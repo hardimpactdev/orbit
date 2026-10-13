@@ -34,7 +34,7 @@ The Gateway owns the image build. This decision changes item 1 of [ADR 0200](/de
 
 ### The build is a chain of jobs
 
-A base image build is a chain of queued jobs on the `builds` queue, one job for each step. Each job does one step and queues the next one when it succeeds. The chain for an Incus host is:
+A base image build is one Laravel job chain (`Bus::chain`) on the `builds` queue, with one job for each step. The chain stops at the first step that fails, and its one `catch` callback queues the cleanup. Horizon shows the build as one chain. The chain for an Incus host is:
 
 | Step | What it does |
 | --- | --- |
@@ -50,7 +50,7 @@ A base image build is a chain of queued jobs on the `builds` queue, one job for 
 
 The programs are the ones that enrollment renders today, rendered by the same code. A new tool or package is a new program and one new step in the chain. The build of a host's image never edits one shared script.
 
-Each step is idempotent. A step that runs again finds its work done, so a step can fail, retry, or run after a release without harm. A step that waits, such as `AwaitImageBuilderBoot` or `SmokeImage`, checks once and releases itself back to the queue with a delay instead of holding the worker. No job runs longer than its step needs, so a release never waits long for a build.
+Each step is idempotent. A step that runs again finds its work done, so a step can fail, retry, or run after a release without harm. A step that waits, such as `AwaitImageBuilderBoot` or `SmokeImage`, checks once and releases itself back to the queue with a delay instead of holding the worker. Laravel counts each release as an attempt, so a waiting step ends at a deadline (`retryUntil()`) instead of after a number of tries. No job runs longer than its step needs, so a release never waits long for a build.
 
 ### The build row holds the state
 
@@ -58,7 +58,7 @@ The table `task_vm_image_builds` has one row for each build. It holds the host, 
 
 When a step fails after its retries, the row becomes `failed` with the step and the error, and a cleanup job deletes the builder and smoke VMs, and the new image when it never became the base image. `task-vms:build-image` prints the steps from the row as they finish. A command `task-vms:image-builds` lists recent builds with their steps and errors. A failed build can be continued from its failed step with `task-vms:build-image --resume <build id>`, while its builder VM still exists.
 
-The [host sweep](/reference/compute-drivers#report-strays) deletes a `tvm-image-<build id>` VM whose build is not `running`. It no longer reads a time from the VM's name.
+The [host sweep](/reference/compute-drivers#report-strays) deletes a `tvm-image-<build id>` VM whose build is not `running`, and its stray report reads the same row. Neither reads a time from the VM's name, so the 60-minute grace for builders goes away.
 
 ### Each build starts from the current image
 
