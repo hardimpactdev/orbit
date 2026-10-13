@@ -61,10 +61,12 @@ final readonly class TaskTopology implements Castable
         $nodes = array_keys(self::Nodes);
         $last = array_pop($nodes);
         $roles = implode(' or ', array_map(static fn (string $role): string => '+'.$role, self::ExtraRoles));
-        $requires = implode('; ', array_map(static fn (string $node, string $needed): string => "{$node} needs {$needed}", array_keys(self::Requires), self::Requires));
+        $rules = [
+            'each with an optional '.$roles.' role where it fits the node',
+            ...array_map(static fn (string $node, string $needed): string => "{$node} needs {$needed}", array_keys(self::Requires), self::Requires),
+        ];
 
-        return 'Topology must be a list of at most '.self::maxNodes().' distinct '.implode(', ', $nodes).', or '.$last.' nodes, each with an optional '
-            .$roles.' role where it fits the node'.($requires === '' ? '' : '; '.$requires).'.';
+        return 'Topology must be a list of at most '.self::maxNodes().' distinct '.implode(', ', $nodes).', or '.$last.' nodes, '.implode('; ', $rules).'.';
     }
 
     public static function tooManyMessage(): string
@@ -94,13 +96,13 @@ final readonly class TaskTopology implements Castable
      * A declaration Orbit stored after {@see self::fromInput()}. It is not validated again: a node or role that left
      * the catalog since stays in it, and the harness reports it.
      *
-     * @param  list<string>|null  $value
+     * @param  array<mixed>|null  $value  the stored entries; anything but a string is skipped
      */
     public static function fromStored(?array $value): self
     {
         $entries = [];
-        foreach ($value ?? [] as $entry) {
-            $parts = explode('+', (string) $entry);
+        foreach (array_filter($value ?? [], is_string(...)) as $entry) {
+            $parts = explode('+', $entry);
             $node = array_shift($parts);
             $entries[$node] = array_values(array_unique([...$entries[$node] ?? [], ...$parts]));
         }
@@ -191,13 +193,7 @@ final readonly class TaskTopology implements Castable
     /** Whether this topology holds every node and role of another. */
     public function covers(self $needed): bool
     {
-        foreach ($needed->entries as $node => $roles) {
-            if (! isset($this->entries[$node]) || array_diff($roles, $this->entries[$node]) !== []) {
-                return false;
-            }
-        }
-
-        return true;
+        return array_all($needed->entries, fn (array $roles, string|int $node): bool => isset($this->entries[$node]) && array_diff($roles, $this->entries[$node]) === []);
     }
 
     /**
@@ -214,7 +210,10 @@ final readonly class TaskTopology implements Castable
         );
     }
 
-    /** @param array<string, mixed> $arguments */
+    /**
+     * @param  array<string, mixed>  $arguments
+     * @return CastsAttributes<TaskTopology, TaskTopology|list<string>|null>
+     */
     public static function castUsing(array $arguments): CastsAttributes
     {
         /** @implements CastsAttributes<TaskTopology, TaskTopology|list<string>|null> */
@@ -229,7 +228,7 @@ final readonly class TaskTopology implements Castable
                     $decoded = null;
                 }
 
-                return TaskTopology::fromStored(is_array($decoded) ? array_values(array_filter($decoded, is_string(...))) : null);
+                return TaskTopology::fromStored(is_array($decoded) ? $decoded : null);
             }
 
             /** @param array<string, mixed> $attributes */

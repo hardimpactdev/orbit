@@ -71,7 +71,7 @@ enum TaskVmSize: string
             }
         }
 
-        return self::cases()[array_key_last(self::cases())];
+        return array_last(self::cases());
     }
 
     /** The slots of the host's `max_vms` that a VM of this size takes. */

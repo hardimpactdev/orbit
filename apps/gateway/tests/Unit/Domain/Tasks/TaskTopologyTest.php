@@ -126,7 +126,6 @@ it('counts a shell script that does work and shows its argv quoted', function ()
         ->and($evidence->summary(['app-prod']))->toEndWith(": sh -c 'curl -fsS http://localhost/ | grep '\\''It works'\\'''");
 });
 
-
 /** One evidence log entry in the harness's shape. */
 function evidence_entry(string $start, string $label, string $node, string $command, int $exit = 0, string $stdout = "ok\n"): string
 {

@@ -58,11 +58,13 @@ final readonly class TaskTopologyEvidence
             if (! is_array($record) || ($record['v'] ?? null) !== 1 || ($record['exit'] ?? null) !== 0
                 || ! is_string($record['start'] ?? null) || ! is_string($record['label'] ?? null)
                 || ! is_string($record['node'] ?? null) || preg_match(self::Node, $record['node']) !== 1
-                || ! is_array($record['argv'] ?? null) || ! array_is_list($record['argv']) || ! array_all($record['argv'], static fn (mixed $word): bool => is_string($word))) {
+                || ! is_array($record['argv'] ?? null) || ! array_is_list($record['argv'])) {
                 continue;
             }
-            /** @var list<string> $argv */
-            $argv = $record['argv'];
+            $argv = array_values(array_filter($record['argv'], is_string(...)));
+            if (count($argv) !== count($record['argv'])) {
+                continue;
+            }
             if (self::counts($record['start'], $argv, $since, $now)) {
                 $records[] = ['start' => $record['start'], 'label' => $record['label'], 'node' => $record['node'], 'command' => implode(' ', array_map(self::shellWord(...), $argv))];
             }
