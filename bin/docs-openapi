@@ -213,7 +213,7 @@ def load_controllers():
 def load_form_requests():
     reqs = {}
     for f in sorted((GW / 'app/Http/Requests').rglob('*.php')):
-        s = f.read_text()
+        s = resolve_rule_constants(f.read_text(), f)
         i = s.find('function rules(')
         if i < 0:
             continue
@@ -1058,18 +1058,40 @@ def clean_schema(s):
     return s
 
 
-def database_field_rules():
-    """Resolve constant-backed regex rule strings from their shared PHP source."""
-    source = (GW / 'app/Http/Requests/DatabaseConnections/DatabaseConnectionFieldRules.php').read_text()
-    constants = dict(re.findall(r"\bconst\s+string\s+(\w+)\s*=\s*'((?:[^'\\]|\\.)*)';", source))
+RULE_CONSTANT = re.compile(r"'([a-z_]+:)'\s*\.\s*(self|[A-Z]\w*)::(\w+)(\(\))?")
+
+
+def resolve_rule_constants(source, path):
+    """Inline rule strings built from a PHP constant or a static method without arguments, such as
+    `'regex:'.self::Pattern` or `'max:'.TaskTopology::maxNodes()`, with the value PHP gives them."""
+    refs = RULE_CONSTANT.findall(source)
+    if not refs:
+        return source
+    namespace = re.search(r'^namespace\s+([\w\\]+);', source, re.M).group(1)
+    uses = {alias or name.rsplit('\\', 1)[-1]: name for name, alias in re.findall(r'^use\s+([\w\\]+)(?:\s+as\s+(\w+))?;', source, re.M)}
+
+    def expression(cls, name, call):
+        fqcn = f'{namespace}\\{path.stem}' if cls == 'self' else uses.get(cls, f'{namespace}\\{cls}')
+        return f'\\{fqcn}::{name}{call}'
+
+    expressions = sorted({expression(cls, name, call) for _, cls, name, call in refs})
+    script = "require 'vendor/autoload.php'; echo json_encode([" + ', '.join(expressions) + "], JSON_THROW_ON_ERROR);"
+    values = dict(zip(expressions, run_json(['php', '-r', script], GW)))
 
     def resolve(match):
-        prefix, name = match.groups()
-        if name not in constants:
-            sys.exit(f'Unknown database rule constant self::{name}')
-        return "'" + prefix + constants[name] + "'"
+        prefix, cls, name, call = match.groups()
+        value = values[expression(cls, name, call)]
+        if not isinstance(value, (str, int)):
+            sys.exit(f'Rule constant {cls}::{name}{call} in {path.name} is not a string or an integer')
+        return "'" + prefix + str(value).replace("'", "\\'") + "'"
 
-    return re.sub(r"'(regex:|not_regex:)'\s*\.\s*self::(\w+)", resolve, source)
+    return RULE_CONSTANT.sub(resolve, source)
+
+
+def database_field_rules():
+    """The shared database connection rules, with their constant-backed regex rule strings resolved."""
+    path = GW / 'app/Http/Requests/DatabaseConnections/DatabaseConnectionFieldRules.php'
+    return resolve_rule_constants(path.read_text(), path)
 
 
 def database_update_rules(field_rules):
