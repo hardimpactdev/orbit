@@ -6,21 +6,31 @@ namespace App\Domain\Tasks;
 
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
+use JsonException;
 use Throwable;
 
 /**
- * The records of a topology's evidence log that count for an approval. `bin/e2e-topology exec --record` and
- * `logs --record` append one entry each: a blank line or the start of the file, then
- * `=== <start> <label> node=<node> exit=<code> duration=<ms>ms end=<end>` in UTC with milliseconds, the argv as
- * `$ <shell words>`, and `--- stdout`. Only that shape counts, so a header inside command output, which is not
- * preceded by a blank line and followed by those two lines, cannot forge a record.
+ * The records of a topology's evidence that count for an approval. `bin/e2e-topology exec --record` and
+ * `logs --record` append one JSON line per command to `.e2e/evidence.jsonl`:
+ * `{"v":1,"start":…,"end":…,"label":…,"node":…,"exit":…,"argv":[…]}`, with UTC times in milliseconds and the redacted
+ * argv as a list ({@see self::fromJsonLines()}). A harness from before that file wrote only the text log
+ * `.e2e/evidence.log`, which {@see self::parse()} still reads until those VMs are gone.
  *
  * A record counts when its command exited 0, started at or after the last handoff and not after now, and did work on
  * its node: a command that only exits, such as `true` or `:`, proves nothing.
+ *
+ * This is a cooperative check, not an anti-forgery control. The agent owns the VM and can write the file directly, so
+ * the gate catches a reviewer that skipped the nodes; the approval carries the counted records for a person to audit.
  */
 final readonly class TaskTopologyEvidence
 {
+    public const string File = '.e2e/evidence.jsonl';
+
+    public const string LegacyFile = '.e2e/evidence.log';
+
     private const string Header = '/\A=== (\S+) (.+) node=([a-z0-9-]+) exit=(-?\d+) duration=\d+ms end=\S+\z/D';
+
+    private const string Node = '/\A[a-z0-9-]+\z/D';
 
     /** Programs that do no work on the node. */
     private const array NoOps = ['true', ':', 'false', 'exit', 'echo', 'printf', 'sleep', 'yes'];
@@ -30,6 +40,42 @@ final readonly class TaskTopologyEvidence
     /** @param list<array{start: string, label: string, node: string, command: string}> $records */
     private function __construct(public array $records) {}
 
+    public static function none(): self
+    {
+        return new self([]);
+    }
+
+    /** The records of `.e2e/evidence.jsonl`. A line that is not a version 1 record, such as a cut first line, is skipped. */
+    public static function fromJsonLines(string $lines, CarbonInterface $since, CarbonInterface $now): self
+    {
+        $records = [];
+        foreach (preg_split('/\R/', $lines) ?: [] as $line) {
+            try {
+                $record = json_decode($line, true, 8, JSON_THROW_ON_ERROR);
+            } catch (JsonException) {
+                continue;
+            }
+            if (! is_array($record) || ($record['v'] ?? null) !== 1 || ($record['exit'] ?? null) !== 0
+                || ! is_string($record['start'] ?? null) || ! is_string($record['label'] ?? null)
+                || ! is_string($record['node'] ?? null) || preg_match(self::Node, $record['node']) !== 1
+                || ! is_array($record['argv'] ?? null) || ! array_is_list($record['argv']) || ! array_all($record['argv'], is_string(...))) {
+                continue;
+            }
+            /** @var list<string> $argv */
+            $argv = $record['argv'];
+            if (self::counts($record['start'], $argv, $since, $now)) {
+                $records[] = ['start' => $record['start'], 'label' => $record['label'], 'node' => $record['node'], 'command' => implode(' ', array_map(self::shellWord(...), $argv))];
+            }
+        }
+
+        return new self($records);
+    }
+
+    /**
+     * The records of the text log `.e2e/evidence.log` that a harness from before `.e2e/evidence.jsonl` wrote: a blank
+     * line or the start of the file, then `=== <start> <label> node=<node> exit=<code> duration=<ms>ms end=<end>`, the
+     * argv as `$ <shell words>`, and `--- stdout`.
+     */
     public static function parse(string $log, CarbonInterface $since, CarbonInterface $now): self
     {
         $lines = preg_split('/\R/', $log) ?: [];
@@ -42,16 +88,10 @@ final readonly class TaskTopologyEvidence
             if (($i > 0 && $lines[$i - 1] !== '') || ! str_starts_with($command, '$ ') || ($lines[$i + 2] ?? '') !== '--- stdout') {
                 continue;
             }
-            try {
-                $started = CarbonImmutable::parse($match[1]);
-            } catch (Throwable) {
-                continue;
-            }
             $command = substr($command, 2);
-            if ($started->lessThan($since) || $started->greaterThan($now) || self::noOp($command)) {
-                continue;
+            if (self::counts($match[1], self::words($command), $since, $now)) {
+                $records[] = ['start' => $match[1], 'label' => $match[2], 'node' => $match[3], 'command' => $command];
             }
-            $records[] = ['start' => $match[1], 'label' => $match[2], 'node' => $match[3], 'command' => $command];
         }
 
         return new self($records);
@@ -100,25 +140,49 @@ final readonly class TaskTopologyEvidence
             .implode(', ', $missing).'. Prove the deliverables there with `bin/e2e-topology exec TASK-'.$groupId.' NODE --argv=JSON --record=LABEL`, then approve again. Commands that only exit, such as `true`, do not count.';
     }
 
-    /** Whether the shell-quoted argv only exits, also wrapped in `sh -c` or `bash -c`. */
-    private static function noOp(string $command): bool
+    /** @param list<string> $argv */
+    private static function counts(string $start, array $argv, CarbonInterface $since, CarbonInterface $now): bool
     {
-        $words = self::words($command);
-        $program = basename($words[0] ?? '');
-        if (in_array($program, ['sh', 'bash'], true) && ($words[1] ?? null) === '-c') {
-            $script = trim($words[2] ?? '');
+        try {
+            $started = CarbonImmutable::parse($start);
+        } catch (Throwable) {
+            return false;
+        }
 
-            return $script === '' || self::noOp($script);
+        return ! $started->lessThan($since) && ! $started->greaterThan($now) && ! self::noOp($argv);
+    }
+
+    /**
+     * Whether the argv only exits, also wrapped in `sh -c` or `bash -c`.
+     *
+     * @param  list<string>  $argv
+     */
+    private static function noOp(array $argv): bool
+    {
+        $program = basename($argv[0] ?? '');
+        if (in_array($program, ['sh', 'bash'], true) && ($argv[1] ?? null) === '-c') {
+            $script = trim($argv[2] ?? '');
+
+            return $script === '' || self::noOp(self::words($script));
         }
 
         return $program === '' || in_array($program, self::NoOps, true);
     }
 
-    /** @return list<string> */
+    /**
+     * The words of shell text, with single quotes removed.
+     *
+     * @return list<string>
+     */
     private static function words(string $command): array
     {
         preg_match_all("/(?:'(?:[^']|'\\\\'')*'|[^\\s'])+/", $command, $matches);
 
         return array_map(static fn (string $word): string => str_replace("'\\''", "'", preg_replace("/\\A'|'\\z/", '', $word) ?? $word), $matches[0]);
+    }
+
+    private static function shellWord(string $word): string
+    {
+        return $word !== '' && preg_match('/\A[A-Za-z0-9_@%+=:,.\/-]+\z/', $word) === 1 ? $word : "'".str_replace("'", "'\\''", $word)."'";
     }
 }
