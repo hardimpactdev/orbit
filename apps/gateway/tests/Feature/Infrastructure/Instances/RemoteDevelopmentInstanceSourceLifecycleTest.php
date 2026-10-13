@@ -37,6 +37,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\AppDev\NativeAppDevSourceOperationLock;
@@ -3985,7 +3986,7 @@ function orb76_source_instance(
 /** Makes the Node the Node of a live task VM, whose one workspace lives at the fixed checkout path. */
 function orb76_task_vm(Node $node): TaskVm
 {
-    return TaskVm::query()->create(['host_node_id' => $node->id, 'node_id' => $node->id, 'provider' => TaskVm::Incus, 'name' => 'tvm-7',
+    return TaskVm::query()->create(['host_node_id' => $node->id, 'node_id' => $node->id, 'provider' => TaskVmProviderKind::Incus, 'name' => 'tvm-7',
         'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.200']);
 }
 

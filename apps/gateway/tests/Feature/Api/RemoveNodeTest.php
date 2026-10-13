@@ -27,7 +27,6 @@ use App\Domain\Schedules\DesiredTimerState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCompute;
-use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
@@ -54,6 +53,7 @@ use Tests\Support\FakeIncusFleet;
 use Tests\Support\FakeNodeAgentRuntime;
 use Tests\Support\FakeNodeRoleFirewallManager;
 use Tests\Support\FakeRouterLanIngressReconciler;
+use Tests\Support\TaskVmSettingsBuilder;
 
 beforeEach(function (): void {
     $services = Mockery::mock(ServiceMetricsRuntime::class);
@@ -1133,9 +1133,7 @@ it('refuses a host with a live task VM, and deletes its destroyed task VM rows w
 it('refuses a configured task VM host, so its peers never keep trusting it', function (): void {
     $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
     $host = remove_node_record(name: 'beast', wireguardIp: '10.44.0.7');
-    app()->instance(TaskVmSettings::class, new TaskVmSettings(false, null, '10.44.0.128/25', [
-        new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 2, 2, '4GiB', '20GiB'),
-    ], null, null, null, []));
+    app()->instance(TaskVmSettings::class, TaskVmSettingsBuilder::off(['hosts' => [TaskVmSettingsBuilder::host($host->id)]]));
 
     expect(fn () => app(RemoveNodeAction::class)->execute($host, $caller))
         ->toThrow(fn (ResourceOperationException $exception): bool => $exception->errorCode === 'node.task_vm_host_configured');
@@ -1146,9 +1144,7 @@ it('removes the transfer key of a former task VM host from the remaining hosts f
     $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
     $beast = remove_node_record(name: 'beast', wireguardIp: '10.44.0.7');
     $shark = remove_node_record(name: 'shark', wireguardIp: '10.44.0.11');
-    app()->instance(TaskVmSettings::class, new TaskVmSettings(false, null, '10.44.0.128/25', [
-        new TaskVmHost($beast->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 2, 2, '4GiB', '20GiB'),
-    ], null, null, null, []));
+    app()->instance(TaskVmSettings::class, TaskVmSettingsBuilder::off(['hosts' => [TaskVmSettingsBuilder::host($beast->id)]]));
     $fleet = new FakeIncusFleet;
     $fleet->host('10.44.0.7')->authorizedKeys = [
         'ssh-ed25519 AAAAgateway orbit@gateway',

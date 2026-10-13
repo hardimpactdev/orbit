@@ -8,6 +8,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\TaskVmUpCloud;
@@ -101,7 +102,7 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
     private function sweepUpCloud(UpCloudServers $servers): void
     {
         $labelled = $servers->labelled(TaskVmUpCloud::Label);
-        $live = TaskVm::query()->live()->where('provider', TaskVm::UpCloud)->pluck('name')->all();
+        $live = TaskVm::query()->live()->where('provider', TaskVmProviderKind::UpCloud)->pluck('name')->all();
         foreach ($labelled as $server) {
             if ($server['title'] === 'tvm-'.$server['value'] && preg_match('/\Atvm-[0-9]+\z/D', $server['title']) === 1 && ! in_array($server['title'], $live, true)) {
                 $servers->delete($server['title'], TaskVmUpCloud::Label, $server['value'], $server['uuid']);
@@ -109,7 +110,7 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
             }
         }
         $names = array_column($labelled, 'title');
-        $rows = TaskVm::query()->live()->where('provider', TaskVm::UpCloud);
+        $rows = TaskVm::query()->live()->where('provider', TaskVmProviderKind::UpCloud);
         $this->misses($rows, array_values((clone $rows)->get()->filter(
             static fn (TaskVm $vm): bool => in_array($vm->state, [TaskVmState::Warm, TaskVmState::Ready, TaskVmState::Parked], true) && ! in_array($vm->name, $names, true),
         )->all()));

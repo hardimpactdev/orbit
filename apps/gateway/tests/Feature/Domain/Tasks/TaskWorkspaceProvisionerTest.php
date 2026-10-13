@@ -35,7 +35,6 @@ use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceName;
 use App\Domain\Tasks\TaskWorkspaceTopology;
 use App\Domain\TaskVms\TaskVmException;
-use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Processes\CommandResult;
@@ -55,6 +54,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
+use Tests\Support\TaskVmSettingsBuilder;
 
 function provisioner_app(
     string $slug,
@@ -1023,9 +1023,7 @@ describe('task VMs', function (): void {
         $group->update(['task_compute' => TaskCompute::Vm]);
         TaskVm::query()->create(['group_id' => $group->id, 'host_node_id' => $host->id, 'node_id' => $vmNode->id, 'provider' => 'incus',
             'name' => 'tvm-1', 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.129', 'pi_token' => str_repeat('p', 64)]);
-        app()->instance(TaskVmSettings::class, new TaskVmSettings(true, 4, '10.44.0.128/25', [
-            new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 4, 2, '4GiB', '20GiB'),
-        ], 'http://10.44.0.3:8317', null, null, []));
+        TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($host->id, ['maxVms' => 4])]]);
         $volumes = $ready ? [['name' => 'tvm-template-'.$project->id.'-20261011040000', 'type' => 'custom', 'config' => [
             'user.orbit.ready' => 'true', 'user.orbit.repository' => $project->repository_url, 'user.orbit.image' => 'base-image', 'user.orbit.owner' => '1000:1000', 'user.orbit.layout' => 'workspace',
         ]]] : [];

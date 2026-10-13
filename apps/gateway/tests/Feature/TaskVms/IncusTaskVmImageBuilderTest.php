@@ -7,7 +7,6 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
-use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\Nodes\NodeAgentFootprint;
 use App\Infrastructure\Nodes\NodeBootstrapCommandFactory;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
@@ -35,6 +34,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Sleep;
 use Symfony\Component\Yaml\Yaml;
+use Tests\Support\TaskVmSettingsBuilder;
 
 const IMAGE_KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeGatewayPublicKeyMaterial0123456789abcd orbit@gateway';
 
@@ -203,10 +203,7 @@ beforeEach(function (): void {
         'name' => 'beast', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64',
         'public_ssh_host' => '192.0.2.7', 'wireguard_ip' => '10.44.0.7', 'user' => 'nckrtl',
     ]);
-    $this->settings = new TaskVmSettings(true, 4, '10.44.0.128/25', [
-        new TaskVmHost($this->host->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 2, 2, '4GiB', '20GiB'),
-    ], 'http://10.44.0.3:8317', null, null, []);
-    app()->instance(TaskVmSettings::class, $this->settings);
+    $this->settings = TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($this->host->id)]]);
     $this->incus = new FakeIncusImageHost;
     $this->incus->images = [IMAGE_STOCK => [TaskVmHost::SourceImage]];
     app()->instance(SshExecutor::class, $this->incus);
@@ -289,7 +286,7 @@ describe('a build', function (): void {
         $artifact = tempnam(sys_get_temp_dir(), 'pi-server-');
         file_put_contents($artifact, 'pi-server build');
         $digest = hash_file('sha256', $artifact);
-        app()->instance(TaskVmSettings::class, new TaskVmSettings(true, 4, '10.44.0.128/25', $this->settings->hosts, 'http://10.44.0.3:8317', $artifact, $digest, ['gpt-5.6-luna']));
+        TaskVmSettingsBuilder::bind(['hosts' => $this->settings->hosts, 'piArtifactPath' => $artifact, 'piArtifactSha256' => $digest, 'piModels' => ['gpt-5.6-luna']]);
         $stages = [];
 
         try {

@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Infrastructure\TaskVms;
 
 use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmGuestCommand;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmUpCloud;
 use App\Domain\TaskVms\VmObservation;
+use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\TaskVm;
@@ -24,8 +26,6 @@ use App\Models\TaskVm;
 final readonly class UpCloudTaskVmProvider implements TaskVmProvider
 {
     private const int StartSeconds = 240;
-
-    private const int CloudInitWaitSeconds = 30;
 
     public function __construct(
         private UpCloudServers $servers,
@@ -61,52 +61,29 @@ final readonly class UpCloudTaskVmProvider implements TaskVmProvider
         return $server === null ? null : new VmObservation($server->state === 'started', $server->address);
     }
 
-    public function bootstrapReady(TaskVm $vm): bool
-    {
-        $address = $this->observe($vm)?->address;
-        if ($address === null) {
-            return false;
-        }
-        $result = $this->guest->run($address, $this->hostKey($vm), new RemoteCommand(
-            ['timeout', (string) self::CloudInitWaitSeconds, 'cloud-init', 'status', '--wait', '--format=json'],
-            maxOutputBytes: 65536,
-            timeout: self::CloudInitWaitSeconds + 15,
-        ));
-        // Until sshd runs with the key from the user-data, the connection fails and prints nothing on stdout.
-        if (! $result->succeeded() && trim($result->stdout) === '') {
-            return false;
-        }
-        $status = json_decode($result->stdout, true);
-        $errors = is_array($status) ? $status['errors'] ?? null : null;
-        if (! is_array($status) || ! is_string($status['status'] ?? null) || ! is_array($errors) || ! array_is_list($errors)) {
-            throw new TaskVmException('task_vm.upcloud_invalid', "The cloud-init status of task VM [{$vm->name}] has no status or errors.", 502);
-        }
-        if ($status['status'] === 'error') {
-            throw new TaskVmException('task_vm.bootstrap_failed', "Cloud-init failed on task VM [{$vm->name}]: ".mb_substr(json_encode($errors, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), 0, 2000), 502);
-        }
-
-        return $status['status'] === 'done' && $errors === [];
-    }
-
     /** The key the Gateway generated and gave the server: the server proves it holds it on every SSH connection. */
     public function sshHostFingerprint(TaskVm $vm): string
     {
         return UpCloudGuest::fingerprint($this->hostKey($vm));
     }
 
-    public function imageManifest(TaskVm $vm): ?string
+    /**
+     * Runs the command as `orbit` over SSH at the server's public address, which must present the pinned host key.
+     * Until sshd runs with the key from the user-data, the connection fails and prints nothing on stdout. A server
+     * without an address yet gives such a result too.
+     */
+    public function exec(TaskVm $vm, TaskVmGuestCommand $command): CommandResult
     {
-        $address = $this->observe($vm)->address ?? throw new TaskVmException('task_vm.vm_not_running', "Task VM [{$vm->name}] has no address.", 502);
-        $result = $this->guest->run($address, $this->hostKey($vm), new RemoteCommand(
-            ['sh', '-c', 'if [ -e "$1" ]; then cat -- "$1"; else printf absent; fi', 'sh', TaskVmBakedPrograms::ManifestPath],
-            maxOutputBytes: 1_048_576,
-            timeout: 30,
-        ));
-        if (! $result->succeeded() || $result->truncated) {
-            throw new TaskVmException('task_vm.upcloud_failed', "The image manifest of task VM [{$vm->name}] could not be read.", 502);
+        $address = $this->observe($vm)?->address;
+        if ($address === null) {
+            return new CommandResult(255, '', "Task VM [{$vm->name}] has no address.", 0, false);
         }
 
-        return $result->stdout === 'absent' ? null : $result->stdout;
+        return $this->guest->run($address, $this->hostKey($vm), new RemoteCommand(
+            $command->argv(),
+            maxOutputBytes: TaskVmGuestCommand::MaxOutputBytes,
+            timeout: $command->timeoutSeconds(),
+        ));
     }
 
     public function start(TaskVm $vm): void

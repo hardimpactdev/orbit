@@ -12,6 +12,7 @@ use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\TaskVms\TaskVmBakedPrograms;
+use App\Infrastructure\TaskVms\TaskVmGuest;
 use App\Infrastructure\TaskVms\TaskVmStepClock;
 use App\Models\TaskVm;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -59,7 +60,7 @@ final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
         $this->onConnection('task-vms')->onQueue('task-vms');
     }
 
-    public function handle(TaskVmProvider $provider, ProvisionNodeAction $nodes, TaskVmSettings $settings, TaskVmStepClock $clock, TaskVmBakedPrograms $baked): void
+    public function handle(TaskVmProvider $provider, TaskVmGuest $guest, ProvisionNodeAction $nodes, TaskVmSettings $settings, TaskVmStepClock $clock, TaskVmBakedPrograms $baked): void
     {
         $vm = $this->provisioning();
         if (! $vm instanceof TaskVm) {
@@ -78,10 +79,10 @@ final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
             $clock->step('enroll-queue');
         }
         try {
-            $address = $this->bootstrappedAddress($vm, $provider);
+            $address = $this->bootstrappedAddress($vm, $provider, $guest);
             for ($poll = 0; $address === null && $poll < self::InlinePolls; $poll++) {
                 Sleep::for(self::InlinePollSeconds)->seconds();
-                $address = $this->bootstrappedAddress($vm, $provider);
+                $address = $this->bootstrappedAddress($vm, $provider, $guest);
             }
         } catch (TaskVmException $exception) {
             if (! in_array($exception->errorCode, self::Permanent, true)) {
@@ -100,7 +101,7 @@ final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
         $clock->step('boot');
         $fingerprint = $provider->sshHostFingerprint($vm);
         // Enrollment skips the programs that the base image ran as they render now.
-        $baked->load($vm, $provider->imageManifest($vm));
+        $baked->load($vm, $guest->imageManifest($vm));
         $vm->update(['address' => $address]);
         $nodes->execute(new ProvisionNodeData(
             name: $vm->name,
@@ -126,20 +127,15 @@ final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
      *
      * @throws TaskVmException
      */
-    private function bootstrappedAddress(TaskVm $vm, TaskVmProvider $provider): ?string
+    private function bootstrappedAddress(TaskVm $vm, TaskVmProvider $provider, TaskVmGuest $guest): ?string
     {
-        $observation = $provider->observe($vm);
-        if ($observation?->running === false) {
-            // A guest reboot shows the VM stopped for about a second.
-            Sleep::for(5)->seconds();
-            $observation = $provider->observe($vm);
-        }
+        $observation = $guest->observeSettled($vm);
         if ($observation?->running !== true) {
             throw new TaskVmException('task_vm.vm_not_running', "Task VM [{$vm->name}] is ".($observation === null ? 'absent' : 'stopped').' on its host.', 502);
         }
         // Cloud-init is done only after the network is online, so the host knows the address by then. The
         // check waits in the guest, so it runs before the host reports an address, which it does later.
-        if ($provider->bootstrapReady($vm)) {
+        if ($guest->bootstrapReady($vm)) {
             $address = $observation->address ?? $provider->observe($vm)?->address;
             if ($address !== null) {
                 return $address;

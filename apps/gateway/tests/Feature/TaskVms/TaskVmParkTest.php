@@ -21,7 +21,6 @@ use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\TaskVms\TaskVmException;
-use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmPlacement;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmSettings;
@@ -47,78 +46,17 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\RecordingTaskVmProvider;
+use Tests\Support\TaskVmSettingsBuilder;
 
 use function Pest\Laravel\mock;
 
-/** A provider that records start, stop, and destroy. */
-final class TaskVmParkProvider implements TaskVmProvider
-{
-    /** @var list<string> */
-    public array $calls = [];
-
-    public ?Throwable $startError = null;
-
-    public bool $running = false;
-
-    public function create(TaskVm $vm, string $userData): void
-    {
-        $this->calls[] = 'create';
-    }
-
-    public function observe(TaskVm $vm): ?VmObservation
-    {
-        $this->calls[] = 'observe';
-
-        return new VmObservation($this->running, null);
-    }
-
-    public function bootstrapReady(TaskVm $vm): bool
-    {
-        return true;
-    }
-
-    public function sshHostFingerprint(TaskVm $vm): string
-    {
-        return 'SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
-    }
-
-    public function imageManifest(TaskVm $vm): ?string
-    {
-        return null;
-    }
-
-    public function start(TaskVm $vm): void
-    {
-        $this->calls[] = 'start';
-        if ($this->startError instanceof Throwable) {
-            throw $this->startError;
-        }
-    }
-
-    public function stop(TaskVm $vm): void
-    {
-        $this->calls[] = 'stop';
-    }
-
-    public ?Closure $onDestroy = null;
-
-    public function destroy(TaskVm $vm): void
-    {
-        $this->calls[] = 'destroy';
-        if ($this->onDestroy instanceof Closure) {
-            ($this->onDestroy)();
-        }
-    }
-}
-
 function tvm_park_settings(int $parkAfterMinutes = 30): void
 {
-    app()->instance(TaskVmSettings::class, new TaskVmSettings(
-        enabled: true, devClusterId: null, wireguardRange: '10.44.0.128/25',
-        hosts: [new TaskVmHost(test()->host->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 4, 2, '4GiB', '20GiB')],
-        modelProxyOrigin: 'http://10.44.0.3:8317', piArtifactPath: null, piArtifactSha256: null, piModels: [],
-        parkAfterMinutes: $parkAfterMinutes,
-    ));
+    TaskVmSettingsBuilder::bind([
+        'devClusterId' => null, 'parkAfterMinutes' => $parkAfterMinutes,
+        'hosts' => [TaskVmSettingsBuilder::host(test()->host->id, ['maxVms' => 4])],
+    ]);
 }
 
 /**
@@ -174,7 +112,8 @@ beforeEach(function (): void {
         'name' => 'beast', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64',
         'public_ssh_host' => '10.44.0.7', 'wireguard_ip' => '10.44.0.7', 'user' => 'nckrtl', 'ssh_host_fingerprint' => 'SHA256:managed',
     ]);
-    $this->provider = new TaskVmParkProvider;
+    $this->provider = new RecordingTaskVmProvider;
+    $this->provider->observation = new VmObservation(false, null);
     app()->instance(TaskVmProvider::class, $this->provider);
     tvm_park_settings();
 });
@@ -209,7 +148,7 @@ describe('park', function (): void {
     it('never parks a group whose workspace removal or merge cleanup failed, so destroy and park do not loop', function (string $prefix): void {
         Queue::fake();
         Sleep::fake();
-        $this->provider->running = true;
+        $this->provider->observation = new VmObservation(true, null);
         [$group, $vm] = tvm_park_waiting(group: ['assistance_requested' => true, 'assistance_reason' => $prefix.'disk full']);
         tvm_park_workspace($group, $vm);
 

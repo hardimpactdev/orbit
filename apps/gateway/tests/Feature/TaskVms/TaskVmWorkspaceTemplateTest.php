@@ -14,7 +14,6 @@ use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
-use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
@@ -52,6 +51,7 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
 use Symfony\Component\Process\Process;
 use Tests\Support\GitRemoteRedirect;
+use Tests\Support\TaskVmSettingsBuilder;
 use Tests\Support\TestOrbitHome;
 
 /**
@@ -317,7 +317,7 @@ beforeEach(function (): void {
         'public_ssh_host' => '10.44.0.7', 'wireguard_ip' => '10.44.0.7', 'user' => 'nckrtl', 'ssh_host_fingerprint' => 'SHA256:managed',
     ]);
     $this->host = new TaskVmHost($this->hostNode->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 4, 2, '4GiB', '40GiB');
-    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, 4, '10.44.0.128/25', [$this->host], 'http://10.44.0.3:8317', null, null, []));
+    TaskVmSettingsBuilder::bind(['hosts' => [$this->host]]);
     $this->project = Project::query()->create([
         'name' => 'Mealou', 'slug' => 'mealou', 'repository_url' => 'https://github.com/acme/mealou.git', 'default_branch' => 'main', 'task_compute' => TaskCompute::Vm,
     ]);
@@ -584,7 +584,7 @@ describe('scale', function (): void {
             'public_ssh_host' => '10.44.0.8', 'wireguard_ip' => '10.44.0.8', 'user' => 'nckrtl', 'ssh_host_fingerprint' => 'SHA256:shark',
         ]);
         $sharkHost = new TaskVmHost($shark->id, 'orbit-tasks', 'orbittask0', '10.251.78.0/24', 4, 2, '4GiB', '40GiB');
-        app()->instance(TaskVmSettings::class, new TaskVmSettings(true, 4, '10.44.0.128/25', [$this->host, $sharkHost], 'http://10.44.0.3:8317', null, null, []));
+        TaskVmSettingsBuilder::bind(['hosts' => [$this->host, $sharkHost]]);
         // Mealou is active through the group of the setup; its old group does not count.
         $projects = tvm_projects(25, active: 6);
         Task::topLevel()->create(['project_id' => $projects[10]->id, 'title' => 'Old', 'brief' => 'Old', 'status' => TaskGroupStatus::Completed, 'task_compute' => TaskCompute::Vm])

@@ -10,6 +10,8 @@ use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Domain\Tasks\TaskWait;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
+use App\Domain\TaskVms\TaskVmPlacementTarget;
+use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
@@ -54,12 +56,6 @@ final readonly class AllocateTaskVmAction
     /** Every slot is taken, and at least one of them is a warm VM that is still starting. */
     public const string WarmStarting = 'Task VM: waiting for a warm VM.';
 
-    /** No host has the free slots of a large VM, for a group with a declared topology. */
-    public const string NoLargeCapacity = 'Task VM: no host has 3 free slots for a large VM.';
-
-    /** No host has the free slots of a medium VM, for a group of a Project in `task_vms.medium_projects`. */
-    public const string NoMediumCapacity = 'Task VM: no host has 2 free slots for a medium VM.';
-
     private const string PlacementLock = 'task-vms:placement';
 
     /** The image read at a claim runs in the scheduler tick, so it gets a short limit. */
@@ -88,8 +84,8 @@ final readonly class AllocateTaskVmAction
         if ($size === TaskVmSize::Large && ! $this->topology->available()) {
             throw new TaskCapacityException(TaskWait::Topology, RefusingTopologyAdmission::Unavailable);
         }
-        // A large VM is always new, so it needs no warm VM image.
-        $images = $size === TaskVmSize::Normal ? $this->warmImages() : [];
+        // A medium or large VM is always new, so it needs no warm VM image.
+        $images = $size->resources()->warmEligible ? $this->warmImages() : [];
 
         try {
             [$vm, $warm] = self::locked(fn (): array => $this->place($group, $images, $size));
@@ -151,15 +147,14 @@ final readonly class AllocateTaskVmAction
 
     /**
      * Records a new `provisioning` row on the host: a group's VM, or a pool VM when `$group` is null. A pool row
-     * gets no Pi token; a claim gives it one. A row without a host is an UpCloud VM. Call it under the placement
-     * lock, inside a transaction.
+     * gets no Pi token; a claim gives it one. Call it under the placement lock, inside a transaction.
      */
-    public function record(?Task $group, ?int $hostNodeId, TaskVmSize $size = TaskVmSize::Normal): TaskVm
+    public function record(?Task $group, TaskVmPlacementTarget $target, TaskVmSize $size = TaskVmSize::Normal): TaskVm
     {
         $vm = TaskVm::query()->create([
             'group_id' => $group?->id,
-            'host_node_id' => $hostNodeId,
-            'provider' => $hostNodeId === null ? TaskVm::UpCloud : TaskVm::Incus,
+            'host_node_id' => $target->hostNodeId,
+            'provider' => $target->provider,
             'size' => $size,
             'name' => 'tvm-pending-'.Str::uuid(),
             'state' => TaskVmState::Provisioning,
@@ -188,7 +183,7 @@ final readonly class AllocateTaskVmAction
         $active = Node::query()->whereKey(array_map(static fn (TaskVmHost $host): int => $host->nodeId, $this->settings->hosts))
             ->where('status', LifecycleStatus::Active)->pluck('id')->all();
         $used = [];
-        foreach (TaskVm::query()->live()->where('state', '!=', TaskVmState::Failed)->whereNotNull('host_node_id')->get(['host_node_id', 'size']) as $vm) {
+        foreach (TaskVm::query()->countedAgainstCap(TaskVmProviderKind::Incus)->get(['host_node_id', 'size']) as $vm) {
             $host = (int) $vm->host_node_id;
             $used[$host] = ($used[$host] ?? 0) + $vm->size->slots();
         }
@@ -276,7 +271,7 @@ final readonly class AllocateTaskVmAction
             }
 
             $free = $this->freeSlots();
-            $warm = $size === TaskVmSize::Normal ? $this->takeWarm($group, $images, $free) : null;
+            $warm = $size->resources()->warmEligible ? $this->takeWarm($group, $images, $free) : null;
             if ($warm instanceof TaskVm) {
                 return [$warm, true];
             }
@@ -324,13 +319,14 @@ final readonly class AllocateTaskVmAction
 
     /**
      * The active host with the most free slots, when it has room for the size. Hosts with as many free slots keep
-     * their config order. Without room for a normal VM, null places it at UpCloud: only while the overflow is on, the
-     * group's Project is opted in, and fewer than `max_vms` UpCloud VMs are live, failed and parked ones too. A medium
-     * or large VM waits for an Incus host: UpCloud has a fixed plan and no nested virtualization that Orbit relies on.
+     * their config order. Without room, a VM of a size that UpCloud supports goes to UpCloud: only while the overflow
+     * is on, the group's Project is opted in, and fewer than `max_vms` UpCloud VMs count against its cap, failed and
+     * parked ones too. This row cap is the placement rule; `UpCloudTaskVmProvider` also counts the account's servers
+     * before each create, as its own cost guard. A VM of another size waits for an Incus host.
      *
      * @param  array<int, int>  $free
      */
-    private function host(array $free, Task $group, TaskVmSize $size): ?int
+    private function host(array $free, Task $group, TaskVmSize $size): TaskVmPlacementTarget
     {
         $best = null;
         $bestFree = $size->slots() - 1;
@@ -340,19 +336,29 @@ final readonly class AllocateTaskVmAction
             }
         }
         if ($best !== null) {
-            return $best;
+            return TaskVmPlacementTarget::incusHost($best);
         }
-        if ($size !== TaskVmSize::Normal) {
-            throw new TaskCapacityException(TaskWait::Capacity, $size === TaskVmSize::Large ? self::NoLargeCapacity : self::NoMediumCapacity);
+        if (! TaskVmProviderKind::UpCloud->supports($size)) {
+            throw new TaskCapacityException(TaskWait::Capacity, self::noCapacityFor($size));
         }
         $upcloud = $this->settings->upcloud;
         if ($upcloud?->allows($group->project_id) === true
-            && TaskVm::query()->live()->where('provider', TaskVm::UpCloud)->count() < $upcloud->maxVms) {
-            return null;
+            && TaskVm::query()->countedAgainstCap(TaskVmProviderKind::UpCloud)->count() < $upcloud->maxVms) {
+            return TaskVmPlacementTarget::upCloud();
         }
         $starting = TaskVm::query()->pool()->where('state', TaskVmState::Provisioning)->whereIn('host_node_id', array_keys($free))->exists();
 
         throw new TaskCapacityException(TaskWait::Capacity, $starting ? self::WarmStarting : self::NoCapacity);
+    }
+
+    /**
+     * The wait reason of a VM that only an Incus host can run, while no host has its free slots: `Task VM: no host has 3
+     * free slots for a large VM.` for a group with a declared topology, or 2 for a medium VM of a Project in
+     * `task_vms.medium_projects`.
+     */
+    public static function noCapacityFor(TaskVmSize $size): string
+    {
+        return "Task VM: no host has {$size->slots()} free slots for a {$size->value} VM.";
     }
 
     private static function piToken(): string

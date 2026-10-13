@@ -6,8 +6,6 @@ use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\TaskVms\TaskVmException;
-use App\Domain\TaskVms\TaskVmHost;
-use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\VmObservation;
@@ -21,11 +19,13 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\IncusHost;
 use App\Infrastructure\TaskVms\IncusTaskVmProvider;
+use App\Infrastructure\TaskVms\TaskVmGuest;
 use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplates;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
+use Tests\Support\TaskVmSettingsBuilder;
 
 const INCUS_PREFIX = ['sudo', '-n', 'incus', '--project', 'orbit-tasks'];
 
@@ -68,10 +68,7 @@ beforeEach(function (): void {
         'group_id' => $group->id, 'host_node_id' => $host->id, 'provider' => 'incus', 'name' => 'tvm-1',
         'state' => TaskVmState::Provisioning, 'wireguard_ip' => '10.44.0.130', 'pi_token' => 'pi-secret',
     ]);
-    $settings = new TaskVmSettings(true, 4, '10.44.0.128/25', [
-        new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 4, 2, '4GiB', '20GiB', 'tank'),
-    ], 'http://10.44.0.3:8317', null, null, []);
-    app()->instance(TaskVmSettings::class, $settings);
+    $settings = TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($host->id, ['maxVms' => 4, 'pool' => 'tank'])]]);
 
     $this->ssh = new class implements SshExecutor
     {
@@ -109,6 +106,7 @@ beforeEach(function (): void {
         public function put(string $host, int $port, HostKey $key): void {}
     });
     $this->provider = new IncusTaskVmProvider($incus, $settings, new TaskVmWorkspaceTemplates($incus, $settings, app(DevelopmentSshExecutor::class), app(ManagedUserAccountResolver::class)));
+    $this->guest = new TaskVmGuest($this->provider);
     $this->answer = function (CommandResult ...$results): void {
         $this->ssh->results = $results;
     };
@@ -248,7 +246,7 @@ it('fails when incus list fails', function (): void {
 it('reads the cloud-init status', function (CommandResult $result, bool $ready): void {
     ($this->answer)($result);
 
-    expect($this->provider->bootstrapReady($this->vm))->toBe($ready)
+    expect($this->guest->bootstrapReady($this->vm))->toBe($ready)
         ->and(($this->argv)())->toBe([[...INCUS_PREFIX, 'exec', '--', 'tvm-1', 'timeout', '30', 'cloud-init', 'status', '--wait', '--format=json']]);
 })->with([
     'agent not running' => [incusResult(exitCode: 1, stderr: "Error: VM agent isn't currently running"), false],
@@ -261,13 +259,13 @@ it('reads the cloud-init status', function (CommandResult $result, bool $ready):
 it('fails when cloud-init failed', function (): void {
     ($this->answer)(incusResult('{"status":"error","errors":["apt failed"]}', 1));
 
-    expect(fn () => $this->provider->bootstrapReady($this->vm))->toThrow(TaskVmException::class, 'Cloud-init failed on task VM [tvm-1]: ["apt failed"]');
+    expect(fn () => $this->guest->bootstrapReady($this->vm))->toThrow(TaskVmException::class, 'Cloud-init failed on task VM [tvm-1]: ["apt failed"]');
 });
 
 it('refuses an invalid cloud-init status', function (string $stdout): void {
     ($this->answer)(incusResult($stdout));
 
-    expect(fn () => $this->provider->bootstrapReady($this->vm))->toThrow(TaskVmException::class, 'invalid output');
+    expect(fn () => $this->guest->bootstrapReady($this->vm))->toThrow(fn (TaskVmException $e) => expect([$e->errorCode, $e->getMessage()])->toBe(['task_vm.invalid_host_output', 'Task VM [tvm-1] returned invalid guest output: '.($stdout === 'done' ? 'the cloud-init status is not complete JSON.' : 'the cloud-init status has no status or errors.')]));
 })->with(['done', '{"status":"done"}', '{"status":"done","errors":{"a":1}}', '{"errors":[]}']);
 
 it('reads the ed25519 host key fingerprint', function (): void {
@@ -281,7 +279,7 @@ it('reads the ed25519 host key fingerprint', function (): void {
 it('reads the image manifest, or null for an image without one', function (string $stdout, ?string $manifest): void {
     ($this->answer)(incusResult($stdout));
 
-    expect($this->provider->imageManifest($this->vm))->toBe($manifest)
+    expect($this->guest->imageManifest($this->vm))->toBe($manifest)
         ->and(($this->argv)())->toBe([[...INCUS_PREFIX, 'exec', '--', 'tvm-1', 'sh', '-c', 'if [ -e "$1" ]; then cat -- "$1"; else printf absent; fi', 'sh', '/var/lib/orbit-task-vm/image.json']]);
 })->with([
     'manifest' => ['{"schema":1,"programs":{}}'."\n", '{"schema":1,"programs":{}}'."\n"],
@@ -291,7 +289,7 @@ it('reads the image manifest, or null for an image without one', function (strin
 it('fails when it cannot read the image manifest', function (): void {
     ($this->answer)(incusResult(exitCode: 1, stderr: "Error: VM agent isn't currently running"));
 
-    expect(fn () => $this->provider->imageManifest($this->vm))->toThrow(TaskVmException::class, 'exec cat image manifest');
+    expect(fn () => $this->guest->imageManifest($this->vm))->toThrow(fn (TaskVmException $e) => expect([$e->errorCode, $e->getMessage()])->toBe(['task_vm.host_command_failed', "On task VM [tvm-1], the image manifest read failed with exit code [1].\nError: VM agent isn't currently running"]));
 });
 
 it('refuses an invalid fingerprint', function (CommandResult $result, string $code): void {

@@ -21,21 +21,21 @@ enum TaskVmSize: string
     case Medium = 'medium';
     case Large = 'large';
 
-    public const int MediumCpus = 4;
-
-    public const string MediumMemory = '8GiB';
-
-    public const int LargeCpus = 6;
-
-    public const string LargeMemory = '12GiB';
-
-    public const string LargeDisk = '60GiB';
-
     /**
      * QEMU configuration of a large VM: free page reporting on its memory balloon, so the host gets back the memory
      * that the guest frees. Without it, memory that a nested topology touched once stays allocated on the host.
      */
-    public const string LargeQemuConfig = "[device \"qemu_balloon\"]\nfree-page-reporting = \"on\"\n";
+    private const string LargeQemuConfig = "[device \"qemu_balloon\"]\nfree-page-reporting = \"on\"\n";
+
+    /** What a VM of this size takes: the one place that sizes are defined. Only a normal VM may be a warm VM. */
+    public function resources(): TaskVmResources
+    {
+        return match ($this) {
+            self::Normal => new TaskVmResources(slots: 1, warmEligible: true),
+            self::Medium => new TaskVmResources(slots: 2, warmEligible: false, cpus: 4, memory: '8GiB'),
+            self::Large => new TaskVmResources(slots: 3, warmEligible: false, cpus: 6, memory: '12GiB', disk: '60GiB', qemuConfig: self::LargeQemuConfig),
+        };
+    }
 
     /**
      * The size of the group's VM: large when any subtask that is not cancelled declares a topology, else medium when the
@@ -69,11 +69,7 @@ enum TaskVmSize: string
     /** The slots of the host's `max_vms` that a VM of this size takes. */
     public function slots(): int
     {
-        return match ($this) {
-            self::Normal => 1,
-            self::Medium => 2,
-            self::Large => 3,
-        };
+        return $this->resources()->slots;
     }
 
     /** Whether a VM of this size can hold the topology a subtask declares. */

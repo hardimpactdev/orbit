@@ -46,7 +46,6 @@ use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmFailedException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmProvider;
-use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\VmObservation;
@@ -88,90 +87,13 @@ use Illuminate\Support\Sleep;
 use Tests\Support\AvailableTopologyAdmission;
 use Tests\Support\FakeNodeAgentRuntime;
 use Tests\Support\FakeToolManagerMaterializer;
+use Tests\Support\RecordingTaskVmProvider;
+use Tests\Support\TaskVmSettingsBuilder;
 
 use function Pest\Laravel\mock;
 
 const TVM_LIFE_ORIGIN = 'http://10.44.0.3:8317';
-const TVM_LIFE_FINGERPRINT = 'SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
-
-/** A provider that records its calls and answers from scripted observations. */
-final class TaskVmLifecycleProvider implements TaskVmProvider
-{
-    /** @var list<string> */
-    public array $calls = [];
-
-    /** @var list<VmObservation|null> */
-    public array $observations = [];
-
-    public bool|Throwable $ready = true;
-
-    public ?string $userData = null;
-
-    public ?Closure $onDestroy = null;
-
-    /** The image manifest the VM holds, or null for an image without one. */
-    public ?string $manifest = null;
-
-    public ?Closure $onCreate = null;
-
-    public function create(TaskVm $vm, string $userData): void
-    {
-        $this->calls[] = 'create';
-        $this->userData = $userData;
-        if ($this->onCreate !== null) {
-            ($this->onCreate)($vm);
-        }
-    }
-
-    public function observe(TaskVm $vm): ?VmObservation
-    {
-        $this->calls[] = 'observe';
-
-        return $this->observations === [] ? new VmObservation(true, '10.251.77.20') : array_shift($this->observations);
-    }
-
-    public function bootstrapReady(TaskVm $vm): bool
-    {
-        $this->calls[] = 'bootstrapReady';
-        if ($this->ready instanceof Throwable) {
-            throw $this->ready;
-        }
-
-        return $this->ready;
-    }
-
-    public function sshHostFingerprint(TaskVm $vm): string
-    {
-        $this->calls[] = 'fingerprint';
-
-        return TVM_LIFE_FINGERPRINT;
-    }
-
-    public function imageManifest(TaskVm $vm): ?string
-    {
-        $this->calls[] = 'manifest';
-
-        return $this->manifest;
-    }
-
-    public function start(TaskVm $vm): void
-    {
-        $this->calls[] = 'start';
-    }
-
-    public function stop(TaskVm $vm): void
-    {
-        $this->calls[] = 'stop';
-    }
-
-    public function destroy(TaskVm $vm): void
-    {
-        $this->calls[] = 'destroy';
-        if ($this->onDestroy !== null) {
-            ($this->onDestroy)($vm);
-        }
-    }
-}
+const TVM_LIFE_FINGERPRINT = RecordingTaskVmProvider::Fingerprint;
 
 /** Clears a Route target in the database as the projector does; the remote steps belong to the projector's own tests. */
 final class TaskVmLifecycleProjector implements InstanceRemovalProjector
@@ -244,22 +166,20 @@ function tvm_life_node(string $name, string $address, string $user = 'orbit', ?R
 
 function tvm_life_settings(bool $enabled = true, int $maxVms = 2, ?int $clusterId = null): void
 {
-    app()->instance(TaskVmSettings::class, new TaskVmSettings(
-        enabled: $enabled, devClusterId: $clusterId, wireguardRange: '10.44.0.128/25',
-        hosts: [new TaskVmHost(test()->host->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', $maxVms, 2, '4GiB', '20GiB')],
-        modelProxyOrigin: TVM_LIFE_ORIGIN, piArtifactPath: null, piArtifactSha256: null, piModels: [],
-    ));
+    TaskVmSettingsBuilder::bind([
+        'enabled' => $enabled, 'devClusterId' => $clusterId, 'modelProxyOrigin' => TVM_LIFE_ORIGIN,
+        'hosts' => [TaskVmSettingsBuilder::host(test()->host->id, ['maxVms' => $maxVms])],
+    ]);
 }
 
 /** @param list<array{0: int, 1: int}> $hosts node id and max_vms, in config order */
 function tvm_life_hosts(array $hosts): void
 {
     $cidrs = ['10.251.77.0/24', '10.251.78.0/24', '10.251.79.0/24'];
-    app()->instance(TaskVmSettings::class, new TaskVmSettings(
-        enabled: true, devClusterId: null, wireguardRange: '10.44.0.128/25',
-        hosts: array_map(static fn (array $host, int $index): TaskVmHost => new TaskVmHost($host[0], 'orbit-tasks', 'orbittask0', $cidrs[$index], $host[1], 2, '4GiB', '20GiB'), $hosts, array_keys($hosts)),
-        modelProxyOrigin: TVM_LIFE_ORIGIN, piArtifactPath: null, piArtifactSha256: null, piModels: [],
-    ));
+    TaskVmSettingsBuilder::bind([
+        'devClusterId' => null, 'modelProxyOrigin' => TVM_LIFE_ORIGIN,
+        'hosts' => array_map(static fn (array $host, int $index): TaskVmHost => TaskVmSettingsBuilder::host($host[0], ['cidr' => $cidrs[$index], 'maxVms' => $host[1]]), $hosts, array_keys($hosts)),
+    ]);
 }
 
 function tvm_life_group(TaskGroupStatus $status = TaskGroupStatus::Reserved): Task
@@ -285,7 +205,7 @@ function tvm_life_vm(Task $group, TaskVmState $state = TaskVmState::Provisioning
 beforeEach(function (): void {
     $this->project = Project::query()->create(['name' => 'DLF', 'slug' => 'dlf', 'repository_url' => 'https://github.com/acme/dlf.git', 'default_branch' => 'main']);
     $this->host = tvm_life_node('beast', '10.44.0.7', 'nckrtl');
-    $this->provider = new TaskVmLifecycleProvider;
+    $this->provider = new RecordingTaskVmProvider;
     app()->instance(TaskVmProvider::class, $this->provider);
     tvm_life_settings();
 });
@@ -392,7 +312,7 @@ describe('allocation', function (): void {
         Task::query()->create(['parent_id' => $again->id, 'position' => 1, 'title' => 'Dev', 'brief' => 'Dev', 'status' => TaskStatus::Todo, 'topology' => ['app-dev']]);
 
         // One slot is free, so a second large VM waits, while a normal one still fits.
-        expect(fn () => app(AllocateTaskVmAction::class)->execute($again))->toThrow(TaskCapacityException::class, AllocateTaskVmAction::NoLargeCapacity)
+        expect(fn () => app(AllocateTaskVmAction::class)->execute($again))->toThrow(TaskCapacityException::class, AllocateTaskVmAction::noCapacityFor(TaskVmSize::Large))
             ->and(app(AllocateTaskVmAction::class)->execute(tvm_life_group())->size)->toBe(TaskVmSize::Normal);
         Queue::assertPushed(ProvisionTaskVm::class, 3);
     });
@@ -410,12 +330,10 @@ describe('allocation', function (): void {
     it('gives a group of a medium Project a medium VM of two slots, and a large one for a topology', function (): void {
         Queue::fake();
         app()->instance(TaskTopologyAdmission::class, new AvailableTopologyAdmission);
-        app()->instance(TaskVmSettings::class, new TaskVmSettings(
-            enabled: true, devClusterId: null, wireguardRange: '10.44.0.128/25',
-            hosts: [new TaskVmHost($this->host->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 3, 2, '4GiB', '20GiB')],
-            modelProxyOrigin: TVM_LIFE_ORIGIN, piArtifactPath: null, piArtifactSha256: null, piModels: [],
-            mediumProjectIds: [$this->project->id],
-        ));
+        TaskVmSettingsBuilder::bind([
+            'devClusterId' => null, 'modelProxyOrigin' => TVM_LIFE_ORIGIN, 'mediumProjectIds' => [$this->project->id],
+            'hosts' => [TaskVmSettingsBuilder::host($this->host->id, ['maxVms' => 3])],
+        ]);
         $topology = tvm_life_group();
         Task::query()->create(['parent_id' => $topology->id, 'position' => 1, 'title' => 'Dev', 'brief' => 'Dev', 'status' => TaskStatus::Todo, 'topology' => ['app-dev']]);
 
@@ -424,7 +342,7 @@ describe('allocation', function (): void {
         expect($medium->refresh()->size)->toBe(TaskVmSize::Medium)
             ->and(TaskVmSize::forGroup($topology, [$this->project->id]))->toBe(TaskVmSize::Large)
             ->and(app(AllocateTaskVmAction::class)->freeSlots())->toBe([$this->host->id => 1])
-            ->and(fn () => app(AllocateTaskVmAction::class)->execute(tvm_life_group()))->toThrow(TaskCapacityException::class, AllocateTaskVmAction::NoMediumCapacity);
+            ->and(fn () => app(AllocateTaskVmAction::class)->execute(tvm_life_group()))->toThrow(TaskCapacityException::class, AllocateTaskVmAction::noCapacityFor(TaskVmSize::Medium));
     });
 
     it('waits while another placement holds the lock and records nothing', function (): void {
@@ -615,7 +533,7 @@ describe(EnrollTaskVm::class, function (): void {
 
         $job->assertReleased(15);
         expect($this->converged)->toBe([])->and(Node::query()->where('name', $vm->name)->exists())->toBeFalse()
-            ->and(array_count_values($this->provider->calls)['bootstrapReady'])->toBe(121);
+            ->and(array_count_values($this->provider->calls)['cloud-init'])->toBe(121);
         Sleep::assertSleptTimes(120);
     });
 
@@ -667,7 +585,7 @@ describe(EnrollTaskVm::class, function (): void {
             ->and($node->user)->toBe('orbit')
             ->and($node->cluster_id)->toBe($this->cluster->id)
             ->and($node->roles()->pluck('role')->all())->toBe([RoleName::AppDev])
-            ->and($this->provider->calls)->toBe(['observe', 'bootstrapReady', 'fingerprint', 'manifest']);
+            ->and($this->provider->calls)->toBe(['observe', 'cloud-init', 'fingerprint', 'manifest']);
         Queue::assertPushedOn('task-vms', PrepareTaskVmRuntime::class, fn (PrepareTaskVmRuntime $job): bool => $job->taskVmId === $vm->id);
     });
 
@@ -713,7 +631,7 @@ describe(EnrollTaskVm::class, function (): void {
         app()->call([new EnrollTaskVm($vm->id, now()->getTimestamp()), 'handle']);
 
         expect($vm->fresh()?->address)->toBe('10.251.77.20')
-            ->and(array_slice($this->provider->calls, 0, 3))->toBe(['observe', 'bootstrapReady', 'observe']);
+            ->and(array_slice($this->provider->calls, 0, 3))->toBe(['observe', 'cloud-init', 'observe']);
     });
 
     it('tolerates one stopped reading during a guest reboot', function (): void {
@@ -736,10 +654,10 @@ describe(EnrollTaskVm::class, function (): void {
         $job->assertFailedWith(fn (TaskVmException $exception): bool => $exception->errorCode === $code);
         expect($this->converged)->toBe([]);
     })->with([
-        'absent' => [fn (TaskVmLifecycleProvider $provider) => $provider->observations = [null], 'task_vm.vm_not_running'],
-        'stopped' => [fn (TaskVmLifecycleProvider $provider) => $provider->observations = [new VmObservation(false, null), new VmObservation(false, null)], 'task_vm.vm_not_running'],
-        'cloud-init error' => [fn (TaskVmLifecycleProvider $provider) => $provider->ready = new TaskVmException('task_vm.bootstrap_failed', 'Cloud-init failed.', 502), 'task_vm.bootstrap_failed'],
-        'slow boot' => [function (TaskVmLifecycleProvider $provider): int {
+        'absent' => [fn (RecordingTaskVmProvider $provider) => $provider->observations = [null], 'task_vm.vm_not_running'],
+        'stopped' => [fn (RecordingTaskVmProvider $provider) => $provider->observations = [new VmObservation(false, null), new VmObservation(false, null)], 'task_vm.vm_not_running'],
+        'cloud-init error' => [fn (RecordingTaskVmProvider $provider) => $provider->cloudInitOutput = '{"status":"error","errors":["apt failed"]}', 'task_vm.bootstrap_failed'],
+        'slow boot' => [function (RecordingTaskVmProvider $provider): int {
             $provider->ready = false;
 
             return now()->subMinutes(11)->getTimestamp();

@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\TaskVms;
 
-use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmGuestCommand;
 use App\Domain\TaskVms\TaskVmProvider;
+use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\VmObservation;
+use App\Infrastructure\Processes\CommandResult;
 use App\Models\TaskVm;
 
-/** The `TaskVmProvider` of every job: sends each row to the provider that its `provider` names. */
+/** The `TaskVmProvider` of every job: sends each row to the provider of its `provider` kind. */
 final readonly class TaskVmProviders implements TaskVmProvider
 {
     public function __construct(
@@ -27,19 +29,14 @@ final readonly class TaskVmProviders implements TaskVmProvider
         return $this->for($vm)->observe($vm);
     }
 
-    public function bootstrapReady(TaskVm $vm): bool
-    {
-        return $this->for($vm)->bootstrapReady($vm);
-    }
-
     public function sshHostFingerprint(TaskVm $vm): string
     {
         return $this->for($vm)->sshHostFingerprint($vm);
     }
 
-    public function imageManifest(TaskVm $vm): ?string
+    public function exec(TaskVm $vm, TaskVmGuestCommand $command): CommandResult
     {
-        return $this->for($vm)->imageManifest($vm);
+        return $this->for($vm)->exec($vm, $command);
     }
 
     public function start(TaskVm $vm): void
@@ -60,9 +57,8 @@ final readonly class TaskVmProviders implements TaskVmProvider
     private function for(TaskVm $vm): TaskVmProvider
     {
         return match ($vm->provider) {
-            TaskVm::Incus => $this->incus,
-            TaskVm::UpCloud => $this->upcloud,
-            default => throw new TaskVmException('task_vm.unknown_provider', "Task VM [{$vm->name}] has the unknown provider [{$vm->provider}].", 500),
+            TaskVmProviderKind::Incus => $this->incus,
+            TaskVmProviderKind::UpCloud => $this->upcloud,
         };
     }
 }

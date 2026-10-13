@@ -7,6 +7,7 @@ namespace App\Actions\TaskVms;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
+use App\Domain\TaskVms\TaskVmPlacementTarget;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\TaskVms\IncusHost;
@@ -195,7 +196,7 @@ final readonly class RefillTaskVmPoolAction
                 continue;
             }
             for ($index = 0; $index < $missing; $index++) {
-                $created[] = $this->allocate->record(null, $node->id)->id;
+                $created[] = $this->allocate->record(null, TaskVmPlacementTarget::incusHost($node->id))->id;
             }
         }
 

@@ -85,8 +85,7 @@ final readonly class TaskVmWorkspace
      */
     public function template(TaskVm $vm, Task $group, string $directory): ?string
     {
-        // Templates are volumes on an Incus host. An UpCloud VM starts from a fresh clone.
-        if ($vm->provider !== TaskVm::Incus) {
+        if (! $vm->provider->hasWorkspaceTemplates()) {
             return null;
         }
         try {

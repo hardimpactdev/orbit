@@ -9,8 +9,8 @@ use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Domain\TaskVms\TaskVmException;
-use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmProvider;
+use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
@@ -23,6 +23,7 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\IncusTaskVmProvider;
+use App\Infrastructure\TaskVms\TaskVmGuest;
 use App\Infrastructure\TaskVms\TaskVmImageRecipe;
 use App\Infrastructure\TaskVms\TaskVmProviders;
 use App\Infrastructure\TaskVms\TaskVmWorkspace;
@@ -48,6 +49,7 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
 use Tests\Support\AvailableTopologyAdmission;
+use Tests\Support\TaskVmSettingsBuilder;
 
 use function Pest\Laravel\mock;
 
@@ -243,16 +245,14 @@ class FakeUpCloudSsh implements SshExecutor
 /** @param  array<string, mixed>  $upcloud */
 function tvm_up_settings(?array $upcloud = [], int $maxVms = 1, ?int $hostId = null): void
 {
-    app()->instance(TaskVmSettings::class, new TaskVmSettings(
-        enabled: true, devClusterId: 4, wireguardRange: '10.44.0.128/25',
-        hosts: [new TaskVmHost($hostId ?? test()->host->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', $maxVms, 2, '4GiB', '20GiB')],
-        modelProxyOrigin: 'http://10.44.0.3:8317', piArtifactPath: null, piArtifactSha256: null, piModels: [],
-        upcloud: $upcloud === null ? null : new TaskVmUpCloud(...[
+    TaskVmSettingsBuilder::bind([
+        'hosts' => [TaskVmSettingsBuilder::host($hostId ?? test()->host->id, ['maxVms' => $maxVms])],
+        'upcloud' => $upcloud === null ? null : new TaskVmUpCloud(...[
             'enabled' => true, 'projectIds' => [test()->project->id], 'tokenFile' => test()->tokenFile, 'maxVms' => 2,
             'zone' => 'nl-ams1', 'plan' => 'STARTER-2xCPU-4GB', 'diskGb' => 30, 'sourceTemplate' => '01000000-0000-4000-8000-000030260200',
             ...$upcloud,
         ]),
-    ));
+    ]);
 }
 
 function tvm_up_group(?Project $project = null): Task
@@ -266,7 +266,7 @@ function tvm_up_group(?Project $project = null): Task
 function tvm_up_vm(TaskVmState $state = TaskVmState::Provisioning, ?string $hostKey = null): TaskVm
 {
     $vm = TaskVm::query()->create([
-        'group_id' => tvm_up_group()->id, 'host_node_id' => null, 'provider' => TaskVm::UpCloud, 'name' => 'tvm-pending-'.Str::uuid(),
+        'group_id' => tvm_up_group()->id, 'host_node_id' => null, 'provider' => TaskVmProviderKind::UpCloud, 'name' => 'tvm-pending-'.Str::uuid(),
         'state' => $state, 'wireguard_ip' => '10.44.0.'.(129 + TaskVm::query()->count()), 'pi_token' => str_repeat('p', 64),
         'ssh_host_key' => $hostKey,
     ]);
@@ -359,7 +359,7 @@ describe('placement', function (): void {
         Queue::fake();
         // beast's one slot is taken.
         TaskVm::query()->create([
-            'group_id' => tvm_up_group()->id, 'host_node_id' => $this->host->id, 'provider' => TaskVm::Incus, 'name' => 'tvm-full',
+            'group_id' => tvm_up_group()->id, 'host_node_id' => $this->host->id, 'provider' => TaskVmProviderKind::Incus, 'name' => 'tvm-full',
             'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.200', 'pi_token' => str_repeat('p', 64),
         ]);
     });
@@ -367,7 +367,7 @@ describe('placement', function (): void {
     it('places an opted-in group at UpCloud only when no host has a free slot', function (): void {
         $vm = app(AllocateTaskVmAction::class)->execute(tvm_up_group());
 
-        expect($vm->provider)->toBe(TaskVm::UpCloud)
+        expect($vm->provider)->toBe(TaskVmProviderKind::UpCloud)
             ->and($vm->host_node_id)->toBeNull()
             ->and($vm->name)->toBe('tvm-'.$vm->id)
             ->and($vm->state)->toBe(TaskVmState::Provisioning);
@@ -380,22 +380,22 @@ describe('placement', function (): void {
         $group = tvm_up_group();
         Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Dev', 'brief' => 'Dev', 'status' => TaskStatus::Todo, 'topology' => ['app-dev']]);
 
-        expect(fn () => app(AllocateTaskVmAction::class)->execute($group))->toThrow(TaskCapacityException::class, AllocateTaskVmAction::NoLargeCapacity)
-            ->and(TaskVm::query()->where('provider', TaskVm::UpCloud)->count())->toBe(0)
+        expect(fn () => app(AllocateTaskVmAction::class)->execute($group))->toThrow(TaskCapacityException::class, AllocateTaskVmAction::noCapacityFor(TaskVmSize::Large))
+            ->and(TaskVm::query()->where('provider', TaskVmProviderKind::UpCloud)->count())->toBe(0)
             ->and(TaskVmSize::forGroup($group))->toBe(TaskVmSize::Large);
     });
 
     it('prefers a free Incus slot', function (): void {
         tvm_up_settings(maxVms: 2);
 
-        expect(app(AllocateTaskVmAction::class)->execute(tvm_up_group())->provider)->toBe(TaskVm::Incus);
+        expect(app(AllocateTaskVmAction::class)->execute(tvm_up_group())->provider)->toBe(TaskVmProviderKind::Incus);
     });
 
     it('keeps the group waiting without the switch, the opt-in, or the configuration', function (?array $upcloud): void {
         tvm_up_settings($upcloud);
 
         expect(fn () => app(AllocateTaskVmAction::class)->execute(tvm_up_group()))->toThrow(TaskCapacityException::class, AllocateTaskVmAction::NoCapacity)
-            ->and(TaskVm::query()->where('provider', TaskVm::UpCloud)->count())->toBe(0);
+            ->and(TaskVm::query()->where('provider', TaskVmProviderKind::UpCloud)->count())->toBe(0);
     })->with([
         'switch off' => [['enabled' => false]],
         'Project not opted in' => [['projectIds' => [999]]],
@@ -422,7 +422,7 @@ describe('provider', function (): void {
         $providers = new ReflectionClass(TaskVmProviders::class);
         $for = $providers->getMethod('for');
         $router = app(TaskVmProviders::class);
-        $incus = TaskVm::query()->make(['provider' => TaskVm::Incus, 'name' => 'tvm-1']);
+        $incus = TaskVm::query()->make(['provider' => TaskVmProviderKind::Incus, 'name' => 'tvm-1']);
 
         expect($for->invoke($router, tvm_up_vm()))->toBeInstanceOf(UpCloudTaskVmProvider::class)
             ->and($for->invoke($router, $incus))->toBeInstanceOf(IncusTaskVmProvider::class)
@@ -511,21 +511,25 @@ describe('provider', function (): void {
         $vm = tvm_up_vm(hostKey: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHostKey');
         $this->upcloud->server($vm->name, [['key' => 'orbit-task-vm', 'value' => (string) $vm->id]]);
         $provider = app(UpCloudTaskVmProvider::class);
+        $guest = new TaskVmGuest($provider);
         $this->ssh->manifest = '{"schema":1}';
 
         $observation = $provider->observe($vm);
 
         expect($observation?->running)->toBeTrue()
             ->and($observation?->address)->toBe('94.237.1.10')
-            ->and($provider->bootstrapReady($vm))->toBeTrue()
-            ->and($provider->imageManifest($vm))->toBe('{"schema":1}')
+            ->and($guest->bootstrapReady($vm))->toBeTrue()
+            ->and($guest->imageManifest($vm))->toBe('{"schema":1}')
             ->and(array_unique(array_column($this->ssh->calls, 0)))->toBe(['94.237.1.10'])
             ->and(file_get_contents(app(KnownHostsStore::class)->path()))->toContain('94.237.1.10 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHostKey');
 
         $this->ssh->cloudInit = '';
-        expect($provider->bootstrapReady($vm))->toBeFalse();
+        expect($guest->bootstrapReady($vm))->toBeFalse();
         $this->ssh->cloudInit = '{"status":"error","errors":["boom"]}';
-        expect(fn () => $provider->bootstrapReady($vm))->toThrow(TaskVmException::class, 'Cloud-init failed');
+        expect(fn () => $guest->bootstrapReady($vm))->toThrow(TaskVmException::class, 'Cloud-init failed');
+        // The Incus provider fails with the same code: TaskVmGuest reads the guest of both.
+        $this->ssh->cloudInit = '{"status":"done"}';
+        expect(fn () => $guest->bootstrapReady($vm))->toThrow(fn (TaskVmException $e) => expect($e->errorCode)->toBe('task_vm.invalid_host_output'));
     });
 
     it('stops a server cleanly for a park and deletes it with its disk on destroy', function (): void {
@@ -613,7 +617,7 @@ describe('sweep', function (): void {
 
     it('sweeps UpCloud while task VMs are off and only the token file is set', function (): void {
         $settings = app(TaskVmSettings::class);
-        app()->instance(TaskVmSettings::class, new TaskVmSettings(false, null, '10.44.0.128/25', $settings->hosts, null, null, null, [], upcloud: new TaskVmUpCloud(...[...get_object_vars($settings->upcloud), 'enabled' => false])));
+        app()->instance(TaskVmSettings::class, TaskVmSettingsBuilder::off(['hosts' => $settings->hosts, 'upcloud' => new TaskVmUpCloud(...[...get_object_vars($settings->upcloud), 'enabled' => false])]));
         $this->host->update(['status' => LifecycleStatus::Active]);
         $orphan = $this->upcloud->server('tvm-777', [['key' => 'orbit-task-vm', 'value' => '777']]);
 
