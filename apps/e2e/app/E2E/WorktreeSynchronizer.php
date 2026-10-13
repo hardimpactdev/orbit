@@ -23,8 +23,7 @@ final readonly class WorktreeSynchronizer
 {
     /** @var list<string> */
     public const array GUEST_SCRIPTS = [
-        'converge-app-dev.sh',
-        'converge-app-prod.sh',
+        'converge-node.sh',
         'converge-gateway.sh',
         'converge-operator.sh',
         'prepare-node.sh',

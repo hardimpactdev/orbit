@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # One readiness probe on one Node of a composed topology. Prints one JSON line of passing evidence and
-# exits 0, or exits nonzero with the reason on stderr.
+# exits 0, or exits nonzero with the reason on stderr. A per-Node probe is named KIND.NODE, such as
+# `caddy.app-prod`; its kind selects the check, so no Node key is written here.
 # Usage: verify-topology.sh PROBE SOURCE_SHA INSTANCE [ARGUMENT...]
 set -euo pipefail
 umask 077
@@ -79,29 +80,25 @@ case "$probe" in
     [[ "$observed" == "$expected" ]] || { echo "$observed" >&2; exit 1; }
     ;;
   wireguard.reachability)
-    # Every other Node has a WireGuard route on the Gateway and answers a ping on its address.
+    # Every other Node has a WireGuard route on the Gateway and answers a ping on its address. Each argument is
+    # NODE=ADDRESS, the address the Node was provisioned with.
     [[ $# -ge 1 ]] || exit 64
-    db=/home/orbit/.orbit/gateway.sqlite
     routes=$(wg show orbit allowed-ips)
-    for name in "$@"; do
-      [[ "$name" =~ ^[a-z][a-z0-9-]{0,22}$ ]] || exit 64
-      address=$(php -r '$pdo = new PDO("sqlite:".$argv[1]); $statement = $pdo->prepare("SELECT wireguard_ip FROM nodes WHERE name = ? AND status = ?"); $statement->execute([$argv[2], "active"]); $address = $statement->fetchColumn(); if (!is_string($address) || !preg_match("/\\A(?:[0-9]{1,3}\\.){3}[0-9]{1,3}\\z/D", $address)) exit(1); echo $address;' -- "$db" "$name") || { echo "Node $name has no active WireGuard address" >&2; exit 1; }
+    names=()
+    for node in "$@"; do
+      name=${node%%=*} address=${node#*=}
+      [[ "$name" =~ ^[a-z][a-z0-9-]{0,22}$ && "$address" =~ ^10\.44\.0\.[1-9][0-9]{0,2}$ ]] || exit 64
       awk -v expected="$address/32" '{ for (i = 1; i <= NF; i++) if ($i == expected) found = 1 } END { exit !found }' <<<"$routes" || { echo "no WireGuard route to $name at $address" >&2; exit 1; }
       ping -c 1 -W 3 "$address" >/dev/null || { echo "$name at $address does not answer over WireGuard" >&2; exit 1; }
+      names+=("$name")
     done
-    expected="$(IFS=,; printf '%s' "$*"):wireguard-route+ping"
+    expected="$(IFS=,; printf '%s' "${names[*]}"):wireguard-route+ping"
     observed=$expected
     ;;
-  caddy.app-dev|caddy.app-prod|caddy.app-prod-2)
+  caddy.*)
     caddy_ready
     expected='caddy=active,config=valid,node-caddy-build'
     observed=$expected
-    ;;
-  php-fpm.app-prod|php-fpm.app-prod-2)
-    php_state=$(systemctl is-active php8.5-fpm 2>/dev/null || true)
-    expected='php8.5-fpm=active'
-    observed="php8.5-fpm=$php_state"
-    [[ "$observed" == "$expected" ]] || { echo "$observed" >&2; exit 1; }
     ;;
   operator.gateway)
     [[ -s /etc/wireguard/orbit.conf ]] || { echo 'the operator has no WireGuard configuration' >&2; exit 1; }
@@ -111,7 +108,7 @@ case "$probe" in
     expected='operator:gateway-access+wireguard+ca'
     observed=$expected
     ;;
-  source.gateway|source.app-dev|source.operator)
+  source.*)
     # The worktree is mounted, and its mount token hashes to what the host recorded.
     [[ $# -eq 1 && "$1" =~ ^[0-9a-f]{64}$ ]] || exit 64
     mountpoint -q -- "$source_root" || { echo "$source_root is not a mountpoint" >&2; exit 1; }

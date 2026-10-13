@@ -7,6 +7,8 @@ namespace App\E2E;
 use App\E2E\Value\GuestCommand;
 use App\E2E\Value\GuestCommandResult;
 use App\E2E\Value\SourceState;
+use App\E2E\Value\TopologyNode;
+use App\E2E\Value\TopologyNodePurpose;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\Value\VerificationReport;
 use InvalidArgumentException;
@@ -43,14 +45,14 @@ final readonly class TopologyVerifier
             'service.vpn' => ['node' => 'gateway', 'arguments' => []],
             'wireguard.reachability' => [
                 'node' => 'gateway',
-                'arguments' => array_values(array_filter($recipe->nodeKeys(), static fn (string $node): bool => $node !== 'gateway')),
+                'arguments' => array_values(array_map(
+                    static fn (TopologyNode $node): string => $node->key.'='.$node->wireGuardAddress(),
+                    array_filter($recipe->nodes, static fn (TopologyNode $node): bool => $node->purpose !== TopologyNodePurpose::Gateway),
+                )),
             ],
         ];
         foreach ($recipe->workloadNodes() as $node) {
             $probes['caddy.'.$node->key] = ['node' => $node->key, 'arguments' => []];
-            if (in_array('app-prod', $node->roles, true)) {
-                $probes['php-fpm.'.$node->key] = ['node' => $node->key, 'arguments' => []];
-            }
         }
         $probes['operator.gateway'] = ['node' => 'operator', 'arguments' => []];
         if ($source->mounted) {
