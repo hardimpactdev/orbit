@@ -453,7 +453,9 @@ orbit instance:setup-step:create ci-caches --project=PROJECT --command='@orbit/c
 
 The Gateway uses its [GitHub App](/reference/github-app) with `Actions: read` for this one repository. It reads the newest 20 successful runs of `ci.yml` on the Project's default branch from a push, a schedule, or a manual dispatch. It takes the newest run that has unexpired `sandbox-tia-<job>-<commit>` artifacts, and downloads them all: one archive per Composer project, each at most 16 MiB and 32 MiB together. The archives travel to the checkout inside the step's command. The checkout receives no GitHub credential.
 
-In the checkout, the step runs `bin/tia-cache import-ci` for each archive. It checks the archive's manifest, checksums, project, tested commit, and test configuration. It writes the project's Pest TIA graph to `.orbit-tia/graph.json`, and the Pint and PHPStan caches into `vendor/`, where none exists. An existing graph stays, so a retry or a later baseline keeps the workspace's own results, with one exception: when CI tested a descendant of the graph's main commit, the CI graph replaces it. A workspace from a template then gets the graph of today's `main`, not of the template's day, and its check selects fewer tests. The log names each graph it kept or replaced, and why.
+In the checkout, the step runs `bin/tia-cache import-ci` for each archive. It checks the archive's manifest, checksums, project, tested commit, and test configuration. It writes the project's Pest TIA graph to `.orbit-tia/graph.json`, and the Pint and PHPStan caches into `vendor/`, where none exists.
+
+An existing graph stays, so a retry or a later baseline keeps the workspace's own results, with one exception: when CI tested a descendant of the graph's main commit, the CI graph replaces it. A workspace from a template then gets the graph of today's `main`, not of the template's day, and its check selects fewer tests. The log names each graph it kept or replaced, and why.
 
 The step decides between a loud failure and a cold run like this:
 
