@@ -27,7 +27,6 @@ use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
-use App\Domain\TaskVms\VmObservation;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
@@ -69,57 +68,12 @@ use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\AvailableTopologyAdmission;
 use Tests\Support\FakeIncusFleet;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
+use Tests\Support\RecordingTaskVmProvider;
+use Tests\Support\TaskVmSettingsBuilder;
 
 const TVM_POOL_CURRENT = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const TVM_POOL_OLD = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 const TVM_POOL_ORIGIN = 'http://10.44.0.3:8317';
-
-/** A provider that records its calls; every VM runs. */
-final class TaskVmPoolProvider implements TaskVmProvider
-{
-    /** @var list<string> */
-    public array $calls = [];
-
-    public function create(TaskVm $vm, string $userData): void
-    {
-        $this->calls[] = "create {$vm->name}";
-    }
-
-    public function observe(TaskVm $vm): ?VmObservation
-    {
-        return new VmObservation(true, '10.251.77.20');
-    }
-
-    public function bootstrapReady(TaskVm $vm): bool
-    {
-        return true;
-    }
-
-    public function sshHostFingerprint(TaskVm $vm): string
-    {
-        return 'SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
-    }
-
-    public function imageManifest(TaskVm $vm): ?string
-    {
-        return null;
-    }
-
-    public function start(TaskVm $vm): void
-    {
-        $this->calls[] = "start {$vm->name}";
-    }
-
-    public function stop(TaskVm $vm): void
-    {
-        $this->calls[] = "stop {$vm->name}";
-    }
-
-    public function destroy(TaskVm $vm): void
-    {
-        $this->calls[] = "destroy {$vm->name}";
-    }
-}
 
 function tvm_pool_node(string $name, string $address, string $user = 'orbit'): Node
 {
@@ -132,13 +86,12 @@ function tvm_pool_node(string $name, string $address, string $user = 'orbit'): N
 /** @param list<array{0: Node, 1: int, 2: int}> $hosts each host Node, max_vms and warm_vms, in config order */
 function tvm_pool_hosts(array $hosts, bool $enabled = true): void
 {
-    app()->instance(TaskVmSettings::class, new TaskVmSettings(
-        enabled: $enabled, devClusterId: null, wireguardRange: '10.44.0.128/25',
-        hosts: array_map(static fn (array $host, int $index): TaskVmHost => new TaskVmHost(
-            $host[0]->id, 'orbit-tasks', 'orbittask0', '10.251.'.(77 + $index).'.0/24', $host[1], 2, '4GiB', '20GiB', warmVms: $host[2],
+    TaskVmSettingsBuilder::bind([
+        'enabled' => $enabled, 'devClusterId' => null, 'modelProxyOrigin' => TVM_POOL_ORIGIN,
+        'hosts' => array_map(static fn (array $host, int $index): TaskVmHost => TaskVmSettingsBuilder::host(
+            $host[0]->id, ['cidr' => '10.251.'.(77 + $index).'.0/24', 'maxVms' => $host[1], 'warmVms' => $host[2]],
         ), $hosts, array_keys($hosts)),
-        modelProxyOrigin: TVM_POOL_ORIGIN, piArtifactPath: null, piArtifactSha256: null, piModels: [],
-    ));
+    ]);
 }
 
 function tvm_pool_group(TaskGroupStatus $status = TaskGroupStatus::Reserved): Task
@@ -178,7 +131,7 @@ function tvm_pool_refill(): array
 beforeEach(function (): void {
     $this->project = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'https://github.com/acme/shop.git', 'default_branch' => 'main']);
     $this->host = tvm_pool_node('beast', '10.44.0.7', 'nckrtl');
-    $this->provider = new TaskVmPoolProvider;
+    $this->provider = new RecordingTaskVmProvider;
     app()->instance(TaskVmProvider::class, $this->provider);
     $this->fleet = new FakeIncusFleet;
     $this->fleet->host('10.44.0.7')->images = [TVM_POOL_CURRENT => ['orbit-task-base-20261011030000', TaskVmHost::BaseImage], TVM_POOL_OLD => ['orbit-task-base-20261010030000']];
@@ -520,12 +473,10 @@ describe('claim', function (): void {
         Queue::fake();
         $warm = tvm_pool_vm();
         $group = tvm_pool_group();
-        app()->instance(TaskVmSettings::class, new TaskVmSettings(
-            enabled: true, devClusterId: null, wireguardRange: '10.44.0.128/25',
-            hosts: [new TaskVmHost($this->host->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 4, 2, '4GiB', '20GiB', warmVms: 1)],
-            modelProxyOrigin: TVM_POOL_ORIGIN, piArtifactPath: null, piArtifactSha256: null, piModels: [],
-            mediumProjectIds: [$group->project_id],
-        ));
+        TaskVmSettingsBuilder::bind([
+            'devClusterId' => null, 'modelProxyOrigin' => TVM_POOL_ORIGIN, 'mediumProjectIds' => [$group->project_id],
+            'hosts' => [TaskVmSettingsBuilder::host($this->host->id, ['maxVms' => 4, 'warmVms' => 1])],
+        ]);
 
         $vm = app(AllocateTaskVmAction::class)->execute($group);
 
@@ -690,11 +641,11 @@ describe('a claimed warm VM', function (): void {
         app(ProxyCliState::class)->enable(1, 'cache', TVM_POOL_ORIGIN, 'management-key', 'read-token', 'control-token');
         $this->artifact = tempnam(sys_get_temp_dir(), 'pi-artifact');
         file_put_contents($this->artifact, 'pi-server executable');
-        app()->instance(TaskVmSettings::class, new TaskVmSettings(
-            enabled: true, devClusterId: null, wireguardRange: '10.44.0.128/25',
-            hosts: [new TaskVmHost($this->host->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 3, 2, '4GiB', '20GiB', warmVms: 1)],
-            modelProxyOrigin: TVM_POOL_ORIGIN, piArtifactPath: $this->artifact, piArtifactSha256: hash_file('sha256', $this->artifact), piModels: ['gpt-5.6-luna'],
-        ));
+        TaskVmSettingsBuilder::bind([
+            'devClusterId' => null, 'modelProxyOrigin' => TVM_POOL_ORIGIN,
+            'piArtifactPath' => $this->artifact, 'piArtifactSha256' => hash_file('sha256', $this->artifact), 'piModels' => ['gpt-5.6-luna'],
+            'hosts' => [TaskVmSettingsBuilder::host($this->host->id, ['maxVms' => 3, 'warmVms' => 1])],
+        ]);
         $keys = new ArrayObject;
         // CLIProxyAPI keeps its key list in memory and answers a key it holds, as its management API does.
         Http::fake([TVM_POOL_ORIGIN.'/*' => function (Request $request) use ($keys) {
@@ -873,7 +824,7 @@ describe('a warm VM', function (): void {
 
         app()->call([new DestroyTaskVm($vm->id), 'handle']);
 
-        expect($this->provider->calls)->toBe(["destroy {$vm->name}"])
+        expect($this->provider->vmCalls)->toBe(["destroy {$vm->name}"])
             ->and($vm->fresh()?->state)->toBe(TaskVmState::Destroyed);
     });
 

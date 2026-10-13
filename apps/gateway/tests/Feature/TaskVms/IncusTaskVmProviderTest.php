@@ -6,8 +6,6 @@ use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\TaskVms\TaskVmException;
-use App\Domain\TaskVms\TaskVmHost;
-use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\VmObservation;
@@ -26,6 +24,7 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
+use Tests\Support\TaskVmSettingsBuilder;
 
 const INCUS_PREFIX = ['sudo', '-n', 'incus', '--project', 'orbit-tasks'];
 
@@ -68,10 +67,7 @@ beforeEach(function (): void {
         'group_id' => $group->id, 'host_node_id' => $host->id, 'provider' => 'incus', 'name' => 'tvm-1',
         'state' => TaskVmState::Provisioning, 'wireguard_ip' => '10.44.0.130', 'pi_token' => 'pi-secret',
     ]);
-    $settings = new TaskVmSettings(true, 4, '10.44.0.128/25', [
-        new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 4, 2, '4GiB', '20GiB', 'tank'),
-    ], 'http://10.44.0.3:8317', null, null, []);
-    app()->instance(TaskVmSettings::class, $settings);
+    $settings = TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($host->id, ['maxVms' => 4, 'pool' => 'tank'])]]);
 
     $this->ssh = new class implements SshExecutor
     {

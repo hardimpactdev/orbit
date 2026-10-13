@@ -9,7 +9,6 @@ use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Domain\TaskVms\TaskVmException;
-use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
@@ -48,6 +47,7 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
 use Tests\Support\AvailableTopologyAdmission;
+use Tests\Support\TaskVmSettingsBuilder;
 
 use function Pest\Laravel\mock;
 
@@ -243,16 +243,14 @@ class FakeUpCloudSsh implements SshExecutor
 /** @param  array<string, mixed>  $upcloud */
 function tvm_up_settings(?array $upcloud = [], int $maxVms = 1, ?int $hostId = null): void
 {
-    app()->instance(TaskVmSettings::class, new TaskVmSettings(
-        enabled: true, devClusterId: 4, wireguardRange: '10.44.0.128/25',
-        hosts: [new TaskVmHost($hostId ?? test()->host->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', $maxVms, 2, '4GiB', '20GiB')],
-        modelProxyOrigin: 'http://10.44.0.3:8317', piArtifactPath: null, piArtifactSha256: null, piModels: [],
-        upcloud: $upcloud === null ? null : new TaskVmUpCloud(...[
+    TaskVmSettingsBuilder::bind([
+        'hosts' => [TaskVmSettingsBuilder::host($hostId ?? test()->host->id, ['maxVms' => $maxVms])],
+        'upcloud' => $upcloud === null ? null : new TaskVmUpCloud(...[
             'enabled' => true, 'projectIds' => [test()->project->id], 'tokenFile' => test()->tokenFile, 'maxVms' => 2,
             'zone' => 'nl-ams1', 'plan' => 'STARTER-2xCPU-4GB', 'diskGb' => 30, 'sourceTemplate' => '01000000-0000-4000-8000-000030260200',
             ...$upcloud,
         ]),
-    ));
+    ]);
 }
 
 function tvm_up_group(?Project $project = null): Task
@@ -613,7 +611,7 @@ describe('sweep', function (): void {
 
     it('sweeps UpCloud while task VMs are off and only the token file is set', function (): void {
         $settings = app(TaskVmSettings::class);
-        app()->instance(TaskVmSettings::class, new TaskVmSettings(false, null, '10.44.0.128/25', $settings->hosts, null, null, null, [], upcloud: new TaskVmUpCloud(...[...get_object_vars($settings->upcloud), 'enabled' => false])));
+        app()->instance(TaskVmSettings::class, TaskVmSettingsBuilder::off(['hosts' => $settings->hosts, 'upcloud' => new TaskVmUpCloud(...[...get_object_vars($settings->upcloud), 'enabled' => false])]));
         $this->host->update(['status' => LifecycleStatus::Active]);
         $orphan = $this->upcloud->server('tvm-777', [['key' => 'orbit-task-vm', 'value' => '777']]);
 
