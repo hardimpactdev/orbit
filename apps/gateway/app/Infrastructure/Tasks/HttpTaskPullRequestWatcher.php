@@ -55,15 +55,25 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
         }
         [$repository, $number] = $target;
         $key = 'tasks:branch-update:'.$group->id.':'.$headSha;
-        $cached = Cache::remember($key, 60, function () use ($repository, $number, $headSha): string {
+        $read = function () use ($repository, $number, $headSha): string {
             try {
                 return $this->github->updatePullRequestBranch($this->access->token($repository), $repository, $number, $headSha)->value;
             } catch (Throwable) {
                 return TaskBranchUpdate::Unavailable->value;
             }
-        });
+        };
+        $cached = self::cachedBranchUpdate(Cache::remember($key, 60, $read));
+        if ($cached !== null) {
+            return $cached;
+        }
+        Cache::forget($key);
 
-        return TaskBranchUpdate::from($cached);
+        return self::cachedBranchUpdate(Cache::remember($key, 60, $read)) ?? TaskBranchUpdate::Unavailable;
+    }
+
+    private static function cachedBranchUpdate(mixed $value): ?TaskBranchUpdate
+    {
+        return is_string($value) ? TaskBranchUpdate::tryFrom($value) : null;
     }
 
     public function status(Task $group): ?string
@@ -368,7 +378,7 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
             return ['failed' => [], 'pending' => []];
         }
         $key = 'tasks:pull-request-checks:v3:'.$repository->owner.'/'.$repository->name.'#'.$number.'@'.$pullRequest->headSha;
-        $cached = Cache::remember($key, self::CHECKS_CACHE_SECONDS, function () use ($repository, $pullRequest): ?array {
+        $read = function () use ($repository, $pullRequest): ?array {
             $token = $this->access->checksToken($repository);
             if ($token === null) {
                 // A null cache value is a miss, so permission is checked again next tick.
@@ -386,15 +396,27 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
                     array_filter($runs, static fn (GitHubCheckRun $run): bool => $run->pending()),
                 )),
             ];
-        });
+        };
+        $cached = Cache::remember($key, self::CHECKS_CACHE_SECONDS, $read);
         if ($cached === null) {
             return ['failed' => [], 'pending' => []];
         }
+        $checks = $this->cachedHeadChecks($cached);
+        if ($checks !== null) {
+            return $checks;
+        }
+        Cache::forget($key);
 
-        return [
-            'failed' => $this->failedRuns($cached['failed']),
-            'pending' => $this->pendingRuns($cached['pending']),
-        ];
+        return $this->cachedHeadChecks(Cache::remember($key, self::CHECKS_CACHE_SECONDS, $read)) ?? ['failed' => [], 'pending' => []];
+    }
+
+    /** @return array{failed: list<GitHubCheckRun>, pending: list<GitHubCheckRun>}|null */
+    private function cachedHeadChecks(mixed $cached): ?array
+    {
+        return is_array($cached) ? [
+            'failed' => $this->failedRuns($cached['failed'] ?? null),
+            'pending' => $this->pendingRuns($cached['pending'] ?? null),
+        ] : null;
     }
 
     /** @return list<GitHubCheckRun> */

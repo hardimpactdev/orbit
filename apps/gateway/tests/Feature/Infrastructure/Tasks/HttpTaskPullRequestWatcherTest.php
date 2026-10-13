@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Tasks\TaskBranchUpdate;
 use App\Domain\Tasks\TaskPullRequestCheck;
 use App\Domain\Tasks\TaskPullRequestReviewWatcher;
 use App\Domain\Tasks\TaskReviewReadStatus;
@@ -657,4 +658,32 @@ describe('bounded pending clocks', function (): void {
         $this->travel(1)->days();
         expect($watcher->health($group)?->checksYoungPending)->toBeTrue();
     });
+});
+
+describe('malformed watcher cache values', function (): void {
+    it('reloads a branch update when its cached outcome is invalid', function (mixed $value): void {
+        GitHubTestSupport::storeApp();
+        Http::fake([
+            'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
+            'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
+            'https://api.github.com/repos/acme/orbit/pulls/42/update-branch' => Http::response([], 202),
+        ]);
+        $group = watcher_group();
+        Cache::put('tasks:branch-update:'.$group->id.':abc123', $value, 60);
+
+        expect(app(HttpTaskPullRequestWatcher::class)->updateBranch($group, 'abc123'))->toBe(TaskBranchUpdate::Accepted);
+        Http::assertSentCount(3);
+    })->with(['unknown outcome' => ['invalid'], 'wrong scalar type' => [false], 'wrong container type' => [[]]]);
+
+    it('reads incomplete check arrays safely and reloads a non-array cache value', function (mixed $value): void {
+        GitHubTestSupport::storeApp();
+        watcher_fake_health([]);
+        Cache::put('tasks:pull-request-checks:v3:acme/orbit#42@abc123', $value, 60);
+
+        $health = app(HttpTaskPullRequestWatcher::class)->health(watcher_group());
+
+        expect($health?->state)->toBe('open')
+            ->and($health?->problems)->toBe([])
+            ->and($health?->checksPending)->toBeFalse();
+    })->with(['missing both lists' => [[]], 'missing failed list' => [['pending' => []]], 'missing pending list' => [['failed' => []]], 'wrong container type' => ['invalid']]);
 });

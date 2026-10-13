@@ -861,7 +861,7 @@ it('names the declared topology and the evidence the approval needs, also in a c
     expect($packet)->toContain("Topology\nThis subtask declares the topology app-dev, app-prod+ingress. Orbit prepared it nested in this task VM as TASK-42")
         ->toContain('Prove each deliverable on the declared nodes (app-dev, app-prod) with `bin/e2e-topology exec TASK-42 NODE --argv=JSON --record=LABEL`')
         ->toContain('Orbit refuses the approval until the evidence log holds a recorded command that did work on each declared node and exited 0')
-        ->toContain('`--record` appends to .e2e/evidence.log, which the read-only rule allows')
+        ->toContain('`--record` appends to .e2e/evidence.jsonl, which the read-only rule allows')
         ->not->toContain('topology_requested');
 })->with(['opening' => [false], 'continued' => [true]]);
 
