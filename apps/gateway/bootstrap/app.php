@@ -17,7 +17,6 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskDefinitionInvalid;
 use App\Domain\Tasks\TaskDefinitionViolation;
 use App\Domain\Tasks\TaskSchedule;
-use App\Domain\TaskVms\TaskVmQueue;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\Tools\ToolOperationException;
 use App\Http\Middleware\AnnounceDesiredCliVersion;
@@ -45,7 +44,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Middleware\ValidatePostSize;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Middleware\SubstituteBindings;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\ErrorHandler\Error\FatalError;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -97,39 +95,8 @@ return Application::configure(basePath: dirname(__DIR__))
         // host has warm_vms and no pool VM exists.
         $schedule->job(new RefillTaskVmPool)->everyMinute()
             ->when(static fn (): bool => RefillTaskVmPool::due());
-        // Whether a job of the queue is one that a worker would take now: a delayed retry or release waits for its
-        // time, as the queue does, and a reserved job waits until its reservation expires.
-        $due = static function (string $queue): bool {
-            $now = now()->getTimestamp();
-
-            return DB::table('jobs')->where('queue', $queue)->where('available_at', '<=', $now)
-                ->where(static fn ($query) => $query->whereNull('reserved_at')
-                    ->orWhere('reserved_at', '<=', $now - (int) config('queue.connections.task-vms.retry_after')))
-                ->exists();
-        };
-        // Task VM jobs (ADR 0200). In the foreground and at the end, so a release drain lets a running job finish.
-        // One worker run takes a VM from launch to ready, so the next job never waits for the next start.
-        // Every second, so a claim outside the task tick waits at most a second for its VM to start.
-        $schedule->command('queue:work task-vms --queue='.TaskVmQueue::Vms->value.' --stop-when-empty --max-time=120 --timeout=1500')
-            ->everySecond()->withoutOverlapping(30)
-            ->when(static fn (): bool => $due(TaskVmQueue::Vms->value));
-        // Base image and workspace template jobs, each queue with its own worker, so a base image refresh or a template
-        // build never delays a task VM job, and neither delays the other. Each worker runs one job at a time. A
-        // foreground command holds its scheduler run until it ends, so these workers start only near the end of a
-        // minute, the image worker in seconds 56 and 57 and the template worker in seconds 58 and 59: the next
-        // minute's run then polls the task VM queue every second again, and starts the other worker if it is due.
-        // Each overlap lock of 32 minutes outlasts a run: 120 seconds of jobs, then at most one more job of 1700.
-        $schedule->command('queue:work task-vms --queue='.TaskVmQueue::Images->value.' --stop-when-empty --max-time=120 --timeout=1700')
-            ->everySecond()->withoutOverlapping(32)
-            ->when(static fn (): bool => in_array(now()->second, [56, 57], true) && $due(TaskVmQueue::Images->value));
-        $schedule->command('queue:work task-vms --queue='.TaskVmQueue::Templates->value.' --stop-when-empty --max-time=120 --timeout=1700')
-            ->everySecond()->withoutOverlapping(32)
-            ->when(static fn (): bool => now()->second >= 58 && $due(TaskVmQueue::Templates->value));
-        // Task VM publishes: the push of an approved commit out of a VM, which runs at the VM's pace, so the task tick
-        // only queues it. The worker starts in seconds 54 and 55, like the image and template workers above.
-        $schedule->command('queue:work task-vms --queue='.TaskVmQueue::Git->value.' --stop-when-empty --max-time=120 --timeout=1700')
-            ->everySecond()->withoutOverlapping(32)
-            ->when(static fn (): bool => in_array(now()->second, [54, 55], true) && $due(TaskVmQueue::Git->value));
+        // The task VM queue workers run as systemd units outside the scheduler (TaskVmWorkerUnits), so a long command
+        // here never delays a job.
     })
     ->withCommands()
     ->withMiddleware(function (Middleware $middleware): void {

@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\AgentView\AgentViewConverger;
 use App\Domain\Fleet\FleetConvergeUnits;
 use App\Domain\GatewayReleases\GatewayDocumentCleanup;
+use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseUnitConverger;
 use App\Domain\Hibernation\RuntimeHibernatorConverger;
 use App\Domain\Nodes\RoleName;
@@ -22,6 +23,7 @@ use App\Infrastructure\Nodes\NodeAgentFootprint;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\TaskVms\TaskVmWorkerUnits;
 use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Support\Facades\Cache;
@@ -187,7 +189,7 @@ final class SchedulerDrainProbe
 /**
  * @return array{GatewayRuntimeHandoff, HandoffProcessRunner, FakeDocumentCleanup, FakeNodeCaddyBuilds, RecordingHandoffUnits, SchedulerDrainProbe}
  */
-function runtime_handoff(?string $livePool = null, int $drainSeconds = 5, ?FleetConvergeUnits $fleet = null, bool $agent = false): array
+function runtime_handoff(?string $livePool = null, int $drainSeconds = 5, ?FleetConvergeUnits $fleet = null, bool $agent = false, ?string $workerUnits = null): array
 {
     $processes = new HandoffProcessRunner;
     $probe = new SchedulerDrainProbe;
@@ -238,6 +240,9 @@ function runtime_handoff(?string $livePool = null, int $drainSeconds = 5, ?Fleet
             idleWaitSeconds: 1,
             fleet: $fleet,
             agent: $agent ? new GatewayNodeAgentUpdate($processes) : null,
+            workers: $workerUnits === null ? null : new TaskVmWorkerUnits($processes, applicationPath: HANDOFF_APP, orbitHome: $orbitHome, unitDirectory: $workerUnits, restartWorkers: static function () use ($processes): void {
+                $processes->ran[] = ['queue:restart'];
+            }),
         ),
         $processes,
         $cleanup,
@@ -446,6 +451,39 @@ describe('gateway:release:handoff', function (): void {
         expect($schedule['gateway_agent'])->toMatchArray(['outcome' => 'failed', 'error_code' => 'agent.unhealthy'])
             ->and($schedule['scheduler'])->toBe('restarted')
             ->and($schedule['opcache']['outcome'])->toBe('reset');
+    });
+
+    it('starts the task VM queue workers after the old scheduler drained, so no scheduled worker runs beside them', function (): void {
+        config(['task_vms.enabled' => true]);
+        handoff_scheduler(handoff_gateway());
+        $directory = sys_get_temp_dir().'/handoff-workers-'.bin2hex(random_bytes(4));
+        [$handoff, $processes] = runtime_handoff(workerUnits: $directory);
+        $processes->mainPids = ['4242', '0'];
+        $commands = static fn (): array => array_map(static fn (array $arguments): string => implode(' ', array_slice($arguments, 0, 3)), $processes->ran);
+
+        $serve = $handoff->serve();
+        $beforeVerify = $commands();
+        $schedule = $handoff->schedule();
+        $ran = $commands();
+        $start = array_search('sudo systemctl start', $ran, true);
+
+        expect($serve)->not->toHaveKey('task_vm_workers')
+            ->and($beforeVerify)->not->toContain('queue:restart')
+            ->and($schedule['task_vm_workers'])->toBe('started')
+            ->and($schedule['scheduler'])->toBe('restarted')
+            ->and($start)->toBeInt()
+            ->and(array_search('queue:restart', $ran, true))->toBeGreaterThan($start)
+            ->and(array_search('sudo systemctl enable', $ran, true))->toBeGreaterThan(array_search('queue:restart', $ran, true));
+    });
+
+    it('fails the scheduler phase when the task VM queue workers cannot be installed', function (): void {
+        config(['task_vms.enabled' => true]);
+        handoff_scheduler(handoff_gateway());
+        [$handoff, $processes] = runtime_handoff(workerUnits: sys_get_temp_dir().'/handoff-workers-'.bin2hex(random_bytes(4)));
+        $processes->results['sudo systemctl enable'] = new CommandResult(1, '', 'denied', 1, false);
+
+        expect(fn () => $handoff->schedule())
+            ->toThrow(fn (GatewayReleaseException $exception) => expect($exception->errorCode)->toBe('gateway.release_units_failed'));
     });
 
     it('reloads FPM only when the rendered pool differs from the live pool', function (): void {

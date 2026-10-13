@@ -14,6 +14,7 @@ use App\Domain\Nodes\NodeProvisioningException;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Files\ProtectedFileWriter;
+use App\Infrastructure\TaskVms\TaskVmWorkerUnits;
 use App\Models\Node;
 
 final readonly class NativeGatewayWebConverger implements GatewayWebConverger
@@ -34,6 +35,7 @@ final readonly class NativeGatewayWebConverger implements GatewayWebConverger
         private AgentViewConverger $agentView,
         private GatewayReleaseUnitConverger $releaseUnits,
         private ?FleetConvergeUnits $fleet = null,
+        private ?TaskVmWorkerUnits $taskVmWorkers = null,
     ) {}
 
     /**
@@ -61,6 +63,7 @@ final readonly class NativeGatewayWebConverger implements GatewayWebConverger
         $this->agentView->converge();
         $this->releaseUnits->converge();
         $this->fleet?->converge();
+        $this->taskVmWorkers?->converge();
     }
 
     private function build(Node $node): void

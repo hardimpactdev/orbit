@@ -57,6 +57,7 @@ use App\Infrastructure\GatewayReleases\SqliteGatewayReleaseDatabase;
 use App\Infrastructure\GatewayReleases\SystemdGatewayReleaseUnitStarter;
 use App\Infrastructure\GitHub\GitHubActionsReader;
 use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\TaskVms\TaskVmWorkerUnits;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\ServiceProvider;
@@ -131,6 +132,7 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 orbitHome: rtrim(Config::string('orbit.home'), '/'),
                 fleet: $app->make(FleetConvergeUnits::class),
                 agent: new GatewayNodeAgentUpdate($app->make(ProcessRunner::class)),
+                workers: $app->make(TaskVmWorkerUnits::class),
             ),
         );
         $this->app->singleton(

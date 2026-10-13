@@ -19,6 +19,7 @@ use App\Infrastructure\Gateway\FpmPoolConnections;
 use App\Infrastructure\Gateway\FpmScriptRequest;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
+use App\Infrastructure\TaskVms\TaskVmWorkerUnits;
 use App\Models\Node;
 use Closure;
 use Illuminate\Support\Facades\Log;
@@ -34,7 +35,9 @@ use Throwable;
  *    The release units are only written and the timer enabled, so the release that runs the handoff keeps running.
  * 4. The scheduler finishes its running commands and starts on the new release ({@see GatewaySchedulerHandoff}).
  * 5. Document cleanup is reconciled and resumed ({@see GatewayCleanupHandoff}).
- * 6. The Gateway Node's own `orbit-agent` moves to the release's pin ({@see GatewayNodeAgentUpdate}), which the
+ * 6. The task VM queue workers are installed and restart on the new release after their running job
+ *    ({@see TaskVmWorkerUnits}).
+ * 7. The Gateway Node's own `orbit-agent` moves to the release's pin ({@see GatewayNodeAgentUpdate}), which the
  *    fleet rollout never does for the Gateway's machine.
  *
  * @phpstan-import-type HandoffResult from \App\Domain\GatewayReleases\GatewayReleaseRuntime
@@ -81,6 +84,7 @@ final readonly class GatewayRuntimeHandoff
         private int $idleWaitSeconds = 60,
         private ?FleetConvergeUnits $fleet = null,
         private ?GatewayNodeAgentUpdate $agent = null,
+        private ?TaskVmWorkerUnits $workers = null,
     ) {
         $this->readLivePool = $readLivePool ?? static fn (string $path): string|false => @file_get_contents($path);
         $this->resetOpcache = $resetOpcache ?? static fn (string $script, string $query): string => new FpmScriptRequest()->request($script, $query);
@@ -143,6 +147,7 @@ final readonly class GatewayRuntimeHandoff
         $generation = $this->cleanup->generation();
         $scheduler = $this->scheduler->handoff($gateway);
         $cleanup = $this->cleanup->resume($generation, true);
+        $workers = $this->workers();
         $agent = $this->gatewayAgent($gateway);
 
         return [
@@ -150,6 +155,7 @@ final readonly class GatewayRuntimeHandoff
             'scheduler_unit' => $scheduler['unit'],
             'scheduler_drain' => $scheduler['drain'],
             'processes_restarted' => $scheduler['restarted'],
+            'task_vm_workers' => $workers,
             'cleanup' => $cleanup['outcome'],
             'cleanup_error_code' => $cleanup['error_code'] ?? null,
             'cleanup_paused' => $cleanup['paused'],
@@ -171,6 +177,24 @@ final readonly class GatewayRuntimeHandoff
         } catch (Throwable $exception) {
             Log::warning('The fleet rollout units could not be installed.', ['error' => $exception->getMessage()]);
         }
+    }
+
+    /**
+     * Installs the task VM queue workers after the scheduler drain, so no scheduled worker of an older release runs
+     * beside them. A failure fails the handoff: without the workers no task VM job runs.
+     *
+     * @return 'started'|'stopped'|'none'
+     *
+     * @throws GatewayReleaseException
+     */
+    private function workers(): string
+    {
+        $outcome = 'none';
+        $this->step('task_vm_workers', 'gateway.release_units_failed', function () use (&$outcome): void {
+            $outcome = $this->workers?->converge() ?? 'none';
+        });
+
+        return $outcome;
     }
 
     /**

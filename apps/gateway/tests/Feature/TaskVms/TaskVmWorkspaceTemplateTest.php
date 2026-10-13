@@ -29,6 +29,7 @@ use App\Infrastructure\TaskVms\IncusTaskVmWorkspaceTemplateBuilder;
 use App\Infrastructure\TaskVms\TaskVmBuilderShell;
 use App\Infrastructure\TaskVms\TaskVmWorkspace;
 use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplates;
+use App\Infrastructure\TaskVms\TaskVmWorkerUnits;
 use App\Jobs\TaskVms\BuildTaskVmWorkspaceTemplate;
 use App\Jobs\TaskVms\DestroyTaskVm;
 use App\Jobs\TaskVms\PublishTaskVmCommit;
@@ -41,7 +42,6 @@ use App\Models\ProjectLifecycleStep;
 use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Console\Scheduling\CallbackEvent;
-use Illuminate\Console\Scheduling\Event;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Support\Facades\Artisan;
@@ -52,6 +52,7 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
 use Symfony\Component\Process\Process;
 use Tests\Support\GitRemoteRedirect;
+use Tests\Support\RecordingProcessRunner;
 use Tests\Support\TaskVmSettingsBuilder;
 use Tests\Support\TestOrbitHome;
 
@@ -635,47 +636,23 @@ describe('scale', function (): void {
     });
 
     it('keeps task VM jobs ahead of template builds and base image refreshes: each queue has its own worker', function (): void {
-        $this->travelTo(now()->setTime(4, 0, 10));
         tvm_projects(25, active: 25);
         app()->call([new RefreshTaskVmWorkspaceTemplates, 'handle']);
         DestroyTaskVm::dispatch(tvm_template_vm($this->group)->id);
-
-        Artisan::call('schedule:list');
-        $events = app(Schedule::class)->events();
-        $workers = collect($events)->filter(static fn (Event $event): bool => str_contains((string) $event->command, 'queue:work'))->values();
-        [$vms, $images, $templates, $git] = [$workers[0], $workers[1], $workers[2], $workers[3]];
-
-        expect(DB::table('jobs')->where('queue', TaskVmQueue::Templates->value)->count())->toBe(21)
-            ->and($vms->command)->toEndWith("'artisan' queue:work task-vms --queue=task-vms --stop-when-empty --max-time=120 --timeout=1500")
-            ->and($images->command)->toEndWith("'artisan' queue:work task-vms --queue=task-vm-images --stop-when-empty --max-time=120 --timeout=1700")
-            ->and($templates->command)->toEndWith("'artisan' queue:work task-vms --queue=task-vm-templates --stop-when-empty --max-time=120 --timeout=1700")
-            ->and([$images->repeatSeconds, $images->withoutOverlapping, $images->expiresAt, $images->runInBackground])->toBe([1, true, 32, false])
-            ->and($git->command)->toEndWith("'artisan' queue:work task-vms --queue=task-vm-git --stop-when-empty --max-time=120 --timeout=1700")
-            ->and($git)->toBe(end($events))
-            ->and([$templates->repeatSeconds, $templates->withoutOverlapping, $templates->expiresAt, $templates->runInBackground])->toBe([1, true, 32, false])
-            ->and([$git->repeatSeconds, $git->withoutOverlapping, $git->expiresAt, $git->runInBackground])->toBe([1, true, 32, false])
-            // The task VM worker takes the destroy at once, behind no build.
-            ->and($vms->filtersPass(app()))->toBeTrue()
-            // The template worker starts only in the last two seconds of a minute, so the run it holds ends soon.
-            ->and($templates->filtersPass(app()))->toBeFalse();
-
-        $this->travelTo(now()->setTime(4, 0, 58));
-        expect($templates->filtersPass(app()))->toBeTrue();
-
-        // A base image refresh starts the image worker only in seconds 56 and 57, and never the template worker.
         RefreshTaskVmBaseImages::dispatch();
-        expect($images->filtersPass(app()))->toBeFalse();
-        $this->travelTo(now()->setTime(4, 1, 56));
-        expect([$images->filtersPass(app()), $templates->filtersPass(app())])->toBe([true, false]);
-
-        DB::table('jobs')->where('queue', 'task-vms')->delete();
-        expect($vms->filtersPass(app()))->toBeFalse();
-
-        // A task VM publish starts the Git worker only in seconds 54 and 55.
         PublishTaskVmCommit::dispatch(1, str_repeat('a', 40), 'task-1');
-        expect($git->filtersPass(app()))->toBeFalse();
-        $this->travelTo(now()->setTime(4, 2, 54));
-        expect([$git->filtersPass(app()), $images->filtersPass(app()), $templates->filtersPass(app())])->toBe([true, false, false]);
+        $units = new TaskVmWorkerUnits(new RecordingProcessRunner);
+        $workers = collect(TaskVmQueue::cases())->mapWithKeys(fn (TaskVmQueue $queue): array => [
+            $queue->value => $units->render($queue, '/home/orbit/orbit/apps/gateway', '/home/orbit/.orbit'),
+        ]);
+
+        // Every queue holds its own jobs, and every queue has a unit that works only that queue.
+        expect(DB::table('jobs')->where('queue', TaskVmQueue::Templates->value)->count())->toBe(21)
+            ->and(DB::table('jobs')->where('queue', TaskVmQueue::Vms->value)->count())->toBe(1)
+            ->and(DB::table('jobs')->where('queue', TaskVmQueue::Images->value)->count())->toBe(1)
+            ->and(DB::table('jobs')->where('queue', TaskVmQueue::Git->value)->count())->toBe(1)
+            ->and($workers->keys()->all())->toBe(['task-vms', 'task-vm-templates', 'task-vm-images', 'task-vm-git'])
+            ->and($workers->every(fn (string $unit, string $queue): bool => substr_count($unit, '"--queue=') === 1 && str_contains($unit, "\"--queue={$queue}\"")))->toBeTrue();
     });
 
     it('starts a claim from a fresh clone while its template builds, and queues no second build', function (): void {

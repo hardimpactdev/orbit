@@ -379,6 +379,7 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshHostKeyScanner;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\TaskVmCredentialGuard;
+use App\Infrastructure\TaskVms\TaskVmWorkerUnits;
 use App\Infrastructure\Tools\AptToolManager;
 use App\Infrastructure\Tools\ComposerToolManager;
 use App\Infrastructure\Tools\HomebrewCaskToolManager;
@@ -877,6 +878,7 @@ final class ApplicationServiceProvider extends ServiceProvider
                 agentView: app(AgentViewConverger::class),
                 releaseUnits: app(GatewayReleaseUnitConverger::class),
                 fleet: app(FleetConvergeUnits::class),
+                taskVmWorkers: app(TaskVmWorkerUnits::class),
             ),
         );
         $this->app->singleton(
