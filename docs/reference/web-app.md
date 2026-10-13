@@ -252,7 +252,7 @@ The web directory is `/home/orbit/web`. `ORBIT_GATEWAY_WEB` can name another dir
 4. It writes the Gateway PHP-FPM pool and runs `systemctl reload-or-restart php8.5-fpm`, which can restart the workers that serve the API.
 5. It publishes the site.
 6. It converges the runtime hibernator and the [agent view subscriber](/reference/node-agent#subscriber).
-7. It installs the [Horizon unit](/reference/gateway-queue#horizon) while the Gateway queue is set, and removes it otherwise.
+7. It converges the [Horizon unit](/reference/gateway-queue#horizon).
 
 It changes no role, VPN setting, or Node, and it never changes the releases or `current`. A [Gateway release](/reference/gateway-recovery#web-build) installs its own web build in `releases/` and switches `current` after the release verified.
 

@@ -84,8 +84,10 @@ The Redis server needs `maxmemory-policy noeviction`, so that it never drops a q
 A release moves the queue in the scheduler phase, after the old scheduler drained:
 
 1. It installs the unit and enables it.
-2. It moves every job that is still in the database queues of the previous releases, `task-vms`, `task-vm-git`, `task-vm-templates`, and `task-vm-images`, to `tasks` or `builds`. A delayed job keeps its time, and a job keeps its unique lock. No job is lost.
+2. It moves the jobs left in the old database queues to the Gateway queue, as described below.
 3. It starts Horizon, or sends SIGTERM to the running Horizon master, which is what `php artisan horizon:terminate` does.
+
+The old database queues are `task-vms` and `task-vm-git`, whose jobs move to `tasks`, and `task-vm-templates` and `task-vm-images`, whose jobs move to `builds`. A delayed job keeps its time, and a job keeps its unique lock. Its attempts count from zero again. No job is lost. The handoff records the count as `queue_moved`.
 
 Horizon uses fast termination, and the unit stops only the master. Each running job finishes in its old worker process, on the release it started on. systemd starts the master again at once, on the new release, so new jobs start right away. For the length of a running build, two builds can run: the old one and a new one. The host locks still allow one build per host.
 
@@ -99,13 +101,17 @@ A job queued by one release can run on the next one, and during a release, on th
 
 ## When Redis is down
 
+The queue depends on its Redis server, but the Gateway keeps running without it:
+
 - The scheduler logs each failed dispatch as an error and frees the job's unique lock, so the next run dispatches it again. The scheduler keeps running.
-- Horizon exits, and systemd starts it again every 5 seconds until Redis answers.
+- Horizon exits. systemd starts it again every 5 seconds until Redis answers.
 - A request that queues a job, such as a task VM claim, fails with an error.
 
 When Redis answers again, Horizon starts and works the queued jobs. A job that Redis lost runs again only when its owner queues it again. For example, the tick queues a publish again after its backoff.
 
 ## Operations
+
+These commands inspect and control Horizon on the Gateway.
 
 | Task | Command |
 | --- | --- |
