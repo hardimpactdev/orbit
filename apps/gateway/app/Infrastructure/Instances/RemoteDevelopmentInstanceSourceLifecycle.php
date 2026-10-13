@@ -19,7 +19,6 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Domain\SourceControl\GitRepositoryOrigin;
-use App\Domain\TaskVms\TaskVmPlacement;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Processes\CommandResult;
@@ -346,7 +345,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
     /** A task VM gets no GitHub token: it fetches nothing itself, and resolve sends its branches from the Gateway's mirror. */
     private function onTaskVm(Instance $instance): bool
     {
-        return TaskVmPlacement::forNode($instance->node) instanceof TaskVm;
+        return TaskVm::forNode($instance->node) instanceof TaskVm;
     }
 
     private function readAccess(Instance $instance, string $repository, bool $taskVm): GitReadEnvironment

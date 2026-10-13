@@ -7,6 +7,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmPlacementPolicy;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSettings;
@@ -301,13 +302,12 @@ describe('settings', function (): void {
     /** @param  array<string, mixed>  $upcloud */
     function tvm_up_config(array $upcloud, bool $taskVms = true): void
     {
-        config(['task_vms' => [
-            'enabled' => $taskVms, 'dev_cluster_id' => $taskVms ? 4 : null, 'wireguard_range' => '10.44.0.128/25',
-            'model_proxy_origin' => $taskVms ? 'http://10.44.0.3:8317' : null, 'park_after_minutes' => null,
-            'pi' => ['artifact_path' => null, 'artifact_sha256' => null, 'models' => []],
+        config(['task_vms' => task_vm_config([
+            'enabled' => $taskVms, 'dev_cluster_id' => $taskVms ? 4 : null,
+            'model_proxy_origin' => $taskVms ? 'http://10.44.0.3:8317' : null,
             'incus' => ['hosts' => $taskVms ? [['node_id' => 7, 'cidr' => '10.251.77.0/24', 'max_vms' => 4]] : []],
-            'upcloud' => [...['enabled' => false, 'projects' => [], 'token_file' => null, 'max_vms' => null, 'zone' => null, 'plan' => null, 'disk_gb' => null, 'source_template' => null], ...$upcloud],
-        ]]);
+            'upcloud' => $upcloud,
+        ])]);
     }
 
     it('leaves UpCloud unconfigured while every value is unset', function (): void {
@@ -377,7 +377,7 @@ describe('placement', function (): void {
         $group = tvm_up_group();
         Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Dev', 'brief' => 'Dev', 'status' => TaskStatus::Todo, 'topology' => ['app-dev', 'app-prod']]);
 
-        expect(fn () => app(AllocateTaskVmAction::class)->execute($group))->toThrow(TaskCapacityException::class, AllocateTaskVmAction::noCapacityFor(TaskVmSize::Large))
+        expect(fn () => app(AllocateTaskVmAction::class)->execute($group))->toThrow(TaskCapacityException::class, TaskVmPlacementPolicy::noCapacityFor(TaskVmSize::Large))
             ->and(TaskVm::query()->where('provider', TaskVmProviderKind::UpCloud)->count())->toBe(0)
             ->and(TaskVmSize::forGroup($group))->toBe(TaskVmSize::Large);
     });
@@ -391,7 +391,7 @@ describe('placement', function (): void {
     it('keeps the group waiting without the switch, the opt-in, or the configuration', function (?array $upcloud): void {
         tvm_up_settings($upcloud);
 
-        expect(fn () => app(AllocateTaskVmAction::class)->execute(tvm_up_group()))->toThrow(TaskCapacityException::class, AllocateTaskVmAction::NoCapacity)
+        expect(fn () => app(AllocateTaskVmAction::class)->execute(tvm_up_group()))->toThrow(TaskCapacityException::class, TaskVmPlacementPolicy::NoCapacity)
             ->and(TaskVm::query()->where('provider', TaskVmProviderKind::UpCloud)->count())->toBe(0);
     })->with([
         'switch off' => [['enabled' => false]],
@@ -404,7 +404,7 @@ describe('placement', function (): void {
         tvm_up_vm(TaskVmState::Failed);
         tvm_up_vm(TaskVmState::Parked);
 
-        expect(fn () => app(AllocateTaskVmAction::class)->execute(tvm_up_group()))->toThrow(TaskCapacityException::class, AllocateTaskVmAction::NoCapacity);
+        expect(fn () => app(AllocateTaskVmAction::class)->execute(tvm_up_group()))->toThrow(TaskCapacityException::class, TaskVmPlacementPolicy::NoCapacity);
     });
 
     it('gives an UpCloud VM no workspace template', function (): void {

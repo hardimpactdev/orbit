@@ -6,16 +6,15 @@ namespace App\Domain\TaskVms;
 
 use App\Domain\Tasks\TaskWorkspaceName;
 use App\Models\Instance;
-use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskVm;
 
 /**
- * The one placement rule for task VMs: a Node with a live task VM serves only its group's
+ * Guards workspace ownership on task VMs: a Node with a live task VM serves only its group's
  * workspace, and a `vm` group works only in that workspace. A live task VM is any row that is
- * not Destroyed.
+ * not Destroyed. Placement of the VMs themselves is {@see TaskVmPlacementPolicy}.
  */
-final class TaskVmPlacement
+final class TaskVmWorkspaceGuard
 {
     /**
      * The checkout of the one workspace on a task VM, below the Project's directory in the apps root. The name is
@@ -23,32 +22,20 @@ final class TaskVmPlacement
      */
     public const string WorkspaceCheckout = 'workspace';
 
-    /** The live task VM that this Node is, or null for every other Node. */
-    public static function forNode(Node $node): ?TaskVm
-    {
-        return self::forNodeId($node->id);
-    }
-
-    /** The group's live task VM, or null when it has none. */
-    public static function forGroup(Task $group): ?TaskVm
-    {
-        return TaskVm::query()->live()->where('group_id', $group->id)->first();
-    }
-
     /**
      * A group's workspace must be its `task-<group id>` Instance in the group's Project, on the Node of its Ready
      * task VM. A parked VM fails with `task_vm.parked`: no command reaches a VM that is stopped or starting.
      */
     public static function assertWorkspace(Task $group, Instance $workspace): void
     {
-        $vm = self::forGroup($group);
+        $vm = TaskVm::forGroup($group);
         if ($vm?->state === TaskVmState::Parked) {
-            throw new TaskVmException('task_vm.parked', "The task VM [{$vm->name}] of task group [{$group->id}] is parked. Orbit starts it for the group's next work.");
+            throw new TaskVmException(TaskVmError::Parked, "The task VM [{$vm->name}] of task group [{$group->id}] is parked. Orbit starts it for the group's next work.");
         }
         if (! $vm instanceof TaskVm || $vm->state !== TaskVmState::Ready || $vm->node_id === null
             || $workspace->node_id !== $vm->node_id || $workspace->project_id !== $group->project_id
             || $workspace->name !== TaskWorkspaceName::for($group)) {
-            throw new TaskVmException('task_vm.workspace_mismatch', "Task group [{$group->id}] has no workspace on its ready task VM.");
+            throw new TaskVmException(TaskVmError::WorkspaceMismatch, "Task group [{$group->id}] has no workspace on its ready task VM.");
         }
     }
 
@@ -76,22 +63,17 @@ final class TaskVmPlacement
     /** An Instance on a task VM Node must be that group's `task-<group id>` workspace in the group's Project. A pool VM serves none. */
     public static function assertInstance(Instance $instance): void
     {
-        $vm = self::forNodeId($instance->node_id);
+        $vm = TaskVm::forNode($instance->node_id);
         if (! $vm instanceof TaskVm) {
             return;
         }
 
         $group = $vm->group;
         if (! $group instanceof Task) {
-            throw new TaskVmException('task_vm.foreign_instance', "Node [{$instance->node_id}] is a warm task VM. It serves no Instance until a task group claims it.");
+            throw new TaskVmException(TaskVmError::ForeignInstance, "Node [{$instance->node_id}] is a warm task VM. It serves no Instance until a task group claims it.");
         }
         if ($instance->project_id !== $group->project_id || $instance->name !== TaskWorkspaceName::for($group)) {
-            throw new TaskVmException('task_vm.foreign_instance', "Node [{$instance->node_id}] is a task VM and serves only the workspace of task group [{$group->id}].");
+            throw new TaskVmException(TaskVmError::ForeignInstance, "Node [{$instance->node_id}] is a task VM and serves only the workspace of task group [{$group->id}].");
         }
-    }
-
-    private static function forNodeId(int $nodeId): ?TaskVm
-    {
-        return TaskVm::query()->live()->where('node_id', $nodeId)->first();
     }
 }

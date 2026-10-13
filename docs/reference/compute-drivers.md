@@ -449,7 +449,7 @@ Each `tasks:tick` parks the `ready` task VM of a group when all of these are tru
 - The group and all of its subtasks settled more than `task_vms.park_after_minutes` minutes ago. The default is 30 minutes.
 - The VM has been `ready` for at least as long.
 
-The last rule keeps a VM that Orbit started again, for example for a removal retry, running that long before it can park again.
+The last rule keeps a VM that Orbit started again, for example for a removal retry, running that long before it can park again. The row's `ready_at` records when the VM last became `ready`: at its first preparation, and at each resume.
 
 The tick sets the row to `parked` and queues `ParkTaskVm`, which stops the VM with `incus stop`. A `parked` VM still takes its slot on the host, so a resume never needs a free slot.
 

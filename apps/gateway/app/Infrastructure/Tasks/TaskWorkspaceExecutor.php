@@ -6,7 +6,7 @@ namespace App\Infrastructure\Tasks;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\TaskVms\TaskVmException;
-use App\Domain\TaskVms\TaskVmPlacement;
+use App\Domain\TaskVms\TaskVmWorkspaceGuard;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -20,7 +20,7 @@ final readonly class TaskWorkspaceExecutor
     public function execute(Instance $workspace, RemoteCommand $command, string $step, string $errorCode, ?float $commandTimeout = null, string $failureLabel = 'Task workspace'): CommandResult
     {
         try {
-            TaskVmPlacement::assertOwnedWorkspace($workspace);
+            TaskVmWorkspaceGuard::assertOwnedWorkspace($workspace);
         } catch (TaskVmException $exception) {
             throw new RuntimeConvergenceException($step, $errorCode, $exception->getMessage(), previous: $exception);
         }

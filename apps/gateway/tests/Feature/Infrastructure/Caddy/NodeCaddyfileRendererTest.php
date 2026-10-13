@@ -629,12 +629,7 @@ function caddy_build_site(
 function caddy_build_task_vms(array $values = []): void
 {
     config(['task_vms' => [
-        'enabled' => false,
-        'dev_cluster_id' => 4,
-        'wireguard_range' => '10.44.0.128/25',
-        'model_proxy_origin' => 'http://10.44.0.3:8317',
-        'pi' => ['artifact_path' => null, 'artifact_sha256' => null, 'models' => []],
-        'incus' => ['hosts' => []],
+        ...task_vm_config(['dev_cluster_id' => 4, 'model_proxy_origin' => 'http://10.44.0.3:8317']),
         ...$values,
     ]]);
 }

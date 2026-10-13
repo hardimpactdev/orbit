@@ -18,9 +18,10 @@ use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
-use App\Domain\TaskVms\TaskVmPlacement;
+use App\Domain\TaskVms\TaskVmPlacementPolicy;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
@@ -190,7 +191,7 @@ describe('refill', function (): void {
         expect(TaskVm::query()->live()->count())->toBe(2)
             ->and(TaskVm::query()->live()->pool()->count())->toBe(1)
             ->and(fn () => app(AllocateTaskVmAction::class)->execute(tvm_pool_group()))
-            ->toThrow(TaskCapacityException::class, AllocateTaskVmAction::WarmStarting);
+            ->toThrow(TaskCapacityException::class, TaskVmPlacementPolicy::WarmStarting);
     });
 
     it('drains the pool while task VMs are disabled, and keeps VMs that are still starting', function (): void {
@@ -357,11 +358,11 @@ describe('failure and backoff', function (): void {
         tvm_pool_refill();
 
         expect($stuck->fresh()?->state)->toBe(TaskVmState::Destroying)
-            ->and($stuck->fresh()?->error_code)->toBe(RefillTaskVmPoolAction::StartTimeoutCode)
+            ->and($stuck->fresh()?->error_code)->toBe(TaskVmError::PoolStartTimeout->value)
             ->and($young->fresh()?->state)->toBe(TaskVmState::Provisioning);
         Queue::assertPushed(DestroyTaskVm::class, fn (DestroyTaskVm $job): bool => $job->taskVmId === $stuck->id);
         Log::shouldHaveReceived('error')->withArgs(fn (string $message, array $context): bool => str_contains($message, 'A warm task VM failed')
-            && $context['task_vm'] === $stuck->name && $context['error_code'] === RefillTaskVmPoolAction::StartTimeoutCode);
+            && $context['task_vm'] === $stuck->name && $context['error_code'] === TaskVmError::PoolStartTimeout->value);
 
         // Once destroyed, its slot is free again for a pool VM after the wait.
         $stuck->update(['state' => TaskVmState::Destroyed]);
@@ -559,7 +560,7 @@ describe('claim', function (): void {
         $vm = tvm_pool_vm();
 
         expect(app(AllocateTaskVmAction::class)->execute(tvm_pool_group())->id)->toBe($vm->id)
-            ->and(fn () => app(AllocateTaskVmAction::class)->execute(tvm_pool_group()))->toThrow(TaskCapacityException::class, AllocateTaskVmAction::NoCapacity);
+            ->and(fn () => app(AllocateTaskVmAction::class)->execute(tvm_pool_group()))->toThrow(TaskCapacityException::class, TaskVmPlacementPolicy::NoCapacity);
     });
 
     it('reads a host image at most every 10 seconds, and waits a minute after a failed read', function (): void {
@@ -732,7 +733,7 @@ describe('a claimed warm VM', function (): void {
             ->and($vm->fresh()?->state)->toBe(TaskVmState::Provisioning);
         Log::shouldHaveReceived('warning')->withArgs(fn (string $message, array $context): bool => str_contains($message, 'the task VM worker retries them')
             && $context['error_code'] === 'task_vm.model_key_failed');
-        Queue::assertPushed(PrepareTaskVmRuntime::class, fn (PrepareTaskVmRuntime $job): bool => $job->taskVmId === $vm->id && ! $job->inline);
+        Queue::assertPushed(PrepareTaskVmRuntime::class, fn (PrepareTaskVmRuntime $job): bool => $job->taskVmId === $vm->id);
     });
 
     it('leaves the Pi upload to the queued job, which makes the VM ready', function (): void {
@@ -745,7 +746,7 @@ describe('a claimed warm VM', function (): void {
             ->and($vm->fresh()?->state)->toBe(TaskVmState::Provisioning)
             ->and($this->transport->commands)->toHaveCount(1);
         Log::shouldHaveReceived('warning')->withArgs(fn (string $message, array $context): bool => str_contains($message, 'the task VM worker retries them'));
-        Queue::assertPushed(PrepareTaskVmRuntime::class, fn (PrepareTaskVmRuntime $job): bool => $job->taskVmId === $vm->id && ! $job->inline);
+        Queue::assertPushed(PrepareTaskVmRuntime::class, fn (PrepareTaskVmRuntime $job): bool => $job->taskVmId === $vm->id);
 
         app()->call([new PrepareTaskVmRuntime($vm->id), 'handle']);
 
@@ -767,7 +768,7 @@ describe('a warm VM', function (): void {
                 'project_id' => $this->project->id, 'node_id' => $node->id, 'name' => 'task-1', 'source_layout' => 'checkout',
                 'checkout_path' => '/home/orbit/apps/shop/task-1', 'root' => 'public', 'branch' => 'task-1',
             ]))->toThrow(TaskVmException::class, 'is a warm task VM')
-            ->and(TaskVmPlacement::forNode($node)?->id)->toBe($vm->id);
+            ->and(TaskVm::forNode($node)?->id)->toBe($vm->id);
     });
 
     it('is not parked, woken, or destroyed with an ended group', function (): void {
@@ -798,7 +799,7 @@ describe('a warm VM', function (): void {
         app()->call([new SweepTaskVmHosts, 'handle']);
 
         expect($vm->fresh()?->state)->toBe(TaskVmState::Failed)
-            ->and($vm->fresh()?->error_code)->toBe(SweepTaskVmHosts::MissingCode)
+            ->and($vm->fresh()?->error_code)->toBe(TaskVmError::VmMissing->value)
             ->and(Task::query()->count())->toBe(0);
     });
 

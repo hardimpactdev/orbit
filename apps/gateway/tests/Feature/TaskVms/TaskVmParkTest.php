@@ -20,10 +20,10 @@ use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\TaskVms\TaskVmException;
-use App\Domain\TaskVms\TaskVmPlacement;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
+use App\Domain\TaskVms\TaskVmWorkspaceGuard;
 use App\Domain\TaskVms\VmObservation;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -87,7 +87,7 @@ function tvm_park_waiting(int $minutesAgo = 31, array $group = [], string $wireg
     ]);
     $vm->update(['name' => 'tvm-'.$vm->id]);
     // The VM has been ready as long as the group waited.
-    TaskVm::query()->whereKey($vm->id)->update(['updated_at' => now()->subMinutes($minutesAgo + 10)]);
+    TaskVm::query()->whereKey($vm->id)->update(['ready_at' => now()->subMinutes($minutesAgo + 10)]);
 
     return [$task->fresh() ?? $task, $vm->fresh() ?? $vm];
 }
@@ -165,11 +165,21 @@ describe('park', function (): void {
         Queue::fake();
         [, $vm] = tvm_park_waiting(minutesAgo: 120);
         $vm->update(['state' => TaskVmState::Parked]);
-        $vm->update(['state' => TaskVmState::Ready]);
+        // As a resume does.
+        $vm->update(['state' => TaskVmState::Ready, 'ready_at' => now()]);
 
         expect(app(ParkIdleTaskVmsAction::class)->execute())->toBe(0);
 
         $this->travel(31)->minutes();
+        expect(app(ParkIdleTaskVmsAction::class)->execute())->toBe(1)
+            ->and($vm->fresh()?->state)->toBe(TaskVmState::Parked);
+    });
+
+    it('counts the ready time from ready_at, so another write to the row does not reset it', function (): void {
+        Queue::fake();
+        [, $vm] = tvm_park_waiting(minutesAgo: 120);
+        $vm->update(['error_code' => null, 'error_message' => null]);
+
         expect(app(ParkIdleTaskVmsAction::class)->execute())->toBe(1)
             ->and($vm->fresh()?->state)->toBe(TaskVmState::Parked);
     });
@@ -230,6 +240,7 @@ describe('resume', function (): void {
         app()->call([new ResumeTaskVm($vm->id), 'handle']);
 
         expect($vm->fresh()?->state)->toBe(TaskVmState::Ready)
+            ->and($vm->fresh()?->ready_at?->timestamp)->toBe(now()->timestamp)
             ->and($this->provider->calls)->toBe(['start'])
             ->and($this->ssh->commands[0]->arguments)->toBe(['systemctl', 'is-active', '--quiet', 'orbit-agent.service'])
             ->and($this->ssh->connections[0]->host)->toBe('10.44.0.129');
@@ -316,8 +327,8 @@ describe('wake', function (): void {
         $workspace = tvm_park_workspace($group, $vm);
         $vm->update(['state' => TaskVmState::Parked]);
 
-        expect(fn () => TaskVmPlacement::assertWorkspace($group, $workspace))->toThrow(TaskVmException::class, 'is parked')
-            ->and(TaskVmPlacement::allowsWorkspace($group, $workspace))->toBeFalse();
+        expect(fn () => TaskVmWorkspaceGuard::assertWorkspace($group, $workspace))->toThrow(TaskVmException::class, 'is parked')
+            ->and(TaskVmWorkspaceGuard::allowsWorkspace($group, $workspace))->toBeFalse();
     });
 
     it('keeps the workspace of a parked VM and starts the VM instead of removing it', function (): void {

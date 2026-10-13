@@ -22,8 +22,9 @@ use Illuminate\Database\Eloquent\Builder;
  * Parks the `ready` task VM of each group that has nothing to do: it waits for review with a pull request,
  * has no open subtask, is not a preview, has no failed workspace removal or merge cleanup, and it and its
  * subtasks settled longer ago than `task_vms.park_after_minutes`. The VM must also have been `ready` that
- * long, so a VM that Orbit started again for work, such as a removal retry, is never stopped and started on
- * every tick. The row becomes `parked` under the group's admission lock, so no work is admitted while the
+ * long, by its `ready_at`, which the first preparation and every resume set. So a VM that Orbit started again for
+ * work, such as a removal retry, is never stopped and started on every tick, and another write to the row, such as
+ * a cleared error, does not reset the clock. The row becomes `parked` under the group's admission lock, so no work is admitted while the
  * VM stops, and `ParkTaskVm` stops it.
  *
  * It reads `TaskVmSettings` only when a `ready` task VM qualifies, so without task VMs it reads nothing.
@@ -49,14 +50,14 @@ final readonly class ParkIdleTaskVmsAction
         foreach ($candidates as $vm) {
             $owner = $vm->group;
             $settled = $owner instanceof Task ? self::settledAt($owner) : null;
-            if (! $owner instanceof Task || $settled === null || $settled->greaterThan($cutoff) || $vm->updated_at === null || $vm->updated_at->greaterThan($cutoff)) {
+            if (! $owner instanceof Task || $settled === null || $settled->greaterThan($cutoff) || $vm->ready_at === null || $vm->ready_at->greaterThan($cutoff)) {
                 continue;
             }
             $parked += $this->execution->synchronized($owner->id, static function () use ($vm, $cutoff): int {
                 $group = self::idle(Task::topLevel()->whereKey($vm->group_id))->first();
                 $settled = $group instanceof Task ? self::settledAt($group) : null;
                 if (! $group instanceof Task || TaskExecutionHold::active($group) || $settled === null || $settled->greaterThan($cutoff)
-                    || TaskVm::query()->whereKey($vm->id)->where('state', TaskVmState::Ready)->where('updated_at', '<=', $cutoff)
+                    || TaskVm::query()->whereKey($vm->id)->where('state', TaskVmState::Ready)->where('ready_at', '<=', $cutoff)
                         // The nested topology's guests stop with the VM, so the next subtask with one prepares it again.
                         ->update(['state' => TaskVmState::Parked, ...TaskVm::ForgetTopology]) !== 1) {
                     return 0;

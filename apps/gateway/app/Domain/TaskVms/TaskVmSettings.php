@@ -6,11 +6,15 @@ namespace App\Domain\TaskVms;
 
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Domain\WireGuard\VpnSettings;
+use Closure;
 use Illuminate\Support\Facades\Config;
 use InvalidArgumentException;
 
 /**
- * The validated `task_vms` config. Resolve it from the container: the singleton validates once.
+ * The validated `task_vms` config. Resolve it from the container: the singleton validates once. The defaults live in
+ * `config/task_vms.php`; this class only validates, with Laravel's validator, and each host and the UpCloud overflow
+ * validate their own entry ({@see TaskVmHost::fromConfig()}, {@see TaskVmUpCloud::fromConfig()}). The scheduler reads
+ * the raw config leniently through {@see self::scheduled()}, so an invalid value never stops it.
  *
  * Every value is validated whenever it is set, also while task VMs are off, so an operator can
  * prepare hosts and the hub before enabling claims. An unset value stays absent: no hosts, a null
@@ -24,21 +28,6 @@ use InvalidArgumentException;
  */
 final readonly class TaskVmSettings
 {
-    private const array HostDefaults = [
-        'project' => 'orbit-tasks',
-        'network' => 'orbittask0',
-        'cpus' => 2,
-        'memory' => '4GiB',
-        'disk' => '20GiB',
-        'pool' => 'orbit-tasks',
-        'zfs_dataset' => null,
-        'warm_vms' => 0,
-    ];
-
-    private const array HostKeys = ['node_id', 'project', 'network', 'cidr', 'max_vms', 'cpus', 'memory', 'disk', 'pool', 'zfs_dataset', 'warm_vms'];
-
-    private const array PrivateRanges = ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'];
-
     /**
      * @param  list<TaskVmHost>  $hosts
      * @param  list<string>  $piModels
@@ -60,43 +49,108 @@ final readonly class TaskVmSettings
         public array $topologyPaths = [],
     ) {}
 
+    /** @throws TaskVmException `task_vm.invalid_config` for the first invalid value */
     public static function fromConfig(): self
     {
-        $enabled = Config::get('task_vms.enabled') === true;
-        $range = self::wireguardRange(Config::get('task_vms.wireguard_range'));
-        $clusterId = self::clusterId(Config::get('task_vms.dev_cluster_id'));
-        $origin = self::origin(Config::get('task_vms.model_proxy_origin'));
-        $hostEntries = Config::get('task_vms.incus.hosts');
+        $config = self::config();
+        $enabled = ($config['enabled'] ?? null) === true;
+        $range = TaskVmConfig::wireguardRange($config['wireguard_range'] ?? null);
+        $clusterId = TaskVmConfig::filled($config['dev_cluster_id'] ?? null);
+        $origin = TaskVmConfig::filled($config['model_proxy_origin'] ?? null);
+        $scalars = TaskVmConfig::validate(['dev_cluster_id' => $clusterId, 'model_proxy_origin' => $origin], [
+            'dev_cluster_id' => $clusterId === null ? [] : ['required', 'integer', 'min:1'],
+            'model_proxy_origin' => $origin === null ? [] : ['required', 'string', static function (string $attribute, mixed $value, Closure $fail): void {
+                if (self::origin($value) === null) {
+                    $fail('model_proxy_origin must be an http(s) origin, for example http://10.44.0.3:8317.');
+                }
+            }],
+        ], [
+            'dev_cluster_id' => 'dev_cluster_id must be a Cluster id.',
+            'model_proxy_origin' => 'model_proxy_origin must be an http(s) origin, for example http://10.44.0.3:8317.',
+        ]);
 
-        $hosts = self::configuredInConfig() ? self::hosts($hostEntries, self::vpnSubnet($range)) : [];
+        $hosts = self::configured($config) ? self::hosts($config['incus'] ?? [], self::vpnSubnet($range)) : [];
 
         if ($enabled) {
             match (true) {
-                $clusterId === null => throw self::invalid('dev_cluster_id is required while task VMs are enabled.'),
-                $origin === null => throw self::invalid('model_proxy_origin is required while task VMs are enabled.'),
-                $hosts === [] => throw self::invalid('incus.hosts needs at least one host while task VMs are enabled.'),
+                $clusterId === null => throw TaskVmConfig::invalid('dev_cluster_id is required while task VMs are enabled.'),
+                $origin === null => throw TaskVmConfig::invalid('model_proxy_origin is required while task VMs are enabled.'),
+                $hosts === [] => throw TaskVmConfig::invalid('incus.hosts needs at least one host while task VMs are enabled.'),
                 default => null,
             };
         }
 
-        [$artifactPath, $artifactSha256] = self::artifact(
-            self::filled(Config::get('task_vms.pi.artifact_path')),
-            self::filled(Config::get('task_vms.pi.artifact_sha256')),
-        );
+        $pi = is_array($config['pi'] ?? null) ? $config['pi'] : [];
+        $artifactPath = TaskVmConfig::filled($pi['artifact_path'] ?? null);
+        $artifactSha256 = TaskVmConfig::filled($pi['artifact_sha256'] ?? null);
+        $values = [
+            'pi' => ['artifact_path' => $artifactPath, 'artifact_sha256' => $artifactSha256, 'models' => $pi['models'] ?? null],
+            'park_after_minutes' => $config['park_after_minutes'] ?? null,
+            'medium_projects' => $config['medium_projects'] ?? null,
+            'topology_paths' => $config['topology_paths'] ?? null,
+        ];
+        $together = 'pi.artifact_path and pi.artifact_sha256 must be set together.';
+        $topologyPaths = 'topology_paths must be a JSON object from Project id to a list of path patterns.';
+        $valid = TaskVmConfig::validate($values, [
+            'pi.artifact_path' => $artifactPath === null ? ['required_with:pi.artifact_sha256'] : ['required', 'string', 'starts_with:/', 'not_regex:/\x00/'],
+            'pi.artifact_sha256' => $artifactSha256 === null ? ['required_with:pi.artifact_path'] : ['required', 'string', 'regex:/\A[a-f0-9]{64}\z/D'],
+            'pi.models' => ['present', 'list'],
+            'pi.models.*' => ['required', 'string', 'regex:/\A[A-Za-z0-9][A-Za-z0-9._:\/-]{0,127}\z/D'],
+            'park_after_minutes' => ['required', 'integer', 'between:1,10080'],
+            'medium_projects' => ['present', 'list'],
+            'medium_projects.*' => ['integer:strict', 'min:1'],
+            'topology_paths' => ['present', static function (string $attribute, mixed $value, Closure $fail) use ($topologyPaths): void {
+                if (! self::validTopologyPaths($value)) {
+                    $fail($topologyPaths);
+                }
+            }],
+        ], [
+            'pi.artifact_path.required_with' => $together,
+            'pi.artifact_sha256.required_with' => $together,
+            'pi.artifact_path' => 'pi.artifact_path must be an absolute path.',
+            'pi.artifact_sha256' => 'pi.artifact_sha256 must be a lowercase SHA-256 digest.',
+            'pi.models' => 'pi.models must be a JSON list of model names.',
+            'pi.models.*' => 'pi.models must contain only model names.',
+            'park_after_minutes' => 'park_after_minutes must be a whole number of minutes from 1 to 10080.',
+            'medium_projects' => 'medium_projects must be a JSON list of Project ids.',
+            'medium_projects.*' => 'medium_projects must be a JSON list of Project ids.',
+            'topology_paths' => $topologyPaths,
+        ]);
+        $topology = [];
+        foreach (is_array($values['topology_paths']) ? $values['topology_paths'] : [] as $projectId => $patterns) {
+            $topology[(int) $projectId] = array_values(array_unique(TaskVmConfig::strings($patterns)));
+        }
 
         return new self(
             enabled: $enabled,
-            devClusterId: $clusterId,
+            devClusterId: $clusterId === null ? null : $scalars->integer('dev_cluster_id'),
             wireguardRange: $range->value(),
             hosts: $hosts,
-            modelProxyOrigin: $origin,
-            piArtifactPath: $artifactPath,
-            piArtifactSha256: $artifactSha256,
-            piModels: self::models(Config::get('task_vms.pi.models')),
-            parkAfterMinutes: self::parkAfterMinutes(Config::get('task_vms.park_after_minutes')),
-            upcloud: self::upcloud($enabled),
-            mediumProjectIds: self::projectIds(Config::get('task_vms.medium_projects', []), 'medium_projects'),
-            topologyPaths: self::topologyPaths(Config::get('task_vms.topology_paths', [])),
+            modelProxyOrigin: self::origin($origin),
+            piArtifactPath: is_string($artifactPath) ? $artifactPath : null,
+            piArtifactSha256: is_string($artifactSha256) ? $artifactSha256 : null,
+            piModels: array_values(array_unique(TaskVmConfig::strings($values['pi']['models']))),
+            parkAfterMinutes: $valid->integer('park_after_minutes'),
+            upcloud: TaskVmUpCloud::fromConfig(is_array($config['upcloud'] ?? null) ? $config['upcloud'] : [], $enabled),
+            mediumProjectIds: array_values(array_unique(TaskVmConfig::ints($values['medium_projects']))),
+            topologyPaths: $topology,
+        );
+    }
+
+    /**
+     * The task VM switches that the scheduler reads every minute. It reads the raw config leniently, so an invalid
+     * value never stops the scheduler: a job it queues validates through the settings and fails loudly.
+     */
+    public static function scheduled(): TaskVmSchedule
+    {
+        $enabled = Config::get('task_vms.enabled') === true;
+        $hosts = Config::get('task_vms.incus.hosts');
+
+        return new TaskVmSchedule(
+            enabled: $enabled,
+            upcloudConfigured: filled(Config::get('task_vms.upcloud.token_file')),
+            warmVmsWanted: $enabled && is_array($hosts)
+                && array_any($hosts, static fn (mixed $host): bool => is_array($host) && is_int($host['warm_vms'] ?? null) && $host['warm_vms'] > 0),
         );
     }
 
@@ -108,7 +162,9 @@ final readonly class TaskVmSettings
      */
     public static function caddyGuardRange(): ?string
     {
-        return self::configuredInConfig() ? self::wireguardRange(Config::get('task_vms.wireguard_range'))->value() : null;
+        $config = self::config();
+
+        return self::configured($config) ? TaskVmConfig::wireguardRange($config['wireguard_range'] ?? null)->value() : null;
     }
 
     public function host(int $nodeId): TaskVmHost
@@ -119,7 +175,7 @@ final readonly class TaskVmSettings
             }
         }
 
-        throw new TaskVmException('task_vm.unknown_host', "Node [{$nodeId}] is not a task VM host.");
+        throw new TaskVmException(TaskVmError::UnknownHost, "Node [{$nodeId}] is not a task VM host.");
     }
 
     public function hasHost(int $nodeId): bool
@@ -133,27 +189,25 @@ final readonly class TaskVmSettings
         return $this->hosts[0] ?? null;
     }
 
-    /** Task VMs are enabled, or the Cluster, the origin, or a host is set. Malformed hosts JSON counts as set. */
-    private static function configuredInConfig(): bool
+    /** @return array<string, mixed> the raw `task_vms` config */
+    private static function config(): array
     {
-        return Config::get('task_vms.enabled') === true
-            || self::filled(Config::get('task_vms.dev_cluster_id')) !== null
-            || self::filled(Config::get('task_vms.model_proxy_origin')) !== null
-            || Config::get('task_vms.incus.hosts') !== [];
+        $config = Config::get('task_vms');
+
+        return is_array($config) ? $config : [];
     }
 
-    private static function wireguardRange(mixed $value): Ipv4Subnet
+    /**
+     * Task VMs are enabled, or the Cluster, the origin, or a host is set. Malformed hosts JSON counts as set.
+     *
+     * @param  array<string, mixed>  $config
+     */
+    private static function configured(array $config): bool
     {
-        try {
-            $range = Ipv4Subnet::from(is_string($value) ? $value : '');
-        } catch (InvalidArgumentException) {
-            throw self::invalid('wireguard_range must be an IPv4 network, for example 10.44.0.128/25.');
-        }
-        if (! self::isPrivate($range)) {
-            throw self::invalid('wireguard_range must be a private IPv4 network.');
-        }
-
-        return $range;
+        return ($config['enabled'] ?? null) === true
+            || TaskVmConfig::filled($config['dev_cluster_id'] ?? null) !== null
+            || TaskVmConfig::filled($config['model_proxy_origin'] ?? null) !== null
+            || (is_array($config['incus'] ?? null) ? $config['incus']['hosts'] ?? null : null) !== [];
     }
 
     private static function vpnSubnet(Ipv4Subnet $range): Ipv4Subnet
@@ -162,74 +216,29 @@ final readonly class TaskVmSettings
         try {
             $subnet = Ipv4Subnet::from($value);
         } catch (InvalidArgumentException) {
-            throw self::invalid("the VPN subnet [{$value}] is not an IPv4 network.");
+            throw TaskVmConfig::invalid("the VPN subnet [{$value}] is not an IPv4 network.");
         }
         if ($range->prefixLength() <= $subnet->prefixLength() || ! $subnet->contains($range->networkAddress())) {
-            throw self::invalid("wireguard_range must be a smaller network inside the VPN subnet [{$subnet->value()}].");
+            throw TaskVmConfig::invalid("wireguard_range must be a smaller network inside the VPN subnet [{$subnet->value()}].");
         }
 
         return $subnet;
     }
 
-    private static function clusterId(mixed $value): ?int
+    /**
+     * @param  mixed  $incus  `task_vms.incus`: the host entries and their defaults
+     * @return list<TaskVmHost>
+     */
+    private static function hosts(mixed $incus, Ipv4Subnet $vpnSubnet): array
     {
-        $value = self::filled($value);
-        if ($value === null) {
-            return null;
-        }
-        $id = is_int($value) || is_string($value) ? filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) : false;
-        if (! is_int($id)) {
-            throw self::invalid('dev_cluster_id must be a Cluster id.');
-        }
-
-        return $id;
-    }
-
-    /** @return array{?string, ?string} */
-    private static function artifact(mixed $path, mixed $sha256): array
-    {
-        if (($path === null) !== ($sha256 === null)) {
-            throw self::invalid('pi.artifact_path and pi.artifact_sha256 must be set together.');
-        }
-        if ($path !== null && (! is_string($path) || ! str_starts_with($path, '/') || str_contains($path, "\0"))) {
-            throw self::invalid('pi.artifact_path must be an absolute path.');
-        }
-        if ($sha256 !== null && (! is_string($sha256) || preg_match('/\A[a-f0-9]{64}\z/D', $sha256) !== 1)) {
-            throw self::invalid('pi.artifact_sha256 must be a lowercase SHA-256 digest.');
-        }
-
-        return [$path, $sha256];
-    }
-
-    /** @return list<TaskVmHost> */
-    private static function hosts(mixed $value, Ipv4Subnet $vpnSubnet): array
-    {
-        if (! is_array($value) || ! array_is_list($value)) {
-            throw self::invalid('incus.hosts must be a JSON list.');
-        }
+        $entries = is_array($incus) ? $incus['hosts'] ?? null : null;
+        TaskVmConfig::validate(['hosts' => $entries], ['hosts' => ['present', 'list']], ['hosts' => 'incus.hosts must be a JSON list.']);
+        $defaults = is_array($incus) && is_array($incus['host_defaults'] ?? null) ? $incus['host_defaults'] : [];
         $hosts = [];
-        foreach ($value as $index => $entry) {
-            if (! is_array($entry) || array_diff(array_keys($entry), self::HostKeys) !== []) {
-                throw self::invalid("incus.hosts.{$index} has unknown keys.");
-            }
-            $entry = [...self::HostDefaults, ...$entry];
-            $host = new TaskVmHost(
-                nodeId: self::positiveInt($entry['node_id'] ?? null, 1_000_000_000, "incus.hosts.{$index}.node_id"),
-                project: self::name($entry['project'], '/\A[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\z/D', "incus.hosts.{$index}.project"),
-                network: self::name($entry['network'], '/\Aorbittask[a-z0-9]{1,6}\z/D', "incus.hosts.{$index}.network"),
-                cidr: self::bridge($entry['cidr'] ?? null, $vpnSubnet, "incus.hosts.{$index}.cidr"),
-                maxVms: self::positiveInt($entry['max_vms'] ?? null, 64, "incus.hosts.{$index}.max_vms"),
-                cpus: self::positiveInt($entry['cpus'], 64, "incus.hosts.{$index}.cpus"),
-                memory: self::name($entry['memory'], '/\A[1-9][0-9]{0,5}(?:MiB|GiB)\z/D', "incus.hosts.{$index}.memory"),
-                disk: self::name($entry['disk'], '/\A[1-9][0-9]{0,5}(?:MiB|GiB)\z/D', "incus.hosts.{$index}.disk"),
-                pool: self::name($entry['pool'], '/\A[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?\z/D', "incus.hosts.{$index}.pool"),
-                // A dataset below a ZFS pool, never a whole pool: Incus takes over the dataset it creates the pool on.
-                zfsDataset: $entry['zfs_dataset'] === null ? null
-                    : self::name($entry['zfs_dataset'], '/\A(?=.{3,200}\z)[A-Za-z0-9][A-Za-z0-9_.:-]*(?:\/[A-Za-z0-9][A-Za-z0-9_.:-]*)+\z/D', "incus.hosts.{$index}.zfs_dataset"),
-                warmVms: self::warmVms($entry['warm_vms'], $entry['max_vms'], "incus.hosts.{$index}.warm_vms"),
-            );
+        foreach (is_array($entries) ? array_values($entries) : [] as $index => $entry) {
+            $host = TaskVmHost::fromConfig($entry, $index, $vpnSubnet, $defaults);
             if (isset($hosts[$host->nodeId])) {
-                throw self::invalid("incus.hosts.{$index}.node_id is listed twice.");
+                throw TaskVmConfig::invalid("incus.hosts.{$index}.node_id is listed twice.");
             }
             $hosts[$host->nodeId] = $host;
         }
@@ -237,194 +246,31 @@ final readonly class TaskVmSettings
         return array_values($hosts);
     }
 
-    private static function bridge(mixed $value, Ipv4Subnet $vpnSubnet, string $key): string
-    {
-        try {
-            $subnet = Ipv4Subnet::from(is_string($value) ? $value : '');
-        } catch (InvalidArgumentException) {
-            throw self::invalid("{$key} must be an IPv4 network, for example 10.251.77.0/24.");
-        }
-        if ($subnet->prefixLength() < 16 || $subnet->prefixLength() > 28 || ! self::isPrivate($subnet)) {
-            throw self::invalid("{$key} must be a private IPv4 network from /16 to /28.");
-        }
-        if ($subnet->contains($vpnSubnet->networkAddress()) || $vpnSubnet->contains($subnet->networkAddress())) {
-            throw self::invalid("{$key} must not overlap the VPN subnet [{$vpnSubnet->value()}].");
-        }
-
-        return $subnet->value();
-    }
-
+    /** The origin without a trailing slash, or null when the value is not an http(s) origin. */
     private static function origin(mixed $value): ?string
     {
-        $value = self::filled($value);
-        if ($value === null) {
-            return null;
-        }
         $parts = is_string($value) ? parse_url($value) : false;
         if (! is_array($parts) || ! in_array($parts['scheme'] ?? null, ['http', 'https'], true) || ! isset($parts['host'])
             || isset($parts['user']) || isset($parts['pass']) || isset($parts['query']) || isset($parts['fragment'])
             || ! in_array($parts['path'] ?? '', ['', '/'], true)) {
-            throw self::invalid('model_proxy_origin must be an http(s) origin, for example http://10.44.0.3:8317.');
+            return null;
         }
 
         return $parts['scheme'].'://'.$parts['host'].(isset($parts['port']) ? ':'.$parts['port'] : '');
     }
 
-    /** @return list<string> */
-    private static function models(mixed $value): array
-    {
-        if (! is_array($value) || ! array_is_list($value)) {
-            throw self::invalid('pi.models must be a JSON list of model names.');
-        }
-        foreach ($value as $model) {
-            if (! is_string($model) || preg_match('/\A[A-Za-z0-9][A-Za-z0-9._:\/-]{0,127}\z/D', $model) !== 1) {
-                throw self::invalid('pi.models must contain only model names.');
-            }
-        }
-
-        return array_values(array_unique($value));
-    }
-
-    /**
-     * The UpCloud overflow, or null while its token file is unset. Its switch needs task VMs enabled, the token file,
-     * and `max_vms`: the cost guard has no default.
-     */
-    private static function upcloud(bool $taskVmsEnabled): ?TaskVmUpCloud
-    {
-        $enabled = Config::get('task_vms.upcloud.enabled') === true;
-        $tokenFile = self::filled(Config::get('task_vms.upcloud.token_file'));
-        if ($tokenFile === null) {
-            if ($enabled) {
-                throw self::invalid('upcloud.token_file is required while the UpCloud overflow is enabled.');
-            }
-
-            return null;
-        }
-        if (! is_string($tokenFile) || ! str_starts_with($tokenFile, '/') || str_contains($tokenFile, "\0")) {
-            throw self::invalid('upcloud.token_file must be an absolute path.');
-        }
-        if ($enabled && ! $taskVmsEnabled) {
-            throw self::invalid('the UpCloud overflow needs task VMs enabled.');
-        }
-        $projects = self::projectIds(Config::get('task_vms.upcloud.projects'), 'upcloud.projects');
-        $maxVms = self::filled(Config::get('task_vms.upcloud.max_vms'));
-        $maxVms = is_int($maxVms) || is_string($maxVms) ? filter_var($maxVms, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 16]]) : false;
-        if (! is_int($maxVms)) {
-            throw self::invalid('upcloud.max_vms must be a whole number from 1 to 16.');
-        }
-        $diskGb = filter_var(self::filled(Config::get('task_vms.upcloud.disk_gb')) ?? 30, FILTER_VALIDATE_INT, ['options' => ['min_range' => 10, 'max_range' => 200]]);
-        if (! is_int($diskGb)) {
-            throw self::invalid('upcloud.disk_gb must be a whole number of GB from 10 to 200.');
-        }
-
-        return new TaskVmUpCloud(
-            enabled: $enabled,
-            projectIds: $projects,
-            tokenFile: $tokenFile,
-            maxVms: $maxVms,
-            zone: self::name(self::filled(Config::get('task_vms.upcloud.zone')) ?? 'nl-ams1', '/\A[a-z]{2}-[a-z]{3}[1-9]\z/D', 'upcloud.zone'),
-            plan: self::name(self::filled(Config::get('task_vms.upcloud.plan')) ?? 'STARTER-2xCPU-4GB', '/\A[A-Za-z0-9][A-Za-z0-9-]{0,63}\z/D', 'upcloud.plan'),
-            diskGb: $diskGb,
-            sourceTemplate: self::name(self::filled(Config::get('task_vms.upcloud.source_template')) ?? '01000000-0000-4000-8000-000030260200', '/\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/D', 'upcloud.source_template'),
-        );
-    }
-
-    /** @return list<int> */
-    private static function projectIds(mixed $value, string $key): array
-    {
-        if (! is_array($value) || ! array_is_list($value) || array_any($value, static fn (mixed $id): bool => ! is_int($id) || $id < 1)) {
-            throw self::invalid("{$key} must be a JSON list of Project ids.");
-        }
-
-        return array_values(array_unique($value));
-    }
-
     /**
      * A JSON object from Project id to a list of path patterns, in the syntax of file deliverables. A key is a JSON
      * string, so `{"46": [...]}`; PHP decodes a numeric key to an integer.
-     *
-     * @return array<int, list<string>>
      */
-    private static function topologyPaths(mixed $value): array
+    private static function validTopologyPaths(mixed $value): bool
     {
-        $invalid = static fn (): TaskVmException => self::invalid('topology_paths must be a JSON object from Project id to a list of path patterns.');
         if (! is_array($value) || ($value !== [] && array_is_list($value))) {
-            throw $invalid();
-        }
-        $paths = [];
-        foreach ($value as $projectId => $patterns) {
-            if (! is_int($projectId) || $projectId < 1 || ! is_array($patterns) || ! array_is_list($patterns)
-                || array_any($patterns, static fn (mixed $pattern): bool => ! is_string($pattern) || trim($pattern) === '' || str_starts_with($pattern, '/'))) {
-                throw $invalid();
-            }
-            $paths[$projectId] = array_values(array_unique($patterns));
+            return false;
         }
 
-        return $paths;
-    }
-
-    /** Unset or empty means 30; 0 is an error. The environment gives a string, so a whole number in a string counts. */
-    private static function parkAfterMinutes(mixed $value): int
-    {
-        $value = self::filled($value) ?? 30;
-        $minutes = is_int($value) || is_string($value) ? filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 10080]]) : false;
-        if (! is_int($minutes)) {
-            throw self::invalid('park_after_minutes must be a whole number of minutes from 1 to 10080.');
-        }
-
-        return $minutes;
-    }
-
-    /** From 0, the default, to the host's `max_vms`: warm VMs take slots too. */
-    private static function warmVms(mixed $value, mixed $maxVms, string $key): int
-    {
-        $maximum = is_int($maxVms) ? $maxVms : 64;
-        if (! is_int($value) || $value < 0 || $value > $maximum) {
-            throw self::invalid("{$key} must be an integer from 0 to the host's max_vms.");
-        }
-
-        return $value;
-    }
-
-    private static function positiveInt(mixed $value, int $maximum, string $key): int
-    {
-        if (! is_int($value) || $value < 1 || $value > $maximum) {
-            throw self::invalid("{$key} must be an integer from 1 to {$maximum}.");
-        }
-
-        return $value;
-    }
-
-    private static function name(mixed $value, string $pattern, string $key): string
-    {
-        if (! is_string($value) || preg_match($pattern, $value) !== 1) {
-            throw self::invalid("{$key} is invalid.");
-        }
-
-        return $value;
-    }
-
-    /** An unset or empty value is absent. */
-    private static function filled(mixed $value): mixed
-    {
-        return $value === '' ? null : $value;
-    }
-
-    private static function isPrivate(Ipv4Subnet $subnet): bool
-    {
-        [$first, $last] = [$subnet->networkAddress(), $subnet->usableRange()[1]];
-        foreach (self::PrivateRanges as $range) {
-            $private = Ipv4Subnet::from($range);
-            if ($private->contains($first) && $private->contains($last)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static function invalid(string $reason): TaskVmException
-    {
-        return new TaskVmException('task_vm.invalid_config', "The task VM config is invalid: {$reason}", 500);
+        return array_all($value, static fn (mixed $patterns, int|string $projectId): bool => is_int($projectId) && $projectId >= 1
+            && is_array($patterns) && array_is_list($patterns)
+            && array_all($patterns, static fn (mixed $pattern): bool => is_string($pattern) && trim($pattern) !== '' && ! str_starts_with($pattern, '/')));
     }
 }

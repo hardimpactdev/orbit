@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Actions\TaskVms;
 
-use App\Domain\TaskVms\TaskVmPlacement;
 use App\Domain\TaskVms\TaskVmState;
 use App\Jobs\TaskVms\ResumeTaskVm;
 use App\Models\Instance;
@@ -24,7 +23,7 @@ final readonly class WakeTaskVmAction
     /** Whether the group's work may use its task VM now. The group shows `Task VM: resuming.` while it waits. */
     public function forGroup(Task $group): bool
     {
-        $awake = $this->awake(TaskVmPlacement::forGroup($group));
+        $awake = $this->awake(TaskVm::forGroup($group));
         if (! $awake && $group->capacity_wait_reason !== self::Resuming) {
             $group->update(['capacity_wait_reason' => self::Resuming]);
         } elseif ($awake && $group->capacity_wait_reason === self::Resuming) {
@@ -37,7 +36,7 @@ final readonly class WakeTaskVmAction
     /** Whether work on this Instance may use its Node now: false only while the Node is a parked task VM. */
     public function forInstance(Instance $instance): bool
     {
-        return $this->awake(TaskVm::query()->live()->where('node_id', $instance->node_id)->first());
+        return $this->awake(TaskVm::forNode($instance->node_id));
     }
 
     private function awake(?TaskVm $vm): bool

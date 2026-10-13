@@ -10,7 +10,6 @@ use App\Infrastructure\TaskVms\UpCloudServers;
 use App\Infrastructure\TaskVms\UpCloudTaskVmImageBuilder;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -21,7 +20,7 @@ use Illuminate\Support\Facades\Log;
  */
 final class RefreshUpCloudTaskVmBaseImage implements ShouldBeUnique, ShouldQueue
 {
-    use Queueable;
+    use TaskVmJob;
 
     public int $tries = 1;
 
@@ -34,7 +33,7 @@ final class RefreshUpCloudTaskVmBaseImage implements ShouldBeUnique, ShouldQueue
 
     public function __construct()
     {
-        $this->onConnection('task-vms')->onQueue(TaskVmQueue::Images->value);
+        $this->onTaskVmQueue(TaskVmQueue::Images);
     }
 
     public function handle(TaskVmSettings $settings, UpCloudServers $servers, UpCloudTaskVmImageBuilder $builder): void

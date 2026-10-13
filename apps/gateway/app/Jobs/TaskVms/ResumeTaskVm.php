@@ -4,18 +4,16 @@ declare(strict_types=1);
 
 namespace App\Jobs\TaskVms;
 
-use App\Domain\Tasks\AssistanceKind;
-use App\Domain\Tasks\TaskAssistance;
+use App\Actions\TaskVms\FailTaskVmAction;
+use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmFailedException;
 use App\Domain\TaskVms\TaskVmProvider;
-use App\Domain\TaskVms\TaskVmQueue;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\TaskVms\TaskVmRuntime;
-use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Sleep;
 use Throwable;
 
@@ -26,7 +24,7 @@ use Throwable;
  */
 final class ResumeTaskVm implements ShouldBeUnique, ShouldQueue
 {
-    use Queueable;
+    use TaskVmRowJob;
 
     public const int Runs = 3;
 
@@ -44,16 +42,6 @@ final class ResumeTaskVm implements ShouldBeUnique, ShouldQueue
     /** A lost unique lock expires, so a crashed worker never blocks the row for good. */
     public int $uniqueFor = 3600;
 
-    public function __construct(public int $taskVmId)
-    {
-        $this->onConnection('task-vms')->onQueue(TaskVmQueue::Vms->value);
-    }
-
-    public function uniqueId(): string
-    {
-        return (string) $this->taskVmId;
-    }
-
     public function handle(TaskVmProvider $provider, TaskVmRuntime $runtime): void
     {
         $vm = TaskVm::query()->find($this->taskVmId);
@@ -66,7 +54,7 @@ final class ResumeTaskVm implements ShouldBeUnique, ShouldQueue
         while (true) {
             if ($runtime->responds($vm)) {
                 TaskVm::query()->whereKey($vm->id)->where('state', TaskVmState::Parked)
-                    ->update(['state' => TaskVmState::Ready, 'error_code' => null, 'error_message' => null, ...TaskVm::ForgetTopology]);
+                    ->update(['state' => TaskVmState::Ready, 'ready_at' => now(), 'error_code' => null, 'error_message' => null, ...TaskVm::ForgetTopology]);
 
                 return;
             }
@@ -77,7 +65,7 @@ final class ResumeTaskVm implements ShouldBeUnique, ShouldQueue
         }
 
         if ($this->attempts() >= self::Runs) {
-            throw new TaskVmException('task_vm.resume_timeout', "Task VM [{$vm->name}] did not answer after its start: its Node agent or Pi is not ready.", 504);
+            throw new TaskVmException(TaskVmError::ResumeTimeout, "Task VM [{$vm->name}] did not answer after its start: its Node agent or Pi is not ready.", 504);
         }
         $this->release(15);
     }
@@ -85,13 +73,10 @@ final class ResumeTaskVm implements ShouldBeUnique, ShouldQueue
     /** Only a row that is still `parked` fails, so a later destroy or resume is never overwritten. */
     public function failed(Throwable $exception): void
     {
-        $code = TaskVmException::codeOf($exception);
-        $message = mb_substr($exception->getMessage(), 0, 2000);
-        $failed = TaskVm::query()->whereKey($this->taskVmId)->where('state', TaskVmState::Parked)
-            ->update(['state' => TaskVmState::Failed, 'error_code' => $code, 'error_message' => $message]);
-        $group = TaskVm::query()->find($this->taskVmId)?->group;
-        if ($failed === 1 && $group instanceof Task) {
-            TaskAssistance::apply($group, AssistanceKind::Failure, null, ProvisionTaskVm::FailedReasonPrefix."{$code}: {$message} Cancel or complete the group to destroy the VM.", replaceFailure: true);
+        $vm = TaskVm::query()->find($this->taskVmId);
+        if ($vm instanceof TaskVm) {
+            ['error_code' => $code, 'error_message' => $message] = TaskVm::errorFrom($exception);
+            app(FailTaskVmAction::class)->execute($vm, [TaskVmState::Parked], $code, $message, TaskVmFailedException::stoppedReason($code, $message));
         }
     }
 }
