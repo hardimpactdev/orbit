@@ -34,7 +34,7 @@ The Gateway owns the image build. This decision changes item 1 of [ADR 0200](/de
 
 ### The build is a chain of jobs
 
-A base image build is one Laravel job chain (`Bus::chain`) on the `builds` queue, with one job for each step. The chain stops at the first step that fails, and its one `catch` callback queues the cleanup. Horizon shows the build as one chain. The chain for an Incus host is:
+A base image build is one Laravel job chain (`Bus::chain`) on the `builds` queue, with one job for each step. The chain stops at the first step that fails, and its one `catch` callback queues the cleanup. Horizon shows individual jobs, not the whole chain. The build row and `task-vms:image-builds` report the whole build. The chain for an Incus host is:
 
 | Step | What it does |
 | --- | --- |

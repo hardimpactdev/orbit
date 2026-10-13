@@ -3,10 +3,10 @@ title: "Compute drivers"
 description: "Task VMs for every Project and their UpCloud overflow."
 covers:
   - apps/gateway/app/{Domain/TaskVms,Infrastructure/TaskVms,Jobs/TaskVms,Actions/TaskVms,Domain/Compute}/**
-  - apps/gateway/app/{Models/TaskVm.php,Console/Commands/PrepareTaskVmHostCommand.php,Console/Commands/PrepareTaskVmHubCommand.php,Console/Commands/BuildTaskVmImageCommand.php,Console/Commands/BuildUpCloudTaskVmImageCommand.php,Console/Commands/BuildTaskVmWorkspaceTemplateCommand.php,Console/Commands/SyncTaskVmImageCommand.php,Console/Commands/RetireTaskVmHostCommand.php,Console/Commands/ResolvesTaskVmHostNode.php}
+  - apps/gateway/app/{Models/TaskVm.php,Models/TaskVmImageBuild.php,Console/Commands/*ImageBuildsCommand.php,Console/Commands/PrepareTaskVmHostCommand.php,Console/Commands/PrepareTaskVmHubCommand.php,Console/Commands/BuildTaskVmImageCommand.php,Console/Commands/BuildUpCloudTaskVmImageCommand.php,Console/Commands/BuildTaskVmWorkspaceTemplateCommand.php,Console/Commands/SyncTaskVmImageCommand.php,Console/Commands/RetireTaskVmHostCommand.php,Console/Commands/ResolvesTaskVmHostNode.php}
   - apps/gateway/config/task_vms.php
   - apps/gateway/resources/task-vms/**
-  - apps/gateway/database/migrations/*{create_task_vms_table,add_model_proxy_origin_to_task_vms,add_warm_pool_to_task_vms,add_upcloud_to_task_vms,add_size_to_task_vms,add_topology_to_task_vms,create_jobs_table,create_failed_jobs_table,create_task_sandboxes_table,add_fleet_enrollment_to_task_sandboxes,add_pi_ready_at_to_task_sandboxes,close_checks_of_destroyed_task_sandboxes,drop_task_sandboxes}.php
+  - apps/gateway/database/migrations/*{create_task_vm_image_builds_table,create_task_vms_table,add_model_proxy_origin_to_task_vms,add_warm_pool_to_task_vms,add_upcloud_to_task_vms,add_size_to_task_vms,add_topology_to_task_vms,create_jobs_table,create_failed_jobs_table,create_task_sandboxes_table,add_fleet_enrollment_to_task_sandboxes,add_pi_ready_at_to_task_sandboxes,close_checks_of_destroyed_task_sandboxes,drop_task_sandboxes}.php
 ---
 
 # Compute drivers
@@ -25,7 +25,7 @@ A claim moves a group through these steps. Steps 2 to 5 are queued [jobs](#jobs)
 
 1. The scheduler claims a group. `AllocateTaskVmAction` decides the VM's [size](#size-by-declared-topology). It takes a warm VM or records a new `provisioning` row, and queues `ProvisionTaskVm` for a new row.
 2. `ProvisionTaskVm` launches the VM from the base image with cloud-init user-data. Its disk is a ZFS clone of the image. On beast, the launch takes under a second. Cloud-init is done about 10 seconds later.
-3. `EnrollTaskVm` waits for cloud-init. Then it reads the guest's IPv4 address, its ed25519 host key fingerprint, and the [image manifest](#skip-what-the-image-holds) from the host through `incus`.
+3. `EnrollTaskVm` waits for cloud-init. Then it reads the guest's IPv4 address, and its ed25519 host key fingerprint from the host through `incus`. Enrollment [trusts the image](#skip-what-the-image-holds) for the `app-dev` software.
 4. `EnrollTaskVm` runs the normal [Node provisioning](/reference/node-provisioning#add-a-node) for the Node `tvm-<id>`, through the host as [jump host](/reference/node-provisioning#enroll-through-a-jump-host).
 5. `PrepareTaskVmRuntime` creates the group's CLIProxyAPI key and starts Pi as `orbit`. See [Run Pi on a task VM](/reference/pi-server#run-pi-on-a-task-vm). The row becomes `ready`.
 6. On the next claim, Orbit creates the [task workspace](/reference/tasks#task-vm-workspace) on the VM's Node. It is a normal Instance `task-<group id>`. A routed workspace gets the private Route `task-<id>.<project>.<dev-tld>`.
@@ -63,15 +63,13 @@ Each step of the jobs logs one line `Task VM step done.` in the Gateway log, wit
 
 #### Skip what the image holds
 
-The [image build](#build-the-base-image) runs the programs that enrollment runs on an `app-dev` Node: `bootstrap`, `caddy-package`, `app-dev-prerequisites`, `vp-manager`, and `composer-manager`. It also runs the `app-dev` PHP programs that an Instance's Route runs, as described below. It records the fingerprint of each one, the SHA-256 of its exact arguments and input, in `/var/lib/orbit-task-vm/image.json` in the image. `EnrollTaskVm` reads that manifest through the host before enrollment. Enrollment then skips a program when it renders the same fingerprint under the same name, because the image ran that exact program and each program is idempotent. It logs `Task VM program skipped: its image ran it.` for each one.
+Task VM enrollment trusts the [base image](#build-the-base-image) that the same Gateway code built. It does not run the `app-dev` software programs: `bootstrap`, `caddy-package`, `app-dev-prerequisites`, `vp-manager`, and `composer-manager`. It does not read or compare program fingerprints. Every other Node runs every program at enrollment.
 
-Every other program runs, with the warning `Task VM image did not run this program; enrollment runs it.` and its reason. That happens when the Gateway's code or its SSH key changed the program since the build.
+Enrollment still renders and applies everything that is specific to the VM: the host key, WireGuard, the firewall, Caddy, DNS, the agent and its secret, and Pi.
 
-An image without a manifest, such as one built before manifests, or with a manifest the Gateway cannot read, makes enrollment run every program, with the warning `Task VM image has no usable manifest; enrollment runs every program.` So an older image is never wrong, only slower.
+The apt packages, Bun, Vite+ and its Node, and Composer are the versions that the last image build fetched. A change to a software program reaches task VMs with the next nightly build. Run `task-vms:build-image` after a program change to apply it at once. Until then, a task VM can have software up to a day older than the Gateway's programs. A missing tool shows when a setup step or check needs it, not at enrollment.
 
-A skipped program fetches nothing at enrollment. The apt packages, Bun, Vite+ and its Node, and Composer are the versions that the last image build fetched. The nightly build refreshes them. Enrollment still renders and applies everything that is specific to the VM: the host key, WireGuard, the firewall, Caddy, DNS, the agent and its secret, and Pi. Only task VM enrollment reads a manifest, so every other Node runs every program.
-
-The image also runs `app-dev-php-source` and one `app-dev-php-<version>` program for each PHP version an Instance can select, now `8.5` and `8.4`. They add the pinned Sury source and install the `app-dev` PHP packages, with the same code that installs them for an Instance. Enrollment never runs these programs, so the manifest only records them. The Instance's own PHP step on the VM finds the source current and every package installed, and skips the source refresh, as [PHP runtimes](/reference/php-runtime#development-runtime) describes.
+The image also runs `app-dev-php-source` and one `app-dev-php-<version>` program for each PHP version an Instance can select, now `8.5` and `8.4`. They add the pinned Sury source and install the `app-dev` PHP packages, with the same code that installs them for an Instance. Enrollment never runs these programs. The Instance's own PHP step on the VM finds the source current and every package installed, and skips the source refresh, as [PHP runtimes](/reference/php-runtime#development-runtime) describes.
 
 Last, the image runs `rust-toolchain`. It installs the stable Rust toolchain for `orbit` with rustup's minimal profile, plus clippy and rustfmt, as CI checks the Node agent. Each build takes the stable release of its day. Enrollment never runs it either.
 
@@ -494,7 +492,7 @@ The job fails a missing VM only when two sweeps in a row miss it. The first miss
 
 Cancel or complete the group of a missing VM to destroy its Node, as for [a VM that dies before its group ends](#a-vm-that-dies-before-its-group-ends).
 
-The job changes only the host's configured Incus project, such as `orbit-tasks`. It reads the other projects only to [report strays](#report-strays). It never changes another project, an instance whose name is not `tvm-<number>`, the base image builder VMs `tvm-image-<time>`, or a workspace template. Rows in `provisioning`, `failed`, or `destroying` are never missing: their own jobs check the VM.
+The job changes only the host's configured Incus project, such as `orbit-tasks`. It reads the other projects only to [report strays](#report-strays). It deletes a base image builder `tvm-image-<build id>` when its build row on that host is not `running` or is absent. It leaves a builder with a `running` row alone, whatever its age. It never changes another project, a sync smoke VM, a workspace template, or an instance outside the task VM and base image builder names. Rows in `provisioning`, `failed`, or `destroying` are never missing: their own jobs check the VM.
 
 [Doctor](/cli/doctor) reports the VM findings in the `node` family of the host, without changes. It has no finding for an orphaned clone, a leftover template builder `tvm-template-<time>`, or an unfinished template: the sweep deletes the clone, and the next template build deletes the other two. Doctor's codes are `node.task_vm_orphaned` for an orphaned VM and `node.task_vm_missing` for a missing one. Doctor reports a missing VM on its first miss. A host whose project does not exist or cannot be listed reports `node.task_vm_inspection_failed`. Doctor checks a host only while it is in `task_vms.incus.hosts` and reachable over SSH. The fleet rollout ignores these codes.
 
@@ -502,15 +500,16 @@ Doctor does not inspect the Node of a `parked` task VM, because the VM is stoppe
 
 ### Report strays
 
-The sweep and Doctor also report what Orbit does not own on a task VM host, and the records that should be gone. They never delete or change any of it: the operator decides. The sweep logs one warning per stray on every run, and Doctor reports one finding per stray in the host's `node` family.
+The sweep and Doctor also report what Orbit does not own on a task VM host, and the records that should be gone. Doctor never changes any of it. The sweep deletes base image builders whose build row is not `running` or is absent, as described above. For every other stray, neither tool changes it: the operator decides. The sweep logs one warning per stray on every run, and Doctor reports one finding per stray in the host's `node` family.
 
 A **stray instance** is an Incus instance in any project of the host that is none of these:
 
 - a task VM `tvm-<number>` in the host's project, which the [sweep](#sweep-task-vm-hosts) checks against its row;
-- a base image builder or smoke VM `tvm-image-<time>…`, or a workspace template builder `tvm-template-<time>`, in the host's project, for one hour after the `<time>` in its name;
+- a base image builder `tvm-image-<build id>` or its smoke VM in the host's project, linked to a `running` image build row on that host;
+- a sync smoke VM `tvm-image-<time>-sync-smoke`, or a workspace template builder `tvm-template-<time>`, in the host's project, for one hour after the `<time>` in its name;
 - an entry of the host's `operator_owned` list.
 
-A build holds its lock for less than 30 minutes. So a builder VM older than one hour belongs to no running build. It is a stray until the next build deletes it.
+A base image builder without a `running` build row is a stray, whatever its age. The sweep deletes it in the host's configured project. The sync smoke VM and the template builder keep the one-hour rule until they have their own chains and rows. Their locks last less than 30 minutes, so an older VM belongs to no running sync or template build. It is a stray until the next sync or template build deletes it.
 
 A **stray volume** is an Incus custom volume in any project and pool of the host that is none of these:
 
@@ -556,17 +555,17 @@ The task VM jobs run on the [Gateway queue](/reference/gateway-queue), which Lar
 | --- | --- |
 | `task-vms` | Provision, enroll, prepare, park, resume, and destroy a VM, the guard of a warm claim, the host sweep, and the pool refill |
 | `tasks` | The [publish](#publish-from-the-vm) of an approved commit (`PublishTaskVmCommit`), beside the scheduled commands |
-| `builds` | The workspace template jobs, `RefreshTaskVmWorkspaceTemplates` and `BuildTaskVmWorkspaceTemplate`, and the nightly base image refreshes, [`RefreshTaskVmBaseImages`](#build-the-base-image) and [`RefreshUpCloudTaskVmBaseImage`](#refresh-the-upcloud-template-every-night) |
+| `builds` | The workspace template jobs, `RefreshTaskVmWorkspaceTemplates` and `BuildTaskVmWorkspaceTemplate`, the [base image step chains](#build-the-base-image) and their cleanup, and the nightly refreshes, `RefreshTaskVmBaseImages` and [`RefreshUpCloudTaskVmBaseImage`](#refresh-the-upcloud-template-every-night) |
 
 One worker runs the `task-vms` jobs one at a time and in order, so no two jobs change the same VM at once.
 
 A `task-vms` or `tasks` job starts within about a second while its worker is free, also while a build runs. A delayed job, such as the guard of a warm claim, or a released job waits for its time. A `task-vms` job runs at most 1500 seconds, and any other job at most 1700 seconds. A job that a worker lost runs again after 1800 seconds.
 
-A template build takes about a minute, a base image refresh up to 25 minutes, and a publish seconds. The `builds` queue has one process, so one template build or base image refresh runs in the fleet at a time. The host locks also allow one template build and one base image build or sync per host.
+A template build takes about a minute, and a publish takes seconds. A base image build runs as short steps, each in its own job. The `builds` queue has one process, so base image steps and template builds take turns across the fleet. The image build row allows one `running` base image build per host. Syncs and template builds still use their own host locks until they have their own chains.
 
 The template queue runs its jobs in the order they were queued. A claim's build waits behind the builds that a refresh queued. After a nightly promote with 10 active Projects on 2 hosts, that can be 20 to 60 minutes.
 
-A builder VM has the size of a task VM and does not count against `max_vms`. It can run beside new task VMs on the same host. At most one template builder runs in the fleet, and none while a base image build runs, because the `builds` queue has one process. The base image builder and smoke VMs do not count against `max_vms` either, and they can run beside new task VMs too.
+A builder VM has the size of a task VM and does not count against `max_vms`. It can run beside new task VMs on the same host. At most one template builder runs in the fleet. It can run between the steps of a base image build, because the `builds` queue has one process. The base image builder and smoke VMs do not count against `max_vms` either, and they can run beside new task VMs too.
 
 | Job | Retries |
 | --- | --- |
@@ -580,6 +579,7 @@ A builder VM has the size of a task VM and does not count against `max_vms`. It 
 | `RefillTaskVmPool` | Never. It runs again a minute later. A failed pool VM makes its host wait, as [Failures](#warm-vm-failures) describes |
 | `EnsureWarmClaimReady` | Never. It queues `PrepareTaskVmRuntime`, which has its own retries |
 | `RefreshTaskVmBaseImages` | Never. The next night runs it again |
+| Base image step jobs | Retry their step. Waiting steps release with a delay until their deadline, not an attempt limit. The first final failure stops the chain and queues cleanup |
 | `RefreshTaskVmWorkspaceTemplates` | Never. The next base image build, sync, or night queues it again |
 | `RefreshUpCloudTaskVmBaseImage` | Never. The next night runs it again |
 | `BuildTaskVmWorkspaceTemplate` | Waits a minute while another template build runs on the host, up to 10 times. A failed build or a Project without a default branch is not retried; see [Template failures](#template-failures) |
@@ -680,31 +680,35 @@ No peer reaches a host's Incus API. The task VM project keeps its restrictions a
 
 ### Build the base image
 
-Run `task-vms:build-image {node}` to build the base image on one host. It prints each stage with its time. Then it [syncs](#sync-the-base-image) the new image to every other configured host, so every host launches the same image. It runs these stages on the build host over SSH, with `sudo -n incus --project <project> …`:
+Run `task-vms:build-image {node} [--from-stock] [--resume=<build id>]` on the Gateway to build the base image on one host. It prints each step from the build row as the step finishes. `task-vms:image-builds` lists recent builds with their steps and errors. After a successful build, Orbit [syncs](#sync-the-base-image) the image to every other configured host.
 
-| Stage | What it does |
+The Gateway queues one Laravel job chain (`Bus::chain`) on `builds`, with one job for each step. The jobs reach the host over SSH with `sudo -n incus --project <project> …`:
+
+| Step | What it does |
 | --- | --- |
-| `launch`, `cloud-init` | Launches a builder VM `tvm-image-<time>` from the stock image `ubuntu-26.04-vm`, with the host's VM size and bridge, and waits for cloud-init |
-| `orbit-user` | Requires `orbit` to have uid and gid 1000 |
-| `bootstrap`, `caddy-package`, `app-dev-prerequisites`, `vp-manager`, `composer-manager` | Runs the Node bootstrap, the Caddy package, the `app-dev` role prerequisites, and the Vite+ and Composer manager programs as `orbit` through `incus exec`, in enrollment's order |
-| `app-dev-php-source`, `app-dev-php-8-5`, `app-dev-php-8-4` | Adds the pinned Sury PHP source and installs the `app-dev` PHP packages of each PHP version an Instance can select, with the program that installs them for an Instance |
-| `rust-toolchain` | Installs the stable Rust toolchain with clippy and rustfmt for `orbit`, with rustup's minimal profile |
-| `agent-binary` | Installs the pinned [Node agent](/reference/node-agent) binary |
-| `pi-artifact` | Streams the pinned Pi executable to the VM. The VM checks its digest and installs it for `orbit` as `~/.local/bin/pi-server`. The stage runs only when the Gateway pins a Pi executable |
-| `single-boot` | Makes a VM from the image boot once, as described below |
-| `lean-boot` | Keeps work off the boot, as described below |
-| `manifest` | Writes the fingerprints of the programs it ran to `/var/lib/orbit-task-vm/image.json`. See [Skip what the image holds](#skip-what-the-image-holds) |
-| `clean` | Runs `resources/task-vms/base-image-clean.sh` in the VM, which removes the VM's identity. The [E2E role image](/reference/incus-topologies#role-images) build runs the same script. |
-| `publish` | Stops the VM and publishes it, without compression, as the image `orbit-task-base-<time>` |
-| `smoke` | Boots a smoke VM from the new image with the task VM user-data |
-| `promote` | Points the alias `orbit-task-base` at the new image in one step |
-| `prune` | Deletes every other `orbit-task-base-<time>` image that no VM in the project uses |
+| `LaunchImageBuilder` | Records the source image on the row and launches `tvm-image-<build id>` from it, with the host's VM size and bridge |
+| `AwaitImageBuilderBoot` | Waits for cloud-init to finish without errors |
+| `UpgradeImagePackages` | Runs `apt-get update` and `apt-get full-upgrade`, and installs the image's apt packages |
+| One job for each program | Runs `bootstrap`, `caddy-package`, `app-dev-prerequisites`, `vp-manager`, `composer-manager`, the PHP source and each selectable PHP version, `rust-toolchain`, the agent binary, and Pi |
+| `PrepareImageBoot` | Applies the single boot and the lean boot, as described below |
+| `CleanImageBuilder` | Runs `resources/task-vms/base-image-clean.sh`, which removes the VM's identity. The [E2E role image](/reference/incus-topologies#role-images) build uses the same script |
+| `PublishImage` | Stops the builder, publishes it without compression as `orbit-task-base-<time>`, and deletes the builder |
+| `SmokeImage` | Boots a VM from the new image with the task VM user-data and runs `image-check.sh` |
+| `PromoteImage` | Points `orbit-task-base` at the new image and deletes older images that no VM uses |
 
-The smoke VM must finish cloud-init without errors. It must have an ed25519 SSH host key and the Gateway's key for `orbit`. Its journal must list one boot only. After a build, `resources/task-vms/image-check.sh --lean-boot` also requires that it kept the lean boot through its first boot, holds the manifest, and has `orbit` with uid and gid 1000. The [UpCloud smoke](#build-the-upcloud-template) runs the same script with `--ufw`. A [sync](#sync-the-base-image) does not check those two, so it can still copy an image built before them.
+The programs use the same rendering code as enrollment. A new tool or package adds one program and one step, not an edit to a shared provisioning script. Each step is idempotent, so it can retry or run after a release without harm. A waiting step checks once, then releases itself to the queue with a delay. It uses a deadline (`retryUntil()`), not an attempt count. Horizon shows individual jobs, not the whole chain. The build row and `task-vms:image-builds` report the whole build. The chain stops at the first failed step.
 
-A VM from the stock image boots twice. Its Incus templates write the NoCloud seed, but cloud-init starts before the Incus agent writes it, so the agent reboots the VM. That costs about 10 seconds. The `single-boot` stage drops the templates under `/var/lib/cloud/seed/` from the image metadata, and keeps the others, such as `/etc/hostname`. It also orders `cloud-init-main.service` after `incus-agent.service`. Cloud-init then reads the user-data from the Incus agent through its `LXD` data source, and each VM gets its own instance ID from Incus.
+One `task_vm_image_builds` row records each build. It holds the host, source image, builder VM name, new image fingerprint, current step, and state: `running`, `succeeded`, or `failed`. It also holds each step's start, seconds, and error. A partial unique index allows only one `running` build per host.
 
-The `lean-boot` stage runs `resources/task-vms/lean-boot.sh` and masks units, which keeps work off the boot. A VM from the image reaches cloud-init's end about a second sooner:
+By default, the builder starts from the host's current `orbit-task-base` and changes only what changed. The host's first build, a build with `--from-stock`, and the build each Sunday night start from `ubuntu-26.04-vm`. The weekly stock build limits drift and removes leftovers of removed packages or programs within a week. The source is always a cleaned, published base image. It never ran an agent or Project script.
+
+[ADR 0206](/decisions/0206-build-task-vm-images-as-chains-of-small-jobs) keeps three next steps open: sync chains for each host, workspace template chains, and UpCloud using the same list of steps through SSH. Each gets its own row and its own pull request. Until then, those operations keep their current jobs.
+
+The smoke VM must finish cloud-init without errors. It must have an ed25519 SSH host key and the Gateway's key for `orbit`. Its journal must list one boot only. After a build, `resources/task-vms/image-check.sh --lean-boot` also requires that it kept the lean boot through its first boot and has `orbit` with uid and gid 1000. The [UpCloud smoke](#build-the-upcloud-template) runs the same script with `--ufw`. A [sync](#sync-the-base-image) does not check those two, so it can still copy an image built before them.
+
+A VM from the stock image boots twice. Its Incus templates write the NoCloud seed, but cloud-init starts before the Incus agent writes it, so the agent reboots the VM. That costs about 10 seconds. `PrepareImageBoot` drops the templates under `/var/lib/cloud/seed/` from the image metadata, and keeps the others, such as `/etc/hostname`. It also orders `cloud-init-main.service` after `incus-agent.service`. Cloud-init then reads the user-data from the Incus agent through its `LXD` data source, and each VM gets its own instance ID from Incus.
+
+`PrepareImageBoot` also runs `resources/task-vms/lean-boot.sh` and masks units, which keeps work off the boot. A VM from the image reaches cloud-init's end about a second sooner:
 
 - The Ethernet link takes DHCPv4 only. The file `/etc/systemd/network/00-orbit-task-vm.network` sorts before the netplan file and otherwise matches it.
 - The task bridge has no IPv6. The wait for an IPv6 link-local address cost about a second of each boot.
@@ -718,23 +722,21 @@ Docker stays enabled at boot. Doctor expects it active on an `app-dev` Node. It 
 
 The agent binary and the Pi executable are the Gateway's pins at build time. The nightly refresh picks up new pins. Enrollment still checks both digests and installs the pinned build when the image has another one.
 
-The builder's user-data creates `orbit` without the `incus-admin` group, and adds five things to the task VM user-data: `orbit` with uid and gid 1000, a package upgrade, `openssh-server`, Chromium's system libraries, and the workspace tools. The workspace tools are `rsync` and `dig` from `bind9-dnsutils`, which Orbit's own test suites call, and `gcc` with `libc6-dev`, which Rust crates such as `ring` build with. The last program installs the stable Rust toolchain for `orbit` and links each of its tools, such as `cargo` and `rustup`, into `/usr/local/bin`. So shells that are not login shells, such as an agent's commands, find them too.
+The builder's user-data creates `orbit` without the `incus-admin` group, and adds these requirements to the task VM user-data: `orbit` with uid and gid 1000, `openssh-server`, Chromium's system libraries, and the workspace tools. `UpgradeImagePackages` upgrades and installs the apt packages. The workspace tools are `rsync` and `dig` from `bind9-dnsutils`, which Orbit's own test suites call, and `gcc` with `libc6-dev`, which Rust crates such as `ring` build with. The `rust-toolchain` program installs the stable Rust toolchain for `orbit` and links each of its tools, such as `cargo` and `rustup`, into `/usr/local/bin`. So shells that are not login shells, such as an agent's commands, find them too.
 
 A `bootcmd` creates the group `orbit` with gid 1000 before cloud-init creates the user, and the user gets uid 1000 with that group. The ids are pinned because workspace templates hold files that `orbit` owns: before, a stock image or package that added a user first moved `orbit` to uid 1001. A uid or gid that is taken makes cloud-init fail, and with it the build.
 
-Enrollment runs the same programs over SSH, rendered by the same code, so the image holds what enrollment installs. The clean script fails while part of the identity remains. The smoke boot also creates the image volume on the pool, so the first task VM is a clone too. New task VMs launch from the new image, and running VMs keep theirs. An image that a task VM still uses stays until a later build finds it unused.
+Enrollment on other Nodes runs the same software programs over SSH, rendered by the same code, so the image holds what they install. Task VM enrollment trusts the image and runs only the VM-specific parts. The clean script fails while part of the identity remains. The smoke boot also creates the image volume on the pool, so the first task VM is a clone too. New task VMs launch from the new image, and running VMs keep theirs. An image that a task VM still uses stays until a later build finds it unused.
 
 The Chromium libraries are Playwright's `chromium` dependency list for Ubuntu 26.04, which covers `chromium` and `chromium-headless-shell`: `libasound2t64`, `libatk-bridge2.0-0t64`, `libatk1.0-0t64`, `libatspi2.0-0t64`, `libcairo2`, `libcups2t64`, `libdbus-1-3`, `libdrm2`, `libgbm1`, `libglib2.0-0t64`, `libnspr4`, `libnss3`, `libpango-1.0-0`, `libx11-6`, `libxcb1`, `libxcomposite1`, `libxdamage1`, `libxext6`, `libxfixes3`, `libxkbcommon0`, and `libxrandr2`. Playwright's xvfb and font list for headed runs is left out. The `app-dev` role prerequisites install PHP, Composer, Caddy, Docker, Vite+ with Node and pnpm, and Bun.
 
 The clean script removes the SSH host keys, the machine ID, every authorized key, the cloud-init state and its generated configuration, the logs, the APT package cache, temporary files, and shell history.
 
-It also stops Docker, containerd, and Caddy, and removes the IDs they write on their first start: Docker's engine ID, containerd's UUID, and Caddy's instance UUID, storage clean record, and saved config. So every VM from the image gets its own host keys, machine ID, and DHCP address, and cloud-init runs again on its first boot. The package lists stay, so an enrollment that runs a program again fetches only changes. The manifest stays too.
+It also stops Docker, containerd, and Caddy, and removes the IDs they write on their first start: Docker's engine ID, containerd's UUID, and Caddy's instance UUID, storage clean record, and saved config. So every VM from the image gets its own host keys, machine ID, and DHCP address, and cloud-init runs again on its first boot. The package lists stay, so the next build from this image fetches only changes.
 
 The builder never enrolls, so the image has no WireGuard key, agent secret, Caddy site, firewall rule, or Gateway record. Each VM gets those from its own enrollment.
 
-The command deletes the builder and the smoke VM whether the build passes or fails. A failed build keeps the current base image on every host. It deletes the new image when it already published one, and fails with `task_vm.image_build_failed`, which names the stage. Only one build or sync of a host runs at a time. A second one fails with `task_vm.image_build_running`.
-
-A build or sync that stops early cleans up too. A command stopped with SIGINT or SIGTERM deletes its builder and smoke VMs, frees each host, and queues the template refresh. When the nightly job runs past its timeout, the worker's failure handler does the same. A build killed with SIGKILL holds the host for at most 25 minutes. The next build or sync deletes every builder and smoke VM that an earlier one left.
+When a step fails after its retries, the row becomes `failed` with that step and its error. The chain's one failure callback queues a cleanup job. It deletes the builder and smoke VMs, and the new image if it never became the base image. A failed build keeps the current base image. A build whose builder still exists can resume from its failed step with `task-vms:build-image {node} --resume=<build id>`. Once cleanup deletes the builder, start a new build instead.
 
 Every night at 03:00, while task VMs are enabled, the Gateway scheduler queues the job `RefreshTaskVmBaseImages` on the `builds` queue. It builds the base image once, on the first host in `task_vms.incus.hosts`, and syncs it to every other configured host, one after another. While the first host has no base image, the job only reads its image list, so the first build is always `task-vms:build-image`. The job fails with `task_vm.unknown_host` when the first host's Node is not active.
 
@@ -751,7 +753,7 @@ The export is a file, because `incus image export` writes no stream. The receive
 | Stage | What it does |
 | --- | --- |
 | `inspect` | Reads the source image's dated alias and the host's images. A host whose `orbit-task-base` already names the image stops here, and the command says so |
-| `sweep` | Deletes builder and smoke VMs that an interrupted build or sync left |
+| `sweep` | Deletes smoke VMs that an interrupted sync left; it leaves VMs linked to a `running` image build row alone |
 | `export` | The source runs `incus image export` into `/var/lib/orbit-task-vm-image/export/node-<target id>`, which only root reads. It empties the directory first, and expects one image file |
 | `transfer` | The source streams the file to the target's receiver, which imports it. The fingerprint that the receiver prints must be the source's |
 | `verify` | Gives the image the dated alias, and checks that the alias names the source's fingerprint. An equal fingerprint is an equal image |
@@ -761,7 +763,7 @@ The export is a file, because `incus image export` writes no stream. The receive
 
 A host that has the image already skips `export` and `transfer`. The source removes the export directory after the transfer, also when a stage fails. Incus names an image by the SHA-256 of its content, so `verify` compares content.
 
-The export may take 300 seconds and the transfer 540 seconds. With a smoke boot of up to 600 seconds, a sync ends within the host's 25-minute image lock.
+The export may take 300 seconds and the transfer 540 seconds. With a smoke boot of up to 600 seconds, a sync ends within the sync's 25-minute host lock.
 
 A transfer can fail after the import, for example when the connection drops before the receiver's answer. So when ssh fails, Orbit reads the target's images. When the image is there, it logs the warning `The task VM base image transfer failed, but the target has the image.` with the exit code and the ssh error, and goes on with `verify`. Otherwise the stage fails with the exit code and the end of the ssh error output. When the receiver imports an image with another fingerprint, Orbit deletes it and the stage fails.
 
@@ -873,7 +875,7 @@ The reserved range must always be a private network. As soon as task VMs are ena
 
 ### Errors
 
-`IncusTaskVmProvider` reads the host's output: the instance state, its one IPv4 address inside the bridge range, and the host key fingerprint. `TaskVmGuest` reads the guest's output the same way for every provider: the cloud-init status and the image manifest. Invalid output fails with `task_vm.invalid_host_output`, and a failed guest command with `task_vm.host_command_failed`, also on UpCloud. Every task VM error code starts with `task_vm.`. The setup commands print the code and message, and for `task_vm.setup_failed` the last lines of the script's error output. After that check, Orbit trusts its own records.
+`IncusTaskVmProvider` reads the host's output: the instance state, its one IPv4 address inside the bridge range, and the host key fingerprint. `TaskVmGuest` reads the guest's output the same way for every provider: the cloud-init status. Invalid output fails with `task_vm.invalid_host_output`, and a failed guest command with `task_vm.host_command_failed`, also on UpCloud. Every task VM error code starts with `task_vm.`. The setup commands print the code and message, and for `task_vm.setup_failed` the last lines of the script's error output. After that check, Orbit trusts its own records.
 
 | Code | HTTP | Cause |
 | --- | --- | --- |
@@ -1036,7 +1038,7 @@ The server clones the newest verified template onto a disk with the storage tier
 
 The server boots with ufw on, from the template. ufw denies all incoming traffic except public SSH on port 22, so Caddy and the other services in the image are not public before enrollment. The template holds the exact rule `orbit:public-ssh-recovery` that enrollment opens on a new Node. Enrollment finds it in place and changes nothing, then the `app-dev` role adds WireGuard trust and closes public SSH, as on any public `app-dev` Node.
 
-UpCloud has no trusted host that can read the guest's SSH host key, as Incus does. So the Gateway generates an ed25519 host key for each server, adds it to the user-data, and pins its fingerprint. No connection trusts a key on first use. Root login stays off. The Gateway reads cloud-init and the image manifest over SSH as `orbit` at the public address, and enrollment needs no jump Node.
+UpCloud has no trusted host that can read the guest's SSH host key, as Incus does. So the Gateway generates an ed25519 host key for each server, adds it to the user-data, and pins its fingerprint. No connection trusts a key on first use. Root login stays off. The Gateway reads cloud-init over SSH as `orbit` at the public address, and enrollment needs no jump Node.
 
 A park stops the server cleanly, and a hard stop follows after 150 seconds. UpCloud bills a stopped server for its storage only. A destroy stops the server, deletes it with its disk, and waits until it is gone.
 
@@ -1052,9 +1054,9 @@ A park stops the server cleanly, and a hard stop follows after 150 seconds. UpCl
 | One stage for each enrollment program | Runs the same enrollment programs as the Incus base image |
 | `agent-binary`, `pi-artifact`, `masks` | Installs the pinned agent binary and Pi executable, and masks the first-boot and apt timers |
 | `firewall` | Turns ufw on: incoming traffic denied, except the public SSH rule `orbit:public-ssh-recovery` on port 22 |
-| `manifest`, `clean` | Writes the image manifest, and runs `base-image-clean.sh` |
+| `clean` | Runs `base-image-clean.sh` |
 | `templatize`, `delete-builder` | Stops the builder, turns its disk into the template `orbit-task-base-<time>-unverified`, and deletes the builder |
-| `smoke` | Boots a server from the template with the task VM user-data, and checks cloud-init, the manifest, ufw, and the key, uid, and gid of `orbit` |
+| `smoke` | Boots a server from the template with the task VM user-data, and checks cloud-init, ufw, and the key, uid, and gid of `orbit` |
 | `promote`, `prune` | Renames the template to `orbit-task-base-<time>`, and deletes all but the two newest verified templates |
 
 A failed build deletes its servers and its unverified template, and the previous template stays in use. Without a verified template, a create fails with `task_vm.base_image_missing`.

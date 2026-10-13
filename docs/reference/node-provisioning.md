@@ -35,6 +35,8 @@ For Ubuntu, the Gateway records the Node as `provisioning` and runs these steps 
 | 9 | Reconcile the [Metrics exporters](/reference/metrics#exporter-selection). A [task VM](/reference/compute-drivers#task-vms) skips this step. |
 | 10 | Install or upgrade the [Node agent](/reference/node-agent), at step `agent`. |
 
+A [task VM's enrollment trusts its base image](/reference/compute-drivers#skip-what-the-image-holds) for the `app-dev` software. It keeps the VM-specific host key, WireGuard, firewall, Caddy, DNS, agent and secret, and Pi steps. Every other Node runs every program at enrollment.
+
 After the agent, the Gateway installs the [Orbit CLI](#orbit-cli) on a Node of the [fleet rollout set](/reference/gateway-recovery#rollout-set-and-order). A role converge does the same after its agent converge. Both are best effort: an unpublished CLI release or a failed install only logs a warning, and the fleet catch-up installs the CLI later.
 
 The Gateway console command `orbit:node-provision` runs the same steps for the first Node. Role firewall state comes from the shared Node firewall rule catalog, keeping initial provisioning and later role reconciliation consistent.
