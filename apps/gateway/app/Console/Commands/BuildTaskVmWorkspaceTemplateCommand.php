@@ -64,8 +64,8 @@ final class BuildTaskVmWorkspaceTemplateCommand extends Command
             ? Project::query()->find((int) $reference)
             : Project::query()->where('slug', $reference)->first();
 
-        if (! $project instanceof Project || ! TaskVmWorkspaceTemplates::serves($project)) {
-            throw new TaskVmException('task_vm.invalid_config', "Project [{$reference}] does not run its groups on task VMs.", 422);
+        if (! $project instanceof Project) {
+            throw new TaskVmException('task_vm.invalid_config', "Project [{$reference}] does not exist.", 422);
         }
         $reason = TaskVmWorkspaceTemplates::unbuildable($project);
         if ($reason !== null) {

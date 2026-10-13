@@ -11,6 +11,7 @@ enum TaskCommentType: string
     case Approved = 'approved';
     case Blocked = 'blocked';
     case Answered = 'answered';
+    // History only: reviewers asked for a TASK-<group> topology before declared topologies replaced it.
     case TopologyRequested = 'topology_requested';
     case AssistanceRequested = 'assistance_requested';
     case Resolution = 'resolution';

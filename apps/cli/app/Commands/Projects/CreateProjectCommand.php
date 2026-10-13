@@ -26,7 +26,6 @@ final class CreateProjectCommand extends GatewayCommand
         {--root= : Repository-relative root; defaults to . for package types and public otherwise}
         {--task-check= : Task check command. Omitted stores none}
         {--task-workspace-routed= : Whether new task workspaces get a Route (true or false)}
-        {--task-compute= : Compute for future task groups (shared or vm)}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -60,12 +59,6 @@ final class CreateProjectCommand extends GatewayCommand
                 'project.slug_invalid',
                 'Project slug is invalid.',
             );
-        }
-
-        $taskCompute = $this->option('task-compute');
-
-        if ($this->input->hasParameterOption('--task-compute') && ! in_array($taskCompute, ['shared', 'vm'], true)) {
-            return $this->renderGatewayFailure('project.task_compute_invalid', 'Task compute must be shared or vm.');
         }
 
         $taskWorkspaceRouted = $this->taskWorkspaceRouted();
@@ -125,7 +118,6 @@ final class CreateProjectCommand extends GatewayCommand
                 taskCheckProvided: $taskCheck !== null,
                 sourceAccess: $sourceAccess,
                 taskWorkspaceRouted: $taskWorkspaceRouted['value'],
-                taskCompute: is_string($taskCompute) ? $taskCompute : null,
             ),
             ProjectResponse::class,
             ['Create Project', 'Creating Project', 'Created Project'],

@@ -6,7 +6,6 @@ namespace App\Infrastructure\TaskVms;
 
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
-use App\Domain\Tasks\TaskCompute;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmPlacement;
@@ -183,12 +182,6 @@ final readonly class TaskVmWorkspaceTemplates
         private TaskVmSettings $settings,
         private DevelopmentSshExecutor $ssh,
     ) {}
-
-    /** Whether the Project's groups run on task VMs, which use workspace templates. */
-    public static function serves(Project $project): bool
-    {
-        return $project->task_compute === TaskCompute::Vm;
-    }
 
     /**
      * Why the Project cannot have a template, or null when it can. A build clones the default branch from the

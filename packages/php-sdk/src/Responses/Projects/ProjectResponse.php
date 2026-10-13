@@ -23,7 +23,6 @@ final readonly class ProjectResponse
         public ?string $taskCheck = null,
         public string $sourceAccess = 'github_app',
         public ?bool $taskWorkspaceRouted = null,
-        public ?string $taskCompute = null,
         public ?bool $reviewAndMerge = null,
         public ?string $mergeCheck = null,
     ) {}
@@ -51,7 +50,6 @@ final readonly class ProjectResponse
             excludedNodes: self::exclusions($data['excluded_nodes'] ?? null),
             taskCheck: is_string($data['task_check'] ?? null) ? $data['task_check'] : null,
             sourceAccess: is_string($data['source_access'] ?? null) ? $data['source_access'] : 'github_app',
-            taskCompute: is_string($data['task_compute'] ?? null) ? $data['task_compute'] : null,
             taskWorkspaceRouted: is_bool($data['task_workspace_routed'] ?? null) ? $data['task_workspace_routed'] : null,
             reviewAndMerge: is_bool($data['review_and_merge'] ?? null) ? $data['review_and_merge'] : null,
             mergeCheck: is_string($data['merge_check'] ?? null) ? $data['merge_check'] : null,
@@ -72,7 +70,6 @@ final readonly class ProjectResponse
             'root' => $this->root,
             'task_check' => $this->taskCheck,
             ...($this->taskWorkspaceRouted === null ? [] : ['task_workspace_routed' => $this->taskWorkspaceRouted]),
-            ...($this->taskCompute === null ? [] : ['task_compute' => $this->taskCompute]),
             ...($this->reviewAndMerge === null ? [] : ['review_and_merge' => $this->reviewAndMerge, 'merge_check' => $this->mergeCheck]),
             'request_id' => $this->requestId,
             ...($this->excludedNodes === null ? [] : ['excluded_nodes' => $this->excludedNodes]),

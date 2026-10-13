@@ -11,7 +11,6 @@ use App\Domain\Projects\ProjectType;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\SourceControl\ProjectRoot;
-use App\Domain\Tasks\TaskCompute;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Models\Project;
 use Illuminate\Foundation\Http\FormRequest;
@@ -36,7 +35,6 @@ final class UpdateProjectRequest extends FormRequest
             'root' => ['sometimes', 'required', 'string', 'max:255'],
             'task_check' => ['sometimes', 'nullable', 'string', 'max:4096'],
             'task_workspace_routed' => ['sometimes', 'boolean:strict'],
-            'task_compute' => ['sometimes', 'required', 'string', Rule::enum(TaskCompute::class)],
             'review_and_merge' => ['sometimes', 'boolean:strict'],
             'merge_check' => ['sometimes', 'nullable', 'string', 'max:255'],
         ];
@@ -48,7 +46,7 @@ final class UpdateProjectRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['code', 'name', 'type', 'slug', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed', 'task_compute', 'review_and_merge', 'merge_check'],
+                ['code', 'name', 'type', 'slug', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed', 'review_and_merge', 'merge_check'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -70,7 +68,6 @@ final class UpdateProjectRequest extends FormRequest
                 && ! $this->exists('root')
                 && ! $this->exists('task_check')
                 && ! $this->exists('task_workspace_routed')
-                && ! $this->exists('task_compute')
                 && ! $this->exists('review_and_merge')
                 && ! $this->exists('merge_check')
             ) {
@@ -131,7 +128,6 @@ final class UpdateProjectRequest extends FormRequest
             sourceAccess: is_string($validated['source_access'] ?? null) ? ProjectSourceAccess::tryFrom($validated['source_access']) : null,
             taskWorkspaceRoutedProvided: array_key_exists('task_workspace_routed', $validated),
             taskWorkspaceRouted: ($validated['task_workspace_routed'] ?? false) === true,
-            taskCompute: is_string($validated['task_compute'] ?? null) ? TaskCompute::from($validated['task_compute']) : null,
             reviewAndMergeProvided: array_key_exists('review_and_merge', $validated),
             reviewAndMerge: ($validated['review_and_merge'] ?? false) === true,
             mergeCheckProvided: array_key_exists('merge_check', $validated),
@@ -141,8 +137,8 @@ final class UpdateProjectRequest extends FormRequest
     }
 
     /**
-     * ADR 0203: the review-and-merge flow names the check that must pass, publishes through the App, and runs on
-     * shared compute. The rule reads the values this request leaves on the Project.
+     * ADR 0203: the review-and-merge flow names the check that must pass and publishes through the
+     * App. The rule reads the values this request leaves on the Project.
      */
     private function validateReviewAndMerge(Validator $validator): void
     {
@@ -162,12 +158,6 @@ final class UpdateProjectRequest extends FormRequest
             : ($project instanceof Project ? $project->source_access : null);
         if ($access !== ProjectSourceAccess::GitHubApp) {
             $validator->errors()->add('review_and_merge', 'Review and merge needs source access through the GitHub App.');
-        }
-        $compute = is_string($this->input('task_compute'))
-            ? TaskCompute::tryFrom($this->string('task_compute')->toString())
-            : ($project instanceof Project ? $project->task_compute : TaskCompute::Shared);
-        if ($compute !== TaskCompute::Shared) {
-            $validator->errors()->add('review_and_merge', 'Review and merge needs shared task compute.');
         }
     }
 

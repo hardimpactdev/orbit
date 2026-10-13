@@ -155,9 +155,6 @@ final readonly class UpdateProjectAction
         if ($data->name !== null) {
             $changes['name'] = $data->name;
         }
-        if ($data->taskCompute !== null) {
-            $changes['task_compute'] = $data->taskCompute;
-        }
         if ($data->taskCheckProvided) {
             $changes['task_check'] = $data->taskCheck;
         }

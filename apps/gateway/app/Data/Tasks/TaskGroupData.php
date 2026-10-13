@@ -6,7 +6,6 @@ namespace App\Data\Tasks;
 
 use App\Domain\Compute\SandboxPower;
 use App\Domain\Tasks\AssistanceKind;
-use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmState;
@@ -54,7 +53,6 @@ final class TaskGroupData extends Data
         public int $escalations,
         public array $tasks,
         public TaskExecutionMode $executionMode,
-        public ?TaskCompute $taskCompute = null,
         public ?string $capacityWaitReason = null,
         public ?SandboxPower $sandboxPower = null,
         public bool $preview = false,
@@ -79,7 +77,6 @@ final class TaskGroupData extends Data
 
         return new self(
             executionMode: $group->execution_mode,
-            taskCompute: $group->task_compute,
             capacityWaitReason: $group->capacity_wait_reason,
             sandboxPower: self::sandboxPower($group),
             preview: $group->preview ?? false,
@@ -123,7 +120,7 @@ final class TaskGroupData extends Data
 
     private static function sandboxPower(Task $group): ?SandboxPower
     {
-        if ($group->task_compute !== TaskCompute::Vm || $group->parent_id !== null) {
+        if ($group->parent_id !== null) {
             return null;
         }
         // A task VM reports running while ready and destroyed once gone. The capacity wait reason names other states.
