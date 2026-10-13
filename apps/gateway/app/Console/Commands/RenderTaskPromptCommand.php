@@ -10,6 +10,7 @@ use App\Domain\Tasks\TaskPromptGroup;
 use App\Domain\Tasks\TaskPromptRenderer;
 use App\Domain\Tasks\TaskPromptSubtask;
 use App\Domain\Tasks\TaskReviewPacket;
+use App\Domain\Tasks\TaskTopology;
 use Illuminate\Console\Command;
 use InvalidArgumentException;
 use JsonException;
@@ -113,7 +114,7 @@ final class RenderTaskPromptCommand extends Command
     private function subtask(array $data): TaskPromptSubtask
     {
         $subtask = $this->object($data, 'subtask');
-        $this->knownFields($subtask, ['id', 'title', 'brief', 'position', 'deliverables'], 'subtask');
+        $this->knownFields($subtask, ['id', 'title', 'brief', 'position', 'deliverables', 'topology'], 'subtask');
         $deliverables = $this->list($subtask, 'deliverables', 'subtask');
 
         return new TaskPromptSubtask(
@@ -122,6 +123,7 @@ final class RenderTaskPromptCommand extends Command
             brief: $this->string($subtask, 'brief', 'subtask'),
             position: $this->integer($subtask, 'position', 'subtask'),
             deliverables: array_map(fn (mixed $deliverable, int $index): TaskDeliverable => $this->deliverable($deliverable, 'subtask.deliverables['.$index.']'), $deliverables, array_keys($deliverables)),
+            topology: array_key_exists('topology', $subtask) ? TaskTopology::from($this->listValue($subtask['topology'], 'subtask.topology')) : [],
         );
     }
 
@@ -231,6 +233,8 @@ final class RenderTaskPromptCommand extends Command
             resolution: $continued ? '' : ($heldResolution ?? ''),
             threadId: $this->threadId($data),
             groupStartCommit: $group->startCommit ?? '',
+            groupId: $group->id,
+            topology: $subtask->topology,
         )->render();
     }
 

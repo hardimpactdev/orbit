@@ -684,6 +684,8 @@ function review_packet(array $overrides = []): string
         diffCounts: $values['diffCounts'],
         consults: $values['consults'],
         resolution: $values['resolution'],
+        groupId: $values['groupId'] ?? 0,
+        topology: $values['topology'] ?? [],
     )->render();
 }
 
@@ -850,4 +852,18 @@ it('keeps full immutable findings in fresh task context when the compact reviewe
     expect($compact)->not->toContain('FINAL-FINDING')
         ->toContain('$(git rev-parse --git-path orbit)/context.md holds the full brief.')
         ->and($context->render())->toContain($plan->brief)->toContain('FINAL-FINDING')->toContain('every snapshotted finding');
+});
+
+it('names the declared topology and the evidence the approval needs, also in a continued review', function (bool $continued): void {
+    $packet = review_packet(['groupId' => 42, 'topology' => ['app-dev', 'app-prod+ingress'], 'continued' => $continued]);
+
+    expect($packet)->toContain("Topology\nThis subtask declares the topology app-dev, app-prod+ingress. Orbit prepared it nested in this task VM as TASK-42")
+        ->toContain('Prove each deliverable on the declared nodes (app-dev, app-prod) with `bin/e2e-topology exec TASK-42 NODE --argv=JSON --record=LABEL`')
+        ->toContain('Orbit refuses the approval until the evidence log holds a recorded command that did work on each declared node and exited 0')
+        ->toContain('`--record` appends to .e2e/evidence.log, which the read-only rule allows')
+        ->not->toContain('topology_requested');
+})->with(['opening' => [false], 'continued' => [true]]);
+
+it('has no topology section for a subtask without one', function (): void {
+    expect(review_packet())->not->toContain("Topology\n")->not->toContain('topology_requested');
 });

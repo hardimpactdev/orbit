@@ -19,7 +19,6 @@ use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
-use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmPlacement;
@@ -65,7 +64,6 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
 use Tests\Support\AppDevFakeSshExecutor;
-use Tests\Support\AvailableTopologyAdmission;
 use Tests\Support\FakeIncusFleet;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 use Tests\Support\RecordingTaskVmProvider;
@@ -454,11 +452,10 @@ describe('claim', function (): void {
 
     it('gives a group with a declared topology a new large VM, never a warm one', function (): void {
         Queue::fake();
-        app()->instance(TaskTopologyAdmission::class, new AvailableTopologyAdmission);
         $warm = tvm_pool_vm();
         tvm_pool_hosts([[$this->host, 4, 1]]);
         $group = tvm_pool_group();
-        Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Dev', 'brief' => 'Dev', 'status' => TaskStatus::Todo, 'topology' => ['app-dev']]);
+        Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Dev', 'brief' => 'Dev', 'status' => TaskStatus::Todo, 'topology' => ['app-dev', 'app-prod']]);
 
         $vm = app(AllocateTaskVmAction::class)->execute($group);
 

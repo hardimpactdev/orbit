@@ -16,6 +16,9 @@ return [
     'park_after_minutes' => env('ORBIT_TASK_VMS_PARK_AFTER_MINUTES'),
     // A JSON list of Project ids whose groups without a declared topology get a medium VM (TaskVmSize::resources()).
     'medium_projects' => json_decode((string) (env('ORBIT_TASK_VMS_MEDIUM_PROJECTS') ?: '[]'), true),
+    // A JSON object from Project id to path patterns, such as {"46":["apps/agent/**"]}. A handoff that changes one fails
+    // while no subtask of the group declares a topology.
+    'topology_paths' => json_decode((string) (env('ORBIT_TASK_VMS_TOPOLOGY_PATHS') ?: '{}'), true),
     'pi' => [
         'artifact_path' => env('ORBIT_TASK_VMS_PI_ARTIFACT_PATH'),
         'artifact_sha256' => env('ORBIT_TASK_VMS_PI_ARTIFACT_SHA256'),

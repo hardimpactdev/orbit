@@ -65,6 +65,8 @@ use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadObservation;
 use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskTopologyAdmission;
+use App\Domain\Tasks\TaskTopologyEvidence;
+use App\Domain\Tasks\TaskTopologyFailedException;
 use App\Domain\Tasks\TaskTurnFetchNotice;
 use App\Domain\Tasks\TaskTurnInstructions;
 use App\Domain\Tasks\TaskTurnPullRequest;
@@ -94,6 +96,7 @@ use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskQuestion;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Exceptions;
@@ -3294,6 +3297,77 @@ it('waits for topology before baseline and retries without failed spawns or comm
     test_pass_baseline();
     expect($spawner->events)->toBe(['implementer:1'])->and($group->fresh()->capacity_wait_reason)->toBeNull();
 });
+
+it('asks for assistance when the declared topology fails to prepare, and starts nothing', function (): void {
+    $project = scheduler_app('topology-failed');
+    $project->update(['task_check' => 'composer check']);
+    $instance = scheduler_instance($project, scheduler_node('topology-failed-node', '10.44.0.96'), 'baseline');
+    $group = queued_group($project, 'Topology failure', $instance);
+    $spawner = scheduler_recording_spawner();
+    scheduler_bind_claim($instance, $spawner);
+    $checks = new FakeTaskCheckRunner([FakeTaskCheckRunner::passed()]);
+    app()->instance(TaskCheckRunner::class, $checks);
+    mock(TaskTopologyAdmission::class)->shouldReceive('prepare')->andThrow(new TaskTopologyFailedException('Task VM: Preparing the topology failed at step images. Post a resolution to prepare it again.'));
+
+    app(TaskScheduler::class)->claimNext();
+    test_pass_baseline();
+
+    expect($checks->starts)->toBe(0)->and($spawner->events)->toBe([])
+        ->and($group->fresh()->assistance_requested)->toBeTrue()
+        ->and($group->fresh()->assistance_reason)->toContain('failed at step images')
+        ->and($group->fresh()->capacity_wait_reason)->toBeNull();
+});
+
+it('refuses the approval of a subtask with a topology until each declared node has recorded evidence', function (): void {
+    [$group, $task, , $signer, , $dispatcher] = scheduler_review([
+        FakeTaskTurnReceipts::contents('approved', 'Proved on the nodes.'),
+    ]);
+    $task->update(['topology' => ['app-dev', 'app-prod+ingress']]);
+    $since = [];
+    $admission = mock(TaskTopologyAdmission::class);
+    $admission->shouldReceive('prepare');
+    $admission->shouldReceive('evidence')->andReturnUsing(function (Task $actualGroup, CarbonInterface $from) use (&$since): TaskTopologyEvidence {
+        $since[] = $from;
+
+        return TaskTopologyEvidence::parse(topology_evidence_entry(now()->subSecond(), 'node list', 'app-dev', 'orbit node:list'), $from->subYear(), now());
+    });
+
+    app(TaskScheduler::class)->tick();
+
+    expect($signer->messages)->toBe([])
+        ->and($since)->toHaveCount(1)
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
+        ->and(json_encode($dispatcher->commands))->toContain('no recorded command that did work and exited 0 since the last handoff on: app-prod');
+});
+
+it('adds the counted topology evidence to the approval and its commit', function (): void {
+    [, $task, , $signer] = scheduler_review([
+        FakeTaskTurnReceipts::contents('approved', 'Proved on the nodes.'),
+    ]);
+    $task->update(['topology' => ['app-prod+ingress']]);
+    $admission = mock(TaskTopologyAdmission::class);
+    $admission->shouldReceive('prepare');
+    $admission->shouldReceive('evidence')->andReturnUsing(fn (Task $group, CarbonInterface $from): TaskTopologyEvidence => TaskTopologyEvidence::parse(
+        topology_evidence_entry(now()->subSecond(), 'ingress caddy', 'app-prod', 'systemctl is-active caddy'),
+        $from->subYear(),
+        now(),
+    ));
+
+    app(TaskScheduler::class)->tick();
+
+    expect($signer->messages)->toHaveCount(1)
+        ->and($signer->messages[0])->toContain("Topology evidence (exit 0, recorded by bin/e2e-topology):\n- ")
+        ->and($signer->messages[0])->toContain('app-prod "ingress caddy": systemctl is-active caddy')
+        ->and($task->comments()->sole()->body)->toContain('systemctl is-active caddy');
+});
+
+/** One evidence log entry in the harness's shape. */
+function topology_evidence_entry(CarbonInterface $start, string $label, string $node, string $command, int $exit = 0): string
+{
+    $time = $start->utc()->format('Y-m-d\\TH:i:s.v\\Z');
+
+    return "=== {$time} {$label} node={$node} exit={$exit} duration=5ms end={$time}\n\$ {$command}\n--- stdout\nok\n--- stderr\n\n";
+}
 
 it('polls a running baseline without mutating topology and rechecks readiness after it finishes', function (): void {
     $project = scheduler_app('topology-running-baseline');

@@ -6,7 +6,6 @@ namespace App\Actions\TaskVms;
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCapacityException;
-use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Domain\Tasks\TaskWait;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
@@ -17,7 +16,6 @@ use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\WireGuard\WireGuardAddressAllocator;
 use App\Infrastructure\Processes\CommandDeadline;
-use App\Infrastructure\Tasks\RefusingTopologyAdmission;
 use App\Infrastructure\TaskVms\IncusHost;
 use App\Infrastructure\TaskVms\TaskVmRuntime;
 use App\Jobs\TaskVms\EnsureWarmClaimReady;
@@ -37,10 +35,10 @@ use Throwable;
 
 /**
  * Gives a group its task VM, of the size that the group's declared topology and its Project need ({@see TaskVmSize}).
- * A group with a declared topology waits without a VM while no lane can prepare one. For a normal VM a warm VM goes
+ * For a normal VM a warm VM goes
  * first: the claim sets its group, a new Pi token, and `claimed_at`, and runs only the
  * group's steps, in the claim. A warm VM qualifies only while it launched the image that its host's
- * `orbit-task-base` names now, read from the host at the claim. Without one, and always for a large VM, the claim
+ * `orbit-task-base` names now, read from the host at the claim. Without one, and always for a medium or large VM, the claim
  * records a new row on the active host with the most free slots that has room for the size, and queues its creation.
  * When no host has room for a normal VM, an opted-in Project's group may overflow to an UpCloud VM
  * ({@see self::host()}); a medium or large VM never does. A new row is named `tvm-<row id>`, so a retry after a destroyed VM
@@ -69,10 +67,9 @@ final readonly class AllocateTaskVmAction
         private TaskVmSettings $settings,
         private WireGuardAddressAllocator $addresses,
         private IncusHost $incus,
-        private TaskTopologyAdmission $topology,
     ) {}
 
-    /** @throws TaskCapacityException when no warm VM qualifies and no host has a free slot, or no lane prepares the group's topology */
+    /** @throws TaskCapacityException when no warm VM qualifies and no host has a free slot */
     public function execute(Task $group): TaskVm
     {
         $existing = TaskVm::query()->live()->where('group_id', $group->id)->first();
@@ -80,10 +77,6 @@ final readonly class AllocateTaskVmAction
             return $existing;
         }
         $size = TaskVmSize::forGroup($group, $this->settings->mediumProjectIds);
-        // A large VM would hold three slots for a group that cannot start.
-        if ($size === TaskVmSize::Large && ! $this->topology->available()) {
-            throw new TaskCapacityException(TaskWait::Topology, RefusingTopologyAdmission::Unavailable);
-        }
         // A medium or large VM is always new, so it needs no warm VM image.
         $images = $size->resources()->warmEligible ? $this->warmImages() : [];
 
@@ -353,8 +346,8 @@ final readonly class AllocateTaskVmAction
 
     /**
      * The wait reason of a VM that only an Incus host can run, while no host has its free slots: `Task VM: no host has 3
-     * free slots for a large VM.` for a group with a declared topology, or 2 for a medium VM of a Project in
-     * `task_vms.medium_projects`.
+     * free slots for a large VM.` for a topology with two or more test nodes, or 2 for a medium VM: one test node, or a
+     * Project in `task_vms.medium_projects`.
      */
     public static function noCapacityFor(TaskVmSize $size): string
     {

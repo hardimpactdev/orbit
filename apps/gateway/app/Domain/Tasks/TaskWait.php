@@ -13,6 +13,6 @@ enum TaskWait: string
     /** The group's task VM is not ready yet: it is provisioning, resuming, or destroying, or cannot be placed yet. */
     case TaskVm = 'task_vm';
 
-    /** No lane prepares the subtask's declared topology, or the group's task VM is too small for it. */
+    /** The subtask's declared topology is being prepared, or its group cannot run it. */
     case Topology = 'topology';
 }

@@ -143,15 +143,18 @@ it('launches a large VM with its own size and free page reporting on its memory 
         ]]);
 });
 
-it('launches a medium VM with 4 vCPU, 8 GiB, and the host disk', function (): void {
+it('launches a medium VM with 4 vCPU, 8 GiB, a 40 GiB disk, and free page reporting', function (): void {
     $this->vm->update(['size' => TaskVmSize::Medium]);
     ($this->answer)(incusList(incusInstance('tvm-12')), incusResult());
 
     $this->provider->create($this->vm, "#cloud-config\n");
 
-    expect(($this->argv)()[1])->toBe([...INCUS_PREFIX, 'launch', '--vm', '--config', 'limits.cpu=4', '--config', 'limits.memory=8GiB', '--device', 'root,size=20GiB',
+    expect(($this->argv)()[1])->toBe([...INCUS_PREFIX, 'launch', '--vm', '--config', 'limits.cpu=4', '--config', 'limits.memory=8GiB', '--device', 'root,size=40GiB',
         '--device', 'eth0,network=orbittask0', '--device', 'eth0,security.port_isolation=true', '--', 'orbit-task-base', 'tvm-1'])
-        ->and(json_decode($this->ssh->calls[1][1]->input ?? '', true))->toBe(['config' => ['cloud-init.user-data' => "#cloud-config\n"]]);
+        ->and(json_decode($this->ssh->calls[1][1]->input ?? '', true))->toBe(['config' => [
+            'cloud-init.user-data' => "#cloud-config\n",
+            'raw.qemu.conf' => "[device \"qemu_balloon\"]\nfree-page-reporting = \"on\"\n",
+        ]]);
 });
 
 it('does not launch a VM that runs', function (): void {

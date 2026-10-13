@@ -19,6 +19,7 @@ use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
 use App\Domain\TaskVms\TaskVmFailedException;
+use App\Domain\TaskVms\TaskVmSettings;
 use App\Models\Activity;
 use App\Models\AgentThread;
 use App\Models\Instance;
@@ -476,10 +477,15 @@ final readonly class TaskScheduler
 
         $status = $check?->status;
         if ($check instanceof TaskCheck && $status === TaskCheckStatus::Passed) {
-            $failures = TaskDeliverableVerifier::failures($task->deliverableList(), TaskDeliverableEvidence::fromArray($check->deliverable_evidence));
-            if ($failures !== []) {
-                $item = new TaskRubricItem('deliverables', false, "Orbit could not verify these deliverables:\n".implode("\n", array_map(static fn (string $failure): string => '- '.$failure, $failures))."\n");
-                if ($this->remindOrAssist($group, $task, $implementer, [$item])) {
+            $evidence = TaskDeliverableEvidence::fromArray($check->deliverable_evidence);
+            $failures = TaskDeliverableVerifier::failures($task->deliverableList(), $evidence);
+            $items = $failures === [] ? [] : [new TaskRubricItem('deliverables', false, "Orbit could not verify these deliverables:\n".implode("\n", array_map(static fn (string $failure): string => '- '.$failure, $failures))."\n")];
+            $required = $this->topologyRequiredItem($group, $evidence);
+            if ($required instanceof TaskRubricItem) {
+                $items[] = $required;
+            }
+            if ($items !== []) {
+                if ($this->remindOrAssist($group, $task, $implementer, $items)) {
                     $task->update(['completion_handoff_comment_id' => $receipt->id]);
                 }
 
@@ -698,6 +704,7 @@ final readonly class TaskScheduler
 
         $instance = $group->taskable;
         $pullRequest = null;
+        $evidenceSummary = null;
         $items = [$this->receiptItem($read, $receipt)];
         if ($receipt instanceof TaskComment && $outcome === TaskTurnOutcome::Approved) {
             $onBranch = $instance instanceof Instance && $this->workspace->currentBranch($instance) === 'task-'.$group->id;
@@ -705,6 +712,16 @@ final readonly class TaskScheduler
             $confirmation = $this->confirmationItem($task, $receipt, TaskThreadRole::Reviewer);
             if ($confirmation instanceof TaskRubricItem) {
                 $items[] = $confirmation;
+            }
+            try {
+                [$evidence, $evidenceSummary] = $this->topologyEvidenceItem($group, $task);
+            } catch (TaskCheckException $exception) {
+                $this->recordCommunicationFailure($task, $group, $exception->getMessage());
+
+                return true;
+            }
+            if ($evidence instanceof TaskRubricItem) {
+                $items[] = $evidence;
             }
             if ($task->opensPullRequest()) {
                 $pullRequest = TaskTurnPullRequest::fromArray($receipt->pull_request);
@@ -738,6 +755,10 @@ final readonly class TaskScheduler
             }
 
             return true;
+        }
+        // The counted records go into the approval, and so into its commit, for a person to audit.
+        if (is_string($evidenceSummary) && ! str_contains($receipt->body, $evidenceSummary)) {
+            $receipt->update(['body' => rtrim($receipt->body)."\n\n".$evidenceSummary]);
         }
 
         if ($task->isFinalReview()) {
@@ -1488,6 +1509,59 @@ final readonly class TaskScheduler
     }
 
     /**
+     * ADR 0200: the approval of a subtask that declares a topology needs recorded evidence on each declared node,
+     * started after the implementer's last handoff. Returns the rubric item and the summary of the counted records,
+     * which the approval carries for a person to audit; both null when the subtask declares none.
+     *
+     * @return array{0: ?TaskRubricItem, 1: ?string}
+     *
+     * @throws TaskCheckException when the evidence log cannot be read
+     */
+    private function topologyEvidenceItem(Task $group, Task $task): array
+    {
+        $nodes = TaskTopology::nodes(TaskTopology::from($task->topology ?? []));
+        if ($nodes === []) {
+            return [null, null];
+        }
+        $handoff = $task->completion_handoff_comment_id === null ? null : TaskComment::query()->find($task->completion_handoff_comment_id);
+        $since = $handoff instanceof TaskComment ? $handoff->posted_at : ($task->started_at ?? now());
+        $evidence = $this->topologyAdmission->evidence($group, $since);
+        $missing = $evidence->missing($nodes);
+
+        return [
+            new TaskRubricItem('topology_evidence', $missing === [], $missing === [] ? '' : TaskTopologyEvidence::reminder($group->id, $missing)),
+            $missing === [] ? $evidence->summary($nodes) : null,
+        ];
+    }
+
+    /**
+     * ADR 0200: a `vm` group whose subtask changes a path that the Project lists in `task_vms.topology_paths` needs a
+     * declared topology on some subtask of the group. Null when the rule does not apply.
+     */
+    private function topologyRequiredItem(Task $group, ?TaskDeliverableEvidence $evidence): ?TaskRubricItem
+    {
+        if ($group->task_compute !== TaskCompute::Vm) {
+            return null;
+        }
+        $patterns = app(TaskVmSettings::class)->topologyPaths[(int) $group->project_id] ?? [];
+        if ($patterns === [] || TaskTopology::forGroup($group) !== []) {
+            return null;
+        }
+        if (! $evidence instanceof TaskDeliverableEvidence || $evidence->diff === null) {
+            return new TaskRubricItem('topology_required', false, "Orbit could not read the subtask's diff to check the paths that need a declared topology.");
+        }
+        $paths = array_values(array_unique(array_map(
+            static fn (array $entry): string => $entry['path'],
+            array_filter($evidence->diff, static fn (array $entry): bool => array_any($patterns, static fn (string $pattern): bool => TaskDeliverableVerifier::matches($pattern, $entry['path']))),
+        )));
+        if ($paths === []) {
+            return null;
+        }
+
+        return new TaskRubricItem('topology_required', false, 'This subtask changes paths that need real machines ('.implode(', ', array_slice($paths, 0, 10)).(count($paths) > 10 ? ', and '.(count($paths) - 10).' more' : '').'), but no subtask of the group declares a topology, so the change cannot be proven on test nodes. Revert those changes, or end your turn blocked so the operator can add a subtask that declares a topology.');
+    }
+
+    /**
      * ADR 0133: a receipt confirms every deliverable it must, as the turn command requires. A hand-written
      * receipt that misses one fails the `deliverables` item.
      */
@@ -1783,13 +1857,21 @@ final readonly class TaskScheduler
         return true;
     }
 
-    /** A preparation wait never consumes a spawn or communication-failure attempt. */
+    /**
+     * A preparation wait never consumes a spawn or communication-failure attempt. A failed preparation asks for
+     * assistance, and a resolution prepares the topology again.
+     */
     private function admitTopology(Task $group, Task $task): bool
     {
         try {
             $this->topologyAdmission->prepare($group, $task);
         } catch (TaskCapacityException $exception) {
             $group->update(['capacity_wait_reason' => $exception->getMessage()]);
+
+            return false;
+        } catch (TaskTopologyFailedException $exception) {
+            $group->update(['capacity_wait_reason' => null]);
+            $this->requestAssistance($task, $group, $exception->getMessage());
 
             return false;
         }

@@ -482,6 +482,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
                 brief: $task->brief,
                 position: $task->position,
                 deliverables: $task->deliverableList(),
+                topology: TaskTopology::from($task->topology ?? []),
             ),
             $threadId,
         );

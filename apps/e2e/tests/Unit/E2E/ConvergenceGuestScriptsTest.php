@@ -53,6 +53,8 @@ function guestOrbitStub(string $root): string
         printf 'orbit %s\n' "$*" >> '__ROOT__/commands'
         case "$1" in
           node:list) cat '__ROOT__/nodes.json' ;;
+          cluster:list) cat '__ROOT__/clusters.json' 2>/dev/null || printf '{"clusters":[]}\n' ;;
+          cluster:create) printf '{"id":7,"name":"%s"}\n' "$2" ;;
           *) printf '{"ok":true}\n' ;;
         esac
         BASH));
@@ -311,7 +313,40 @@ describe('operator convergence', function () {
         'grant Node name' => [['grant', 'operator', 'gate way']],
         'configure-cli arity' => [['configure-cli']],
         'configure-cli Gateway host' => [['configure-cli', '-gateway']],
-    ])->skip(fn (): bool => posix_geteuid() === 0, 'grant and configure-cli re-run themselves through sudo as root.');
+        'role-add arity' => [['role-add', 'app-prod']],
+        'role-add Node' => [['role-add', 'gateway', 'ingress']],
+        'role-add role' => [['role-add', 'app-prod', 'websocket']],
+    ])->skip(fn (): bool => posix_geteuid() === 0, 'grant, configure-cli, and role-add re-run themselves through sudo as root.');
+
+    it('puts the Node in the topology Cluster, then adds ingress through the topology Gateway', function () {
+        $fixture = operatorFixture();
+        file_put_contents("{$fixture['root']}/nodes.json", json_encode(['nodes' => [
+            ['id' => 1, 'name' => 'gateway', 'cluster_id' => null],
+            ['id' => 2, 'name' => 'app-prod', 'cluster_id' => null],
+        ]], JSON_THROW_ON_ERROR));
+
+        expect(runGuestScript($fixture, ['role-add', 'app-prod', 'ingress'])->getExitCode())->toBe(0)
+            ->and(commandLog($fixture))->toBe([
+                'orbit cluster:list --json',
+                'orbit cluster:create e2e-app-prod --json',
+                'orbit node:list --json',
+                'orbit cluster:node:add 7 2 --json',
+                'orbit node:role:add app-prod ingress --json',
+            ]);
+    })->skip(fn (): bool => posix_geteuid() === 0, 'role-add re-runs itself through sudo as root.');
+
+    it('reuses the topology Cluster and a Node already in it', function () {
+        $fixture = operatorFixture();
+        file_put_contents("{$fixture['root']}/clusters.json", json_encode(['clusters' => [['id' => 2, 'name' => 'e2e-app-prod'], ['id' => 3, 'name' => 'e2e-app-prod-2']]], JSON_THROW_ON_ERROR));
+        file_put_contents("{$fixture['root']}/nodes.json", json_encode(['nodes' => [['id' => 4, 'name' => 'app-prod-2', 'cluster_id' => 3]]], JSON_THROW_ON_ERROR));
+
+        expect(runGuestScript($fixture, ['role-add', 'app-prod-2', 'ingress'])->getExitCode())->toBe(0)
+            ->and(commandLog($fixture))->toBe([
+                'orbit cluster:list --json',
+                'orbit node:list --json',
+                'orbit node:role:add app-prod-2 ingress --json',
+            ]);
+    })->skip(fn (): bool => posix_geteuid() === 0, 'role-add re-runs itself through sudo as root.');
 
     it('skips provisioning when the operator is already active in the Gateway store', function () {
         $fixture = operatorFixture();

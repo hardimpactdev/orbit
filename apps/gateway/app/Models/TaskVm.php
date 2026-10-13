@@ -8,6 +8,7 @@ use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
+use App\Domain\TaskVms\TaskVmTopologyState;
 use Illuminate\Database\Eloquent\Attributes\Scope;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -26,6 +27,11 @@ use Illuminate\Support\Carbon;
  * @property int|null $node_id
  * @property TaskVmProviderKind $provider
  * @property TaskVmSize $size
+ * @property list<string>|null $topology
+ * @property TaskVmTopologyState|null $topology_state
+ * @property string|null $topology_run
+ * @property Carbon|null $topology_started_at
+ * @property string|null $topology_error
  * @property string|null $provider_id
  * @property string|null $ssh_host_key
  * @property string $name
@@ -50,10 +56,16 @@ use Illuminate\Support\Carbon;
  */
 final class TaskVm extends Model
 {
+    /**
+     * The columns that forget the VM's nested topology. Its test machines stop when the VM stops, so a park and a
+     * resume both clear it, and the next subtask with a topology prepares it again.
+     */
+    public const array ForgetTopology = ['topology' => null, 'topology_state' => null, 'topology_run' => null, 'topology_started_at' => null, 'topology_error' => null];
+
     /** @var list<string> */
     #[\Override]
     protected $fillable = [
-        'group_id', 'host_node_id', 'node_id', 'provider', 'size', 'provider_id', 'ssh_host_key', 'name', 'state', 'address', 'wireguard_ip',
+        'group_id', 'host_node_id', 'node_id', 'provider', 'size', 'topology', 'topology_state', 'topology_run', 'topology_started_at', 'topology_error', 'provider_id', 'ssh_host_key', 'name', 'state', 'address', 'wireguard_ip',
         'pi_token', 'model_key', 'model_proxy_origin', 'claimed_at', 'warmed_at', 'image_fingerprint',
         'error_code', 'error_message', 'ready_at', 'destroyed_at',
     ];
@@ -74,6 +86,9 @@ final class TaskVm extends Model
             'provider' => TaskVmProviderKind::class,
             'state' => TaskVmState::class,
             'size' => TaskVmSize::class,
+            'topology' => 'array',
+            'topology_state' => TaskVmTopologyState::class,
+            'topology_started_at' => 'datetime',
             'pi_token' => 'encrypted',
             'model_key' => 'encrypted',
             'claimed_at' => 'datetime',

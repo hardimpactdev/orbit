@@ -26916,14 +26916,11 @@
                         },
                         "topology": {
                           "type": "array",
-                          "maxItems": 3,
+                          "maxItems": 2,
                           "items": {
                             "type": "string",
-                            "enum": [
-                              "app-dev",
-                              "app-prod",
-                              "app-prod-2"
-                            ]
+                            "pattern": "^(?:app-dev|app-prod|app-prod-2)(?:\\+ingress)?$(?![\\s\\S])",
+                            "maxLength": 64
                           }
                         },
                         "deliverables": {
@@ -27775,14 +27772,11 @@
                   },
                   "topology": {
                     "type": "array",
-                    "maxItems": 3,
+                    "maxItems": 2,
                     "items": {
                       "type": "string",
-                      "enum": [
-                        "app-dev",
-                        "app-prod",
-                        "app-prod-2"
-                      ]
+                      "pattern": "^(?:app-dev|app-prod|app-prod-2)(?:\\+ingress)?$(?![\\s\\S])",
+                      "maxLength": 64
                     },
                     "description": "JSON array of required workload nodes; [] removes declarations"
                   },
@@ -27953,7 +27947,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/task-groups/1/tasks\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"title\": \"Absorb Commander\", \"brief\": \"Persist groups. Accept when create and list work.\", \"topology\": [\"app-dev\"], \"deliverables\": [{\"id\": \"example\", \"type\": \"file\", \"description\": \"example\"}]}'\n"
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/task-groups/1/tasks\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"title\": \"Absorb Commander\", \"brief\": \"Persist groups. Accept when create and list work.\", \"topology\": [\"example\"], \"deliverables\": [{\"id\": \"example\", \"type\": \"file\", \"description\": \"example\"}]}'\n"
           },
           {
             "lang": "php",
@@ -28134,14 +28128,11 @@
                   },
                   "topology": {
                     "type": "array",
-                    "maxItems": 3,
+                    "maxItems": 2,
                     "items": {
                       "type": "string",
-                      "enum": [
-                        "app-dev",
-                        "app-prod",
-                        "app-prod-2"
-                      ]
+                      "pattern": "^(?:app-dev|app-prod|app-prod-2)(?:\\+ingress)?$(?![\\s\\S])",
+                      "maxLength": 64
                     },
                     "description": "JSON array of required workload nodes; [] removes declarations"
                   },

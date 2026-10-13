@@ -8849,14 +8849,11 @@
                 },
                 "topology": {
                   "type": "array",
-                  "maxItems": 3,
+                  "maxItems": 2,
                   "items": {
                     "type": "string",
-                    "enum": [
-                      "app-dev",
-                      "app-prod",
-                      "app-prod-2"
-                    ]
+                    "pattern": "^(?:app-dev|app-prod|app-prod-2)(?:\\+ingress)?$(?![\\s\\S])",
+                    "maxLength": 64
                   }
                 },
                 "deliverables": {
@@ -9811,14 +9808,11 @@
           },
           "topology": {
             "type": "array",
-            "maxItems": 3,
+            "maxItems": 2,
             "items": {
               "type": "string",
-              "enum": [
-                "app-dev",
-                "app-prod",
-                "app-prod-2"
-              ]
+              "pattern": "^(?:app-dev|app-prod|app-prod-2)(?:\\+ingress)?$(?![\\s\\S])",
+              "maxLength": 64
             },
             "description": "JSON array of required workload nodes; [] removes declarations"
           },
@@ -9971,14 +9965,11 @@
           },
           "topology": {
             "type": "array",
-            "maxItems": 3,
+            "maxItems": 2,
             "items": {
               "type": "string",
-              "enum": [
-                "app-dev",
-                "app-prod",
-                "app-prod-2"
-              ]
+              "pattern": "^(?:app-dev|app-prod|app-prod-2)(?:\\+ingress)?$(?![\\s\\S])",
+              "maxLength": 64
             },
             "description": "JSON array of required workload nodes; [] removes declarations"
           },

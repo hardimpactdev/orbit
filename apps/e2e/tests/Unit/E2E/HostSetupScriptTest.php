@@ -51,6 +51,15 @@ describe('bin/e2e-topology-host-setup', function () {
             ->and($process->getErrorOutput())->toBe("e2e-topology-host-setup: run it with sudo.\n");
     })->skip(fn (): bool => posix_geteuid() === 0, 'As root the script would change this machine.');
 
+    it('gives root a subordinate id range when the files lack one, so Incus can map the operator container', function () {
+        $source = (string) file_get_contents(hostSetupScript());
+
+        expect($source)->toContain('for file in /etc/subuid /etc/subgid; do')
+            ->toContain('grep -q \'^root:\' "$file"')
+            ->toContain('printf \'root:1000000:1000000000\\n\' >>"$file"')
+            ->toContain('((idmap_changed == 0)) || systemctl restart incus.service');
+    });
+
     it('writes an isolation table that drops topology traffic to the WireGuard network', function () {
         $source = (string) file_get_contents(hostSetupScript());
         expect(preg_match('/<<NFT\n(.*?)\nNFT\n/s', $source, $match))->toBe(1);
@@ -69,6 +78,7 @@ describe('bin/e2e-topology-host-setup', function () {
                 'iifname "oe*" oifname "orbit" drop',
                 'iifname "incusbr0" oifname "orbit" drop',
                 'iifname "oe*" ip daddr 10.44.0.0/24 drop',
+                'iifname "incusbr0" ip daddr 10.44.0.0/24 drop',
             ])
             ->and($table)
             ->toContain('type filter hook forward priority -10; policy accept;')

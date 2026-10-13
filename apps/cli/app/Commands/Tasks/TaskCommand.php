@@ -392,7 +392,7 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
         }
         $topology = self::topology($value);
         if ($topology === null) {
-            $this->renderGatewayFailure('tasks.topology_invalid', 'Topology must be a JSON array of distinct app-dev, app-prod, or app-prod-2 nodes.');
+            $this->renderGatewayFailure('tasks.topology_invalid', 'Topology must be a JSON array of distinct node entries, such as ["app-dev","app-prod+ingress"].');
 
             return false;
         }
@@ -400,21 +400,26 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
         return $topology;
     }
 
-    /** @return list<string>|null */
+    /**
+     * The shape of a topology declaration: a list of at most two distinct entries. The Gateway validates the
+     * entries themselves, such as `app-prod+ingress`.
+     *
+     * @return list<string>|null
+     */
     protected static function topology(mixed $value): ?array
     {
-        if (! is_array($value) || ! array_is_list($value) || count($value) > 3) {
+        if (! is_array($value) || ! array_is_list($value) || count($value) > 2) {
             return null;
         }
-        $roles = [];
-        foreach ($value as $role) {
-            if (! is_string($role) || ! in_array($role, ['app-dev', 'app-prod', 'app-prod-2'], true) || in_array($role, $roles, true)) {
+        $entries = [];
+        foreach ($value as $entry) {
+            if (! is_string($entry) || $entry === '' || in_array($entry, $entries, true)) {
                 return null;
             }
-            $roles[] = $role;
+            $entries[] = $entry;
         }
 
-        return $roles;
+        return $entries;
     }
 
     protected function renderSubtask(SubtaskResponse $task): int

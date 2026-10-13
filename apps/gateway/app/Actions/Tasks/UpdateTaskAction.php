@@ -148,6 +148,7 @@ final readonly class UpdateTaskAction
                 if ($task->status !== TaskStatus::Todo || $task->subtask_start_commit !== null) {
                     throw ValidationException::withMessages(['topology' => ['A started subtask cannot change its topology.']]);
                 }
+                TaskTopology::union([...TaskTopology::declarations($group, $task), $data->topology]);
                 $task->topology = TaskTopology::from($data->topology);
             }
 

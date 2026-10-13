@@ -82,7 +82,7 @@ it('defines what each size takes in one place', function (): void {
 
     expect(array_map($takes, TaskVmSize::cases()))->toBe([
         [1, true, 2, '4GiB', '20GiB', false],
-        [2, false, 4, '8GiB', '20GiB', false],
+        [2, false, 4, '8GiB', '40GiB', true],
         [3, false, 6, '12GiB', '60GiB', true],
     ])
         ->and(AllocateTaskVmAction::noCapacityFor(TaskVmSize::Medium))->toBe('Task VM: no host has 2 free slots for a medium VM.')

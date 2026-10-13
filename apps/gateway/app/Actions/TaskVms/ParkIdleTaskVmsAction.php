@@ -57,7 +57,8 @@ final readonly class ParkIdleTaskVmsAction
                 $settled = $group instanceof Task ? self::settledAt($group) : null;
                 if (! $group instanceof Task || TaskExecutionHold::active($group) || $settled === null || $settled->greaterThan($cutoff)
                     || TaskVm::query()->whereKey($vm->id)->where('state', TaskVmState::Ready)->where('updated_at', '<=', $cutoff)
-                        ->update(['state' => TaskVmState::Parked]) !== 1) {
+                        // The nested topology's guests stop with the VM, so the next subtask with one prepares it again.
+                        ->update(['state' => TaskVmState::Parked, ...TaskVm::ForgetTopology]) !== 1) {
                     return 0;
                 }
                 ParkTaskVm::dispatch($vm->id);

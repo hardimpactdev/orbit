@@ -809,9 +809,9 @@ it('requests a preview on task group creation', function (): void {
 describe('declared topology', function (): void {
     it('sends a declaration and an explicit empty update', function (): void {
         $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-subtask-create/created'));
-        expect(Artisan::call('tasks:subtask:create', ['group' => '13', 'title' => 'Step', '--brief' => 'Work', '--topology' => '["app-dev"]', '--json' => true]))->toBe(0);
+        expect(Artisan::call('tasks:subtask:create', ['group' => '13', 'title' => 'Step', '--brief' => 'Work', '--topology' => '["app-dev","app-prod+ingress"]', '--json' => true]))->toBe(0);
         $mock->assertSent(static fn (Request $request): bool => $request instanceof CreateSubtaskRequest
-            && json_decode((string) $request->body(), true)['topology'] === ['app-dev']);
+            && json_decode((string) $request->body(), true)['topology'] === ['app-dev', 'app-prod+ingress']);
         MockClient::destroyGlobal();
         $fixture = json_decode((string) file_get_contents(base_path('../../packages/php-sdk/fixtures/tasks/tasks-subtask-create/created.json')), true, flags: JSON_THROW_ON_ERROR);
         $mock = MockClient::global([UpdateSubtaskRequest::class => MockResponse::make($fixture['body'])]);
@@ -825,5 +825,5 @@ describe('declared topology', function (): void {
         expect(Artisan::call('tasks:subtask:create', ['group' => '13', 'title' => 'Step', '--brief' => 'Work', '--topology' => $value, '--json' => true]))->toBe(1);
         expect(json_decode(Artisan::output(), true)['error']['code'])->toBe('tasks.topology_invalid');
         $mock->assertNothingSent();
-    })->with(['["gateway"]', '["app-dev","app-dev"]', '{}', 'null', 'app-dev']);
+    })->with(['[""]', '["app-dev","app-dev"]', '[1]', '["app-dev","app-prod","app-prod-2"]', '{}', 'null', 'app-dev']);
 });

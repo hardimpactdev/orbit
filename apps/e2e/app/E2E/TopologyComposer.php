@@ -79,6 +79,21 @@ final readonly class TopologyComposer
         });
         $steps['enroll.operator'] = true;
 
+        // Declared extra roles go through the product path, from the operator's CLI, after every Node exists.
+        foreach ($target->recipe->workloadNodes() as $node) {
+            $roles = $target->recipe->extraRoles($node);
+            if ($roles === []) {
+                continue;
+            }
+            $name = 'roles.'.$node->key;
+            $this->step($progress, $name, function () use ($name, $instances, $node, $roles): void {
+                foreach ($roles as $role) {
+                    $this->run($name, $instances['operator'], 'converge-operator.sh', ['role-add', $node->key, $role]);
+                }
+            });
+            $steps[$name] = true;
+        }
+
         return ConvergenceReport::successful($steps);
     }
 
