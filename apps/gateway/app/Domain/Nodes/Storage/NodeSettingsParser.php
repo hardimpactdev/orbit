@@ -6,14 +6,13 @@ namespace App\Domain\Nodes\Storage;
 
 use App\Data\Nodes\NodeSettingsData;
 use App\Data\Nodes\NodeStorageAppsData;
-use App\Data\Nodes\NodeTaskSettingsData;
 use App\Domain\Shared\ResourceOperationException;
 use stdClass;
 
 final readonly class NodeSettingsParser
 {
     /** @var list<string> */
-    private const array TOP_LEVEL_KEYS = ['apps', 'tasks'];
+    private const array TOP_LEVEL_KEYS = ['apps'];
 
     /** @var list<string> */
     private const array NESTED_KEYS = ['path'];
@@ -39,8 +38,6 @@ final readonly class NodeSettingsParser
         return new NodeSettingsPatch(
             hasApps: array_key_exists('apps', $object),
             apps: array_key_exists('apps', $object) ? $this->nestedApps($object['apps']) : null,
-            hasTasks: array_key_exists('tasks', $object),
-            tasks: array_key_exists('tasks', $object) ? $this->nestedTasks($object['tasks']) : null,
         );
     }
 
@@ -55,24 +52,7 @@ final readonly class NodeSettingsParser
 
         return new NodeSettingsData(
             apps: array_key_exists('apps', $object) ? $this->nestedApps($object['apps']) : null,
-            tasks: array_key_exists('tasks', $object) ? $this->nestedTasks($object['tasks']) : null,
         );
-    }
-
-    private function nestedTasks(mixed $value): ?NodeTaskSettingsData
-    {
-        if ($value === null) {
-            return null;
-        }
-
-        $value = $this->assertNestedObject($value, ['worker']);
-        $worker = $value['worker'] ?? null;
-
-        if ($worker !== null && $worker !== 'none') {
-            $this->reject('The tasks worker setting must be "none" or null.');
-        }
-
-        return new NodeTaskSettingsData($worker);
     }
 
     private function nestedApps(mixed $value): ?NodeStorageAppsData

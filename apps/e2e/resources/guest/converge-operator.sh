@@ -10,29 +10,13 @@ node_id() {
   php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $m=array_values(array_filter($v["nodes"], fn($x) => ($x["name"] ?? null)===$argv[1])); if(count($m)!==1 || !is_int($m[0]["id"] ?? null)) exit(65); echo $m[0]["id"];' "$1"
 }
 case ${1-} in
-  provision)
-    # On the Gateway: register the operator as a roleless Node.
-    [[ $# -eq 4 && "$2" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ && "$3" =~ ^(x86_64|aarch64)$ && "$4" =~ ^10\.44\.0\.[1-9][0-9]{0,2}$ ]] || exit 64
-    db=/home/orbit/.orbit/gateway.sqlite
-    active=$(php -r '$pdo=new PDO("sqlite:".$argv[1]); echo $pdo->query("SELECT COUNT(*) FROM nodes WHERE name = '\''operator'\'' AND status = '\''active'\''")->fetchColumn();' -- "$db")
-    [[ "$active" != 1 ]] || exit 0
-    deadline=$((SECONDS + 60))
-    until keys=$(ssh-keyscan -T 5 -t ed25519 -- "$2" 2>/dev/null) && [[ -n "$keys" ]]; do
-      (( SECONDS < deadline )) || { echo "converge-operator: no SSH host key from $2" >&2; exit 1; }
-      sleep 2
-    done
-    fingerprint=$(ssh-keygen -lf - -E sha256 <<<"$keys" | awk 'NR == 1 { print $2 }')
-    [[ "$fingerprint" =~ ^SHA256:[A-Za-z0-9+/]{43}$ ]]
-    cd /home/orbit/orbit/apps/gateway
-    "${as_orbit[@]}" ORBIT_GATEWAY_CHECKOUT=/home/orbit/orbit/apps/gateway php artisan orbit:node-provision operator "$2" --architecture="$3" --user=orbit --wireguard-ip="$4" --host-key-fingerprint="$fingerprint" --no-interaction
-    ;;
   grant)
-    # On the Gateway: give the operator Node access to the Gateway Node.
+    # On the Gateway: give the operator Node access to the Gateway Node, through the Gateway at its WireGuard address.
     [[ "$(id -u)" -eq 0 ]] && exec "${as_orbit[@]}" bash "$0" "$@"
-    [[ $# -eq 3 && "$2" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ && "$3" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ ]] || { echo "converge-operator: invalid grant arguments" >&2; exit 64; }
+    [[ $# -eq 4 && "$2" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ && "$3" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ && "$4" =~ ^10\.44\.0\.[1-9][0-9]{0,2}$ ]] || { echo "converge-operator: invalid grant arguments" >&2; exit 64; }
     ca=/home/orbit/.orbit/ca/root.pem
     [[ -s "$ca" ]] || { echo "converge-operator: missing root CA at $ca" >&2; exit 66; }
-    if ! output=$("$orbit" gateway:add https://10.44.0.1 --name=e2e --ca="$ca" --use --json 2>&1); then
+    if ! output=$("$orbit" gateway:add "https://$4" --name=e2e --ca="$ca" --use --json 2>&1); then
       printf 'gateway:add failed: %s\n' "$output" >&2
       exit 1
     fi
@@ -63,18 +47,20 @@ case ${1-} in
     "$orbit" gateway:add "https://$2" --name=e2e --ca="$ca" --use --json
     ;;
   role-add)
-    # On the operator: add one declared role to a workload Node through the topology Gateway. Ingress needs Cluster
-    # membership and allows one ingress Node per Cluster, so the Node first joins its own Cluster `e2e-<node>`.
+    # On the operator: add one declared role to a workload Node through the topology Gateway. With CLUSTER, the Node
+    # first joins that Cluster, creating it when it is missing: a role such as ingress needs a Cluster of its own.
+    # Usage: role-add NODE ROLE [CLUSTER]
     [[ "$(id -u)" -eq 0 ]] && exec "${as_orbit[@]}" bash "$0" "$@"
-    [[ $# -eq 3 && "$2" =~ ^app-(dev|prod|prod-2)$ && "$3" =~ ^(ingress)$ ]] || { echo "converge-operator: invalid role-add arguments" >&2; exit 64; }
-    if [[ "$3" == ingress ]]; then
+    [[ ($# -eq 3 || $# -eq 4) && "$2" =~ ^[a-z][a-z0-9-]{0,22}$ && "$3" =~ ^[a-z][a-z0-9-]{0,31}$ ]] || { echo "converge-operator: invalid role-add arguments" >&2; exit 64; }
+    [[ $# -eq 3 || "$4" =~ ^[a-z][a-z0-9-]{0,62}$ ]] || { echo "converge-operator: invalid role-add arguments" >&2; exit 64; }
+    if [[ $# -eq 4 ]]; then
       if ! clusters=$("$orbit" cluster:list --json 2>&1); then
         printf 'cluster:list failed: %s\n' "$clusters" >&2
         exit 1
       fi
-      cluster_id=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); foreach ($v["clusters"] as $c) { if (($c["name"] ?? null) === $argv[1]) { echo $c["id"]; } }' -- "e2e-$2" <<<"$clusters")
+      cluster_id=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); foreach ($v["clusters"] as $c) { if (($c["name"] ?? null) === $argv[1]) { echo $c["id"]; } }' -- "$4" <<<"$clusters")
       if [[ -z "$cluster_id" ]]; then
-        if ! created=$("$orbit" cluster:create "e2e-$2" --json 2>&1); then
+        if ! created=$("$orbit" cluster:create "$4" --json 2>&1); then
           printf 'cluster:create failed: %s\n' "$created" >&2
           exit 1
         fi

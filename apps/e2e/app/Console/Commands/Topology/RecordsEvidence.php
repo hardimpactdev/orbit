@@ -12,11 +12,11 @@ use DateTimeImmutable;
 use DateTimeZone;
 use Throwable;
 
-/** Appends one `--record=LABEL` entry to `<worktree>/.e2e/evidence.log`, shared by `exec` and `logs`. */
+/** Appends one `--record=LABEL` entry to the worktree's evidence files, shared by `exec` and `logs`. */
 trait RecordsEvidence
 {
     /** The option signature both commands declare. */
-    protected const string RECORD_OPTION = ' {--record= : Append the command, its timestamps, and its output to .e2e/evidence.log in the worktree under this label}';
+    protected const string RECORD_OPTION = ' {--record= : Append the command, its timestamps, and its output to .e2e/evidence.log, and one JSON record to .e2e/evidence.jsonl, under this label}';
 
     /** The validated label, or null without `--record`; checked before any infrastructure access. */
     protected function evidenceLabel(): ?EvidenceLabel

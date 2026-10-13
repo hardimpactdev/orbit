@@ -2,7 +2,7 @@
 title: "Incus topologies"
 description: "How the harness composes a disposable Incus topology from declared Nodes and per-role images, runs it nested in a task VM or on a bare host, and releases it."
 covers:
-  - bin/{e2e-topology,e2e-topology-images,e2e-topology-host-setup,e2e-clone-bridge,e2e-task-cleanup}
+  - bin/{e2e-topology,e2e-topology-images,e2e-topology-host-setup}
   - apps/e2e/config/e2e.php
   - apps/e2e/app/Console/Commands/{Topology,TopologyImages}/**
   - apps/e2e/app/E2E/**
@@ -18,16 +18,6 @@ This page is for the contributor, agent, or reviewer who runs Orbit on disposabl
 
 An Orbit task group on a [task VM](/reference/compute-drivers#task-vms) gets a topology only when its subtasks [declare](/reference/compute-drivers#declare-a-topology) one. Orbit prepares it nested in the group's VM as `TASK-<group>`, with `--nodes` set to the union of the declarations, before the subtask's baseline check or implementer. Agents use it and never acquire or release it. The reviewer records evidence on each declared node, and Orbit refuses the approval without it. See [Prove work on a topology](/reference/compute-drivers#prove-work-on-a-topology).
 
-## Topologies on the reviewer's request
-
-This section applies to shared task workspaces only. An Orbit task group has no topology by default. Workspace provisioning never acquires one. The reviewer decides whether discovery needs a topology and ends a turn with `topology_requested` through the [turn receipt](/reference/tasks#request-a-topology). An implementer asks the reviewer through the existing consult instead. Agents run as `orbit-worker` without sudo; they do not acquire topologies themselves.
-
-Orbit consumes the receipt, acquires `TASK-<group>` as the managed user, and resumes the same requesting reviewer thread in its original review, consult, or relay context with the acquisition result or failure. A consult stays open and its implementer stays paused during acquisition; a resource request neither answers it nor escalates it to the operator. The resumed reviewer answers normally under the original context's outcome and cause rules.
-
-Acquisition changes host firewall rules. Each group holds at most one topology, shared across its subtasks and review turns. A repeated request uses that group's complete discovery topology, not another one. Orbit acquires the default Nodes, `app-dev` and `app-prod`.
-
-A retained discovery lease without its topology record is an incomplete acquisition, not an already-held usable topology. Orbit reports that failure and keeps its ownership and state for normal workspace-removal cleanup; it neither acquires another topology nor asks the agent to release it. Failure replies include a bounded, redacted reason from the harness output. Acquisition failure or absence of a topology never prevents approval: these topologies support discovery, not mandatory proofs. Orbit releases the topology when it removes the group's workspace.
-
 ## Declared Nodes
 
 Every topology has a `gateway` VM and an `operator` system container. `acquire --nodes=LIST` adds the workload Nodes the work needs. `LIST` is a comma-separated list of entries, in any order. An entry names one of `app-dev`, `app-prod`, and `app-prod-2`, and may add the role `ingress` after a `+`, for example `app-prod+ingress`. `app-prod-2` requires `app-prod`. Without the option, the list is `app-dev,app-prod`. An empty list, `--nodes=`, gives the Gateway and the operator only. A task VM group's subtask `topology` uses the same entries.
@@ -41,6 +31,10 @@ Every topology has a `gateway` VM and an `operator` system container. `acquire -
 | `operator` | `orbit-e2e-operator` | `.14` | `10.44.0.5` | none | yes |
 
 `app-prod-2` is a second `app-prod` Node from the same role image. Each production Node gets its own name as its development TLD, and `app-dev` gets `beast`.
+
+The Node catalog `apps/e2e/resources/topology-nodes.json` holds this table. For each Node it names the role image, address position, checkout, memory, TLD, and the Node it requires. It also names the default list, the roles an entry may add, and the roles that put a Node in its own Cluster. The recipe, the role image builders, composition, and readiness derive from it.
+
+The WireGuard address is the address position minus 9. The network's DHCP range ends at the highest position the topology uses. A new Node kind is one catalog entry, and a new role image is one more case of the harness `RoleImage` enum. A Gateway test reads the same file, so the Gateway accepts the same `topology` entries as the harness.
 
 The harness assigns the roles in the table and the roles each entry adds, and nothing else. It creates no Router, no Cluster except the one an `ingress` entry needs, no other role, and no sample Project, Instance, or Route. Add other things the work needs with the Orbit CLI on the topology, for example `orbit project:create`, and record those steps as evidence. So a topology holds only what the task declared and created.
 
@@ -93,11 +87,12 @@ An image holds no Gateway database, CA, SSH key, WireGuard key, authorized key, 
 | Command | What it does |
 | --- | --- |
 | `bin/e2e-topology-images build [--role=ROLE ...]` | Builds the named role images, or all four |
+| `bin/e2e-topology-images ensure [--nodes=LIST]` | Builds only the missing role images that a topology of `LIST` needs. It leaves stale images, which compose correctly. Rendering writes the Gateway `.env` from `.env.example` when the checkout has none, as `bin/bootstrap` does. |
 | `bin/e2e-topology-images status` | Prints each image's alias, fingerprint, build time, and state |
 
 ## Composition
 
-`acquire ISSUE WORKTREE [--nodes=LIST]` composes the topology in this order. Each step names itself in a failure.
+`acquire ISSUE WORKTREE [--nodes=LIST] [--replace]` composes the topology in this order. Each step names itself in a failure. `--replace` first releases a topology the issue holds; without it, `acquire` refuses an issue that holds one. When the worktree has no Gateway `.env`, `acquire` writes it from `.env.example`, as `bin/bootstrap` does.
 
 | Step | Work |
 | --- | --- |
@@ -105,7 +100,7 @@ An image holds no Gateway database, CA, SSH key, WireGuard key, authorized key, 
 | `create` | Creates each guest from its role image, with a fixed MAC and Incus address, and mounts the worktree on the checkout Nodes |
 | `start` | Starts every guest and waits for its agent and its address |
 | `bootstrap.gateway` | Prepares the worktree's Gateway `.env` and runs `orbit:bootstrap` at the Gateway's address |
-| `enroll.<node>` | Enrolls each workload Node in table order with `orbit:node-provision` |
+| `enroll.<node>` | Enrolls each workload Node in catalog order with `orbit:node-provision`, through the guest script `converge-node.sh` |
 | `enroll.operator` | Registers the roleless operator, grants it Gateway access, and points its CLI at the topology Gateway and CA |
 | `roles.<node>` | For each workload Node whose entry adds a role, runs `orbit node:role:add <node> <role> --json` from the operator. `ingress` first puts the Node in its own Cluster. |
 | `readiness` | Runs the readiness probes |
@@ -176,10 +171,12 @@ The harness counts capacity from `incus list`, never from a ledger. It counts th
 
 | Setting | Value |
 | --- | --- |
-| VM size | 1 vCPU and 16 GiB root disk (`e2e.incus.cpu`, `e2e.incus.root_size`). Memory is 1.5 GiB for `gateway`, 2 GiB for `app-dev`, 1 GiB for `app-prod` and `app-prod-2`, and 512 MiB for the operator container (`e2e.incus.memory`). `ORBIT_E2E_INCUS_MEMORY=2GiB` sets every guest for one run. |
+| VM size | 1 vCPU and 16 GiB root disk (`e2e.incus.cpu`, `e2e.incus.root_size`). Memory comes from the Node catalog, as below. |
 | VM budget | `e2e.incus.max_vms`, default 24. `ORBIT_E2E_INCUS_MAX_VMS` sets it for one run. |
 | Network slots | 1 to 200 |
 | Incus scope | `e2e.incus.remote`, `e2e.incus.project`, and `e2e.incus.storage_pool`, from `ORBIT_E2E_INCUS_REMOTE`, `ORBIT_E2E_INCUS_PROJECT`, and `ORBIT_E2E_INCUS_STORAGE_POOL`. The defaults are `local`, `default`, and `orbit-e2e`. The remote must be `local`, because network creation and deletion also change host firewall rules. |
+
+The catalog gives 1.5 GiB of memory to `gateway`, 2 GiB to `app-dev`, 1 GiB each to `app-prod` and `app-prod-2`, and 512 MiB to the operator container. A role image builder gets the memory of the first Node from its image. `ORBIT_E2E_INCUS_MEMORY=2GiB` (`e2e.incus.memory`) sets every guest for one run.
 
 Every `incus` call carries the configured project. The harness reserves the declared VMs before it creates a network or a guest, and refuses `acquire` when the budget cannot hold them, naming the count and the limit. The operator container is not a VM. A role image build counts its three builder VMs the same way.
 
@@ -193,7 +190,7 @@ Every command except `status`, `shell`, and `web` holds the lock `topology-<ISSU
 
 | Command | What it does |
 | --- | --- |
-| `acquire ISSUE WORKTREE [--nodes=LIST]` | [Composes](#composition) the topology and verifies readiness |
+| `acquire ISSUE WORKTREE [--nodes=LIST] [--replace]` | [Composes](#composition) the topology and verifies readiness |
 | `shell ISSUE NODE` | Opens a login shell as `orbit` on one Node |
 | `exec ISSUE NODE --argv=JSON [--timeout=SECONDS] [--record=LABEL]` | Runs one argument vector as `orbit` on one Node and waits for it. The timeout defaults to 60 seconds, with a maximum of 3600. |
 | `spawn ISSUE NODE NAME --argv=JSON` | Starts a long-lived process as the transient unit `orbit-e2e-NAME.service` and returns at once |
@@ -201,14 +198,13 @@ Every command except `status`, `shell`, and `web` holds the lock `topology-<ISSU
 | `kill ISSUE NODE NAME` | Stops the unit. Its output stays readable. |
 | `sync ISSUE [--quick]` | Proves the mount, applies pending Gateway migrations, and verifies readiness. `--quick` skips verification. |
 | `verify ISSUE` | Verifies readiness and records the report |
-| `status ISSUE` | Reports the state files without touching Incus |
+| `status ISSUE` | Reports the state files without touching Incus: `state` is `absent` or `acquired` |
 | `web ISSUE` | Runs the web development server in the operator, publishes it on the host's loopback, and streams output until stopped; see [Web session](#web-session) |
 | `release ISSUE` | Stops its web session, removes its loopback publication, removes the topology, and verifies that it is gone |
-| `register [--force]` | Registers this checkout as the primary for its origin, so task workspace clones can [bridge](#task-workspace-clones) to it. `--force` replaces a live registration. |
 
 `NODE` is a Node key of the topology: `gateway`, `operator`, or a declared workload Node. `--argv-file=PATH` can replace `--argv` on `exec` and `spawn`. The file holds `{"argv":[...],"stdin":null}`, and only `exec` accepts stdin. The harness refuses both options together.
 
-An issue holds one discovery topology at a time. `acquire` creates it and `release` removes it. Its state lives under `<worktree>/.e2e/`, in `attempt.json` and `topology.json`, and it dies with the worktree. A lease names the issue, the attempt ID, the operation ID, the declared Nodes, and the acquisition time. There is no reaper. A topology lives until the operator or Orbit releases it.
+An issue holds one topology at a time. `acquire` creates it and `release` removes it. Its state lives under `<worktree>/.e2e/`, in `attempt.json` and `topology.json`, and it dies with the worktree. A lease names the issue, the attempt ID, the operation ID, the declared Nodes, and the acquisition time. There is no reaper. A topology lives until the operator or Orbit releases it.
 
 Task agents and reviewers use only the topology allocated to their task. They never acquire or release a topology, receive no sudo, and do not touch the host firewall. Use `exec`, `spawn`, `logs`, and `kill` from the task workspace to work on the allocated topology. Clean up processes you spawn, but leave the topology allocated for teardown.
 
@@ -222,7 +218,7 @@ The command publishes the dev server only on the host's IPv4 loopback, `127.0.0.
 
 The proxy device records a random ownership token before startup, and the unit's description carries the same token. Cleanup reads that durable reservation rather than trusting whether an external command returned successfully. It stops only the matching unit and keeps the reservation until the unit is confirmed stopped. A guest lock serializes startup and cleanup; cancellation records prevent a delayed start from reviving a cleaned session. Release can recover a session after its foreground owner crashes, and failed cleanup retains the marker for retry.
 
-The public wrapper transfers its PID through the clone bridge to PHP, so TERM or HUP sent to that PID reaches the foreground owner and waits for cleanup, just as terminal Ctrl-C does.
+The public wrapper execs PHP with its own PID, so TERM or HUP sent to that PID reaches the foreground owner and waits for cleanup, just as terminal Ctrl-C does.
 
 The session pins the Gateway URL and trusted CA to the selected topology. Inherited endpoint overrides must not redirect Gateway, realtime, or metrics traffic to the live fleet. If the topology, operator, URL, CA, Gateway grant, or WireGuard configuration is absent, startup fails clearly instead of falling back to the caller's live profile or another user's credentials.
 
@@ -240,7 +236,7 @@ Incus waits for every process that an `exec` session starts. A command that leav
 
 ### Evidence log
 
-`exec --record=LABEL` and `logs --record=LABEL` append one entry to `<worktree>/.e2e/evidence.log`. A label has 1 to 80 letters, digits, spaces, dots, dashes, or underscores, and is not blank. The harness checks the label before it touches Incus.
+`exec --record=LABEL` and `logs --record=LABEL` append one entry for people to `<worktree>/.e2e/evidence.log` and one JSON record to `<worktree>/.e2e/evidence.jsonl`, under one lock. A label has 1 to 80 letters, digits, spaces, dots, dashes, or underscores, and is not blank. The harness checks the label before it touches Incus.
 
 ```text
 === 2026-09-24T06:40:00.123Z viewer after crash node=app-dev exit=0 duration=1234ms end=2026-09-24T06:40:01.357Z
@@ -252,6 +248,14 @@ $ orbit node:list --json
 ```
 
 The header gives the start time, the label, the Node, the exit code, the duration, and the end time, in UTC with milliseconds. The `$` line is the argv as shell-quoted words. The harness redacts the argv and the output as it does in `<worktree>/.e2e/log`. The log is append-only. The harness creates it with mode `0600` in the `0700` `.e2e/` directory, and refuses a symbolic link in that directory path.
+
+Each line of `evidence.jsonl` is one record, without the output. `argv` is the redacted argument list, not shell words:
+
+```json
+{"v":1,"start":"2026-09-24T06:40:00.123Z","end":"2026-09-24T06:40:01.357Z","duration_ms":1234,"label":"viewer after crash","node":"app-dev","exit":0,"argv":["orbit","node:list","--json"]}
+```
+
+The agent owns the machine and can write either file itself. The Gateway's evidence gate is a cooperative check, which the reviewer and the person who reads the approval audit.
 
 Recording never changes the command's output or exit code. A failed append prints a warning on stderr. The log can hold output that the redactor does not recognize as a secret, so treat it like the rest of `.e2e/`. `bin/worktree-remove` deletes it with the worktree, so copy what you need first.
 
@@ -267,40 +271,9 @@ Guests never run Composer. Host `bin/bootstrap` owns `vendor/` and the Gateway `
 
 `sync --quick` proves the mount, installs the current guest helper scripts, and applies the migrations. It skips the readiness probes and prints a note that readiness was not verified. It leaves `topology.json` and the guest source marker at the last full `sync`. So `status` shows that binding, and `verify` refuses a mount that differs from it until the next full `sync`.
 
-## Task workspace clones
+## State access
 
-On a host shared by several task workspaces, such as beast, a task workspace is not a linked worktree of the primary checkout. It is a linked worktree of Orbit's default Instance, or an independent clone. It does not hold the host locks. So `bin/e2e-topology` runs the command in place only in the primary checkout and its linked worktrees. In any other checkout, it runs the command through a bridge worktree of the primary checkout. The table calls that checkout the clone.
-
-| Step | What happens |
-| --- | --- |
-| Find the primary | Reads the primary registration for the clone's origin; without a live one, the command runs in the clone |
-| Update the bridge | Checks out the clone's HEAD in `<worktree root>/<clone directory>-e2e`, on branch `<clone branch>-e2e`. The worktree root is the primary's `orbit.worktreeRoot`, default `/fast/worktrees/orbit`. |
-| Mirror the work | Copies the clone's modified and untracked files, removes its deleted tracked files, and mirrors each `vendor/` directory without preserving source owners or groups |
-| Run | Runs the bridge's `bin/e2e-topology`, with each clone path replaced by the bridge path and `--worktree` set to the bridge |
-
-The registration is the first of `$XDG_STATE_HOME/orbit/e2e-primary-checkouts/{origin key}` (when set), `$HOME/.local/state/orbit/e2e-primary-checkouts/{origin key}`, and `/var/lib/orbit/e2e-primary-checkouts/{origin key}`. Its link must point to a checkout that is not a linked worktree. The primary owner is the invoking user or the owner of the invoking checkout.
-
-`bin/e2e-topology register` writes that registration. The first live primary keeps it; another checkout replaces it only with `--force` or when the registered checkout is gone. A task VM has one checkout and no registration, so its commands run in place.
-
-The origin key is the SHA-256 of the origin URL's lowercase host and its path, so every clone of one repository finds the same primary. The cleanup helper uses the same lookup order and owner rule.
-
-Missing or dangling links and explicitly rejected registrations are successful no-ops. Once an eligible primary is registered, operational failures while probing its Git directories, origin, or worktree-root setting are cleanup failures, not an absent registration. An unset worktree-root key still uses the default. The helper returns nonzero before changing task or bridge resources, so teardown retains the task checkout for retry. [Primary registration](/reference/instance-setup#primary-registration) describes the shared registry and the worker's access grants.
-
-State directories and operation locks allow access only to their owner and ACL-named users. The harness keeps existing ACL masks, including the managed user's grant to `orbit-worker`, when it opens the state root, ensures a parent directory, or acquires a lock. It removes access for the owning group and other users without recalculating those masks. An already-private owner-owned directory or lock needs no permission change when the worker uses it.
-
-A managed-user run that creates a directory with explicit mode `0700` can mask inherited named-user ACL grants and cancel worker access despite default ACLs. Keeping an existing ACL mask does not repair that inaccessible directory owned by another user. The operator must restore its effective grants and keep state owning-group/other access closed. The task lifecycle must preserve effective worker access on state and bridge directories it creates.
-
-The mirror leaves the bridge's other ignored files, such as `.e2e/`, `.env`, and Gateway storage, because the harness and the guests write them. So a file that a guest writes into the mount appears in the bridge, not in the clone. The evidence log is in the bridge too. Every command mirrors the clone first, so any command, such as `status`, pushes an edit. Set `ORBIT_E2E_BRIDGE=0` to run in the clone itself. `bin/e2e-topology-images` never bridges, because images belong to the host's Incus project, not to a checkout.
-
-In a task workspace on branch `task-58`, use the allocated topology with commands such as `bin/e2e-topology exec TASK-58 gateway --argv='["orbit","node:list","--json"]'`. When the Gateway ends a task, the Orbit Project's configured teardown step runs the installed copy of `bin/e2e-task-cleanup` to remove the task's bridge. [Tasks](/reference/tasks#complete-and-cleanup) describes that cleanup. Orbit releases the group's topology, including any web session and loopback publication, before removing the workspace. Bridge removal itself does not release a topology.
-
-Vendor mirroring keeps content, symbolic links, file timestamps, and deletion of stale entries. With rsync, it disables owner, group, and permission preservation after archive mode and omits directory timestamps. Existing destination permissions and ACL grants stay in place; new files use source permissions subject to the destination's defaults and the caller's umask, including executable permissions. This lets `orbit-worker` update a managed-user-owned bridge without trying to change its ownership, chmod owner-owned entries, or set timestamps on directories the worker does not own.
-
-The helper checks the checkout identity and origin and the repository identity. It reads the same registration paths as the bridge, including the shared directory, and it accepts a primary owned by the checkout owner. A primary registered by the managed user is found after teardown runs as `orbit-worker`. The worker also needs to traverse and write the primary's `.git` and the bridge worktree root. [Primary registration](/reference/instance-setup#primary-registration) records the copy and that grant.
-
-It targets `task-{id}-e2e` under that primary's worktree root. It removes a registered worktree only when both its path and branch match. A bridge checked out on another branch stays. It deletes the task bridge branch only when no worktree has it checked out, and deletes only `refs/orbit/e2e-bridge/task-{id}`. It never removes another task's bridge or releases a topology.
-
-An absent bridge, or a checkout with no registration, is success. A registration that exists is not that case. A cleanup command failure exits nonzero and makes teardown retain the task checkout and Instance for retry. Removal of a matching bridge, its unused branch, and its staging ref is idempotent. The helper does not alter the checkout that runs it or that checkout's worktrees.
+State directories and operation locks allow access only to their owner and ACL-named users. The harness keeps existing ACL masks when it opens the state root, ensures a parent directory, or acquires a lock. It removes access for the owning group and other users without recalculating those masks. An already-private owner-owned directory or lock needs no permission change.
 
 ## Release
 
@@ -325,12 +298,6 @@ Every network named `oe-*` belongs to the harness and never outlives its topolog
 ## Why it works this way
 
 These reasons explain the design. Check them before you propose a change.
-
-### The reviewer requests discovery on a shared host
-
-This reason applies to shared task workspaces. A task VM group declares its topology up front, because the declaration decides the VM size and the reviewer must prove the work on those nodes.
-
-Ordinary groups use no topology resources. Acquisition at workspace provisioning was rejected because most groups do not need discovery and startup should not depend on it. The reviewer decides when discovery helps; the existing consult gives implementers a way to ask without granting agents host sudo or adding another request API. Orbit owns acquisition because it changes host firewall rules. A topology is not proof of correctness, so acquisition failure or absence never prevents approval. This serves lean resource use and the principle that agents operate while humans steer.
 
 ### Composed from role images
 

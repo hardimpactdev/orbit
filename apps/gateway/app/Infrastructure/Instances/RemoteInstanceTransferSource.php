@@ -21,7 +21,6 @@ use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Infrastructure\Tasks\TaskWorkerUser;
 use App\Models\Instance;
 use App\Models\InstanceTransfer;
 use App\Models\Node;
@@ -210,7 +209,7 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
                     $capture->detached ? '1' : '0',
                     $environmentDirectory.'/.env',
                 ],
-                input: $this->materializeScript(TaskWorkerUser::forNode($destination)),
+                input: $this->materializeScript(),
             ),
             step: 'app-instance-transfer-materialize',
             errorCode: 'instance.transfer_failed',
@@ -358,10 +357,9 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
             BASH;
     }
 
-    /** Only a destination that hosts shared task work shares the checkout with the worker and runs its Git. */
-    private function materializeScript(?string $worker): string
+    private function materializeScript(): string
     {
-        return WorkspaceGit::bashPreamble().WorkspaceGit::workerPreamble($worker).'transfer_worker='.escapeshellarg($worker ?? '')."\n".<<<'BASH'
+        return WorkspaceGit::bashPreamble().<<<'BASH'
             archive=$1
             destination=$2
             head=$3
@@ -374,30 +372,19 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
             cd -- "$destination"
             if [ ! -d .git ]; then
               git init --quiet
-              if [ -n "$transfer_worker" ]; then
-                worker_uid=$(id -u "$transfer_worker")
-                test "$worker_uid" != 0
-                test "$worker_uid" != "$(id -u)"
-                managed_user=$(id -un)
-                find -P "$destination" -type d -exec setfacl -m "d:u:$transfer_worker:rwX,d:u:$managed_user:rwX" -- {} +
-                setfacl -R -P -m "u:$transfer_worker:rwX,u:$managed_user:rwX" -- "$destination"
-                setfacl -m "u:$transfer_worker:r--" -- "$destination/.git/config"
-                find -P "$destination/.git/hooks" -type d -exec setfacl -m "u:$transfer_worker:r-X,d:u:$transfer_worker:r-X" -- {} +
-                find -P "$destination/.git/hooks" -type f -exec setfacl -m "u:$transfer_worker:r-X" -- {} +
-              fi
               if [ -f ./*.bundle ]; then
                 bundle=$(echo ./*.bundle)
-                workspace_git -C "$destination" fetch --quiet "$bundle" HEAD
+                git -C "$destination" fetch --quiet "$bundle" HEAD
                 rm -f -- "$bundle"
               fi
               if [ "$detached" = "1" ] || [ -z "$branch" ]; then
-                workspace_git -C "$destination" update-ref --no-deref HEAD "$head"
+                git -C "$destination" update-ref --no-deref HEAD "$head"
               else
-                workspace_git -C "$destination" symbolic-ref HEAD "refs/heads/$branch"
-                workspace_git -C "$destination" update-ref HEAD "$head"
+                git -C "$destination" symbolic-ref HEAD "refs/heads/$branch"
+                git -C "$destination" update-ref HEAD "$head"
               fi
               # Populate the index without replacing dirty files or restoring excluded SQLite files.
-              workspace_git -C "$destination" reset --mixed --quiet "$head"
+              git -C "$destination" reset --mixed --quiet "$head"
             fi
             # Other local users, the Node agent included, never read an Instance's environment (ADR 0151).
             environment=${6:-$destination/.env}

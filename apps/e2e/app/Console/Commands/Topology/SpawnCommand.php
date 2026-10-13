@@ -22,7 +22,7 @@ final class SpawnCommand extends E2ECommand
         .' {--argv=} {--argv-file=} {--json}';
 
     #[\Override]
-    protected $description = 'Start a long-lived process as orbit on a discovery Node and return at once';
+    protected $description = 'Start a long-lived process as orbit on a topology Node and return at once';
 
     public function handle(TopologyAcquirer $acquirer, SecretRedactor $redactor): int
     {

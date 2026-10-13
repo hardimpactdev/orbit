@@ -22,7 +22,7 @@ it('always composes the Gateway and the operator around the declared workload No
 ]);
 
 it('gives every Node its role image, fixed address, WireGuard address, roles, and checkout', function () {
-    $recipe = TopologyRecipe::compose(TopologyRecipe::WORKLOADS);
+    $recipe = TopologyRecipe::fromOption('app-dev,app-prod,app-prod-2');
     $rows = array_map(static fn (TopologyNode $node): array => [
         $node->key,
         $node->image,

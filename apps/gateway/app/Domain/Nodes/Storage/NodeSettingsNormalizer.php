@@ -6,7 +6,6 @@ namespace App\Domain\Nodes\Storage;
 
 use App\Data\Nodes\NodeSettingsData;
 use App\Data\Nodes\NodeStorageAppsData;
-use App\Data\Nodes\NodeTaskSettingsData;
 
 final readonly class NodeSettingsNormalizer
 {
@@ -18,7 +17,6 @@ final readonly class NodeSettingsNormalizer
 
         $normalized = new NodeSettingsData(
             apps: $this->nested($settings->appsPath()),
-            tasks: $settings->taskWorker() === null ? null : new NodeTaskSettingsData($settings->taskWorker()),
         );
 
         return $normalized->isEmpty() ? null : $normalized;
@@ -35,12 +33,11 @@ final readonly class NodeSettingsNormalizer
 
         return array_filter([
             'apps' => $normalized->appsPath() === null ? null : ['path' => $normalized->appsPath()],
-            'tasks' => $normalized->taskWorker() === null ? null : ['worker' => $normalized->taskWorker()],
         ], static fn (?array $member): bool => $member !== null);
     }
 
     /**
-     * The stored settings with the members this normalizer manages, `apps.path` and `tasks.worker`, set or cleared.
+     * The stored settings with the member this normalizer manages, `apps.path`, set or cleared.
      * Every other key stays, such as the `t3` connection that T3 Code registration writes.
      *
      * @return array<string, mixed>|null
@@ -51,7 +48,6 @@ final readonly class NodeSettingsNormalizer
         $normalized = $this->normalize($settings);
         $managed = [
             'apps' => ['path', $normalized?->appsPath()],
-            'tasks' => ['worker', $normalized?->taskWorker()],
         ];
 
         foreach ($managed as $member => [$key, $set]) {
@@ -76,11 +72,8 @@ final readonly class NodeSettingsNormalizer
             return null;
         }
 
-        $worker = data_get($value, 'tasks.worker');
-
         return $this->normalize(new NodeSettingsData(
             apps: $this->nestedFromStored($value['apps'] ?? null),
-            tasks: is_string($worker) ? new NodeTaskSettingsData($worker) : null,
         ));
     }
 

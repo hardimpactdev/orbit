@@ -123,7 +123,7 @@ final class RenderTaskPromptCommand extends Command
             brief: $this->string($subtask, 'brief', 'subtask'),
             position: $this->integer($subtask, 'position', 'subtask'),
             deliverables: array_map(fn (mixed $deliverable, int $index): TaskDeliverable => $this->deliverable($deliverable, 'subtask.deliverables['.$index.']'), $deliverables, array_keys($deliverables)),
-            topology: array_key_exists('topology', $subtask) ? TaskTopology::from($this->listValue($subtask['topology'], 'subtask.topology')) : [],
+            topology: array_key_exists('topology', $subtask) ? TaskTopology::fromInput($this->listValue($subtask['topology'], 'subtask.topology')) : new TaskTopology,
         );
     }
 

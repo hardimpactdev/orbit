@@ -81,37 +81,6 @@ it('sends repeatable known settings including a later colon and an empty unset',
         ]);
 });
 
-it('sends the task worker opt-out and its removal', function (string $value, ?array $tasks): void {
-    node_settings_profile();
-    $node = [
-        'id' => 17,
-        'name' => 'services',
-        'status' => 'active',
-        'public_ssh_host' => '85.9.217.155',
-        'public_ssh_port' => 22,
-        'user' => 'orbit',
-        'roles' => ['app-dev'],
-    ];
-    $mockClient = MockClient::global([
-        '*/api/v1/nodes/17/settings' => MockResponse::make([
-            'data' => [...$node, 'settings' => $tasks === null ? null : ['tasks' => $tasks]],
-            'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
-        ]),
-        '*/api/v1/nodes' => MockResponse::make([
-            'data' => [$node],
-            'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
-        ]),
-    ]);
-
-    $this->artisan('node:settings', ['node' => 'services', '--setting' => ['tasks.worker:'.$value], '--json' => true])
-        ->assertExitCode(0);
-
-    expect($mockClient->getLastRequest()?->body()->all())->toBe(['tasks' => $tasks]);
-})->with([
-    'opt out' => ['none', ['worker' => 'none']],
-    'remove the opt-out' => ['', null],
-]);
-
 it('rejects duplicate, unknown, and malformed settings before making a request', function (
     array $settings,
     string $message,
@@ -131,6 +100,7 @@ it('rejects duplicate, unknown, and malformed settings before making a request',
 })->with([
     'duplicate key' => [['apps.path:/srv/a', 'apps.path:/srv/b'], 'supplied more than once'],
     'unknown key' => [['packages.path:/srv/a'], 'Unknown setting'],
+    'removed task worker key' => [['tasks.worker:none'], 'Unknown setting'],
     'missing colon' => [['apps.path'], 'setting-path'],
     'empty key' => [[':/srv/a'], 'setting-path'],
 ]);

@@ -92,7 +92,7 @@ function worktreeSynchronizerFixture(WorktreeSynchronizerGuestFake $guest, strin
         exec('git -C '.escapeshellarg($root).' '.implode(' ', array_map(escapeshellarg(...), $arguments)).' 2>&1', $output, $status);
         expect($status)->toBe(0);
     }
-    $target = TopologyTarget::feature('TST-7', new AttemptId(str_repeat('a', 32)), TopologyRecipe::compose(['app-dev']));
+    $target = TopologyTarget::for('TST-7', new AttemptId(str_repeat('a', 32)), TopologyRecipe::compose(['app-dev']));
 
     return [
         'root' => $root,

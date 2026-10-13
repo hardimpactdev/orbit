@@ -8,7 +8,6 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskBroadcastObserver;
-use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskFinalReview;
@@ -18,6 +17,7 @@ use App\Domain\Tasks\TaskLevelStatusCast;
 use App\Domain\Tasks\TaskMergeStatus;
 use App\Domain\Tasks\TaskQuestions;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskTopology;
 use App\Domain\Tasks\TaskType;
 use BackedEnum;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
@@ -94,7 +94,6 @@ use LogicException;
  * @property string $reviewer_model
  * @property int|null $reviewer_agent_thread_id
  * @property string|null $capacity_wait_reason
- * @property TaskCompute|null $task_compute
  * @property TaskExecutionMode $execution_mode
  * @property string $implementer_agent_driver
  * @property string $reviewer_agent_driver
@@ -117,7 +116,7 @@ use LogicException;
  * @property string|null $subtask_start_commit
  * @property string|null $fixup_problem
  * @property string|null $fixup_head_sha
- * @property list<string>|null $topology
+ * @property TaskTopology $topology
  * @property list<array<string, string|bool|list<string>>>|null $deliverables
  * @property Carbon|null $settled_at
  * @property-read Task $parent
@@ -151,7 +150,6 @@ final class Task extends Model
         'agent_unavailable_since',
         'agent_unavailable_notified_at',
         'reserved_at',
-        'task_compute',
         'capacity_wait_reason',
         'pr_branch',
         'merge_status',
@@ -272,7 +270,6 @@ final class Task extends Model
         'agent_unavailable_since',
         'agent_unavailable_notified_at',
         'reserved_at',
-        'task_compute',
         'capacity_wait_reason',
     ];
 
@@ -284,9 +281,6 @@ final class Task extends Model
         });
 
         self::saving(static function (Task $task): void {
-            if ($task->exists && $task->getRawOriginal('task_compute') !== null && $task->isDirty('task_compute')) {
-                throw new LogicException('A claimed task group cannot change compute mode.');
-            }
             $task->ensureParentId();
             $task->applyLevelDefaults();
             $task->guardHierarchy();
@@ -513,7 +507,6 @@ final class Task extends Model
             'position' => 'integer',
             'status' => TaskLevelStatusCast::class,
             'execution_mode' => TaskExecutionMode::class,
-            'task_compute' => TaskCompute::class,
             'merge_status' => TaskMergeStatus::class,
             'preview' => 'boolean',
             'notify_coder' => 'boolean',
@@ -533,7 +526,7 @@ final class Task extends Model
             'started_at' => 'immutable_datetime',
             'settled_at' => 'immutable_datetime',
             'deliverables' => 'array',
-            'topology' => 'array',
+            'topology' => TaskTopology::class,
             'completion_attempt' => 'integer',
             'completion_handoff_attempt' => 'integer',
             'completion_handoff_comment_id' => 'integer',

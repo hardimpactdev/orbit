@@ -1241,7 +1241,7 @@ it('validates a deliverable correction without consuming it on refused requests'
     $this->patchJson($url, ['title' => 'Changed', 'deliverables' => [deliverable_path_file('tests/ExistingTest.php')]])->assertConflict()->assertJsonPath('error.code', 'tasks.not_in_backlog');
     $this->patchJson($url, ['topology' => ['app-dev'], 'deliverables' => [deliverable_path_file('tests/ExistingTest.php')]])->assertConflict()->assertJsonPath('error.code', 'tasks.not_in_backlog');
     expect($task->fresh()?->deliverables)->toBe($before)
-        ->and($task->fresh()?->topology)->toBeNull();
+        ->and($task->fresh()?->topology->isEmpty())->toBeTrue();
     expect(Activity::query()->where('subject_id', $task->id)->where('description', 'deliverables corrected')->count())->toBe(0);
 
     $command['paths'] = ['tests/ExistingTest.php'];
@@ -1275,9 +1275,11 @@ it('accepts a subtask appended after a review-and-merge approval that exists onl
     };
     app()->instance(DeliverablePathRepository::class, new NativeDeliverablePathRepository($origin, app(RepositoryReadAccess::class), new Filesystem, DeliverablePathWorkspace::localExecutor()));
     $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Local approval', 'brief' => 'Keep approvals local.', 'status' => TaskGroupStatus::Running]);
-    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $gateway->id, 'name' => 'local-approval', 'checkout_path' => $git['checkout'], 'starting_commit' => $git['pushed'], 'status' => 'source_resolved']);
+    $workspaceNode = Node::query()->create(['name' => 'local-approval-vm', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '10.44.0.231', 'wireguard_ip' => '10.44.0.231', 'user' => 'orbit']);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $workspaceNode->id, 'name' => 'local-approval', 'checkout_path' => $git['checkout'], 'starting_commit' => $git['pushed'], 'status' => 'source_resolved']);
     $group->taskable()->associate($instance);
     $group->save();
+    test_vm_group($group);
     $previous = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Earlier', 'brief' => 'Earlier.', 'status' => TaskStatus::Completed]);
     TaskComment::query()->create(['task_group_id' => $group->id, 'task_id' => $previous->id, 'type' => TaskCommentType::Approved, 'body' => 'Approved.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => $git['local']]);
 

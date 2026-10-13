@@ -163,7 +163,7 @@ The migration seeds false for existing Projects with slug `orbit` and true for o
 
 ### Review and merge
 
-`PATCH /api/v1/projects/{project}` accepts `review_and_merge` as a JSON boolean and `merge_check` as a string of at most 255 characters, or null. The flow is on only while `review_and_merge` is true, `merge_check` is set, `source_access` is `github_app`, and `task_compute` is `shared`. A request that would leave the switch on without one of these fails with HTTP 422 `validation.failed` on `merge_check` or `review_and_merge`, and changes nothing. CLI human detail output labels the fields `Review and merge` and `Merge check`. An invalid CLI value returns `project.review_and_merge_invalid`, `project.merge_check_conflict`, or `project.merge_check_invalid` before a request.
+`PATCH /api/v1/projects/{project}` accepts `review_and_merge` as a JSON boolean and `merge_check` as a string of at most 255 characters, or null. The flow is on only while `review_and_merge` is true, `merge_check` is set, and `source_access` is `github_app`. A request that would leave the switch on without one of these fails with HTTP 422 `validation.failed` on `merge_check` or `review_and_merge`, and changes nothing. CLI human detail output labels the fields `Review and merge` and `Merge check`. An invalid CLI value returns `project.review_and_merge_invalid`, `project.merge_check_conflict`, or `project.merge_check_invalid` before a request.
 
 ```bash
 orbit project:update 46 --review-and-merge=true --merge-check="Required checks"
@@ -194,11 +194,7 @@ A slug change synchronizes the stored environment of each development Instance t
 
 When updating source, the Gateway passes `-c core.hooksPath=/dev/null` and `-c core.fsmonitor=false` to Git during preflight, origin changes, fetches, branch changes, and rollback. The Gateway does not run checkout hooks or a custom filesystem monitor for those operations. The overrides do not change the stored Git configuration.
 
-Branch switch and rollback checkout commands write the work tree, so they can start a filter from `.git/config`. On a checkout that is [shared with the task worker](/reference/instance-setup#task-work-nodes), they run as the worker, without a credential environment. The worker can change `.git/config` on such a checkout: it has write access to `.git`, so a read-only ACL on the file does not stop a replacement. A filter it plants therefore runs only as the worker.
-
-The worker then owns the files it wrote. Their inherited ACL gives the managed user the same access; see [task work Nodes](/reference/instance-setup#task-work-nodes). A switch checks out with `--no-track`, and the managed user then records the branch's upstream, so the worker never rewrites `.git/config`.
-
-When the worker account is missing, the switch fails with `project.source_switch_failed` and never falls back to the managed user. On a Node that opts out of the worker, these commands run as the managed user. Origin changes read no content and stay with the managed user. Preflight fetches use the Project repository URL and never read the checkout's configuration; see [credentialed Git](/reference/instance-setup#credentialed-git).
+Branch switch, rollback, and origin changes run as the Node's managed user, the owner of the checkout. Branch switch and rollback checkout commands write the work tree, so they run without a credential environment. A switch checks out with `--no-track`, and then records the branch's upstream. Preflight fetches use the Project repository URL and never read the checkout's configuration; see [credentialed Git](/reference/instance-setup#credentialed-git).
 
 Run [Doctor](/cli/doctor) to inspect any projection that needs attention.
 
@@ -315,11 +311,3 @@ Reading a stored placeholder or activity class under a different spelling, as if
 
 A repository check fails when an App-domain name is present in app code, database code, the SDK, the CLI, web sources, or these pages. A monorepo path under `apps/` is not that name. A `covers:` glob names a file that exists, and the check rejects an App-domain name left in that glob. The same check rejects the Node names the web app used before [Concepts](/concepts) settled on Nodes with roles and roleless Nodes.
 
-### Task compute
-
-`task_compute` selects `shared` or `vm` for future task group claims. It defaults to `shared` while sandbox rollout is in progress. The first reservation records the selected mode on the group. That mode stays fixed through retries, review, and resume, even if the Project setting changes. Existing groups that have already started keep `shared`. A VM group waits with a visible reason when its sandbox is unavailable and never uses a shared workspace as a fallback. Enable `vm` only after the corresponding lane has passed its disposable proof.
-
-Set the mode with `orbit project:create ... --task-compute=shared|vm` or
-`orbit project:update <id> --task-compute=shared|vm`. `project:show` shows the
-Project setting. `tasks:show` shows the group's pinned mode and its capacity wait
-reason. Omitting the option on update preserves the setting.

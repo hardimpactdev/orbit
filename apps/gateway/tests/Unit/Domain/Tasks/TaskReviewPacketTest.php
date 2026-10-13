@@ -8,6 +8,7 @@ use App\Domain\Tasks\TaskReviewContext;
 use App\Domain\Tasks\TaskReviewFindingsPacket;
 use App\Domain\Tasks\TaskReviewPacket;
 use App\Domain\Tasks\TaskSettlingFixup;
+use App\Domain\Tasks\TaskTopology;
 use App\Domain\Tasks\TaskTurnInstructions;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Facades\Http;
@@ -685,7 +686,7 @@ function review_packet(array $overrides = []): string
         consults: $values['consults'],
         resolution: $values['resolution'],
         groupId: $values['groupId'] ?? 0,
-        topology: $values['topology'] ?? [],
+        topology: TaskTopology::fromStored($values['topology'] ?? []),
     )->render();
 }
 

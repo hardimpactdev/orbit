@@ -29,7 +29,7 @@ Lease a topology, apply four fixture patterns with `bin/e2e-topology exec`, and 
 
 ### Lease the topology
 
-Run `bin/e2e-topology acquire ISSUE . --nodes=app-dev,app-prod` from the worktree, where the branch name contains the issue. Run `bin/e2e-topology status ISSUE` to see the lease. In a task workspace clone, every command runs through the bridge worktree, and the evidence log is in the bridge.
+Run `bin/e2e-topology acquire ISSUE . --nodes=app-dev,app-prod` from the worktree, where the branch name contains the issue. Run `bin/e2e-topology status ISSUE` to see the lease.
 
 Every `exec` below runs one argument vector as `orbit` on one Node. Run the Orbit CLI on `gateway`. An action on `app-prod`, which has no checkout, uses `sudo` or a short `sh -c` string. `exec` allows 60 seconds, so pass `--timeout=SECONDS` when a Doctor request needs more.
 

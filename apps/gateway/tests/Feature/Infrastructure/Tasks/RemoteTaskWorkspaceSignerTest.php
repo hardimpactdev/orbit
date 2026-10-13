@@ -18,7 +18,6 @@ use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\LocalShellSshExecutor;
-use Tests\Support\TaskWorkerSshExecutor;
 
 pest()->group('privileged');
 
@@ -115,8 +114,7 @@ it('returns HEAD without a new commit when the workspace has no changes', functi
 });
 
 describe('TaskGitHardening', function (): void {
-    it('ignores planted hooks and fsmonitor on an Orbit commit', function (?string $worker): void {
-        config()->set('orbit.tasks.worker_user', $worker);
+    it('ignores planted hooks and fsmonitor on an Orbit commit', function (): void {
         $checkout = sys_get_temp_dir().'/orbit-task-git-hardening-'.bin2hex(random_bytes(6));
         (new Process(['git', 'init', '--quiet', $checkout]))->mustRun();
         task_signer_git($checkout, ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '--allow-empty', '-m', 'start']);
@@ -130,58 +128,13 @@ describe('TaskGitHardening', function (): void {
         task_signer_git($checkout, ['config', 'core.hooksPath', $hooks]);
         task_signer_git($checkout, ['config', 'core.fsmonitor', $checkout.'/.git/planted-monitor']);
         file_put_contents($checkout.'/change', 'agent change');
-        $transport = $worker === null ? new LocalShellSshExecutor : TaskWorkerSshExecutor::forCheckout($checkout);
-        if ($worker !== null) {
-            (new Process(['setfacl', '-R', '-m', 'u:nobody:rwX,d:u:nobody:rwX,d:u:'.posix_geteuid().':rwX', $checkout]))->mustRun();
-        }
 
         try {
-            $sha = new RemoteTaskWorkspaceSigner(new TaskWorkspaceExecutor(task_signer_ssh($transport)))->commit(task_signer_instance($checkout), 'Orbit commit');
+            $sha = new RemoteTaskWorkspaceSigner(new TaskWorkspaceExecutor(task_signer_ssh(new LocalShellSshExecutor)))->commit(task_signer_instance($checkout), 'Orbit commit');
 
             expect($sha)->not->toBeNull()
                 ->and(file_exists($checkout.'/.git/hook-ran'))->toBeFalse()
                 ->and(file_exists($checkout.'/.git/fsmonitor-ran'))->toBeFalse();
-        } finally {
-            File::deleteDirectory($checkout);
-        }
-    })->with([null, 'nobody']);
-});
-
-describe('TaskCheckWorkerUser', function (): void {
-    it('refuses to run checkout programs when the worker resolves to the managed UID', function (): void {
-        config()->set('orbit.tasks.worker_user', posix_getpwuid(posix_geteuid())['name']);
-        $checkout = sys_get_temp_dir().'/orbit-signer-same-uid-'.bin2hex(random_bytes(6));
-        (new Process(['git', 'init', '-q', $checkout]))->mustRun();
-        file_put_contents($checkout.'/.gitattributes', "change filter=uid\n");
-        file_put_contents($checkout.'/change', 'change');
-        task_signer_git($checkout, ['config', 'filter.uid.clean', 'id -u > .git/filter-user; cat']);
-
-        try {
-            expect(new RemoteTaskWorkspaceSigner(new TaskWorkspaceExecutor(task_signer_ssh(new LocalShellSshExecutor)))->commit(task_signer_instance($checkout), 'commit'))->toBeNull()
-                ->and(file_exists($checkout.'/.git/filter-user'))->toBeFalse();
-        } finally {
-            File::deleteDirectory($checkout);
-        }
-    });
-
-    it('runs start-commit Git and its checkout filter as the worker, not the Node user', function (): void {
-        config()->set('orbit.tasks.worker_user', 'nobody');
-        $checkout = sys_get_temp_dir().'/orbit-task-worker-commit-'.bin2hex(random_bytes(6));
-        (new Process(['git', 'init', '--quiet', $checkout]))->mustRun();
-        task_signer_git($checkout, ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '--allow-empty', '-m', 'start']);
-        file_put_contents($checkout.'/.gitattributes', "change filter=worker\n");
-        task_signer_git($checkout, ['config', 'filter.worker.clean', 'id -un > .git/filter-user; cat']);
-        file_put_contents($checkout.'/change', 'agent change');
-        $transport = TaskWorkerSshExecutor::forCheckout($checkout);
-        (new Process(['setfacl', '-R', '-m', 'u:nobody:rwX,d:u:nobody:rwX,d:u:'.posix_geteuid().':rwX', $checkout]))->mustRun();
-
-        try {
-            $sha = new RemoteTaskWorkspaceSigner(new TaskWorkspaceExecutor(task_signer_ssh($transport)))->commit(task_signer_instance($checkout), 'Start commit');
-
-            expect($sha)->not->toBeNull()
-                ->and(trim((string) file_get_contents($checkout.'/.git/filter-user')))->toBe('nobody')
-                ->and(fileowner($checkout.'/.git/index'))->toBe(65534)
-                ->and(task_signer_git($checkout, ['log', '-1', '--format=%an <%ae>']))->toBe('orbit <tasks@orbit>');
         } finally {
             File::deleteDirectory($checkout);
         }

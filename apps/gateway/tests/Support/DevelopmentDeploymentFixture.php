@@ -42,7 +42,7 @@ final class DevelopmentDeploymentFixture
 
     public readonly string $initialCommit;
 
-    /** A privileged test passes a root that the task worker can reach, such as the system temporary directory. */
+    /** A privileged test passes a root that another account can reach, such as the system temporary directory. */
     public function __construct(?string $root = null)
     {
         $this->sandbox = ($root ?? storage_path('framework/testing')).'/dev935-'.bin2hex(random_bytes(8));

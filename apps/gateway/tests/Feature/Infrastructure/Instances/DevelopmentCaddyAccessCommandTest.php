@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\Instances\DevelopmentCaddyAccessCommand;
-use App\Infrastructure\Ssh\RemoteCommand;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
@@ -202,24 +201,16 @@ it('restores what it grants and keeps the source denied, or retains its snapshot
         file_put_contents("$checkout/web/site/x\\057y", 'escaped slash');
         file_put_contents("$checkout/web/site/back\\\\slash", 'backslashes');
         mkdir("$root/bin");
-        file_put_contents("$root/bin/setfacl", <<<'BASH'
+        $failRestore = $failRecovery ? 'exit 1' : '';
+        file_put_contents("$root/bin/setfacl", <<<BASH
             #!/bin/bash
-            for argument in "$@"; do
-                if [ "$argument" = 'u:caddy:r-X' ]; then exit 1; fi
+            for argument in "\$@"; do
+                if [ "\$argument" = 'u:caddy:r-X' ]; then exit 1; fi
+                case "\$argument" in --restore=*) {$failRestore} ;; esac
             done
-            exec /usr/bin/setfacl "$@"
+            exec /usr/bin/setfacl "\$@"
             BASH);
         chmod("$root/bin/setfacl", 0o700);
-        if ($failRecovery) {
-            file_put_contents("$root/bin/python3", <<<'BASH'
-                #!/bin/bash
-                for argument in "$@"; do
-                    if [ "$argument" = restore ]; then exit 1; fi
-                done
-                exec /usr/bin/python3 "$@"
-                BASH);
-            chmod("$root/bin/python3", 0o700);
-        }
         // The walk grants the Web root, its ancestors, and the shared Git directory; it denies the rest.
         $ancestors = [];
         for ($ancestor = "$checkout/web"; $ancestor !== dirname($root); $ancestor = dirname($ancestor)) {
@@ -234,18 +225,16 @@ it('restores what it grants and keeps the source denied, or retains its snapshot
 
         $process = new Process($command->arguments, env: ['PATH' => "$root/bin:".getenv('PATH')]);
         expect($process->setInput($command->input)->run())->not->toBe(0);
-        // Nothing lands in the Git directory, which the task worker can write.
+        // Nothing lands in the Git directory, which the checkout's own programs can write.
         expect(new Filesystem()->glob("$root/checkout/.git/orbit-caddy-acl.*"))->toBe([]);
         $retained = development_caddy_access_retained($process);
         if ($failRecovery) {
             expect($retained)->toStartWith('/var/tmp/orbit-caddy-acl.')
                 ->and(fileowner($retained))->toBe(posix_geteuid())
-                ->and(fileperms($retained) & 0o777)->toBe(0o700);
-            // The test account owns every saved entry, so its own restore puts them back.
-            expect(fileperms("$retained/entries/".posix_geteuid()) & 0o777)->toBe(0o600)
-                ->and(file_exists("$retained/ancestors/0"))->toBeFalse();
-            new Process(['python3', '-I', '-c', development_caddy_access_helper($command), 'restore'])
-                ->setInput(file_get_contents("$retained/entries/".posix_geteuid()))->mustRun();
+                ->and(fileperms($retained) & 0o777)->toBe(0o700)
+                ->and(filesize("$retained/root"))->toBe(0);
+            // The test account owns every saved entry, so its own restore of the retained snapshot puts them back.
+            new Process(['setfacl', "--restore=$retained/managed"])->mustRun();
             new Filesystem()->deleteDirectory($retained);
         } else {
             expect($retained)->toBeNull();
@@ -359,7 +348,7 @@ it('treats only a vanished entry as harmless, and fails on any other walk error'
     'a refused entry' => ['Operation not permitted', false],
 ]);
 
-it('changes each entry as its owner on a checkout shared with the task worker', function (): void {
+it('fails loudly on an entry the managed user does not own and restores what it granted', function (string $entry): void {
     if (LinuxHost::delegate($this)) {
         return;
     }
@@ -368,140 +357,27 @@ it('changes each entry as its owner on a checkout shared with the task worker', 
 
     try {
         $checkout = "$root/checkout";
-        mkdir("$checkout/web/site/assets");
-        file_put_contents("$checkout/web/site/assets/app.js", 'worker asset');
-        file_put_contents("$checkout/web/site/worker.html", 'worker page');
-        file_put_contents("$checkout/worker-source.txt", 'worker source');
-        // The worker's Git wrote these files; it owns them, and only it may change their ACL.
-        development_caddy_access_share($root);
-        new Process(['sudo', '-n', 'chown', 'nobody', "$checkout/web/site/assets", "$checkout/web/site/assets/app.js", "$checkout/web/site/worker.html", "$checkout/worker-source.txt"])->mustRun();
-        $command = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site($checkout, 'web/site')]), 'nobody');
+        file_put_contents("$checkout/$entry", 'foreign');
+        new Process(['sudo', '-n', 'chown', 'root', "$checkout/$entry"])->mustRun();
+        $foreign = new Process(['getfacl', '-p', "$checkout/$entry"])->mustRun()->getOutput();
+        $granted = static fn (): string => new Process(['getfacl', '-R', '-p', "$checkout/web/site"])->mustRun()->getOutput()
+            .new Process(['getfacl', '-p', "$checkout/web", $checkout, $root])->mustRun()->getOutput();
+        $before = $granted();
+        $command = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site($checkout, 'web/site')]));
 
         $process = new Process($command->arguments)->setInput($command->input);
-        expect($process->run())->toBe(0, $process->getErrorOutput());
-        foreach (['web/site/index.html' => 'first page', 'web/site/worker.html' => 'worker page', 'web/site/assets/app.js' => 'worker asset'] as $served => $content) {
-            expect(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$checkout/$served"])->mustRun()->getOutput())->toBe($content);
-        }
-        foreach (['.env', 'source.txt', 'worker-source.txt'] as $private) {
-            expect(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$checkout/$private"])->run())->toBe(1);
-        }
-        expect(fileowner("$checkout/web/site/worker.html"))->toBe(posix_getpwnam('nobody')['uid']);
-
-        // Without the worker, or for an entry neither account owns, the walk stops instead of skipping it.
-        $managedOnly = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site($checkout, 'web/site')]));
-        $process = new Process($managedOnly->arguments)->setInput($managedOnly->input);
         expect($process->run())->not->toBe(0)
-            ->and($process->getErrorOutput())->toContain('neither');
-        file_put_contents("$checkout/foreign.txt", 'foreign');
-        new Process(['sudo', '-n', 'chown', 'root', "$checkout/foreign.txt"])->mustRun();
-        $process = new Process($command->arguments)->setInput($command->input);
-        expect($process->run())->not->toBe(0)
-            ->and($process->getErrorOutput())->toContain("$checkout/foreign.txt");
+            ->and($process->getErrorOutput())->toContain("$checkout/$entry: Operation not permitted")
+            ->and(new Process(['getfacl', '-p', "$checkout/$entry"])->mustRun()->getOutput())->toBe($foreign);
+        // The walk failed after it changed ACLs, so recovery put back the saved ones.
+        expect(development_caddy_access_retained($process))->toBeNull($process->getErrorOutput())
+            ->and($granted())->toBe($before);
     } finally {
         new Process(['sudo', '-n', 'rm', '-rf', '--', $root])->run();
     }
-});
+})->with(['outside the Web root' => 'foreign.txt', 'inside the Web root' => 'web/site/foreign.html']);
 
-it('never follows a symlink that the worker swaps in at a saved entry when it restores', function (): void {
-    if (LinuxHost::delegate($this)) {
-        return;
-    }
-
-    $root = development_caddy_access_fixture();
-    $retained = null;
-
-    try {
-        $checkout = "$root/checkout";
-        file_put_contents("$checkout/web/site/worker.html", 'worker page');
-        file_put_contents("$root/target", 'root file');
-        development_caddy_access_share($root);
-        new Process(['sudo', '-n', 'chown', 'nobody', "$checkout/web/site/worker.html"])->mustRun();
-        new Process(['sudo', '-n', 'chown', 'root:root', "$root/target"])->mustRun();
-        new Process(['sudo', '-n', 'chmod', '0600', "$root/target"])->mustRun();
-        $before = new Process(['getfacl', '-p', "$root/target"])->mustRun()->getOutput();
-        // After the snapshot saved worker.html as the worker's, the worker swaps a symlink to a root file in and
-        // fails the walk, so recovery restores the saved entry at that name.
-        mkdir("$root/bin");
-        file_put_contents("$root/bin/setfacl", <<<BASH
-            #!/bin/bash
-            for argument in "\$@"; do
-                if [ "\$argument" = u:caddy:r-X ]; then
-                    sudo -n -u nobody rm -f -- '$checkout/web/site/worker.html'
-                    sudo -n -u nobody ln -s -- '$root/target' '$checkout/web/site/worker.html'
-                    exit 1
-                fi
-            done
-            exec /usr/bin/setfacl "\$@"
-            BASH);
-        chmod("$root/bin/setfacl", 0o700);
-        $command = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site($checkout, 'web/site')]), 'nobody');
-
-        $process = new Process($command->arguments, env: ['PATH' => "$root/bin:".getenv('PATH')]);
-        expect($process->setInput($command->input)->run())->not->toBe(0);
-        $retained = development_caddy_access_retained($process);
-        clearstatcache();
-        // The worker's restore names the replaced entry and fails, so the snapshot stays.
-        expect(is_link("$checkout/web/site/worker.html"))->toBeTrue()
-            ->and(fileowner("$root/target"))->toBe(0)
-            ->and(new Process(['getfacl', '-p', "$root/target"])->mustRun()->getOutput())->toBe($before)
-            ->and($process->getErrorOutput())->toContain("$checkout/web/site/worker.html: Replaced since the snapshot")
-            ->and($retained)->toStartWith('/var/tmp/orbit-caddy-acl.');
-    } finally {
-        if ($retained !== null) {
-            new Filesystem()->deleteDirectory($retained);
-        }
-        new Process(['sudo', '-n', 'rm', '-rf', '--', $root])->run();
-    }
-});
-
-it('never follows a symlink that the worker swaps in at a directory above the Web root', function (): void {
-    if (LinuxHost::delegate($this)) {
-        return;
-    }
-
-    $root = development_caddy_access_fixture();
-    $retained = null;
-
-    try {
-        $checkout = "$root/checkout";
-        development_caddy_access_share($root);
-        new Process(['sudo', '-n', 'chown', 'nobody', "$checkout/web"])->mustRun();
-        new Process(['sudo', '-n', 'install', '-d', '-o', 'root', '-g', 'root', '-m', '0700', "$root/private"])->mustRun();
-        $before = new Process(['getfacl', '-p', "$root/private"])->mustRun()->getOutput();
-        // After the Web root passed its checks, the worker moves its directory above the Web root away and puts a
-        // symlink to a root directory Caddy cannot pass in its place, so the passage grant meets the symlink.
-        mkdir("$root/bin");
-        file_put_contents("$root/bin/setfacl", <<<BASH
-            #!/bin/bash
-            for argument in "\$@"; do
-                if [ "\$argument" = u:caddy:--- ] && [ ! -e '$root/swapped' ]; then
-                    touch '$root/swapped'
-                    sudo -n -u nobody mv -- '$checkout/web' '$checkout/moved'
-                    sudo -n -u nobody ln -s -- '$root/private' '$checkout/web'
-                fi
-            done
-            exec /usr/bin/setfacl "\$@"
-            BASH);
-        chmod("$root/bin/setfacl", 0o700);
-        $command = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site($checkout, 'web/site')]), 'nobody');
-
-        $process = new Process($command->arguments, env: ['PATH' => "$root/bin:".getenv('PATH')]);
-        expect($process->setInput($command->input)->run())->not->toBe(0);
-        $retained = development_caddy_access_retained($process);
-        clearstatcache();
-        expect(file_exists("$root/swapped"))->toBeTrue($process->getErrorOutput())
-            ->and(fileowner("$root/private"))->toBe(0)
-            ->and(new Process(['getfacl', '-p', "$root/private"])->mustRun()->getOutput())->toBe($before)
-            ->and($process->getErrorOutput())->toContain("$checkout/web: Not a directory");
-    } finally {
-        if ($retained !== null) {
-            new Filesystem()->deleteDirectory($retained);
-        }
-        new Process(['sudo', '-n', 'rm', '-rf', '--', $root])->run();
-    }
-});
-
-it('restores the entries of both accounts and the root directory above the checkout after a failed walk', function (): void {
+it('restores the root directory above the checkout after a failed walk', function (): void {
     if (LinuxHost::delegate($this)) {
         return;
     }
@@ -511,14 +387,9 @@ it('restores the entries of both accounts and the root directory above the check
     new Process(['sudo', '-n', 'install', '-d', '-o', 'root', '-g', 'root', '-m', '0700', $base])->mustRun();
 
     try {
-        new Process(['sudo', '-n', 'setfacl', '-m', 'u:'.posix_geteuid().':rwx,u:nobody:--x', $base])->mustRun();
+        new Process(['sudo', '-n', 'setfacl', '-m', 'u:'.posix_geteuid().':rwx', $base])->mustRun();
         $root = development_caddy_access_fixture($base);
         $checkout = "$root/checkout";
-        mkdir("$checkout/web/site/assets");
-        file_put_contents("$checkout/web/site/assets/app.js", 'worker asset');
-        file_put_contents("$checkout/web/site/worker.html", 'worker page');
-        development_caddy_access_share($root);
-        new Process(['sudo', '-n', 'chown', 'nobody', "$checkout/web/site/assets", "$checkout/web/site/assets/app.js", "$checkout/web/site/worker.html"])->mustRun();
         $granted = static fn (): string => new Process(['getfacl', '-R', '-p', "$checkout/web/site"])->mustRun()->getOutput()
             .new Process(['getfacl', '-p', "$checkout/web", $checkout, $root, $base, "$checkout/.git"])->mustRun()->getOutput();
         $before = $granted();
@@ -531,7 +402,7 @@ it('restores the entries of both accounts and the root directory above the check
             exec /usr/bin/setfacl "$@"
             BASH);
         chmod("$root/bin/setfacl", 0o700);
-        $command = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site($checkout, 'web/site')]), 'nobody');
+        $command = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site($checkout, 'web/site')]));
 
         $process = new Process($command->arguments, env: ['PATH' => "$root/bin:".getenv('PATH')]);
         expect($process->setInput($command->input)->run())->not->toBe(0)
@@ -539,11 +410,9 @@ it('restores the entries of both accounts and the root directory above the check
             ->and($granted())->toBe($before);
 
         $process = new Process($command->arguments)->setInput($command->input);
-        expect($process->run())->toBe(0, $process->getErrorOutput());
-        foreach (['web/site/index.html' => 'first page', 'web/site/worker.html' => 'worker page', 'web/site/assets/app.js' => 'worker asset'] as $served => $content) {
-            expect(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$checkout/$served"])->mustRun()->getOutput())->toBe($content);
-        }
-        expect(new Process(['getfacl', '-cp', $base])->mustRun()->getOutput())->toContain('user:caddy:--x')
+        expect($process->run())->toBe(0, $process->getErrorOutput())
+            ->and(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$checkout/web/site/index.html"])->mustRun()->getOutput())->toBe('first page')
+            ->and(new Process(['getfacl', '-cp', $base])->mustRun()->getOutput())->toContain('user:caddy:--x')
             ->and(fileowner($base))->toBe(0)
             ->and(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$checkout/source.txt"])->run())->toBe(1);
     } finally {
@@ -551,7 +420,7 @@ it('restores the entries of both accounts and the root directory above the check
     }
 });
 
-it('refuses to act as root below a directory that root does not own', function (): void {
+it('checks what Caddy can pass with its ACL entry, not only the mode', function (): void {
     if (LinuxHost::delegate($this)) {
         return;
     }
@@ -559,71 +428,26 @@ it('refuses to act as root below a directory that root does not own', function (
     $root = development_caddy_access_fixture();
 
     try {
-        // The helper of the walk, run as root on a directory of the managed user.
+        // The modes let every account pass, but the deny gives Caddy its own entry without execute.
+        foreach (["$root", "$root/checkout", "$root/checkout/web"] as $directory) {
+            chmod($directory, 0o755);
+        }
         $command = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site("$root/checkout", 'web/site')]));
-        $before = new Process(['getfacl', '-p', "$root/checkout"])->mustRun()->getOutput();
-        $process = new Process(['sudo', '-n', 'python3', '-I', '-c', development_caddy_access_helper($command), 'set', 'D', '-m', 'u:caddy:--x', '--', "$root/checkout"]);
 
-        expect($process->run())->not->toBe(0)
-            ->and($process->getErrorOutput())->toContain('Root acts only on a path that root owns from / down')
-            ->and(new Process(['getfacl', '-p', "$root/checkout"])->mustRun()->getOutput())->toBe($before);
+        foreach ([1, 2] as $run) {
+            $process = new Process($command->arguments)->setInput($command->input);
+            expect($process->run())->toBe(0, $process->getErrorOutput())
+                ->and(new Process(['getfacl', '-cp', "$root/checkout"])->mustRun()->getOutput())->toContain('user:caddy:--x')
+                ->and(new Process(['getfacl', '-cp', "$root/checkout/web"])->mustRun()->getOutput())->toContain('user:caddy:--x')
+                ->and(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$root/checkout/web/site/index.html"])->mustRun()->getOutput())->toBe('first page')
+                ->and(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$root/checkout/web/private.txt"])->run())->toBe(1);
+        }
     } finally {
         new Filesystem()->deleteDirectory($root);
     }
 });
 
-it('never gives a saved ACL to a private file that the worker moves to the saved name', function (): void {
-    if (LinuxHost::delegate($this)) {
-        return;
-    }
-
-    $root = development_caddy_access_fixture();
-    $retained = null;
-
-    try {
-        $checkout = "$root/checkout";
-        development_caddy_access_share($root);
-        // The Gateway writes the environment file with mode 0600, so its mask hides it from the worker's entry.
-        chmod("$checkout/.env", 0o600);
-        // After the snapshot saved index.html, the worker moves the managed user's environment file over it and
-        // fails the walk, so recovery meets the environment file at the saved name.
-        mkdir("$root/bin");
-        file_put_contents("$root/bin/setfacl", <<<BASH
-            #!/bin/bash
-            for argument in "\$@"; do
-                if [ "\$argument" = u:caddy:r-X ]; then
-                    sudo -n -u nobody mv -f -- '$checkout/.env' '$checkout/web/site/index.html'
-                    exit 1
-                fi
-            done
-            exec /usr/bin/setfacl "\$@"
-            BASH);
-        chmod("$root/bin/setfacl", 0o700);
-        $command = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site($checkout, 'web/site')]), 'nobody');
-
-        $process = new Process($command->arguments, env: ['PATH' => "$root/bin:".getenv('PATH')]);
-        expect($process->setInput($command->input)->run())->not->toBe(0);
-        $retained = development_caddy_access_retained($process);
-        $moved = "$checkout/web/site/index.html";
-        $acl = new Process(['getfacl', '-cp', $moved])->mustRun()->getOutput();
-
-        expect(file_exists("$checkout/.env"))->toBeFalse()
-            ->and(file_get_contents($moved))->toBe('SECRET=value')
-            ->and($acl)->toContain('mask::---')
-            ->and($acl)->toContain('other::---')
-            ->and(new Process(['sudo', '-n', '-u', 'nobody', 'cat', $moved])->run())->not->toBe(0)
-            ->and(new Process(['sudo', '-n', '-u', 'caddy', 'cat', $moved])->run())->not->toBe(0)
-            ->and($process->getErrorOutput())->toContain("$moved: Replaced since the snapshot")
-            ->and($retained)->toStartWith('/var/tmp/orbit-caddy-acl.');
-    } finally {
-        if ($retained !== null) {
-            new Filesystem()->deleteDirectory($retained);
-        }
-        new Process(['sudo', '-n', 'rm', '-rf', '--', $root])->run();
-    }
-});
-
-it('keeps a private file that the worker moves into the Web root hidden from Caddy and the worker', function (): void {
+it('keeps a mode 0600 file in the Web root hidden from Caddy', function (): void {
     if (LinuxHost::delegate($this)) {
         return;
     }
@@ -632,21 +456,21 @@ it('keeps a private file that the worker moves into the Web root hidden from Cad
 
     try {
         $checkout = "$root/checkout";
-        development_caddy_access_share($root);
         chmod("$checkout/.env", 0o600);
-        new Process(['sudo', '-n', '-u', 'nobody', 'mv', '--', "$checkout/.env", "$checkout/web/site/leak.txt"])->mustRun();
-        $command = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site($checkout, 'web/site')]), 'nobody');
+        rename("$checkout/.env", "$checkout/web/site/leak.txt");
+        $command = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site($checkout, 'web/site')]));
 
         $process = new Process($command->arguments)->setInput($command->input);
         expect($process->run())->toBe(0, $process->getErrorOutput());
         $acl = new Process(['getfacl', '-cp', "$checkout/web/site/leak.txt"])->mustRun()->getOutput();
 
+        clearstatcache();
         expect($acl)->toContain('mask::---')
+            ->and(fileperms("$checkout/web/site/leak.txt") & 0o777)->toBe(0o600)
             ->and(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$checkout/web/site/leak.txt"])->run())->not->toBe(0)
-            ->and(new Process(['sudo', '-n', '-u', 'nobody', 'cat', "$checkout/web/site/leak.txt"])->run())->not->toBe(0)
             ->and(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$checkout/web/site/index.html"])->mustRun()->getOutput())->toBe('first page');
     } finally {
-        new Process(['sudo', '-n', 'rm', '-rf', '--', $root])->run();
+        new Filesystem()->deleteDirectory($root);
     }
 });
 
@@ -667,126 +491,6 @@ it('fails and restores access when the mode of the Web root hides it from Caddy'
             ->and($process->getErrorOutput())->toContain("Caddy cannot read the Web root $root/checkout/web/site")
             ->and(development_caddy_access_retained($process))->toBeNull()
             ->and(new Process(['getfacl', '-R', '-p', "$root/checkout/web/site"])->mustRun()->getOutput())->toBe($before);
-    } finally {
-        new Filesystem()->deleteDirectory($root);
-    }
-});
-
-it('never widens a private file that reuses the inode number of a saved entry', function (): void {
-    if (LinuxHost::delegate($this)) {
-        return;
-    }
-
-    $root = development_caddy_access_fixture();
-    $retained = null;
-
-    try {
-        $checkout = "$root/checkout";
-        development_caddy_access_share($root);
-        // After the snapshot saved index.html, at the first change, the worker removes it, waits until the managed
-        // user writes a mode 0600 file that reuses the freed inode number, and moves that file onto the saved name.
-        // Then the worker fails the walk.
-        mkdir("$root/bin");
-        file_put_contents("$root/bin/setfacl", <<<BASH
-            #!/bin/bash
-            if [ ! -e '$root/attempted' ]; then
-                touch '$root/attempted'
-                inode=\$(stat -c %i -- '$checkout/web/site/index.html')
-                sudo -n -u nobody rm -f -- '$checkout/web/site/index.html'
-                for attempt in \$(seq 1 200); do
-                    printf 'SECRET=value' > '$checkout/secret-'\$attempt
-                    chmod 0600 -- '$checkout/secret-'\$attempt
-                    if [ "\$(stat -c %i -- '$checkout/secret-'\$attempt)" = "\$inode" ]; then
-                        sudo -n -u nobody mv -f -- '$checkout/secret-'\$attempt '$checkout/web/site/index.html'
-                        touch '$root/reused'
-                        break
-                    fi
-                done
-            fi
-            for argument in "\$@"; do
-                if [ "\$argument" = u:caddy:r-X ]; then exit 1; fi
-            done
-            exec /usr/bin/setfacl "\$@"
-            BASH);
-        chmod("$root/bin/setfacl", 0o700);
-        $command = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site($checkout, 'web/site')]), 'nobody');
-
-        $process = new Process($command->arguments, env: ['PATH' => "$root/bin:".getenv('PATH')]);
-        expect($process->setInput($command->input)->run())->not->toBe(0);
-        $retained = development_caddy_access_retained($process);
-        $moved = "$checkout/web/site/index.html";
-        clearstatcache();
-        $acl = new Process(['getfacl', '-cp', $moved])->mustRun()->getOutput();
-
-        expect(file_exists("$root/reused"))->toBeTrue('The filesystem never reused the inode number.')
-            ->and(file_get_contents($moved))->toBe('SECRET=value')
-            ->and(fileperms($moved) & 0o777)->toBe(0o600)
-            ->and($acl)->toContain('mask::---')
-            ->and(new Process(['sudo', '-n', '-u', 'nobody', 'cat', $moved])->run())->not->toBe(0)
-            ->and(new Process(['sudo', '-n', '-u', 'caddy', 'cat', $moved])->run())->not->toBe(0)
-            ->and($process->getErrorOutput())->toContain("$moved: Replaced since the snapshot")
-            ->and($retained)->toStartWith('/var/tmp/orbit-caddy-acl.');
-    } finally {
-        if ($retained !== null) {
-            new Filesystem()->deleteDirectory($retained);
-        }
-        new Process(['sudo', '-n', 'rm', '-rf', '--', $root])->run();
-    }
-});
-
-it('restores nothing on a filesystem that reports no inode generation', function (): void {
-    if (LinuxHost::delegate($this)) {
-        return;
-    }
-
-    // tmpfs reports no inode generation, so the restore cannot tell a reused inode number apart.
-    $root = '/dev/shm/orbit-caddy-access-'.Str::uuid();
-    mkdir("$root/snapshot", 0o700, true);
-
-    try {
-        file_put_contents("$root/page.html", 'page');
-        $helper = development_caddy_access_helper(new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site("$root/checkout", 'web/site')])));
-        new Process(['python3', '-I', '-c', $helper, 'save', "$root/snapshot", '-', "$root/page.html"])->mustRun();
-        $process = new Process(['python3', '-I', '-c', $helper, 'restore']);
-
-        expect($process->setInput(file_get_contents("$root/snapshot/".posix_geteuid()))->run())->not->toBe(0)
-            ->and($process->getErrorOutput())->toContain("$root/page.html: Replaced since the snapshot");
-    } finally {
-        new Filesystem()->deleteDirectory($root);
-    }
-});
-
-it('never restores a setuid bit that the entry lost during the walk', function (): void {
-    if (LinuxHost::delegate($this)) {
-        return;
-    }
-
-    $root = development_caddy_access_fixture();
-
-    try {
-        $tool = "$root/checkout/web/site/tool";
-        file_put_contents($tool, 'tool');
-        chmod($tool, 0o4755);
-        // After the snapshot saved the setuid file, a write clears its setuid bit, and the walk fails.
-        mkdir("$root/bin");
-        file_put_contents("$root/bin/setfacl", <<<BASH
-            #!/bin/bash
-            for argument in "\$@"; do
-                if [ "\$argument" = u:caddy:r-X ]; then
-                    chmod u-s -- '$tool'
-                    exit 1
-                fi
-            done
-            exec /usr/bin/setfacl "\$@"
-            BASH);
-        chmod("$root/bin/setfacl", 0o700);
-        $command = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site("$root/checkout", 'web/site')]));
-
-        $process = new Process($command->arguments, env: ['PATH' => "$root/bin:".getenv('PATH')]);
-        expect($process->setInput($command->input)->run())->not->toBe(0)
-            ->and(development_caddy_access_retained($process))->toBeNull($process->getErrorOutput());
-        clearstatcache();
-        expect(fileperms($tool) & 0o7777)->toBe(0o755);
     } finally {
         new Filesystem()->deleteDirectory($root);
     }
@@ -847,21 +551,6 @@ it('fails and restores access when the mode of the public storage hides it from 
     }
 });
 
-/** The Python helper that makes every ACL change of the walk. */
-function development_caddy_access_helper(RemoteCommand $command): string
-{
-    preg_match("/fd_acl=\\$\\(cat <<'PYTHON'\\n(.*?)\\nPYTHON\\n/s", (string) $command->input, $helper);
-
-    return $helper[1];
-}
-
-/** Shares the fixture with the task worker `nobody`, as a shared task checkout does: both accounts get `rwX`. */
-function development_caddy_access_share(string $root): void
-{
-    $me = posix_geteuid();
-    new Process(['setfacl', '-R', '-m', "u:nobody:rwX,u:$me:rwX,d:u:nobody:rwX,d:u:$me:rwX", $root])->mustRun();
-}
-
 /** The snapshot directory that a failed recovery retained and named, or null. */
 function development_caddy_access_retained(Process $process): ?string
 {
@@ -870,9 +559,7 @@ function development_caddy_access_retained(Process $process): ?string
 
 function development_caddy_access_fixture(?string $parent = null): string
 {
-    // A restore needs inode generations, which tmpfs does not report, so a tmpfs temporary directory gives way to the
-    // on-disk /var/tmp.
-    $parent ??= trim(new Process(['stat', '-f', '-c', '%T', sys_get_temp_dir()])->mustRun()->getOutput()) === 'tmpfs' ? '/var/tmp' : sys_get_temp_dir();
+    $parent ??= sys_get_temp_dir();
     $root = $parent.'/orbit-caddy-access-'.Str::uuid();
     // The directories above the Web root are closed, so the walk grants Caddy passage. Git creates the Web root
     // and what it serves with the usual modes.

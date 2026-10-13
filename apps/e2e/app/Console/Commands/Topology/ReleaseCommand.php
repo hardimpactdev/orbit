@@ -14,7 +14,7 @@ final class ReleaseCommand extends E2ECommand
     protected $signature = 'topology:release {issue} '.self::WORKTREE_OPTION.' {--json}';
 
     #[\Override]
-    protected $description = 'Release the discovery topology and sweep orphaned networks';
+    protected $description = 'Release the topology and sweep orphaned networks';
 
     public function handle(TopologyReleaser $releaser): int
     {

@@ -96,7 +96,7 @@ final readonly class TopologyConstructionInputs
         ) {
             throw new InvalidArgumentException('The topology construction input schema is invalid.');
         }
-        $target = TopologyTarget::feature(
+        $target = TopologyTarget::for(
             $value['issue'],
             new AttemptId($value['attempt_id']),
             TopologyRecipe::fromArray($value['recipe']),

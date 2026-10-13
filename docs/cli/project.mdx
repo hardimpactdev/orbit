@@ -71,7 +71,6 @@ orbit project:create <slug> <type> <repository> [options]
 | `--root=PATH` | `.` for `laravel-package` and `node-package`; `public` otherwise | Normalized repository-relative root that Instances inherit. `.` means the repository root. |
 | `--task-check=COMMAND` | none | Command that task baselines and handoffs run in the workspace. See [Project check](/reference/tasks#project-check). |
 | `--task-workspace-routed=true\|false` | true | Whether new task workspaces get a Route. See [Task workspace routing](/reference/projects#task-workspace-routing). |
-| `--task-compute=shared\|vm` | `shared` | Where future task groups run. See [Task compute](/reference/projects#task-compute). |
 
 ```bash
 orbit project:create acme laravel-app git@github.com:acme/site.git
@@ -103,7 +102,7 @@ orbit project:show <project> [--json]
 Change a Project's display name, type, source access, source defaults, task check, task workspace routing, or review and merge. Omitted fields stay unchanged. The Gateway reconciles affected development sources, checkouts, Routes, inherited web roots, and runtimes before publishing the change. It does not start a production deployment. See [Update a Project](/reference/projects#update-a-project) for validation, rollback, and retry behavior.
 
 ```bash
-orbit project:update <project> [--name=NAME] [--type=TYPE] [--slug=SLUG] [--repository=URL] [--source-access=VALUE] [--default-branch=BRANCH] [--root=PATH] [--task-check=COMMAND] [--clear-task-check] [--task-workspace-routed=true|false] [--task-compute=shared|vm] [--review-and-merge=true|false] [--merge-check=NAME] [--clear-merge-check]
+orbit project:update <project> [--name=NAME] [--type=TYPE] [--slug=SLUG] [--repository=URL] [--source-access=VALUE] [--default-branch=BRANCH] [--root=PATH] [--task-check=COMMAND] [--clear-task-check] [--task-workspace-routed=true|false] [--review-and-merge=true|false] [--merge-check=NAME] [--clear-merge-check]
 ```
 
 | Option | Meaning |
@@ -118,7 +117,6 @@ orbit project:update <project> [--name=NAME] [--type=TYPE] [--slug=SLUG] [--repo
 | `--task-check=COMMAND` | New command that task baselines and handoffs run. A type change does not change it. |
 | `--clear-task-check` | Remove the task check so tasks run no check command. Combining it with `--task-check` fails with `project.task_check_conflict`. |
 | `--task-workspace-routed=true\|false` | Change routing for future task workspaces. Invalid values return `project.task_workspace_routed_invalid` before a request. Existing workspaces keep their mode. |
-| `--task-compute=shared\|vm` | Change where future task groups run. A group keeps the mode of its first reservation. See [Task compute](/reference/projects#task-compute). |
 | `--review-and-merge=true\|false` | Switch the [review-and-merge flow](/reference/tasks#review-and-merge). Invalid values return `project.review_and_merge_invalid` before a request. |
 | `--merge-check=NAME` | The check that must pass on a head before Orbit merges it, such as `Required checks`. |
 | `--clear-merge-check` | Remove the merge check. Combining it with `--merge-check` fails with `project.merge_check_conflict`. The Gateway refuses it while the flow is on. |

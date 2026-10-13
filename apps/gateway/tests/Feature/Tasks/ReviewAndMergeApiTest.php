@@ -73,7 +73,6 @@ describe('Project review-and-merge settings', function (): void {
     })->with([
         'no merge check' => [[], ['review_and_merge' => true], 'merge_check'],
         'GitHub CLI source access' => [['source_access' => 'gh_cli'], ['review_and_merge' => true, 'merge_check' => 'Required checks'], 'review_and_merge'],
-        'VM compute' => [['task_compute' => 'vm'], ['review_and_merge' => true, 'merge_check' => 'Required checks'], 'review_and_merge'],
         'clearing the check of an enabled Project' => [['review_and_merge' => true, 'merge_check' => 'Required checks'], ['merge_check' => null], 'merge_check'],
     ]);
 });

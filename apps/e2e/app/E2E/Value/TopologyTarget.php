@@ -17,7 +17,7 @@ final readonly class TopologyTarget
         public TopologyRecipe $recipe,
     ) {}
 
-    public static function feature(string $issue, AttemptId $attempt, TopologyRecipe $recipe): self
+    public static function for(string $issue, AttemptId $attempt, TopologyRecipe $recipe): self
     {
         self::assertIssue($issue);
 
@@ -27,7 +27,7 @@ final readonly class TopologyTarget
     public static function assertIssue(string $issue): void
     {
         if (preg_match(self::ISSUE_PATTERN, $issue) !== 1) {
-            throw new InvalidArgumentException('The Linear issue ID is invalid.');
+            throw new InvalidArgumentException('The topology issue ID is invalid; it looks like TASK-123.');
         }
     }
 

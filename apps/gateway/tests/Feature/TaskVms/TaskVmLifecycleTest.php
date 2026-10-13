@@ -34,7 +34,6 @@ use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCapacityException;
-use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskScheduler;
@@ -42,7 +41,6 @@ use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskTopology;
 use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Domain\Tasks\TaskWait;
-use App\Domain\Tasks\TaskWorkspaceTopology;
 use App\Domain\TaskVms\TaskVmCapacity;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmFailedException;
@@ -57,7 +55,6 @@ use App\Infrastructure\Metrics\ServiceMetricsRuntime;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Infrastructure\Tasks\RemoteTaskWorkspaceTopology;
 use App\Infrastructure\TaskVms\TaskVmBakedPrograms;
 use App\Infrastructure\TaskVms\TaskVmTopologyAdmission;
 use App\Infrastructure\TaskVms\TaskVmWorkerUnits;
@@ -188,8 +185,7 @@ function tvm_life_hosts(array $hosts): void
 function tvm_life_group(TaskGroupStatus $status = TaskGroupStatus::Reserved): Task
 {
     return Task::topLevel()->create([
-        'project_id' => test()->project->id, 'title' => 'Export', 'brief' => 'Work', 'status' => $status,
-        'task_compute' => TaskCompute::Vm, 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
+        'project_id' => test()->project->id, 'title' => 'Export', 'brief' => 'Work', 'status' => $status, 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
     ]);
 }
 
@@ -298,8 +294,8 @@ describe('allocation', function (): void {
         Task::query()->create(['parent_id' => $topology->id, 'position' => 1, 'title' => 'Prod', 'brief' => 'Prod', 'status' => TaskStatus::Todo, 'topology' => ['app-prod', 'app-dev']]);
         Task::query()->create(['parent_id' => $topology->id, 'position' => 2, 'title' => 'Dev', 'brief' => 'Dev', 'status' => TaskStatus::Todo, 'topology' => ['app-prod+ingress']]);
 
-        expect(TaskTopology::forGroup($plain))->toBe([])
-            ->and(TaskTopology::forGroup($topology))->toBe(['app-dev', 'app-prod+ingress']);
+        expect(TaskTopology::forGroup($plain)->toArray())->toBe([])
+            ->and(TaskTopology::forGroup($topology)->toArray())->toBe(['app-dev', 'app-prod+ingress']);
 
         $large = app(AllocateTaskVmAction::class)->execute($topology);
         $normal = app(AllocateTaskVmAction::class)->execute($plain);
@@ -399,16 +395,6 @@ describe('claim', function (): void {
         $vm->update(['size' => TaskVmSize::Medium]);
         Task::query()->create(['parent_id' => $group->id, 'position' => 2, 'title' => 'Prod', 'brief' => 'Prod', 'status' => TaskStatus::Todo, 'topology' => ['app-prod']]);
         expect(fn () => $admission->prepare($group->refresh(), $subtask))->toThrow(TaskCapacityException::class, TaskVmTopologyAdmission::TooSmall);
-    });
-
-    it('makes a shared group\'s subtask with a topology wait', function (): void {
-        $group = Task::topLevel()->create([
-            'project_id' => $this->project->id, 'title' => 'Shared', 'brief' => 'Work', 'status' => TaskGroupStatus::Running,
-            'task_compute' => TaskCompute::Shared, 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
-        ]);
-        $subtask = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Dev', 'brief' => 'Dev', 'status' => TaskStatus::Todo, 'topology' => ['app-dev']]);
-
-        expect(fn () => app(TaskTopologyAdmission::class)->prepare($group->refresh(), $subtask))->toThrow(TaskCapacityException::class, TaskVmTopologyAdmission::SharedGroup);
     });
 
     it('allocates on the first claim and waits until the task VM is ready', function (): void {
@@ -899,7 +885,6 @@ describe(DestroyTaskVm::class, function (): void {
         bind_task_node_reachability();
         // No SSH to the VM: the checkout goes with the VM, and the Project has no teardown steps.
         mock(SshExecutor::class)->shouldReceive('execute')->never();
-        app()->instance(TaskWorkspaceTopology::class, app(RemoteTaskWorkspaceTopology::class));
         app()->instance(InstanceRemover::class, mock(InstanceRemover::class)->shouldReceive('execute')->never()->getMock());
         Queue::fake();
 

@@ -24,7 +24,7 @@ final class ShellCommand extends E2ECommand
         .' {--json}';
 
     #[\Override]
-    protected $description = 'Open an orbit shell on one Node of the discovery topology';
+    protected $description = 'Open an orbit shell on one Node of the topology';
 
     public function handle(TopologyAcquirer $acquirer, IncusHost $host): int
     {

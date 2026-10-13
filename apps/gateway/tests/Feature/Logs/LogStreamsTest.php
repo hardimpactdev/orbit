@@ -56,7 +56,7 @@ function log_stream_process(Node $node, string $runtime, string $name = 'queue')
         'runtime' => $runtime,
         'working_directory' => '/srv',
         'runtime_config' => $runtime === 'docker'
-            ? ['image' => 'example/worker:1', 'environment' => ['WORKER_SECRET' => 'orbit-worker-secret-9931']]
+            ? ['image' => 'example/worker:1', 'environment' => ['WORKER_SECRET' => 'orbit-sidecar-secret-9931']]
             : ['command' => ['/usr/bin/worker']],
         'restart_policy' => 'always',
         'desired_state' => 'running',

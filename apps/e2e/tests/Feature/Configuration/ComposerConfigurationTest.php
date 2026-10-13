@@ -276,7 +276,7 @@ describe('Composer configuration', function (): void {
             ->toContain('tests/Unit/Architecture')
             ->toContain('tests/Feature/Infrastructure/Instances/ConfiguredOriginReadTest.php')
             ->toContain('tests/Feature/Infrastructure/Caddy/CaddyPublicationLockTest.php')
-            ->toContain('tests/Unit/E2E/ProofFixtureContractTest.php')
+            ->toContain('tests/Unit/E2E/Value/TopologyNodeCatalogTest.php')
             ->toContain('tests/Unit/SuccessRequestIdBoundaryTest.php')
             ->toContain('tests/Unit/RepositoryGuidanceTest.php')
             ->toContain('tests/Unit/Requests/Workspaces/WorkspaceRequestsTest.php')
@@ -649,36 +649,3 @@ it('publishes the web build of each main push for the Gateway to install', funct
     expect(array_search('Publish web build', $names, true))
         ->toBe(array_search('Build', $names, true) + 1);
 });
-
-it('excludes privileged feedback through configuration while retaining TIA and ignores feedback in CI', function (bool $ci): void {
-    $directory = temporaryPath('orbit-feedback-', 6);
-    mkdir($directory);
-    file_put_contents($directory.'/composer.json', '{"name":"nckrtl/orbit-gateway"}');
-    file_put_contents($directory.'/phpunit.xml', '<phpunit bootstrap="tests/bootstrap.php"><testsuites><testsuite name="Feature"><directory>tests</directory></testsuite></testsuites></phpunit>');
-    $probe = <<<'PY'
-import json,os,sys,xml.etree.ElementTree as ET
-args=sys.argv[1:]
-config=ET.parse(args[args.index('--configuration')+1]).getroot() if '--configuration' in args else None
-print(json.dumps({'args':args,'excluded':None if config is None else config.find('groups/exclude/group').text,'bootstrap':None if config is None else config.get('bootstrap'),'cache':os.environ.get('ORBIT_TIA_DIRECTORY')}))
-PY;
-    file_put_contents($directory.'/probe.py', $probe);
-    $process = new Process(['python3', base_path('../../bin/task-feedback-tests'), 'python3', $directory.'/probe.py', '--tia'], $directory, [
-        'ORBIT_TASK_FEEDBACK' => 'shared', 'CI' => $ci ? 'true' : false, 'GITHUB_ACTIONS' => false, 'ORBIT_TIA_DIRECTORY' => false,
-    ]);
-    try {
-        $process->mustRun();
-        $result = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
-        expect($result['args'])->toContain('--tia')->not->toContain('--exclude-group');
-        expect($result['excluded'])->toBe($ci ? null : 'privileged');
-        expect($result['bootstrap'])->toBe($ci ? null : $directory.'/tests/bootstrap.php');
-        expect($result['cache'])->toBe($ci ? null : $directory.'/.orbit-tia/task-feedback');
-        if (! $ci) {
-            expect(file_exists($result['args'][array_search('--configuration', $result['args'], true) + 1]))->toBeFalse();
-        }
-    } finally {
-        unlink($directory.'/probe.py');
-        unlink($directory.'/composer.json');
-        unlink($directory.'/phpunit.xml');
-        rmdir($directory);
-    }
-})->with([true, false]);

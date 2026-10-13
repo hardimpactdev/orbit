@@ -10,7 +10,6 @@ use App\Domain\Projects\ProjectType;
 use App\Domain\Projects\TiaBaselineFiles;
 use App\Domain\Projects\TiaBaselineSource;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
@@ -28,8 +27,11 @@ use App\Infrastructure\TaskVms\IncusTaskVmProvider;
 use App\Infrastructure\TaskVms\IncusTaskVmWorkspaceTemplateBuilder;
 use App\Infrastructure\TaskVms\TaskVmBuilderShell;
 use App\Infrastructure\TaskVms\TaskVmWorkerUnits;
+use App\Infrastructure\TaskVms\TaskVmScripts;
 use App\Infrastructure\TaskVms\TaskVmWorkspace;
-use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplates;
+use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplate;
+use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplateLifecycle;
+use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplateVolumes;
 use App\Jobs\TaskVms\BuildTaskVmWorkspaceTemplate;
 use App\Jobs\TaskVms\DestroyTaskVm;
 use App\Jobs\TaskVms\PublishTaskVmCommit;
@@ -53,6 +55,7 @@ use Illuminate\Support\Sleep;
 use Symfony\Component\Process\Process;
 use Tests\Support\GitRemoteRedirect;
 use Tests\Support\RecordingProcessRunner;
+use Tests\Support\TaskVmScriptNames;
 use Tests\Support\TaskVmSettingsBuilder;
 use Tests\Support\TestOrbitHome;
 
@@ -115,7 +118,7 @@ final class TaskVmTemplateIncus implements SshExecutor
         $this->input = $command->input;
         if (array_slice($argv, 0, 3) !== ['sudo', '-n', 'incus']) {
             // A command over the task VM Node's own SSH connection: the mount or the unmount script.
-            $script = $argv[2] === TaskVmWorkspaceTemplates::UnmountScript ? 'unmount' : 'mount';
+            $script = (TaskVmScriptNames::call($argv)[0] ?? null) === 'workspace-unmount.sh' ? 'unmount' : 'mount';
             $this->guest[] = $script;
             if ($this->fail === $script) {
                 return new CommandResult(1, '', "{$script} failed\n", 1, false);
@@ -277,10 +280,10 @@ function tvm_projects(int $count, int $active): array
     for ($i = 1; $i <= $count; $i++) {
         $project = Project::query()->create([
             'name' => "App {$i}", 'slug' => "app-{$i}", 'repository_url' => "https://github.com/acme/app-{$i}.git",
-            'default_branch' => $i % 5 === 0 ? null : 'main', 'task_compute' => TaskCompute::Vm,
+            'default_branch' => $i % 5 === 0 ? null : 'main',
         ]);
         if ($i <= $active) {
-            Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Work', 'brief' => 'Work', 'status' => TaskGroupStatus::Completed, 'task_compute' => TaskCompute::Vm]);
+            Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Work', 'brief' => 'Work', 'status' => TaskGroupStatus::Completed]);
         }
         $projects[] = $project;
     }
@@ -321,9 +324,9 @@ beforeEach(function (): void {
     $this->host = new TaskVmHost($this->hostNode->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 4, 2, '4GiB', '40GiB');
     TaskVmSettingsBuilder::bind(['hosts' => [$this->host]]);
     $this->project = Project::query()->create([
-        'name' => 'Mealou', 'slug' => 'mealou', 'repository_url' => 'https://github.com/acme/mealou.git', 'default_branch' => 'main', 'task_compute' => TaskCompute::Vm,
+        'name' => 'Mealou', 'slug' => 'mealou', 'repository_url' => 'https://github.com/acme/mealou.git', 'default_branch' => 'main',
     ]);
-    $this->group = Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'Work', 'brief' => 'Work', 'status' => TaskGroupStatus::Reserved, 'task_compute' => TaskCompute::Vm]);
+    $this->group = Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'Work', 'brief' => 'Work', 'status' => TaskGroupStatus::Reserved]);
     $this->incus = new TaskVmTemplateIncus;
     app()->instance(SshExecutor::class, $this->incus);
     app()->instance(SshKeyProvider::class, new class implements SshKeyProvider
@@ -369,13 +372,14 @@ describe('claim', function (): void {
         $template = app(TaskVmWorkspace::class)->template($vm, $this->group, '/home/orbit/apps/mealou');
 
         $mount = collect($this->incus->calls)->first(static fn (array $call): bool => $call[0] === '10.44.0.130');
+        $fstab = TaskVmScripts::read('workspace-mount.sh');
         expect($template)->toBe('/home/orbit/apps/mealou/workspace')
             ->and($this->incus->operations())->toContain(
                 ['storage', 'volume', 'copy', '--', 'orbit-tasks/tvm-template-'.$this->project->id.'-20261011040000', 'orbit-tasks/tvm-1-workspace'],
                 ['config', 'device', 'add', '--', 'tvm-1', 'workspace', 'disk', 'pool=orbit-tasks', 'source=tvm-1-workspace'],
             )
-            ->and(array_slice($mount[1], 3))->toBe(['--', 'workspace', '/home/orbit/apps/mealou', '1000:1000', 'workspace', '.orbit-cache', 'ms-playwright', 'composer'])
-            ->and($mount[1][2])->toContain('/etc/fstab')->toContain('x-systemd.before=multi-user.target');
+            ->and(TaskVmScriptNames::call($mount[1]))->toBe(['workspace-mount.sh', ['workspace', '/home/orbit/apps/mealou', '1000:1000', 'workspace', '.orbit-cache', 'ms-playwright', 'composer']])
+            ->and($fstab)->toContain('/etc/fstab')->toContain('x-systemd.before=multi-user.target');
     });
 
     it('takes no template of an earlier repository, and asks for a build', function (): void {
@@ -388,8 +392,19 @@ describe('claim', function (): void {
         Queue::assertPushed(BuildTaskVmWorkspaceTemplate::class);
     });
 
+    it('takes no template whose files belong to another user, and asks for a build', function (): void {
+        Queue::fake();
+        $vm = tvm_template_vm($this->group);
+        $this->incus->volumes = ['tvm-template-'.$this->project->id.'-20261011040000' => [...tvm_ready(), 'user.orbit.owner' => '1001:1001']];
+
+        expect(app(TaskVmWorkspace::class)->template($vm, $this->group, '/home/orbit/apps/mealou'))->toBeNull()
+            ->and(collect($this->incus->operations())->contains(static fn (array $operation): bool => ($operation[2] ?? null) === 'copy'))->toBeFalse()
+            ->and($this->incus->guest)->toBe([]);
+        Queue::assertPushed(BuildTaskVmWorkspaceTemplate::class);
+    });
+
     it('writes the fstab line only after the mount and the owner checks', function (): void {
-        $script = TaskVmWorkspaceTemplates::MountScript;
+        $script = TaskVmScripts::read('workspace-mount.sh');
 
         expect(strpos($script, '"$(id -u):$(id -g)" != "$owner"'))->toBeLessThan(strpos($script, 'mount -o noatime'))
             ->and(strpos($script, 'mount -o noatime'))->toBeLessThan(strpos($script, '/etc/fstab'))
@@ -456,7 +471,7 @@ describe('claim', function (): void {
         Log::shouldHaveReceived('warning')->with('Task VM workspace has no template; it starts from a fresh clone.', Mockery::any());
 
         Queue::fake();
-        Cache::put(TaskVmWorkspaceTemplates::backoffKey($this->hostNode->id, $this->project->id), 1, 60);
+        Cache::put(TaskVmWorkspaceTemplateLifecycle::backoffKey($this->hostNode->id, $this->project->id), 1, 60);
         expect(app(TaskVmWorkspace::class)->template($vm, $this->group, '/home/orbit/apps/mealou'))->toBeNull();
         Queue::assertNothingPushed();
     });
@@ -488,7 +503,7 @@ describe('claim', function (): void {
 
             public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
             {
-                if ($command->arguments[2] === TaskVmWorkspaceTemplates::UnmountScript) {
+                if ((TaskVmScriptNames::call($command->arguments)[0] ?? null) === 'workspace-unmount.sh') {
                     $this->incus->guest[] = 'unmount';
 
                     return new CommandResult(32, '', "umount: target is busy\n", 1, false);
@@ -527,6 +542,32 @@ describe('volumes', function (): void {
         expect($this->incus->instances)->toBe([])->and($this->incus->volumes)->toBe([]);
     });
 
+    it('reads the template state of each volume once, and publishes it with ready last', function (): void {
+        $this->incus->volumes = [
+            'tvm-template-'.$this->project->id.'-20261011040000' => tvm_ready(),
+            'tvm-template-'.$this->project->id.'-20261011050000' => [],
+            'tvm-1-workspace' => tvm_ready(),
+        ];
+
+        $volumes = app(TaskVmWorkspaceTemplateVolumes::class)->read($this->host, $this->hostNode);
+        $ready = $volumes['tvm-template-'.$this->project->id.'-20261011040000'];
+        $building = $volumes['tvm-template-'.$this->project->id.'-20261011050000'];
+        $clone = $volumes['tvm-1-workspace'];
+
+        expect([$ready->projectId, $ready->isReady(), $ready->isBuilding(), $ready->serves($this->project->id, REPO, TVM_IMAGE)])->toBe([$this->project->id, true, false, true])
+            ->and([$building->isReady(), $building->isBuilding()])->toBe([false, true])
+            ->and([$clone->projectId, $clone->isReady(), $clone->isBuilding(), $clone->owner])->toBe([null, false, false, '1000:1000'])
+            ->and($ready->serves($this->project->id, REPO, TVM_NEW_IMAGE))->toBeFalse()
+            ->and($ready->serves($this->project->id, 'https://github.com/old/mealou.git'))->toBeFalse();
+
+        $built = TaskVmWorkspaceTemplate::built('tvm-template-'.$this->project->id.'-20261012040000', $this->project->id, str_repeat('a', 40), REPO, TVM_IMAGE, '1000:1000');
+        app(TaskVmWorkspaceTemplateVolumes::class)->publish($this->host, $this->hostNode, $built);
+
+        expect(last($this->incus->operations()))->toBe(['storage', 'volume', 'set', '--', 'orbit-tasks', $built->name, ...$built->metadata()])
+            ->and(last($built->metadata()))->toBe('user.orbit.ready=true')
+            ->and(TaskVmWorkspaceTemplate::fromVolume($built->name, $this->incus->volumes[$built->name]))->toEqual($built);
+    });
+
     it('sweeps clones whose task VM has no live row', function (): void {
         $vm = tvm_template_vm($this->group);
         $this->incus->volumes = [
@@ -555,15 +596,6 @@ describe('volumes', function (): void {
         Queue::assertPushed(BuildTaskVmWorkspaceTemplate::class, fn (BuildTaskVmWorkspaceTemplate $job): bool => $job->projectId === $this->project->id);
     });
 
-    it('serves the Orbit Project like every Project whose groups run on task VMs', function (): void {
-        $orbit = Project::query()->create(['name' => 'Orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/nckrtl/orbit.git', 'default_branch' => 'main', 'task_compute' => TaskCompute::Vm]);
-
-        expect(TaskVmWorkspaceTemplates::serves($orbit))->toBeTrue();
-
-        $orbit->update(['task_compute' => TaskCompute::Shared]);
-        expect(TaskVmWorkspaceTemplates::serves($orbit))->toBeFalse();
-    });
-
     it('has no clock of its own: whoever builds or syncs a base image queues the template refresh, not the promote', function (): void {
         Artisan::call('schedule:list');
         $events = collect(app(Schedule::class)->events())->filter(static fn ($event): bool => $event instanceof CallbackEvent);
@@ -589,8 +621,8 @@ describe('scale', function (): void {
         TaskVmSettingsBuilder::bind(['hosts' => [$this->host, $sharkHost]]);
         // Mealou is active through the group of the setup; its old group does not count.
         $projects = tvm_projects(25, active: 6);
-        Task::topLevel()->create(['project_id' => $projects[10]->id, 'title' => 'Old', 'brief' => 'Old', 'status' => TaskGroupStatus::Completed, 'task_compute' => TaskCompute::Vm])
-            ->forceFill(['created_at' => now()->subDays(TaskVmWorkspaceTemplates::ActiveDays + 1)])->save();
+        Task::topLevel()->create(['project_id' => $projects[10]->id, 'title' => 'Old', 'brief' => 'Old', 'status' => TaskGroupStatus::Completed])
+            ->forceFill(['created_at' => now()->subDays(TaskVmWorkspaceTemplateLifecycle::ActiveDays + 1)])->save();
         $this->incus->volumes = [
             'tvm-template-'.$this->project->id.'-20261011040000' => tvm_ready(),
             'tvm-template-'.$projects[0]->id.'-20261011040000' => tvm_ready($projects[0]->repository_url),
@@ -685,7 +717,7 @@ describe('scale', function (): void {
         $job->assertNotFailed();
         $job->assertNotReleased();
         expect($this->incus->calls)->toBe([])
-            ->and(Cache::has(TaskVmWorkspaceTemplates::backoffKey($this->hostNode->id, $this->project->id)))->toBeFalse();
+            ->and(Cache::has(TaskVmWorkspaceTemplateLifecycle::backoffKey($this->hostNode->id, $this->project->id)))->toBeFalse();
         Log::shouldHaveReceived('warning')->with('Task VM workspace template cannot be built; workspaces of the Project start from a fresh clone.', Mockery::on(
             static fn (array $context): bool => $context['reason'] === 'the Project has no valid default branch',
         ))->twice();
@@ -737,10 +769,10 @@ describe('build', function (): void {
     it('stops what the managed user left running in the builder before it unmounts the volume', function (): void {
         app(IncusTaskVmWorkspaceTemplateBuilder::class)->build($this->host, $this->hostNode, $this->project);
 
-        $unmount = collect($this->incus->operations())->first(static fn (array $operation): bool => str_contains(implode(' ', $operation), 'pkill -KILL'));
-        expect(array_slice($unmount, -2))->toBe(['/home/orbit/apps/mealou', 'orbit'])
-            ->and((string) $unmount[count($unmount) - 4])->toContain('pkill -KILL -u "$user"')
-            ->and(strpos((string) $unmount[count($unmount) - 4], 'pkill'))->toBeLessThan(strpos((string) $unmount[count($unmount) - 4], 'umount --'));
+        $script = TaskVmScripts::read('template-unmount.sh');
+        expect(collect($this->incus->operations())->map(TaskVmScriptNames::call(...))->filter()->values()->all())->toContain(['template-unmount.sh', ['/home/orbit/apps/mealou', 'orbit']])
+            ->and($script)->toContain('pkill -KILL -u "$user"')
+            ->and(strpos($script, 'pkill'))->toBeLessThan(strpos($script, 'umount --'));
     });
 
     it('deletes its builder and volume and keeps the current template when a step fails', function (string $failure, string $stage): void {
@@ -846,8 +878,10 @@ describe('build', function (): void {
         $old = tvm_ready();
         unset($old['user.orbit.layout']);
 
-        expect(TaskVmWorkspaceTemplates::isCurrent(['tvm-template-'.$this->project->id.'-20261011040000' => $old], $this->project, TVM_IMAGE))->toBeFalse()
-            ->and(TaskVmWorkspaceTemplates::isCurrent(['tvm-template-'.$this->project->id.'-20261011040000' => tvm_ready()], $this->project, TVM_IMAGE))->toBeTrue();
+        $name = 'tvm-template-'.$this->project->id.'-20261011040000';
+
+        expect(TaskVmWorkspaceTemplateLifecycle::isCurrent([$name => TaskVmWorkspaceTemplate::fromVolume($name, $old)], $this->project, TVM_IMAGE))->toBeFalse()
+            ->and(TaskVmWorkspaceTemplateLifecycle::isCurrent([$name => TaskVmWorkspaceTemplate::fromVolume($name, tvm_ready())], $this->project, TVM_IMAGE))->toBeTrue();
     });
 
     it('refuses a second build on the host while one runs', function (): void {
@@ -875,30 +909,24 @@ describe(BuildTaskVmWorkspaceTemplate::class, function (): void {
         app()->call([$job->withFakeQueueInteractions(), 'handle']);
 
         $job->assertFailed();
-        expect(Cache::has(TaskVmWorkspaceTemplates::backoffKey($this->hostNode->id, $this->project->id)))->toBeTrue();
+        expect(Cache::has(TaskVmWorkspaceTemplateLifecycle::backoffKey($this->hostNode->id, $this->project->id)))->toBeTrue();
         Log::shouldHaveReceived('error')->with('Task VM workspace template build failed; workspaces of the Project start from a fresh clone.', Mockery::any());
     });
 
-    it('waits a minute while another build runs on the host, and skips a Project without task VMs', function (): void {
+    it('waits a minute while another build runs on the host', function (): void {
         Cache::lock('task-vms:workspace-template:'.$this->hostNode->id, 60)->get();
         $job = new BuildTaskVmWorkspaceTemplate($this->hostNode->id, $this->project->id);
 
         app()->call([$job->withFakeQueueInteractions(), 'handle']);
         $job->assertReleased(60);
-
-        $this->project->update(['task_compute' => TaskCompute::Shared]);
-        $this->incus->calls = [];
-        app()->call([(new BuildTaskVmWorkspaceTemplate($this->hostNode->id, $this->project->id))->withFakeQueueInteractions(), 'handle']);
-        expect($this->incus->calls)->toBe([]);
     });
 
     it('builds through the command and prints each stage', function (): void {
         expect(Artisan::call('task-vms:build-workspace-template', ['node' => 'beast', 'project' => 'mealou']))->toBe(0)
             ->and(Artisan::output())->toContain('clone')->toContain('prune')->toContain('has the workspace template [tvm-template-'.$this->project->id.'-');
 
-        $this->project->update(['task_compute' => TaskCompute::Shared]);
-        expect(Artisan::call('task-vms:build-workspace-template', ['node' => 'beast', 'project' => 'mealou']))->toBe(1)
-            ->and(Artisan::output())->toContain('does not run its groups on task VMs');
+        expect(Artisan::call('task-vms:build-workspace-template', ['node' => 'beast', 'project' => 'missing']))->toBe(1)
+            ->and(Artisan::output())->toContain('does not exist');
     });
 });
 

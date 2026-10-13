@@ -25,7 +25,7 @@ final class ExecCommand extends E2ECommand
         .' {--json}';
 
     #[\Override]
-    protected $description = 'Execute exact argv as orbit on one Node of the discovery topology';
+    protected $description = 'Execute exact argv as orbit on one Node of the topology';
 
     public function handle(TopologyAcquirer $acquirer, SecretRedactor $redactor): int
     {

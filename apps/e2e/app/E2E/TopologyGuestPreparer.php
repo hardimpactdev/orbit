@@ -12,11 +12,11 @@ use RuntimeException;
 use Throwable;
 
 /**
- * Prepare the mounted worktree on the checkout Nodes of one discovery attempt: prove the mount, point the
+ * Prepare the mounted worktree on the checkout Nodes of one topology attempt: prove the mount, point the
  * worktree's Gateway `.env` at the mounted checkout, link the CLI onto the guest `PATH`, and apply the
  * Gateway migrations. The mount proof alone is what verify and sync re-run before touching a topology.
  */
-final readonly class DiscoveryGuestPreparer
+final readonly class TopologyGuestPreparer
 {
     public function __construct(
         private IncusHost $host,

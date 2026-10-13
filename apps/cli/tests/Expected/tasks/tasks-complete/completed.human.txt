@@ -17,6 +17,8 @@ Completing task group...
 │
 ├  Status              completed
 │
+├  Preview             no
+│
 ├  Assistance          no
 │
 ├  Kind                —

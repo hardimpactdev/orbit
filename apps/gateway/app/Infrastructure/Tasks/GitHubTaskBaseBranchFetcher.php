@@ -14,18 +14,15 @@ use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\Tasks\TaskBaseBranchFetcher;
-use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskRemoteBranch;
 use App\Domain\TaskVms\TaskVmWorkspaceGuard;
-use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\TaskVms\TaskVmGit;
 use App\Models\Instance;
 use App\Models\Task;
-use SensitiveParameter;
 use Throwable;
 
 /**
@@ -61,12 +58,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
         }
 
         try {
-            if ($group->task_compute === TaskCompute::Vm) {
-                $this->sendToVm($instance, [$base], [], GitReadEnvironment::forGitHubToken($this->access->token($repository)), 'task-base-fetch', 'The base branch could not be fetched.');
-
-                return;
-            }
-            $this->fetchRef($instance, $base, $this->access->token($repository));
+            $this->sendToVm($instance, [$base], [], GitReadEnvironment::forGitHubToken($this->access->token($repository)), 'task-base-fetch', 'The base branch could not be fetched.');
         } catch (GitHubApiException $exception) {
             throw new TaskPullRequestException('The base branch could not be fetched.', previous: $exception);
         }
@@ -82,7 +74,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
 
         $instance->loadMissing('node');
         // The turn fetch has already updated this ref. This step is local and needs no token.
-        $script = WorkspaceGit::bashPreamble().WorkspaceGit::workerPreamble(TaskWorkerUser::name($instance)).<<<'BASH'
+        $script = WorkspaceGit::bashPreamble().<<<'BASH'
             checkout=$1
             branch=$2
             status=0
@@ -96,7 +88,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
             head=$(git -C "$checkout" rev-parse HEAD)
             remote=$(git -C "$checkout" rev-parse "refs/remotes/origin/$branch")
             if [ "$head" != "$remote" ] && git -C "$checkout" merge-base --is-ancestor "$head" "$remote"; then
-                workspace_git -C "$checkout" merge --ff-only --quiet "$remote"
+                git -C "$checkout" merge --ff-only --quiet "$remote"
             fi
             BASH;
         $arguments = ['bash', '-seu', '--', $instance->checkout_path, TaskRemoteBranch::for($group)];
@@ -125,21 +117,20 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
         }
         $instance->loadMissing('node');
         // The checks and the reset run in one command: another branch, a commit that is not on the
-        // default branch, or a tracked change is manual work, and the reset refuses it. Content reads
-        // can start filters, so they run as the worker.
-        $script = WorkspaceGit::bashPreamble().WorkspaceGit::workerPreamble(TaskWorkerUser::name($instance)).<<<'BASH'
+        // default branch, or a tracked change is manual work, and the reset refuses it.
+        $script = WorkspaceGit::bashPreamble().<<<'BASH'
             checkout=$1
             branch=$2
             local=$3
             tip=$(git -C "$checkout" rev-parse --verify "refs/remotes/origin/$branch^{commit}")
             if [ "$(git -C "$checkout" symbolic-ref -q HEAD)" != "refs/heads/$local" ] \
                 || ! git -C "$checkout" merge-base --is-ancestor HEAD "$tip" \
-                || ! workspace_git -C "$checkout" diff --quiet --cached HEAD -- \
-                || ! workspace_git -C "$checkout" diff --quiet --; then
+                || ! git -C "$checkout" diff --quiet --cached HEAD -- \
+                || ! git -C "$checkout" diff --quiet --; then
                 echo 'The workspace has manual work.' >&2
                 exit 3
             fi
-            workspace_git -C "$checkout" reset --hard --quiet "$tip"
+            git -C "$checkout" reset --hard --quiet "$tip"
             git -C "$checkout" rev-parse HEAD
             BASH;
         try {
@@ -181,12 +172,12 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
         }
         $instance = $this->workspace($group);
         // Only a workspace without tracked changes moves. Untracked Orbit files such as .mcp.json stay.
-        $script = WorkspaceGit::bashPreamble().WorkspaceGit::workerPreamble(TaskWorkerUser::name($instance)).<<<'BASH'
+        $script = WorkspaceGit::bashPreamble().<<<'BASH'
             checkout=$1
             sha=$2
             git -C "$checkout" cat-file -e "$sha^{commit}"
-            workspace_git -C "$checkout" diff --quiet HEAD --
-            workspace_git -C "$checkout" reset --hard --quiet "$sha"
+            git -C "$checkout" diff --quiet HEAD --
+            git -C "$checkout" reset --hard --quiet "$sha"
             git -C "$checkout" rev-parse HEAD
             BASH;
         if ($this->commitFrom($instance, $script, [$sha], 'task-pull-request-head', 'The workspace could not move to the pull request head.') !== $sha) {
@@ -268,12 +259,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
         }
 
         $pullBase = $this->pullRequestBase($group, $repository, $default, $taskBranch);
-        if ($group->task_compute === TaskCompute::Vm) {
-            $this->sendToVm($instance, array_filter([$default, $pullBase], is_string(...)), [$taskBranch], $environment, 'task-turn-fetch', 'The workspace refs could not be fetched.');
-
-            return;
-        }
-        $this->fetchRefs($instance, $environment, $default, $taskBranch, $pullBase);
+        $this->sendToVm($instance, array_filter([$default, $pullBase], is_string(...)), [$taskBranch], $environment, 'task-turn-fetch', 'The workspace refs could not be fetched.');
     }
 
     /**
@@ -329,67 +315,6 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
             $this->git->send($project, $instance->checkout_path, $tips, fn (RemoteCommand $command): CommandResult => $this->workspaces->execute($instance, $command, $step, 'tasks.fetch_failed'), 'tasks.fetch_failed');
         } catch (RuntimeConvergenceException $exception) {
             throw new TaskPullRequestException($failure, previous: $exception);
-        }
-    }
-
-    private function fetchRefs(Instance $instance, GitReadEnvironment $environment, string $default, string $taskBranch, ?string $pullBase): void
-    {
-        $instance->loadMissing('node');
-        // A missing task branch is not a failure. The full ref avoids a suffix such as archive/task-{id}.
-        // The other refs are still fetched, and HEAD stays put.
-        $script = GitReadScript::for($environment, WorkspaceGit::workerPreamble(TaskWorkerUser::name($instance)).WorkspaceGit::networkPreamble().<<<'BASH'
-            checkout=$1
-            default_branch=$2
-            task_branch=$3
-            pull_base=$4
-            repository=$5
-            common=$6
-            status=0
-            git_read git -c credential.helper= -c http.followRedirects=false -c core.hooksPath=/dev/null -c core.fsmonitor=false -C / ls-remote --exit-code --heads -- "$repository" "refs/heads/$task_branch" >/dev/null || status=$?
-            if [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then
-                exit "$status"
-            fi
-            refspecs=("+refs/heads/${default_branch}:refs/remotes/origin/${default_branch}")
-            if [ "$status" -eq 0 ]; then
-                refspecs+=("+refs/heads/${task_branch}:refs/remotes/origin/${task_branch}")
-            fi
-            if [ -n "$pull_base" ]; then
-                refspecs+=("+refs/heads/${pull_base}:refs/remotes/origin/${pull_base}")
-            fi
-            isolated_fetch "$checkout" "$common" "$repository" 0 "${refspecs[@]}"
-            if [ "$status" -eq 2 ]; then
-                git -C "$checkout" update-ref -d "refs/remotes/origin/$task_branch"
-            fi
-            BASH);
-        try {
-            $this->workspaces->execute($instance, new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $instance->checkout_path, $default, $taskBranch, $pullBase ?? '', (string) $instance->project->repository_url, WorkspaceGit::commonDirectory($instance)],
-                input: $script->input,
-                protectedInput: $script->protectedInput,
-            ), 'task-turn-fetch', 'tasks.fetch_failed');
-        } catch (RuntimeConvergenceException $exception) {
-            throw new TaskPullRequestException('The workspace refs could not be fetched.', previous: $exception);
-        }
-    }
-
-    private function fetchRef(Instance $instance, string $base, #[SensitiveParameter] string $token): void
-    {
-        $instance->loadMissing('node');
-        $script = GitReadScript::for(GitReadEnvironment::forGitHubToken($token), WorkspaceGit::workerPreamble(TaskWorkerUser::name($instance)).WorkspaceGit::networkPreamble().<<<'BASH'
-            checkout=$1
-            base=$2
-            repository=$3
-            common=$4
-            isolated_fetch "$checkout" "$common" "$repository" 0 "+refs/heads/$base:refs/remotes/origin/$base"
-            BASH);
-        try {
-            $this->workspaces->execute($instance, new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $instance->checkout_path, $base, (string) $instance->loadMissing('project')->project->repository_url, WorkspaceGit::commonDirectory($instance)],
-                input: $script->input,
-                protectedInput: $script->protectedInput,
-            ), 'task-base-fetch', 'tasks.fetch_failed');
-        } catch (RuntimeConvergenceException $exception) {
-            throw new TaskPullRequestException('The base branch could not be fetched.', previous: $exception);
         }
     }
 }

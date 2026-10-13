@@ -23,8 +23,6 @@ final class UpdateNodeSettingsRequest extends FormRequest
         return [
             'apps' => ['sometimes', 'nullable', 'array:path'],
             'apps.path' => ['sometimes', 'nullable', 'string'],
-            'tasks' => ['sometimes', 'nullable', 'array:worker'],
-            'tasks.worker' => ['sometimes', 'nullable', 'string', 'in:none'],
         ];
     }
 
@@ -33,10 +31,7 @@ final class UpdateNodeSettingsRequest extends FormRequest
     {
         $patch = $this->payload();
 
-        return array_merge(
-            $patch->hasApps ? ['apps' => $patch->apps === null ? null : ['path' => $patch->apps->path]] : [],
-            $patch->hasTasks ? ['tasks' => $patch->tasks === null ? null : ['worker' => $patch->tasks->worker]] : [],
-        );
+        return $patch->hasApps ? ['apps' => $patch->apps === null ? null : ['path' => $patch->apps->path]] : [];
     }
 
     public function payload(): NodeSettingsPatch

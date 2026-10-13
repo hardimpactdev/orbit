@@ -11,9 +11,9 @@ covers:
 
 # Compute drivers
 
-A task group of a Project with `task_compute: vm` runs in its own [task VM](#task-vms), which is a normal `app-dev` Node of the dev Cluster. This holds for every Project, `orbit` included. See [Orbit Project](#orbit-project).
+Every task group runs in its own [task VM](#task-vms), which is a normal `app-dev` Node of the dev Cluster. This holds for every Project, `orbit` included. See [Orbit Project](#orbit-project).
 
-Task VMs are off until you [configure them](#configure-task-vms), and `task_compute` defaults to `shared`. [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) records the design.
+Task VMs are off until you [configure them](#configure-task-vms). Until then no task group can start. [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) records the design.
 
 ## Task VMs
 
@@ -23,7 +23,7 @@ A task VM is an Ubuntu 26.04 VM on an Incus host. It boots from the [base image]
 
 A claim moves a group through these steps. Steps 2 to 5 are queued [jobs](#jobs). When the host keeps [warm VMs](#keep-warm-vms), the claim takes one and runs step 5 itself, and step 6 follows in the same claim.
 
-1. The scheduler claims a `vm` group. `AllocateTaskVmAction` decides the VM's [size](#size-by-declared-topology). It takes a warm VM or records a new `provisioning` row, and queues `ProvisionTaskVm` for a new row.
+1. The scheduler claims a group. `AllocateTaskVmAction` decides the VM's [size](#size-by-declared-topology). It takes a warm VM or records a new `provisioning` row, and queues `ProvisionTaskVm` for a new row.
 2. `ProvisionTaskVm` launches the VM from the base image with cloud-init user-data. Its disk is a ZFS clone of the image. On beast, the launch takes under a second. Cloud-init is done about 10 seconds later.
 3. `EnrollTaskVm` waits for cloud-init. Then it reads the guest's IPv4 address, its ed25519 host key fingerprint, and the [image manifest](#skip-what-the-image-holds) from the host through `incus`.
 4. `EnrollTaskVm` runs the normal [Node provisioning](/reference/node-provisioning#add-a-node) for the Node `tvm-<id>`, through the host as [jump host](/reference/node-provisioning#enroll-through-a-jump-host).
@@ -48,8 +48,6 @@ The workspace stays `source_resolved`, and its Route stays `pending`. The claim 
 The setup steps of the check can change files while the Route grants Caddy access to the checkout: `vp build` rewrites the build output, and Composer republishes assets. So the access walk ignores an entry that vanishes during the walk, and fails on any other error. It sets each directory's default ACL before its access ACLs, so a file that setup creates during or after the walk inherits the right entry: readable by Caddy in the Web root, denied elsewhere.
 
 A Route that fails at the claim logs `The task workspace Route failed after the baseline check started; Orbit tries again before the implementer starts.` Work that uses the Route waits for it: before the first implementer or the final review starts, Orbit tries the Route again. Each failure there counts as a communication failure. After the fifth, the subtask asks for assistance with `The task workspace Route could not be finished, so no agent started.` and the error. So no agent, reviewer, preview, or pull request ever uses a workspace whose Route failed. Cancelling the group removes the workspace with its pending Route.
-
-Shared groups keep the earlier order: their workspace is `active` before the check starts.
 
 `AllocateTaskVmAction` [places](#place-task-vms) the VM on a host. The row gets the name `tvm-<row id>`, the next free WireGuard address in the reserved range, and a random Pi token. It also records `claimed_at`, the moment of the claim.
 
@@ -88,12 +86,12 @@ Until the row is `ready`, the claim returns the group to `todo` with a reason, a
 | `Task VM: waiting for a warm VM.` | Every host is full, and at least one of its VMs is a [warm VM](#keep-warm-vms) that is still starting. The claim takes it once it is `warm` |
 | `Task VM: another placement is running.` | Another claim held the placement lock for 15 seconds |
 | `Task VM: provisioning.` | The jobs are still running |
-| `Task VM: task_vm.invalid_config: <message>` | A `task_vms` value is invalid. Shared groups keep working, because only `vm` claims read these settings |
+| `Task VM: task_vm.invalid_config: <message>` | A `task_vms` value is invalid |
 | `Task VM: destroying.` | Cleanup has started |
 
 These reasons are waits: the group asks for no assistance. A `failed` task VM is no wait. The claim returns the group to `todo` without a wait reason, and the group asks for assistance at once with `Task VM failed: tvm-<id>: <code>: <message> Cancel the group to destroy the VM.` Every later claim finds the same VM and keeps the request. The group gets no other VM: cancel it to destroy the VM.
 
-The Node `tvm-<id>` has user `orbit`, role `app-dev`, the dev Cluster, and the reserved WireGuard address. Shared groups never get a workspace on a task VM Node: their Node selection leaves out every Node of a task VM that is not `destroyed`.
+The Node `tvm-<id>` has user `orbit`, role `app-dev`, the dev Cluster, and the reserved WireGuard address.
 
 ### Destroy a task VM
 
@@ -153,7 +151,9 @@ At the claim, Orbit decides the size of the group's VM once. It takes the union 
 | `medium` | The topology has one test node, or no subtask declares a topology and the Project is in `task_vms.medium_projects` | 4 vCPU, 8 GiB of memory, and a 40 GiB disk | 2 | Never: always a new VM, and never at UpCloud |
 | `large` | The topology has two test nodes | 6 vCPU, 12 GiB of memory, and a 60 GiB disk | 3 | Never: always a new VM, and never at UpCloud |
 
-A test node is `app-dev`, `app-prod`, or `app-prod-2`, whatever roles its entry adds. The [test Gateway and the operator](/reference/incus-topologies#declared-nodes) run in every topology and do not count. The sizes come from the nested topology spike on beast. There, the test Gateway, an `app-dev` node, and the operator used about 2.7 GiB together. A large VM that ran four test machines used all of its 12 GiB on the host under IO.
+A test node is `app-dev`, `app-prod`, or `app-prod-2`, whatever roles its entry adds. The [test Gateway and the operator](/reference/incus-topologies#declared-nodes) run in every topology and do not count. Each size defines how many test nodes it holds, one in a medium VM and two in a large VM, and the group gets the smallest size that holds its topology. The largest size sets the most test nodes a group may declare.
+
+The sizes come from the nested topology spike on beast. There, the test Gateway, an `app-dev` node, and the operator used about 2.7 GiB together. A large VM that ran four test machines used all of its 12 GiB on the host under IO.
 
 The sizes are caps, not reservations. Incus does not pin the vCPUs, and the guest takes host memory only when it first uses it. Medium and large VMs have free page reporting on their memory balloon, so the host gets back the memory that the guest frees, but not the guest's page cache. Plan for a VM that runs a topology to use all of its memory on the host. Warm VMs hold their slots, so a host fits a large VM only when `max_vms` minus its other VMs, warm VMs included, leaves three slots.
 
@@ -244,7 +244,7 @@ A pool row that is still `provisioning` an hour after the refill recorded it has
 - A warm VM is never parked. Parking, resume, and the wake gate apply only to a VM with a group.
 - The tick destroys only the VMs of ended groups. The refill destroys warm VMs.
 - The [sweep](#sweep-task-vm-hosts) and Doctor know warm VMs, so a warm VM is never an orphan. A warm VM whose instance is gone is a missing VM.
-- A warm VM's Node serves no Instance. Any Instance on it fails with `task_vm.foreign_instance`. Shared groups never get a workspace on it.
+- A warm VM's Node serves no Instance. Any Instance on it fails with `task_vm.foreign_instance`.
 - The fleet rollout skips it, and it has no Metrics exporter, as for every task VM Node.
 - Node removal refuses a host with a pool row that is not `destroyed`, with `node.has_task_vms`. `task-vms:retire-host` refuses it with `task_vm.host_in_use`.
 
@@ -282,6 +282,8 @@ A task VM workspace's checkout is always `<apps directory>/workspace`, the path 
 
 A claim takes only a template with `user.orbit.layout=workspace`. A template from before the fixed checkout path has none. No claim takes it, and the claim queues a new build.
 
+A claim also takes only a template whose files belong to `1000:1000` (`user.orbit.owner`), the `uid:gid` of `orbit` on the base image. For another owner, the claim queues a new build.
+
 The mount never goes over a directory with content. Before it mounts, it checks that `orbit` has the `uid:gid` that the template recorded. After it mounts, it checks that the volume root and `workspace` belong to that `uid:gid`.
 
 After the Project's repository or the base image changes, no template matches until the next build. The fstab line follows a successful mount and owner check only, so a failed mount never comes back at a later boot over a fresh clone.
@@ -290,9 +292,9 @@ When step 3 or 4 fails, the claim undoes the attach before the fresh clone: it r
 
 Then the Gateway sends the group's branches from its [mirror](#git-on-a-task-vm), and the workspace checks out the group's branch. The baseline check runs the setup steps on the workspace. Each step finds the dependencies in place and only installs what the branch changed.
 
-A task VM holds one workspace, so its checkout path is fixed, unlike the `task-<id>` checkout on a shared Node. Caches that record absolute paths, such as Rector's, still match at the claim, so the baseline check finds them warm.
+A task VM holds one workspace, so its checkout path is fixed. Caches that record absolute paths, such as Rector's, still match at the claim, so the baseline check finds them warm.
 
-Every step is idempotent, so a claim that runs again finds the clone, the disk, and the mount in place. A warm VM gets its clone at the claim, so warm VMs stay the same for every Project. The base image creates `orbit` with uid and gid 1000, so the files of a template belong to `orbit` on every VM from that image. A template is still only taken on the image it was built on, and the mount checks the owner.
+Every step is idempotent, so a claim that runs again finds the clone, the disk, and the mount in place. A warm VM gets its clone at the claim, so warm VMs stay the same for every Project. The base image creates `orbit` with uid and gid 1000, so the files of a template belong to `orbit` on every VM from that image. A template is still only taken on the image it was built on and with the owner `1000:1000`, and the mount checks the owner again on the VM.
 
 On beast, mealou's setup steps took about 13 seconds on a new VM with a template, against about 36 seconds without one. `vp install` always runs `npm audit`, which reaches the network.
 
@@ -300,7 +302,7 @@ On beast, mealou's setup steps took about 13 seconds on a new VM with a template
 
 The workspace starts from a fresh clone, as before, in these cases:
 
-- The host has no ready template for the Project. Orbit logs the warning `Task VM workspace has no template; it starts from a fresh clone.` and queues a build of the template. See [Template failures](#template-failures) for the wait after a failed build.
+- The host has no ready template for the Project, or none whose owner is `1000:1000`. Orbit logs the warning `Task VM workspace has no template; it starts from a fresh clone.` and queues a build of the template. See [Template failures](#template-failures) for the wait after a failed build.
 - A build of the template runs. An unfinished template is never taken, and the claim queues no second build.
 - The Project has no valid default branch or repository URL. Orbit logs `Task VM workspace template cannot be built; workspaces of the Project start from a fresh clone.` with the reason, and queues no build.
 - The Project's templates were built on another base image than the VM's, and the VM runs the host's current `orbit-task-base`. Orbit logs `Task VM workspace template was built on another base image; it starts from a fresh clone, and a new build is queued.` and queues a build.
@@ -315,20 +317,19 @@ The group never waits because of a template, and fails only when Orbit cannot un
 
 Run `task-vms:build-workspace-template {node} {project}` to build the template of a Project on one host. It prints each stage with its time.
 
-Templates are built on demand. A claim that finds no template for its VM's base image queues `BuildTaskVmWorkspaceTemplate`, and the refresh below builds ahead only for active Projects. Most `vm` Projects get few groups, so a build for every Project after each promote would mostly make templates that the next promote replaces unused.
+Templates are built on demand. A claim that finds no template for its VM's base image queues `BuildTaskVmWorkspaceTemplate`, and the refresh below builds ahead only for active Projects. Most Projects get few groups, so a build for every Project after each promote would mostly make templates that the next promote replaces unused.
 
 Templates belong to the base image they were built on, so they follow it. Whatever builds or syncs a base image queues `RefreshTaskVmWorkspaceTemplates` once when it ends, after every host it changed, also when it fails: `task-vms:build-image`, the nightly base image refresh at 03:00, and `task-vms:sync-image` unless the host already had the image. The promote itself queues nothing, so no refresh sees one host moved and another not. A refresh that is already queued absorbs another one. A refresh queued while one runs queues one more, which sees the new alias.
 
 The refresh runs on every configured host whose Node is active. It reads the host's current `orbit-task-base` and deletes each ready template that no claim can take:
 
-- the templates of Projects whose `task_compute` is not `vm`;
 - the templates of Projects without a valid default branch or repository URL;
 - the templates from an earlier repository URL, or built on another base image;
 - all but the newest template of each Project.
 
 So after a promote, each host keeps at most one template for each Project, and none from the old image.
 
-Then the refresh queues one build on each host for each `vm` Project that had a group created in the last 7 days, unless the host already has a current template of it. A current template is ready, comes from the Project's repository, was built on the host's current base image, and belongs to uid and gid 1000. So a second refresh builds only what the first one did not, and the build job skips a current template too.
+Then the refresh queues one build on each host for each Project that had a group created in the last 7 days, unless the host already has a current template of it. A current template is ready, comes from the Project's repository, was built on the host's current base image, and belongs to uid and gid 1000. So a second refresh builds only what the first one did not, and the build job skips a current template too.
 
 Other Projects get their template at their next claim. A Project without a valid default branch or repository URL gets no build. The refresh logs the warning `Task VM workspace template cannot be built; workspaces of the Project start from a fresh clone.` for it each time.
 
@@ -992,7 +993,7 @@ These alternatives were also rejected:
 
 ## UpCloud overflow
 
-When beast and shark have no free slot, a `vm` group of an opted-in Project may get its [task VM](#task-vms) at UpCloud. The overflow is off by default. It needs both the Gateway-wide switch `ORBIT_TASK_VMS_UPCLOUD_ENABLED=true` and the Project's ID in `ORBIT_TASK_VMS_UPCLOUD_PROJECTS`. Without both, the group waits with `Task VM: no capacity.` as before. `shared` stays the default task compute.
+When beast and shark have no free slot, a group of an opted-in Project may get its [task VM](#task-vms) at UpCloud. The overflow is off by default. It needs both the Gateway-wide switch `ORBIT_TASK_VMS_UPCLOUD_ENABLED=true` and the Project's ID in `ORBIT_TASK_VMS_UPCLOUD_PROJECTS`. Without both, the group waits with `Task VM: no capacity.` as before. `shared` stays the default task compute.
 
 An UpCloud task VM follows the same path as an Incus one. It is a `task_vms` row with the provider `upcloud` and no host Node. The same jobs create, enroll, park, resume, and destroy it.
 
@@ -1088,7 +1089,7 @@ The Project list lives in the Gateway environment next to the switch, so no Proj
 
 ## Task workspace cleanup
 
-A [task VM](#destroy-a-task-vm) workspace is a normal Instance, and Orbit removes it as it removes a shared workspace.
+A task workspace is a normal Instance on its task VM. Orbit runs the Project's teardown steps in it and then destroys the VM with it. See [Destroy a task VM](#destroy-a-task-vm).
 
 ## Orbit Project
 
@@ -1096,14 +1097,10 @@ A group of the `orbit` Project runs on a task VM, like the group of any other Pr
 
 Configure the Project like this:
 
-- Set its `task_compute` to `vm`.
 - List it in `task_vms.medium_projects`, so its groups get a [medium VM](#size-by-declared-topology) with 4 vCPU. Its check runs the test suites in parallel.
 - Add the setup step [`@orbit/ci-caches`](/reference/instance-setup#import-ci-main-caches) after the install steps.
-- Make the teardown step exit 0 when the [`e2e-task-cleanup` helper](/reference/instance-setup#install-the-helper) is absent.
 
 A task VM has no main cache store, so without the `@orbit/ci-caches` step every check runs all tests. With it, the template and a workspace from a fresh clone get the test-impact graphs and quality caches of CI. Then the check runs only the affected tests, as on beast.
-
-A task VM has no E2E task bridge and no cleanup helper. A teardown step that needs the helper fails the workspace removal, and the group asks for assistance. Use, for example, `[ -x "$HOME/.local/lib/orbit/e2e-task-cleanup" ] || exit 0; "$HOME/.local/lib/orbit/e2e-task-cleanup"`.
 
 The setup and teardown steps run on the VM as `orbit`. The `seed-dependencies` step does nothing there, because a task VM workspace has no `ORBIT_SEED_PATH`: the template brings the dependency trees instead.
 
@@ -1111,7 +1108,9 @@ The setup and teardown steps run on the VM as `orbit`. The `seed-dependencies` s
 
 A subtask declares the test nodes it needs in its `topology` field, for example `["app-dev"]` or `["app-dev", "app-prod+ingress"]`. Each entry names one node, `app-dev`, `app-prod`, or `app-prod-2`, at most once. After a `+` it may add the role `ingress`. `app-prod-2` needs `app-prod` in the same list. A role that conflicts with the node's base role, such as `app-dev+ingress`, is refused, by the [role compatibility](/reference/node-provisioning#role-compatibility) rules. The format takes more roles once one is proven to converge on a test node. Subtask creation, group creation, and stored task definitions keep the declaration. Only a subtask that has not started can change it.
 
-The subtasks of a group declare at most two test nodes together. In the spike, a 12 GiB VM was full with two, so a third would run it out of memory.
+The subtasks of a group declare at most two test nodes together, as many as a large VM holds. In the spike, a 12 GiB VM was full with two, so a third would run it out of memory. A group that declares more is refused with `tasks.invalid_topology`.
+
+The Gateway validates a declaration once, when a request, a task definition, or `tasks:render-prompt` gives it. It trusts a stored declaration. So a node or role that leaves the format later never fails a tick or a response for a subtask that declares it; the harness refuses that node when the topology is prepared.
 
 The group's topology is the union of its subtasks that are not cancelled: each node once, with every role any subtask adds to it. It decides the [VM size](#size-by-declared-topology) at the claim.
 
@@ -1122,9 +1121,8 @@ Before a subtask that declares a topology runs its baseline check or its impleme
 | Step | What happens |
 | --- | --- |
 | `host-setup` | `sudo bin/e2e-topology-host-setup --pool-size=SIZE`: Incus, the btrfs pool, and the [isolation table](/reference/incus-topologies#run-topologies-nested-in-a-task-vm). The pool is 25 GiB in a medium VM and 45 GiB in a large VM. |
-| `images` | `bin/e2e-topology-images build` for each [role image](/reference/incus-topologies#role-images) that the declared nodes need and the VM does not have yet. A first build takes about 9 minutes. |
-| `release` | Releases `TASK-<group>` when the VM still holds it from an earlier subtask |
-| `acquire` | `bin/e2e-topology acquire TASK-<group> <checkout> --nodes=<union>`, once more after a failure |
+| `images` | `bin/e2e-topology-images ensure --nodes=<union>`: the harness builds each [role image](/reference/incus-topologies#role-images) that the declared nodes need and the VM does not have yet. A first build takes about 9 minutes. |
+| `acquire` | `bin/e2e-topology acquire TASK-<group> <checkout> --nodes=<union> --replace`, which first releases the topology the VM still holds from an earlier subtask. After a failure it runs once more; the log warns, and the result counts the retry in `retries`. |
 
 Every task VM's user `orbit` is in the `incus-admin` group from its first boot, so agents can run `bin/e2e-topology` once Incus is installed. The row stores the union in `topology`, its state in `topology_state` (`preparing` or `ready`), and the run in `topology_run`.
 
@@ -1138,14 +1136,15 @@ When the unit fails, or stops without a result, the subtask asks for assistance 
 
 The implementer and the reviewer use the topology with `bin/e2e-topology`, as the [using-incus-topologies](https://github.com/nckrtl/orbit/blob/main/.agents/skills/using-incus-topologies/SKILL.md) skill describes. Their prompts name the declared nodes. They never acquire or release it.
 
-The reviewer proves each deliverable on the declared nodes with `bin/e2e-topology exec TASK-<group> NODE --argv=JSON --record=LABEL`. The harness writes the node, the command, the exit code, and the output to the [evidence log](/reference/incus-topologies#evidence-log). When the reviewer approves a subtask that declares a topology, Orbit reads the newest MiB of that log. The approval passes only when the log holds, for each node the subtask declares, a record that counts. Otherwise Orbit reminds the reviewer with the nodes that lack evidence, and the subtask is not approved. A record counts when:
+The reviewer proves each deliverable on the declared nodes with `bin/e2e-topology exec TASK-<group> NODE --argv=JSON --record=LABEL`. The harness writes the node, the command, the exit code, and the output to the [evidence log](/reference/incus-topologies#evidence-log). When the reviewer approves a subtask that declares a topology, Orbit reads the newest MiB of the evidence. The approval passes only when the evidence holds, for each node the subtask declares, a record that counts. Otherwise Orbit reminds the reviewer with the nodes that lack evidence, and the subtask is not approved.
 
-- it has the shape the harness writes, described below;
+Orbit reads `.e2e/evidence.jsonl` when the workspace has it. Each line is one JSON record: `{"v":1,"start":"…","end":"…","label":"…","node":"…","exit":0,"argv":["…"]}`, with UTC times in milliseconds and the redacted argv as a list. Orbit skips a line that is not such a record, for example one cut at the start of the newest MiB, and ignores keys it does not use. A workspace without that file falls back to the text log `.e2e/evidence.log`, whose `===` header, `$` command line, and `--- stdout` line Orbit parses. A record counts when:
+
 - its command exited 0;
-- it started after the implementer's last handoff, and not after the time Orbit reads the log;
+- it started after the implementer's last handoff, and not after the time Orbit reads the evidence;
 - its command does work on the node. These commands do not count, also inside `sh -c` or `bash -c`: `true`, `:`, `false`, `exit`, `echo`, `printf`, `sleep`, and `yes`.
 
-The harness writes a blank line or the start of the file, then the `===` header, the `$` command line, and `--- stdout`. A header inside command output lacks that shape, so command output cannot forge a record.
+The gate is a cooperative check, not a control against forgery. The agent owns the VM and can write the file directly. The gate catches a reviewer that did not run anything on a declared node, and a person audits the records.
 
 Orbit adds the counted records, with their time, node, label, and command, to the approval, and so to its commit, for a person to audit. Appending to `.e2e/evidence.log` is not a workspace change: the file is ignored, and the reviewer's prompt says so.
 
@@ -1155,11 +1154,11 @@ Orbit adds the counted records, with their time, node, label, and command, to th
 {"46": ["apps/agent/**", "apps/e2e/resources/guest/**", "apps/gateway/app/{Domain,Infrastructure,Actions}/{Nodes,Deployments,Routes,Caddy,WireGuard}/**"]}
 ```
 
-Orbit checks this when the handoff check of a `vm` group passes. It refuses the handoff when the subtask's diff changes a matching path and no subtask of the group declares a topology. The reminder starts with `This subtask changes paths that need real machines`. The implementer reverts those changes, or ends its turn blocked so the operator can add a subtask with a topology.
+Orbit checks this when the handoff check of a group passes. It refuses the handoff when the subtask's diff changes a matching path and no subtask of the group declares a topology. The reminder starts with `This subtask changes paths that need real machines`. The implementer reverts those changes, or ends its turn blocked so the operator can add a subtask with a topology.
 
 ## Sandbox power
 
-Task group responses report `sandbox_power` separately from task status. For a [task VM](#task-vms), it is `running` while the VM is `ready`, `stopped` while it is [`parked`](#park-and-resume), and `destroyed` once it is `destroyed`. In the other states it is `null`, and the group's wait reason names the state. Shared groups return `null`. The CLI shows this value as **Sandbox power** for VM groups.
+Task group responses report `sandbox_power` separately from task status. For a [task VM](#task-vms), it is `running` while the VM is `ready`, `stopped` while it is [`parked`](#park-and-resume), and `destroyed` once it is `destroyed`. In the other states it is `null`, and the group's wait reason names the state. The CLI shows this value as **Sandbox power**.
 
 ## Request a preview
 

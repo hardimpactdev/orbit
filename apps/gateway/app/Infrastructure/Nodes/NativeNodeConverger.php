@@ -156,7 +156,7 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
             ? $this->bootstrapCommand->make($node, $identity->managedUser, $rolelessOperator)
             : $this->bootstrapCommand->makeWithPasswordlessSudo($node, $identity->managedUser, $rolelessOperator);
         // A task VM whose base image ran this exact program skips it.
-        if (! app(TaskVmBakedPrograms::class)->holds($node, TaskVmBakedPrograms::Bootstrap, $bootstrapCommand)) {
+        if (! app(TaskVmBakedPrograms::class)->holds($node, EnrollmentProgram::Bootstrap, $bootstrapCommand)) {
             $bootstrap = $this->ssh->execute($bootstrapConnection, $bootstrapCommand);
 
             if (! $bootstrap->succeeded()) {

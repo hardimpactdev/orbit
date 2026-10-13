@@ -43,9 +43,9 @@ The Gateway reserves `<destination-apps-root>/<project-slug>/<name>`. It refuses
 
 The destination gets an independent checkout, even when the source is a worktree. It holds the branch, commits, detached state, tracked changes, untracked files, and file modes of the source. Orbit does not fetch, reset, clean, or push the source. The common repository, sibling worktrees, and local branches of a source worktree stay unchanged.
 
-Gateway Git commands that capture the source and prepare the destination pass `-c core.hooksPath=/dev/null` and `-c core.fsmonitor=false`. Checkout hooks and custom filesystem monitors are not transfer steps. The overrides apply to those commands without changing the stored Git configuration. When the destination [uses the task worker](/reference/instance-setup#task-work-nodes), checkout commands that can start clean, smudge, or process filters run as the worker without a credential environment, and the destination must have that account. On an opted-out destination they run as the managed account.
+Gateway Git commands that capture the source and prepare the destination pass `-c core.hooksPath=/dev/null` and `-c core.fsmonitor=false`. Checkout hooks and custom filesystem monitors are not transfer steps. The overrides apply to those commands without changing the stored Git configuration. Checkout commands that can start clean, smudge, or process filters run as the managed account without a credential environment.
 
-The checkout and its `.git` travel as they are, so a checkout marked `worker_shared` cannot move to an opted-out destination: the transfer returns `instance.transfer_worker_shared` before it changes the source. Privileged file placement stays under the managed account.
+The checkout and its `.git` travel as they are. Privileged file placement stays under the managed account.
 
 Every transfer runs in this order:
 

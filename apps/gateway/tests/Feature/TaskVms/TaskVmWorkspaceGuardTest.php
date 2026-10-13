@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tasks\TaskCompute;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\TaskVmWorkspaceGuard;
@@ -21,9 +20,9 @@ function task_vm_node(string $name, int $octet): Node
     ]);
 }
 
-function task_vm_group(Project $project, TaskCompute $compute = TaskCompute::Vm): Task
+function task_vm_group(Project $project): Task
 {
-    return Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Work', 'brief' => 'Work', 'status' => 'todo', 'task_compute' => $compute]);
+    return Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Work', 'brief' => 'Work', 'status' => 'todo']);
 }
 
 function task_vm_row(Task $group, Node $host, ?Node $node, TaskVmState $state = TaskVmState::Ready, string $wireguardIp = '10.44.0.130'): TaskVm
@@ -120,20 +119,4 @@ describe('assertWorkspace', function (): void {
         'shared Node' => [TaskVmState::Ready, 'shared', 'task-{group}'],
         'wrong name' => [TaskVmState::Ready, 'vmNode', 'main'],
     ]);
-
-    it('refuses a shared group workspace on a task VM Node', function (): void {
-        task_vm_row($this->group, $this->host, $this->vmNode);
-        $shared = task_vm_group($this->project, TaskCompute::Shared);
-
-        expect(fn () => TaskVmWorkspaceGuard::assertWorkspace($shared, task_vm_instance($this->project, $this->vmNode, 'task-'.$shared->id)))
-            ->toThrow(TaskVmException::class, "Task group [{$shared->id}] does not own the task VM that serves its workspace.");
-    });
-
-    it('accepts a shared group workspace on a shared Node', function (): void {
-        $shared = task_vm_group($this->project, TaskCompute::Shared);
-
-        TaskVmWorkspaceGuard::assertWorkspace($shared, task_vm_instance($this->project, $this->shared, 'task-'.$shared->id));
-
-        expect(true)->toBeTrue();
-    });
 });

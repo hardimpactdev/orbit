@@ -47,6 +47,7 @@ use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\AppProd\ProductionSshExecutor;
 use App\Infrastructure\Gateway\GatewayPrivateDnsResolver;
 use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
+use App\Infrastructure\Nodes\EnrollmentProgram;
 use App\Infrastructure\Nodes\Roles\AnalyticsRoleBaseline;
 use App\Infrastructure\Nodes\Roles\DatabaseRoleBaseline;
 use App\Infrastructure\Nodes\Roles\DevelopmentRoleBaseline;
@@ -105,8 +106,8 @@ it('skips the app development programs that a task VM image ran and runs a chang
     [$node, $assignment] = role_baseline_models(RoleName::AppDev, 'tvm-31');
     $commands = new NodeRolePrerequisiteCommandFactory;
     app(TaskVmBakedPrograms::class)->load(new TaskVm(['name' => 'tvm-31']), TaskVmBakedPrograms::manifest([
-        TaskVmBakedPrograms::CaddyPackage => $commands->caddyPackage($node, RoleName::AppDev),
-        TaskVmBakedPrograms::AppDevPrerequisites => new RemoteCommand(['sudo', 'bash', '-seu', '--', 'an older program']),
+        EnrollmentProgram::CaddyPackage => $commands->caddyPackage($node, RoleName::AppDev),
+        EnrollmentProgram::prerequisites(RoleName::AppDev) => new RemoteCommand(['sudo', 'bash', '-seu', '--', 'an older program']),
     ]));
     Log::spy();
 

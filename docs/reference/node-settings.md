@@ -1,11 +1,11 @@
 ---
 title: "Node settings"
-description: "Node settings: the apps.path root and the tasks.worker opt-out. Input, the effective apps root, validation, preparation, and failure codes."
+description: "Node settings: the apps.path root. Input, the effective apps root, validation, preparation, and failure codes."
 covers:
   - apps/gateway/app/Domain/Nodes/Storage/**
   - apps/gateway/app/Actions/Nodes/UpdateNodeSettingsAction.php
   - apps/gateway/app/Infrastructure/Nodes/RemoteNodeStorageRootPreparer.php
-  - apps/gateway/app/Data/Nodes/{NodeSettingsData,NodeStorageAppsData,NodeTaskSettingsData}.php
+  - apps/gateway/app/Data/Nodes/{NodeSettingsData,NodeStorageAppsData}.php
   - apps/gateway/app/Http/Requests/Nodes/UpdateNodeSettingsRequest.php
   - apps/cli/app/{Support/NodeSettingOptions,Commands/Nodes/UpdateNodeSettingsCommand}.php
   - packages/php-sdk/src/{Responses/Nodes/NodeSettings,Requests/Nodes/UpdateNodeSettingsRequest}.php
@@ -13,11 +13,11 @@ covers:
 
 # Node settings
 
-A Node has two settings. `apps.path` is the apps root under which the Gateway creates development Instance checkouts. `tasks.worker` opts the Node out of the task worker. Set them with `node:add` or `node:settings`. [`node`](/cli/node#orbit-nodesettings) lists the commands.
+A Node has one setting, `apps.path`: the apps root under which the Gateway creates development Instance checkouts. Set it with `node:add` or `node:settings`. [`node`](/cli/node#orbit-nodesettings) lists the commands.
 
 ## Set the apps root
 
-Both commands take repeatable `--setting=<setting-path>:<value>` options. The setting paths are `apps.path` and `tasks.worker`.
+Both commands take repeatable `--setting=<setting-path>:<value>` options. The only setting path is `apps.path`.
 
 ```bash
 orbit node:add app-dev app-dev.example --role=app-dev --setting=apps.path:/srv/orbit/apps
@@ -38,19 +38,7 @@ The CLI splits each option at its first colon, so a value can contain more colon
 { "apps": { "path": "/mnt/apps" } }
 ```
 
-The [API reference](/api/overview), [MCP](/reference/mcp), and generated web types publish `apps` as an object or null, with `path` as a string or null. Both the settings object and the nested `apps` object reject unknown fields. A patch needs at least one of `apps` and `tasks`; a nested member is optional. `"path": null`, `"apps": null`, or `"apps": {}` removes the path. A patch changes only the members it names. Other stored keys stay, such as the [`t3` connection](/reference/tasks#opsbot-direction-webhook) that annotations use. The API never returns them. Node responses return the stored value only. They return `settings: null` when nothing is set, never the default. `orbit node:show` shows the path, or an em dash when none is set.
-
-## Opt out of the task worker
-
-With `ORBIT_TASKS_WORKER_USER` set, every Node with an `app-dev` role runs filter-capable Gateway Git on its checkouts as that worker. [Task work Nodes](/reference/instance-setup#task-work-nodes) explains the rule. A Node where no agent runs, and which has no worker account, opts out:
-
-```bash
-orbit node:settings services --setting=tasks.worker:none
-```
-
-The API body is `{"tasks": {"worker": "none"}}`. `none` is the only value. `--setting=tasks.worker:` or `"tasks": null` removes the opt-out. The Gateway refuses the opt-out with `node.task_work_present` (HTTP 409) while the Node has a `pi-server` Process in any state, or holds a checkout marked `worker_shared`. Shared task groups never place a workspace on an opted-out Node.
-
-The migration that added the opt-out set it once on each `app-dev` Node without a `pi-server` Process, a marked checkout, or a task VM. On the live fleet that was `services`.
+The [API reference](/api/overview), [MCP](/reference/mcp), and generated web types publish `apps` as an object or null, with `path` as a string or null. Both the settings object and the nested `apps` object reject unknown fields. A patch needs the `apps` member; its `path` member is optional. `"path": null`, `"apps": null`, or `"apps": {}` removes the path. A patch changes only the members it names. Other stored keys stay, such as the [`t3` connection](/reference/tasks#opsbot-direction-webhook) that annotations use. The API never returns them. Node responses return the stored value only. They return `settings: null` when nothing is set, never the default. `orbit node:show` shows the path, or an em dash when none is set.
 
 ## Derive the effective root
 
@@ -69,29 +57,9 @@ The Gateway checks the path before it stores it. A path must:
 - not be inside a hidden directory of the managed user's home; and
 - not equal, or lie inside, an existing Instance checkout on the Node.
 
-The Gateway then checks the path on the Node. When the Node has an active `app-dev` role, it prepares the path: it creates each missing directory, owned by the managed user and group with mode `0755`. Otherwise the path must already exist. `app-dev` convergence prepares the apps root in the same way.
+The Gateway then checks the path on the Node. When the Node has an active `app-dev` role, it prepares the path: it creates each missing directory, owned by the managed user and group with mode `0755`. Otherwise the path must already exist. `app-dev` convergence prepares the apps root in the same way. Caddy must still reach each development Web root under the apps root; [Caddy access](/reference/routes#caddy-access) explains how.
 
 An existing directory must be a real directory, not a symlink, owned by the managed user and group. The owner must have read, write, and execute access, and group and others must not have write access. The Gateway never changes the owner or mode of an existing directory. When a check fails, the stored setting stays unchanged. A directory that the Gateway created before the failure can remain.
-
-### Caddy access
-
-Caddy runs as its own user and must reach each development site's document root, also when the apps root lies outside the managed user's home. When a development site publishes, the Gateway adds execute access for the `caddy` user on each ancestor directory of the document root that Caddy cannot enter yet. It adds no read access to those directories, so Caddy can pass through them but cannot list them. Inside the checkout, Caddy can read only the document root and the public storage target.
-
-Each entry's access list changes as the entry's owner: the managed user's entries as the managed user, and the task worker's entries as the worker. Root changes only a directory above every checkout that root owns, on a path that root owns from `/` down, such as an apps root's parent that Caddy cannot enter. Root never changes anything at or below a checkout. A directory that Caddy must pass but that none of these owners may change stops the publication.
-
-No change follows a symlink. Each change opens its path one directory at a time without following a symlink and checks the owner of what it opened. A symlink that the worker swaps in during the walk makes the walk fail instead of redirecting a change.
-
-Caddy's read grant keeps each entry's mask. A file or directory whose mode hides it from the group class, such as a mode 0600 environment file, stays hidden from Caddy and from the worker even when it lies in the document root. Only the passage grant on a directory adds execute to its mask. When Caddy still cannot read the document root or the public storage target, the publication fails and names it. When Caddy cannot read some entries in them, the publication succeeds and warns, naming up to five of those entries.
-
-Before it changes access, the Gateway saves the access lists of what it grants: the document root, its ancestor directories, the public storage target, and the shared Git directory. It saves each entry's device and inode number, type, owner, mode, and access lists, and for a file or directory its inode generation.
-
-The saved lists live in a private directory under `/var/tmp`, which is on disk, not in a `/tmp` that can be a memory-backed tmpfs. Only the managed user can enter that directory. Each owner's entries go in their own mode 0600 file, and the worker reads only its own file, so neither the worker nor Caddy can read or replace the managed user's saved lists.
-
-When the publication fails, each account restores its own saved entries, and root restores only the root-owned directories it changed. A restore changes access lists and modes only, never an owner. It never adds a setuid or setgid bit that the entry lost since it was saved. The site keeps the access it had, and the rest of the checkout stays closed to Caddy.
-
-A restore applies a saved entry only to the same file, by device, inode number, and type, and for a file or directory by inode generation too. So a new file that reuses a freed inode number never gets the saved access. An entry that vanished needs nothing. An entry that another file replaced keeps its own access list, and the restore names it and fails. A file or directory whose generation the save or the restore cannot read counts as replaced, such as one on a tmpfs, or one whose mode hides it from the account that reads it.
-
-When the restore fails, the saved directory stays and the error names it. The next publication removes the managed user's saved directories that are older than three days.
 
 ## Failure codes
 
@@ -99,7 +67,7 @@ The CLI refuses a bad option before it sends a request.
 
 | Code | Condition |
 | --- | --- |
-| `node.setting_unknown` | The setting path is not `apps.path` or `tasks.worker`. |
+| `node.setting_unknown` | The setting path is not `apps.path`. |
 | `node.setting_duplicate` | The same setting path appears twice. |
 | `node.setting_invalid` | An option has no colon or an empty setting path. |
 | `node.setting_required` | `node:settings` got no `--setting` option. |

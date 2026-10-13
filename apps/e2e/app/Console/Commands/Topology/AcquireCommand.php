@@ -6,7 +6,9 @@ namespace App\Console\Commands\Topology;
 
 use App\Console\Commands\E2ECommand;
 use App\E2E\Interrupted;
+use App\E2E\IssueState;
 use App\E2E\TopologyAcquirer;
+use App\E2E\TopologyReleaser;
 use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologyRequest;
 use Throwable;
@@ -15,13 +17,14 @@ final class AcquireCommand extends E2ECommand
 {
     #[\Override]
     protected $signature = 'topology:acquire {issue} {worktree}'
-        .' {--nodes= : Comma-separated workload Nodes: app-dev, app-prod, app-prod-2; default app-dev,app-prod}'
+        .' {--nodes= : Comma-separated workload Nodes from resources/topology-nodes.json, each with optional +ROLE; default app-dev,app-prod}'
+        .' {--replace : Release the issue\'s held topology first, if it has one}'
         .' {--json}';
 
     #[\Override]
-    protected $description = 'Compose a fresh discovery topology from role images on the mounted worktree';
+    protected $description = 'Compose a fresh topology from role images on the mounted worktree';
 
-    public function handle(TopologyAcquirer $acquirer): int
+    public function handle(TopologyAcquirer $acquirer, TopologyReleaser $releaser): int
     {
         try {
             // A signal unwinds the work like a failure, so the build or acquisition removes what it created.
@@ -33,6 +36,11 @@ final class AcquireCommand extends E2ECommand
             $recipe = TopologyRecipe::fromOption(is_string($nodes) ? $nodes : null);
             $timings = [];
             $started = microtime(true);
+            if ($this->option('replace') && IssueState::forWorktree($request->issue, $request->worktree)->hasAttempt()) {
+                $released = $releaser->release($request);
+                $timings['release'] = round(microtime(true) - $started, 1);
+                $this->log($request, 'replaced attempt='.$released['attempt_id']);
+            }
             $topology = $acquirer->acquire($request, $recipe, function (string $step, float $seconds) use (&$timings): void {
                 $timings[$step] = round($seconds, 1);
                 if (! $this->option('json')) {
@@ -43,7 +51,7 @@ final class AcquireCommand extends E2ECommand
             $this->log($request, 'attempt='.$topology->attempt->value.' nodes='.implode(',', $recipe->nodeKeys()).' seconds='.$timings['total'].' ok');
             $this->outputJson(
                 [
-                    'state' => $topology->purpose->value,
+                    'state' => 'acquired',
                     'issue' => $request->issue,
                     'attempt_id' => $topology->attempt->value,
                     'worktree' => $request->worktree,
@@ -51,7 +59,7 @@ final class AcquireCommand extends E2ECommand
                     'timings' => $timings,
                     'topology' => $topology->toArray(),
                 ],
-                $topology->purpose->value.' '.$topology->attempt->value.' '.implode(',', $recipe->nodeKeys()).' in '.$timings['total'].' s',
+                'acquired '.$topology->attempt->value.' '.implode(',', $recipe->nodeKeys()).' in '.$timings['total'].' s',
             );
 
             return self::SUCCESS;

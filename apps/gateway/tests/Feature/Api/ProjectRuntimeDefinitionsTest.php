@@ -29,7 +29,7 @@ describe('ProcessUser', function (): void {
     it('refuses an account in a Project definition on create and replace', function (): void {
         $payload = runtime_definition_process_payload('worker', '/usr/bin/sleep');
         $this->postJson("/api/v1/projects/{$this->orbitApp->id}/process-definitions", $payload)->assertCreated();
-        $payload['spec']['user'] = 'orbit-worker';
+        $payload['spec']['user'] = 'svc-runner';
         $this->postJson("/api/v1/projects/{$this->orbitApp->id}/process-definitions", $payload)->assertUnprocessable();
         $this->putJson("/api/v1/projects/{$this->orbitApp->id}/process-definitions/worker", $payload)->assertUnprocessable();
         expect(ProcessDefinition::query()->sole()->spec)->not->toHaveKey('user');

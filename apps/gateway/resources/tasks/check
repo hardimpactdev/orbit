@@ -21,19 +21,12 @@ It only removes a non-empty directory it owns that sits directly under the host 
 `orbit-check-<euid>-*`. A leftover after SIGKILL is removed on a later cancel, not on status polls. A cleanup
 failure does not change the check's exit status. Status and snapshot keep working until the check finishes
 and never allocate or modify a TMPDIR.
-
-The check runs as the managed user. When ORBIT_TASK_WORKER_USER names an account on the Node, `run` grants that worker
-and the managed user rwX on every checkout entry the managed user owns, as workspace inspection does, before it writes
-check.json. .git/config and .git/hooks keep their ACLs. Directories the managed user cannot enter are skipped.
-Before setup and the command, `run` does the reverse as the worker, through `sudo -n -u WORKER`: it grants the managed
-user rwX on every entry the worker owns, so the check can replace what an agent's build or install created.
 """
 
 import atexit
 import json
 import os
 import re
-import pwd
 import shutil
 import signal
 import stat
@@ -55,7 +48,6 @@ DELIVERABLE_RESULTS = os.path.join(DIRECTORY, 'deliverables')
 # The Gateway reads these failed_step values. invalid_deliverable asks for assistance with the log's messages.
 INVALID_DELIVERABLE = 'invalid_deliverable'
 CHECK_ERROR = 'check_error'
-WORKER_ENVIRONMENT = 'ORBIT_TASK_WORKER_USER'
 CHECK_TMPDIR_PREFIX = 'orbit-check-{uid}-'
 TMPDIR_RECORD = os.path.join(DIRECTORY, 'check-tmpdir')
 
@@ -493,96 +485,11 @@ def verify_deliverables(checkout, tree, deliverables, log):
     return evidence
 
 
-def share_with_worker(checkout, worker):
-    """Grant the task worker what the check created, so its next turn can read and change it."""
-    if not worker:
-        return
-    try:
-        pwd.getpwnam(worker)
-    except KeyError:
-        return
-    managed = pwd.getpwuid(os.geteuid()).pw_name
-    # Default ACLs first, as inspection does, so a partial grant never leaves a directory without inheritance.
-    # Setting the named entries also recalculates the ACL mask, which repairs a mask of --- on a private directory.
-    for options in grant_scopes(checkout, os.geteuid()):
-        for selection, grant in ((['-type', 'd'], f'd:u:{worker}:rwX,d:u:{managed}:rwX'),
-                                 (['!', '-type', 'l'], f'u:{worker}:rwX,u:{managed}:rwX')):
-            # Skip directories the managed user cannot enter, such as private directories an agent or an earlier
-            # worker-run gate created. Their owner keeps access, and find would otherwise fail on them.
-            subprocess.run([*options, *selection, '-exec', 'setfacl', '-m', grant, '--', '{}', '+'],
-                           cwd=checkout, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
-
-
-def grant_options(owner):
-    """Select owned checkout entries, excluding protected Git files, role-private temp directories,
-    and any directory the running user cannot enter."""
-    return ['find', '-P', '.', '(', '-path', './.git/config', '-o', '-path', './.git/hooks',
-            '-o', '-path', './.git/orbit/tmp',
-            '-o', '(', '-type', 'd', '!', '(', '-readable', '-executable', ')', ')', ')', '-prune', '-o', '-user', str(owner)]
-
-
-def grant_scopes(checkout, owner):
-    """The checkout, plus the check reports in a linked worktree's Git common directory.
-
-    bin/review-check writes reports to <git-common-dir>/orbit-checks. For a linked worktree, that directory is
-    outside the checkout, so the checkout walk never reaches it. Only that directory is added."""
-    scopes = [grant_options(owner)]
-    reports = common_reports(checkout)
-    if reports:
-        scopes.append(['find', '-P', reports, '(', '-type', 'd', '!', '(', '-readable', '-executable', ')', ')',
-                       '-prune', '-o', '-user', str(owner)])
-    return scopes
-
-
-def common_reports(checkout):
-    """Return <git-common-dir>/orbit-checks when it is a real directory outside the checkout."""
-    try:
-        common = os.path.realpath(git(checkout, 'rev-parse', '--path-format=absolute', '--git-common-dir'))
-    except (OSError, subprocess.CalledProcessError):
-        return None
-    root = os.path.realpath(checkout)
-    reports = os.path.join(common, 'orbit-checks')
-    if os.path.commonpath([root, common]) == root or os.path.islink(reports) or not os.path.isdir(reports):
-        return None
-    return reports
-
-
-def claim_from_worker(checkout, worker):
-    """Grant the managed user write on what the worker created, so setup and the command can replace it.
-
-    Only an entry's owner can change its ACL, so this runs as the worker. Without the grant, a directory that a
-    package manager created with mode 0755 keeps an ACL mask of r-x, and the managed user cannot replace it."""
-    if not worker:
-        return
-    try:
-        worker_uid = pwd.getpwnam(worker).pw_uid
-    except KeyError:
-        return
-    if worker_uid == os.geteuid():
-        return
-    managed = pwd.getpwuid(os.geteuid()).pw_name
-    switch = ['sudo', '-n', '-u', worker, '-H', '--']
-    if subprocess.run([*switch, 'true'], cwd=checkout, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                      stderr=subprocess.DEVNULL).returncode != 0:
-        raise RuntimeError(f'The managed user cannot run commands as {worker}.')
-    # Default ACLs first, as inspection does, so a partial grant never leaves a directory without inheritance.
-    for options in grant_scopes(checkout, worker_uid):
-        for selection, grant in ((['-type', 'd'], f'd:u:{worker}:rwX,d:u:{managed}:rwX'),
-                                 (['!', '-type', 'l'], f'u:{managed}:rwX')):
-            result = subprocess.run([*switch, *options, *selection,
-                                     '-exec', 'setfacl', '-m', grant, '--', '{}', '+'],
-                                    cwd=checkout, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-            if result.returncode != 0:
-                raise RuntimeError(f'Could not grant {managed} access to the files {worker} owns: '
-                                   + result.stderr.decode('utf-8', errors='replace').strip()[-2000:])
-
-
-def perform(checkout, head, tree, setup, deliverables, command, started_at, worker=''):
+def perform(checkout, head, tree, setup, deliverables, command, started_at):
     """Run setup and the project check, then verify deliverables. Invalid command deliverables fail first."""
     evidence = None
     failed_step = None
     exit_code = 0
-    claim_from_worker(checkout, worker)
     with open(LOG, 'wb') as log:
         messages = invalid_command_deliverables(checkout, deliverables)
         if messages:
@@ -598,9 +505,6 @@ def perform(checkout, head, tree, setup, deliverables, command, started_at, work
             log.flush()
             environment = dict(os.environ)
             environment.pop('ORBIT_TASK_CHECK_BASE', None)
-            environment.pop('ORBIT_TASK_FEEDBACK', None)
-            if worker:
-                environment['ORBIT_TASK_FEEDBACK'] = 'shared'
             if deliverables:
                 with open(deliverables) as source:
                     test_base = json.load(source).get('test_base')
@@ -618,7 +522,6 @@ def perform(checkout, head, tree, setup, deliverables, command, started_at, work
         head, tree, head_after, tree_after, changed_paths(checkout, tree, tree_after),
         exit_code, failed_step, evidence, started_at,
     )
-    share_with_worker(checkout, worker)
     write_check_result(result)
 
 
@@ -628,24 +531,15 @@ def run(checkout, head, tree, setup=None, deliverables=None, command=''):
     signal.signal(signal.SIGHUP, cancelled)
     record_allocated_tmpdir()
     atexit.register(_release_allocated_tmpdir)
-    # The worker name is for this process only, not for the commands the check runs.
-    worker = os.environ.pop(WORKER_ENVIRONMENT, '')
     setup, deliverables = optional(setup), optional(deliverables)
     started_at = time.time()
     try:
-        perform(checkout, head, tree, setup, deliverables, command, started_at, worker)
-    except SystemExit:
-        # A cancelled check writes no result, but the worker still needs what it created.
-        try:
-            share_with_worker(checkout, worker)
-        except Exception:
-            pass
-        raise
+        perform(checkout, head, tree, setup, deliverables, command, started_at)
     except Exception:
-        fail_check(checkout, head, tree, started_at, worker)
+        fail_check(checkout, head, tree, started_at)
 
 
-def fail_check(checkout, head, tree, started_at, worker=''):
+def fail_check(checkout, head, tree, started_at):
     """Append the traceback and write a failed result. The check must not exit without check.json."""
     error = traceback.format_exc().encode()
     try:
@@ -662,10 +556,6 @@ def fail_check(checkout, head, tree, started_at, worker=''):
         head_after = git(checkout, 'rev-parse', 'HEAD')
         tree_after = working_tree(checkout)
         paths = changed_paths(checkout, tree, tree_after)
-    except Exception:
-        pass
-    try:
-        share_with_worker(checkout, worker)
     except Exception:
         pass
     try:

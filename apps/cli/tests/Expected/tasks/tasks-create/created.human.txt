@@ -17,6 +17,8 @@ Creating task group...
 │
 ├  Status              backlog
 │
+├  Preview             no
+│
 ├  Assistance          no
 │
 ├  Kind                —

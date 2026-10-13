@@ -12,13 +12,11 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Infrastructure\GitHub\GitReadScript;
-use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Infrastructure\Tasks\TaskWorkerUser;
 use App\Models\Instance;
 use App\Models\Node;
 use Throwable;
@@ -45,9 +43,8 @@ final readonly class RemoteInstanceCloneCandidateInspector implements InstanceCl
         $node = $candidate->node;
         [$basePath, $executionUser, $configuredBranch, $expectedSource] = $this->identity($candidate, $node);
         $sshUser = $node->user;
-        $worker = $candidate->placedOnAppDev() ? TaskWorkerUser::forCheckout($candidate) : null;
 
-        $script = GitReadScript::for($this->access->for($candidate->project->repository_url, $candidate->project->source_access), WorkspaceGit::workerPreamble($worker).'source_worker='.escapeshellarg($worker ?? '')."\n".<<<'BASH'
+        $script = GitReadScript::for($this->access->for($candidate->project->repository_url, $candidate->project->source_access), <<<'BASH'
                         environment=$1
                         base=$2
                         runtime_user=$3
@@ -70,11 +67,7 @@ final readonly class RemoteInstanceCloneCandidateInspector implements InstanceCl
                             fi
                         }
                         run_source_git() {
-                            if [ "$environment" = development ] && [ -n "$source_worker" ]; then
-                                workspace_git -C "$source" "$@"
-                            else
-                                run_as_runtime git -C "$source" "$@"
-                            fi
+                            run_as_runtime git -C "$source" "$@"
                         }
 
                         case "$environment" in
@@ -116,11 +109,6 @@ final readonly class RemoteInstanceCloneCandidateInspector implements InstanceCl
                             [0-9a-f][0-9a-f][0-9a-f][0-9a-f]*) ;;
                             *) refuse instance.clone_candidate_source_invalid ;;
                         esac
-                        if [ "$environment" = development ] && [ -n "$source_worker" ]; then
-                            # A missing account, sudo rule, or ACL is not a dirty checkout. Keep its stderr for the error.
-                            run_source_git rev-parse --git-dir >/dev/null \
-                                || refuse instance.clone_candidate_worker_access
-                        fi
                         content_status=$(run_source_git status --porcelain=v1 --untracked-files=all --ignore-submodules=none) \
                             || refuse instance.clone_candidate_dirty
                         test -z "$content_status" || refuse instance.clone_candidate_dirty
@@ -191,9 +179,7 @@ final readonly class RemoteInstanceCloneCandidateInspector implements InstanceCl
         if (! $result->truncated && count($parts) === 2 && $parts[0] === 'REFUSED' && preg_match('/\Ainstance\.clone_[a-z_]+\z/D', $parts[1]) === 1) {
             throw $this->conflict(
                 $parts[1],
-                ($parts[1] === 'instance.clone_candidate_worker_access'
-                    ? "The task worker cannot read the candidate checkout on Node [{$node->name}]."
-                    : 'The candidate is not eligible for cloning.').$this->stderrSuffix($stderr),
+                'The candidate is not eligible for cloning.'.$this->stderrSuffix($stderr),
                 $stderr,
             );
         }

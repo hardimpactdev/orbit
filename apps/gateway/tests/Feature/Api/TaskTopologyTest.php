@@ -20,16 +20,16 @@ it('preserves per-subtask declarations through group creation edits and standalo
     ])->assertCreated()->assertJsonPath('data.tasks.0.topology', ['app-dev'])
         ->assertJsonPath('data.tasks.1.topology', ['app-dev'])->json('data');
     $task = Task::query()->findOrFail($group['tasks'][0]['id']);
-    expect($task->topology)->toBe(['app-dev']);
+    expect($task->topology->toArray())->toBe(['app-dev']);
     $url = '/api/v1/task-groups/'.$group['id'].'/tasks';
     $this->patchJson($url.'/'.$task->id, ['title' => 'Renamed'])->assertOk()->assertJsonPath('data.topology', ['app-dev']);
     $this->patchJson($url.'/'.$task->id, ['topology' => []])->assertOk()->assertJsonPath('data.topology', []);
-    expect($task->fresh()->topology)->toBe([]);
+    expect($task->fresh()->topology->toArray())->toBe([]);
     $this->postJson($url, ['title' => 'Third', 'brief' => 'Production.', 'topology' => ['app-prod']])
         ->assertCreated()->assertJsonPath('data.topology', ['app-prod']);
     // app-dev and app-prod are two test nodes; a third, app-prod-2, would not fit a large VM.
     $this->postJson($url, ['title' => 'Fourth', 'brief' => 'Second production node.', 'topology' => ['app-prod', 'app-prod-2']])
-        ->assertUnprocessable()->assertJsonPath('error.message', TaskTopology::TooMany);
+        ->assertUnprocessable()->assertJsonPath('error.message', TaskTopology::tooManyMessage());
 });
 
 it('rejects invalid declarations without creating a group', function (mixed $topology): void {
@@ -77,7 +77,7 @@ it('keeps declarations locked after a subtask has started even if its status is 
     $task = $group->tasks()->create(['title' => 'Started', 'brief' => 'Work', 'position' => 1, 'status' => 'todo',
         'topology' => ['app-dev'], 'subtask_start_commit' => str_repeat('a', 40)]);
     $this->patchJson('/api/v1/task-groups/'.$group->id.'/tasks/'.$task->id, ['topology' => ['app-prod']])->assertUnprocessable();
-    expect($task->fresh()->topology)->toBe(['app-dev']);
+    expect($task->fresh()->topology->toArray())->toBe(['app-dev']);
 });
 
 it('round trips declared nodes in stored task definitions', function (): void {

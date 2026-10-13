@@ -191,24 +191,7 @@ describe('workspace TMPDIR', function (): void {
         expect(fileperms($temporary) & 0777)->toBe(0711);
     });
 
-    it('supports cross-user tests inheriting a private check TMPDIR', function (): void {
-        $temporary = tmpdir_check_directory($this->directory);
-        expect(fileperms($temporary) & 0777)->toBe(0711);
-        $process = new Process([
-            PHP_BINARY, 'vendor/bin/pest',
-            'tests/Feature/Infrastructure/Tasks/RemoteTaskCheckRunnerTest.php',
-            '--filter=isolates workspace TMPDIR when another Unix user',
-        ], base_path(), ['TMPDIR' => $temporary, 'PARATEST' => false]);
-        $process->setTimeout(60);
-        $process->run();
-
-        expect($process->getExitCode())->toBe(0, $process->getOutput().$process->getErrorOutput());
-        expect(fileperms($temporary) & 0777)->toBe(0711);
-    });
-
     it('keeps restrictive prior shared caches out of setup and analyse in per-workspace tmp', function (): void {
-        // Exercise the post-check sharing grant without needing another user's sudo access.
-        config()->set('orbit.tasks.worker_user', posix_getpwuid(posix_geteuid())['name']);
         $shared = $this->directory.'/prior-shared';
         File::ensureDirectoryExists($shared.'/phpstan');
         chmod($shared.'/phpstan', 0500);

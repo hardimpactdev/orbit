@@ -7,12 +7,14 @@ if [[ $# -lt 1 ]]; then
     cat >&2 <<'USAGE'
 usage: bin/e2e-topology <action> ISSUE [...]
 
-  acquire ISSUE WORKTREE [--nodes=LIST]
-                                  compose a discovery topology on the mounted worktree; LIST is a comma-separated
-                                  subset of app-dev, app-prod, app-prod-2 (default app-dev,app-prod)
+  acquire ISSUE WORKTREE [--nodes=LIST] [--replace]
+                                  compose a topology on the mounted worktree; LIST is a comma-separated list of the
+                                  declarable Nodes in apps/e2e/resources/topology-nodes.json, each with optional
+                                  +ROLE (default app-dev,app-prod); --replace releases a held topology first
   shell   ISSUE NODE              login shell as orbit on one Node
   exec    ISSUE NODE --argv=JSON [--timeout=SECONDS] [--record=LABEL]
                                   run on one Node; --record appends the command and output to <worktree>/.e2e/evidence.log
+                                  and one JSON line to <worktree>/.e2e/evidence.jsonl
   spawn   ISSUE NODE NAME --argv=JSON
                                   start a long-lived process on a Node and return at once
   logs    ISSUE NODE NAME [--since=TIME] [--lines=N] [--record=LABEL]
@@ -21,16 +23,12 @@ usage: bin/e2e-topology <action> ISSUE [...]
   sync    ISSUE [--quick]         migrate the Gateway and re-verify the mounted source identity;
                                   --quick skips readiness verification and keeps the recorded binding
   web     ISSUE                   foreground web dev session in the operator; publishes on host loopback
-  verify  ISSUE                   verify the discovery topology
-  status  ISSUE                   report discovery from <worktree>/.e2e/
+  verify  ISSUE                   verify the topology
+  status  ISSUE                   report the topology from <worktree>/.e2e/
   release ISSUE                   release the topology
-  register [--force]              register this checkout as the primary for task workspace clones
 
 Every action except acquire finds the issue among registered Git worktrees
 or takes --worktree=PATH. State lives in <worktree>/.e2e/.
-
-In a task workspace clone, every action runs through a bridge worktree of the
-registered primary checkout. ORBIT_E2E_BRIDGE=0 runs it in the clone.
 USAGE
     exit 64
 fi
@@ -40,12 +38,8 @@ shift
 
 case "$action" in
     acquire|shell|exec|spawn|logs|kill|sync|web|verify|status|release)
-        # In a task workspace clone, run through a bridge worktree of the registered primary (ADR 0135).
-        # Transfer the public PID through the bridge to PHP, including TERM/HUP ownership.
-        exec python3 "$root/bin/e2e-clone-bridge" dispatch "$root" "$action" "$@"
-        ;;
-    register)
-        exec python3 "$root/bin/e2e-clone-bridge" register "$root" "$@"
+        # exec keeps the public PID for the foreground PHP owner, including TERM/HUP ownership.
+        exec php "$root/apps/e2e/artisan" "topology:$action" "$@"
         ;;
     *)
         echo "unknown topology action: $action" >&2

@@ -12,7 +12,6 @@ use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentThreadEvent;
 use App\Domain\Tasks\AgentThreadStart;
 use App\Domain\Tasks\AgentThreadState;
-use App\Domain\Tasks\TaskCompute;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmWorkspaceGuard;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
@@ -36,17 +35,11 @@ final readonly class PiDriver implements AgentDriver
     public function __construct(
         private PiClient $client,
         private PiConnection $connection,
-        private PiNodeEligibility $nodes,
     ) {}
 
     public function key(): string
     {
         return 'pi';
-    }
-
-    public function allows(Node $node): bool
-    {
-        return $this->nodes->allows($node);
     }
 
     public function create(AgentThreadStart $intent): string
@@ -57,13 +50,13 @@ final readonly class PiDriver implements AgentDriver
         }
         $id = $intent->externalId ?? (string) Str::uuid();
         $node = $this->workspaceNode($intent->workspace, $intent->node);
+        if (! TaskVm::forNode($node) instanceof TaskVm) {
+            throw new AgentDriverException('Pi threads run only on a task VM.');
+        }
         $this->client->create($node, [
             'id' => $id,
             'cwd' => $cwd,
-            'model' => match (true) {
-                TaskVm::forNode($node) instanceof TaskVm => PiModel::onlyProvider($intent->model, TaskVmRuntime::PiProvider),
-                default => PiModel::forModel($intent->model, $this->configuredProvider()),
-            },
+            'model' => PiModel::onlyProvider($intent->model, TaskVmRuntime::PiProvider),
             'thinkingLevel' => $intent->effort,
             'appendSystemPrompt' => null,
         ]);
@@ -337,13 +330,6 @@ final readonly class PiDriver implements AgentDriver
         return $result;
     }
 
-    private function configuredProvider(): ?string
-    {
-        $provider = config('orbit.pi.provider');
-
-        return is_string($provider) && $provider !== '' ? $provider : null;
-    }
-
     private function node(AgentThread $thread): Node
     {
         $node = $thread->node;
@@ -352,17 +338,10 @@ final readonly class PiDriver implements AgentDriver
         }
         $group = $thread->parent()->with('taskable')->first();
         $workspace = $group?->taskable;
-        if ($group?->task_compute === TaskCompute::Vm) {
-            // A task VM is a normal Node: the thread stays on the Node of the group's ready task VM.
-            if ($thread->runtime_key !== 'node:'.$node->id || ! $workspace instanceof Instance
-                || ! TaskVmWorkspaceGuard::allowsWorkspace($group, $workspace) || $workspace->node_id !== $node->id) {
-                throw new AgentDriverException('The original task VM Pi server is unavailable.');
-            }
-
-            return $node;
-        }
-        if ($thread->runtime_key !== 'node:'.$node->id) {
-            throw new AgentDriverException('The original agent Node is unavailable.');
+        // A task VM is a normal Node: the thread stays on the Node of the group's ready task VM.
+        if ($group === null || $thread->runtime_key !== 'node:'.$node->id || ! $workspace instanceof Instance
+            || ! TaskVmWorkspaceGuard::allowsWorkspace($group, $workspace) || $workspace->node_id !== $node->id) {
+            throw new AgentDriverException('The original task VM Pi server is unavailable.');
         }
 
         return $node;

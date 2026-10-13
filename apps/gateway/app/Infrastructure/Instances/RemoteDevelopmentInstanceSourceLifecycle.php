@@ -24,7 +24,6 @@ use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Tasks\TaskWorkerUser;
 use App\Infrastructure\TaskVms\TaskVmGit;
 use App\Models\Instance;
 use App\Models\TaskVm;
@@ -56,11 +55,10 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                     managed_user=$4
                     managed_group=$5
                     allow_existing=$6
-                    worker_user=$7
-                    seed_repository=$8
-                    seed_commit=$9
-                    template=${10}
-                    network=${11}
+                    seed_repository=$7
+                    seed_commit=$8
+                    template=$9
+                    network=${10}
                     checkout_parent=$(dirname "$checkout")
 
                     guard_parent_chain "$checkout_parent" "$allowed_root"
@@ -77,7 +75,6 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                     if [ "$in_place" = 0 ] && { [ -e "$checkout" ] || [ -L "$checkout" ]; }; then
                         test "$allow_existing" = 1
                         inspect_prepared_repository
-                        share_checkout
                         exit 0
                     fi
 
@@ -110,7 +107,6 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                     elif [ -n "$seed_repository" ]; then
                         test ! -L "$seed_repository"
                         test "$(git -C "$seed_repository" config --get remote.origin.url)" = "$repository"
-                        # Resolve writes the files. On a shared seed that checkout can start filters, so it runs as the worker.
                         git -c core.hooksPath=/dev/null -C "$seed_repository" worktree add --no-checkout --detach -- "$checkout" "$seed_commit"
                     elif [ "$network" = 1 ]; then
                         git_read git -c core.hooksPath=/dev/null -c core.fsmonitor=false clone --no-checkout --origin origin -- "$repository" "$checkout"
@@ -124,12 +120,11 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                         (umask 077; set -C; printf '%s:%s\n' "$prepare_id" "$(stat -c '%d:%i' "$checkout")" > "$git_directory/orbit-source-prepare")
                     fi
                     inspect_prepared_repository
-                    share_checkout
                     BASH);
         $result = $this->ssh->execute(
             $instance->node,
             new RemoteCommand(
-                arguments: [...$this->arguments($instance, $context), $allowExisting ? '1' : '0', $this->workerUser($instance), $instance->seed_repository ?? '', $instance->seed_commit ?? '', $template ?? '', $taskVm ? '0' : '1'],
+                arguments: [...$this->arguments($instance, $context), $allowExisting ? '1' : '0', $instance->seed_repository ?? '', $instance->seed_commit ?? '', $template ?? '', $taskVm ? '0' : '1'],
                 input: $script->input,
                 protectedInput: $script->protectedInput,
             ),
@@ -147,19 +142,17 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
         $this->ssh->execute(
             $instance->node,
             new RemoteCommand(
-                arguments: [...$this->arguments($instance, $context), $this->workerUser($instance)],
+                arguments: $this->arguments($instance, $context),
                 input: self::preparedRepositoryGuard($instance->source_prepare_id, $instance->seed_repository).<<<'BASH'
                     repository=$1
                     checkout=$2
                     allowed_root=$3
                     managed_user=$4
                     managed_group=$5
-                    worker_user=$6
                     checkout_parent=$(dirname "$checkout")
 
                     guard_parent_chain "$checkout_parent" "$allowed_root"
                     inspect_prepared_repository
-                    share_checkout
                     BASH,
             ),
             step: 'app-instance-source-inspect',
@@ -175,8 +168,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
         if ($taskVm) {
             $this->sendToTaskVm($instance, $defaultBranch);
         }
-        // The checkout writes the work tree and can start filters. On a checkout shared with the worker it runs as the worker.
-        $script = GitReadScript::for($this->readAccess($instance, $context['repository'], $taskVm), self::preparedRepositoryGuard($instance->source_prepare_id, $instance->seed_repository).WorkspaceGit::workerPreamble(TaskWorkerUser::forCheckout($instance)).WorkspaceGit::networkPreamble().<<<'BASH'
+        $script = GitReadScript::for($this->readAccess($instance, $context['repository'], $taskVm), self::preparedRepositoryGuard($instance->source_prepare_id, $instance->seed_repository).WorkspaceGit::fetchPreamble().<<<'BASH'
                     repository=$1
                     checkout=$2
                     allowed_root=$3
@@ -192,7 +184,8 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                     guard_parent_chain "$checkout_parent" "$allowed_root"
                     inspect_prepared_repository
                     if [ "$network" = 1 ]; then
-                        isolated_fetch "$checkout" "$common_directory" "$repository" 1 '+refs/heads/*:refs/remotes/origin/*'
+                        checkout_fetch -C "$checkout" fetch --quiet --no-tags --prune -- "$repository" \
+                            '+refs/heads/*:refs/remotes/origin/*'
                     fi
 
                     branch=${branch_override:-$instance_name}
@@ -210,7 +203,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                         source_ref="refs/remotes/origin/$default_branch"
                         git -C "$checkout" show-ref --verify --quiet "$source_ref"
                     fi
-                    workspace_git -C "$checkout" checkout --quiet --force --no-track -B "$branch" "$source_ref"
+                    git -C "$checkout" checkout --quiet --force --no-track -B "$branch" "$source_ref"
                     test "$(git -C "$checkout" symbolic-ref --short HEAD)" = "$branch"
                     commit=$(git -C "$checkout" rev-parse --verify HEAD^{commit})
                     printf '%s\n%s\n' "$branch" "$commit"
@@ -373,12 +366,6 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
         $this->git->send($project, $instance->checkout_path, $tips, fn (RemoteCommand $command): CommandResult => $this->ssh->execute($instance->node, $command, 'app-instance-source-resolve', 'instance.branch_resolution_failed'), 'instance.branch_resolution_failed');
     }
 
-    /** Only a Node that hosts shared task work shares checkouts with the worker. */
-    private function workerUser(Instance $instance): string
-    {
-        return TaskWorkerUser::forCheckout($instance) ?? '';
-    }
-
     private function defaultBranch(Instance $instance): string
     {
         $defaultBranch = $instance->project->default_branch;
@@ -492,61 +479,6 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                     return 0
                 fi
                 install -d -m 0755 -- "$1"
-            }
-            share_checkout() {
-                if [ -z "$worker_user" ]; then
-                    return 0
-                fi
-                if ! id "$worker_user" >/dev/null 2>&1; then
-                    printf 'The task worker account %s does not exist on this task Node.\n' "$worker_user" >&2
-                    return 1
-                fi
-                test "$(id -u "$worker_user")" != 0
-                test "$worker_user" != "$managed_user"
-                test "$(stat -c '%U:%G' "$checkout/.git")" = "$managed_user:$managed_group"
-                orbit="$git_directory/orbit"
-                if [ -e "$orbit" ] || [ -L "$orbit" ]; then
-                    test ! -L "$orbit"
-                    test -d "$orbit"
-                    test "$(stat -c '%U:%G' "$orbit")" = "$managed_user:$managed_group"
-                else
-                    install -d -m 0775 -- "$orbit"
-                fi
-                test -f "$common_directory/config"
-                test ! -L "$common_directory/config"
-                test "$(stat -c '%U' "$common_directory/config")" = "$managed_user"
-                test ! -L "$common_directory/hooks"
-                # A worker command can leave a private directory, such as a check receipt, that the managed user cannot
-                # enter. The worker owns everything below it, so the grants skip it instead of failing the whole prepare.
-                # setfacl writes access before defaults in a combined call. Finish inheritance first.
-                default_grant="d:u:$worker_user:rwX,d:u:$managed_user:rwX"
-                # Always use a pruned traversal, even when every entry is managed-owned. A recursive
-                # setfacl fast path would reopen private caches, including other linked worktrees' temp.
-                share_entries() {
-                    sharing_root=$1
-                    shift
-                    find -P "$sharing_root" \( -path "$git_directory/orbit/tmp" -o -path "$common_directory/orbit/tmp" -o -path "$common_directory/worktrees/*/orbit/tmp" -o \( -type d \( ! -readable -o ! -executable \) \) \) -prune -o \( -user "$managed_user" "$@" \)
-                }
-                share_entries "$checkout" -type d -exec setfacl -m "$default_grant" -- {} +
-                access_grant="u:$worker_user:rwX,u:$managed_user:rwX"
-                # Worker-owned files already inherit access; only their owner can change their ACL.
-                share_entries "$checkout" ! -type l -exec setfacl -m "$access_grant" -- {} +
-                # Linked worktrees need their own administration and the shared refs/objects.
-                share_entries "$common_directory" -type d -exec setfacl -m "$default_grant" -- {} +
-                share_entries "$common_directory" ! -type l -exec setfacl -m "$access_grant" -- {} +
-                setfacl -m "u:$worker_user:r--" -- "$common_directory/config"
-                if [ -d "$common_directory/hooks" ]; then
-                    find -P "$common_directory/hooks" -user "$managed_user" -type d -exec setfacl -m "u:$worker_user:r-X,d:u:$worker_user:r-X" -- {} +
-                    find -P "$common_directory/hooks" -user "$managed_user" ! -type d ! -type l -exec setfacl -m "u:$worker_user:r-X" -- {} +
-                fi
-                chmod 0775 -- "$orbit"
-                if sudo -n -u "$worker_user" -H -- git config --global --fixed-value --get-all safe.directory "$checkout" >/dev/null; then
-                    :
-                else
-                    status=$?
-                    test "$status" = 1
-                    sudo -n -u "$worker_user" -H -- git config --global --add safe.directory "$checkout"
-                fi
             }
             inspect_prepared_repository() {
                 test -d "$checkout"

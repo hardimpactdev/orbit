@@ -37,8 +37,8 @@ it('records the pi driver and Pi-runnable models on a new group', function (): v
         ->and(config('orbit.tasks.reviewer_agent_driver'))->toBe('pi')
         ->and(TaskAgentDefaults::ImplementerModel)->toBe('gpt-5.6-luna')
         ->and(TaskAgentDefaults::ReviewerModel)->toBe('gpt-5.6-luna')
-        ->and(PiModel::forModel(TaskAgentDefaults::ImplementerModel))->toBe('openai-codex/gpt-5.6-luna')
-        ->and(PiModel::forModel(TaskAgentDefaults::ReviewerModel))->toBe('openai-codex/gpt-5.6-luna');
+        ->and(PiModel::onlyProvider(TaskAgentDefaults::ImplementerModel, 'orbit-task-vm'))->toBe('orbit-task-vm/gpt-5.6-luna')
+        ->and(PiModel::onlyProvider('openai-codex/'.TaskAgentDefaults::ReviewerModel, 'orbit-task-vm'))->toBe('orbit-task-vm/gpt-5.6-luna');
 
     $this->postJson('/api/v1/task-groups', [
         'project_id' => $project->id,

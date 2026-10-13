@@ -17,6 +17,8 @@ Loading task group...
 │
 ├  Status                settling
 │
+├  Preview               no
+│
 ├  Assistance            no
 │
 ├  Kind                  —

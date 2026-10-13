@@ -23,18 +23,13 @@ use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\InstanceProvisionFailure;
-use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskCapacityException;
-use App\Domain\Tasks\TaskCeilings;
-use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceName;
-use App\Domain\Tasks\TaskWorkspaceTopology;
-use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Processes\CommandResult;
@@ -46,7 +41,6 @@ use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\Node;
 use App\Models\Project;
-use App\Models\ProjectNodeExclusion;
 use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Filesystem\Filesystem;
@@ -102,7 +96,8 @@ function provisioner_node(string $name, string $ip): Node
     return $node;
 }
 
-function provisioner_group(Project $project, string $title = 'Workspace'): Task
+/** A reserved group. With `$vmNode`, the group's ready task VM serves that Node. */
+function provisioner_group(Project $project, string $title = 'Workspace', ?Node $vmNode = null): Task
 {
     $group = Task::topLevel()->create([
         'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
@@ -118,6 +113,10 @@ function provisioner_group(Project $project, string $title = 'Workspace'): Task
         'brief' => 'First subtask',
         'status' => TaskStatus::Todo,
     ]);
+
+    if ($vmNode instanceof Node) {
+        test_task_vm($group, $vmNode);
+    }
 
     return $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
 }
@@ -214,8 +213,8 @@ function bind_task_workspace_fakes(): object
 
 it('task workspace stamps source_prepare_id before preparing source', function (): void {
     $project = provisioner_app('prepare-id');
-    provisioner_node('prepare-id-dev', '10.44.0.138');
-    $group = provisioner_group($project);
+    $node = provisioner_node('prepare-id-dev', '10.44.0.138');
+    $group = provisioner_group($project, vmNode: $node);
     $fakes = bind_task_workspace_fakes();
     $reservation = null;
     $fakes->source->onPrepare = static function (Instance $instance, bool $allowExisting) use (&$reservation): void {
@@ -236,7 +235,7 @@ it('provisions a workspace without an automatic root dependency copy', function 
     $node = provisioner_node('acme-dev', '10.44.0.111');
     Instance::query()->create([
         'project_id' => $project->id,
-        'node_id' => $node->id,
+        'node_id' => provisioner_node('acme-host', '10.44.0.112')->id,
         'name' => 'default',
         'checkout_path' => '/srv/orbit/apps/acme/default',
         'branch' => 'main',
@@ -244,7 +243,7 @@ it('provisions a workspace without an automatic root dependency copy', function 
         'provisioning_step' => 'active',
         'status' => InstanceState::Active,
     ]);
-    $group = provisioner_group($project, 'Copied');
+    $group = provisioner_group($project, 'Copied', $node);
     bind_task_workspace_fakes();
 
     $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
@@ -252,36 +251,10 @@ it('provisions a workspace without an automatic root dependency copy', function 
     expect($instance?->status)->toBe(InstanceState::SourceResolved);
 });
 
-it('never acquires a topology when provisioning a new or reused workspace', function (): void {
-    $project = provisioner_app('topology');
-    provisioner_node('topology-dev', '10.44.0.112');
-    $group = provisioner_group($project, 'Topology');
-    bind_task_workspace_fakes();
-    $topology = app(TaskWorkspaceTopology::class);
-
-    $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
-    $group->taskable()->associate($instance);
-    $group->save();
-    $topology->fails = true;
-    $reused = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group->fresh(['taskable']) ?? $group, false));
-
-    expect($reused?->id)->toBe($instance?->id)
-        ->and($topology->calls)->toBe([]);
-});
-
-it('leaves a group reserved when no app-dev Node can take the workspace', function (): void {
-    $project = provisioner_app('lonely');
-    $group = provisioner_group($project);
-    bind_task_workspace_fakes();
-
-    expect(app(InstanceProvisioning::class)->provision(new InstanceProvisionIntent($group, true)))
-        ->toBeInstanceOf(InstanceProvisionFailure::class);
-});
-
 it('creates a non-visitable Orbit checkout without activating a Route', function (): void {
     $project = provisioner_app('orbit');
     $node = provisioner_node('orbit-dev', '10.44.0.101');
-    $group = provisioner_group($project, 'Isolated');
+    $group = provisioner_group($project, 'Isolated', $node);
     $fakes = bind_task_workspace_fakes();
 
     $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
@@ -289,7 +262,7 @@ it('creates a non-visitable Orbit checkout without activating a Route', function
     expect($instance)->toBeInstanceOf(Instance::class)
         ->and($instance?->node_id)->toBe($node->id)
         ->and($instance?->name)->toBe(TaskWorkspaceName::for($group))
-        ->and($instance?->checkout_path)->toBe('/srv/orbit/apps/orbit/'.TaskWorkspaceName::for($group))
+        ->and($instance?->checkout_path)->toBe('/srv/orbit/apps/orbit/workspace')
         ->and($instance?->branch_override)->toBe(TaskWorkspaceName::for($group))
         ->and($instance?->branch)->toBe(TaskWorkspaceName::for($group))
         ->and($instance?->status)->toBe(InstanceState::SourceResolved)
@@ -303,7 +276,7 @@ it('creates a non-visitable Orbit checkout without activating a Route', function
 it('activates a visitable workspace through the development provisioner', function (): void {
     $project = provisioner_app('shop');
     $node = provisioner_node('shop-dev', '10.44.0.102');
-    $group = provisioner_group($project, 'Inspect');
+    $group = provisioner_group($project, 'Inspect', $node);
     $fakes = bind_task_workspace_fakes();
 
     $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, true));
@@ -313,13 +286,14 @@ it('activates a visitable workspace through the development provisioner', functi
         ->and($instance?->status)->toBe(InstanceState::SourceResolved)
         ->and($instance?->task_workspace_routed)->toBeTrue()
         ->and($fakes->development->reserves)->toBe(1)
-        ->and($fakes->development->completes)->toBe(1);
+        ->and($fakes->development->prepares)->toBe(1)
+        ->and($fakes->development->completes)->toBe(0);
 });
 
 it('creates a visitable Task workspace at the repository root for each package type', function (ProjectType $type): void {
     $project = provisioner_app($type->value, '.', $type);
     $node = provisioner_node($type->value.'-dev', '10.44.0.125');
-    $group = provisioner_group($project);
+    $group = provisioner_group($project, vmNode: $node);
     $fakes = bind_task_workspace_fakes();
 
     $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, true));
@@ -329,7 +303,8 @@ it('creates a visitable Task workspace at the repository root for each package t
         ->and($instance?->root)->toBe('.')
         ->and($instance?->status)->toBe(InstanceState::SourceResolved)
         ->and($fakes->development->reserves)->toBe(1)
-        ->and($fakes->development->completes)->toBe(1);
+        ->and($fakes->development->prepares)->toBe(1)
+        ->and($fakes->development->completes)->toBe(0);
 })->with([
     'laravel-package' => ProjectType::LaravelPackage,
     'node-package' => ProjectType::NodePackage,
@@ -338,12 +313,12 @@ it('creates a visitable Task workspace at the repository root for each package t
 it('reuses an already assigned Task workspace', function (): void {
     $project = provisioner_app('reuse');
     $node = provisioner_node('reuse-dev', '10.44.0.103');
-    $group = provisioner_group($project);
+    $group = provisioner_group($project, vmNode: $node);
     $instance = Instance::query()->create([
         'project_id' => $project->id,
         'node_id' => $node->id,
-        'name' => 'existing',
-        'checkout_path' => '/srv/orbit/apps/reuse/existing',
+        'name' => TaskWorkspaceName::for($group),
+        'checkout_path' => '/srv/orbit/apps/reuse/workspace',
         'status' => InstanceState::SourceResolved,
     ]);
     $group->taskable()->associate($instance);
@@ -356,8 +331,8 @@ it('reuses an already assigned Task workspace', function (): void {
 
 it('returns a failure when a visitable App lacks a web root', function (): void {
     $project = provisioner_app('bare', null);
-    provisioner_node('bare-dev', '10.44.0.104');
-    $group = provisioner_group($project);
+    $node = provisioner_node('bare-dev', '10.44.0.104');
+    $group = provisioner_group($project, vmNode: $node);
     bind_task_workspace_fakes();
 
     expect(app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, true)))
@@ -366,8 +341,8 @@ it('returns a failure when a visitable App lacks a web root', function (): void 
 
 it('returns a failure when destination occupation refuses the checkout', function (): void {
     $project = provisioner_app('blocked');
-    provisioner_node('blocked-dev', '10.44.0.105');
-    $group = provisioner_group($project);
+    $node = provisioner_node('blocked-dev', '10.44.0.105');
+    $group = provisioner_group($project, vmNode: $node);
     bind_task_workspace_fakes();
     app()->instance(InstanceDestinationGuard::class, new class implements InstanceDestinationGuard
     {
@@ -385,127 +360,10 @@ it('returns a failure when destination occupation refuses the checkout', functio
         ->toBeInstanceOf(InstanceProvisionFailure::class);
 });
 
-it('skips an excluded app-dev Node before choosing the least loaded node', function (): void {
-    $project = provisioner_app('orbit');
-    $excluded = provisioner_node('sabre', '10.44.0.120');
-    $allowed = provisioner_node('shark', '10.44.0.121');
-    ProjectNodeExclusion::query()->create(['project_id' => $project->id, 'node_id' => $excluded->id]);
-    $group = provisioner_group($project);
-    bind_task_workspace_fakes();
-
-    $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
-
-    expect($instance?->node_id)->toBe($allowed->id);
-});
-
-it('skips an app-dev Node that opts out of the task worker, even with Pi and the lower id', function (): void {
-    $project = provisioner_app('orbit');
-    $optedOut = provisioner_node('services', '10.44.0.122');
-    $optedOut->update(['settings' => ['apps' => ['path' => '/srv/orbit/apps'], 'tasks' => ['worker' => 'none']]]);
-    $allowed = provisioner_node('shark', '10.44.0.123');
-    $group = provisioner_group($project);
-    bind_task_workspace_fakes();
-
-    $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
-
-    expect($instance?->node_id)->toBe($allowed->id);
-    $this->assertDatabaseMissing('instances', ['node_id' => $optedOut->id]);
-});
-
-it('skips a non-Pi app-dev Node even when it has the lower id', function (): void {
-    $project = provisioner_app('placement');
-    $incapable = provisioner_node('no-pi', '10.44.0.110');
-    $incapable->processes()->delete();
-    $capable = provisioner_node('with-pi', '10.44.0.111');
-    $group = provisioner_group($project);
-    bind_task_workspace_fakes();
-
-    $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
-
-    expect($instance?->node_id)->toBe($capable->id);
-    $this->assertDatabaseMissing('instances', ['node_id' => $incapable->id]);
-});
-
-it('reports a capacity wait without creating a workspace when every capable Node is full', function (bool $otherNodeHasRoom): void {
-    $project = provisioner_app('full');
-    $incapable = provisioner_node('no-pi', '10.44.0.110');
-    $incapable->processes()->delete();
-    $capable = provisioner_node('full-pi', '10.44.0.111');
-    foreach ($otherNodeHasRoom ? [$capable] : [$capable, $incapable] as $node) {
-        $occupied = Instance::query()->create([
-            'project_id' => $project->id,
-            'node_id' => $node->id,
-            'name' => "occupied-{$node->id}",
-            'checkout_path' => "/srv/orbit/apps/full/occupied-{$node->id}",
-            'status' => InstanceState::SourceResolved,
-        ]);
-        for ($i = 0; $i < TaskCeilings::PerNode; $i++) {
-            $active = provisioner_group($project, "Active {$node->id} {$i}");
-            $active->taskable()->associate($occupied);
-            $active->save();
-        }
-    }
-    $group = provisioner_group($project);
-    $fakes = bind_task_workspace_fakes();
-
-    expect(fn () => app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false)))
-        ->toThrow(fn (TaskCapacityException $exception) => expect($exception->fleetFull)->toBe(! $otherNodeHasRoom))
-        ->and($fakes->source->calls)->toBe([]);
-    $this->assertDatabaseCount('instances', $otherNodeHasRoom ? 1 : 2);
-})->with([
-    'another app-dev Node has room' => [true],
-    'the whole fleet is full' => [false],
-]);
-
-it('places Pi roles on a Node with Pi rather than one with only T3', function (): void {
-    $project = provisioner_app('pi-placement');
-    $t3Only = provisioner_node('t3-only', '10.44.0.113');
-    $t3Only->processes()->update(['name' => 't3-code']);
-    $pi = provisioner_node('pi-only', '10.44.0.114');
-    $group = provisioner_group($project);
-    bind_task_workspace_fakes();
-
-    $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
-
-    expect($instance?->node_id)->toBe($pi->id);
-    $this->assertDatabaseMissing('instances', ['node_id' => $t3Only->id]);
-});
-
-it('returns a failure when no Node allows the implementer driver', function (): void {
-    $project = provisioner_app('no-pi');
-    provisioner_node('t3-only', '10.44.0.115')->processes()->update(['name' => 't3-code']);
-    $group = provisioner_group($project);
-    $fakes = bind_task_workspace_fakes();
-
-    expect(app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group->fresh() ?? $group, false)))->toBeInstanceOf(InstanceProvisionFailure::class)
-        ->and($fakes->source->calls)->toBe([]);
-});
-
-it('returns a failure when the app-dev Node has no usable Pi process', function (string $reason): void {
-    $project = provisioner_app('unavailable');
-    $node = provisioner_node('unavailable', '10.44.0.112');
-    match ($reason) {
-        'missing' => $node->processes()->delete(),
-        'unrelated' => $node->processes()->update(['name' => 'other-service']),
-        'failed' => $node->processes()->update(['status' => LifecycleStatus::Failed]),
-        'stopped' => $node->processes()->update(['desired_state' => DesiredProcessState::Stopped]),
-        'no-address' => $node->update(['wireguard_ip' => null]),
-        'empty-address' => $node->update(['wireguard_ip' => '']),
-    };
-    $group = provisioner_group($project);
-    $fakes = bind_task_workspace_fakes();
-
-    $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
-
-    expect($instance)->toBeInstanceOf(InstanceProvisionFailure::class)
-        ->and($fakes->source->calls)->toBe([]);
-    $this->assertDatabaseCount('instances', 0);
-})->with(['missing', 'unrelated', 'failed', 'stopped', 'no-address', 'empty-address']);
-
 it('resumes a reserved worktree reclaim with no starting commit', function (): void {
     $project = provisioner_app('reclaim');
     $node = provisioner_node('reclaim-dev', '10.44.0.135');
-    $group = provisioner_group($project);
+    $group = provisioner_group($project, vmNode: $node);
     $sandbox = sys_get_temp_dir().'/orbit-reserved-reclaim-'.Str::uuid();
     $seed = $sandbox.'/default';
     $checkout = $sandbox.'/'.TaskWorkspaceName::for($group);
@@ -560,7 +418,7 @@ it('resumes a reserved worktree reclaim with no starting commit', function (): v
 it('refuses a reserved worktree reclaim when source identity does not match', function (): void {
     $project = provisioner_app('foreign-reclaim');
     $node = provisioner_node('foreign-dev', '10.44.0.137');
-    $group = provisioner_group($project);
+    $group = provisioner_group($project, vmNode: $node);
     $left = Instance::query()->create([
         'project_id' => $project->id,
         'node_id' => $node->id,
@@ -589,8 +447,8 @@ it('refuses a reserved worktree reclaim when source identity does not match', fu
 
 it('does not allow_existing task provision for a newly reserved Instance', function (): void {
     $project = provisioner_app('fresh-reclaim');
-    provisioner_node('fresh-dev', '10.44.0.136');
-    $group = provisioner_group($project);
+    $node = provisioner_node('fresh-dev', '10.44.0.136');
+    $group = provisioner_group($project, vmNode: $node);
     $fakes = bind_task_workspace_fakes();
     $fakes->source->onPrepare = static function (Instance $instance, bool $allowExisting): void {
         if ($allowExisting) {
@@ -604,67 +462,10 @@ it('does not allow_existing task provision for a newly reserved Instance', funct
 });
 
 describe('a workspace an interrupted claim left unattached', function (): void {
-    it('resumes it on its own Node instead of the least loaded one', function (): void {
-        $project = provisioner_app('orbit');
-        provisioner_node('first', '10.44.0.130');
-        $second = provisioner_node('second', '10.44.0.131');
-        $group = provisioner_group($project);
-        $left = Instance::query()->create([
-            'project_id' => $project->id,
-            'node_id' => $second->id,
-            'name' => TaskWorkspaceName::for($group),
-            'checkout_path' => '/srv/orbit/apps/orbit/'.TaskWorkspaceName::for($group),
-            'branch_override' => TaskWorkspaceName::for($group),
-            'status' => InstanceState::CheckoutPrepared,
-        ]);
-        bind_task_workspace_fakes();
-
-        $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
-
-        expect($instance?->id)->toBe($left->id)
-            ->and($instance?->status)->toBe(InstanceState::SourceResolved);
-        $this->assertDatabaseCount('instances', 1);
-    });
-
-    it('releases an empty reserved pin when another Node has capacity', function (): void {
-        $project = provisioner_app('orbit');
-        $roomy = provisioner_node('roomy', '10.44.0.132');
-        $full = provisioner_node('full', '10.44.0.133');
-        $occupied = Instance::query()->create([
-            'project_id' => $project->id,
-            'node_id' => $full->id,
-            'name' => 'occupied',
-            'checkout_path' => '/srv/orbit/apps/orbit/occupied',
-            'status' => InstanceState::SourceResolved,
-        ]);
-        for ($i = 0; $i < TaskCeilings::PerNode; $i++) {
-            $active = provisioner_group($project, "Active {$i}");
-            $active->taskable()->associate($occupied);
-            $active->save();
-        }
-        $group = provisioner_group($project);
-        Instance::query()->create([
-            'project_id' => $project->id,
-            'node_id' => $full->id,
-            'name' => TaskWorkspaceName::for($group),
-            'checkout_path' => '/srv/orbit/apps/orbit/'.TaskWorkspaceName::for($group),
-            'branch_override' => TaskWorkspaceName::for($group),
-            'status' => InstanceState::Reserved,
-        ]);
-        bind_task_workspace_fakes();
-
-        $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
-
-        expect($instance)->toBeInstanceOf(Instance::class)
-            ->and($instance->node_id)->toBe($roomy->id)
-            ->and($instance->status)->toBe(InstanceState::SourceResolved);
-        $this->assertDatabaseMissing('instances', ['node_id' => $full->id, 'name' => TaskWorkspaceName::for($group)]);
-    });
-
     it('never adopts an Instance that only shares the workspace name', function (): void {
         $project = provisioner_app('orbit');
         $node = provisioner_node('only', '10.44.0.134');
-        $group = provisioner_group($project);
+        $group = provisioner_group($project, vmNode: $node);
         $lookalike = Instance::query()->create([
             'project_id' => $project->id,
             'node_id' => $node->id,
@@ -688,13 +489,15 @@ describe('a workspace an interrupted claim left unattached', function (): void {
 function orbit_workspace_clone(): array
 {
     $project = provisioner_app('orbit', type: ProjectType::Monorepo);
-    provisioner_node('orbit-clone', '10.44.0.181');
-    $group = provisioner_group($project, 'Clone');
+    $node = provisioner_node('orbit-clone', '10.44.0.181');
+    $group = provisioner_group($project, 'Clone', $node);
     bind_task_workspace_fakes();
     $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
     expect($instance)->toBeInstanceOf(Instance::class)
         ->and($instance->status)->toBe(InstanceState::SourceResolved)
         ->and($instance->routes()->count())->toBe(0);
+    // The task VM is already gone, so removal falls back to the generic Instance remover.
+    TaskVm::query()->where('group_id', $group->id)->update(['state' => TaskVmState::Destroyed]);
 
     $checkout = sys_get_temp_dir().'/orbit-task-'.$instance->id;
     if (! is_dir($checkout)) {
@@ -765,30 +568,6 @@ it('removes the orbit workspace clone on cancel and on complete', function (stri
     }
 })->with(['cancel', 'complete', 'unattached']);
 
-it('releases the group topology before it removes the workspace, and keeps the workspace when that fails', function (bool $fails): void {
-    app(TaskExtensionState::class)->enable();
-    bind_task_node_reachability();
-    [$group, $instance, $checkout] = orbit_workspace_clone();
-    $group->taskable()->associate($instance);
-    $group->status = TaskGroupStatus::Running;
-    $group->save();
-    bind_checkout_remover();
-    $topology = app(TaskWorkspaceTopology::class);
-    $topology->fails = $fails;
-
-    try {
-        try {
-            app(CancelTaskGroupAction::class)->execute($group);
-        } catch (Throwable) {
-        }
-
-        expect(end($topology->calls))->toBe(['release', $instance->id, $group->id])
-            ->and(Instance::query()->whereKey($instance->id)->exists())->toBe($fails);
-    } finally {
-        forget_checkout($checkout);
-    }
-})->with(['released' => false, 'release fails' => true]);
-
 it('keeps the source-resolved orbit clone and asks for assistance when removal is refused', function (string $operation): void {
     app(TaskExtensionState::class)->enable();
     bind_task_node_reachability();
@@ -837,59 +616,15 @@ it('keeps the source-resolved orbit clone and asks for assistance when removal i
     }
 })->with(['cancel', 'complete', 'unattached']);
 
-it('keeps a full-node reserved workspace when it cannot prove the reservation is empty', function (bool $sourceEvidence): void {
-    $project = provisioner_app('kept-reservation');
-    provisioner_node('roomy', '10.44.0.140');
-    $full = provisioner_node('full', '10.44.0.141');
-    $occupied = Instance::query()->create([
-        'project_id' => $project->id, 'node_id' => $full->id, 'name' => 'occupied',
-        'checkout_path' => '/srv/orbit/apps/kept-reservation/occupied', 'status' => InstanceState::SourceResolved,
-    ]);
-    for ($i = 0; $i < TaskCeilings::PerNode; $i++) {
-        $active = provisioner_group($project, "Active {$i}");
-        $active->taskable()->associate($occupied);
-        $active->save();
-    }
-    $group = provisioner_group($project);
-    $left = Instance::query()->create([
-        'project_id' => $project->id, 'node_id' => $full->id, 'name' => TaskWorkspaceName::for($group),
-        'checkout_path' => '/srv/orbit/apps/kept-reservation/'.TaskWorkspaceName::for($group),
-        'branch_override' => TaskWorkspaceName::for($group), 'status' => InstanceState::Reserved,
-        'seed_commit' => $sourceEvidence ? str_repeat('a', 40) : null,
-    ]);
-    $fakes = bind_task_workspace_fakes();
-    app()->instance(InstanceDestinationGuard::class, new class implements InstanceDestinationGuard
-    {
-        public function assertUnoccupied(Node $node, StoragePath $destination): void
-        {
-            throw new ResourceOperationException('instance.migration_conflict', 'Checkout exists.', 409);
-        }
-    });
-
-    $result = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
-
-    expect($result)->toBeInstanceOf(InstanceProvisionFailure::class)
-        ->and($result->cause)->toContain('Reserved workspace')
-        ->and($left->fresh()->node_id)->toBe($full->id)
-        ->and($fakes->source->calls)->toBe([]);
-    $this->assertModelExists($left);
-})->with(['source evidence' => true, 'checkout exists' => false]);
-
 describe('task VMs', function (): void {
-    it('keeps shared claims working while a task VM value is invalid, and makes vm groups wait', function (): void {
+    it('makes a group wait while a task VM value is invalid', function (): void {
         config(['task_vms.incus.hosts' => [['node_id' => 9, 'cidr' => '10.251.77.0/24', 'max_vms' => 2, 'pool' => 'Bad_Pool']]]);
         app()->forgetInstance(TaskVmSettings::class);
-        expect(fn () => app(TaskVmSettings::class))->toThrow(TaskVmException::class);
-        $shared = provisioner_app('shared');
-        $node = provisioner_node('beast', '10.44.0.7');
+        provisioner_node('beast', '10.44.0.7');
         bind_task_workspace_fakes();
 
         expect(app(TaskScheduler::class))->toBeInstanceOf(TaskScheduler::class)
-            ->and(app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent(provisioner_group($shared), false))?->node_id)->toBe($node->id);
-
-        $vmGroup = provisioner_group(provisioner_app('dlf'));
-        $vmGroup->update(['task_compute' => TaskCompute::Vm]);
-        expect(fn () => app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($vmGroup->fresh() ?? $vmGroup, true)))
+            ->and(fn () => app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent(provisioner_group(provisioner_app('dlf')), true)))
             ->toThrow(TaskCapacityException::class, 'Task VM: task_vm.invalid_config: ');
     });
 
@@ -898,7 +633,6 @@ describe('task VMs', function (): void {
         $host = provisioner_node('beast', '10.44.0.7');
         $vmNode = provisioner_node('tvm-1', '10.44.0.129');
         $group = provisioner_group($project);
-        $group->update(['task_compute' => TaskCompute::Vm]);
         TaskVm::query()->create(['group_id' => $group->id, 'host_node_id' => $host->id, 'node_id' => $vmNode->id, 'provider' => 'incus',
             'name' => 'tvm-1', 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.129', 'pi_token' => str_repeat('p', 64)]);
         bind_task_workspace_fakes();
@@ -911,25 +645,10 @@ describe('task VMs', function (): void {
             ->and($instance?->task_workspace_routed)->toBeFalse();
     });
 
-    it('never places a shared group on a task VM Node', function (): void {
-        $project = provisioner_app('shared');
-        $vmNode = provisioner_node('tvm-1', '10.44.0.129');
-        $other = provisioner_node('beast', '10.44.0.7');
-        $vmGroup = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'VM', 'brief' => 'VM', 'status' => TaskGroupStatus::Running, 'task_compute' => TaskCompute::Vm]);
-        TaskVm::query()->create(['group_id' => $vmGroup->id, 'host_node_id' => $other->id, 'node_id' => $vmNode->id, 'provider' => 'incus',
-            'name' => 'tvm-1', 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.129', 'pi_token' => str_repeat('p', 64)]);
-        bind_task_workspace_fakes();
-
-        $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent(provisioner_group($project), false));
-
-        expect($instance?->node_id)->toBe($other->id);
-    });
-
     it('creates the workspace of a web vm group on its ready task VM Node, and waits before that', function (): void {
         $project = provisioner_app('dlf');
         $host = provisioner_node('beast', '10.44.0.7');
         $group = provisioner_group($project);
-        $group->update(['task_compute' => TaskCompute::Vm]);
         $vm = TaskVm::query()->create(['group_id' => $group->id, 'host_node_id' => $host->id, 'provider' => 'incus',
             'name' => 'tvm-1', 'state' => TaskVmState::Provisioning, 'wireguard_ip' => '10.44.0.129', 'pi_token' => str_repeat('p', 64)]);
         $fakes = bind_task_workspace_fakes();
@@ -955,7 +674,6 @@ describe('task VMs', function (): void {
         $host = provisioner_node('beast', '10.44.0.7');
         $vmNode = provisioner_node('tvm-1', '10.44.0.129');
         $group = provisioner_group($project);
-        $group->update(['task_compute' => TaskCompute::Vm]);
         TaskVm::query()->create(['group_id' => $group->id, 'host_node_id' => $host->id, 'node_id' => $vmNode->id, 'provider' => 'incus',
             'name' => 'tvm-1', 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.129', 'pi_token' => str_repeat('p', 64)]);
         $fakes = bind_task_workspace_fakes();
@@ -984,7 +702,6 @@ describe('task VMs', function (): void {
         $host = provisioner_node('beast', '10.44.0.7');
         $vmNode = provisioner_node('tvm-1', '10.44.0.129');
         $group = provisioner_group($project);
-        $group->update(['task_compute' => TaskCompute::Vm]);
         TaskVm::query()->create(['group_id' => $group->id, 'host_node_id' => $host->id, 'node_id' => $vmNode->id, 'provider' => 'incus',
             'name' => 'tvm-1', 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.129', 'pi_token' => str_repeat('p', 64)]);
         bind_task_workspace_fakes();
@@ -1020,7 +737,6 @@ describe('task VMs', function (): void {
         $host = provisioner_node('beast', '10.44.0.7');
         $vmNode = provisioner_node('tvm-1', '10.44.0.129');
         $group = provisioner_group($project);
-        $group->update(['task_compute' => TaskCompute::Vm]);
         TaskVm::query()->create(['group_id' => $group->id, 'host_node_id' => $host->id, 'node_id' => $vmNode->id, 'provider' => 'incus',
             'name' => 'tvm-1', 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.129', 'pi_token' => str_repeat('p', 64)]);
         TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($host->id, ['maxVms' => 4])]]);

@@ -11,6 +11,7 @@ use App\E2E\Value\GuestCommand;
 use App\E2E\Value\GuestCommandResult;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\RoleImage;
+use App\E2E\Value\TopologyNodeCatalog;
 use Closure;
 use RuntimeException;
 use Throwable;
@@ -33,8 +34,8 @@ final readonly class RoleImageBuilder
 
     private const int SETTLE_SECONDS = 900;
 
-    /** Builder address positions on the build network, the same as the Nodes' positions in a topology. */
-    private const array ADDRESSES = ['gateway' => 10, 'app-dev' => 11, 'app-prod' => 12, 'operator' => 14];
+    /** The first builder's address position on the build network; each next builder takes the next one. */
+    private const int FIRST_ADDRESS = 10;
 
     public function __construct(
         private IncusHost $host,
@@ -66,7 +67,7 @@ final readonly class RoleImageBuilder
 
         try {
             $roles = array_map(static fn (RoleImage $image): string => $image->value, $images);
-            $programs = $this->stage($progress, 'render', fn (): array => array_combine(
+            $programs = StageTimer::run($progress, 'render', fn (): array => array_combine(
                 $roles,
                 array_map($this->programs->for(...), $images),
             ));
@@ -80,21 +81,21 @@ final readonly class RoleImageBuilder
             $promoted = [];
             $published = [];
             try {
-                $this->stage($progress, 'launch', fn () => $this->launch($images, $builders, $network));
-                $this->stage($progress, 'start', function () use ($builders): void {
+                StageTimer::run($progress, 'launch', fn () => $this->launch($images, $builders, $network));
+                StageTimer::run($progress, 'start', function () use ($builders): void {
                     $this->host->startAll(array_values($builders));
                     $this->host->waitForAgents(array_values($builders));
                     $this->host->waitForGlobalIpv4(array_values($builders));
                     $this->settle(array_values($builders));
                 });
                 $sources = $this->host->instanceBaseImages();
-                $this->stage($progress, 'programs', fn () => $this->runPrograms($builders, $programs));
-                $this->stage($progress, 'manifest', fn () => $this->writeManifests($builders, $programs, $sources, $commit));
-                $this->stage($progress, 'clean', fn () => $this->clean($builders));
-                $this->stage($progress, 'stop', fn () => $this->host->stopAll(array_values($builders)));
+                StageTimer::run($progress, 'programs', fn () => $this->runPrograms($builders, $programs));
+                StageTimer::run($progress, 'manifest', fn () => $this->writeManifests($builders, $programs, $sources, $commit));
+                StageTimer::run($progress, 'clean', fn () => $this->clean($builders));
+                StageTimer::run($progress, 'stop', fn () => $this->host->stopAll(array_values($builders)));
                 $stamp = gmdate('YmdHis');
                 foreach ($images as $image) {
-                    $published[$image->value] = $this->stage($progress, 'publish.'.$image->value, fn (): string => $this->host->publish(
+                    $published[$image->value] = StageTimer::run($progress, 'publish.'.$image->value, fn (): string => $this->host->publish(
                         $builders[$image->value],
                         $image->alias().'-'.$stamp,
                         [
@@ -120,9 +121,9 @@ final readonly class RoleImageBuilder
 
                 throw $exception;
             } finally {
-                $this->stage($progress, 'cleanup', fn () => $this->removeBuilders(array_values($builders), $network));
+                StageTimer::run($progress, 'cleanup', fn () => $this->removeBuilders(array_values($builders), $network));
             }
-            $this->stage($progress, 'prune', fn () => $this->prune($images));
+            StageTimer::run($progress, 'prune', fn () => $this->prune($images));
 
             return $promoted;
         } finally {
@@ -144,15 +145,17 @@ final readonly class RoleImageBuilder
             $vms = count(array_filter($images, static fn (RoleImage $image): bool => ! $image->isContainer()));
             $slot = $this->capacity->reserveSlot(max(1, $vms));
             $metadata = ['user.orbit.e2e.operation' => $this->operation->value, 'user.orbit.e2e.purpose' => 'role-image'];
-            $this->networks->create($network, $slot, $metadata, 14);
+            $this->networks->create($network, $slot, $metadata, self::FIRST_ADDRESS + count($images) - 1);
+            $catalog = TopologyNodeCatalog::load();
             $guests = [];
-            foreach ($images as $image) {
+            foreach ($images as $index => $image) {
                 $guests[$image->value] = [
                     'image' => $image->isContainer() ? $this->containerSource : $this->vmSource,
                     'name' => $builders[$image->value],
                     'network' => $network,
                     'node' => $image->value,
-                    'address' => self::ADDRESSES[$image->value],
+                    'address' => self::FIRST_ADDRESS + $index,
+                    'memory' => $catalog->memoryFor($image),
                     'slot' => $slot,
                     'container' => $image->isContainer(),
                     'metadata' => [...$metadata, 'user.orbit.e2e.role-image' => $image->value],
@@ -352,23 +355,5 @@ final readonly class RoleImageBuilder
                 $this->host->deleteImage($candidate['fingerprint']);
             }
         }
-    }
-
-    /**
-     * @template T
-     *
-     * @param  (Closure(string, float): void)|null  $progress
-     * @param  Closure(): T  $work
-     * @return T
-     */
-    private function stage(?Closure $progress, string $name, Closure $work): mixed
-    {
-        $started = microtime(true);
-        $result = $work();
-        if ($progress !== null) {
-            $progress($name, microtime(true) - $started);
-        }
-
-        return $result;
     }
 }

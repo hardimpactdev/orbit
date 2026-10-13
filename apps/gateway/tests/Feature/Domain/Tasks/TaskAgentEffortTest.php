@@ -64,7 +64,6 @@ function effort_task(): Task
     $node = Node::query()->create([
         'name' => 'effort-node', 'platform' => 'linux', 'status' => 'active',
         'wireguard_ip' => '10.44.0.110', 'public_ssh_host' => '10.44.0.110',
-        'settings' => ['pi' => ['token' => 'effort-test-pi-token']],
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-1',
@@ -76,6 +75,7 @@ function effort_task(): Task
     ]);
     $group->taskable()->associate($instance);
     $group->save();
+    test_vm_group($group);
     app()->instance(TaskWorkspaceMcp::class, new AcceptingTaskWorkspaceMcp);
 
     return Task::query()->create([

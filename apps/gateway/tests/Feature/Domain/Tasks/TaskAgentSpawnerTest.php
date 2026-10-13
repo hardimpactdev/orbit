@@ -11,7 +11,6 @@ use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckStatus;
-use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskReviewDiffException;
@@ -47,7 +46,7 @@ beforeEach(function (): void {
     app()->instance(TaskWorkspaceMcp::class, new AcceptingTaskWorkspaceMcp);
 });
 
-function task_spawner_group(TaskCompute $compute = TaskCompute::Shared): Task
+function task_spawner_group(): Task
 {
     $project = Project::query()->create([
         'name' => 'orbit',
@@ -77,7 +76,6 @@ function task_spawner_group(TaskCompute $compute = TaskCompute::Shared): Task
         'title' => 'Wire an agent',
         'brief' => 'Spawn reviewer and implementer.',
         'status' => TaskGroupStatus::Running,
-        'task_compute' => $compute,
     ]);
     $group->taskable()->associate($instance);
     $group->save();

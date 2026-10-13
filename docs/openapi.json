@@ -4700,6 +4700,7 @@
                 "properties": {
                   "sql": {
                     "type": "string",
+                    "maxLength": 16384,
                     "minLength": 1,
                     "description": "SQL statement"
                   },
@@ -5127,7 +5128,7 @@
                 "properties": {
                   "username": {
                     "type": "string",
-                    "pattern": "",
+                    "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,31}$(?![\\s\\S])",
                     "maxLength": 32,
                     "description": "Username, a 1-32 character identifier"
                   },
@@ -5324,7 +5325,7 @@
                 "properties": {
                   "slug": {
                     "type": "string",
-                    "pattern": "",
+                    "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
                     "maxLength": 63,
                     "description": "Database server slug"
                   },
@@ -5334,7 +5335,7 @@
                   },
                   "tag": {
                     "type": "string",
-                    "pattern": "",
+                    "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$(?![\\s\\S])",
                     "maxLength": 128,
                     "description": "MySQL image tag. Defaults to 8.4"
                   },
@@ -8757,6 +8758,7 @@
                 "properties": {
                   "hosts": {
                     "type": "array",
+                    "maxItems": 10,
                     "items": {
                       "type": "string",
                       "maxLength": 253
@@ -9778,7 +9780,7 @@
                 "properties": {
                   "prefix": {
                     "type": "string",
-                    "pattern": "",
+                    "pattern": "^[A-Z][A-Z0-9_]{0,31}$(?![\\s\\S])",
                     "description": "Environment key prefix; defaults to DB"
                   }
                 },
@@ -9901,7 +9903,7 @@
                 "properties": {
                   "prefix": {
                     "type": "string",
-                    "pattern": "",
+                    "pattern": "^[A-Z][A-Z0-9_]{0,31}$(?![\\s\\S])",
                     "description": "Environment key prefix; defaults to DB"
                   }
                 },
@@ -16050,7 +16052,7 @@
             "description": "Numeric Node ID."
           }
         ],
-        "description": "Update typed storage and task worker settings on a node.",
+        "description": "Update typed storage settings on a node.",
         "requestBody": {
           "required": false,
           "content": {
@@ -16069,24 +16071,6 @@
                         "type": [
                           "string",
                           "null"
-                        ]
-                      }
-                    }
-                  },
-                  "tasks": {
-                    "type": [
-                      "object",
-                      "null"
-                    ],
-                    "additionalProperties": false,
-                    "properties": {
-                      "worker": {
-                        "type": [
-                          "string",
-                          "null"
-                        ],
-                        "enum": [
-                          "none"
                         ]
                       }
                     }
@@ -16165,7 +16149,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/nodes/7/settings\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"apps\": {\"path\": \"/srv/orbit/apps\"}, \"tasks\": {}}'\n"
+            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/nodes/7/settings\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"apps\": {\"path\": \"/srv/orbit/apps\"}}'\n"
           },
           {
             "lang": "php",
@@ -17827,14 +17811,6 @@
                   "task_workspace_routed": {
                     "type": "boolean",
                     "description": "Whether new task workspaces get a Route (true or false)"
-                  },
-                  "task_compute": {
-                    "type": "string",
-                    "enum": [
-                      "shared",
-                      "vm"
-                    ],
-                    "description": "Compute for future task groups (shared or vm)"
                   }
                 },
                 "required": [
@@ -18201,14 +18177,6 @@
                   "task_workspace_routed": {
                     "type": "boolean",
                     "description": "Change routing for future task workspaces (true or false)"
-                  },
-                  "task_compute": {
-                    "type": "string",
-                    "enum": [
-                      "shared",
-                      "vm"
-                    ],
-                    "description": "Compute for future task groups (shared or vm)"
                   },
                   "review_and_merge": {
                     "type": "boolean",
@@ -22948,7 +22916,8 @@
                 "type": "object",
                 "properties": {
                   "name": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 63
                   },
                   "title": {
                     "type": "string",
@@ -22965,7 +22934,8 @@
                       "additionalProperties": false,
                       "properties": {
                         "name": {
-                          "type": "string"
+                          "type": "string",
+                          "maxLength": 63
                         },
                         "type": {
                           "type": "string",
@@ -23018,7 +22988,8 @@
                       "additionalProperties": false,
                       "properties": {
                         "key": {
-                          "type": "string"
+                          "type": "string",
+                          "maxLength": 63
                         },
                         "title": {
                           "type": "string",
@@ -23047,7 +23018,8 @@
                       "type": "object",
                       "properties": {
                         "key": {
-                          "type": "string"
+                          "type": "string",
+                          "maxLength": 63
                         },
                         "title": {
                           "type": "string",
@@ -23062,7 +23034,8 @@
                           "maxLength": 8000
                         },
                         "phase": {
-                          "type": "string"
+                          "type": "string",
+                          "maxLength": 63
                         },
                         "deliverables": {
                           "type": "array",
@@ -23158,13 +23131,15 @@
                         "options": {
                           "type": "array",
                           "items": {
-                            "type": "string"
+                            "type": "string",
+                            "maxLength": 63
                           }
                         },
                         "evidence": {
                           "type": "array",
                           "items": {
-                            "type": "string"
+                            "type": "string",
+                            "maxLength": 63
                           }
                         },
                         "min_probability": {
@@ -23550,6 +23525,7 @@
                 "properties": {
                   "name": {
                     "type": "string",
+                    "maxLength": 63,
                     "description": "Definition name"
                   },
                   "title": {
@@ -23567,7 +23543,8 @@
                       "additionalProperties": false,
                       "properties": {
                         "name": {
-                          "type": "string"
+                          "type": "string",
+                          "maxLength": 63
                         },
                         "type": {
                           "type": "string",
@@ -23620,7 +23597,8 @@
                       "additionalProperties": false,
                       "properties": {
                         "key": {
-                          "type": "string"
+                          "type": "string",
+                          "maxLength": 63
                         },
                         "title": {
                           "type": "string",
@@ -23649,7 +23627,8 @@
                       "type": "object",
                       "properties": {
                         "key": {
-                          "type": "string"
+                          "type": "string",
+                          "maxLength": 63
                         },
                         "title": {
                           "type": "string",
@@ -23664,7 +23643,8 @@
                           "maxLength": 8000
                         },
                         "phase": {
-                          "type": "string"
+                          "type": "string",
+                          "maxLength": 63
                         },
                         "deliverables": {
                           "type": "array",
@@ -23760,13 +23740,15 @@
                         "options": {
                           "type": "array",
                           "items": {
-                            "type": "string"
+                            "type": "string",
+                            "maxLength": 63
                           }
                         },
                         "evidence": {
                           "type": "array",
                           "items": {
-                            "type": "string"
+                            "type": "string",
+                            "maxLength": 63
                           }
                         },
                         "min_probability": {
@@ -32376,13 +32358,6 @@
           "task_workspace_routed": {
             "type": "boolean"
           },
-          "task_compute": {
-            "type": "string",
-            "enum": [
-              "shared",
-              "vm"
-            ]
-          },
           "review_and_merge": {
             "type": "boolean"
           },
@@ -32913,16 +32888,6 @@
                 "type": "null"
               }
             ]
-          },
-          "tasks": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/NodeTaskSettings"
-              },
-              {
-                "type": "null"
-              }
-            ]
           }
         }
       },
@@ -32930,17 +32895,6 @@
         "type": "object",
         "properties": {
           "path": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        }
-      },
-      "NodeTaskSettings": {
-        "type": "object",
-        "properties": {
-          "worker": {
             "type": [
               "string",
               "null"
@@ -33405,7 +33359,8 @@
               "additionalProperties": false,
               "properties": {
                 "name": {
-                  "type": "string"
+                  "type": "string",
+                  "maxLength": 63
                 },
                 "type": {
                   "type": "string",
@@ -33448,7 +33403,8 @@
               "additionalProperties": false,
               "properties": {
                 "key": {
-                  "type": "string"
+                  "type": "string",
+                  "maxLength": 63
                 },
                 "title": {
                   "type": "string",
@@ -33476,7 +33432,8 @@
               "type": "object",
               "properties": {
                 "key": {
-                  "type": "string"
+                  "type": "string",
+                  "maxLength": 63
                 },
                 "title": {
                   "type": "string",
@@ -33491,7 +33448,8 @@
                   "maxLength": 8000
                 },
                 "phase": {
-                  "type": "string"
+                  "type": "string",
+                  "maxLength": 63
                 },
                 "deliverables": {
                   "type": "array",
@@ -33587,13 +33545,15 @@
                 "options": {
                   "type": "array",
                   "items": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 63
                   }
                 },
                 "evidence": {
                   "type": "array",
                   "items": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 63
                   }
                 },
                 "min_probability": {
@@ -33998,17 +33958,6 @@
             "enum": [
               "managed",
               "existing_thread"
-            ]
-          },
-          "task_compute": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "enum": [
-              "shared",
-              "vm",
-              null
             ]
           },
           "capacity_wait_reason": {

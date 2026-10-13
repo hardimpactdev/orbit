@@ -11,7 +11,6 @@ use App\Domain\Instances\InstanceRemover;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskExtensionState;
@@ -70,7 +69,7 @@ function tvm_park_waiting(int $minutesAgo = 31, array $group = [], string $wireg
 {
     $task = Task::topLevel()->create([
         'project_id' => test()->project->id, 'title' => 'Export', 'brief' => 'Work', 'status' => TaskGroupStatus::WaitingForReview,
-        'execution_mode' => TaskExecutionMode::Managed, 'task_compute' => TaskCompute::Vm, 'pr_url' => 'https://github.com/acme/dlf/pull/7',
+        'execution_mode' => TaskExecutionMode::Managed, 'pr_url' => 'https://github.com/acme/dlf/pull/7',
         'settled_at' => now()->subMinutes($minutesAgo + 10), ...$group,
     ]);
     Task::query()->create([
@@ -315,13 +314,11 @@ describe('wake', function (): void {
             ->and($group->fresh()?->capacity_wait_reason)->toBeNull();
     });
 
-    it('lets shared groups and groups without a task VM go on', function (): void {
+    it('lets groups without a task VM go on', function (): void {
         Queue::fake();
-        $shared = Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'S', 'brief' => 'S', 'status' => TaskGroupStatus::WaitingForReview, 'task_compute' => TaskCompute::Shared]);
-        $fresh = Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'V', 'brief' => 'V', 'status' => TaskGroupStatus::WaitingForReview, 'task_compute' => TaskCompute::Vm]);
+        $fresh = Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'V', 'brief' => 'V', 'status' => TaskGroupStatus::WaitingForReview]);
 
-        expect(app(WakeTaskVmAction::class)->forGroup($shared))->toBeTrue()
-            ->and(app(WakeTaskVmAction::class)->forGroup($fresh))->toBeTrue();
+        expect(app(WakeTaskVmAction::class)->forGroup($fresh))->toBeTrue();
         Queue::assertNothingPushed();
     });
 

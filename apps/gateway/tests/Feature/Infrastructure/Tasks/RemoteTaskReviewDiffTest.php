@@ -244,6 +244,7 @@ it('does not send a review when git cannot produce the stat, the body, or the fi
     ]);
     $group->taskable()->associate($instance);
     $group->save();
+    test_vm_group($group);
     $task = Task::query()->create([
         'parent_id' => $group->id,
         'position' => 1,

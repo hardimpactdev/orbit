@@ -43,7 +43,7 @@ Every command accepts `--json`. JSON output is the Gateway record with `request_
 
 [Trusted GitHub requested changes](/reference/tasks#trusted-github-feedback) can append a normal fixup subtask. `tasks:show --json` exposes its source review and findings in the existing `brief`. The Gateway API's `fixup_problem` is `review:{reviewer_id}`; the CLI keeps its existing brief and deliverable fields without adding an identity field. Use the existing cancel or operator-subtask commands when that scope needs intervention. No command configures reviewer trust, submits a GitHub review, requests external re-review, or merges a pull request. In a Project with [review and merge](/reference/tasks#review-and-merge) on, the Gateway itself reviews and merges; the CLI only shows that state. The Gateway's automatic findings packet has its own 64 KiB bound; the CLI's 8,000-character input limit remains unchanged.
 
-Subtask creation and update accept `--topology='["app-dev","app-prod+ingress"]'`. The JSON array holds at most two entries. Each names a node, `app-dev`, `app-prod`, or `app-prod-2`, once, and may add the role `ingress` after `+`. The Gateway validates the entries. On update, omit the option to keep the declaration or pass `--topology='[]'` to clear it. Each object in a `--subtasks` JSON file can carry the same `topology` array. A started subtask cannot change its declaration. The [compute driver](/reference/compute-drivers#declare-a-topology) sizes the group's VM by these declarations at the claim and prepares the nodes nested in it.
+Subtask creation and update accept `--topology='["app-dev","app-prod+ingress"]'`. Each entry names a node, `app-dev`, `app-prod`, or `app-prod-2`, once, and may add the role `ingress` after `+`. The CLI checks only that the value is a JSON array of distinct strings, and refuses anything else with `tasks.invalid_topology`. The Gateway validates the entries and how many a topology may have. On update, omit the option to keep the declaration or pass `--topology='[]'` to clear it. Each object in a `--subtasks` JSON file can carry the same `topology` array. A started subtask cannot change its declaration. The [compute driver](/reference/compute-drivers#declare-a-topology) sizes the group's VM by these declarations at the claim and prepares the nodes nested in it.
 
 ## Select a task or subtask
 
@@ -164,7 +164,7 @@ In a terminal, the task list shows `backlog` and `todo` tasks. Without a change 
 
 ## orbit tasks:cancel
 
-Cancel a task that is stuck or that you do not want to run. The Gateway removes the task's shared Instance when it has one and marks the task `cancelled`. Subtasks, comments, and agent thread records stay as history. Cancellation does not stop the external agent conversation.
+Cancel a task that is stuck or that you do not want to run. The Gateway removes the task's workspace and task VM when it has them and marks the task `cancelled`. Subtasks, comments, and agent thread records stay as history. Cancellation does not stop the external agent conversation.
 
 ```bash
 orbit tasks:cancel [group] [--yes] [--json]
@@ -430,5 +430,5 @@ In a terminal, the question names the definition and its Project and defaults to
 ## Related
 
 - [`project`](/cli/project) lists the Projects that a task can belong to.
-- [`instance`](/cli/instance) shows the shared Instance of a running task.
+- [`instance`](/cli/instance) shows the task workspace Instance of a running task.
 - The [tasks reference](/reference/tasks) explains task definitions, Backlog preparation, the scheduler, turn receipts, review, and pull requests.

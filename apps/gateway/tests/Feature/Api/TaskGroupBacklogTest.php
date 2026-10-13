@@ -8,7 +8,6 @@ use App\Domain\Tasks\DeliverablePathRepository;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskCommentType;
-use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestWatcher;
@@ -372,7 +371,7 @@ it('does not check merged pull request assistance when cancelling todo in a retu
     $settled = Task::topLevel()->findOrFail($group['id']);
     expect($cancelled?->assistance_requested)->toBeFalse()
         ->and($cancelled?->assistance_reason)->toBeNull()
-        ->and($settled->status)->toBe(TaskGroupStatus::Settling)
+        ->and($settled->status)->toBe(TaskGroupStatus::WaitingForReview)
         ->and($settled->assistance_requested)->toBeFalse()
         ->and($settled->assistance_reason)->toBeNull();
 });
@@ -799,7 +798,7 @@ it('stores preview intent on groups only and preserves explicit false', function
 it('changes preview intent during review while preserving title restrictions', function (): void {
     $data = backlog_group($this);
     $group = Task::topLevel()->findOrFail($data['id']);
-    $group->update(['status' => TaskGroupStatus::WaitingForReview, 'task_compute' => TaskCompute::Vm]);
+    $group->update(['status' => TaskGroupStatus::WaitingForReview]);
     $url = '/api/v1/task-groups/'.$group->id;
 
     $this->patchJson($url, ['preview' => true])->assertOk()->assertJsonPath('data.preview', true)

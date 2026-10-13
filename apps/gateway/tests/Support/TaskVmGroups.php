@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskWorkspaceName;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\Instance;
@@ -17,13 +16,12 @@ use App\Models\TaskVm;
 const TEST_TASK_VM_PI_TOKEN = 'pi-node-token-with-more-than-32-characters';
 
 /**
- * Runs a group on its own ready task VM, as every task group does once shared mode is gone: the group is `vm`, its
- * workspace is `task-<group id>`, and a ready task VM owns the workspace's Node. A group without a workspace only
- * becomes `vm`. A test provisioner then calls {@see test_vm_workspace()} when the claim provides the workspace.
+ * Runs a group on its own ready task VM, as every task group does: its workspace is `task-<group id>`, and a ready
+ * task VM owns the workspace's Node. A test provisioner calls {@see test_vm_workspace()} for a group without a
+ * workspace when the claim provides one.
  */
 function test_vm_group(Task $group): Task
 {
-    $group->forceFill(['task_compute' => TaskCompute::Vm])->save();
     $workspace = $group->taskable;
     if ($workspace instanceof Instance) {
         test_vm_workspace($group, $workspace);
@@ -33,17 +31,14 @@ function test_vm_group(Task $group): Task
 }
 
 /**
- * Places a `vm` group's workspace as the task VM provisioner does: the workspace becomes `task-<group id>`, and a
- * ready task VM of the group owns its Node. A shared group's workspace stays as it is.
+ * Places a group's workspace as the task VM provisioner does: the workspace becomes `task-<group id>`, and a ready
+ * task VM of the group owns its Node.
  */
 function test_vm_workspace(Task $group, Instance $workspace): Instance
 {
-    $group->loadMissing('project');
-    if (($group->task_compute ?? $group->project->task_compute) !== TaskCompute::Vm
-        || TaskVm::query()->live()->where('group_id', $group->id)->exists()) {
+    if (TaskVm::query()->live()->where('group_id', $group->id)->exists()) {
         return $workspace;
     }
-    $group->forceFill(['task_compute' => TaskCompute::Vm])->save();
     $workspace->forceFill(['name' => TaskWorkspaceName::for($group), 'source_layout' => $workspace->source_layout ?? 'checkout'])->save();
     test_task_vm($group, $workspace->node);
 

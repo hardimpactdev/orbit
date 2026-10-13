@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCapacityException;
-use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskTopologyAdmission;
@@ -73,8 +72,7 @@ beforeEach(function (): void {
     ]);
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $this->node->id, 'name' => 'task-1', 'checkout_path' => '/home/orbit/apps/orbit/workspace']);
     $this->group = Task::topLevel()->create([
-        'project_id' => $project->id, 'title' => 'Nodes', 'brief' => 'Work', 'status' => TaskGroupStatus::Running,
-        'task_compute' => TaskCompute::Vm, 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
+        'project_id' => $project->id, 'title' => 'Nodes', 'brief' => 'Work', 'status' => TaskGroupStatus::Running, 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'taskable_type' => $instance->getMorphClass(), 'taskable_id' => $instance->id,
     ]);
     $this->vm = TaskVm::query()->create([
@@ -105,7 +103,7 @@ it('starts the preparation unit once, waits while it runs, and admits the subtas
     $vm = $this->vm->fresh();
     $start = $ssh->commands[0];
     expect($vm?->topology_state)->toBe(TaskVmTopologyState::Preparing)
-        ->and($vm?->topology)->toBe(['app-prod+ingress'])
+        ->and($vm?->topology->toArray())->toBe(['app-prod+ingress'])
         ->and($vm?->topology_run)->toMatch('/\A[0-9a-f]{16}\z/')
         ->and(array_slice($start->arguments, 3))->toBe(['topology', 'start', $vm?->topology_run, '/home/orbit/apps/orbit/workspace', 'TASK-'.$this->group->id, 'app-prod+ingress', '25GiB', '10.44.0.0/24'])
         ->and($start->arguments[0])->toBe('bash')
@@ -129,7 +127,7 @@ it('prepares the union again when a later subtask declares more than the ready t
         ->toThrow(TaskCapacityException::class, 'Task VM: preparing the topology app-dev, app-prod+ingress.');
     expect($ssh->commands[0]->arguments[8])->toBe('app-dev,app-prod+ingress')
         ->and($ssh->commands[0]->arguments[9])->toBe('45GiB')
-        ->and($this->vm->fresh()?->topology)->toBe(['app-dev', 'app-prod+ingress']);
+        ->and($this->vm->fresh()?->topology->toArray())->toBe(['app-dev', 'app-prod+ingress']);
 });
 
 it('asks for assistance with the step and the redacted log when the unit fails, and forgets the run', function (string $status, string $message): void {
@@ -166,28 +164,35 @@ it('makes a subtask wait when its group cannot run its topology', function (): v
     $subtask = topology_admission_subtask($this->group, ['app-dev', 'app-prod']);
 
     expect(fn () => app(TaskTopologyAdmission::class)->prepare($this->group, $subtask))->toThrow(TaskCapacityException::class, TaskVmTopologyAdmission::TooSmall);
-
-    $shared = Task::topLevel()->create([
-        'project_id' => $this->group->project_id, 'title' => 'Shared', 'brief' => 'Work', 'status' => TaskGroupStatus::Running,
-        'task_compute' => TaskCompute::Shared, 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
-    ]);
-    expect(fn () => app(TaskTopologyAdmission::class)->prepare($shared, topology_admission_subtask($shared, ['app-dev'])))->toThrow(TaskCapacityException::class, TaskVmTopologyAdmission::SharedGroup);
 });
 
-it('reads the newest MiB of the evidence log and counts its records since the handoff', function (): void {
-    $entry = static fn (string $start, string $label, string $node, int $exit): string => "=== {$start} {$label} node={$node} exit={$exit} duration=10ms end={$start}\n\$ orbit node:list\n--- stdout\nok\n--- stderr\n\n";
-    $at = static fn (int $minutes): string => CarbonImmutable::now()->utc()->subMinutes($minutes)->format('Y-m-d\\TH:i:s.v\\Z');
+it('reads the newest MiB of the JSON evidence and counts its records since the handoff', function (): void {
+    $line = static fn (int $minutes, string $label, string $node, int $exit): string => json_encode([
+        'v' => 1, 'start' => CarbonImmutable::now()->utc()->subMinutes($minutes)->format('Y-m-d\\TH:i:s.v\\Z'), 'end' => CarbonImmutable::now()->utc()->format('Y-m-d\\TH:i:s.v\\Z'),
+        'duration_ms' => 10, 'label' => $label, 'node' => $node, 'exit' => $exit, 'argv' => ['orbit', 'node:list'],
+    ], JSON_THROW_ON_ERROR)."\n";
     $ssh = topology_admission_ssh([topology_admission_result(
-        $entry($at(60), 'before handoff', 'app-dev', 0)
-        .$entry($at(10), 'ingress check', 'app-prod', 1)
-        .$entry($at(5), 'node list', 'app-dev', 0),
+        ".e2e/evidence.jsonl\n".$line(60, 'before handoff', 'app-dev', 0).$line(10, 'ingress check', 'app-prod', 1).$line(5, 'node list', 'app-dev', 0),
     )]);
 
     $evidence = app(TaskTopologyAdmission::class)->evidence($this->group, CarbonImmutable::now()->subMinutes(30));
 
     expect($evidence->missing(['app-dev', 'app-prod']))->toBe(['app-prod'])
-        ->and(array_slice($ssh->commands[0]->arguments, 3))->toBe(['evidence', '/home/orbit/apps/orbit/workspace'])
+        ->and(array_slice($ssh->commands[0]->arguments, 3))->toBe(['evidence', '/home/orbit/apps/orbit/workspace', '.e2e/evidence.jsonl', '.e2e/evidence.log'])
         ->and($ssh->commands[0]->arguments[2])->toContain('tail -c 1048576');
+});
+
+it('reads the text evidence log of a harness without JSON evidence, and counts nothing without either', function (): void {
+    $entry = static fn (string $start, string $label, string $node, int $exit): string => "=== {$start} {$label} node={$node} exit={$exit} duration=10ms end={$start}\n\$ orbit node:list\n--- stdout\nok\n--- stderr\n\n";
+    $at = static fn (int $minutes): string => CarbonImmutable::now()->utc()->subMinutes($minutes)->format('Y-m-d\\TH:i:s.v\\Z');
+    topology_admission_ssh([
+        topology_admission_result(".e2e/evidence.log\n".$entry($at(60), 'before handoff', 'app-dev', 0).$entry($at(10), 'ingress check', 'app-prod', 1).$entry($at(5), 'node list', 'app-dev', 0)),
+        topology_admission_result(''),
+    ]);
+    $admission = app(TaskTopologyAdmission::class);
+
+    expect($admission->evidence($this->group, CarbonImmutable::now()->subMinutes(30))->missing(['app-dev', 'app-prod']))->toBe(['app-prod'])
+        ->and($admission->evidence($this->group, CarbonImmutable::now()->subMinutes(30))->missing(['app-dev']))->toBe(['app-dev']);
 });
 
 it('keeps a run whose unit started although the start call failed, and fails one without a unit', function (): void {

@@ -245,7 +245,7 @@ final class IncusHost implements GuestTransport
      * harness ownership metadata, and, when given, the worktree mount. A container gets an unprivileged,
      * nesting-capable container; every other guest is a VM.
      *
-     * @param  array<string, array{image:string,name:string,network:string,node:string,address:int,slot:int,container:bool,metadata:array<string,string>,config?:array<string,string>,mount?:array{device:string,source:string,path:string}}>  $guests
+     * @param  array<string, array{image:string,name:string,network:string,node:string,address:int,slot:int,container:bool,memory:string,metadata:array<string,string>,config?:array<string,string>,mount?:array{device:string,source:string,path:string}}>  $guests
      * @return array<string, IncusInstance>
      */
     public function initGuests(array $guests): array
@@ -286,7 +286,7 @@ final class IncusHost implements GuestTransport
                 '--config',
                 'limits.cpu='.$this->incusLimit('cpu', '1'),
                 '--config',
-                'limits.memory='.$this->incusLimit('memory', '2GiB', $guest['node']),
+                'limits.memory='.$this->incusLimit('memory', $guest['memory']),
                 '--device',
                 'root,pool='.$this->pool,
                 '--device',
@@ -765,14 +765,13 @@ final class IncusHost implements GuestTransport
         return TopologyTarget::macFor($topologyId, $role);
     }
 
-    private function incusLimit(string $key, string $default, ?string $node = null): string
+    /**
+     * A configured limit, or the default: the catalog memory of the guest's Node, or the harness defaults. Unit tests
+     * build the host on a bare container without configuration, which gets the defaults.
+     */
+    private function incusLimit(string $key, string $default): string
     {
-        $configured = function_exists('config') && app()->bound('config')
-            ? config("e2e.incus.{$key}", $default)
-            : $default;
-        if ($key === 'memory' && is_array($configured)) {
-            $configured = $configured[$node ?? 'default'] ?? $configured['default'] ?? $default;
-        }
+        $configured = (app()->bound('config') ? config("e2e.incus.{$key}") : null) ?? $default;
         if (is_int($configured) || is_float($configured)) {
             $value = (string) $configured;
         } elseif (is_string($configured)) {

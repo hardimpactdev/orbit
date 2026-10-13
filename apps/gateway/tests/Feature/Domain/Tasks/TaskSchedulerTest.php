@@ -6,17 +6,6 @@ use App\Actions\Tasks\ShowAgentThreadsAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Actions\Tasks\UpdateTaskGroupAction;
 use App\Data\Tasks\UpdateTaskGroupData;
-use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\Instances\DevelopmentInstanceSourceLifecycle;
-use App\Domain\Instances\DevelopmentSourceResolution;
-use App\Domain\Instances\InstanceDestinationGuard;
-use App\Domain\Instances\InstanceState;
-use App\Domain\Nodes\ManagedUserAccount;
-use App\Domain\Nodes\ManagedUserAccountResolver;
-use App\Domain\Nodes\RoleName;
-use App\Domain\Nodes\Storage\StoragePath;
-use App\Domain\Processes\DesiredProcessState;
-use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Projects\GatewaySetupSteps;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverRegistry;
@@ -36,14 +25,11 @@ use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskBriefCoverage;
 use App\Domain\Tasks\TaskCapacityException;
-use App\Domain\Tasks\TaskCeilings;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskCommentType;
-use App\Domain\Tasks\TaskCompute;
-use App\Domain\Tasks\TaskConcurrencyGuard;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupMetricsRefresher;
 use App\Domain\Tasks\TaskGroupStatus;
@@ -71,7 +57,6 @@ use App\Domain\Tasks\TaskTopologyFailedException;
 use App\Domain\Tasks\TaskTurnFetchNotice;
 use App\Domain\Tasks\TaskTurnInstructions;
 use App\Domain\Tasks\TaskTurnPullRequest;
-use App\Domain\Tasks\TaskTurnReceipt;
 use App\Domain\Tasks\TaskTurnReceiptException;
 use App\Domain\Tasks\TaskTurnReceipts;
 use App\Domain\Tasks\TaskWait;
@@ -79,14 +64,12 @@ use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
-use App\Domain\Tasks\TaskWorkspaceTopology;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
 use App\Infrastructure\Tasks\TaskWorkspaceExecutor;
-use App\Infrastructure\Tasks\TaskWorkspaceProvisioner;
 use App\Models\Activity;
 use App\Models\AgentThread;
 use App\Models\Instance;
@@ -96,7 +79,6 @@ use App\Models\ProjectLifecycleStep;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
-use App\Models\TaskQuestion;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -109,7 +91,6 @@ use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\FakeAgentDriver;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskTurnReceipts;
-use Tests\Support\FakeTaskWorkspaceTopology;
 use Tests\Support\NullAgentSnapshotReader;
 use Tests\Support\ResolvedVp;
 
@@ -123,15 +104,13 @@ beforeEach(function (): void {
     test_bind_snapshot_driver();
 });
 
-/** A Project whose groups run on task VMs, unless a test needs shared compute. */
-function scheduler_app(string $slug, TaskCompute $compute = TaskCompute::Vm): Project
+function scheduler_app(string $slug): Project
 {
     return Project::query()->create([
         'name' => $slug,
         'slug' => $slug,
         'repository_url' => "git@example.test:{$slug}.git",
         'default_branch' => 'main',
-        'task_compute' => $compute,
     ]);
 }
 
@@ -258,7 +237,7 @@ it('reserves queued groups without a per-Project ceiling', function (): void {
         ->and($second->fresh()?->status)->toBe(TaskGroupStatus::Todo)
         ->and($third->fresh()?->status)->toBe(TaskGroupStatus::Todo)
         ->and($fourth->fresh()?->status)->toBe(TaskGroupStatus::Todo)
-        ->and(app(TaskConcurrencyGuard::class)->activeForApp($project->id))->toBe(0);
+        ->and(Task::topLevel()->where('project_id', $project->id)->where('status', TaskGroupStatus::Running)->count())->toBe(0);
 });
 
 it('does not count completed groups toward the Project ceiling', function (): void {
@@ -293,33 +272,7 @@ it('claims another group when three reserved groups already occupy the App', fun
         ->and($queued->fresh()?->status)->toBe(TaskGroupStatus::Todo);
 });
 
-it('applies the Node ceiling only after a Project instance is assigned', function (): void {
-    $project = scheduler_app('node-app', TaskCompute::Shared);
-    $node = scheduler_node('task-node', '10.44.0.90');
-    $instance = scheduler_instance($project, $node, 'shared');
-
-    foreach (range(1, TaskCeilings::PerNode) as $index) {
-        $owner = scheduler_app("node-owner-{$index}", TaskCompute::Shared);
-        $placed = scheduler_instance($owner, $node, "slot-{$index}");
-        $group = Task::topLevel()->create([
-            'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
-            'project_id' => $owner->id,
-            'title' => "Active {$index}",
-            'brief' => 'Occupies the node',
-            'status' => TaskGroupStatus::Running,
-        ]);
-        $group->taskable()->associate($placed);
-        $group->save();
-    }
-
-    $queued = queued_group($project, 'Blocked', $instance);
-
-    expect(app(TaskConcurrencyGuard::class)->activeForNode($node->id))->toBe(TaskCeilings::PerNode)
-        ->and(app(TaskScheduler::class)->claimNext())->toBeNull()
-        ->and($queued->fresh()?->status)->toBe(TaskGroupStatus::Todo);
-});
-
-it('starts a group when provisioning assigns an instance under both ceilings', function (): void {
+it('starts a group when provisioning assigns an instance', function (): void {
     $project = scheduler_app('orbit');
     $node = scheduler_node('orbit-node', '10.44.0.91');
     $instance = scheduler_instance($project, $node, 'isolated');
@@ -543,73 +496,6 @@ it('fails the group when a later implementer spawn returns no thread id', functi
         ->and($advanced->tasks->first()?->status)->toBe(TaskStatus::Completed)
         ->and($advanced->tasks->last()?->status)->toBe(TaskStatus::Failed)
         ->and($advanced->tasks->last()?->implementer_agent_thread_id)->toBeNull();
-});
-
-it('returns a provisioned group to todo on its Instance when the Node is already at the ceiling', function (): void {
-    $project = scheduler_app('held-app', TaskCompute::Shared);
-    $node = scheduler_node('full-node', '10.44.0.92');
-    $instance = scheduler_instance($project, $node, 'held');
-
-    foreach (range(1, TaskCeilings::PerNode) as $index) {
-        $owner = scheduler_app("fill-owner-{$index}", TaskCompute::Shared);
-        $placed = scheduler_instance($owner, $node, "fill-{$index}");
-        $group = Task::topLevel()->create([
-            'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
-            'project_id' => $owner->id,
-            'title' => "Fill {$index}",
-            'brief' => 'Fills the node',
-            'status' => TaskGroupStatus::Reviewing,
-        ]);
-        $group->taskable()->associate($placed);
-        $group->save();
-    }
-
-    $queued = queued_group($project, 'Wait');
-    app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
-    {
-        public function __construct(private Instance $instance) {}
-
-        public function provision(InstanceProvisionIntent $intent): ?Instance
-        {
-            return test_vm_workspace($intent->group, $this->instance);
-        }
-    });
-
-    $claimed = app(TaskScheduler::class)->claimNext();
-
-    expect($claimed)->toBeNull()
-        ->and($queued->fresh()?->status)->toBe(TaskGroupStatus::Todo)
-        ->and($queued->fresh()?->taskable_id)->toBe($instance->id)
-        ->and($queued->fresh()?->reviewer_agent_thread_id)->toBeNull();
-});
-
-it('provisioning failures raise assistance with the reported checkout prepare step and message', function (): void {
-    Exceptions::fake();
-    $project = scheduler_app('prepare-failure', TaskCompute::Shared);
-    $project->update(['task_workspace_routed' => false]);
-    $node = scheduler_node('prepare-node', '10.44.0.94');
-    $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
-    $group = queued_group($project, 'Prepare failure');
-    $workspace = scheduler_instance($project, $node, 'task-'.$group->id);
-    $workspace->update(['branch_override' => $workspace->name, 'status' => InstanceState::Reserved, 'task_workspace_routed' => false]);
-    mock(DevelopmentInstanceSourceLifecycle::class)->shouldReceive('prepare')->times(3)
-        ->andThrow(new RuntimeConvergenceException('app-instance-source-prepare', 'instance.path_taken', 'The checkout already exists.'));
-    app()->bind(InstanceProvisioning::class, TaskWorkspaceProvisioner::class);
-
-    for ($tick = 1; $tick <= 3; $tick++) {
-        expect(app(TaskScheduler::class)->claimAvailable())->toBe(0);
-        expect($group->fresh()->status)->toBe(TaskGroupStatus::Todo)
-            ->and($group->fresh()->assistance_requested)->toBe($tick === 3);
-    }
-    expect($group->fresh()->assistance_kind)->toBe(AssistanceKind::Failure)
-        ->and($group->fresh()->assistance_reason)->toContain('RuntimeConvergenceException', 'app-instance-source-prepare', 'The checkout already exists.');
-    Exceptions::assertReported(fn (RuntimeConvergenceException $exception): bool => $exception->step === 'app-instance-source-prepare' && $exception->getMessage() === 'The checkout already exists.');
-
-    scheduler_bind_claim($workspace, scheduler_recording_spawner());
-    expect(app(TaskScheduler::class)->claimAvailable())->toBe(1)
-        ->and($group->fresh()->assistance_requested)->toBeFalse()
-        ->and($group->fresh()->assistance_kind)->toBeNull()
-        ->and($group->fresh()->assistance_reason)->toBeNull();
 });
 
 it('provisioning failures raise assistance after three exceptions without blocking another group in the tick', function (): void {
@@ -836,7 +722,7 @@ it('provisioning failures raise assistance that clears on a capacity wait or bac
         {
             public function provision(InstanceProvisionIntent $intent): ?Instance
             {
-                throw new TaskCapacityException(TaskWait::Capacity, fleetFull: true);
+                throw new TaskCapacityException(TaskWait::Capacity);
             }
         });
         expect(app(TaskScheduler::class)->claimAvailable())->toBe(0);
@@ -960,105 +846,6 @@ it('provisioning failures raise assistance from a new generation after a success
         Log::shouldHaveReceived('warning')->with('The workspace provisioning backoff could not be written.', Mockery::on(fn (array $context): bool => ($context['key'] ?? null) === $key))->once();
     }
 })->with(['crash', 'false', 'exception']);
-
-it('provisioning failures raise assistance naming the driver constraint when no Node fits', function (): void {
-    $project = scheduler_app('no-fit', TaskCompute::Shared);
-    $project->update(['task_workspace_routed' => false]);
-    $node = scheduler_node('no-fit-node', '10.44.0.97');
-    $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
-    $group = queued_group($project, 'No fit');
-    $driver = new FakeAgentDriver('pi');
-    $driver->eligible = false;
-    app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
-    app()->bind(InstanceProvisioning::class, TaskWorkspaceProvisioner::class);
-
-    for ($tick = 0; $tick < 3; $tick++) {
-        app(TaskScheduler::class)->claimAvailable();
-    }
-    expect($group->fresh()->assistance_requested)->toBeTrue()
-        ->and($group->fresh()->assistance_reason)->toContain('driver', 'pi', 'not allowed');
-});
-
-it('advances a claimed unrouted group to running when the real provisioner and agent spawner succeed', function (): void {
-    $project = scheduler_app('orbit', TaskCompute::Shared);
-    $project->update(['root' => 'public', 'task_workspace_routed' => false]);
-    $node = scheduler_node('real-wire', '10.44.0.94');
-    $node->update(['user' => 'orbit', 'tld' => 'test', 'settings' => ['apps' => ['path' => '/srv/orbit/apps']]]);
-    $node->roles()->create([
-        'role' => RoleName::AppDev,
-        'status' => LifecycleStatus::Active,
-    ]);
-    $node->processes()->create([
-        'name' => 'pi-server',
-        'runtime' => ProcessRuntime::Systemd,
-        'working_directory' => '/home/orbit',
-        'runtime_config' => ['command' => ['/home/orbit/.local/bin/pi-server', 'serve', '--port=3774']],
-        'restart_policy' => 'always',
-        'keep_alive' => true,
-        'desired_state' => DesiredProcessState::Running,
-        'status' => LifecycleStatus::Active,
-    ]);
-    $group = queued_group($project, 'Real wire');
-
-    app()->instance(ManagedUserAccountResolver::class, new class implements ManagedUserAccountResolver
-    {
-        public function resolve(Node $node): ManagedUserAccount
-        {
-            return new ManagedUserAccount('orbit', 'orbit', '/home/orbit');
-        }
-    });
-    app()->instance(InstanceDestinationGuard::class, new class implements InstanceDestinationGuard
-    {
-        public function assertUnoccupied(Node $node, StoragePath $destination): void {}
-    });
-    app()->instance(DevelopmentInstanceSourceLifecycle::class, new class implements DevelopmentInstanceSourceLifecycle
-    {
-        public function prepare(Instance $instance, bool $allowExisting, ?string $template = null): void {}
-
-        public function inspectPrepared(Instance $instance): void {}
-
-        public function resolve(Instance $instance): DevelopmentSourceResolution
-        {
-            return new DevelopmentSourceResolution($instance->name, str_repeat('c', 40));
-        }
-
-        public function inspectResolved(Instance $instance): DevelopmentSourceResolution
-        {
-            return new DevelopmentSourceResolution((string) $instance->branch, (string) $instance->starting_commit);
-        }
-    });
-    app()->instance(AgentCommandDispatcher::class, new class implements AgentCommandDispatcher
-    {
-        public function dispatch(Node $node, array $command): array
-        {
-            $threadId = is_string($command['threadId'] ?? null) ? $command['threadId'] : 'agent-thread';
-
-            return ['sequence' => 1, 'thread_id' => $threadId];
-        }
-    });
-    app()->instance(TaskWorkspaceSigner::class, new class implements TaskWorkspaceSigner
-    {
-        public function commit(Instance $instance, string $message): ?string
-        {
-            return str_repeat('d', 40);
-        }
-    });
-
-    $claimed = app(TaskScheduler::class)->claimNext();
-    test_pass_baseline();
-    $claimed = $claimed?->fresh(['tasks', 'project', 'taskable']);
-
-    expect($claimed?->id)->toBe($group->id)
-        ->and($claimed?->status)->toBe(TaskGroupStatus::Running)
-        ->and($claimed?->taskable_id)->not->toBeNull()
-        ->and($claimed?->taskable)->toBeInstanceOf(Instance::class)
-        ->and($claimed?->taskable?->status)->toBe(InstanceState::SourceResolved)
-        ->and($claimed?->taskable?->task_workspace_routed)->toBeFalse()
-        ->and($claimed?->taskable?->routes()->count())->toBe(0)
-        ->and($claimed?->reviewer_agent_thread_id)->toBeNull()
-        ->and($claimed?->tasks->first()?->status)->toBe(TaskStatus::Running)
-        ->and($claimed?->tasks->first()?->implementer_agent_thread_id)->not->toBeNull();
-});
 
 it('starts only the first pending subtask when a claimed group has later siblings', function (): void {
     $project = scheduler_app('opening-order-app');
@@ -2748,11 +2535,11 @@ it('does not run a baseline for a group whose implementers already started', fun
  * @param  list<string|null>  $receipts
  * @return array{Task, Task, FakeTaskTurnReceipts, object, FakeTaskCheckRunner, object, object}
  */
-function scheduler_review(array $receipts, bool $notified = true, TaskCompute $compute = TaskCompute::Vm): array
+function scheduler_review(array $receipts, bool $notified = true): array
 {
     static $octet = 30;
     $octet++;
-    $project = scheduler_app('review-ws-'.$octet, $compute);
+    $project = scheduler_app('review-ws-'.$octet);
     $node = scheduler_node('review-ws-node-'.$octet, '10.44.2.'.$octet);
     $instance = scheduler_instance($project, $node, 'workspace');
     $group = queued_group($project, 'Review workspace', $instance);
@@ -2867,74 +2654,6 @@ function scheduler_review(array $receipts, bool $notified = true, TaskCompute $c
 
     return [$group->fresh(['tasks', 'taskable']) ?? $group, $task->fresh() ?? $task, $receipts, $signer, $checks, $dispatcher, $reader];
 }
-
-it('resumes a reviewer topology request with ready or the failure reason without advancing review or asking for assistance', function (bool $fails): void {
-    [$group, $task, , $signer, $checks, $dispatcher, $reader] = scheduler_review([
-        FakeTaskTurnReceipts::contents('topology_requested', 'Discovery needs Nodes.'),
-        FakeTaskTurnReceipts::contents('approved', 'Checked with available discovery.'),
-    ], compute: TaskCompute::Shared);
-    $topology = new FakeTaskWorkspaceTopology;
-    $topology->fails = $fails;
-    app()->instance(TaskWorkspaceTopology::class, $topology);
-
-    app(TaskScheduler::class)->tick();
-
-    expect($topology->calls)->toBe([['acquire', $group->taskable_id, $group->id]])
-        ->and($task->fresh()->status)->toBe(TaskStatus::Reviewing)
-        ->and($group->fresh()->assistance_requested)->toBeFalse()
-        ->and($signer->messages)->toBe([])
-        ->and($dispatcher->commands)->toHaveCount(1)
-        ->and(json_encode($dispatcher->commands))->toContain($fails ? 'acquisition failed: The topology could not be acquired.' : 'is ready.')
-        ->and(json_encode($dispatcher->commands))->toContain('reviewer-')
-        ->and(TaskQuestion::query()->count())->toBe(0);
-
-    $reader->turnId = 'review-after-topology-request';
-    app(TaskScheduler::class)->tick();
-    expect($task->fresh()->status)->toBe(TaskStatus::Completed)
-        ->and($task->fresh()->assistance_requested)->toBeFalse();
-})->with([false, true]);
-
-it('reuses the recorded topology reply after receipt removal fails', function (): void {
-    [$group, $task, , , , $dispatcher] = scheduler_review([], compute: TaskCompute::Shared);
-    $topology = new FakeTaskWorkspaceTopology;
-    app()->instance(TaskWorkspaceTopology::class, $topology);
-    $receipt = TaskTurnReceipt::parse(FakeTaskTurnReceipts::contents('topology_requested', 'Need Nodes.'))->withThread($group->reviewer_agent_thread_id);
-    $receipts = mock(TaskTurnReceipts::class);
-    $receipts->shouldReceive('hasLegacyTurn')->andReturn(false);
-    $receipts->shouldReceive('read')->twice()->andReturn($receipt);
-    $receipts->shouldReceive('clear')->once()->andThrow(new TaskTurnReceiptException('Receipt removal interrupted.'));
-    $receipts->shouldReceive('clear')->once();
-    $receipts->shouldReceive('prepare')->once();
-
-    app(TaskScheduler::class)->tick();
-    expect($dispatcher->commands)->toBe([]);
-    app(TaskScheduler::class)->tick();
-
-    expect($topology->calls)->toHaveCount(1)
-        ->and($dispatcher->commands)->toHaveCount(1)
-        ->and(json_encode($dispatcher->commands))->toContain('is ready.')
-        ->and($task->comments()->count())->toBe(1);
-});
-
-it('answers a second reviewer topology request with already held', function (): void {
-    [$group, $task, , , , $dispatcher, $reader] = scheduler_review([
-        FakeTaskTurnReceipts::contents('topology_requested', 'First request.'),
-        FakeTaskTurnReceipts::contents('topology_requested', 'Second request.'),
-    ], compute: TaskCompute::Shared);
-    $topology = new FakeTaskWorkspaceTopology;
-    app()->instance(TaskWorkspaceTopology::class, $topology);
-    app(TaskScheduler::class)->tick();
-    // The previous stopped turn may still be visible while the resume is being delivered.
-    app(TaskScheduler::class)->tick();
-    expect($dispatcher->commands)->toHaveCount(1);
-    $reader->turnId = 'second-request-turn';
-    app(TaskScheduler::class)->tick();
-
-    expect($topology->held)->toBe([$group->id])
-        ->and($dispatcher->commands)->toHaveCount(2)
-        ->and(json_encode($dispatcher->commands[1]))->toContain('is already held.')
-        ->and($task->fresh()->status)->toBe(TaskStatus::Reviewing);
-});
 
 it('approves a review when the workspace is unchanged since the review request', function (): void {
     [$group, $task, , $signer, $checks, $dispatcher, $reader] = scheduler_review([
@@ -3532,30 +3251,4 @@ it('polls a running baseline without mutating topology and rechecks readiness af
     expect($state->calls)->toBe(2)->and(TaskCheck::query()->sole()->status)->toBe(TaskCheckStatus::Passed)
         ->and($spawner->events)->toBe([])
         ->and($group->fresh()->capacity_wait_reason)->toBe('The branch runtime is waiting.');
-});
-
-it('refuses an Orbit topology fallback on the Project VM lane without blocking its review', function (): void {
-    [$group, $task, , , , $dispatcher] = scheduler_review([
-        FakeTaskTurnReceipts::contents('topology_requested', 'Need discovery.'),
-    ]);
-    $group->project->update(['slug' => 'dlf']);
-    $group->update(['task_compute' => TaskCompute::Vm]);
-    $task->update(['topology' => []]);
-    $topology = new FakeTaskWorkspaceTopology;
-    app()->instance(TaskWorkspaceTopology::class, $topology);
-    mock(TaskTopologyAdmission::class)->shouldReceive('prepare')->once()->andReturnUsing(function (Task $actualGroup, Task $actualTask): void {
-        expect($actualGroup->project->slug)->toBe('dlf');
-        expect($actualTask->topology)->toBe([]);
-    });
-
-    app(TaskScheduler::class)->tick();
-
-    expect($topology->calls)->toBe([]);
-    expect($dispatcher->commands)->toHaveCount(1);
-    expect(json_encode($dispatcher->commands))->toContain('Project workspace');
-    expect($group->fresh()->capacity_wait_reason)->toBeNull();
-    expect($group->fresh()->task_compute)->toBe(TaskCompute::Vm);
-    expect($task->fresh()->topology)->toBe([]);
-    expect($task->fresh()->status)->toBe(TaskStatus::Reviewing);
-    expect(TaskQuestion::query()->count())->toBe(0);
 });

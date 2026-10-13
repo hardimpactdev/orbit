@@ -17,8 +17,6 @@ use App\Domain\Nodes\Storage\NodeSettingsPatch;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Shared\ResourceOperationException;
-use App\Models\Instance;
 use App\Models\Node;
 
 final readonly class UpdateNodeSettingsAction
@@ -34,11 +32,7 @@ final readonly class UpdateNodeSettingsAction
     public function execute(Node $node, NodeSettingsPatch $patch): Node
     {
         $merged = $patch->merge($this->normalizer->fromStored($node->settings));
-        $normalized = $this->normalizer->normalize($merged);
-        if ($normalized?->taskWorker() === 'none') {
-            $this->assertNoTaskWork($node);
-        }
-        $this->apply($node, $normalized);
+        $this->apply($node, $this->normalizer->normalize($merged));
 
         $result = $node->refresh();
 
@@ -100,21 +94,6 @@ final readonly class UpdateNodeSettingsAction
 
         if (is_string($path) && $path !== '') {
             $this->preparer->inspect($node, $account, StoragePath::parse($path));
-        }
-    }
-
-    /** A Node that runs or ran task agents, or holds a checkout shared with the worker, cannot opt out. */
-    private function assertNoTaskWork(Node $node): void
-    {
-        if (
-            $node->processes()->where('name', 'pi-server')->exists()
-            || Instance::query()->where('node_id', $node->id)->where('worker_shared', true)->exists()
-        ) {
-            throw new ResourceOperationException(
-                errorCode: 'node.task_work_present',
-                message: "Node [{$node->name}] has a pi-server Process or a checkout shared with the task worker, so it cannot opt out of the task worker.",
-                status: 409,
-            );
         }
     }
 

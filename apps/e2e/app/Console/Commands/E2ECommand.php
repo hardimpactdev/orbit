@@ -41,9 +41,9 @@ abstract class E2ECommand extends Command
     /** The issue and its worktree; the attempt is whatever `<worktree>/.e2e/` names. */
     protected function request(): TopologyRequest
     {
-        $worktree = $this->hasOption('worktree') ? $this->option('worktree') : null;
-        // argument() is typed from each subclass signature, and that type depends on
-        // command discovery order. The input value is what a caller actually passed.
+        // option() and argument() are typed from each subclass signature, and that type depends
+        // on command discovery order. The input value is what a caller actually passed.
+        $worktree = $this->input->hasOption('worktree') ? $this->input->getOption('worktree') : null;
         // A mixed parameter would still call argument(), which Larastan checks on every
         // subclass, including commands that do not declare issue.
         $issue = $this->input->getArgument('issue');

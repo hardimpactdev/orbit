@@ -37,7 +37,9 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceLifecycle;
 use App\Domain\Tasks\TaskWorkspaceName;
+use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Instances\NativeDevelopmentInstanceProvisioner;
+use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Tasks\TaskWorkspaceProvisioner;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
@@ -45,17 +47,19 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
 use App\Models\Task;
+use App\Models\TaskVm;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\FakeProjectUpdateProjectionMutator;
 
 it('provisions from the Project setting for an orbit slug and another slug', function (string $slug, bool $routed): void {
     $project = routing_mode_project($slug, $routed);
     $node = routing_mode_node($slug);
-    $group = routing_mode_group($project);
+    $group = routing_mode_group($project, $node);
     routing_mode_bind_boundaries();
 
     $intent = InstanceProvisionIntent::for($group);
-    $instance = app(TaskWorkspaceProvisioner::class)->provision($intent);
+    $instance = routing_mode_provision($group);
 
     expect($intent->visitable)->toBe($routed)
         ->and($instance)->toBeInstanceOf(Instance::class)
@@ -76,15 +80,14 @@ it('provisions from the Project setting for an orbit slug and another slug', fun
 
 it('keeps an existing workspace on its recorded mode when the setting changes', function (string $slug, bool $routed): void {
     $project = routing_mode_project($slug, $routed);
-    routing_mode_node($slug.'-kept');
     $group = routing_mode_group($project);
     routing_mode_bind_boundaries();
-    $instance = app(TaskWorkspaceProvisioner::class)->provision(InstanceProvisionIntent::for($group));
+    $instance = routing_mode_provision($group);
     expect($instance)->toBeInstanceOf(Instance::class);
     $routeIds = $instance->routes()->pluck('routes.id')->sort()->values()->all();
     $project->update(['task_workspace_routed' => ! $routed]);
 
-    $resumed = app(TaskWorkspaceProvisioner::class)->provision(InstanceProvisionIntent::for($group->fresh(['project']) ?? $group));
+    $resumed = routing_mode_provision($group->fresh(['project']) ?? $group);
 
     expect($resumed)->toBeInstanceOf(Instance::class)
         ->and($resumed->id)->toBe($instance->id)
@@ -103,7 +106,7 @@ it('keeps an existing workspace on its recorded mode when the setting changes', 
 it('finishes a routed workspace that stopped early even after routing is turned off', function (): void {
     $project = routing_mode_project('orbit', false);
     $node = routing_mode_node('orbit-resume');
-    $group = routing_mode_group($project);
+    $group = routing_mode_group($project, $node);
     $name = TaskWorkspaceName::for($group);
     Instance::query()->create([
         'project_id' => $project->id,
@@ -118,7 +121,7 @@ it('finishes a routed workspace that stopped early even after routing is turned 
     ]);
     routing_mode_bind_boundaries();
 
-    $instance = app(TaskWorkspaceProvisioner::class)->provision(InstanceProvisionIntent::for($group));
+    $instance = routing_mode_provision($group);
 
     expect($instance)->toBeInstanceOf(Instance::class)
         ->and($instance->task_workspace_routed)->toBeTrue()
@@ -130,7 +133,7 @@ it('finishes a routed workspace that stopped early even after routing is turned 
 it('does not route an unrouted workspace that stopped early after routing is turned on', function (): void {
     $project = routing_mode_project('shop', true);
     $node = routing_mode_node('shop-resume');
-    $group = routing_mode_group($project);
+    $group = routing_mode_group($project, $node);
     $name = TaskWorkspaceName::for($group);
     Instance::query()->create([
         'project_id' => $project->id,
@@ -146,7 +149,7 @@ it('does not route an unrouted workspace that stopped early after routing is tur
     ]);
     routing_mode_bind_boundaries();
 
-    $instance = app(TaskWorkspaceProvisioner::class)->provision(InstanceProvisionIntent::for($group));
+    $instance = routing_mode_provision($group);
 
     expect($instance)->toBeInstanceOf(Instance::class)
         ->and($instance->task_workspace_routed)->toBeFalse()
@@ -158,7 +161,7 @@ it('does not route an unrouted workspace that stopped early after routing is tur
 it('resumes an unrouted workspace after routing is turned on when the Project root cannot serve', function (?string $root): void {
     $project = routing_mode_project('shop', true, ProjectType::LaravelApp, $root);
     $node = routing_mode_node($root === null ? 'shop-missing-root' : 'shop-dot-root');
-    $group = routing_mode_group($project);
+    $group = routing_mode_group($project, $node);
     $name = TaskWorkspaceName::for($group);
     Instance::query()->create([
         'project_id' => $project->id,
@@ -174,7 +177,7 @@ it('resumes an unrouted workspace after routing is turned on when the Project ro
     ]);
     routing_mode_bind_boundaries();
 
-    $instance = app(TaskWorkspaceProvisioner::class)->provision(InstanceProvisionIntent::for($group));
+    $instance = routing_mode_provision($group);
 
     expect($instance)->toBeInstanceOf(Instance::class)
         ->and($instance->task_workspace_routed)->toBeFalse()
@@ -185,32 +188,6 @@ it('resumes an unrouted workspace after routing is turned on when the Project ro
     'missing root' => [null],
     'repository root' => ['.'],
 ]);
-
-it('resumes an unrecorded unrouted workspace from its missing root instead of the current setting', function (): void {
-    $project = routing_mode_project('orbit', true, ProjectType::LaravelApp, null);
-    $node = routing_mode_node('orbit-unrecorded');
-    $group = routing_mode_group($project);
-    $name = TaskWorkspaceName::for($group);
-    Instance::query()->create([
-        'project_id' => $project->id,
-        'node_id' => $node->id,
-        'name' => $name,
-        'source_layout' => InstanceSourceLayout::Checkout,
-        'checkout_path' => '/srv/orbit/apps/orbit/'.$name,
-        'branch_override' => $name,
-        'status' => InstanceState::SourceResolved,
-        'branch' => $name,
-        'starting_commit' => str_repeat('c', 40),
-    ]);
-    routing_mode_bind_boundaries();
-
-    $instance = app(TaskWorkspaceProvisioner::class)->provision(InstanceProvisionIntent::for($group));
-
-    expect($instance)->toBeInstanceOf(Instance::class)
-        ->and($instance->task_workspace_routed)->toBeFalse()
-        ->and($instance->status)->toBe(InstanceState::SourceResolved)
-        ->and($instance->routes()->count())->toBe(0);
-});
 
 it('keeps workspace routes and settled state after a rename and both setting changes', function (): void {
     $this->markAsGateway(Node::query()->create([
@@ -224,10 +201,11 @@ it('keeps workspace routes and settled state after a rename and both setting cha
     app()->instance(ProjectUpdateProjectionMutator::class, new FakeProjectUpdateProjectionMutator);
     $routedProject = routing_mode_project('shop', true);
     $unroutedProject = routing_mode_project('orbit', false);
+    // The ordinary Instance lives on a development Node; each task workspace on its own task VM.
     $node = routing_mode_node('rename');
     routing_mode_bind_boundaries();
-    $routed = app(TaskWorkspaceProvisioner::class)->provision(InstanceProvisionIntent::for(routing_mode_group($routedProject)));
-    $unrouted = app(TaskWorkspaceProvisioner::class)->provision(InstanceProvisionIntent::for(routing_mode_group($unroutedProject)));
+    $routed = routing_mode_provision(routing_mode_group($routedProject));
+    $unrouted = routing_mode_provision(routing_mode_group($unroutedProject));
     $ordinary = Instance::query()->create([
         'project_id' => $routedProject->id,
         'node_id' => $node->id,
@@ -274,15 +252,14 @@ it('keeps workspace routes and settled state after a rename and both setting cha
 
 it('refuses a routed workspace whose root cannot serve and still creates an unrouted one', function (string $slug, ProjectType $type, ?string $root): void {
     $routed = routing_mode_project($slug, true, $type, $root);
-    routing_mode_node($slug.'-root');
     routing_mode_bind_boundaries();
 
-    expect(app(TaskWorkspaceProvisioner::class)->provision(InstanceProvisionIntent::for(routing_mode_group($routed))))
+    expect(routing_mode_provision(routing_mode_group($routed)))
         ->toBeInstanceOf(InstanceProvisionFailure::class)
         ->and(Instance::query()->where('project_id', $routed->id)->exists())->toBeFalse();
 
     $unrouted = routing_mode_project($slug.'-plain', false, $type, $root);
-    $instance = app(TaskWorkspaceProvisioner::class)->provision(InstanceProvisionIntent::for(routing_mode_group($unrouted)));
+    $instance = routing_mode_provision(routing_mode_group($unrouted));
 
     expect($instance)->toBeInstanceOf(Instance::class)
         ->and($instance->status)->toBe(InstanceState::SourceResolved)
@@ -325,8 +302,10 @@ it('removes a routed workspace and an unrouted workspace on cancel', function (s
     $node = routing_mode_node($slug.'-cancel');
     $group = routing_mode_group($project);
     routing_mode_bind_boundaries();
-    $instance = app(TaskWorkspaceProvisioner::class)->provision(InstanceProvisionIntent::for($group));
+    $instance = routing_mode_provision($group);
     expect($instance)->toBeInstanceOf(Instance::class);
+    // The task VM is already gone, so removal falls back to the generic Instance remover.
+    TaskVm::query()->where('group_id', $group->id)->update(['state' => TaskVmState::Destroyed]);
     $ordinary = Instance::query()->create([
         'project_id' => $project->id,
         'node_id' => $node->id,
@@ -422,7 +401,8 @@ function routing_mode_node(string $name): Node
     return $node;
 }
 
-function routing_mode_group(Project $project): Task
+/** A reserved group whose ready task VM serves `$node`, or a new routing Node. */
+function routing_mode_group(Project $project, ?Node $node = null): Task
 {
     $group = Task::topLevel()->create([
         'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
@@ -438,8 +418,23 @@ function routing_mode_group(Project $project): Task
         'brief' => 'First subtask',
         'status' => TaskStatus::Todo,
     ]);
+    test_task_vm($group, $node ?? routing_mode_node('routing-vm-'.$group->id));
 
     return $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
+}
+
+/**
+ * Provisions the group's workspace as a claim does: a routed workspace on a task VM stops before its Route, and the
+ * Route follows once the baseline check started.
+ */
+function routing_mode_provision(Task $group): Instance|InstanceProvisionFailure
+{
+    $instance = app(TaskWorkspaceProvisioner::class)->provision(InstanceProvisionIntent::for($group));
+    if ($instance instanceof Instance && $instance->task_workspace_routed === true && $instance->status === InstanceState::SourceResolved) {
+        return app(DevelopmentInstanceProvisioner::class)->complete($instance, null);
+    }
+
+    return $instance;
 }
 
 function routing_mode_bind_boundaries(): void
@@ -484,6 +479,8 @@ function routing_mode_bind_boundaries(): void
     {
         public function converge(Instance $instance, Route $route): void {}
     });
+    // A task VM workspace installs the PHP packages of its version before the Route; the fake host succeeds.
+    app()->instance(SshExecutor::class, new AppDevFakeSshExecutor);
     app()->forgetInstance(DevelopmentInstanceProvisioner::class);
     app()->forgetInstance(NativeDevelopmentInstanceProvisioner::class);
 }
