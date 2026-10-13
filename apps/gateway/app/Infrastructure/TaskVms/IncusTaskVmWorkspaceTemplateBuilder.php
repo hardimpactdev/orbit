@@ -41,6 +41,10 @@ use Throwable;
  * baseline check does. The tree must stay clean. Then the volume is detached and marked ready, the builder goes, and
  * older templates of the Project are deleted. No agent and no group ever ran on the volume.
  *
+ * After a merge to the default branch, {@see self::update()} brings the current template to the new commit: the
+ * builder gets a copy of the template instead of a new volume, so the setup steps find the older dependencies in place
+ * and the task check runs only the tests that the merge affects. An update never starts from a group's workspace.
+ *
  * One build runs on a host at a time. A failed build deletes its builder and its volume, and the Project keeps its
  * current template. A build that was killed is cleaned up by the next build on the host.
  */
@@ -100,6 +104,45 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
      */
     public function build(TaskVmHost $host, Node $node, Project $project, ?Closure $progress = null, ?string $owner = null): string
     {
+        return $this->make($host, $node, $project, null, null, $progress, $owner);
+    }
+
+    /**
+     * Updates the Project's current template `$base` to `$commit`, the default branch tip from
+     * {@see self::defaultBranchTip()}, after a merge. A builder gets a copy of the template, which stays unfinished until
+     * `publish`, checks out the new commit, and runs the stages of a full build from `php` on. The setup steps find the
+     * dependencies of the older commit in place, so they install only what changed. The copy is published with one more
+     * update than `$base`, and `$base` is pruned. A failure deletes the copy, so `$base` stays the current template.
+     *
+     * @param  (Closure(string, float): void)|null  $progress
+     *
+     * @throws TaskVmException `task_vm.workspace_template_running` while another template build of the host runs, else `task_vm.workspace_template_failed`
+     */
+    public function update(TaskVmHost $host, Node $node, Project $project, TaskVmWorkspaceTemplate $base, string $commit, ?Closure $progress = null, ?string $owner = null): string
+    {
+        return $this->make($host, $node, $project, $base, [(string) $project->default_branch => $commit], $progress, $owner);
+    }
+
+    /**
+     * Fetches the Project's default branch into the Gateway's mirror and returns its tip.
+     *
+     * @throws Throwable when the fetch fails or the repository has no such branch
+     */
+    public function defaultBranchTip(Project $project): string
+    {
+        $branch = (string) $project->default_branch;
+
+        return $this->fetchDefaultBranch($project, "the default branch [{$branch}] of Project [{$project->slug}]")[$branch];
+    }
+
+    /**
+     * A full build without `$base`, or an update of `$base` to the default branch commit in `$tips`.
+     *
+     * @param  array<string, string>|null  $tips
+     * @param  (Closure(string, float): void)|null  $progress
+     */
+    private function make(TaskVmHost $host, Node $node, Project $project, ?TaskVmWorkspaceTemplate $base, ?array $tips, ?Closure $progress, ?string $owner): string
+    {
         $lock = $this->lock($node, $owner);
         $stamp = now()->format('YmdHis');
         $builder = self::BuilderPrefix.$stamp;
@@ -114,10 +157,18 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
             $this->stage($node, $progress, 'sweep', fn () => $this->sweep($host, $node));
             $this->stage($node, $progress, 'launch', fn () => $this->image->launch($host, $node, $builder, TaskVmHost::BaseImage, $this->cloudInit->render($this->keys->publicKey())));
             $this->stage($node, $progress, 'cloud-init', fn () => $this->image->awaitCloudInit($host, $node, $builder));
-            [$image, $fileOwner] = $this->stage($node, $progress, 'identity', fn (): array => $this->identity($host, $node, $builder));
-            $this->stage($node, $progress, 'volume', fn () => $this->createVolume($host, $node, $builder, $volume));
-            $this->stage($node, $progress, 'mount', fn () => $this->mount($host, $node, $builder, $directory, $fileOwner));
-            $commit = $this->stage($node, $progress, 'clone', fn (): string => $this->cloneDefaultBranch($host, $node, $builder, $project, $checkout));
+            [$image, $fileOwner] = $this->stage($node, $progress, 'identity', fn (): array => $this->identity($host, $node, $builder, $base));
+            if ($base === null || $tips === null) {
+                $updates = 0;
+                $this->stage($node, $progress, 'volume', fn () => $this->createVolume($host, $node, $builder, $volume));
+                $this->stage($node, $progress, 'mount', fn () => $this->mount($host, $node, $builder, $directory, $fileOwner));
+                $commit = $this->stage($node, $progress, 'clone', fn (): string => $this->cloneDefaultBranch($host, $node, $builder, $project, $checkout));
+            } else {
+                $updates = $base->updates + 1;
+                $this->stage($node, $progress, 'volume', fn () => $this->copyVolume($host, $node, $builder, $base, $volume));
+                $this->stage($node, $progress, 'mount', fn () => $this->mountCopy($host, $node, $builder, $directory, $fileOwner));
+                $commit = $this->stage($node, $progress, 'checkout', fn (): string => $this->receive($host, $node, $builder, $project, $checkout, $tips));
+            }
             $this->stage($node, $progress, 'php', fn () => $this->installPhp($host, $node, $builder, $project, $checkout));
             foreach ($steps as $step) {
                 $this->stage($node, $progress, 'setup:'.$step->name, fn () => $this->runStep($host, $node, $builder, $project, $checkout, $step, $deadline));
@@ -126,7 +177,7 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
             $this->stage($node, $progress, 'verify', fn () => $this->verify($host, $node, $builder, $checkout));
             $this->stage($node, $progress, 'detach', fn () => $this->detach($host, $node, $builder, $directory));
             $this->stage($node, $progress, 'publish', fn () => $this->volumes->publish($host, $node, TaskVmWorkspaceTemplate::built(
-                $volume, $project->id, $commit, $project->repository_url, $image, $fileOwner,
+                $volume, $project->id, $commit, $project->repository_url, $image, $fileOwner, $updates,
             )));
             $published = true;
             // The template is ready now. A failure to tidy up after it only warns: the next build sweeps the builder
@@ -228,11 +279,12 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
 
     /**
      * The base image the builder booted and the managed user's `uid:gid` on it. The template records both, so a claim
-     * takes it only on a VM from the same image, and the mount refuses a VM whose user differs.
+     * takes it only on a VM from the same image, and the mount refuses a VM whose user differs. An update must boot the
+     * image of the template it copies, with the same user: else the setup steps would run on another system.
      *
      * @return array{string, string}
      */
-    private function identity(TaskVmHost $host, Node $node, string $builder): array
+    private function identity(TaskVmHost $host, Node $node, string $builder, ?TaskVmWorkspaceTemplate $base): array
     {
         $image = $this->image->instances($host, $node)[$builder] ?? null;
         if (! is_string($image) || $image === '') {
@@ -242,8 +294,23 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
         if (preg_match('/\A[0-9]+:[0-9]+\z/D', $owner) !== 1) {
             throw IncusHost::invalid("the workspace template builder [{$builder}]", 'the managed user has no numeric uid and gid');
         }
+        if ($base !== null && ($base->image !== $image || $base->owner !== $owner)) {
+            throw IncusHost::invalid("the workspace template builder [{$builder}]", "it booted image [{$image}] with user [{$owner}], but the template [{$base->name}] has image [{$base->image}] and user [{$base->owner}]");
+        }
 
         return [$image, $owner];
+    }
+
+    /** Copies the template `$base` to the update's new, unfinished template volume, and attaches the copy. */
+    private function copyVolume(TaskVmHost $host, Node $node, string $builder, TaskVmWorkspaceTemplate $base, string $volume): void
+    {
+        if ($volume === $base->name) {
+            throw IncusHost::invalid("the workspace template builder [{$builder}]", "the update would replace the template [{$base->name}] itself");
+        }
+        $this->volumes->copy($host, $node, $base, $volume);
+        $this->checked($builder, 'config device add', $this->incus->run($host, $node, [
+            'config', 'device', 'add', '--', $builder, TaskVmWorkspaceTemplates::Device, 'disk', "pool={$host->pool}", "source={$volume}",
+        ]));
     }
 
     private function mount(TaskVmHost $host, Node $node, string $builder, string $directory, string $fileOwner): void
@@ -254,6 +321,15 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
         $this->checked($builder, 'exec mount', $this->asManagedUser($host, $node, $builder, TaskVmCloudInit::Home, TaskVmWorkspaceTemplates::mountCommand($directory, $fileOwner)));
     }
 
+    /** Mounts the update's copy with the claim's script. The copy must hold the template checkout. */
+    private function mountCopy(TaskVmHost $host, Node $node, string $builder, string $directory, string $fileOwner): void
+    {
+        $mounted = $this->checked($builder, 'exec mount', $this->asManagedUser($host, $node, $builder, TaskVmCloudInit::Home, TaskVmWorkspaceTemplates::mountCommand($directory, $fileOwner)));
+        if (trim($mounted->stdout) !== 'template') {
+            throw IncusHost::invalid("the workspace template builder [{$builder}]", 'the copy of the template holds no template checkout');
+        }
+    }
+
     /**
      * Creates the template checkout and checks out the default branch, which the Gateway sends from its mirror. No
      * GitHub token reaches the builder ([Git on a task VM](/reference/compute-drivers#git-on-a-task-vm)).
@@ -261,13 +337,36 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
     private function cloneDefaultBranch(TaskVmHost $host, Node $node, string $builder, Project $project, string $checkout): string
     {
         $repository = GitRepositoryOrigin::validate($project->repository_url);
+        $this->checked($builder, 'exec git init', $this->asManagedUser($host, $node, $builder, TaskVmCloudInit::Home, TaskVmScripts::bash('template-init.sh', [$checkout, $repository])));
+
+        return $this->receive($host, $node, $builder, $project, $checkout, $this->fetchDefaultBranch($project, "the workspace template builder [{$builder}]"));
+    }
+
+    /**
+     * Fetches the default branch into the Gateway's mirror and returns its tip, as {@see TaskVmGit::fetch()} does.
+     *
+     * @return array<string, string>
+     */
+    private function fetchDefaultBranch(Project $project, string $subject): array
+    {
+        $repository = GitRepositoryOrigin::validate($project->repository_url);
+        $branch = (string) $project->default_branch;
+        $tips = $this->git->fetch($project, [$branch], $this->access->for($repository, $project->source_access), self::ErrorCode);
+        $tip = $tips[$branch] ?? null;
+
+        return $tip !== null ? [$branch => $tip] : throw IncusHost::invalid($subject, "the repository has no default branch [{$branch}]");
+    }
+
+    /**
+     * Sends the default branch commit in `$tips` from the Gateway's mirror into the checkout, which may hold an older
+     * commit of the branch, and checks it out. The pack holds what the checkout's own commits lack.
+     *
+     * @param  array<string, string>  $tips
+     */
+    private function receive(TaskVmHost $host, Node $node, string $builder, Project $project, string $checkout, array $tips): string
+    {
         $branch = (string) $project->default_branch;
         $home = TaskVmCloudInit::Home;
-        $this->checked($builder, 'exec git init', $this->asManagedUser($host, $node, $builder, $home, TaskVmScripts::bash('template-init.sh', [$checkout, $repository])));
-        $tips = $this->git->fetch($project, [$branch], $this->access->for($repository, $project->source_access), self::ErrorCode);
-        if ($tips[$branch] === null) {
-            throw IncusHost::invalid("the workspace template builder [{$builder}]", "the repository has no default branch [{$branch}]");
-        }
         $this->git->send($project, $checkout, $tips, fn (RemoteCommand $command): CommandResult => $this->checked(
             $builder,
             'exec git receive',

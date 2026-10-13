@@ -32,6 +32,7 @@ use App\Http\Middleware\ValidateDocumentPostSize;
 use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Logging\GatewayExceptionStatus;
+use App\Jobs\TaskVms\FollowTaskVmDefaultBranches;
 use App\Jobs\TaskVms\RefillTaskVmPool;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
 use App\Jobs\TaskVms\RefreshUpCloudTaskVmBaseImage;
@@ -93,6 +94,10 @@ return Application::configure(basePath: dirname(__DIR__))
 
                 return $taskVms->enabled || $taskVms->upcloudConfigured;
             });
+        // Workspace templates follow their Project's default branch: every 5 minutes a job on the template queue queues
+        // an update for each current template that a merge left behind.
+        $schedule->job(new FollowTaskVmDefaultBranches)->everyFiveMinutes()
+            ->when(static fn (): bool => TaskVmSettings::scheduled()->enabled);
         // The task VM pool: warm VMs up to each host's warm_vms, and a drain while task VMs are off. Inert while no
         // host has warm_vms and no pool VM exists.
         $schedule->job(new RefillTaskVmPool)->everyMinute()

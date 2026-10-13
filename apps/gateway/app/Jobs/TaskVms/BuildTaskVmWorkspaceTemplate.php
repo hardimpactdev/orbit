@@ -11,6 +11,7 @@ use App\Domain\TaskVms\TaskVmQueue;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\TaskVms\IncusHost;
 use App\Infrastructure\TaskVms\IncusTaskVmWorkspaceTemplateBuilder;
+use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplate;
 use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplateLifecycle;
 use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplateVolumes;
 use App\Models\Node;
@@ -22,13 +23,21 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Builds the workspace template of one Project on one task VM host. A claim queues it when the Project has no
- * template for the VM's base image, and the template refresh queues it for each recently active `vm` Project on
- * every host. It runs on the template queue, whose own worker takes one job at a time, so a build never delays task
- * VM jobs. A host that already has a ready template of the Project on its current base image, from the Project's
- * repository and owned by the image's user, gets no build. While another template build runs on the host, the job waits a minute and tries again. A Project without
- * a valid default branch or repository is logged and skipped, without a retry. A failed build logs an error, and
- * claims ask for no new build of that Project on that host for 6 hours; their workspaces start from a fresh clone.
+ * Brings the workspace template of one Project on one task VM host to the Project's default branch. A claim queues it
+ * when the Project has no template for the VM's base image, the template refresh queues it for each recently active
+ * `vm` Project on every host, and {@see FollowTaskVmDefaultBranches} queues it after a merge. It runs on the template
+ * queue, whose own worker takes one job at a time, so a build never delays task VM jobs.
+ *
+ * A host that has a current template of the Project, ready on the host's current base image, from the Project's
+ * repository and owned by the image's user, gets an update of that template to the default branch tip, or nothing at
+ * the tip ({@see IncusTaskVmWorkspaceTemplateBuilder::update()}). Without one, or after
+ * {@see TaskVmWorkspaceTemplateLifecycle::MaxUpdates} updates, it builds a new template from scratch. The job is unique
+ * for its host and Project and reads the tip when it runs, so a burst of merges becomes one update to the newest commit.
+ *
+ * While another template build runs on the host, the job waits a minute and tries again. A Project without a valid
+ * default branch or repository is logged and skipped, without a retry. A failed update makes the next try a full build.
+ * A failed full build logs an error, and claims and merges ask for no new build of that Project on that host for
+ * 6 hours; their workspaces start from a fresh clone or from the older template.
  */
 final class BuildTaskVmWorkspaceTemplate implements ShouldBeUnique, ShouldQueue
 {
@@ -65,14 +74,16 @@ final class BuildTaskVmWorkspaceTemplate implements ShouldBeUnique, ShouldQueue
         }
 
         $host = $settings->host($node->id);
+        $current = null;
         try {
-            if (TaskVmWorkspaceTemplateLifecycle::isCurrent($volumes->read($host, $node), $project, $incus->aliasTarget($host, $node, TaskVmHost::BaseImage, 60.0))) {
-                Log::info('Task VM workspace template is current; no build.', ['host_node_id' => $node->id, 'project_id' => $project->id]);
-
-                return;
-            }
+            $current = TaskVmWorkspaceTemplate::newest($volumes->read($host, $node), $project->id, $project->repository_url, $incus->aliasTarget($host, $node, TaskVmHost::BaseImage, 60.0));
         } catch (Throwable) {
             // The build reads the host again and fails loudly when it cannot.
+        }
+        if ($current instanceof TaskVmWorkspaceTemplate && $current->updates < TaskVmWorkspaceTemplateLifecycle::MaxUpdates) {
+            $this->update($builder, $volumes, $host, $node, $project, $current);
+
+            return;
         }
         try {
             $volume = $builder->build($host, $node, $project, owner: $this->owner());
@@ -89,6 +100,51 @@ final class BuildTaskVmWorkspaceTemplate implements ShouldBeUnique, ShouldQueue
         }
         Cache::forget(TaskVmWorkspaceTemplateLifecycle::backoffKey($this->hostNodeId, $this->projectId));
         Log::info('Task VM workspace template built.', ['host_node_id' => $this->hostNodeId, 'project_id' => $this->projectId, 'volume' => $volume]);
+    }
+
+    /**
+     * Updates the current template to the default branch tip. At the template's own commit nothing happens. A failed
+     * fetch only warns: the next check tries again. A failed update marks the template for a full build and puts the job
+     * back at once, so its next try builds from scratch. Claims keep taking the current template meanwhile.
+     */
+    private function update(IncusTaskVmWorkspaceTemplateBuilder $builder, TaskVmWorkspaceTemplateVolumes $volumes, TaskVmHost $host, Node $node, Project $project, TaskVmWorkspaceTemplate $current): void
+    {
+        $context = ['host_node_id' => $node->id, 'project_id' => $project->id, 'template' => $current->name];
+        try {
+            $commit = $builder->defaultBranchTip($project);
+        } catch (Throwable $exception) {
+            Log::warning('Task VM workspace template could not follow its default branch.', [...$context, 'error' => TaskVmException::messageOf($exception)]);
+
+            return;
+        }
+        if ($commit === $current->commit) {
+            Log::info('Task VM workspace template is at the default branch; no update.', [...$context, 'commit' => $commit]);
+
+            return;
+        }
+        try {
+            $volume = $builder->update($host, $node, $project, $current, $commit, owner: $this->owner());
+        } catch (TaskVmException $exception) {
+            if ($exception->errorCode === 'task_vm.workspace_template_running') {
+                $this->release(60);
+
+                return;
+            }
+            Log::warning('Task VM workspace template update failed; the next build is a full one.', [...$context, 'error_code' => $exception->errorCode, 'error' => $exception->getMessage()]);
+            try {
+                $volumes->setUpdates($host, $node, $current->name, TaskVmWorkspaceTemplateLifecycle::MaxUpdates);
+            } catch (Throwable $marking) {
+                $this->recordFailure($marking);
+                $this->fail($marking);
+
+                return;
+            }
+            $this->release(0);
+
+            return;
+        }
+        Cache::forget(TaskVmWorkspaceTemplateLifecycle::backoffKey($this->hostNodeId, $this->projectId));
+        Log::info('Task VM workspace template updated.', [...$context, 'volume' => $volume, 'commit' => $commit, 'updates' => $current->updates + 1]);
     }
 
     /** After a timeout the worker stops the job in the middle of a build, so this deletes its builder and frees the host. */

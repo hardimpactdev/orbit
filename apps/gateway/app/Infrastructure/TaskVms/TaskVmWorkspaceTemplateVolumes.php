@@ -46,10 +46,26 @@ final readonly class TaskVmWorkspaceTemplateVolumes
     /** Writes the config of a finished template, which makes it ready ({@see TaskVmWorkspaceTemplate::metadata()}). */
     public function publish(TaskVmHost $host, Node $hostNode, TaskVmWorkspaceTemplate $template): void
     {
-        $result = $this->incus->run($host, $hostNode, ['storage', 'volume', 'set', '--', $host->pool, $template->name, ...$template->metadata()]);
-        if (! $result->succeeded()) {
-            throw IncusHost::failed("the workspace template [{$template->name}]", 'storage volume set', $result);
+        $this->set($host, $hostNode, $template->name, $template->metadata());
+    }
+
+    /**
+     * Copies the template `$from` to the new template volume `$to` and marks the copy unfinished at once, so no claim
+     * takes it before its update publishes it. Incus copies the config with the volume; on ZFS the copy is a clone.
+     */
+    public function copy(TaskVmHost $host, Node $hostNode, TaskVmWorkspaceTemplate $from, string $to): void
+    {
+        $copied = $this->incus->run($host, $hostNode, ['storage', 'volume', 'copy', '--', "{$host->pool}/{$from->name}", "{$host->pool}/{$to}"], timeout: 120.0);
+        if (! $copied->succeeded()) {
+            throw IncusHost::failed("the workspace template [{$from->name}]", 'storage volume copy', $copied);
         }
+        $this->set($host, $hostNode, $to, [TaskVmWorkspaceTemplate::ReadyKey.'=false']);
+    }
+
+    /** Sets the update count of a ready template. At {@see TaskVmWorkspaceTemplateLifecycle::MaxUpdates} the next build of its Project is a full one. */
+    public function setUpdates(TaskVmHost $host, Node $hostNode, string $name, int $updates): void
+    {
+        $this->set($host, $hostNode, $name, [TaskVmWorkspaceTemplate::UpdatesKey.'='.$updates]);
     }
 
     /** Deletes a volume of the host's pool. An absent volume counts as deleted. */
@@ -58,6 +74,15 @@ final readonly class TaskVmWorkspaceTemplateVolumes
         $result = $this->incus->run($host, $hostNode, ['storage', 'volume', 'delete', '--', $host->pool, $name], timeout: 120.0);
         if (! $result->succeeded() && array_key_exists($name, $this->read($host, $hostNode))) {
             throw IncusHost::failed("the storage volume [{$name}]", 'storage volume delete', $result);
+        }
+    }
+
+    /** @param  list<string>  $pairs  `key=value` config of the volume */
+    private function set(TaskVmHost $host, Node $hostNode, string $name, array $pairs): void
+    {
+        $result = $this->incus->run($host, $hostNode, ['storage', 'volume', 'set', '--', $host->pool, $name, ...$pairs]);
+        if (! $result->succeeded()) {
+            throw IncusHost::failed("the workspace template [{$name}]", 'storage volume set', $result);
         }
     }
 }

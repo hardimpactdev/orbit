@@ -22,7 +22,7 @@ final readonly class TaskVmWorkspaceTemplate
      */
     public const string Layout = 'workspace';
 
-    private const string ReadyKey = 'user.orbit.ready';
+    public const string ReadyKey = 'user.orbit.ready';
 
     private const string ProjectKey = 'user.orbit.project';
 
@@ -39,6 +39,9 @@ final readonly class TaskVmWorkspaceTemplate
     /** The managed user's `uid:gid` on the builder, which owns the files. */
     private const string OwnerKey = 'user.orbit.owner';
 
+    /** How many updates after a merge the template had since its last full build. */
+    public const string UpdatesKey = 'user.orbit.updates';
+
     /**
      * @param  int|null  $projectId  the Project of a template, from its name; null for another volume
      */
@@ -51,6 +54,7 @@ final readonly class TaskVmWorkspaceTemplate
         public ?string $owner = null,
         public ?string $commit = null,
         public ?string $layout = null,
+        public int $updates = 0,
     ) {}
 
     /** The volume name of a template of `$projectId` built at `$stamp` (`YmdHis`). */
@@ -71,13 +75,14 @@ final readonly class TaskVmWorkspaceTemplate
             $config[self::OwnerKey] ?? null,
             $config[self::CommitKey] ?? null,
             $config[self::LayoutKey] ?? null,
+            ctype_digit($config[self::UpdatesKey] ?? '') ? (int) $config[self::UpdatesKey] : 0,
         );
     }
 
-    /** A finished template, as a build publishes it. */
-    public static function built(string $name, int $projectId, string $commit, string $repository, string $image, string $owner): self
+    /** A finished template, as a build publishes it: `$updates` is 0 after a full build, and one more than its source after an update. */
+    public static function built(string $name, int $projectId, string $commit, string $repository, string $image, string $owner, int $updates = 0): self
     {
-        return new self($name, $projectId, true, $repository, $image, $owner, $commit, self::Layout);
+        return new self($name, $projectId, true, $repository, $image, $owner, $commit, self::Layout, $updates);
     }
 
     /** Whether a build has not finished this template: it is still running, or it was killed. */
@@ -138,6 +143,7 @@ final readonly class TaskVmWorkspaceTemplate
             self::ImageKey.'='.$this->image,
             self::OwnerKey.'='.$this->owner,
             self::LayoutKey.'='.$this->layout,
+            self::UpdatesKey.'='.$this->updates,
             self::ReadyKey.'='.($this->ready ? 'true' : 'false'),
         ];
     }

@@ -28,6 +28,12 @@ final readonly class TaskVmWorkspaceTemplateLifecycle
     /** A refresh builds templates ahead only for Projects with a group created within this many days. */
     public const int ActiveDays = 7;
 
+    /**
+     * After this many updates in a row the next build of a template is a full one. It starts the checkout without the
+     * ignored files of older commits, and ends the chain of ZFS clones that keeps the data of each older template.
+     */
+    public const int MaxUpdates = 20;
+
     public function __construct(private TaskVmWorkspaceTemplateVolumes $volumes) {}
 
     /**
