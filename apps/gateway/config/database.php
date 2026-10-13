@@ -41,7 +41,8 @@ return [
     'redis' => [
         'client' => 'predis',
         'gateway' => [
-            'host' => '127.0.0.1',
+            // Unresolvable until GatewayQueueRedis fills it in, so a missing connection fails with this name.
+            'host' => 'orbit-gateway-queue-unconfigured.invalid',
             'port' => 6379,
             'password' => null,
             'database' => (int) env('ORBIT_GATEWAY_QUEUE_REDIS_DATABASE', 1),

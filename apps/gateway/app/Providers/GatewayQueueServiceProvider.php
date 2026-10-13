@@ -12,9 +12,11 @@ use App\Models\Node;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Horizon\Events\MasterSupervisorLooped;
 use Laravel\Horizon\Horizon;
+use Throwable;
 
 /** The Gateway queue and Laravel Horizon (docs/reference/gateway-queue.md). */
 final class GatewayQueueServiceProvider extends ServiceProvider
@@ -30,9 +32,17 @@ final class GatewayQueueServiceProvider extends ServiceProvider
 
         if (GatewayQueueRedis::configured()) {
             // The registered connection decides host and port, read once, before a process first uses Redis.
+            // Every Artisan command resolves Redis for the Horizon commands, so a missing connection only logs here; a
+            // dispatch then fails on the unresolvable host.
             $this->app->beforeResolving('redis', static function (mixed $abstract, array $parameters, Application $app): void {
-                if (! $app->resolved('redis')) {
+                if ($app->resolved('redis')) {
+                    return;
+                }
+
+                try {
                     GatewayQueueRedis::configure();
+                } catch (Throwable $exception) {
+                    Log::error('The Gateway queue has no Redis server.', ['error' => $exception->getMessage()]);
                 }
             });
         }
