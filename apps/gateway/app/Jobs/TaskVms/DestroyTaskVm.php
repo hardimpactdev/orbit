@@ -10,8 +10,8 @@ use App\Actions\TaskVms\DeleteTaskVmAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
-use App\Domain\TaskVms\TaskVmQueue;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\TaskVms\TaskVmGuest;
 use App\Models\Instance;
@@ -20,7 +20,6 @@ use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Queue\Queueable;
 use Throwable;
 
 /**
@@ -38,7 +37,7 @@ use Throwable;
  */
 final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
 {
-    use Queueable;
+    use TaskVmRowJob;
 
     public int $tries = 0;
 
@@ -46,16 +45,6 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
     public array $backoff = [60, 300, 900];
 
     public int $timeout = 900;
-
-    public function __construct(public int $taskVmId)
-    {
-        $this->onConnection('task-vms')->onQueue(TaskVmQueue::Vms->value);
-    }
-
-    public function uniqueId(): string
-    {
-        return (string) $this->taskVmId;
-    }
 
     public function handle(TaskVmGuest $guest, DeleteTaskVmAction $delete, RemoveNodeAction $nodes, RemoveTaskWorkspaceAction $removal): void
     {
@@ -89,7 +78,7 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
             }
             $vm->update(['state' => TaskVmState::Destroyed, 'destroyed_at' => now()]);
         } catch (Throwable $exception) {
-            $vm->update(['error_code' => TaskVmException::codeOf($exception), 'error_message' => mb_substr($exception->getMessage(), 0, 2000)]);
+            $vm->recordError($exception);
 
             throw $exception;
         }
@@ -121,6 +110,6 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
     {
         return Node::query()->where('status', LifecycleStatus::Active)
             ->whereHas('roles', static fn ($query) => $query->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))
-            ->first() ?? throw new TaskVmException('task_vm.job_failed', 'No active Gateway Node can remove the task VM Node.', 500);
+            ->first() ?? throw new TaskVmException(TaskVmError::JobFailed, 'No active Gateway Node can remove the task VM Node.', 500);
     }
 }

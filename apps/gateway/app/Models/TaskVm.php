@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSize;
@@ -14,6 +15,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
+use Throwable;
 
 /**
  * One disposable VM that serves one task group as a normal `app-dev` Node. A pool row has no group: it is
@@ -125,6 +127,22 @@ final class TaskVm extends Model
         $query->whereNull('group_id');
     }
 
+    /**
+     * The error columns of a failure: its stable code and its message, cut to {@see TaskVmException::MessageLimit}.
+     *
+     * @return array{error_code: string, error_message: string}
+     */
+    public static function errorFrom(Throwable $exception): array
+    {
+        return ['error_code' => TaskVmException::codeOf($exception), 'error_message' => TaskVmException::messageOf($exception)];
+    }
+
+    /** Keeps a failure on the row as its error, without changing its state. */
+    public function recordError(Throwable $exception): void
+    {
+        $this->update(self::errorFrom($exception));
+    }
+
     /** The group's live task VM, or null when it has none. */
     public static function forGroup(Task $group): ?self
     {
@@ -152,7 +170,7 @@ final class TaskVm extends Model
     /** The Incus host Node of an `incus` row. */
     public function incusHostNode(): Node
     {
-        return $this->hostNode ?? throw new TaskVmException('task_vm.unknown_host', "Task VM [{$this->name}] has no host Node.", 500);
+        return $this->hostNode ?? throw new TaskVmException(TaskVmError::UnknownHost, "Task VM [{$this->name}] has no host Node.", 500);
     }
 
     /** @return BelongsTo<Node, $this> */

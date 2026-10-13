@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace App\Jobs\TaskVms;
 
-use App\Domain\Tasks\AssistanceKind;
-use App\Domain\Tasks\TaskAssistance;
+use App\Actions\TaskVms\FailTaskVmAction;
 use App\Domain\TaskVms\TaskVmCapacity;
+use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmFailedException;
 use App\Domain\TaskVms\TaskVmProviderKind;
-use App\Domain\TaskVms\TaskVmQueue;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\TaskVmUpCloud;
@@ -17,12 +17,10 @@ use App\Infrastructure\TaskVms\TaskVmHostAudit;
 use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplates;
 use App\Infrastructure\TaskVms\UpCloudServers;
 use App\Infrastructure\TaskVms\UpCloudTaskVmImageBuilder;
-use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -40,9 +38,7 @@ use Throwable;
  */
 final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
 {
-    use Queueable;
-
-    public const string MissingCode = 'task_vm.vm_missing';
+    use TaskVmJob;
 
     public int $tries = 1;
 
@@ -52,7 +48,7 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
 
     public function __construct()
     {
-        $this->onConnection('task-vms')->onQueue(TaskVmQueue::Vms->value);
+        $this->onTaskVmQueue();
     }
 
     public function handle(TaskVmSettings $settings, TaskVmCapacity $capacity, TaskVmHostAudit $audit, TaskVmWorkspaceTemplates $templates, UpCloudServers $servers, UpCloudTaskVmImageBuilder $images): void
@@ -86,7 +82,7 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
         }
 
         if ($failures !== []) {
-            throw new TaskVmException('task_vm.host_command_failed', 'The task VM host sweep failed on '.implode(', ', $failures).'.', 502);
+            throw new TaskVmException(TaskVmError::HostCommandFailed, 'The task VM host sweep failed on '.implode(', ', $failures).'.', 502);
         }
     }
 
@@ -144,15 +140,8 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
     private function fail(TaskVm $vm): void
     {
         $message = "Task VM [{$vm->name}] is gone from its host.";
-        $failed = TaskVm::query()->whereKey($vm->id)
-            ->whereIn('state', [TaskVmState::Warm, TaskVmState::Ready, TaskVmState::Parked])
-            ->update(['state' => TaskVmState::Failed, 'error_code' => self::MissingCode, 'error_message' => $message]);
-        $group = $vm->group;
-        if ($failed === 1) {
+        if (app(FailTaskVmAction::class)->execute($vm, [TaskVmState::Warm, TaskVmState::Ready, TaskVmState::Parked], TaskVmError::VmMissing->value, $message, TaskVmFailedException::stoppedReason(TaskVmError::VmMissing->value, $message))) {
             Log::warning('A task VM is gone from its host.', ['task_vm_id' => $vm->id, 'name' => $vm->name]);
-        }
-        if ($failed === 1 && $group instanceof Task) {
-            TaskAssistance::apply($group, AssistanceKind::Failure, null, ProvisionTaskVm::FailedReasonPrefix.self::MissingCode.": {$message} Cancel or complete the group to destroy the VM.", replaceFailure: true);
         }
     }
 }

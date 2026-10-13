@@ -97,7 +97,7 @@ final readonly class TaskVmWorkspace
                 'task_vm' => $vm->name,
                 'project_id' => $group->project_id,
                 'error_code' => TaskVmException::codeOf($exception),
-                'error' => mb_substr($exception->getMessage(), 0, 2000),
+                'error' => TaskVmException::messageOf($exception),
             ]);
 
             return null;

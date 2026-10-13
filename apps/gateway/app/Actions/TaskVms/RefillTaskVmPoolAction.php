@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\TaskVms;
 
 use App\Domain\TaskVms\TaskVmCapacity;
+use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmPlacementTarget;
@@ -42,8 +43,6 @@ use Throwable;
  */
 final readonly class RefillTaskVmPoolAction
 {
-    public const string StartTimeoutCode = 'task_vm.pool_start_timeout';
-
     /** Minutes a pool row may stay `provisioning` before the refill fails it. */
     public const int StartMinutes = 60;
 
@@ -179,9 +178,9 @@ final readonly class RefillTaskVmPoolAction
         foreach ($stuck as $vm) {
             $message = "Pool task VM [{$vm->name}] was not warm ".self::StartMinutes.' minutes after its row was recorded.';
             $failed = TaskVm::query()->whereKey($vm->id)->pool()->where('state', TaskVmState::Provisioning)
-                ->update(['state' => TaskVmState::Failed, 'error_code' => self::StartTimeoutCode, 'error_message' => $message]);
+                ->update(['state' => TaskVmState::Failed, 'error_code' => TaskVmError::PoolStartTimeout->value, 'error_message' => $message]);
             if ($failed === 1) {
-                $this->backoff->failed($vm, self::StartTimeoutCode, $message);
+                $this->backoff->failed($vm, TaskVmError::PoolStartTimeout->value, $message);
             }
         }
     }

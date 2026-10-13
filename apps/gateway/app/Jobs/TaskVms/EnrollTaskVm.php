@@ -8,9 +8,9 @@ use App\Actions\Nodes\ProvisionNodeAction;
 use App\Data\Nodes\ProvisionNodeData;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmProvider;
-use App\Domain\TaskVms\TaskVmQueue;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\TaskVms\TaskVmBakedPrograms;
 use App\Infrastructure\TaskVms\TaskVmGuest;
@@ -53,12 +53,12 @@ final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
     private const int BootstrapMinutes = 10;
 
     /** Failures that a retry cannot fix. */
-    private const array Permanent = ['task_vm.bootstrap_failed', 'task_vm.bootstrap_timeout', 'task_vm.vm_not_running'];
+    private const array Permanent = [TaskVmError::BootstrapFailed, TaskVmError::BootstrapTimeout, TaskVmError::VmNotRunning];
 
     /** @param  int  $launchedAt  when `ProvisionTaskVm` launched the VM: the boot limit counts from then, not from the row, because jobs run one at a time */
     public function __construct(public int $taskVmId, public int $launchedAt)
     {
-        $this->onConnection('task-vms')->onQueue(TaskVmQueue::Vms->value);
+        $this->onTaskVmQueue();
     }
 
     public function handle(TaskVmProvider $provider, TaskVmGuest $guest, ProvisionNodeAction $nodes, TaskVmSettings $settings, TaskVmStepClock $clock, TaskVmBakedPrograms $baked): void
@@ -86,7 +86,7 @@ final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
                 $address = $this->bootstrappedAddress($vm, $provider, $guest);
             }
         } catch (TaskVmException $exception) {
-            if (! in_array($exception->errorCode, self::Permanent, true)) {
+            if (! in_array(TaskVmError::tryFrom($exception->errorCode), self::Permanent, true)) {
                 throw $exception;
             }
             $this->fail($exception);
@@ -132,7 +132,7 @@ final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
     {
         $observation = $guest->observeSettled($vm);
         if ($observation?->running !== true) {
-            throw new TaskVmException('task_vm.vm_not_running', "Task VM [{$vm->name}] is ".($observation === null ? 'absent' : 'stopped').' on its host.', 502);
+            throw new TaskVmException(TaskVmError::VmNotRunning, "Task VM [{$vm->name}] is ".($observation === null ? 'absent' : 'stopped').' on its host.', 502);
         }
         // Cloud-init is done only after the network is online, so the host knows the address by then. The
         // check waits in the guest, so it runs before the host reports an address, which it does later.
@@ -143,7 +143,7 @@ final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
             }
         }
         if (now()->getTimestamp() - $this->launchedAt > self::BootstrapMinutes * 60) {
-            throw new TaskVmException('task_vm.bootstrap_timeout', "Cloud-init on task VM [{$vm->name}] was not done ".self::BootstrapMinutes.' minutes after launch.', 504);
+            throw new TaskVmException(TaskVmError::BootstrapTimeout, "Cloud-init on task VM [{$vm->name}] was not done ".self::BootstrapMinutes.' minutes after launch.', 504);
         }
 
         return null;

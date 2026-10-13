@@ -13,6 +13,7 @@ use App\Domain\Settings\SettingRepository;
 use App\Domain\Settings\SettingScope;
 use App\Domain\Settings\SettingScopeType;
 use App\Domain\Settings\SettingValueProtection;
+use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
@@ -106,8 +107,8 @@ final readonly class TaskVmRuntime
      */
     public function prepare(TaskVm $vm, bool $inline = false): void
     {
-        $node = $vm->node ?? throw new TaskVmException('task_vm.not_enrolled', "Task VM [{$vm->name}] has no Node yet.");
-        $token = $vm->pi_token ?? throw new TaskVmException('task_vm.runtime_failed', "Task VM [{$vm->name}] has no Pi token: no task group claimed it.", 409);
+        $node = $vm->node ?? throw new TaskVmException(TaskVmError::NotEnrolled, "Task VM [{$vm->name}] has no Node yet.");
+        $token = $vm->pi_token ?? throw new TaskVmException(TaskVmError::RuntimeFailed, "Task VM [{$vm->name}] has no Pi token: no task group claimed it.", 409);
         $origin = $this->origin();
         if (rtrim((string) $this->proxy->cliproxyUrl(), '/') !== $origin) {
             throw $this->invalidConfig('model_proxy_origin must be the CLIProxyAPI URL of the proxycli extension.');
@@ -130,7 +131,7 @@ final readonly class TaskVmRuntime
             $installed = $this->run($node, ['bash', '-ceu', self::PiIsCurrent, '--', $digest], null, 'task-vm-pi-artifact-check', $timeout)->stdout;
             if (trim($installed) !== 'current') {
                 if ($inline) {
-                    throw new TaskVmException('task_vm.runtime_failed', "Task VM [{$vm->name}] has no current Pi, so the queued job uploads it.");
+                    throw new TaskVmException(TaskVmError::RuntimeFailed, "Task VM [{$vm->name}] has no current Pi, so the queued job uploads it.");
                 }
                 $this->run($node, ['bash', '-ceu', self::InstallPi, '--', $digest], ProtectedInput::fromFile($artifact, '', self::ArtifactMaxBytes), 'task-vm-pi-artifact', 600);
                 $this->clock->step('pi-upload');
@@ -160,7 +161,7 @@ final readonly class TaskVmRuntime
             ));
             $this->clock->step('pi-server');
         } catch (Throwable $exception) {
-            throw new TaskVmException('task_vm.runtime_failed', "Pi could not be prepared on task VM [{$vm->name}].", 502, $exception);
+            throw new TaskVmException(TaskVmError::RuntimeFailed, "Pi could not be prepared on task VM [{$vm->name}].", 502, $exception);
         }
     }
 
@@ -229,9 +230,9 @@ final readonly class TaskVmRuntime
         } catch (TaskVmException $exception) {
             throw $exception;
         } catch (LockTimeoutException $exception) {
-            throw new TaskVmException('task_vm.model_key_failed', 'Another model key operation is running.', 409, $exception);
+            throw new TaskVmException(TaskVmError::ModelKeyFailed, 'Another model key operation is running.', 409, $exception);
         } catch (Throwable $exception) {
-            throw new TaskVmException('task_vm.model_key_failed', 'The group model key could not be confirmed with CLIProxyAPI.', 502, $exception);
+            throw new TaskVmException(TaskVmError::ModelKeyFailed, 'The group model key could not be confirmed with CLIProxyAPI.', 502, $exception);
         }
     }
 
@@ -260,7 +261,7 @@ final readonly class TaskVmRuntime
     {
         $key = $this->proxy->cliproxyManagementKey();
         if ($key === null || $key === '') {
-            throw new TaskVmException('task_vm.model_key_failed', 'Set up the proxycli extension: it holds the CLIProxyAPI management key.', 409);
+            throw new TaskVmException(TaskVmError::ModelKeyFailed, 'Set up the proxycli extension: it holds the CLIProxyAPI management key.', 409);
         }
 
         return $key;
@@ -282,6 +283,6 @@ final readonly class TaskVmRuntime
 
     private function invalidConfig(string $reason): TaskVmException
     {
-        return new TaskVmException('task_vm.invalid_config', "The task VM config is invalid: {$reason}", 500);
+        return new TaskVmException(TaskVmError::InvalidConfig, "The task VM config is invalid: {$reason}", 500);
     }
 }

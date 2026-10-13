@@ -119,7 +119,7 @@ final readonly class TaskVmSettings
             }
         }
 
-        throw new TaskVmException('task_vm.unknown_host', "Node [{$nodeId}] is not a task VM host.");
+        throw new TaskVmException(TaskVmError::UnknownHost, "Node [{$nodeId}] is not a task VM host.");
     }
 
     public function hasHost(int $nodeId): bool
@@ -425,6 +425,6 @@ final readonly class TaskVmSettings
 
     private static function invalid(string $reason): TaskVmException
     {
-        return new TaskVmException('task_vm.invalid_config', "The task VM config is invalid: {$reason}", 500);
+        return new TaskVmException(TaskVmError::InvalidConfig, "The task VM config is invalid: {$reason}", 500);
     }
 }

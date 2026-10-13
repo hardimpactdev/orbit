@@ -32,7 +32,7 @@ final class TaskVmWorkspaceGuard
     {
         if ($group->task_compute !== TaskCompute::Vm) {
             if (TaskVm::forNode($workspace->node_id) instanceof TaskVm) {
-                throw new TaskVmException('task_vm.workspace_mismatch', "Task group [{$group->id}] does not own the task VM that serves its workspace.");
+                throw new TaskVmException(TaskVmError::WorkspaceMismatch, "Task group [{$group->id}] does not own the task VM that serves its workspace.");
             }
 
             return;
@@ -40,12 +40,12 @@ final class TaskVmWorkspaceGuard
 
         $vm = TaskVm::forGroup($group);
         if ($vm?->state === TaskVmState::Parked) {
-            throw new TaskVmException('task_vm.parked', "The task VM [{$vm->name}] of task group [{$group->id}] is parked. Orbit starts it for the group's next work.");
+            throw new TaskVmException(TaskVmError::Parked, "The task VM [{$vm->name}] of task group [{$group->id}] is parked. Orbit starts it for the group's next work.");
         }
         if (! $vm instanceof TaskVm || $vm->state !== TaskVmState::Ready || $vm->node_id === null
             || $workspace->node_id !== $vm->node_id || $workspace->project_id !== $group->project_id
             || $workspace->name !== TaskWorkspaceName::for($group)) {
-            throw new TaskVmException('task_vm.workspace_mismatch', "Task group [{$group->id}] has no workspace on its ready task VM.");
+            throw new TaskVmException(TaskVmError::WorkspaceMismatch, "Task group [{$group->id}] has no workspace on its ready task VM.");
         }
     }
 
@@ -81,10 +81,10 @@ final class TaskVmWorkspaceGuard
 
         $group = $vm->group;
         if (! $group instanceof Task) {
-            throw new TaskVmException('task_vm.foreign_instance', "Node [{$instance->node_id}] is a warm task VM. It serves no Instance until a task group claims it.");
+            throw new TaskVmException(TaskVmError::ForeignInstance, "Node [{$instance->node_id}] is a warm task VM. It serves no Instance until a task group claims it.");
         }
         if ($instance->project_id !== $group->project_id || $instance->name !== TaskWorkspaceName::for($group)) {
-            throw new TaskVmException('task_vm.foreign_instance', "Node [{$instance->node_id}] is a task VM and serves only the workspace of task group [{$group->id}].");
+            throw new TaskVmException(TaskVmError::ForeignInstance, "Node [{$instance->node_id}] is a task VM and serves only the workspace of task group [{$group->id}].");
         }
     }
 }

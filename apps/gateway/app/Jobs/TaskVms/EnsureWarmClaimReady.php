@@ -4,12 +4,10 @@ declare(strict_types=1);
 
 namespace App\Jobs\TaskVms;
 
-use App\Domain\TaskVms\TaskVmQueue;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\TaskVm;
 use Illuminate\Bus\UniqueLock;
 use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
@@ -23,17 +21,12 @@ use Illuminate\Support\Facades\Log;
  */
 final class EnsureWarmClaimReady implements ShouldQueue
 {
-    use Queueable;
+    use TaskVmRowJob;
 
     /** Longer than the tick lock of 300 seconds, so a claim that still runs its steps is never overtaken. */
     public const int DelaySeconds = 330;
 
     public int $tries = 1;
-
-    public function __construct(public int $taskVmId)
-    {
-        $this->onConnection('task-vms')->onQueue(TaskVmQueue::Vms->value);
-    }
 
     public function handle(): void
     {

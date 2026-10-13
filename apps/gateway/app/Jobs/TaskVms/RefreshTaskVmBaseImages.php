@@ -15,7 +15,6 @@ use App\Infrastructure\TaskVms\IncusTaskVmImageSync;
 use App\Models\Node;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -28,7 +27,7 @@ use Throwable;
  */
 final class RefreshTaskVmBaseImages implements ShouldBeUnique, ShouldQueue
 {
-    use Queueable;
+    use TaskVmJob;
 
     public int $tries = 1;
 
@@ -44,7 +43,7 @@ final class RefreshTaskVmBaseImages implements ShouldBeUnique, ShouldQueue
 
     public function __construct()
     {
-        $this->onConnection('task-vms')->onQueue(TaskVmQueue::Images->value);
+        $this->onTaskVmQueue(TaskVmQueue::Images);
     }
 
     public function handle(TaskVmSettings $settings, IncusTaskVmImageBuilder $builder, IncusTaskVmImageSync $sync): void

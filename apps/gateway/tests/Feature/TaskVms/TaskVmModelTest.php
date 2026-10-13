@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCompute;
+use App\Domain\TaskVms\TaskVmError;
+use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmPlacementPolicy;
 use App\Domain\TaskVms\TaskVmProviderKind;
@@ -124,4 +126,18 @@ it('keeps the destroyed row when its Node is removed', function (): void {
     $node->delete();
 
     expect($vm->fresh()?->node_id)->toBeNull();
+});
+
+it('lists every task VM error code of the Gateway in TaskVmError', function (): void {
+    $codes = [];
+    $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(app_path(), FilesystemIterator::SKIP_DOTS));
+    foreach ($files as $file) {
+        if ($file->getExtension() === 'php' && preg_match_all("/'(task_vm\\.[a-z_]+)'/", (string) file_get_contents($file->getPathname()), $matches) > 0) {
+            array_push($codes, ...$matches[1]);
+        }
+    }
+
+    expect($codes)->not->toBeEmpty()
+        ->and(array_values(array_diff(array_unique($codes), array_column(TaskVmError::cases(), 'value'))))->toBe([])
+        ->and(new TaskVmException(TaskVmError::Parked)->errorCode)->toBe('task_vm.parked');
 });

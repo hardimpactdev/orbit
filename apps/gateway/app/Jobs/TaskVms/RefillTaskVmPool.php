@@ -5,11 +5,9 @@ declare(strict_types=1);
 namespace App\Jobs\TaskVms;
 
 use App\Actions\TaskVms\RefillTaskVmPoolAction;
-use App\Domain\TaskVms\TaskVmQueue;
 use App\Models\TaskVm;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Queue\Queueable;
 
 /**
  * Keeps every task VM host's pool of warm VMs at its `warm_vms`. The scheduler queues it every minute while a host
@@ -18,7 +16,7 @@ use Illuminate\Foundation\Queue\Queueable;
  */
 final class RefillTaskVmPool implements ShouldBeUnique, ShouldQueue
 {
-    use Queueable;
+    use TaskVmJob;
 
     public int $tries = 1;
 
@@ -28,7 +26,7 @@ final class RefillTaskVmPool implements ShouldBeUnique, ShouldQueue
 
     public function __construct()
     {
-        $this->onConnection('task-vms')->onQueue(TaskVmQueue::Vms->value);
+        $this->onTaskVmQueue();
     }
 
     /**

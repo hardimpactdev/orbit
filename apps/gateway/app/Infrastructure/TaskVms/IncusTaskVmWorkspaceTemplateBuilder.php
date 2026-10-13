@@ -138,7 +138,7 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
                 try {
                     $this->stage($node, $progress, $name, $work);
                 } catch (Throwable $exception) {
-                    Log::warning('Task VM workspace template is ready, but a cleanup stage failed; the next build retries it.', ['volume' => $volume, 'stage' => $name, 'error' => mb_substr($exception->getMessage(), 0, 2000)]);
+                    Log::warning('Task VM workspace template is ready, but a cleanup stage failed; the next build retries it.', ['volume' => $volume, 'stage' => $name, 'error' => TaskVmException::messageOf($exception)]);
                 }
             }
 

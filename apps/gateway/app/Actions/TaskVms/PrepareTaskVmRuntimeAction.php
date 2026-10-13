@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\TaskVms;
 
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmPoolBackoff;
 use App\Domain\TaskVms\TaskVmState;
@@ -34,7 +35,7 @@ final readonly class PrepareTaskVmRuntimeAction
             return;
         }
         if ($vm->node?->status !== LifecycleStatus::Active) {
-            throw new TaskVmException('task_vm.not_enrolled', "Task VM [{$vm->name}] has no active Node.");
+            throw new TaskVmException(TaskVmError::NotEnrolled, "Task VM [{$vm->name}] has no active Node.");
         }
 
         if ($vm->group_id === null) {

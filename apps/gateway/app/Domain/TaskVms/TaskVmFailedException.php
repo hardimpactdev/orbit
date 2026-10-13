@@ -13,6 +13,9 @@ use RuntimeException;
  */
 final class TaskVmFailedException extends RuntimeException
 {
+    /** The start of the assistance reason of every group whose task VM failed. */
+    public const string ReasonPrefix = 'Task VM failed: ';
+
     public function __construct(public readonly TaskVm $vm)
     {
         parent::__construct(self::reason($vm->name, (string) $vm->error_code, (string) $vm->error_message));
@@ -21,6 +24,12 @@ final class TaskVmFailedException extends RuntimeException
     /** The assistance reason of a group whose task VM failed, naming the VM and its error code. */
     public static function reason(string $name, string $code, string $message): string
     {
-        return "Task VM failed: {$name}: {$code}: {$message} Cancel the group to destroy the VM.";
+        return self::ReasonPrefix."{$name}: {$code}: {$message} Cancel the group to destroy the VM.";
+    }
+
+    /** The assistance reason of a group whose `ready` or `parked` task VM failed: a resume or the sweep failed it. */
+    public static function stoppedReason(string $code, string $message): string
+    {
+        return self::ReasonPrefix."{$code}: {$message} Cancel or complete the group to destroy the VM.";
     }
 }

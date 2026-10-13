@@ -4,16 +4,11 @@ declare(strict_types=1);
 
 namespace App\Jobs\TaskVms;
 
-use App\Domain\Tasks\AssistanceKind;
-use App\Domain\Tasks\TaskAssistance;
-use App\Domain\TaskVms\TaskVmException;
+use App\Actions\TaskVms\FailTaskVmAction;
 use App\Domain\TaskVms\TaskVmFailedException;
 use App\Domain\TaskVms\TaskVmPoolBackoff;
-use App\Domain\TaskVms\TaskVmQueue;
 use App\Domain\TaskVms\TaskVmState;
-use App\Models\Task;
 use App\Models\TaskVm;
-use Illuminate\Foundation\Queue\Queueable;
 use Throwable;
 
 /**
@@ -23,9 +18,7 @@ use Throwable;
  */
 trait ProvisionsTaskVm
 {
-    use Queueable;
-
-    public const string FailedReasonPrefix = 'Task VM failed: ';
+    use TaskVmRowJob;
 
     /** A lost unique lock expires, so a crashed worker never blocks the row for good. */
     public int $uniqueFor = 3600;
@@ -33,36 +26,18 @@ trait ProvisionsTaskVm
     /** A job that outlives its timeout fails the row instead of running again after `retry_after`. */
     public bool $failOnTimeout = true;
 
-    public function __construct(public int $taskVmId)
-    {
-        $this->onConnection('task-vms')->onQueue(TaskVmQueue::Vms->value);
-    }
-
-    public function uniqueId(): string
-    {
-        return (string) $this->taskVmId;
-    }
-
     /** The row becomes `failed`, and its group asks for assistance, so the failure shows in `tasks:status`. A pool row has no group. */
     public function failed(Throwable $exception): void
     {
-        $code = TaskVmException::codeOf($exception);
-        $message = mb_substr($exception->getMessage(), 0, 2000);
-        $failed = TaskVm::query()->whereKey($this->taskVmId)->where('state', TaskVmState::Provisioning)->update([
-            'state' => TaskVmState::Failed,
-            'error_code' => $code,
-            'error_message' => $message,
-        ]);
         $vm = TaskVm::query()->find($this->taskVmId);
-        if ($failed === 1 && $vm instanceof TaskVm && $vm->group_id === null) {
-            // A pool VM has no group to ask: its host waits before the next one, and the refill destroys it.
-            app(TaskVmPoolBackoff::class)->failed($vm, $code, $message);
-
+        if (! $vm instanceof TaskVm) {
             return;
         }
-        $group = $vm?->group;
-        if ($failed === 1 && $vm instanceof TaskVm && $group instanceof Task) {
-            TaskAssistance::apply($group, AssistanceKind::Failure, null, TaskVmFailedException::reason($vm->name, $code, $message), replaceFailure: true);
+        ['error_code' => $code, 'error_message' => $message] = TaskVm::errorFrom($exception);
+        $failed = app(FailTaskVmAction::class)->execute($vm, [TaskVmState::Provisioning], $code, $message, TaskVmFailedException::reason($vm->name, $code, $message));
+        if ($failed && $vm->group_id === null) {
+            // A pool VM has no group to ask: its host waits before the next one, and the refill destroys it.
+            app(TaskVmPoolBackoff::class)->failed($vm, $code, $message);
         }
     }
 

@@ -19,6 +19,7 @@ use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmPlacementPolicy;
@@ -359,11 +360,11 @@ describe('failure and backoff', function (): void {
         tvm_pool_refill();
 
         expect($stuck->fresh()?->state)->toBe(TaskVmState::Destroying)
-            ->and($stuck->fresh()?->error_code)->toBe(RefillTaskVmPoolAction::StartTimeoutCode)
+            ->and($stuck->fresh()?->error_code)->toBe(TaskVmError::PoolStartTimeout->value)
             ->and($young->fresh()?->state)->toBe(TaskVmState::Provisioning);
         Queue::assertPushed(DestroyTaskVm::class, fn (DestroyTaskVm $job): bool => $job->taskVmId === $stuck->id);
         Log::shouldHaveReceived('error')->withArgs(fn (string $message, array $context): bool => str_contains($message, 'A warm task VM failed')
-            && $context['task_vm'] === $stuck->name && $context['error_code'] === RefillTaskVmPoolAction::StartTimeoutCode);
+            && $context['task_vm'] === $stuck->name && $context['error_code'] === TaskVmError::PoolStartTimeout->value);
 
         // Once destroyed, its slot is free again for a pool VM after the wait.
         $stuck->update(['state' => TaskVmState::Destroyed]);
@@ -800,7 +801,7 @@ describe('a warm VM', function (): void {
         app()->call([new SweepTaskVmHosts, 'handle']);
 
         expect($vm->fresh()?->state)->toBe(TaskVmState::Failed)
-            ->and($vm->fresh()?->error_code)->toBe(SweepTaskVmHosts::MissingCode)
+            ->and($vm->fresh()?->error_code)->toBe(TaskVmError::VmMissing->value)
             ->and(Task::query()->count())->toBe(0);
     });
 
