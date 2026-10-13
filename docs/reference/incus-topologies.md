@@ -153,7 +153,7 @@ A topology also runs inside a VM, such as a task VM, with nested KVM. Run `sudo 
 | AppArmor | Adds `file mr /usr/bin/bash,` to `/etc/apparmor.d/local/wg-quick` and reloads the profile, so `wg-quick` runs in the unprivileged operator container. |
 | Worktrees | Creates `/fast/worktrees/orbit`, the default worktree root, owned by the invoking user |
 | Isolation | Installs the nftables table `orbit-e2e-isolation` and the boot unit `orbit-e2e-isolation.service` that loads it |
-| UFW | When UFW is active, as on an enrolled task VM, allows DHCP and DNS in, and routed traffic in, on `incusbr0` and `oe+` |
+| UFW | When UFW is active, as on an enrolled task VM, allows DHCP and DNS over UDP in, and routed traffic in, on `incusbr0` and `oe+` |
 
 A task VM's `/etc/subuid` holds only the range of its user `orbit`, which is why the Idmap step exists.
 

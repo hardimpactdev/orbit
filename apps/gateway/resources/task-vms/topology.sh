@@ -45,11 +45,12 @@ case ${1-} in
     status)
         [[ $# -eq 2 ]] && valid_run "$2" || exit 64
         if [[ -s $state/$2.json ]]; then
-            # A ready topology from an earlier boot is gone: its guests stopped with the VM.
+            # A ready topology from an earlier boot is gone: its guests stopped with the VM. A run written before the
+            # boot ID was recorded has none, and counts as ready.
             # shellcheck disable=SC2016 # PHP code, not shell.
             php -r '
                 $result = json_decode((string) file_get_contents($argv[1]), true, 16, JSON_THROW_ON_ERROR);
-                if (($result["state"] ?? null) === "ready" && ($result["boot_id"] ?? null) !== trim((string) file_get_contents("/proc/sys/kernel/random/boot_id"))) {
+                if (($result["state"] ?? null) === "ready" && isset($result["boot_id"]) && $result["boot_id"] !== trim((string) file_get_contents("/proc/sys/kernel/random/boot_id"))) {
                     $result = ["state" => "stale"];
                 }
                 echo json_encode($result, JSON_UNESCAPED_SLASHES), "\n";

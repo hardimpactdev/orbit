@@ -152,7 +152,7 @@ systemctl enable orbit-e2e-isolation.service >/dev/null
 if ufw status 2>/dev/null | grep -qx 'Status: active'; then
     for interface in "$bridge" 'oe+'; do
         ufw allow in on "$interface" to any port 67 proto udp comment 'orbit-e2e dhcp' >/dev/null
-        ufw allow in on "$interface" to any port 53 comment 'orbit-e2e dns' >/dev/null
+        ufw allow in on "$interface" to any port 53 proto udp comment 'orbit-e2e dns' >/dev/null
         ufw route allow in on "$interface" comment 'orbit-e2e guests' >/dev/null
     done
 fi

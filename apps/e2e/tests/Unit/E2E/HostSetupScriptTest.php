@@ -66,7 +66,7 @@ describe('bin/e2e-topology-host-setup', function () {
         expect($source)->toContain("if ufw status 2>/dev/null | grep -qx 'Status: active'; then")
             ->toContain('for interface in "$bridge" \'oe+\'; do')
             ->toContain('ufw allow in on "$interface" to any port 67 proto udp')
-            ->toContain('ufw allow in on "$interface" to any port 53')
+            ->toContain('ufw allow in on "$interface" to any port 53 proto udp')
             ->toContain('ufw route allow in on "$interface"');
     });
 
