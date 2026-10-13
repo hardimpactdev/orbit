@@ -2276,7 +2276,7 @@ export interface paths {
         head?: never;
         /**
          * Update Node settings
-         * @description Update typed storage and task worker settings on a node.
+         * @description Update typed storage settings on a node.
          */
         patch: operations["node-settings"];
         trace?: never;
@@ -4360,8 +4360,6 @@ export interface components {
             root?: string | null;
             task_check?: string | null;
             task_workspace_routed?: boolean;
-            /** @enum {string} */
-            task_compute?: "shared" | "vm";
             review_and_merge?: boolean;
             merge_check?: string | null;
         };
@@ -4483,13 +4481,9 @@ export interface components {
         };
         NodeSettings: {
             apps?: components["schemas"]["NodeStorageApps"] | null;
-            tasks?: components["schemas"]["NodeTaskSettings"] | null;
         };
         NodeStorageApps: {
             path?: string | null;
-        };
-        NodeTaskSettings: {
-            worker?: string | null;
         };
         NodeUpdating: {
             /** @enum {string} */
@@ -4771,8 +4765,6 @@ export interface components {
             tasks?: components["schemas"]["Task"][];
             /** @enum {string} */
             execution_mode?: "managed" | "existing_thread";
-            /** @enum {string|null} */
-            task_compute?: "shared" | "vm" | null;
             capacity_wait_reason?: string | null;
             /** @enum {string|null} */
             sandbox_power?: "running" | "stopped" | "destroyed" | null;
@@ -13401,10 +13393,6 @@ export interface operations {
                     apps?: {
                         path?: string | null;
                     } | null;
-                    tasks?: {
-                        /** @enum {string|null} */
-                        worker?: "none" | null;
-                    } | null;
                 };
             };
         };
@@ -14343,11 +14331,6 @@ export interface operations {
                     task_check?: string | null;
                     /** @description Whether new task workspaces get a Route (true or false) */
                     task_workspace_routed?: boolean;
-                    /**
-                     * @description Compute for future task groups (shared or vm)
-                     * @enum {string}
-                     */
-                    task_compute?: "shared" | "vm";
                 };
             };
         };
@@ -14541,11 +14524,6 @@ export interface operations {
                     task_check?: string | null;
                     /** @description Change routing for future task workspaces (true or false) */
                     task_workspace_routed?: boolean;
-                    /**
-                     * @description Compute for future task groups (shared or vm)
-                     * @enum {string}
-                     */
-                    task_compute?: "shared" | "vm";
                     /** @description Review every push, review incoming pull requests, and merge reviewed green heads (true or false) */
                     review_and_merge?: boolean;
                     /** @description The check that must pass on a head before Orbit merges it, such as "Required checks" */
