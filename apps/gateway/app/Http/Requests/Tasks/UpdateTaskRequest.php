@@ -30,7 +30,7 @@ final class UpdateTaskRequest extends FormRequest
             'title' => ['sometimes', 'string', 'max:160'],
             'brief' => ['sometimes', 'string', 'max:8000'],
             'position' => ['sometimes', 'integer:strict', 'min:1'],
-            'topology' => ['sometimes', 'array', 'list', 'max:3', new TaskTopologyList],
+            'topology' => ['sometimes', 'array', 'list', 'max:2', new TaskTopologyList],
             'topology.*' => ['required', 'string', 'max:64', 'regex:/\A(?:app-dev|app-prod|app-prod-2)(?:\+ingress)?\z/'],
             'deliverables' => ['sometimes', 'array', 'list', 'max:5', new DistinctDeliverableIds],
             'deliverables.*' => ['required', 'array:id,type,description,path,change,command,directory,fails_on_base,paths'],

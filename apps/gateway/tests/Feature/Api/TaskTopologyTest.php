@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Tasks\TaskTopology;
 use App\Models\Task;
 use App\Models\TaskDefinition;
 
@@ -14,10 +15,10 @@ it('preserves per-subtask declarations through group creation edits and standalo
         'project_id' => $project->id, 'title' => 'Declared nodes', 'brief' => 'Use private workload nodes.',
         'tasks' => [
             ['title' => 'First', 'brief' => 'Needs dev.', 'topology' => ['app-dev']],
-            ['title' => 'Second', 'brief' => 'Also needs prod.', 'topology' => ['app-dev', 'app-prod', 'app-prod-2']],
+            ['title' => 'Second', 'brief' => 'Also needs dev.', 'topology' => ['app-dev']],
         ],
     ])->assertCreated()->assertJsonPath('data.tasks.0.topology', ['app-dev'])
-        ->assertJsonPath('data.tasks.1.topology', ['app-dev', 'app-prod', 'app-prod-2'])->json('data');
+        ->assertJsonPath('data.tasks.1.topology', ['app-dev'])->json('data');
     $task = Task::query()->findOrFail($group['tasks'][0]['id']);
     expect($task->topology)->toBe(['app-dev']);
     $url = '/api/v1/task-groups/'.$group['id'].'/tasks';
@@ -26,6 +27,9 @@ it('preserves per-subtask declarations through group creation edits and standalo
     expect($task->fresh()->topology)->toBe([]);
     $this->postJson($url, ['title' => 'Third', 'brief' => 'Production.', 'topology' => ['app-prod']])
         ->assertCreated()->assertJsonPath('data.topology', ['app-prod']);
+    // app-dev and app-prod are two test nodes; a third, app-prod-2, would not fit a large VM.
+    $this->postJson($url, ['title' => 'Fourth', 'brief' => 'Second production node.', 'topology' => ['app-prod', 'app-prod-2']])
+        ->assertUnprocessable()->assertJsonPath('error.message', TaskTopology::TooMany);
 });
 
 it('rejects invalid declarations without creating a group', function (mixed $topology): void {
@@ -42,6 +46,7 @@ it('rejects invalid declarations without creating a group', function (mixed $top
     'node twice with roles' => [['app-prod', 'app-prod+ingress']], 'unknown role' => [['app-prod+router']],
     'conflicting role' => [['app-dev+ingress']], 'role without a Cluster-free path' => [['app-prod+database']],
     'repeated role' => [['app-prod+ingress+ingress']], 'second production node alone' => [['app-prod-2']],
+    'three nodes' => [['app-dev', 'app-prod', 'app-prod-2']]
 ]);
 
 it('stores declared roles and refuses a role that does not fit its node', function (): void {

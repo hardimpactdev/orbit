@@ -56,6 +56,12 @@ use Illuminate\Support\Carbon;
  */
 final class TaskVm extends Model
 {
+    /**
+     * The columns that forget the VM's nested topology. Its test machines stop when the VM stops, so a park and a
+     * resume both clear it, and the next subtask with a topology prepares it again.
+     */
+    public const array ForgetTopology = ['topology' => null, 'topology_state' => null, 'topology_run' => null, 'topology_started_at' => null, 'topology_error' => null];
+
     /** @var list<string> */
     #[\Override]
     protected $fillable = [

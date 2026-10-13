@@ -401,14 +401,14 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
     }
 
     /**
-     * The shape of a topology declaration: a list of at most three distinct entries. The Gateway validates the
+     * The shape of a topology declaration: a list of at most two distinct entries. The Gateway validates the
      * entries themselves, such as `app-prod+ingress`.
      *
      * @return list<string>|null
      */
     protected static function topology(mixed $value): ?array
     {
-        if (! is_array($value) || ! array_is_list($value) || count($value) > 3) {
+        if (! is_array($value) || ! array_is_list($value) || count($value) > 2) {
             return null;
         }
         $entries = [];

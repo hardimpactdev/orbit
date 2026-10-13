@@ -151,7 +151,7 @@ At the claim, Orbit decides the size of the group's VM once. It takes the union 
 | --- | --- | --- | --- | --- |
 | `normal` | No subtask declares a topology | The host's `cpus`, `memory`, and `disk` | 1 | Taken when one is ready |
 | `medium` | The topology has one test node, or no subtask declares a topology and the Project is in `task_vms.medium_projects` | 4 vCPU, 8 GiB of memory, and a 40 GiB disk | 2 | Never: always a new VM, and never at UpCloud |
-| `large` | The topology has two or more test nodes | 6 vCPU, 12 GiB of memory, and a 60 GiB disk | 3 | Never: always a new VM, and never at UpCloud |
+| `large` | The topology has two test nodes | 6 vCPU, 12 GiB of memory, and a 60 GiB disk | 3 | Never: always a new VM, and never at UpCloud |
 
 A test node is `app-dev`, `app-prod`, or `app-prod-2`, whatever roles its entry adds. The [test Gateway and the operator](/reference/incus-topologies#declared-nodes) run in every topology and do not count. The sizes come from the nested topology spike on beast. There, the test Gateway, an `app-dev` node, and the operator used about 2.7 GiB together. A large VM that ran four test machines used all of its 12 GiB on the host under IO.
 
@@ -1097,7 +1097,7 @@ The setup and teardown steps run on the VM as `orbit`. The `seed-dependencies` s
 
 ### Declare a topology
 
-A subtask declares the test nodes it needs in its `topology` field, for example `["app-dev"]` or `["app-dev", "app-prod+ingress"]`. Each entry names one node, `app-dev`, `app-prod`, or `app-prod-2`, at most once. After a `+` it may add the role `ingress`. `app-prod-2` needs `app-prod` in the same list. A role that conflicts with the node's base role, such as `app-dev+ingress`, is refused, by the [role compatibility](/reference/node-provisioning#role-compatibility) rules. The format takes more roles once one is proven to converge on a test node. Subtask creation, group creation, and stored task definitions keep the declaration. Only a subtask that has not started can change it.
+A subtask declares the test nodes it needs in its `topology` field, for example `["app-dev"]` or `["app-dev", "app-prod+ingress"]`. Each entry names one node, `app-dev`, `app-prod`, or `app-prod-2`, at most once. The subtasks of a group declare at most two test nodes together: in the spike, a 12 GiB VM was full with two, so a third would run it out of memory. After a `+` it may add the role `ingress`. `app-prod-2` needs `app-prod` in the same list. A role that conflicts with the node's base role, such as `app-dev+ingress`, is refused, by the [role compatibility](/reference/node-provisioning#role-compatibility) rules. The format takes more roles once one is proven to converge on a test node. Subtask creation, group creation, and stored task definitions keep the declaration. Only a subtask that has not started can change it.
 
 The group's topology is the union of its subtasks that are not cancelled: each node once, with every role any subtask adds to it. It decides the [VM size](#size-by-declared-topology) at the claim.
 
@@ -1114,15 +1114,21 @@ Before a subtask that declares a topology runs its baseline check or its impleme
 
 Every task VM's user `orbit` is in the `incus-admin` group from its first boot, so agents can run `bin/e2e-topology` once Incus is installed. The row stores the union in `topology`, its state in `topology_state` (`preparing` or `ready`), and the run in `topology_run`.
 
-A ready topology serves every next subtask whose declaration it holds. A subtask that declares more starts the unit again, which releases the topology and acquires the new union; the images stay. A [parked](#park-and-resume) VM forgets its topology, because its test machines stop with it, and the next subtask prepares it again. A shared group cannot run a topology: its subtask waits with `Declared topology runs only in a task VM group.`
+A ready topology serves every next subtask whose declaration it holds. A subtask that declares more starts the unit again, which releases the topology and acquires the new union; the images stay. A [parked](#park-and-resume) or resumed VM forgets its topology, because its test machines stop with it, and the next subtask prepares it again. A shared group cannot run a topology: its subtask waits with `Declared topology runs only in a task VM group.`
 
-When the unit fails, or stops without a result, the subtask asks for assistance with the step and the end of its log. The row forgets the run, so a resolution prepares again. A unit runs for at most 75 minutes.
+When the unit fails, or stops without a result, the subtask asks for assistance with the step and the end of its log. The row forgets the run, so a resolution prepares again. A unit runs for at most 75 minutes. A start stops the units of earlier runs first, so one preparation runs at a time. When the start call fails, Orbit reads the run's state: a unit that runs or finished is the run, and only a run without a unit fails. Host setup gets the Gateway's VPN subnet, so its input rule covers the VM's own address.
 
 ### Prove work on a topology
 
 The implementer and the reviewer use the topology with `bin/e2e-topology`, as the [using-incus-topologies](https://github.com/nckrtl/orbit/blob/main/.agents/skills/using-incus-topologies/SKILL.md) skill describes. Their prompts name the declared nodes. They never acquire or release it.
 
-The reviewer proves each deliverable on the declared nodes with `bin/e2e-topology exec TASK-<group> NODE --argv=JSON --record=LABEL`. The harness writes the node, the command, the exit code, and the output to the [evidence log](/reference/incus-topologies#evidence-log). When the reviewer approves a subtask that declares a topology, Orbit reads that log. The approval passes only when the log holds, for each node the subtask declares, a recorded command that exited 0 and started after the implementer's last handoff. Otherwise Orbit reminds the reviewer with the nodes that lack evidence, and the subtask is not approved.
+The reviewer proves each deliverable on the declared nodes with `bin/e2e-topology exec TASK-<group> NODE --argv=JSON --record=LABEL`. The harness writes the node, the command, the exit code, and the output to the [evidence log](/reference/incus-topologies#evidence-log). When the reviewer approves a subtask that declares a topology, Orbit reads the newest MiB of that log. The approval passes only when the log holds, for each node the subtask declares, a record that counts. Otherwise Orbit reminds the reviewer with the nodes that lack evidence, and the subtask is not approved. A record counts when:
+
+- it has the harness's shape: a blank line or the start of the file, the `===` header, the `$` command line, and `--- stdout`, so a header inside command output does not count;
+- its command exited 0, started after the implementer's last handoff, and did not start after the time Orbit reads the log;
+- its command does work: `true`, `:`, `false`, `exit`, `echo`, `printf`, `sleep`, and `yes`, also inside `sh -c` or `bash -c`, do not count.
+
+Orbit adds the counted records, with their time, node, label, and command, to the approval, and so to its commit, for a person to audit. Appending to `.e2e/evidence.log` is not a workspace change: the file is ignored, and the reviewer's prompt says so.
 
 `task_vms.topology_paths` is the safety net. It maps a Project ID to path patterns in the syntax of [file deliverables](/reference/tasks#deliverables). For Orbit, list its Node, agent, guest, deployment, and routing code, for example:
 

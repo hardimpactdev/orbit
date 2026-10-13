@@ -106,7 +106,7 @@ it('starts the preparation unit once, waits while it runs, and admits the subtas
     expect($vm?->topology_state)->toBe(TaskVmTopologyState::Preparing)
         ->and($vm?->topology)->toBe(['app-prod+ingress'])
         ->and($vm?->topology_run)->toMatch('/\A[0-9a-f]{16}\z/')
-        ->and(array_slice($start->arguments, 3))->toBe(['topology', 'start', $vm?->topology_run, '/home/orbit/apps/orbit/workspace', 'TASK-'.$this->group->id, 'app-prod+ingress', '25GiB'])
+        ->and(array_slice($start->arguments, 3))->toBe(['topology', 'start', $vm?->topology_run, '/home/orbit/apps/orbit/workspace', 'TASK-'.$this->group->id, 'app-prod+ingress', '25GiB', '10.44.0.0/24'])
         ->and($start->arguments[0])->toBe('bash')
         ->and($start->input)->toBe(file_get_contents(resource_path('task-vms/topology.sh')));
 
@@ -157,7 +157,7 @@ it('waits when the unit state cannot be read, and fails when it cannot start', f
     expect($this->vm->fresh()?->topology_state)->toBe(TaskVmTopologyState::Preparing);
 
     $this->vm->update(['topology_state' => null]);
-    topology_admission_ssh([new CommandResult(1, '', 'sudo: a password is required', 1, false)]);
+    topology_admission_ssh([new CommandResult(1, '', 'sudo: a password is required', 1, false), topology_admission_result('{"state":"lost"}')]);
     expect(fn () => app(TaskTopologyAdmission::class)->prepare($this->group, $subtask))->toThrow(TaskTopologyFailedException::class, 'failed at step start. The end of its log: sudo: a password is required');
 });
 
@@ -174,16 +174,29 @@ it('makes a subtask wait when its group cannot run its topology', function (): v
     expect(fn () => app(TaskTopologyAdmission::class)->prepare($shared, topology_admission_subtask($shared, ['app-dev'])))->toThrow(TaskCapacityException::class, TaskVmTopologyAdmission::SharedGroup);
 });
 
-it('reads the evidence log headers and names the declared nodes without a successful entry since the handoff', function (): void {
-    $ssh = topology_admission_ssh([topology_admission_result(implode("\n", [
-        '=== 2026-10-13T10:00:00.000Z before handoff node=app-dev exit=0 duration=10ms end=2026-10-13T10:00:00.010Z',
-        '=== 2026-10-13T11:00:00.000Z ingress check node=app-prod exit=1 duration=10ms end=2026-10-13T11:00:00.010Z',
-        '=== 2026-10-13T11:01:00.000Z node list node=app-dev exit=0 duration=10ms end=2026-10-13T11:01:00.010Z',
-    ]))]);
-    $subtask = topology_admission_subtask($this->group, ['app-dev', 'app-prod+ingress']);
+it('reads the newest MiB of the evidence log and counts its records since the handoff', function (): void {
+    $entry = static fn (string $start, string $label, string $node, int $exit): string => "=== {$start} {$label} node={$node} exit={$exit} duration=10ms end={$start}\n\$ orbit node:list\n--- stdout\nok\n--- stderr\n\n";
+    $ssh = topology_admission_ssh([topology_admission_result(
+        $entry('2026-10-13T10:00:00.000Z', 'before handoff', 'app-dev', 0)
+        .$entry('2026-10-13T11:00:00.000Z', 'ingress check', 'app-prod', 1)
+        .$entry('2026-10-13T11:01:00.000Z', 'node list', 'app-dev', 0),
+    )]);
 
-    $missing = app(TaskTopologyAdmission::class)->missingEvidence($this->group, $subtask, CarbonImmutable::parse('2026-10-13T10:30:00Z'));
+    $evidence = app(TaskTopologyAdmission::class)->evidence($this->group, CarbonImmutable::parse('2026-10-13T10:30:00Z'));
 
-    expect($missing)->toBe(['app-prod'])
-        ->and(array_slice($ssh->commands[0]->arguments, 3))->toBe(['evidence', '/home/orbit/apps/orbit/workspace']);
+    expect($evidence->missing(['app-dev', 'app-prod']))->toBe(['app-prod'])
+        ->and(array_slice($ssh->commands[0]->arguments, 3))->toBe(['evidence', '/home/orbit/apps/orbit/workspace'])
+        ->and($ssh->commands[0]->arguments[2])->toContain('tail -c 1048576');
+});
+
+it('keeps a run whose unit started although the start call failed, and fails one without a unit', function (): void {
+    $subtask = topology_admission_subtask($this->group, ['app-dev']);
+    topology_admission_ssh([new CommandResult(255, '', 'Connection timed out', 1, false), topology_admission_result('{"state":"running"}')]);
+
+    expect(fn () => app(TaskTopologyAdmission::class)->prepare($this->group, $subtask))->toThrow(TaskCapacityException::class, 'preparing the topology app-dev');
+    expect($this->vm->fresh()?->topology_state)->toBe(TaskVmTopologyState::Preparing);
+
+    $this->vm->update(['topology_state' => null]);
+    topology_admission_ssh([new CommandResult(255, '', 'Connection timed out', 1, false), topology_admission_result('{"state":"lost"}')]);
+    expect(fn () => app(TaskTopologyAdmission::class)->prepare($this->group, $subtask))->toThrow(TaskTopologyFailedException::class, 'failed at step start. The end of its log: Connection timed out');
 });

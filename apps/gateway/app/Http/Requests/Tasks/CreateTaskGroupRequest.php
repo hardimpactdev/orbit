@@ -41,7 +41,7 @@ final class CreateTaskGroupRequest extends FormRequest
             'tasks' => ['sometimes', 'array', 'max:50'],
             'tasks.*.title' => ['required', 'string', 'max:160'],
             'tasks.*.brief' => ['required', 'string', 'max:8000'],
-            'tasks.*.topology' => ['sometimes', 'array', 'list', 'max:3', new TaskTopologyList],
+            'tasks.*.topology' => ['sometimes', 'array', 'list', 'max:2', new TaskTopologyList],
             'tasks.*.topology.*' => ['required', 'string', 'max:64', 'regex:/\A(?:app-dev|app-prod|app-prod-2)(?:\+ingress)?\z/'],
             'tasks.*.deliverables' => ['sometimes', 'array', 'list', 'max:5', new DistinctDeliverableIds],
             'tasks.*.deliverables.*' => ['required', 'array:id,type,description,path,change,command,directory,fails_on_base,paths'],

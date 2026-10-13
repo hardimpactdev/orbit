@@ -330,7 +330,6 @@ describe('allocation', function (): void {
         'app-dev' => [['app-dev'], TaskVmSize::Medium, 2],
         'app-prod with a role' => [['app-prod+ingress'], TaskVmSize::Medium, 2],
         'two nodes' => [['app-dev', 'app-prod'], TaskVmSize::Large, 3],
-        'three nodes' => [['app-dev', 'app-prod', 'app-prod-2'], TaskVmSize::Large, 3],
     ]);
 
     it('gives a group of a medium Project a medium VM of two slots, and a large one for a topology', function (): void {

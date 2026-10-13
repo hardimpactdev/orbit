@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Prepares a task group's declared E2E topology nested in its task VM, as the managed user.
 #
-#   topology.sh start RUN CHECKOUT ISSUE NODES POOL_SIZE   install this script and start the unit for RUN
+#   topology.sh start RUN CHECKOUT ISSUE NODES POOL_SIZE VPN_SUBNET   install this script and start the unit for RUN
 #   topology.sh status RUN                                 print the state of RUN as one JSON line
-#   topology.sh run RUN CHECKOUT ISSUE NODES POOL_SIZE     the unit's work: host setup, role images, acquire
+#   topology.sh run RUN CHECKOUT ISSUE NODES POOL_SIZE VPN_SUBNET     the unit's work: host setup, role images, acquire
 #
 # The Gateway runs it with `bash -c`, and sends it on stdin too to `start`, which installs it for the unit. `run`
 # writes exactly one result file per run, so a unit that stops without one was killed. Every harness command runs from
@@ -20,18 +20,26 @@ valid_run() { [[ $1 =~ ^[a-z0-9]{8,40}$ ]]; }
 
 case ${1-} in
     start)
-        [[ $# -eq 6 ]] && valid_run "$2" || exit 64
+        [[ $# -eq 7 ]] && valid_run "$2" || exit 64
         [[ $3 == /* && -d $3 ]] || { echo "topology: the checkout $3 does not exist." >&2; exit 66; }
-        [[ $4 =~ ^TASK-[1-9][0-9]{0,8}$ && $5 =~ ^[a-z0-9+,-]*$ && $6 =~ ^[1-9][0-9]*GiB$ ]] || exit 64
+        [[ $4 =~ ^TASK-[1-9][0-9]{0,8}$ && $5 =~ ^[a-z0-9+,-]*$ && $6 =~ ^[1-9][0-9]*GiB$ && $7 =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$ ]] || exit 64
         install -d -m 0700 "$(dirname "$self")" "$state"
         cat >"$self.new"
         chmod 0700 "$self.new"
         mv -f -- "$self.new" "$self"
+        # A repeated start of a run that already runs leaves it alone.
+        if systemctl is-active --quiet "$unit_prefix$2.service"; then
+            exit 0
+        fi
+        # One preparation at a time: a unit of an earlier run, whose start the Gateway lost, stops first.
+        for unit in $(systemctl list-units --plain --no-legend --state=active "$unit_prefix*" | awk '{print $1}'); do
+            sudo -n systemctl stop -- "$unit"
+        done
         rm -f -- "$state/$2.json" "$state/$2.log"
         exec sudo -n systemd-run --quiet --collect --unit="$unit_prefix$2" \
             --uid="$(id -un)" --gid="$(id -gn)" --working-directory="$3" \
             --setenv=HOME="$HOME" --property=RuntimeMaxSec="$max_seconds" \
-            -- "$self" run "$2" "$3" "$4" "$5" "$6"
+            -- "$self" run "$2" "$3" "$4" "$5" "$6" "$7"
         ;;
     status)
         [[ $# -eq 2 ]] && valid_run "$2" || exit 64
@@ -44,8 +52,8 @@ case ${1-} in
         fi
         ;;
     run)
-        [[ $# -eq 6 ]] && valid_run "$2" || exit 64
-        run=$2 checkout=$3 issue=$4 nodes=$5 pool_size=$6
+        [[ $# -eq 7 ]] && valid_run "$2" || exit 64
+        run=$2 checkout=$3 issue=$4 nodes=$5 pool_size=$6 vpn_subnet=$7
         log="$state/$run.log"
         exec >>"$log" 2>&1
         step=start
@@ -72,7 +80,8 @@ case ${1-} in
         [[ -e apps/gateway/.env ]] || cp apps/gateway/.env.example apps/gateway/.env
 
         step=host-setup
-        sudo -n bin/e2e-topology-host-setup --pool-size="$pool_size"
+        # The input rule keeps topology guests off this VM's own address in the fleet's VPN subnet.
+        sudo -n bin/e2e-topology-host-setup --pool-size="$pool_size" --wireguard-subnet="$vpn_subnet"
 
         step=images
         roles=(gateway operator)

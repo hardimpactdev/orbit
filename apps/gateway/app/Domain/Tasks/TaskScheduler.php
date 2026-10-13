@@ -704,6 +704,7 @@ final readonly class TaskScheduler
 
         $instance = $group->taskable;
         $pullRequest = null;
+        $evidenceSummary = null;
         $items = [$this->receiptItem($read, $receipt)];
         if ($receipt instanceof TaskComment && $outcome === TaskTurnOutcome::Approved) {
             $onBranch = $instance instanceof Instance && $this->workspace->currentBranch($instance) === 'task-'.$group->id;
@@ -713,7 +714,7 @@ final readonly class TaskScheduler
                 $items[] = $confirmation;
             }
             try {
-                $evidence = $this->topologyEvidenceItem($group, $task);
+                [$evidence, $evidenceSummary] = $this->topologyEvidenceItem($group, $task);
             } catch (TaskCheckException $exception) {
                 $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
@@ -754,6 +755,10 @@ final readonly class TaskScheduler
             }
 
             return true;
+        }
+        // The counted records go into the approval, and so into its commit, for a person to audit.
+        if (is_string($evidenceSummary) && ! str_contains($receipt->body, $evidenceSummary)) {
+            $receipt->update(['body' => rtrim($receipt->body)."\n\n".$evidenceSummary]);
         }
 
         if ($task->isFinalReview()) {
@@ -1505,20 +1510,28 @@ final readonly class TaskScheduler
 
     /**
      * ADR 0200: the approval of a subtask that declares a topology needs recorded evidence on each declared node,
-     * started after the implementer's last handoff. Null when the subtask declares none.
+     * started after the implementer's last handoff. Returns the rubric item and the summary of the counted records,
+     * which the approval carries for a person to audit; both null when the subtask declares none.
+     *
+     * @return array{0: ?TaskRubricItem, 1: ?string}
      *
      * @throws TaskCheckException when the evidence log cannot be read
      */
-    private function topologyEvidenceItem(Task $group, Task $task): ?TaskRubricItem
+    private function topologyEvidenceItem(Task $group, Task $task): array
     {
-        if (TaskTopology::from($task->topology ?? []) === []) {
-            return null;
+        $nodes = TaskTopology::nodes(TaskTopology::from($task->topology ?? []));
+        if ($nodes === []) {
+            return [null, null];
         }
         $handoff = $task->completion_handoff_comment_id === null ? null : TaskComment::query()->find($task->completion_handoff_comment_id);
         $since = $handoff instanceof TaskComment ? $handoff->posted_at : ($task->started_at ?? now());
-        $missing = $this->topologyAdmission->missingEvidence($group, $task, $since);
+        $evidence = $this->topologyAdmission->evidence($group, $since);
+        $missing = $evidence->missing($nodes);
 
-        return new TaskRubricItem('topology_evidence', $missing === [], $missing === [] ? '' : TaskTopologyEvidence::reminder($group->id, $missing));
+        return [
+            new TaskRubricItem('topology_evidence', $missing === [], $missing === [] ? '' : TaskTopologyEvidence::reminder($group->id, $missing)),
+            $missing === [] ? $evidence->summary($nodes) : null,
+        ];
     }
 
     /**

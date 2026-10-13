@@ -65,7 +65,7 @@ final class ResumeTaskVm implements ShouldBeUnique, ShouldQueue
         while (true) {
             if ($runtime->responds($vm)) {
                 TaskVm::query()->whereKey($vm->id)->where('state', TaskVmState::Parked)
-                    ->update(['state' => TaskVmState::Ready, 'error_code' => null, 'error_message' => null]);
+                    ->update(['state' => TaskVmState::Ready, 'error_code' => null, 'error_message' => null, ...TaskVm::ForgetTopology]);
 
                 return;
             }

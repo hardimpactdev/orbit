@@ -13,6 +13,7 @@ use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Domain\Tasks\TaskTopologyEvidence;
 use App\Domain\Tasks\TaskTopologyFailedException;
 use App\Domain\Tasks\TaskWait;
+use App\Domain\WireGuard\VpnSettings;
 use App\Domain\TaskVms\TaskVmPlacement;
 use App\Domain\TaskVms\TaskVmTopologyState;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
@@ -46,7 +47,7 @@ final readonly class TaskVmTopologyAdmission implements TaskTopologyAdmission
 
     private const int ReasonLimit = 2000;
 
-    public function __construct(private DevelopmentSshExecutor $ssh) {}
+    public function __construct(private DevelopmentSshExecutor $ssh, private VpnSettings $vpn) {}
 
     public function prepare(Task $group, Task $task): void
     {
@@ -82,29 +83,25 @@ final readonly class TaskVmTopologyAdmission implements TaskTopologyAdmission
         throw new TaskCapacityException(TaskWait::Topology, self::preparing($topology));
     }
 
-    public function missingEvidence(Task $group, Task $task, CarbonInterface $since): array
+    public function evidence(Task $group, CarbonInterface $since): TaskTopologyEvidence
     {
-        $nodes = TaskTopology::nodes(TaskTopology::from($task->topology ?? []));
         $vm = TaskVmPlacement::forGroup($group);
         $instance = $group->taskable;
-        if ($nodes === []) {
-            return [];
-        }
         if (! $vm instanceof TaskVm || ! $vm->node instanceof Node || ! $instance instanceof Instance) {
-            return $nodes;
+            return TaskTopologyEvidence::parse('', $since, now());
         }
         try {
-            // Only the entry headers count, so the output stays small however much the commands printed.
+            // The newest MiB: a record cut at its start no longer has the shape that counts.
             $result = $this->run($vm->node, new RemoteCommand(
-                ['bash', '-c', 'log="$1/.e2e/evidence.log"; [ -f "$log" ] || exit 0; grep -a "^=== " -- "$log" || true', 'evidence', (string) $instance->checkout_path],
-                maxOutputBytes: 1048576,
+                ['bash', '-c', 'log="$1/.e2e/evidence.log"; [ -f "$log" ] || exit 0; tail -c 1048576 -- "$log"', 'evidence', (string) $instance->checkout_path],
+                maxOutputBytes: 1100000,
                 timeout: 30,
             ));
         } catch (RuntimeConvergenceException $exception) {
             throw new TaskCheckException('Orbit could not read the topology evidence log: '.$exception->getMessage(), previous: $exception);
         }
 
-        return TaskTopologyEvidence::missing($result->stdout, $nodes, $since);
+        return TaskTopologyEvidence::parse($result->stdout, $since, now());
     }
 
     /** @param list<string> $topology */
@@ -131,13 +128,22 @@ final readonly class TaskVmTopologyAdmission implements TaskTopologyAdmission
         $script = self::script();
         try {
             $this->run($node, new RemoteCommand(
-                ['bash', '-c', $script, 'topology', 'start', $run, (string) $instance->checkout_path, 'TASK-'.$group->id, implode(',', $topology), $vm->size->topologyPoolSize()],
+                ['bash', '-c', $script, 'topology', 'start', $run, (string) $instance->checkout_path, 'TASK-'.$group->id, implode(',', $topology), $vm->size->topologyPoolSize(), $this->vpn->subnet()],
                 input: $script,
                 maxOutputBytes: 16384,
                 timeout: 60,
             ));
         } catch (RuntimeConvergenceException $exception) {
-            $this->fail($vm, ['step' => 'start', 'log' => $this->output($exception->result) ?: $exception->getMessage()]);
+            // The call can fail after systemd-run started the unit, for example when SSH timed out. A unit that runs
+            // or finished is the run; only a run without a unit fails.
+            try {
+                $state = $this->status($vm)['state'] ?? null;
+            } catch (TaskCapacityException) {
+                $state = null;
+            }
+            if (! in_array($state, ['running', 'ready', 'failed'], true)) {
+                $this->fail($vm, ['step' => 'start', 'log' => $this->output($exception->result) ?: $exception->getMessage()]);
+            }
         }
     }
 

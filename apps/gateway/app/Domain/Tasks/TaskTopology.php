@@ -24,13 +24,21 @@ final class TaskTopology
      */
     public const array ExtraRoles = ['ingress'];
 
-    public const string Invalid = 'Topology must be a list of distinct app-dev, app-prod, or app-prod-2 nodes, each with an optional +ingress role where it fits the node; app-prod-2 needs app-prod.';
+    /**
+     * The most test nodes a group's topology may have. In the spike, a 12 GiB task VM was full with two test nodes
+     * beside the test Gateway and the operator, so a third would run it out of memory.
+     */
+    public const int MaxNodes = 2;
+
+    public const string Invalid = 'Topology must be a list of at most two distinct app-dev, app-prod, or app-prod-2 nodes, each with an optional +ingress role where it fits the node; app-prod-2 needs app-prod.';
+
+    public const string TooMany = 'The subtasks of a group declare more than two test nodes together. A large task VM holds two: split the work into groups.';
 
     private const array BaseRoles = ['app-dev' => 'app-dev', 'app-prod' => 'app-prod', 'app-prod-2' => 'app-prod'];
 
     public static function valid(mixed $value): bool
     {
-        if (! is_array($value) || ! array_is_list($value) || count($value) > count(self::Nodes)) {
+        if (! is_array($value) || ! array_is_list($value) || count($value) > self::MaxNodes) {
             return false;
         }
         $nodes = [];
@@ -73,11 +81,27 @@ final class TaskTopology
      */
     public static function forGroup(Task $group): array
     {
-        return self::union(array_values($group->tasks()->where('status', '!=', TaskStatus::Cancelled->value)->pluck('topology')->all()));
+        return self::union(self::declarations($group));
     }
 
     /**
-     * The union of valid declarations is valid: each node keeps roles that fit its base role.
+     * The stored declarations of the group's subtasks that are not cancelled, without `$except`.
+     *
+     * @return list<mixed>
+     */
+    public static function declarations(Task $group, ?Task $except = null): array
+    {
+        $query = $group->tasks()->where('status', '!=', TaskStatus::Cancelled->value);
+        if ($except instanceof Task) {
+            $query->whereKeyNot($except->id);
+        }
+
+        return array_values($query->pluck('topology')->all());
+    }
+
+    /**
+     * Each node keeps roles that fit its base role, so only the node count can make a union invalid: more than
+     * {@see self::MaxNodes} is refused.
      *
      * @param  list<mixed>  $declarations
      * @return list<string>
@@ -96,6 +120,10 @@ final class TaskTopology
             if (isset($roles[$node])) {
                 $union[] = self::entry($node, array_values(array_intersect(self::ExtraRoles, $roles[$node])));
             }
+        }
+
+        if (count($union) > self::MaxNodes) {
+            throw new ResourceOperationException('tasks.invalid_topology', self::TooMany, 422);
         }
 
         return $union;

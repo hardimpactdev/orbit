@@ -19,11 +19,9 @@ interface TaskTopologyAdmission
     public function prepare(Task $group, Task $task): void;
 
     /**
-     * The nodes the subtask declares that have no successful recorded evidence since `$since` ({@see TaskTopologyEvidence}).
-     *
-     * @return list<string>
+     * The records of the group's evidence log that count since `$since` ({@see TaskTopologyEvidence}).
      *
      * @throws TaskCheckException when the evidence log cannot be read
      */
-    public function missingEvidence(Task $group, Task $task, CarbonInterface $since): array;
+    public function evidence(Task $group, CarbonInterface $since): TaskTopologyEvidence;
 }
