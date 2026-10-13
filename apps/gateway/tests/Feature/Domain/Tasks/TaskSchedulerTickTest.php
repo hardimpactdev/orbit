@@ -1265,7 +1265,8 @@ it('uses backoff for publication and removal retries and retries a failed manual
         ]);
         $workspace = Instance::query()->create([
             'project_id' => $group->project_id, 'node_id' => $node->id, 'name' => 'task-'.$owner->id,
-            'checkout_path' => '/srv/orbit/apps/tick-app/workspace', 'status' => 'source_resolved',
+            'checkout_path' => '/srv/orbit/apps/tick-app/workspace', 'branch' => 'task-'.$owner->id,
+            'starting_commit' => str_repeat('a', 40), 'status' => 'source_resolved',
         ]);
         $owner->taskable()->associate($workspace);
         $owner->save();

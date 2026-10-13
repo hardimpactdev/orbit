@@ -317,8 +317,8 @@ it('reuses an already assigned Task workspace', function (): void {
     $instance = Instance::query()->create([
         'project_id' => $project->id,
         'node_id' => $node->id,
-        'name' => 'existing',
-        'checkout_path' => '/srv/orbit/apps/reuse/existing',
+        'name' => TaskWorkspaceName::for($group),
+        'checkout_path' => '/srv/orbit/apps/reuse/workspace',
         'status' => InstanceState::SourceResolved,
     ]);
     $group->taskable()->associate($instance);
