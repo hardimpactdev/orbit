@@ -5,8 +5,9 @@ declare(strict_types=1);
 namespace App\E2E\Value;
 
 /**
- * One prepared, identity-free Incus image per Node kind. A topology starts each declared Node from its
- * role image; `app-prod-2` is a second Node from the `app-prod` image.
+ * One prepared, identity-free Incus image per Node kind. A topology starts each Node from the role image its
+ * catalog entry names; `app-prod-2` is a second Node from the `app-prod` image. A new kind of Node is one case here
+ * and one catalog entry.
  */
 enum RoleImage: string
 {
@@ -49,6 +50,24 @@ enum RoleImage: string
             self::AppProd => ['app-prod'],
             self::Operator => [],
         };
+    }
+
+    /**
+     * The harness programs the image runs as root before the Gateway's: name, script in `resources/image/`, and
+     * arguments.
+     *
+     * @return list<array{0:string, 1:string, 2:list<string>}>
+     */
+    public function harnessPrograms(): array
+    {
+        return [
+            ['orbit-e2e-base', 'role-image.sh', ['base']],
+            ...match ($this) {
+                self::Gateway => [['orbit-e2e-gateway-prerequisites', 'role-image.sh', ['gateway-prerequisites']]],
+                self::Operator => [['orbit-e2e-operator-tooling', 'operator-tooling.sh', []]],
+                self::AppDev, self::AppProd => [],
+            },
+        ];
     }
 
     /**

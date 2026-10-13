@@ -7,14 +7,14 @@ namespace App\Console\Commands\Topology;
 use App\Console\Commands\E2ECommand;
 use Throwable;
 
-/** Read-only: reports the issue's discovery topology from its worktree state. */
+/** Read-only: reports the issue's topology from its worktree state. */
 final class StatusCommand extends E2ECommand
 {
     #[\Override]
     protected $signature = 'topology:status {issue} '.self::WORKTREE_OPTION.' {--json}';
 
     #[\Override]
-    protected $description = 'Report the issue discovery topology without touching infrastructure';
+    protected $description = 'Report the issue topology without touching infrastructure';
 
     public function handle(): int
     {
@@ -30,7 +30,7 @@ final class StatusCommand extends E2ECommand
             $topology = $state->topology();
             $this->outputJson(
                 [
-                    'state' => 'discovery',
+                    'state' => 'acquired',
                     'issue' => $request->issue,
                     'attempt_id' => $attempt['attempt_id'],
                     'worktree' => $request->worktree,
@@ -38,7 +38,7 @@ final class StatusCommand extends E2ECommand
                     'nodes' => $state->recipe()->nodeKeys(),
                     'topology' => $topology?->toArray(),
                 ],
-                'discovery '.$attempt['attempt_id'].($topology === null ? ' incomplete' : ''),
+                'acquired '.$attempt['attempt_id'].($topology === null ? ' incomplete' : ''),
             );
 
             return self::SUCCESS;

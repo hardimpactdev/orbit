@@ -21,7 +21,7 @@ final class SyncCommand extends E2ECommand
         .' {--json}';
 
     #[\Override]
-    protected $description = 'Apply Gateway migrations and verify mounted discovery readiness';
+    protected $description = 'Apply Gateway migrations and verify mounted topology readiness';
 
     public function handle(TopologyAcquirer $acquirer): int
     {

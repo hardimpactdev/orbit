@@ -47,14 +47,12 @@ case ${1-} in
         if [[ -s $state/$2.json ]]; then
             # A ready topology from an earlier boot is gone: its guests stopped with the VM. A run written before the
             # boot ID was recorded has none, and counts as ready.
-            # shellcheck disable=SC2016 # PHP code, not shell.
-            php -r '
-                $result = json_decode((string) file_get_contents($argv[1]), true, 16, JSON_THROW_ON_ERROR);
-                if (($result["state"] ?? null) === "ready" && isset($result["boot_id"]) && $result["boot_id"] !== trim((string) file_get_contents("/proc/sys/kernel/random/boot_id"))) {
-                    $result = ["state" => "stale"];
-                }
-                echo json_encode($result, JSON_UNESCAPED_SLASHES), "\n";
-            ' -- "$state/$2.json"
+            result=$(<"$state/$2.json")
+            boot=$(</proc/sys/kernel/random/boot_id)
+            if [[ $result == '{"state":"ready",'* && $result == *'"boot_id":'* && $result != *"\"boot_id\":\"$boot\""* ]]; then
+                result='{"state":"stale"}'
+            fi
+            printf '%s\n' "$result"
         elif systemctl is-active --quiet "$unit_prefix$2.service"; then
             echo '{"state":"running"}'
         else
@@ -68,14 +66,18 @@ case ${1-} in
         exec >>"$log" 2>&1
         step=start
         started=$SECONDS
+        retries=0
+        # One line as a JSON string: invalid UTF-8 and control characters dropped, the rest escaped.
+        json_string() {
+            iconv -c -f UTF-8 -t UTF-8 | tr -d '\000-\010\013\014\016-\037\177' \
+                | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\t/\\t/g' -e 's/\r/\\r/g' \
+                | awk 'BEGIN { ORS = ""; print "\"" } NR > 1 { print "\\n" } { print } END { print "\"" }'
+        }
         # The result is written last and atomically, so `status` never reads half of it.
         result() {
-            # shellcheck disable=SC2016 # PHP code, not shell.
-            php -r '
-                $tail = array_slice(file($argv[4], FILE_IGNORE_NEW_LINES) ?: [], -40);
-                $boot = trim((string) file_get_contents("/proc/sys/kernel/random/boot_id"));
-                echo json_encode(["state" => $argv[1], "step" => $argv[2], "seconds" => (int) $argv[3], "boot_id" => $boot, "log" => implode("\n", $tail)], JSON_UNESCAPED_SLASHES), "\n";
-            ' -- "$1" "$step" "$((SECONDS - started))" "$log" >"$state/$run.json.new"
+            printf '{"state":"%s","step":"%s","seconds":%d,"retries":%d,"boot_id":"%s","log":%s}\n' \
+                "$1" "$step" "$((SECONDS - started))" "$retries" "$(</proc/sys/kernel/random/boot_id)" \
+                "$(tail -n 40 -- "$log" | json_string)" >"$state/$run.json.new"
             mv -f -- "$state/$run.json.new" "$state/$run.json"
         }
         on_exit() {
@@ -86,44 +88,23 @@ case ${1-} in
         cd -- "$checkout"
         printf 'topology: preparing %s with nodes [%s]\n' "$issue" "$nodes"
 
-        step='env'
-        # Like bin/bootstrap: the harness needs the Gateway .env, which a workspace's composer install does not write.
-        [[ -e apps/gateway/.env ]] || cp apps/gateway/.env.example apps/gateway/.env
-
         step=host-setup
         # The input rule keeps topology guests off this VM's own address in the fleet's VPN subnet.
         sudo -n bin/e2e-topology-host-setup --pool-size="$pool_size" --wireguard-subnet="$vpn_subnet"
 
         step=images
-        roles=(gateway operator)
-        [[ ,$nodes, == *,app-dev[,+]* ]] && roles+=(app-dev)
-        [[ ,$nodes, == *,app-prod[,+-]* ]] && roles+=(app-prod)
-        # shellcheck disable=SC2016 # PHP code, not shell.
-        missing=$(bin/e2e-topology-images status --json | php -r '
-            $wanted = array_slice($argv, 1);
-            foreach (json_decode(stream_get_contents(STDIN), true, 16, JSON_THROW_ON_ERROR)["images"] as $image) {
-                if (in_array($image["role"], $wanted, true) && $image["state"] === "missing") {
-                    echo "--role=", $image["role"], "\n";
-                }
-            }
-        ' -- "${roles[@]}")
-        if [[ -n $missing ]]; then
-            mapfile -t build <<<"$missing"
-            bin/e2e-topology-images build "${build[@]}"
-        fi
-
-        step=release
-        held=$(bin/e2e-topology status "$issue" --worktree="$checkout" --json | php -r 'echo json_decode(stream_get_contents(STDIN), true, 32, JSON_THROW_ON_ERROR)["state"] ?? "";')
-        if [[ $held != absent ]]; then
-            bin/e2e-topology release "$issue" --worktree="$checkout"
-        fi
+        # The harness knows which role images the Nodes need. It builds only missing ones: a stale image is fine,
+        # because enrollment reruns every program on top of it.
+        bin/e2e-topology-images ensure --nodes="$nodes"
 
         step=acquire
-        # A nested guest can miss its readiness window once; acquire removes what it created, so it can run again.
-        if ! bin/e2e-topology acquire "$issue" "$checkout" --nodes="$nodes"; then
-            echo 'topology: acquire failed; trying once more.'
-            bin/e2e-topology acquire "$issue" "$checkout" --nodes="$nodes"
-        fi
+        # A nested guest can miss its readiness window. Acquire removes what it created, and --replace releases a
+        # topology an earlier run left, so it can run again. The result counts the retries for the Gateway.
+        until bin/e2e-topology acquire "$issue" "$checkout" --nodes="$nodes" --replace; do
+            ((retries < 1)) || exit 1
+            retries=$((retries + 1))
+            echo "topology: warning: acquire failed; retry $retries of 1."
+        done
         result ready
         ;;
     *)

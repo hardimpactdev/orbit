@@ -7,7 +7,7 @@ namespace App\E2E\Value;
 use InvalidArgumentException;
 use Stringable;
 
-/** One feature-proof attempt. Two attempts of one issue never share a resource identity. */
+/** One topology attempt. Two attempts of one issue never share a resource identity. */
 final readonly class AttemptId implements Stringable
 {
     public function __construct(

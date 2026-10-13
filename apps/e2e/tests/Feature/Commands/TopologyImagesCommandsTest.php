@@ -75,7 +75,7 @@ function imagesCommandJson(string $command, array $parameters = []): array
 
 describe('topology image commands', function () {
     it('registers the build and status commands', function () {
-        expect(array_keys(Artisan::all()))->toContain('topology-images:build', 'topology-images:status');
+        expect(array_keys(Artisan::all()))->toContain('topology-images:build', 'topology-images:ensure', 'topology-images:status');
     });
 
     it('reports every role image row in JSON and text', function () {
@@ -130,6 +130,32 @@ describe('topology image commands', function () {
             ->and($incus->images[$output['images']['operator']]['aliases'])->toContain('orbit-e2e-operator')
             ->and($output['timings'])->toHaveKey('total')
             ->and($incus->instances)->toBe([]);
+    });
+
+    it('ensures only the missing role images the declared Nodes need', function () {
+        $incus = new FakeIncus()->install();
+        $root = imagesCommandCheckout();
+        imagesCommandBuilder($incus, $root);
+        $stale = ['properties' => [RoleImages::PROGRAMS_PROPERTY => str_repeat('0', 64)]];
+        $incus->addImage('orbit-e2e-gateway', properties: $stale['properties']);
+        $incus->addImage('orbit-e2e-operator', 'container', $stale['properties']);
+
+        $output = imagesCommandJson('topology-images:ensure', ['--nodes' => 'app-prod+ingress']);
+        $again = imagesCommandJson('topology-images:ensure', ['--nodes' => 'app-prod+ingress']);
+
+        expect($output['state'])->toBe('ensured')
+            ->and($output['needed'])->toBe(['gateway', 'app-prod', 'operator'])
+            ->and(array_keys($output['built']))->toBe(['app-prod'])
+            ->and($again['built'])->toBe([])
+            ->and($incus->instances)->toBe([]);
+    });
+
+    it('refuses an undeclarable Node before it touches Incus', function () {
+        $incus = new FakeIncus()->install();
+
+        expect(Artisan::call('topology-images:ensure', ['--nodes' => 'app-staging', '--json' => true]))->toBe(1)
+            ->and(Artisan::output())->toContain('A declared Node must be one of app-dev, app-prod, app-prod-2.')
+            ->and($incus->calls)->toBe([]);
     });
 
     it('reports a failed build as JSON', function () {

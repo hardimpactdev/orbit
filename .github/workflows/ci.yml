@@ -311,7 +311,7 @@ jobs:
           case "$PROJECT" in
             apps/cli) architecture_tests='tests/Feature/CommandSurfaceTest.php tests/Feature/CliBinaryBuildContractTest.php' ;;
             apps/gateway) architecture_tests='tests/Unit/Architecture tests/Feature/Infrastructure/Instances/ConfiguredOriginReadTest.php tests/Feature/Infrastructure/Caddy/CaddyPublicationLockTest.php' ;;
-            apps/e2e) architecture_tests='tests/Unit/E2E/ProofFixtureContractTest.php tests/Feature/Configuration/ComposerConfigurationTest.php tests/Feature/Configuration/SubprocessTestGroupTest.php tests/Feature/Configuration/DocsMergeRefWorkflowTest.php' ;;
+            apps/e2e) architecture_tests='tests/Unit/E2E/Value/TopologyNodeCatalogTest.php tests/Feature/Configuration/ComposerConfigurationTest.php tests/Feature/Configuration/SubprocessTestGroupTest.php tests/Feature/Configuration/DocsMergeRefWorkflowTest.php' ;;
             packages/php-sdk) architecture_tests='tests/Unit/SuccessRequestIdBoundaryTest.php tests/Unit/RepositoryGuidanceTest.php tests/Unit/Requests/Workspaces/WorkspaceRequestsTest.php tests/Unit/Requests/Deployments/DeploymentRequestsTest.php' ;;
             *) exit 0 ;;
           esac

@@ -7,25 +7,13 @@ namespace App\E2E\Value;
 use InvalidArgumentException;
 
 /**
- * The Nodes of one topology: the Gateway and the operator always, plus the declared workload Nodes.
- * The declared list alone determines every Node, its role image, address, roles, and checkout. An entry
- * names one workload Node and may add roles after a `+`, such as `app-prod+ingress`; the composer adds
- * them with `orbit node:role:add`, so the Gateway's own role rules decide whether they fit.
+ * The Nodes of one topology: the Gateway and the operator always, plus the declared workload Nodes, all from the
+ * {@see TopologyNodeCatalog}. The declared list alone determines every Node, its role image, address, roles, and
+ * checkout. An entry names one workload Node and may add roles after a `+`, such as `app-prod+ingress`; the composer
+ * adds them with `orbit node:role:add`, so the Gateway's own role rules decide whether they fit.
  */
 final readonly class TopologyRecipe
 {
-    /** The workload Nodes a topology can declare, in composition order. */
-    public const array WORKLOADS = ['app-dev', 'app-prod', 'app-prod-2'];
-
-    /** What `acquire` composes when the caller declares nothing. */
-    public const array DEFAULT_WORKLOADS = ['app-dev', 'app-prod'];
-
-    /**
-     * The roles an entry may add to its workload Node, in the order the composer adds them. `ingress` also puts the
-     * Node in its own Cluster `e2e-<node>`, which the role needs.
-     */
-    public const array EXTRA_ROLES = ['ingress'];
-
     /** @var list<TopologyNode> */
     public array $nodes;
 
@@ -35,17 +23,32 @@ final readonly class TopologyRecipe
     /** @param list<string> $workloads canonical entries, such as `app-prod+ingress` */
     private function __construct(public array $workloads)
     {
-        $nodes = [new TopologyNode('gateway', RoleImage::Gateway, TopologyNodePurpose::Gateway, 10, true, ['gateway', 'vpn'])];
+        $catalog = TopologyNodeCatalog::load();
+        $extras = [];
         foreach ($workloads as $workload) {
             [$key, $extra] = self::entry($workload);
-            $nodes[] = match ($key) {
-                'app-dev' => new TopologyNode('app-dev', RoleImage::AppDev, TopologyNodePurpose::Workload, 11, true, ['app-dev', ...$extra]),
-                'app-prod' => new TopologyNode('app-prod', RoleImage::AppProd, TopologyNodePurpose::Workload, 12, false, ['app-prod', ...$extra]),
-                'app-prod-2' => new TopologyNode('app-prod-2', RoleImage::AppProd, TopologyNodePurpose::Workload, 13, false, ['app-prod', ...$extra]),
-                default => throw new InvalidArgumentException("The Node [{$key}] cannot be declared."),
-            };
+            $extras[$key] = $extra;
         }
-        $nodes[] = new TopologyNode('operator', RoleImage::Operator, TopologyNodePurpose::Operator, 14, true, []);
+        $nodes = [];
+        foreach ($catalog->nodes as $key => $entry) {
+            if ($entry['declarable'] && ! isset($extras[$key])) {
+                continue;
+            }
+            $nodes[] = new TopologyNode(
+                $key,
+                $entry['image'],
+                match (true) {
+                    $entry['declarable'] => TopologyNodePurpose::Workload,
+                    $entry['image'] === RoleImage::Gateway => TopologyNodePurpose::Gateway,
+                    default => TopologyNodePurpose::Operator,
+                },
+                $entry['address'],
+                $entry['checkout'],
+                $entry['declarable'] ? [(string) $entry['base_role'], ...$extras[$key]] : $entry['image']->programRoles(),
+                $entry['memory'],
+                $entry['tld'],
+            );
+        }
 
         $this->nodes = $nodes;
         $byKey = [];
@@ -60,10 +63,11 @@ final readonly class TopologyRecipe
      */
     public static function compose(array $workloads): self
     {
+        $catalog = TopologyNodeCatalog::load();
         $declared = [];
         foreach ($workloads as $workload) {
             if (! is_string($workload)) {
-                throw new InvalidArgumentException('A declared Node must be one of '.implode(', ', self::WORKLOADS).'.');
+                throw new InvalidArgumentException('A declared Node must be one of '.implode(', ', $catalog->declarable()).'.');
             }
             [$key, $extra] = self::entry($workload);
             if (isset($declared[$key])) {
@@ -71,13 +75,16 @@ final readonly class TopologyRecipe
             }
             $declared[$key] = implode('+', [$key, ...$extra]);
         }
-        if (isset($declared['app-prod-2']) && ! isset($declared['app-prod'])) {
-            throw new InvalidArgumentException('The Node [app-prod-2] requires [app-prod].');
+        foreach (array_keys($declared) as $key) {
+            $requires = $catalog->node($key)['requires'];
+            if ($requires !== null && ! isset($declared[$requires])) {
+                throw new InvalidArgumentException("The Node [{$key}] requires [{$requires}].");
+            }
         }
 
         return new self(array_values(array_filter(array_map(
             static fn (string $key): ?string => $declared[$key] ?? null,
-            self::WORKLOADS,
+            $catalog->declarable(),
         ))));
     }
 
@@ -88,28 +95,29 @@ final readonly class TopologyRecipe
      */
     private static function entry(string $entry): array
     {
+        $catalog = TopologyNodeCatalog::load();
         $parts = explode('+', $entry);
         $key = array_shift($parts);
-        if (! in_array($key, self::WORKLOADS, true)) {
-            throw new InvalidArgumentException('A declared Node must be one of '.implode(', ', self::WORKLOADS).'.');
+        if (! in_array($key, $catalog->declarable(), true)) {
+            throw new InvalidArgumentException('A declared Node must be one of '.implode(', ', $catalog->declarable()).'.');
         }
         foreach ($parts as $role) {
-            if (! in_array($role, self::EXTRA_ROLES, true)) {
-                throw new InvalidArgumentException("The Node [{$key}] can only add the roles ".implode(', ', self::EXTRA_ROLES).'.');
+            if (! in_array($role, $catalog->extraRoles, true)) {
+                throw new InvalidArgumentException("The Node [{$key}] can only add the roles ".implode(', ', $catalog->extraRoles).'.');
             }
         }
         if (count($parts) !== count(array_unique($parts))) {
             throw new InvalidArgumentException("The Node [{$key}] adds a role twice.");
         }
 
-        return [$key, array_values(array_intersect(self::EXTRA_ROLES, $parts))];
+        return [$key, array_values(array_intersect($catalog->extraRoles, $parts))];
     }
 
     /** The `--nodes` option: absent gives the default, an empty string gives no workload Node. */
     public static function fromOption(?string $option): self
     {
         if ($option === null) {
-            return self::compose(self::DEFAULT_WORKLOADS);
+            return self::compose(TopologyNodeCatalog::load()->defaults);
         }
         $option = trim($option);
 
@@ -142,6 +150,12 @@ final readonly class TopologyRecipe
         return array_keys($this->nodesByKey);
     }
 
+    /** The last address position the recipe uses, which ends the network's DHCP range. */
+    public function lastAddress(): int
+    {
+        return max(0, ...array_map(static fn (TopologyNode $node): int => $node->address, $this->nodes));
+    }
+
     public function vmCount(): int
     {
         return count(array_filter($this->nodes, static fn (TopologyNode $node): bool => ! $node->isContainer()));
@@ -164,6 +178,16 @@ final readonly class TopologyRecipe
     public function extraRoles(TopologyNode $node): array
     {
         return array_slice($node->roles, 1);
+    }
+
+    /**
+     * The extra roles of a Node that put it in its own Cluster `e2e-<node>` first, as `ingress` needs.
+     *
+     * @return list<string>
+     */
+    public function ownClusterRoles(TopologyNode $node): array
+    {
+        return array_values(array_intersect($this->extraRoles($node), TopologyNodeCatalog::load()->ownClusterRoles));
     }
 
     /** @return list<TopologyNode> */

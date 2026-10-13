@@ -11,6 +11,7 @@ use App\Domain\Nodes\RecoverableNodeConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\UbuntuRelease;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\Nodes\EnrollmentProgram;
 use App\Infrastructure\Nodes\NativeNodeConverger;
 use App\Infrastructure\Nodes\NodeBootstrapCommandFactory;
 use App\Infrastructure\Processes\CommandResult;
@@ -779,7 +780,7 @@ it('skips the bootstrap that a task VM image ran as it renders now', function (b
     $node->update(['user' => 'orbit']);
     $factory = new NodeBootstrapCommandFactory(base_test_keys());
     app(TaskVmBakedPrograms::class)->load(new TaskVm(['name' => 'base-node']), TaskVmBakedPrograms::manifest([
-        TaskVmBakedPrograms::Bootstrap => $same ? $factory->makeWithPasswordlessSudo($node, 'orbit') : $factory->makeWithPasswordlessSudo($node, 'nckrtl'),
+        EnrollmentProgram::Bootstrap => $same ? $factory->makeWithPasswordlessSudo($node, 'orbit') : $factory->makeWithPasswordlessSudo($node, 'nckrtl'),
     ]));
     $ssh = new BaseNodeSshExecutor;
 
@@ -795,7 +796,7 @@ it('runs the bootstrap on any other Node while a task VM image is loaded', funct
     $node->update(['user' => 'orbit']);
     $factory = new NodeBootstrapCommandFactory(base_test_keys());
     app(TaskVmBakedPrograms::class)->load(new TaskVm(['name' => 'tvm-7']), TaskVmBakedPrograms::manifest([
-        TaskVmBakedPrograms::Bootstrap => $factory->makeWithPasswordlessSudo($node, 'orbit'),
+        EnrollmentProgram::Bootstrap => $factory->makeWithPasswordlessSudo($node, 'orbit'),
     ]));
     $ssh = new BaseNodeSshExecutor;
 

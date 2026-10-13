@@ -2,23 +2,23 @@
 
 declare(strict_types=1);
 
-use App\E2E\Value\FeatureTopology;
 use App\E2E\Value\IncusInstance;
 use App\E2E\Value\MountPath;
 use App\E2E\Value\SourceState;
 use App\E2E\Value\TopologyConstructionInputs;
 use App\E2E\Value\TopologyRecipe;
+use App\E2E\Value\TopologyRecord;
 use App\E2E\Value\VerificationReport;
 use Illuminate\Filesystem\Filesystem;
 
 /** @param array<string, array{device:string,source:string,path:string}>|null $mounts */
-function mountedTopologyFixture(bool $mounted = true, ?array $mounts = null, ?TopologyRecipe $recipe = null): FeatureTopology
+function mountedTopologyFixture(bool $mounted = true, ?array $mounts = null, ?TopologyRecipe $recipe = null): TopologyRecord
 {
     $construction = topologyConstructionFixture('TST-321', 'a', $recipe);
     $mount = ['device' => 'orbit-source', 'source' => '/srv/wt', 'path' => '/home/orbit/orbit'];
     $mounts ??= $mounted ? array_fill_keys($construction->target->recipe->checkoutNodeKeys(), $mount) : [];
 
-    return new FeatureTopology(
+    return new TopologyRecord(
         $construction,
         new SourceState(
             str_repeat('b', 40),
@@ -31,19 +31,19 @@ function mountedTopologyFixture(bool $mounted = true, ?array $mounts = null, ?To
     );
 }
 
-describe('feature topology', function () {
+describe('topology record', function () {
     it('round-trips the declared Nodes, role images, mounts, and mounted source state', function (array $workloads) {
         $topology = mountedTopologyFixture(recipe: TopologyRecipe::compose($workloads));
         $value = $topology->toArray();
 
-        expect($value['purpose'])->toBe('discovery')
+        expect($value)->not->toHaveKey('purpose')
             ->and($value['nodes'])->toBe($topology->target->recipe->nodeKeys())
             ->and(array_keys($value['construction']['images']))->toBe(array_map(
                 static fn ($image): string => $image->value,
                 $topology->target->recipe->images(),
             ))
             ->and(array_keys($value['mounts']))->toBe($topology->target->recipe->checkoutNodeKeys())
-            ->and(FeatureTopology::fromArray($value)->toArray())->toBe($value)
+            ->and(TopologyRecord::fromArray($value)->toArray())->toBe($value)
             ->and(mountedTopologyFixture(false)->toArray()['mounts'])->toBe([]);
     })->with([
         'gateway only' => [[]],
@@ -59,7 +59,7 @@ describe('feature topology', function () {
             $value[$field] = $replacement;
         }
 
-        expect(fn () => FeatureTopology::fromArray($value))
+        expect(fn () => TopologyRecord::fromArray($value))
             ->toThrow(InvalidArgumentException::class, 'identity does not match its construction inputs');
     })->with([
         'issue' => ['issue', 'TST-322'],
@@ -91,10 +91,10 @@ describe('feature topology', function () {
         $value['schema'] = $schema;
         $version = json_encode($schema, JSON_THROW_ON_ERROR);
 
-        expect(FeatureTopology::SCHEMA)->toBe(5)
-            ->and(fn () => FeatureTopology::fromArray($value))
+        expect(TopologyRecord::SCHEMA)->toBe(6)
+            ->and(fn () => TopologyRecord::fromArray($value))
             ->toThrow(InvalidArgumentException::class, "schema {$version} is not supported; release it with the harness that created it");
-    })->with(['schema 4' => [4], 'string schema' => ['5']]);
+    })->with(['schema 5, with the attempt purpose' => [5], 'string schema' => ['6']]);
 
     it('refuses a construction record whose images or Nodes do not match its declaration', function () {
         $value = mountedTopologyFixture(false)->toArray()['construction'];

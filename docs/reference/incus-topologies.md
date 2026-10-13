@@ -32,6 +32,10 @@ Every topology has a `gateway` VM and an `operator` system container. `acquire -
 
 `app-prod-2` is a second `app-prod` Node from the same role image. Each production Node gets its own name as its development TLD, and `app-dev` gets `beast`.
 
+The Node catalog `apps/e2e/resources/topology-nodes.json` holds this table. For each Node it names the role image, address position, checkout, memory, TLD, and the Node it requires. It also names the default list, the roles an entry may add, and the roles that put a Node in its own Cluster. The recipe, the role image builders, composition, and readiness derive from it.
+
+The WireGuard address is the address position minus 9. The network's DHCP range ends at the highest position the topology uses. A new Node kind is one catalog entry, and a new role image is one more case of the harness `RoleImage` enum. A Gateway test reads the same file, so the Gateway accepts the same `topology` entries as the harness.
+
 The harness assigns the roles in the table and the roles each entry adds, and nothing else. It creates no Router, no Cluster except the one an `ingress` entry needs, no other role, and no sample Project, Instance, or Route. Add other things the work needs with the Orbit CLI on the topology, for example `orbit project:create`, and record those steps as evidence. So a topology holds only what the task declared and created.
 
 | Field | Value |
@@ -83,11 +87,12 @@ An image holds no Gateway database, CA, SSH key, WireGuard key, authorized key, 
 | Command | What it does |
 | --- | --- |
 | `bin/e2e-topology-images build [--role=ROLE ...]` | Builds the named role images, or all four |
+| `bin/e2e-topology-images ensure [--nodes=LIST]` | Builds only the missing role images that a topology of `LIST` needs. It leaves stale images, which compose correctly. Rendering writes the Gateway `.env` from `.env.example` when the checkout has none, as `bin/bootstrap` does. |
 | `bin/e2e-topology-images status` | Prints each image's alias, fingerprint, build time, and state |
 
 ## Composition
 
-`acquire ISSUE WORKTREE [--nodes=LIST]` composes the topology in this order. Each step names itself in a failure.
+`acquire ISSUE WORKTREE [--nodes=LIST] [--replace]` composes the topology in this order. Each step names itself in a failure. `--replace` first releases a topology the issue holds; without it, `acquire` refuses an issue that holds one. When the worktree has no Gateway `.env`, `acquire` writes it from `.env.example`, as `bin/bootstrap` does.
 
 | Step | Work |
 | --- | --- |
@@ -95,7 +100,7 @@ An image holds no Gateway database, CA, SSH key, WireGuard key, authorized key, 
 | `create` | Creates each guest from its role image, with a fixed MAC and Incus address, and mounts the worktree on the checkout Nodes |
 | `start` | Starts every guest and waits for its agent and its address |
 | `bootstrap.gateway` | Prepares the worktree's Gateway `.env` and runs `orbit:bootstrap` at the Gateway's address |
-| `enroll.<node>` | Enrolls each workload Node in table order with `orbit:node-provision` |
+| `enroll.<node>` | Enrolls each workload Node in catalog order with `orbit:node-provision`, through the guest script `converge-node.sh` |
 | `enroll.operator` | Registers the roleless operator, grants it Gateway access, and points its CLI at the topology Gateway and CA |
 | `roles.<node>` | For each workload Node whose entry adds a role, runs `orbit node:role:add <node> <role> --json` from the operator. `ingress` first puts the Node in its own Cluster. |
 | `readiness` | Runs the readiness probes |
@@ -166,10 +171,12 @@ The harness counts capacity from `incus list`, never from a ledger. It counts th
 
 | Setting | Value |
 | --- | --- |
-| VM size | 1 vCPU and 16 GiB root disk (`e2e.incus.cpu`, `e2e.incus.root_size`). Memory is 1.5 GiB for `gateway`, 2 GiB for `app-dev`, 1 GiB for `app-prod` and `app-prod-2`, and 512 MiB for the operator container (`e2e.incus.memory`). `ORBIT_E2E_INCUS_MEMORY=2GiB` sets every guest for one run. |
+| VM size | 1 vCPU and 16 GiB root disk (`e2e.incus.cpu`, `e2e.incus.root_size`). Memory comes from the Node catalog, as below. |
 | VM budget | `e2e.incus.max_vms`, default 24. `ORBIT_E2E_INCUS_MAX_VMS` sets it for one run. |
 | Network slots | 1 to 200 |
 | Incus scope | `e2e.incus.remote`, `e2e.incus.project`, and `e2e.incus.storage_pool`, from `ORBIT_E2E_INCUS_REMOTE`, `ORBIT_E2E_INCUS_PROJECT`, and `ORBIT_E2E_INCUS_STORAGE_POOL`. The defaults are `local`, `default`, and `orbit-e2e`. The remote must be `local`, because network creation and deletion also change host firewall rules. |
+
+The catalog gives 1.5 GiB of memory to `gateway`, 2 GiB to `app-dev`, 1 GiB each to `app-prod` and `app-prod-2`, and 512 MiB to the operator container. A role image builder gets the memory of the first Node from its image. `ORBIT_E2E_INCUS_MEMORY=2GiB` (`e2e.incus.memory`) sets every guest for one run.
 
 Every `incus` call carries the configured project. The harness reserves the declared VMs before it creates a network or a guest, and refuses `acquire` when the budget cannot hold them, naming the count and the limit. The operator container is not a VM. A role image build counts its three builder VMs the same way.
 
@@ -183,7 +190,7 @@ Every command except `status`, `shell`, and `web` holds the lock `topology-<ISSU
 
 | Command | What it does |
 | --- | --- |
-| `acquire ISSUE WORKTREE [--nodes=LIST]` | [Composes](#composition) the topology and verifies readiness |
+| `acquire ISSUE WORKTREE [--nodes=LIST] [--replace]` | [Composes](#composition) the topology and verifies readiness |
 | `shell ISSUE NODE` | Opens a login shell as `orbit` on one Node |
 | `exec ISSUE NODE --argv=JSON [--timeout=SECONDS] [--record=LABEL]` | Runs one argument vector as `orbit` on one Node and waits for it. The timeout defaults to 60 seconds, with a maximum of 3600. |
 | `spawn ISSUE NODE NAME --argv=JSON` | Starts a long-lived process as the transient unit `orbit-e2e-NAME.service` and returns at once |
@@ -191,13 +198,13 @@ Every command except `status`, `shell`, and `web` holds the lock `topology-<ISSU
 | `kill ISSUE NODE NAME` | Stops the unit. Its output stays readable. |
 | `sync ISSUE [--quick]` | Proves the mount, applies pending Gateway migrations, and verifies readiness. `--quick` skips verification. |
 | `verify ISSUE` | Verifies readiness and records the report |
-| `status ISSUE` | Reports the state files without touching Incus |
+| `status ISSUE` | Reports the state files without touching Incus: `state` is `absent` or `acquired` |
 | `web ISSUE` | Runs the web development server in the operator, publishes it on the host's loopback, and streams output until stopped; see [Web session](#web-session) |
 | `release ISSUE` | Stops its web session, removes its loopback publication, removes the topology, and verifies that it is gone |
 
 `NODE` is a Node key of the topology: `gateway`, `operator`, or a declared workload Node. `--argv-file=PATH` can replace `--argv` on `exec` and `spawn`. The file holds `{"argv":[...],"stdin":null}`, and only `exec` accepts stdin. The harness refuses both options together.
 
-An issue holds one discovery topology at a time. `acquire` creates it and `release` removes it. Its state lives under `<worktree>/.e2e/`, in `attempt.json` and `topology.json`, and it dies with the worktree. A lease names the issue, the attempt ID, the operation ID, the declared Nodes, and the acquisition time. There is no reaper. A topology lives until the operator or Orbit releases it.
+An issue holds one topology at a time. `acquire` creates it and `release` removes it. Its state lives under `<worktree>/.e2e/`, in `attempt.json` and `topology.json`, and it dies with the worktree. A lease names the issue, the attempt ID, the operation ID, the declared Nodes, and the acquisition time. There is no reaper. A topology lives until the operator or Orbit releases it.
 
 Task agents and reviewers use only the topology allocated to their task. They never acquire or release a topology, receive no sudo, and do not touch the host firewall. Use `exec`, `spawn`, `logs`, and `kill` from the task workspace to work on the allocated topology. Clean up processes you spawn, but leave the topology allocated for teardown.
 
@@ -229,7 +236,7 @@ Incus waits for every process that an `exec` session starts. A command that leav
 
 ### Evidence log
 
-`exec --record=LABEL` and `logs --record=LABEL` append one entry to `<worktree>/.e2e/evidence.log`. A label has 1 to 80 letters, digits, spaces, dots, dashes, or underscores, and is not blank. The harness checks the label before it touches Incus.
+`exec --record=LABEL` and `logs --record=LABEL` append one entry for people to `<worktree>/.e2e/evidence.log` and one JSON record to `<worktree>/.e2e/evidence.jsonl`, under one lock. A label has 1 to 80 letters, digits, spaces, dots, dashes, or underscores, and is not blank. The harness checks the label before it touches Incus.
 
 ```text
 === 2026-09-24T06:40:00.123Z viewer after crash node=app-dev exit=0 duration=1234ms end=2026-09-24T06:40:01.357Z
@@ -241,6 +248,14 @@ $ orbit node:list --json
 ```
 
 The header gives the start time, the label, the Node, the exit code, the duration, and the end time, in UTC with milliseconds. The `$` line is the argv as shell-quoted words. The harness redacts the argv and the output as it does in `<worktree>/.e2e/log`. The log is append-only. The harness creates it with mode `0600` in the `0700` `.e2e/` directory, and refuses a symbolic link in that directory path.
+
+Each line of `evidence.jsonl` is one record, without the output. `argv` is the redacted argument list, not shell words:
+
+```json
+{"v":1,"start":"2026-09-24T06:40:00.123Z","end":"2026-09-24T06:40:01.357Z","duration_ms":1234,"label":"viewer after crash","node":"app-dev","exit":0,"argv":["orbit","node:list","--json"]}
+```
+
+The agent owns the machine and can write either file itself. The Gateway's evidence gate is a cooperative check, which the reviewer and the person who reads the approval audit.
 
 Recording never changes the command's output or exit code. A failed append prints a warning on stderr. The log can hold output that the redactor does not recognize as a secret, so treat it like the rest of `.e2e/`. `bin/worktree-remove` deletes it with the worktree, so copy what you need first.
 

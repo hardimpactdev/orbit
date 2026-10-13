@@ -73,57 +73,28 @@ function runGuestScript(array $fixture, array $arguments, array $environment = [
 }
 
 /**
- * The fixture of `converge-app-dev.sh` and `converge-app-prod.sh`: SSH, host keys, and `php` stubbed.
+ * The fixture of `converge-node.sh`: host keys stubbed, and `php` logs its arguments.
  *
  * @return array{root:string,script:string,home:string,state:string,commands:string,path:string}
  */
-function convergenceAppFixture(string $name): array
+function convergeNodeFixture(): array
 {
-    $fixture = guestScriptFixture($name, [
+    return guestScriptFixture('converge-node.sh', [
         'sudo' => GUEST_SUDO_STUB,
-        'ssh-keyscan' => "printf '%s\\n' 'host ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOJgN5jVtcfw7oASD2F6If4O5mQ/HZBqbrw4QC9PcHEO'",
+        'ssh-keyscan' => "printf 'ssh-keyscan %s\\n' \"\$*\" >> '__ROOT__/commands'\nprintf '%s\\n' 'host ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOJgN5jVtcfw7oASD2F6If4O5mQ/HZBqbrw4QC9PcHEO'",
         'ssh-keygen' => "cat >/dev/null\nprintf '256 SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA host (ED25519)\\n'",
-        'ssh' => "printf 'ssh %s\\n' \"\$*\" >> '__ROOT__/commands'\ncat >/dev/null",
         'php' => <<<'BASH'
             printf 'php %s\n' "$*" >> '__ROOT__/commands'
-            if [[ "$*" == *'SELECT COUNT(*) FROM nodes'* ]]; then printf '%s\n' "${ORBIT_PHP_NODE_ACTIVE:-0}"; exit 0; fi
-            [[ ",${ORBIT_PHP_FAIL:-}," == *',provision,'* && "$*" == *' orbit:node-provision '* ]] && exit 1
-            exit 0
+            [[ -z "${ORBIT_PHP_FAIL:-}" ]]
             BASH,
     ]);
-    file_put_contents("{$fixture['home']}/.orbit/gateway.sqlite", 'fixture');
-
-    return $fixture;
-}
-
-/**
- * A Gateway store with the given Nodes, as `converge-operator.sh provision` reads it.
- *
- * @param  array<string, string>  $nodes  name => status
- */
-function operatorStore(string $home, array $nodes): void
-{
-    $pdo = new PDO("sqlite:{$home}/.orbit/gateway.sqlite");
-    $pdo->exec('CREATE TABLE nodes (id INTEGER PRIMARY KEY, name TEXT NOT NULL, status TEXT NOT NULL)');
-    $insert = $pdo->prepare('INSERT INTO nodes (name, status) VALUES (?, ?)');
-    foreach ($nodes as $name => $status) {
-        $insert->execute([$name, $status]);
-    }
 }
 
 /** @return array{root:string,script:string,home:string,state:string,commands:string,path:string} */
 function operatorFixture(): array
 {
-    $fixture = guestScriptFixture('converge-operator.sh', [
-        'sudo' => GUEST_SUDO_STUB,
-        'ssh-keyscan' => "printf 'ssh-keyscan %s\\n' \"\$*\" >> '__ROOT__/commands'\nprintf '%s\\n' 'host ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOJgN5jVtcfw7oASD2F6If4O5mQ/HZBqbrw4QC9PcHEO'",
-        'ssh-keygen' => "cat >/dev/null\nprintf '256 SHA256:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB host (ED25519)\\n'",
-    ]);
+    $fixture = guestScriptFixture('converge-operator.sh', ['sudo' => GUEST_SUDO_STUB]);
     guestOrbitStub($fixture['root']);
-    file_put_contents(
-        "{$fixture['home']}/orbit/apps/gateway/artisan",
-        "<?php\nfile_put_contents('{$fixture['commands']}', 'artisan '.implode(' ', array_slice(\$argv, 1)).\"\\n\", FILE_APPEND);\n",
-    );
 
     return $fixture;
 }
@@ -219,80 +190,67 @@ describe('Gateway convergence', function () {
         $resources = dirname(__DIR__, 3).'/resources';
         $scripts = [...glob($resources.'/guest/*.sh'), ...glob($resources.'/image/*.sh')];
 
-        expect($scripts)->toHaveCount(8);
+        expect($scripts)->toHaveCount(7);
         foreach ($scripts as $script) {
             expect(new Process(['bash', '-n', $script], timeout: 5)->run())->toBe(0, $script);
         }
     });
 });
 
-describe('workload Node convergence', function () {
-    it('provisions app-dev when the Gateway store has no active node role', function () {
-        $fixture = convergenceAppFixture('converge-app-dev.sh');
+describe('Node convergence', function () {
+    it('provisions a workload Node with its base role, TLD, WireGuard address, and scanned host key', function (string $node, string $role, string $address) {
+        $fixture = convergeNodeFixture();
 
-        expect(runGuestScript($fixture, ['app-dev', '192.0.2.11', 'x86_64'])->getExitCode())->toBe(0)
-            ->and(implode("\n", commandLog($fixture)))
-            ->toContain('orbit:node-provision app-dev 192.0.2.11 --role=app-dev --tld=beast --architecture=x86_64 --user=orbit --wireguard-ip=10.44.0.2 --host-key-fingerprint=SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA --no-interaction');
-    });
+        expect(runGuestScript($fixture, ['provision', $node, '192.0.2.12', 'aarch64', $address, $role, $node])->getExitCode())->toBe(0)
+            ->and(commandLog($fixture))->toBe([
+                'ssh-keyscan -T 5 -t ed25519 -- 192.0.2.12',
+                "php artisan orbit:node-provision {$node} 192.0.2.12 --role={$role} --tld={$node} --architecture=aarch64 --user=orbit "
+                    ."--wireguard-ip={$address} --host-key-fingerprint=SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA --no-interaction",
+            ]);
+    })->with([
+        'development' => ['app-dev', 'app-dev', '10.44.0.2'],
+        'production' => ['app-prod', 'app-prod', '10.44.0.3'],
+        'second production' => ['app-prod-2', 'app-prod', '10.44.0.4'],
+    ]);
 
-    it('skips provisioning when the Gateway store already holds the active node role', function () {
-        $fixture = convergenceAppFixture('converge-app-dev.sh');
+    it('provisions the roleless operator without a role or TLD', function () {
+        $fixture = convergeNodeFixture();
 
-        expect(runGuestScript($fixture, ['app-dev', '192.0.2.11', 'x86_64'], ['ORBIT_PHP_NODE_ACTIVE' => '1'])->getExitCode())->toBe(0)
-            ->and(implode("\n", commandLog($fixture)))->not->toContain('orbit:node-provision');
+        expect(runGuestScript($fixture, ['provision', 'operator', '192.0.2.14', 'x86_64', '10.44.0.5'])->getExitCode())->toBe(0)
+            ->and(commandLog($fixture)[1])->toBe(
+                'php artisan orbit:node-provision operator 192.0.2.14 --architecture=x86_64 --user=orbit --wireguard-ip=10.44.0.5 '
+                    .'--host-key-fingerprint=SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA --no-interaction',
+            );
     });
 
     it('fails closed when provisioning fails', function () {
-        $fixture = convergenceAppFixture('converge-app-dev.sh');
+        $fixture = convergeNodeFixture();
 
-        expect(runGuestScript($fixture, ['app-dev', '192.0.2.11', 'x86_64'], ['ORBIT_PHP_FAIL' => 'provision'])->getExitCode())->not->toBe(0);
+        expect(runGuestScript($fixture, ['provision', 'app-dev', '192.0.2.11', 'x86_64', '10.44.0.2', 'app-dev', 'beast'], ['ORBIT_PHP_FAIL' => '1'])->getExitCode())->not->toBe(0);
     });
 
-    it('refuses invalid workload arguments before provisioning', function (string $script, array $arguments, int $exit) {
-        $fixture = convergenceAppFixture($script);
+    it('refuses invalid arguments before provisioning', function (array $arguments, int $exit) {
+        $fixture = convergeNodeFixture();
 
         expect(runGuestScript($fixture, $arguments)->getExitCode())->toBe($exit)
-            ->and(implode("\n", commandLog($fixture)))->not->toContain('orbit:node-provision');
+            ->and(commandLog($fixture))->toBe([]);
     })->with([
-        'app-dev arity' => ['converge-app-dev.sh', ['app-dev', '192.0.2.11'], 64],
-        'app-dev address' => ['converge-app-dev.sh', ['app-dev', 'example', 'x86_64'], 64],
-        'app-dev architecture' => ['converge-app-dev.sh', ['app-dev', '192.0.2.11', 'armv7'], 65],
-        'app-prod WireGuard address' => ['converge-app-prod.sh', ['app-prod', '192.0.2.12', 'x86_64', '10.45.0.3'], 65],
+        'no mode' => [['app-dev', '192.0.2.11', 'x86_64', '10.44.0.2'], 64],
+        'arity' => [['provision', 'app-dev', '192.0.2.11', 'x86_64'], 64],
+        'role without TLD' => [['provision', 'app-dev', '192.0.2.11', 'x86_64', '10.44.0.2', 'app-dev'], 64],
+        'address' => [['provision', 'app-dev', 'example', 'x86_64', '10.44.0.2'], 64],
+        'Node key' => [['provision', 'App_Dev', '192.0.2.11', 'x86_64', '10.44.0.2'], 64],
+        'architecture' => [['provision', 'app-dev', '192.0.2.11', 'armv7', '10.44.0.2'], 65],
+        'WireGuard address' => [['provision', 'app-prod', '192.0.2.12', 'x86_64', '10.45.0.3'], 65],
+        'role' => [['provision', 'app-prod', '192.0.2.12', 'x86_64', '10.44.0.3', 'App Prod', 'app-prod'], 64],
     ]);
 
-    it('provisions app-prod with its own preview TLD and WireGuard address and prepares its runtime', function (string $node, string $address) {
-        $fixture = convergenceAppFixture('converge-app-prod.sh');
-        $log = static fn (): string => implode("\n", commandLog($fixture));
-
-        expect(runGuestScript($fixture, [$node, '192.0.2.12', 'aarch64', $address])->getExitCode())->toBe(0)
-            ->and($log())
-            ->toContain("orbit:node-provision {$node} 192.0.2.12 --role=app-prod --tld={$node} --architecture=aarch64 --user=orbit --wireguard-ip={$address} ")
-            ->toContain("ssh -i {$fixture['home']}/.orbit/ssh/id_ed25519");
-    })->with([
-        'primary production' => ['app-prod', '10.44.0.3'],
-        'production extension' => ['app-prod-2', '10.44.0.4'],
-    ]);
-
-    it('prepares the app-prod runtime again without provisioning an active Node', function () {
-        $fixture = convergenceAppFixture('converge-app-prod.sh');
-
-        expect(runGuestScript($fixture, ['app-prod', '192.0.2.12', 'x86_64', '10.44.0.3'], ['ORBIT_PHP_NODE_ACTIVE' => '1'])->getExitCode())->toBe(0)
-            ->and(implode("\n", commandLog($fixture)))
-            ->not->toContain('orbit:node-provision')
-            ->toContain('orbit@10.44.0.3 bash -se');
-    });
-
-    it('writes no Caddy file on a Node and leaves the whole Caddyfile to the Node Caddy build', function () {
-        foreach (['converge-app-dev.sh', 'converge-app-prod.sh', 'converge-gateway.sh'] as $script) {
+    it('installs no product software and writes no Caddy file on a Node', function () {
+        foreach (['converge-node.sh', 'converge-gateway.sh'] as $script) {
             expect(guestScriptSource($script))
                 ->not->toContain('/etc/caddy', 'local_certs', 'caddy validate', 'systemctl reload caddy');
         }
-        expect(guestScriptSource('converge-app-prod.sh'))->toContain(
-            "dpkg-query -W -f='\${Status}' php8.5-fpm",
-            'apt-get install --yes --no-install-recommends -- php8.5-fpm',
-            'systemctl enable --now php8.5-fpm',
-            'install -d -m 0755 /var/www',
-        );
+        expect(guestScriptSource('converge-node.sh'))->not->toContain('apt-get', 'php8.5-fpm', 'PDO');
     });
 });
 
@@ -305,17 +263,16 @@ describe('operator convergence', function () {
     })->with([
         'no mode' => [[]],
         'unknown mode' => [['retarget']],
-        'provision arity' => [['provision', '192.0.2.14', 'x86_64']],
-        'provision address' => [['provision', 'operator', 'x86_64', '10.44.0.5']],
-        'provision architecture' => [['provision', '192.0.2.14', 'riscv64', '10.44.0.5']],
-        'provision WireGuard address' => [['provision', '192.0.2.14', 'x86_64', '10.44.1.5']],
-        'grant arity' => [['grant', 'operator']],
-        'grant Node name' => [['grant', 'operator', 'gate way']],
+        'provision moved to converge-node.sh' => [['provision', '192.0.2.14', 'x86_64', '10.44.0.5']],
+        'grant arity' => [['grant', 'operator', 'gateway']],
+        'grant Node name' => [['grant', 'operator', 'gate way', '10.44.0.1']],
+        'grant Gateway address' => [['grant', 'operator', 'gateway', '192.0.2.10']],
         'configure-cli arity' => [['configure-cli']],
         'configure-cli Gateway host' => [['configure-cli', '-gateway']],
         'role-add arity' => [['role-add', 'app-prod']],
-        'role-add Node' => [['role-add', 'gateway', 'ingress']],
-        'role-add role' => [['role-add', 'app-prod', 'websocket']],
+        'role-add Node' => [['role-add', 'App_Prod', 'ingress']],
+        'role-add role' => [['role-add', 'app-prod', 'Ingress']],
+        'role-add Cluster' => [['role-add', 'app-prod', 'ingress', 'e2e app-prod']],
     ])->skip(fn (): bool => posix_geteuid() === 0, 'grant, configure-cli, and role-add re-run themselves through sudo as root.');
 
     it('puts the Node in the topology Cluster, then adds ingress through the topology Gateway', function () {
@@ -325,7 +282,7 @@ describe('operator convergence', function () {
             ['id' => 2, 'name' => 'app-prod', 'cluster_id' => null],
         ]], JSON_THROW_ON_ERROR));
 
-        expect(runGuestScript($fixture, ['role-add', 'app-prod', 'ingress'])->getExitCode())->toBe(0)
+        expect(runGuestScript($fixture, ['role-add', 'app-prod', 'ingress', 'e2e-app-prod'])->getExitCode())->toBe(0)
             ->and(commandLog($fixture))->toBe([
                 'orbit cluster:list --json',
                 'orbit cluster:create e2e-app-prod --json',
@@ -340,7 +297,7 @@ describe('operator convergence', function () {
         file_put_contents("{$fixture['root']}/clusters.json", json_encode(['clusters' => [['id' => 2, 'name' => 'e2e-app-prod'], ['id' => 3, 'name' => 'e2e-app-prod-2']]], JSON_THROW_ON_ERROR));
         file_put_contents("{$fixture['root']}/nodes.json", json_encode(['nodes' => [['id' => 4, 'name' => 'app-prod-2', 'cluster_id' => 3]]], JSON_THROW_ON_ERROR));
 
-        expect(runGuestScript($fixture, ['role-add', 'app-prod-2', 'ingress'])->getExitCode())->toBe(0)
+        expect(runGuestScript($fixture, ['role-add', 'app-prod-2', 'ingress', 'e2e-app-prod-2'])->getExitCode())->toBe(0)
             ->and(commandLog($fixture))->toBe([
                 'orbit cluster:list --json',
                 'orbit node:list --json',
@@ -348,25 +305,12 @@ describe('operator convergence', function () {
             ]);
     })->skip(fn (): bool => posix_geteuid() === 0, 'role-add re-runs itself through sudo as root.');
 
-    it('skips provisioning when the operator is already active in the Gateway store', function () {
+    it('adds a role without a Cluster when none is named', function () {
         $fixture = operatorFixture();
-        operatorStore($fixture['home'], ['gateway' => 'active', 'operator' => 'active']);
 
-        expect(runGuestScript($fixture, ['provision', '192.0.2.14', 'x86_64', '10.44.0.5'])->getExitCode())->toBe(0)
-            ->and(commandLog($fixture))->toBe([]);
-    });
-
-    it('provisions a roleless operator with its scanned host key', function () {
-        $fixture = operatorFixture();
-        operatorStore($fixture['home'], ['gateway' => 'active', 'operator' => 'provisioning']);
-
-        expect(runGuestScript($fixture, ['provision', '192.0.2.14', 'x86_64', '10.44.0.5'])->getExitCode())->toBe(0)
-            ->and(commandLog($fixture))->toBe([
-                'ssh-keyscan -T 5 -t ed25519 -- 192.0.2.14',
-                'artisan orbit:node-provision operator 192.0.2.14 --architecture=x86_64 --user=orbit --wireguard-ip=10.44.0.5 '
-                    .'--host-key-fingerprint=SHA256:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB --no-interaction',
-            ]);
-    });
+        expect(runGuestScript($fixture, ['role-add', 'app-dev', 'database'])->getExitCode())->toBe(0)
+            ->and(commandLog($fixture))->toBe(['orbit node:role:add app-dev database --json']);
+    })->skip(fn (): bool => posix_geteuid() === 0, 'role-add re-runs itself through sudo as root.');
 
     it('adds the Gateway, then grants the operator Node access to the Gateway Node by id', function () {
         $fixture = operatorFixture();
@@ -378,7 +322,7 @@ describe('operator convergence', function () {
             ['id' => 4, 'name' => 'operator'],
         ]], JSON_THROW_ON_ERROR));
 
-        expect(runGuestScript($fixture, ['grant', 'operator', 'gateway'])->getExitCode())->toBe(0)
+        expect(runGuestScript($fixture, ['grant', 'operator', 'gateway', '10.44.0.1'])->getExitCode())->toBe(0)
             ->and(commandLog($fixture))->toBe([
                 "orbit gateway:add https://10.44.0.1 --name=e2e --ca={$fixture['home']}/.orbit/ca/root.pem --use --json",
                 'orbit node:list --json',
@@ -392,7 +336,7 @@ describe('operator convergence', function () {
         file_put_contents("{$fixture['home']}/.orbit/ca/root.pem", "root CA\n");
         file_put_contents("{$fixture['root']}/nodes.json", json_encode(['nodes' => [['id' => 1, 'name' => 'gateway']]], JSON_THROW_ON_ERROR));
 
-        expect(runGuestScript($fixture, ['grant', 'operator', 'gateway'])->getExitCode())->toBe(65)
+        expect(runGuestScript($fixture, ['grant', 'operator', 'gateway', '10.44.0.1'])->getExitCode())->toBe(65)
             ->and(implode("\n", commandLog($fixture)))->not->toContain('node:access:add');
     })->skip(fn (): bool => posix_geteuid() === 0, 'grant re-runs itself through sudo as root.');
 });
@@ -413,8 +357,9 @@ describe('topology verifier', function () {
         'Node set missing' => [['nodes.registered', str_repeat('a', 40), 'orbit-e2e-gateway']],
         'Node set not base64' => [['nodes.registered', str_repeat('a', 40), 'orbit-e2e-gateway', '{"gateway":[]}']],
         'no reachable Nodes' => [['wireguard.reachability', str_repeat('a', 40), 'orbit-e2e-gateway']],
+        'reachable Node without address' => [['wireguard.reachability', str_repeat('a', 40), 'orbit-e2e-gateway', 'app-dev']],
+        'reachable Node outside WireGuard' => [['wireguard.reachability', str_repeat('a', 40), 'orbit-e2e-gateway', 'app-dev=192.0.2.11']],
         'mount token not a hash' => [['source.app-dev', str_repeat('a', 40), 'orbit-e2e-app-dev', 'token']],
-        'source on a production Node' => [['source.app-prod', str_repeat('a', 40), 'orbit-e2e-app-prod', str_repeat('b', 64)]],
     ]);
 
     it('passes nodes.registered on the exact declared Nodes and prints one JSON evidence line', function () {

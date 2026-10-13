@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\Nodes\EnrollmentProgram;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -104,7 +105,7 @@ describe('tool managers', function (): void {
             ->and($ssh->commands[0]->arguments)->toBe(['sudo', 'bash', '-seu', '--', 'orbit'])
             ->and($ssh->commands[0]->input)->toBe($tools->materializeCommand($this->node)->input);
     })->with([
-        'Vite+' => [VpToolManager::class, TaskVmBakedPrograms::VpManager],
-        'Composer' => [ComposerToolManager::class, TaskVmBakedPrograms::ComposerManager],
+        'Vite+' => [VpToolManager::class, EnrollmentProgram::VpManager],
+        'Composer' => [ComposerToolManager::class, EnrollmentProgram::ComposerManager],
     ]);
 });

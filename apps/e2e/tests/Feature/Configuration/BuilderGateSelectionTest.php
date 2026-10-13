@@ -650,7 +650,7 @@ PHP);
             'tests/Feature/Infrastructure/Caddy/CaddyPublicationLockTest.php',
         ]],
         ['apps/e2e', [
-            'tests/Unit/E2E/ProofFixtureContractTest.php',
+            'tests/Unit/E2E/Value/TopologyNodeCatalogTest.php',
         ]],
         ['packages/php-sdk', [
             'tests/Unit/SuccessRequestIdBoundaryTest.php',

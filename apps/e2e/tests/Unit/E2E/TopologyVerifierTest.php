@@ -89,8 +89,7 @@ describe('TopologyVerifier', function () {
         ]],
         'full' => [['app-dev', 'app-prod', 'app-prod-2'], [
             'nodes.registered' => 'gateway', 'service.gateway' => 'gateway', 'service.vpn' => 'gateway', 'wireguard.reachability' => 'gateway',
-            'caddy.app-dev' => 'app-dev', 'caddy.app-prod' => 'app-prod', 'php-fpm.app-prod' => 'app-prod',
-            'caddy.app-prod-2' => 'app-prod-2', 'php-fpm.app-prod-2' => 'app-prod-2',
+            'caddy.app-dev' => 'app-dev', 'caddy.app-prod' => 'app-prod', 'caddy.app-prod-2' => 'app-prod-2',
             'operator.gateway' => 'operator', 'source.gateway' => 'gateway', 'source.app-dev' => 'app-dev', 'source.operator' => 'operator',
         ]],
     ]);
@@ -110,7 +109,7 @@ describe('TopologyVerifier', function () {
         }
         expect(json_decode(base64_decode($arguments['nodes.registered'][0]), true))
             ->toBe(['gateway' => ['gateway', 'vpn'], 'app-dev' => ['app-dev'], 'operator' => []])
-            ->and($arguments['wireguard.reachability'])->toBe(['app-dev', 'operator'])
+            ->and($arguments['wireguard.reachability'])->toBe(['app-dev=10.44.0.2', 'operator=10.44.0.5'])
             ->and($arguments['source.app-dev'])->toBe([str_repeat('e', 64)])
             ->and($arguments['service.gateway'])->toBe([]);
     });

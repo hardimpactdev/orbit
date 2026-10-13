@@ -12,13 +12,3 @@ parameters:
     parallel:
         maximumNumberOfProcesses: 2
 
-    # Larastan checks inherited helpers against every registered subclass, even
-    # when that subclass never calls the helper. Only the callers declare these
-    # inputs; E2E also guards its optional worktree input with hasOption().
-    # Match the exact commands, input names, files, and counts. New findings fail.
-    ignoreErrors:
-        -
-            identifier: larastan.console.undefinedOption
-            message: '#^Command "(?:topology\-images:build|topology\-images:status|topology:acquire)" does not have option "worktree"\.$#'
-            path: app/Console/Commands/E2ECommand.php
-            count: 3

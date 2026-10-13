@@ -9,7 +9,6 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\RoleName;
 use App\Infrastructure\Nodes\Roles\NodeRolePrerequisiteCommandFactory;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\TaskVms\TaskVmBakedPrograms;
 use App\Infrastructure\TaskVms\TaskVmImageRecipe;
 use App\Infrastructure\Tools\ComposerToolManager;
 use App\Infrastructure\Tools\VpToolManager;
@@ -56,7 +55,7 @@ final readonly class NodeEnrollmentPrograms
      * operator Node. Each program runs as `orbit` and starts with `sudo`.
      *
      * @param  list<RoleName>  $roles
-     * @return array<string, RemoteCommand> keyed by stable program name
+     * @return array<string, RemoteCommand> keyed by stable program name ({@see EnrollmentProgram})
      *
      * @throws InvalidArgumentException for a repeated role or a role this cannot render
      */
@@ -65,7 +64,7 @@ final readonly class NodeEnrollmentPrograms
         $node = new Node(['name' => 'node-programs', 'platform' => 'linux', 'user' => self::ManagedUser]);
         $account = new ManagedUserAccount(self::ManagedUser, self::ManagedUser, '/home/'.self::ManagedUser);
 
-        $programs = [TaskVmBakedPrograms::Bootstrap => $this->bootstrap->makeWithPasswordlessSudo($node, self::ManagedUser, rolelessOperator: $roles === [])];
+        $programs = [EnrollmentProgram::Bootstrap => $this->bootstrap->makeWithPasswordlessSudo($node, self::ManagedUser, rolelessOperator: $roles === [])];
         $rendered = [];
         foreach ($roles as $role) {
             if (in_array($role, $rendered, strict: true)) {
@@ -78,19 +77,19 @@ final readonly class NodeEnrollmentPrograms
 
             $caddy = $this->roles->caddyPackage($node, $role);
             if ($caddy instanceof RemoteCommand) {
-                $programs[TaskVmBakedPrograms::CaddyPackage] ??= $caddy;
+                $programs[EnrollmentProgram::CaddyPackage] ??= $caddy;
             }
             // The gateway role has no prerequisites program; its Caddy follows the VPN through a role step.
             if ($role !== RoleName::Gateway) {
-                $programs[$role->value.'-prerequisites'] = $this->roles->make($node, $role, $account);
+                $programs[EnrollmentProgram::prerequisites($role)] = $this->roles->make($node, $role, $account);
             }
             if ($role === RoleName::AppDev || $role === RoleName::AppProd) {
-                $programs[TaskVmBakedPrograms::VpManager] ??= $this->vp->materializeCommand($node);
-                $programs[TaskVmBakedPrograms::ComposerManager] ??= $this->composer->materializeCommand($node);
+                $programs[EnrollmentProgram::VpManager] ??= $this->vp->materializeCommand($node);
+                $programs[EnrollmentProgram::ComposerManager] ??= $this->composer->materializeCommand($node);
             }
             if ($role === RoleName::AppDev) {
                 foreach ($this->php->appDevPrograms($this->phpVersions->versions()) as $name => $program) {
-                    $programs[TaskVmBakedPrograms::AppDevPhp.'-'.str_replace('.', '-', (string) $name)] = $program;
+                    $programs[EnrollmentProgram::AppDevPhp.'-'.str_replace('.', '-', (string) $name)] = $program;
                 }
             }
         }

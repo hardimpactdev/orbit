@@ -12,7 +12,7 @@ use App\E2E\Value\TopologyTarget;
 use RuntimeException;
 
 /**
- * Release an issue's discovery topology and prove its resources are gone.
+ * Release an issue's topology and prove its resources are gone.
  *
  * Every Incus resource is checked against the attempt (owner, issue, attempt) before deletion. The lease
  * names the declared Nodes, so a failed acquisition without a topology record is released exactly too.
@@ -28,7 +28,7 @@ final readonly class TopologyReleaser
         private ?OrphanNetworkSweep $sweep = null,
     ) {}
 
-    /** @return array{state:string,issue:string,purpose:string,attempt_id:string,released:list<string>,already_absent:list<string>,networks_reaped:list<string>} */
+    /** @return array{state:string,issue:string,attempt_id:string,released:list<string>,already_absent:list<string>,networks_reaped:list<string>} */
     public function release(TopologyRequest $request): array
     {
         $state = IssueState::forWorktree($request->issue, $request->worktree);
@@ -41,14 +41,13 @@ final readonly class TopologyReleaser
                 throw new RuntimeException("{$request->issue} has no active attempt.");
             }
             $target = $state->topology()->target
-                ?? TopologyTarget::feature($request->issue, $state->attemptId(), $state->recipe());
+                ?? TopologyTarget::for($request->issue, $state->attemptId(), $state->recipe());
             [$released, $absent] = $this->deleteResources($target);
             $state->forgetAttempt();
 
             return [
                 'state' => 'released',
                 'issue' => $request->issue,
-                'purpose' => 'discovery',
                 'attempt_id' => $target->attempt->value,
                 'released' => $released,
                 'already_absent' => $absent,

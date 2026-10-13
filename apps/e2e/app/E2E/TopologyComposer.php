@@ -7,7 +7,6 @@ namespace App\E2E;
 use App\E2E\Value\ConvergenceReport;
 use App\E2E\Value\GuestCommand;
 use App\E2E\Value\GuestCommandResult;
-use App\E2E\Value\TopologyNode;
 use App\E2E\Value\TopologyTarget;
 use Closure;
 use RuntimeException;
@@ -24,19 +23,19 @@ final readonly class TopologyComposer
 
     public function __construct(
         private IncusHost $host,
-        private DiscoveryGuestPreparer $guests,
+        private TopologyGuestPreparer $guests,
     ) {}
 
     /** @param (Closure(string, float): void)|null $progress hears each step and its seconds */
     public function compose(TopologyTarget $target, ?Closure $progress = null): ConvergenceReport
     {
-        $progress ??= static function (string $step, float $seconds): void {};
         $instances = $target->instances();
         $addresses = $this->host->globalIpv4All($instances);
         $gateway = $instances['gateway'];
+        $gatewayAddress = $target->recipe->node('gateway')->wireGuardAddress();
         $steps = [];
 
-        $this->step($progress, 'bootstrap.gateway', function () use ($target, $gateway, $addresses): void {
+        StageTimer::run($progress, 'bootstrap.gateway', function () use ($target, $gateway, $addresses): void {
             $this->guests->placeGatewayEnvironment($target);
             $this->guests->exposeOrbitCli($target);
             $this->run('bootstrap.gateway', $gateway, 'converge-gateway.sh', ['prerequisites']);
@@ -62,20 +61,29 @@ final readonly class TopologyComposer
 
         foreach ($target->recipe->workloadNodes() as $node) {
             $name = 'enroll.'.$node->key;
-            $this->step($progress, $name, fn () => $this->run($name, $gateway, ...$this->enrollment($node, $addresses[$node->key], $architectures[$node->key])));
+            StageTimer::run($progress, $name, fn () => $this->run($name, $gateway, 'converge-node.sh', [
+                'provision',
+                $node->key,
+                $addresses[$node->key],
+                $architectures[$node->key],
+                $node->wireGuardAddress(),
+                $node->roles[0],
+                (string) $node->tld,
+            ]));
             $steps[$name] = true;
         }
 
         $operator = $target->recipe->node('operator');
-        $this->step($progress, 'enroll.operator', function () use ($gateway, $instances, $addresses, $architectures, $operator): void {
-            $this->run('enroll.operator', $gateway, 'converge-operator.sh', [
+        StageTimer::run($progress, 'enroll.operator', function () use ($gateway, $gatewayAddress, $instances, $addresses, $architectures, $operator): void {
+            $this->run('enroll.operator', $gateway, 'converge-node.sh', [
                 'provision',
+                $operator->key,
                 $addresses['operator'],
                 $architectures['operator'],
                 $operator->wireGuardAddress(),
             ]);
-            $this->run('enroll.operator', $gateway, 'converge-operator.sh', ['grant', 'operator', 'gateway']);
-            $this->run('enroll.operator', $instances['operator'], 'converge-operator.sh', ['configure-cli', '10.44.0.1']);
+            $this->run('enroll.operator', $gateway, 'converge-operator.sh', ['grant', 'operator', 'gateway', $gatewayAddress]);
+            $this->run('enroll.operator', $instances['operator'], 'converge-operator.sh', ['configure-cli', $gatewayAddress]);
         });
         $steps['enroll.operator'] = true;
 
@@ -86,40 +94,21 @@ final readonly class TopologyComposer
                 continue;
             }
             $name = 'roles.'.$node->key;
-            $this->step($progress, $name, function () use ($name, $instances, $node, $roles): void {
+            $ownCluster = $target->recipe->ownClusterRoles($node);
+            StageTimer::run($progress, $name, function () use ($name, $instances, $node, $roles, $ownCluster): void {
                 foreach ($roles as $role) {
-                    $this->run($name, $instances['operator'], 'converge-operator.sh', ['role-add', $node->key, $role]);
+                    $this->run($name, $instances['operator'], 'converge-operator.sh', [
+                        'role-add',
+                        $node->key,
+                        $role,
+                        ...(in_array($role, $ownCluster, true) ? ['e2e-'.$node->key] : []),
+                    ]);
                 }
             });
             $steps[$name] = true;
         }
 
         return ConvergenceReport::successful($steps);
-    }
-
-    /** @return array{0:string, 1:list<string>} the script and arguments that enroll one workload Node */
-    private function enrollment(TopologyNode $node, string $address, string $architecture): array
-    {
-        return in_array('app-dev', $node->roles, true)
-            ? ['converge-app-dev.sh', [$node->key, $address, $architecture]]
-            : ['converge-app-prod.sh', [$node->key, $address, $architecture, $node->wireGuardAddress()]];
-    }
-
-    /**
-     * @param  Closure(string, float): void  $progress
-     * @param  callable(): mixed  $work
-     */
-    private function step(Closure $progress, string $name, callable $work): void
-    {
-        $started = microtime(true);
-        try {
-            $work();
-            $progress($name, microtime(true) - $started);
-        } catch (RuntimeException $exception) {
-            throw str_starts_with($exception->getMessage(), "Step {$name} ")
-                ? $exception
-                : new RuntimeException("Step {$name} failed: ".$exception->getMessage(), previous: $exception);
-        }
     }
 
     /** @param list<string> $arguments */
@@ -191,7 +180,7 @@ final readonly class TopologyComposer
     {
         $pattern = match (true) {
             $script === 'converge-gateway.sh' && $result->exitCode === 71 => '/(?:\A|\R)Gateway bootstrap failed at step \[([a-z0-9:-]+)\] with error \[([a-z0-9._-]+)\]\.(?:\R|\z)/D',
-            in_array($script, ['converge-app-dev.sh', 'converge-app-prod.sh', 'converge-operator.sh'], true) => '/(?:\A|\R)Node provisioning failed at step \[([a-z0-9:-]+)\] with error \[([a-z0-9._-]+)\]\.(?:\R|\z)/D',
+            $script === 'converge-node.sh' => '/(?:\A|\R)Node provisioning failed at step \[([a-z0-9:-]+)\] with error \[([a-z0-9._-]+)\]\.(?:\R|\z)/D',
             default => null,
         };
 

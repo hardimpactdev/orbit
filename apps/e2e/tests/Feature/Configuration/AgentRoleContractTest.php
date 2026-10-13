@@ -40,6 +40,6 @@ it('documents Node selection for extended issue topologies', function () use ($r
     $script = $read('bin/e2e-topology');
 
     expect($script)
-        ->toContain('acquire ISSUE WORKTREE [--nodes=LIST]')
-        ->toContain('subset of app-dev, app-prod, app-prod-2 (default app-dev,app-prod)');
+        ->toContain('acquire ISSUE WORKTREE [--nodes=LIST] [--replace]')
+        ->toContain('declarable Nodes in apps/e2e/resources/topology-nodes.json');
 });

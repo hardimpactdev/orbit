@@ -73,6 +73,6 @@ The topology has the base roles of its Nodes, `gateway` and `vpn` on `gateway`, 
 ## Keep notes honest
 
 - Do not work around a product gap on the Nodes, for example with `/etc/hosts` entries or hand-installed packages. A workaround hides the failure you are looking for. Record the gap as a finding and ask for help when it blocks you.
-- Record what you checked with `--record=LABEL` on `exec` and `logs`, for example `exec TASK-58 gateway --argv='["orbit","node:list"]' --record="node list after crash"`. The harness appends the command, its UTC start and end times in milliseconds, the exit code, and the redacted output to `<worktree>/.e2e/evidence.log`. Cite entries by label in your handoff or review instead of copying output by hand.
+- Record what you checked with `--record=LABEL` on `exec` and `logs`, for example `exec TASK-58 gateway --argv='["orbit","node:list"]' --record="node list after crash"`. The harness appends the command, its UTC start and end times in milliseconds, the exit code, and the redacted output to `<worktree>/.e2e/evidence.log`, and one JSON record to `.e2e/evidence.jsonl`. Cite entries by label in your handoff or review instead of copying output by hand.
 - Timing claims such as "within one second" need both ends. Use the recorded start and end times, or record `["date","-Ins"]` before and after an action that the harness does not run.
 - Record every limitation, manual patch, and skipped check in your handoff or review.

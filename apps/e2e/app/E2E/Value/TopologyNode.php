@@ -18,6 +18,8 @@ final readonly class TopologyNode
         public int $address,
         public bool $checkout,
         public array $roles,
+        public string $memory,
+        public ?string $tld = null,
     ) {
         self::assertKey($key);
         if ($address < 10 || $address > 254) {
@@ -33,6 +35,7 @@ final readonly class TopologyNode
         }
     }
 
+    /** The Node's address in the topology's own WireGuard network: position 10 is `.1`, the Gateway. */
     public function wireGuardAddress(): string
     {
         return '10.44.0.'.($this->address - 9);

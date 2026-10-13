@@ -147,7 +147,7 @@ function incusHost(?SecretRedactor $redactor = null, int $guestReadinessTimeoutS
 /**
  * @return array{image:string,name:string,network:string,node:string,address:int,slot:int,container:bool,metadata:array<string,string>}
  */
-function incusGuestSpec(string $node, int $address, bool $container = false): array
+function incusGuestSpec(string $node, int $address, bool $container = false, string $memory = '2GiB'): array
 {
     return [
         'image' => $container ? 'orbit-e2e-operator' : 'images:ubuntu/26.04',
@@ -157,6 +157,7 @@ function incusGuestSpec(string $node, int $address, bool $container = false): ar
         'address' => $address,
         'slot' => 30,
         'container' => $container,
+        'memory' => $memory,
         'metadata' => ['user.orbit.e2e.operation' => 'op-1'],
     ];
 }
@@ -632,12 +633,11 @@ describe('IncusHost reads', function () {
         expect(incusHost()->imageFingerprint('orbit-base'))->toBe($fingerprint);
     });
 
-    it('creates a guest with integer CPU and per-Node memory limits', function () {
+    it('creates a guest with an integer CPU limit and the memory its spec names', function () {
         app()->instance('config', new Repository([
             'e2e' => [
                 'incus' => [
                     'cpu' => 2,
-                    'memory' => ['default' => '2GiB', 'operator' => '1GiB'],
                     'root_size' => '16GiB',
                 ],
             ],
@@ -649,7 +649,7 @@ describe('IncusHost reads', function () {
                 return Process::result();
             });
 
-            incusHost()->initGuests(['operator' => incusGuestSpec('operator', 14, container: true)]);
+            incusHost()->initGuests(['operator' => incusGuestSpec('operator', 14, container: true, memory: '1GiB')]);
         } finally {
             app()->forgetInstance('config');
         }

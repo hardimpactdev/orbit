@@ -34,6 +34,35 @@ it('appends a greppable, redacted entry with millisecond UTC timestamps', functi
         LOG);
 });
 
+it('writes one JSON record per entry with the redacted argv as a list and no output', function (): void {
+    $worktree = temporaryPath('orbit-evidence-', 4);
+    mkdir($worktree, 0700, true);
+    $log = new EvidenceLog(new SecretRedactor(['s3cret-value']));
+    $previousUmask = umask(0022);
+    try {
+        foreach (['first' => 3, 'second' => 0] as $label => $exit) {
+            $log->append(
+                $worktree,
+                new EvidenceLabel($label),
+                'app-prod',
+                ['sh', '-c', "printf 'a\nb' | grep a", '--token=abc', 's3cret-value'],
+                new GuestCommandResult("never in the record\n", 'nor this', $exit),
+                new DateTimeImmutable('2026-09-24T08:40:00.123456+02:00'),
+                new DateTimeImmutable('2026-09-24T06:40:01.357999Z'),
+            );
+        }
+    } finally {
+        umask($previousUmask);
+    }
+    $lines = file($worktree.'/.e2e/evidence.jsonl', FILE_IGNORE_NEW_LINES);
+
+    expect(fileperms($worktree.'/.e2e/evidence.jsonl') & 0777)->toBe(0600)
+        ->and($lines)->toHaveCount(2)
+        ->and($lines[0])->toBe('{"v":1,"start":"2026-09-24T06:40:00.123Z","end":"2026-09-24T06:40:01.357Z","duration_ms":1234,'
+            .'"label":"first","node":"app-prod","exit":3,"argv":["sh","-c","printf \'a\\nb\' | grep a","--token=[REDACTED]","[REDACTED]"]}')
+        ->and(json_decode($lines[1], true, 8, JSON_THROW_ON_ERROR))->toMatchArray(['label' => 'second', 'exit' => 0]);
+});
+
 it('appends without rewriting earlier entries and creates the log private', function (): void {
     $worktree = temporaryPath('orbit-evidence-', 4);
     mkdir($worktree, 0700, true);
