@@ -221,7 +221,7 @@ final readonly class IncusHost
         $subject = "the Incus resources of Node [{$node->name}]";
         $result = $this->execute($node, ['incus', 'query', '--', $path], null, 120.0);
         $list = self::json($subject, $result->succeeded() ? $result : throw self::failed($subject, 'query', $result));
-        if (! array_is_list($list) || ! array_all($list, is_string(...))) {
+        if (! array_is_list($list) || ! array_all($list, static fn (mixed $url): bool => is_string($url))) {
             throw self::invalid($subject, 'the answer is not a list of URLs');
         }
 

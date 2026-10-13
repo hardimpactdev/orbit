@@ -292,7 +292,8 @@ describe('Doctor', function (): void {
         $ready = tvm_sweep_vm($this->beast, TaskVmState::Ready, '10.44.0.129');
         $this->incus->instances = ['10.44.0.7' => ['tvm-9999', 'tvm-image-20261010030000']];
 
-        expect(tvm_sweep_doctor($this->beast))->toBe([['node.task_vm_orphaned', 'tvm-9999'], ['node.task_vm_missing', 'absent']])
+        // The builder started long before the last hour, so it is a stray, reported and left in place.
+        expect(tvm_sweep_doctor($this->beast))->toBe([['node.task_vm_orphaned', 'tvm-9999'], ['node.task_vm_missing', 'absent'], ['node.task_vm_stray_instance', 'orbit-tasks/tvm-image-20261010030000']])
             ->and($this->incus->instances['10.44.0.7'])->toBe(['tvm-9999', 'tvm-image-20261010030000'])
             ->and($ready->fresh()?->state)->toBe(TaskVmState::Ready);
     });
@@ -389,15 +390,15 @@ describe('strays', function (): void {
             ['node.task_vm_stray_instance', 'orbit-tasks/dev-box'],
             ['node.task_vm_stray_instance', 'default/renewed-ghost'],
             ['node.task_vm_stray_instance', 'orbit-templates/orbit-template-agent-base'],
-            ['node.task_vm_stray_volume', 'orbit-tasks/orbit-tasks/scratch'],
             ['node.task_vm_stray_volume', 'orbit-tasks/default/tvm-template-46-20261013083819'],
+            ['node.task_vm_stray_volume', 'orbit-tasks/orbit-tasks/scratch'],
         ];
         foreach ($expected as [$code, $stray]) {
             $instance = $code === 'node.task_vm_stray_instance';
-            Log::shouldHaveReceived('warning')->once()->with(
+            Log::shouldHaveReceived('warning')->with(
                 $instance ? 'A task VM host has an Incus instance that Orbit does not own.' : 'A task VM host has an Incus custom volume that Orbit does not own.',
                 ['node_id' => $this->beast->id, $instance ? 'instance' : 'volume' => $stray],
-            );
+            )->once();
         }
         expect(collect($this->incus->calls)->contains(static fn (array $call): bool => in_array('delete', $call[1], true)))->toBeFalse()
             ->and(tvm_stray_doctor($this->beast))->toBe($expected);
@@ -419,8 +420,8 @@ describe('strays', function (): void {
             ['node.task_vm_stray_record', $noGroup->name.' ready'],
             ['node.task_vm_stray_record', $completed->name.' parked'],
         ]);
-        Log::shouldHaveReceived('warning')->once()->with('A task VM is ready or parked without an open group.', ['task_vm_id' => $noGroup->id, 'name' => $noGroup->name, 'state' => 'ready', 'group_id' => null]);
-        Log::shouldHaveReceived('warning')->once()->with('A task VM is ready or parked without an open group.', ['task_vm_id' => $completed->id, 'name' => $completed->name, 'state' => 'parked', 'group_id' => $completed->group_id]);
+        Log::shouldHaveReceived('warning')->with('A task VM is ready or parked without an open group.', ['task_vm_id' => $noGroup->id, 'name' => $noGroup->name, 'state' => 'ready', 'group_id' => null])->once();
+        Log::shouldHaveReceived('warning')->with('A task VM is ready or parked without an open group.', ['task_vm_id' => $completed->id, 'name' => $completed->name, 'state' => 'parked', 'group_id' => $completed->group_id])->once();
         expect($noGroup->fresh()?->state)->toBe(TaskVmState::Ready)
             ->and($completed->fresh()?->state)->toBe(TaskVmState::Parked);
     });
@@ -439,7 +440,7 @@ describe('strays', function (): void {
 
         app()->call([new SweepTaskVmHosts, 'handle']);
 
-        Log::shouldHaveReceived('warning')->once()->with('A task VM Node has no live task VM record.', ['node_id' => $stray->id, 'name' => 'tvm-41']);
+        Log::shouldHaveReceived('warning')->with('A task VM Node has no live task VM record.', ['node_id' => $stray->id, 'name' => 'tvm-41'])->once();
         Log::shouldNotHaveReceived('warning', ['A task VM Node has no live task VM record.', ['node_id' => $young->id, 'name' => 'tvm-43']]);
         expect(tvm_stray_doctor($stray, reachable: false))->toBe([['node.task_vm_stray_node', 'none']])
             ->and(tvm_stray_doctor($live))->toBe([])
