@@ -8,7 +8,6 @@ use App\Domain\Instances\DevelopmentSourceAccess;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
-use App\Infrastructure\Tasks\TaskWorkerUser;
 use App\Models\Instance;
 use Illuminate\Support\Collection;
 
@@ -30,7 +29,7 @@ final readonly class NativeDevelopmentSourceAccess implements DevelopmentSourceA
 
         $this->ssh->execute(
             $instance->node,
-            $command->command($sites, TaskWorkerUser::forCheckout($instance)),
+            $command->command($sites),
             step: 'source-access',
             errorCode: 'app-dev.source_access_failed',
         );

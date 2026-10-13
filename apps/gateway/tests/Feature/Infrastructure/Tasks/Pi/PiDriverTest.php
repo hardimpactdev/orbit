@@ -2,9 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Domain\Processes\DesiredProcessState;
-use App\Domain\Processes\ProcessRuntime;
-use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentInputRequest;
@@ -22,29 +19,35 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
-const PI_TOKEN = 'pi-node-token-with-more-than-32-characters';
+const PI_TOKEN = TEST_TASK_VM_PI_TOKEN;
 const PI_BASE = 'http://10.44.0.9:3774';
 
-/** @param array<string, mixed> $settings */
-function pi_node(array $settings = ['pi' => ['token' => PI_TOKEN]]): Node
+function pi_node(): Node
 {
     return Node::query()->create([
         'name' => 'pi-node', 'platform' => 'linux', 'status' => 'active',
-        'wireguard_ip' => '10.44.0.9', 'public_ssh_host' => '10.44.0.9', 'settings' => $settings,
+        'wireguard_ip' => '10.44.0.9', 'public_ssh_host' => '10.44.0.9',
     ]);
 }
 
-function pi_workspace(Node $node): Instance
+/** The workspace of a running group on its ready task VM, whose Node is `$node`. */
+function pi_workspace(Node $node, bool $taskVm = true): Instance
 {
     $project = Project::query()->create(['name' => 'pi', 'slug' => 'pi', 'repository_url' => 'git@example.test:pi.git', 'default_branch' => 'main']);
+    $group = Task::topLevel()->create(['project_id' => $project->id, 'implementer_agent_driver' => 'pi', 'title' => 'Feature', 'brief' => 'Brief', 'status' => 'running']);
+    $workspace = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id, 'checkout_path' => '/srv/task-1', 'status' => 'source_resolved']);
+    $group->taskable()->associate($workspace)->save();
+    if ($taskVm) {
+        test_task_vm($group, $node);
+    }
 
-    return Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-1', 'checkout_path' => '/srv/task-1', 'status' => 'source_resolved']);
+    return $workspace;
 }
 
-function pi_thread(Node $node, string $externalId = 'session-1'): AgentThread
+function pi_thread(Node $node, string $externalId = 'session-1', bool $taskVm = true): AgentThread
 {
-    $workspace = pi_workspace($node);
-    $group = Task::topLevel()->create(['project_id' => $workspace->project_id, 'implementer_agent_driver' => 'pi', 'title' => 'Feature', 'brief' => 'Brief', 'status' => 'running']);
+    $workspace = pi_workspace($node, $taskVm);
+    $group = Task::topLevel()->whereMorphedTo('taskable', $workspace)->firstOrFail();
 
     return AgentThread::query()->create([
         'task_group_id' => $group->id,
@@ -116,21 +119,6 @@ describe('registration and placement', function (): void {
     it('is registered as the pi driver', function (): void {
         expect(app(AgentDriverRegistry::class)->get('pi'))->toBeInstanceOf(PiDriver::class);
     });
-
-    it('allows a Node only while its pi-server Process is recorded as running', function (): void {
-        $node = pi_node();
-        expect(pi_driver()->allows($node))->toBeFalse();
-
-        $process = $node->processes()->create([
-            'name' => 'pi-server', 'runtime' => ProcessRuntime::Systemd, 'working_directory' => '/home/orbit',
-            'runtime_config' => ['command' => ['/home/orbit/.local/bin/pi-server']], 'restart_policy' => 'always',
-            'keep_alive' => true, 'desired_state' => DesiredProcessState::Running, 'status' => LifecycleStatus::Active,
-        ]);
-        expect(pi_driver()->allows($node))->toBeTrue();
-
-        $process->update(['desired_state' => DesiredProcessState::Stopped]);
-        expect(pi_driver()->allows($node))->toBeFalse();
-    });
 });
 
 describe('create and send', function (): void {
@@ -143,7 +131,7 @@ describe('create and send', function (): void {
         Http::assertSent(fn (Request $request): bool => $request->url() === PI_BASE.'/sessions'
             && $request->hasHeader('Authorization', 'Bearer '.PI_TOKEN)
             && $request['id'] === $id && $request['cwd'] === '/srv/task-1'
-            && $request['model'] === 'openai-codex/gpt-5.6-luna' && $request['thinkingLevel'] === 'low');
+            && $request['model'] === 'orbit-task-vm/gpt-5.6-luna' && $request['thinkingLevel'] === 'low');
         Http::assertSent(fn (Request $request): bool => $request->url() === PI_BASE.'/sessions/'.$id.'/messages'
             && $request['text'] === 'Do the work' && is_string($request['key']));
     });
@@ -174,18 +162,7 @@ describe('create and send', function (): void {
             ->toThrow(AgentDriverException::class, 'The Pi server refused the request (session.turn_active): Session is already working on a turn.');
     });
 
-    it('uses the configured provider, such as a CLIProxyAPI endpoint, for plain model names', function (): void {
-        config()->set('orbit.pi.provider', 'cliproxyapi');
-        Http::fake([PI_BASE.'/sessions' => Http::response(['id' => 'x'], 201), PI_BASE.'/sessions/*/messages' => Http::response(['duplicate' => false], 202)]);
-        $node = pi_node();
-
-        pi_driver()->create(new AgentThreadStart($node, pi_workspace($node), 'Task', 'Do the work', 'gpt-5.6-luna', 'low', TaskThreadRole::Implementer));
-
-        Http::assertSent(fn (Request $request): bool => $request->url() === PI_BASE.'/sessions' && $request['model'] === 'cliproxyapi/gpt-5.6-luna');
-    });
-
-    it('refuses Claude models even through a configured or named provider', function (string $model): void {
-        config()->set('orbit.pi.provider', 'cliproxyapi');
+    it('refuses Claude models even through a named provider', function (string $model): void {
         Http::fake();
         $node = pi_node();
 
@@ -203,11 +180,20 @@ describe('create and send', function (): void {
         Http::assertNothingSent();
     });
 
-    it('refuses a Node without a Pi token', function (): void {
+    it('refuses a thread whose workspace is not on a ready task VM', function (): void {
         Http::fake();
 
-        expect(fn () => pi_driver()->send(pi_thread(pi_node(['pi' => []])), 'Continue'))
-            ->toThrow(AgentDriverException::class, 'The Node has no Pi server token configured.');
+        expect(fn () => pi_driver()->send(pi_thread(pi_node(), taskVm: false), 'Continue'))
+            ->toThrow(AgentDriverException::class, 'The original task VM Pi server is unavailable.');
+        Http::assertNothingSent();
+    });
+
+    it('refuses to create a session on a Node that is no task VM', function (): void {
+        Http::fake();
+        $node = pi_node();
+
+        expect(fn () => pi_driver()->create(new AgentThreadStart($node, pi_workspace($node, taskVm: false), 'Task', 'Work', 'gpt-5.6-luna', 'low', TaskThreadRole::Implementer)))
+            ->toThrow(AgentDriverException::class, 'The original workspace Pi server is unavailable.');
         Http::assertNothingSent();
     });
 

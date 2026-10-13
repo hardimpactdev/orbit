@@ -51,8 +51,6 @@ it('publishes validated write body fields in OpenAPI and MCP', function (string 
         expect(array_keys($body['properties']['apps']['properties']))->toBe(['path']);
         expect($body['properties']['apps']['required'] ?? [])->toBe([]);
         expect($body['properties']['apps']['minProperties'] ?? 0)->toBe(0);
-        expect(array_keys($body['properties']['tasks']['properties']))->toBe(['worker']);
-        expect($body['properties']['tasks']['properties']['worker']['enum'])->toBe(['none']);
     }
 
     if ($operationId === 'database-update') {
@@ -81,7 +79,7 @@ it('publishes validated write body fields in OpenAPI and MCP', function (string 
         'driver' => 'string', 'node_id' => ['integer', 'null'], 'host' => ['string', 'null'], 'port' => ['integer', 'null'],
         'database' => ['string', 'null'], 'path' => ['string', 'null'], 'username' => ['string', 'null'], 'password' => ['string', 'null'],
     ], []],
-    'node settings' => ['node-settings', UpdateNodeSettingsRequest::class, ['apps' => ['object', 'null'], 'tasks' => ['object', 'null']], []],
+    'node settings' => ['node-settings', UpdateNodeSettingsRequest::class, ['apps' => ['object', 'null']], []],
 ]);
 
 it('publishes database patterns that enforce the runtime field constraints', function (string $field, string $value, bool $valid): void {

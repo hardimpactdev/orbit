@@ -13,7 +13,6 @@ use App\Data\Tasks\UpdateTaskGroupData;
 use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\TaskConcurrencyGuard;
 use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
@@ -185,7 +184,6 @@ it('creates task-backed annotations and keeps their lifecycle outside the manage
     $this->postJson($url.'/annotation-one/status', ['status' => 'in_progress'])->assertOk();
     expect($task->refresh()->status)->toBe(TaskStatus::Running);
     expect($scheduler->tick())->toBe([]);
-    expect(app(TaskConcurrencyGuard::class)->activeForNode($instance->node_id))->toBe(0);
     expect(fn () => $scheduler->startTask($task))->toThrow(ResourceOperationException::class);
     expect(fn () => app(CompleteTaskGroupAction::class)->execute($task->parent))->toThrow(ResourceOperationException::class);
     expect(fn () => app(CancelTaskGroupAction::class)->execute($task->parent))->toThrow(ResourceOperationException::class);

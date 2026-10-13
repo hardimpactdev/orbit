@@ -6,7 +6,6 @@ namespace App\Infrastructure\TaskVms;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Tasks\TaskCapacityException;
-use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskTopology;
 use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Domain\Tasks\TaskTopologyEvidence;
@@ -34,8 +33,6 @@ use Illuminate\Support\Facades\Log;
  */
 final readonly class TaskVmTopologyAdmission implements TaskTopologyAdmission
 {
-    public const string SharedGroup = 'Declared topology runs only in a task VM group.';
-
     public const string TooSmall = 'Task VM: this subtask\'s topology needs a larger task VM than the group got, and Orbit does not resize it.';
 
     public const string NoWorkspace = 'Task VM: the group has no task VM workspace for its topology yet.';
@@ -48,9 +45,6 @@ final readonly class TaskVmTopologyAdmission implements TaskTopologyAdmission
     {
         if ($task->topology->isEmpty()) {
             return;
-        }
-        if ($group->task_compute !== TaskCompute::Vm) {
-            throw new TaskCapacityException(TaskWait::Topology, self::SharedGroup);
         }
         $vm = TaskVm::forGroup($group);
         $node = $vm?->node;

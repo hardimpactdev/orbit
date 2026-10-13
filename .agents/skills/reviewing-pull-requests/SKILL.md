@@ -19,9 +19,9 @@ For command behavior, use [designing-cli-commands](../designing-cli-commands/SKI
 
 When the subtask declares a topology, Orbit has prepared it as `TASK-<group>` in the task VM. Prove each deliverable on the declared nodes with `bin/e2e-topology exec --record=LABEL`; Orbit refuses the approval without a successful recorded command on each declared node. See [using-incus-topologies](../using-incus-topologies/SKILL.md#use-the-declared-topology).
 
-In a shared workspace, when discovery needs an Incus topology, request it through the reviewer's turn command: `"$(git rev-parse --git-path orbit)/turn" --thread=ID --outcome=topology_requested --summary="Why discovery needs a topology"`. Workspaces start without one. Do not pass `--question`, `--cause`, or pull request flags. Orbit resumes the same reviewer with ready, already held, or the failure reason, in the same review, consult, or relay context. An implementer asks you through a blocked consult. A topology request leaves that consult open and the implementer paused until you answer normally. Agents never acquire or release topologies; Orbit owns acquisition and workspace-removal release.
+A subtask without a declared topology has none. Agents never acquire or release topologies; the topology goes with the task VM.
 
-Use an available topology to reproduce the feature's user-visible behavior and important failure cases. Verify the running source commit. The [Incus topology reference](../../../docs/reference/incus-topologies.md) describes harness commands. Acquisition failure does not ask for operator assistance, and a missing topology does not block task approval. Return the code findings and record any discovery limitation. A required check on the running Gateway is an operator step after deploy, not a reason to acquire a topology manually.
+Use an available topology to reproduce the feature's user-visible behavior and important failure cases. Verify the running source commit. The [Incus topology reference](../../../docs/reference/incus-topologies.md) describes harness commands. A missing topology does not block task approval of a subtask that declares none. Return the code findings and record any discovery limitation. A required check on the running Gateway is an operator step after deploy, not a reason to acquire a topology manually.
 
 ## Report
 

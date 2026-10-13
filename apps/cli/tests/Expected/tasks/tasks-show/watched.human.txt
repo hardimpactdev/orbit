@@ -17,6 +17,8 @@ Loading task group...
 │
 ├  Status              running
 │
+├  Preview             no
+│
 ├  Assistance          no
 │
 ├  Kind                —

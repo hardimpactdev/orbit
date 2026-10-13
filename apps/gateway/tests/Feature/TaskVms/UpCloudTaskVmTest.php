@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Actions\TaskVms\AllocateTaskVmAction;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCapacityException;
-use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmPlacementPolicy;
@@ -259,8 +258,7 @@ function tvm_up_settings(?array $upcloud = [], int $maxVms = 1, ?int $hostId = n
 function tvm_up_group(?Project $project = null): Task
 {
     return Task::topLevel()->create([
-        'project_id' => ($project ?? test()->project)->id, 'title' => 'Export', 'brief' => 'Work', 'status' => 'reserved',
-        'task_compute' => TaskCompute::Vm, 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
+        'project_id' => ($project ?? test()->project)->id, 'title' => 'Export', 'brief' => 'Work', 'status' => 'reserved', 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
     ]);
 }
 

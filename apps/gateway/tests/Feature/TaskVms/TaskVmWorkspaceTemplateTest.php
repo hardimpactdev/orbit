@@ -10,7 +10,6 @@ use App\Domain\Projects\ProjectType;
 use App\Domain\Projects\TiaBaselineFiles;
 use App\Domain\Projects\TiaBaselineSource;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
@@ -280,10 +279,10 @@ function tvm_projects(int $count, int $active): array
     for ($i = 1; $i <= $count; $i++) {
         $project = Project::query()->create([
             'name' => "App {$i}", 'slug' => "app-{$i}", 'repository_url' => "https://github.com/acme/app-{$i}.git",
-            'default_branch' => $i % 5 === 0 ? null : 'main', 'task_compute' => TaskCompute::Vm,
+            'default_branch' => $i % 5 === 0 ? null : 'main',
         ]);
         if ($i <= $active) {
-            Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Work', 'brief' => 'Work', 'status' => TaskGroupStatus::Completed, 'task_compute' => TaskCompute::Vm]);
+            Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Work', 'brief' => 'Work', 'status' => TaskGroupStatus::Completed]);
         }
         $projects[] = $project;
     }
@@ -324,9 +323,9 @@ beforeEach(function (): void {
     $this->host = new TaskVmHost($this->hostNode->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 4, 2, '4GiB', '40GiB');
     TaskVmSettingsBuilder::bind(['hosts' => [$this->host]]);
     $this->project = Project::query()->create([
-        'name' => 'Mealou', 'slug' => 'mealou', 'repository_url' => 'https://github.com/acme/mealou.git', 'default_branch' => 'main', 'task_compute' => TaskCompute::Vm,
+        'name' => 'Mealou', 'slug' => 'mealou', 'repository_url' => 'https://github.com/acme/mealou.git', 'default_branch' => 'main',
     ]);
-    $this->group = Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'Work', 'brief' => 'Work', 'status' => TaskGroupStatus::Reserved, 'task_compute' => TaskCompute::Vm]);
+    $this->group = Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'Work', 'brief' => 'Work', 'status' => TaskGroupStatus::Reserved]);
     $this->incus = new TaskVmTemplateIncus;
     app()->instance(SshExecutor::class, $this->incus);
     app()->instance(SshKeyProvider::class, new class implements SshKeyProvider
@@ -596,15 +595,6 @@ describe('volumes', function (): void {
         Queue::assertPushed(BuildTaskVmWorkspaceTemplate::class, fn (BuildTaskVmWorkspaceTemplate $job): bool => $job->projectId === $this->project->id);
     });
 
-    it('serves the Orbit Project like every Project whose groups run on task VMs', function (): void {
-        $orbit = Project::query()->create(['name' => 'Orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/nckrtl/orbit.git', 'default_branch' => 'main', 'task_compute' => TaskCompute::Vm]);
-
-        expect(TaskVmWorkspaceTemplateLifecycle::serves($orbit))->toBeTrue();
-
-        $orbit->update(['task_compute' => TaskCompute::Shared]);
-        expect(TaskVmWorkspaceTemplateLifecycle::serves($orbit))->toBeFalse();
-    });
-
     it('has no clock of its own: whoever builds or syncs a base image queues the template refresh, not the promote', function (): void {
         Artisan::call('schedule:list');
         $events = collect(app(Schedule::class)->events())->filter(static fn ($event): bool => $event instanceof CallbackEvent);
@@ -630,7 +620,7 @@ describe('scale', function (): void {
         TaskVmSettingsBuilder::bind(['hosts' => [$this->host, $sharkHost]]);
         // Mealou is active through the group of the setup; its old group does not count.
         $projects = tvm_projects(25, active: 6);
-        Task::topLevel()->create(['project_id' => $projects[10]->id, 'title' => 'Old', 'brief' => 'Old', 'status' => TaskGroupStatus::Completed, 'task_compute' => TaskCompute::Vm])
+        Task::topLevel()->create(['project_id' => $projects[10]->id, 'title' => 'Old', 'brief' => 'Old', 'status' => TaskGroupStatus::Completed])
             ->forceFill(['created_at' => now()->subDays(TaskVmWorkspaceTemplateLifecycle::ActiveDays + 1)])->save();
         $this->incus->volumes = [
             'tvm-template-'.$this->project->id.'-20261011040000' => tvm_ready(),
@@ -946,26 +936,20 @@ describe(BuildTaskVmWorkspaceTemplate::class, function (): void {
         Log::shouldHaveReceived('error')->with('Task VM workspace template build failed; workspaces of the Project start from a fresh clone.', Mockery::any());
     });
 
-    it('waits a minute while another build runs on the host, and skips a Project without task VMs', function (): void {
+    it('waits a minute while another build runs on the host', function (): void {
         Cache::lock('task-vms:workspace-template:'.$this->hostNode->id, 60)->get();
         $job = new BuildTaskVmWorkspaceTemplate($this->hostNode->id, $this->project->id);
 
         app()->call([$job->withFakeQueueInteractions(), 'handle']);
         $job->assertReleased(60);
-
-        $this->project->update(['task_compute' => TaskCompute::Shared]);
-        $this->incus->calls = [];
-        app()->call([(new BuildTaskVmWorkspaceTemplate($this->hostNode->id, $this->project->id))->withFakeQueueInteractions(), 'handle']);
-        expect($this->incus->calls)->toBe([]);
     });
 
     it('builds through the command and prints each stage', function (): void {
         expect(Artisan::call('task-vms:build-workspace-template', ['node' => 'beast', 'project' => 'mealou']))->toBe(0)
             ->and(Artisan::output())->toContain('clone')->toContain('prune')->toContain('has the workspace template [tvm-template-'.$this->project->id.'-');
 
-        $this->project->update(['task_compute' => TaskCompute::Shared]);
-        expect(Artisan::call('task-vms:build-workspace-template', ['node' => 'beast', 'project' => 'mealou']))->toBe(1)
-            ->and(Artisan::output())->toContain('does not run its groups on task VMs');
+        expect(Artisan::call('task-vms:build-workspace-template', ['node' => 'beast', 'project' => 'missing']))->toBe(1)
+            ->and(Artisan::output())->toContain('does not exist');
     });
 });
 

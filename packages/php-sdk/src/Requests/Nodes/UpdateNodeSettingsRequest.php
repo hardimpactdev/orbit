@@ -24,8 +24,6 @@ final class UpdateNodeSettingsRequest extends GatewayRequest implements HasBody
         private readonly int $nodeId,
         private readonly bool $hasApps = false,
         private readonly ?AppsSettings $apps = null,
-        private readonly bool $hasTasks = false,
-        private readonly ?string $taskWorker = null,
     ) {}
 
     public static function fromSettings(int $nodeId, NodeSettings $settings): self
@@ -34,8 +32,6 @@ final class UpdateNodeSettingsRequest extends GatewayRequest implements HasBody
             nodeId: $nodeId,
             hasApps: true,
             apps: $settings->apps,
-            hasTasks: true,
-            taskWorker: $settings->taskWorker,
         );
     }
 
@@ -59,10 +55,6 @@ final class UpdateNodeSettingsRequest extends GatewayRequest implements HasBody
 
         if ($this->hasApps) {
             $body['apps'] = $this->apps?->toArray();
-        }
-
-        if ($this->hasTasks) {
-            $body['tasks'] = $this->taskWorker === null ? null : ['worker' => $this->taskWorker];
         }
 
         return $body;

@@ -810,7 +810,7 @@ final readonly class RecordCommandActivity
         try {
             $input = $this->jsonInspector->inspect(
                 $request->getContent(),
-                ['name', 'slug', 'repository_url', 'default_branch', 'root', 'task_check', 'task_workspace_routed', 'task_compute', 'review_and_merge', 'merge_check'],
+                ['name', 'slug', 'repository_url', 'default_branch', 'root', 'task_check', 'task_workspace_routed', 'review_and_merge', 'merge_check'],
             );
         } catch (UnexpectedValueException) {
             return [];

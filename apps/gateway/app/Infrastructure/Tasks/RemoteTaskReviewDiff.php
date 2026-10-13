@@ -33,8 +33,8 @@ final readonly class RemoteTaskReviewDiff implements TaskReviewDiff
 
         try {
             $result = $this->ssh->execute($instance, new RemoteCommand(
-                arguments: TaskWorkerUser::arguments(['bash', '-seu', '--', $instance->checkout_path, $startCommit], $instance),
-                input: WorkspaceGit::bashPreamble(TaskWorkerUser::name($instance) === null ? null : $instance->checkout_path).<<<'BASH'
+                arguments: ['bash', '-seu', '--', $instance->checkout_path, $startCommit],
+                input: WorkspaceGit::bashPreamble().<<<'BASH'
                     set -o pipefail
                     cd -- "$1"
                     start=$2

@@ -43,9 +43,9 @@ final readonly class RemoteTaskWorkspaceMcp implements TaskWorkspaceMcp
         try {
             $result = $this->ssh->execute($instance, new RemoteCommand(
                 arguments: ['bash', '-seu', '--', $instance->checkout_path],
-                input: "checkout=\$1\n".WorkspaceGit::workerPreamble(TaskWorkerUser::name($instance)).TaskWorkspaceMetadata::bashPreamble().<<<'BASH'
+                input: "checkout=\$1\n".WorkspaceGit::bashPreamble().TaskWorkspaceMetadata::bashPreamble().<<<'BASH'
                     status=0
-                    workspace_git -C "$checkout" ls-files --error-unmatch -- .mcp.json >/dev/null 2>&1 || status=$?
+                    git -C "$checkout" ls-files --error-unmatch -- .mcp.json >/dev/null 2>&1 || status=$?
                     if [ "$status" = 0 ]; then
                         printf 'tracked\n'
                         exit 0

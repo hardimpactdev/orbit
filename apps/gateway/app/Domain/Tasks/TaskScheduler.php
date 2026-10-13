@@ -113,7 +113,6 @@ final readonly class TaskScheduler
     public const string WorkspaceRouteFailedReason = 'The task workspace Route could not be finished, so no agent started.';
 
     public function __construct(
-        private TaskConcurrencyGuard $ceilings,
         private InstanceProvisioning $provisioning,
         private AgentSpawner $spawner,
         private TaskSettleMetricsCollector $metrics,
@@ -143,7 +142,6 @@ final readonly class TaskScheduler
         private TaskPullRequestReviewWatcher $reviewWatcher,
         private TaskGitHubReviewConsumption $reviewConsumption,
         private TaskGitHubReviewFeedback $reviewFeedback,
-        private TaskWorkspaceTopology $topology,
         private TaskTopologyAdmission $topologyAdmission,
         private TaskPullRequestMerger $merger,
         private DeliverablePathChecker $deliverablePaths,
@@ -491,9 +489,6 @@ final readonly class TaskScheduler
             return true;
         }
         $receipt = $this->pendingReceipt($task, TaskThreadRole::Implementer);
-        if ($this->resumeTopologyRequest($group, $task, $implementer, $receipt)) {
-            return true;
-        }
         if ($receipt instanceof TaskComment && $this->receiptOutcome($receipt) === TaskTurnOutcome::Blocked) {
             $this->beginConsult($group, $task, $receipt, $observation);
 
@@ -704,9 +699,6 @@ final readonly class TaskScheduler
             return true;
         }
         $receipt = $this->pendingReceipt($task, TaskThreadRole::Reviewer);
-        if ($this->resumeTopologyRequest($group, $task, $reviewer, $receipt)) {
-            return true;
-        }
         $outcome = $receipt instanceof TaskComment ? $this->receiptOutcome($receipt) : null;
         if ($receipt instanceof TaskComment && TaskQuestions::awaitsCause($task) && ! $receipt->cause instanceof QuestionCause) {
             $this->remindOrAssist($group, $task, $reviewer, [
@@ -1610,14 +1602,11 @@ final readonly class TaskScheduler
     }
 
     /**
-     * ADR 0200: a `vm` group whose subtask changes a path that the Project lists in `task_vms.topology_paths` needs a
+     * ADR 0200: a group whose subtask changes a path that the Project lists in `task_vms.topology_paths` needs a
      * declared topology on some subtask of the group. Null when the rule does not apply.
      */
     private function topologyRequiredItem(Task $group, ?TaskDeliverableEvidence $evidence): ?TaskRubricItem
     {
-        if ($group->task_compute !== TaskCompute::Vm) {
-            return null;
-        }
         $patterns = app(TaskVmSettings::class)->topologyPaths[(int) $group->project_id] ?? [];
         if ($patterns === [] || ! TaskTopology::forGroup($group)->isEmpty()) {
             return null;
@@ -1724,23 +1713,7 @@ final readonly class TaskScheduler
         if (! $receipt instanceof TaskTurnReceipt || ! $this->receiptMatchesActingThread($receipt, $actingThreadId)) {
             return null;
         }
-        if ($receipt->outcome === TaskTurnOutcome::TopologyRequested) {
-            $existing = TaskComment::query()->where('task_id', $task->id)->where('receipt_hash', $receipt->hash)->first();
-            if (! $existing instanceof TaskComment) {
-                TaskComment::query()->create([
-                    'task_id' => $task->id,
-                    'task_group_id' => $group->id,
-                    'agent_thread_id' => $actingThreadId,
-                    'receipt_hash' => $receipt->hash,
-                    'completion_attempt' => $task->completion_attempt,
-                    'review_attempt' => $role === TaskThreadRole::Reviewer ? $task->review_attempt : null,
-                    'type' => TaskCommentType::TopologyRequested,
-                    'body' => $receipt->summary."\n\n".$this->topologyReply($instance, $group, $task, $role),
-                    'author' => $role->value,
-                    'posted_at' => now(),
-                ]);
-            }
-        } elseif ($receipt->outcome instanceof TaskTurnOutcome && $receipt->fits($role)) {
+        if ($receipt->outcome instanceof TaskTurnOutcome && $receipt->fits($role)) {
             TaskComment::query()->firstOrCreate(['task_id' => $task->id, 'receipt_hash' => $receipt->hash], [
                 'task_group_id' => $group->id,
                 'agent_thread_id' => $role === TaskThreadRole::Implementer ? $task->implementer_agent_thread_id : $group->reviewer_agent_thread_id,
@@ -1758,74 +1731,6 @@ final readonly class TaskScheduler
         $this->receipts->clear($instance, $receipt);
 
         return $receipt;
-    }
-
-    private function topologyReply(Instance $instance, Task $group, Task $task, TaskThreadRole $role): string
-    {
-        if ($role !== TaskThreadRole::Reviewer) {
-            return 'Topology request refused. Ask the reviewer through a blocked consult; only the reviewer can request a topology.';
-        }
-        if ($group->task_compute === TaskCompute::Vm) {
-            return 'Topology request refused. Project VM groups use their own Project workspace.';
-        }
-        try {
-            return $this->topology->acquire($instance, $group->id)
-                ? 'Topology TASK-'.$group->id.' is ready.'
-                : 'Topology TASK-'.$group->id.' is already held.';
-        } catch (Throwable $exception) {
-            return 'Topology TASK-'.$group->id.' acquisition failed: '.$exception->getMessage().' A missing topology does not block approval. Continue without operator assistance for this failure.';
-        }
-    }
-
-    /** A resource request resumes this thread without answering a question or advancing the subtask. */
-    private function resumeTopologyRequest(Task $group, Task $task, TaskThreadObservation $thread, ?TaskComment $receipt): bool
-    {
-        if (! $receipt instanceof TaskComment || $this->receiptOutcome($receipt) !== TaskTurnOutcome::TopologyRequested) {
-            return false;
-        }
-        // Reserve before sending. A retry must not mistake the resumed turn for the requesting turn.
-        $resume = $receipt->topology_resume;
-        if ($resume === null) {
-            $resume = ['source_turn_id' => $thread->turnId];
-            $receipt->update(['topology_resume' => $resume]);
-        }
-        $sourceTurn = $resume['source_turn_id'];
-        $key = 'topology-request-'.$receipt->id;
-        $accepted = $thread->turnId === $key
-            || array_any($thread->recentMessages, static fn (array $message): bool => $message['id'] === $key);
-        $superseded = is_string($thread->turnId) && $thread->turnId !== '' && $thread->turnId !== $sourceTurn;
-        if ($accepted || $superseded) {
-            $this->finishTopologyResume($task, $thread->role, $receipt, $sourceTurn);
-
-            return true;
-        }
-        try {
-            if (! $this->prepareTurn($group, $task, $thread->role, $thread->threadId)) {
-                return true;
-            }
-            $message = $receipt->body."\n\n".$this->actingInstructions($group, $task, $thread->role, $thread->threadId);
-            $this->actor->resumeInterruptedTurn($group, $thread, $message, $key);
-            $this->finishTopologyResume($task, $thread->role, $receipt, $sourceTurn);
-        } catch (AgentDriverException|TaskTurnReceiptException $exception) {
-            $this->recordCommunicationFailure($task, $group, $exception->getMessage());
-        }
-
-        return true;
-    }
-
-    /** The completion gate always names the reserved source, never an already-stopped resumed turn. */
-    private function finishTopologyResume(Task $task, TaskThreadRole $role, TaskComment $receipt, ?string $sourceTurn): void
-    {
-        $task->update($role === TaskThreadRole::Reviewer ? [
-            'review_handled_comment_id' => $receipt->id,
-            'review_notified_turn_id' => $sourceTurn,
-            'communication_failures' => 0,
-        ] : [
-            'completion_handoff_comment_id' => $receipt->id,
-            'completion_handoff_attempt' => $task->completion_attempt,
-            'completion_handoff_turn_id' => $sourceTurn,
-            'communication_failures' => 0,
-        ]);
     }
 
     /** The Orbit id of the thread this phase acts as, or null when that thread has not been stored. */
@@ -2278,9 +2183,6 @@ final readonly class TaskScheduler
             return;
         }
         $receipt = $this->pendingReceipt($task, TaskThreadRole::Reviewer);
-        if ($this->resumeTopologyRequest($group, $task, $reviewer, $receipt)) {
-            return;
-        }
         $outcome = $receipt instanceof TaskComment ? $this->receiptOutcome($receipt) : null;
         if (! $receipt instanceof TaskComment || ! in_array($outcome, [TaskTurnOutcome::Answered, TaskTurnOutcome::Blocked], true)) {
             $this->remindOrAssist($group, $task, $reviewer, [
@@ -2467,9 +2369,6 @@ final readonly class TaskScheduler
             return;
         }
         $receipt = $this->pendingReceipt($task, TaskThreadRole::Reviewer);
-        if ($this->resumeTopologyRequest($group, $task, $reviewer, $receipt)) {
-            return;
-        }
         $outcome = $receipt instanceof TaskComment ? $this->receiptOutcome($receipt) : null;
         if (! $receipt instanceof TaskComment || ! in_array($outcome, [TaskTurnOutcome::Answered, TaskTurnOutcome::Blocked], true)) {
             if ($read instanceof TaskTurnReceipt || $receipt instanceof TaskComment) {
@@ -2801,29 +2700,21 @@ final readonly class TaskScheduler
         }
         while (true) {
             $reserved = DB::transaction(function () use ($skipped): ?Task {
-                $candidates = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
-                    ->with(['tasks', 'taskable'])
+                $group = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
                     ->where('status', TaskGroupStatus::Todo)
                     ->when($skipped !== [], fn ($query) => $query->whereNotIn('id', $skipped))
                     ->orderBy('id')
                     ->lockForUpdate()
-                    ->get();
-
-                foreach ($candidates as $group) {
-                    if (! $this->ceilings->canActivate($group)) {
-                        continue;
-                    }
-
-                    $group->task_compute ??= $group->project->task_compute;
-                    $group->capacity_wait_reason = null;
-                    $group->status = TaskGroupStatus::Reserved;
-                    $group->reserved_at = now();
-                    $group->save();
-
-                    return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
+                    ->first();
+                if (! $group instanceof Task) {
+                    return null;
                 }
+                $group->capacity_wait_reason = null;
+                $group->status = TaskGroupStatus::Reserved;
+                $group->reserved_at = now();
+                $group->save();
 
-                return null;
+                return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
             });
 
             if (! $reserved instanceof Task) {
@@ -2835,11 +2726,6 @@ final readonly class TaskScheduler
             } catch (TaskCapacityException $exception) {
                 $this->releaseReservation($reserved, $exception->getMessage());
                 $this->endClaim($reserved, null);
-
-                if ($exception->fleetFull) {
-                    return null;
-                }
-
                 $skipped[] = $reserved->id;
 
                 continue;
@@ -2901,7 +2787,7 @@ final readonly class TaskScheduler
     private function resumeWaitingSandbox(array &$skipped): ?Task
     {
         $groups = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
-            ->where('task_compute', TaskCompute::Vm)->where('status', TaskGroupStatus::WaitingForReview)
+            ->where('status', TaskGroupStatus::WaitingForReview)
             ->whereNull('watched_pr_completion')
             ->whereHas('tasks', fn ($tasks) => $tasks->where('status', TaskStatus::Todo))
             ->when($skipped !== [], fn ($query) => $query->whereNotIn('id', $skipped))
@@ -2948,13 +2834,6 @@ final readonly class TaskScheduler
 
         $group->taskable()->associate($instance);
         $group->load('taskable');
-
-        if (! $this->ceilings->canActivate($group)) {
-            $group->status = TaskGroupStatus::Todo;
-            $group->save();
-
-            return null;
-        }
 
         $group->status = TaskGroupStatus::Running;
         $group->started_at ??= now();
@@ -3981,7 +3860,7 @@ final readonly class TaskScheduler
         $group->questions = $metrics->questions;
         $group->escalations = $metrics->escalations;
         $group->settled_at ??= now();
-        if ($group->task_compute === TaskCompute::Vm && $group->status === TaskGroupStatus::Settling) {
+        if ($group->status === TaskGroupStatus::Settling) {
             $group->status = TaskGroupStatus::WaitingForReview;
         }
         $group->save();
@@ -4561,7 +4440,7 @@ final readonly class TaskScheduler
             return;
         }
 
-        if ($group->task_compute === TaskCompute::Vm && ! app(WakeTaskVmAction::class)->forGroup($group)) {
+        if (! app(WakeTaskVmAction::class)->forGroup($group)) {
             return;
         }
 

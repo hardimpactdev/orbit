@@ -26,7 +26,6 @@ use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Schedules\DesiredTimerState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\TaskCompute;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
@@ -1116,7 +1115,7 @@ it('refuses a host with a live task VM, and deletes its destroyed task VM rows w
     $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
     $host = remove_node_record(name: 'beast', wireguardIp: '10.44.0.7');
     $project = Project::query()->create(['name' => 'DLF', 'slug' => 'dlf', 'repository_url' => 'https://github.com/acme/dlf.git', 'default_branch' => 'main']);
-    $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Work', 'brief' => 'Work', 'status' => 'cancelled', 'task_compute' => TaskCompute::Vm]);
+    $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Work', 'brief' => 'Work', 'status' => 'cancelled']);
     $vm = TaskVm::query()->create(['group_id' => $group->id, 'host_node_id' => $host->id, 'provider' => 'incus', 'name' => 'tvm-1',
         'state' => TaskVmState::Failed, 'wireguard_ip' => '10.44.0.129', 'pi_token' => str_repeat('p', 64)]);
 

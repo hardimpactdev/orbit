@@ -94,9 +94,9 @@ Cleanup that cannot finish retains the Instance and removal progress. When a cle
 
 If cleanup still cannot finish, the failed create reports its original error with `details.cleanup = "incomplete"`, the Instance identity, and a recovery command. An identical create retry first finishes that forced cleanup without `--force`, then creates the Instance afresh. A retry with another Node, root, or branch returns `instance.placement_conflict` and leaves the cleanup as it is. You can also finish removal with the recovery command; `--yes` supplies consent and `--force` waives only the normal dirty, unpublished-source, and linked-worktree refusals. Cleanup never deletes the Instance row before its owned resources have been handled.
 
-When the Node [uses the task worker](/reference/instance-setup#task-work-nodes) or the checkout is marked `worker_shared`, Git checks that inspect file contents run as the worker without a credential environment. A clean filter triggered by the dirty-source check cannot run as the managed account. If the Node has no worker account, the check fails. Only an unmarked checkout on an opted-out Node is checked as the managed account. Privileged ownership checks and deletion still run as the managed account.
+Git checks that inspect file contents, ownership checks, and deletion run as the Node's managed account. Git checks run without a credential environment.
 
-The ownership check reads the owner of the checkout directory and its parent. It does not read the owner of every file inside. A development checkout can hold an ACL for `orbit-worker` and files that user created. [Checkout access](/reference/instance-setup#checkout-access) grants that ACL. Removal still refuses a directory the managed user does not own.
+The ownership check reads the owner of the checkout directory and its parent. It does not read the owner of every file inside. Removal refuses a directory the managed user does not own.
 
 ### Failed creation
 
@@ -144,7 +144,7 @@ PHP-FPM refuses to start while any pool names a missing `chdir`, and all develop
 
 ### Processes inside a task workspace
 
-Agents and checks can leave processes behind in a task workspace, such as a Playwright server that a browser test started. A task workspace is the Instance `task-<group id>` of a task group of the same Project. Before removal moves its checkout to the removal quarantine and deletes it, removal stops every process of the managed user and of the configured task worker whose working directory or executable is inside the checkout. It sends `SIGTERM` and waits up to 5 seconds, then sends `SIGKILL` and waits up to 5 seconds more. A process that still runs then fails the step, and the checkout stays for retry.
+Agents and checks can leave processes behind in a task workspace, such as a Playwright server that a browser test started. A task workspace is the Instance `task-<group id>` of a task group of the same Project. Before removal moves its checkout to the removal quarantine and deletes it, removal stops every process of the managed user whose working directory or executable is inside the checkout. It sends `SIGTERM` and waits up to 5 seconds, then sends `SIGKILL` and waits up to 5 seconds more. A process that still runs then fails the step, and the checkout stays for retry.
 
 The processes inside a tmux or screen session are normal processes. Removal stops those that work inside the task workspace.
 
@@ -201,9 +201,6 @@ Repeat the same command to resume at the first unfinished step. To take over a f
 
 Before it deletes more source, the Gateway checks each remaining source again. A retry after Route deletion does not recreate the Route. A cleanup failure keeps the Instance and its progress until you repair the Node or the artifact and retry. When a failed create has no checkout, finalization records completion only after it has cleaned up the empty Project directory. An interrupted directory cleanup stays unfinished and resumes on retry.
 
-Before deleting source, the Gateway runs `find -P` as the task worker on directories that worker owns. It clears setgid and sticky bits and gives the group `rwx`, which also sets the ACL mask. This lets the managed user remove the worker's entries without changing ownership or following symlinks. The managed user enters the validated tree before switching to the worker, so the quarantine's parent stays private.
-
-The worker's `find` does not descend into directories it cannot enter; it skips them instead of failing the mode fix. This is safe because the worker cannot have created entries inside those directories, so skipping them cannot leave worker-owned entries that need the mode fix behind. The managed user then deletes the whole tree, including the skipped directories.
 
 Two things otherwise block that removal. On Ubuntu 26.04, uutils `mkdir` 0.8.0 can set setgid and sticky bits on directories created under a default ACL; GNU `mkdir` and `os.mkdir` do not. The ACL alone does not override the sticky bit. A directory created with an explicit mode such as `0755`, as Pest does for its graph, narrows the mask to `r-x` and hides the managed user's ACL entry.
 
@@ -247,4 +244,4 @@ Production data and releases are hard to rebuild. Removal stops serving the Inst
 
 ### The owner check is the directory
 
-The managed user must own the checkout directory and its parent. Files inside can belong to `orbit-worker` when that user has an ACL on the tree. Checking every file was rejected, because the agent creates files and the managed user can still delete them while the directory stays writable. An ACL does not change the owner the check reads.
+The managed user must own the checkout directory and its parent. Checking every file was rejected, because the managed user can delete every entry while the directory stays writable.

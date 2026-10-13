@@ -57,7 +57,7 @@ final class BuildTaskVmWorkspaceTemplate implements ShouldBeUnique, ShouldQueue
     {
         $project = Project::query()->find($this->projectId);
         $node = Node::query()->whereKey($this->hostNodeId)->where('status', LifecycleStatus::Active)->first();
-        if (! $project instanceof Project || ! $node instanceof Node || ! TaskVmWorkspaceTemplateLifecycle::serves($project)) {
+        if (! $project instanceof Project || ! $node instanceof Node) {
             return;
         }
         if (! TaskVmWorkspaceTemplateLifecycle::buildable($project, $node->id)) {

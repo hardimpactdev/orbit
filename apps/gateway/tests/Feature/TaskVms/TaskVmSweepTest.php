@@ -9,7 +9,6 @@ use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Doctor\NodeStateInspector;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmSettings;
@@ -86,7 +85,7 @@ function tvm_sweep_node(string $name, string $address): Node
 function tvm_sweep_vm(Node $host, TaskVmState $state, string $wireguardIp): TaskVm
 {
     $group = Task::topLevel()->create([
-        'project_id' => test()->project->id, 'title' => 'Work', 'brief' => 'Work', 'status' => TaskGroupStatus::WaitingForReview, 'task_compute' => TaskCompute::Vm,
+        'project_id' => test()->project->id, 'title' => 'Work', 'brief' => 'Work', 'status' => TaskGroupStatus::WaitingForReview,
     ]);
     $vm = TaskVm::query()->create([
         'group_id' => $group->id, 'host_node_id' => $host->id, 'provider' => 'incus', 'name' => 'tvm-pending-'.$group->id,

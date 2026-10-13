@@ -6,7 +6,6 @@ use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\ProxyCli\ProxyCliState;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tasks\TaskCompute;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Processes\CommandResult;
@@ -43,7 +42,7 @@ function tvm_runtime_vm(bool $enrolled = true): TaskVm
         'public_ssh_host' => $address, 'wireguard_ip' => $address, 'user' => $user,
     ]);
     $host = $node('beast', '10.44.0.7', 'nckrtl');
-    $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Export', 'brief' => 'Work', 'status' => 'todo', 'task_compute' => TaskCompute::Vm]);
+    $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Export', 'brief' => 'Work', 'status' => 'todo']);
 
     return TaskVm::query()->create([
         'group_id' => $group->id, 'host_node_id' => $host->id, 'node_id' => $enrolled ? $node('tvm-1', '10.44.0.130', 'orbit')->id : null,

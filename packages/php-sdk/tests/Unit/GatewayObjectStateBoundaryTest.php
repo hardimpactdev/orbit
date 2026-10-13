@@ -227,14 +227,14 @@ describe('gateway object-state boundary', function (): void {
             'start' => true,
             'keep_alive' => false,
             'environment' => $environment,
-            'image' => 'orbit-worker:latest',
+            'image' => 'orbit-sidecar:latest',
         ];
         $request = new CreateProcessRequest(
             target: new InstanceProcessTarget(7),
             name: 'worker',
             runtime: 'docker',
             command: ['php', 'artisan', 'queue:work'],
-            image: 'orbit-worker:latest',
+            image: 'orbit-sidecar:latest',
             environment: $environment,
             restartPolicy: 'unless-stopped',
             start: true,

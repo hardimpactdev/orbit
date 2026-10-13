@@ -15,12 +15,12 @@ final readonly class RemoteTaskWorkspaceStateReader implements TaskWorkspaceStat
 
     public function headCommit(Instance $instance): ?string
     {
-        return $this->run($instance, 'git -c core.hooksPath=/dev/null -c core.fsmonitor=false -c safe.directory="$checkout" -C "$checkout" rev-parse HEAD');
+        return $this->run($instance, 'git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" rev-parse HEAD');
     }
 
     public function currentBranch(Instance $instance): ?string
     {
-        return $this->run($instance, 'git -c core.hooksPath=/dev/null -c core.fsmonitor=false -c safe.directory="$checkout" -C "$checkout" rev-parse --abbrev-ref HEAD');
+        return $this->run($instance, 'git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" rev-parse --abbrev-ref HEAD');
     }
 
     private function run(Instance $instance, string $command): ?string
@@ -31,7 +31,7 @@ final readonly class RemoteTaskWorkspaceStateReader implements TaskWorkspaceStat
         }
         try {
             $result = $this->ssh->execute($instance, new RemoteCommand(
-                arguments: TaskWorkerUser::arguments(['bash', '-seu', '--', $instance->checkout_path], $instance),
+                arguments: ['bash', '-seu', '--', $instance->checkout_path],
                 input: "checkout=\$1\n{$command}\n",
             ), 'task-workspace-state', 'tasks.diff_failed');
         } catch (RuntimeConvergenceException) {

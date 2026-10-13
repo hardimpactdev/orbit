@@ -10,7 +10,6 @@ use App\Domain\Tasks\AgentInputRequest;
 use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentThreadStart;
 use App\Models\AgentThread;
-use App\Models\Node;
 use Closure;
 use Illuminate\Support\Facades\DB;
 
@@ -20,8 +19,6 @@ class FakeAgentDriver implements AgentDriver
 
     /** @var list<array<string, mixed>> */
     public array $calls = [];
-
-    public bool $eligible = true;
 
     public bool $supportsInterruption = false;
 
@@ -45,11 +42,6 @@ class FakeAgentDriver implements AgentDriver
     public function key(): string
     {
         return $this->key;
-    }
-
-    public function allows(Node $node): bool
-    {
-        return $this->eligible;
     }
 
     public function create(AgentThreadStart $intent): string

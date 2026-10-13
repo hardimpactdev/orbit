@@ -81,11 +81,12 @@ return [
         'port' => max(1, (int) env('ORBIT_T3_PORT', 3773)),
         'token' => env('ORBIT_T3_TOKEN'),
     ],
+    'git' => [
+        // Transports a credentialed development checkout fetch may use. Tests add `file` for local origins.
+        'checkout_protocols' => ['https'],
+    ],
     'pi' => [
         'port' => max(1, (int) env('ORBIT_PI_PORT', 3774)),
-        'token' => env('ORBIT_PI_TOKEN'),
-        // A models.json provider such as a CLIProxyAPI endpoint. Plain model names use it when set.
-        'provider' => env('ORBIT_PI_PROVIDER'),
     ],
     'tasks' => [
         // Operator-owned repair trust: lower-case github.com owner/repository => list of positive integer account IDs,
@@ -97,7 +98,6 @@ return [
         // Comma-separated GitHub logins requested as reviewers after a task pull request is opened or reused.
         // Unset or empty requests no one. The pull request author is omitted at request time.
         'review_request_logins' => TaskReviewRequestLogins::parseEnv(env('ORBIT_TASKS_REVIEW_REQUEST_LOGINS')),
-        'worker_user' => env('ORBIT_TASKS_WORKER_USER'),
         'implementer_agent_driver' => env('ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER', 'pi'),
         'reviewer_agent_driver' => env('ORBIT_TASKS_REVIEWER_AGENT_DRIVER', 'pi'),
         // Models for new groups. Unset keeps TaskAgentDefaults.

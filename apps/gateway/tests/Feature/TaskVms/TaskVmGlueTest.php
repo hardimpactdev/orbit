@@ -8,7 +8,6 @@ use App\Domain\Compute\SandboxPower;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentThreadStart;
-use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\TaskVms\TaskVmPublishState;
@@ -22,7 +21,6 @@ use App\Infrastructure\Tasks\GitHubTaskBaseBranchFetcher;
 use App\Infrastructure\Tasks\GitHubTaskPullRequestPublisher;
 use App\Infrastructure\Tasks\Pi\PiConnection;
 use App\Infrastructure\Tasks\Pi\PiDriver;
-use App\Infrastructure\Tasks\TaskWorkerUser;
 use App\Infrastructure\Tasks\TaskWorkspaceExecutor;
 use App\Jobs\TaskVms\PublishTaskVmCommit;
 use App\Models\AgentThread;
@@ -60,7 +58,7 @@ function tvm_glue_group(TaskVmState $state = TaskVmState::Ready): Task
     $project = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@github.com:acme/shop.git', 'default_branch' => 'main']);
     $host = tvm_glue_node('beast', '10.44.0.7', 'nckrtl');
     $node = tvm_glue_node('tvm-1', '10.44.0.130');
-    $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Export', 'brief' => 'Add an export.', 'status' => 'running', 'task_compute' => TaskCompute::Vm]);
+    $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Export', 'brief' => 'Add an export.', 'status' => 'running']);
     TaskVm::query()->create([
         'group_id' => $group->id, 'host_node_id' => $host->id, 'node_id' => $node->id, 'provider' => 'incus', 'name' => 'tvm-1',
         'state' => $state, 'wireguard_ip' => '10.44.0.130', 'pi_token' => TVM_GLUE_PI_TOKEN, 'model_key' => TVM_GLUE_MODEL_KEY,
@@ -94,20 +92,6 @@ function tvm_glue_ssh(): AppDevFakeSshExecutor
 beforeEach(function (): void {
     mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/keys/private');
     mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/keys/known_hosts');
-    config(['orbit.tasks.worker_user' => 'orbit-worker', 'orbit.pi.token' => 'gateway-wide-pi-token-with-32-characters']);
-});
-
-describe('worker user', function (): void {
-    it('runs task VM work as the managed user and keeps the worker elsewhere', function (): void {
-        $workspace = tvm_glue_workspace(tvm_glue_group());
-        $shared = Instance::query()->create(['project_id' => $workspace->project_id, 'node_id' => tvm_glue_node('app-dev', '10.44.0.9')->id,
-            'name' => 'task-99', 'checkout_path' => '/srv/apps/shop/task-99', 'status' => 'source_resolved']);
-
-        expect(TaskWorkerUser::name($workspace))->toBeNull()
-            ->and(TaskWorkerUser::arguments(['id'], $workspace))->toBe(['id'])
-            ->and(TaskWorkerUser::name($shared))->toBe('orbit-worker')
-            ->and(TaskWorkerUser::name())->toBe('orbit-worker');
-    });
 });
 
 describe('workspace commands', function (): void {
@@ -281,8 +265,8 @@ describe('Pi', function (): void {
         expect(app(PiConnection::class)->token($node))->toBe(TVM_GLUE_PI_TOKEN)
             ->and(app(PiConnection::class)->secrets($node))->toBe([TVM_GLUE_PI_TOKEN, TVM_GLUE_MODEL_KEY])
             ->and(app(PiConnection::class)->baseUrl($node))->toBe('http://10.44.0.130:3774')
-            ->and(app(PiConnection::class)->token($other))->toBe('gateway-wide-pi-token-with-32-characters')
-            ->and(app(PiConnection::class)->secrets($other))->toBe(['gateway-wide-pi-token-with-32-characters']);
+            ->and(app(PiConnection::class)->secrets($other))->toBe([])
+            ->and(fn () => app(PiConnection::class)->token($other))->toThrow(AgentDriverException::class, 'The Node is no task VM, so it has no Pi server.');
     });
 
     it('starts a session on the task VM through its only provider', function (): void {

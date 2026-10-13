@@ -22,26 +22,26 @@ use Saloon\Http\Faking\MockResponse;
 describe('ProcessUser', function (): void {
     it('sends the named account in a typed Node Process request', function (): void {
         $mock = new MockClient([CreateProcessRequest::class => MockResponse::make(process_envelope(), 201)]);
-        $request = new CreateProcessRequest(target: new NodeProcessTarget(4), name: 'worker', runtime: 'systemd', command: ['/usr/bin/sleep', '60'], user: 'orbit-worker');
+        $request = new CreateProcessRequest(target: new NodeProcessTarget(4), name: 'worker', runtime: 'systemd', command: ['/usr/bin/sleep', '60'], user: 'svc-runner');
         process_connector($mock)->send($request);
         expect($mock->getLastPendingRequest()?->getUrl())->toBe('https://10.44.0.1/api/v1/processes')
             ->and($request->getMethod())->toBe(Method::POST)
-            ->and($mock->getLastRequest()?->body()->all())->toMatchArray(['target_type' => 'node', 'target_id' => 4, 'user' => 'orbit-worker']);
+            ->and($mock->getLastRequest()?->body()->all())->toMatchArray(['target_type' => 'node', 'target_id' => 4, 'user' => 'svc-runner']);
     });
 
     it('exposes the Process user in its typed response and JSON', function (): void {
         $envelope = process_envelope();
-        $envelope['data']['user'] = 'orbit-worker';
+        $envelope['data']['user'] = 'svc-runner';
         $mock = new MockClient([CreateProcessRequest::class => MockResponse::make($envelope, 201)]);
-        $response = process_connector($mock)->send(new CreateProcessRequest(target: new NodeProcessTarget(4), name: 'worker', user: 'orbit-worker'))->dto();
+        $response = process_connector($mock)->send(new CreateProcessRequest(target: new NodeProcessTarget(4), name: 'worker', user: 'svc-runner'))->dto();
         expect($response)->toBeInstanceOf(ProcessResponse::class)
-            ->and($response->user)->toBe('orbit-worker')->and($response->toArray()['user'])->toBe('orbit-worker');
+            ->and($response->user)->toBe('svc-runner')->and($response->toArray()['user'])->toBe('svc-runner');
     });
 
     it('preserves explicit user input without SDK policy', function (string $user): void {
         $request = new CreateProcessRequest(target: new NodeProcessTarget(4), name: 'worker', user: $user);
         expect($request->body()->all()['user'])->toBe($user);
-    })->with(['', 'root', 'orbit-worker']);
+    })->with(['', 'root', 'svc-runner']);
 
     it('omits an absent user', function (): void {
         $request = new CreateProcessRequest(target: new NodeProcessTarget(4), name: 'worker');
@@ -100,7 +100,7 @@ it('forwards every explicit process field without applying runtime policy', func
         name: 'worker',
         runtime: 'systemd',
         command: ['php', 'artisan', 'queue:work'],
-        image: 'orbit-worker:latest',
+        image: 'orbit-sidecar:latest',
         workingDirectory: '/srv/orbit',
         environment: ['APP_MODE' => 'production'],
         ports: ['127.0.0.1:9080:8080/tcp'],
@@ -121,7 +121,7 @@ it('forwards every explicit process field without applying runtime policy', func
         'environment' => ['APP_MODE' => 'production'],
         'ports' => ['127.0.0.1:9080:8080/tcp'],
         'volumes' => [['source' => 'orbit-data', 'target' => '/data', 'read_only' => true]],
-        'image' => 'orbit-worker:latest',
+        'image' => 'orbit-sidecar:latest',
         'working_directory' => '/srv/orbit',
     ]);
 });

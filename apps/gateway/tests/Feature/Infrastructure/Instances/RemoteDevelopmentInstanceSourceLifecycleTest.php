@@ -34,7 +34,6 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmProviderKind;
@@ -83,7 +82,6 @@ beforeEach(function (): void {
     $this->appsRoot = $this->sandbox.'/apps';
     $this->remoteOrigin = 'ssh://git@example.test/acme/site.git';
     $this->files->makeDirectory($this->sandbox, 0o755, true);
-    // Worker commands inherit this directory. A linked worktree's Git directory may be closed to the worker.
     $this->previousDirectory = getcwd();
     chdir($this->sandbox);
     orb76_create_remote_repository($this->sandbox, $this->repository);
@@ -108,11 +106,6 @@ beforeEach(function (): void {
     };
     $this->accounts = $accounts;
     $this->transport = new Orb76LocalSourceSshExecutor($this->remoteOrigin, $this->repository);
-    // Give nobody an isolated global config instead of writing its host home.
-    $this->workerHome = $this->sandbox.'/worker-home';
-    $this->files->makeDirectory($this->workerHome);
-    chmod($this->workerHome, 0777);
-    $this->transport->workerGlobalConfig = $this->workerHome.'/.gitconfig';
     $this->sourceLock = new NativeAppDevSourceOperationLock($this->sandbox.'/locks');
     $ssh = new DevelopmentSshExecutor(
         $this->transport,
@@ -163,8 +156,7 @@ beforeEach(function (): void {
         'wireguard_ip' => '10.44.0.3',
         'user' => $user,
     ]);
-    // Worker tests below need a Node that hosts shared task work. Without a worker config this changes nothing.
-    orbit_test_task_work_host($this->node);
+    orbit_test_set_app_placement_role($this->node, production: false);
     $this->orbitApp = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
@@ -183,7 +175,7 @@ it('creates a task VM workspace from the Gateway mirror, with no clone or fetch 
     orb76_https_origin($this);
     GitRemoteRedirect::global($this->repository, $this->remoteOrigin);
     $host = Node::query()->create(['name' => 'beast', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '10.44.0.7', 'wireguard_ip' => '10.44.0.7', 'user' => 'nckrtl']);
-    $group = Task::topLevel()->create(['project_id' => $this->orbitApp->id, 'title' => 'Export', 'brief' => 'Add an export.', 'status' => TaskGroupStatus::Running, 'task_compute' => TaskCompute::Vm]);
+    $group = Task::topLevel()->create(['project_id' => $this->orbitApp->id, 'title' => 'Export', 'brief' => 'Add an export.', 'status' => TaskGroupStatus::Running]);
     TaskVm::query()->create([
         'group_id' => $group->id, 'host_node_id' => $host->id, 'node_id' => $this->node->id, 'provider' => 'incus', 'name' => 'tvm-1',
         'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.130', 'pi_token' => str_repeat('p', 64),
@@ -268,7 +260,6 @@ it('retains an interrupted prepare without a receipt and cleans a lost response 
 })->with(['interrupted before receipt' => 'before receipt', 'lost completed response' => 'lost response']);
 
 it('starts a linked workspace from the deployed commit of the default instead of newer origin main', function (): void {
-    config()->set('orbit.tasks.worker_user', null);
     $seed = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'default');
     $this->source->prepare($seed, false);
     $resolution = $this->source->resolve($seed);
@@ -287,7 +278,6 @@ it('starts a linked workspace from the deployed commit of the default instead of
 });
 
 it('starts a task VM workspace from the template checkout next to it, with its ignored files', function (): void {
-    config()->set('orbit.tasks.worker_user', null);
     $template = $this->appsRoot.'/acme/.orbit-workspace-template';
     $this->files->makeDirectory(dirname($template), 0o755, true);
     // The transport maps the Project origin to this local repository, as it does for a clone.
@@ -310,7 +300,6 @@ it('starts a task VM workspace from the template checkout next to it, with its i
 
 it('takes a task VM template built at the checkout path in place, and the prepared checkout on a retry', function (): void {
     orb76_https_origin($this);
-    config()->set('orbit.tasks.worker_user', null);
     $workspace = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-7', 'task-7');
     orb76_task_vm($this->node);
     $checkout = dirname($workspace->checkout_path).'/workspace';
@@ -340,7 +329,6 @@ it('takes a task VM template built at the checkout path in place, and the prepar
 });
 
 it('fails instead of cloning over a template in place that fails its source checks', function (): void {
-    config()->set('orbit.tasks.worker_user', null);
     $workspace = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-8', 'task-8');
     orb76_task_vm($this->node);
     $checkout = dirname($workspace->checkout_path).'/workspace';
@@ -362,7 +350,6 @@ it('refuses the fixed workspace checkout on a Node that is not a task VM', funct
 
 it('clones when the template is gone, and clones instead of taking a template of another repository', function (): void {
     Log::spy();
-    config()->set('orbit.tasks.worker_user', null);
     $template = $this->appsRoot.'/acme/.orbit-workspace-template';
     $gone = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-8', 'task-8');
     $gone->update(['source_prepare_id' => (string) Str::uuid()]);
@@ -423,548 +410,34 @@ it('refuses to move a checkout across a mount before any copy, and keeps it in p
         ->and(file_exists($checkout))->toBeFalse();
 });
 
-describe('TaskCheckWorkerUser', function (): void {
-    it('keeps removal content filters on the worker while the managed account validates and deletes the tree', function (): void {
-        config()->set('orbit.tasks.worker_user', null);
-        $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-worker-removal');
-        $checkout = $instance->checkout_path;
-        file_put_contents($checkout.'/.gitattributes', "README.md filter=uid\n");
-        orb76_run(['git', '-C', $checkout, 'add', '.gitattributes']);
-        orb76_run(['git', '-C', $checkout, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'filter attributes']);
-        orb76_run(['git', '-C', $checkout, 'push', '-q', $this->repository, 'HEAD:refs/heads/'.$instance->branch]);
-        $users = $this->sandbox.'/worker-users';
-        file_put_contents($users, '');
-        (new Process(['setfacl', '-m', 'u:nobody:rw', $users]))->mustRun();
-        orb76_run(['git', '-C', $checkout, 'config', 'filter.uid.clean', 'printf "%s:%s\\n" "$(id -u)" "${GIT_CONFIG_VALUE_0-absent}" >> '.escapeshellarg($users).'; cat']);
-        config()->set('orbit.tasks.worker_user', 'nobody');
-        $this->source->inspectPrepared($instance);
-        touch($checkout.'/README.md', time() - 10);
+// Setup steps, development Processes, and agents run as the managed user and can write the checkout config. A planted
+// URL rewrite to `ext::` makes the fetch fail closed; no planted command runs.
+it('fetches at resolve without running a command planted in the checkout config', function (): void {
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-planted-fetch');
+    $checkout = $instance->checkout_path;
+    orb76_run(['git', '-C', $checkout, 'push', '-q', $this->repository, 'HEAD:refs/heads/planted']);
+    PlantedGitConfig::plant($checkout, $this->sandbox.'/markers', [$this->repository, $this->remoteOrigin]);
+    $this->source->inspectPrepared($instance);
+    $instance->update(['branch_override' => 'planted']);
 
-        $member = orb180_record_source($this->removal, $instance, false);
-        expect(trim((string) file_get_contents($users)))->toContain('65534:absent');
-        file_put_contents($users, '');
-        $this->removal->prepare($member);
-        touch($checkout.'/README.md', time() - 20);
-        $this->removal->finalize($member);
-
-        expect(file_exists($checkout))->toBeFalse();
-        $records = file($users, FILE_IGNORE_NEW_LINES) ?: [];
-        expect($records)->not->toBeEmpty();
-        foreach ($records as $record) {
-            expect($record)->toBe('65534:absent');
-        }
-    });
-
-    it('checks out a resolved branch as the worker so a planted filter never runs as the managed user', function (): void {
-        config()->set('orbit.tasks.worker_user', null);
-        $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-worker-resolve');
-        $checkout = $instance->checkout_path;
-        file_put_contents($checkout.'/.gitattributes', "README.md filter=uid\n");
-        file_put_contents($checkout.'/README.md', "filtered\n", FILE_APPEND);
-        orb76_run(['git', '-C', $checkout, 'add', '.gitattributes', 'README.md']);
-        orb76_run(['git', '-C', $checkout, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'filter attributes']);
-        orb76_run(['git', '-C', $checkout, 'push', '-q', $this->repository, 'HEAD:refs/heads/filtered']);
-        orb76_run(['git', '-C', $checkout, 'reset', '-q', '--hard', 'HEAD~1']);
-        $users = $this->sandbox.'/worker-users';
-        file_put_contents($users, '');
-        (new Process(['setfacl', '-m', 'u:nobody:rw', $users]))->mustRun();
-        orb76_run(['git', '-C', $checkout, 'config', 'filter.uid.smudge', 'printf "%s:%s\\n" "$(id -u)" "${GIT_CONFIG_VALUE_0-absent}" >> '.escapeshellarg($users).'; cat']);
-        config()->set('orbit.tasks.worker_user', 'nobody');
-        $this->source->inspectPrepared($instance);
-        $instance->update(['branch_override' => 'filtered']);
-
-        expect($this->source->resolve($instance->refresh())->branch)->toBe('filtered');
-        $records = file($users, FILE_IGNORE_NEW_LINES) ?: [];
-        expect($records)->not->toBeEmpty();
-        foreach ($records as $record) {
-            expect($record)->toBe('65534:absent');
-        }
-    });
-
-    it('fetches at resolve without running a command planted in the checkout config', function (?string $worker): void {
-        config()->set('orbit.tasks.worker_user', null);
-        $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-planted-fetch');
-        $checkout = $instance->checkout_path;
-        orb76_run(['git', '-C', $checkout, 'push', '-q', $this->repository, 'HEAD:refs/heads/planted']);
-        PlantedGitConfig::plant($checkout, $this->sandbox.'/markers', [$this->repository, $this->remoteOrigin]);
-        config()->set('orbit.tasks.worker_user', $worker);
-        $this->source->inspectPrepared($instance);
-        $instance->update(['branch_override' => 'planted']);
-
-        expect($this->source->resolve($instance->refresh())->branch)->toBe('planted')
-            ->and(PlantedGitConfig::markers($this->sandbox.'/markers'))->toBe([]);
-    })->with(['managed user' => null, 'worker' => 'nobody']);
-
-    it('refuses removal content inspection when the configured worker cannot run', function (): void {
-        config()->set('orbit.tasks.worker_user', null);
-        $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-missing-worker');
-        config()->set('orbit.tasks.worker_user', 'orbit-absent-task-worker');
-
-        expect(fn () => $this->removal->inspect($instance, false))->toThrow(RuntimeConvergenceException::class)
-            ->and(is_dir($instance->checkout_path))->toBeTrue();
-    });
+    expect(fn () => $this->source->resolve($instance->refresh()))->toThrow(RuntimeConvergenceException::class);
+    expect(PlantedGitConfig::markers($this->sandbox.'/markers'))->toBe([]);
 });
 
-describe('TaskWorkspaceAcl', function (): void {
-    it('preserves populated private workspace temp caches across repeated inspection', function (bool $linked): void {
-        config()->set('orbit.tasks.worker_user', null);
-        $seed = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'tmp-seed');
-        $instance = $seed;
-        if ($linked) {
-            $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'tmp-linked');
-            orb76_run(['git', '-C', $seed->checkout_path, 'worktree', 'add', '--detach', $instance->checkout_path, $seed->starting_commit]);
-            $instance->update(['seed_repository' => $seed->checkout_path, 'source_layout' => 'worktree']);
-            // Common metadata traversal must also protect another linked workspace's caches.
-            orb76_run(['git', '-C', $seed->checkout_path, 'worktree', 'add', '--detach', $this->appsRoot.'/tmp-other', $seed->starting_commit]);
-        }
-        $git = trim(orb76_run(['git', '-C', $instance->checkout_path, 'rev-parse', '--absolute-git-dir'])->stdout);
-        $common = trim(orb76_run(['git', '-C', $instance->checkout_path, 'rev-parse', '--path-format=absolute', '--git-common-dir'])->stdout);
-        $metadata = array_unique([$git, $common, ...($linked ? [$common.'/worktrees/tmp-other'] : [])]);
-        $before = [];
-        foreach ($metadata as $directory) {
-            $cache = $directory.'/orbit/tmp/check-'.posix_geteuid().'/phpstan';
-            $this->files->makeDirectory($cache, 0700, true);
-            file_put_contents($cache.'/result', 'private');
-            chmod($cache.'/result', 0600);
-            foreach ([$directory.'/orbit/tmp', dirname($cache), $cache, $cache.'/result'] as $path) {
-                $before[$path] = orb76_run(['getfacl', '-cp', $path])->stdout;
-            }
-        }
-        config()->set('orbit.tasks.worker_user', 'nobody');
-        for ($attempt = 0; $attempt < 2; $attempt++) {
-            $failure = null;
-            try {
-                $this->source->inspectPrepared($instance);
-            } catch (RuntimeConvergenceException $exception) {
-                $failure = $exception;
-            }
-            foreach ($before as $path => $permissions) {
-                expect(orb76_run(['getfacl', '-cp', $path])->stdout)->toBe($permissions);
-            }
-            if ($failure !== null) {
-                throw new RuntimeException($failure->result?->stderr ?? $failure->getMessage(), previous: $failure);
-            }
-        }
-        // Ordinary checkout sharing still works; only the resolved temp subtrees are excluded.
-        expect(orb76_run(['getfacl', '-cp', $instance->checkout_path])->stdout)->toContain('user:nobody:rwx');
-    })->with(['normal checkout (former recursive fast path)' => false, 'linked worktrees' => true]);
+it('fetches at resolve past planted command keys without running them', function (): void {
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-planted-keys');
+    $checkout = $instance->checkout_path;
+    orb76_run(['git', '-C', $checkout, 'push', '-q', $this->repository, 'HEAD:refs/heads/planted-keys']);
+    PlantedGitConfig::plant($checkout, $this->sandbox.'/markers', []);
+    $this->source->inspectPrepared($instance);
+    $instance->update(['branch_override' => 'planted-keys']);
 
-    it('trusts only the managed checkout for worker Git and removes that trust on teardown', function (string $operation): void {
-        config()->set('orbit.tasks.worker_user', null);
-        $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-worker-trust');
-        $worker = ['sudo', '-n', '-u', 'nobody', '-H', '--', 'env', 'GIT_CONFIG_GLOBAL='.$this->transport->workerGlobalConfig, 'git'];
-        orb76_run([...$worker, 'config', '--global', '--add', 'safe.directory', $this->sandbox.'/another-checkout']);
-        config()->set('orbit.tasks.worker_user', 'nobody');
-
-        if ($operation === 'prepare') {
-            $this->source->prepare($instance, true);
-        } else {
-            $this->source->inspectPrepared($instance);
-        }
-        $this->source->inspectPrepared($instance);
-
-        expect(trim(orb76_run([...$worker, 'config', '--global', '--get-all', 'safe.directory'])->stdout))
-            ->toBe($this->sandbox.'/another-checkout'."\n".$instance->checkout_path);
-        expect(trim(orb76_run([...$worker, '-C', $instance->checkout_path, 'status', '--porcelain'])->stdout))->toBe('');
-        $member = orb180_record_source($this->removal, $instance, true);
-        $this->removal->finalize($member);
-        $this->removal->finalize($member);
-
-        expect(trim(orb76_run([...$worker, 'config', '--global', '--get-all', 'safe.directory'])->stdout))->toBe($this->sandbox.'/another-checkout');
-        expect(file_exists($instance->checkout_path))->toBeFalse();
-    })->with(['prepare', 'inspect']);
-
-    it('retries scoped trust cleanup after interruption between quarantine deletion and unset', function (string $retry): void {
-        config()->set('orbit.tasks.worker_user', 'nobody');
-        $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-interrupted-trust');
-        $worker = ['sudo', '-n', '-u', 'nobody', '-H', '--', 'env', 'GIT_CONFIG_GLOBAL='.$this->transport->workerGlobalConfig, 'git'];
-        orb76_run([...$worker, 'config', '--global', '--add', 'safe.directory', $this->sandbox.'/another-checkout']);
-        $member = orb180_record_source($this->removal, $instance, true);
-        $this->transport->interruptBeforeTrustCleanup = true;
-
-        expect(fn () => $this->removal->finalize($member))->toThrow(RuntimeConvergenceException::class);
-
-        expect(file_exists($instance->checkout_path))->toBeFalse();
-        expect(is_file(orb180_receipt_path($member)))->toBeTrue();
-        expect(trim(orb76_run([...$worker, 'config', '--global', '--get-all', 'safe.directory'])->stdout))
-            ->toBe($instance->checkout_path."\n".$this->sandbox.'/another-checkout');
-        $configLock = $this->transport->workerGlobalConfig.'.lock';
-        file_put_contents($configLock, 'another writer');
-        expect(fn () => $this->removal->{$retry}($member))->toThrow(RuntimeConvergenceException::class);
-        expect(trim(orb76_run([...$worker, 'config', '--global', '--get-all', 'safe.directory'])->stdout))
-            ->toBe($instance->checkout_path."\n".$this->sandbox.'/another-checkout');
-        unlink($configLock);
-        if ($retry === 'revalidate') {
-            expect($this->removal->revalidate($member))->toBe(InstanceSourceRevalidationState::Completed);
-        } else {
-            expect($this->removal->finalize($member))->toBe(trim(file_get_contents(orb180_receipt_path($member))));
-        }
-
-        expect(trim(orb76_run([...$worker, 'config', '--global', '--get-all', 'safe.directory'])->stdout))->toBe($this->sandbox.'/another-checkout');
-        expect(is_dir(dirname($instance->checkout_path)))->toBeFalse();
-    })->with(['revalidate', 'finalize']);
-
-    it('keeps worker-created entries writable and removable after an interrupted access grant and retry', function (string $operation): void {
-        config()->set('orbit.tasks.worker_user', null);
-        $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-partial-acl');
-        if ($operation === 'inspect') {
-            $this->source->prepare($instance, false);
-        }
-        $workerDirectory = $instance->checkout_path.'/partial-worker-directory';
-        $realSetfacl = trim(orb76_run(['bash', '-c', 'command -v setfacl'])->stdout);
-        $bin = $this->sandbox.'/bin';
-        $this->files->makeDirectory($bin);
-        file_put_contents($bin.'/setfacl', <<<'BASH'
-            #!/bin/bash
-            set -eu
-            for argument in "$@"; do
-                case "$argument" in
-                    u:nobody:rwX*)
-                        "$ORBIT_TEST_REAL_SETFACL" -m "u:nobody:rwx,u:$ORBIT_TEST_MANAGED_USER:rwx" -- "$ORBIT_TEST_CHECKOUT"
-                        printf 'Injected ACL access failure after mutation\n' >&2
-                        exit 1
-                        ;;
-                esac
-            done
-            exec "$ORBIT_TEST_REAL_SETFACL" "$@"
-            BASH);
-        chmod($bin.'/setfacl', 0755);
-        $this->transport->environment = [
-            'PATH' => $bin.':'.getenv('PATH'),
-            'ORBIT_TEST_REAL_SETFACL' => $realSetfacl,
-            'ORBIT_TEST_MANAGED_USER' => $this->node->user,
-            'ORBIT_TEST_CHECKOUT' => $instance->checkout_path,
-        ];
-        config()->set('orbit.tasks.worker_user', 'nobody');
-        $worker = ['sudo', '-n', '-u', 'nobody', '--'];
-
-        try {
-            expect(fn () => $operation === 'prepare'
-                ? $this->source->prepare($instance, false)
-                : $this->source->inspectPrepared($instance))
-                ->toThrow(function (RuntimeConvergenceException $exception) use ($operation): void {
-                    expect($exception->errorCode)->toBe($operation === 'prepare' ? 'instance.clone_failed' : 'instance.source_identity_invalid')
-                        ->and($exception->result?->stderr)->toContain('Injected ACL access failure after mutation');
-                });
-            orb76_run([...$worker, 'bash', '-seu', '--', $workerDirectory], <<<'BASH'
-                umask 077
-                mkdir -p "$1/nested"
-                printf 'worker\n' > "$1/nested/file"
-                BASH);
-            expect(trim(orb76_run([...$worker, 'stat', '-c', '%U', $workerDirectory.'/nested/file'])->stdout))->toBe('nobody');
-            $this->transport->environment = [];
-
-            $this->source->prepare($instance, true);
-            $this->source->inspectPrepared($instance);
-            file_put_contents($workerDirectory.'/nested/file', "node\n", FILE_APPEND);
-            clearstatcache();
-            expect(file_get_contents($workerDirectory.'/nested/file'))->toBe("worker\nnode\n")
-                ->and(fileowner($workerDirectory.'/nested/file'))->toBe(65534)
-                ->and(fileowner($instance->checkout_path))->toBe(posix_geteuid())
-                ->and(filegroup($instance->checkout_path))->toBe(posix_getegid());
-            $resolution = $this->source->resolve($instance);
-            $instance->update([
-                'branch' => $resolution->branch,
-                'starting_commit' => $resolution->startingCommit,
-                'status' => InstanceState::SourceResolved,
-            ]);
-            $member = orb180_record_source($this->removal, $instance->refresh(), true);
-
-            expect($this->removal->finalize($member))->not->toBeNull()
-                ->and(file_exists($instance->checkout_path))->toBeFalse();
-        } finally {
-            orb76_run([...$worker, 'rm', '-rf', '--', $workerDirectory]);
-        }
-    })->with(['prepare', 'inspect']);
-
-    it('fails prepare and inspection when the ACL command fails', function (): void {
-        $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-failed-acl');
-        $bin = $this->sandbox.'/bin';
-        $this->files->makeDirectory($bin);
-        file_put_contents($bin.'/setfacl', "#!/bin/sh\nexit 1\n");
-        chmod($bin.'/setfacl', 0755);
-        $this->transport->environment = ['PATH' => $bin.':'.getenv('PATH')];
-        config()->set('orbit.tasks.worker_user', 'nobody');
-
-        expect(fn () => $this->source->prepare($instance, false))->toThrow(function (RuntimeConvergenceException $exception): void {
-            expect($exception->errorCode)->toBe('instance.clone_failed');
-        });
-        expect(fn () => $this->source->inspectPrepared($instance))->toThrow(function (RuntimeConvergenceException $exception): void {
-            expect($exception->errorCode)->toBe('instance.source_identity_invalid');
-        });
-        expect($instance->refresh()->starting_commit)->toBeNull();
-    });
-
-    it('refuses a symlink in the shared Orbit directory before granting ACLs', function (): void {
-        $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-symlink-acl');
-        $outside = $this->sandbox.'/outside';
-        $this->files->makeDirectory($outside, 0700);
-        symlink($outside, $instance->checkout_path.'/.git/orbit');
-        config()->set('orbit.tasks.worker_user', 'nobody');
-
-        expect(fn () => $this->source->inspectPrepared($instance))->toThrow(RuntimeConvergenceException::class);
-
-        expect(orb76_run(['getfacl', '-cp', $outside])->stdout)->not->toContain('nobody');
-    });
-
-    it('rejects an invalid or privileged worker name before cloning', function (string $worker): void {
-        config()->set('orbit.tasks.worker_user', $worker);
-        $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-invalid-acl');
-
-        expect(fn () => $this->source->prepare($instance, false))->toThrow(RuntimeConvergenceException::class);
-
-        expect(is_dir($instance->checkout_path))->toBeFalse();
-    })->with(['root', 'worker:rwX', '-R']);
-
-    it('leaves tracked files with the worker that checked them out, writable by the managed user', function (): void {
-        config()->set('orbit.tasks.worker_user', 'nobody');
-        $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-owner');
-        clearstatcache();
-
-        // No root process hands the files back. Their inherited ACL gives the managed user the same access.
-        expect(fileowner($instance->checkout_path.'/README.md'))->toBe(posix_getpwnam('nobody')['uid'])
-            ->and(fileowner($instance->checkout_path))->toBe(posix_geteuid())
-            ->and(fileowner($instance->checkout_path.'/.git'))->toBe(posix_geteuid())
-            ->and(file_put_contents($instance->checkout_path.'/README.md', 'edited'))->toBe(6);
-    });
-
-    it('grants checkout access and inherited write access without changing the owner', function (): void {
-        config()->set('orbit.tasks.worker_user', 'nobody');
-        $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-acl');
-        $checkout = $instance->checkout_path;
-        $worker = ['sudo', '-n', '-u', 'nobody', '--'];
-
-        orb76_run([...$worker, 'bash', '-seu', '--', $checkout], <<<'BASH'
-            checkout=$1
-            test -w "$checkout/README.md"
-            test -w "$checkout/.git"
-            test ! -w "$checkout/.git/config"
-            test ! -w "$checkout/.git/hooks"
-            test ! -w "$checkout/.git/hooks/pre-commit.sample"
-            umask 077
-            mkdir "$checkout/worker-directory"
-            printf 'worker\n' > "$checkout/worker-directory/file"
-            printf 'output\n' > "$checkout/.git/orbit/worker-output"
-            BASH);
-        file_put_contents($checkout.'/worker-directory/file', "node\n", FILE_APPEND);
-        file_put_contents($checkout.'/.git/orbit/worker-output', "node\n", FILE_APPEND);
-        $this->source->prepare($instance, true);
-        $this->source->inspectPrepared($instance);
-        clearstatcache();
-
-        expect(file_get_contents($checkout.'/worker-directory/file'))->toBe("worker\nnode\n")
-            ->and(file_get_contents($checkout.'/.git/orbit/worker-output'))->toBe("output\nnode\n")
-            ->and(fileowner($checkout.'/worker-directory/file'))->toBe(65534)
-            ->and(fileowner($checkout))->toBe(posix_geteuid())
-            ->and(filegroup($checkout))->toBe(posix_getegid())
-            ->and(fileperms($checkout.'/.git/orbit') & 0777)->toBe(0775);
-        $acl = orb76_run(['getfacl', '-cp', $checkout])->stdout;
-        expect($acl)->toContain('user:nobody:rwx', 'default:user:nobody:rwx', 'default:user:'.$this->node->user.':rwx');
-        expect(orb76_run(['getfacl', '-cp', $this->appsRoot])->stdout)->not->toContain('nobody');
-    });
-
-    it('grants access around a private directory the worker created in the Git directory', function (): void {
-        config()->set('orbit.tasks.worker_user', 'nobody');
-        $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-private');
-        $checkout = $instance->checkout_path;
-
-        // A check run by the worker keeps its receipt in a mkdtemp directory. Mode 0700 narrows the ACL mask, which
-        // closes the directory to the managed user.
-        orb76_run(['sudo', '-n', '-u', 'nobody', '--', 'python3', '-c', <<<'PYTHON'
-            import os, sys, tempfile
-            reports = os.path.join(sys.argv[1], '.git/orbit-checks/head')
-            os.makedirs(reports)
-            private = os.path.join(reports, 'review-private')
-            os.rename(tempfile.mkdtemp(prefix='review-', dir=reports), private)
-            with open(os.path.join(private, 'result.json'), 'w') as receipt:
-                receipt.write('receipt\n')
-            PYTHON, $checkout]);
-        $private = $checkout.'/.git/orbit-checks/head/review-private';
-
-        try {
-            clearstatcache();
-            expect(is_executable($private))->toBeFalse();
-
-            $this->source->prepare($instance, true);
-            $this->source->inspectPrepared($instance);
-
-            expect(orb76_run(['sudo', '-n', '-u', 'nobody', '--', 'cat', $private.'/result.json'])->stdout)->toBe("receipt\n")
-                ->and(orb76_run(['getfacl', '-cp', $checkout.'/.git/orbit'])->stdout)->toContain('user:nobody:rwx');
-        } finally {
-            orb76_run(['sudo', '-n', '-u', 'nobody', '--', 'rm', '-rf', '--', $private]);
-        }
-    });
-
-    it('removes a checkout containing worker-owned directories and files', function (): void {
-        config()->set('orbit.tasks.worker_user', 'nobody');
-        $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-removal-acl');
-        orb76_run(['sudo', '-n', '-u', 'nobody', '--', 'bash', '-seu', '--', $instance->checkout_path], <<<'BASH'
-            mkdir "$1/worker-directory"
-            printf 'worker\n' > "$1/worker-directory/file"
-            BASH);
-        $member = orb180_record_source($this->removal, $instance, true);
-
-        $receipt = $this->removal->finalize($member);
-
-        expect($receipt)->not->toBeNull()
-            ->and(file_exists($instance->checkout_path))->toBeFalse();
-    });
-
-    it('removes a worker-created mkdir-p tree with sticky and setgid directories under a default ACL', function (): void {
-        config()->set('orbit.tasks.worker_user', 'nobody');
-        $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-sticky-removal');
-        $tree = $instance->checkout_path.'/worker-directory';
-        expect(orb76_run(['getfacl', '-cp', $instance->checkout_path])->stdout)
-            ->toContain('default:user:nobody:rwx', 'default:user:'.$this->node->user.':rwx');
-        orb76_run(['sudo', '-n', '-u', 'nobody', '--', 'bash', '-seu', '--', $tree], <<<'BASH'
-            mkdir -p "$1/nested/deep"
-            printf 'worker\n' > "$1/nested/deep/file"
-            # Reproduce uutils mkdir 0.8.0 on hosts whose mkdir does not inherit these bits.
-            chmod g+s,+t -- "$1" "$1/nested" "$1/nested/deep"
-            # An explicit 0755 mode, as Pest uses for its TIA graph, narrows the ACL mask to r-x.
-            python3 -c 'import os, sys; os.mkdir(sys.argv[1], 0o755)' "$1/graph"
-            printf 'worker\n' > "$1/graph/graph.json"
-            BASH);
-        expect(fileperms($tree.'/graph') & 0o777)->toBe(0o755);
-        expect(trim(orb76_run(['stat', '-c', '%U', $tree.'/nested/deep'])->stdout))->toBe('nobody');
-        expect(fileperms($tree.'/nested/deep') & 0o3000)->toBe(0o3000);
-        $member = orb180_record_source($this->removal, $instance, true);
-        $state = dirname(orb180_receipt_path($member));
-        $workerStateAccess = ['sudo', '-n', '-u', 'nobody', '--', 'test', '-x', $state];
-        expect(orb178_run_allow_failure($workerStateAccess)->succeeded())->toBeFalse();
-
-        $receipt = $this->removal->finalize($member);
-
-        expect($receipt)->toBe(trim(file_get_contents(orb180_receipt_path($member))));
-        expect(file_exists($instance->checkout_path))->toBeFalse();
-        expect(file_exists(orb180_quarantine_path($member)))->toBeFalse();
-        expect(orb178_run_allow_failure($workerStateAccess)->succeeded())->toBeFalse();
-    });
-
-    it('removes a quarantined source with managed-user directories the worker cannot enter', function (string $layout): void {
-        config()->set('orbit.tasks.worker_user', 'nobody');
-        $checkout = null;
-        $siblingPath = null;
-        if ($layout === 'worktree') {
-            [$checkout, $instance, $siblingPath] = orb180_worktree_source(
-                $this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-private-removal',
-            );
-            $instance->update(['seed_repository' => $checkout->checkout_path]);
-            $this->source->inspectPrepared($instance);
-        } else {
-            $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-private-removal');
-        }
-        $private = $instance->checkout_path.'/storage/app/private';
-        $this->files->makeDirectory($private.'/nested', 0o755, true);
-        file_put_contents($private.'/nested/file', "managed\n");
-        chmod($private.'/nested', 0o700);
-        chmod($private, 0o700);
-        expect(trim(orb76_run(['stat', '-c', '%U', $private])->stdout))->toBe($this->node->user);
-        expect(orb178_run_allow_failure(['sudo', '-n', '-u', 'nobody', '--', 'test', '-x', $private])->succeeded())->toBeFalse();
-        orb76_run(['sudo', '-n', '-u', 'nobody', '--', 'bash', '-seu', '--', $instance->checkout_path], <<<'BASH'
-            mkdir -p "$1/worker-directory/nested"
-            printf 'worker\n' > "$1/worker-directory/nested/file"
-            chmod g+s,+t -- "$1/worker-directory" "$1/worker-directory/nested"
-            BASH);
-        expect(fileperms($instance->checkout_path.'/worker-directory/nested') & 0o3000)->toBe(0o3000);
-        $member = orb180_record_source($this->removal, $instance, true);
-        $quarantine = orb180_quarantine_path($member);
-
-        $receipt = $this->removal->finalize($member);
-
-        expect($receipt)->toBe(trim(file_get_contents(orb180_receipt_path($member))));
-        expect(file_exists($quarantine))->toBeFalse();
-        expect(file_exists($instance->checkout_path))->toBeFalse();
-        if ($checkout !== null) {
-            expect(is_dir($checkout->checkout_path.'/.git'))->toBeTrue();
-            expect(is_dir($siblingPath))->toBeTrue();
-            $worktrees = orb76_run(['git', '-C', $checkout->checkout_path, 'worktree', 'list', '--porcelain'])->stdout;
-            expect($worktrees)->toContain($checkout->checkout_path, $siblingPath)
-                ->not->toContain($instance->checkout_path, $quarantine);
-            expect(trim(orb76_run(['git', '-C', $checkout->checkout_path, 'branch', '--list', $instance->branch])->stdout))->toBe($instance->branch);
-        }
-    })->with(['checkout', 'worktree']);
-
-    it('finishes a worker-owned workspace removal after partial deletion leaves a damaged quarantined Git directory', function (): void {
-        config()->set('orbit.tasks.worker_user', 'nobody');
-        $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-partial-removal');
-        orb76_run(['sudo', '-n', '-u', 'nobody', '--', 'bash', '-seu', '--', $instance->checkout_path], <<<'BASH'
-            mkdir -p "$1/worker-directory/nested"
-            printf 'worker\n' > "$1/worker-directory/nested/file"
-            chmod g+s,+t -- "$1/worker-directory" "$1/worker-directory/nested"
-            BASH);
-        $member = orb180_record_source($this->removal, $instance, true);
-        $this->transport->interruptDuringSourceDeletion = true;
-        expect(fn () => $this->removal->finalize($member))->toThrow(RuntimeConvergenceException::class);
-        $quarantine = orb180_quarantine_path($member);
-        expect(is_dir($quarantine.'/.git'))->toBeTrue();
-        expect(file_exists($quarantine.'/.git/HEAD'))->toBeFalse();
-        expect(is_file($quarantine.'/worker-directory/nested/file'))->toBeTrue();
-        expect(is_file(orb180_receipt_path($member)))->toBeTrue();
-        expect($this->removal->revalidate($member))->toBe(InstanceSourceRevalidationState::ReceiptPendingCleanup);
-
-        $receipt = $this->removal->finalize($member);
-
-        expect($receipt)->toBe(trim(file_get_contents(orb180_receipt_path($member))));
-        expect(file_exists($quarantine))->toBeFalse();
-        expect(file_exists($instance->checkout_path))->toBeFalse();
-        expect(is_dir(dirname($instance->checkout_path)))->toBeFalse();
-        expect($this->removal->finalize($member))->toBe($receipt);
-    });
-
-    it('shares nothing when the worker is unset or the Node opts out of the task worker', function (?string $worker, bool $taskHost): void {
-        config()->set('orbit.tasks.worker_user', $worker);
-        if (! $taskHost) {
-            orbit_test_opt_out_task_worker($this->node);
-        }
-        $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-no-acl');
-
-        $this->source->prepare($instance, false);
-        $this->source->inspectPrepared($instance);
-
-        expect(orb76_run(['getfacl', '-cp', $instance->checkout_path])->stdout)->not->toContain('default:user:')
-            ->and(is_dir($instance->checkout_path.'/.git/orbit'))->toBeFalse();
-    })->with([
-        'worker unset' => [null, true],
-        'opted-out Node without the account' => ['orbit-absent-task-worker', false],
-        'opted-out Node, account present' => ['nobody', false],
-    ]);
-
-    it('keeps the worker for a checkout shared with it, even on an opted-out Node', function (): void {
-        config()->set('orbit.tasks.worker_user', null);
-        $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-shared-moved');
-        $instance->update(['worker_shared' => true]);
-        orbit_test_opt_out_task_worker($this->node);
-        config()->set('orbit.tasks.worker_user', 'orbit-absent-task-worker');
-
-        expect(fn () => $this->removal->inspect($instance->refresh(), false))->toThrow(RuntimeConvergenceException::class)
-            ->and(is_dir($instance->checkout_path))->toBeTrue();
-    });
-
-    it('fails loudly when a task Node lacks the configured worker account', function (): void {
-        config()->set('orbit.tasks.worker_user', 'orbit-absent-task-worker');
-        $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-absent-worker');
-
-        expect(fn () => $this->source->prepare($instance, false))->toThrow(function (RuntimeConvergenceException $exception): void {
-            expect($exception->result?->stderr)->toContain('The task worker account orbit-absent-task-worker does not exist on this task Node.');
-        });
-    });
-
-    it('restores inherited ACLs on an existing checkout during inspection', function (): void {
-        config()->set('orbit.tasks.worker_user', null);
-        $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-existing-acl');
-        config()->set('orbit.tasks.worker_user', 'nobody');
-
-        $this->source->inspectPrepared($instance);
-
-        expect(orb76_run(['getfacl', '-cp', $instance->checkout_path.'/README.md'])->stdout)->toContain('user:nobody:rw-')
-            ->and(is_dir($instance->checkout_path.'/.git/orbit'))->toBeTrue();
-    });
+    expect($this->source->resolve($instance->refresh())->branch)->toBe('planted-keys')
+        ->and(PlantedGitConfig::markers($this->sandbox.'/markers'))->toBe([]);
 });
 
 describe('CheckoutProcesses', function (): void {
     it('stops the processes inside a task workspace before deleting it and leaves every other process alone', function (string $operation): void {
-        config()->set('orbit.tasks.worker_user', 'nobody');
         $group = Task::topLevel()->create(['project_id' => $this->orbitApp->id, 'title' => 'Orphans', 'brief' => 'Brief.', 'status' => TaskGroupStatus::Running]);
         $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-'.$group->id);
         $sibling = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-'.$group->id.'0');
@@ -977,13 +450,11 @@ describe('CheckoutProcesses', function (): void {
         chmod($this->sandbox.'/tmux: server', 0o755);
         $stopped = [
             'own cwd' => orb_checkout_process_spawn($checkout, 'sleep'),
-            'worker cwd' => orb_checkout_process_spawn($checkout, 'sleep', 'nobody'),
             'own executable' => orb_checkout_process_spawn($this->sandbox, $checkout.'/orbit-test-shell'),
         ];
         $kept = [
             'own tmux server' => orb_checkout_process_spawn($checkout, $this->sandbox.'/tmux: server'),
             'own sibling Instance' => orb_checkout_process_spawn((string) $sibling->checkout_path, 'sleep'),
-            'worker sibling Instance' => orb_checkout_process_spawn((string) $sibling->checkout_path, 'sleep', 'nobody'),
             'own outside' => orb_checkout_process_spawn($this->sandbox, 'sleep'),
         ];
 
@@ -1002,20 +473,17 @@ describe('CheckoutProcesses', function (): void {
                 expect(orb_checkout_process_running($pid))->toBeTrue("{$label} process {$pid} was stopped");
             }
         } finally {
-            foreach ([...$stopped, ...$kept] as $label => $pid) {
-                $user = str_starts_with($label, 'worker') ? ['sudo', '-n', '-u', 'nobody', '--'] : [];
-                orb178_run_allow_failure([...$user, 'kill', '-KILL', (string) $pid]);
+            foreach ([...$stopped, ...$kept] as $pid) {
+                orb178_run_allow_failure(['kill', '-KILL', (string) $pid]);
             }
         }
     })->with(['finalize', 'remove']);
 
     it('leaves the processes inside a development Instance running', function (string $name): void {
-        config()->set('orbit.tasks.worker_user', 'nobody');
         $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, $name);
         $checkout = (string) $instance->checkout_path;
         $kept = [
             'own cwd' => orb_checkout_process_spawn($checkout, 'sleep'),
-            'worker cwd' => orb_checkout_process_spawn($checkout, 'sleep', 'nobody'),
         ];
 
         try {
@@ -1026,9 +494,8 @@ describe('CheckoutProcesses', function (): void {
                 expect(orb_checkout_process_running($pid))->toBeTrue("{$label} process {$pid} was stopped");
             }
         } finally {
-            foreach ($kept as $label => $pid) {
-                $user = str_starts_with($label, 'worker') ? ['sudo', '-n', '-u', 'nobody', '--'] : [];
-                orb178_run_allow_failure([...$user, 'kill', '-KILL', (string) $pid]);
+            foreach ($kept as $pid) {
+                orb178_run_allow_failure(['kill', '-KILL', (string) $pid]);
             }
         }
     })->with(['named' => 'feature-processes', 'task name without a group' => 'task-999999']);
@@ -4028,7 +3495,7 @@ function orb76_run(array $arguments, ?string $input = null): CommandResult
  * Start a detached process in $directory, optionally as $user, and return its PID. `sleep` sleeps 300 seconds;
  * any other executable is a copy of bash that waits up to 300 seconds on a FIFO without a child process.
  */
-function orb_checkout_process_spawn(string $directory, string $executable, ?string $user = null): int
+function orb_checkout_process_spawn(string $directory, string $executable): int
 {
     $script = <<<'BASH'
         cd -- "$1"
@@ -4041,8 +3508,7 @@ function orb_checkout_process_spawn(string $directory, string $executable, ?stri
         fi
         printf %s "$!"
         BASH;
-    $prefix = $user === null ? [] : ['sudo', '-n', '-u', $user, '--'];
-    $pid = (int) orb76_run([...$prefix, 'bash', '-c', $script, '_', $directory, $executable])->stdout;
+    $pid = (int) orb76_run(['bash', '-c', $script, '_', $directory, $executable])->stdout;
     expect(orb_checkout_process_running($pid))->toBeTrue();
 
     return $pid;
@@ -4094,10 +3560,6 @@ final class Orb76LocalSourceSshExecutor implements SshExecutor
 
     public ?string $prepareFailure = null;
 
-    public ?string $workerGlobalConfig = null;
-
-    public bool $interruptBeforeTrustCleanup = false;
-
     public bool $interruptDuringSourceDeletion = false;
 
     public bool $interruptAfterSourceMove = false;
@@ -4125,15 +3587,6 @@ final class Orb76LocalSourceSshExecutor implements SshExecutor
                 'checkout) find -P "$quarantine/.git" -mindepth 1 -delete; exit 74 ;;',
                 $input,
             );
-        }
-        if (is_string($input) && $this->interruptBeforeTrustCleanup && (
-            str_contains($input, 'rm -rf -- "$quarantine"') || str_contains($input, 'remove_source_tree "$quarantine"')
-        )) {
-            $this->interruptBeforeTrustCleanup = false;
-            $input = str_replace('release_empty_grouping_directory "$grouping_directory"', 'exit 73', $input);
-        }
-        if (is_string($input) && $this->workerGlobalConfig !== null) {
-            $input = str_replace('-- git config --global', '-- env '.escapeshellarg('GIT_CONFIG_GLOBAL='.$this->workerGlobalConfig).' git config --global', $input);
         }
 
         if (is_string($input) && $this->interruptAfterSourceMove && str_contains($input, 'expected_origin=$6')) {

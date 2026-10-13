@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\TaskVms;
 
-use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskWorkspaceName;
 use App\Models\Instance;
 use App\Models\Task;
@@ -24,20 +23,11 @@ final class TaskVmWorkspaceGuard
     public const string WorkspaceCheckout = 'workspace';
 
     /**
-     * A `vm` group's workspace must be its `task-<group id>` Instance in the group's Project, on
-     * the Node of its Ready task VM. Any other group's workspace must not be on a task VM Node.
-     * A parked VM fails with `task_vm.parked`: no command reaches a VM that is stopped or starting.
+     * A group's workspace must be its `task-<group id>` Instance in the group's Project, on the Node of its Ready
+     * task VM. A parked VM fails with `task_vm.parked`: no command reaches a VM that is stopped or starting.
      */
     public static function assertWorkspace(Task $group, Instance $workspace): void
     {
-        if ($group->task_compute !== TaskCompute::Vm) {
-            if (TaskVm::forNode($workspace->node_id) instanceof TaskVm) {
-                throw new TaskVmException(TaskVmError::WorkspaceMismatch, "Task group [{$group->id}] does not own the task VM that serves its workspace.");
-            }
-
-            return;
-        }
-
         $vm = TaskVm::forGroup($group);
         if ($vm?->state === TaskVmState::Parked) {
             throw new TaskVmException(TaskVmError::Parked, "The task VM [{$vm->name}] of task group [{$group->id}] is parked. Orbit starts it for the group's next work.");
@@ -61,11 +51,10 @@ final class TaskVmWorkspaceGuard
         }
     }
 
-    /** When a `vm` group owns this workspace, the workspace must be on that group's ready task VM. */
+    /** When a group owns this workspace, the workspace must be on that group's ready task VM. */
     public static function assertOwnedWorkspace(Instance $workspace): void
     {
-        $group = Task::topLevel()->where('taskable_type', $workspace->getMorphClass())->where('taskable_id', $workspace->id)
-            ->where('task_compute', TaskCompute::Vm->value)->first();
+        $group = Task::topLevel()->where('taskable_type', $workspace->getMorphClass())->where('taskable_id', $workspace->id)->first();
         if ($group instanceof Task) {
             self::assertWorkspace($group, $workspace);
         }

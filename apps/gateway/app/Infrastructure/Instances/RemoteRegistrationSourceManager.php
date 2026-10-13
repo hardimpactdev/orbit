@@ -16,18 +16,13 @@ use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Tasks\TaskWorkerUser;
 use App\Models\Instance;
 use App\Models\Node;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use JsonException;
 
 final readonly class RemoteRegistrationSourceManager implements RegistrationSourceManager
 {
-    /** Prefix of the stderr line the read grant prints for each directory of another account that it skips. */
-    private const string SKIPPED_UNREADABLE = 'orbit: skipped unreadable directory ';
-
     public function __construct(
         private DevelopmentSshExecutor $ssh,
         private ManagedUserAccountResolver $accounts,
@@ -47,14 +42,12 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                     $includeWorktrees ? '1' : '0',
                     $account->user,
                     $account->group,
-                    TaskWorkerUser::forNode($node) ?? '',
                 ],
             ),
             step: 'registration-source-inspect',
             errorCode: 'instance.source_invalid',
             commandTimeout: 60,
         );
-        $this->logSkippedDirectories($node, 'registration-source-inspect', $result);
 
         try {
             $rows = json_decode($result->stdout, true, flags: JSON_THROW_ON_ERROR);
@@ -418,7 +411,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
     /** @param list<array<string, mixed>> $payload */
     private function runRelocation(Node $node, string $operation, array $payload): CommandResult
     {
-        $result = $this->ssh->execute(
+        return $this->ssh->execute(
             $node,
             new RemoteCommand([
                 'python3',
@@ -426,39 +419,11 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                 self::relocationScript(),
                 $operation,
                 json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
-                TaskWorkerUser::forNode($node) ?? '',
             ]),
             step: 'registration-source-relocate',
             errorCode: 'instance.registration_incomplete',
             commandTimeout: 900,
         );
-        $this->logSkippedDirectories($node, 'registration-source-relocate', $result);
-
-        return $result;
-    }
-
-    /**
-     * The worker read grant skips directories of another account that the managed user cannot open, such as a
-     * worker's private check scratch directory in the shared Git directory. Name them so an operator can find them.
-     */
-    private function logSkippedDirectories(Node $node, string $step, CommandResult $result): void
-    {
-        $paths = [];
-
-        foreach (preg_split('/\R/', $result->stderr) ?: [] as $line) {
-            if (str_starts_with($line, self::SKIPPED_UNREADABLE)) {
-                $paths[] = substr($line, strlen(self::SKIPPED_UNREADABLE));
-            }
-        }
-
-        if ($paths !== []) {
-            Log::warning('Registration skipped directories of another account that the managed user cannot read.', [
-                'node' => $node->name,
-                'step' => $step,
-                'count' => count($paths),
-                'paths' => array_slice($paths, 0, 20),
-            ]);
-        }
     }
 
     public function restoreOriginal(Instance $instance, RegistrationSourceFacts $facts): void
@@ -621,125 +586,20 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
         );
     }
 
-    private static function workerStatusScript(): string
+    private static function contentStatusScript(): string
     {
-        return str_replace('__SKIPPED__', self::SKIPPED_UNREADABLE, <<<'PYTHON'
-            import contextlib, errno, os, pathlib, pwd, stat, struct, subprocess, sys
-
-            worker = sys.argv[-1]
-            SKIPPED = '__SKIPPED__'
-
-            class ReadGrant:
-                def __init__(self):
-                    self.stack = contextlib.ExitStack()
-                    self.anchors = []
-
-                def keep(self, fd):
-                    self.stack.callback(os.close, fd)
-                    return fd
-
-                def pin(self, path, directory=True):
-                    if not os.path.isabs(path) or os.path.normpath(path) != path: raise SystemExit(42)
-                    parent = self.keep(os.open('/', os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC))
-                    parts = pathlib.Path(path).parts[1:]
-                    for index, name in enumerate(parts):
-                        flags = os.O_PATH | os.O_NOFOLLOW | os.O_CLOEXEC
-                        if directory or index != len(parts) - 1: flags |= os.O_DIRECTORY
-                        fd = self.keep(os.open(name, flags, dir_fd=parent))
-                        info = os.fstat(fd)
-                        if stat.S_ISLNK(info.st_mode): raise SystemExit(42)
-                        self.anchors.append((parent, name, fd, info.st_size, info.st_mtime_ns))
-                        parent = fd
-                    if os.fstat(parent).st_uid != os.geteuid(): raise SystemExit(42)
-                    return parent
-
-                def verify(self):
-                    for parent, name, fd, size, mtime in self.anchors:
-                        current = os.stat(name, dir_fd=parent, follow_symlinks=False)
-                        pinned = os.fstat(fd)
-                        if (current.st_dev, current.st_ino, stat.S_IFMT(current.st_mode)) != (pinned.st_dev, pinned.st_ino, stat.S_IFMT(pinned.st_mode)): raise SystemExit(42)
-                        if stat.S_ISREG(pinned.st_mode) and (pinned.st_size, pinned.st_mtime_ns) != (size, mtime): raise SystemExit(42)
-
-                def add_reads(self, fd, uid, groups, path):
-                    self.verify()
-                    info = os.fstat(fd)
-                    if not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode)): return
-                    if stat.S_ISREG(info.st_mode) and info.st_nlink != 1: return
-                    if info.st_uid == os.geteuid():
-                        target = '/proc/self/fd/' + str(fd)
-                        try: original = os.getxattr(target, 'system.posix_acl_access')
-                        except OSError as error:
-                            if error.errno != errno.ENODATA: raise
-                            original = None
-                        entries = list(struct.iter_unpack('<HHI', original[4:])) if original else [(1, (info.st_mode >> 6) & 7, 0xffffffff), (4, (info.st_mode >> 3) & 7, 0xffffffff), (32, info.st_mode & 7, 0xffffffff)]
-                        mask = next((perm for tag, perm, identity in entries if tag == 16), (info.st_mode >> 3) & 7)
-                        named = next((perm & mask for tag, perm, identity in entries if tag == 2 and identity == uid), None)
-                        matching = [perm for tag, perm, identity in entries if tag == 4 and info.st_gid in groups or tag == 8 and identity in groups]
-                        effective = named if named is not None else ((sum_bits(matching) & mask) if matching else next(perm for tag, perm, identity in entries if tag == 32))
-                        needed = 4 | (1 if stat.S_ISDIR(info.st_mode) or info.st_mode & 0o111 else 0)
-                        desired = effective | needed
-                        # Freeze other masked entries before adding mask bits for the worker.
-                        updated = [(tag, perm & mask if tag in (2, 4, 8) else perm, identity) for tag, perm, identity in entries if tag != 16 and not (tag == 2 and identity == uid)]
-                        updated.extend([(2, desired, uid), (16, mask | desired, 0xffffffff)])
-                        updated.sort(key=lambda entry: (entry[0], entry[2]))
-                        value = struct.pack('<I', 2) + b''.join(struct.pack('<HHI', *entry) for entry in updated)
-                        if value != original:
-                            self.verify()
-                            os.setxattr(target, 'system.posix_acl_access', value)
-                    if stat.S_ISDIR(info.st_mode):
-                        try: directory = os.open('.', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
-                        except PermissionError:
-                            # Another account's private directory. This user can grant nothing in it, and Git as
-                            # the worker still fails loudly if it needs an entry the worker cannot read.
-                            if info.st_uid == os.geteuid(): raise
-                            print(SKIPPED + path, file=sys.stderr)
-                            self.verify()
-                            return
-                        try:
-                            for name in os.listdir(directory):
-                                child = os.open(name, os.O_PATH | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=directory)
-                                try: self.add_reads(child, uid, groups, path + '/' + name)
-                                finally: os.close(child)
-                        finally: os.close(directory)
-                    self.verify()
-
-            def sum_bits(values):
-                result = 0
-                for value in values: result |= value
-                return result
+        return <<<'PYTHON'
+            import subprocess
 
             def content_status(path):
-                env = {key: value for key, value in git_env.items() if key not in ('GIT_CONFIG_COUNT', 'GIT_CONFIG_PARAMETERS', 'GIT_ASKPASS', 'SSH_ASKPASS', 'GH_TOKEN', 'GITHUB_TOKEN') and not key.startswith(('GIT_CONFIG_KEY_', 'GIT_CONFIG_VALUE_'))}
-                command = ['git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-C', path, 'status', '--porcelain=v2', '--untracked-files=all']
-                if not worker: return subprocess.check_output(command, stderr=subprocess.DEVNULL, env=env)
-                try: account = pwd.getpwnam(worker)
-                except KeyError: raise SystemExit(126)
-                uid = account.pw_uid
-                if uid == 0 or uid == os.geteuid(): raise SystemExit(126)
-                groups = os.getgrouplist(worker, account.pw_gid)
-                access = ReadGrant()
-                with access.stack:
-                    source = access.pin(path)
-                    access.pin(path + '/.git', directory=False)
-                    common_path = git(path, 'rev-parse', '--path-format=absolute', '--git-common-dir')
-                    access.verify()
-                    common = access.pin(common_path)
-                    homes = [os.path.realpath(pwd.getpwuid(value).pw_dir) for value in (os.geteuid(), uid)]
-                    if any(os.path.commonpath([directory, home]) == directory for directory in (path, common_path) for home in homes): raise SystemExit(42)
-                    access.verify()
-                    access.add_reads(source, uid, groups, path)
-                    access.add_reads(common, uid, groups, common_path)
-                    command = ['sudo', '-n', '-u', worker, '-H', '--', 'env', 'GIT_OPTIONAL_LOCKS=0', 'git', '-c', 'safe.directory=' + path, *command[1:]]
-                    result = subprocess.check_output(command, stderr=subprocess.DEVNULL, env=env)
-                    access.verify()
-                    return result
+                return subprocess.check_output(['git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-C', path, 'status', '--porcelain=v2', '--untracked-files=all'], stderr=subprocess.DEVNULL, env=git_env)
 
-            PYTHON);
+            PYTHON;
     }
 
     private static function inspectionScript(): string
     {
-        return self::workerStatusScript().<<<'PYTHON'
+        return self::contentStatusScript().<<<'PYTHON'
             import hashlib, json, os, pathlib, stat, subprocess, sys
 
             requested = sys.argv[1]
@@ -839,7 +699,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
 
     private static function relocationScript(): string
     {
-        return self::workerStatusScript().<<<'PYTHON'
+        return self::contentStatusScript().<<<'PYTHON'
             import errno, hashlib, json, os, pathlib, shutil, stat, subprocess, sys
             operation = sys.argv[1]
             members = json.loads(sys.argv[2])

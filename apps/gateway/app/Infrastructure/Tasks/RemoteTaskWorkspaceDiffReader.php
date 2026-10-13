@@ -34,17 +34,17 @@ final readonly class RemoteTaskWorkspaceDiffReader implements TaskWorkspaceDiffR
             $result = $this->ssh->execute(
                 $instance,
                 new RemoteCommand(
-                    arguments: TaskWorkerUser::arguments([
+                    arguments: [
                         'bash',
                         '-seu',
                         '--',
                         $instance->checkout_path,
                         $baseBranch,
-                    ], $instance),
+                    ],
                     input: <<<'BASH'
                     checkout=$1
                     base=$2
-                    git -c core.hooksPath=/dev/null -c core.fsmonitor=false -c safe.directory="$checkout" -C "$checkout" diff --shortstat "refs/remotes/origin/$base"...HEAD
+                    git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" diff --shortstat "refs/remotes/origin/$base"...HEAD
                     BASH,
                 ),
                 'task-workspace-diff',
@@ -76,20 +76,20 @@ final readonly class RemoteTaskWorkspaceDiffReader implements TaskWorkspaceDiffR
             $result = $this->ssh->execute(
                 $instance,
                 new RemoteCommand(
-                    arguments: TaskWorkerUser::arguments([
+                    arguments: [
                         'bash',
                         '-seu',
                         '--',
                         $instance->checkout_path,
                         $since,
-                    ], $instance),
+                    ],
                     input: <<<'BASH'
                     checkout=$1
                     since=$2
-                    if git -c core.hooksPath=/dev/null -c core.fsmonitor=false -c safe.directory="$checkout" -C "$checkout" rev-parse --verify "$since" >/dev/null 2>&1; then
-                        git -c core.hooksPath=/dev/null -c core.fsmonitor=false -c safe.directory="$checkout" -C "$checkout" rev-list --count "$since"..HEAD
+                    if git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" rev-parse --verify "$since" >/dev/null 2>&1; then
+                        git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" rev-list --count "$since"..HEAD
                     else
-                        git -c core.hooksPath=/dev/null -c core.fsmonitor=false -c safe.directory="$checkout" -C "$checkout" log --since="$since" --pretty=oneline
+                        git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" log --since="$since" --pretty=oneline
                     fi
                     BASH,
                 ),

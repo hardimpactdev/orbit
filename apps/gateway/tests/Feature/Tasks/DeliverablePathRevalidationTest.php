@@ -99,6 +99,7 @@ function revalidation_fixture(array $deliverables, string $base = 'bbbbbbbbbbbbb
     ]);
     $group->taskable()->associate($instance);
     $group->save();
+    test_vm_group($group);
     $task = Task::query()->create([
         'parent_id' => $group->id, 'position' => 1, 'title' => 'Implement', 'brief' => 'Deliver the paths.',
         'status' => TaskStatus::Todo, 'deliverables' => $deliverables,

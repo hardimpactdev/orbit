@@ -573,7 +573,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'project:create' => [
             ['slug', 'type', 'repository'],
             ['name' => null, 'source-access' => null, 'default-branch' => null, 'root' => null, 'task-check' => null, 'task-workspace-routed' => null,
-                'task-compute' => null, 'json' => false],
+                'json' => false],
         ],
         'project:destroy' => [['project'], ['yes' => false, 'json' => false]],
         'project:dev-deploy-step:create' => [['name'], ['project' => null, 'command' => null, 'timeout' => null, 'required' => null, 'before' => null, 'after' => null, 'json' => false]],
@@ -587,7 +587,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'project:update' => [
             ['project'],
             ['name' => null, 'type' => null, 'slug' => null, 'repository' => null, 'source-access' => null, 'default-branch' => null, 'root' => null, 'task-check' => null, 'clear-task-check' => false, 'task-workspace-routed' => null,
-                'task-compute' => null, 'review-and-merge' => null, 'merge-check' => null, 'clear-merge-check' => false, 'json' => false],
+                'review-and-merge' => null, 'merge-check' => null, 'clear-merge-check' => false, 'json' => false],
         ],
         'cluster:list' => [[], ['json' => false]],
         'cluster:create' => [['name'], ['tld' => null, 'json' => false]],

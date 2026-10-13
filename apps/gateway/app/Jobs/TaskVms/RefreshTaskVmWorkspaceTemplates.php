@@ -49,7 +49,7 @@ final class RefreshTaskVmWorkspaceTemplates implements ShouldBeUniqueUntilProces
 
     public function handle(TaskVmSettings $settings, TaskVmWorkspaceTemplateVolumes $volumes, TaskVmWorkspaceTemplateLifecycle $lifecycle, IncusHost $incus): void
     {
-        $projects = Project::query()->orderBy('id')->get()->filter(TaskVmWorkspaceTemplateLifecycle::serves(...))->values();
+        $projects = Project::query()->orderBy('id')->get();
         $buildable = $projects->filter(static fn (Project $project): bool => TaskVmWorkspaceTemplateLifecycle::buildable($project))->values();
         $repositories = [];
         foreach ($buildable as $project) {

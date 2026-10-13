@@ -11,7 +11,6 @@ enum TaskTurnOutcome: string
     case ChangesRequested = 'changes_requested';
     case Blocked = 'blocked';
     case Answered = 'answered';
-    case TopologyRequested = 'topology_requested';
 
     public function fits(TaskThreadRole $role): bool
     {
@@ -19,7 +18,6 @@ enum TaskTurnOutcome: string
             self::ReadyForReview => $role === TaskThreadRole::Implementer,
             self::Approved, self::ChangesRequested, self::Answered => $role === TaskThreadRole::Reviewer,
             self::Blocked => true,
-            self::TopologyRequested => $role === TaskThreadRole::Reviewer,
         };
     }
 

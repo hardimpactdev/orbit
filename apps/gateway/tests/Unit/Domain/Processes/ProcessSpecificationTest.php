@@ -33,7 +33,7 @@ describe('ProcessUser', function (): void {
     it('distinguishes explicit and derived accounts even with the same directory', function (): void {
         $target = new ProcessTarget(node: new Node(['name' => 'beast']), user: 'orbit', checkoutPath: '/home/orbit');
         $specification = new ProcessSpecification;
-        $attributes = $specification->attributes(process_specification_data([], 'orbit-worker'), $target);
+        $attributes = $specification->attributes(process_specification_data([], 'svc-runner'), $target);
         $process = new Process($attributes);
         expect($specification->matches($process, $attributes))->toBeTrue()
             ->and($specification->matches($process, $specification->attributes(process_specification_data([], 'other-worker'), $target)))->toBeFalse()

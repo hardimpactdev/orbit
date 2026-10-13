@@ -8,7 +8,6 @@ use App\Domain\Projects\ProjectCode;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectType;
 use App\Domain\SourceControl\GitRepositoryIdentity;
-use App\Domain\Tasks\TaskCompute;
 use App\Support\ValidatedData;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
@@ -27,7 +26,6 @@ use SensitiveParameter;
  * @property string|null $default_branch
  * @property string|null $root
  * @property string|null $task_check
- * @property TaskCompute $task_compute
  * @property bool $task_workspace_routed
  * @property bool $review_and_merge
  * @property string|null $merge_check
@@ -40,13 +38,12 @@ final class Project extends Model
     protected $attributes = [
         'type' => 'laravel-app',
         'source_access' => 'github_app',
-        'task_compute' => 'shared',
         'review_and_merge' => false,
     ];
 
     /** @var list<string> */
     #[\Override]
-    protected $fillable = ['name', 'code', 'slug', 'type', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed', 'task_compute', 'review_and_merge', 'merge_check'];
+    protected $fillable = ['name', 'code', 'slug', 'type', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed', 'review_and_merge', 'merge_check'];
 
     /** @var list<string> */
     #[\Override]
@@ -124,12 +121,12 @@ final class Project extends Model
 
     /**
      * ADR 0203: whether Orbit reviews every push of this Project's tasks, reviews incoming pull requests,
-     * and merges reviewed green heads. The switch needs a merge check, the GitHub App, and shared compute.
+     * and merges reviewed green heads. The switch needs a merge check and the GitHub App.
      */
     public function reviewsAndMerges(): bool
     {
         return $this->review_and_merge && $this->mergeCheckName() !== null
-            && $this->source_access === ProjectSourceAccess::GitHubApp && $this->task_compute === TaskCompute::Shared;
+            && $this->source_access === ProjectSourceAccess::GitHubApp;
     }
 
     public function mergeCheckName(): ?string
@@ -154,7 +151,6 @@ final class Project extends Model
             'source_access' => ProjectSourceAccess::class,
             'task_workspace_routed' => 'boolean',
             'review_and_merge' => 'boolean',
-            'task_compute' => TaskCompute::class,
         ];
     }
 }

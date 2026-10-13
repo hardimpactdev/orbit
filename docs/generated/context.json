@@ -588,6 +588,7 @@
                 "Task",
                 "Task check",
                 "Task definition",
+                "Task workspace",
                 "Tool"
             ],
             "governing_adrs": []
@@ -835,7 +836,8 @@
                 "Route",
                 "Subtask",
                 "Task",
-                "Task check"
+                "Task check",
+                "Task workspace"
             ],
             "governing_adrs": [
                 "0200"
@@ -1135,7 +1137,6 @@
                 "Instance",
                 "Node",
                 "Node agent",
-                "Pi server",
                 "Process",
                 "Project",
                 "Role",
@@ -1722,8 +1723,7 @@
                 "Route",
                 "Subtask",
                 "Task",
-                "Task workspace",
-                "Turn receipt"
+                "Task workspace"
             ],
             "governing_adrs": []
         },
@@ -1762,8 +1762,7 @@
                 "Placement",
                 "Project",
                 "Role",
-                "Route",
-                "Task"
+                "Route"
             ],
             "governing_adrs": []
         },
@@ -1877,7 +1876,6 @@
                 "packages/php-sdk"
             ],
             "concepts": [
-                "Access grant",
                 "Activity",
                 "Deployment",
                 "Extension",
@@ -1886,7 +1884,6 @@
                 "Node",
                 "Process",
                 "Project",
-                "Role",
                 "Route",
                 "Schedule",
                 "Task",
@@ -1916,8 +1913,7 @@
                 "Project",
                 "Role",
                 "Route",
-                "Schedule",
-                "Task"
+                "Schedule"
             ],
             "governing_adrs": []
         },
@@ -2072,10 +2068,8 @@
                 "Gateway",
                 "Instance",
                 "Node",
-                "Process",
                 "Project",
-                "Role",
-                "Task"
+                "Role"
             ],
             "governing_adrs": []
         },
@@ -2112,19 +2106,17 @@
             "concepts": [
                 "Extension",
                 "Gateway",
-                "Instance",
                 "Node",
                 "Pi server",
                 "Process",
                 "Project",
                 "Route",
-                "Schedule",
-                "Subtask",
                 "Task",
-                "Task workspace",
                 "Tool"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0200"
+            ]
         },
         {
             "path": "docs/reference/private-dns.md",
@@ -2162,7 +2154,6 @@
                 "Gateway",
                 "Instance",
                 "Node",
-                "Pi server",
                 "Placement",
                 "Process",
                 "Project",
@@ -2501,7 +2492,6 @@
                 "Route",
                 "Schedule",
                 "Task",
-                "Task workspace",
                 "Tool"
             ],
             "governing_adrs": []

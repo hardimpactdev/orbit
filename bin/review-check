@@ -205,8 +205,8 @@ def prepare_tia_directory(root, project, destination, test_base=None):
 def prune_reports(checks):
     """Remove this user's report directories older than a day, then HEAD directories that stayed empty for a day.
 
-    Reports live in the Git common directory that every worktree shares, and the managed user and the task worker
-    both write them. Only an owner can reliably remove its own report, so each run removes what its user left."""
+    Reports live in the Git common directory that every worktree shares, and more than one account may
+    write them. Only an owner can reliably remove its own report, so each run removes what its user left."""
     cutoff = time.time() - REPORT_RETENTION_SECONDS
     try:
         heads = [entry for entry in checks.iterdir() if entry.is_dir() and not entry.is_symlink()]
@@ -280,7 +280,7 @@ def main():
     prune_reports(common / 'orbit-checks')
     directory = report_directory(common / 'orbit-checks' / head)
     # mkdtemp uses mode 0700. Under an inherited default ACL, the group bits become the ACL mask, so 0700 leaves
-    # mask::--- and disables named entries such as orbit-worker's. 0750 keeps them readable; other stays closed.
+    # mask::--- and disables the named entries of that ACL. 0750 keeps them readable; other stays closed.
     directory.chmod(0o750)
     base, paths = candidate_paths(root, head, committed)
     test_base = task_test_base(root, head)

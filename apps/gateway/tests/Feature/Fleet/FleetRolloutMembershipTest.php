@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Domain\Fleet\FleetRolloutMembership;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tasks\TaskCompute;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\Node;
 use App\Models\Project;
@@ -45,7 +44,7 @@ describe('fleet rollout set', function (): void {
         $host = FleetFixtures::node('beast', [RoleName::AppDev]);
         $node = FleetFixtures::node('tvm-1', [RoleName::AppDev]);
         $project = Project::query()->create(['name' => 'DLF', 'slug' => 'dlf', 'repository_url' => 'https://github.com/acme/dlf.git']);
-        $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Work', 'brief' => 'Work', 'status' => 'todo', 'task_compute' => TaskCompute::Vm]);
+        $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Work', 'brief' => 'Work', 'status' => 'todo']);
         $vm = TaskVm::query()->create(['group_id' => $group->id, 'host_node_id' => $host->id, 'node_id' => $node->id, 'provider' => 'incus',
             'name' => 'tvm-1', 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.64.10', 'pi_token' => 'pi-token']);
         $membership = app(FleetRolloutMembership::class);
