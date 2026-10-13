@@ -179,6 +179,7 @@ it('releases the unstarted baseline reservation and retries after a VP_HOME prob
     ]);
     $group->taskable()->associate($instance);
     $group->save();
+    $group = test_vm_group($group);
     $task = Task::query()->create([
         'parent_id' => $group->id, 'position' => 1, 'title' => 'First', 'brief' => 'First subtask', 'status' => TaskStatus::Running,
     ]);
