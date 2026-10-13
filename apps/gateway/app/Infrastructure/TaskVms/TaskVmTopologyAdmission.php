@@ -6,7 +6,6 @@ namespace App\Infrastructure\TaskVms;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Tasks\TaskCapacityException;
-use App\Domain\Tasks\TaskCheckException;
 use App\Domain\Tasks\TaskTopology;
 use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Domain\Tasks\TaskTopologyEvidence;
