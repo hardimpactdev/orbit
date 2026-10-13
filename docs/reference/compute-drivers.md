@@ -1099,11 +1099,8 @@ Configure the Project like this:
 
 - List it in `task_vms.medium_projects`, so its groups get a [medium VM](#size-by-declared-topology) with 4 vCPU. Its check runs the test suites in parallel.
 - Add the setup step [`@orbit/ci-caches`](/reference/instance-setup#import-ci-main-caches) after the install steps.
-- Make the teardown step exit 0 when the [`e2e-task-cleanup` helper](/reference/instance-setup#install-the-helper) is absent.
 
 A task VM has no main cache store, so without the `@orbit/ci-caches` step every check runs all tests. With it, the template and a workspace from a fresh clone get the test-impact graphs and quality caches of CI. Then the check runs only the affected tests, as on beast.
-
-A task VM has no E2E task bridge and no cleanup helper. A teardown step that needs the helper fails the workspace removal, and the group asks for assistance. Use, for example, `[ -x "$HOME/.local/lib/orbit/e2e-task-cleanup" ] || exit 0; "$HOME/.local/lib/orbit/e2e-task-cleanup"`.
 
 The setup and teardown steps run on the VM as `orbit`. The `seed-dependencies` step does nothing there, because a task VM workspace has no `ORBIT_SEED_PATH`: the template brings the dependency trees instead.
 

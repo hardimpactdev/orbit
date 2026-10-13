@@ -13,15 +13,11 @@ In a task VM group, a subtask that declares a `topology` runs with `TASK-<group>
 
 When you review such a subtask, prove each deliverable on the declared nodes with `exec ... --record=LABEL`, where LABEL names the deliverable. Orbit refuses your approval until the evidence log holds a recorded command that exited 0 on each node the subtask declares, started after the implementer's last handoff. Cite the labels in your `--deliverable` evidence and summary.
 
-## Use the allocated topology on a shared host
+## Work on the topology
 
-A new shared task workspace has no topology. When discovery needs one, the reviewer ends its turn with `"$(git rev-parse --git-path orbit)/turn" --thread=ID --outcome=topology_requested --summary="Why discovery needs a topology"`. Do not pass `--question`, `--cause`, or pull request flags. Orbit acquires the group's one `TASK-<group>` as the managed user and resumes the same reviewer with ready, already held, or the failure reason. The review, consult, or relay context stays unchanged. A consult stays open and the implementer stays paused until the reviewer answers normally.
+Run commands from the task workspace. The issue must appear in the branch name, so branch `task-58` uses `TASK-58`. Check the topology with `bin/e2e-topology status TASK-<group>`. Agents never acquire or release topologies and do not touch the host firewall.
 
-An implementer asks the reviewer through a `blocked` consult, not a topology request or a direct operator request. Acquisition failure does not ask for operator assistance. A missing topology does not block approval; continue with tests and code review and record the discovery limitation. The implementer and reviewer share any acquired topology. Check it with `bin/e2e-topology status TASK-<group>`. Agents never acquire or release topologies, receive no sudo, and do not touch the host firewall. Orbit releases the topology before removing the workspace.
-
-Run commands from the task workspace. The issue must appear in the branch name, so branch `task-58` uses `TASK-58`. A task workspace clone runs through its [bridge worktree](../../../docs/reference/incus-topologies.md#task-workspace-clones).
-
-Leave the topology allocated while you wait for help and when you finish. Orbit or the operator owns teardown. Clean up only the disposable processes and fixtures you created within that allocation.
+Leave the topology allocated while you wait for help and when you finish. Orbit owns teardown: the topology goes with the task VM. Clean up only the disposable processes and fixtures you created within that allocation.
 
 ## Check the web UI on the held topology
 
@@ -64,8 +60,6 @@ bin/e2e-topology kill TASK-58 app-dev viewer
 ## Change code on the topology
 
 The worktree is mounted read-write into `gateway`, `app-dev`, and `operator`, so an edited file is live there at once. Run `sync` only after a migration or when a guest helper script changed. A full `sync` runs the readiness check and takes minutes. After a migration, run `sync ISSUE --quick` when you do not need full verification: it proves the mount, installs the guest helpers, and applies the migrations without the readiness probes. Run a full `sync` before you rely on `verify`.
-
-A task workspace clone reaches the Nodes through its bridge worktree, and every harness command copies the clone's changes into the bridge first. Run any command, such as `status`, to push an edit.
 
 ## Add what the task needs
 

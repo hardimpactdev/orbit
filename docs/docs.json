@@ -1084,7 +1084,7 @@
     },
     {
       "source": "/decisions/0135-run-incus-topologies-for-task-workspace-clones-through-a-bridge-worktree",
-      "destination": "/reference/incus-topologies#task-workspace-clones"
+      "destination": "/reference/incus-topologies"
     },
     {
       "source": "/decisions/0136-run-long-lived-topology-processes-as-transient-units",

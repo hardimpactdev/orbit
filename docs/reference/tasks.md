@@ -1483,7 +1483,7 @@ The Gateway tests inject these completion failures:
 
 Cancel, complete, and the sweep remove a workspace the same way. Orbit runs the Project's teardown steps in the workspace, then destroys the task VM with the workspace and its Routes. See [Destroy a task VM](/reference/compute-drivers#destroy-a-task-vm).
 
-A failed teardown keeps the workspace, its Instance, and its VM for retry. On a completed or cancelled task, that failure does not ask for assistance and keeps the reason. On any other task, it asks for assistance through the normal task cleanup path. The engine has no Orbit bridge cleanup hook. The Orbit Project records its bridge cleanup as a [teardown step](/reference/instance-setup#configure-orbits-task-policy); [Incus topologies](/reference/incus-topologies#task-workspace-clones) defines its ownership checks. A declared topology runs inside the VM and goes with it.
+A failed teardown keeps the workspace, its Instance, and its VM for retry. On a completed or cancelled task, that failure does not ask for assistance and keeps the reason. On any other task, it asks for assistance through the normal task cleanup path.
 
 When a manual complete cannot remove the workspace, the task is already `completed` and keeps its Instance. Open subtasks cancelled in the completion transaction stay `cancelled`. It does not ask for assistance. It keeps the reason `Workspace removal failed: `. The retry does not read GitHub.
 
@@ -1540,7 +1540,7 @@ When the Project's default has not deployed on that Node, Orbit creates an indep
 
 [Task workspace routing](/reference/projects#task-workspace-routing) decides whether a new workspace is visitable. It defaults to routed, and a change applies only to a workspace Orbit creates afterward. An unrouted workspace stays healthy in `source_resolved`. A group has an [Incus topology](/reference/incus-topologies) only when its subtasks [declare](/reference/compute-drivers#declare-a-topology) one. It runs inside the VM and goes with it.
 
-Orbit-specific cleanup, including a task bridge worktree, is a Project teardown step. The engine has no bridge cleanup hook. [Configure Orbit's task policy](/reference/instance-setup#configure-orbits-task-policy) records Orbit's check, setup, and installed helper. [Task workspace clones](/reference/incus-topologies#task-workspace-clones) defines that helper's ownership checks.
+Project-specific cleanup is a Project teardown step. [Configure Orbit's task policy](/reference/instance-setup#configure-orbits-task-policy) records Orbit's check and setup.
 
 ### The base-run limit
 
