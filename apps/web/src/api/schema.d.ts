@@ -19074,7 +19074,7 @@ export interface operations {
                     tasks?: {
                         title: string;
                         brief: string;
-                        topology?: ("app-dev" | "app-prod" | "app-prod-2")[];
+                        topology?: string[];
                         deliverables?: {
                             id: string;
                             /** @enum {string} */
@@ -19541,7 +19541,7 @@ export interface operations {
                     /** @description Goal and acceptance of the step */
                     brief: string;
                     /** @description JSON array of required workload nodes; [] removes declarations */
-                    topology?: ("app-dev" | "app-prod" | "app-prod-2")[];
+                    topology?: string[];
                     /** @description JSON file with an array of typed deliverables for the step */
                     deliverables?: {
                         id: string;
@@ -19715,7 +19715,7 @@ export interface operations {
                     /** @description New position, starting at 1 */
                     position?: number;
                     /** @description JSON array of required workload nodes; [] removes declarations */
-                    topology?: ("app-dev" | "app-prod" | "app-prod-2")[];
+                    topology?: string[];
                     /** @description JSON file with an array of typed deliverables that replaces the list */
                     deliverables?: {
                         id: string;

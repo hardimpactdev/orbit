@@ -785,7 +785,7 @@ Orbit task workspaces have no Incus topology by default. Provisioning does not a
 "$(git rev-parse --git-path orbit)/turn" --thread=ID --outcome=topology_requested --summary="Why this group needs a topology"
 ```
 
-A reviewer in a [task VM](#task-vm-workspace) group cannot request a topology: Orbit refuses the request, and the reviewer continues in its workspace. A task VM group [declares](/reference/compute-drivers#declare-a-topology) its topology instead. Shared workspaces use the discovery topology below. Agent prompts no longer offer the request, because Orbit's own groups run on task VMs; Phase 5 removes it with shared mode.
+A reviewer in a [task VM](#task-vm-workspace) group cannot request a topology: Orbit refuses the request, and the reviewer continues in its workspace. A task VM group [declares](/reference/compute-drivers#declare-a-topology) its topology instead. Shared workspaces use the discovery topology below. Agent prompts do not offer the request, because Orbit's own groups run on task VMs. Phase 5 removes it with shared mode.
 
 Only a reviewer turn may use `topology_requested`. The command refuses it from an implementer turn and tells the implementer to ask the reviewer through the [existing consult](#consult-the-reviewer). There is no separate agent CLI or API acquisition command. Agents run as `orbit-worker` without sudo; acquisition changes host firewall rules.
 
@@ -811,7 +811,7 @@ When the acting thread is `idle`, `done`, or `asking_for_input`, the tick checks
 | `branch` | On approval, the workspace is on `task-{id}` |
 | `pull_request_fields` | The approval that opens the pull request describes it |
 | `brief_coverage` | The change list covers every subtask. See [Pull request](#pull-request-and-settle-metrics) |
-| `topology_evidence` | On approval of a subtask that declares a topology, the evidence log holds a successful recorded command on each declared node since the last handoff. See [Prove work on a topology](/reference/compute-drivers#prove-work-on-a-topology) |
+| `topology_evidence` | On approval of a subtask with a topology, each declared node has a successful recorded command since the last handoff. See [Prove work on a topology](/reference/compute-drivers#prove-work-on-a-topology) |
 | `topology_required` | At handoff in a `vm` group, the subtask's diff changes no path in the Project's `task_vms.topology_paths`, or a subtask of the group declares a topology |
 
 When items fail, the Gateway sends one reminder to the acting thread. It names every failed item and ends with the role's turn-command instructions. The implementer's reminder starts with "Orbit could not confirm the brief is complete." The reviewer's starts with "Orbit could not confirm the review is complete." The Gateway installs the turn command again before it sends. Each attempt gets one reminder. When an item still fails at the next stop, the subtask asks for assistance, and the reason names each remaining item. The same pending input does not count as that next stop.

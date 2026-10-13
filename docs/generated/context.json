@@ -1308,11 +1308,14 @@
             "title": "Compute drivers",
             "kind": "reference",
             "components": [
+                "apps/e2e",
                 "apps/gateway"
             ],
             "concepts": [
                 "Access grant",
                 "Cluster",
+                "Deliverable",
+                "Deployment",
                 "Doctor",
                 "Extension",
                 "Gateway",
@@ -1717,6 +1720,7 @@
                 "Role",
                 "Roleless Node",
                 "Route",
+                "Subtask",
                 "Task",
                 "Task workspace",
                 "Turn receipt"
@@ -2103,7 +2107,6 @@
             "title": "Pi server",
             "kind": "reference",
             "components": [
-                "apps/e2e",
                 "apps/gateway"
             ],
             "concepts": [
@@ -2119,8 +2122,7 @@
                 "Subtask",
                 "Task",
                 "Task workspace",
-                "Tool",
-                "Turn receipt"
+                "Tool"
             ],
             "governing_adrs": []
         },
@@ -2334,7 +2336,6 @@
             "title": "Tasks",
             "kind": "reference",
             "components": [
-                "apps/e2e",
                 "apps/gateway",
                 "apps/web"
             ],
@@ -2567,7 +2568,6 @@
             "title": "Relocate the gateway role",
             "kind": "solution",
             "components": [
-                "apps/e2e",
                 "apps/gateway"
             ],
             "concepts": [

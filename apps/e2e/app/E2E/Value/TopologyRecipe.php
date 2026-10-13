@@ -160,7 +160,7 @@ final readonly class TopologyRecipe
      */
     public function extraRoles(TopologyNode $node): array
     {
-        return array_values(array_slice($node->roles, 1));
+        return array_slice($node->roles, 1);
     }
 
     /** @return list<TopologyNode> */

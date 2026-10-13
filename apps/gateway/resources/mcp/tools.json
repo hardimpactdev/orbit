@@ -8852,11 +8852,8 @@
                   "maxItems": 3,
                   "items": {
                     "type": "string",
-                    "enum": [
-                      "app-dev",
-                      "app-prod",
-                      "app-prod-2"
-                    ]
+                    "pattern": "^(?:app-dev|app-prod|app-prod-2)(?:\\+(?:ingress|database|websocket))*$(?![\\s\\S])",
+                    "maxLength": 64
                   }
                 },
                 "deliverables": {
@@ -9814,11 +9811,8 @@
             "maxItems": 3,
             "items": {
               "type": "string",
-              "enum": [
-                "app-dev",
-                "app-prod",
-                "app-prod-2"
-              ]
+              "pattern": "^(?:app-dev|app-prod|app-prod-2)(?:\\+(?:ingress|database|websocket))*$(?![\\s\\S])",
+              "maxLength": 64
             },
             "description": "JSON array of required workload nodes; [] removes declarations"
           },
@@ -9974,11 +9968,8 @@
             "maxItems": 3,
             "items": {
               "type": "string",
-              "enum": [
-                "app-dev",
-                "app-prod",
-                "app-prod-2"
-              ]
+              "pattern": "^(?:app-dev|app-prod|app-prod-2)(?:\\+(?:ingress|database|websocket))*$(?![\\s\\S])",
+              "maxLength": 64
             },
             "description": "JSON array of required workload nodes; [] removes declarations"
           },

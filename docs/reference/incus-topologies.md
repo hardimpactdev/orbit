@@ -322,7 +322,9 @@ These reasons explain the design. Check them before you propose a change.
 
 ### The reviewer requests discovery on a shared host
 
-This reason applies to shared task workspaces. A task VM group declares its topology up front, because the declaration decides the VM size and the reviewer must prove the work on those nodes. Ordinary groups use no topology resources. Acquisition at workspace provisioning was rejected because most groups do not need discovery and startup should not depend on it. The reviewer decides when discovery helps; the existing consult gives implementers a way to ask without granting agents host sudo or adding another request API. Orbit owns acquisition because it changes host firewall rules. A topology is not proof of correctness, so acquisition failure or absence never prevents approval. This serves lean resource use and the principle that agents operate while humans steer.
+This reason applies to shared task workspaces. A task VM group declares its topology up front, because the declaration decides the VM size and the reviewer must prove the work on those nodes.
+
+Ordinary groups use no topology resources. Acquisition at workspace provisioning was rejected because most groups do not need discovery and startup should not depend on it. The reviewer decides when discovery helps; the existing consult gives implementers a way to ask without granting agents host sudo or adding another request API. Orbit owns acquisition because it changes host firewall rules. A topology is not proof of correctness, so acquisition failure or absence never prevents approval. This serves lean resource use and the principle that agents operate while humans steer.
 
 ### Composed from role images
 

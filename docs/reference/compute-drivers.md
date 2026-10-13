@@ -153,7 +153,7 @@ At the claim, Orbit decides the size of the group's VM once. It takes the union 
 | `medium` | The topology has one test node, or no subtask declares a topology and the Project is in `task_vms.medium_projects` | 4 vCPU, 8 GiB of memory, and a 40 GiB disk | 2 | Never: always a new VM, and never at UpCloud |
 | `large` | The topology has two or more test nodes | 6 vCPU, 12 GiB of memory, and a 60 GiB disk | 3 | Never: always a new VM, and never at UpCloud |
 
-A test node is `app-dev`, `app-prod`, or `app-prod-2`, whatever roles its entry adds. The [test Gateway and the operator](/reference/incus-topologies#declared-nodes) run in every topology and do not count. The sizes come from the nested topology spike on beast: the test Gateway, an `app-dev` node, and the operator used about 2.7 GiB together, and a large VM that ran four test machines used all of its 12 GiB on the host under IO.
+A test node is `app-dev`, `app-prod`, or `app-prod-2`, whatever roles its entry adds. The [test Gateway and the operator](/reference/incus-topologies#declared-nodes) run in every topology and do not count. The sizes come from the nested topology spike on beast. There, the test Gateway, an `app-dev` node, and the operator used about 2.7 GiB together. A large VM that ran four test machines used all of its 12 GiB on the host under IO.
 
 The sizes are caps, not reservations. Incus does not pin the vCPUs, and the guest takes host memory only when it first uses it. Medium and large VMs have free page reporting on their memory balloon, so the host gets back the memory that the guest frees, but not the guest's page cache. Plan for a VM that runs a topology to use all of its memory on the host. Warm VMs hold their slots, so a host fits a large VM only when `max_vms` minus its other VMs, warm VMs included, leaves three slots.
 
@@ -1114,7 +1114,9 @@ Before a subtask that declares a topology runs its baseline check or its impleme
 
 Every task VM's user `orbit` is in the `incus-admin` group from its first boot, so agents can run `bin/e2e-topology` once Incus is installed. The row stores the union in `topology`, its state in `topology_state` (`preparing` or `ready`), and the run in `topology_run`.
 
-A ready topology serves every later subtask whose declaration it holds. A subtask that declares more starts the unit again, which releases the topology and acquires the new union; the images stay. When the unit fails, or stops without a result, the subtask asks for assistance with the step and the end of its log. The row forgets the run, so a resolution prepares again. A unit runs for at most 75 minutes. A [parked](#park-and-resume) VM forgets its topology, because its test machines stop with it, and the next subtask prepares it again. A shared group cannot run a topology: its subtask waits with `Declared topology runs only in a task VM group.`
+A ready topology serves every next subtask whose declaration it holds. A subtask that declares more starts the unit again, which releases the topology and acquires the new union; the images stay. A [parked](#park-and-resume) VM forgets its topology, because its test machines stop with it, and the next subtask prepares it again. A shared group cannot run a topology: its subtask waits with `Declared topology runs only in a task VM group.`
+
+When the unit fails, or stops without a result, the subtask asks for assistance with the step and the end of its log. The row forgets the run, so a resolution prepares again. A unit runs for at most 75 minutes.
 
 ### Prove work on a topology
 
@@ -1128,7 +1130,7 @@ The reviewer proves each deliverable on the declared nodes with `bin/e2e-topolog
 {"46": ["apps/agent/**", "apps/e2e/resources/guest/**", "apps/gateway/app/{Domain,Infrastructure,Actions}/{Nodes,Deployments,Routes,Caddy,WireGuard}/**"]}
 ```
 
-When the handoff check of a `vm` group passes and the subtask's diff changes a path that matches, while no subtask of the group declares a topology, Orbit refuses the handoff: `This subtask changes paths that need real machines (...), but no subtask of the group declares a topology.` The implementer reverts those changes, or ends its turn blocked so the operator can add a subtask with a topology.
+Orbit checks this when the handoff check of a `vm` group passes. It refuses the handoff when the subtask's diff changes a matching path and no subtask of the group declares a topology. The reminder starts with `This subtask changes paths that need real machines`. The implementer reverts those changes, or ends its turn blocked so the operator can add a subtask with a topology.
 
 ## Sandbox power
 
