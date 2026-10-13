@@ -1590,6 +1590,7 @@
                 "Node",
                 "Process",
                 "Project",
+                "Role",
                 "Schedule",
                 "Task"
             ],
