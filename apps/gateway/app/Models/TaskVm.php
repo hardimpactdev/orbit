@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Domain\Tasks\TaskTopology;
 use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmProviderKind;
@@ -30,7 +31,7 @@ use Throwable;
  * @property int|null $node_id
  * @property TaskVmProviderKind $provider
  * @property TaskVmSize $size
- * @property list<string>|null $topology
+ * @property TaskTopology $topology
  * @property TaskVmTopologyState|null $topology_state
  * @property string|null $topology_run
  * @property Carbon|null $topology_started_at
@@ -96,7 +97,7 @@ final class TaskVm extends Model
             'provider' => TaskVmProviderKind::class,
             'state' => TaskVmState::class,
             'size' => TaskVmSize::class,
-            'topology' => 'array',
+            'topology' => TaskTopology::class,
             'topology_state' => TaskVmTopologyState::class,
             'topology_started_at' => 'datetime',
             'publish_state' => TaskVmPublishState::class,

@@ -13,7 +13,7 @@ final readonly class TaskTopologyList implements ValidationRule
     public function validate(string $attribute, mixed $value, Closure $fail): void
     {
         if (! TaskTopology::valid($value)) {
-            $fail(TaskTopology::Invalid);
+            $fail(TaskTopology::invalidMessage());
         }
     }
 }

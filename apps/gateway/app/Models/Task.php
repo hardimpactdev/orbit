@@ -18,6 +18,7 @@ use App\Domain\Tasks\TaskLevelStatusCast;
 use App\Domain\Tasks\TaskMergeStatus;
 use App\Domain\Tasks\TaskQuestions;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskTopology;
 use App\Domain\Tasks\TaskType;
 use BackedEnum;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
@@ -117,7 +118,7 @@ use LogicException;
  * @property string|null $subtask_start_commit
  * @property string|null $fixup_problem
  * @property string|null $fixup_head_sha
- * @property list<string>|null $topology
+ * @property TaskTopology $topology
  * @property list<array<string, string|bool|list<string>>>|null $deliverables
  * @property Carbon|null $settled_at
  * @property-read Task $parent
@@ -533,7 +534,7 @@ final class Task extends Model
             'started_at' => 'immutable_datetime',
             'settled_at' => 'immutable_datetime',
             'deliverables' => 'array',
-            'topology' => 'array',
+            'topology' => TaskTopology::class,
             'completion_attempt' => 'integer',
             'completion_handoff_attempt' => 'integer',
             'completion_handoff_comment_id' => 'integer',

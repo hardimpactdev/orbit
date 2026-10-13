@@ -297,8 +297,8 @@ describe('allocation', function (): void {
         Task::query()->create(['parent_id' => $topology->id, 'position' => 1, 'title' => 'Prod', 'brief' => 'Prod', 'status' => TaskStatus::Todo, 'topology' => ['app-prod', 'app-dev']]);
         Task::query()->create(['parent_id' => $topology->id, 'position' => 2, 'title' => 'Dev', 'brief' => 'Dev', 'status' => TaskStatus::Todo, 'topology' => ['app-prod+ingress']]);
 
-        expect(TaskTopology::forGroup($plain))->toBe([])
-            ->and(TaskTopology::forGroup($topology))->toBe(['app-dev', 'app-prod+ingress']);
+        expect(TaskTopology::forGroup($plain)->toArray())->toBe([])
+            ->and(TaskTopology::forGroup($topology)->toArray())->toBe(['app-dev', 'app-prod+ingress']);
 
         $large = app(AllocateTaskVmAction::class)->execute($topology);
         $normal = app(AllocateTaskVmAction::class)->execute($plain);
