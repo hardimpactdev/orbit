@@ -14,8 +14,8 @@ use App\Domain\Fleet\ReleaseHistory;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Releases\ReleaseAlertNotifier;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\TaskVms\TaskVmState;
 use App\Domain\Tasks\TaskCompute;
+use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\AgentView\AgentReportedVersions;
 use App\Infrastructure\Nodes\NodeUpdateLock;
 use App\Models\Node;
@@ -26,7 +26,6 @@ use App\Models\TaskVm;
 use Illuminate\Cache\ArrayStore;
 use Illuminate\Cache\Repository;
 use Illuminate\Support\Facades\Config;
-use Illuminate\Support\Str;
 
 /** Nodes, roles, and fakes for the fleet rollout tests. */
 final class FleetFixtures
