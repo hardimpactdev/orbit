@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Nodes;
 
 use App\Domain\Nodes\CaddyRelease;
+use App\Infrastructure\Ssh\RemoteCommand;
 
 /**
  * Installs the Caddy project's own `.deb` from its GitHub release on a Node, so the Node runs a
@@ -23,7 +24,7 @@ use App\Domain\Nodes\CaddyRelease;
  * Caddy for a newer pin. It upgrades an archive Caddy in place and keeps the Orbit-owned Caddyfile
  * through `--force-confold`. It prints `orbit-caddy-package-result=changed` or `=unchanged`.
  */
-final class CaddyPackageSourceProgram
+final class CaddyPackageProgram
 {
     public const string RELEASE = '2.11.7';
 
@@ -37,10 +38,6 @@ final class CaddyPackageSourceProgram
     public const string KERNEL_SETTING_PATH = '/etc/sysctl.d/60-orbit-caddy.conf';
 
     public const string KERNEL_SETTING = 'net.ipv4.tcp_migrate_req = 1';
-
-    public const string LEGACY_KEYRING_PATH = '/usr/share/keyrings/orbit-caddy.gpg';
-
-    public const string LEGACY_SOURCE_PATH = '/etc/apt/sources.list.d/orbit-caddy.sources';
 
     public const string Changed = 'orbit-caddy-package-result=changed';
 
@@ -59,14 +56,22 @@ final class CaddyPackageSourceProgram
             CaddyRelease::MINIMUM,
             self::KERNEL_SETTING_PATH,
             self::KERNEL_SETTING,
-            self::LEGACY_KEYRING_PATH,
-            self::LEGACY_SOURCE_PATH,
+            '/usr/share/keyrings/orbit-caddy.gpg',
+            '/etc/apt/sources.list.d/orbit-caddy.sources',
         ];
+    }
+
+    public static function command(): RemoteCommand
+    {
+        return new RemoteCommand(
+            arguments: ['sudo', 'bash', '-seu', '--', ...self::arguments()],
+            input: self::render(),
+        );
     }
 
     public static function render(): string
     {
-        return <<<'BASH'
+        return str_replace('{{changed}}', self::Changed, <<<'BASH'
             release=$1
             release_url=$2
             amd64_sha512=$3
@@ -162,10 +167,10 @@ final class CaddyPackageSourceProgram
             fi
 
             if [ "$changed" -eq 1 ]; then
-                printf '%s\n' 'orbit-caddy-package-result=changed'
+                printf '%s\n' '{{changed}}'
             else
                 printf '%s\n' 'orbit-caddy-package-result=unchanged'
             fi
-            BASH;
+            BASH);
     }
 }

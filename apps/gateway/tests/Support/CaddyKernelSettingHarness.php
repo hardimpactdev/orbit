@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
-use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
+use App\Infrastructure\Nodes\CaddyPackageProgram;
 use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
 
@@ -55,7 +55,7 @@ final class CaddyKernelSettingHarness
         $log = $this->root.'/calls.log';
         $this->files->delete($log);
 
-        $arguments = CaddyPackageSourceProgram::arguments();
+        $arguments = CaddyPackageProgram::arguments();
         $arguments[4] = $this->root.'/usr/share/keyrings/orbit-caddy.gpg';
         $arguments[5] = $this->root.'/etc/apt/sources.list.d/orbit-caddy.sources';
         $arguments[9] = $this->settingPath();
@@ -66,7 +66,7 @@ final class CaddyKernelSettingHarness
             'HARNESS_KERNEL_ACCEPTS' => $kernelAccepts ? '1' : '0',
             'HARNESS_LIVE_MODE' => $liveFileSafe ? '644' : '600',
         ]);
-        $process->setInput(CaddyPackageSourceProgram::render());
+        $process->setInput(CaddyPackageProgram::render());
         $process->run();
 
         return [$process->getExitCode() ?? 1, $process->getErrorOutput(), $this->calls($log)];

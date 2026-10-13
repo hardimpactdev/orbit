@@ -25,7 +25,7 @@ use App\Infrastructure\Gateway\NativeGatewayCaddyInstaller;
 use App\Infrastructure\Gateway\NativeGatewayCertificatePublisher;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
 use App\Infrastructure\Gateway\NativeGatewayWebConverger;
-use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
+use App\Infrastructure\Nodes\CaddyPackageProgram;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -565,7 +565,7 @@ it('installs Caddy from the pinned source and orders it after WireGuard before a
         $converger->converge(gateway_web_node(), 'gateway.orbit', '10.44.0.1');
         $calls = Collection::make($processes->calls);
         $commands = $calls->map(static fn (ProcessInvocation $invocation): array => $invocation->arguments);
-        $installIndex = $commands->search(['sudo', 'bash', '-seu', '--', ...CaddyPackageSourceProgram::arguments()]);
+        $installIndex = $commands->search(['sudo', 'bash', '-seu', '--', ...CaddyPackageProgram::arguments()]);
         $orderingIndex = $commands->search(['sudo', 'bash', '-seu', '--', 'caddy', '/etc/systemd/system']);
         $firstCaddyGroupIndex = $commands->search(
             static fn (array $arguments): bool => in_array(needle: 'orbit:caddy', haystack: $arguments, strict: true),
@@ -594,7 +594,7 @@ it('installs Caddy from the pinned source and orders it after WireGuard before a
             ))
             ->toHaveCount(1)
             ->and($install->input)
-            ->toBe(CaddyPackageSourceProgram::render())
+            ->toBe(CaddyPackageProgram::render())
             ->toContain('-o Dpkg::Options::=--force-confold')
             ->and($install->timeout)
             ->toBe(900.0)
@@ -631,7 +631,7 @@ it('repeats the same idempotent install step on every web convergence', function
             ->and($first[0]->arguments)
             ->toBe(['sudo', 'bash', '-seu', '--', '/home/orbit/orbit-gateway', '/home/orbit/orbit-gateway'])
             ->and($first[1]->arguments)
-            ->toBe(['sudo', 'bash', '-seu', '--', ...CaddyPackageSourceProgram::arguments()])
+            ->toBe(['sudo', 'bash', '-seu', '--', ...CaddyPackageProgram::arguments()])
             ->and($first[2]->arguments)
             ->toBe(['sudo', 'bash', '-seu', '--', 'caddy', '/etc/systemd/system']);
     } finally {
@@ -657,7 +657,7 @@ it('stops before any Caddy or certificate step when Caddy cannot be installed', 
             ->map(static fn (ProcessInvocation $invocation): array => $invocation->arguments);
 
         expect($commands->last())
-            ->toBe(['sudo', 'bash', '-seu', '--', ...CaddyPackageSourceProgram::arguments()])
+            ->toBe(['sudo', 'bash', '-seu', '--', ...CaddyPackageProgram::arguments()])
             ->and($commands->contains(['sudo', 'bash', '-seu', '--', 'caddy', '/etc/systemd/system']))
             ->toBeFalse()
             ->and($commands->contains(
@@ -948,7 +948,7 @@ function gateway_web_converger(?string $failure = null, string $checkoutPath = '
 
             if (
                 $this->failure === 'caddy-install'
-                && $arguments === ['sudo', 'bash', '-seu', '--', ...CaddyPackageSourceProgram::arguments()]
+                && $arguments === ['sudo', 'bash', '-seu', '--', ...CaddyPackageProgram::arguments()]
             ) {
                 return new CommandResult(1, '', 'The caddy candidate does not come from the pinned Orbit source.', 2, false);
             }

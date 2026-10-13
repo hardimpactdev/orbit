@@ -7,7 +7,7 @@ namespace App\Infrastructure\Nodes\Roles;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\UbuntuRelease;
-use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
+use App\Infrastructure\Nodes\CaddyPackageProgram;
 use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
 use App\Infrastructure\Nodes\OsReleaseParserProgram;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -29,10 +29,7 @@ final readonly class NodeRolePrerequisiteCommandFactory
             return null;
         }
 
-        return new RemoteCommand(
-            arguments: ['sudo', 'bash', '-seu', '--', ...CaddyPackageSourceProgram::arguments()],
-            input: CaddyPackageSourceProgram::render(),
-        );
+        return CaddyPackageProgram::command();
     }
 
     public function make(Node $node, RoleName $role, ManagedUserAccount $account): RemoteCommand

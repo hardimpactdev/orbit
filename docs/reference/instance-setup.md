@@ -8,7 +8,7 @@ covers:
   - apps/gateway/app/Domain/Instances/{DevelopmentInstanceProvisioner,InstanceSourceProfileGuard,DependencyCopy/InstanceDependencyCopier}.php
   - apps/gateway/app/Http/Controllers/Api/ProjectLifecycleStepsController.php
   - apps/gateway/app/Models/ProjectLifecycleStep.php
-  - apps/gateway/resources/instances/lifecycle.py
+  - apps/gateway/resources/instances/{lifecycle.py,ci-caches.sh}
   - apps/cli/app/Commands/Instances/{SetupInstanceCommand,*SetupStepCommand,*TeardownStepCommand}.php
 ---
 
@@ -277,6 +277,10 @@ The Gateway uses its [GitHub App](/reference/github-app) with `Actions: read` fo
 
 In the checkout, the step runs `bin/tia-cache import-ci` for each archive. It checks the archive's manifest, checksums, project, tested commit, and test configuration. It writes the project's Pest TIA graph to `.orbit-tia/graph.json`, and the Pint and PHPStan caches into `vendor/`, where none exists.
 
+Before extraction, the step rejects a ZIP with more than 1,024 entries or more than 64 MiB of total expanded data, as declared by the ZIP. Python's ZIP reader bounds each extracted file by its declared size and checks its CRC. A rejected archive fails the step before extraction or cache import. The step removes its temporary archives and extracted files when it exits.
+
+PHPStan's result cache is PHP code, which PHPStan executes when it reads the cache. Orbit trusts this code because the artifact comes from a successful default-branch run of the repository's own `ci.yml`, using the Gateway's GitHub App access to that repository. It never imports a pull-request run's cache. The repository's default branch, workflow, and CI artifact publishers must therefore be trusted to run code in the checkout. Checksums detect damaged bytes; they do not establish that trust. The matching commit, lock file, tool configuration, and PHP minor version checks guard compatibility.
+
 An existing graph stays, so a retry or a later baseline keeps the workspace's own results, with one exception: when CI tested a descendant of the graph's main commit, the CI graph replaces it. A workspace from a template then gets the graph of today's `main`, not of the template's day, and its check selects fewer tests. The log names each graph it kept or replaced, and why.
 
 The step decides between a loud failure and a cold run like this:
@@ -285,7 +289,7 @@ The step decides between a loud failure and a cold run like this:
 | --- | --- |
 | No App, no Actions read, or GitHub unreadable | The step fails with `instance.ci_caches_unavailable` |
 | No successful run among the newest 20 has unexpired main caches | The step fails with `instance.ci_caches_missing` |
-| An archive fails its checksums, its graph is invalid, or `bin/tia-cache` is missing | The step fails |
+| An archive exceeds the extraction limits, fails its checksums, has an invalid graph, or `bin/tia-cache` is missing | The step fails |
 | The archive's test configuration differs from the checkout's, or its commit is not in the checkout's history | The step goes on. That project's tests run cold, and the log names the project and the reason |
 | A quality cache's lock file, tool configuration, or PHP minor version differs | The step goes on without that cache, and the log names the reason |
 | A Pest project gets no graph | The log prints `[<project>] has no Pest TIA graph: its tests run cold.` |

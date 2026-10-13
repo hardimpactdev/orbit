@@ -7,7 +7,7 @@ use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
-use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
+use App\Infrastructure\Nodes\CaddyPackageProgram;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
@@ -206,7 +206,7 @@ function caddy_failure_ssh(?string $fail = null): SshExecutor
 
             $ordering = ($command->arguments[4] ?? null) === 'caddy'
                 && str_contains($command->input ?? '', 'orbit-vpn.conf');
-            $source = in_array(CaddyPackageSourceProgram::RELEASE_URL, $command->arguments, true);
+            $source = in_array(CaddyPackageProgram::RELEASE_URL, $command->arguments, true);
 
             if (($this->fail === 'ordering' && $ordering) || ($this->fail === 'source' && $source)) {
                 return new CommandResult(1, '', 'forced failure', 1, false);
