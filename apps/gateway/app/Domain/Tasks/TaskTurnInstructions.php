@@ -84,17 +84,15 @@ final readonly class TaskTurnInstructions
     /**
      * The subtask's declared topology for an agent prompt, or an empty string without one. A reviewer must prove each
      * deliverable on the declared nodes with recorded evidence ({@see TaskTopologyEvidence}).
-     *
-     * @param  list<string>  $topology
      */
-    public static function topology(int $groupId, array $topology, bool $reviewer): string
+    public static function topology(int $groupId, TaskTopology $topology, bool $reviewer): string
     {
-        if ($topology === []) {
+        if ($topology->isEmpty()) {
             return '';
         }
         $issue = 'TASK-'.$groupId;
-        $nodes = implode(', ', TaskTopology::nodes($topology));
-        $text = 'This subtask declares the topology '.implode(', ', $topology).'. Orbit prepared it nested in this task VM as '.$issue
+        $nodes = implode(', ', $topology->nodes());
+        $text = 'This subtask declares the topology '.implode(', ', $topology->toArray()).'. Orbit prepared it nested in this task VM as '.$issue
             .': a test Gateway, an operator, and the declared nodes with their roles. Use it with bin/e2e-topology, for example `bin/e2e-topology exec '.$issue.' operator --argv=\'["orbit","node:list","--json"]\'`, and follow the using-incus-topologies skill. Never acquire or release it.';
 
         return $reviewer

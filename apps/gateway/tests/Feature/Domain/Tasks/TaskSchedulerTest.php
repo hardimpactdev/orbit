@@ -3545,7 +3545,7 @@ it('refuses an Orbit topology fallback on the Project VM lane without blocking i
     app()->instance(TaskWorkspaceTopology::class, $topology);
     mock(TaskTopologyAdmission::class)->shouldReceive('prepare')->once()->andReturnUsing(function (Task $actualGroup, Task $actualTask): void {
         expect($actualGroup->project->slug)->toBe('dlf');
-        expect($actualTask->topology)->toBe([]);
+        expect($actualTask->topology->toArray())->toBe([]);
     });
 
     app(TaskScheduler::class)->tick();
@@ -3555,7 +3555,7 @@ it('refuses an Orbit topology fallback on the Project VM lane without blocking i
     expect(json_encode($dispatcher->commands))->toContain('Project workspace');
     expect($group->fresh()->capacity_wait_reason)->toBeNull();
     expect($group->fresh()->task_compute)->toBe(TaskCompute::Vm);
-    expect($task->fresh()->topology)->toBe([]);
+    expect($task->fresh()->topology->toArray())->toBe([]);
     expect($task->fresh()->status)->toBe(TaskStatus::Reviewing);
     expect(TaskQuestion::query()->count())->toBe(0);
 });

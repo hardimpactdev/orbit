@@ -392,7 +392,7 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
         }
         $topology = self::topology($value);
         if ($topology === null) {
-            $this->renderGatewayFailure('tasks.topology_invalid', 'Topology must be a JSON array of distinct node entries, such as ["app-dev","app-prod+ingress"].');
+            $this->renderGatewayFailure('tasks.invalid_topology', 'Topology must be a JSON array of distinct node entries, such as ["app-dev","app-prod+ingress"].');
 
             return false;
         }
@@ -401,14 +401,14 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
     }
 
     /**
-     * The shape of a topology declaration: a list of at most two distinct entries. The Gateway validates the
-     * entries themselves, such as `app-prod+ingress`.
+     * The shape of a topology declaration: a list of distinct entries. The Gateway validates the entries themselves,
+     * such as `app-prod+ingress`, and how many a topology may have.
      *
      * @return list<string>|null
      */
     protected static function topology(mixed $value): ?array
     {
-        if (! is_array($value) || ! array_is_list($value) || count($value) > 2) {
+        if (! is_array($value) || ! array_is_list($value)) {
             return null;
         }
         $entries = [];
