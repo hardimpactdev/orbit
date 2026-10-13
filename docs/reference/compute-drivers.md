@@ -280,6 +280,8 @@ A task VM workspace's checkout is always `<apps directory>/workspace`, the path 
 
 A claim takes only a template with `user.orbit.layout=workspace`. A template from before the fixed checkout path has none. No claim takes it, and the claim queues a new build.
 
+A claim also takes only a template whose files belong to `1000:1000` (`user.orbit.owner`), the `uid:gid` of `orbit` on the base image. For another owner, the claim queues a new build.
+
 The mount never goes over a directory with content. Before it mounts, it checks that `orbit` has the `uid:gid` that the template recorded. After it mounts, it checks that the volume root and `workspace` belong to that `uid:gid`.
 
 After the Project's repository or the base image changes, no template matches until the next build. The fstab line follows a successful mount and owner check only, so a failed mount never comes back at a later boot over a fresh clone.
@@ -290,7 +292,7 @@ Then the Gateway sends the group's branches from its [mirror](#git-on-a-task-vm)
 
 A task VM holds one workspace, so its checkout path is fixed. Caches that record absolute paths, such as Rector's, still match at the claim, so the baseline check finds them warm.
 
-Every step is idempotent, so a claim that runs again finds the clone, the disk, and the mount in place. A warm VM gets its clone at the claim, so warm VMs stay the same for every Project. The base image creates `orbit` with uid and gid 1000, so the files of a template belong to `orbit` on every VM from that image. A template is still only taken on the image it was built on, and the mount checks the owner.
+Every step is idempotent, so a claim that runs again finds the clone, the disk, and the mount in place. A warm VM gets its clone at the claim, so warm VMs stay the same for every Project. The base image creates `orbit` with uid and gid 1000, so the files of a template belong to `orbit` on every VM from that image. A template is still only taken on the image it was built on and with the owner `1000:1000`, and the mount checks the owner again on the VM.
 
 On beast, mealou's setup steps took about 13 seconds on a new VM with a template, against about 36 seconds without one. `vp install` always runs `npm audit`, which reaches the network.
 
@@ -298,7 +300,7 @@ On beast, mealou's setup steps took about 13 seconds on a new VM with a template
 
 The workspace starts from a fresh clone, as before, in these cases:
 
-- The host has no ready template for the Project. Orbit logs the warning `Task VM workspace has no template; it starts from a fresh clone.` and queues a build of the template. See [Template failures](#template-failures) for the wait after a failed build.
+- The host has no ready template for the Project, or none whose owner is `1000:1000`. Orbit logs the warning `Task VM workspace has no template; it starts from a fresh clone.` and queues a build of the template. See [Template failures](#template-failures) for the wait after a failed build.
 - A build of the template runs. An unfinished template is never taken, and the claim queues no second build.
 - The Project has no valid default branch or repository URL. Orbit logs `Task VM workspace template cannot be built; workspaces of the Project start from a fresh clone.` with the reason, and queues no build.
 - The Project's templates were built on another base image than the VM's, and the VM runs the host's current `orbit-task-base`. Orbit logs `Task VM workspace template was built on another base image; it starts from a fresh clone, and a new build is queued.` and queues a build.
@@ -430,7 +432,7 @@ A VM sends its pack at its own pace, so the task tick does not publish. The push
 - `pushed`: GitHub has the commit at the branch. The approval continues, and the pull request opens.
 - `failed`: the tick reports the job's error as a [failed push](/reference/tasks#pull-request-and-settle-metrics), once. The next push after its backoff queues the job again.
 
-A job that has not finished 40 minutes after it was queued counts as failed. The job pushes only while the row still names its commit and branch as `queued`, so a repeated or late job changes nothing. It does this:
+The job records its start on the row. A job that has not finished 40 minutes after its start counts as failed. A push that waits behind other jobs stays pending, for up to 2 hours. A push whose job has not started after 2 hours counts as failed too, so a lost job or a worker that never starts cannot hold the group. The job pushes only while the row still names its commit and branch as `queued`, so a repeated or late job changes nothing. It does this:
 
 1. The Gateway fetches the default branch and `task-<id>` into the mirror.
 2. It asks the VM for a pack of the approved commit. The pack leaves out the history of the mirror's commits of those branches.

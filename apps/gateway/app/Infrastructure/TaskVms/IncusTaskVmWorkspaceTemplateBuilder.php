@@ -33,7 +33,7 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Builds the workspace template of one Project on one task VM host ({@see TaskVmWorkspaceTemplates}). A builder VM
+ * Builds the workspace template of one Project on one task VM host ({@see TaskVmWorkspaceTemplate}). A builder VM
  * `tvm-template-<time>` boots the base image with the task VM user-data and gets a new block volume. The volume is
  * mounted at the Project's apps directory with the same script as a claim. The template records the base image the
  * builder booted and the managed user's `uid:gid`, which own its files. The builder gets the default branch from the Gateway's mirror,
@@ -64,6 +64,9 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
     /** The build budget that the warm-up check leaves for `verify`, `detach`, and `publish`. */
     private const int WarmReserveSeconds = 60;
 
+    /** Sets `VP_HOME` from `vp` before a setup step or the task check, as the check does. */
+    private const string StepEnvironment = 'if vp=$(command -v vp); then export VP_HOME="$(dirname "$(dirname "$vp")")"; fi'."\n";
+
     /** Runs the task check from stdin like {@see self::RunStep}, keeps its output in a file, and prints only its tail. */
     private const string WarmStep = 'script=$(mktemp) && log=$(mktemp) && trap \'rm -f -- "$script" "$log"\' EXIT && cat > "$script" && { bash -l "$script" < /dev/null > "$log" 2>&1; status=$?; tail -c 2000 -- "$log"; exit "$status"; }';
 
@@ -76,7 +79,8 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
         private TaskVmCloudInit $cloudInit,
         private SshKeyProvider $keys,
         private KnownHostsStore $knownHosts,
-        private TaskVmWorkspaceTemplates $templates,
+        private TaskVmWorkspaceTemplateVolumes $volumes,
+        private TaskVmWorkspaceTemplateLifecycle $lifecycle,
         private RepositoryReadAccess $access,
         private ComposerSourceClassifier $classifier,
         private RemotePhpPackageManager $php,
@@ -99,7 +103,7 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
         $lock = $this->lock($node, $owner);
         $stamp = now()->format('YmdHis');
         $builder = self::BuilderPrefix.$stamp;
-        $volume = TaskVmWorkspaceTemplates::templateName($project->id, $stamp);
+        $volume = TaskVmWorkspaceTemplate::name($project->id, $stamp);
         $directory = $this->directory($project);
         $checkout = $directory.'/'.TaskVmWorkspaceTemplates::CheckoutDirectory;
 
@@ -110,9 +114,9 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
             $this->stage($node, $progress, 'sweep', fn () => $this->sweep($host, $node));
             $this->stage($node, $progress, 'launch', fn () => $this->image->launch($host, $node, $builder, TaskVmHost::BaseImage, $this->cloudInit->render($this->keys->publicKey())));
             $this->stage($node, $progress, 'cloud-init', fn () => $this->image->awaitCloudInit($host, $node, $builder));
-            [$image, $owner] = $this->stage($node, $progress, 'identity', fn (): array => $this->identity($host, $node, $builder));
+            [$image, $fileOwner] = $this->stage($node, $progress, 'identity', fn (): array => $this->identity($host, $node, $builder));
             $this->stage($node, $progress, 'volume', fn () => $this->createVolume($host, $node, $builder, $volume));
-            $this->stage($node, $progress, 'mount', fn () => $this->mount($host, $node, $builder, $directory, $owner));
+            $this->stage($node, $progress, 'mount', fn () => $this->mount($host, $node, $builder, $directory, $fileOwner));
             $commit = $this->stage($node, $progress, 'clone', fn (): string => $this->cloneDefaultBranch($host, $node, $builder, $project, $checkout));
             $this->stage($node, $progress, 'php', fn () => $this->installPhp($host, $node, $builder, $project, $checkout));
             foreach ($steps as $step) {
@@ -121,20 +125,13 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
             $this->stage($node, $progress, 'warm-check', fn () => $this->warmCheck($host, $node, $builder, $project, $checkout, $deadline, $volume));
             $this->stage($node, $progress, 'verify', fn () => $this->verify($host, $node, $builder, $checkout));
             $this->stage($node, $progress, 'detach', fn () => $this->detach($host, $node, $builder, $directory));
-            $this->stage($node, $progress, 'publish', fn () => $this->checked($builder, 'storage volume set', $this->incus->run($host, $node, [
-                'storage', 'volume', 'set', '--', $host->pool, $volume,
-                TaskVmWorkspaceTemplates::ProjectKey.'='.$project->id,
-                TaskVmWorkspaceTemplates::CommitKey.'='.$commit,
-                TaskVmWorkspaceTemplates::RepositoryKey.'='.$project->repository_url,
-                TaskVmWorkspaceTemplates::ImageKey.'='.$image,
-                TaskVmWorkspaceTemplates::OwnerKey.'='.$owner,
-                TaskVmWorkspaceTemplates::LayoutKey.'='.TaskVmWorkspaceTemplates::Layout,
-                TaskVmWorkspaceTemplates::Ready.'=true',
-            ])));
+            $this->stage($node, $progress, 'publish', fn () => $this->volumes->publish($host, $node, TaskVmWorkspaceTemplate::built(
+                $volume, $project->id, $commit, $project->repository_url, $image, $fileOwner,
+            )));
             $published = true;
             // The template is ready now. A failure to tidy up after it only warns: the next build sweeps the builder
             // and prunes the older templates.
-            foreach (['delete-builder' => fn () => $this->image->delete($host, $node, $builder), 'prune' => fn (): array => $this->templates->prune($host, $node, $project->id, $volume)] as $name => $work) {
+            foreach (['delete-builder' => fn () => $this->image->delete($host, $node, $builder), 'prune' => fn (): array => $this->lifecycle->prune($host, $node, $project->id, $volume)] as $name => $work) {
                 try {
                     $this->stage($node, $progress, $name, $work);
                 } catch (Throwable $exception) {
@@ -202,11 +199,7 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
                 $this->image->delete($host, $node, $name);
             }
         }
-        foreach ($this->templates->volumes($host, $node) as $name => $config) {
-            if (TaskVmWorkspaceTemplates::projectOf($name) !== null && ($config[TaskVmWorkspaceTemplates::Ready] ?? null) !== 'true') {
-                $this->templates->deleteVolume($host, $node, $name);
-            }
-        }
+        $this->lifecycle->deleteUnfinished($host, $node);
     }
 
     /** @return list<ProjectLifecycleStep> */
@@ -253,15 +246,12 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
         return [$image, $owner];
     }
 
-    private function mount(TaskVmHost $host, Node $node, string $builder, string $directory, string $owner): void
+    private function mount(TaskVmHost $host, Node $node, string $builder, string $directory, string $fileOwner): void
     {
         $this->checked($builder, 'exec format', $this->image->shell($host, $node, $builder)->asRoot(TaskVmScripts::bash('template-format.sh', [
             TaskVmWorkspaceTemplates::Device, self::ManagedUser, self::ManagedUser,
         ])));
-        $this->checked($builder, 'exec mount', $this->asManagedUser($host, $node, $builder, TaskVmCloudInit::Home, [
-            'bash', '-ceu', TaskVmWorkspaceTemplates::MountScript, '--', TaskVmWorkspaceTemplates::Device, $directory, $owner,
-            TaskVmWorkspaceTemplates::CheckoutDirectory, TaskVmWorkspaceTemplates::CacheDirectory, ...TaskVmWorkspaceTemplates::Caches,
-        ]));
+        $this->checked($builder, 'exec mount', $this->asManagedUser($host, $node, $builder, TaskVmCloudInit::Home, TaskVmWorkspaceTemplates::mountCommand($directory, $fileOwner)));
     }
 
     /**
@@ -333,10 +323,9 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
             $command = $this->gatewaySteps->command($project, $command, $seconds);
             $seconds = max(1, (int) floor($seconds - (microtime(true) - $started)));
         }
-        $environment = 'if vp=$(command -v vp); then export VP_HOME="$(dirname "$(dirname "$vp")")"; fi'."\n";
         $this->checked($builder, "setup step [{$step->name}]", $this->asManagedUser($host, $node, $builder, $checkout, [
             'timeout', (string) $seconds, 'bash', '-c', self::RunStep,
-        ], $environment.$command, $seconds + 30.0));
+        ], self::StepEnvironment.$command, $seconds + 30.0));
     }
 
     /**
@@ -359,9 +348,8 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
 
             return;
         }
-        $environment = 'if vp=$(command -v vp); then export VP_HOME="$(dirname "$(dirname "$vp")")"; fi'."\n";
         $started = microtime(true);
-        $result = $this->asManagedUser($host, $node, $builder, $checkout, ['timeout', '-k', '10', (string) $seconds, 'bash', '-c', self::WarmStep], $environment.$command, $seconds + 30.0);
+        $result = $this->asManagedUser($host, $node, $builder, $checkout, ['timeout', '-k', '10', (string) $seconds, 'bash', '-c', self::WarmStep], self::StepEnvironment.$command, $seconds + 30.0);
         $context['seconds'] = round(microtime(true) - $started, 1);
         $context['exit_code'] = $result->exitCode;
         match ($result->exitCode) {
@@ -380,7 +368,7 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
      */
     private function undoWarmCheckChanges(TaskVmHost $host, Node $node, string $builder, string $checkout, array $context): void
     {
-        $status = trim($this->checked($builder, 'exec git status', $this->asManagedUser($host, $node, $builder, $checkout, ['git', 'status', '--porcelain']))->stdout);
+        $status = $this->status($host, $node, $builder, $checkout);
         if ($status === '') {
             return;
         }
@@ -391,10 +379,16 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
     /** The setup steps may only add ignored files, so a claim's checkout of its branch starts from a clean tree. */
     private function verify(TaskVmHost $host, Node $node, string $builder, string $checkout): void
     {
-        $status = $this->checked($builder, 'exec git status', $this->asManagedUser($host, $node, $builder, $checkout, ['git', 'status', '--porcelain']));
-        if (trim($status->stdout) !== '') {
-            throw IncusHost::invalid("the workspace template builder [{$builder}]", 'the setup steps changed tracked or unignored files: '.mb_substr(trim($status->stdout), 0, 500));
+        $status = $this->status($host, $node, $builder, $checkout);
+        if ($status !== '') {
+            throw IncusHost::invalid("the workspace template builder [{$builder}]", 'the setup steps changed tracked or unignored files: '.mb_substr($status, 0, 500));
         }
+    }
+
+    /** What `git status --porcelain` prints in the template checkout, trimmed: empty for a clean tree. */
+    private function status(TaskVmHost $host, Node $node, string $builder, string $checkout): string
+    {
+        return trim($this->checked($builder, 'exec git status', $this->asManagedUser($host, $node, $builder, $checkout, ['git', 'status', '--porcelain']))->stdout);
     }
 
     /** Stops what the managed user left running on the volume and unmounts it (`template-unmount.sh`), then detaches it. */

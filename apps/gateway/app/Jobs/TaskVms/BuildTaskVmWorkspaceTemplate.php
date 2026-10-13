@@ -11,7 +11,8 @@ use App\Domain\TaskVms\TaskVmQueue;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\TaskVms\IncusHost;
 use App\Infrastructure\TaskVms\IncusTaskVmWorkspaceTemplateBuilder;
-use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplates;
+use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplateLifecycle;
+use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplateVolumes;
 use App\Models\Node;
 use App\Models\Project;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -52,25 +53,20 @@ final class BuildTaskVmWorkspaceTemplate implements ShouldBeUnique, ShouldQueue
         return "{$this->hostNodeId}:{$this->projectId}";
     }
 
-    public function handle(TaskVmSettings $settings, IncusTaskVmWorkspaceTemplateBuilder $builder, TaskVmWorkspaceTemplates $templates, IncusHost $incus): void
+    public function handle(TaskVmSettings $settings, IncusTaskVmWorkspaceTemplateBuilder $builder, TaskVmWorkspaceTemplateVolumes $volumes, IncusHost $incus): void
     {
         $project = Project::query()->find($this->projectId);
         $node = Node::query()->whereKey($this->hostNodeId)->where('status', LifecycleStatus::Active)->first();
         if (! $project instanceof Project || ! $node instanceof Node) {
             return;
         }
-        $reason = TaskVmWorkspaceTemplates::unbuildable($project);
-        if ($reason !== null) {
-            Log::warning('Task VM workspace template cannot be built; workspaces of the Project start from a fresh clone.', [
-                'project_id' => $project->id, 'host_node_id' => $node->id, 'reason' => $reason,
-            ]);
-
+        if (! TaskVmWorkspaceTemplateLifecycle::buildable($project, $node->id)) {
             return;
         }
 
         $host = $settings->host($node->id);
         try {
-            if (TaskVmWorkspaceTemplates::isCurrent($templates->volumes($host, $node), $project, $incus->aliasTarget($host, $node, TaskVmHost::BaseImage, 60.0))) {
+            if (TaskVmWorkspaceTemplateLifecycle::isCurrent($volumes->read($host, $node), $project, $incus->aliasTarget($host, $node, TaskVmHost::BaseImage, 60.0))) {
                 Log::info('Task VM workspace template is current; no build.', ['host_node_id' => $node->id, 'project_id' => $project->id]);
 
                 return;
@@ -91,7 +87,7 @@ final class BuildTaskVmWorkspaceTemplate implements ShouldBeUnique, ShouldQueue
 
             return;
         }
-        Cache::forget(TaskVmWorkspaceTemplates::backoffKey($this->hostNodeId, $this->projectId));
+        Cache::forget(TaskVmWorkspaceTemplateLifecycle::backoffKey($this->hostNodeId, $this->projectId));
         Log::info('Task VM workspace template built.', ['host_node_id' => $this->hostNodeId, 'project_id' => $this->projectId, 'volume' => $volume]);
     }
 
@@ -113,7 +109,7 @@ final class BuildTaskVmWorkspaceTemplate implements ShouldBeUnique, ShouldQueue
 
     private function recordFailure(Throwable $exception): void
     {
-        Cache::put(TaskVmWorkspaceTemplates::backoffKey($this->hostNodeId, $this->projectId), now()->getTimestamp(), TaskVmWorkspaceTemplates::FailureBackoffSeconds);
+        Cache::put(TaskVmWorkspaceTemplateLifecycle::backoffKey($this->hostNodeId, $this->projectId), now()->getTimestamp(), TaskVmWorkspaceTemplateLifecycle::FailureBackoffSeconds);
         Log::error('Task VM workspace template build failed; workspaces of the Project start from a fresh clone.', [
             'host_node_id' => $this->hostNodeId,
             'project_id' => $this->projectId,

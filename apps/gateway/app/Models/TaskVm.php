@@ -40,6 +40,7 @@ use Throwable;
  * @property TaskVmPublishState|null $publish_state
  * @property string|null $publish_error
  * @property Carbon|null $publish_queued_at
+ * @property Carbon|null $publish_started_at
  * @property string|null $provider_id
  * @property string|null $ssh_host_key
  * @property string $name
@@ -74,7 +75,7 @@ final class TaskVm extends Model
     #[\Override]
     protected $fillable = [
         'group_id', 'host_node_id', 'node_id', 'provider', 'size', 'topology', 'topology_state', 'topology_run', 'topology_started_at', 'topology_error',
-        'publish_commit', 'publish_branch', 'publish_state', 'publish_error', 'publish_queued_at', 'provider_id', 'ssh_host_key', 'name', 'state', 'address', 'wireguard_ip',
+        'publish_commit', 'publish_branch', 'publish_state', 'publish_error', 'publish_queued_at', 'publish_started_at', 'provider_id', 'ssh_host_key', 'name', 'state', 'address', 'wireguard_ip',
         'pi_token', 'model_key', 'model_proxy_origin', 'claimed_at', 'warmed_at', 'image_fingerprint',
         'error_code', 'error_message', 'ready_at', 'destroyed_at',
     ];
@@ -100,6 +101,7 @@ final class TaskVm extends Model
             'topology_started_at' => 'datetime',
             'publish_state' => TaskVmPublishState::class,
             'publish_queued_at' => 'datetime',
+            'publish_started_at' => 'datetime',
             'pi_token' => 'encrypted',
             'model_key' => 'encrypted',
             'claimed_at' => 'datetime',
