@@ -52,7 +52,8 @@ function fetcher_group(string $checkout): Task
     $group->taskable()->associate($instance);
     $group->save();
     if (is_dir(dirname($checkout))) {
-        GitRemoteRedirect::global(dirname($checkout).'/origin.git', 'git@github.com:acme/shop.git');
+        // The mirror reaches the repository over HTTPS.
+        GitRemoteRedirect::global(dirname($checkout).'/origin.git', 'https://github.com/acme/shop.git');
     }
 
     return test_vm_group($group);
