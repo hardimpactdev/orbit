@@ -31,8 +31,8 @@ use App\Models\Process;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Tests\Support\FakeNodeCaddyBuilds;
 use Tests\Support\FakeGatewayHorizonRuntime;
+use Tests\Support\FakeNodeCaddyBuilds;
 use Tests\Support\Fleet\FakeFleetConvergeUnits;
 
 const HANDOFF_APP = '/home/orbit/orbit/apps/gateway';
