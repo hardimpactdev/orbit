@@ -83,9 +83,6 @@ return [
     ],
     'pi' => [
         'port' => max(1, (int) env('ORBIT_PI_PORT', 3774)),
-        'token' => env('ORBIT_PI_TOKEN'),
-        // A models.json provider such as a CLIProxyAPI endpoint. Plain model names use it when set.
-        'provider' => env('ORBIT_PI_PROVIDER'),
     ],
     'tasks' => [
         // Operator-owned repair trust: lower-case github.com owner/repository => list of positive integer account IDs,

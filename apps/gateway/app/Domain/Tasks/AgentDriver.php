@@ -5,13 +5,10 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 use App\Models\AgentThread;
-use App\Models\Node;
 
 interface AgentDriver
 {
     public function key(): string;
-
-    public function allows(Node $node): bool;
 
     public function create(AgentThreadStart $intent): string;
 
