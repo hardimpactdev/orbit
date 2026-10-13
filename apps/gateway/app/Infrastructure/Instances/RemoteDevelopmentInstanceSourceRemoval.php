@@ -28,6 +28,9 @@ use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Tasks\TaskWorkerUser;
 use App\Models\Instance;
+use App\Domain\Processes\ProcessRuntime;
+use App\Domain\Schedules\ScheduleRenderer;
+use App\Infrastructure\Processes\SystemdProcessRenderer;
 use App\Models\InstanceRemovalMember;
 use App\Models\Node;
 use App\Models\Project;
@@ -298,7 +301,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             ->value;
         $script = GitReadScript::for(
             $this->access->for($inventory->origin, $this->sourceAccess($instance->project_id)),
-            self::releaseEmptyGroupingDirectoryFunction(self::stopsCheckoutProcesses($instance)).self::removalScript(TaskWorkerUser::forCheckout($instance)),
+            self::releaseEmptyGroupingDirectoryFunction(self::stopsCheckoutProcesses($instance), self::ownUnits($instance)).self::removalScript(TaskWorkerUser::forCheckout($instance)),
         );
         $this->executeRefusable(
             $instance,
@@ -443,7 +446,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                 && ($inventory->sourceIdentity === 'absent'
                     || $instance->registration_request_id === null
                     && InstanceCreationRecovery::isPreActivation($instance, removing: true));
-            $input = self::releaseEmptyGroupingDirectoryFunction(self::stopsCheckoutProcesses($instance)).self::finalizationScript(TaskWorkerUser::forCheckout($instance));
+            $input = self::releaseEmptyGroupingDirectoryFunction(self::stopsCheckoutProcesses($instance), self::ownUnits($instance)).self::finalizationScript(TaskWorkerUser::forCheckout($instance));
             $script = $failedCreation ? null : GitReadScript::for(
                 $this->access->for($inventory->origin, $this->sourceAccess($member->project_id)),
                 $input,
@@ -2189,18 +2192,45 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
         return Task::topLevel()->whereKey((int) $match[1])->where('project_id', $instance->project_id)->exists();
     }
 
-    private static function releaseEmptyGroupingDirectoryFunction(bool $stopProcesses = false): string
+    /**
+     * The systemd units of the Instance's own Processes and Schedules. Runtime cleanup removes them after its ownership
+     * checks, so the process stop leaves them alone. A unit of another owner, such as the Node's `pi-server` that runs
+     * the agents, is not on the list: what it started inside the tree is stopped like any other process.
+     *
+     * @return list<string>
+     */
+    public static function ownUnits(Instance $instance): array
+    {
+        $systemd = app(SystemdProcessRenderer::class);
+        $schedules = app(ScheduleRenderer::class);
+        $units = [];
+        foreach ($instance->processes()->get() as $process) {
+            if ($process->runtime === ProcessRuntime::Systemd) {
+                $units[] = $systemd->unitName($process);
+            }
+        }
+        foreach ($instance->schedules()->get() as $schedule) {
+            $units[] = $schedules->serviceName($schedule);
+        }
+        sort($units);
+
+        return $units;
+    }
+
+    /** @param  list<string>  $ownUnits */
+    public static function releaseEmptyGroupingDirectoryFunction(bool $stopProcesses = false, array $ownUnits = []): string
     {
         // Not Node-aware: this only cleans up what the worker left. It runs no Git and skips a Node without the account.
         $worker = TaskWorkerUser::name() ?? '';
 
-        return 'trust_worker='.escapeshellarg($worker)."\n".'stop_processes='.($stopProcesses ? '1' : '0')."\n".<<<'SHELL'
+        return 'trust_worker='.escapeshellarg($worker)."\n".'stop_processes='.($stopProcesses ? '1' : '0')."\n"
+            .'own_units='.escapeshellarg(implode("\n", $ownUnits))."\n".<<<'SHELL'
             # Stop the caller's own processes whose working directory or executable is inside the tree: SIGTERM,
-            # then SIGKILL, each for up to 5 seconds. Owned Processes and Schedules are systemd units that runtime
-            # cleanup removes after ownership checks. A tmux or screen server is the operator's: it hosts sessions
-            # that work elsewhere, so it is left running.
+            # then SIGKILL, each for up to 5 seconds. The units in $own_units are the Instance's own Processes and
+            # Schedules, which runtime cleanup removes after ownership checks; their processes stay. A tmux or screen
+            # server is the operator's: it hosts sessions that work elsewhere, so it is left running.
             stop_own_tree_processes() {
-                local tree=$1 signal started entry pid target found
+                local tree=$1 signal started entry pid target found unit
                 for signal in TERM KILL; do
                     started=${EPOCHREALTIME//[!0-9]/}
                     while :; do
@@ -2214,8 +2244,10 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                             if [ "$pid" = "$$" ] || [ "$pid" = "$BASHPID" ]; then
                                 continue
                             fi
-                            case "$(cat -- "$entry/cgroup" 2>/dev/null || true)" in
-                                */orbit-process-*.service*|*/orbit-schedule-*.service*) continue ;;
+                            unit=$(cat -- "$entry/cgroup" 2>/dev/null || true)
+                            unit=${unit##*/}
+                            case $'\n'"$own_units"$'\n' in
+                                *$'\n'"$unit"$'\n'*) [ -n "$unit" ] && continue ;;
                             esac
                             case "$(cat -- "$entry/comm" 2>/dev/null || true)" in
                                 'tmux: server'|screen|SCREEN) continue ;;
@@ -2249,7 +2281,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                     (
                         cd /
                         sudo -n -u "$trust_worker" -- bash -eu -c \
-                            "$(declare -f stop_own_tree_processes)"'; stop_own_tree_processes "$1"' _ "$tree"
+                            "own_units=$(printf '%q' "$own_units"); $(declare -f stop_own_tree_processes)"'; stop_own_tree_processes "$1"' _ "$tree"
                     )
                 fi
             }
