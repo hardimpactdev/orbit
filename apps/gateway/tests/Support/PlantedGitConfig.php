@@ -7,8 +7,9 @@ namespace Tests\Support;
 use Symfony\Component\Process\Process;
 
 /**
- * Plants every command-capable network key an agent could write into a shared checkout's `.git/config`. Each one
- * creates a marker file when Git runs it. A credentialed Gateway call that reads the checkout config would leave one.
+ * Plants every command-capable network key that code running as the managed user could write into a checkout's
+ * `.git/config`. Each one creates a marker file when Git runs it. A credentialed Gateway call that reads the checkout
+ * config would leave one.
  */
 final class PlantedGitConfig
 {

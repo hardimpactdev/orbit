@@ -84,9 +84,9 @@ The managed user writes task metadata under `$(git rev-parse --git-path orbit)`.
 
 On a task VM none of this runs: the Gateway fetches and pushes in its own mirror and sends no token to the VM. See [Git on a task VM](/reference/compute-drivers#git-on-a-task-vm). The rest of this section covers development checkouts on other Nodes.
 
-A fetch and `ls-remote` carry a GitHub token. `ls-remote` runs outside the checkout. A fetch runs in the checkout as the managed user, against the Project repository URL with explicit refspecs, never against a configured remote. It sets `credential.helper` empty, `http.followRedirects` to `false`, and `protocol.ext.allow` to `never`, besides the hook and fsmonitor overrides above. The token exists only in the environment of that one `git` command. It travels on the standard input of the SSH process, never in an argument or a file.
+A fetch and `ls-remote` carry a GitHub token. `ls-remote` runs outside the checkout. A fetch runs in the checkout as the managed user, against the Project repository URL with explicit refspecs, never against a configured remote. It sets `credential.helper` empty, `http.followRedirects` to `false`, and `core.alternateRefsCommand` to `true`, besides the hook and fsmonitor overrides above. Only HTTPS may carry the fetch: `protocol.allow` is `never`, and each transport is set on the command line, so `ssh`, `ext`, `file`, and `git` stay off. The token exists only in the environment of that one `git` command. It travels on the standard input of the SSH process, never in an argument or a file.
 
-Only the managed user and the operator write the checkout's `.git/config`, so the fetch may read it. Orbit runs no task agent in a development checkout on a host Node.
+The checkout's `.git/config` is not trusted. The operator writes it, and so does every program that runs as the managed user: setup steps, development Processes, and any agent working in the checkout. Command-line settings outrank that file, so a planted credential helper, hook, `url.*.insteadOf`, or transport setting cannot run a command or move the fetch off HTTPS while the token is in the environment.
 
 ## Run setup
 

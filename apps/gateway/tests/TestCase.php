@@ -53,6 +53,8 @@ abstract class TestCase extends BaseTestCase
             NativeProcessRunner::class,
             static fn (ProcessRunner $runner): ProcessRunner => new HostPathGuardedProcessRunner($runner),
         );
+        // Tests point GitHub URLs at local repositories, so a credentialed checkout fetch may use them.
+        $app['config']->set('orbit.git.checkout_protocols', ['https', 'file']);
         // Each test gets its own task VM mirrors in the test's ORBIT_HOME, and tests point GitHub URLs at local repositories.
         $app->singleton(TaskVmGit::class, static fn (Application $app): TaskVmGit => new TaskVmGit(
             $app->make(ProcessRunner::class),

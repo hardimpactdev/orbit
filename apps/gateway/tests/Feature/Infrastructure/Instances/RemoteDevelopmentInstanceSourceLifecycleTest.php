@@ -71,6 +71,7 @@ use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
 use Tests\Support\GitRemoteRedirect;
 use Tests\Support\LifecycleSshExecutor;
+use Tests\Support\PlantedGitConfig;
 
 pest()->group('privileged');
 
@@ -407,6 +408,32 @@ it('refuses to move a checkout across a mount before any copy, and keeps it in p
     $this->transport->environment = [];
     expect($this->removal->finalize($member))->not->toBeNull()
         ->and(file_exists($checkout))->toBeFalse();
+});
+
+// Setup steps, development Processes, and agents run as the managed user and can write the checkout config. A planted
+// URL rewrite to `ext::` makes the fetch fail closed; no planted command runs.
+it('fetches at resolve without running a command planted in the checkout config', function (): void {
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-planted-fetch');
+    $checkout = $instance->checkout_path;
+    orb76_run(['git', '-C', $checkout, 'push', '-q', $this->repository, 'HEAD:refs/heads/planted']);
+    PlantedGitConfig::plant($checkout, $this->sandbox.'/markers', [$this->repository, $this->remoteOrigin]);
+    $this->source->inspectPrepared($instance);
+    $instance->update(['branch_override' => 'planted']);
+
+    expect(fn () => $this->source->resolve($instance->refresh()))->toThrow(RuntimeConvergenceException::class);
+    expect(PlantedGitConfig::markers($this->sandbox.'/markers'))->toBe([]);
+});
+
+it('fetches at resolve past planted command keys without running them', function (): void {
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-planted-keys');
+    $checkout = $instance->checkout_path;
+    orb76_run(['git', '-C', $checkout, 'push', '-q', $this->repository, 'HEAD:refs/heads/planted-keys']);
+    PlantedGitConfig::plant($checkout, $this->sandbox.'/markers', []);
+    $this->source->inspectPrepared($instance);
+    $instance->update(['branch_override' => 'planted-keys']);
+
+    expect($this->source->resolve($instance->refresh())->branch)->toBe('planted-keys')
+        ->and(PlantedGitConfig::markers($this->sandbox.'/markers'))->toBe([]);
 });
 
 describe('CheckoutProcesses', function (): void {

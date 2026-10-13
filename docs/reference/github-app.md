@@ -197,7 +197,7 @@ The agent shares the Pi server's user, so it can read that server's token and th
 
 `git checkout` and the approval commit do not carry the token. On a development checkout, the managed user runs Orbit's own checkouts, at create, on a branch switch, and when a development default deploys. In a task workspace, the VM's user `orbit` runs them, and the VM holds no token.
 
-Fetch, `git clone --no-checkout`, and `ls-remote` do not check out file contents. A token-bearing fetch on a development checkout reads that checkout's `.git/config`, which only the managed user and the operator write; see [credentialed Git](/reference/instance-setup#credentialed-git). Privileged removal deletes the tree as the managed user and runs no checkout program.
+Fetch, `git clone --no-checkout`, and `ls-remote` do not check out file contents. A token-bearing fetch on a development checkout reads that checkout's `.git/config`, which any program running as the managed user can write, and overrides every setting there that could run a command or change the transport; see [credentialed Git](/reference/instance-setup#credentialed-git). Privileged removal deletes the tree as the managed user and runs no checkout program.
 
 Before each agent turn, the Gateway itself fetches the task workspace. That fetch uses the read token and `--no-tags`, not a token handed to the agent. [Tasks](/reference/tasks#fetch-before-a-turn) names the refs. When the fetch fails, the turn still starts, and its message says the fetch failed and warns that `origin/*` may be stale.
 
@@ -236,9 +236,9 @@ The Gateway starts every repository read and push itself, so it can create a tok
 
 ### The checkout cannot inherit the token
 
-The token is in the environment of one `git` process, running as the managed user. A program named by the checkout, including a hook or `fsmonitor`, would be a child of that process and would see the token. So token-bearing Git turns off hooks, `fsmonitor`, and every credential helper, and it fetches from the explicit Project repository URL. It reads the checkout's `.git/config`, which only the managed user and the operator write.
+The token is in the environment of one `git` process, running as the managed user. A program named by the checkout, including a hook or `fsmonitor`, would be a child of that process and would see the token. So token-bearing Git turns off hooks, `fsmonitor`, every credential helper, and the alternate-refs command, allows only HTTPS, and fetches from the explicit Project repository URL. It still reads the checkout's `.git/config`, which setup steps, development Processes, and agents running as the managed user can write, so those command-line settings are what keep the token in Git.
 
-Task agents work only in task VMs, and a VM never receives a token: the Gateway fetches and pushes for it in its own mirror. Task groups once shared host Nodes, where an agent account could write `.git/config`. Token-bearing Git then ran in a private bare repository that the agent could not write. That isolation went with shared mode, because no agent writes a checkout on a host Node anymore.
+Task agents work only in task VMs, and a VM never receives a token: the Gateway fetches and pushes for it in its own mirror. Task groups once shared host Nodes, where an agent account could write `.git/config`. Token-bearing Git then ran in a private bare repository that the agent could not write. That isolation went with shared mode: no second account writes a checkout on a host Node anymore, and the command-line settings above cover what the managed user's own programs could plant.
 
 The node agent reads Git with libgit2, which starts no checkout program. A credential helper on the Node was rejected because it remains callable by any program after the command ends. The token stays in one command's environment.
 

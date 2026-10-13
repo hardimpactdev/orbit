@@ -168,7 +168,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
         if ($taskVm) {
             $this->sendToTaskVm($instance, $defaultBranch);
         }
-        $script = GitReadScript::for($this->readAccess($instance, $context['repository'], $taskVm), self::preparedRepositoryGuard($instance->source_prepare_id, $instance->seed_repository).<<<'BASH'
+        $script = GitReadScript::for($this->readAccess($instance, $context['repository'], $taskVm), self::preparedRepositoryGuard($instance->source_prepare_id, $instance->seed_repository).WorkspaceGit::fetchPreamble().<<<'BASH'
                     repository=$1
                     checkout=$2
                     allowed_root=$3
@@ -184,8 +184,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                     guard_parent_chain "$checkout_parent" "$allowed_root"
                     inspect_prepared_repository
                     if [ "$network" = 1 ]; then
-                        git_read git -c credential.helper= -c core.hooksPath=/dev/null -c core.fsmonitor=false -c protocol.ext.allow=never \
-                            -c http.followRedirects=false -C "$checkout" fetch --quiet --no-tags --prune -- "$repository" \
+                        checkout_fetch -C "$checkout" fetch --quiet --no-tags --prune -- "$repository" \
                             '+refs/heads/*:refs/remotes/origin/*'
                     fi
 

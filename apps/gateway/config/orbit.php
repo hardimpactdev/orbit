@@ -81,6 +81,10 @@ return [
         'port' => max(1, (int) env('ORBIT_T3_PORT', 3773)),
         'token' => env('ORBIT_T3_TOKEN'),
     ],
+    'git' => [
+        // Transports a credentialed development checkout fetch may use. Tests add `file` for local origins.
+        'checkout_protocols' => ['https'],
+    ],
     'pi' => [
         'port' => max(1, (int) env('ORBIT_PI_PORT', 3774)),
     ],

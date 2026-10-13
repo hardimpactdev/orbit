@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 it('drops worker_shared and strips the tasks section from Node settings, and rolls the column back', function (): void {
-    $migration = require base_path('database/migrations/2026_11_02_000000_drop_task_worker.php');
+    $migration = require base_path('database/migrations/2026_11_02_000000_drop_shared_task_mode.php');
     $node = static fn (string $name, string $ip, ?array $settings): Node => Node::query()->create([
         'name' => $name,
         'status' => LifecycleStatus::Active,

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Instances;
 
+use App\Infrastructure\SourceControl\WorkspaceGit;
+
 /**
  * Shell programs that deploy a development default in its own checkout. Each runs as the managed
  * user with the positional arguments home, repository URL, and Instance ID, then its own arguments.
@@ -111,11 +113,10 @@ final class DevelopmentCheckoutProgram
     /** Fetches the branch and prints its commit, then `LEGACY` while the old release layout remains. */
     public static function target(): string
     {
-        return self::guard().<<<'BASH'
+        return self::guard().WorkspaceGit::fetchPreamble().<<<'BASH'
 
             branch=$1
-            git_read git -c credential.helper= -c core.hooksPath=/dev/null -c core.fsmonitor=false -c protocol.ext.allow=never \
-                -c http.followRedirects=false -C "$home" fetch --quiet --no-tags -- "$repository" \
+            checkout_fetch -C "$home" fetch --quiet --no-tags -- "$repository" \
                 "+refs/heads/$branch:refs/remotes/origin/$branch" >/dev/null
             git -C "$home" rev-parse --verify "refs/remotes/origin/$branch^{commit}"
             if legacy; then printf 'LEGACY\n'; fi

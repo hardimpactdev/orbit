@@ -126,14 +126,13 @@ final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSo
         $this->run(
             $instance,
             [$instance->checkout_path, $newBranch, $instance->loadMissing('project')->project->repository_url],
-            <<<'BASH'
+            WorkspaceGit::fetchPreamble().<<<'BASH'
                 path=$1
                 branch=$2
                 repository=$3
                 test -d "$path"
                 git -C "$path" rev-parse --is-inside-work-tree >/dev/null
-                git_read git -c credential.helper= -c core.hooksPath=/dev/null -c core.fsmonitor=false -c protocol.ext.allow=never \
-                    -c http.followRedirects=false -C "$path" fetch --quiet --no-tags --prune -- "$repository" \
+                checkout_fetch -C "$path" fetch --quiet --no-tags --prune -- "$repository" \
                     '+refs/heads/*:refs/remotes/origin/*'
                 git -C "$path" show-ref --verify --quiet "refs/remotes/origin/$branch"
                 BASH,
