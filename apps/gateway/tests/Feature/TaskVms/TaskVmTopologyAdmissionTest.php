@@ -96,6 +96,7 @@ it('starts the preparation unit once, waits while it runs, and admits the subtas
         topology_admission_result(''),
         topology_admission_result('{"state":"running"}'),
         topology_admission_result('{"state":"ready","step":"acquire","seconds":690,"log":""}'),
+        topology_admission_result('{"state":"ready","step":"acquire","seconds":690,"log":""}'),
     ]);
     $subtask = topology_admission_subtask($this->group, ['app-prod+ingress']);
     $admission = app(TaskTopologyAdmission::class);
@@ -112,10 +113,9 @@ it('starts the preparation unit once, waits while it runs, and admits the subtas
 
     expect(fn () => $admission->prepare($this->group, $subtask))->toThrow(TaskCapacityException::class, 'preparing the topology');
     $admission->prepare($this->group, $subtask);
-    $admission->prepare($this->group, $subtask);
 
     expect($this->vm->fresh()?->topology_state)->toBe(TaskVmTopologyState::Ready)
-        ->and($ssh->commands)->toHaveCount(3)
+        ->and($ssh->commands)->toHaveCount(4)
         ->and(array_slice($ssh->commands[1]->arguments, 3))->toBe(['topology', 'status', $vm?->topology_run]);
 });
 
@@ -200,4 +200,16 @@ it('keeps a run whose unit started although the start call failed, and fails one
     $this->vm->update(['topology_state' => null]);
     topology_admission_ssh([new CommandResult(255, '', 'Connection timed out', 1, false), topology_admission_result('{"state":"lost"}')]);
     expect(fn () => app(TaskTopologyAdmission::class)->prepare($this->group, $subtask))->toThrow(TaskTopologyFailedException::class, 'failed at step start. The end of its log: Connection timed out');
+});
+
+it('prepares the topology again when the VM restarted since it was ready', function (): void {
+    $this->vm->update(['topology' => ['app-dev'], 'topology_state' => TaskVmTopologyState::Ready, 'topology_run' => 'abcdef0123456789']);
+    $ssh = topology_admission_ssh([topology_admission_result('{"state":"stale"}'), topology_admission_result('')]);
+
+    expect(fn () => app(TaskTopologyAdmission::class)->prepare($this->group, topology_admission_subtask($this->group, ['app-dev'])))
+        ->toThrow(TaskCapacityException::class, 'Task VM: preparing the topology app-dev.');
+    expect(array_slice($ssh->commands[0]->arguments, 3))->toBe(['topology', 'status', 'abcdef0123456789'])
+        ->and($ssh->commands[1]->arguments[4])->toBe('start')
+        ->and($this->vm->fresh()?->topology_state)->toBe(TaskVmTopologyState::Preparing)
+        ->and($this->vm->fresh()?->topology_run)->not->toBe('abcdef0123456789');
 });
