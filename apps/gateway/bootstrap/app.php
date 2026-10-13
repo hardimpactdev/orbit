@@ -120,6 +120,11 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('queue:work task-vms --queue='.TaskVmQueue::Templates->value.' --stop-when-empty --max-time=120 --timeout=1700')
             ->everySecond()->withoutOverlapping(32)
             ->when(static fn (): bool => now()->second >= 58 && $due(TaskVmQueue::Templates->value));
+        // Task VM publishes: the push of an approved commit out of a VM, which runs at the VM's pace, so the task tick
+        // only queues it. The worker starts in seconds 54 and 55, like the image and template workers above.
+        $schedule->command('queue:work task-vms --queue='.TaskVmQueue::Git->value.' --stop-when-empty --max-time=120 --timeout=1700')
+            ->everySecond()->withoutOverlapping(32)
+            ->when(static fn (): bool => in_array(now()->second, [54, 55], true) && $due(TaskVmQueue::Git->value));
     })
     ->withCommands()
     ->withMiddleware(function (Middleware $middleware): void {

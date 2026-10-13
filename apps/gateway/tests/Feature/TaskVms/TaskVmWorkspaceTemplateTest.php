@@ -31,6 +31,7 @@ use App\Infrastructure\TaskVms\TaskVmWorkspace;
 use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplates;
 use App\Jobs\TaskVms\BuildTaskVmWorkspaceTemplate;
 use App\Jobs\TaskVms\DestroyTaskVm;
+use App\Jobs\TaskVms\PublishTaskVmCommit;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
 use App\Jobs\TaskVms\RefreshTaskVmWorkspaceTemplates;
 use App\Jobs\TaskVms\SweepTaskVmHosts;
@@ -642,15 +643,17 @@ describe('scale', function (): void {
         Artisan::call('schedule:list');
         $events = app(Schedule::class)->events();
         $workers = collect($events)->filter(static fn (Event $event): bool => str_contains((string) $event->command, 'queue:work'))->values();
-        [$vms, $images, $templates] = [$workers[0], $workers[1], $workers[2]];
+        [$vms, $images, $templates, $git] = [$workers[0], $workers[1], $workers[2], $workers[3]];
 
         expect(DB::table('jobs')->where('queue', TaskVmQueue::Templates->value)->count())->toBe(21)
             ->and($vms->command)->toEndWith("'artisan' queue:work task-vms --queue=task-vms --stop-when-empty --max-time=120 --timeout=1500")
             ->and($images->command)->toEndWith("'artisan' queue:work task-vms --queue=task-vm-images --stop-when-empty --max-time=120 --timeout=1700")
             ->and($templates->command)->toEndWith("'artisan' queue:work task-vms --queue=task-vm-templates --stop-when-empty --max-time=120 --timeout=1700")
             ->and([$images->repeatSeconds, $images->withoutOverlapping, $images->expiresAt, $images->runInBackground])->toBe([1, true, 32, false])
-            ->and($templates)->toBe(end($events))
+            ->and($git->command)->toEndWith("'artisan' queue:work task-vms --queue=task-vm-git --stop-when-empty --max-time=120 --timeout=1700")
+            ->and($git)->toBe(end($events))
             ->and([$templates->repeatSeconds, $templates->withoutOverlapping, $templates->expiresAt, $templates->runInBackground])->toBe([1, true, 32, false])
+            ->and([$git->repeatSeconds, $git->withoutOverlapping, $git->expiresAt, $git->runInBackground])->toBe([1, true, 32, false])
             // The task VM worker takes the destroy at once, behind no build.
             ->and($vms->filtersPass(app()))->toBeTrue()
             // The template worker starts only in the last two seconds of a minute, so the run it holds ends soon.
@@ -667,6 +670,12 @@ describe('scale', function (): void {
 
         DB::table('jobs')->where('queue', 'task-vms')->delete();
         expect($vms->filtersPass(app()))->toBeFalse();
+
+        // A task VM publish starts the Git worker only in seconds 54 and 55.
+        PublishTaskVmCommit::dispatch(1, str_repeat('a', 40), 'task-1');
+        expect($git->filtersPass(app()))->toBeFalse();
+        $this->travelTo(now()->setTime(4, 2, 54));
+        expect([$git->filtersPass(app()), $images->filtersPass(app()), $templates->filtersPass(app())])->toBe([true, false, false]);
     });
 
     it('starts a claim from a fresh clone while its template builds, and queues no second build', function (): void {

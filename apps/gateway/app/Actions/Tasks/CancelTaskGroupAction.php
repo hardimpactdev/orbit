@@ -149,9 +149,12 @@ final readonly class CancelTaskGroupAction
         try {
             $this->publisher->push($group, $commit);
         } catch (TaskPullRequestException $exception) {
+            // A task VM's push runs in a queued job. Cancel fails until GitHub has the commit, so no approved work is lost.
             throw new ResourceOperationException(
                 errorCode: 'tasks.push_failed',
-                message: __('The group remains settling because its approved commits could not be pushed to task-:group: :reason', ['group' => $group->id, 'reason' => $exception->getMessage()]),
+                message: $exception->pending
+                    ? __('The group remains settling while its approved commits are pushed to task-:group: :reason Cancel again in a minute.', ['group' => $group->id, 'reason' => $exception->getMessage()])
+                    : __('The group remains settling because its approved commits could not be pushed to task-:group: :reason', ['group' => $group->id, 'reason' => $exception->getMessage()]),
                 status: 502,
             );
         }
