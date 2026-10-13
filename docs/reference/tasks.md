@@ -794,7 +794,7 @@ Each observation also reports whether the workspace has commits since its starti
 
 ### Consult the reviewer
 
-When an implementer hands off `blocked`, Orbit sends the summary and the question to the subtask's reviewer. Orbit starts that reviewer when the subtask has none yet, and the review that follows uses the same thread. The subtask stays `running`, and nobody is asked for assistance. This turn is a consult. Its reviewer may [request a topology](#request-a-topology) before answering. The consult remains open and the implementer remains paused until the same reviewer resumes with the acquisition result or failure and answers normally.
+When an implementer hands off `blocked`, Orbit sends the summary and the question to the subtask's reviewer. Orbit starts that reviewer when the subtask has none yet, and the review that follows uses the same thread. The subtask stays `running`, and nobody is asked for assistance. This turn is a consult.
 
 The reviewer answers from the brief, the ADRs, the documentation, the code, and the task history. It hands off `answered` with the answer as its summary, and Orbit sends that answer to the implementer, which continues the same attempt. A question about scope, priorities, access, money, or a resource that only the operator controls cannot be answered from the contract. The reviewer then hands off `blocked` with one question for the operator, and the subtask asks for direction.
 

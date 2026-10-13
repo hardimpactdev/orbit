@@ -18,16 +18,6 @@ This page is for the contributor, agent, or reviewer who runs Orbit on disposabl
 
 An Orbit task group on a [task VM](/reference/compute-drivers#task-vms) gets a topology only when its subtasks [declare](/reference/compute-drivers#declare-a-topology) one. Orbit prepares it nested in the group's VM as `TASK-<group>`, with `--nodes` set to the union of the declarations, before the subtask's baseline check or implementer. Agents use it and never acquire or release it. The reviewer records evidence on each declared node, and Orbit refuses the approval without it. See [Prove work on a topology](/reference/compute-drivers#prove-work-on-a-topology).
 
-## Topologies on the reviewer's request
-
-This section applies to shared task workspaces only. An Orbit task group has no topology by default. Workspace provisioning never acquires one. The reviewer decides whether discovery needs a topology and ends a turn with `topology_requested` through the [turn receipt](/reference/tasks#request-a-topology). An implementer asks the reviewer through the existing consult instead. Agents run as `orbit-worker` without sudo; they do not acquire topologies themselves.
-
-Orbit consumes the receipt, acquires `TASK-<group>` as the managed user, and resumes the same requesting reviewer thread in its original review, consult, or relay context with the acquisition result or failure. A consult stays open and its implementer stays paused during acquisition; a resource request neither answers it nor escalates it to the operator. The resumed reviewer answers normally under the original context's outcome and cause rules.
-
-Acquisition changes host firewall rules. Each group holds at most one topology, shared across its subtasks and review turns. A repeated request uses that group's complete discovery topology, not another one. Orbit acquires the default Nodes, `app-dev` and `app-prod`.
-
-A retained discovery lease without its topology record is an incomplete acquisition, not an already-held usable topology. Orbit reports that failure and keeps its ownership and state for normal workspace-removal cleanup; it neither acquires another topology nor asks the agent to release it. Failure replies include a bounded, redacted reason from the harness output. Acquisition failure or absence of a topology never prevents approval: these topologies support discovery, not mandatory proofs. Orbit releases the topology when it removes the group's workspace.
-
 ## Declared Nodes
 
 Every topology has a `gateway` VM and an `operator` system container. `acquire --nodes=LIST` adds the workload Nodes the work needs. `LIST` is a comma-separated list of entries, in any order. An entry names one of `app-dev`, `app-prod`, and `app-prod-2`, and may add the role `ingress` after a `+`, for example `app-prod+ingress`. `app-prod-2` requires `app-prod`. Without the option, the list is `app-dev,app-prod`. An empty list, `--nodes=`, gives the Gateway and the operator only. A task VM group's subtask `topology` uses the same entries.
@@ -269,7 +259,7 @@ Guests never run Composer. Host `bin/bootstrap` owns `vendor/` and the Gateway `
 
 ## Task workspace clones
 
-On a host shared by several task workspaces, such as beast, a task workspace is not a linked worktree of the primary checkout. It is a linked worktree of Orbit's default Instance, or an independent clone. It does not hold the host locks. So `bin/e2e-topology` runs the command in place only in the primary checkout and its linked worktrees. In any other checkout, it runs the command through a bridge worktree of the primary checkout. The table calls that checkout the clone.
+On a host with several checkouts of one repository, such as beast, a checkout can be a linked worktree of Orbit's default Instance or an independent clone instead of a linked worktree of the primary checkout. Such a checkout does not hold the host locks. So `bin/e2e-topology` runs the command in place only in the primary checkout and its linked worktrees. In any other checkout, it runs the command through a bridge worktree of the primary checkout. The table calls that checkout the clone.
 
 | Step | What happens |
 | --- | --- |
@@ -284,19 +274,17 @@ The registration is the first of `$XDG_STATE_HOME/orbit/e2e-primary-checkouts/{o
 
 The origin key is the SHA-256 of the origin URL's lowercase host and its path, so every clone of one repository finds the same primary. The cleanup helper uses the same lookup order and owner rule.
 
-Missing or dangling links and explicitly rejected registrations are successful no-ops. Once an eligible primary is registered, operational failures while probing its Git directories, origin, or worktree-root setting are cleanup failures, not an absent registration. An unset worktree-root key still uses the default. The helper returns nonzero before changing task or bridge resources, so teardown retains the task checkout for retry. [Primary registration](/reference/instance-setup#primary-registration) describes the shared registry and the worker's access grants.
+Missing or dangling links and explicitly rejected registrations are successful no-ops. Once an eligible primary is registered, operational failures while probing its Git directories, origin, or worktree-root setting are cleanup failures, not an absent registration. An unset worktree-root key still uses the default. The helper returns nonzero before changing task or bridge resources, so teardown retains the task checkout for retry. [Primary registration](/reference/instance-setup#primary-registration) describes the shared registry.
 
-State directories and operation locks allow access only to their owner and ACL-named users. The harness keeps existing ACL masks, including the managed user's grant to `orbit-worker`, when it opens the state root, ensures a parent directory, or acquires a lock. It removes access for the owning group and other users without recalculating those masks. An already-private owner-owned directory or lock needs no permission change when the worker uses it.
-
-A managed-user run that creates a directory with explicit mode `0700` can mask inherited named-user ACL grants and cancel worker access despite default ACLs. Keeping an existing ACL mask does not repair that inaccessible directory owned by another user. The operator must restore its effective grants and keep state owning-group/other access closed. The task lifecycle must preserve effective worker access on state and bridge directories it creates.
+State directories and operation locks allow access only to their owner and ACL-named users. The harness keeps existing ACL masks when it opens the state root, ensures a parent directory, or acquires a lock. It removes access for the owning group and other users without recalculating those masks. An already-private owner-owned directory or lock needs no permission change.
 
 The mirror leaves the bridge's other ignored files, such as `.e2e/`, `.env`, and Gateway storage, because the harness and the guests write them. So a file that a guest writes into the mount appears in the bridge, not in the clone. The evidence log is in the bridge too. Every command mirrors the clone first, so any command, such as `status`, pushes an edit. Set `ORBIT_E2E_BRIDGE=0` to run in the clone itself. `bin/e2e-topology-images` never bridges, because images belong to the host's Incus project, not to a checkout.
 
-In a task workspace on branch `task-58`, use the allocated topology with commands such as `bin/e2e-topology exec TASK-58 gateway --argv='["orbit","node:list","--json"]'`. When the Gateway ends a task, the Orbit Project's configured teardown step runs the installed copy of `bin/e2e-task-cleanup` to remove the task's bridge. [Tasks](/reference/tasks#complete-and-cleanup) describes that cleanup. Orbit releases the group's topology, including any web session and loopback publication, before removing the workspace. Bridge removal itself does not release a topology.
+In a task workspace on branch `task-58`, use the allocated topology with commands such as `bin/e2e-topology exec TASK-58 gateway --argv='["orbit","node:list","--json"]'`. When the Gateway ends a task, the Orbit Project's configured teardown step runs the installed copy of `bin/e2e-task-cleanup` to remove the task's bridge. [Tasks](/reference/tasks#complete-and-cleanup) describes that cleanup. A declared topology runs inside the task VM and goes with it. Bridge removal itself does not release a topology.
 
-Vendor mirroring keeps content, symbolic links, file timestamps, and deletion of stale entries. With rsync, it disables owner, group, and permission preservation after archive mode and omits directory timestamps. Existing destination permissions and ACL grants stay in place; new files use source permissions subject to the destination's defaults and the caller's umask, including executable permissions. This lets `orbit-worker` update a managed-user-owned bridge without trying to change its ownership, chmod owner-owned entries, or set timestamps on directories the worker does not own.
+Vendor mirroring keeps content, symbolic links, file timestamps, and deletion of stale entries. With rsync, it disables owner, group, and permission preservation after archive mode and omits directory timestamps. Existing destination permissions and ACL grants stay in place; new files use source permissions subject to the destination's defaults and the caller's umask, including executable permissions. This lets a user update a bridge that another user owns without trying to change its ownership, chmod owner-owned entries, or set timestamps on directories it does not own.
 
-The helper checks the checkout identity and origin and the repository identity. It reads the same registration paths as the bridge, including the shared directory, and it accepts a primary owned by the checkout owner. A primary registered by the managed user is found after teardown runs as `orbit-worker`. The worker also needs to traverse and write the primary's `.git` and the bridge worktree root. [Primary registration](/reference/instance-setup#primary-registration) records the copy and that grant.
+The helper checks the checkout identity and origin and the repository identity. It reads the same registration paths as the bridge, including the shared directory, and it accepts a primary owned by the checkout owner. [Primary registration](/reference/instance-setup#primary-registration) records the shared directory.
 
 It targets `task-{id}-e2e` under that primary's worktree root. It removes a registered worktree only when both its path and branch match. A bridge checked out on another branch stays. It deletes the task bridge branch only when no worktree has it checked out, and deletes only `refs/orbit/e2e-bridge/task-{id}`. It never removes another task's bridge or releases a topology.
 
@@ -325,12 +313,6 @@ Every network named `oe-*` belongs to the harness and never outlives its topolog
 ## Why it works this way
 
 These reasons explain the design. Check them before you propose a change.
-
-### The reviewer requests discovery on a shared host
-
-This reason applies to shared task workspaces. A task VM group declares its topology up front, because the declaration decides the VM size and the reviewer must prove the work on those nodes.
-
-Ordinary groups use no topology resources. Acquisition at workspace provisioning was rejected because most groups do not need discovery and startup should not depend on it. The reviewer decides when discovery helps; the existing consult gives implementers a way to ask without granting agents host sudo or adding another request API. Orbit owns acquisition because it changes host firewall rules. A topology is not proof of correctness, so acquisition failure or absence never prevents approval. This serves lean resource use and the principle that agents operate while humans steer.
 
 ### Composed from role images
 

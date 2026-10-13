@@ -41,13 +41,13 @@ On the install page, choose the account or organization and all or selected repo
 
 ## How Orbit reads a repository
 
-The Gateway reads a Project repository with `git ls-remote` to resolve its default branch. A Node clones or fetches source for production provisioning, a deployment, a development checkout, a repository or default-branch change, an Instance clone, the published-commit check before a development checkout is removed, and a task workspace before each agent turn.
+The Gateway reads a Project repository with `git ls-remote` to resolve its default branch. A Node clones or fetches source for production provisioning, a deployment, a development checkout, a repository or default-branch change, an Instance clone, and the published-commit check before a development checkout is removed. For a task workspace, the Gateway fetches in its own mirror before each agent turn; see [Git on a task VM](/reference/compute-drivers#git-on-a-task-vm).
 
 Each Project has a `source_access` setting. This section describes `github_app`, the default. [Read through the GitHub CLI](#read-through-the-github-cli) describes `gh_cli`.
 
 For each read of a `github.com` repository that an installation covers, the Gateway asks GitHub for a token with `contents: read` for that one repository. The token expires after one hour. The Gateway passes it to `git` through the environment of that one command, as `GIT_CONFIG_*` variables. The token never appears in the origin URL, the command arguments, `.git/config`, or a file on the Node.
 
-Token-bearing Git runs as the Node's managed user with a private git directory at mode `0700`, without a worker ACL. The Gateway copies objects and refs as files, not by running Git against the checkout. It does not copy config or hooks. The private config contains only the remote URL the Gateway writes; an unexpected executable config key stops the operation and asks for assistance. [The checkout cannot inherit the token](#the-checkout-cannot-inherit-the-token) explains why the checkout is not trusted.
+Token-bearing Git on a Node runs as the Node's managed user. [The checkout cannot inherit the token](#the-checkout-cannot-inherit-the-token) explains which checkout programs it turns off.
 
 Every repository read disables hooks with `core.hooksPath=/dev/null` and clears `core.fsmonitor`, `core.alternateRefsCommand`, `core.sshCommand`, `core.askPass`, `core.gitProxy`, `credential.helper`, and `uploadpack.packObjectsHook`. Direct token-bearing Git uses the same overrides. Clone uses `--no-checkout`; clone, fetch, and push do not check out file contents.
 
@@ -86,7 +86,7 @@ Orbit accepts any login and does not check its scopes. A usual `gh auth login` g
 
 For each read, the Gateway runs `gh auth token --hostname github.com` as `orbit`. It hands the token to `git` in the same way as an App token, for the same reads: through `GIT_CONFIG_*` variables of one command, on the Gateway or on a Node through the script on standard input. An SSH-form origin is read through its HTTPS form, and the stored origin stays as it is.
 
-A command that carries a token does not use the checkout as its git directory. It runs in a private bare repository that the agent cannot write, with a fresh configuration, and borrows the objects of the Instance's Git directory as an alternate. It sets `core.hooksPath` to `/dev/null`, `core.fsmonitor` to `false`, `credential.helper` empty, `http.followRedirects` to `false`, `protocol.ext.allow` to `never`, and `core.alternateRefsCommand` to `true`. By default a fetch runs `git for-each-ref` in each alternate, and that child would read the alternate's configuration with `GIT_CONFIG_VALUE_0`, the `Authorization` header, in its environment. [Credentialed Git](/reference/instance-setup#credentialed-git) describes the steps.
+A command that carries a token sets `core.hooksPath` to `/dev/null`, `core.fsmonitor` to `false`, `credential.helper` empty, `http.followRedirects` to `false`, and `protocol.ext.allow` to `never`. It fetches from the Project repository URL with explicit refspecs. [Credentialed Git](/reference/instance-setup#credentialed-git) describes the steps.
 
 The Gateway stores no token. No API response, Activity, Doctor result, origin URL, command argument, `.git/config`, or file on a Node contains it.
 
@@ -104,9 +104,7 @@ Tasks publish only through the App. Creating a task for a `gh_cli` Project fails
 
 ## How Orbit publishes a task pull request
 
-After the Gateway commits an approved subtask, it asks GitHub for a token with `contents: write` and `pull_requests: write` for the Project repository. The token reaches the Node in the same way as a read token. `git` pushes the stored commit as `<commit_sha>:refs/heads/task-{id}` and never uses `HEAD`. After the last approval, the Gateway opens the pull request with the same kind of token. When `ORBIT_TASKS_REVIEW_REQUEST_LOGINS` is set, it then requests those GitHub logins as reviewers with that write token, skipping the pull request author. A failed reviewer request does not block publication. [Tasks](/reference/tasks#pull-request-and-settle-metrics) describes the request.
-
-For a task VM workspace the token stays on the Gateway. The Gateway takes the commit out of the VM into its own mirror and pushes from there. See [Git on a task VM](/reference/compute-drivers#publish-from-the-vm).
+After the Gateway commits an approved subtask, it asks GitHub for a token with `contents: write` and `pull_requests: write` for the Project repository. The token stays on the Gateway. The Gateway takes the commit out of the task VM into its own mirror, and `git` pushes the stored commit from there as `<commit_sha>:refs/heads/task-{id}`, never using `HEAD`. See [Git on a task VM](/reference/compute-drivers#publish-from-the-vm). After the last approval, the Gateway opens the pull request with the same kind of token. When `ORBIT_TASKS_REVIEW_REQUEST_LOGINS` is set, it then requests those GitHub logins as reviewers with that write token, skipping the pull request author. A failed reviewer request does not block publication. [Tasks](/reference/tasks#pull-request-and-settle-metrics) describes the request.
 
 Publishing has no path without the App. Without an installation that covers the repository, the task counts a communication failure and then asks for assistance. [Tasks](/reference/tasks#pull-request-and-settle-metrics) describes the retry.
 
@@ -189,17 +187,15 @@ The Gateway reads the branch through its full ref, so a tag with the same name i
 
 ## What the App does not cover
 
-Git commands that you run by hand in a development checkout use your own credentials. Shared Nodes have no Orbit credential helper or GitHub CLI login.
+Git commands that you run by hand in a development checkout use your own credentials. Nodes have no Orbit credential helper or GitHub CLI login.
 
-A shared task agent does not receive a GitHub token and never fetches or pushes. The agent runs as `orbit-worker`. The token exists only in the environment of one `git` command, and that command uses the private git directory above, running as the Node's managed user. A program that the agent starts cannot see the token.
+A task agent runs on its own [task VM](/reference/compute-drivers#task-vms), which holds no GitHub token. The agent never fetches or pushes. The Gateway fetches and pushes in its own mirror of the Project, moves Git objects to and from the VM over SSH, and refuses to send a token there. See [Git on a task VM](/reference/compute-drivers#git-on-a-task-vm).
 
-A [task VM](/reference/compute-drivers#task-vms) holds no GitHub token. The Gateway fetches and pushes in its own mirror of the Project, moves Git objects to and from the VM over SSH, and refuses to send a token there. See [Git on a task VM](/reference/compute-drivers#git-on-a-task-vm).
+The agent shares the Pi server's user, so it can read that server's token and the group's model key. [Limits](/reference/pi-server#limits) records that bound. [One user for every task agent](/reference/pi-server#one-user-for-every-task-agent) explains the account boundary.
 
-The candidate gate is the exception: it runs workspace programs as the managed user, and such a program could observe a token-bearing `git` process of that user that runs at the same time. [The candidate gate runs as the managed user](/reference/pi-server#the-candidate-gate-runs-as-the-managed-user) records that cost. The agent shares the Pi server's user, so it can read that server's token and provider sign-in. [Limits](/reference/pi-server#limits) records both bounds. [One user for every task agent](/reference/pi-server#one-user-for-every-task-agent) explains the account boundary.
+`git checkout` and the approval commit do not carry the token. On a development checkout, the managed user runs Orbit's own checkouts, at create, on a branch switch, and when a development default deploys. In a task workspace, the VM's user `orbit` runs them, and the VM holds no token.
 
-`git checkout` and the approval commit do not carry the token. The approval commit and Git in a task workspace run as `orbit-worker`, so a filter they start runs as `orbit-worker`. Orbit's own checkout of a development Instance, at create, on a branch switch, and when a development default deploys, also runs as `orbit-worker` on a [checkout shared with the worker](/reference/instance-setup#task-work-nodes). The worker then owns the files it wrote; their inherited ACL gives the managed user the same access.
-
-Fetch, `git clone --no-checkout`, and push do not check out file contents. Fetch and push with a token never read a checkout's `.git/config`; see [credentialed Git](/reference/instance-setup#credentialed-git). Task teardown runs as `orbit-worker` and executes the root-owned helper, not a file from the checkout. Privileged removal deletes the tree as the managed user and runs no checkout program.
+Fetch, `git clone --no-checkout`, and `ls-remote` do not check out file contents. A token-bearing fetch on a development checkout reads that checkout's `.git/config`, which only the managed user and the operator write; see [credentialed Git](/reference/instance-setup#credentialed-git). Privileged removal deletes the tree as the managed user and runs no checkout program.
 
 Before each agent turn, the Gateway itself fetches the task workspace. That fetch uses the read token and `--no-tags`, not a token handed to the agent. [Tasks](/reference/tasks#fetch-before-a-turn) names the refs. When the fetch fails, the turn still starts, and its message says the fetch failed and warns that `origin/*` may be stale.
 
@@ -238,15 +234,11 @@ The Gateway starts every repository read and push itself, so it can create a tok
 
 ### The checkout cannot inherit the token
 
-The token is in the environment of one `git` process, running as the managed user. A program named by the checkout, including a hook, `fsmonitor`, or `core.alternateRefsCommand`, would be a child of that process and would see the token. Git 2.55 runs `core.alternateRefsCommand` from a shell during fetch, and that child inherits `GIT_CONFIG_VALUE_0`, including the Authorization header. Clearing only hooks and `fsmonitor` was therefore rejected. Token-bearing Git uses a private git directory that the worker cannot write and sets `core.alternateRefsCommand=true`, so it starts no Git process in the checkout or another alternate. It reads no configuration file that the worker can write.
+The token is in the environment of one `git` process, running as the managed user. A program named by the checkout, including a hook or `fsmonitor`, would be a child of that process and would see the token. So token-bearing Git turns off hooks, `fsmonitor`, and every credential helper, and it fetches from the explicit Project repository URL. It reads the checkout's `.git/config`, which only the managed user and the operator write.
 
-The task agent runs as `orbit-worker` and is not that process. Filters started by the approval commit or by Git in a task workspace run as the worker without the token. Orbit's own create, branch-switch, and deployment checkouts on a shared checkout run as the worker too, because the worker can replace `.git/config`. The worker keeps the files they write, and no root process walks the checkout. [Task work Nodes](/reference/instance-setup#task-work-nodes) explains how the managed user still works with them.
+Task agents work only in task VMs, and a VM never receives a token: the Gateway fetches and pushes for it in its own mirror. Task groups once shared host Nodes, where an agent account could write `.git/config`. Token-bearing Git then ran in a private bare repository that the agent could not write. That isolation went with shared mode, because no agent writes a checkout on a host Node anymore.
 
-The baseline and handoff checks are the one exception, for host-dependent tests; [the candidate gate runs as the managed user](/reference/pi-server#the-candidate-gate-runs-as-the-managed-user).
-
-Create-time source resolution may run as the managed user before an agent has written the checkout. The node agent reads Git with libgit2, which starts no checkout program. [One user for every task agent](/reference/pi-server#one-user-for-every-task-agent) explains the account and ACL choices.
-
-A credential helper on the Node was rejected because it remains callable by the agent after the command ends. The private git directory is temporary; the token stays in one command's environment. These controls separate the GitHub credential from agent programs. They do not stop a member of `incus-admin` who deliberately uses its root-equivalent power.
+The node agent reads Git with libgit2, which starts no checkout program. A credential helper on the Node was rejected because it remains callable by any program after the command ends. The token stays in one command's environment.
 
 ### No personal access token and no deploy keys
 

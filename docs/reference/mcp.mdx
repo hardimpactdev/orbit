@@ -14,7 +14,7 @@ The Gateway serves a Model Context Protocol (MCP) server, so an agent can operat
 
 The Project's [development deploy steps](/reference/deployments#development-deploy-steps) are available as `project-dev-deploy-step-list`, `project-dev-deploy-step-create`, `project-dev-deploy-step-update`, and `project-dev-deploy-step-destroy`. Supply the numeric `project`; updates and removal also take the step name as `step`. Create and update accept `required` as a JSON boolean, so `false` stays false through MCP dispatch.
 
-`node-settings` takes `apps` and `tasks`, and needs at least one. `{"node": 17, "tasks": {"worker": "none"}}` records the [task worker opt-out](/reference/node-settings#opt-out-of-the-task-worker).
+`node-settings` takes `apps`, the [apps root](/reference/node-settings#set-the-apps-root).
 
 ## Endpoints
 
