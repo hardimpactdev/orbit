@@ -64,7 +64,7 @@ it('disables framework file serving and owns Boost provider discovery', function
     expect(get_parent_class(GatewayBoostServiceProvider::class))->toBe(ServiceProvider::class);
 });
 
-it('exposes only API, MCP, and health routes in an HTTP runtime', function (
+it('exposes only API, MCP, health, and Horizon dashboard routes in an HTTP runtime', function (
     string $environment,
     string $debug,
 ) use ($bootHttpRoutes): void {
@@ -74,12 +74,14 @@ it('exposes only API, MCP, and health routes in an HTTP runtime', function (
         expect(
             $route['uri'] === 'up'
             || in_array($route['uri'], ['mcp', 'mcp/search'], true)
-            || str_starts_with($route['uri'], 'api/v1/'),
+            || str_starts_with($route['uri'], 'api/v1/')
+            || $route['uri'] === 'horizon' || str_starts_with($route['uri'], 'horizon/'),
         )->toBeTrue("Unexpected HTTP route [{$route['uri']}].");
     }
 
     expect(array_column($routes, 'uri'))
         ->toContain('mcp', 'mcp/search')
+        ->toContain('horizon')
         ->not->toContain('_boost/browser-logs', 'storage/{path}');
     expect(array_column($routes, 'name'))
         ->not
