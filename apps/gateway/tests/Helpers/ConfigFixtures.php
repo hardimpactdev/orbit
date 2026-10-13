@@ -34,3 +34,21 @@ function config_without_env(string $file, array $keys): array
         }
     }
 }
+
+/**
+ * The `task_vms` config with its defaults from `config/task_vms.php` and no `ORBIT_TASK_VMS_*` value set, with
+ * `$overrides` merged in.
+ *
+ * @param  array<string, mixed>  $overrides
+ * @return array<string, mixed>
+ */
+function task_vm_config(array $overrides = []): array
+{
+    $keys = array_map(static fn (string $key): string => "ORBIT_TASK_VMS_{$key}", [
+        'ENABLED', 'DEV_CLUSTER_ID', 'WIREGUARD_RANGE', 'MODEL_PROXY_ORIGIN', 'PARK_AFTER_MINUTES', 'MEDIUM_PROJECTS', 'TOPOLOGY_PATHS',
+        'PI_ARTIFACT_PATH', 'PI_ARTIFACT_SHA256', 'PI_MODELS', 'INCUS_HOSTS', 'UPCLOUD_ENABLED', 'UPCLOUD_PROJECTS', 'UPCLOUD_TOKEN_FILE',
+        'UPCLOUD_MAX_VMS', 'UPCLOUD_ZONE', 'UPCLOUD_PLAN', 'UPCLOUD_DISK_GB', 'UPCLOUD_SOURCE_TEMPLATE',
+    ]);
+
+    return array_replace_recursive(config_without_env('task_vms.php', $keys), $overrides);
+}

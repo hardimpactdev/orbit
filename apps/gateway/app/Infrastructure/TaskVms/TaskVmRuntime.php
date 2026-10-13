@@ -13,6 +13,7 @@ use App\Domain\Settings\SettingRepository;
 use App\Domain\Settings\SettingScope;
 use App\Domain\Settings\SettingScopeType;
 use App\Domain\Settings\SettingValueProtection;
+use App\Domain\TaskVms\TaskVmConfig;
 use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmSettings;
@@ -111,15 +112,15 @@ final readonly class TaskVmRuntime
         $token = $vm->pi_token ?? throw new TaskVmException(TaskVmError::RuntimeFailed, "Task VM [{$vm->name}] has no Pi token: no task group claimed it.", 409);
         $origin = $this->origin();
         if (rtrim((string) $this->proxy->cliproxyUrl(), '/') !== $origin) {
-            throw $this->invalidConfig('model_proxy_origin must be the CLIProxyAPI URL of the proxycli extension.');
+            throw TaskVmConfig::invalid('model_proxy_origin must be the CLIProxyAPI URL of the proxycli extension.');
         }
         if ($vm->model_proxy_origin !== null && $vm->model_proxy_origin !== $origin) {
-            throw $this->invalidConfig("model_proxy_origin changed while task VM [{$vm->name}] holds a key at [{$vm->model_proxy_origin}].");
+            throw TaskVmConfig::invalid("model_proxy_origin changed while task VM [{$vm->name}] holds a key at [{$vm->model_proxy_origin}].");
         }
         $artifact = $this->settings->piArtifactPath;
         $digest = $this->settings->piArtifactSha256;
         if ($artifact === null || $digest === null || $this->settings->piModels === []) {
-            throw $this->invalidConfig('pi.artifact_path, pi.artifact_sha256 and pi.models are required to prepare a task VM.');
+            throw TaskVmConfig::invalid('pi.artifact_path, pi.artifact_sha256 and pi.models are required to prepare a task VM.');
         }
         $key = $this->ensureModelKey($vm, $origin, $inline ? self::InlineLockSeconds : 60);
         $timeout = $inline ? self::InlineStepSeconds : 60;
@@ -254,7 +255,7 @@ final readonly class TaskVmRuntime
 
     private function origin(): string
     {
-        return $this->settings->modelProxyOrigin ?? throw $this->invalidConfig('model_proxy_origin is required to prepare a task VM.');
+        return $this->settings->modelProxyOrigin ?? throw TaskVmConfig::invalid('model_proxy_origin is required to prepare a task VM.');
     }
 
     private function managementKey(): string
@@ -279,10 +280,5 @@ final readonly class TaskVmRuntime
         }
 
         return $key;
-    }
-
-    private function invalidConfig(string $reason): TaskVmException
-    {
-        return new TaskVmException(TaskVmError::InvalidConfig, "The task VM config is invalid: {$reason}", 500);
     }
 }
