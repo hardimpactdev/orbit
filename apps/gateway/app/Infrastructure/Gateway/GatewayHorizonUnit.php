@@ -11,6 +11,7 @@ use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
 use App\Infrastructure\Shared\StoredValue;
 use Closure;
+use Illuminate\Support\Facades\Config;
 use RuntimeException;
 use Throwable;
 
@@ -43,7 +44,7 @@ final readonly class GatewayHorizonUnit
     /** The longest a `task-vms` job runs: its supervisor's timeout, which no `task-vms` job's own timeout exceeds. */
     public static function taskVmJobSeconds(): int
     {
-        return (int) config('horizon.defaults.task-vms.timeout');
+        return Config::integer('horizon.defaults.task-vms.timeout');
     }
 
     /** How long a release waits for the old `task-vms` worker: its longest job and a margin for its exit. */
