@@ -6,6 +6,8 @@ namespace App\Domain\Broadcasting;
 
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketHostname;
+use App\Infrastructure\Certificates\OrbitCaCurlFactory;
+use GuzzleHttp\Handler\CurlHandler;
 use Illuminate\Support\Facades\Broadcast;
 
 /**
@@ -137,6 +139,7 @@ final class RealtimeConnection
             'broadcasting.connections.reverb.options.port' => $connection->port,
             'broadcasting.connections.reverb.options.scheme' => $connection->scheme,
             'broadcasting.connections.reverb.options.useTLS' => $connection->scheme === 'https',
+            'broadcasting.connections.reverb.client_options.handler' => new CurlHandler(['handle_factory' => new OrbitCaCurlFactory]),
             'broadcasting.connections.reverb.client_options.verify' => $connection->caCertificatePath,
             // A broadcast runs inside the request that changed the record, so a stuck server must not hold it.
             // The old server of a `websocket` move gets a much shorter limit, so it never slows the serving one.

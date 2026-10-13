@@ -116,7 +116,7 @@ Logs read only the Schedule's service, with fixed `journalctl --output cat` argu
 
 ## Latest run
 
-When the service stops, the script sends one report to `https://gateway.orbit/api/v1/schedules/{uuid}/complete` with `success` or `error`. It uses `curl` with the Orbit root CA embedded in the script, so the Node needs no Orbit CLI. The Gateway accepts it only from the Schedule's host Node, which it identifies by the WireGuard address. It sets `last_run_at` to the time of receipt and `last_run_status` to the reported status, and changes nothing else. A report for a Schedule that is `removing` changes nothing.
+When the service stops, the script sends one report to `https://gateway.orbit/api/v1/schedules/{uuid}/complete` with `success` or `error`. It uses `curl` with the Orbit root CA embedded in the script and an empty private CA directory, so the system trust store does not apply and the Node needs no Orbit CLI. The script removes that directory when it exits. The Gateway accepts it only from the Schedule's host Node, which it identifies by the WireGuard address. It sets `last_run_at` to the time of receipt and `last_run_status` to the reported status, and changes nothing else. A report for a Schedule that is `removing` changes nothing.
 
 The Node does not retry a failed report. A lost report leaves the earlier values in place and does not affect the command or later runs.
 

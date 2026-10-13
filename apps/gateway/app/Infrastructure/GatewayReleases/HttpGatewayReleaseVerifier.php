@@ -7,10 +7,13 @@ namespace App\Infrastructure\GatewayReleases;
 use App\Domain\GatewayReleases\GatewayReleaseCommit;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseVerifier;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProcessInvocation;
-use App\Infrastructure\Processes\ProcessRunner;
-use Closure;
+use App\Infrastructure\Certificates\OrbitCaCurlFactory;
+use GuzzleHttp\Handler\CurlHandler;
+use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\RequestException;
+use Illuminate\Http\Client\Response;
+use Illuminate\Support\Facades\Http;
+use Throwable;
 
 /**
  * `/up` plus Gateway status, the same checks as `bin/deploy-verify`. The version matches only the
@@ -19,24 +22,12 @@ use Closure;
  */
 final readonly class HttpGatewayReleaseVerifier implements GatewayReleaseVerifier
 {
-    /** @var Closure(int): void */
-    private Closure $sleep;
-
-    /**
-     * @param  list<int>  $backoff  seconds to wait before each retry; about a minute in all by default
-     * @param  (Closure(int): void)|null  $sleep  seconds
-     */
+    /** @param list<int> $backoff Seconds to wait before each retry; about a minute in all by default. */
     public function __construct(
-        private ProcessRunner $processes,
         private string $origin = 'https://gateway.orbit',
         private string $caFile = '/etc/caddy/orbit-cert-current/root-ca.pem',
         private array $backoff = [2, 4, 8, 16, 30],
-        ?Closure $sleep = null,
-    ) {
-        $this->sleep = $sleep ?? static function (int $seconds): void {
-            sleep($seconds);
-        };
-    }
+    ) {}
 
     public function verify(string $sha): array
     {
@@ -51,39 +42,43 @@ final readonly class HttpGatewayReleaseVerifier implements GatewayReleaseVerifie
     /** @return array{status: string, version: string} */
     private function retrying(?string $sha): array
     {
-        $delays = $this->backoff;
+        $result = null;
 
-        while (true) {
-            try {
-                return $this->check($sha);
-            } catch (GatewayReleaseException $exception) {
-                $delay = array_shift($delays);
+        try {
+            $this->http()
+                ->retry(array_map(static fn (int $seconds): int => $seconds * 1000, $this->backoff), throw: false)
+                ->afterResponse(function (Response $up) use ($sha, &$result): Response {
+                    $this->assertResponse($up, 'Gateway /up did not succeed.');
+                    $result = $this->check($sha);
 
-                if ($delay === null) {
-                    throw $exception;
-                }
-
-                ($this->sleep)($delay);
-            }
+                    return $up;
+                })
+                ->get($this->origin.'/up');
+        } catch (GatewayReleaseException $exception) {
+            throw $exception;
+        } catch (RequestException $exception) {
+            throw $this->failed('Gateway /up did not succeed.', "HTTP {$exception->response->status()}.");
+        } catch (Throwable $exception) {
+            throw $this->failed('Gateway /up did not succeed.', $exception->getMessage());
         }
+
+        return $result ?? throw $this->failed('Gateway /up did not succeed.', '');
     }
 
     /** @return array{status: string, version: string} */
     private function check(?string $sha): array
     {
-        $up = $this->get($this->origin.'/up');
-
-        if (! $up->succeeded()) {
-            throw $this->failed('Gateway /up did not succeed.', $up->stderr);
+        try {
+            $status = $this->http()->get($this->origin.'/api/v1/gateway/status');
+        } catch (RequestException $exception) {
+            throw $this->failed('Gateway status did not succeed.', "HTTP {$exception->response->status()}.");
+        } catch (Throwable $exception) {
+            throw $this->failed('Gateway status did not succeed.', $exception->getMessage());
         }
 
-        $status = $this->get($this->origin.'/api/v1/gateway/status');
+        $this->assertResponse($status, 'Gateway status did not succeed.');
 
-        if (! $status->succeeded()) {
-            throw $this->failed('Gateway status did not succeed.', $status->stderr);
-        }
-
-        $decoded = json_decode($status->stdout, true);
+        $decoded = json_decode($status->body(), true);
         $data = is_array($decoded) ? ($decoded['data'] ?? $decoded) : null;
         $reportedStatus = is_array($data) && is_string($data['status'] ?? null) ? $data['status'] : '';
         $version = is_array($data) && is_string($data['version'] ?? null) ? $data['version'] : '';
@@ -108,24 +103,25 @@ final readonly class HttpGatewayReleaseVerifier implements GatewayReleaseVerifie
             && ($observed === $expected || $observed === GatewayReleaseCommit::id($expected));
     }
 
-    private function get(string $url): CommandResult
+    private function http(): PendingRequest
     {
-        $arguments = ['curl', '--silent', '--show-error', '--fail-with-body', '--max-time', '15', '--output', '-'];
-
-        if (is_file($this->caFile)) {
-            $arguments[] = '--cacert';
-            $arguments[] = $this->caFile;
-        }
-
-        $arguments[] = '--';
-        $arguments[] = $url;
-
-        return $this->processes->run(new ProcessInvocation($arguments, timeout: 20.0));
+        return Http::setHandler(new CurlHandler(['handle_factory' => new OrbitCaCurlFactory]))
+            ->connectTimeout(15)
+            ->timeout(15)
+            ->acceptJson()
+            ->withOptions(['verify' => $this->caFile, 'allow_redirects' => false]);
     }
 
-    private function failed(string $message, string $stderr): GatewayReleaseException
+    private function assertResponse(Response $response, string $message): void
     {
-        $detail = trim($stderr);
+        if ($response->failed()) {
+            throw $this->failed($message, "HTTP {$response->status()}.");
+        }
+    }
+
+    private function failed(string $message, string $detail): GatewayReleaseException
+    {
+        $detail = trim($detail);
 
         return new GatewayReleaseException(
             step: 'verify',
