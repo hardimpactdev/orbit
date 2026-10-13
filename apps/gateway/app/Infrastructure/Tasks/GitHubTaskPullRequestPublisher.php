@@ -49,8 +49,8 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
     private const int PushErrorBytes = 2000;
 
     /**
-     * A queued push that has not finished after this long failed: the job's 1700 seconds, a minute for its worker to
-     * start, and a margin.
+     * A started push that has not finished after this long failed: the job's 1700 seconds and a margin. The time is
+     * measured from the job's start, so a push that waits behind other jobs never looks lost.
      */
     private const int PublishStaleSeconds = 2400;
 
@@ -197,7 +197,7 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
                 return;
             }
             $stale = $vm->publish_state === TaskVmPublishState::Queued
-                && ! ($vm->publish_queued_at?->isAfter(now()->subSeconds(self::PublishStaleSeconds)) ?? false);
+                && $vm->publish_started_at?->isBefore(now()->subSeconds(self::PublishStaleSeconds)) === true;
             if ($vm->publish_state === TaskVmPublishState::Queued && ! $stale) {
                 throw TaskPullRequestException::pending("Orbit is pushing commit {$commit} to {$branch}.");
             }
@@ -206,12 +206,12 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
                 ->where('publish_state', $vm->publish_state)->update(['publish_state' => null]);
 
             throw new TaskPullRequestException($stale
-                ? 'The task branch could not be pushed: the publish job did not finish in '.self::PublishStaleSeconds.' seconds.'
+                ? 'The task branch could not be pushed: the publish job did not finish within '.self::PublishStaleSeconds.' seconds of its start.'
                 : ($vm->publish_error ?? 'The task branch could not be pushed.'));
         }
         $vm->update([
             'publish_commit' => $commit, 'publish_branch' => $branch, 'publish_state' => TaskVmPublishState::Queued,
-            'publish_error' => null, 'publish_queued_at' => now(),
+            'publish_error' => null, 'publish_queued_at' => now(), 'publish_started_at' => null,
         ]);
         PublishTaskVmCommit::dispatch($vm->id, $commit, $branch);
 
@@ -229,7 +229,7 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
     {
         $queued = static fn () => TaskVm::query()->whereKey($vm->id)->where('publish_commit', $commit)
             ->where('publish_branch', $branch)->where('publish_state', TaskVmPublishState::Queued);
-        if (! $queued()->exists()) {
+        if ($queued()->update(['publish_started_at' => now()]) !== 1) {
             return;
         }
         try {

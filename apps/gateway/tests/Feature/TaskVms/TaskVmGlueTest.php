@@ -192,6 +192,7 @@ describe('publish and fetch', function (): void {
                 ->and($transport->sent)->toHaveCount(2);
 
             $job->handle($publisher);
+            expect(TaskVm::query()->where('group_id', $group->id)->sole()->publish_started_at)->not->toBeNull();
             $publisher->push($group, $commit);
 
             expect($git($root.'/origin.git', 'rev-parse', 'refs/heads/task-'.$group->id))->toBe($commit)
@@ -227,8 +228,24 @@ describe('publish and fetch', function (): void {
         Queue::assertPushed(PublishTaskVmCommit::class, 1);
     })->with([
         'failed' => [['publish_state' => 'failed', 'publish_error' => 'The task branch could not be pushed. rejected'], 'The task branch could not be pushed. rejected'],
-        'lost' => [['publish_state' => 'queued', 'publish_queued_at' => now()->subHour()], 'the publish job did not finish in 2400 seconds.'],
+        'lost' => [['publish_state' => 'queued', 'publish_queued_at' => now()->subHour(), 'publish_started_at' => now()->subHour()], 'the publish job did not finish within 2400 seconds of its start.'],
     ]);
+
+    it('keeps a push pending while its job waits in the queue, however long', function (): void {
+        tvm_glue_ssh();
+        Queue::fake();
+        $group = tvm_glue_group();
+        $commit = str_repeat('a', 40);
+        TaskVm::query()->where('group_id', $group->id)->update(['publish_commit' => $commit, 'publish_branch' => 'task-'.$group->id, 'publish_state' => 'queued', 'publish_queued_at' => now()->subHours(3)]);
+
+        try {
+            app(GitHubTaskPullRequestPublisher::class)->push($group, $commit);
+            $this->fail('The push did not wait for its job.');
+        } catch (TaskPullRequestException $exception) {
+            expect($exception->pending)->toBeTrue();
+        }
+        Queue::assertNothingPushed();
+    });
 
     it('records a publish job that stopped as failed, and ignores a job for another commit', function (): void {
         $group = tvm_glue_group();
