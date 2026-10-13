@@ -23,6 +23,7 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\IncusTaskVmProvider;
+use App\Infrastructure\TaskVms\TaskVmGuest;
 use App\Infrastructure\TaskVms\TaskVmImageRecipe;
 use App\Infrastructure\TaskVms\TaskVmProviders;
 use App\Infrastructure\TaskVms\TaskVmWorkspace;
@@ -510,21 +511,25 @@ describe('provider', function (): void {
         $vm = tvm_up_vm(hostKey: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHostKey');
         $this->upcloud->server($vm->name, [['key' => 'orbit-task-vm', 'value' => (string) $vm->id]]);
         $provider = app(UpCloudTaskVmProvider::class);
+        $guest = new TaskVmGuest($provider);
         $this->ssh->manifest = '{"schema":1}';
 
         $observation = $provider->observe($vm);
 
         expect($observation?->running)->toBeTrue()
             ->and($observation?->address)->toBe('94.237.1.10')
-            ->and($provider->bootstrapReady($vm))->toBeTrue()
-            ->and($provider->imageManifest($vm))->toBe('{"schema":1}')
+            ->and($guest->bootstrapReady($vm))->toBeTrue()
+            ->and($guest->imageManifest($vm))->toBe('{"schema":1}')
             ->and(array_unique(array_column($this->ssh->calls, 0)))->toBe(['94.237.1.10'])
             ->and(file_get_contents(app(KnownHostsStore::class)->path()))->toContain('94.237.1.10 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHostKey');
 
         $this->ssh->cloudInit = '';
-        expect($provider->bootstrapReady($vm))->toBeFalse();
+        expect($guest->bootstrapReady($vm))->toBeFalse();
         $this->ssh->cloudInit = '{"status":"error","errors":["boom"]}';
-        expect(fn () => $provider->bootstrapReady($vm))->toThrow(TaskVmException::class, 'Cloud-init failed');
+        expect(fn () => $guest->bootstrapReady($vm))->toThrow(TaskVmException::class, 'Cloud-init failed');
+        // The Incus provider fails with the same code: TaskVmGuest reads the guest of both.
+        $this->ssh->cloudInit = '{"status":"done"}';
+        expect(fn () => $guest->bootstrapReady($vm))->toThrow(fn (TaskVmException $e) => expect($e->errorCode)->toBe('task_vm.invalid_host_output'));
     });
 
     it('stops a server cleanly for a park and deletes it with its disk on destroy', function (): void {

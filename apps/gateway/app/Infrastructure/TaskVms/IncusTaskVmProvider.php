@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\TaskVms;
 
 use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmGuestCommand;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmSettings;
@@ -18,15 +19,12 @@ use App\Models\TaskVm;
  * host's managed user. `incus-host.sh` prepared the project, the bridge with its ACL and the default
  * profile, and `IncusTaskVmImageBuilder` the base image that every VM launches. The provider never
  * creates a network: it pins the VM's profile NIC to the host's configured bridge with port isolation.
- * This class validates the instance output of Incus. Every VM name follows `--`, so no name can be
- * read as an option.
+ * This class validates the instance output of Incus; `TaskVmGuest` reads the guest. Every VM name follows `--`, so
+ * no name can be read as an option.
  */
 final readonly class IncusTaskVmProvider implements TaskVmProvider
 {
     private const string FingerprintPattern = '/\A256 (SHA256:[A-Za-z0-9+\/]{43}) .* \(ED25519\)\n?\z/D';
-
-    /** How long one readiness check waits in the guest for cloud-init. A boot from the base image takes about 10 seconds. */
-    private const int CloudInitWaitSeconds = 30;
 
     public function __construct(
         private IncusHost $incus,
@@ -87,28 +85,6 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
         return new VmObservation($status === 'Running', $this->address($vm, is_array($state) ? $state['network'] ?? null : null));
     }
 
-    public function bootstrapReady(TaskVm $vm): bool
-    {
-        // Waits in the guest until cloud-init is done, so the caller hears it at once instead of on its next poll.
-        $result = $this->incus($vm, ['exec', '--', $vm->name, 'timeout', (string) self::CloudInitWaitSeconds, 'cloud-init', 'status', '--wait', '--format=json']);
-        // Until the guest agent runs, `incus exec` fails and prints nothing on stdout.
-        if (! $result->succeeded() && trim($result->stdout) === '') {
-            return false;
-        }
-
-        // `cloud-init status` exits 1 or 2 after errors, but still prints its JSON.
-        $status = IncusHost::json("task VM [{$vm->name}]", $result);
-        $errors = $status['errors'] ?? null;
-        if (! is_string($status['status'] ?? null) || ! is_array($errors) || ! array_is_list($errors)) {
-            throw $this->invalid($vm, 'the cloud-init status has no status or errors');
-        }
-        if ($status['status'] === 'error') {
-            throw new TaskVmException('task_vm.bootstrap_failed', "Cloud-init failed on task VM [{$vm->name}]: ".mb_substr(json_encode($errors, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), 0, 2000), 502);
-        }
-
-        return $status['status'] === 'done' && $errors === [];
-    }
-
     public function sshHostFingerprint(TaskVm $vm): string
     {
         $result = $this->incus($vm, ['exec', '--', $vm->name, 'ssh-keygen', '-l', '-f', '/etc/ssh/ssh_host_ed25519_key.pub']);
@@ -122,14 +98,10 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
         return $match[1];
     }
 
-    public function imageManifest(TaskVm $vm): ?string
+    /** Runs the command as `root` with `incus exec`. Until the guest agent runs, `incus exec` fails and prints nothing on stdout. */
+    public function exec(TaskVm $vm, TaskVmGuestCommand $command): CommandResult
     {
-        $result = $this->incus($vm, ['exec', '--', $vm->name, 'sh', '-c', 'if [ -e "$1" ]; then cat -- "$1"; else printf absent; fi', 'sh', TaskVmBakedPrograms::ManifestPath]);
-        if (! $result->succeeded() || $result->truncated) {
-            throw $this->failed($vm, 'exec cat image manifest', $result);
-        }
-
-        return $result->stdout === 'absent' ? null : $result->stdout;
+        return $this->incus->run($this->settings->host((int) $vm->host_node_id), $vm->incusHostNode(), ['exec', '--', $vm->name, ...$command->argv()], timeout: $command->timeoutSeconds());
     }
 
     public function start(TaskVm $vm): void

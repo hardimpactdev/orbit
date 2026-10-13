@@ -832,7 +832,7 @@ The reserved range must always be a private network. As soon as task VMs are ena
 
 ### Errors
 
-`IncusTaskVmProvider` is the only place that reads host and guest output. It checks the instance state and its one IPv4 address inside the bridge range, the cloud-init status, and the host key fingerprint. Invalid output fails with `task_vm.invalid_host_output`. Every task VM error code starts with `task_vm.`. The setup commands print the code and message, and for `task_vm.setup_failed` the last lines of the script's error output. After that check, Orbit trusts its own records.
+`IncusTaskVmProvider` reads the host's output: the instance state, its one IPv4 address inside the bridge range, and the host key fingerprint. `TaskVmGuest` reads the guest's output the same way for every provider: the cloud-init status and the image manifest. Invalid output fails with `task_vm.invalid_host_output`, and a failed guest command with `task_vm.host_command_failed`, also on UpCloud. Every task VM error code starts with `task_vm.`. The setup commands print the code and message, and for `task_vm.setup_failed` the last lines of the script's error output. After that check, Orbit trusts its own records.
 
 | Code | HTTP | Cause |
 | --- | --- | --- |
@@ -846,8 +846,8 @@ The reserved range must always be a private network. As soon as task VMs are ena
 | `task_vm.fleet_unavailable` | 409 | The fleet has not exactly one active `vpn`, `gateway`, or `websocket` Node, the dev Cluster has no active router, or one of these Nodes has no WireGuard address |
 | `task_vm.setup_unavailable` | 409 | The setup script is missing, or the target Node has no WireGuard address |
 | `task_vm.setup_failed` | 409 | The setup script failed or did not print `{"ok":true}` |
-| `task_vm.invalid_host_output` | 502 | Incus returned output that fails these checks |
-| `task_vm.host_command_failed` | 502 | An `incus` command on the host failed |
+| `task_vm.invalid_host_output` | 502 | Incus or a task VM guest returned output that fails these checks |
+| `task_vm.host_command_failed` | 502 | An `incus` command on the host, or a guest command in a task VM, failed |
 | `task_vm.bootstrap_failed` | 502 | Cloud-init in the VM reports `error` |
 | `task_vm.not_enrolled` | 409 | The task VM has no Node yet, so Pi cannot be prepared |
 | `task_vm.model_key_failed` | 409 or 502 | CLIProxyAPI did not confirm the group's model key, the proxycli extension holds no management key, or another key operation runs |

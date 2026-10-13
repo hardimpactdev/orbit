@@ -533,7 +533,7 @@ describe(EnrollTaskVm::class, function (): void {
 
         $job->assertReleased(15);
         expect($this->converged)->toBe([])->and(Node::query()->where('name', $vm->name)->exists())->toBeFalse()
-            ->and(array_count_values($this->provider->calls)['bootstrapReady'])->toBe(121);
+            ->and(array_count_values($this->provider->calls)['cloud-init'])->toBe(121);
         Sleep::assertSleptTimes(120);
     });
 
@@ -585,7 +585,7 @@ describe(EnrollTaskVm::class, function (): void {
             ->and($node->user)->toBe('orbit')
             ->and($node->cluster_id)->toBe($this->cluster->id)
             ->and($node->roles()->pluck('role')->all())->toBe([RoleName::AppDev])
-            ->and($this->provider->calls)->toBe(['observe', 'bootstrapReady', 'fingerprint', 'manifest']);
+            ->and($this->provider->calls)->toBe(['observe', 'cloud-init', 'fingerprint', 'manifest']);
         Queue::assertPushedOn('task-vms', PrepareTaskVmRuntime::class, fn (PrepareTaskVmRuntime $job): bool => $job->taskVmId === $vm->id);
     });
 
@@ -631,7 +631,7 @@ describe(EnrollTaskVm::class, function (): void {
         app()->call([new EnrollTaskVm($vm->id, now()->getTimestamp()), 'handle']);
 
         expect($vm->fresh()?->address)->toBe('10.251.77.20')
-            ->and(array_slice($this->provider->calls, 0, 3))->toBe(['observe', 'bootstrapReady', 'observe']);
+            ->and(array_slice($this->provider->calls, 0, 3))->toBe(['observe', 'cloud-init', 'observe']);
     });
 
     it('tolerates one stopped reading during a guest reboot', function (): void {
@@ -656,7 +656,7 @@ describe(EnrollTaskVm::class, function (): void {
     })->with([
         'absent' => [fn (RecordingTaskVmProvider $provider) => $provider->observations = [null], 'task_vm.vm_not_running'],
         'stopped' => [fn (RecordingTaskVmProvider $provider) => $provider->observations = [new VmObservation(false, null), new VmObservation(false, null)], 'task_vm.vm_not_running'],
-        'cloud-init error' => [fn (RecordingTaskVmProvider $provider) => $provider->ready = new TaskVmException('task_vm.bootstrap_failed', 'Cloud-init failed.', 502), 'task_vm.bootstrap_failed'],
+        'cloud-init error' => [fn (RecordingTaskVmProvider $provider) => $provider->cloudInitOutput = '{"status":"error","errors":["apt failed"]}', 'task_vm.bootstrap_failed'],
         'slow boot' => [function (RecordingTaskVmProvider $provider): int {
             $provider->ready = false;
 

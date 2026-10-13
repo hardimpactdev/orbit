@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
+use App\Domain\TaskVms\TaskVmGuestCommand;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\VmObservation;
+use App\Infrastructure\Processes\CommandResult;
 use App\Models\TaskVm;
 use Closure;
 use Throwable;
@@ -30,8 +32,11 @@ final class RecordingTaskVmProvider implements TaskVmProvider
     /** What `observe` answers once `$observations` is empty. */
     public ?VmObservation $observation;
 
-    /** Whether cloud-init is done, or the failure its check throws. */
+    /** Whether cloud-init is done, or the failure its guest command throws. */
     public bool|Throwable $ready = true;
+
+    /** What `cloud-init status` prints, in place of the answer of `$ready`. */
+    public ?string $cloudInitOutput = null;
 
     /** The image manifest the VM holds, or null for an image without one. */
     public ?string $manifest = null;
@@ -67,16 +72,6 @@ final class RecordingTaskVmProvider implements TaskVmProvider
         return $this->observations === [] ? $this->observation : array_shift($this->observations);
     }
 
-    public function bootstrapReady(TaskVm $vm): bool
-    {
-        $this->record('bootstrapReady', $vm);
-        if ($this->ready instanceof Throwable) {
-            throw $this->ready;
-        }
-
-        return $this->ready;
-    }
-
     public function sshHostFingerprint(TaskVm $vm): string
     {
         $this->record('fingerprint', $vm);
@@ -84,11 +79,24 @@ final class RecordingTaskVmProvider implements TaskVmProvider
         return self::Fingerprint;
     }
 
-    public function imageManifest(TaskVm $vm): ?string
+    /** Answers `cloud-init status` from `$cloudInitOutput` or `$ready`, recorded as `cloud-init`, and the manifest read from `$manifest`, as `manifest`. */
+    public function exec(TaskVm $vm, TaskVmGuestCommand $command): CommandResult
     {
-        $this->record('manifest', $vm);
+        if ($command === TaskVmGuestCommand::ImageManifest) {
+            $this->record('manifest', $vm);
 
-        return $this->manifest;
+            return new CommandResult(0, $this->manifest ?? 'absent', '', 1, false);
+        }
+        $this->record('cloud-init', $vm);
+        if ($this->cloudInitOutput !== null) {
+            return new CommandResult(1, $this->cloudInitOutput, '', 1, false);
+        }
+        if ($this->ready instanceof Throwable) {
+            throw $this->ready;
+        }
+
+        // A guest that cannot run commands yet fails with nothing on stdout.
+        return $this->ready ? new CommandResult(0, '{"status":"done","errors":[]}', '', 1, false) : new CommandResult(255, '', 'not reachable', 1, false);
     }
 
     public function start(TaskVm $vm): void
