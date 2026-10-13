@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\E2E\TopologyGuestPreparer;
 use App\E2E\HostCapacity;
 use App\E2E\IncusHost;
 use App\E2E\IncusNetworkLifecycle;
@@ -13,10 +12,10 @@ use App\E2E\RoleImages;
 use App\E2E\State\StatePaths;
 use App\E2E\TopologyAcquirer;
 use App\E2E\TopologyComposer;
+use App\E2E\TopologyGuestPreparer;
 use App\E2E\TopologyReleaser;
 use App\E2E\TopologyVerifier;
 use App\E2E\Value\AttemptId;
-use App\E2E\Value\TopologyRecord;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\RoleImage;
 use App\E2E\Value\TopologyRecipe;

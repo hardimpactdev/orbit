@@ -42,7 +42,9 @@ Every topology has a `gateway` VM and an `operator` system container. `acquire -
 
 `app-prod-2` is a second `app-prod` Node from the same role image. Each production Node gets its own name as its development TLD, and `app-dev` gets `beast`.
 
-The Node catalog `apps/e2e/resources/topology-nodes.json` holds this table: each Node's role image, address position, checkout, memory, TLD, and the Node it requires, plus the default list, the roles an entry may add, and the roles that put a Node in its own Cluster. The recipe, the role image builders, composition, and readiness derive from it. The WireGuard address is the address position minus 9. The network's DHCP range ends at the highest position the topology uses. A new Node kind is one catalog entry, and a new role image one more case of the harness `RoleImage` enum. A Gateway test reads the same file, so the Gateway accepts the same `topology` entries as the harness.
+The Node catalog `apps/e2e/resources/topology-nodes.json` holds this table. For each Node it names the role image, address position, checkout, memory, TLD, and the Node it requires. It also names the default list, the roles an entry may add, and the roles that put a Node in its own Cluster. The recipe, the role image builders, composition, and readiness derive from it.
+
+The WireGuard address is the address position minus 9. The network's DHCP range ends at the highest position the topology uses. A new Node kind is one catalog entry, and a new role image is one more case of the harness `RoleImage` enum. A Gateway test reads the same file, so the Gateway accepts the same `topology` entries as the harness.
 
 The harness assigns the roles in the table and the roles each entry adds, and nothing else. It creates no Router, no Cluster except the one an `ingress` entry needs, no other role, and no sample Project, Instance, or Route. Add other things the work needs with the Orbit CLI on the topology, for example `orbit project:create`, and record those steps as evidence. So a topology holds only what the task declared and created.
 
@@ -179,10 +181,12 @@ The harness counts capacity from `incus list`, never from a ledger. It counts th
 
 | Setting | Value |
 | --- | --- |
-| VM size | 1 vCPU and 16 GiB root disk (`e2e.incus.cpu`, `e2e.incus.root_size`). Memory comes from the Node catalog: 1.5 GiB for `gateway`, 2 GiB for `app-dev`, 1 GiB for `app-prod` and `app-prod-2`, and 512 MiB for the operator container. A role image builder gets the memory of the first Node from its image. `ORBIT_E2E_INCUS_MEMORY=2GiB` (`e2e.incus.memory`) sets every guest for one run. |
+| VM size | 1 vCPU and 16 GiB root disk (`e2e.incus.cpu`, `e2e.incus.root_size`). Memory comes from the Node catalog, as below. |
 | VM budget | `e2e.incus.max_vms`, default 24. `ORBIT_E2E_INCUS_MAX_VMS` sets it for one run. |
 | Network slots | 1 to 200 |
 | Incus scope | `e2e.incus.remote`, `e2e.incus.project`, and `e2e.incus.storage_pool`, from `ORBIT_E2E_INCUS_REMOTE`, `ORBIT_E2E_INCUS_PROJECT`, and `ORBIT_E2E_INCUS_STORAGE_POOL`. The defaults are `local`, `default`, and `orbit-e2e`. The remote must be `local`, because network creation and deletion also change host firewall rules. |
+
+The catalog gives 1.5 GiB of memory to `gateway`, 2 GiB to `app-dev`, 1 GiB each to `app-prod` and `app-prod-2`, and 512 MiB to the operator container. A role image builder gets the memory of the first Node from its image. `ORBIT_E2E_INCUS_MEMORY=2GiB` (`e2e.incus.memory`) sets every guest for one run.
 
 Every `incus` call carries the configured project. The harness reserves the declared VMs before it creates a network or a guest, and refuses `acquire` when the budget cannot hold them, naming the count and the limit. The operator container is not a VM. A role image build counts its three builder VMs the same way.
 

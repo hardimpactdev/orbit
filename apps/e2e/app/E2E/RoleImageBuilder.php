@@ -148,7 +148,7 @@ final readonly class RoleImageBuilder
             $this->networks->create($network, $slot, $metadata, self::FIRST_ADDRESS + count($images) - 1);
             $catalog = TopologyNodeCatalog::load();
             $guests = [];
-            foreach (array_values($images) as $index => $image) {
+            foreach ($images as $index => $image) {
                 $guests[$image->value] = [
                     'image' => $image->isContainer() ? $this->containerSource : $this->vmSource,
                     'name' => $builders[$image->value],

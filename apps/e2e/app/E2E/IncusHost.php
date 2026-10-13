@@ -765,10 +765,13 @@ final class IncusHost implements GuestTransport
         return TopologyTarget::macFor($topologyId, $role);
     }
 
-    /** A configured limit, or the default: the catalog memory of the guest's Node, or the harness defaults. */
+    /**
+     * A configured limit, or the default: the catalog memory of the guest's Node, or the harness defaults. Unit tests
+     * build the host on a bare container without configuration, which gets the defaults.
+     */
     private function incusLimit(string $key, string $default): string
     {
-        $configured = config("e2e.incus.{$key}") ?? $default;
+        $configured = (app()->bound('config') ? config("e2e.incus.{$key}") : null) ?? $default;
         if (is_int($configured) || is_float($configured)) {
             $value = (string) $configured;
         } elseif (is_string($configured)) {

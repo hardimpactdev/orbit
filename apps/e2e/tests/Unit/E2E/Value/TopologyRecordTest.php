@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-use App\E2E\Value\TopologyRecord;
 use App\E2E\Value\IncusInstance;
 use App\E2E\Value\MountPath;
 use App\E2E\Value\SourceState;
 use App\E2E\Value\TopologyConstructionInputs;
 use App\E2E\Value\TopologyRecipe;
+use App\E2E\Value\TopologyRecord;
 use App\E2E\Value\VerificationReport;
 use Illuminate\Filesystem\Filesystem;
 
@@ -91,10 +91,10 @@ describe('topology record', function () {
         $value['schema'] = $schema;
         $version = json_encode($schema, JSON_THROW_ON_ERROR);
 
-        expect(TopologyRecord::SCHEMA)->toBe(5)
+        expect(TopologyRecord::SCHEMA)->toBe(6)
             ->and(fn () => TopologyRecord::fromArray($value))
             ->toThrow(InvalidArgumentException::class, "schema {$version} is not supported; release it with the harness that created it");
-    })->with(['schema 4' => [4], 'string schema' => ['5']]);
+    })->with(['schema 5, with the attempt purpose' => [5], 'string schema' => ['6']]);
 
     it('refuses a construction record whose images or Nodes do not match its declaration', function () {
         $value = mountedTopologyFixture(false)->toArray()['construction'];

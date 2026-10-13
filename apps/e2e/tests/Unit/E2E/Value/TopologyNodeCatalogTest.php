@@ -52,4 +52,3 @@ it('refuses a catalog with a missing or mistyped field', function (string $json)
     'address as text' => ['{"nodes":{"gateway":{"declarable":false,"image":"gateway","address":"10","checkout":true,"memory":"1GiB"}},"default":[],"extra_roles":[],"own_cluster_roles":[]}'],
     'no extra roles' => ['{"nodes":{},"default":[]}'],
 ]);
-

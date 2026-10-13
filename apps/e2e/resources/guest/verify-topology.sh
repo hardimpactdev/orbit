@@ -83,11 +83,13 @@ case "$probe" in
     # Every other Node has a WireGuard route on the Gateway and answers a ping on its address. Each argument is
     # NODE=ADDRESS, the address the Node was provisioned with.
     [[ $# -ge 1 ]] || exit 64
+    for node in "$@"; do
+      [[ "$node" =~ ^[a-z][a-z0-9-]{0,22}=10\.44\.0\.[1-9][0-9]{0,2}$ ]] || exit 64
+    done
     routes=$(wg show orbit allowed-ips)
     names=()
     for node in "$@"; do
       name=${node%%=*} address=${node#*=}
-      [[ "$name" =~ ^[a-z][a-z0-9-]{0,22}$ && "$address" =~ ^10\.44\.0\.[1-9][0-9]{0,2}$ ]] || exit 64
       awk -v expected="$address/32" '{ for (i = 1; i <= NF; i++) if ($i == expected) found = 1 } END { exit !found }' <<<"$routes" || { echo "no WireGuard route to $name at $address" >&2; exit 1; }
       ping -c 1 -W 3 "$address" >/dev/null || { echo "$name at $address does not answer over WireGuard" >&2; exit 1; }
       names+=("$name")

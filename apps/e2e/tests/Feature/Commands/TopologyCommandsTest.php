@@ -14,11 +14,11 @@ use App\Console\Commands\Topology\SyncCommand;
 use App\Console\Commands\Topology\VerifyCommand;
 use App\Console\Commands\Topology\WebCommand;
 use App\E2E\IssueState;
-use App\E2E\Value\TopologyRecord;
 use App\E2E\Value\GuestCommand;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\SourceState;
 use App\E2E\Value\TopologyRecipe;
+use App\E2E\Value\TopologyRecord;
 use App\E2E\Value\VerificationReport;
 use App\E2E\WorktreeLocator;
 use Illuminate\Console\Command;
@@ -98,13 +98,14 @@ function commandJson(string $command, array $parameters): array
 }
 
 describe('topology commands', function () {
-    it('registers the discovery command family and none of the removed commands', function () {
+    it('registers the topology command family and none of the removed commands', function () {
         $names = array_keys(Artisan::all());
         $harness = array_values(array_filter($names, static fn (string $name): bool => preg_match('/\A(topology|topology-images|topology-snapshot|scenario|legacy):/', $name) === 1));
         sort($harness);
 
         expect($harness)->toBe([
             'topology-images:build',
+            'topology-images:ensure',
             'topology-images:status',
             'topology:acquire',
             'topology:exec',
@@ -125,7 +126,7 @@ describe('topology commands', function () {
         $options = static fn (Command $command): array => array_keys($command->getDefinition()->getOptions());
 
         expect($arguments(new AcquireCommand))->toBe(['issue', 'worktree'])
-            ->and($options(new AcquireCommand))->toBe(['nodes', 'json'])
+            ->and($options(new AcquireCommand))->toBe(['nodes', 'replace', 'json'])
             ->and($arguments(new ShellCommand))->toBe(['issue', 'node'])
             ->and($arguments(new ExecCommand))->toBe(['issue', 'node'])
             ->and($options(new ExecCommand))->toBe(['worktree', 'argv', 'argv-file', 'timeout', 'record', 'json'])
@@ -170,19 +171,16 @@ describe('topology commands', function () {
         'a second production Node alone' => ['app-dev,app-prod-2', 'The Node [app-prod-2] requires [app-prod].'],
     ]);
 
-    it('refuses a held topology, and with --replace releases it before it acquires', function () {
+    it('releases a held topology with --replace before it acquires', function () {
         ['worktree' => $worktree] = commandPrimaryFixture();
         $topology = commandTopologyFixture('TST-12', $worktree);
         $incus = commandIncusFixture($topology);
 
-        $refused = commandJson('topology:acquire', ['issue' => 'TST-12', 'worktree' => $worktree, '--nodes' => 'app-dev']);
-        expect($refused['error'])->toContain('TST-12 already has topology attempt '.$topology->attempt->value.'; release it first, or acquire with --replace.')
-            ->and($incus->instances)->toHaveCount(3);
-
         $replaced = commandJson('topology:acquire', ['issue' => 'TST-12', 'worktree' => $worktree, '--nodes' => 'app-dev', '--replace' => true]);
 
+        // The fixture repository is not Orbit, so acquire itself refuses after the release.
         expect($replaced['state'])->toBe('failed')
-            ->and($replaced['error'])->toContain('run bin/bootstrap in the worktree before acquire')
+            ->and($replaced['error'])->toContain('The worktree repository identity does not match Orbit.')
             ->and($incus->instances)->toBe([])
             ->and($incus->networks)->toBe([])
             ->and(IssueState::forWorktree('TST-12', $worktree)->hasAttempt())->toBeFalse();

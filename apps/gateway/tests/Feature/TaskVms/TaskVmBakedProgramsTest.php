@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Infrastructure\Nodes\EnrollmentProgram;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\Nodes\EnrollmentProgram;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;

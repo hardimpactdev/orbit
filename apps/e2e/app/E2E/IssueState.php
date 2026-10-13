@@ -7,9 +7,9 @@ namespace App\E2E;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\StatePaths;
 use App\E2E\Value\AttemptId;
-use App\E2E\Value\TopologyRecord;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\TopologyRecipe;
+use App\E2E\Value\TopologyRecord;
 use InvalidArgumentException;
 use RuntimeException;
 

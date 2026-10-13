@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 use App\E2E\IssueState;
 use App\E2E\Value\AttemptId;
-use App\E2E\Value\TopologyRecord;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\SourceState;
 use App\E2E\Value\TopologyConstructionInputs;
 use App\E2E\Value\TopologyRecipe;
+use App\E2E\Value\TopologyRecord;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\Value\VerificationReport;
 

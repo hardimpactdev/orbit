@@ -153,7 +153,7 @@ final readonly class TopologyRecipe
     /** The last address position the recipe uses, which ends the network's DHCP range. */
     public function lastAddress(): int
     {
-        return max(array_map(static fn (TopologyNode $node): int => $node->address, $this->nodes));
+        return max(0, ...array_map(static fn (TopologyNode $node): int => $node->address, $this->nodes));
     }
 
     public function vmCount(): int

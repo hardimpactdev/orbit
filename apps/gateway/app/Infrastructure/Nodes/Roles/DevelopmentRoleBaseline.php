@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Nodes\Roles;
 
-use App\Infrastructure\Nodes\EnrollmentProgram;
 use App\Domain\AppDev\AppDevCaddyManager;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Hibernation\RuntimeHibernation;
@@ -17,6 +16,7 @@ use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Hibernation\HibernationDirectoryEnsure;
+use App\Infrastructure\Nodes\EnrollmentProgram;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\TaskVms\TaskVmBakedPrograms;
 use App\Models\Node;

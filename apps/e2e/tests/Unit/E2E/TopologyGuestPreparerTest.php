@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use App\E2E\TopologyGuestPreparer;
 use App\E2E\IncusHost;
+use App\E2E\TopologyGuestPreparer;
 use App\E2E\Value\GuestCommand;
 use App\E2E\Value\TopologyTarget;
 use Illuminate\Filesystem\Filesystem;

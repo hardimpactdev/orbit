@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
-use App\E2E\TopologyGuestPreparer;
 use App\E2E\Git\GitRepository;
 use App\E2E\GuestTransport;
 use App\E2E\HostCapacity;
@@ -20,6 +19,7 @@ use App\E2E\State\SecretRedactor;
 use App\E2E\State\StatePaths;
 use App\E2E\TopologyAcquirer;
 use App\E2E\TopologyComposer;
+use App\E2E\TopologyGuestPreparer;
 use App\E2E\TopologyReleaser;
 use App\E2E\TopologyVerifier;
 use App\E2E\Value\OperationId;
