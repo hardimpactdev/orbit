@@ -306,10 +306,40 @@ def import_ci(root, project, artifact, commit):
         imported = True
         print(f'[{project}] imported CI baseline {commit}', flush=True)
     except FileExistsError:
-        imported = False
-        print(f'[{project}] kept existing private graph', flush=True)
+        imported = replace_older_graph(root, project, destination / 'graph.json', graph, commit)
     import_quality(root, project, artifact, manifest, commit)
     return imported
+
+
+def private_main(path):
+    """The main commit that a private graph records, or None when the graph is unreadable or records none."""
+    try:
+        sha = json.loads(path.read_text())['baselines']['main']['sha']
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    return sha if isinstance(sha, str) and SHA.fullmatch(sha) else None
+
+
+def replace_older_graph(root, project, path, graph, commit):
+    """Replace a private graph with the CI graph when CI tested a descendant of the graph's main commit.
+
+    A workspace from a template keeps the graph of the template's day. Main moves on, and the newer CI graph covers
+    that history, so the check selects fewer tests. A graph at the CI commit, newer than it, on another history, or
+    without a main commit stays: it may hold the checkout's own results.
+    """
+    current = private_main(path)
+    if current is None:
+        reason = 'it records no main commit'
+    elif current == commit:
+        reason = f'it already describes main {commit[:12]}'
+    elif not is_ancestor(root, current, commit):
+        reason = f'its main {current[:12]} is not an ancestor of CI main {commit[:12]}'
+    else:
+        atomic_write(path, graph)
+        print(f'[{project}] replaced private graph of main {current[:12]} with newer CI baseline {commit}', flush=True)
+        return True
+    print(f'[{project}] kept existing private graph: {reason}', flush=True)
+    return False
 
 
 def import_quality(root, project, artifact, manifest, commit):

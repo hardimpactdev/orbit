@@ -442,7 +442,7 @@ For Orbit, the store lives under the stable `default` repository's `.git/orbit-t
 | `bin/tia-cache status` | Prints the publications and the maintenance state |
 | `bin/tia-cache status --json --remote` | Reads `main` from the remote and prints the maintenance state as JSON, without changing anything |
 | `bin/tia-cache register` | Registers this repository's store for its origin |
-| `bin/tia-cache import-ci` | Seeds one project's private graph and absent Pint and PHPStan caches from an extracted artifact, without publishing them |
+| `bin/tia-cache import-ci` | Seeds one project's private graph and absent Pint and PHPStan caches from an extracted artifact, without publishing them. It replaces a private graph only when CI tested a descendant of that graph's main commit |
 
 `import-ci` exits 3, with the reason, when the artifact does not fit the checkout: another test configuration, or a commit outside its history. The project's tests then run cold. Every cache command accepts `--repository=PATH`. `seed` and `refresh` accept repeatable `--project=apps/docs` options, and they cover all five projects by default.
 

@@ -1,6 +1,7 @@
 """Exercise main cache import, publication, and seeding with real repositories and a fake GitHub CLI."""
 import copy
-from contextlib import contextmanager
+from contextlib import contextmanager, redirect_stdout
+import io
 import fcntl
 import importlib.machinery
 import importlib.util
@@ -205,6 +206,25 @@ class MainCacheTest(CacheFixture):
             self.assertFalse(cache.import_ci(self.root, self.project, artifact, self.commit))
             self.assertEqual(destination.read_text(), 'newer private results')
         self.assertFalse(self.store.exists())
+
+    def test_a_newer_ci_baseline_replaces_the_stale_graph_of_a_template(self):
+        destination = self.root / self.project / '.orbit-tia/graph.json'
+        with patch.object(cache, 'metadata', return_value=self.info):
+            cache.import_ci(self.root, self.project, self.artifact(self.commit), self.commit)
+            # Main moves on after the template was built, and CI tests the newer commit.
+            newer = self.advance('newer main')
+            output = io.StringIO()
+            with redirect_stdout(output):
+                self.assertTrue(cache.import_ci(self.root, self.project, self.artifact(newer), newer))
+            self.assertEqual(json.loads(destination.read_text())['baselines']['main']['sha'], newer)
+            self.assertIn(f'replaced private graph of main {self.commit[:12]} with newer CI baseline {newer}', output.getvalue())
+            # The same or an older CI baseline never replaces it.
+            for commit in (newer, self.commit):
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    self.assertFalse(cache.import_ci(self.root, self.project, self.artifact(commit), commit))
+                self.assertEqual(json.loads(destination.read_text())['baselines']['main']['sha'], newer)
+                self.assertIn('kept existing private graph: ', output.getvalue())
 
     def test_ci_baseline_import_writes_absent_quality_caches_that_fit_the_checkout(self):
         artifact = self.artifact(self.commit, quality={'pint': b'pint result', 'phpstan': b'phpstan result'})
