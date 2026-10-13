@@ -47,6 +47,7 @@ use App\Models\Project;
 use App\Models\Schedule;
 use App\Models\Task;
 use App\Models\TaskVm;
+use App\Models\TaskVmImageBuild;
 use Illuminate\Support\Facades\Log;
 use Tests\Support\FakeIncusFleet;
 use Tests\Support\FakeNodeAgentRuntime;
@@ -1128,6 +1129,20 @@ it('refuses a host with a live task VM, and deletes its destroyed task VM rows w
 
     expect($host->fresh())->toBeNull()->and(TaskVm::query()->count())->toBe(0);
 });
+
+it('removes a retired task VM host with completed image build history', function (string $state): void {
+    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
+    $host = remove_node_record(name: 'retired-host', wireguardIp: '10.44.0.7');
+    app()->instance(TaskVmSettings::class, TaskVmSettingsBuilder::off());
+    $build = TaskVmImageBuild::query()->create(['host_node_id' => $host->id, 'state' => $state]);
+    $otherBuild = TaskVmImageBuild::query()->create(['host_node_id' => $caller->id, 'state' => $state]);
+
+    app(RemoveNodeAction::class)->execute($host, $caller);
+
+    $this->assertModelMissing($host);
+    $this->assertModelMissing($build);
+    $this->assertModelExists($otherBuild);
+})->with(['succeeded', 'failed']);
 
 it('refuses a configured task VM host, so its peers never keep trusting it', function (): void {
     $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
