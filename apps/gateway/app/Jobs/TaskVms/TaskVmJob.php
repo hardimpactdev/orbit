@@ -12,7 +12,7 @@ trait TaskVmJob
 {
     use Queueable;
 
-    private function onTaskVmQueue(GatewayQueue $queue = GatewayQueue::Tasks): void
+    private function onTaskVmQueue(GatewayQueue $queue = GatewayQueue::TaskVms): void
     {
         $this->onConnection(GatewayQueue::Connection)->onQueue($queue->value);
     }

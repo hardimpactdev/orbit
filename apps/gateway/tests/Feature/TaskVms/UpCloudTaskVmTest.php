@@ -752,9 +752,6 @@ describe('nightly UpCloud base image refresh', function (): void {
             ->and($refresh->filtersPass(app()))->toBeFalse();
 
         config(['task_vms.enabled' => false, 'task_vms.upcloud.token_file' => '/home/orbit/upcloud.yaml']);
-        expect($refresh->filtersPass(app()))->toBeFalse();
-
-        config(['orbit.gateway_queue.connection' => 'services-valkey']);
         expect($refresh->filtersPass(app()))->toBeTrue();
     });
 });

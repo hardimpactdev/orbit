@@ -21,7 +21,7 @@ final readonly class GatewayQueueMove
 {
     /** The database queues of the releases before, and where their jobs go. */
     public const array Queues = [
-        'task-vms' => GatewayQueue::Tasks,
+        'task-vms' => GatewayQueue::TaskVms,
         'task-vm-git' => GatewayQueue::Tasks,
         'task-vm-templates' => GatewayQueue::Builds,
         'task-vm-images' => GatewayQueue::Builds,
@@ -34,12 +34,21 @@ final readonly class GatewayQueueMove
      */
     public function move(): int
     {
-        if (! GatewayQueueRedis::configured()) {
+        $moved = 0;
+        $rows = DB::table('jobs')->whereIn('queue', array_keys(self::Queues))->orderBy('id')->get();
+
+        if ($rows->isEmpty()) {
             return 0;
         }
 
-        $moved = 0;
-        $rows = DB::table('jobs')->whereIn('queue', array_keys(self::Queues))->orderBy('id')->get();
+        // These jobs need the Gateway queue: without it, nothing would ever run them.
+        if (! GatewayQueueRedis::configured()) {
+            throw new NodeProvisioningException(
+                step: 'queue-move',
+                errorCode: 'gateway.queue_move_failed',
+                message: "{$rows->count()} jobs wait in the old database queues, and ORBIT_GATEWAY_QUEUE_CONNECTION is empty. Set it and run the handoff again.",
+            );
+        }
 
         foreach ($rows as $row) {
             $queue = self::Queues[(string) $row->queue]->value;

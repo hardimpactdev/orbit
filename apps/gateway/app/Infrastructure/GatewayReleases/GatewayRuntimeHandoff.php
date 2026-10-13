@@ -36,7 +36,8 @@ use Throwable;
  *    The release units are only written and the timer enabled, so the release that runs the handoff keeps running.
  * 4. The scheduler finishes its running commands and starts on the new release ({@see GatewaySchedulerHandoff}).
  * 5. Document cleanup is reconciled and resumed ({@see GatewayCleanupHandoff}).
- * 6. The jobs of the old database queues move to the Gateway queue, and Laravel Horizon starts on the new release
+ * 6. Laravel Horizon starts on the new release before the scheduler moves, and after the drain the jobs of the old
+ *    database queues move to the Gateway queue
  *    ({@see GatewayQueueMove}, {@see GatewayHorizonUnit}).
  * 7. The Gateway Node's own `orbit-agent` moves to the release's pin ({@see GatewayNodeAgentUpdate}), which the
  *    fleet rollout never does for the Gateway's machine.
@@ -147,9 +148,26 @@ final readonly class GatewayRuntimeHandoff
     {
         $gateway = $this->gateway();
         $generation = $this->cleanup->generation();
+        // Horizon first: it reads only Redis, so it never races the old scheduler's database workers. Its failure fails
+        // the handoff, but only after the scheduler moved on.
+        $horizonFailure = null;
+
+        try {
+            $horizon = $this->step('horizon', 'gateway.release_units_failed', fn (): array => $this->horizon?->converge() ?? ['outcome' => 'none']);
+        } catch (GatewayReleaseException $exception) {
+            $horizonFailure = $exception;
+            $horizon = ['outcome' => 'failed', 'error_code' => $exception->errorCode];
+        }
+
         $scheduler = $this->scheduler->handoff($gateway);
         $cleanup = $this->cleanup->resume($generation, true);
-        [$moved, $horizon] = $this->queue();
+        // After the drain, no old worker takes a database job any more.
+        $moved = $this->step('queue_move', 'gateway.release_units_failed', fn (): int => $this->queueMove?->move() ?? 0);
+
+        if ($horizonFailure instanceof GatewayReleaseException) {
+            throw $horizonFailure;
+        }
+
         $agent = $this->gatewayAgent($gateway);
 
         return [
@@ -180,22 +198,6 @@ final readonly class GatewayRuntimeHandoff
         } catch (Throwable $exception) {
             Log::warning('The fleet rollout units could not be installed.', ['error' => $exception->getMessage()]);
         }
-    }
-
-    /**
-     * Moves the Gateway queue after the scheduler drain, so no scheduled worker of an older release takes a job: first
-     * the jobs of the old database queues, then Horizon. A failure fails the handoff, because without Horizon no job runs.
-     *
-     * @return array{int, string}
-     *
-     * @throws GatewayReleaseException
-     */
-    private function queue(): array
-    {
-        $moved = $this->step('queue_move', 'gateway.release_units_failed', fn (): int => $this->queueMove?->move() ?? 0);
-        $horizon = $this->step('horizon', 'gateway.release_units_failed', fn (): string => $this->horizon?->converge() ?? 'none');
-
-        return [$moved, $horizon];
     }
 
     /**

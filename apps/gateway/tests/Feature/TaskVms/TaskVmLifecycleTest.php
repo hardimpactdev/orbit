@@ -219,7 +219,7 @@ describe('allocation', function (): void {
             ->and($vm->host_node_id)->toBe($this->host->id)
             ->and($vm->wireguard_ip)->toBe('10.44.0.129')
             ->and($vm->pi_token)->toMatch('/\A[a-f0-9]{64}\z/');
-        Queue::assertPushedOn('tasks', ProvisionTaskVm::class, fn (ProvisionTaskVm $job): bool => $job->taskVmId === $vm->id && $job->connection === 'gateway');
+        Queue::assertPushedOn('task-vms', ProvisionTaskVm::class, fn (ProvisionTaskVm $job): bool => $job->taskVmId === $vm->id && $job->connection === 'gateway');
         Queue::assertPushed(ProvisionTaskVm::class, 1);
     });
 
@@ -421,7 +421,7 @@ describe(ProvisionTaskVm::class, function (): void {
 
         expect($this->provider->calls)->toBe(['create'])
             ->and($this->provider->userData)->toStartWith("#cloud-config\n")->toContain('ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGatewayKey gateway');
-        Queue::assertPushedOn('tasks', EnrollTaskVm::class, fn (EnrollTaskVm $job): bool => $job->taskVmId === $vm->id && abs($job->launchedAt - now()->getTimestamp()) <= 5);
+        Queue::assertPushedOn('task-vms', EnrollTaskVm::class, fn (EnrollTaskVm $job): bool => $job->taskVmId === $vm->id && abs($job->launchedAt - now()->getTimestamp()) <= 5);
     });
 
     it('logs the wait for the worker as its own step, apart from the launch', function (): void {
@@ -480,7 +480,7 @@ describe(ProvisionTaskVm::class, function (): void {
     it('retries a failed create once and is unique for its task VM', function (): void {
         $job = new ProvisionTaskVm(7);
 
-        expect($job->tries)->toBe(2)->and($job->uniqueId())->toBe('7')->and($job->queue)->toBe('tasks')
+        expect($job->tries)->toBe(2)->and($job->uniqueId())->toBe('7')->and($job->queue)->toBe('task-vms')
             ->and($job->failOnTimeout)->toBeTrue()
             ->and((new EnrollTaskVm(7, 0))->tries)->toBe(60)
             ->and((new EnrollTaskVm(7, 0))->failOnTimeout)->toBeTrue()
@@ -588,7 +588,7 @@ describe(EnrollTaskVm::class, function (): void {
             ->and($node->cluster_id)->toBe($this->cluster->id)
             ->and($node->roles()->pluck('role')->all())->toBe([RoleName::AppDev])
             ->and($this->provider->calls)->toBe(['observe', 'cloud-init', 'fingerprint', 'manifest']);
-        Queue::assertPushedOn('tasks', PrepareTaskVmRuntime::class, fn (PrepareTaskVmRuntime $job): bool => $job->taskVmId === $vm->id);
+        Queue::assertPushedOn('task-vms', PrepareTaskVmRuntime::class, fn (PrepareTaskVmRuntime $job): bool => $job->taskVmId === $vm->id);
     });
 
     it('loads the image manifest for the enrollment and drops it afterwards', function (): void {

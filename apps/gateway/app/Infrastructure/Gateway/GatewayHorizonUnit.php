@@ -11,7 +11,6 @@ use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
 use App\Infrastructure\Shared\StoredValue;
 use Closure;
-use Illuminate\Support\Facades\Artisan;
 use RuntimeException;
 use Throwable;
 
@@ -26,56 +25,89 @@ final readonly class GatewayHorizonUnit
     /** The file whose absence in the current release keeps the unit from starting. */
     public const string Marker = 'config/horizon.php';
 
-    /** @var Closure(): void */
-    private Closure $terminate;
+    /** How long a release waits for the old `task-vms` worker to finish its job, below the handoff's own limit. */
+    public const int TaskVmWaitSeconds = 600;
 
-    /** @param  (Closure(): void)|null  $terminate  asks a running Horizon master to finish and exit */
+    /** How long a new Horizon master has to register in Redis. */
+    public const int StartSeconds = 30;
+
     public function __construct(
         private ProcessRunner $processes,
+        private GatewayHorizonRuntime $runtime = new NativeGatewayHorizonRuntime,
         private string $phpBinary = PHP_BINARY,
         private string $applicationPath = '',
         private string $orbitHome = '',
         private string $user = 'orbit',
         private string $unitDirectory = '/etc/systemd/system',
-        ?Closure $terminate = null,
-    ) {
-        $this->terminate = $terminate ?? static function (): void {
-            Artisan::call('horizon:terminate');
-        };
-    }
+        private int $taskVmWaitSeconds = self::TaskVmWaitSeconds,
+        private int $startSeconds = self::StartSeconds,
+    ) {}
 
     /**
-     * Installs and starts the unit while the Gateway queue is set, and lets a running master move to the new release.
+     * Installs and starts the unit while the Gateway queue is set, and moves a running master to the new release.
      * Otherwise it stops and removes the unit when it exists, and changes nothing when it does not.
      *
-     * @return 'started'|'stopped'|'none'
+     * The old master stops at once and its workers finish their jobs. The `task-vms` queue stays paused until the old
+     * `task-vms` worker is gone, so its jobs still run one at a time and in order. It reports `started` only once a new
+     * master is registered.
+     *
+     * @return array{outcome: 'started'|'stopped'|'none', task_vm_wait_ms?: int, task_vm_overlap?: bool}
      *
      * @throws NodeProvisioningException
      */
-    public function converge(): string
+    public function converge(): array
     {
         if (! GatewayQueueRedis::configured()) {
-            return $this->remove();
+            return ['outcome' => $this->remove()];
         }
 
         $application = $this->applicationPath !== '' ? $this->applicationPath : GatewayApplicationPath::resolve();
         $orbitHome = $this->orbitHome !== '' ? $this->orbitHome : StoredValue::string(config('orbit.home'));
         $this->install($this->render($application, $orbitHome));
         $this->run(['sudo', 'systemctl', 'daemon-reload']);
-        $this->run(['sudo', 'systemctl', 'enable', '--now', self::Name]);
 
         try {
-            ($this->terminate)();
+            $oldWorkers = $this->runtime->taskVmWorkers();
+            $oldMasters = $this->runtime->masters();
+            $startedAt = hrtime(true);
+            $overlap = false;
+
+            if ($oldWorkers !== []) {
+                $this->runtime->pauseTaskVms($this->taskVmWaitSeconds + 60);
+            }
+
+            try {
+                $this->run(['sudo', 'systemctl', 'enable', '--now', self::Name]);
+                $this->runtime->terminate();
+                $overlap = ! $this->waitFor(fn (): bool => array_filter($oldWorkers, $this->runtime->running(...)) === [], $this->taskVmWaitSeconds);
+            } finally {
+                if ($oldWorkers !== []) {
+                    $this->runtime->resumeTaskVms();
+                }
+            }
+
+            $waited = intdiv(hrtime(true) - $startedAt, 1_000_000);
+            $started = $this->waitFor(fn (): bool => array_diff($this->runtime->masters(), $oldMasters) !== [], $this->startSeconds);
+        } catch (NodeProvisioningException $exception) {
+            throw $exception;
         } catch (Throwable $exception) {
             throw new NodeProvisioningException(
-                step: 'horizon-terminate',
+                step: 'horizon-restart',
                 errorCode: 'gateway.horizon_unit_failed',
-                message: 'The running Horizon master could not be asked to restart on the new release.',
+                message: 'Horizon could not be moved to the new release: '.$exception->getMessage(),
                 previous: $exception,
             );
         }
 
-        return 'started';
+        if (! $started) {
+            throw new NodeProvisioningException(
+                step: 'horizon-start',
+                errorCode: 'gateway.horizon_unit_failed',
+                message: 'No Horizon master registered '.$this->startSeconds.' seconds after the start. See journalctl -u '.self::Name.'.',
+            );
+        }
+
+        return ['outcome' => 'started', 'task_vm_wait_ms' => $oldWorkers === [] ? 0 : $waited, 'task_vm_overlap' => $overlap];
     }
 
     public function render(string $application, string $orbitHome): string
@@ -121,6 +153,22 @@ final readonly class GatewayHorizonUnit
         $this->run(['sudo', 'systemctl', 'daemon-reload']);
 
         return 'stopped';
+    }
+
+    /** @param  Closure(): bool  $done */
+    private function waitFor(Closure $done, int $seconds): bool
+    {
+        $deadline = hrtime(true) + $seconds * 1_000_000_000;
+
+        while (! $done()) {
+            if (hrtime(true) >= $deadline) {
+                return false;
+            }
+
+            $this->runtime->sleep(500);
+        }
+
+        return true;
     }
 
     private function path(): string

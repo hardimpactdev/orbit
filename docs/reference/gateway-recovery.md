@@ -227,12 +227,13 @@ The serving phase:
 
 The scheduler phase:
 
-1. moves the scheduler to the new release without cutting off a scheduled command;
-2. restarts every other Gateway Node Process whose directory is in the Gateway application;
-3. resumes [document cleanup](/reference/project-documents#restore-time-cleanup-gate);
-4. moves the [Gateway queue](/reference/gateway-queue#releases) and Laravel Horizon to the new release;
-5. updates the Gateway Node's own `orbit-agent` to the release's pin, described below;
-6. resets OPcache, described below.
+1. moves [Laravel Horizon](/reference/gateway-queue#releases) to the new release;
+2. moves the scheduler to the new release without cutting off a scheduled command;
+3. restarts every other Gateway Node Process whose directory is in the Gateway application;
+4. resumes [document cleanup](/reference/project-documents#restore-time-cleanup-gate);
+5. moves the jobs left in the old database queues to the [Gateway queue](/reference/gateway-queue#releases);
+6. updates the Gateway Node's own `orbit-agent` to the release's pin, described below;
+7. resets OPcache, described below.
 
 PHP-FPM is not restarted for a release. Caddy resolves the `/home/orbit/orbit` link for each request (`resolve_root_symlink`) and passes PHP-FPM the release's real script path. A request that started before the switch finishes on its release, and the next one runs the new release. The `/grafana` authorization resolves the link the same way. A fixed script path through the link would let each PHP-FPM worker keep the old release in its realpath cache for up to two minutes.
 

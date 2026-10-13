@@ -535,9 +535,6 @@ describe('the nightly refresh', function (): void {
             ->and([new RefreshTaskVmBaseImages()->connection, new RefreshTaskVmBaseImages()->queue])->toBe(['gateway', 'builds']);
 
         config(['task_vms.enabled' => true]);
-        expect($refresh->filtersPass(app()))->toBeFalse();
-
-        config(['orbit.gateway_queue.connection' => 'services-valkey']);
         expect($refresh->filtersPass(app()))->toBeTrue();
     });
 });

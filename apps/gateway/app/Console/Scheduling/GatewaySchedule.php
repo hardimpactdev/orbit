@@ -14,6 +14,7 @@ use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Support\Facades\Queue;
+use RuntimeException;
 use Throwable;
 
 /**
@@ -40,12 +41,19 @@ final readonly class GatewaySchedule
         })->name($command);
     }
 
-    /** A job that names its own connection and queue, dispatched only while the Gateway queue is set. */
+    /**
+     * A job that names its own connection and queue. Only the Gateway queue runs it, so without the queue each due run
+     * fails loudly instead of skipping the work.
+     */
     public static function job(Schedule $schedule, ShouldQueue $job): Event
     {
         return $schedule->call(static function () use ($job): void {
+            if (! GatewayQueueRedis::configured()) {
+                throw new RuntimeException($job::class.' needs the Gateway queue, but ORBIT_GATEWAY_QUEUE_CONNECTION is empty. See /reference/gateway-queue.');
+            }
+
             self::dispatch(clone $job);
-        })->name($job::class)->when(static fn (): bool => GatewayQueueRedis::configured());
+        })->name($job::class);
     }
 
     /**

@@ -256,12 +256,9 @@ describe(SweepTaskVmHosts::class, function (): void {
         expect($sweep)->not->toBeNull()
             ->and($sweep->expression)->toBe('*/10 * * * *')
             ->and($sweep->filtersPass(app()))->toBeFalse()
-            ->and([new SweepTaskVmHosts()->connection, new SweepTaskVmHosts()->queue])->toBe(['gateway', 'tasks']);
+            ->and([new SweepTaskVmHosts()->connection, new SweepTaskVmHosts()->queue])->toBe(['gateway', 'task-vms']);
 
         config(['task_vms.enabled' => true]);
-        expect($sweep->filtersPass(app()))->toBeFalse();
-
-        config(['orbit.gateway_queue.connection' => 'services-valkey']);
         expect($sweep->filtersPass(app()))->toBeTrue();
 
         config(['task_vms.enabled' => false, 'task_vms.upcloud.token_file' => '/home/orbit/upcloud.yaml']);

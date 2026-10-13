@@ -32,6 +32,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Tests\Support\FakeNodeCaddyBuilds;
+use Tests\Support\FakeGatewayHorizonRuntime;
 use Tests\Support\Fleet\FakeFleetConvergeUnits;
 
 const HANDOFF_APP = '/home/orbit/orbit/apps/gateway';
@@ -189,6 +190,16 @@ final class SchedulerDrainProbe
     public array $members = ['/usr/bin/php8.5 artisan schedule:work', "sh -c '/usr/bin/php8.5' 'artisan' orbit:deploy-development-defaults > '/dev/null' 2>&1"];
 }
 
+function handoff_horizon_runtime(HandoffProcessRunner $processes): FakeGatewayHorizonRuntime
+{
+    $runtime = new FakeGatewayHorizonRuntime;
+    $runtime->onTerminate = static function () use ($processes): void {
+        $processes->ran[] = ['horizon:terminate'];
+    };
+
+    return $runtime;
+}
+
 /**
  * @return array{GatewayRuntimeHandoff, HandoffProcessRunner, FakeDocumentCleanup, FakeNodeCaddyBuilds, RecordingHandoffUnits, SchedulerDrainProbe}
  */
@@ -243,9 +254,7 @@ function runtime_handoff(?string $livePool = null, int $drainSeconds = 5, ?Fleet
             idleWaitSeconds: 1,
             fleet: $fleet,
             agent: $agent ? new GatewayNodeAgentUpdate($processes) : null,
-            horizon: $workerUnits === null ? null : new GatewayHorizonUnit($processes, applicationPath: HANDOFF_APP, orbitHome: $orbitHome, unitDirectory: $workerUnits, terminate: static function () use ($processes): void {
-                $processes->ran[] = ['horizon:terminate'];
-            }),
+            horizon: $workerUnits === null ? null : new GatewayHorizonUnit($processes, handoff_horizon_runtime($processes), applicationPath: HANDOFF_APP, orbitHome: $orbitHome, unitDirectory: $workerUnits),
             queueMove: new GatewayQueueMove,
         ),
         $processes,
@@ -457,7 +466,7 @@ describe('gateway:release:handoff', function (): void {
             ->and($schedule['opcache']['outcome'])->toBe('reset');
     });
 
-    it('moves the old database jobs and restarts Horizon after the old scheduler drained, and only in the scheduler phase', function (): void {
+    it('moves Horizon before the scheduler and the old database jobs after its drain, only in the scheduler phase', function (): void {
         config(['orbit.gateway_queue.connection' => 'services-valkey']);
         handoff_scheduler(handoff_gateway());
         DB::table('jobs')->insert(['queue' => 'task-vm-git', 'payload' => json_encode(['data' => ['command' => serialize(new PublishTaskVmCommit(7, str_repeat('a', 40), 'task-7'))]]), 'attempts' => 0, 'reserved_at' => null, 'available_at' => now()->getTimestamp(), 'created_at' => now()->getTimestamp()]);
@@ -469,25 +478,28 @@ describe('gateway:release:handoff', function (): void {
         $beforeVerify = $commands();
         $schedule = $handoff->schedule();
         $ran = $commands();
-        $start = array_search('sudo systemctl start', $ran, true);
 
         expect($serve)->not->toHaveKey('horizon')
             ->and($beforeVerify)->not->toContain('horizon:terminate')
-            ->and($schedule)->toMatchArray(['horizon' => 'started', 'queue_moved' => 1, 'scheduler' => 'restarted'])
+            ->and($schedule)->toMatchArray(['horizon' => ['outcome' => 'started', 'task_vm_wait_ms' => 0, 'task_vm_overlap' => false], 'queue_moved' => 1, 'scheduler' => 'restarted'])
             ->and(DB::table('jobs')->pluck('queue')->all())->toBe(['tasks'])
-            ->and($start)->toBeInt()
-            ->and(array_search('sudo systemctl enable', $ran, true))->toBeGreaterThan($start)
-            ->and(array_search('horizon:terminate', $ran, true))->toBeGreaterThan(array_search('sudo systemctl enable', $ran, true));
+            ->and(array_search('horizon:terminate', $ran, true))->toBeGreaterThan(array_search('sudo systemctl enable', $ran, true))
+            ->and(array_search('sudo systemctl start', $ran, true))->toBeGreaterThan(array_search('horizon:terminate', $ran, true));
     });
 
-    it('fails the scheduler phase when the Horizon unit cannot be installed', function (): void {
+    it('still moves the scheduler and the old database jobs when Horizon fails, and then fails the scheduler phase', function (): void {
         config(['orbit.gateway_queue.connection' => 'services-valkey']);
         handoff_scheduler(handoff_gateway());
+        DB::table('jobs')->insert(['queue' => 'task-vms', 'payload' => json_encode(['data' => ['command' => serialize(new PublishTaskVmCommit(7, str_repeat('a', 40), 'task-7'))]]), 'attempts' => 0, 'reserved_at' => null, 'available_at' => now()->getTimestamp(), 'created_at' => now()->getTimestamp()]);
         [$handoff, $processes] = runtime_handoff(workerUnits: sys_get_temp_dir().'/handoff-horizon-'.bin2hex(random_bytes(4)));
+        $processes->mainPids = ['4242', '0'];
         $processes->results['sudo systemctl enable'] = new CommandResult(1, '', 'denied', 1, false);
 
         expect(fn () => $handoff->schedule())
-            ->toThrow(fn (GatewayReleaseException $exception) => expect($exception->errorCode)->toBe('gateway.release_units_failed'));
+            ->toThrow(fn (GatewayReleaseException $exception) => expect($exception->errorCode)->toBe('gateway.release_units_failed'))
+            ->and(array_filter($processes->systemctl(), static fn (string $command): bool => str_starts_with($command, 'sudo systemctl start orbit-process-')))->not->toBeEmpty()
+            ->and(DB::table('jobs')->sole()->queue)->toBe('task-vms')
+            ->and(json_decode(DB::table('jobs')->sole()->payload, true)['displayName'] ?? null)->toBe(PublishTaskVmCommit::class);
     });
 
     it('reloads FPM only when the rendered pool differs from the live pool', function (): void {

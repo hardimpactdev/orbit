@@ -429,7 +429,7 @@ describe('claim', function (): void {
             ->and($claimed->node_id)->toBe($vm->node_id)
             ->and(TaskVm::query()->count())->toBe(1)
             ->and(app(AllocateTaskVmAction::class)->execute($group)->id)->toBe($vm->id);
-        Queue::assertPushedOn('tasks', PrepareTaskVmRuntime::class, fn (PrepareTaskVmRuntime $job): bool => $job->taskVmId === $vm->id);
+        Queue::assertPushedOn('task-vms', PrepareTaskVmRuntime::class, fn (PrepareTaskVmRuntime $job): bool => $job->taskVmId === $vm->id);
         Queue::assertPushed(RefillTaskVmPool::class);
         Queue::assertNotPushed(ProvisionTaskVm::class);
         Queue::assertNotPushed(EnrollTaskVm::class);
@@ -898,6 +898,6 @@ describe(EnsureWarmClaimReady::class, function (): void {
 
     it('waits longer than the tick lock before it acts', function (): void {
         expect(EnsureWarmClaimReady::DelaySeconds)->toBeGreaterThan(300)
-            ->and((new EnsureWarmClaimReady(1))->queue)->toBe('tasks');
+            ->and((new EnsureWarmClaimReady(1))->queue)->toBe('task-vms');
     });
 });

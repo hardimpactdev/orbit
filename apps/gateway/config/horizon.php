@@ -13,10 +13,12 @@ return [
     'path' => 'horizon',
     'use' => 'gateway',
     'prefix' => 'orbit-gateway-horizon:',
-    // The dashboard is off: GatewayQueueServiceProvider denies every request.
+    // The dashboard admits WireGuard peers with Gateway access (GatewayQueueServiceProvider); GuardBrowserOrigins admits
+    // only same-origin requests, because the dashboard takes no CSRF token.
     'middleware' => ['web'],
     'waits' => [
         'gateway:tasks' => 60,
+        'gateway:task-vms' => 600,
         'gateway:builds' => 3600,
     ],
     'trim' => [
@@ -53,6 +55,21 @@ return [
             'timeout' => 1700,
             'nice' => 0,
         ],
+        // One worker, so task VM jobs run one at a time and in order. A release pauses the queue until the old worker is
+        // done (GatewayHorizonUnit).
+        'task-vms' => [
+            'connection' => 'gateway',
+            'queue' => ['task-vms'],
+            'balance' => false,
+            'minProcesses' => 1,
+            'maxProcesses' => 1,
+            'maxTime' => 0,
+            'maxJobs' => 0,
+            'memory' => 256,
+            'tries' => 1,
+            'timeout' => 1700,
+            'nice' => 0,
+        ],
         'builds' => [
             'connection' => 'gateway',
             'queue' => ['builds'],
@@ -71,6 +88,7 @@ return [
     'environments' => [
         '*' => [
             'tasks' => [],
+            'task-vms' => [],
             'builds' => [],
         ],
     ],

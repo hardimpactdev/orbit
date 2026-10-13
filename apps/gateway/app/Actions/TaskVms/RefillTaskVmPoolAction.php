@@ -71,7 +71,7 @@ final readonly class RefillTaskVmPoolAction
         }
         $this->reportUnmanaged(array_map(static fn (array $entry): int => $entry[0]->nodeId, $hosts));
 
-        // New VMs first: the `tasks` queue takes jobs in order, and a destroy waits on the Node removal. The order
+        // New VMs first: the `task-vms` queue runs one job at a time, and a destroy waits on the Node removal. The order
         // cannot overfill a host, because a `destroying` row holds its slot until it is `destroyed`.
         foreach ($created as $id) {
             ProvisionTaskVm::dispatch($id);

@@ -667,22 +667,25 @@ describe('scale', function (): void {
         }
         expect($built)->toBe($expected)
             ->and($builds->pluck('queue')->unique()->all())->toBe([GatewayQueue::Builds->value])
-            ->and(DB::table('jobs')->where('queue', GatewayQueue::Tasks->value)->count())->toBe(0);
+            ->and(DB::table('jobs')->where('queue', GatewayQueue::TaskVms->value)->count())->toBe(0);
         Log::shouldHaveReceived('warning')->with('Task VM workspace template cannot be built; workspaces of the Project start from a fresh clone.', Mockery::on(
             static fn (array $context): bool => $context['reason'] === 'the Project has no valid default branch',
         ))->times(5);
     });
 
-    it('keeps task VM jobs and publishes on the tasks queue, apart from template builds and base image refreshes', function (): void {
+    it('keeps task VM jobs and publishes apart from template builds and base image refreshes', function (): void {
         tvm_projects(25, active: 25);
         app()->call([new RefreshTaskVmWorkspaceTemplates, 'handle']);
         DestroyTaskVm::dispatch(tvm_template_vm($this->group)->id);
         RefreshTaskVmBaseImages::dispatch();
         PublishTaskVmCommit::dispatch(1, str_repeat('a', 40), 'task-1');
 
-        // 21 template builds and the base image refresh wait on builds; the destroy and the publish never wait behind them.
+        // 21 template builds and the base image refresh wait on builds; the destroy waits on task-vms and the publish on
+        // tasks, so neither waits behind a build.
         expect(DB::table('jobs')->where('queue', GatewayQueue::Builds->value)->count())->toBe(22)
-            ->and(DB::table('jobs')->where('queue', GatewayQueue::Tasks->value)->count())->toBe(2)
+            ->and(DB::table('jobs')->where('queue', GatewayQueue::TaskVms->value)->count())->toBe(1)
+            ->and(DB::table('jobs')->where('queue', GatewayQueue::Tasks->value)->count())->toBe(1)
+            ->and(config('horizon.defaults.task-vms.queue'))->toBe([GatewayQueue::TaskVms->value])
             ->and(config('horizon.defaults.tasks.queue'))->toBe([GatewayQueue::Tasks->value])
             ->and(config('horizon.defaults.builds.queue'))->toBe([GatewayQueue::Builds->value]);
     });

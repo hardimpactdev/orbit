@@ -554,10 +554,11 @@ The task VM jobs run on the [Gateway queue](/reference/gateway-queue), which Lar
 
 | Queue | Task VM jobs |
 | --- | --- |
-| `tasks` | Provision, enroll, prepare, park, resume, and destroy a VM, the guard of a warm claim, the [publish](#publish-from-the-vm) of an approved commit (`PublishTaskVmCommit`), the host sweep, and the pool refill |
+| `task-vms` | Provision, enroll, prepare, park, resume, and destroy a VM, the guard of a warm claim, the host sweep, and the pool refill. One worker runs them one at a time and in order |
+| `tasks` | The [publish](#publish-from-the-vm) of an approved commit (`PublishTaskVmCommit`), beside the scheduled commands |
 | `builds` | The workspace template jobs, `RefreshTaskVmWorkspaceTemplates` and `BuildTaskVmWorkspaceTemplate`, and the nightly base image refreshes, [`RefreshTaskVmBaseImages`](#build-the-base-image) and [`RefreshUpCloudTaskVmBaseImage`](#refresh-the-upcloud-template-every-night) |
 
-A `tasks` job starts within about a second while a process is free, also while a build runs. A delayed job, such as the guard of a warm claim, or a released job waits for its time. A job runs at most 1700 seconds, and a job that a worker lost runs again after 1800 seconds.
+A `task-vms` or `tasks` job starts within about a second while its worker is free, also while a build runs. A delayed job, such as the guard of a warm claim, or a released job waits for its time. A job runs at most 1700 seconds, and a job that a worker lost runs again after 1800 seconds.
 
 A template build takes about a minute, a base image refresh up to 25 minutes, and a publish seconds. The `builds` queue has one process, so one template build or base image refresh runs in the fleet at a time. The host locks also allow one template build and one base image build or sync per host.
 

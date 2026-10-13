@@ -51,6 +51,8 @@ final class GatewayQueueServiceProvider extends ServiceProvider
         // it terminates; systemd starts it again only when that release ships Horizon.
         $release = realpath(base_path()) ?: base_path();
         Event::listen(MasterSupervisorLooped::class, static function (MasterSupervisorLooped $event) use ($release): void {
+            // realpath() caches link targets per process; the master runs for days.
+            clearstatcache(true);
             $current = realpath(GatewayApplicationPath::resolve());
 
             if ($event->master->working && $current !== false && $current !== $release) {

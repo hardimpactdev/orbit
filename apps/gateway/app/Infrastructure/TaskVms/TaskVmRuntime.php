@@ -190,6 +190,7 @@ final readonly class TaskVmRuntime
     /** Revokes the group's model key at the origin that holds it. A task VM without a key has nothing to revoke. */
     public function release(TaskVm $vm): void
     {
+        $vm->refresh();
         if ($vm->model_key === null) {
             return;
         }
