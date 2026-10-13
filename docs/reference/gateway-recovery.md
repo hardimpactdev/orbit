@@ -230,7 +230,7 @@ The scheduler phase:
 1. moves the scheduler to the new release without cutting off a scheduled command;
 2. restarts every other Gateway Node Process whose directory is in the Gateway application;
 3. resumes [document cleanup](/reference/project-documents#restore-time-cleanup-gate);
-4. moves the [task VM queue workers](/reference/compute-drivers#jobs) to the new release after their running jobs;
+4. moves the [Gateway queue](/reference/gateway-queue#releases) and Laravel Horizon to the new release;
 5. updates the Gateway Node's own `orbit-agent` to the release's pin, described below;
 6. resets OPcache, described below.
 
@@ -257,7 +257,7 @@ The drain needs the scheduler's PHP to have the `pcntl` extension, so `schedule:
 2. It sends SIGTERM to the `schedule:work` main process only. That process starts no new `schedule:run` and waits for the running ones, so a long command such as a development deploy finishes on the release it started on.
 3. When the main process has exited, it starts the unit, which now runs the new release, and waits until it is active.
 
-Each command ran to its end and released its own overlap lock, so the handoff clears none. While the old scheduler drains, it starts nothing, so `tasks:tick` pauses for the drain at most.
+Each command ran to its end and released its own overlap lock, so the handoff clears none. While the old scheduler drains, it starts nothing, so `tasks:tick` pauses for the drain at most. While the [Gateway queue](/reference/gateway-queue) is set, the scheduler only dispatches, so the drain takes seconds, and a running tick finishes in Laravel Horizon.
 
 The drain waits at most `ORBIT_GATEWAY_RELEASE_SCHEDULER_DRAIN_SECONDS` (default 600). After that limit, the handoff takes the `tasks:tick` lock and stops the unit, which ends what still runs. It then clears the schedule's overlap locks with `schedule:clear-cache`, because the stopped commands cannot release them, and starts the unit. The release record's `handoff.scheduler_drain` shows `outcome` (`drained`, `forced`, or `not_running`), `waited_ms`, the commands that were `running` when the drain began, and, after a forced stop, the commands it `stopped`.
 
@@ -265,7 +265,7 @@ The new scheduler pauses document cleanup when it starts. The handoff waits for 
 
 The handoff also installs the [fleet rollout units](#units). A failure there only logs a warning.
 
-When any step fails, the handoff still starts the scheduler unit, so the scheduler never stays down. The handoff prints one JSON object with `caddy`, `fpm`, `opcache`, `scheduler`, `scheduler_unit`, `scheduler_drain`, `processes_restarted`, `task_vm_workers`, `cleanup`, `cleanup_error_code`, `agent_view`, `cleanup_paused`, and `gateway_agent`. Run it again by hand after fixing a handoff failure. It takes no release lock, so run it only when no release step is running.
+When any step fails, the handoff still starts the scheduler unit, so the scheduler never stays down. The handoff prints one JSON object with `caddy`, `fpm`, `opcache`, `scheduler`, `scheduler_unit`, `scheduler_drain`, `processes_restarted`, `horizon`, `queue_moved`, `cleanup`, `cleanup_error_code`, `agent_view`, `cleanup_paused`, and `gateway_agent`. Run it again by hand after fixing a handoff failure. It takes no release lock, so run it only when no release step is running.
 
 ##### Gateway Node agent
 
