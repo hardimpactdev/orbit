@@ -7,10 +7,8 @@ namespace App\Infrastructure\SourceControl;
 /** Suppress checkout-controlled hooks and fsmonitor for Gateway shell reads and mutations. */
 final readonly class WorkspaceGit
 {
-    public static function bashPreamble(?string $checkout = null): string
+    public static function bashPreamble(): string
     {
-        $trust = $checkout === null ? '' : ' -c '.escapeshellarg('safe.directory='.$checkout);
-
-        return 'git() { command git -c core.hooksPath=/dev/null -c core.fsmonitor=false'.$trust.' "$@"; }'."\n";
+        return 'git() { command git -c core.hooksPath=/dev/null -c core.fsmonitor=false "$@"; }'."\n";
     }
 }

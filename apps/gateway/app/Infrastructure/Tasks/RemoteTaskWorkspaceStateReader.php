@@ -15,12 +15,12 @@ final readonly class RemoteTaskWorkspaceStateReader implements TaskWorkspaceStat
 
     public function headCommit(Instance $instance): ?string
     {
-        return $this->run($instance, 'git -c core.hooksPath=/dev/null -c core.fsmonitor=false -c safe.directory="$checkout" -C "$checkout" rev-parse HEAD');
+        return $this->run($instance, 'git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" rev-parse HEAD');
     }
 
     public function currentBranch(Instance $instance): ?string
     {
-        return $this->run($instance, 'git -c core.hooksPath=/dev/null -c core.fsmonitor=false -c safe.directory="$checkout" -C "$checkout" rev-parse --abbrev-ref HEAD');
+        return $this->run($instance, 'git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" rev-parse --abbrev-ref HEAD');
     }
 
     private function run(Instance $instance, string $command): ?string

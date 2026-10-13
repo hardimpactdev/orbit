@@ -33,11 +33,11 @@ final readonly class RemoteTaskWorkspaceSigner implements TaskWorkspaceSigner
                     export GIT_AUTHOR_EMAIL=tasks@orbit
                     export GIT_COMMITTER_NAME=orbit
                     export GIT_COMMITTER_EMAIL=tasks@orbit
-                    git -c core.hooksPath=/dev/null -c core.fsmonitor=false -c safe.directory="$checkout" -C "$checkout" add -A
-                    if ! git -c core.hooksPath=/dev/null -c core.fsmonitor=false -c safe.directory="$checkout" -C "$checkout" diff --cached --quiet; then
-                        printf '%s' "$message" | base64 -d | git -c core.hooksPath=/dev/null -c core.fsmonitor=false -c safe.directory="$checkout" -C "$checkout" commit --quiet --file=-
+                    git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" add -A
+                    if ! git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" diff --cached --quiet; then
+                        printf '%s' "$message" | base64 -d | git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" commit --quiet --file=-
                     fi
-                    git -c core.hooksPath=/dev/null -c core.fsmonitor=false -c safe.directory="$checkout" -C "$checkout" rev-parse --verify HEAD^{commit}
+                    git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" rev-parse --verify HEAD^{commit}
                     BASH,
                 ),
                 'task-workspace-commit',

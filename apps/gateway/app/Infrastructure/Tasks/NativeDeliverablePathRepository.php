@@ -56,7 +56,7 @@ final readonly class NativeDeliverablePathRepository implements DeliverablePathR
     /** @return list<string>|null null when the workspace cannot list this commit, so the origin is tried next. */
     private function workspaceFiles(Instance $workspace, string $commit): ?array
     {
-        $git = 'git -c core.hooksPath=/dev/null -c core.fsmonitor=false -c safe.directory="$checkout" -C "$checkout"';
+        $git = 'git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout"';
         try {
             $result = $this->workspaces->execute($workspace, new RemoteCommand(
                 arguments: ['bash', '-seu', '--', $workspace->checkout_path, $commit],
