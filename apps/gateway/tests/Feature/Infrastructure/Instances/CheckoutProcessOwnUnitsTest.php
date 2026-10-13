@@ -78,7 +78,7 @@ describe('own units of a checkout process stop', function (): void {
         $process = fn (Instance|Node $owner, string $name, string $runtime): Process => Process::query()->create([
             'owner_type' => $owner instanceof Instance ? Instance::MorphAlias : $owner->getMorphClass(), 'owner_id' => $owner->id, 'name' => $name,
             'runtime' => $runtime, 'runtime_config' => ['command' => ['sleep', '1']] + ($runtime === 'docker' ? ['image' => 'alpine'] : []),
-            'restart_policy' => 'on-failure', 'desired_state' => 'running', 'status' => 'active',
+            'working_directory' => '/srv/apps/units', 'restart_policy' => 'on-failure', 'desired_state' => 'running', 'status' => 'active',
         ]);
         $web = $process($instance, 'web', 'systemd');
         $process($instance, 'redis', 'docker');
