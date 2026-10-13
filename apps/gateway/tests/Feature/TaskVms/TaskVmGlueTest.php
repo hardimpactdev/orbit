@@ -19,7 +19,6 @@ use App\Infrastructure\Tasks\GitHubTaskBaseBranchFetcher;
 use App\Infrastructure\Tasks\GitHubTaskPullRequestPublisher;
 use App\Infrastructure\Tasks\Pi\PiConnection;
 use App\Infrastructure\Tasks\Pi\PiDriver;
-use App\Infrastructure\Tasks\TaskWorkerUser;
 use App\Infrastructure\Tasks\TaskWorkspaceExecutor;
 use App\Models\AgentThread;
 use App\Models\Instance;
@@ -89,20 +88,7 @@ function tvm_glue_ssh(): AppDevFakeSshExecutor
 beforeEach(function (): void {
     mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/keys/private');
     mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/keys/known_hosts');
-    config(['orbit.tasks.worker_user' => 'orbit-worker', 'orbit.pi.token' => 'gateway-wide-pi-token-with-32-characters']);
-});
-
-describe('worker user', function (): void {
-    it('runs task VM work as the managed user and keeps the worker elsewhere', function (): void {
-        $workspace = tvm_glue_workspace(tvm_glue_group());
-        $shared = Instance::query()->create(['project_id' => $workspace->project_id, 'node_id' => tvm_glue_node('app-dev', '10.44.0.9')->id,
-            'name' => 'task-99', 'checkout_path' => '/srv/apps/shop/task-99', 'status' => 'source_resolved']);
-
-        expect(TaskWorkerUser::name($workspace))->toBeNull()
-            ->and(TaskWorkerUser::arguments(['id'], $workspace))->toBe(['id'])
-            ->and(TaskWorkerUser::name($shared))->toBe('orbit-worker')
-            ->and(TaskWorkerUser::name())->toBe('orbit-worker');
-    });
+    config(['orbit.pi.token' => 'gateway-wide-pi-token-with-32-characters']);
 });
 
 describe('workspace commands', function (): void {

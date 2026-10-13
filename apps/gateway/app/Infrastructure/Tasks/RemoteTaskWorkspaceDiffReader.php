@@ -34,13 +34,13 @@ final readonly class RemoteTaskWorkspaceDiffReader implements TaskWorkspaceDiffR
             $result = $this->ssh->execute(
                 $instance,
                 new RemoteCommand(
-                    arguments: TaskWorkerUser::arguments([
+                    arguments: [
                         'bash',
                         '-seu',
                         '--',
                         $instance->checkout_path,
                         $baseBranch,
-                    ], $instance),
+                    ],
                     input: <<<'BASH'
                     checkout=$1
                     base=$2
@@ -76,13 +76,13 @@ final readonly class RemoteTaskWorkspaceDiffReader implements TaskWorkspaceDiffR
             $result = $this->ssh->execute(
                 $instance,
                 new RemoteCommand(
-                    arguments: TaskWorkerUser::arguments([
+                    arguments: [
                         'bash',
                         '-seu',
                         '--',
                         $instance->checkout_path,
                         $since,
-                    ], $instance),
+                    ],
                     input: <<<'BASH'
                     checkout=$1
                     since=$2

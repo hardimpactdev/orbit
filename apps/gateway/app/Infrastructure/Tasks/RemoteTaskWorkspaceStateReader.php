@@ -31,7 +31,7 @@ final readonly class RemoteTaskWorkspaceStateReader implements TaskWorkspaceStat
         }
         try {
             $result = $this->ssh->execute($instance, new RemoteCommand(
-                arguments: TaskWorkerUser::arguments(['bash', '-seu', '--', $instance->checkout_path], $instance),
+                arguments: ['bash', '-seu', '--', $instance->checkout_path],
                 input: "checkout=\$1\n{$command}\n",
             ), 'task-workspace-state', 'tasks.diff_failed');
         } catch (RuntimeConvergenceException) {

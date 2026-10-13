@@ -27,7 +27,7 @@ final readonly class RemoteTaskWorkspaceSigner implements TaskWorkspaceSigner
             $result = $this->ssh->execute(
                 $instance,
                 new RemoteCommand(
-                    arguments: TaskWorkerUser::arguments(['bash', '-seu', '--', $instance->checkout_path], $instance),
+                    arguments: ['bash', '-seu', '--', $instance->checkout_path],
                     input: "checkout=\$1\nmessage='".base64_encode($message)."'\n".<<<'BASH'
                     export GIT_AUTHOR_NAME=orbit
                     export GIT_AUTHOR_EMAIL=tasks@orbit

@@ -16,7 +16,6 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use Illuminate\Http\Client\Request;
-use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Symfony\Component\Process\Process;
 use Tests\Feature\GitHub\GitHubTestSupport;
@@ -24,7 +23,6 @@ use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\GitRemoteRedirect;
 use Tests\Support\LocalShellSshExecutor;
 use Tests\Support\PlantedGitConfig;
-use Tests\Support\TaskWorkerSshExecutor;
 use Tests\Support\TestOrbitHome;
 
 pest()->group('privileged');
@@ -106,55 +104,6 @@ afterEach(function (): void {
     TestOrbitHome::clearScratch();
 });
 
-describe('TaskCheckWorkerUser', function (): void {
-    it('updates the checkout with worker filter UIDs and without the fetch credential environment', function (string $operation): void {
-        config()->set('orbit.tasks.worker_user', 'nobody');
-        $root = sys_get_temp_dir().'/orbit-worker-fast-forward-'.bin2hex(random_bytes(6));
-        $checkout = $root.'/checkout';
-        (new Process(['git', 'init', '-q', '--bare', $root.'/origin.git']))->mustRun();
-        (new Process(['git', 'init', '-q', '-b', 'task-7', $checkout]))->mustRun();
-        $group = fetcher_group($checkout);
-        $branch = 'task-'.$group->id;
-        file_put_contents($checkout.'/.gitattributes', "readme filter=uid\n");
-        file_put_contents($checkout.'/readme', 'approved');
-        fetcher_git($checkout, ['add', '.']);
-        fetcher_git($checkout, ['commit', '-qm', 'approved']);
-        $approved = fetcher_git($checkout, ['rev-parse', 'HEAD']);
-        file_put_contents($checkout.'/readme', 'upstream');
-        fetcher_git($checkout, ['commit', '-qam', 'upstream']);
-        $upstream = fetcher_git($checkout, ['rev-parse', 'HEAD']);
-        fetcher_git($checkout, ['remote', 'add', 'origin', $root.'/origin.git']);
-        fetcher_git($checkout, ['push', '-q', 'origin', 'HEAD:refs/heads/'.$branch, 'HEAD:refs/heads/main']);
-        fetcher_git($checkout, ['reset', '--hard', '-q', $approved]);
-        foreach (['clean', 'smudge'] as $filter) {
-            fetcher_git($checkout, ['config', 'filter.uid.'.$filter, 'printf "%s:%s\\n" "$(id -u)" "${GIT_CONFIG_VALUE_0-absent}" >> .git/filter-users; cat']);
-        }
-        $transport = TaskWorkerSshExecutor::forCheckout($checkout);
-        GitRemoteRedirect::append($checkout.'/.git/worker-global-config', $root.'/origin.git', 'git@github.com:acme/shop.git');
-        (new Process(['setfacl', '-R', '-m', 'u:nobody:rwX,d:u:nobody:rwX,d:u:'.posix_geteuid().':rwX', $root]))->mustRun();
-
-        try {
-            $bases = fetcher($transport);
-            $bases->fetchForTurn($group);
-            fetcher_git($checkout, ['remote', 'set-url', 'origin', $root.'/unreachable.git']);
-            if ($operation === 'fast-forward') {
-                $bases->fastForward($group);
-            } else {
-                expect($bases->resetToDefault($group))->toBe($upstream);
-            }
-
-            expect(fetcher_git($checkout, ['rev-parse', 'HEAD']))->toBe($upstream);
-            $users = file($checkout.'/.git/filter-users', FILE_IGNORE_NEW_LINES) ?: [];
-            expect($users)->not->toBeEmpty();
-            foreach ($users as $user) {
-                expect($user)->toBe('65534:absent');
-            }
-        } finally {
-            File::deleteDirectory($root);
-        }
-    })->with(['fast-forward', 'baseline-reset']);
-});
-
 it('fetches the base ref into the remote-tracking ref and leaves the task branch', function (): void {
     $root = TestOrbitHome::scratch('orbit-fetch');
     (new Process(['git', 'init', '--quiet', '--bare', $root.'/origin.git']))->mustRun();
@@ -197,28 +146,16 @@ it('never runs a command planted in the checkout config while it fetches with a 
         ->and(PlantedGitConfig::markers($root.'/markers'))->toBe([]);
 });
 
-it('passes the base ref as one argument and the token only on standard input', function (): void {
-    $transport = new AppDevFakeSshExecutor;
-    $group = fetcher_group('/srv/orbit/apps/shop/task-7');
-
-    fetcher($transport)->fetch($group, 'feature/main');
-
-    $command = $transport->commands[0];
-    expect($command->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'feature/main', 'git@github.com:acme/shop.git', '/srv/orbit/apps/shop/task-7/.git'])
-        ->and($command->input)->toBeNull()
-        ->and(stream_get_contents($command->protectedInput?->stream()))->toContain(base64_encode('x-access-token:ghs_fetch'))
-        ->and(stream_get_contents($command->protectedInput?->stream()))->toContain('isolated_fetch "$checkout" "$common" "$repository" 0 "+refs/heads/$base:refs/remotes/origin/$base"');
-});
-
-it('reports one failure when the base name is invalid or the fetch fails', function (string $base, bool $ssh): void {
+it('reports one failure when the base name is invalid or the fetch fails', function (string $base): void {
     $transport = new AppDevFakeSshExecutor([new CommandResult(128, '', 'fatal: not found', 1, false)]);
 
     expect(fn () => fetcher($transport)->fetch(fetcher_group('/srv/orbit/apps/shop/task-7'), $base))
         ->toThrow(TaskPullRequestException::class, 'The base branch could not be fetched.');
-    expect($transport->commands)->toHaveCount($ssh ? 1 : 0);
+    // The Gateway mirror fetches first, so a failed fetch reaches no workspace.
+    expect($transport->commands)->toBeEmpty();
 })->with([
-    'invalid name' => ['HEAD', false],
-    'failed fetch' => ['main', true],
+    'invalid name' => ['HEAD'],
+    'failed fetch' => ['main'],
 ]);
 
 it('fast-forwards a workspace that is strictly behind the task branch and leaves a level, ahead, or diverged one', function (string $case): void {
@@ -292,57 +229,6 @@ it('passes missing-ok when a missing task branch should not fail the resume', fu
     expect($transport->commands[0]->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'task-'.$group->id, 'missing-ok'])
         ->and($script)->toContain('show-ref --verify --quiet "refs/remotes/origin/$branch"')
         ->and($script)->toContain('missing-ok');
-});
-
-it('fetches the turn refs with explicit refspecs, --no-tags, and the read token only on standard input', function (): void {
-    $transport = new AppDevFakeSshExecutor;
-    $group = fetcher_group('/srv/orbit/apps/shop/task-7');
-
-    fetcher($transport)->fetchForTurn($group);
-
-    $command = $transport->commands[0];
-    $script = (string) stream_get_contents($command->protectedInput?->stream());
-    expect($transport->commands)->toHaveCount(1)
-        ->and($command->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'main', 'task-'.$group->id, '', 'git@github.com:acme/shop.git', '/srv/orbit/apps/shop/task-7/.git'])
-        ->and($command->input)->toBeNull()
-        ->and(implode(' ', $command->arguments))->not->toContain('ghs_read')
-        ->and($script)->toContain(base64_encode('x-access-token:ghs_read'))
-        ->and($script)->not->toContain('ghs_read')
-        ->and($script)->toContain('-C / ls-remote --exit-code --heads -- "$repository" "refs/heads/$task_branch"')
-        ->and($script)->toContain('isolated_fetch "$checkout" "$common" "$repository" 0 "${refspecs[@]}"')
-        ->and($script)->toContain('+refs/heads/${default_branch}:refs/remotes/origin/${default_branch}')
-        ->and($script)->toContain('+refs/heads/${task_branch}:refs/remotes/origin/${task_branch}')
-        ->and($script)->not->toContain('merge')
-        ->and($script)->not->toContain('rebase')
-        ->and($script)->not->toContain('reset');
-    Http::assertSent(static fn (Request $request): bool => str_ends_with($request->url(), '/access_tokens')
-        && $request->data() === ['repositories' => ['shop'], 'permissions' => ['contents' => 'read']]);
-    Http::assertNotSent(static fn (Request $request): bool => str_ends_with($request->url(), '/access_tokens')
-        && ($request->data()['permissions']['contents'] ?? null) === 'write');
-});
-
-it('asks for a different pull request base as its own refspec and keeps the write token off the node', function (): void {
-    Http::fake([
-        'https://api.github.com/repos/acme/shop/pulls/42' => Http::response([
-            'merged' => false, 'state' => 'open', 'base' => ['ref' => 'develop'], 'head' => ['sha' => str_repeat('a', 40)],
-        ]),
-    ]);
-    $transport = new AppDevFakeSshExecutor;
-    $group = fetcher_group('/srv/orbit/apps/shop/task-7');
-    $group->update(['pr_url' => 'https://github.com/acme/shop/pull/42']);
-
-    fetcher($transport)->fetchForTurn($group->fresh() ?? $group);
-
-    $command = $transport->commands[0];
-    $script = (string) stream_get_contents($command->protectedInput?->stream());
-    expect($command->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'main', 'task-'.$group->id, 'develop', 'git@github.com:acme/shop.git', '/srv/orbit/apps/shop/task-7/.git'])
-        ->and($command->input)->toBeNull()
-        ->and(implode(' ', $command->arguments))->not->toContain('ghs_')
-        ->and($script)->toContain(base64_encode('x-access-token:ghs_read'))
-        ->and($script)->not->toContain('ghs_read')
-        ->and($script)->not->toContain('ghs_fetch')
-        ->and($script)->toContain('+refs/heads/${pull_base}:refs/remotes/origin/${pull_base}')
-        ->and($script)->toContain('--no-tags');
 });
 
 it('updates remote-tracking refs and does not move HEAD when the task branch or a tag is missing', function (bool $taskBranch, bool $staleRef): void {
@@ -520,17 +406,14 @@ it('leaves the workspace alone when the task branch is missing and that absence 
         ->toThrow(TaskPullRequestException::class, 'The task branch could not be fetched.');
 });
 
-it('fetches and fast-forwards an incoming pull request branch instead of task-{id}', function (): void {
+it('fast-forwards an incoming pull request branch instead of task-{id}', function (): void {
     $transport = new AppDevFakeSshExecutor;
     $group = fetcher_group('/srv/orbit/apps/shop/task-7');
     $group->update(['pr_branch' => 'cursor/login-throttle']);
-    $fetcher = fetcher($transport);
 
-    $fetcher->fetchForTurn($group);
-    $fetcher->fastForward($group);
+    fetcher($transport)->fastForward($group);
 
-    expect($transport->commands[0]->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'main', 'cursor/login-throttle', '', 'git@github.com:acme/shop.git', '/srv/orbit/apps/shop/task-7/.git'])
-        ->and($transport->commands[1]->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'cursor/login-throttle']);
+    expect($transport->commands[0]->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'cursor/login-throttle']);
 });
 
 it('reads the merge base with the fetched default branch and moves a clean workspace to a pull request head', function (): void {
