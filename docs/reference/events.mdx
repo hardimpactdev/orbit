@@ -20,6 +20,8 @@ The Gateway broadcasts an event for every record it changes, so a client such as
 
 The Gateway's HTTPS broadcasts to Reverb trust only `ORBIT_HOME/ca/root.pem`, with the system CA directory disabled. They use the resolved Node address while retaining the Reverb hostname for TLS verification. The old Node during a role move keeps its shorter client timeouts.
 
+Reverb broadcasts share one empty private CA directory per PHP process. The Gateway creates it when that process first configures broadcasting and removes it at normal process shutdown. Reconfiguring a connection does not create another directory.
+
 The Gateway sends events to Laravel Reverb at `wss://reverb.orbit`. Reverb runs on the Node that holds the `websocket` role. [Realtime events with Reverb](/solutions/realtime-reverb) sets it up. Without an active `websocket` role, the Gateway broadcasts nothing.
 
 A client connects to Reverb directly, not to the Gateway. The Gateway only publishes, as a Pusher-protocol client.

@@ -8,13 +8,14 @@ use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\Schedules\ScheduleRenderer;
 use App\Domain\Schedules\ScheduleTarget;
+use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Infrastructure\Certificates\OrbitCaCurlFactory;
 use App\Infrastructure\GatewayReleases\HttpGatewayReleaseVerifier;
 use App\Infrastructure\ProxyCli\HttpProxyCliAccountControlClient;
 use App\Models\Node;
 use App\Models\Schedule;
-use GuzzleHttp\Client;
 use GuzzleHttp\Handler\CurlHandler;
+use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -114,6 +115,34 @@ it('pins the Reverb transport without losing address resolution or old-server li
     expect($options['connect_timeout'])->toBe($oldServer ? 0.3 : 2);
 })->with([false, true]);
 
+it('reuses one private CA directory across separate realtime connections in a process', function (): void {
+    $port = orbit_https_server($this->servers, $this->directory, 'orbit', 'ok');
+    $connection = new RealtimeConnectionData('reverb.orbit', $port, 'https', 'app', 'key', 'secret', $this->orbitRoot, '127.0.0.1');
+    $trace = fopen('php://temp', 'w+');
+
+    try {
+        for ($attempt = 0; $attempt < 2; $attempt++) {
+            $realtime = new RealtimeConnection(app(WebSocketCredentialManager::class), $this->directory);
+            $realtime->configureBroadcasting($connection);
+            config(['broadcasting.connections.reverb.client_options.debug' => $trace]);
+            Broadcast::purge('reverb');
+
+            expect(Broadcast::connection('reverb')->getPusher()->trigger('private-orbit', 'test', ['value' => 'ok']))->toBeObject();
+        }
+
+        rewind($trace);
+        expect(preg_match_all('/CApath: (.+)/', stream_get_contents($trace), $matches))->toBe(2);
+        $directories = array_map(trim(...), $matches[1]);
+        expect(array_unique($directories))->toHaveCount(1);
+        expect(scandir($directories[0]))->toBe(['.', '..']);
+        expect(fileperms($directories[0]) & 0o777)->toBe(0o700);
+    } finally {
+        Broadcast::purge('reverb');
+        config(['broadcasting.connections.reverb.client_options.debug' => null]);
+        fclose($trace);
+    }
+});
+
 it('accepts Orbit certificates and rejects a different CA for internal HTTPS', function (string $client): void {
     $trusted = orbit_https_server($this->servers, $this->directory, 'orbit', 'ok');
     $untrusted = orbit_https_server($this->servers, $this->directory, 'system', 'ok');
@@ -127,8 +156,8 @@ it('accepts Orbit certificates and rejects a different CA for internal HTTPS', f
         } elseif ($client === 'reverb') {
             $connection = new RealtimeConnectionData('reverb.orbit', $port, 'https', 'app', 'key', 'secret', $this->orbitRoot, '127.0.0.1');
             app(RealtimeConnection::class)->configureBroadcasting($connection);
-            $http = new Client(config('broadcasting.connections.reverb.client_options'));
-            expect($http->post("https://reverb.orbit:{$port}/apps/app/events", ['json' => ['name' => 'test']])->getStatusCode())->toBe(200);
+            Broadcast::purge('reverb');
+            expect(Broadcast::connection('reverb')->getPusher()->trigger('private-orbit', 'test', ['value' => 'ok']))->toBeObject();
         } else {
             $verifier = new HttpGatewayReleaseVerifier(origin: "https://127.0.0.1:{$port}", caFile: $this->orbitRoot, backoff: []);
             expect($verifier->verify(str_repeat('a', 40))['status'])->toBe('ok');
