@@ -1050,6 +1050,8 @@ After each approval, the Gateway pushes the stored commit, never `HEAD`, with `g
 
 Publication then requests the GitHub logins in `ORBIT_TASKS_REVIEW_REQUEST_LOGINS` as reviewers so the fleet reviewer wakes. It skips the pull request author, because GitHub rejects that request. Unset or empty logins request no one. A failed reviewer request is logged and does not block publication. It stores `pr_url` and moves a shared task to `settling`, or a VM task to `waiting_for_review`. Both statuses use the same pull request watch, fixup, and completion rules.
 
+A VM task's push runs in a [queued job](/reference/compute-drivers#publish-from-the-vm), because the commit comes out of the VM at the VM's pace. While the job waits or runs, the subtask stays in `reviewing` without a failure, and each tick checks the job again. The job's error counts as one failed push.
+
 A failed push or open keeps the subtask in `reviewing` and keeps its commit. It retries after 1 minute, then 2, 5, 10, and 30 minutes, and then every 30 minutes. The fifth failure asks for assistance with a reason that starts with `Approved commit publication failed: `. The reason names Git's error. When GitHub refuses a push that changes `.github/workflows/`, it names the missing `Workflows` permission. A later success clears only that reason.
 
 The task title is the pull request title. The description holds the summary, a Changes list, a Breaking changes list or `None.`, and one line that says each delivered subtask passed the task check and reviewer approval. Cancelled and failed subtasks are not counted.
@@ -1446,6 +1448,7 @@ Cancel removes the task's workspace, then marks the task and its open subtasks `
 Cancel uses forced [Instance removal](/reference/instance-removal), including Project teardown and checkout deletion. A development workspace in `source_resolved` can have no Route or exactly one pending or failed Route targeting only that Instance. The eligible Route and its RouteTarget are removed with the workspace. An active or shared Route still prevents removal, keeps the Instance, and follows the removal-refused rule below.
 
 - **Settling without a pull request.** Cancel first pushes the latest approved commit to `task-{id}`, so you can open a pull request from it. A failed push returns HTTP 502 `tasks.push_failed` and keeps the task.
+- **VM task settling without a pull request.** The first cancel queues the push and returns `tasks.push_failed` with `Cancel again in a minute.` A later cancel finds the push done and ends the task.
 - **Review and merge.** Cancel pushes only an approved commit that a final review approved. It removes approved work that no final review saw.
 - **Node unreachable.** Cancel still ends the task and keeps the Instance attached. The task does not ask for assistance. It keeps the reason `Workspace removal failed: The Node is unreachable.` The sweep removes the workspace later.
 - **Removal refused.** Cancel returns the error and keeps the task. A task other than `cancelled` asks for assistance with `Workspace removal failed: `. A `cancelled` task keeps that reason and does not ask for assistance.

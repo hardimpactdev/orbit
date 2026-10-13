@@ -49,6 +49,19 @@ final class ProcessOutputControlledProcess extends SymfonyProcess
         $this->started = true;
     }
 
+    /** Never started, so it has no buffer to clear. */
+    #[Override]
+    public function clearOutput(): static
+    {
+        return $this;
+    }
+
+    #[Override]
+    public function clearErrorOutput(): static
+    {
+        return $this;
+    }
+
     #[Override]
     public function isRunning(): bool
     {
@@ -543,6 +556,19 @@ final class NativeProcessRunnerCompletedProcess extends SymfonyProcess
     {
         $this->started = true;
         $this->calls[] = 'start';
+    }
+
+    /** Never started, so it has no buffer to clear. */
+    #[Override]
+    public function clearOutput(): static
+    {
+        return $this;
+    }
+
+    #[Override]
+    public function clearErrorOutput(): static
+    {
+        return $this;
     }
 
     #[Override]

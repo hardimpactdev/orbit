@@ -269,7 +269,7 @@ describe('Gateway startup entry points', function (): void {
 
         expect(file_exists($this->gateDirectory.'/permit.json'))->toBeTrue()
             ->and($gate->status()->generation)->toBe($first->generation);
-    })->with(['task-vms', 'task-vm-templates', 'task-vm-images']);
+    })->with(['task-vms', 'task-vm-templates', 'task-vm-images', 'task-vm-git']);
 
     it('refuses consumer startup when the gate cannot be invalidated', function (): void {
         app(CleanupGate::class)->invalidate();

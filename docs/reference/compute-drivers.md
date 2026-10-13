@@ -399,7 +399,11 @@ No GitHub token reaches a task VM or a template builder. The agent in a task VM 
 
 #### The mirror
 
-Each Project with task VM work has one bare repository on the Gateway: `storage/app/task-vm-git/<project id>.git`, in the [shared Gateway storage](/reference/gateway-recovery#release-layout). The Gateway fetches into it from the Project repository URL with the Project's [repository access](/reference/github-app#how-orbit-reads-a-repository). The token is in the environment of one `git` process on the Gateway, as for any other read. The fetch asks only for the branches that the operation names, with `--no-tags`, into `refs/heads/<branch>`. One operation at a time changes the mirror of a Project.
+Each Project with task VM work has one bare repository on the Gateway: `storage/app/task-vm-git/<project id>.git`, in the [shared Gateway storage](/reference/gateway-recovery#release-layout). The Gateway fetches into it from the Project repository URL with the Project's [repository access](/reference/github-app#how-orbit-reads-a-repository). The token is in the environment of one `git` process on the Gateway, as for any other read. The fetch asks only for the branches that the operation names, with `--no-tags`, into `refs/heads/<branch>`.
+
+The mirror always uses HTTPS, because the token travels in an HTTPS header. A `git@github.com:` or `ssh://git@github.com/` URL becomes `https://github.com/<owner>/<name>.git`. Any other SSH URL fails with `Task VM Git reaches a repository over HTTPS only`.
+
+A lock lets one operation at a time change the mirror of a Project. The lock covers only work on the Gateway and GitHub: a fetch, the packing of a send, and the move of a verified pack. It never covers a transfer to or from a VM. It lasts 40 minutes, longer than a fetch can run, and another operation waits for it at most 300 seconds. Git in the mirror never collects garbage on its own (`gc.auto=0`). After each publish, the publish job runs `git gc --auto` outside the lock.
 
 #### Send branches to the VM
 
@@ -420,20 +424,31 @@ A workspace without a template starts from `git init`, with the Project reposito
 
 #### Publish from the VM
 
+A VM sends its pack at its own pace, so the task tick does not publish. The push of an approved commit records the commit and `task-<id>` on the task VM row as `queued`, and queues the job `PublishTaskVmCommit` on the [Git queue](#jobs). The approval stays in review, without a failure. Each later tick reads the row:
+
+- `queued`: the job waits or runs. The tick changes nothing.
+- `pushed`: GitHub has the commit at the branch. The approval continues, and the pull request opens.
+- `failed`: the tick reports the job's error as a [failed push](/reference/tasks#pull-request-and-settle-metrics), once. The next push after its backoff queues the job again.
+
+A job that has not finished 40 minutes after it was queued counts as failed. The job pushes only while the row still names its commit and branch as `queued`, so a repeated or late job changes nothing. It does this:
+
 1. The Gateway fetches the default branch and `task-<id>` into the mirror.
 2. It asks the VM for a pack of the approved commit. The pack leaves out the history of the mirror's commits of those branches.
-3. The VM writes the pack to standard output, and the Gateway writes it to a file. A pack over 2 GiB fails the push.
-4. The Gateway indexes the pack in the mirror with `git index-pack --strict`, which checks every object.
-5. It checks that the approved commit is a commit in the mirror, and that its history is complete.
-6. It pushes `<commit>:refs/heads/task-<id>` from the mirror with the write token, and records the branch in the mirror.
+3. The VM writes the pack to standard output, and the Gateway streams it to one file. A pack over 2 GiB stops the VM's command and fails the push with `The task VM sent a pack over 2 GiB`.
+4. The Gateway indexes the pack into a quarantine object directory with `git index-pack --strict`. That command checks every object. The quarantine reads the mirror's objects but changes nothing in the mirror.
+5. It checks that the approved commit is a commit there, and that its history is complete.
+6. Only then does the verified pack move into the mirror. A pack that fails a check leaves nothing behind.
+7. It pushes `<commit>:refs/heads/task-<id>` from the mirror with the write token, and records the branch in the mirror.
 
-Only the commit ID that the Gateway approved names what it pushes. The VM's branch names, refs, and configuration play no part.
+The job and each of its Git commands end within 1600 seconds. Only the commit ID that the Gateway approved names what it pushes. The VM's branch names, refs, and configuration play no part.
 
 #### What the Gateway trusts
 
 From the VM, the Gateway takes only commit IDs and pack data. A commit ID must be 40 or 64 lowercase hex characters. Git in the mirror never reads a file from the VM. It runs with these settings: `core.hooksPath=/dev/null`, `core.fsmonitor=false`, an empty `credential.helper`, `http.followRedirects=false`, `protocol.allow=never`, and `protocol.https.allow=always`. A pack from the VM goes through `git index-pack --strict`, which runs the object checks that `transfer.fsckObjects` runs for a fetch. Fetches from GitHub skip them, because an old commit in a real repository can fail them.
 
 The Gateway refuses to send a command that carries a GitHub credential to a task VM. The command fails with `task_vm.git_credential_refused` before SSH starts. An `incus` command on a task VM host refuses one too. So an Instance or Project operation that would fetch on a task VM with a token fails there and passes no token. Examples are `instance:destroy` of a task VM workspace, `instance:clone` from one, and `project:update` with a new repository URL while one exists. A task VM workspace goes with its group; see [Destroy a task VM](#destroy-a-task-vm).
+
+The guard knows a credential by the mark that `GitReadScript` puts on its input. A test fails when other code builds the credential header. It also fails when a new file sends remote commands with GitHub access in reach, so each such path gets a review.
 
 The checkout keeps the Project repository URL as `origin`. The agent can run Git there, but it holds no credential. So it cannot fetch from or push to a private repository.
 
@@ -509,18 +524,19 @@ The worker stops when the queue is empty, or takes no new job after 120 seconds.
 
 A job is due when its time has come and no worker holds it, or a worker's hold is older than 1800 seconds. A delayed retry or a released job starts no worker before its time. Without a due job, the scheduler only reads the queue table each second. A Gateway release drains the worker like any other scheduled command. Its start does not pause [document cleanup](/reference/project-documents), because it runs only task VM jobs.
 
-The workspace template jobs, `RefreshTaskVmWorkspaceTemplates` and `BuildTaskVmWorkspaceTemplate`, run on the queue `task-vm-templates` in the same table, with a worker of their own. The nightly base image refreshes, [`RefreshTaskVmBaseImages`](#build-the-base-image) and [`RefreshUpCloudTaskVmBaseImage`](#refresh-the-upcloud-template-every-night), run on the queue `task-vm-images`, with a third worker:
+The workspace template jobs, `RefreshTaskVmWorkspaceTemplates` and `BuildTaskVmWorkspaceTemplate`, run on the queue `task-vm-templates` in the same table, with a worker of their own. The nightly base image refreshes, [`RefreshTaskVmBaseImages`](#build-the-base-image) and [`RefreshUpCloudTaskVmBaseImage`](#refresh-the-upcloud-template-every-night), run on the queue `task-vm-images`, with a third worker. The [publish](#publish-from-the-vm) of an approved commit, `PublishTaskVmCommit`, runs on the queue `task-vm-git`, with a fourth:
 
 ```text
 queue:work task-vms --queue=task-vm-templates --stop-when-empty --max-time=120 --timeout=1700
 queue:work task-vms --queue=task-vm-images --stop-when-empty --max-time=120 --timeout=1700
+queue:work task-vms --queue=task-vm-git --stop-when-empty --max-time=120 --timeout=1700
 ```
 
-So a template build, which takes about a minute and at most 1700 seconds, and a base image refresh, which takes up to 25 minutes, never hold up a task VM job or each other. Each of these workers runs one job at a time, so one template build and one base image refresh run in the fleet at a time. The host locks also allow one template build and one base image build or sync per host.
+So a template build, a base image refresh, and a publish never hold up a task VM job or each other. A template build takes about a minute, a base image refresh up to 25 minutes, and a publish seconds. Each runs at most 1700 seconds. Each of these workers runs one job at a time, so one template build, one base image refresh, and one publish run in the fleet at a time. The host locks also allow one template build and one base image build or sync per host.
 
 Each worker's overlap lock lasts 32 minutes, longer than its longest run: 120 seconds of jobs, then one more job of at most 1700 seconds.
 
-These workers have the same due check, but start only at the end of a minute: the image worker in seconds 56 and 57, the template worker in seconds 58 and 59. A scheduler run waits for a command that it starts in the foreground, and the scheduler starts a new run each minute. So a long job holds a run that was about to end, and the next run starts the task VM worker each second again, and the other worker when it is due.
+These workers have the same due check, but start only at the end of a minute: the Git worker in seconds 54 and 55, the image worker in seconds 56 and 57, the template worker in seconds 58 and 59. So a publish waits up to a minute for its worker. A scheduler run waits for a command that it starts in the foreground, and the scheduler starts a new run each minute. So a long job holds a run that was about to end, and the next run starts the task VM worker each second again, and the other worker when it is due.
 
 A worker stops after 120 seconds and starts again at the end of a minute, so it can idle up to a minute between runs.
 

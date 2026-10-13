@@ -5,8 +5,11 @@ declare(strict_types=1);
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\GitHub\GitReadEnvironment;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\ProcessCancelledException;
+use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessOutput;
 use App\Infrastructure\Processes\ProcessOutputStream;
+use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\TaskVms\TaskVmGit;
@@ -63,7 +66,8 @@ beforeEach(function (): void {
     (new Process(['git', 'init', '--quiet', $this->root.'/vm']))->mustRun();
     tvm_git($this->root.'/vm', ['remote', 'add', 'origin', TVM_GIT_REPOSITORY]);
     $this->project = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => TVM_GIT_REPOSITORY, 'default_branch' => 'main']);
-    $this->git = app(TaskVmGit::class);
+    $this->mirrors = $this->root.'/mirrors';
+    $this->git = new TaskVmGit(app(ProcessRunner::class), $this->mirrors, ['https', 'file']);
     $this->access = GitReadEnvironment::forGitHubToken(TVM_GIT_TOKEN);
 });
 
@@ -154,8 +158,50 @@ describe('publish from the VM', function (): void {
         $this->git->publish($this->project, $this->root.'/vm', $this->approved, 'task-7', [$this->main], $this->access, tvm_git_vm(), 'tasks.push_failed');
 
         expect(tvm_git($this->root.'/origin.git', ['rev-parse', 'refs/heads/task-7']))->toBe($this->approved)
-            ->and(tvm_git($this->root.'/origin.git', ['fsck', '--no-dangling']))->toBe('');
+            ->and(tvm_git($this->root.'/origin.git', ['fsck', '--no-dangling']))->toBe('')
+            // The verified pack moved out of quarantine into the mirror, and the scratch directory is gone.
+            ->and(tvm_git($this->mirrors.'/'.$this->project->id.'.git', ['rev-parse', 'refs/heads/task-7']))->toBe($this->approved)
+            ->and(tvm_git($this->mirrors.'/'.$this->project->id.'.git', ['fsck', '--no-dangling', '--connectivity-only']))->toBe('')
+            ->and(glob($this->mirrors.'/tmp/*'))->toBe([]);
         tvm_git_expect_no_token();
+    });
+
+    it('keeps the objects of a pack that fails verification out of the mirror', function (): void {
+        // A whole, valid pack of another commit: index-pack accepts it, but it lacks the approved commit.
+        tvm_git($this->root.'/vm', ['checkout', '--quiet', '--orphan', 'other']);
+        $other = tvm_git_commit($this->root.'/vm', 'other.php');
+        $pack = (string) (new Process(['git', '-C', $this->root.'/vm', 'pack-objects', '--revs', '--stdout', '--quiet'], null, null, $other."\n"))->mustRun()->getOutput();
+        $forged = function (RemoteCommand $command) use ($pack): CommandResult {
+            ($command->output)(new ProcessOutput(ProcessOutputStream::Stdout, $pack));
+
+            return new CommandResult(0, '', '', 1, false);
+        };
+
+        expect(fn () => $this->git->publish($this->project, $this->root.'/vm', $this->approved, 'task-7', [$this->main], $this->access, $forged, 'tasks.push_failed'))
+            ->toThrow(RuntimeConvergenceException::class, 'The task VM did not send the approved commit with its whole history.');
+        $probe = new Process(['git', '--git-dir='.$this->mirrors.'/'.$this->project->id.'.git', 'cat-file', '-e', $other]);
+        expect($probe->run())->not->toBe(0)
+            ->and(glob($this->mirrors.'/tmp/*'))->toBe([])
+            ->and(tvm_git($this->root.'/origin.git', ['for-each-ref', 'refs/heads/task-7']))->toBe('');
+    });
+
+    it('stops a VM that sends more than the limit and fails with the limit', function (): void {
+        $git = new TaskVmGit(app(ProcessRunner::class), $this->mirrors, ['https', 'file'], maxPackBytes: 1024);
+        $flood = function (RemoteCommand $command): CommandResult {
+            // As the process runner does: output in chunks, then the cancel check stops the command.
+            for ($chunk = 0; $chunk < 8; $chunk++) {
+                ($command->output)(new ProcessOutput(ProcessOutputStream::Stdout, str_repeat('p', 512)));
+                if (($command->cancelled)()) {
+                    throw new ProcessCancelledException;
+                }
+            }
+
+            return new CommandResult(0, '', '', 1, false);
+        };
+
+        expect(fn () => $git->publish($this->project, $this->root.'/vm', $this->approved, 'task-7', [$this->main], $this->access, $flood, 'tasks.push_failed'))
+            ->toThrow(RuntimeConvergenceException::class, 'The task VM sent a pack over 1024 bytes.');
+        expect(glob($this->mirrors.'/tmp/*'))->toBe([]);
     });
 
     it('refuses a pack that does not hold the approved commit and its history, and pushes nothing', function (string $stdout): void {
@@ -191,5 +237,53 @@ describe('publish from the VM', function (): void {
             expect($exception->step)->toBe('task-pull-request-push')
                 ->and($exception->result?->stderr)->toContain('rejected');
         }
+    });
+});
+
+describe('the repository URL', function (): void {
+    it('fetches a github.com repository named in SSH form over HTTPS', function (string $origin): void {
+        $this->project->update(['repository_url' => $origin]);
+
+        expect($this->git->fetch($this->project, ['main'], $this->access, 'tasks.fetch_failed'))->toBe(['main' => $this->main]);
+    })->with(['git@' => ['git@github.com:acme/shop.git'], 'ssh://' => ['ssh://git@github.com/acme/shop']]);
+
+    it('refuses another SSH repository clearly', function (): void {
+        $this->project->update(['repository_url' => 'git@gitlab.com:acme/shop.git']);
+
+        expect(fn () => $this->git->fetch($this->project, ['main'], $this->access, 'tasks.fetch_failed'))
+            ->toThrow(RuntimeConvergenceException::class, 'Task VM Git reaches a repository over HTTPS only.');
+    });
+});
+
+describe('garbage collection', function (): void {
+    it('never collects garbage inside a mirror command, and collects it on request', function (): void {
+        $runs = new ArrayObject;
+        $recording = new class(app(ProcessRunner::class), $runs) implements ProcessRunner
+        {
+            public function __construct(private ProcessRunner $runner, private ArrayObject $runs) {}
+
+            public function run(ProcessInvocation $invocation): CommandResult
+            {
+                $this->runs->append($invocation->arguments);
+
+                return $this->runner->run($invocation);
+            }
+        };
+        $git = new TaskVmGit($recording, $this->mirrors, ['https', 'file']);
+        $tips = $git->fetch($this->project, ['main'], $this->access, 'tasks.push_failed');
+        $git->send($this->project, $this->root.'/vm', $tips, tvm_git_vm(), 'tasks.push_failed');
+        tvm_git($this->root.'/vm', ['checkout', '--quiet', '-B', 'task-7', 'refs/remotes/origin/main']);
+        $git->publish($this->project, $this->root.'/vm', tvm_git_commit($this->root.'/vm', 'export.php'), 'task-7', [$this->main], $this->access, tvm_git_vm(), 'tasks.push_failed');
+        $mirrorRuns = array_filter($runs->getArrayCopy(), static fn (array $arguments): bool => ! in_array('init', $arguments, true));
+
+        expect($mirrorRuns)->not->toBeEmpty();
+        foreach ($mirrorRuns as $arguments) {
+            expect(implode(' ', $arguments))->toContain('-c gc.auto=0')->not->toContain(' gc ');
+        }
+
+        $runs->exchangeArray([]);
+        $git->collectGarbage($this->project);
+
+        expect(implode(' ', $runs[0]))->toContain('-c gc.auto=0')->toContain('-c gc.auto=6700 gc --auto --quiet');
     });
 });
