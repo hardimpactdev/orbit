@@ -108,7 +108,7 @@ final readonly class TaskVmHostAudit
             ->with('group')->orderBy('id')->get()
             ->filter(static fn (TaskVm $vm): bool => $vm->group === null
                 || (in_array($vm->group->groupStatus(), [TaskGroupStatus::Completed, TaskGroupStatus::Cancelled], true)
-                    && $vm->group->updated_at !== null && $vm->group->updated_at->lessThanOrEqualTo($cutoff)))
+                    && $vm->group->getAttribute('updated_at') instanceof Carbon && $vm->group->getAttribute('updated_at')->lessThanOrEqualTo($cutoff)))
             ->all());
     }
 
