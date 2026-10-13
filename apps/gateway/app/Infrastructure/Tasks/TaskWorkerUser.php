@@ -6,7 +6,6 @@ namespace App\Infrastructure\Tasks;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\RoleName;
-use App\Domain\TaskVms\TaskVmPlacement;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\TaskVm;
@@ -26,7 +25,7 @@ final readonly class TaskWorkerUser
         if ($worker === null) {
             return null;
         }
-        if ($workspace?->node instanceof Node && TaskVmPlacement::forNode($workspace->node) instanceof TaskVm) {
+        if ($workspace?->node instanceof Node && TaskVm::forNode($workspace->node) instanceof TaskVm) {
             return null;
         }
         if (! is_string($worker) || preg_match('/\A[a-z_][a-z0-9_-]{0,31}\z/D', $worker) !== 1 || $worker === 'root') {
@@ -66,7 +65,7 @@ final readonly class TaskWorkerUser
             return null;
         }
         $node = $instance->node;
-        if (TaskVmPlacement::forNode($node) instanceof TaskVm) {
+        if (TaskVm::forNode($node) instanceof TaskVm) {
             return null;
         }
         if ($instance->worker_shared) {
@@ -85,7 +84,7 @@ final readonly class TaskWorkerUser
     {
         return ! self::optedOut($node)
             && $node->roles()->where('role', RoleName::AppDev)->exists()
-            && ! (TaskVmPlacement::forNode($node) instanceof TaskVm);
+            && ! (TaskVm::forNode($node) instanceof TaskVm);
     }
 
     private static function configured(): mixed

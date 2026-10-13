@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
+use App\Domain\TaskVms\TaskVmSchedule;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\WireGuard\VpnSettings;
 use PHPUnit\Framework\Assert;
@@ -11,7 +12,7 @@ use PHPUnit\Framework\Assert;
 /** @param array<string, mixed> $overrides */
 function enable_task_vms(array $overrides = []): void
 {
-    config(['task_vms' => array_replace_recursive([
+    config(['task_vms' => array_replace_recursive(task_vm_config([
         'enabled' => true,
         'dev_cluster_id' => 4,
         'wireguard_range' => '10.44.0.128/25',
@@ -22,7 +23,7 @@ function enable_task_vms(array $overrides = []): void
             'models' => ['proxy/coder-large', 'proxy/coder-large'],
         ],
         'incus' => ['hosts' => [['node_id' => 7, 'cidr' => '10.251.77.0/24', 'max_vms' => 4]]],
-    ], $overrides)]);
+    ]), $overrides)]);
 }
 
 /** @param array<string, mixed> $host */
@@ -34,14 +35,23 @@ function task_vm_hosts(array $host): array
 /** @param array<string, mixed> $values */
 function task_vms_off(array $values = []): void
 {
-    config(['task_vms' => array_replace_recursive([
-        'enabled' => false,
-        'dev_cluster_id' => null,
-        'wireguard_range' => '10.44.0.128/25',
-        'model_proxy_origin' => null,
-        'pi' => ['artifact_path' => null, 'artifact_sha256' => null, 'models' => []],
-        'incus' => ['hosts' => []],
-    ], $values)]);
+    config(['task_vms' => array_replace_recursive(task_vm_config(), $values)]);
+}
+
+/** The config file's `park_after_minutes` while its environment value is `$value`, or unset for null. */
+function task_vm_park_after_minutes_from_env(?string $value): mixed
+{
+    $key = 'ORBIT_TASK_VMS_PARK_AFTER_MINUTES';
+    if ($value !== null) {
+        putenv("{$key}={$value}");
+        $_ENV[$key] = $_SERVER[$key] = $value;
+    }
+    try {
+        return (require config_path('task_vms.php'))['park_after_minutes'];
+    } finally {
+        putenv($key);
+        unset($_ENV[$key], $_SERVER[$key]);
+    }
 }
 
 function expect_invalid_task_vm_config(string $reason): void
@@ -71,27 +81,19 @@ describe('defaults', function (): void {
             ->and($settings->parkAfterMinutes)->toBe(30);
     });
 
-    it('reads park_after_minutes as a whole number of minutes', function (mixed $value, int $minutes): void {
-        task_vms_off(['park_after_minutes' => $value]);
+    it('reads park_after_minutes as a whole number of minutes, 30 by default', function (?string $value, int $minutes): void {
+        task_vms_off(['park_after_minutes' => task_vm_park_after_minutes_from_env($value)]);
 
         expect(TaskVmSettings::fromConfig()->parkAfterMinutes)->toBe($minutes);
     })->with([
         'unset' => [null, 30],
         'empty' => ['', 30],
         'from the environment' => ['45', 45],
-        'an integer' => [10080, 10080],
+        'the maximum' => ['10080', 10080],
     ]);
 
     it('passes 0 from the environment through to validation instead of the default', function (): void {
-        putenv('ORBIT_TASK_VMS_PARK_AFTER_MINUTES=0');
-        $_ENV['ORBIT_TASK_VMS_PARK_AFTER_MINUTES'] = $_SERVER['ORBIT_TASK_VMS_PARK_AFTER_MINUTES'] = '0';
-        try {
-            $config = require config_path('task_vms.php');
-        } finally {
-            putenv('ORBIT_TASK_VMS_PARK_AFTER_MINUTES');
-            unset($_ENV['ORBIT_TASK_VMS_PARK_AFTER_MINUTES'], $_SERVER['ORBIT_TASK_VMS_PARK_AFTER_MINUTES']);
-        }
-        task_vms_off(['park_after_minutes' => $config['park_after_minutes']]);
+        task_vms_off(['park_after_minutes' => task_vm_park_after_minutes_from_env('0')]);
 
         expect_invalid_task_vm_config('park_after_minutes must be a whole number of minutes from 1 to 10080.');
     });
@@ -177,6 +179,8 @@ describe('off but configured', function (): void {
         'hosts not a list' => [['incus' => ['hosts' => 'not json']], 'incus.hosts must be a JSON list'],
         'bad host' => [task_vm_hosts(['max_vms' => 0]), 'incus.hosts.0.max_vms'],
         'bad Cluster' => [['dev_cluster_id' => '4x'], 'dev_cluster_id must be a Cluster id'],
+        'blank Cluster' => [['dev_cluster_id' => '  '], 'dev_cluster_id must be a Cluster id'],
+        'blank origin' => [['model_proxy_origin' => ' '], 'model_proxy_origin must be an http(s) origin'],
         'bad origin' => [['model_proxy_origin' => 'http://10.44.0.3:8317/v1'], 'model_proxy_origin'],
         'malformed models JSON' => [['pi' => ['models' => null]], 'pi.models'],
         'artifact without digest' => [['pi' => ['artifact_path' => '/home/orbit/pi']], 'must be set together'],
@@ -307,5 +311,27 @@ describe('hosts', function (): void {
         'broadcast' => ['10.251.77.255', false],
         'outside' => ['10.251.78.32', false],
         'not an address' => ['10.251.77.032', false],
+    ]);
+});
+
+describe('scheduler reader', function (): void {
+    it('reads the switches leniently, also from an invalid config', function (): void {
+        task_vms_off([
+            'enabled' => true, 'dev_cluster_id' => 'not an id',
+            'incus' => ['hosts' => [['node_id' => 7, 'warm_vms' => 1]]],
+            'upcloud' => ['token_file' => '/home/orbit/upcloud.yaml'],
+        ]);
+
+        expect(TaskVmSettings::scheduled())->toEqual(new TaskVmSchedule(enabled: true, upcloudConfigured: true, warmVmsWanted: true));
+    });
+
+    it('wants no warm VMs while task VMs are off or no host sets warm_vms', function (array $values): void {
+        task_vms_off($values);
+
+        expect(TaskVmSettings::scheduled()->warmVmsWanted)->toBeFalse();
+    })->with([
+        'off' => [['incus' => ['hosts' => [['node_id' => 7, 'warm_vms' => 1]]]]],
+        'no warm_vms' => [['enabled' => true, 'incus' => ['hosts' => [['node_id' => 7]]]]],
+        'malformed hosts JSON' => [['enabled' => true, 'incus' => ['hosts' => null]]],
     ]);
 });

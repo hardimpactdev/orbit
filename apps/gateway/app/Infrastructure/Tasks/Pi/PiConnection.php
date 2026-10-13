@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Infrastructure\Tasks\Pi;
 
 use App\Domain\Tasks\AgentDriverException;
-use App\Domain\TaskVms\TaskVmPlacement;
 use App\Infrastructure\Shared\StoredValue;
 use App\Models\Node;
 use App\Models\TaskVm;
@@ -42,7 +41,7 @@ final readonly class PiConnection
 
     public function token(Node $node): string
     {
-        $vm = TaskVmPlacement::forNode($node);
+        $vm = TaskVm::forNode($node);
         if ($vm instanceof TaskVm) {
             // A warm VM has no token until a claim: it never falls back to Node settings or the Gateway-wide token.
             return $vm->pi_token ?? throw new AgentDriverException('The task VM has no Pi token, because no task group claimed it yet.');
@@ -58,7 +57,7 @@ final readonly class PiConnection
      */
     public function secrets(Node $node): array
     {
-        $vm = TaskVmPlacement::forNode($node);
+        $vm = TaskVm::forNode($node);
         if ($vm instanceof TaskVm) {
             return array_values(array_filter([$vm->pi_token ?? '', $vm->model_key ?? ''], static fn (string $value): bool => $value !== ''));
         }

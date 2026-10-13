@@ -4,14 +4,11 @@ declare(strict_types=1);
 
 namespace App\Jobs\TaskVms;
 
-use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmProvider;
-use App\Domain\TaskVms\TaskVmQueue;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\TaskVm;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Queue\Queueable;
 use Throwable;
 
 /**
@@ -21,7 +18,7 @@ use Throwable;
  */
 final class ParkTaskVm implements ShouldBeUnique, ShouldQueue
 {
-    use Queueable;
+    use TaskVmRowJob;
 
     public int $tries = 3;
 
@@ -31,16 +28,6 @@ final class ParkTaskVm implements ShouldBeUnique, ShouldQueue
 
     /** A lost unique lock expires, so a crashed worker never blocks the row for good. */
     public int $uniqueFor = 3600;
-
-    public function __construct(public int $taskVmId)
-    {
-        $this->onConnection('task-vms')->onQueue(TaskVmQueue::Vms->value);
-    }
-
-    public function uniqueId(): string
-    {
-        return (string) $this->taskVmId;
-    }
 
     public function handle(TaskVmProvider $provider): void
     {
@@ -55,9 +42,6 @@ final class ParkTaskVm implements ShouldBeUnique, ShouldQueue
 
     public function failed(Throwable $exception): void
     {
-        TaskVm::query()->whereKey($this->taskVmId)->where('state', TaskVmState::Parked)->update([
-            'error_code' => TaskVmException::codeOf($exception),
-            'error_message' => mb_substr($exception->getMessage(), 0, 2000),
-        ]);
+        TaskVm::query()->whereKey($this->taskVmId)->where('state', TaskVmState::Parked)->update(TaskVm::errorFrom($exception));
     }
 }

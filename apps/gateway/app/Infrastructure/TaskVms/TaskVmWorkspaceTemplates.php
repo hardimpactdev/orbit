@@ -9,8 +9,8 @@ use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
-use App\Domain\TaskVms\TaskVmPlacement;
 use App\Domain\TaskVms\TaskVmSettings;
+use App\Domain\TaskVms\TaskVmWorkspaceGuard;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -51,7 +51,7 @@ final readonly class TaskVmWorkspaceTemplates
      * name is fixed: the template is built at this path, and tools that key their caches by absolute path, such as
      * Rector, find them after the claim.
      */
-    public const string CheckoutDirectory = TaskVmPlacement::WorkspaceCheckout;
+    public const string CheckoutDirectory = TaskVmWorkspaceGuard::WorkspaceCheckout;
 
     public const string CacheDirectory = '.orbit-cache';
 

@@ -2,10 +2,12 @@
 
 declare(strict_types=1);
 
-use App\Actions\TaskVms\AllocateTaskVmAction;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCompute;
+use App\Domain\TaskVms\TaskVmError;
+use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
+use App\Domain\TaskVms\TaskVmPlacementPolicy;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
@@ -85,8 +87,8 @@ it('defines what each size takes in one place', function (): void {
         [2, false, 4, '8GiB', '40GiB', true],
         [3, false, 6, '12GiB', '60GiB', true],
     ])
-        ->and(AllocateTaskVmAction::noCapacityFor(TaskVmSize::Medium))->toBe('Task VM: no host has 2 free slots for a medium VM.')
-        ->and(AllocateTaskVmAction::noCapacityFor(TaskVmSize::Large))->toBe('Task VM: no host has 3 free slots for a large VM.');
+        ->and(TaskVmPlacementPolicy::noCapacityFor(TaskVmSize::Medium))->toBe('Task VM: no host has 2 free slots for a medium VM.')
+        ->and(TaskVmPlacementPolicy::noCapacityFor(TaskVmSize::Large))->toBe('Task VM: no host has 3 free slots for a large VM.');
 });
 
 it('encrypts the Pi token and model key at rest and hides them', function (): void {
@@ -124,4 +126,18 @@ it('keeps the destroyed row when its Node is removed', function (): void {
     $node->delete();
 
     expect($vm->fresh()?->node_id)->toBeNull();
+});
+
+it('lists every task VM error code of the Gateway in TaskVmError', function (): void {
+    $codes = [];
+    $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(app_path(), FilesystemIterator::SKIP_DOTS));
+    foreach ($files as $file) {
+        if ($file->getExtension() === 'php' && preg_match_all("/'(task_vm\\.[a-z_]+)'/", (string) file_get_contents($file->getPathname()), $matches) > 0) {
+            array_push($codes, ...$matches[1]);
+        }
+    }
+
+    expect($codes)->not->toBeEmpty()
+        ->and(array_values(array_diff(array_unique($codes), array_column(TaskVmError::cases(), 'value'))))->toBe([])
+        ->and(new TaskVmException(TaskVmError::Parked)->errorCode)->toBe('task_vm.parked');
 });

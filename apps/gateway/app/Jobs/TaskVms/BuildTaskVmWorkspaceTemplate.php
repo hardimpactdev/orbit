@@ -16,7 +16,6 @@ use App\Models\Node;
 use App\Models\Project;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -32,7 +31,7 @@ use Throwable;
  */
 final class BuildTaskVmWorkspaceTemplate implements ShouldBeUnique, ShouldQueue
 {
-    use Queueable;
+    use TaskVmJob;
 
     public int $tries = 10;
 
@@ -45,7 +44,7 @@ final class BuildTaskVmWorkspaceTemplate implements ShouldBeUnique, ShouldQueue
 
     public function __construct(public int $hostNodeId, public int $projectId)
     {
-        $this->onConnection('task-vms')->onQueue(TaskVmQueue::Templates->value);
+        $this->onTaskVmQueue(TaskVmQueue::Templates);
     }
 
     public function uniqueId(): string
@@ -119,7 +118,7 @@ final class BuildTaskVmWorkspaceTemplate implements ShouldBeUnique, ShouldQueue
             'host_node_id' => $this->hostNodeId,
             'project_id' => $this->projectId,
             'error_code' => TaskVmException::codeOf($exception),
-            'error' => mb_substr($exception->getMessage(), 0, 2000),
+            'error' => TaskVmException::messageOf($exception),
         ]);
     }
 

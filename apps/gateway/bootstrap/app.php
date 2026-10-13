@@ -18,6 +18,7 @@ use App\Domain\Tasks\TaskDefinitionInvalid;
 use App\Domain\Tasks\TaskDefinitionViolation;
 use App\Domain\Tasks\TaskSchedule;
 use App\Domain\TaskVms\TaskVmQueue;
+use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\Tools\ToolOperationException;
 use App\Http\Middleware\AnnounceDesiredCliVersion;
 use App\Http\Middleware\EnsureRequestId;
@@ -79,15 +80,19 @@ return Application::configure(basePath: dirname(__DIR__))
         // The nightly task VM base image refresh, a job on the image queue below, so its build and sync of up to 25
         // minutes hold up no task VM job. When it ends, it queues one workspace template refresh for every host.
         $schedule->job(new RefreshTaskVmBaseImages)->dailyAt('03:00')
-            ->when(static fn (): bool => config('task_vms.enabled') === true);
+            ->when(static fn (): bool => TaskVmSettings::scheduled()->enabled);
         // The nightly UpCloud base image refresh, on the image queue too, so its build of about 20 minutes holds up no
         // task VM job. It runs while the UpCloud token file is set, also with the overflow off.
         $schedule->job(new RefreshUpCloudTaskVmBaseImage)->dailyAt('02:00')
-            ->when(static fn (): bool => filled(config('task_vms.upcloud.token_file')));
+            ->when(static fn (): bool => TaskVmSettings::scheduled()->upcloudConfigured);
         // The task VM host sweep: orphaned VMs and clones, and live rows whose VM is gone. It also runs while only the
         // UpCloud token file is set, so no UpCloud server that Orbit created keeps costing money.
         $schedule->job(new SweepTaskVmHosts)->everyTenMinutes()
-            ->when(static fn (): bool => config('task_vms.enabled') === true || filled(config('task_vms.upcloud.token_file')));
+            ->when(static function (): bool {
+                $taskVms = TaskVmSettings::scheduled();
+
+                return $taskVms->enabled || $taskVms->upcloudConfigured;
+            });
         // The task VM pool: warm VMs up to each host's warm_vms, and a drain while task VMs are off. Inert while no
         // host has warm_vms and no pool VM exists.
         $schedule->job(new RefillTaskVmPool)->everyMinute()

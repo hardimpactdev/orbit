@@ -11,13 +11,16 @@ use Throwable;
 /** A task VM failure with a stable `task_vm.*` error code. */
 final class TaskVmException extends ResourceOperationException
 {
+    /** The most characters of an error message that a row, a log entry, or an assistance reason keeps. */
+    public const int MessageLimit = 2000;
+
     public function __construct(
-        string $errorCode,
+        TaskVmError|string $errorCode,
         string $message = 'The task VM operation failed.',
         int $status = 409,
         ?Throwable $previous = null,
     ) {
-        parent::__construct($errorCode, $message, $status, $previous);
+        parent::__construct($errorCode instanceof TaskVmError ? $errorCode->value : $errorCode, $message, $status, $previous);
     }
 
     /** The stable code of any failure: its own code, or `task_vm.job_failed` when it has none. */
@@ -25,7 +28,13 @@ final class TaskVmException extends ResourceOperationException
     {
         return match (true) {
             $exception instanceof ResourceOperationException, $exception instanceof NodeProvisioningException => $exception->errorCode,
-            default => 'task_vm.job_failed',
+            default => TaskVmError::JobFailed->value,
         };
+    }
+
+    /** The message of any failure, cut to {@see self::MessageLimit} characters. */
+    public static function messageOf(Throwable $exception): string
+    {
+        return mb_substr($exception->getMessage(), 0, self::MessageLimit);
     }
 }

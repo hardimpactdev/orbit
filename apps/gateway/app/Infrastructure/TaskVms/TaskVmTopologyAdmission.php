@@ -13,7 +13,6 @@ use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Domain\Tasks\TaskTopologyEvidence;
 use App\Domain\Tasks\TaskTopologyFailedException;
 use App\Domain\Tasks\TaskWait;
-use App\Domain\TaskVms\TaskVmPlacement;
 use App\Domain\TaskVms\TaskVmTopologyState;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
@@ -58,7 +57,7 @@ final readonly class TaskVmTopologyAdmission implements TaskTopologyAdmission
         if ($group->task_compute !== TaskCompute::Vm) {
             throw new TaskCapacityException(TaskWait::Topology, self::SharedGroup);
         }
-        $vm = TaskVmPlacement::forGroup($group);
+        $vm = TaskVm::forGroup($group);
         $instance = $group->taskable;
         if (! $vm instanceof TaskVm || ! $vm->node instanceof Node || ! $instance instanceof Instance) {
             throw new TaskCapacityException(TaskWait::Topology, self::NoWorkspace);
@@ -91,7 +90,7 @@ final readonly class TaskVmTopologyAdmission implements TaskTopologyAdmission
 
     public function evidence(Task $group, CarbonInterface $since): TaskTopologyEvidence
     {
-        $vm = TaskVmPlacement::forGroup($group);
+        $vm = TaskVm::forGroup($group);
         $instance = $group->taskable;
         if (! $vm instanceof TaskVm || ! $vm->node instanceof Node || ! $instance instanceof Instance) {
             return TaskTopologyEvidence::parse('', $since, now());

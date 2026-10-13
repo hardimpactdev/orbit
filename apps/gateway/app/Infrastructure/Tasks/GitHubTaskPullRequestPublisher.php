@@ -18,7 +18,7 @@ use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskRemoteBranch;
 use App\Domain\Tasks\TaskReviewRequestLogins;
-use App\Domain\TaskVms\TaskVmPlacement;
+use App\Domain\TaskVms\TaskVmWorkspaceGuard;
 use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\SourceControl\WorkspaceGit;
@@ -132,7 +132,7 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
         $instance = $group->taskable;
         if (! $instance instanceof Instance || $instance->checkout_path === ''
             || $instance->project_id !== $group->project_id
-            || ! TaskVmPlacement::allowsWorkspace($group, $instance)) {
+            || ! TaskVmWorkspaceGuard::allowsWorkspace($group, $instance)) {
             throw new TaskPullRequestException('The task workspace is unavailable.');
         }
 
