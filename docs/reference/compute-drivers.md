@@ -350,7 +350,7 @@ The build runs these stages on the host over SSH, with `sudo -n incus --project 
 | `setup:<step>` | Runs each Project setup step as `orbit` in a login Bash in the checkout, with `VP_HOME` set and stdin closed, as the baseline check does. See below |
 | `warm-check` | Runs the Project's task check once in the checkout, as the baseline check would, so the template brings its caches. See below |
 | `verify` | Requires a clean tree. The setup steps may only add ignored files |
-| `detach` | Unmounts the volume and detaches it |
+| `detach` | Stops every process of `orbit` in the builder, which a setup step or the task check may leave running on the volume, then unmounts the volume and detaches it |
 | `publish` | Sets `user.orbit.project`, `user.orbit.commit`, `user.orbit.repository`, `user.orbit.image`, `user.orbit.owner`, `user.orbit.layout=workspace`, and `user.orbit.ready=true` on the volume |
 | `delete-builder` | Deletes the builder VM |
 | `prune` | Deletes the older templates of the Project on the host |

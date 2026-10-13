@@ -426,9 +426,25 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
         }
     }
 
+    /**
+     * Stops every process of the managed user in the builder, which the setup steps or the warm-up check may have left
+     * running on the volume, such as a test server, then unmounts. The builder is deleted afterwards, so nothing of
+     * value runs there.
+     */
+    private const string Unmount = <<<'BASH'
+        user=$2
+        pkill -KILL -u "$user" || true
+        for _ in $(seq 1 50); do
+            pgrep -u "$user" >/dev/null || break
+            sleep 0.2
+        done
+        sync
+        umount -- "$1"
+        BASH;
+
     private function detach(TaskVmHost $host, Node $node, string $builder, string $directory): void
     {
-        $this->checked($builder, 'exec umount', $this->image->exec($host, $node, $builder, ['sh', '-euc', 'sync; umount -- "$1"', 'sh', $directory]));
+        $this->checked($builder, 'exec umount', $this->image->exec($host, $node, $builder, ['bash', '-euc', self::Unmount, 'bash', $directory, self::ManagedUser]));
         $this->checked($builder, 'config device remove', $this->incus->run($host, $node, ['config', 'device', 'remove', '--', $builder, TaskVmWorkspaceTemplates::Device]));
     }
 

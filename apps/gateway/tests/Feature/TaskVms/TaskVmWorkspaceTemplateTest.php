@@ -738,6 +738,15 @@ describe('build', function (): void {
             ->and(Cache::lock('task-vms:workspace-template:'.$this->hostNode->id, 10)->get())->toBeTrue();
     });
 
+    it('stops what the managed user left running in the builder before it unmounts the volume', function (): void {
+        app(IncusTaskVmWorkspaceTemplateBuilder::class)->build($this->host, $this->hostNode, $this->project);
+
+        $unmount = collect($this->incus->operations())->first(static fn (array $operation): bool => str_contains(implode(' ', $operation), 'pkill -KILL'));
+        expect(array_slice($unmount, -2))->toBe(['/home/orbit/apps/mealou', 'orbit'])
+            ->and((string) $unmount[count($unmount) - 4])->toContain('pkill -KILL -u "$user"')
+            ->and(strpos((string) $unmount[count($unmount) - 4], 'pkill'))->toBeLessThan(strpos((string) $unmount[count($unmount) - 4], 'umount --'));
+    });
+
     it('deletes its builder and volume and keeps the current template when a step fails', function (string $failure, string $stage): void {
         $current = 'tvm-template-'.$this->project->id.'-20261011040000';
         $this->incus->volumes = [$current => tvm_ready()];
