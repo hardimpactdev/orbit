@@ -947,7 +947,7 @@ it('recovers a crash after feedback activation without consuming or appending ag
     mock(TaskPullRequestWatcher::class)->shouldReceive('health')->andReturn(new TaskPullRequestHealth('open', headSha: 'abc123'));
     tick_running_agents();
     mock(AgentSpawner::class)->shouldReceive('spawnImplementer')->once()->andThrow(new RuntimeException('Fixture crash after activation.'));
-    expect(fn () => app(TaskScheduler::class)->tick())->toThrow(RuntimeException::class, 'Fixture crash after activation.');
+    test_tick_reporting(RuntimeException::class, 'Fixture crash after activation.');
     $fixup = $group->tasks()->where('fixup_problem', 'review:42')->sole();
     expect($fixup->status)->toBe(TaskStatus::Running)
         ->and(DB::table('task_github_review_consumptions')->count())->toBe(1);
@@ -2009,7 +2009,7 @@ it('retains an orphaned approval after interruption between settling and recordi
     // Abort the first hold write, after the preceding settling transaction has committed.
     DB::statement("CREATE TRIGGER interrupt_orphaned_approval_hold BEFORE UPDATE ON tasks WHEN NEW.id = {$group->id} AND NEW.assistance_reason LIKE 'An approved commit is not on the pull request:%' BEGIN SELECT RAISE(ABORT, 'Gateway interrupted before orphaned hold'); END");
     try {
-        expect(fn () => app(TaskScheduler::class)->tick())->toThrow(QueryException::class, 'Gateway interrupted before orphaned hold');
+        test_tick_reporting(QueryException::class, 'Gateway interrupted before orphaned hold');
     } finally {
         DB::statement('DROP TRIGGER interrupt_orphaned_approval_hold');
     }
@@ -2874,7 +2874,7 @@ it('keeps the consult answer when the marker update fails after the send', funct
         throw new RuntimeException('injected consult marker failure');
     });
 
-    expect(fn () => app(TaskScheduler::class)->tick())->toThrow(RuntimeException::class, 'injected consult marker failure');
+    test_tick_reporting(RuntimeException::class, 'injected consult marker failure');
 
     $starts = tick_reviewer_starts($dispatcher);
     expect($starts)->toHaveCount(1)
@@ -3159,7 +3159,7 @@ it('recovers a stopped receiptless topology resume after lost Pi responses or a 
         }
     });
     if ($writeFails) {
-        expect(fn () => app(TaskScheduler::class)->tick())->toThrow(RuntimeException::class, 'injected post-send topology marker failure');
+        test_tick_reporting(RuntimeException::class, 'injected post-send topology marker failure');
     } else {
         app(TaskScheduler::class)->tick();
     }
@@ -3217,7 +3217,7 @@ it('preserves the implementer source turn after an ambiguous refusal resume and 
         }
     });
     if ($writeFails) {
-        expect(fn () => app(TaskScheduler::class)->tick())->toThrow(RuntimeException::class, 'injected refusal marker failure');
+        test_tick_reporting(RuntimeException::class, 'injected refusal marker failure');
     } else {
         app(TaskScheduler::class)->tick();
     }
@@ -5521,7 +5521,7 @@ it('supersedes an uncertain correction after completed direction without erasing
                     throw new RuntimeException('Direction delivery commit crashed.');
                 }
             });
-            expect(fn () => app(TaskScheduler::class)->tick())->toThrow(RuntimeException::class, 'Direction delivery commit crashed.');
+            test_tick_reporting(RuntimeException::class, 'Direction delivery commit crashed.');
             expect($task->fresh()?->deliverable_correction_resume['state'])->toBe('pending');
             expect($task->fresh()?->direction_relay_comment_id)->not->toBeNull();
         }
@@ -5660,7 +5660,7 @@ it('keeps the implementer handoff when the relay marker update fails after the s
     $completion = $task->completion_attempt;
     $starts = fn (): int => collect($dispatcher->commands)->filter(fn (array $command): bool => ($command['type'] ?? null) === 'send' && ($command['threadId'] ?? null) === 'implementer-thread')->count();
 
-    expect(fn () => app(TaskScheduler::class)->tick())->toThrow(RuntimeException::class);
+    test_tick_reporting(RuntimeException::class);
 
     expect($starts())->toBe(1)
         ->and($dispatcher->commands[0]['commandId'] ?? null)->toBe($task->fresh()?->direction_answer_key)

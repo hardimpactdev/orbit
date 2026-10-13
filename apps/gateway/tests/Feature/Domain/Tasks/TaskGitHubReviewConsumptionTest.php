@@ -97,7 +97,7 @@ describe('once-only GitHub review consumption', function (): void {
         [$group] = consumption_group();
         DB::unprepared("CREATE TEMP TRIGGER reject_consumption BEFORE INSERT ON task_github_review_consumptions BEGIN SELECT RAISE(ABORT, 'fixture crash'); END");
         try {
-            expect(fn () => app(TaskScheduler::class)->tick())->toThrow(QueryException::class);
+            test_tick_reporting(QueryException::class);
             expect($group->tasks()->whereNotNull('fixup_problem')->exists())->toBeFalse()
                 ->and(DB::table('task_github_review_consumptions')->exists())->toBeFalse();
         } finally {

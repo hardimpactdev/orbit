@@ -47,6 +47,7 @@ use App\Domain\Tasks\TaskConcurrencyGuard;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupMetricsRefresher;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskHierarchyException;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestHealth;
 use App\Domain\Tasks\TaskPullRequestPublisher;
@@ -3335,6 +3336,95 @@ it('asks for assistance when the declared topology fails to prepare, and starts 
         ->and($group->tasks()->sole()->assistance_requested)->toBeFalse()
         ->and($state->calls)->toBeGreaterThan($calls)
         ->and($group->fresh()->capacity_wait_reason)->toBe('Task VM: preparing the topology app-prod+ingress.');
+});
+
+/**
+ * Two claimed groups, each in its own task VM, whose subtasks wait for their topology.
+ *
+ * @return array{Task, Task}
+ */
+function scheduler_two_waiting_groups(string $slug, Closure $prepare): array
+{
+    $project = scheduler_app($slug);
+    $project->update(['task_check' => 'composer check']);
+    $first = queued_group($project, 'First', scheduler_instance($project, scheduler_node($slug.'-first', '10.44.0.99'), 'first'));
+    $second = queued_group($project, 'Second', scheduler_instance($project, scheduler_node($slug.'-second', '10.44.0.100'), 'second'));
+    app()->instance(InstanceProvisioning::class, new class implements InstanceProvisioning
+    {
+        public function provision(InstanceProvisionIntent $intent): ?Instance
+        {
+            $workspace = $intent->group->taskable;
+
+            return $workspace instanceof Instance ? test_vm_workspace($intent->group, $workspace) : null;
+        }
+    });
+    app()->instance(AgentSpawner::class, scheduler_recording_spawner());
+    app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner([FakeTaskCheckRunner::passed(), FakeTaskCheckRunner::passed()]));
+    mock(TaskTopologyAdmission::class)->shouldReceive('prepare')->andReturnUsing($prepare);
+    app(TaskScheduler::class)->claimNext();
+    app(TaskScheduler::class)->claimNext();
+    expect($first->fresh()?->status)->toBe(TaskGroupStatus::Running)
+        ->and($second->fresh()?->status)->toBe(TaskGroupStatus::Running);
+
+    return [$first, $second];
+}
+
+it('keeps ticking the other groups when a group row breaks the task model, and asks for assistance once', function (): void {
+    [$broken, $healthy] = scheduler_two_waiting_groups('tick-broken-row', function (): void {
+        throw new TaskCapacityException(TaskWait::Topology, 'Waiting for the topology.');
+    });
+    // The 2026-10-13 incident: a hand-written repair left a subtask-only column on a group row.
+    DB::table('tasks')->where('id', $broken->id)->update(['communication_failures' => 0]);
+    Exceptions::fake();
+
+    app(TaskExtensionState::class)->enable();
+    app(TaskScheduler::class)->tick();
+
+    $reason = TaskScheduler::TickFailedReason.'A top-level task cannot set communication_failures.';
+    expect($healthy->fresh()?->capacity_wait_reason)->toBe('Waiting for the topology.')
+        ->and($healthy->fresh()?->assistance_requested)->toBeFalse()
+        ->and($broken->fresh()?->assistance_requested)->toBeTrue()
+        ->and($broken->fresh()?->assistance_reason)->toBe($reason)
+        ->and($broken->tasks()->sole()->assistance_reason)->toBe($reason);
+    Exceptions::assertReportedCount(1);
+    Exceptions::assertReported(TaskHierarchyException::class);
+
+    app(TaskScheduler::class)->tick();
+
+    Exceptions::assertReportedCount(1);
+});
+
+it('reports a failing group, asks for assistance on its second failure in a row, and resets on success', function (): void {
+    $fail = (object) ['first' => false];
+    [$first, $second] = scheduler_two_waiting_groups('tick-transient', function (Task $group) use ($fail): void {
+        if ($fail->first && $group->title === 'First') {
+            throw new RuntimeException('The Node did not answer.');
+        }
+
+        throw new TaskCapacityException(TaskWait::Topology, 'Waiting for the topology.');
+    });
+    $fail->first = true;
+    Exceptions::fake();
+    app(TaskExtensionState::class)->enable();
+
+    app(TaskScheduler::class)->tick();
+    expect($first->fresh()?->assistance_requested)->toBeFalse()
+        ->and($second->fresh()?->capacity_wait_reason)->toBe('Waiting for the topology.');
+    Exceptions::assertReportedCount(1);
+
+    $fail->first = false;
+    app(TaskScheduler::class)->tick();
+    $fail->first = true;
+    app(TaskScheduler::class)->tick();
+    expect($first->fresh()?->assistance_requested)->toBeFalse();
+    Exceptions::assertReportedCount(2);
+
+    app(TaskScheduler::class)->tick();
+    expect($first->fresh()?->assistance_requested)->toBeTrue()
+        ->and($first->fresh()?->assistance_reason)->toBe(TaskScheduler::TickFailedReason.'The Node did not answer.')
+        ->and($first->tasks()->sole()->assistance_requested)->toBeTrue()
+        ->and($second->fresh()?->assistance_requested)->toBeFalse();
+    Exceptions::assertReportedCount(3);
 });
 
 it('refuses the approval of a subtask with a topology until each declared node has recorded evidence', function (): void {

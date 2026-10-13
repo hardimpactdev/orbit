@@ -35,6 +35,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Context;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -49,6 +50,10 @@ final readonly class TaskScheduler
     public const string ReservationExpiredReason = 'The group stayed reserved too long and returned to todo.';
 
     public const string WorkspaceChangedReminder = 'The workspace changed during the review. Revert your changes and request the changes from the implementer instead.';
+
+    public const string TickFailedReason = 'The tick failed on this group. Fix the cause, then post a resolution. The error: ';
+
+    private const string TickFailureKey = 'tasks.tick-failures.';
 
     /** Assistance set when an approved commit cannot be pushed or its pull request cannot be opened. */
     public const string PublicationFailedPrefix = 'Approved commit publication failed: ';
@@ -167,222 +172,284 @@ final readonly class TaskScheduler
             }
         }
 
+        $failed = [];
         foreach ($groups as $group) {
-            $this->reportMissingReviewFixups($group);
-            if (in_array($group->status, [TaskGroupStatus::Running, TaskGroupStatus::Reviewing], true)
-                && in_array($group->watched_pr_completion, ['merged', 'closed'], true)) {
-                try {
-                    $this->completeGroup->execute($group);
-                } catch (Throwable $exception) {
-                    report($exception);
-                }
-
-                continue;
-            }
-            $this->branchPullRequests->execute($group);
-            if ($this->endedPullRequests->execute($group)) {
-                continue;
-            }
-            if (! in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)) {
-                continue;
-            }
-            if (! is_string($group->pr_url) || $group->pr_url === '') {
-                if ($this->lowestTodo($group->tasks) instanceof Task) {
-                    $this->resumeWaitingSubtask($group);
-                } elseif (TaskFinalReview::due($group, $group->tasks)) {
-                    $this->beginFinalReview($group);
-                } else {
-                    $this->requestMissingPullRequest($group);
-                }
-
-                continue;
-            }
-            $reviews = $this->observeReviewFeedback($group);
-            $health = $this->pullRequestWatcher->health($group);
-            $status = $health?->state;
-            // With open work, only the branch watch decides which pull request ended. Never
-            // auto-complete from pr_url here: it can name an older, reviewed pull request.
-            if (in_array($status, ['merged', 'closed'], true) && $group->tasks->contains(
-                static fn (Task $task): bool => in_array($task->status, [TaskStatus::Todo, TaskStatus::Running, TaskStatus::Reviewing], true),
-            )) {
-                continue;
-            }
-            if ($status === 'merged') {
-                try {
-                    $this->coverageLabeler->label($group, $health);
-                } catch (Throwable $exception) {
-                    try {
-                        report($exception);
-                    } catch (Throwable) {
-                    }
-                }
-                // Revalidate even when a prior tick committed settling but stopped before its hold write.
-                $missedApproval = $this->checkReturningPullRequest($group, $health);
-                if (! $missedApproval && ! $this->orphanedCommit($group)) {
-                    $this->completeMergedGroup($group);
-                }
-            } elseif ($status === 'closed') {
-                TaskAssistance::apply($group, AssistanceKind::Failure, null, 'The expected pull request closed without merging.', replaceFailure: true);
-            } elseif ($health instanceof TaskPullRequestHealth) {
-                $this->healOpenPullRequest($group, $health, $reviews);
-                if ($group->reviewsBeforePush()) {
-                    $this->mergeWhenReady($group, $health, $reviews);
-                }
-            }
+            $this->isolateGroup($group, $failed, fn () => $this->tickPullRequest($group));
         }
 
         $decisions = [];
 
         foreach ($groups as $group) {
-            if ($group->status === TaskGroupStatus::Completed
-                || in_array($group->watched_pr_completion, ['merged', 'closed'], true)
-                || RequestEndedPullRequestAssistanceAction::isReason($group->assistance_reason)) {
-                continue;
+            if (! isset($failed[$group->id])) {
+                $this->isolateGroup($group, $failed, function () use ($group, $runningAtStart, &$decisions): void {
+                    $this->tickSubtasks($group, isset($runningAtStart[$group->id]), $decisions);
+                });
             }
-            if (isset($runningAtStart[$group->id])) {
-                $this->resumeStrandedSubtask($group);
-            }
-            $tasks = $group->tasks
-                ->filter(static fn (Task $task): bool => in_array($task->status, [TaskStatus::Running, TaskStatus::Reviewing], true))
-                ->sortBy(static fn (Task $task): array => [$task->position, $task->id]);
-
-            foreach ($tasks as $task) {
-                $task = $task->fresh();
-
-                if (! $task instanceof Task || ! in_array($task->status, [TaskStatus::Running, TaskStatus::Reviewing], true)) {
-                    continue;
-                }
-                if ($task->status === TaskStatus::Running && ($task->deliverable_correction_resume['state'] ?? null) === 'pending') {
-                    $this->correctionResume->execute($task);
-                    $task->refresh();
-                    $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
-                }
-                if ($task->status === TaskStatus::Running && $task->assistance_requested && $this->queueBaselineRetryOnGreenTip($group, $task)) {
-                    $task->refresh();
-                }
-                if ($task->status === TaskStatus::Running && $task->assistance_requested && $task->resolution_delivered_comment_id !== null) {
-                    try {
-                        if (TaskExecutionHold::run($group, fn (): bool => $this->retryBaseline->recover($task)) === true) {
-                            $task->refresh();
-                            $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
-                        }
-                    } catch (AgentDriverException $exception) {
-                        $this->recordCommunicationFailure($task, $group, $exception->getMessage());
-
-                        continue;
-                    }
-                }
-                if ($task->status === TaskStatus::Running) {
-                    $this->recordSubtaskStart($task);
-                }
-                if ($task->assistance_requested || $this->progressBlockedByAssistance($group)) {
-                    if ($task->assistance_requested && ! $group->assistance_requested && $task->assistance_kind instanceof AssistanceKind && is_string($task->assistance_reason)) {
-                        $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
-                        if (! $group->assistance_requested) {
-                            $this->requestAssistance($task, $group, $task->assistance_reason, null, $task->assistance_kind, $task->assistance_question);
-                        }
-                    }
-                    if ($task->status === TaskStatus::Reviewing) {
-                        $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
-                        $this->retryCommittedApproval($group, $task);
-                    }
-                    $resolution = $task->status === TaskStatus::Running ? $this->pendingRelayResolution($task) : null;
-                    if ($resolution instanceof TaskComment && $this->spawner instanceof TaskAgentSpawner && $this->subtaskReviewer($task) === null) {
-                        $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
-                        $this->beginDirectionRelay($group, $task, $resolution);
-                    }
-                    if ($task->status === TaskStatus::Reviewing && $task->assistance_kind === AssistanceKind::Direction && $this->subtaskReviewer($task) === null) {
-                        $this->replayHeldDirectionReview($task);
-                    }
-
-                    continue;
-                }
-
-                $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
-                if ($task->status === TaskStatus::Running && $task->direction_relay_comment_id !== null) {
-                    $this->handleDirectionRelay($group, $task);
-
-                    continue;
-                }
-                if ($task->status === TaskStatus::Running && $task->consult_comment_id !== null) {
-                    $this->handleConsult($group, $task);
-
-                    continue;
-                }
-                if ($task->status === TaskStatus::Reviewing && $this->retryCommittedApproval($group, $task)) {
-                    continue;
-                }
-                if ($task->status === TaskStatus::Running && ! $this->hasImplementer($task)) {
-                    $this->beginRunningTask($task);
-
-                    continue;
-                }
-                if ($task->status === TaskStatus::Reviewing && $task->isFinalReview() && $task->review_notified_attempt !== $task->review_attempt) {
-                    $this->nudgeReviewer($task, null);
-
-                    continue;
-                }
-                $observation = $this->observer->observe($group, $task);
-
-                if ($observation->available) {
-                    $this->clearUnavailable($group);
-                }
-                if (($observation->available && $observation->threads === []) || ($task->status === TaskStatus::Running && $observation->thread(TaskThreadRole::Implementer) === null)) {
-                    continue;
-                }
-
-                if ($observation->available && $task->status === TaskStatus::Running && $this->handleImplementerCompletion($group, $task, $observation)) {
-                    continue;
-                }
-
-                if ($observation->available && $task->status === TaskStatus::Reviewing && $this->handleReviewerOutcome($group, $task, $observation)) {
-                    continue;
-                }
-
-                try {
-                    $decision = ! $observation->available
-                        ? $this->unavailableDecision($group)
-                        : $this->classifyAvailable($group, $observation);
-                } catch (TaskSessionClassificationException $exception) {
-                    $decision = TaskSessionDecision::escalate($exception->getMessage());
-                }
-
-                if ($decision->action === TaskSessionNextAction::EscalateCoder) {
-                    if (! $observation->available) {
-                        $this->actor->execute($group, $observation, $decision);
-                        $decisions[] = $decision;
-
-                        continue;
-                    }
-                    $this->requestAssistance($task, $group, $decision->reason, $observation);
-                    $decisions[] = $decision;
-
-                    continue;
-                }
-
-                try {
-                    $this->actor->execute($group, $observation, $decision);
-                    $this->advance($group, $task, $decision, $observation);
-                    if ($task->communication_failures > 0) {
-                        $task->update(['communication_failures' => 0]);
-                    }
-                } catch (AgentDriverException $exception) {
-                    $decision = TaskSessionDecision::escalate($exception->getMessage());
-                    $task->increment('communication_failures');
-                    $task->refresh();
-                    if ($task->communication_failures >= 5) {
-                        $this->requestAssistance($task, $group, $exception->getMessage());
-                    }
-                    $this->actor->execute($group, $observation, $decision);
-                }
-
-                $decisions[] = $decision;
+        }
+        foreach ($groups as $group) {
+            if (! isset($failed[$group->id])) {
+                Cache::forget(self::TickFailureKey.$group->id);
             }
         }
 
         $this->pendingThreads->run();
 
         return $decisions;
+    }
+
+    /**
+     * Runs one group's tick work so its failure never stops the other groups. The failure is reported with the
+     * group id, and the next tick tries again. A second failure in a row asks the group and its open subtasks for
+     * assistance. Later failures stay quiet while the group asks. A row that breaks the task model cannot heal by
+     * itself, so that failure asks at once.
+     *
+     * @param  array<int, true>  $failed
+     */
+    private function isolateGroup(Task $group, array &$failed, Closure $work): void
+    {
+        Context::scope(function () use ($group, &$failed, $work): void {
+            try {
+                $work();
+            } catch (Throwable $exception) {
+                $failed[$group->id] = true;
+                $key = self::TickFailureKey.$group->id;
+                $failures = StoredInteger::fromOrZero(Cache::get($key)) + 1;
+                Cache::put($key, $failures, now()->addDay());
+                if ($failures < ($exception instanceof TaskHierarchyException ? 1 : 2)) {
+                    report($exception);
+
+                    return;
+                }
+                if (! DB::table('tasks')->where('id', $group->id)->value('assistance_requested')) {
+                    report($exception);
+                    $this->escalateTickFailure($group, $exception);
+                }
+            }
+        }, ['task_group_id' => $group->id]);
+    }
+
+    /** Raw writes: the model refuses every save of a broken row, and assistance must still reach the operator. */
+    private function escalateTickFailure(Task $group, Throwable $exception): void
+    {
+        $reason = self::TickFailedReason.$exception->getMessage();
+        TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason, replaceFailure: true);
+        foreach (Task::query()->where('parent_id', $group->id)->whereIn('status', [TaskStatus::Running, TaskStatus::Reviewing])->get() as $task) {
+            TaskAssistance::apply($task, AssistanceKind::Failure, null, $reason, replaceFailure: true);
+        }
+    }
+
+    private function tickPullRequest(Task $group): void
+    {
+        $this->reportMissingReviewFixups($group);
+        if (in_array($group->status, [TaskGroupStatus::Running, TaskGroupStatus::Reviewing], true)
+            && in_array($group->watched_pr_completion, ['merged', 'closed'], true)) {
+            try {
+                $this->completeGroup->execute($group);
+            } catch (Throwable $exception) {
+                report($exception);
+            }
+
+            return;
+        }
+        $this->branchPullRequests->execute($group);
+        if ($this->endedPullRequests->execute($group)) {
+            return;
+        }
+        if (! in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)) {
+            return;
+        }
+        if (! is_string($group->pr_url) || $group->pr_url === '') {
+            if ($this->lowestTodo($group->tasks) instanceof Task) {
+                $this->resumeWaitingSubtask($group);
+            } elseif (TaskFinalReview::due($group, $group->tasks)) {
+                $this->beginFinalReview($group);
+            } else {
+                $this->requestMissingPullRequest($group);
+            }
+
+            return;
+        }
+        $reviews = $this->observeReviewFeedback($group);
+        $health = $this->pullRequestWatcher->health($group);
+        $status = $health?->state;
+        // With open work, only the branch watch decides which pull request ended. Never
+        // auto-complete from pr_url here: it can name an older, reviewed pull request.
+        if (in_array($status, ['merged', 'closed'], true) && $group->tasks->contains(
+            static fn (Task $task): bool => in_array($task->status, [TaskStatus::Todo, TaskStatus::Running, TaskStatus::Reviewing], true),
+        )) {
+            return;
+        }
+        if ($status === 'merged') {
+            try {
+                $this->coverageLabeler->label($group, $health);
+            } catch (Throwable $exception) {
+                try {
+                    report($exception);
+                } catch (Throwable) {
+                }
+            }
+            // Revalidate even when a prior tick committed settling but stopped before its hold write.
+            $missedApproval = $this->checkReturningPullRequest($group, $health);
+            if (! $missedApproval && ! $this->orphanedCommit($group)) {
+                $this->completeMergedGroup($group);
+            }
+        } elseif ($status === 'closed') {
+            TaskAssistance::apply($group, AssistanceKind::Failure, null, 'The expected pull request closed without merging.', replaceFailure: true);
+        } elseif ($health instanceof TaskPullRequestHealth) {
+            $this->healOpenPullRequest($group, $health, $reviews);
+            if ($group->reviewsBeforePush()) {
+                $this->mergeWhenReady($group, $health, $reviews);
+            }
+        }
+    }
+
+    /** @param  list<TaskSessionDecision>  $decisions */
+    private function tickSubtasks(Task $group, bool $runningAtStart, array &$decisions): void
+    {
+        if ($group->status === TaskGroupStatus::Completed
+            || in_array($group->watched_pr_completion, ['merged', 'closed'], true)
+            || RequestEndedPullRequestAssistanceAction::isReason($group->assistance_reason)) {
+            return;
+        }
+        if ($runningAtStart) {
+            $this->resumeStrandedSubtask($group);
+        }
+        $tasks = $group->tasks
+            ->filter(static fn (Task $task): bool => in_array($task->status, [TaskStatus::Running, TaskStatus::Reviewing], true))
+            ->sortBy(static fn (Task $task): array => [$task->position, $task->id]);
+
+        foreach ($tasks as $task) {
+            $task = $task->fresh();
+
+            if (! $task instanceof Task || ! in_array($task->status, [TaskStatus::Running, TaskStatus::Reviewing], true)) {
+                continue;
+            }
+            if ($task->status === TaskStatus::Running && ($task->deliverable_correction_resume['state'] ?? null) === 'pending') {
+                $this->correctionResume->execute($task);
+                $task->refresh();
+                $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
+            }
+            if ($task->status === TaskStatus::Running && $task->assistance_requested && $this->queueBaselineRetryOnGreenTip($group, $task)) {
+                $task->refresh();
+            }
+            if ($task->status === TaskStatus::Running && $task->assistance_requested && $task->resolution_delivered_comment_id !== null) {
+                try {
+                    if (TaskExecutionHold::run($group, fn (): bool => $this->retryBaseline->recover($task)) === true) {
+                        $task->refresh();
+                        $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
+                    }
+                } catch (AgentDriverException $exception) {
+                    $this->recordCommunicationFailure($task, $group, $exception->getMessage());
+
+                    continue;
+                }
+            }
+            if ($task->status === TaskStatus::Running) {
+                $this->recordSubtaskStart($task);
+            }
+            if ($task->assistance_requested || $this->progressBlockedByAssistance($group)) {
+                if ($task->assistance_requested && ! $group->assistance_requested && $task->assistance_kind instanceof AssistanceKind && is_string($task->assistance_reason)) {
+                    $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
+                    if (! $group->assistance_requested) {
+                        $this->requestAssistance($task, $group, $task->assistance_reason, null, $task->assistance_kind, $task->assistance_question);
+                    }
+                }
+                if ($task->status === TaskStatus::Reviewing) {
+                    $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
+                    $this->retryCommittedApproval($group, $task);
+                }
+                $resolution = $task->status === TaskStatus::Running ? $this->pendingRelayResolution($task) : null;
+                if ($resolution instanceof TaskComment && $this->spawner instanceof TaskAgentSpawner && $this->subtaskReviewer($task) === null) {
+                    $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
+                    $this->beginDirectionRelay($group, $task, $resolution);
+                }
+                if ($task->status === TaskStatus::Reviewing && $task->assistance_kind === AssistanceKind::Direction && $this->subtaskReviewer($task) === null) {
+                    $this->replayHeldDirectionReview($task);
+                }
+
+                continue;
+            }
+
+            $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
+            if ($task->status === TaskStatus::Running && $task->direction_relay_comment_id !== null) {
+                $this->handleDirectionRelay($group, $task);
+
+                continue;
+            }
+            if ($task->status === TaskStatus::Running && $task->consult_comment_id !== null) {
+                $this->handleConsult($group, $task);
+
+                continue;
+            }
+            if ($task->status === TaskStatus::Reviewing && $this->retryCommittedApproval($group, $task)) {
+                continue;
+            }
+            if ($task->status === TaskStatus::Running && ! $this->hasImplementer($task)) {
+                $this->beginRunningTask($task);
+
+                continue;
+            }
+            if ($task->status === TaskStatus::Reviewing && $task->isFinalReview() && $task->review_notified_attempt !== $task->review_attempt) {
+                $this->nudgeReviewer($task, null);
+
+                continue;
+            }
+            $observation = $this->observer->observe($group, $task);
+
+            if ($observation->available) {
+                $this->clearUnavailable($group);
+            }
+            if (($observation->available && $observation->threads === []) || ($task->status === TaskStatus::Running && $observation->thread(TaskThreadRole::Implementer) === null)) {
+                continue;
+            }
+
+            if ($observation->available && $task->status === TaskStatus::Running && $this->handleImplementerCompletion($group, $task, $observation)) {
+                continue;
+            }
+
+            if ($observation->available && $task->status === TaskStatus::Reviewing && $this->handleReviewerOutcome($group, $task, $observation)) {
+                continue;
+            }
+
+            try {
+                $decision = ! $observation->available
+                    ? $this->unavailableDecision($group)
+                    : $this->classifyAvailable($group, $observation);
+            } catch (TaskSessionClassificationException $exception) {
+                $decision = TaskSessionDecision::escalate($exception->getMessage());
+            }
+
+            if ($decision->action === TaskSessionNextAction::EscalateCoder) {
+                if (! $observation->available) {
+                    $this->actor->execute($group, $observation, $decision);
+                    $decisions[] = $decision;
+
+                    continue;
+                }
+                $this->requestAssistance($task, $group, $decision->reason, $observation);
+                $decisions[] = $decision;
+
+                continue;
+            }
+
+            try {
+                $this->actor->execute($group, $observation, $decision);
+                $this->advance($group, $task, $decision, $observation);
+                if ($task->communication_failures > 0) {
+                    $task->update(['communication_failures' => 0]);
+                }
+            } catch (AgentDriverException $exception) {
+                $decision = TaskSessionDecision::escalate($exception->getMessage());
+                $task->increment('communication_failures');
+                $task->refresh();
+                if ($task->communication_failures >= 5) {
+                    $this->requestAssistance($task, $group, $exception->getMessage());
+                }
+                $this->actor->execute($group, $observation, $decision);
+            }
+
+            $decisions[] = $decision;
+        }
     }
 
     private function handleImplementerCompletion(Task $group, Task $task, TaskSessionObservation $observation): bool

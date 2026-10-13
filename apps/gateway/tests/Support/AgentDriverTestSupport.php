@@ -10,6 +10,7 @@ use App\Domain\Tasks\TaskScheduler;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Task;
+use Illuminate\Support\Facades\Exceptions;
 use Tests\Support\AgentCommandDispatcher;
 use Tests\Support\AgentSnapshotReader;
 use Tests\Support\NullAgentSnapshotReader;
@@ -59,4 +60,19 @@ function test_pass_baseline(): void
 {
     app(TaskExtensionState::class)->enable();
     app(TaskScheduler::class)->tick();
+}
+
+/**
+ * Runs a tick in which one group fails, as a stopped process would leave it. The tick reports the failure and
+ * goes on, so the next tick retries the group.
+ *
+ * @param  class-string<Throwable>  $class
+ */
+function test_tick_reporting(string $class, ?string $message = null): void
+{
+    $exceptions = Exceptions::fake();
+    app(TaskScheduler::class)->tick();
+    $matches = array_filter($exceptions->reported(), static fn (Throwable $exception): bool => $exception instanceof $class
+        && ($message === null || str_contains($exception->getMessage(), $message)));
+    expect($matches)->not->toBeEmpty();
 }
