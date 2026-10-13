@@ -201,7 +201,7 @@ it('creates a task VM workspace from the Gateway mirror, with no clone or fetch 
     expect($resolution->branch)->toBe($name)
         ->and($resolution->startingCommit)->toBe($main)
         // Only the default branch and the task branch come from the mirror. The old in-VM fetch took every branch.
-        ->and(trim(orb76_run(['git', '-C', $checkout, 'for-each-ref', '--format=%(refname)', 'refs/remotes'])->stdout))->toBe('refs/remotes/origin/main');
+        ->and(trim(orb76_run(['git', '-C', $checkout, 'for-each-ref', '--format=%(refname)', 'refs/remotes'])->stdout))->toBe("refs/remotes/origin/HEAD\nrefs/remotes/origin/main");
     $network = [];
     foreach ($this->transport->commands as $command) {
         expect($command->protectedInput?->carriesGitCredential())->not->toBeTrue();
