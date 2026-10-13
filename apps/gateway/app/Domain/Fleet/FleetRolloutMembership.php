@@ -18,7 +18,7 @@ use App\Models\TaskVm;
  *
  * A Node is in the rollout when all of these hold:
  *
- * - it is not a disposable task sandbox: it has no `compute_sandbox_id` and is not a live task VM (ADR 0200);
+ * - it is not a live task VM (ADR 0200);
  * - it is `active` and runs Linux;
  * - the Gateway manages it over SSH: it has a WireGuard address and a pinned SSH host key;
  * - it holds at least one active role other than `gateway`;
@@ -26,7 +26,7 @@ use App\Models\TaskVm;
  * - its `/usr/local/bin/orbit` is not a CLI Orbit did not install ({@see NodeCliState}).
  *
  * Roleless Nodes, such as operator machines, and macOS Nodes are never visited. They update
- * themselves with `orbit self-update`. A task sandbox gets its agent and footprint when it is
+ * themselves with `orbit self-update`. A task VM gets its agent and footprint when it is
  * provisioned and is destroyed with its task group, so neither the rollout nor its catch-up visits it.
  *
  * The rollout goes lowest risk first. Each role belongs to a group, and a Node with several roles
@@ -111,7 +111,7 @@ final readonly class FleetRolloutMembership
      */
     public function exclusion(Node $node): ?string
     {
-        if ($node->compute_sandbox_id !== null || TaskVmPlacement::forNode($node) instanceof TaskVm) {
+        if (TaskVmPlacement::forNode($node) instanceof TaskVm) {
             return 'sandbox';
         }
 

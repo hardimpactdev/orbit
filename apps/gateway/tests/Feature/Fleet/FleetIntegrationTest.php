@@ -81,17 +81,17 @@ describe('fleet integration', function (): void {
         expect(fleetLagIssue($dev))->toBeNull();
     });
 
-    it('reports no node.release_lag for a task sandbox and installs no CLI on it', function (): void {
+    it('reports no node.release_lag for a task VM and installs no CLI on it', function (): void {
         FleetFixtures::bind();
         $installer = new RecordingCliInstaller;
         app()->instance(NodeCliInstaller::class, $installer);
         $dev = FleetFixtures::node('dev', [RoleName::AppDev]);
-        $sandbox = FleetFixtures::sandbox();
+        $taskVm = FleetFixtures::taskVm();
         app(DesiredFleetState::class)->current();
 
-        app(NodeCliConvergence::class)->converge($sandbox);
+        app(NodeCliConvergence::class)->converge($taskVm);
 
-        expect(fleetLagIssue($sandbox))->toBeNull()
+        expect(fleetLagIssue($taskVm))->toBeNull()
             ->and(fleetLagIssue($dev)['observed'] ?? null)->toBe('no rollout yet')
             ->and($installer->installed)->toBe([]);
     });
