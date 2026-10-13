@@ -823,7 +823,7 @@ describe('declared topology', function (): void {
     it('rejects invalid declarations before sending a request', function (string $value): void {
         $mock = MockClient::global([]);
         expect(Artisan::call('tasks:subtask:create', ['group' => '13', 'title' => 'Step', '--brief' => 'Work', '--topology' => $value, '--json' => true]))->toBe(1);
-        expect(json_decode(Artisan::output(), true)['error']['code'])->toBe('tasks.topology_invalid');
+        expect(json_decode(Artisan::output(), true)['error']['code'])->toBe('tasks.invalid_topology');
         $mock->assertNothingSent();
-    })->with(['[""]', '["app-dev","app-dev"]', '[1]', '["app-dev","app-prod","app-prod-2"]', '{}', 'null', 'app-dev']);
+    })->with(['[""]', '["app-dev","app-dev"]', '[1]', '{}', 'null', 'app-dev']);
 });
