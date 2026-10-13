@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\TaskVms;
 
 use App\Domain\Nodes\NodeProvisioningException;
+use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmQueue;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\Gateway\GatewayApplicationPath;
@@ -130,7 +131,7 @@ final readonly class TaskVmWorkerUnits
         } catch (Throwable $exception) {
             throw new NodeProvisioningException(
                 step: 'task-vm-workers-restart',
-                errorCode: 'task_vm.workers_failed',
+                errorCode: TaskVmError::WorkersFailed->value,
                 message: 'The task VM queue workers could not be asked to restart.',
                 previous: $exception,
             );
@@ -187,7 +188,7 @@ final readonly class TaskVmWorkerUnits
         } catch (Throwable $exception) {
             throw new NodeProvisioningException(
                 step: 'task-vm-workers-install',
-                errorCode: 'task_vm.workers_failed',
+                errorCode: TaskVmError::WorkersFailed->value,
                 message: "The task VM worker unit [{$path}] could not be installed.",
                 previous: $exception,
             );
@@ -207,7 +208,7 @@ final readonly class TaskVmWorkerUnits
 
         throw new NodeProvisioningException(
             step: 'task-vm-workers',
-            errorCode: 'task_vm.workers_failed',
+            errorCode: TaskVmError::WorkersFailed->value,
             message: 'The task VM queue workers step ['.implode(' ', array_slice($arguments, 0, 3)).'] failed.',
             result: $result,
         );
