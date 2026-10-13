@@ -840,7 +840,8 @@
                 "Task workspace"
             ],
             "governing_adrs": [
-                "0200"
+                "0200",
+                "0206"
             ]
         },
         {
@@ -863,6 +864,26 @@
             ],
             "governing_adrs": [
                 "0205"
+            ]
+        },
+        {
+            "path": "docs/decisions/0206-build-task-vm-images-as-chains-of-small-jobs.md",
+            "title": "ADR 0206: Build task VM images as chains of small jobs",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Project",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0200",
+                "0206"
             ]
         },
         {
@@ -916,7 +937,8 @@
                 "0191",
                 "0196",
                 "0198",
-                "0200"
+                "0200",
+                "0206"
             ]
         },
         {
