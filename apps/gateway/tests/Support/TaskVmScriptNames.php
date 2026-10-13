@@ -20,4 +20,24 @@ final class TaskVmScriptNames
 
         return null;
     }
+
+    /**
+     * The script that `$argv` runs as `bash -ceu <script> -- <arguments>`, wherever that sits in the argv, such as after
+     * an `incus exec` envelope: its file name and its arguments. Null when `$argv` runs no such script.
+     *
+     * @param  list<string>  $argv
+     * @return array{string, list<string>}|null
+     */
+    public static function call(array $argv): ?array
+    {
+        foreach ($argv as $at => $argument) {
+            if ($argument === '-ceu' && ($argv[$at - 1] ?? null) === 'bash' && ($argv[$at + 2] ?? null) === '--') {
+                $name = self::of($argv[$at + 1] ?? '');
+
+                return $name === null ? null : [$name, array_values(array_slice($argv, $at + 3))];
+            }
+        }
+
+        return null;
+    }
 }

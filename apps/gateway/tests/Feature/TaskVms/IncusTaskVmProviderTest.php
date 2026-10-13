@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\TaskVms\TaskVmException;
@@ -21,6 +20,7 @@ use App\Infrastructure\TaskVms\IncusHost;
 use App\Infrastructure\TaskVms\IncusTaskVmProvider;
 use App\Infrastructure\TaskVms\TaskVmGuest;
 use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplates;
+use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplateVolumes;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
@@ -105,7 +105,7 @@ beforeEach(function (): void {
 
         public function put(string $host, int $port, HostKey $key): void {}
     });
-    $this->provider = new IncusTaskVmProvider($incus, $settings, new TaskVmWorkspaceTemplates($incus, $settings, app(DevelopmentSshExecutor::class), app(ManagedUserAccountResolver::class)));
+    $this->provider = new IncusTaskVmProvider($incus, $settings, new TaskVmWorkspaceTemplates($incus, $settings, app(DevelopmentSshExecutor::class), new TaskVmWorkspaceTemplateVolumes($incus)));
     $this->guest = new TaskVmGuest($this->provider);
     $this->answer = function (CommandResult ...$results): void {
         $this->ssh->results = $results;
