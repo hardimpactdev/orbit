@@ -14,7 +14,7 @@ return [
     'model_proxy_origin' => env('ORBIT_TASK_VMS_MODEL_PROXY_ORIGIN'),
     // Minutes a group waits for review before its task VM stops. Its next work starts the VM again.
     'park_after_minutes' => env('ORBIT_TASK_VMS_PARK_AFTER_MINUTES'),
-    // A JSON list of Project ids whose groups without a declared topology get a medium VM: 4 vCPU, 8 GiB, 2 slots.
+    // A JSON list of Project ids whose groups without a declared topology get a medium VM (TaskVmSize::resources()).
     'medium_projects' => json_decode((string) (env('ORBIT_TASK_VMS_MEDIUM_PROJECTS') ?: '[]'), true),
     'pi' => [
         'artifact_path' => env('ORBIT_TASK_VMS_PI_ARTIFACT_PATH'),

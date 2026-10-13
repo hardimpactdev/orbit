@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\SourceControl;
 
+use App\Infrastructure\TaskVms\TaskVmGit;
 use App\Models\Instance;
 
 /** Suppress checkout-controlled hooks and fsmonitor for Gateway shell reads and mutations. */
@@ -58,6 +59,9 @@ final readonly class WorkspaceGit
      * credentials. An ACL lets only the worker read the private repository for it. `isolated_push <git dir> <url>
      * <refspec>...` pushes from the private repository. Both need `git_read`; `isolated_fetch` also needs the worker
      * preamble.
+     *
+     * Task VMs never run these: the Gateway fetches and pushes for them in its own mirror ({@see TaskVmGit}). Only shared
+     * checkouts need the private repository, so it goes with shared mode, and a plain fetch replaces it.
      */
     public static function networkPreamble(): string
     {

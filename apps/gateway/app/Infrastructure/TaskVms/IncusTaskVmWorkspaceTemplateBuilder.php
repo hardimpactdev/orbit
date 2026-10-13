@@ -16,11 +16,11 @@ use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
-use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use App\Models\Project;
@@ -36,7 +36,7 @@ use Throwable;
  * Builds the workspace template of one Project on one task VM host ({@see TaskVmWorkspaceTemplates}). A builder VM
  * `tvm-template-<time>` boots the base image with the task VM user-data and gets a new block volume. The volume is
  * mounted at the Project's apps directory with the same script as a claim. The template records the base image the
- * builder booted and the managed user's `uid:gid`, which own its files. The builder clones the default branch,
+ * builder booted and the managed user's `uid:gid`, which own its files. The builder gets the default branch from the Gateway's mirror,
  * installs the PHP packages that the Project's Instance gets, and runs the Project's setup steps as `orbit`, as the
  * baseline check does. The tree must stay clean. Then the volume is detached and marked ready, the builder goes, and
  * older templates of the Project are deleted. No agent and no group ever ran on the volume.
@@ -78,15 +78,23 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
         rmdir -- "$staging"
         BASH;
 
-    /** Clones the default branch into the template checkout and prints its commit. */
-    private const string Clone = <<<'BASH'
-        checkout=$1
-        branch=$2
-        repository=$3
-        git_read git -c core.hooksPath=/dev/null -c core.fsmonitor=false clone --no-checkout --origin origin -- "$repository" "$checkout"
-        git -C "$checkout" checkout --quiet --force -B "$branch" "refs/remotes/origin/$branch"
-        git -C "$checkout" rev-parse --verify 'HEAD^{commit}'
+    /** Creates the template checkout with the Project repository as `origin`. The Gateway sends its branch. */
+    private const string Init = <<<'BASH'
+        git init --quiet -- "$1"
+        git -C "$1" remote add origin "$2"
         BASH;
+
+    /** Checks out the default branch that the Gateway sent and prints its commit. */
+    private const string Checkout = <<<'BASH'
+        git -c core.hooksPath=/dev/null -C "$1" checkout --quiet --force -B "$2" "refs/remotes/origin/$2"
+        git -C "$1" rev-parse --verify 'HEAD^{commit}'
+        BASH;
+
+    /** The build budget that the warm-up check leaves for `verify`, `detach`, and `publish`. */
+    private const int WarmReserveSeconds = 60;
+
+    /** Runs the task check from stdin like {@see self::RunStep}, keeps its output in a file, and prints only its tail. */
+    private const string WarmStep = 'script=$(mktemp) && log=$(mktemp) && trap \'rm -f -- "$script" "$log"\' EXIT && cat > "$script" && { bash -l "$script" < /dev/null > "$log" 2>&1; status=$?; tail -c 2000 -- "$log"; exit "$status"; }';
 
     /** Writes the step from stdin to a script file and runs it in a login Bash with stdin closed, as the check does. */
     private const string RunStep = 'script=$(mktemp) && trap \'rm -f -- "$script"\' EXIT && cat > "$script" && bash -l "$script" < /dev/null';
@@ -104,6 +112,7 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
         private StorageRootResolver $storageRoots,
         private NodeSettingsNormalizer $nodeSettings,
         private GatewaySetupSteps $gatewaySteps,
+        private TaskVmGit $git,
     ) {}
 
     /**
@@ -121,7 +130,7 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
         $builder = self::BuilderPrefix.$stamp;
         $volume = TaskVmWorkspaceTemplates::templateName($project->id, $stamp);
         $directory = $this->directory($project);
-        $checkout = $directory.'/'.TaskVmWorkspaceTemplates::TemplateDirectory;
+        $checkout = $directory.'/'.TaskVmWorkspaceTemplates::CheckoutDirectory;
 
         $deadline = microtime(true) + self::BudgetSeconds;
         $published = false;
@@ -138,6 +147,7 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
             foreach ($steps as $step) {
                 $this->stage($node, $progress, 'setup:'.$step->name, fn () => $this->runStep($host, $node, $builder, $project, $checkout, $step, $deadline));
             }
+            $this->stage($node, $progress, 'warm-check', fn () => $this->warmCheck($host, $node, $builder, $project, $checkout, $deadline, $volume));
             $this->stage($node, $progress, 'verify', fn () => $this->verify($host, $node, $builder, $checkout));
             $this->stage($node, $progress, 'detach', fn () => $this->detach($host, $node, $builder, $directory));
             $this->stage($node, $progress, 'publish', fn () => $this->checked($builder, 'storage volume set', $this->incus->run($host, $node, [
@@ -147,6 +157,7 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
                 TaskVmWorkspaceTemplates::RepositoryKey.'='.$project->repository_url,
                 TaskVmWorkspaceTemplates::ImageKey.'='.$image,
                 TaskVmWorkspaceTemplates::OwnerKey.'='.$owner,
+                TaskVmWorkspaceTemplates::LayoutKey.'='.TaskVmWorkspaceTemplates::Layout,
                 TaskVmWorkspaceTemplates::Ready.'=true',
             ])));
             $published = true;
@@ -278,22 +289,34 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
         ]));
         $this->checked($builder, 'exec mount', $this->asManagedUser($host, $node, $builder, '/home/'.self::ManagedUser, [
             'bash', '-ceu', TaskVmWorkspaceTemplates::MountScript, '--', TaskVmWorkspaceTemplates::Device, $directory, $owner,
-            TaskVmWorkspaceTemplates::TemplateDirectory, TaskVmWorkspaceTemplates::CacheDirectory, ...TaskVmWorkspaceTemplates::Caches,
+            TaskVmWorkspaceTemplates::CheckoutDirectory, TaskVmWorkspaceTemplates::CacheDirectory, ...TaskVmWorkspaceTemplates::Caches,
         ]));
     }
 
+    /**
+     * Creates the template checkout and checks out the default branch, which the Gateway sends from its mirror. No
+     * GitHub token reaches the builder ([Git on a task VM](/reference/compute-drivers#git-on-a-task-vm)).
+     */
     private function cloneDefaultBranch(TaskVmHost $host, Node $node, string $builder, Project $project, string $checkout): string
     {
         $repository = GitRepositoryOrigin::validate($project->repository_url);
-        $script = GitReadScript::for($this->access->for($repository, $project->source_access), self::Clone);
-        $result = $this->checked($builder, 'exec clone', $this->asManagedUser($host, $node, $builder, '/home/'.self::ManagedUser, [
-            'bash', '-seu', '--', $checkout, (string) $project->default_branch, $repository,
-        ], $script->protectedInput ?? $script->input));
-        $commit = trim($result->stdout);
+        $branch = (string) $project->default_branch;
+        $home = '/home/'.self::ManagedUser;
+        $this->checked($builder, 'exec git init', $this->asManagedUser($host, $node, $builder, $home, ['bash', '-ceu', self::Init, '--', $checkout, $repository]));
+        $tips = $this->git->fetch($project, [$branch], $this->access->for($repository, $project->source_access), self::ErrorCode);
+        if ($tips[$branch] === null) {
+            throw IncusHost::invalid("the workspace template builder [{$builder}]", "the repository has no default branch [{$branch}]");
+        }
+        $this->git->send($project, $checkout, $tips, fn (RemoteCommand $command): CommandResult => $this->checked(
+            $builder,
+            'exec git receive',
+            $this->asManagedUser($host, $node, $builder, $home, $command->arguments, $command->protectedInput ?? $command->input, $command->timeout ?? 900.0),
+        ), self::ErrorCode);
+        $commit = trim($this->checked($builder, 'exec git checkout', $this->asManagedUser($host, $node, $builder, $home, ['bash', '-ceu', self::Checkout, '--', $checkout, $branch]))->stdout);
 
-        return preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $commit) === 1
+        return $commit === $tips[$branch]
             ? $commit
-            : throw IncusHost::invalid("the workspace template builder [{$builder}]", 'the clone printed no commit');
+            : throw IncusHost::invalid("the workspace template builder [{$builder}]", 'the checkout is not at the commit that the Gateway sent');
     }
 
     /**
@@ -345,6 +368,55 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
         ], $environment.$command, $seconds + 30.0));
     }
 
+    /**
+     * Runs the Project's task check once in the checkout, as the baseline check would, so the template brings the caches
+     * that the check fills: static analysis, formatters, and test selection. The checkout is at the workspace's path, so
+     * caches keyed by absolute path still match after the claim. The result does not decide the build: a failed check
+     * or one stopped at the build budget is logged with its outcome and duration, and the template keeps what the check
+     * cached so far. Files that the check changes are restored, with a warning, and ignored caches stay.
+     */
+    private function warmCheck(TaskVmHost $host, Node $node, string $builder, Project $project, string $checkout, float $deadline, string $volume): void
+    {
+        $command = $project->taskCheckCommand();
+        if ($command === null) {
+            return;
+        }
+        $context = ['node' => $node->name, 'project_id' => $project->id, 'volume' => $volume, 'command' => $command];
+        $seconds = (int) floor($deadline - microtime(true)) - self::WarmReserveSeconds;
+        if ($seconds < 1) {
+            Log::warning('Task VM workspace template has no warm caches: the build budget has no time left for the task check.', $context);
+
+            return;
+        }
+        $environment = 'if vp=$(command -v vp); then export VP_HOME="$(dirname "$(dirname "$vp")")"; fi'."\n";
+        $started = microtime(true);
+        $result = $this->asManagedUser($host, $node, $builder, $checkout, ['timeout', '-k', '10', (string) $seconds, 'bash', '-c', self::WarmStep], $environment.$command, $seconds + 30.0);
+        $context['seconds'] = round(microtime(true) - $started, 1);
+        $context['exit_code'] = $result->exitCode;
+        match ($result->exitCode) {
+            0 => Log::info('Task VM workspace template warmed its caches with the task check.', $context),
+            124 => Log::warning("Task VM workspace template task check stopped at the build budget after {$seconds} seconds; the template keeps only the caches it filled so far.", $context),
+            default => Log::warning('Task VM workspace template task check failed; the template keeps the caches it filled.', [...$context, 'output' => mb_substr(trim($result->stdout."\n".$result->stderr), -2000)]),
+        };
+        $this->undoWarmCheckChanges($host, $node, $builder, $checkout, $context);
+    }
+
+    /**
+     * Restores the tracked files and removes the unignored ones that the warm-up check changed, so the template stays a
+     * clean checkout of its commit. Ignored files, such as the caches, stay. A warning names the stage and the paths.
+     *
+     * @param  array<string, mixed>  $context
+     */
+    private function undoWarmCheckChanges(TaskVmHost $host, Node $node, string $builder, string $checkout, array $context): void
+    {
+        $status = trim($this->checked($builder, 'exec git status', $this->asManagedUser($host, $node, $builder, $checkout, ['git', 'status', '--porcelain']))->stdout);
+        if ($status === '') {
+            return;
+        }
+        $this->checked($builder, 'exec git restore', $this->asManagedUser($host, $node, $builder, $checkout, ['sh', '-ec', 'git checkout -q -- . && git clean -fdq']));
+        Log::warning('Task VM workspace template task check changed the checkout; the warm-check stage restored it.', [...$context, 'changes' => mb_substr($status, 0, 500)]);
+    }
+
     /** The setup steps may only add ignored files, so a claim's checkout of its branch starts from a clean tree. */
     private function verify(TaskVmHost $host, Node $node, string $builder, string $checkout): void
     {
@@ -354,9 +426,25 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
         }
     }
 
+    /**
+     * Stops every process of the managed user in the builder, which the setup steps or the warm-up check may have left
+     * running on the volume, such as a test server, then unmounts. The builder is deleted afterwards, so nothing of
+     * value runs there.
+     */
+    private const string Unmount = <<<'BASH'
+        user=$2
+        pkill -KILL -u "$user" || true
+        for _ in $(seq 1 50); do
+            pgrep -u "$user" >/dev/null || break
+            sleep 0.2
+        done
+        sync
+        umount -- "$1"
+        BASH;
+
     private function detach(TaskVmHost $host, Node $node, string $builder, string $directory): void
     {
-        $this->checked($builder, 'exec umount', $this->image->exec($host, $node, $builder, ['sh', '-euc', 'sync; umount -- "$1"', 'sh', $directory]));
+        $this->checked($builder, 'exec umount', $this->image->exec($host, $node, $builder, ['bash', '-euc', self::Unmount, 'bash', $directory, self::ManagedUser]));
         $this->checked($builder, 'config device remove', $this->incus->run($host, $node, ['config', 'device', 'remove', '--', $builder, TaskVmWorkspaceTemplates::Device]));
     }
 

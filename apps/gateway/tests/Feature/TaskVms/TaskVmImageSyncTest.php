@@ -22,6 +22,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Sleep;
 use Tests\Support\FakeIncusFleet;
 use Tests\Support\FakeIncusFleetHost;
+use Tests\Support\TaskVmSettingsBuilder;
 
 const SYNC_KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeGatewayPublicKeyMaterial0123456789abcd orbit@gateway';
 
@@ -36,12 +37,11 @@ const SYNC_STOCK = 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
 /** Configures `$nodes` as task VM hosts, in order. */
 function sync_hosts(Node ...$nodes): TaskVmSettings
 {
-    $settings = new TaskVmSettings(true, 4, '10.44.0.128/25', array_map(
-        static fn (Node $node, int $index): TaskVmHost => new TaskVmHost($node->id, 'orbit-tasks', 'orbittask0', '10.251.'.(77 + $index).'.0/24', 2, 2, '4GiB', '20GiB'),
+    $settings = TaskVmSettingsBuilder::bind(['hosts' => array_map(
+        static fn (Node $node, int $index): TaskVmHost => TaskVmSettingsBuilder::host($node->id, ['cidr' => '10.251.'.(77 + $index).'.0/24']),
         $nodes,
         array_keys($nodes),
-    ), 'http://10.44.0.3:8317', null, null, []);
-    app()->instance(TaskVmSettings::class, $settings);
+    )]);
 
     return $settings;
 }
@@ -315,10 +315,7 @@ describe('a sync that meets other work', function (): void {
         $settings = sync_hosts($this->beast, $this->shark, $far);
         ($this->link)();
         $this->shark->update(['status' => LifecycleStatus::Removing]);
-        app()->instance(TaskVmSettings::class, new TaskVmSettings(true, 4, '10.44.0.128/25', [
-            ...$settings->hosts,
-            new TaskVmHost(999999, 'orbit-tasks', 'orbittask0', '10.251.90.0/24', 2, 2, '4GiB', '20GiB'),
-        ], 'http://10.44.0.3:8317', null, null, []));
+        TaskVmSettingsBuilder::bind(['hosts' => [...$settings->hosts, TaskVmSettingsBuilder::host(999999, ['cidr' => '10.251.90.0/24'])]]);
 
         $results = app(IncusTaskVmImageSync::class)->distribute($settings->host($this->beast->id), $this->beast, SYNC_OLD);
 

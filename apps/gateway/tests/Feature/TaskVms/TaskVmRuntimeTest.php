@@ -8,7 +8,6 @@ use App\Domain\ProxyCli\ProxyCliState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\TaskVms\TaskVmException;
-use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -24,6 +23,7 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
+use Tests\Support\TaskVmSettingsBuilder;
 
 use function Pest\Laravel\mock;
 
@@ -32,10 +32,7 @@ const TVM_RUNTIME_PI_TOKEN = 'task-vm-pi-token-with-more-than-32-characters';
 
 function tvm_runtime_settings(?string $artifact, ?string $digest, array $models = ['gpt-5.6-luna']): void
 {
-    app()->instance(TaskVmSettings::class, new TaskVmSettings(
-        enabled: true, devClusterId: 4, wireguardRange: '10.44.0.128/25', hosts: [], modelProxyOrigin: TVM_RUNTIME_ORIGIN,
-        piArtifactPath: $artifact, piArtifactSha256: $digest, piModels: $models,
-    ));
+    TaskVmSettingsBuilder::bind(['modelProxyOrigin' => TVM_RUNTIME_ORIGIN, 'piArtifactPath' => $artifact, 'piArtifactSha256' => $digest, 'piModels' => $models]);
 }
 
 function tvm_runtime_vm(bool $enrolled = true): TaskVm
@@ -261,10 +258,7 @@ describe('release', function (): void {
         $vm = tvm_runtime_vm();
         app(TaskVmRuntime::class)->prepare($vm);
         expect($vm->fresh()?->model_proxy_origin)->toBe(TVM_RUNTIME_ORIGIN);
-        app()->instance(TaskVmSettings::class, new TaskVmSettings(
-            enabled: true, devClusterId: 4, wireguardRange: '10.44.0.128/25', hosts: [], modelProxyOrigin: 'http://10.44.0.9:8317',
-            piArtifactPath: null, piArtifactSha256: null, piModels: [],
-        ));
+        TaskVmSettingsBuilder::bind(['modelProxyOrigin' => 'http://10.44.0.9:8317']);
 
         app(TaskVmRuntime::class)->release($vm->fresh());
 

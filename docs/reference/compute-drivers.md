@@ -260,7 +260,7 @@ Each host keeps one template for each Project whose groups run on task VMs, `orb
 
 | Path in the volume | What it holds |
 | --- | --- |
-| `.orbit-workspace-template` | A checkout of the default branch, after the Project's setup steps: `vendor`, `node_modules`, and the build output |
+| `workspace` | A checkout of the default branch, after the Project's setup steps and one run of its task check: `vendor`, `node_modules`, the build output, and the caches that the check fills |
 | `.orbit-cache/ms-playwright` | The Playwright browsers |
 | `.orbit-cache/composer` | The Composer cache |
 | `.pnpm-store` | The pnpm store. pnpm puts it at the root of the filesystem by itself, because the default store is on another filesystem |
@@ -274,15 +274,21 @@ When Orbit creates the workspace on a task VM, it runs these steps before source
 3. It attaches the clone to the running VM as the disk `workspace`.
 4. Over the Node's SSH connection, it mounts the disk at the Project's apps directory and adds it to `/etc/fstab`. It points `~/.cache/ms-playwright` and `~/.cache/composer` at the volume.
 
-5. Source preparation checks the owner and the origin of `.orbit-workspace-template`. Then it renames that directory to the checkout `task-<id>`. The rename keeps the files and their inode. Preparation writes its receipt as for a clone.
+5. Source preparation checks the owner and the origin of `workspace`, and takes it in place. Preparation writes its receipt as for a clone.
 
-The mount never goes over a directory with content. Before it mounts, it checks that `orbit` has the `uid:gid` that the template recorded. After it mounts, it checks that the volume root and `.orbit-workspace-template` belong to that `uid:gid`.
+A task VM workspace's checkout is always `<apps directory>/workspace`, the path where the template was built. A template in place that fails the source checks fails the preparation, because a fresh clone cannot go to its path.
+
+A claim takes only a template with `user.orbit.layout=workspace`. A template from before the fixed checkout path has none. No claim takes it, and the claim queues a new build.
+
+The mount never goes over a directory with content. Before it mounts, it checks that `orbit` has the `uid:gid` that the template recorded. After it mounts, it checks that the volume root and `workspace` belong to that `uid:gid`.
 
 After the Project's repository or the base image changes, no template matches until the next build. The fstab line follows a successful mount and owner check only, so a failed mount never comes back at a later boot over a fresh clone.
 
 When step 3 or 4 fails, the claim undoes the attach before the fresh clone: it removes the cache links into the volume, unmounts it, removes its fstab line, detaches the disk, and deletes the clone. So the fresh clone lands on the VM's own disk, never on a volume with another user's files. When the undo fails too, the claim fails with `task_vm.workspace_template_detach_failed`, and the group asks for assistance.
 
-Then the workspace fetches and checks out the group's branch, as usual. The baseline check runs the setup steps on the workspace. Each step finds the dependencies in place and only installs what the branch changed.
+Then the Gateway sends the group's branches from its [mirror](#git-on-a-task-vm), and the workspace checks out the group's branch. The baseline check runs the setup steps on the workspace. Each step finds the dependencies in place and only installs what the branch changed.
+
+A task VM holds one workspace, so its checkout path is fixed, unlike the `task-<id>` checkout on a shared Node. Caches that record absolute paths, such as Rector's, still match at the claim, so the baseline check finds them warm.
 
 Every step is idempotent, so a claim that runs again finds the clone, the disk, and the mount in place. A warm VM gets its clone at the claim, so warm VMs stay the same for every Project. The base image creates `orbit` with uid and gid 1000, so the files of a template belong to `orbit` on every VM from that image. A template is still only taken on the image it was built on, and the mount checks the owner.
 
@@ -339,16 +345,28 @@ The build runs these stages on the host over SSH, with `sudo -n incus --project 
 | `identity` | Reads the base image that the builder booted, and the `uid:gid` of `orbit` |
 | `volume` | Creates the block volume with the host's `disk` size, and attaches it |
 | `mount` | Formats the volume as ext4, gives its root to `orbit`, and mounts it with the same script as a claim |
-| `clone` | Clones the default branch into `.orbit-workspace-template`, with the Project's repository access, as `orbit` |
+| `clone` | Creates `workspace` with `git init` as `orbit`, and checks out the default branch, which the Gateway sends from its [mirror](#git-on-a-task-vm) |
 | `php` | Installs the `app-dev` PHP packages of the version that `composer.json` selects, with the Instance's program. With the base image, it only checks them |
 | `setup:<step>` | Runs each Project setup step as `orbit` in a login Bash in the checkout, with `VP_HOME` set and stdin closed, as the baseline check does. See below |
+| `warm-check` | Runs the Project's task check once in the checkout, as the baseline check would, so the template brings its caches. See below |
 | `verify` | Requires a clean tree. The setup steps may only add ignored files |
-| `detach` | Unmounts the volume and detaches it |
-| `publish` | Sets `user.orbit.project`, `user.orbit.commit`, `user.orbit.repository`, `user.orbit.image`, `user.orbit.owner`, and `user.orbit.ready=true` on the volume |
+| `detach` | Stops every process of `orbit` in the builder, which a setup step or the task check may leave running on the volume, then unmounts the volume and detaches it |
+| `publish` | Sets `user.orbit.project`, `user.orbit.commit`, `user.orbit.repository`, `user.orbit.image`, `user.orbit.owner`, `user.orbit.layout=workspace`, and `user.orbit.ready=true` on the volume |
 | `delete-builder` | Deletes the builder VM |
 | `prune` | Deletes the older templates of the Project on the host |
 
 A monorepo whose task workspaces have no Route, such as `orbit`, skips the `php` stage, as its Instance does: the checkout is not one PHP application.
+
+The `warm-check` stage runs the Project's `task_check` like a setup step, within what the build's budget has left less 60 seconds; a Project without one skips it. Its result does not decide the build:
+
+| Outcome | Log | Template |
+| --- | --- | --- |
+| Passes | Info `Task VM workspace template warmed its caches with the task check.` | Published with warm caches |
+| Fails | Warning `Task VM workspace template task check failed; the template keeps the caches it filled.`, with the output tail | Published |
+| Runs out of budget | Warning `Task VM workspace template task check stopped at the build budget …` | Published with the caches filled so far |
+| No budget left | Warning `Task VM workspace template has no warm caches: …` | Published without warm caches |
+
+Each entry carries the command, the exit code, and the duration. When the check changes tracked files or adds unignored ones, the stage restores the checkout and logs the warning `Task VM workspace template task check changed the checkout; the warm-check stage restored it.` with the paths. Ignored files, such as the caches, stay.
 
 The step travels on stdin to a script file, so a long command fits. A [Gateway-owned step](/reference/instance-setup#gateway-owned-setup-steps), such as `@orbit/tia-baseline` or `@orbit/ci-caches`, becomes the same command as in the check. A builder has no Instance, so no SSR port is set. Each step gets its own timeout, but at most what the build's budget has left.
 
@@ -366,13 +384,57 @@ A build that fails before `publish` deletes its builder VM and its volume, and t
 
 A template takes the size of its files on the pool, compressed. The mealou template takes 1.1 GiB, and the orbit template, with the dependencies of all five Composer projects and the web app, 1.3 GiB. Each host holds at most one template for each Project, plus one clone for each task VM that has a workspace. After a promote, only Projects with a recent group or a new claim get a template again. A clone takes only the blocks that its group changes. The volume is sparse, so its size limit, the host's `disk`, reserves nothing.
 
-A new template replaces the older ones of its Project at once. Incus keeps the data of a deleted template until its last clone is gone, so a running group never loses its workspace. The refresh after each promote deletes the templates that no claim can take, as [Build a template](#build-a-template) lists. Destroy deletes a VM's clone after the VM, and the sweep deletes a clone whose VM has no row. A template holds no secret. The GitHub token reaches the builder only on standard input, as for a clone on a task VM.
+A new template replaces the older ones of its Project at once. Incus keeps the data of a deleted template until its last clone is gone, so a running group never loses its workspace. The refresh after each promote deletes the templates that no claim can take, as [Build a template](#build-a-template) lists. Destroy deletes a VM's clone after the VM, and the sweep deletes a clone whose VM has no row. A template holds no secret. No GitHub token reaches the builder: it gets the default branch from the Gateway's [mirror](#git-on-a-task-vm).
 
 #### Park, resume, and security
 
 A parked VM keeps its disk attached. On the next boot, `/etc/fstab` mounts it before `multi-user.target`, so the agent and Pi start after it. In the test on beast, the volume was mounted by the time the VM answered again, 8 seconds after the start.
 
 A template is built by code in a builder VM that no agent and no group ever ran on. Each group gets its own clone, which it can change freely, and the clone goes with its VM. So no state of one group reaches the template or another group. The Project's setup steps run in the builder, as they run in every task VM of the Project.
+
+### Git on a task VM
+
+No GitHub token reaches a task VM or a template builder. The agent in a task VM runs as `orbit` with passwordless sudo, so it could read a token from any process in the VM. So the Gateway runs every Git command that talks to GitHub itself, in its own mirror of the Project. It moves Git objects to and from the VM over the Node's SSH connection, as a pack on standard input or standard output.
+
+#### The mirror
+
+Each Project with task VM work has one bare repository on the Gateway: `storage/app/task-vm-git/<project id>.git`, in the [shared Gateway storage](/reference/gateway-recovery#release-layout). The Gateway fetches into it from the Project repository URL with the Project's [repository access](/reference/github-app#how-orbit-reads-a-repository). The token is in the environment of one `git` process on the Gateway, as for any other read. The fetch asks only for the branches that the operation names, with `--no-tags`, into `refs/heads/<branch>`. One operation at a time changes the mirror of a Project.
+
+#### Send branches to the VM
+
+1. The Gateway fetches the operation's branches into the mirror. Only `task-<id>` may be missing on GitHub.
+2. It reads the commit IDs of the refs in the VM's checkout. It keeps those that the mirror holds as commits.
+3. It packs the objects of the branches that are not in the history of those commits.
+4. It sends the pack on the standard input of one SSH command. The VM indexes the pack and sets `refs/remotes/origin/<branch>` to the mirror's commit. A missing `task-<id>` loses its ref.
+5. When the default branch was sent, the VM points `refs/remotes/origin/HEAD` at it, as a clone does. Pest's test selection reads the default branch there.
+
+| Operation | Branches |
+| --- | --- |
+| Workspace creation | The default branch and `task-<id>` |
+| [Fetch before a turn](/reference/tasks#fetch-before-a-turn) | The default branch, `task-<id>`, and a pull request base that is not the default branch |
+| Base branch fetch | The pull request base |
+| [Template build](#build-a-template) | The default branch |
+
+A workspace without a template starts from `git init`, with the Project repository URL as `origin`, and gets its branches this way. The log messages about a fresh clone mean this new repository. The VM's refs only shrink the pack. A VM that names commits it does not have gets a pack it cannot complete, and its own Git operation fails.
+
+#### Publish from the VM
+
+1. The Gateway fetches the default branch and `task-<id>` into the mirror.
+2. It asks the VM for a pack of the approved commit. The pack leaves out the history of the mirror's commits of those branches.
+3. The VM writes the pack to standard output, and the Gateway writes it to a file. A pack over 2 GiB fails the push.
+4. The Gateway indexes the pack in the mirror with `git index-pack --strict`, which checks every object.
+5. It checks that the approved commit is a commit in the mirror, and that its history is complete.
+6. It pushes `<commit>:refs/heads/task-<id>` from the mirror with the write token, and records the branch in the mirror.
+
+Only the commit ID that the Gateway approved names what it pushes. The VM's branch names, refs, and configuration play no part.
+
+#### What the Gateway trusts
+
+From the VM, the Gateway takes only commit IDs and pack data. A commit ID must be 40 or 64 lowercase hex characters. Git in the mirror never reads a file from the VM. It runs with these settings: `core.hooksPath=/dev/null`, `core.fsmonitor=false`, an empty `credential.helper`, `http.followRedirects=false`, `protocol.allow=never`, and `protocol.https.allow=always`. A pack from the VM goes through `git index-pack --strict`, which runs the object checks that `transfer.fsckObjects` runs for a fetch. Fetches from GitHub skip them, because an old commit in a real repository can fail them.
+
+The Gateway refuses to send a command that carries a GitHub credential to a task VM. The command fails with `task_vm.git_credential_refused` before SSH starts. An `incus` command on a task VM host refuses one too. So an Instance or Project operation that would fetch on a task VM with a token fails there and passes no token. Examples are `instance:destroy` of a task VM workspace, `instance:clone` from one, and `project:update` with a new repository URL while one exists. A task VM workspace goes with its group; see [Destroy a task VM](#destroy-a-task-vm).
+
+The checkout keeps the Project repository URL as `origin`. The agent can run Git there, but it holds no credential. So it cannot fetch from or push to a private repository.
 
 ### Park and resume
 
@@ -770,7 +832,7 @@ The reserved range must always be a private network. As soon as task VMs are ena
 
 ### Errors
 
-`IncusTaskVmProvider` is the only place that reads host and guest output. It checks the instance state and its one IPv4 address inside the bridge range, the cloud-init status, and the host key fingerprint. Invalid output fails with `task_vm.invalid_host_output`. Every task VM error code starts with `task_vm.`. The setup commands print the code and message, and for `task_vm.setup_failed` the last lines of the script's error output. After that check, Orbit trusts its own records.
+`IncusTaskVmProvider` reads the host's output: the instance state, its one IPv4 address inside the bridge range, and the host key fingerprint. `TaskVmGuest` reads the guest's output the same way for every provider: the cloud-init status and the image manifest. Invalid output fails with `task_vm.invalid_host_output`, and a failed guest command with `task_vm.host_command_failed`, also on UpCloud. Every task VM error code starts with `task_vm.`. The setup commands print the code and message, and for `task_vm.setup_failed` the last lines of the script's error output. After that check, Orbit trusts its own records.
 
 | Code | HTTP | Cause |
 | --- | --- | --- |
@@ -784,8 +846,8 @@ The reserved range must always be a private network. As soon as task VMs are ena
 | `task_vm.fleet_unavailable` | 409 | The fleet has not exactly one active `vpn`, `gateway`, or `websocket` Node, the dev Cluster has no active router, or one of these Nodes has no WireGuard address |
 | `task_vm.setup_unavailable` | 409 | The setup script is missing, or the target Node has no WireGuard address |
 | `task_vm.setup_failed` | 409 | The setup script failed or did not print `{"ok":true}` |
-| `task_vm.invalid_host_output` | 502 | Incus returned output that fails these checks |
-| `task_vm.host_command_failed` | 502 | An `incus` command on the host failed |
+| `task_vm.invalid_host_output` | 502 | Incus or a task VM guest returned output that fails these checks |
+| `task_vm.host_command_failed` | 502 | An `incus` command on the host, or a guest command in a task VM, failed |
 | `task_vm.bootstrap_failed` | 502 | Cloud-init in the VM reports `error` |
 | `task_vm.not_enrolled` | 409 | The task VM has no Node yet, so Pi cannot be prepared |
 | `task_vm.model_key_failed` | 409 or 502 | CLIProxyAPI did not confirm the group's model key, the proxycli extension holds no management key, or another key operation runs |
@@ -806,6 +868,7 @@ The reserved range must always be a private network. As soon as task VMs are ena
 | `task_vm.workspace_template_failed` | 502 | A workspace template build failed, or the mount of a clone failed. The message names the stage |
 | `task_vm.workspace_template_running` | 409 | A workspace template build of the host is already running |
 | `task_vm.workspace_template_detach_failed` | 502 | A claim could not attach a workspace template, and could not unmount and detach the volume after it. The claim stops, so no fresh clone lands on the volume |
+| `task_vm.git_credential_refused` | 409 | A command that carries a GitHub credential was about to reach a task VM or an `incus` command. See [Git on a task VM](#git-on-a-task-vm) |
 
 ### Limits
 
@@ -861,6 +924,14 @@ Parking has these limits:
 - A `parked` VM's private Route does not answer. Set `preview` on a group to keep its VM running during review.
 - Doctor does not check a `parked` VM's Node until the VM starts again.
 
+Git on a task VM has these limits:
+
+- The Gateway keeps a mirror of each Project with task VM work, about the size of its repository.
+- A task VM checkout has only the branches that [Send branches to the VM](#send-branches-to-the-vm) lists, and no tags.
+- The mirror of a Project serves one fetch, pack, or push at a time. A waiting operation fails after 300 seconds.
+- A workspace without a template gets the whole history of its branches from the Gateway once. The Gateway packs it, and the pack goes through the Gateway's storage on its way to the VM.
+- The operations that [refuse a credential](#what-the-gateway-trusts) on a task VM need the workspace's group to end first, or a Project without task VM workspaces.
+
 The hub filter has these limits:
 
 - The hub filter fails open to keep the fleet VPN up. The tunnel starts even after a failed table load at boot.
@@ -873,6 +944,10 @@ The hub filter has these limits:
 Most of a new VM's 35 seconds go to its boot and its enrollment, and none of that depends on the group. So a warm VM does those steps before the claim, and the claim adds only what belongs to the group: its Pi token, its model key, Pi, and its workspace. A warm VM holds no secret of a group, so it can wait on the task network like any other VM. A VM serves one group only and is destroyed after it, so no state of one group can reach the next.
 
 `warm_vms` is a setting of each host, next to its `max_vms`. Hosts differ in size, and setting a host's `warm_vms` to `0` drains only that host, which retiring a host needs. A claim reads the image itself, so a stale warm VM never serves a group, even before the refill replaces it.
+
+The agent in a task VM has root through sudo, so a token anywhere in the VM, even in another user's process, is the agent's token. The Gateway already holds the tokens and already reaches every task VM over SSH. So Git that talks to GitHub runs on the Gateway, and only objects cross the VM edge.
+
+Packs on the standard input and output of the existing SSH commands need no new transport, reach a template builder through its host as well, and keep the check that a command reaches only its group's workspace. The Gateway checks what comes back the way a fetch checks a remote: only the approved commit ID names what it pushes, and `index-pack --strict` checks every object.
 
 Most groups wait for review far longer than they work, so parking frees the host's CPU and memory for other groups. A stop keeps the disk, so a resume continues the same workspace in seconds instead of a new claim. Placement by free slots spreads VMs across hosts and keeps every host inside its budget. The sweep catches what a crash between two steps leaves, and it acts only on names and the project that Orbit owns.
 
@@ -897,6 +972,8 @@ These alternatives were also rejected:
 | A claim that takes a pool VM that is still starting | The row would need a group step in the middle of enrollment. The claim waits for it to become `warm` instead |
 | A record of the current image on the Gateway | It can drift from the host's alias. The claim reads the alias, which is the fact |
 | Stopped warm VMs, saved with a stateful stop | It may follow as a hot pool. A running warm VM uses little and needs no restore |
+| A token in the VM for each fetch and push | The agent can read any process in the VM. A read token exposes every private branch, and the write token lets the agent push any commit |
+| `git push` and `git fetch` over SSH between the mirror and the VM | A template builder has no address of its own and needs a second transport. It also skips the check that a command reaches only its group's workspace |
 
 ## UpCloud overflow
 

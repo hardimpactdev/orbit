@@ -142,6 +142,27 @@ function tick_vm_provider(): RecordingTaskVmProvider
     return $provider;
 }
 
+/**
+ * The names of the task VMs that workspace removal destroyed, in order.
+ *
+ * @return list<string>
+ */
+function tick_vm_destroyed(): array
+{
+    return array_values(array_map(
+        static fn (string $call): string => substr($call, strlen('destroy ')),
+        array_filter(tick_vm_provider()->vmCalls, static fn (string $call): bool => str_starts_with($call, 'destroy ')),
+    ));
+}
+
+/** Makes every task VM destroy fail with the exception, after recording it. */
+function tick_vm_destroy_fails(Throwable $failure): void
+{
+    tick_vm_provider()->onDestroy = static function () use ($failure): never {
+        throw $failure;
+    };
+}
+
 /** A running group on its own task VM, unless a test needs shared compute. */
 function tick_group(TaskCompute $compute = TaskCompute::Vm): Task
 {
@@ -654,7 +675,7 @@ it('continues watching a prior settling PR and completes only after it merges', 
 
     $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'completed', 'pr_url' => $group->pr_url, 'taskable_id' => null]);
     $this->assertDatabaseMissing('instances', ['id' => $group->taskable_id]);
-    expect(tick_vm_provider()->destroyed)->toBe(['tvm-'.$group->id]);
+    expect(tick_vm_destroyed())->toBe(['tvm-'.$group->id]);
     Http::assertSentCount(6);
 });
 
@@ -1103,7 +1124,7 @@ it('withdraws its pull request assistance request when the pull request merges',
     app(TaskScheduler::class)->tick();
 
     $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'completed', 'assistance_requested' => false, 'assistance_reason' => null]);
-    expect(tick_vm_provider()->destroyed)->toBe(['tvm-'.$group->id]);
+    expect(tick_vm_destroyed())->toBe(['tvm-'.$group->id]);
 });
 
 it('keeps another assistance reason without asking when the pull request merges', function (): void {
@@ -1119,13 +1140,12 @@ it('keeps another assistance reason without asking when the pull request merges'
     app(TaskScheduler::class)->tick();
 
     $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'completed', 'assistance_requested' => false, 'assistance_reason' => 'The operator asked to hold this group.']);
-    expect(tick_vm_provider()->destroyed)->toBe(['tvm-'.$group->id]);
+    expect(tick_vm_destroyed())->toBe(['tvm-'.$group->id]);
 });
 
 it('backs off a merged pull request cleanup and retries it on a later tick', function (): void {
     $group = tick_settling_group();
-    $provider = tick_vm_provider();
-    $provider->destroyFailure = new RuntimeException('disk full');
+    tick_vm_destroy_fails(new RuntimeException('disk full'));
     Http::preventStrayRequests();
     Http::fake([
         'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
@@ -1136,7 +1156,7 @@ it('backs off a merged pull request cleanup and retries it on a later tick', fun
     app(TaskScheduler::class)->tick();
     app(TaskScheduler::class)->tick();
 
-    expect($provider->destroyed)->toHaveCount(1)
+    expect(tick_vm_destroyed())->toHaveCount(1)
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
         ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
         ->and($group->fresh()?->assistance_question)->toBeNull()
@@ -1145,7 +1165,7 @@ it('backs off a merged pull request cleanup and retries it on a later tick', fun
     $this->travel(TaskScheduler::AbandonedWorkspaceBackoffSeconds + 1)->seconds();
     app(TaskScheduler::class)->tick();
 
-    expect($provider->destroyed)->toHaveCount(2)
+    expect(tick_vm_destroyed())->toHaveCount(2)
         ->and($group->fresh()?->taskable_id)->toBe($group->taskable_id);
 });
 
@@ -1167,7 +1187,7 @@ it('preserves labeled merge evidence and report metrics when cleanup retries los
         'answers' => ['subtask_'.$task->id => ['value' => true, 'selected_answer_probability' => 0.97]],
         'latency_ms' => 25,
     ]);
-    tick_vm_provider()->destroyFailure = new RuntimeException('disk full');
+    tick_vm_destroy_fails(new RuntimeException('disk full'));
     Http::preventStrayRequests();
     Http::fake([
         'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
@@ -1350,7 +1370,7 @@ it('uses backoff for publication and removal retries and retries a failed manual
 it('replaces its pull request assistance request with the cleanup failure when a merged group cannot complete', function (): void {
     $group = tick_settling_group();
     $group->update(['assistance_requested' => true, 'assistance_reason' => 'The pull request needs attention: It conflicts with main; merge main into the task branch and push.']);
-    tick_vm_provider()->destroyFailure = new RuntimeException('disk full');
+    tick_vm_destroy_fails(new RuntimeException('disk full'));
     Http::preventStrayRequests();
     Http::fake([
         'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
@@ -1373,7 +1393,7 @@ it('does not replace an open direction request when merged pull request cleanup 
         'assistance_question' => $question,
         'assistance_reason' => $reason,
     ]);
-    tick_vm_provider()->destroyFailure = new RuntimeException('disk full');
+    tick_vm_destroy_fails(new RuntimeException('disk full'));
     Http::preventStrayRequests();
     Http::fake([
         'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
@@ -1830,7 +1850,7 @@ it('does not start an appended subtask when the pull request merges', function (
         ->and($group->fresh()?->assistance_reason)->toBe('Watched pull request ended: '.$group->pr_url.' is merged. Open subtasks: #'.$todo->id.' '.$todo->title.'.')
         ->and($todo->fresh()?->status)->toBe(TaskStatus::Todo)
         ->and($agents->spawned)->toBe([])
-        ->and(tick_vm_provider()->destroyed)->toBe([]);
+        ->and(tick_vm_destroyed())->toBe([]);
 });
 
 it('starts an interrupted check fixup on the next tick without appending another', function (TaskStatus $status): void {
@@ -1963,7 +1983,7 @@ it('cancels an unstarted conflict fixup on merge and preserves orphaned approval
         $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'completed', 'taskable_id' => null]);
     }
     expect($agents->spawned)->toBe([]);
-    expect(tick_vm_provider()->destroyed)->toBe($orphaned ? [] : ['tvm-'.$group->id]);
+    expect(tick_vm_destroyed())->toBe($orphaned ? [] : ['tvm-'.$group->id]);
 })->with(['merged approval' => false, 'approval missed merge' => true]);
 
 it('retains an orphaned approval after interruption between settling and recording its hold', function (bool $otherAssistance, bool $direction): void {
@@ -2004,7 +2024,7 @@ it('retains an orphaned approval after interruption between settling and recordi
 
     $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'taskable_id' => $instanceId]);
     $this->assertDatabaseHas('instances', ['id' => $instanceId]);
-    expect(tick_vm_provider()->destroyed)->toBe([]);
+    expect(tick_vm_destroyed())->toBe([]);
     if ($direction) {
         expect($group->fresh()?->assistance_reason)->toBe('Another assistance cause.')
             ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Direction)

@@ -34,8 +34,11 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\TaskVms\TaskVmProviderKind;
+use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\AppDev\NativeAppDevSourceOperationLock;
 use App\Infrastructure\Instances\NativeInstanceEnvironmentOperationLock;
@@ -51,6 +54,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\TaskVms\TaskVmGit;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\InstanceRemovalMember;
@@ -59,12 +63,14 @@ use App\Models\Project;
 use App\Models\ProjectLifecycleStep;
 use App\Models\Route;
 use App\Models\Task;
+use App\Models\TaskVm;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
+use Tests\Support\GitRemoteRedirect;
 use Tests\Support\LifecycleSshExecutor;
 use Tests\Support\PlantedGitConfig;
 
@@ -139,6 +145,7 @@ beforeEach(function (): void {
         $accounts,
         $this->boundary,
         app(RepositoryReadAccess::class),
+        app(TaskVmGit::class),
     );
     $this->removal = new RemoteDevelopmentInstanceSourceRemoval(
         $ssh,
@@ -170,6 +177,41 @@ beforeEach(function (): void {
 afterEach(function (): void {
     chdir($this->previousDirectory);
     $this->files->deleteDirectory($this->sandbox);
+});
+
+it('creates a task VM workspace from the Gateway mirror, with no clone or fetch in the VM', function (): void {
+    GitRemoteRedirect::global($this->repository, $this->remoteOrigin);
+    $host = Node::query()->create(['name' => 'beast', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '10.44.0.7', 'wireguard_ip' => '10.44.0.7', 'user' => 'nckrtl']);
+    $group = Task::topLevel()->create(['project_id' => $this->orbitApp->id, 'title' => 'Export', 'brief' => 'Add an export.', 'status' => TaskGroupStatus::Running, 'task_compute' => TaskCompute::Vm]);
+    TaskVm::query()->create([
+        'group_id' => $group->id, 'host_node_id' => $host->id, 'node_id' => $this->node->id, 'provider' => 'incus', 'name' => 'tvm-1',
+        'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.130', 'pi_token' => str_repeat('p', 64),
+    ]);
+    $name = 'task-'.$group->id;
+
+    try {
+        $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, $name, $name);
+        $this->source->prepare($instance, false);
+        $resolution = $this->source->resolve($instance->refresh());
+    } finally {
+        GitRemoteRedirect::clear();
+    }
+
+    $checkout = $instance->checkout_path;
+    $main = trim(orb76_run(['git', '-C', $this->repository, 'rev-parse', 'refs/heads/main'])->stdout);
+    expect($resolution->branch)->toBe($name)
+        ->and($resolution->startingCommit)->toBe($main)
+        // Only the default branch and the task branch come from the mirror. The old in-VM fetch took every branch.
+        ->and(trim(orb76_run(['git', '-C', $checkout, 'for-each-ref', '--format=%(refname)', 'refs/remotes'])->stdout))->toBe("refs/remotes/origin/HEAD\nrefs/remotes/origin/main");
+    $network = [];
+    foreach ($this->transport->commands as $command) {
+        expect($command->protectedInput?->carriesGitCredential())->not->toBeTrue();
+        if (str_contains((string) $command->input, 'allow_existing=$6') || str_contains((string) $command->input, 'instance_name=$6')) {
+            $network[] = $command->arguments[array_key_last($command->arguments)];
+        }
+    }
+    // Preparation runs `git init` instead of a clone, and resolution fetches nothing in the VM.
+    expect($network)->toBe(['0', '0']);
 });
 
 it('preserves a pre-existing same-origin checkout through the whole failed create and retry', function (): void {
@@ -263,6 +305,57 @@ it('starts a task VM workspace from the template checkout next to it, with its i
         ->and(file_get_contents($workspace->checkout_path.'/vendor/autoload.php'))->toBe("<?php\n")
         ->and($resolved->branch)->toBe('task-7')
         ->and(trim(orb76_run(['git', '-C', $workspace->checkout_path, 'status', '--porcelain'])->stdout))->toBe('');
+});
+
+it('takes a task VM template built at the checkout path in place, and the prepared checkout on a retry', function (): void {
+    config()->set('orbit.tasks.worker_user', null);
+    $workspace = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-7', 'task-7');
+    orb76_task_vm($this->node);
+    $checkout = dirname($workspace->checkout_path).'/workspace';
+    $workspace->update(['checkout_path' => $checkout, 'source_prepare_id' => (string) Str::uuid()]);
+    $this->files->makeDirectory(dirname($checkout), 0o755, true);
+    orb76_run(['git', 'clone', '--quiet', $this->repository, $checkout]);
+    file_put_contents($checkout.'/.git/info/exclude', "vendor/\n");
+    $this->files->makeDirectory($checkout.'/vendor');
+    file_put_contents($checkout.'/vendor/cache.php', "<?php\n");
+    $inode = fileinode($checkout.'/vendor/cache.php');
+
+    // On a task VM Node, resolution sends the branches from the Gateway's mirror.
+    GitRemoteRedirect::global($this->repository, $this->remoteOrigin);
+    try {
+        $this->source->prepare($workspace, false, $checkout);
+        $this->source->prepare($workspace->refresh(), true, $checkout);
+        $resolved = $this->source->resolve($workspace);
+        $this->source->inspectPrepared($workspace);
+    } finally {
+        GitRemoteRedirect::clear();
+    }
+
+    expect(fileinode($checkout.'/vendor/cache.php'))->toBe($inode)
+        ->and(is_file($checkout.'/.git/orbit-source-prepare'))->toBeTrue()
+        ->and($resolved->branch)->toBe('task-7')
+        ->and(trim(orb76_run(['git', '-C', $checkout, 'status', '--porcelain'])->stdout))->toBe('');
+});
+
+it('fails instead of cloning over a template in place that fails its source checks', function (): void {
+    config()->set('orbit.tasks.worker_user', null);
+    $workspace = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-8', 'task-8');
+    orb76_task_vm($this->node);
+    $checkout = dirname($workspace->checkout_path).'/workspace';
+    $workspace->update(['checkout_path' => $checkout, 'source_prepare_id' => (string) Str::uuid()]);
+    $this->files->makeDirectory(dirname($checkout), 0o755, true);
+    orb76_run(['git', 'clone', '--quiet', $this->repository, $checkout]);
+    orb76_run(['git', '-C', $checkout, 'remote', 'set-url', 'origin', $this->sandbox.'/other.git']);
+
+    expect(fn () => $this->source->prepare($workspace, false, $checkout))->toThrow(RuntimeConvergenceException::class);
+    expect(is_file($checkout.'/.git/orbit-source-prepare'))->toBeFalse();
+});
+
+it('refuses the fixed workspace checkout on a Node that is not a task VM', function (): void {
+    $workspace = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-6', 'task-6');
+    $workspace->update(['checkout_path' => dirname($workspace->checkout_path).'/workspace', 'source_prepare_id' => (string) Str::uuid()]);
+
+    expect(fn () => $this->source->prepare($workspace, false))->toThrow(RuntimeConvergenceException::class, 'unsafe checkout path');
 });
 
 it('clones when the template is gone, and clones instead of taking a template of another repository', function (): void {
@@ -1460,6 +1553,7 @@ it('clones a gh_cli Project with the Gateway GitHub CLI token only on protected 
         $this->accounts,
         $this->boundary,
         app(RepositoryReadAccess::class),
+        app(TaskVmGit::class),
     );
     $this->orbitApp->update([
         'repository_url' => 'git@github.com:acme/private.git',
@@ -3889,6 +3983,13 @@ function orb76_source_instance(
         ->load(['project', 'node']);
 }
 
+/** Makes the Node the Node of a live task VM, whose one workspace lives at the fixed checkout path. */
+function orb76_task_vm(Node $node): TaskVm
+{
+    return TaskVm::query()->create(['host_node_id' => $node->id, 'node_id' => $node->id, 'provider' => TaskVmProviderKind::Incus, 'name' => 'tvm-7',
+        'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.200']);
+}
+
 function orb76_create_remote_repository(string $sandbox, string $repository): void
 {
     $work = $sandbox.'/work';
@@ -4081,6 +4182,7 @@ final class Orb76LocalSourceSshExecutor implements SshExecutor
         $result = new NativeProcessRunner()->run(new ProcessInvocation(
             arguments: $arguments,
             input: $input,
+            protectedInput: $command->protectedInput,
             environment: $this->environment,
         ));
 

@@ -46,29 +46,24 @@ final readonly class IncusHost
     }
 
     /**
-     * Launches `$image` as the VM `$name` on the host's bridge, with port isolation on its NIC. A normal VM gets the
-     * host's size. A medium VM gets {@see TaskVmSize::MediumCpus}, its memory, and the host's disk. A large VM gets
-     * {@see TaskVmSize::LargeCpus}, its memory and disk, and free page reporting on its memory balloon, which Incus can
-     * set only before the VM first starts. `incus launch` reads instance config as
-     * YAML from a stdin that is not a terminal. JSON is YAML, but YAML knows no `\/` escape.
+     * Launches `$image` as the VM `$name` on the host's bridge, with port isolation on its NIC, and the CPU, memory, disk
+     * and QEMU configuration of its size ({@see TaskVmSize::resources()}). Incus can set the QEMU configuration only
+     * before the VM first starts. `incus launch` reads instance config as YAML from a stdin that is not a terminal.
+     * JSON is YAML, but YAML knows no `\/` escape.
      */
     public function launch(TaskVmHost $host, Node $node, string $name, string $image, string $userData, TaskVmSize $size = TaskVmSize::Normal): CommandResult
     {
+        $resources = $size->resources();
         $config = ['cloud-init.user-data' => $userData];
-        if ($size === TaskVmSize::Large) {
-            $config['raw.qemu.conf'] = TaskVmSize::LargeQemuConfig;
+        if ($resources->qemuConfig !== null) {
+            $config['raw.qemu.conf'] = $resources->qemuConfig;
         }
-        [$cpus, $memory, $disk] = match ($size) {
-            TaskVmSize::Normal => [$host->cpus, $host->memory, $host->disk],
-            TaskVmSize::Medium => [TaskVmSize::MediumCpus, TaskVmSize::MediumMemory, $host->disk],
-            TaskVmSize::Large => [TaskVmSize::LargeCpus, TaskVmSize::LargeMemory, TaskVmSize::LargeDisk],
-        };
 
         return $this->run($host, $node, [
             'launch', '--vm',
-            '--config', 'limits.cpu='.$cpus,
-            '--config', 'limits.memory='.$memory,
-            '--device', 'root,size='.$disk,
+            '--config', 'limits.cpu='.$resources->cpusOn($host),
+            '--config', 'limits.memory='.$resources->memoryOn($host),
+            '--device', 'root,size='.$resources->diskOn($host),
             '--device', "eth0,network={$host->network}", '--device', 'eth0,security.port_isolation=true',
             '--', $image, $name,
         ], json_encode(['config' => $config], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
@@ -193,6 +188,11 @@ final readonly class IncusHost
     /** @param  list<string>  $arguments */
     private function execute(Node $node, array $arguments, string|ProtectedInput|null $input, float $timeout): CommandResult
     {
+        // `incus exec` would hand the credential to a task VM or a template builder, and the host itself needs none.
+        if ($input instanceof ProtectedInput && $input->carriesGitCredential()) {
+            throw TaskVmCredentialGuard::refused();
+        }
+
         return $this->ssh->execute(
             new SshConnection(
                 host: $node->wireguard_ip ?? throw new TaskVmException('task_vm.unknown_host', "Host Node [{$node->name}] has no WireGuard address."),

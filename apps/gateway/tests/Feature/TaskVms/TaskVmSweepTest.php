@@ -12,7 +12,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmException;
-use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Processes\CommandResult;
@@ -30,6 +29,7 @@ use App\Models\TaskVm;
 use Illuminate\Console\Scheduling\CallbackEvent;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Artisan;
+use Tests\Support\TaskVmSettingsBuilder;
 
 use function Pest\Laravel\mock;
 
@@ -101,10 +101,10 @@ beforeEach(function (): void {
     $this->project = Project::query()->create(['name' => 'DLF', 'slug' => 'dlf', 'repository_url' => 'https://github.com/acme/dlf.git', 'default_branch' => 'main']);
     $this->beast = tvm_sweep_node('beast', '10.44.0.7');
     $this->shark = tvm_sweep_node('shark', '10.44.0.8');
-    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, 4, '10.44.0.128/25', [
-        new TaskVmHost($this->beast->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 4, 2, '4GiB', '20GiB'),
-        new TaskVmHost($this->shark->id, 'orbit-tasks', 'orbittask0', '10.251.78.0/24', 4, 2, '4GiB', '20GiB'),
-    ], 'http://10.44.0.3:8317', null, null, []));
+    TaskVmSettingsBuilder::bind(['hosts' => [
+        TaskVmSettingsBuilder::host($this->beast->id, ['maxVms' => 4]),
+        TaskVmSettingsBuilder::host($this->shark->id, ['cidr' => '10.251.78.0/24', 'maxVms' => 4]),
+    ]]);
     $this->incus = new TaskVmSweepIncus;
     app()->instance(SshExecutor::class, $this->incus);
     app()->instance(SshKeyProvider::class, new class implements SshKeyProvider
@@ -233,7 +233,7 @@ describe(SweepTaskVmHosts::class, function (): void {
     });
 
     it('leaves the Incus hosts alone while task VMs are off', function (): void {
-        app()->instance(TaskVmSettings::class, new TaskVmSettings(false, null, '10.44.0.128/25', app(TaskVmSettings::class)->hosts, null, null, null, []));
+        app()->instance(TaskVmSettings::class, TaskVmSettingsBuilder::off(['hosts' => app(TaskVmSettings::class)->hosts]));
         $this->incus->instances = ['10.44.0.7' => ['tvm-9999']];
 
         app()->call([new SweepTaskVmHosts, 'handle']);
@@ -299,7 +299,7 @@ describe('Doctor', function (): void {
         $other = tvm_sweep_node('services', '10.44.0.3');
         expect(tvm_sweep_doctor($other))->toBe([]);
 
-        app()->instance(TaskVmSettings::class, new TaskVmSettings(false, null, '10.44.0.128/25', [], null, null, null, []));
+        app()->instance(TaskVmSettings::class, TaskVmSettingsBuilder::off());
         expect(tvm_sweep_doctor($this->beast))->toBe([])
             ->and($this->incus->calls)->toBe([]);
     });

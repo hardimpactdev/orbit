@@ -11,8 +11,8 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmException;
-use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmState;
+use App\Infrastructure\TaskVms\TaskVmGuest;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Task;
@@ -20,7 +20,6 @@ use App\Models\TaskVm;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
-use Illuminate\Support\Sleep;
 use Throwable;
 
 /**
@@ -57,7 +56,7 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
         return (string) $this->taskVmId;
     }
 
-    public function handle(TaskVmProvider $provider, DeleteTaskVmAction $delete, RemoveNodeAction $nodes, RemoveTaskWorkspaceAction $removal): void
+    public function handle(TaskVmGuest $guest, DeleteTaskVmAction $delete, RemoveNodeAction $nodes, RemoveTaskWorkspaceAction $removal): void
     {
         $vm = TaskVm::query()->find($this->taskVmId);
         if (! $vm instanceof TaskVm || $vm->state === TaskVmState::Destroyed) {
@@ -71,7 +70,7 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
             return;
         }
         // Normal workspace removal goes first. Only a removal that failed against a VM that is gone lets destroy go on.
-        if ($workspace && $vm->state !== TaskVmState::Destroying && (! $vm->group instanceof Task || ! self::removalFailed($vm->group) || $this->runs($provider, $vm))) {
+        if ($workspace && $vm->state !== TaskVmState::Destroying && (! $vm->group instanceof Task || ! self::removalFailed($vm->group) || $guest->observeSettled($vm)?->running === true)) {
             return;
         }
 
@@ -115,18 +114,6 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
     public static function endedStatuses(): array
     {
         return [TaskGroupStatus::Completed, TaskGroupStatus::Cancelled, ...TaskGroupStatus::awaitingCompletion()];
-    }
-
-    /** Whether the VM runs. A guest reboot shows it stopped for about a second, so a stopped VM gets a second reading. */
-    private function runs(TaskVmProvider $provider, TaskVm $vm): bool
-    {
-        $observation = $provider->observe($vm);
-        if ($observation?->running === false) {
-            Sleep::for(5)->seconds();
-            $observation = $provider->observe($vm);
-        }
-
-        return $observation?->running === true;
     }
 
     private function gateway(): Node

@@ -6,10 +6,13 @@ namespace App\Domain\Nodes\Storage;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\ManagedUserAccount;
+use App\Domain\TaskVms\TaskVmPlacement;
 use App\Models\Instance;
+use App\Models\TaskVm;
 
 /**
- * A development checkout lives at ROOT/DIRECTORY/NAME. The directory is the Project slug when
+ * A development checkout lives at ROOT/DIRECTORY/NAME, or at ROOT/DIRECTORY/workspace for the one workspace of a task
+ * VM ({@see TaskVmPlacement::WorkspaceCheckout}). The directory is the Project slug when
  * the checkout was created; a later slug change keeps the checkout, so the boundary reads the
  * directory from the stored path and never from the current slug.
  */
@@ -37,12 +40,18 @@ final readonly class CheckoutRemovalBoundary
 
         if (
             ! $directory instanceof StoragePath
-            || $checkout->value !== $directory->value.'/'.$instance->name
+            || ($checkout->value !== $directory->value.'/'.$instance->name && ! $this->isTaskVmWorkspace($instance, $checkout, $directory))
         ) {
             $this->unsafeInstance($instance);
         }
 
         return $directory;
+    }
+
+    private function isTaskVmWorkspace(Instance $instance, StoragePath $checkout, StoragePath $directory): bool
+    {
+        return $checkout->value === $directory->value.'/'.TaskVmPlacement::WorkspaceCheckout
+            && TaskVmPlacement::forNode($instance->node) instanceof TaskVm;
     }
 
     private function unsafeInstance(Instance $instance): never

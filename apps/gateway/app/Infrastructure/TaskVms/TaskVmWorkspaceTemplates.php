@@ -9,6 +9,7 @@ use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
+use App\Domain\TaskVms\TaskVmPlacement;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
@@ -25,13 +26,15 @@ use Throwable;
 /**
  * The per-Project workspace templates of a task VM host, and their clones. A template is an Incus block volume
  * `tvm-template-<project id>-<time>` in the host's project and pool. Its ext4 filesystem holds the Project's
- * apps directory: a checkout of the default branch in `.orbit-workspace-template` with the output of the Project's
+ * apps directory: a checkout of the default branch in `workspace`, the checkout path of every task VM workspace
+ * ({@see self::CheckoutDirectory}), with the output of the Project's
  * setup steps, and the Playwright and Composer caches in `.orbit-cache`. pnpm keeps its store at the root of that
  * filesystem by itself. {@see IncusTaskVmWorkspaceTemplateBuilder} builds it and sets `user.orbit.ready` last.
  *
  * A claim clones the newest ready template of the Project as `<vm name>-workspace`, a ZFS clone that Incus makes
  * in well under a second, attaches it to the running VM as the disk `workspace`, and mounts it at the Project's
- * apps directory. Source preparation then renames the template checkout to the workspace checkout. The clone goes
+ * apps directory. The template checkout is already at the workspace's checkout path, so source preparation takes it
+ * in place, and caches that record absolute paths still match. The clone goes
  * with the VM. Without a template, or when a step fails, the workspace starts from a fresh clone, as before.
  *
  * Templates are built on demand: a claim that finds no template for its VM's base image queues a build, and the
@@ -43,7 +46,12 @@ final readonly class TaskVmWorkspaceTemplates
 
     public const string Device = 'workspace';
 
-    public const string TemplateDirectory = '.orbit-workspace-template';
+    /**
+     * The checkout of a task VM workspace, below the Project's apps directory. A task VM holds one workspace, so the
+     * name is fixed: the template is built at this path, and tools that key their caches by absolute path, such as
+     * Rector, find them after the claim.
+     */
+    public const string CheckoutDirectory = TaskVmPlacement::WorkspaceCheckout;
 
     public const string CacheDirectory = '.orbit-cache';
 
@@ -61,6 +69,14 @@ final readonly class TaskVmWorkspaceTemplates
 
     /** The base image the builder VM booted. A claim takes a template only for a VM from the same image. */
     public const string ImageKey = 'user.orbit.image';
+
+    /**
+     * The layout of the volume: `workspace` while the checkout lives at {@see self::CheckoutDirectory}. A template
+     * without it, from before the fixed checkout path, is never current, so a claim queues a new build.
+     */
+    public const string LayoutKey = 'user.orbit.layout';
+
+    public const string Layout = 'workspace';
 
     /** The managed user's `uid:gid` on the builder, which owns the files. The mount refuses a VM where it differs. */
     public const string OwnerKey = 'user.orbit.owner';
@@ -240,7 +256,7 @@ final readonly class TaskVmWorkspaceTemplates
         try {
             $this->attachDisk($host, $hostNode, $vm, $clone);
             $mounted = $this->ssh->execute($node, new RemoteCommand([
-                'bash', '-ceu', self::MountScript, '--', self::Device, $directory, (string) ($template[self::OwnerKey] ?? ''), self::TemplateDirectory, self::CacheDirectory, ...self::Caches,
+                'bash', '-ceu', self::MountScript, '--', self::Device, $directory, (string) ($template[self::OwnerKey] ?? ''), self::CheckoutDirectory, self::CacheDirectory, ...self::Caches,
             ], timeout: 30), 'task-vm-workspace-mount', 'task_vm.workspace_template_failed', 30, 'Task VM workspace');
         } catch (Throwable $exception) {
             $this->detach($host, $hostNode, $vm, $node, $directory, $exception);
@@ -254,7 +270,7 @@ final readonly class TaskVmWorkspaceTemplates
             return null;
         }
 
-        return $directory.'/'.self::TemplateDirectory;
+        return $directory.'/'.self::CheckoutDirectory;
     }
 
     /**
@@ -494,8 +510,8 @@ final readonly class TaskVmWorkspaceTemplates
     }
 
     /**
-     * The newest ready template of the Project that was cloned from `$repository`, and with `$image` built on that
-     * base image. After the Project's repository or the base image changes, no template matches, so the claim starts
+     * The newest ready template of the Project that was cloned from `$repository`, with the current layout, and with
+     * `$image` built on that base image. After the Project's repository or the base image changes, no template matches, so the claim starts
      * from a fresh clone.
      *
      * @param  array<string, array<string, string>>  $volumes
@@ -507,6 +523,7 @@ final readonly class TaskVmWorkspaceTemplates
             static fn (string $name): bool => self::projectOf($name) === $projectId
                 && ($volumes[$name][self::Ready] ?? null) === 'true'
                 && ($volumes[$name][self::RepositoryKey] ?? null) === $repository
+                && ($volumes[$name][self::LayoutKey] ?? null) === self::Layout
                 && ($image === null || ($volumes[$name][self::ImageKey] ?? null) === $image),
         );
         rsort($ready, SORT_STRING);

@@ -646,7 +646,7 @@ When the implementer cannot start, the subtask and the task become `failed`, and
 
 ## Shared Instance
 
-The task workspace is one fresh Instance that every subtask of the task shares. Its name and its branch are `task-{id}`. It lives in the Node's apps root like any development Instance. Its Project setup steps [copy dependencies](/domains/applications#dependency-copy) from the successful `default` release on the same Node.
+The task workspace is one fresh Instance that every subtask of the task shares. Its name and its branch are `task-{id}`. It lives in the Node's apps root like any development Instance: at `<project>/task-{id}` on a shared Node, and at `<project>/workspace` on a [task VM](/reference/compute-drivers#claim-with-a-template), which holds only this workspace. Its Project setup steps [copy dependencies](/domains/applications#dependency-copy) from the successful `default` release on the same Node.
 
 Before returning the workspace or activating its Route, Orbit inspects its source and repairs worker and managed-user ACLs. A linked worktree also needs access to its private Git administration directory and the shared refs and objects. An inspection failure leaves the workspace unexposed and the claim fails. Project setup owns dependency copies; the [task check](#project-check) runs as the managed user and shares entries it creates with the worker before returning.
 
@@ -724,7 +724,7 @@ An operator's [resolution](#assistance-and-resolution) is not a scheduler send. 
 
 Before every agent turn, the Gateway fetches `origin` in the task workspace. The fetch runs before the message is sent. That message is the opening prompt, a reminder, a review, a resumed turn, or an operator message that starts a turn.
 
-The command is `git fetch --no-tags`. It uses the repository [read token](/reference/github-app#how-orbit-reads-a-repository), not the token that publishes the pull request. The read token is `contents: read` for that one repository. It is passed through the environment of that one command, as for any other read. It never appears in the origin URL, the arguments, `.git/config`, or a file on the Node.
+The command is `git fetch --no-tags`. It uses the repository [read token](/reference/github-app#how-orbit-reads-a-repository), not the token that publishes the pull request. The read token is `contents: read` for that one repository. It is passed through the environment of that one command, as for any other read. It never appears in the origin URL, the arguments, `.git/config`, or a file on the Node. For a task VM workspace, the Gateway runs this fetch in its own mirror and sends the refs to the VM, so the token never reaches the VM. See [Git on a task VM](/reference/compute-drivers#git-on-a-task-vm).
 
 The fetch asks for the Project's default branch and for `task-{id}`. When the pull request base is not the default branch, the fetch asks for that base too. A missing `task-{id}` ref is not a failure of this fetch, with or without a pull request. That exemption belongs to the turn. [Resumed preparation](#fix-a-settling-pull-request) decides a missing task branch on its own. The fetch updates remote-tracking refs and does not move `HEAD`. It does not check out, merge, or rebase.
 
@@ -771,7 +771,7 @@ A routed workspace on a task VM starts its baseline check before its Route. The 
 
 Work that uses the Route waits for it. Before the first implementer or the final review starts, Orbit finishes a Route that is still pending. A Route that fails there counts as a communication failure, and Orbit tries again on the next ticks. After the fifth failure, the subtask asks for assistance with the reason `The task workspace Route could not be finished, so no agent started.` and the error. No agent starts on a workspace whose Route failed. A failure at the claim only logs a warning, because the gate tries again. See [From claim to workspace](/reference/compute-drivers#from-claim-to-workspace).
 
-Inside the VM, everything runs as the managed user `orbit`, which has passwordless sudo. There is no `orbit-worker`, so the workspace needs no ACLs and no `safe.directory` entry. Implementers and reviewers run on the VM's own [Pi server](/reference/pi-server#run-pi-on-a-task-vm). The baseline and handoff checks run over SSH as `orbit`. The Gateway fetches and pushes over SSH with the token on standard input, as for a shared group. No GitHub token enters the VM.
+Inside the VM, everything runs as the managed user `orbit`, which has passwordless sudo. There is no `orbit-worker`, so the workspace needs no ACLs and no `safe.directory` entry. Implementers and reviewers run on the VM's own [Pi server](/reference/pi-server#run-pi-on-a-task-vm). The baseline and handoff checks run over SSH as `orbit`. No GitHub token enters the VM. The Gateway fetches and pushes in its own mirror of the Project, and moves Git objects to and from the VM over SSH. See [Git on a task VM](/reference/compute-drivers#git-on-a-task-vm).
 
 A task that waits for review stops its VM after `ORBIT_TASK_VMS_PARK_AFTER_MINUTES`, and its next work starts the VM again with the same workspace. Meanwhile the task shows the reason `Task VM: resuming.` See [Park and resume](/reference/compute-drivers#park-and-resume).
 

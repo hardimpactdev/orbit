@@ -106,6 +106,8 @@ Tasks publish only through the App. Creating a task for a `gh_cli` Project fails
 
 After the Gateway commits an approved subtask, it asks GitHub for a token with `contents: write` and `pull_requests: write` for the Project repository. The token reaches the Node in the same way as a read token. `git` pushes the stored commit as `<commit_sha>:refs/heads/task-{id}` and never uses `HEAD`. After the last approval, the Gateway opens the pull request with the same kind of token. When `ORBIT_TASKS_REVIEW_REQUEST_LOGINS` is set, it then requests those GitHub logins as reviewers with that write token, skipping the pull request author. A failed reviewer request does not block publication. [Tasks](/reference/tasks#pull-request-and-settle-metrics) describes the request.
 
+For a task VM workspace the token stays on the Gateway. The Gateway takes the commit out of the VM into its own mirror and pushes from there. See [Git on a task VM](/reference/compute-drivers#publish-from-the-vm).
+
 Publishing has no path without the App. Without an installation that covers the repository, the task counts a communication failure and then asks for assistance. [Tasks](/reference/tasks#pull-request-and-settle-metrics) describes the retry.
 
 GitHub refuses a token that asks for a permission the installation has not accepted, with 422 and the message "The permissions requested are not granted to this installation." The assistance reason quotes that message. The account owner accepts the permissions in the installation settings on GitHub.
@@ -191,7 +193,7 @@ Git commands that you run by hand in a development checkout use your own credent
 
 A shared task agent does not receive a GitHub token and never fetches or pushes. The agent runs as `orbit-worker`. The token exists only in the environment of one `git` command, and that command uses the private git directory above, running as the Node's managed user. A program that the agent starts cannot see the token.
 
-A [task VM](/reference/compute-drivers#task-vms) holds no GitHub token. The Gateway fetches and pushes over SSH, as for a shared group.
+A [task VM](/reference/compute-drivers#task-vms) holds no GitHub token. The Gateway fetches and pushes in its own mirror of the Project, moves Git objects to and from the VM over SSH, and refuses to send a token there. See [Git on a task VM](/reference/compute-drivers#git-on-a-task-vm).
 
 The candidate gate is the exception: it runs workspace programs as the managed user, and such a program could observe a token-bearing `git` process of that user that runs at the same time. [The candidate gate runs as the managed user](/reference/pi-server#the-candidate-gate-runs-as-the-managed-user) records that cost. The agent shares the Pi server's user, so it can read that server's token and provider sign-in. [Limits](/reference/pi-server#limits) records both bounds. [One user for every task agent](/reference/pi-server#one-user-for-every-task-agent) explains the account boundary.
 
