@@ -8,7 +8,6 @@ use App\Domain\Compute\SandboxPower;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentThreadStart;
-use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\TaskVms\TaskVmState;
@@ -56,7 +55,7 @@ function tvm_glue_group(TaskVmState $state = TaskVmState::Ready): Task
     $project = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@github.com:acme/shop.git', 'default_branch' => 'main']);
     $host = tvm_glue_node('beast', '10.44.0.7', 'nckrtl');
     $node = tvm_glue_node('tvm-1', '10.44.0.130');
-    $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Export', 'brief' => 'Add an export.', 'status' => 'running', 'task_compute' => TaskCompute::Vm]);
+    $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Export', 'brief' => 'Add an export.', 'status' => 'running']);
     TaskVm::query()->create([
         'group_id' => $group->id, 'host_node_id' => $host->id, 'node_id' => $node->id, 'provider' => 'incus', 'name' => 'tvm-1',
         'state' => $state, 'wireguard_ip' => '10.44.0.130', 'pi_token' => TVM_GLUE_PI_TOKEN, 'model_key' => TVM_GLUE_MODEL_KEY,

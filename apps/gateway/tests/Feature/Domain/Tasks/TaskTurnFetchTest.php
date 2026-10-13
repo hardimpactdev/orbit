@@ -276,9 +276,7 @@ it('fetches before a restarted turn and still sends it when the fetch fails', fu
     $thread = test_agent_thread($group, 'implementer-thread', $task);
     $thread->update(['driver' => 'pi']);
     $task->update(['implementer_agent_thread_id' => $thread->id]);
-    $node->update([
-        'settings' => ['pi' => ['token' => 'pi-node-token-with-more-than-32-characters', 'url' => 'http://10.44.0.81:3774']],
-    ]);
+    $group = test_vm_group($group);
     $fetcher = turn_fetch_fetcher(fail: true);
     app()->instance(TaskBaseBranchFetcher::class, $fetcher);
     app()->instance(TaskWorkspaceDiffReader::class, new NullTaskWorkspaceDiffReader);

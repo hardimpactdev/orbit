@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCapacityException;
-use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskTopologyAdmission;
@@ -73,8 +72,7 @@ beforeEach(function (): void {
     ]);
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $this->node->id, 'name' => 'task-1', 'checkout_path' => '/home/orbit/apps/orbit/workspace']);
     $this->group = Task::topLevel()->create([
-        'project_id' => $project->id, 'title' => 'Nodes', 'brief' => 'Work', 'status' => TaskGroupStatus::Running,
-        'task_compute' => TaskCompute::Vm, 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
+        'project_id' => $project->id, 'title' => 'Nodes', 'brief' => 'Work', 'status' => TaskGroupStatus::Running, 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'taskable_type' => $instance->getMorphClass(), 'taskable_id' => $instance->id,
     ]);
     $this->vm = TaskVm::query()->create([
@@ -166,12 +164,6 @@ it('makes a subtask wait when its group cannot run its topology', function (): v
     $subtask = topology_admission_subtask($this->group, ['app-dev', 'app-prod']);
 
     expect(fn () => app(TaskTopologyAdmission::class)->prepare($this->group, $subtask))->toThrow(TaskCapacityException::class, TaskVmTopologyAdmission::TooSmall);
-
-    $shared = Task::topLevel()->create([
-        'project_id' => $this->group->project_id, 'title' => 'Shared', 'brief' => 'Work', 'status' => TaskGroupStatus::Running,
-        'task_compute' => TaskCompute::Shared, 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
-    ]);
-    expect(fn () => app(TaskTopologyAdmission::class)->prepare($shared, topology_admission_subtask($shared, ['app-dev'])))->toThrow(TaskCapacityException::class, TaskVmTopologyAdmission::SharedGroup);
 });
 
 it('reads the newest MiB of the evidence log and counts its records since the handoff', function (): void {

@@ -11,7 +11,6 @@ use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskCommentType;
-use App\Domain\Tasks\TaskConcurrencyGuard;
 use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestException;
@@ -121,7 +120,7 @@ it('claimNext continues after provision null', function (): void {
         ->and($oldest->tasks()->sole()->fresh()?->implementer_agent_thread_id)->not->toBeNull();
 });
 
-it('leaves every group untouched in todo and stops claiming when the fleet is full', function (): void {
+it('leaves every waiting group untouched in todo and tries each once', function (): void {
     claim_hol_enable();
     $project = claim_hol_app();
     $groups = [claim_hol_group($project, 'First'), claim_hol_group($project, 'Second'), claim_hol_group($project, 'Third')];
@@ -134,7 +133,7 @@ it('leaves every group untouched in todo and stops claiming when the fleet is fu
         {
             $this->calls++;
 
-            throw new TaskCapacityException(TaskWait::Capacity, fleetFull: true);
+            throw new TaskCapacityException(TaskWait::Capacity);
         }
     };
     app()->instance(InstanceProvisioning::class, $provisioning);
@@ -142,14 +141,14 @@ it('leaves every group untouched in todo and stops claiming when the fleet is fu
     $started = app(TaskScheduler::class)->claimAvailable();
 
     expect($started)->toBe(0)
-        ->and($provisioning->calls)->toBe(1)
+        ->and($provisioning->calls)->toBe(3)
         ->and(array_map(static fn (Task $group): ?TaskGroupStatus => $group->fresh()?->status, $groups))->toBe([TaskGroupStatus::Todo, TaskGroupStatus::Todo, TaskGroupStatus::Todo])
         ->and($groups[0]->fresh()?->assistance_reason)->toBeNull()
         ->and($groups[1]->fresh()?->assistance_reason)->toBe(TaskScheduler::ProvisioningFailedReason)
         ->and($groups[2]->fresh()?->assistance_reason)->toBeNull();
 });
 
-it('passes a group whose eligible Nodes are full without a failure reason', function (): void {
+it('passes a group that waits for its task VM without a failure reason', function (): void {
     claim_hol_enable();
     $project = claim_hol_app();
     $waiting = claim_hol_group($project, 'Waiting');
@@ -163,7 +162,7 @@ it('passes a group whose eligible Nodes are full without a failure reason', func
         public function provision(InstanceProvisionIntent $intent): ?Instance
         {
             if ($intent->group->id === $this->waitingId) {
-                throw new TaskCapacityException(TaskWait::Capacity, fleetFull: false);
+                throw new TaskCapacityException(TaskWait::Capacity);
             }
 
             return $this->instance;
@@ -244,7 +243,7 @@ it('returns a group to todo when provisioning throws and continues the tick with
         ->and($failing->fresh()?->assistance_reason)->toContain(TaskScheduler::ProvisioningFailedReason, 'RuntimeException', 'Lock wait timeout')
         ->and($next->fresh()?->status)->toBe(TaskGroupStatus::Running)
         ->and(Task::topLevel()->where('status', TaskGroupStatus::Reserved)->count())->toBe(0)
-        ->and(app(TaskConcurrencyGuard::class)->activeForApp($project->id))->toBe(1);
+        ->and(Task::topLevel()->where('project_id', $project->id)->where('status', TaskGroupStatus::Running)->count())->toBe(1);
 });
 
 it('clears the provisioning failure reason when a group moves to backlog', function (): void {
@@ -360,7 +359,7 @@ describe('a start that fails after provisioning', function (): void {
             ->and($group?->taskable?->is($provisioning->instances[$failing->id]))->toBeTrue()
             ->and($next->fresh()?->status)->toBe(TaskGroupStatus::Running)
             ->and(Task::topLevel()->where('status', TaskGroupStatus::Reserved)->count())->toBe(0)
-            ->and(app(TaskConcurrencyGuard::class)->activeForNode($provisioning->instances[$failing->id]->node_id))->toBe(1);
+            ->and(Task::topLevel()->where('status', TaskGroupStatus::Running)->count())->toBe(1);
     });
 
     it('reuses the kept Instance on the next claim and clears the reason', function (): void {

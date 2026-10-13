@@ -14,7 +14,6 @@ use App\Domain\Fleet\ReleaseHistory;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Releases\ReleaseAlertNotifier;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tasks\TaskCompute;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\AgentView\AgentReportedVersions;
 use App\Infrastructure\Nodes\NodeUpdateLock;
@@ -101,7 +100,7 @@ final class FleetFixtures
     {
         $name = 'tvm-'.++self::$taskVms;
         $project = Project::query()->firstOrCreate(['slug' => 'fleet-task-vms'], ['name' => 'Fleet task VMs', 'repository_url' => 'https://github.com/acme/fleet.git']);
-        $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => $name, 'brief' => $name, 'status' => 'running', 'task_compute' => TaskCompute::Vm]);
+        $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => $name, 'brief' => $name, 'status' => 'running']);
         $node = self::node($name, [RoleName::AppDev]);
         TaskVm::query()->create([
             'group_id' => $group->id, 'node_id' => $node->id, 'provider' => 'upcloud', 'name' => $name,

@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Actions\Nodes\AddNodeAccessAction;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskWorkspaceName;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmState;
@@ -36,7 +35,7 @@ beforeEach(function (): void {
     $this->host = invariant_node('beast', 7);
     $this->vmNode = invariant_node('tvm-1', 20);
     $this->shared = invariant_node('app-dev', 21);
-    $this->group = Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'Work', 'brief' => 'Work', 'status' => 'todo', 'task_compute' => TaskCompute::Vm]);
+    $this->group = Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'Work', 'brief' => 'Work', 'status' => 'todo']);
     $this->vm = TaskVm::query()->create([
         'group_id' => $this->group->id, 'host_node_id' => $this->host->id, 'node_id' => $this->vmNode->id, 'provider' => 'incus',
         'name' => 'tvm-1', 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.64.10', 'pi_token' => 'pi-token',

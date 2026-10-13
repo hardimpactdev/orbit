@@ -16,7 +16,6 @@ use App\Domain\ProxyCli\ProxyCliState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\TaskCapacityException;
-use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\TaskVms\TaskVmException;
@@ -95,8 +94,7 @@ function tvm_pool_hosts(array $hosts, bool $enabled = true): void
 function tvm_pool_group(TaskGroupStatus $status = TaskGroupStatus::Reserved): Task
 {
     return Task::topLevel()->create([
-        'project_id' => test()->project->id, 'title' => 'Export', 'brief' => 'Work', 'status' => $status,
-        'task_compute' => TaskCompute::Vm, 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
+        'project_id' => test()->project->id, 'title' => 'Export', 'brief' => 'Work', 'status' => $status, 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
     ]);
 }
 
