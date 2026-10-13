@@ -17,6 +17,8 @@ Cancelling task group...
 │
 ├  Status              cancelled
 │
+├  Preview             no
+│
 ├  Assistance          no
 │
 ├  Kind                —
