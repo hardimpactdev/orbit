@@ -869,6 +869,7 @@ The reserved range must always be a private network. As soon as task VMs are ena
 | `task_vm.vm_not_running` | 502 | During enrollment, the VM is absent, or it stayed stopped |
 | `task_vm.bootstrap_timeout` | 504 | Cloud-init was not `done` 10 minutes after the row was created |
 | `task_vm.job_failed` | 500 | A task VM job failed with an error that has no code of its own |
+| `task_vm.workers_failed` | 500 | A [task VM queue worker](#jobs) unit could not be installed, started, or removed. The release handoff reports it as `gateway.release_units_failed` |
 | `task_vm.base_image_missing` | 409 | The host's project, or the sync source's, has no `orbit-task-base` image. Run `task-vms:sync-image` or `task-vms:build-image` |
 | `task_vm.image_build_failed` | 502 | A base image build failed. The message names the stage |
 | `task_vm.image_build_running` | 409 | A base image build or sync of the host is already running |
