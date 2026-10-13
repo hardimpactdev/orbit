@@ -747,7 +747,9 @@ describe('pairing', function (): void {
         Http::assertSent(static fn (HttpRequest $request): bool => $request->url() === CONN_LAYER_SERVER.'/api/auth/pairing-token'
             && $request->hasHeader('Authorization', 'Bearer admin-session-token')
             && $request['label'] === $pairing->client_label
-            && ! isset($request['scopes']));
+            && in_array('access:read', $request['scopes'], true)
+            && in_array('access:write', $request['scopes'], true)
+            && ! in_array('review:write', $request['scopes'], true));
 
         $this->getJson('/api/v1/conn/environments/env-beast/pairings')
             ->assertOk()

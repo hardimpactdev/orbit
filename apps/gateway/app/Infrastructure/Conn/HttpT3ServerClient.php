@@ -23,6 +23,30 @@ use Throwable;
  */
 final readonly class HttpT3ServerClient implements T3ServerClient
 {
+    /**
+     * Scopes a device pairing link grants: T3's administrative set, so a paired device can manage
+     * linked environments on a headless server. The registered admin session holds all of them;
+     * `review:write` is left out because T3 no longer grants it.
+     */
+    private const array DEVICE_SCOPES = [
+        'orchestration:read',
+        'orchestration:operate',
+        'settings:write',
+        'providers:manage',
+        'environment:maintain',
+        'preview:operate',
+        'diagnostics:read',
+        'terminal:read',
+        'terminal:operate',
+        'source-control:write',
+        'filesystem:read',
+        'filesystem:write',
+        'relay:read',
+        'access:read',
+        'access:write',
+        'relay:write',
+    ];
+
     private const int CONNECT_TIMEOUT_SECONDS = 3;
 
     private const int TIMEOUT_SECONDS = 10;
@@ -70,7 +94,7 @@ final readonly class HttpT3ServerClient implements T3ServerClient
     public function issuePairingCredential(string $baseUrl, #[SensitiveParameter] string $adminSession, string $label): T3PairingCredential
     {
         $body = $this->json($baseUrl, 'pairing-token', fn (): Response => $this->request($adminSession)
-            ->post($this->endpoint($baseUrl, '/api/auth/pairing-token'), ['label' => $label]));
+            ->post($this->endpoint($baseUrl, '/api/auth/pairing-token'), ['label' => $label, 'scopes' => self::DEVICE_SCOPES]));
 
         $id = $body['id'] ?? null;
         $credential = $body['credential'] ?? null;
