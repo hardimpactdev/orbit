@@ -213,7 +213,7 @@ final readonly class TaskScheduler
             } catch (Throwable $exception) {
                 $failed[$group->id] = true;
                 $key = self::TickFailureKey.$group->id;
-                $failures = (int) Cache::get($key, 0) + 1;
+                $failures = StoredInteger::fromOrZero(Cache::get($key)) + 1;
                 Cache::put($key, $failures, now()->addDay());
                 if ($failures < ($exception instanceof TaskHierarchyException ? 1 : 2)) {
                     report($exception);

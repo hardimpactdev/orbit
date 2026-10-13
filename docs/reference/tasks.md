@@ -595,7 +595,9 @@ Each tick runs these steps in order:
 4. Remove the workspaces of ended tasks. See [Complete and cleanup](#complete-and-cleanup).
 5. Claim `todo` tasks while Node capacity lasts.
 
-Steps 1 and 2 run each task on its own. A failure in one task does not stop the other tasks, and the tick does not fail. Orbit reports the error with the task id, and the next tick tries that task again. When the task fails on two ticks in a row, the task and its open subtasks ask for assistance with a reason that starts with `The tick failed on this group.` and names the error. While the task asks, more failures of it are not reported again. A failure to save a row that breaks the task model asks at once, because the row cannot heal by itself. Fix the cause, then post a `resolution` on the subtask. A tick in which the task succeeds resets the count.
+Steps 1 and 2 run each task on its own. A failure in one task does not stop the other tasks, and the tick does not fail. Orbit reports the error with the task id, and the next tick tries that task again.
+
+When the task fails on two ticks in a row, the task and its open subtasks ask for assistance with a reason that starts with `The tick failed on this group.` and names the error. While the task asks, more failures of it are not reported again. A failure to save a row that breaks the task model asks at once, because the row cannot heal by itself. Fix the cause, then post a `resolution` on the subtask. A tick in which the task succeeds resets the count.
 
 ### Claim and provision
 
@@ -929,7 +931,9 @@ When the subtask is `running` and no reviewer has started, Orbit starts the revi
 
 Clearing the flag on send is keyed to the `resolution` comment and does not change the question record. The receipt that follows is keyed to its turn-receipt comment. A failed send keeps the flag set and leaves the record unchanged.
 
-On a failure, Orbit sends the body to the blocked thread at once: the implementer while the subtask is `running`, and that subtask's reviewer while it is `reviewing`. In both cases Orbit then clears the flag on the subtask and the task, clears the communication failures, and starts a new attempt. When a failure resolution must reach a reviewer and none has started, Orbit clears the flag and holds the resolution. The next tick starts a fresh reviewer whose opening packet includes it. When the [topology preparation](/reference/compute-drivers#prepare-the-topology) of a `running` subtask failed before its implementer started, Orbit clears the flag the same way and records `resolution queued topology preparation`. The next tick prepares the topology again. A failed baseline check keeps its own [retry](#baseline-check).
+On a failure, Orbit sends the body to the blocked thread at once: the implementer while the subtask is `running`, and that subtask's reviewer while it is `reviewing`. In both cases Orbit then clears the flag on the subtask and the task, clears the communication failures, and starts a new attempt. When a failure resolution must reach a reviewer and none has started, Orbit clears the flag and holds the resolution. The next tick starts a fresh reviewer whose opening packet includes it.
+
+When the [topology preparation](/reference/compute-drivers#prepare-the-topology) of a `running` subtask failed before its implementer started, Orbit clears the flag the same way and records `resolution queued topology preparation`. The next tick prepares the topology again. A failed baseline check keeps its own [retry](#baseline-check).
 
 A resolution posted while nothing is asked is stored and not sent. Every comment stays as history. An assistance request, a delivered resolution, a held resolution, and a failed delivery each also write an Activity entry with the comment's author as the actor.
 
