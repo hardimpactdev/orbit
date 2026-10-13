@@ -45,9 +45,12 @@ interface RouteDomainProjector
 
     public function rollbackDns(Route $route): void;
 
-    public function rollbackCaddy(Instance $instance, Route $route): void;
+    /** @param list<int> $skippedNodeIds */
+    public function rollbackCaddy(Instance $instance, Route $route, array $skippedNodeIds = []): void;
 
-    public function rollbackCertificates(Instance $instance, Route $route): void;
+    /** @param list<int> $skippedNodeIds */
+    public function rollbackCertificates(Instance $instance, Route $route, array $skippedNodeIds = []): void;
 
-    public function rollbackPublicEdge(Route $route): void;
+    /** @param list<int> $skippedNodeIds */
+    public function rollbackPublicEdge(Route $route, array $skippedNodeIds = []): void;
 }

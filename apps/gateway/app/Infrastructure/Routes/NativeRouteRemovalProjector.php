@@ -7,6 +7,7 @@ namespace App\Infrastructure\Routes;
 use App\Domain\AppDev\AppDevPhpFpmManager;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\ProductionPhpRuntimeManager;
+use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteRemovalNode;
 use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Routes\RouteRemovalStep;
@@ -43,10 +44,25 @@ final readonly class NativeRouteRemovalProjector implements RouteRemovalProjecto
             [RouteRemovalStep::Firewall, $this->workloadNodes($route)],
         ];
 
+        if ($route->isUnactivatedReplacement()) {
+            $stepNodes[] = [RouteRemovalStep::Php, $this->targetNodes($route)];
+            if ($route->publication === RoutePublication::Public) {
+                $route->loadMissing('cluster.ingressAssignment.node');
+                $ingress = $route->cluster?->ingressAssignment?->node;
+                if ($ingress instanceof Node) {
+                    $stepNodes[] = [RouteRemovalStep::Caddy, collect([$ingress])];
+                    $stepNodes[] = [RouteRemovalStep::Certificates, collect([$ingress])];
+                    $stepNodes[] = [RouteRemovalStep::Firewall, collect([$ingress])];
+                }
+            }
+        }
+
         foreach ($stepNodes as [$step, $acting]) {
             foreach ($acting as $node) {
                 $nodes[$node->id] = $node;
-                $steps[$node->id][] = $step;
+                if (! in_array($step, $steps[$node->id] ?? [], true)) {
+                    $steps[$node->id][] = $step;
+                }
             }
         }
 
@@ -163,7 +179,7 @@ final readonly class NativeRouteRemovalProjector implements RouteRemovalProjecto
         $route->loadMissing('node');
 
         return collect([$route->isCustomProxy() ? $route->node : null, $this->router($route)])
-            ->merge($route->hasWebRoot() ? $this->targetNodes($route) : [])
+            ->merge($route->hasWebRoot() || $route->isUnactivatedReplacement() ? $this->targetNodes($route) : [])
             ->filter(static fn (mixed $node): bool => $node instanceof Node)
             ->unique(static fn (Node $node): int => $node->id)
             ->values();

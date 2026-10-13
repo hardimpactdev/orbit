@@ -61,7 +61,8 @@ final class FakePublicRouteEdgeProjector implements PublicRouteEdgeProjector
         $this->event('ingress-firewall');
     }
 
-    public function rollbackPublicEdge(Route $route): void
+    /** @param list<int> $skippedNodeIds */
+    public function rollbackPublicEdge(Route $route, array $skippedNodeIds = []): void
     {
         if ($this->onRollback instanceof \Closure) {
             ($this->onRollback)($route);

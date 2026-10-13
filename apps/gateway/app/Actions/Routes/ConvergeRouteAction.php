@@ -18,6 +18,8 @@ use App\Domain\Routes\RoutePlacement;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReconciliationGuard;
+use App\Domain\Routes\RouteRemovalNode;
+use App\Domain\Routes\RouteRemovalStep;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -25,7 +27,9 @@ use App\Domain\Shared\StoredInteger;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Route;
+use App\Models\RouteRemovalResidue;
 use App\Models\RouteTarget;
+use Closure;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -1247,7 +1251,6 @@ final readonly class ConvergeRouteAction
         return $replacement->refresh()->load('targets');
     }
 
-    /** @param list<Instance> $targets */
     /**
      * A failure before cutover withdraws the replacement. When the withdrawal fails too, the
      * replacement stays `failed` and the original error is reported.
@@ -1272,12 +1275,15 @@ final readonly class ConvergeRouteAction
      * Abandons a domain change whose replacement never cut over, as `route:destroy` on the
      * replacement, Instance removal, and a Project update rollback do. The replaced Route and its
      * targets stay authoritative ([Remove a replacement that never activated](/reference/routes#remove-a-replacement-that-never-activated)).
+     *
+     * @param  list<RouteRemovalNode>  $skipped
+     * @param  (Closure(RouteRemovalStep): void)|null  $beforeStep
      */
-    public function withdrawReplacement(Route $replacement): Route
+    public function withdrawReplacement(Route $replacement, array $skipped = [], ?Closure $beforeStep = null): Route
     {
         $targetIds = $this->targetIds($replacement);
 
-        return $this->owned($targetIds, function () use ($replacement, $targetIds): Route {
+        return $this->owned($targetIds, function () use ($replacement, $targetIds, $skipped, $beforeStep): Route {
             $locked = Route::query()
                 ->with(['targets.instance.project', 'targets.instance.node', 'cluster.routerAssignment.node'])
                 ->findOrFail($replacement->id);
@@ -1291,7 +1297,7 @@ final readonly class ConvergeRouteAction
                 ->sortBy('position')
                 ->map(static fn (RouteTarget $row): Instance => $row->instance)
                 ->all());
-            $this->withdrawBeforeCutover($locked, $targets);
+            $this->withdrawBeforeCutover($locked, $targets, $skipped, $beforeStep);
 
             return $locked;
         });
@@ -1302,11 +1308,14 @@ final readonly class ConvergeRouteAction
      * below withdraw the candidate before its certificates are removed. It stays failed when
      * the withdrawal cannot finish.
      *
+     * @param  list<RouteRemovalNode>  $skipped
+     * @param  (Closure(RouteRemovalStep): void)|null  $beforeStep
      * @param  list<Instance>  $targets
      */
-    private function withdrawBeforeCutover(Route $replacement, array $targets): void
+    private function withdrawBeforeCutover(Route $replacement, array $targets, array $skipped = [], ?Closure $beforeStep = null): void
     {
         $old = Route::query()->find((int) $replacement->replaces_route_id);
+        $skippedNodeIds = array_map(static fn (RouteRemovalNode $node): int => $node->node->id, $skipped);
 
         // A replacement abandoned without a failed step records the withdrawal as its step.
         Route::query()
@@ -1317,13 +1326,19 @@ final readonly class ConvergeRouteAction
                 'error_code' => $replacement->error_code ?? 'route.replacement_withdrawn',
             ]);
 
+        $beforeStep?->__invoke(RouteRemovalStep::Caddy);
         foreach ($targets as $instance) {
-            $this->projection->rollbackCaddy($instance, $replacement);
+            $this->projection->rollbackCaddy($instance, $replacement, $skippedNodeIds);
         }
 
         foreach ($targets as $instance) {
-            $this->projection->rollbackCertificates($instance, $replacement);
+            $beforeStep?->__invoke(RouteRemovalStep::Certificates);
+            $this->projection->rollbackCertificates($instance, $replacement, $skippedNodeIds);
 
+            if (in_array($instance->node_id, $skippedNodeIds, true)) {
+                continue;
+            }
+            $beforeStep?->__invoke(RouteRemovalStep::Php);
             if ($instance->placedOnAppProd()) {
                 $this->routeEnvironment->synchronizeRouteDomain(
                     $instance,
@@ -1337,13 +1352,16 @@ final readonly class ConvergeRouteAction
             }
         }
 
+        $beforeStep?->__invoke(RouteRemovalStep::Dns);
         $this->projection->rollbackDns($replacement);
 
         if ($replacement->publication === RoutePublication::Public) {
-            $this->projection->rollbackPublicEdge($replacement);
+            $beforeStep?->__invoke(RouteRemovalStep::Caddy);
+            $this->projection->rollbackPublicEdge($replacement, $skippedNodeIds);
         }
 
-        DB::transaction(function () use ($replacement): void {
+        $beforeStep?->__invoke(RouteRemovalStep::Record);
+        DB::transaction(function () use ($replacement, $skipped): void {
             $locked = Route::query()->lockForUpdate()->findOrFail($replacement->id);
             Route::query()
                 ->whereKey((int) $locked->replaces_route_id)
@@ -1351,6 +1369,15 @@ final readonly class ConvergeRouteAction
                 ->update(['replaced_by_route_id' => null]);
             $locked->targets()->delete();
             $locked->delete();
+            foreach ($skipped as $node) {
+                RouteRemovalResidue::query()->updateOrCreate(
+                    ['node_id' => $node->node->id, 'route_id' => $locked->id],
+                    [
+                        'domain' => $locked->domain,
+                        'steps' => array_map(static fn (RouteRemovalStep $step): string => $step->value, $node->steps),
+                    ],
+                );
+            }
         });
     }
 

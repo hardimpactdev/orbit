@@ -24,6 +24,8 @@ use App\Domain\Instances\Environment\InstanceEnvironmentRouteDomain;
 use App\Domain\Instances\Environment\InstanceRouteEnvironmentSynchronizer;
 use App\Domain\Instances\InstanceRemover;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Metrics\ExporterDegradationReason;
+use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\ClusterRouterReplacementProjector;
@@ -31,6 +33,7 @@ use App\Domain\Routes\ClusterRouterTransition;
 use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RoutePlacement;
 use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteRemovalNode;
 use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Routes\RouteRemovalStep;
 use App\Domain\Routes\RouteReplacementStep;
@@ -40,10 +43,12 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
+use App\Models\InstanceTransfer;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Project;
 use App\Models\Route;
+use App\Models\RouteRemovalResidue;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Sleep;
@@ -2027,6 +2032,9 @@ final class RouteDomainChangeProjectorFake implements RouteDomainProjector
     /** @var array<string, int> Fails only the given call of an event, counting from 1. */
     public array $failOnCall = [];
 
+    /** @var array<string, list<int>> */
+    public array $skipped = [];
+
     /** @var array<string, int> */
     private array $calls = [];
 
@@ -2085,7 +2093,8 @@ final class RouteDomainChangeProjectorFake implements RouteDomainProjector
         $this->event('public-activated');
     }
 
-    public function rollbackPublicEdge(Route $route): void
+    /** @param list<int> $skippedNodeIds */
+    public function rollbackPublicEdge(Route $route, array $skippedNodeIds = []): void
     {
         $this->event('rollback-public-edge');
     }
@@ -2117,15 +2126,19 @@ final class RouteDomainChangeProjectorFake implements RouteDomainProjector
         $this->event('rollback-dns');
     }
 
-    public function rollbackCaddy(Instance $instance, Route $route): void
+    /** @param list<int> $skippedNodeIds */
+    public function rollbackCaddy(Instance $instance, Route $route, array $skippedNodeIds = []): void
     {
+        $this->skipped['caddy'] = $skippedNodeIds;
         $this->placement('rollback-caddy', $route);
         $this->events->rollbackCaddyStatuses[] = Route::query()->find($route->id)?->status;
         $this->event('rollback-caddy');
     }
 
-    public function rollbackCertificates(Instance $instance, Route $route): void
+    /** @param list<int> $skippedNodeIds */
+    public function rollbackCertificates(Instance $instance, Route $route, array $skippedNodeIds = []): void
     {
+        $this->skipped['certificates'] = $skippedNodeIds;
         $this->event('rollback-certificates');
     }
 
@@ -2208,4 +2221,102 @@ final readonly class RouteDomainChangeOwnerFake implements DevelopmentProjection
 
         return $operation();
     }
+}
+
+describe('replacement removal ownership', function (): void {
+    it('honours offline removal of an unactivated replacement', function (): void {
+        $old = route_domain_change_route(laravel: true);
+        $replacement = s5_unactivated_replacement($old);
+        $node = $old->targets->sole()->instance->node;
+        $removal = new FakeRouteRemovalProjector;
+        $removal->nodes = [new RouteRemovalNode($node, [RouteRemovalStep::Caddy, RouteRemovalStep::Certificates])];
+        app()->instance(RouteRemovalProjector::class, $removal);
+        app()->instance(NodeReachabilityProbe::class, Mockery::mock(NodeReachabilityProbe::class)
+            ->shouldReceive('degradation')->withArgs(fn (Node $candidate): bool => $candidate->is($node))
+            ->andReturn(ExporterDegradationReason::Unreachable)->getMock());
+        $this->events->values = [];
+
+        app(DestroyRouteAction::class)->executeForOperator($replacement, offline: true);
+
+        expect($this->projector->skipped)->toBe(['caddy' => [$node->id], 'certificates' => [$node->id]])
+            ->and(Route::query()->find($replacement->id))->toBeNull()
+            ->and($old->refresh()->status)->toBe(RouteStatus::Active)
+            ->and($old->replaced_by_route_id)->toBeNull()
+            ->and($this->events->values)->not->toContain('url:https://old.example.test')
+            ->and(RouteRemovalResidue::query()->where('route_id', $replacement->id)->sole()->node_id)->toBe($node->id);
+    });
+
+    it('offers offline removal when replacement withdrawal cannot reach a Node', function (): void {
+        $old = route_domain_change_route(laravel: false);
+        $replacement = s5_unactivated_replacement($old);
+        $node = $old->targets->sole()->instance->node;
+        $removal = new FakeRouteRemovalProjector;
+        $removal->nodes = [new RouteRemovalNode($node, [RouteRemovalStep::Caddy])];
+        app()->instance(RouteRemovalProjector::class, $removal);
+        app()->instance(NodeReachabilityProbe::class, Mockery::mock(NodeReachabilityProbe::class)
+            ->shouldReceive('degradation')->andReturn(ExporterDegradationReason::Unreachable)->getMock());
+        $this->projector->failures = ['rollback-caddy' => 1];
+
+        expect(fn () => app(DestroyRouteAction::class)->executeForOperator($replacement, offline: false))
+            ->toThrow(function (ResourceOperationException $exception) use ($node): void {
+                expect($exception->errorCode)->toBe('route.node_unreachable')
+                    ->and($exception->getMessage())->toContain($node->name, '--offline')
+                    ->and($exception->details['step'])->toBe('caddy');
+            });
+        expect($replacement->refresh()->status)->toBe(RouteStatus::Failed)
+            ->and($old->refresh()->replaced_by_route_id)->toBe($replacement->id);
+    });
+
+    it('refuses removal of an open transfer Route before withdrawal', function (string $side): void {
+        $old = route_domain_change_route(laravel: false);
+        $replacement = s5_unactivated_replacement($old);
+        $instance = $old->targets->sole()->instance;
+        $transfer = InstanceTransfer::query()->create([
+            'instance_id' => $instance->id,
+            'source_node_id' => $instance->node_id,
+            'destination_node_id' => $instance->node_id,
+            'requested_name' => $instance->name,
+            'destination_name' => $instance->name,
+            'destination_path' => '/srv/destination',
+            'destination_domain' => $replacement->domain,
+            'source_layout' => 'checkout',
+            'source_path' => '/srv/source',
+            'source_route_id' => $old->id,
+            'destination_route_id' => $replacement->id,
+            'status' => 'failed',
+            'current_step' => 'reserved',
+            'recovery_evidence' => ['rollback_pending' => true],
+        ]);
+        $this->events->values = [];
+
+        expect(fn () => app(DestroyRouteAction::class)->executeForOperator($side === 'source' ? $old : $replacement, offline: true))
+            ->toThrow(function (ResourceOperationException $exception): void {
+                expect($exception->errorCode)->toBe('instance.transfer_incomplete');
+            });
+        expect(Route::query()->find($replacement->id))->not->toBeNull()
+            ->and($old->refresh()->replaced_by_route_id)->toBe($replacement->id)
+            ->and($this->events->values)->toBe(['owner'])
+            ->and($transfer->refresh()->recovery_evidence)->toBe(['rollback_pending' => true]);
+    })->with(['source', 'destination']);
+});
+
+function s5_unactivated_replacement(Route $old): Route
+{
+    $replacement = Route::query()->create([
+        'project_id' => $old->project_id,
+        'node_id' => $old->node_id,
+        'cluster_id' => $old->cluster_id,
+        'domain' => 'next.example.test',
+        'provenance' => $old->provenance,
+        'publication' => $old->publication,
+        'status' => RouteStatus::Pending,
+        'replaces_route_id' => $old->id,
+        'replacement_step' => RouteReplacementStep::Reserved,
+    ]);
+    foreach ($old->targets as $target) {
+        $replacement->targets()->create(['instance_id' => $target->instance_id, 'position' => $target->position]);
+    }
+    $old->update(['replaced_by_route_id' => $replacement->id]);
+
+    return $replacement;
 }

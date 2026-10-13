@@ -518,6 +518,10 @@ A domain change, an Instance rename, or a Project slug update reserves a `pendin
 
 It runs the same withdrawal as a failure before cutover. It marks the replacement `failed` and removes its sites and staging certificates. It restores the Laravel URL or production environment for the old domain and republishes private DNS. Then it clears `replaced_by_route_id` on the replaced Route and deletes the replacement with its target. The replaced Route and its target stay as they are. A failure keeps the replacement `failed`, with `failed_step` `withdrawal` when the change had recorded none. Repeat the command to retry.
 
+An open Instance transfer owns its source and destination Routes. `route:destroy` returns `instance.transfer_incomplete` for either Route, including a replacement that never activated. Retry the identical transfer request to finish or roll back the transfer first.
+
+The [offline removal](#remove-a-route-from-an-unreachable-node) rules also apply to a replacement that never activated. Skipped Nodes keep their configuration and application URL. The old Route stays authoritative. A skipped workload Node can keep its unused Instance hostname-change certificate until the next domain change or Instance removal; Route residue cleanup removes the certificates owned by Route ID.
+
 A replacement that has cut over is `activating` or `active`. `route:destroy` refuses it like any Route that an active Instance needs, with `route.target_conflict`. Finish that change by repeating its request. `route:target:unset` on a replacement that never activated is refused with `route.target_conflict`, and the message names `route:destroy`, because a replacement without its target would replace nothing.
 
 ```bash

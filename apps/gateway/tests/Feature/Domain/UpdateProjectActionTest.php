@@ -18,9 +18,11 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectUpdateProjectionMutator;
 use App\Domain\Projects\ProjectUpdateStatus;
 use App\Domain\Routes\RouteDomainProjector;
+use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Projects\NativeProjectUpdateProjectionMutator;
 use App\Models\Instance;
@@ -617,3 +619,60 @@ function slug_fix_native_projection(?Closure $configureUrl = null): ArrayObject
 
     return $log;
 }
+
+describe('Project update ownership', function (): void {
+    it('refuses a concurrent different update when the Project has no Instances', function (): void {
+        $this->fixture->defaultInstance->update(['status' => InstanceState::SourceResolved]);
+        $this->fixture->defaultRoute->delete();
+        $this->fixture->defaultInstance->delete();
+        $conflict = null;
+        $resolver = Mockery::mock(RepositoryDefaultBranchResolver::class);
+        $resolver->shouldReceive('verify')->andReturnUsing(function (string $repository, string $branch) use (&$conflict): void {
+            if ($branch !== 'stable') {
+                return;
+            }
+
+            try {
+                app(UpdateProjectAction::class)->execute($this->fixture->project, orb101_update_data(defaultBranch: 'develop'));
+            } catch (ResourceOperationException $exception) {
+                $conflict = $exception->errorCode;
+            }
+        });
+        app()->instance(RepositoryDefaultBranchResolver::class, $resolver);
+
+        app(UpdateProjectAction::class)->execute($this->fixture->project, orb101_update_data(defaultBranch: 'stable'));
+
+        expect($conflict)->toBe('project.update_in_progress')
+            ->and($this->fixture->project->refresh()->default_branch)->toBe('stable')
+            ->and(ProjectUpdate::query()->count())->toBe(1)
+            ->and(ProjectUpdate::query()->sole()->status)->toBe(ProjectUpdateStatus::Complete);
+    });
+
+    it('leaves an unrelated replacement in place during slug rollback', function (): void {
+        slug_fix_native_projection();
+        $projection = app(NativeProjectUpdateProjectionMutator::class);
+        $inventory = $projection->preflightSlug($this->fixture->project, 'shop');
+        $prepared = $projection->prepareSlug($this->fixture->project, 'shop', $inventory);
+        $recorded = Route::query()->findOrFail($this->fixture->defaultRoute->refresh()->replaced_by_route_id);
+        $recorded->delete();
+        $unrelated = Route::query()->create([
+            'project_id' => $this->fixture->project->id,
+            'node_id' => $this->fixture->node->id,
+            'domain' => 'unrelated.test',
+            'provenance' => 'explicit',
+            'publication' => 'private',
+            'status' => RouteStatus::Pending,
+            'replaces_route_id' => $this->fixture->defaultRoute->id,
+            'replacement_step' => RouteReplacementStep::Reserved,
+        ]);
+        $unrelated->targets()->create(['instance_id' => $this->fixture->defaultInstance->id, 'position' => 0]);
+        $this->fixture->defaultRoute->update(['replaced_by_route_id' => $unrelated->id]);
+        $before = $unrelated->refresh()->getAttributes();
+
+        $projection->rollbackSlug($this->fixture->project, $prepared);
+
+        expect($unrelated->fresh()?->getAttributes())->toBe($before)
+            ->and($this->fixture->defaultRoute->refresh()->replaced_by_route_id)->toBe($unrelated->id)
+            ->and($unrelated->targets()->count())->toBe(1);
+    });
+});
