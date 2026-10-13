@@ -70,7 +70,7 @@ While `ORBIT_GATEWAY_QUEUE_CONNECTION` is empty, the scheduler runs the commands
 
 Horizon runs as the Gateway Node's [Process](/reference/processes-and-schedules) named `horizon`, beside the scheduler Process. It is a systemd Process with restart policy `always`. It runs `php artisan horizon` with the scheduler's PHP binary, as `orbit`, in the scheduler's directory, the stable path `/home/orbit/orbit/apps/gateway`. Read its output with `orbit process:logs <id>`.
 
-The scheduler phase of a release's [runtime handoff](/reference/gateway-recovery#runtime-handoff) creates the Process and starts it, when `ORBIT_GATEWAY_QUEUE_CONNECTION` is set and the Gateway Node has no `horizon` Process. So the first release after you set the key starts Horizon. A `horizon` Process with another configuration fails the handoff with `gateway.release_units_failed`, and so does a failed start. The Gateway never removes the Process. After you empty the key, destroy it with `orbit process:destroy <id>`.
+The scheduler phase of a release's [runtime handoff](/reference/gateway-recovery#runtime-handoff) creates the Process and starts it, when `ORBIT_GATEWAY_QUEUE_CONNECTION` is set and no Process of the Gateway Node runs `artisan horizon`. So the first release after you set the key starts Horizon. When the handoff cannot create or start the Process, it fails with `gateway.release_units_failed`. The handoff never changes an existing Process, because a change restarts its unit and so ends its running jobs. The Gateway never removes the Process. After you empty the key, destroy it with `orbit process:destroy <id>`.
 
 ## Dashboard
 
@@ -120,9 +120,11 @@ A job queued by one release can run on the next one, and during a release, on th
 The queue depends on its Redis server, but the Gateway keeps running without it:
 
 - The scheduler logs each failed dispatch as an error and frees the job's unique lock, so the next run dispatches it again. The scheduler keeps running.
-- A running Horizon reports each failed read and keeps running. When Redis answers again, it works the queued jobs.
-- Horizon that starts while Redis is down exits. systemd starts it again after 2 seconds. After several failed starts in a row, systemd stops trying, and the Process shows the failure. Start it again with `orbit process:start <id>`.
+- A running Horizon reports each failed read and keeps running. It works the queued jobs again as soon as Redis answers.
+- A Horizon start fails while Redis is down.
 - A request that queues a job, such as a task VM claim, fails with an error.
+
+systemd starts a failed Horizon again after 2 seconds. After several failed starts in a row, systemd stops trying, and the Process shows the failure. Start it again with `orbit process:start <id>`.
 
 A job that Redis lost runs again only when its owner queues it again. For example, the tick queues a publish again after its backoff.
 

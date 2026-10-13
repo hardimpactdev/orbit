@@ -230,7 +230,7 @@ The scheduler phase:
 1. moves the scheduler to the new release without cutting off a scheduled command;
 2. restarts every other Gateway Node Process whose directory is in the Gateway application, except the `horizon` Process;
 3. resumes [document cleanup](/reference/project-documents#restore-time-cleanup-gate);
-4. runs `php artisan horizon:terminate`, so [Laravel Horizon](/reference/gateway-queue#releases) starts again on the new release, or creates the `horizon` Process when the Gateway has none;
+4. moves [Laravel Horizon](/reference/gateway-queue#releases) to the new release with `php artisan horizon:terminate`;
 5. moves the jobs left in the old database queues to the [Gateway queue](/reference/gateway-queue#releases);
 6. updates the Gateway Node's own `orbit-agent` to the release's pin, described below;
 7. resets OPcache, described below.
