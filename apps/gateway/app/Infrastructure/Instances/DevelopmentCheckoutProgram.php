@@ -8,11 +8,9 @@ namespace App\Infrastructure\Instances;
  * Shell programs that deploy a development default in its own checkout. Each runs as the managed
  * user with the positional arguments home, repository URL, and Instance ID, then its own arguments.
  *
- * Git that compares or writes work tree content can start a filter from `.git/config`, which the task worker can
- * rewrite on a shared checkout. `status`, `checkout`, and the forced checkout of `convert` therefore run through
- * `workspace_git`, as the worker on a shared checkout, with hooks and fsmonitor off. The other Git calls read only
- * refs, the index, and trees, which start no filter. A deploy step is the Project's own command and runs as the
- * managed user by design. Every program except `step` needs the worker preamble.
+ * Every Git call runs with hooks and fsmonitor off. The fetch carries the read credential only for itself, with no
+ * credential helper and the explicit repository URL. A deploy step is the Project's own command and runs as the
+ * managed user by design.
  *
  * Older Gateways served a default from `releases/<name>` through a `current` link. `convert` and
  * `removeReleases` turn that layout back into a plain checkout once; nothing else reads it.
@@ -74,7 +72,7 @@ final class DevelopmentCheckoutProgram
             }
             refuse_dirty() {
                 local changes
-                changes=$(workspace_git -C "$home" status --porcelain --untracked-files=no)
+                changes=$(git -C "$home" status --porcelain --untracked-files=no)
                 if [ -n "$changes" ]; then
                     printf 'The checkout has uncommitted changes to tracked files:\n%s\n' "$changes" | head -n 21 >&2
                     exit 3
@@ -116,7 +114,9 @@ final class DevelopmentCheckoutProgram
         return self::guard().<<<'BASH'
 
             branch=$1
-            isolated_fetch "$home" "$home/.git" "$repository" 0 "+refs/heads/$branch:refs/remotes/origin/$branch" >/dev/null
+            git_read git -c credential.helper= -c core.hooksPath=/dev/null -c core.fsmonitor=false -c protocol.ext.allow=never \
+                -c http.followRedirects=false -C "$home" fetch --quiet --no-tags -- "$repository" \
+                "+refs/heads/$branch:refs/remotes/origin/$branch" >/dev/null
             git -C "$home" rev-parse --verify "refs/remotes/origin/$branch^{commit}"
             if legacy; then printf 'LEGACY\n'; fi
             BASH;
@@ -134,7 +134,7 @@ final class DevelopmentCheckoutProgram
             refuse_dirty
             refuse_diverged "$branch" "$commit"
             drop_removed_directories "$commit"
-            workspace_git -C "$home" checkout --quiet --no-track -B "$branch" "$commit"
+            git -C "$home" checkout --quiet --no-track -B "$branch" "$commit"
             test "$(git -C "$home" symbolic-ref --short HEAD)" = "$branch"
             git -C "$home" rev-parse --verify HEAD
             BASH;
@@ -243,7 +243,7 @@ final class DevelopmentCheckoutProgram
             git -C "$release" ls-files -z --others --directory > "$entries"
             drop_removed_directories "$commit"
             # The checkout's tracked files are unchanged, so force replaces only untracked files in the way.
-            workspace_git -C "$home" checkout --quiet --force --no-track -B "$branch" "$commit"
+            git -C "$home" checkout --quiet --force --no-track -B "$branch" "$commit"
             test "$(git -C "$home" rev-parse --verify HEAD)" = "$commit"
             # Both trees now track the same files, so `--directory` lists the same top-most untracked paths.
             links=$(mktemp "$state/release-links.XXXXXXXX")

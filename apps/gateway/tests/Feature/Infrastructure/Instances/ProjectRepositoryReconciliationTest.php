@@ -24,16 +24,14 @@ use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\LocalShellSshExecutor;
 use Tests\Support\Orb101ProjectUpdateFixture;
-use Tests\Support\TaskWorkerSshExecutor;
 
 beforeEach(function (): void {
     $this->fixture = Orb101ProjectUpdateFixture::bind($this);
 });
 
-describe('TaskCheckWorkerUser', function (): void {
-    it('switches and restores Project branches with checkout filters on the expected account', function (bool $optedOut): void {
-        config()->set('orbit.tasks.worker_user', 'nobody');
-        $checkout = sys_get_temp_dir().'/orbit-project-worker-'.bin2hex(random_bytes(6));
+describe('Project branch switch', function (): void {
+    it('switches and restores Project branches as the managed user without hooks or credentials', function (): void {
+        $checkout = sys_get_temp_dir().'/orbit-project-branch-'.bin2hex(random_bytes(6));
         $git = static fn (array $args): string => (new Process(['git', '-C', $checkout, '-c', 'user.name=t', '-c', 'user.email=t@t', ...$args]))->mustRun()->getOutput();
         (new Process(['git', 'init', '-q', '-b', 'main', $checkout]))->mustRun();
         file_put_contents($checkout.'/.gitattributes', "readme filter=uid\n");
@@ -49,47 +47,34 @@ describe('TaskCheckWorkerUser', function (): void {
         foreach (['clean', 'smudge'] as $filter) {
             $git(['config', 'filter.uid.'.$filter, 'printf "%s:%s\\n" "$(id -u)" "${GIT_CONFIG_VALUE_0-absent}" >> .git/filter-users; cat']);
         }
-        // A planted hook must never run, whoever switches the branch.
+        // A planted hook must never run.
         $git(['config', 'core.hooksPath', $checkout.'/.git/planted-hooks']);
         mkdir($checkout.'/.git/planted-hooks');
         file_put_contents($checkout.'/.git/planted-hooks/post-checkout', "#!/bin/sh\ntouch \"$(git rev-parse --git-dir)/hook-ran\"\n");
         chmod($checkout.'/.git/planted-hooks/post-checkout', 0755);
         @unlink($checkout.'/.git/filter-users');
-        $transport = TaskWorkerSshExecutor::forCheckout($checkout);
-        (new Process(['setfacl', '-R', '-m', 'u:nobody:rwX,d:u:nobody:rwX,d:u:'.posix_geteuid().':rwX', $checkout]))->mustRun();
-        if ($optedOut) {
-            $this->fixture->node->forceFill(['settings' => ['tasks' => ['worker' => 'none']]])->save();
-        }
-        $this->fixture->defaultInstance->forceFill(['checkout_path' => $checkout, 'worker_shared' => ! $optedOut])->save();
-        $this->app->instance(SshExecutor::class, $transport);
+        $this->fixture->defaultInstance->forceFill(['checkout_path' => $checkout])->save();
+        $this->app->instance(SshExecutor::class, new LocalShellSshExecutor);
         $mutator = $this->app->make(RemoteProjectUpdateSourceMutator::class);
-        $expected = $optedOut ? posix_geteuid() : posix_getpwnam('nobody')['uid'];
 
         try {
             $mutator->switchDefaultBranch($this->fixture->defaultInstance->refresh(), 'other');
             expect(file_get_contents($checkout.'/readme'))->toBe('other')
                 ->and(trim($git(['config', '--get', 'branch.other.merge'])))->toBe('refs/heads/other')
-                ->and(trim($git(['config', '--get', 'branch.other.remote'])))->toBe('origin')
-                // The worker never rewrites `.git/config`, so a later share still finds it owned by the managed user.
-                ->and(fileowner($checkout.'/.git/config'))->toBe(posix_geteuid());
+                ->and(trim($git(['config', '--get', 'branch.other.remote'])))->toBe('origin');
             $mutator->restoreDefaultBranch($this->fixture->defaultInstance, 'main');
             expect(file_get_contents($checkout.'/readme'))->toBe('main');
             $users = file($checkout.'/.git/filter-users', FILE_IGNORE_NEW_LINES) ?: [];
             expect($users)->not->toBeEmpty();
             foreach ($users as $user) {
-                expect($user)->toBe($expected.':absent');
+                expect($user)->toBe(posix_geteuid().':absent');
             }
-            // The account that ran the checkout owns what it wrote. The inherited ACL lets the managed user change it.
-            expect(fileowner($checkout.'/readme'))->toBe($expected)
-                ->and(file_put_contents($checkout.'/readme', 'edited'))->toBe(6)
+            expect(fileowner($checkout.'/readme'))->toBe(posix_geteuid())
                 ->and(file_exists($checkout.'/.git/hook-ran'))->toBeFalse();
         } finally {
             new Filesystem()->deleteDirectory($checkout);
         }
-    })->with([
-        'worker-shared checkout runs Git as the worker' => [false],
-        'opted-out Node runs Git as the managed user' => [true],
-    ])->group('privileged');
+    });
 });
 
 function orb101_repository_data(string $url): UpdateProjectData

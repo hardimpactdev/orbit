@@ -11,10 +11,9 @@ use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
 use Tests\Support\LocalInstanceTransferTransport;
 
-describe('TaskCheckWorkerUser', function (): void {
-    it('reconstructs a transferred worktree with worker Git without replacing dirty files or restoring selected SQLite', function (bool $detached): void {
-        config()->set('orbit.tasks.worker_user', 'nobody');
-        $root = sys_get_temp_dir().'/orbit-worker-transfer-'.bin2hex(random_bytes(6));
+describe('transferred worktree', function (): void {
+    it('reconstructs a transferred worktree without replacing dirty files or restoring selected SQLite', function (bool $detached): void {
+        $root = sys_get_temp_dir().'/orbit-worktree-transfer-'.bin2hex(random_bytes(6));
         $checkout = $root.'/source';
         $primary = $root.'/primary';
         $files = new Filesystem;
@@ -30,8 +29,8 @@ describe('TaskCheckWorkerUser', function (): void {
         file_put_contents($checkout.'/README.md', "Dirty readme\n");
         file_put_contents($checkout.'/database.sqlite-wal', 'selected WAL');
         file_put_contents($checkout.'/database.sqlite-shm', 'selected SHM');
-        $node = Node::query()->create(['name' => 'worker-transfer', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '10.44.0.53', 'wireguard_ip' => '10.44.0.53']);
-        orbit_test_task_work_host($node);
+        $node = Node::query()->create(['name' => 'worktree-transfer', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '10.44.0.53', 'wireguard_ip' => '10.44.0.53']);
+        orbit_test_set_app_placement_role($node, production: false);
         $project = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@example.test:shop.git', 'default_branch' => 'main']);
         $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'dev', 'checkout_path' => $checkout, 'source_layout' => 'worktree', 'status' => 'source_resolved']);
         $source = new LocalInstanceTransferTransport($root)->source();
@@ -44,7 +43,7 @@ describe('TaskCheckWorkerUser', function (): void {
 
             expect(fileowner($root.'/destination'))->toBe(posix_geteuid())
                 ->and(fileowner($root.'/destination/.git'))->toBe(posix_geteuid())
-                ->and(fileowner($root.'/destination/.git/index'))->toBe(65534)
+                ->and(fileowner($root.'/destination/.git/index'))->toBe(posix_geteuid())
                 ->and(file_get_contents($root.'/destination/README.md'))->toBe("Dirty readme\n")
                 ->and(file_exists($root.'/destination/database.sqlite'))->toBeFalse()
                 ->and(file_exists($root.'/destination/database.sqlite-wal'))->toBeFalse()
@@ -58,7 +57,7 @@ describe('TaskCheckWorkerUser', function (): void {
             }
         }
     })->with(['branch' => false, 'detached' => true]);
-})->group('privileged');
+});
 
 it('materializes a transferred checkout with an environment that other local users cannot read', function (string $webRoot, string $suffix): void {
     $root = sys_get_temp_dir().'/orbit-transfer-env-'.bin2hex(random_bytes(4));

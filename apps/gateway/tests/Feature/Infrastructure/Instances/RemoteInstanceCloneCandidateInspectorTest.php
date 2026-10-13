@@ -21,7 +21,6 @@ use App\Models\Project;
 use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
 use Tests\Support\LocalShellSshExecutor;
-use Tests\Support\TaskWorkerSshExecutor;
 
 pest()->group('privileged');
 
@@ -63,83 +62,6 @@ describe('TaskGitHardening', function (): void {
 
             expect($source->basePath)->toBe($checkout)
                 ->and(glob($checkout.'/.git/monitor-ran-*'))->toBe([]);
-        } finally {
-            File::deleteDirectory($root);
-        }
-    });
-});
-
-describe('TaskCheckWorkerUser', function (): void {
-    it('inspects candidate content and its clean filter as the worker', function (): void {
-        config()->set('orbit.tasks.worker_user', 'nobody');
-        $root = sys_get_temp_dir().'/orbit-clone-worker-'.bin2hex(random_bytes(6));
-        $checkout = $root.'/checkout';
-        (new Process(['git', 'init', '-q', '-b', 'main', $checkout]))->mustRun();
-        file_put_contents($checkout.'/.gitattributes', "readme filter=uid\n");
-        file_put_contents($checkout.'/readme', 'clean');
-        (new Process(['git', '-C', $checkout, 'add', '.']))->mustRun();
-        (new Process(['git', '-C', $checkout, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'parent']))->mustRun();
-        (new Process(['git', '-C', $checkout, 'config', 'filter.uid.clean', 'id -u > .git/filter-user; cat']))->mustRun();
-        file_put_contents($checkout.'/readme', 'dirty');
-        $candidate = orb198_clone_candidate();
-        $candidate->node->update(['user' => posix_getpwuid(posix_geteuid())['name']]);
-        $candidate->update(['checkout_path' => $checkout]);
-        $transport = TaskWorkerSshExecutor::forCheckout($checkout);
-        (new Process(['setfacl', '-R', '-m', 'u:nobody:rwX,d:u:nobody:rwX,d:u:'.posix_geteuid().':rwX', $root]))->mustRun();
-
-        try {
-            expect(fn () => orb198_clone_candidate_inspector($transport)->inspect($candidate, 'main'))->toThrow(ResourceOperationException::class)
-                ->and(trim((string) file_get_contents($checkout.'/.git/filter-user')))->toBe('65534');
-        } finally {
-            File::deleteDirectory($root);
-        }
-    });
-});
-
-describe('CloneCandidateWorkerNode', function (): void {
-    it('inspects a candidate on an opted-out Node as the runtime user when the worker account is missing', function (): void {
-        [$root, $checkout, $candidate] = orb198_clean_local_candidate();
-        orbit_test_opt_out_task_worker($candidate->node);
-        config()->set('orbit.tasks.worker_user', 'orbit-absent-task-worker');
-
-        try {
-            $source = orb198_clone_candidate_inspector(new LocalShellSshExecutor)->inspect($candidate->refresh(), 'main');
-
-            expect($candidate->worker_shared)->toBeFalse()
-                ->and($source->basePath)->toBe($checkout)
-                ->and(trim((string) file_get_contents($checkout.'/.git/filter-user')))->toBe((string) posix_geteuid());
-        } finally {
-            File::deleteDirectory($root);
-        }
-    });
-
-    it('refuses an app-dev Node without the worker account with a specific code and its stderr', function (): void {
-        [$root, , $candidate] = orb198_clean_local_candidate();
-        config()->set('orbit.tasks.worker_user', 'orbit-absent-task-worker');
-
-        try {
-            expect(fn () => orb198_clone_candidate_inspector(new LocalShellSshExecutor)->inspect($candidate, 'main'))
-                ->toThrow(function (ResourceOperationException $exception): void {
-                    expect($exception->errorCode)->toBe('instance.clone_candidate_worker_access')
-                        ->and($exception->status)->toBe(409)
-                        ->and($exception->getMessage())->toContain('The task worker cannot read the candidate checkout on Node [clone-candidate-development].')
-                        ->and($exception->details['stderr'] ?? '')->toContain('orbit-absent-task-worker');
-                });
-        } finally {
-            File::deleteDirectory($root);
-        }
-    });
-
-    it('keeps the worker for a checkout shared with it after it moved to an opted-out Node', function (): void {
-        [$root, $checkout, $candidate] = orb198_clean_local_candidate();
-        $candidate->update(['worker_shared' => true]);
-        orbit_test_opt_out_task_worker($candidate->node);
-        config()->set('orbit.tasks.worker_user', 'orbit-absent-task-worker');
-
-        try {
-            expect(fn () => orb198_clone_candidate_inspector(new LocalShellSshExecutor)->inspect($candidate->refresh(), 'main'))
-                ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.clone_candidate_worker_access'))
-                ->and(file_exists($checkout.'/.git/filter-user'))->toBeFalse();
         } finally {
             File::deleteDirectory($root);
         }
@@ -279,14 +201,14 @@ it('redacts URL credentials and token-shaped words from stderr', function (): vo
 it('reads a refusal before stderr and keeps the stderr', function (): void {
     $candidate = orb198_clone_candidate();
     $ssh = new Orb198CloneCandidateSshExecutor([
-        orb198_clone_candidate_result("REFUSED\tinstance.clone_candidate_worker_access\n", stderr: "id: 'orbit-worker': no such user\n"),
+        orb198_clone_candidate_result("REFUSED\tinstance.clone_candidate_dirty\n", stderr: "warning: could not open directory 'cache/': Permission denied\n"),
     ]);
 
     expect(fn () => orb198_clone_candidate_inspector($ssh)->inspect($candidate, 'main'))
         ->toThrow(function (ResourceOperationException $exception): void {
-            expect($exception->errorCode)->toBe('instance.clone_candidate_worker_access')
-                ->and($exception->getMessage())->toBe("The task worker cannot read the candidate checkout on Node [clone-candidate-development]. id: 'orbit-worker': no such user")
-                ->and($exception->details)->toBe(['stderr' => "id: 'orbit-worker': no such user"]);
+            expect($exception->errorCode)->toBe('instance.clone_candidate_dirty')
+                ->and($exception->getMessage())->toBe("The candidate is not eligible for cloning. warning: could not open directory 'cache/': Permission denied")
+                ->and($exception->details)->toBe(['stderr' => "warning: could not open directory 'cache/': Permission denied"]);
         });
 });
 
