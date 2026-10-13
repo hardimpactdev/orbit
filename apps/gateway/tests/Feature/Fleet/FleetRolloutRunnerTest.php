@@ -239,14 +239,14 @@ describe('fleet rollout', function (): void {
         expect($visitor->visited)->toBe(['new', 'db', 'prod']);
     });
 
-    it('never visits a task sandbox, in the rollout or in the catch-up, and lists it as excluded', function (): void {
+    it('never visits a task VM, in the rollout or in the catch-up, and lists it as excluded', function (): void {
         ['visitor' => $visitor] = FleetFixtures::bind();
         FleetFixtures::node('dev', [RoleName::AppDev]);
-        $first = FleetFixtures::sandbox();
+        $first = FleetFixtures::taskVm();
 
         fleetRun();
         $visitor->visited = [];
-        $second = FleetFixtures::sandbox();
+        $second = FleetFixtures::taskVm();
         fleetRun();
         $status = app(ShowFleetRolloutAction::class)->execute();
 

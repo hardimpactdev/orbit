@@ -31,7 +31,6 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
  * @property string|null $ssh_host_fingerprint
  * @property array<string, mixed>|null $settings
  * @property string|null $agent_secret_hash
- * @property string|null $compute_sandbox_id
  * @property int|null $ssh_jump_node_id
  * @property-read Collection<int, NodeRole> $roles
  * @property-read Collection<int, ProjectNodeExclusion> $projectNodeExclusions

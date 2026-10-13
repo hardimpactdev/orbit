@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Tests\Support\Fleet;
 
-use App\Domain\Compute\SandboxState;
 use App\Domain\Fleet\CliReleaseCatalog;
 use App\Domain\Fleet\FleetConvergeUnits;
 use App\Domain\Fleet\FleetNodeVisitor;
@@ -15,11 +14,15 @@ use App\Domain\Fleet\ReleaseHistory;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Releases\ReleaseAlertNotifier;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\TaskVms\TaskVmState;
+use App\Domain\Tasks\TaskCompute;
 use App\Infrastructure\AgentView\AgentReportedVersions;
 use App\Infrastructure\Nodes\NodeUpdateLock;
 use App\Models\Node;
 use App\Models\NodeRole;
-use App\Models\TaskSandbox;
+use App\Models\Project;
+use App\Models\Task;
+use App\Models\TaskVm;
 use Illuminate\Cache\ArrayStore;
 use Illuminate\Cache\Repository;
 use Illuminate\Support\Facades\Config;
@@ -31,6 +34,8 @@ final class FleetFixtures
     public const string Commit = '0123456789abcdef0123456789abcdef01234567';
 
     private static int $address = 10;
+
+    private static int $taskVms = 0;
 
     /** Points the Gateway checkout at a temporary in-place checkout: no release layout, no release records. */
     public static function inPlace(): string
@@ -92,22 +97,17 @@ final class FleetFixtures
         return $node->load('roles');
     }
 
-    /** An enrolled UpCloud task sandbox: an active, managed `app-dev` Node that its reservation owns (ADR 0200). */
-    public static function sandbox(): Node
+    /** A live task VM: an active, managed `app-dev` Node that its UpCloud task VM row owns (ADR 0200). */
+    public static function taskVm(): Node
     {
-        $id = (string) Str::uuid();
-        $sandbox = TaskSandbox::query()->create([
-            'id' => $id,
-            'provider' => 'upcloud',
-            'name' => 'orbit-sandbox-'.$id,
-            'state' => SandboxState::Running,
-            'desired_power' => 'running',
-            'network_policy' => 'sealed',
-            'spec' => [],
+        $name = 'tvm-'.++self::$taskVms;
+        $project = Project::query()->firstOrCreate(['slug' => 'fleet-task-vms'], ['name' => 'Fleet task VMs', 'repository_url' => 'https://github.com/acme/fleet.git']);
+        $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => $name, 'brief' => $name, 'status' => 'running', 'task_compute' => TaskCompute::Vm]);
+        $node = self::node($name, [RoleName::AppDev]);
+        TaskVm::query()->create([
+            'group_id' => $group->id, 'node_id' => $node->id, 'provider' => 'upcloud', 'name' => $name,
+            'state' => TaskVmState::Ready, 'wireguard_ip' => $node->wireguard_ip, 'pi_token' => 'pi-token',
         ]);
-        $node = self::node($sandbox->name, [RoleName::AppDev]);
-        $node->forceFill(['compute_sandbox_id' => $sandbox->id])->save();
-        $sandbox->forceFill(['node_id' => $node->id])->save();
 
         return $node->load('roles');
     }

@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace App\Infrastructure\Compute;
+namespace App\Infrastructure\TaskVms;
 
-use App\Domain\Compute\ComputeException;
+use App\Domain\TaskVms\TaskVmException;
 use App\Infrastructure\Processes\CommandDeadline;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
@@ -12,8 +12,11 @@ use Illuminate\Support\Sleep;
 use SensitiveParameter;
 use Throwable;
 
-/** Management credentials and group keys only travel in headers or JSON bodies. */
-final readonly class HttpSandboxModelKeys
+/**
+ * Registers and revokes a task VM group model key at CLIProxyAPI. Management credentials and group keys only
+ * travel in headers or JSON bodies.
+ */
+final readonly class TaskVmModelKeys
 {
     /** A running command deadline, such as the inline run of a warm task VM claim, also ends each request. */
     public function __construct(
@@ -119,8 +122,8 @@ final readonly class HttpSandboxModelKeys
         }
     }
 
-    private function failed(): ComputeException
+    private function failed(): TaskVmException
     {
-        return new ComputeException('compute.model_key_unconfirmed', 'The sandbox model credential could not be confirmed; its recorded key is retained for retry.');
+        return new TaskVmException('task_vm.model_key_failed', 'The group model key could not be confirmed with CLIProxyAPI.', 502);
     }
 }
