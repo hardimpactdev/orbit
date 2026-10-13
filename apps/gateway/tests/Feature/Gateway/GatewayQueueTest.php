@@ -16,7 +16,15 @@ use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Jobs\RunScheduledCommand;
 use App\Jobs\TaskVms\DestroyTaskVm;
+use App\Jobs\TaskVms\EnrollTaskVm;
+use App\Jobs\TaskVms\EnsureWarmClaimReady;
+use App\Jobs\TaskVms\ParkTaskVm;
+use App\Jobs\TaskVms\PrepareTaskVmRuntime;
+use App\Jobs\TaskVms\ProvisionTaskVm;
+use App\Jobs\TaskVms\RefillTaskVmPool;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
+use App\Jobs\TaskVms\ResumeTaskVm;
+use App\Jobs\TaskVms\SweepTaskVmHosts;
 use App\Models\DatabaseConnection;
 use App\Models\Node;
 use Illuminate\Bus\UniqueLock;
@@ -29,6 +37,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
+use Laravel\Horizon\Events\MasterSupervisorLooped;
+use Laravel\Horizon\MasterSupervisor;
 use Tests\Support\FakeGatewayHorizonRuntime;
 use Tests\Support\RecordingProcessRunner;
 
@@ -224,7 +234,7 @@ describe(GatewayHorizonUnit::class, function (): void {
 
         $outcome = new GatewayHorizonUnit($processes, $runtime, applicationPath: '/a', orbitHome: '/h', unitDirectory: $this->unitDirectory)->converge();
 
-        expect($outcome)->toBe(['outcome' => 'started', 'task_vm_wait_ms' => 0, 'task_vm_overlap' => false])
+        expect($outcome)->toBe(['outcome' => 'started', 'task_vm_wait_ms' => 0])
             ->and(array_map(static fn (array $arguments): string => implode(' ', array_slice($arguments, 0, 4)), $processes->ran))->toBe([
                 'sudo install -m 0644',
                 'sudo systemctl daemon-reload',
@@ -243,21 +253,31 @@ describe(GatewayHorizonUnit::class, function (): void {
         $outcome = new GatewayHorizonUnit(new RecordingProcessRunner, $runtime, applicationPath: '/a', orbitHome: '/h', unitDirectory: $this->unitDirectory)->converge();
 
         expect($outcome['outcome'])->toBe('started')
-            ->and($outcome['task_vm_overlap'])->toBeFalse()
-            ->and($runtime->calls)->toBe(['pause:'.(GatewayHorizonUnit::TaskVmWaitSeconds + 60), 'terminate', 'worker-gone', 'resume']);
+            ->and($runtime->calls)->toBe(['pause:'.GatewayHorizonUnit::taskVmPauseSeconds(), 'terminate', 'worker-gone', 'resume']);
     });
 
-    it('resumes the task-vms queue and reports the overlap when the old worker outlasts the wait', function (): void {
+    it('fails and keeps the task-vms queue paused when the old worker outlasts the wait, so two task VM jobs never overlap', function (): void {
         config(['orbit.gateway_queue.connection' => 'services-valkey']);
         $runtime = new FakeGatewayHorizonRuntime;
         $runtime->masterNames = ['old-master'];
         $runtime->workers = [4242];
         $runtime->workerChecksLeft = null;
 
-        $outcome = new GatewayHorizonUnit(new RecordingProcessRunner, $runtime, applicationPath: '/a', orbitHome: '/h', unitDirectory: $this->unitDirectory, taskVmWaitSeconds: 0)->converge();
+        expect(fn () => new GatewayHorizonUnit(new RecordingProcessRunner, $runtime, applicationPath: '/a', orbitHome: '/h', unitDirectory: $this->unitDirectory, taskVmWaitSeconds: 0)->converge())
+            ->toThrow(fn (NodeProvisioningException $exception) => expect([$exception->errorCode, $exception->step])->toBe(['gateway.horizon_unit_failed', 'horizon-task-vms']))
+            ->and($runtime->calls)->toBe(['pause:'.GatewayHorizonUnit::taskVmPauseSeconds(), 'terminate']);
+    });
 
-        expect($outcome['task_vm_overlap'])->toBeTrue()
-            ->and(end($runtime->calls))->toBe('resume');
+    it('waits longer than any task-vms job runs, and pauses longer than it waits', function (): void {
+        $jobs = [ProvisionTaskVm::class, EnrollTaskVm::class, PrepareTaskVmRuntime::class, ParkTaskVm::class, ResumeTaskVm::class, DestroyTaskVm::class, EnsureWarmClaimReady::class, RefillTaskVmPool::class, SweepTaskVmHosts::class];
+        // A job without its own timeout runs under the supervisor's.
+        $timeouts = array_map(static fn (string $class): int => (int) ((new ReflectionClass($class))->getDefaultProperties()['timeout'] ?? GatewayHorizonUnit::taskVmJobSeconds()), $jobs);
+
+        expect(max($timeouts))->toBeLessThanOrEqual(GatewayHorizonUnit::taskVmJobSeconds())
+            ->and(GatewayHorizonUnit::taskVmJobSeconds())->toBe(config('horizon.defaults.task-vms.timeout'))
+            ->and(GatewayHorizonUnit::taskVmWaitSeconds())->toBeGreaterThan(GatewayHorizonUnit::taskVmJobSeconds())
+            ->and(GatewayHorizonUnit::taskVmPauseSeconds())->toBeGreaterThan(GatewayHorizonUnit::taskVmWaitSeconds())
+            ->and(new ProvisionTaskVm(1)->queue)->toBe(GatewayQueue::TaskVms->value);
     });
 
     it('fails when no new Horizon master registers', function (): void {
@@ -340,5 +360,34 @@ describe(GatewayQueueMove::class, function (): void {
         expect(fn () => new GatewayQueueMove()->move())
             ->toThrow(fn (NodeProvisioningException $exception) => expect($exception->errorCode)->toBe('gateway.queue_move_failed'))
             ->and(DB::table('jobs')->sole()->queue)->toBe('task-vms');
+    });
+});
+
+describe('the release watch of a Horizon master', function (): void {
+    beforeEach(function (): void {
+        $this->release = sys_get_temp_dir().'/gateway-release-'.bin2hex(random_bytes(4));
+        File::ensureDirectoryExists($this->release.'/config');
+        config(['orbit.gateway_checkout' => $this->release]);
+    });
+
+    afterEach(function (): void {
+        File::deleteDirectory($this->release);
+    });
+
+    it('terminates the master once the stable path switches back to a release without Horizon', function (): void {
+        $master = Mockery::mock(MasterSupervisor::class);
+        $master->working = true;
+        $master->shouldReceive('terminate')->once();
+
+        event(new MasterSupervisorLooped($master));
+    });
+
+    it('leaves a move to a release with Horizon to the handoff, which keeps the task-vms queue in order', function (): void {
+        File::put($this->release.'/config/horizon.php', '<?php return [];');
+        $master = Mockery::mock(MasterSupervisor::class);
+        $master->working = true;
+        $master->shouldNotReceive('terminate');
+
+        event(new MasterSupervisorLooped($master));
     });
 });

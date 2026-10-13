@@ -25,9 +25,6 @@ final readonly class GatewayHorizonUnit
     /** The file whose absence in the current release keeps the unit from starting. */
     public const string Marker = 'config/horizon.php';
 
-    /** How long a release waits for the old `task-vms` worker to finish its job, below the handoff's own limit. */
-    public const int TaskVmWaitSeconds = 600;
-
     /** How long a new Horizon master has to register in Redis. */
     public const int StartSeconds = 30;
 
@@ -39,19 +36,38 @@ final readonly class GatewayHorizonUnit
         private string $orbitHome = '',
         private string $user = 'orbit',
         private string $unitDirectory = '/etc/systemd/system',
-        private int $taskVmWaitSeconds = self::TaskVmWaitSeconds,
+        private ?int $taskVmWaitSeconds = null,
         private int $startSeconds = self::StartSeconds,
     ) {}
+
+    /** The longest a `task-vms` job runs: its supervisor's timeout, which no `task-vms` job's own timeout exceeds. */
+    public static function taskVmJobSeconds(): int
+    {
+        return (int) config('horizon.defaults.task-vms.timeout');
+    }
+
+    /** How long a release waits for the old `task-vms` worker: its longest job and a margin for its exit. */
+    public static function taskVmWaitSeconds(): int
+    {
+        return self::taskVmJobSeconds() + 60;
+    }
+
+    /** The pause outlasts the wait, so the queue never runs again while the release still waits. */
+    public static function taskVmPauseSeconds(): int
+    {
+        return self::taskVmWaitSeconds() + 120;
+    }
 
     /**
      * Installs and starts the unit while the Gateway queue is set, and moves a running master to the new release.
      * Otherwise it stops and removes the unit when it exists, and changes nothing when it does not.
      *
      * The old master stops at once and its workers finish their jobs. The `task-vms` queue stays paused until the old
-     * `task-vms` worker is gone, so its jobs still run one at a time and in order. It reports `started` only once a new
-     * master is registered.
+     * `task-vms` worker is gone, so its jobs still run one at a time and in order. When the old worker outlasts its
+     * longest job, the queue stays paused until the pause expires and the release fails. It reports `started` only once
+     * a new master is registered.
      *
-     * @return array{outcome: 'started'|'stopped'|'none', task_vm_wait_ms?: int, task_vm_overlap?: bool}
+     * @return array{outcome: 'started'|'stopped'|'none', task_vm_wait_ms?: int}
      *
      * @throws NodeProvisioningException
      */
@@ -65,23 +81,35 @@ final readonly class GatewayHorizonUnit
         $orbitHome = $this->orbitHome !== '' ? $this->orbitHome : StoredValue::string(config('orbit.home'));
         $this->install($this->render($application, $orbitHome));
         $this->run(['sudo', 'systemctl', 'daemon-reload']);
+        $wait = $this->taskVmWaitSeconds ?? self::taskVmWaitSeconds();
 
         try {
             $oldWorkers = $this->runtime->taskVmWorkers();
             $oldMasters = $this->runtime->masters();
             $startedAt = hrtime(true);
-            $overlap = false;
+            $paused = false;
 
             if ($oldWorkers !== []) {
-                $this->runtime->pauseTaskVms($this->taskVmWaitSeconds + 60);
+                $this->runtime->pauseTaskVms(max($wait + 120, self::taskVmPauseSeconds()));
+                $paused = true;
             }
 
             try {
                 $this->run(['sudo', 'systemctl', 'enable', '--now', self::Name]);
                 $this->runtime->terminate();
-                $overlap = ! $this->waitFor(fn (): bool => array_filter($oldWorkers, $this->runtime->running(...)) === [], $this->taskVmWaitSeconds);
+
+                if (! $this->waitFor(fn (): bool => array_filter($oldWorkers, $this->runtime->running(...)) === [], $wait)) {
+                    // Resuming now would run two task VM jobs at once. The pause expires on its own.
+                    $paused = false;
+
+                    throw new NodeProvisioningException(
+                        step: 'horizon-task-vms',
+                        errorCode: 'gateway.horizon_unit_failed',
+                        message: "The old task-vms worker still runs after {$wait} seconds, longer than any task VM job. The task-vms queue stays paused until its pause expires.",
+                    );
+                }
             } finally {
-                if ($oldWorkers !== []) {
+                if ($paused) {
                     $this->runtime->resumeTaskVms();
                 }
             }
@@ -107,7 +135,7 @@ final readonly class GatewayHorizonUnit
             );
         }
 
-        return ['outcome' => 'started', 'task_vm_wait_ms' => $oldWorkers === [] ? 0 : $waited, 'task_vm_overlap' => $overlap];
+        return ['outcome' => 'started', 'task_vm_wait_ms' => $oldWorkers === [] ? 0 : $waited];
     }
 
     public function render(string $application, string $orbitHome): string

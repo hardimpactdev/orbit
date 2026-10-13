@@ -36,7 +36,7 @@ Laravel Horizon runs three queues on the connection. Each has its own supervisor
 
 The `task-vms` jobs run one at a time and in order, so no two jobs change the same VM at once.
 
-A job runs at most 1700 seconds. A job that a worker lost, for example when its process was killed, runs again after 1800 seconds. An idle worker waits on the queue with a blocking read, so a job starts within about a second when a process is free.
+A `task-vms` job runs at most 1500 seconds, and any other job at most 1700 seconds. A job that a worker lost, for example when its process was killed, runs again after 1800 seconds. An idle worker waits on the queue with a blocking read, so a job starts within about a second when a process is free.
 
 One `builds` process runs one build at a time in the fleet. The host locks also allow one template build and one base image build or sync per host.
 
@@ -90,9 +90,9 @@ A release moves the queue in the scheduler phase:
 2. It moves the scheduler, as described in the [runtime handoff](/reference/gateway-recovery#runtime-handoff).
 3. After the scheduler's drain, it moves the jobs left in the old database queues to the Gateway queue, as described below.
 
-To move Horizon, the handoff installs the unit and enables it. When Horizon already runs, it pauses the `task-vms` queue and sends SIGTERM to the running master, which is what `php artisan horizon:terminate` does. It waits up to 600 seconds for the old `task-vms` worker to finish its job, then lets the queue run again. It reports Horizon started only once a new master is registered in Redis.
+To move Horizon, the handoff installs the unit and enables it. When Horizon already runs, it pauses the `task-vms` queue and sends SIGTERM to the running master, which is what `php artisan horizon:terminate` does. It waits for the old `task-vms` worker to finish its job, then lets the queue run again. The wait is 1560 seconds: the `task-vms` timeout of 1500 seconds, which is the longest task VM job, plus a minute for the worker to exit. The pause lasts two minutes longer than the wait. It reports Horizon started only once a new master is registered in Redis.
 
-Horizon reads only Redis, so step 1 never races a worker of an older release on the database queues. When step 1 fails, steps 2 and 3 still run, and the handoff then fails with `gateway.release_units_failed`. The handoff records step 1 as `horizon`, with `outcome` (`started`, `stopped`, or `none`), `task_vm_wait_ms`, and `task_vm_overlap`. `task_vm_overlap` is true when the old `task-vms` job outlasted the wait, so two task VM jobs ran at once for a while.
+Horizon reads only Redis, so step 1 never races a worker of an older release on the database queues. When step 1 fails, steps 2 and 3 still run, and the handoff then fails with `gateway.release_units_failed`. The handoff records step 1 as `horizon`, with `outcome` (`started`, `stopped`, or `none`) and `task_vm_wait_ms`. When the old worker still runs after the wait, the handoff fails, and the queue stays paused until the pause expires, so two task VM jobs never run at once.
 
 The old database queues are `task-vms`, whose jobs move to `task-vms`, `task-vm-git`, whose jobs move to `tasks`, and `task-vm-templates` and `task-vm-images`, whose jobs move to `builds`. A delayed job keeps its time, and a job keeps its unique lock. Its attempts count from zero again. No job is lost. The handoff records the count as `queue_moved`. When jobs wait there and `ORBIT_GATEWAY_QUEUE_CONNECTION` is empty, the move fails with `gateway.queue_move_failed` and keeps them.
 
@@ -100,7 +100,7 @@ Horizon uses fast termination, and the unit stops only the master. Each running 
 
 ### Switch back to an older release
 
-The unit starts only while the current release has `config/horizon.php`. The Horizon master also compares the current release with its own each second, and terminates itself when they differ. After a switch back to a release from before Horizon, the master therefore stops, and the unit does not start again. The older release's scheduler then runs its own workers on the database queues. Jobs left in Redis wait for a later release.
+The unit starts only while the current release has `config/horizon.php`. The Horizon master also checks the current release each second. When the stable path links to a release without `config/horizon.php`, it terminates itself, and the unit does not start again. A move to a release with Horizon is left to the handoff, which keeps the `task-vms` queue in order. The older release's scheduler then runs its own workers on the database queues. Jobs left in Redis wait for a later release.
 
 A job left in Redis keeps its unique lock in the Gateway cache. The older release then queues no second copy of that job, for example no second destroy of the same VM, until the lock expires; a lock without an expiry stays. To let the older release queue it again, remove the lock as `orbit` in `/home/orbit/orbit/apps/gateway`:
 

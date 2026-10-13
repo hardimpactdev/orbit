@@ -560,7 +560,7 @@ The task VM jobs run on the [Gateway queue](/reference/gateway-queue), which Lar
 
 One worker runs the `task-vms` jobs one at a time and in order, so no two jobs change the same VM at once.
 
-A `task-vms` or `tasks` job starts within about a second while its worker is free, also while a build runs. A delayed job, such as the guard of a warm claim, or a released job waits for its time. A job runs at most 1700 seconds, and a job that a worker lost runs again after 1800 seconds.
+A `task-vms` or `tasks` job starts within about a second while its worker is free, also while a build runs. A delayed job, such as the guard of a warm claim, or a released job waits for its time. A `task-vms` job runs at most 1500 seconds, and any other job at most 1700 seconds. A job that a worker lost runs again after 1800 seconds.
 
 A template build takes about a minute, a base image refresh up to 25 minutes, and a publish seconds. The `builds` queue has one process, so one template build or base image refresh runs in the fleet at a time. The host locks also allow one template build and one base image build or sync per host.
 

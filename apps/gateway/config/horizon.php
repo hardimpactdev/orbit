@@ -56,7 +56,7 @@ return [
             'nice' => 0,
         ],
         // One worker, so task VM jobs run one at a time and in order. A release pauses the queue until the old worker is
-        // done (GatewayHorizonUnit).
+        // done (GatewayHorizonUnit). The timeout is the longest task VM job, EnrollTaskVm; no task-vms job may exceed it.
         'task-vms' => [
             'connection' => 'gateway',
             'queue' => ['task-vms'],
@@ -67,7 +67,7 @@ return [
             'maxJobs' => 0,
             'memory' => 256,
             'tries' => 1,
-            'timeout' => 1700,
+            'timeout' => 1500,
             'nice' => 0,
         ],
         'builds' => [

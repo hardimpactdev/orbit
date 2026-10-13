@@ -105,9 +105,9 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
             static fn (Application $app): ArtisanGatewayReleaseRuntime => new ArtisanGatewayReleaseRuntime(
                 layout: $app->make(GatewayReleaseLayout::class),
                 processes: $app->make(ProcessRunner::class),
-                // The scheduler drain, a forced stop's wait for the tick lock, the rest of the handoff, and the Gateway
-                // Node's agent update.
-                timeout: (float) (self::drainSeconds() + 330 + 600 + GatewayNodeAgentUpdate::TimeoutSeconds),
+                // Horizon's wait for the old task-vms worker and its start, the scheduler drain, a forced stop's wait for the
+                // tick lock, the rest of the handoff, and the Gateway Node's agent update.
+                timeout: (float) (GatewayHorizonUnit::taskVmWaitSeconds() + GatewayHorizonUnit::StartSeconds + self::drainSeconds() + 330 + 600 + GatewayNodeAgentUpdate::TimeoutSeconds),
                 stepLock: self::stepLock(),
                 fallback: new LocalGatewayReleaseRuntime($app->make(GatewayRuntimeHandoff::class)),
             ),

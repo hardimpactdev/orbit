@@ -14,7 +14,8 @@ namespace App\Infrastructure\GatewayReleases;
  *
  * Both run as the Gateway account from the stable application path, so each run uses the release
  * that is current when it starts. Neither is the scheduler or PHP-FPM, so the runtime handoff of
- * the release they run never stops them. A release can run `composer install`, so they get one hour.
+ * the release they run never stops them. A release can run `composer install` and wait for the old `task-vms`
+ * worker, so they get two hours.
  *
  * `ExecStopPost` runs `gateway:release:settle` after the main process exits for any reason, so a
  * release that was killed or timed out ends its record as `interrupted` at once. Each unit sets
@@ -22,7 +23,7 @@ namespace App\Infrastructure\GatewayReleases;
  */
 final readonly class GatewayReleaseUnitRenderer
 {
-    public const int TimeoutSeconds = 3600;
+    public const int TimeoutSeconds = 7200;
 
     public const string Path = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin';
 

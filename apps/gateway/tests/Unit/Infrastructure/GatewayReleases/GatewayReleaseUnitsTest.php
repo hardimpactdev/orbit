@@ -79,7 +79,7 @@ describe(GatewayReleaseUnitRenderer::class, function (): void {
             'Environment=LANG=C.UTF-8',
             'ExecStart="/usr/bin/php8.5" "/home/orbit/orbit/apps/gateway/artisan" "gateway:release:auto"',
             'ExecStopPost="/usr/bin/php8.5" "/home/orbit/orbit/apps/gateway/artisan" "gateway:release:settle"',
-            'TimeoutStartSec=3600',
+            'TimeoutStartSec=7200',
             '',
         ]))->and($units->renderRunTemplate('/usr/bin/php8.5', $artisan, '/home/orbit/.orbit', '/home/orbit/orbit/apps/gateway', 'orbit'))
             ->toContain('Description=Orbit Gateway release %i')
@@ -87,7 +87,7 @@ describe(GatewayReleaseUnitRenderer::class, function (): void {
             ->toContain('ExecStopPost="/usr/bin/php8.5" "/home/orbit/orbit/apps/gateway/artisan" "gateway:release:settle" %i')
             ->toContain('Type=oneshot')
             ->toContain('User=orbit')
-            ->toContain('TimeoutStartSec=3600')
+            ->toContain('TimeoutStartSec=7200')
             ->and($units->runUnitName(42))->toBe('orbit-gateway-release-run@42.service');
     });
 

@@ -7,6 +7,7 @@ namespace App\Providers;
 use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Infrastructure\Gateway\GatewayApplicationPath;
+use App\Infrastructure\Gateway\GatewayHorizonUnit;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
 use App\Models\Node;
 use Illuminate\Contracts\Foundation\Application;
@@ -47,15 +48,16 @@ final class GatewayQueueServiceProvider extends ServiceProvider
             });
         }
 
-        // A Horizon master keeps the code of the release it started on. Once the stable path links to another release,
-        // it terminates; systemd starts it again only when that release ships Horizon.
+        // A Horizon master keeps the code of the release it started on. When the stable path switches back to a release
+        // without Horizon, it terminates, and systemd does not start it again. A move to a release with Horizon is left to
+        // the handoff (GatewayHorizonUnit), which keeps the task-vms queue paused until the old worker is done.
         $release = realpath(base_path()) ?: base_path();
         Event::listen(MasterSupervisorLooped::class, static function (MasterSupervisorLooped $event) use ($release): void {
             // realpath() caches link targets per process; the master runs for days.
             clearstatcache(true);
             $current = realpath(GatewayApplicationPath::resolve());
 
-            if ($event->master->working && $current !== false && $current !== $release) {
+            if ($event->master->working && $current !== false && $current !== $release && ! is_file($current.'/'.GatewayHorizonUnit::Marker)) {
                 $event->master->terminate();
             }
         });
