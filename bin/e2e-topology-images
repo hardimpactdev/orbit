@@ -8,6 +8,7 @@ if [[ $# -lt 1 ]]; then
 usage: bin/e2e-topology-images <action> [options]
 
   build [--role=ROLE ...] [--json]  build the role images (gateway, app-dev, app-prod, operator); default all four
+  ensure [--nodes=LIST] [--json]    build only the missing role images a topology of LIST needs, as acquire takes it
   status [--json]                   show each role image and whether it is current, stale, or missing
 USAGE
     exit 64
@@ -17,7 +18,7 @@ action=$1
 shift
 
 case "$action" in
-    build|status)
+    build|ensure|status)
         # Role images belong to the host's Incus project, not to a checkout, so this never bridges.
         exec php "$root/apps/e2e/artisan" "topology-images:$action" "$@"
         ;;
