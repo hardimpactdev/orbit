@@ -135,7 +135,7 @@ final readonly class StatePaths
     }
 
     /**
-     * Close state to the owning group and others. With named-user ACL entries, such as the task worker's, the mask is
+     * Close state to the owning group and others. With named-user ACL entries, such as Caddy's, the mask is
      * recalculated from those entries: a mode such as 0600 would otherwise set the mask to none and cancel them.
      */
     private function makePrivate(string $path, int $mode = 0700): void
@@ -153,7 +153,7 @@ final readonly class StatePaths
                 && preg_match('/^other::---$/m', $entries) === 1
                 && preg_match('/^mask::---$/m', $entries) !== 1;
 
-            // Only the owner can change an ACL; another named user, such as the task worker, uses the path as is.
+            // Only the owner can change an ACL; another named user uses the path as is.
             if (! $private && fileowner($path) === posix_geteuid()) {
                 // Without --no-mask, setfacl recalculates the mask as the union of the named entries.
                 new Process(['setfacl', '--modify', 'user::'.$owner.',group::---,other::---', '--', $path])->mustRun();
