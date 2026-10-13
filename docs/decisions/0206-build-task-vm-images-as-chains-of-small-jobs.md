@@ -30,6 +30,8 @@ Off-the-shelf tools were considered first. See [Rejected alternatives](#rejected
 
 ## Decision
 
+The Gateway owns the image build. This decision changes item 1 of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) and the manifest skip in [Skip what the image holds](/reference/compute-drivers#skip-what-the-image-holds).
+
 ### The build is a chain of jobs
 
 A base image build is a chain of queued jobs on the `builds` queue, one job for each step. Each job does one step and queues the next one when it succeeds. The chain for an Incus host is:
@@ -68,11 +70,11 @@ The source image of a build never ran an agent or a Project script: it is a publ
 
 A task VM boots from a base image that the same Gateway code built. Its enrollment no longer runs the `app-dev` software programs and no longer reads a manifest. It still renders and applies everything that is specific to the VM: the host key, WireGuard, the firewall, Caddy, DNS, the agent and its secret, and Pi. The manifest file, `TaskVmBakedPrograms`, and the build's `manifest` step go away.
 
-A change to one of those programs reaches task VMs with the next image build, at most a day later, or at once with `task-vms:build-image`. Long-lived `app-dev` Nodes still run every program at enrollment, as today.
+A change to one of those programs reaches task VMs with the next nightly image build, or at once with `task-vms:build-image`. Long-lived `app-dev` Nodes still run every program at enrollment, as today.
 
 ### Next steps in the same model
 
-These follow in later pull requests, each as its own chain with its own row:
+Each of these gets its own pull request after the base image chain is built, as its own chain with its own row:
 
 1. **Sync.** The copy to each other host becomes a chain for that host: export, transfer, verify, smoke, and promote. A failed host names its step, and the other hosts go on.
 2. **Workspace templates.** A template build becomes a chain: launch, volume, clone, one step for each setup step, warm check, verify, detach, and publish. Its budget, its lock with an expiry time, and its retry count go away with the long job.
@@ -103,7 +105,7 @@ These follow in later pull requests, each as its own chain with its own row:
 - Components: apps/gateway, apps/docs
 - ADRs: [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm), item 1 (image), the manifest, and the enrollment skip in [Skip what the image holds](/reference/compute-drivers#skip-what-the-image-holds)
 - Detail: [Compute drivers: Build the base image](/reference/compute-drivers#build-the-base-image), [Compute drivers: Jobs](/reference/compute-drivers#jobs), [Gateway queue](/reference/gateway-queue)
-- Verify:
+- Verify: The proofs on beast check these outcomes.
   - A build on beast runs each step as its own job on the `builds` queue, and the row lists each step with its seconds.
   - A build launched from the current `orbit-task-base` and a `--from-stock` build both pass the smoke check.
   - A step made to fail leaves the row `failed` with that step, deletes the builder, and keeps the current image. `--resume` then continues from that step.
