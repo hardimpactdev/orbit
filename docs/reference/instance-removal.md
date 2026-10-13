@@ -154,7 +154,9 @@ Removal leaves these processes running:
 - A tmux or screen server, even in a task workspace. It hosts sessions that can work elsewhere.
 - Processes of other users. Each account stops only its own processes.
 - Processes outside the checkout, including the processes of other Instances.
-- Owned [Processes and Schedules](#processes-and-schedules). `runtime_cleanup` checks their ownership before it removes them.
+- The Instance's own [Processes and Schedules](#processes-and-schedules). `runtime_cleanup` checks their ownership before it removes them.
+
+Removal knows the systemd unit names of the Instance's own Processes and Schedules, and matches a process's cgroup to them exactly. A process in another Orbit unit is stopped like any other. An agent runs inside the Node's `pi-server` Process, so a server that the agent started in the workspace does not stay.
 
 ### Route cleanup
 

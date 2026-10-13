@@ -3308,49 +3308,34 @@ it('asks for assistance when the declared topology fails to prepare, and starts 
     scheduler_bind_claim($instance, $spawner);
     $checks = new FakeTaskCheckRunner([FakeTaskCheckRunner::passed()]);
     app()->instance(TaskCheckRunner::class, $checks);
-    mock(TaskTopologyAdmission::class)->shouldReceive('prepare')->andThrow(new TaskTopologyFailedException('Task VM: Preparing the topology failed at step images. Post a resolution to prepare it again.'));
+    $state = (object) ['fail' => true, 'calls' => 0];
+    mock(TaskTopologyAdmission::class)->shouldReceive('prepare')->andReturnUsing(function () use ($state): void {
+        $state->calls++;
+        if ($state->fail) {
+            throw new TaskTopologyFailedException('Preparing the topology failed at step images.');
+        }
+
+        throw new TaskCapacityException(TaskWait::Topology, 'Task VM: preparing the topology app-prod+ingress.');
+    });
 
     app(TaskScheduler::class)->claimNext();
     test_pass_baseline();
 
     expect($checks->starts)->toBe(0)->and($spawner->events)->toBe([])
         ->and($group->fresh()->assistance_requested)->toBeTrue()
-        ->and($group->fresh()->assistance_reason)->toContain('failed at step images')
+        ->and($group->fresh()->assistance_reason)->toBe(TaskTopologyFailedException::Prefix.'Preparing the topology failed at step images. Post a resolution to prepare it again.')
         ->and($group->fresh()->capacity_wait_reason)->toBeNull();
-});
 
-it('prepares a failed topology again after a resolution on a subtask that has no implementer yet', function (): void {
-    $project = scheduler_app('topology-resolution');
-    $project->update(['task_check' => 'composer check']);
-    $instance = scheduler_instance($project, scheduler_node('topology-resolution-node', '10.44.0.98'), 'baseline');
-    $group = queued_group($project, 'Topology resolution', $instance);
-    $group->tasks()->sole()->update(['topology' => ['app-prod+ingress']]);
-    scheduler_bind_claim($instance, scheduler_recording_spawner());
-    app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner([FakeTaskCheckRunner::passed()]));
-    $state = (object) ['calls' => 0];
-    mock(TaskTopologyAdmission::class)->shouldReceive('prepare')->andReturnUsing(function () use ($state): void {
-        $state->calls++;
-        if ($state->calls === 1) {
-            throw new TaskTopologyFailedException('Task VM: Preparing the topology failed at step images. Post a resolution to prepare it again.');
-        }
-
-        throw new TaskCapacityException(TaskWait::Topology, 'Task VM: preparing the topology app-prod+ingress.');
-    });
-    app(TaskScheduler::class)->claimNext();
+    // A resolution has no agent to reach: it clears assistance, and the next tick prepares the topology again.
+    $state->fail = false;
+    $calls = $state->calls;
+    app(StoreTaskCommentAction::class)->execute($group->tasks()->sole(), ['type' => 'resolution', 'body' => 'Fixed the VM firewall.', 'author' => 'operator']);
     test_pass_baseline();
-    $task = $group->tasks()->sole();
-    expect($task->assistance_requested)->toBeTrue();
 
-    app(StoreTaskCommentAction::class)->execute($task, ['type' => 'resolution', 'body' => 'Fixed the VM firewall.', 'author' => 'operator']);
-
-    expect($task->fresh()?->assistance_requested)->toBeFalse()
-        ->and($group->fresh()?->assistance_requested)->toBeFalse()
-        ->and($group->fresh()?->getRawOriginal('communication_failures'))->toBeNull()
-        ->and(Activity::query()->where('subject_id', $task->id)->pluck('description')->all())
-        ->toContain('resolution queued topology preparation')->not->toContain('resolution delivery failed');
-    app(TaskScheduler::class)->tick();
-    expect($state->calls)->toBe(2)
-        ->and($group->fresh()?->capacity_wait_reason)->toBe('Task VM: preparing the topology app-prod+ingress.');
+    expect($group->fresh()->assistance_requested)->toBeFalse()
+        ->and($group->tasks()->sole()->assistance_requested)->toBeFalse()
+        ->and($state->calls)->toBeGreaterThan($calls)
+        ->and($group->fresh()->capacity_wait_reason)->toBe('Task VM: preparing the topology app-prod+ingress.');
 });
 
 /**

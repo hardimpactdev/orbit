@@ -10,8 +10,6 @@ use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskAssistance;
-use App\Domain\Tasks\TaskCheckKind;
-use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskExecutionHold;
 use App\Domain\Tasks\TaskGroupGuard;
@@ -19,7 +17,7 @@ use App\Domain\Tasks\TaskQuestions;
 use App\Domain\Tasks\TaskReviewPacketBuilder;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
-use App\Domain\Tasks\TaskTopology;
+use App\Domain\Tasks\TaskTopologyFailedException;
 use App\Domain\Tasks\TaskTurnFetcher;
 use App\Domain\Tasks\TaskTurnFetchNotice;
 use App\Domain\Tasks\TaskTurnInstructions;
@@ -31,7 +29,6 @@ use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Task;
-use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -80,10 +77,24 @@ final readonly class StoreTaskCommentAction
                 $this->log($task, $comment, 'assistance requested');
             }
             if ($type === TaskCommentType::Resolution && trim($comment->body) !== '' && $task->assistance_requested && ! $endedPullRequest) {
+                if ($task->assistance_kind !== AssistanceKind::Direction && TaskTopologyFailedException::caused($task->assistance_reason)) {
+                    // A failed topology preparation has no agent to tell: the admission forgot the run, so clearing
+                    // assistance lets the next tick prepare the topology again.
+                    $task->update([...TaskAssistance::cleared(), 'communication_failures' => 0]);
+                    if (! $group->tasks()->whereKeyNot($task->id)->where('assistance_requested', true)->exists()) {
+                        $group->update(TaskAssistance::cleared());
+                    }
+                    $this->log($task, $comment, 'resolution queued topology retry');
+
+                    return $comment;
+                }
                 if (TaskGroupGuard::deliverableGateBlocked($group, $task)) {
                     // Like a baseline retry, but nothing remote must be reset first: no implementer exists to
                     // receive this resolution. Clearing assistance lets the next tick run the path gate again.
-                    $this->clearForNextTick($group, $task);
+                    $task->update([...TaskAssistance::cleared(), 'communication_failures' => 0]);
+                    if (! $group->tasks()->whereKeyNot($task->id)->where('assistance_requested', true)->exists()) {
+                        $group->update(TaskAssistance::cleared());
+                    }
                     $this->log($task, $comment, 'resolution queued deliverable gate retry');
 
                     return $comment;
@@ -105,12 +116,6 @@ final readonly class StoreTaskCommentAction
                     $deliverResolution = $task->assistance_kind !== AssistanceKind::Direction;
                     $deliverDirection = $task->assistance_kind === AssistanceKind::Direction;
                     $retryBaselineQueued = $deliverResolution && $this->retryBaseline->queue($task, $comment);
-                    if ($deliverResolution && ! $retryBaselineQueued && $this->awaitsTopology($task)) {
-                        // No implementer exists to receive it. The next tick prepares the topology again.
-                        $this->clearForNextTick($group, $task);
-                        $this->log($task, $comment, 'resolution queued topology preparation');
-                        $deliverResolution = false;
-                    }
                 }
             }
 
@@ -336,27 +341,6 @@ final readonly class StoreTaskCommentAction
             TaskQuestions::attachResolution($locked, $comment);
             $this->log($locked, $comment, 'resolution delivered');
         });
-    }
-
-    /** A running subtask whose declared topology failed to prepare, before its implementer or a failed baseline. */
-    private function awaitsTopology(Task $task): bool
-    {
-        if ($task->status !== TaskStatus::Running || $task->implementer_agent_thread_id !== null
-            || TaskTopology::from($task->topology ?? []) === []) {
-            return false;
-        }
-        $baseline = TaskCheck::query()->where('task_id', $task->id)->where('kind', TaskCheckKind::Baseline->value)->latest('id')->first();
-
-        return ! $baseline instanceof TaskCheck || $baseline->status !== TaskCheckStatus::Failed;
-    }
-
-    /** Clears the subtask's request, and the group's once no other subtask asks, so the next tick acts again. */
-    private function clearForNextTick(Task $group, Task $task): void
-    {
-        $task->update([...TaskAssistance::cleared(), 'communication_failures' => 0]);
-        if (! $group->tasks()->whereKeyNot($task->id)->where('assistance_requested', true)->exists()) {
-            $group->update(TaskAssistance::cleared());
-        }
     }
 
     private function log(Task $task, TaskComment $comment, string $description): void

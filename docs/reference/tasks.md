@@ -933,8 +933,6 @@ Clearing the flag on send is keyed to the `resolution` comment and does not chan
 
 On a failure, Orbit sends the body to the blocked thread at once: the implementer while the subtask is `running`, and that subtask's reviewer while it is `reviewing`. In both cases Orbit then clears the flag on the subtask and the task, clears the communication failures, and starts a new attempt. When a failure resolution must reach a reviewer and none has started, Orbit clears the flag and holds the resolution. The next tick starts a fresh reviewer whose opening packet includes it.
 
-When the [topology preparation](/reference/compute-drivers#prepare-the-topology) of a `running` subtask failed before its implementer started, Orbit clears the flag the same way and records `resolution queued topology preparation`. The next tick prepares the topology again. A failed baseline check keeps its own [retry](#baseline-check).
-
 A resolution posted while nothing is asked is stored and not sent. Every comment stays as history. An assistance request, a delivered resolution, a held resolution, and a failed delivery each also write an Activity entry with the comment's author as the actor.
 
 ### Recover a Pi server restart
