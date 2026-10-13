@@ -186,6 +186,8 @@ Verify runs before the scheduler phase, so a broken release is found and switche
 
 Verify checks `GET /up` and Gateway status at `ORBIT_GATEWAY_VERIFY_ORIGIN` (default `https://gateway.orbit`). Status must be `ok`, and the version must be the full commit or its 12-digit id. A busy pool can queue `/up` behind long requests, so a failed check runs again after 2, 4, 8, 16, and 30 seconds.
 
+Each request has a 15-second overall deadline. HTTPS trusts only `/etc/caddy/orbit-cert-current/root-ca.pem`, with the system CA directory disabled. A missing CA file fails verification. Laravel's HTTP client retries the complete check, including status and version validation. After the last failure, it reports `gateway.release_verify_failed` at the `verify` step with the failed endpoint or the observed status and version.
+
 Smoke does not run before the web switch. Any failure after the switch counts, also an error the release code did not expect (`gateway.release_unexpected_failure`):
 
 - Without migrations, deploy switches back to the previous release and repeats the handoff phases that started. `web/current` returns to its earlier build. The outcome is `switched_back`.

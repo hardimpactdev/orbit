@@ -11,6 +11,7 @@ declare(strict_types=1);
  */
 
 [, $cert, $key] = $argv;
+$mode = $argv[3] ?? 'reject';
 
 $context = stream_context_create(['ssl' => ['local_cert' => $cert, 'local_pk' => $key, 'verify_peer' => false]]);
 $server = stream_socket_server('tls://127.0.0.1:0', $errno, $error, STREAM_SERVER_BIND | STREAM_SERVER_LISTEN, $context);
@@ -38,7 +39,23 @@ while (true) {
         $request .= $chunk;
     }
 
-    $body = '{"error":"invalid_client"}';
-    fwrite($connection, "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: ".strlen($body)."\r\nConnection: close\r\n\r\n".$body);
+    if ($request !== '') {
+        file_put_contents(dirname($cert).'/received-'.basename($cert), $request);
+    }
+
+    if ($mode === 'slow-headers') {
+        fwrite($connection, "HTTP/1.1 400 Bad Request\r\n");
+        for ($header = 0; $header < 18; $header++) {
+            sleep(1);
+            if (@fwrite($connection, "X-Drip-{$header}: yes\r\n") === false) {
+                break;
+            }
+        }
+    }
+
+    $body = $mode === 'ok' ? '{"data":{"status":"ok","version":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}' : '{"error":"invalid_client"}';
+    $status = $mode === 'ok' ? '200 OK' : '400 Bad Request';
+    $statusLine = $mode === 'slow-headers' ? '' : "HTTP/1.1 {$status}\r\n";
+    @fwrite($connection, "{$statusLine}Content-Type: application/json\r\nContent-Length: ".strlen($body)."\r\nConnection: close\r\n\r\n".$body);
     fclose($connection);
 }

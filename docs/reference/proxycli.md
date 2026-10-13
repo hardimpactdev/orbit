@@ -100,6 +100,8 @@ When Grok returns no percentage, the collector calls Grok's billing RPC through 
 
 The collector serves these paths on `https://collector.cli-proxy-api.orbit`. The read token and the control token are bearer tokens in Gateway settings.
 
+Account updates trust only the Orbit CA at `ORBIT_HOME/ca/root.pem`. The Gateway checks that CA in place and sends through Laravel's HTTP client with the system CA directory disabled and a 10-second overall deadline. It does not copy the CA to a temporary file.
+
 | Request | Token | Result |
 | --- | --- | --- |
 | `GET /health` | None | `{"ok": true}` |

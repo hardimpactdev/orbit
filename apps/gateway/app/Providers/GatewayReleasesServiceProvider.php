@@ -157,8 +157,7 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
         );
         $this->app->bind(
             GatewayReleaseVerifier::class,
-            static fn (Application $app): HttpGatewayReleaseVerifier => new HttpGatewayReleaseVerifier(
-                processes: $app->make(ProcessRunner::class),
+            static fn (): HttpGatewayReleaseVerifier => new HttpGatewayReleaseVerifier(
                 origin: rtrim(Config::string('orbit.gateway_verify_origin'), '/'),
             ),
         );

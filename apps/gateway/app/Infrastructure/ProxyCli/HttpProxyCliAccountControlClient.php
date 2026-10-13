@@ -8,6 +8,9 @@ use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\ProxyCli\ProxyCliAccountControlClient;
 use App\Domain\ProxyCli\ProxyCliHostname;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Certificates\OrbitCaCurlFactory;
+use GuzzleHttp\Handler\CurlHandler;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Http;
 use SensitiveParameter;
 use Throwable;
@@ -23,16 +26,12 @@ final readonly class HttpProxyCliAccountControlClient implements ProxyCliAccount
         string $account,
         bool $disabled,
     ): void {
-        $caFile = null;
-
         try {
-            $caFile = tempnam(sys_get_temp_dir(), 'orbit-proxycli-ca-');
+            $this->certificates->rootCertificate();
+            $caFile = rtrim(Config::string('orbit.home'), '/').'/ca/root.pem';
 
-            if (! is_string($caFile) || file_put_contents($caFile, $this->certificates->rootCertificate()) === false) {
-                throw new ResourceOperationException('proxycli.upstream_failed', 'The proxycli collector could not be reached.', 502);
-            }
-
-            Http::timeout(10)
+            Http::setHandler(new CurlHandler(['handle_factory' => new OrbitCaCurlFactory]))
+                ->timeout(10)
                 ->acceptJson()
                 ->withToken($controlToken)
                 ->withHeaders(['Host' => ProxyCliHostname::Value])
@@ -50,10 +49,6 @@ final readonly class HttpProxyCliAccountControlClient implements ProxyCliAccount
                 502,
                 previous: $exception,
             );
-        } finally {
-            if (is_string($caFile) && is_file($caFile)) {
-                unlink($caFile);
-            }
         }
     }
 }
