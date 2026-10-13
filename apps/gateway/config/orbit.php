@@ -94,7 +94,6 @@ return [
         // Comma-separated GitHub logins requested as reviewers after a task pull request is opened or reused.
         // Unset or empty requests no one. The pull request author is omitted at request time.
         'review_request_logins' => TaskReviewRequestLogins::parseEnv(env('ORBIT_TASKS_REVIEW_REQUEST_LOGINS')),
-        'worker_user' => env('ORBIT_TASKS_WORKER_USER'),
         'implementer_agent_driver' => env('ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER', 'pi'),
         'reviewer_agent_driver' => env('ORBIT_TASKS_REVIEWER_AGENT_DRIVER', 'pi'),
         // Models for new groups. Unset keeps TaskAgentDefaults.
