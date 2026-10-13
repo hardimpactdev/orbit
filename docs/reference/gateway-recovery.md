@@ -223,17 +223,17 @@ The serving phase:
 
 1. publishes the Gateway Node's Caddyfile when the render changed, with a graceful Caddy reload;
 2. compares the rendered pool with `/etc/php/8.5/fpm/pool.d/orbit-gateway.conf` and reloads PHP-FPM only for a difference, as a reload ends requests in flight;
-3. installs the hibernator, agent-view, and [release units](#release-units) again and restarts agent-view. The units name the stable `/home/orbit/orbit/apps/gateway` path.
+3. installs the hibernator, agent-view, and [release units](#release-units) again and restarts agent-view. The units name the stable `/home/orbit/orbit/apps/gateway` path;
+4. moves [Laravel Horizon](/reference/gateway-queue#releases) to the new release, with `php artisan horizon:terminate` while it runs.
 
 The scheduler phase:
 
 1. moves the scheduler to the new release without cutting off a scheduled command;
 2. restarts every other Gateway Node Process whose directory is in the Gateway application, except the `horizon` Process;
 3. resumes [document cleanup](/reference/project-documents#restore-time-cleanup-gate);
-4. moves [Laravel Horizon](/reference/gateway-queue#releases) to the new release with `php artisan horizon:terminate`;
-5. moves the jobs left in the old database queues to the [Gateway queue](/reference/gateway-queue#releases);
-6. updates the Gateway Node's own `orbit-agent` to the release's pin, described below;
-7. resets OPcache, described below.
+4. moves the jobs left in the old database queues to the [Gateway queue](/reference/gateway-queue#releases);
+5. updates the Gateway Node's own `orbit-agent` to the release's pin, described below;
+6. resets OPcache, described below.
 
 PHP-FPM is not restarted for a release. Caddy resolves the `/home/orbit/orbit` link for each request (`resolve_root_symlink`) and passes PHP-FPM the release's real script path. A request that started before the switch finishes on its release, and the next one runs the new release. The `/grafana` authorization resolves the link the same way. A fixed script path through the link would let each PHP-FPM worker keep the old release in its realpath cache for up to two minutes.
 
@@ -317,9 +317,11 @@ A verified release starts with the step `tick` set to `pending`. The step record
 | `confirmed` | A tick started at or after `since` and ran the release's own commit. It records `last_tick_at`, `last_tick_version`, and `decided_at`. A tick that ran during smoke confirms the release at once |
 | `missed` | The first runner tick after `deadline` saw no such tick. It records the last tick it saw and raises at most one [`release_scheduler_silent` alert](#release-alerts), stored as `tick.alert` |
 | `skipped` | The tasks extension is disabled, so the scheduler runs no `tasks:tick` |
+
+While the [Gateway queue](/reference/gateway-queue) is set, Horizon runs `tasks:tick`. During a release, the old Horizon master can wait up to 1700 seconds for a long job, and no master is registered until it exits. While no master is registered, a confirmation past its deadline stays `pending`, for at most those 1700 seconds more. The alert then names the scheduler Process and the `horizon` Process.
 | `superseded` | A newer verified release went live. That release has a confirmation of its own. While another release is only being tried, the step stays `pending`, because a failed attempt switches back |
 
-A missed confirmation does not switch back or pause. The release passed verify and smoke, and its scheduler runs the new code, so a forward fix still ships automatically. The record stays `verified`, and the fleet rollout follows it as usual. Check the scheduler unit with `systemctl status` and its journal. `gateway:release:show` lists the step with the others, and `gateway:release:auto:status` shows it for the current release as `tick_confirmation`.
+A missed confirmation does not switch back or pause. The release passed verify and smoke, and its scheduler runs the new code, so a forward fix still ships automatically. The record stays `verified`, and the fleet rollout follows it as usual. Check the scheduler Process with `orbit process:list` and `orbit process:logs`. While the [Gateway queue](/reference/gateway-queue) is set, check the `horizon` Process too. `gateway:release:show` lists the step with the others, and `gateway:release:auto:status` shows it for the current release as `tick_confirmation`.
 
 Run the same smoke by hand against the live Gateway. It runs `bin/gateway-smoke` of the current release for its commit, or for the commit you name. It changes nothing and writes no release record.
 
