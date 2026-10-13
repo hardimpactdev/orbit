@@ -11,6 +11,8 @@ use App\Domain\Tasks\AgentThreadStart;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskThreadRole;
+use App\Domain\TaskVms\TaskVmPublishState;
+use App\Domain\TaskVms\TaskVmQueue;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -22,6 +24,7 @@ use App\Infrastructure\Tasks\Pi\PiConnection;
 use App\Infrastructure\Tasks\Pi\PiDriver;
 use App\Infrastructure\Tasks\TaskWorkerUser;
 use App\Infrastructure\Tasks\TaskWorkspaceExecutor;
+use App\Jobs\TaskVms\PublishTaskVmCommit;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Node;
@@ -30,6 +33,7 @@ use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Symfony\Component\Process\Process;
 use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\AppDevFakeSshExecutor;
@@ -154,7 +158,8 @@ describe('publish and fetch', function (): void {
         (new Process(['git', 'init', '--quiet', '-b', 'main', $root.'/upstream']))->mustRun();
         $git($root.'/upstream', 'commit', '--quiet', '--allow-empty', '-m', 'Start');
         $git($root.'/upstream', 'push', '--quiet', $root.'/origin.git', 'main');
-        GitRemoteRedirect::global($root.'/origin.git', 'git@github.com:acme/shop.git');
+        // The Project names the repository in SSH form. The mirror reaches it over HTTPS.
+        GitRemoteRedirect::global($root.'/origin.git', 'https://github.com/acme/shop.git');
         (new Process(['git', 'init', '--quiet', $root.'/vm']))->mustRun();
         $git($root.'/vm', 'remote', 'add', 'origin', 'git@github.com:acme/shop.git');
         $group = tvm_glue_group();
@@ -168,9 +173,29 @@ describe('publish and fetch', function (): void {
             $git($root.'/vm', 'checkout', '--quiet', '-B', 'task-'.$group->id, 'refs/remotes/origin/main');
             $git($root.'/vm', 'commit', '--quiet', '--allow-empty', '-m', 'Export');
             $commit = $git($root.'/vm', 'rev-parse', 'HEAD');
-            app(GitHubTaskPullRequestPublisher::class)->push($group, $commit);
+            Queue::fake();
+            $publisher = app(GitHubTaskPullRequestPublisher::class);
+
+            // The tick only queues the push and sees it pending, and asking again queues nothing new.
+            foreach ([1, 2] as $attempt) {
+                try {
+                    $publisher->push($group, $commit);
+                    $this->fail('The push did not wait for its job.');
+                } catch (TaskPullRequestException $exception) {
+                    expect($exception->pending)->toBeTrue();
+                }
+            }
+            Queue::assertPushedOn(TaskVmQueue::Git->value, PublishTaskVmCommit::class);
+            Queue::assertPushed(PublishTaskVmCommit::class, 1);
+            $job = Queue::pushed(PublishTaskVmCommit::class)->sole();
+            expect([$job->connection, $job->commit, $job->branch])->toBe(['task-vms', $commit, 'task-'.$group->id])
+                ->and($transport->sent)->toHaveCount(2);
+
+            $job->handle($publisher);
+            $publisher->push($group, $commit);
 
             expect($git($root.'/origin.git', 'rev-parse', 'refs/heads/task-'.$group->id))->toBe($commit)
+                ->and(TaskVm::query()->where('group_id', $group->id)->sole()->publish_state)->toBe(TaskVmPublishState::Pushed)
                 ->and($transport->sent)->not->toBeEmpty();
             foreach ($transport->sent as [$connection, $command]) {
                 $input = $command->protectedInput?->stream();
@@ -182,6 +207,40 @@ describe('publish and fetch', function (): void {
             GitRemoteRedirect::clear();
             TestOrbitHome::clearScratch();
         }
+    });
+
+    it('reports a failed or lost publish job once, then queues the push again', function (array $row, string $reason): void {
+        tvm_glue_ssh();
+        Queue::fake();
+        $group = tvm_glue_group();
+        $commit = str_repeat('a', 40);
+        TaskVm::query()->where('group_id', $group->id)->update(['publish_commit' => $commit, 'publish_branch' => 'task-'.$group->id, ...$row]);
+        $publisher = app(GitHubTaskPullRequestPublisher::class);
+
+        expect(fn () => $publisher->push($group, $commit))->toThrow(TaskPullRequestException::class, $reason);
+        try {
+            $publisher->push($group, $commit);
+            $this->fail('The push was not queued again.');
+        } catch (TaskPullRequestException $exception) {
+            expect($exception->pending)->toBeTrue();
+        }
+        Queue::assertPushed(PublishTaskVmCommit::class, 1);
+    })->with([
+        'failed' => [['publish_state' => 'failed', 'publish_error' => 'The task branch could not be pushed. rejected'], 'The task branch could not be pushed. rejected'],
+        'lost' => [['publish_state' => 'queued', 'publish_queued_at' => now()->subHour()], 'the publish job did not finish in 2400 seconds.'],
+    ]);
+
+    it('records a publish job that stopped as failed, and ignores a job for another commit', function (): void {
+        $group = tvm_glue_group();
+        $vm = TaskVm::query()->where('group_id', $group->id)->sole();
+        $vm->update(['publish_commit' => str_repeat('a', 40), 'publish_branch' => 'task-'.$group->id, 'publish_state' => TaskVmPublishState::Queued, 'publish_queued_at' => now()]);
+
+        (new PublishTaskVmCommit($vm->id, str_repeat('b', 40), 'task-'.$group->id))->handle(app(GitHubTaskPullRequestPublisher::class));
+        expect($vm->fresh()?->publish_state)->toBe(TaskVmPublishState::Queued);
+
+        (new PublishTaskVmCommit($vm->id, str_repeat('a', 40), 'task-'.$group->id))->failed(new RuntimeException('Timed out.'));
+        expect($vm->fresh()?->publish_state)->toBe(TaskVmPublishState::Failed)
+            ->and($vm->fresh()?->publish_error)->toBe('The task branch could not be pushed: Timed out.');
     });
 
     it('refuses to push or fetch once the task VM is not ready', function (TaskVmState $state): void {

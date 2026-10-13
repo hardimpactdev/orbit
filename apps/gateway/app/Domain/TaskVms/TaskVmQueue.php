@@ -21,4 +21,7 @@ enum TaskVmQueue: string
 
     /** The nightly base image refreshes of the Incus hosts and of UpCloud, each up to about 25 minutes. */
     case Images = 'task-vm-images';
+
+    /** Push a task VM's approved commit from the Gateway's mirror, at most about 27 minutes for a VM that sends slowly. */
+    case Git = 'task-vm-git';
 }

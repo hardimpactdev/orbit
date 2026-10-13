@@ -7,6 +7,7 @@ namespace App\Models;
 use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmProviderKind;
+use App\Domain\TaskVms\TaskVmPublishState;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\TaskVmTopologyState;
@@ -34,6 +35,11 @@ use Throwable;
  * @property string|null $topology_run
  * @property Carbon|null $topology_started_at
  * @property string|null $topology_error
+ * @property string|null $publish_commit
+ * @property string|null $publish_branch
+ * @property TaskVmPublishState|null $publish_state
+ * @property string|null $publish_error
+ * @property Carbon|null $publish_queued_at
  * @property string|null $provider_id
  * @property string|null $ssh_host_key
  * @property string $name
@@ -67,7 +73,8 @@ final class TaskVm extends Model
     /** @var list<string> */
     #[\Override]
     protected $fillable = [
-        'group_id', 'host_node_id', 'node_id', 'provider', 'size', 'topology', 'topology_state', 'topology_run', 'topology_started_at', 'topology_error', 'provider_id', 'ssh_host_key', 'name', 'state', 'address', 'wireguard_ip',
+        'group_id', 'host_node_id', 'node_id', 'provider', 'size', 'topology', 'topology_state', 'topology_run', 'topology_started_at', 'topology_error',
+        'publish_commit', 'publish_branch', 'publish_state', 'publish_error', 'publish_queued_at', 'provider_id', 'ssh_host_key', 'name', 'state', 'address', 'wireguard_ip',
         'pi_token', 'model_key', 'model_proxy_origin', 'claimed_at', 'warmed_at', 'image_fingerprint',
         'error_code', 'error_message', 'ready_at', 'destroyed_at',
     ];
@@ -91,6 +98,8 @@ final class TaskVm extends Model
             'topology' => 'array',
             'topology_state' => TaskVmTopologyState::class,
             'topology_started_at' => 'datetime',
+            'publish_state' => TaskVmPublishState::class,
+            'publish_queued_at' => 'datetime',
             'pi_token' => 'encrypted',
             'model_key' => 'encrypted',
             'claimed_at' => 'datetime',

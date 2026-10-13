@@ -77,8 +77,14 @@ final readonly class NativeProcessRunner implements ProcessRunner
             try {
                 do {
                     $running = $process->isRunning();
+                    // The runner keeps its own bounded copy, so each buffer is cleared right after its read. Symfony's
+                    // buffer would otherwise hold the whole stream again in a temporary file, such as a Git pack of up
+                    // to 2 GiB that the output callback already wrote. A read of one stream can buffer more of the
+                    // other, so neither is cleared before it is read.
                     $consume(ProcessOutputStream::Stdout, $process->getIncrementalOutput());
+                    $process->clearOutput();
                     $consume(ProcessOutputStream::Stderr, $process->getIncrementalErrorOutput());
+                    $process->clearErrorOutput();
                     $this->emitPendingOutput($pendingOutput, $invocation->output);
 
                     if ($running && ($invocation->cancelled) !== null && ($invocation->cancelled)()) {

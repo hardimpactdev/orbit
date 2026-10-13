@@ -2258,6 +2258,8 @@ function scheduler_approved_subtask(string $slug, bool $last = false, ?string $r
 
         public int $pushFailures = 0;
 
+        public int $pushPending = 0;
+
         public function publish(Task $group, string $body, string $commit): string
         {
             $this->bodies[] = $body;
@@ -2270,6 +2272,11 @@ function scheduler_approved_subtask(string $slug, bool $last = false, ?string $r
         {
             $this->pushes[] = $group->id;
             $this->commits[] = $commit;
+            if ($this->pushPending > 0) {
+                $this->pushPending--;
+
+                throw TaskPullRequestException::pending('Orbit is pushing commit '.$commit.'.');
+            }
             if ($this->pushFailures > 0) {
                 $this->pushFailures--;
 
@@ -2350,6 +2357,25 @@ it('retries a failed push of an approved subtask without committing again', func
         ->and($publisher->pushes)->toBe([$group->id, $group->id])
         ->and($task->fresh()?->status)->toBe(TaskStatus::Completed)
         ->and(Task::query()->where('title', 'Routes')->sole()->status)->toBe(TaskStatus::Running);
+});
+
+it('waits for a queued push of an approved subtask without counting a failure', function (): void {
+    [$group, $task, $signer, $publisher] = scheduler_approved_subtask('push-pending');
+    $publisher->pushPending = 1;
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
+        ->and($task->fresh()?->communication_failures)->toBe(0)
+        ->and($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and($publisher->pushes)->toBe([$group->id]);
+
+    // No backoff: the next tick asks again, and the push is done.
+    app(TaskScheduler::class)->tick();
+
+    expect($publisher->pushes)->toBe([$group->id, $group->id])
+        ->and($signer->messages)->toHaveCount(1)
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Completed);
 });
 
 it('retries a failed push when the reviewer is unavailable', function (): void {

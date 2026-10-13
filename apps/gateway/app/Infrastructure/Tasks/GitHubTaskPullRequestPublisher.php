@@ -18,21 +18,26 @@ use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskRemoteBranch;
 use App\Domain\Tasks\TaskReviewRequestLogins;
+use App\Domain\TaskVms\TaskVmPublishState;
 use App\Domain\TaskVms\TaskVmWorkspaceGuard;
 use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\TaskVms\TaskVmGit;
+use App\Jobs\TaskVms\PublishTaskVmCommit;
 use App\Models\Instance;
+use App\Models\Project;
 use App\Models\Task;
+use App\Models\TaskVm;
 use Illuminate\Support\Facades\Log;
 use SensitiveParameter;
+use Throwable;
 
 /**
  * The token reaches the Node only on the SSH process's standard input, as for a read
  * ([ADR 0098](/decisions/0098-read-github-repositories-through-a-gateway-owned-github-app)).
- * A task VM never gets the token: the Gateway pushes from its mirror ({@see TaskVmGit::publish()}).
+ * A task VM never gets the token: a queued job pushes from the Gateway's mirror ({@see TaskVmGit::publish()}).
  * A failed push names git's error, with the token removed. A missing Workflows permission is named.
  */
 final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPublisher
@@ -42,6 +47,12 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
 
     /** End of those lines, in bytes, so one huge line cannot fill the assistance reason. */
     private const int PushErrorBytes = 2000;
+
+    /**
+     * A queued push that has not finished after this long failed: the job's 1700 seconds, a minute for its worker to
+     * start, and a margin.
+     */
+    private const int PublishStaleSeconds = 2400;
 
     private const string WorkflowRefusal = 'GitHub refused a change under .github/workflows/: grant the Orbit GitHub App the Workflows (read and write) permission, or push the commit yourself.';
 
@@ -146,7 +157,7 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
         }
         $instance->loadMissing(['node', 'project']);
         if ($group->task_compute === TaskCompute::Vm) {
-            $this->publishFromVm($group, $instance, $branch, $token, $commit);
+            $this->publishFromVm($group, $branch, $commit);
 
             return;
         }
@@ -171,28 +182,103 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
 
     /**
      * A task VM never gets the token. The Gateway takes the approved commit out of the VM into its mirror and pushes
-     * from there ([Git on a task VM](/reference/compute-drivers#publish-from-the-vm)). The mirror first fetches the
-     * default branch and the task branch, so the VM sends only the new objects.
+     * from there ([Git on a task VM](/reference/compute-drivers#publish-from-the-vm)). That transfer runs at the VM's
+     * pace, so a queued job runs it ({@see PublishTaskVmCommit}) and this call only queues and observes it: it returns
+     * once GitHub has the commit at the branch, reports a failed job once, and is pending in between. The task VM row
+     * holds the commit and branch of the push, so a repeated call queues nothing new.
+     *
+     * @throws TaskPullRequestException pending while the job waits or runs
      */
-    private function publishFromVm(Task $group, Instance $instance, string $branch, #[SensitiveParameter] string $token, string $commit): void
+    private function publishFromVm(Task $group, string $branch, string $commit): void
     {
-        $project = $instance->project;
-        $access = GitReadEnvironment::forGitHubToken($token);
-        $default = $group->project->default_branch;
+        $vm = TaskVm::forGroup($group) ?? throw new TaskPullRequestException('The task workspace is unavailable.');
+        if ($vm->publish_commit === $commit && $vm->publish_branch === $branch && $vm->publish_state instanceof TaskVmPublishState) {
+            if ($vm->publish_state === TaskVmPublishState::Pushed) {
+                return;
+            }
+            $stale = $vm->publish_state === TaskVmPublishState::Queued
+                && ! ($vm->publish_queued_at?->isAfter(now()->subSeconds(self::PublishStaleSeconds)) ?? false);
+            if ($vm->publish_state === TaskVmPublishState::Queued && ! $stale) {
+                throw TaskPullRequestException::pending("Orbit is pushing commit {$commit} to {$branch}.");
+            }
+            // The failure is reported once. The next push, after the scheduler's backoff, queues a new job.
+            TaskVm::query()->whereKey($vm->id)->where('publish_commit', $commit)->where('publish_branch', $branch)
+                ->where('publish_state', $vm->publish_state)->update(['publish_state' => null]);
+
+            throw new TaskPullRequestException($stale
+                ? 'The task branch could not be pushed: the publish job did not finish in '.self::PublishStaleSeconds.' seconds.'
+                : ($vm->publish_error ?? 'The task branch could not be pushed.'));
+        }
+        $vm->update([
+            'publish_commit' => $commit, 'publish_branch' => $branch, 'publish_state' => TaskVmPublishState::Queued,
+            'publish_error' => null, 'publish_queued_at' => now(),
+        ]);
+        PublishTaskVmCommit::dispatch($vm->id, $commit, $branch);
+
+        throw TaskPullRequestException::pending("Orbit is pushing commit {$commit} to {$branch}.");
+    }
+
+    /**
+     * The work of {@see PublishTaskVmCommit}: fetches the default branch and the task branch into the mirror, so the VM
+     * sends only the new objects, then takes the approved commit out of the VM and pushes exactly that commit. It acts
+     * only while the row still names this commit and branch as queued, and records the result there.
+     *
+     * @param  float  $deadline  a `microtime(true)` that no Git command may outlast
+     */
+    public function publishQueued(TaskVm $vm, string $commit, string $branch, float $deadline): void
+    {
+        $queued = static fn () => TaskVm::query()->whereKey($vm->id)->where('publish_commit', $commit)
+            ->where('publish_branch', $branch)->where('publish_state', TaskVmPublishState::Queued);
+        if (! $queued()->exists()) {
+            return;
+        }
         try {
-            $tips = $this->git->fetch($project, array_values(array_filter([is_string($default) && GitBranchName::isValid($default) ? $default : null, $branch], is_string(...))), $access, 'tasks.push_failed');
-            $this->git->publish(
-                $project,
-                $instance->checkout_path,
-                $commit,
-                $branch,
-                array_values(array_filter($tips, is_string(...))),
-                $access,
-                fn (RemoteCommand $command): CommandResult => $this->workspaces->execute($instance, $command, 'task-pull-request-push', 'tasks.push_failed'),
-                'tasks.push_failed',
-            );
-        } catch (RuntimeConvergenceException $exception) {
-            $this->failedPush($exception, $token);
+            $group = $vm->group ?? throw new TaskPullRequestException('The task workspace is unavailable.');
+            [$repository, $instance, $expected] = $this->target($group);
+            if ($expected !== $branch || $group->task_compute !== TaskCompute::Vm) {
+                throw new TaskPullRequestException('The task workspace is unavailable.');
+            }
+            $instance->loadMissing(['node', 'project']);
+            $token = $this->access->token($repository);
+            $project = $instance->project;
+            $access = GitReadEnvironment::forGitHubToken($token);
+            $default = $group->project->default_branch;
+            try {
+                $tips = $this->git->fetch($project, array_values(array_filter([is_string($default) && GitBranchName::isValid($default) ? $default : null, $branch], is_string(...))), $access, 'tasks.push_failed', $deadline);
+                $this->git->publish(
+                    $project,
+                    $instance->checkout_path,
+                    $commit,
+                    $branch,
+                    array_values(array_filter($tips, is_string(...))),
+                    $access,
+                    fn (RemoteCommand $command): CommandResult => $this->workspaces->execute($instance, $command, 'task-pull-request-push', 'tasks.push_failed'),
+                    'tasks.push_failed',
+                    $deadline,
+                );
+            } catch (RuntimeConvergenceException $exception) {
+                $this->failedPush($exception, $token);
+            }
+        } catch (TaskPullRequestException $exception) {
+            $queued()->update(['publish_state' => TaskVmPublishState::Failed, 'publish_error' => $exception->getMessage()]);
+
+            return;
+        } catch (GitHubApiException $exception) {
+            $queued()->update(['publish_state' => TaskVmPublishState::Failed, 'publish_error' => 'The task branch could not be pushed: '.$exception->getMessage()]);
+
+            return;
+        }
+        $queued()->update(['publish_state' => TaskVmPublishState::Pushed, 'publish_error' => null]);
+        $this->collectGarbage($project, $deadline);
+    }
+
+    /** A failed collection only leaves the mirror larger. The next publish tries again. */
+    private function collectGarbage(Project $project, float $deadline): void
+    {
+        try {
+            $this->git->collectGarbage($project, $deadline);
+        } catch (Throwable $exception) {
+            Log::warning('The task VM Git mirror could not collect garbage.', ['project_id' => $project->id, 'reason' => $exception->getMessage()]);
         }
     }
 

@@ -1109,7 +1109,7 @@ describe('worker', function (): void {
 
         expect($worker)->not->toBeNull()
             ->and($worker->command)->toEndWith("'artisan' queue:work task-vms --queue=task-vms --stop-when-empty --max-time=120 --timeout=1500")
-            ->and($worker)->toBe($events[count($events) - 3])
+            ->and($worker)->toBe($events[count($events) - 4])
             ->and($worker->expression)->toBe('* * * * *')
             ->and($worker->repeatSeconds)->toBe(1)
             ->and($worker->withoutOverlapping)->toBeTrue()

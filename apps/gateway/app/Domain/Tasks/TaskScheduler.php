@@ -944,7 +944,10 @@ final readonly class TaskScheduler
         try {
             $this->publisher->push($group, $commit);
         } catch (TaskPullRequestException $exception) {
-            $this->failPublication($group, $task, $exception->getMessage());
+            // A task VM's push runs in a queued job. A later tick sees it done.
+            if (! $exception->pending) {
+                $this->failPublication($group, $task, $exception->getMessage());
+            }
 
             return;
         }
@@ -959,7 +962,9 @@ final readonly class TaskScheduler
             try {
                 $url = $this->publisher->publish($group, TaskPullRequestDescription::render($pullRequest, $group->tasks()->whereNotIn('status', [TaskStatus::Cancelled, TaskStatus::Failed])->count(), $group->project->taskCheckCommand()), $commit);
             } catch (TaskPullRequestException $exception) {
-                $this->failPublication($group, $task, $exception->getMessage());
+                if (! $exception->pending) {
+                    $this->failPublication($group, $task, $exception->getMessage());
+                }
 
                 return;
             }
@@ -1016,6 +1021,9 @@ final readonly class TaskScheduler
                     $group->update(['pr_url' => $url]);
                 }
             } catch (TaskPullRequestException $exception) {
+                if ($exception->pending) {
+                    return;
+                }
                 $moved = $incoming ? $this->pullRequestWatcher->health($group)?->headSha : null;
                 if (is_string($moved) && $moved !== $commit && ! TaskFinalReview::isReviewed($group, $moved)) {
                     $this->mergeAuthorPush($group, $task, $receipt, $moved);
@@ -3230,6 +3238,10 @@ final readonly class TaskScheduler
                 Log::warning('Removed the workspace of an ended task group.', ['task_group_id' => $group->id, 'instance_id' => $instance->id]);
                 $removed++;
             } catch (Throwable $exception) {
+                // The push of a cancelled approval from a task VM runs in a queued job. A later sweep removes the workspace.
+                if ($exception instanceof TaskPullRequestException && $exception->pending) {
+                    continue;
+                }
                 report($exception);
                 $prefix = in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)
                     ? RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix
