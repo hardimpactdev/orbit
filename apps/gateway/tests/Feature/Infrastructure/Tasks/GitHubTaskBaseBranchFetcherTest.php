@@ -55,7 +55,7 @@ function fetcher_group(string $checkout): Task
         GitRemoteRedirect::global(dirname($checkout).'/origin.git', 'git@github.com:acme/shop.git');
     }
 
-    return $group->fresh(['project', 'taskable']) ?? $group;
+    return test_vm_group($group);
 }
 
 function fetcher(SshExecutor $transport): GitHubTaskBaseBranchFetcher

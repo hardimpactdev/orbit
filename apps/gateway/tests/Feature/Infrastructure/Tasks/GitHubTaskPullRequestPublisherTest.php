@@ -44,7 +44,7 @@ function publisher_group(string $checkout, string $repository = 'git@github.com:
         GitRemoteRedirect::global(dirname($checkout).'/origin.git', $repository);
     }
 
-    return $group;
+    return test_vm_group($group);
 }
 
 function publisher(SshExecutor $transport): GitHubTaskPullRequestPublisher
