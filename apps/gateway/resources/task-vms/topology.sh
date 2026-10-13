@@ -2,7 +2,8 @@
 # Prepares a task group's declared E2E topology nested in its task VM, as the managed user.
 #
 #   topology.sh start RUN CHECKOUT ISSUE NODES POOL_SIZE VPN_SUBNET   install this script and start the unit for RUN
-#   topology.sh status RUN                                 print the state of RUN as one JSON line
+#   topology.sh status RUN                                 print the state of RUN as one JSON line; a ready run from
+#                                                          an earlier boot of the VM is `stale`
 #   topology.sh run RUN CHECKOUT ISSUE NODES POOL_SIZE VPN_SUBNET     the unit's work: host setup, role images, acquire
 #
 # The Gateway runs it with `bash -c`, and sends it on stdin too to `start`, which installs it for the unit. `run`
@@ -44,7 +45,16 @@ case ${1-} in
     status)
         [[ $# -eq 2 ]] && valid_run "$2" || exit 64
         if [[ -s $state/$2.json ]]; then
-            cat -- "$state/$2.json"
+            # A ready topology from an earlier boot is gone: its guests stopped with the VM. A run written before the
+            # boot ID was recorded has none, and counts as ready.
+            # shellcheck disable=SC2016 # PHP code, not shell.
+            php -r '
+                $result = json_decode((string) file_get_contents($argv[1]), true, 16, JSON_THROW_ON_ERROR);
+                if (($result["state"] ?? null) === "ready" && isset($result["boot_id"]) && $result["boot_id"] !== trim((string) file_get_contents("/proc/sys/kernel/random/boot_id"))) {
+                    $result = ["state" => "stale"];
+                }
+                echo json_encode($result, JSON_UNESCAPED_SLASHES), "\n";
+            ' -- "$state/$2.json"
         elif systemctl is-active --quiet "$unit_prefix$2.service"; then
             echo '{"state":"running"}'
         else
@@ -63,7 +73,8 @@ case ${1-} in
             # shellcheck disable=SC2016 # PHP code, not shell.
             php -r '
                 $tail = array_slice(file($argv[4], FILE_IGNORE_NEW_LINES) ?: [], -40);
-                echo json_encode(["state" => $argv[1], "step" => $argv[2], "seconds" => (int) $argv[3], "log" => implode("\n", $tail)], JSON_UNESCAPED_SLASHES), "\n";
+                $boot = trim((string) file_get_contents("/proc/sys/kernel/random/boot_id"));
+                echo json_encode(["state" => $argv[1], "step" => $argv[2], "seconds" => (int) $argv[3], "boot_id" => $boot, "log" => implode("\n", $tail)], JSON_UNESCAPED_SLASHES), "\n";
             ' -- "$1" "$step" "$((SECONDS - started))" "$log" >"$state/$run.json.new"
             mv -f -- "$state/$run.json.new" "$state/$run.json"
         }

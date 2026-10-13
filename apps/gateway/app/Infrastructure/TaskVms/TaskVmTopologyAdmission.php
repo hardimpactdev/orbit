@@ -25,6 +25,7 @@ use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskVm;
 use Carbon\CarbonInterface;
+use Illuminate\Support\Facades\Log;
 use JsonException;
 
 /**
@@ -76,7 +77,12 @@ final readonly class TaskVmTopologyAdmission implements TaskTopologyAdmission
             };
         }
         if ($vm->topology_state === TaskVmTopologyState::Ready && TaskTopology::covers($vm->topology ?? [], $topology)) {
-            return;
+            // The VM can restart without a park, and its nested guests stop with it. A run from an earlier boot is
+            // stale, so the topology is prepared again; images and host setup stay.
+            if (($this->status($vm)['state'] ?? null) === 'ready') {
+                return;
+            }
+            Log::warning('The task VM restarted since its topology was ready; preparing it again.', ['task_vm' => $vm->name]);
         }
         $this->start($vm, $vm->node, $instance, $group, $topology);
 
@@ -180,7 +186,7 @@ final readonly class TaskVmTopologyAdmission implements TaskTopologyAdmission
         }
         $vm->update(['topology_state' => null, 'topology_run' => null, 'topology_error' => $reason]);
 
-        throw new TaskTopologyFailedException('Task VM: '.$reason.' Post a resolution to prepare it again.');
+        throw new TaskTopologyFailedException($reason);
     }
 
     private function run(Node $node, RemoteCommand $command): CommandResult

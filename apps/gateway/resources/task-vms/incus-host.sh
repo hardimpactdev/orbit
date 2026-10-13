@@ -121,10 +121,10 @@ YAML
             --project "$project"
     fi
 
-    # Restricted project: no privileged or nested containers, no host paths or devices, no low-level config, and no
-    # network other than the task bridge. Task VMs need none of these, so whatever runs in the project cannot ask
-    # for them either.
-    incus project set "$project" restricted=true "restricted.networks.access=$network"
+    # Restricted project: no privileged or nested containers, no host paths or devices, and no network other than the
+    # task bridge. Low-level VM config stays allowed, because medium and large VMs set `raw.qemu.conf` for free page
+    # reporting; only the Gateway sets instance config here, never a guest.
+    incus project set "$project" restricted=true "restricted.networks.access=$network" restricted.virtual-machines.lowlevel=allow
 
     # Stock Ubuntu cloud image, copied once.
     if ! exists incus image show "$image" --project "$project"; then
