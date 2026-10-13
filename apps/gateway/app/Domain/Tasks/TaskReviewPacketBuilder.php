@@ -54,6 +54,8 @@ final readonly class TaskReviewPacketBuilder
             threadId: $threadId,
             groupStartCommit: TaskReviewBase::groupStartCommit($group),
             consults: $continued ? [] : $this->consults($task),
+            groupId: $group->id,
+            topology: TaskTopology::from($task->topology ?? []),
         )->render();
     }
 

@@ -7,7 +7,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskStatus;
-use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmProviderKind;
@@ -48,7 +47,6 @@ use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
-use Tests\Support\AvailableTopologyAdmission;
 use Tests\Support\TaskVmSettingsBuilder;
 
 use function Pest\Laravel\mock;
@@ -376,9 +374,8 @@ describe('placement', function (): void {
 
     it('never places a large VM at UpCloud', function (): void {
         tvm_up_settings(maxVms: 2);
-        app()->instance(TaskTopologyAdmission::class, new AvailableTopologyAdmission);
         $group = tvm_up_group();
-        Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Dev', 'brief' => 'Dev', 'status' => TaskStatus::Todo, 'topology' => ['app-dev']]);
+        Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Dev', 'brief' => 'Dev', 'status' => TaskStatus::Todo, 'topology' => ['app-dev', 'app-prod']]);
 
         expect(fn () => app(AllocateTaskVmAction::class)->execute($group))->toThrow(TaskCapacityException::class, AllocateTaskVmAction::noCapacityFor(TaskVmSize::Large))
             ->and(TaskVm::query()->where('provider', TaskVmProviderKind::UpCloud)->count())->toBe(0)

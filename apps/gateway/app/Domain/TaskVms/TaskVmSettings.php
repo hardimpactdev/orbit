@@ -43,6 +43,7 @@ final readonly class TaskVmSettings
      * @param  list<TaskVmHost>  $hosts
      * @param  list<string>  $piModels
      * @param  list<int>  $mediumProjectIds
+     * @param  array<int, list<string>>  $topologyPaths  Project id => path patterns that need a declared topology
      */
     public function __construct(
         public bool $enabled,
@@ -56,6 +57,7 @@ final readonly class TaskVmSettings
         public int $parkAfterMinutes = 30,
         public ?TaskVmUpCloud $upcloud = null,
         public array $mediumProjectIds = [],
+        public array $topologyPaths = [],
     ) {}
 
     public static function fromConfig(): self
@@ -94,6 +96,7 @@ final readonly class TaskVmSettings
             parkAfterMinutes: self::parkAfterMinutes(Config::get('task_vms.park_after_minutes')),
             upcloud: self::upcloud($enabled),
             mediumProjectIds: self::projectIds(Config::get('task_vms.medium_projects', []), 'medium_projects'),
+            topologyPaths: self::topologyPaths(Config::get('task_vms.topology_paths', [])),
         );
     }
 
@@ -334,6 +337,30 @@ final readonly class TaskVmSettings
         }
 
         return array_values(array_unique($value));
+    }
+
+    /**
+     * A JSON object from Project id to a list of path patterns, in the syntax of file deliverables. A key is a JSON
+     * string, so `{"46": [...]}`; PHP decodes a numeric key to an integer.
+     *
+     * @return array<int, list<string>>
+     */
+    private static function topologyPaths(mixed $value): array
+    {
+        $invalid = static fn (): TaskVmException => self::invalid('topology_paths must be a JSON object from Project id to a list of path patterns.');
+        if (! is_array($value) || ($value !== [] && array_is_list($value))) {
+            throw $invalid();
+        }
+        $paths = [];
+        foreach ($value as $projectId => $patterns) {
+            if (! is_int($projectId) || $projectId < 1 || ! is_array($patterns) || ! array_is_list($patterns)
+                || array_any($patterns, static fn (mixed $pattern): bool => ! is_string($pattern) || trim($pattern) === '' || str_starts_with($pattern, '/'))) {
+                throw $invalid();
+            }
+            $paths[$projectId] = array_values(array_unique($patterns));
+        }
+
+        return $paths;
     }
 
     /** Unset or empty means 30; 0 is an error. The environment gives a string, so a whole number in a string counts. */

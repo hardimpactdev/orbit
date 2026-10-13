@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Domain\Tasks\TaskCompute;
+use App\Domain\Tasks\TaskTopologyAdmission;
+use App\Domain\TaskVms\TaskVmSettings;
 use App\Actions\Tasks\CancelTaskCheckAction;
 use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
@@ -6394,6 +6397,48 @@ function tick_deliverable_reminder(): string
 
     return app(AgentCommandDispatcher::class)->commands[0]['message']['text'] ?? '';
 }
+
+describe('topology paths at handoff', function (): void {
+    beforeEach(function (): void {
+        $this->topologyPaths = static function (Task $group): void {
+            app()->instance(TaskVmSettings::class, new TaskVmSettings(
+                enabled: false, devClusterId: null, wireguardRange: '10.44.0.128/25', hosts: [], modelProxyOrigin: null,
+                piArtifactPath: null, piArtifactSha256: null, piModels: [],
+                topologyPaths: [(int) $group->project_id => ['apps/agent/**', 'apps/gateway/app/Domain/Nodes/**']],
+            ));
+        };
+    });
+
+    it('refuses a vm handoff that changes a listed path while no subtask declares a topology', function (): void {
+        [$group, $task] = tick_deliverables([], [], tick_evidence(['diff' => [
+            ['status' => 'M', 'path' => 'apps/agent/src/main.rs'],
+            ['status' => 'M', 'path' => 'docs/reference/tasks.md'],
+        ]]));
+        $group->update(['task_compute' => TaskCompute::Vm]);
+        ($this->topologyPaths)($group);
+
+        $reminder = tick_deliverable_reminder();
+
+        expect($task->fresh()?->status)->toBe(TaskStatus::Running)
+            ->and($reminder)->toContain('This subtask changes paths that need real machines (apps/agent/src/main.rs), but no subtask of the group declares a topology');
+    });
+
+    it('passes the handoff when a subtask of the group declares a topology, the change avoids the paths, or the group is shared', function (string $case): void {
+        $diff = $case === 'other path' ? [['status' => 'M', 'path' => 'docs/reference/tasks.md']] : [['status' => 'M', 'path' => 'apps/gateway/app/Domain/Nodes/RoleName.php']];
+        [$group, $task] = tick_deliverables([], [], tick_evidence(['diff' => $diff]));
+        $group->update(['task_compute' => $case === 'shared' ? TaskCompute::Shared : TaskCompute::Vm]);
+        if ($case === 'declared') {
+            Task::query()->create(['parent_id' => $group->id, 'position' => 9, 'title' => 'Prove', 'brief' => 'On nodes', 'status' => TaskStatus::Todo, 'topology' => ['app-dev']]);
+            mock(TaskTopologyAdmission::class)->shouldReceive('prepare');
+        }
+        ($this->topologyPaths)($group);
+
+        app(TaskScheduler::class)->tick();
+        app(TaskScheduler::class)->tick();
+
+        expect($task->fresh()?->status)->toBe(TaskStatus::Reviewing);
+    })->with(['declared', 'other path', 'shared']);
+});
 
 describe('subtask deliverables at handoff', function (): void {
     it('asks the check for the diff and commands, then starts the reviewer when every deliverable passes', function (): void {

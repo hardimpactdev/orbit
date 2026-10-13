@@ -52,10 +52,19 @@ final readonly class TaskVmCloudInit
      */
     public const array WorkspaceTools = ['rsync', 'bind9-dnsutils', 'gcc', 'libc6-dev'];
 
-    /** The user-data of a task VM, which boots from the base image. */
+    /**
+     * The user-data of a task VM, which boots from the base image. `orbit` is in `incus-admin` from the first boot, before
+     * Pi starts, so the agents it starts can run a nested topology once Incus is installed. The group is a system group,
+     * as the Incus package creates it, so the package keeps it. `orbit` already has passwordless sudo, so the group
+     * grants nothing more.
+     */
     public function render(string $gatewayPublicKey): string
     {
-        return self::document(['users' => [$this->user($gatewayPublicKey)]]);
+        return self::document([
+            // The base image already has `orbit`, and cloud-init adds groups only to a user it creates.
+            'bootcmd' => [['sh', '-c', 'getent group incus-admin >/dev/null || groupadd --system incus-admin; if id orbit >/dev/null 2>&1; then usermod -aG incus-admin orbit; fi']],
+            'users' => [[...$this->user($gatewayPublicKey), 'groups' => 'incus-admin']],
+        ]);
     }
 
     /** The user-data of the base image builder, which boots from the stock image. */

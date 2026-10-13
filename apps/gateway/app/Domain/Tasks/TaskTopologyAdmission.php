@@ -5,16 +5,25 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 use App\Models\Task;
+use Carbon\CarbonInterface;
 
-/** Prepare declared resources and freshly verify them before baseline or turn dispatch. */
+/** Prepare a subtask's declared topology before its baseline check or any of its turns, and read its evidence. */
 interface TaskTopologyAdmission
 {
-    /** @throws TaskCapacityException when preparation must wait and retry */
+    /**
+     * Returns when the subtask declares no topology or its group's topology holds it.
+     *
+     * @throws TaskCapacityException while the topology is being prepared or cannot be prepared yet
+     * @throws TaskTopologyFailedException when preparing it failed
+     */
     public function prepare(Task $group, Task $task): void;
 
     /**
-     * Whether any lane can prepare declared workload nodes. While it cannot, a `vm` group whose subtasks declare a
-     * topology gets no large task VM: it waits without holding slots.
+     * The nodes the subtask declares that have no successful recorded evidence since `$since` ({@see TaskTopologyEvidence}).
+     *
+     * @return list<string>
+     *
+     * @throws TaskCheckException when the evidence log cannot be read
      */
-    public function available(): bool;
+    public function missingEvidence(Task $group, Task $task, CarbonInterface $since): array;
 }

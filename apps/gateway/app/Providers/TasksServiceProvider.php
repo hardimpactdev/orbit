@@ -46,7 +46,7 @@ use App\Infrastructure\Tasks\LaravelAiTaskBriefCoverage;
 use App\Infrastructure\Tasks\NativeDeliverablePathRepository;
 use App\Infrastructure\Tasks\NativeTaskExecutionLock;
 use App\Infrastructure\Tasks\Pi\PiDriver;
-use App\Infrastructure\Tasks\RefusingTopologyAdmission;
+use App\Infrastructure\TaskVms\TaskVmTopologyAdmission;
 use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
 use App\Infrastructure\Tasks\RemoteTaskReviewDiff;
 use App\Infrastructure\Tasks\RemoteTaskTurnReceipts;
@@ -73,7 +73,7 @@ final class TasksServiceProvider extends ServiceProvider
         InstanceProvisioning::class => TaskWorkspaceProvisioner::class,
         TaskWorkspaceRoute::class => TaskWorkspaceProvisioner::class,
         TaskWorkspaceTopology::class => RemoteTaskWorkspaceTopology::class,
-        TaskTopologyAdmission::class => RefusingTopologyAdmission::class,
+        TaskTopologyAdmission::class => TaskVmTopologyAdmission::class,
         AgentSpawner::class => TaskAgentSpawner::class,
         TaskWorkspaceMcp::class => RemoteTaskWorkspaceMcp::class,
         T3Dispatcher::class => HttpT3Dispatcher::class,

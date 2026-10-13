@@ -13,7 +13,7 @@ final readonly class TaskTopologyList implements ValidationRule
     public function validate(string $attribute, mixed $value, Closure $fail): void
     {
         if (! TaskTopology::valid($value)) {
-            $fail('Topology must be a list of distinct app-dev, app-prod, or app-prod-2 nodes.');
+            $fail(TaskTopology::Invalid);
         }
     }
 }

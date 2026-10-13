@@ -39,7 +39,31 @@ it('rejects invalid declarations without creating a group', function (mixed $top
 })->with([
     'duplicate' => [['app-dev', 'app-dev']], 'gateway' => [['gateway']], 'live host' => [['beast']],
     'scalar' => ['app-dev'], 'null' => [null], 'object' => [['name' => 'app-dev']],
+    'node twice with roles' => [['app-prod', 'app-prod+ingress']], 'unknown role' => [['app-prod+router']],
+    'conflicting role' => [['app-dev+ingress']], 'roles that conflict' => [['app-prod+ingress+database']],
+    'repeated role' => [['app-prod+ingress+ingress']], 'second production node alone' => [['app-prod-2']],
 ]);
+
+it('stores roles in canonical order and refuses a union that does not fit on one node', function (): void {
+    task_definition_gateway();
+    $project = task_definition_project('orbit');
+    $group = $this->postJson('/api/v1/task-groups', [
+        'project_id' => $project->id, 'title' => 'Roles', 'brief' => 'Declared roles.',
+        'tasks' => [['title' => 'Ingress', 'brief' => 'Public edge.', 'topology' => ['app-prod+websocket+ingress', 'app-dev+database']]],
+    ])->assertCreated()->assertJsonPath('data.tasks.0.topology', ['app-prod+ingress+websocket', 'app-dev+database'])->json('data');
+
+    // database conflicts with ingress, so a second subtask cannot add it to the same node.
+    $this->postJson('/api/v1/task-groups/'.$group['id'].'/tasks', ['title' => 'Database', 'brief' => 'Same node.', 'topology' => ['app-prod+database']])
+        ->assertUnprocessable()->assertJsonPath('error.code', 'tasks.invalid_topology');
+    $this->postJson('/api/v1/task-groups', [
+        'project_id' => $project->id, 'title' => 'Conflict', 'brief' => 'Two subtasks.',
+        'tasks' => [
+            ['title' => 'One', 'brief' => 'Edge.', 'topology' => ['app-prod+ingress']],
+            ['title' => 'Two', 'brief' => 'Data.', 'topology' => ['app-prod+database']],
+        ],
+    ])->assertUnprocessable();
+    expect(Task::query()->where('parent_id', $group['id'])->count())->toBe(1);
+});
 
 it('keeps declarations locked after a subtask has started even if its status is reset', function (): void {
     task_definition_gateway();

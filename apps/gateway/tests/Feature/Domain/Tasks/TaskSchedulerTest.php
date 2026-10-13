@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use Carbon\CarbonInterface;
+use App\Domain\Tasks\TaskTopologyFailedException;
 use App\Actions\Tasks\ShowAgentThreadsAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Actions\Tasks\UpdateTaskGroupAction;
@@ -3290,6 +3292,48 @@ it('waits for topology before baseline and retries without failed spawns or comm
     $state->ready = true;
     test_pass_baseline();
     expect($spawner->events)->toBe(['implementer:1'])->and($group->fresh()->capacity_wait_reason)->toBeNull();
+});
+
+it('asks for assistance when the declared topology fails to prepare, and starts nothing', function (): void {
+    $project = scheduler_app('topology-failed');
+    $project->update(['task_check' => 'composer check']);
+    $instance = scheduler_instance($project, scheduler_node('topology-failed-node', '10.44.0.96'), 'baseline');
+    $group = queued_group($project, 'Topology failure', $instance);
+    $spawner = scheduler_recording_spawner();
+    scheduler_bind_claim($instance, $spawner);
+    $checks = new FakeTaskCheckRunner([FakeTaskCheckRunner::passed()]);
+    app()->instance(TaskCheckRunner::class, $checks);
+    mock(TaskTopologyAdmission::class)->shouldReceive('prepare')->andThrow(new TaskTopologyFailedException('Task VM: Preparing the topology failed at step images. Post a resolution to prepare it again.'));
+
+    app(TaskScheduler::class)->claimNext();
+    test_pass_baseline();
+
+    expect($checks->starts)->toBe(0)->and($spawner->events)->toBe([])
+        ->and($group->fresh()->assistance_requested)->toBeTrue()
+        ->and($group->fresh()->assistance_reason)->toContain('failed at step images')
+        ->and($group->fresh()->capacity_wait_reason)->toBeNull();
+});
+
+it('refuses the approval of a subtask with a topology until each declared node has recorded evidence', function (): void {
+    [$group, $task, , $signer, , $dispatcher] = scheduler_review([
+        FakeTaskTurnReceipts::contents('approved', 'Proved on the nodes.'),
+    ]);
+    $task->update(['topology' => ['app-dev', 'app-prod+ingress']]);
+    $since = [];
+    $admission = mock(TaskTopologyAdmission::class);
+    $admission->shouldReceive('prepare');
+    $admission->shouldReceive('missingEvidence')->andReturnUsing(function (Task $actualGroup, Task $actualTask, CarbonInterface $from) use (&$since): array {
+        $since[] = $from;
+
+        return ['app-prod'];
+    });
+
+    app(TaskScheduler::class)->tick();
+
+    expect($signer->messages)->toBe([])
+        ->and($since)->toHaveCount(1)
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
+        ->and(json_encode($dispatcher->commands))->toContain('no recorded command that exited 0 since the last handoff on: app-prod');
 });
 
 it('polls a running baseline without mutating topology and rechecks readiness after it finishes', function (): void {

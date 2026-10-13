@@ -12,12 +12,16 @@ namespace App\Domain\Tasks;
  */
 final readonly class TaskPromptSubtask
 {
-    /** @param list<TaskDeliverable> $deliverables */
+    /**
+     * @param  list<TaskDeliverable>  $deliverables
+     * @param  list<string>  $topology  the declared test nodes, such as `app-prod+ingress`
+     */
     public function __construct(
         public int $id,
         public string $title,
         public string $brief,
         public int $position,
         public array $deliverables,
+        public array $topology = [],
     ) {}
 }

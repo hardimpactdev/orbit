@@ -21,6 +21,7 @@ final readonly class TaskPromptRenderer
             'Subtask: '.$task->title,
             $task->brief,
             TaskTurnInstructions::deliverables($deliverables),
+            TaskTurnInstructions::topology($group->id, $task->topology, reviewer: false),
             TaskTurnInstructions::groupStart($group->startCommit ?? ''),
             'Follow this repository\'s task instructions.',
         ], static fn (string $part): bool => $part !== ''));
