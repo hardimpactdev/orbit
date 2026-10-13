@@ -11,6 +11,7 @@ use App\Domain\Hibernation\RuntimeHibernatorConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
+use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Files\ProtectedFileWriter;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
@@ -34,6 +35,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Tests\Support\FakeNodeCaddyBuilds;
 use Tests\Support\Fleet\FakeFleetConvergeUnits;
+use Tests\Support\ProcessesApiFakeRuntimeManager;
 
 const HANDOFF_APP = '/home/orbit/orbit/apps/gateway';
 
@@ -456,12 +458,15 @@ describe('gateway:release:handoff', function (): void {
             ->and($schedule['opcache']['outcome'])->toBe('reset');
     });
 
-    it('terminates Horizon after the scheduler drain and then moves the old database jobs, only in the scheduler phase', function (): void {
+    it('moves Horizon in the serving phase, right after the switch, and the old database jobs after the scheduler drain', function (): void {
         config(['orbit.gateway_queue.connection' => 'services-valkey']);
         $gateway = handoff_gateway();
         handoff_scheduler($gateway);
         $horizon = handoff_scheduler($gateway, name: 'horizon');
         $horizon->update(['runtime_config' => ['command' => ['/usr/bin/php8.5', 'artisan', 'horizon'], 'environment_file' => '']]);
+        $runtime = new ProcessesApiFakeRuntimeManager;
+        $runtime->statusOverride = 'active';
+        app()->instance(ProcessRuntimeManager::class, $runtime);
         DB::table('jobs')->insert(['queue' => 'task-vm-git', 'payload' => json_encode(['data' => ['command' => serialize(new PublishTaskVmCommit(7, str_repeat('a', 40), 'task-7'))]]), 'attempts' => 0, 'reserved_at' => null, 'available_at' => now()->getTimestamp(), 'created_at' => now()->getTimestamp()]);
         Artisan::command('horizon:terminate', function (): void {
             Cache::increment('handoff-horizon-terminated');
@@ -470,34 +475,35 @@ describe('gateway:release:handoff', function (): void {
         $processes->mainPids = ['4242', '0'];
 
         $serve = $handoff->serve();
-        $terminatedBeforeVerify = Cache::get('handoff-horizon-terminated');
+        $jobsBeforeDrain = DB::table('jobs')->pluck('queue')->all();
         $schedule = $handoff->schedule();
 
-        expect($serve)->not->toHaveKey('horizon')
-            ->and($terminatedBeforeVerify)->toBeNull()
-            ->and($schedule)->toMatchArray(['horizon' => 'terminated', 'queue_moved' => 1, 'scheduler' => 'restarted'])
+        expect($serve['horizon'])->toBe('terminated')
             ->and(Cache::get('handoff-horizon-terminated'))->toBe(1)
+            ->and($jobsBeforeDrain)->toBe(['task-vm-git'])
+            ->and($schedule)->not->toHaveKey('horizon')
+            ->and($schedule)->toMatchArray(['queue_moved' => 1, 'scheduler' => 'restarted'])
             ->and($schedule['processes_restarted'])->toBe([])
+            ->and($runtime->convergedProcessIds)->toBe([])
             ->and(implode("\n", $processes->systemctl()))->not->toContain("orbit-process-{$horizon->id}-horizon")
             ->and(DB::table('jobs')->pluck('queue')->all())->toBe(['tasks']);
     });
 
-    it('fails the scheduler phase when Horizon cannot move, after the scheduler moved, and keeps the old database jobs', function (): void {
+    it('fails the serving phase when Horizon cannot move, so the release switches back', function (): void {
         config(['orbit.gateway_queue.connection' => 'services-valkey']);
         $gateway = handoff_gateway();
         handoff_scheduler($gateway);
         handoff_scheduler($gateway, name: 'horizon')->update(['runtime_config' => ['command' => ['/usr/bin/php8.5', 'artisan', 'horizon'], 'environment_file' => '']]);
-        DB::table('jobs')->insert(['queue' => 'task-vms', 'payload' => json_encode(['data' => ['command' => serialize(new PublishTaskVmCommit(7, str_repeat('a', 40), 'task-7'))]]), 'attempts' => 0, 'reserved_at' => null, 'available_at' => now()->getTimestamp(), 'created_at' => now()->getTimestamp()]);
+        $runtime = new ProcessesApiFakeRuntimeManager;
+        $runtime->statusOverride = 'active';
+        app()->instance(ProcessRuntimeManager::class, $runtime);
         Artisan::command('horizon:terminate', function (): never {
             throw new RuntimeException('Redis is down.');
         });
-        [$handoff, $processes] = runtime_handoff(horizon: app(GatewayHorizon::class));
-        $processes->mainPids = ['4242', '0'];
+        [$handoff] = runtime_handoff(horizon: app(GatewayHorizon::class));
 
-        expect(fn () => $handoff->schedule())
-            ->toThrow(fn (GatewayReleaseException $exception) => expect([$exception->errorCode, $exception->getMessage()])->toBe(['gateway.release_units_failed', 'Runtime handoff step [horizon] failed: Redis is down.']))
-            ->and(array_filter($processes->systemctl(), static fn (string $command): bool => str_starts_with($command, 'sudo systemctl start orbit-process-')))->not->toBeEmpty()
-            ->and(DB::table('jobs')->sole()->queue)->toBe('task-vms');
+        expect(fn () => $handoff->serve())
+            ->toThrow(fn (GatewayReleaseException $exception) => expect([$exception->errorCode, $exception->getMessage()])->toBe(['gateway.release_units_failed', 'Runtime handoff step [horizon] failed: Redis is down.']));
     });
 
     it('reloads FPM only when the rendered pool differs from the live pool', function (): void {

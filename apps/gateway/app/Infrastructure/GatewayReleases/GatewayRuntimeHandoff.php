@@ -22,6 +22,7 @@ use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Infrastructure\Gateway\GatewayQueueMove;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
 use App\Models\Node;
+use App\Models\Process;
 use Closure;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -34,11 +35,11 @@ use Throwable;
  * 2. PHP-FPM reloads only when the rendered pool differs from the live pool. Requests keep running otherwise.
  * 3. The hibernator, agent-view, and release units are installed again; agent-view restarts on the new code.
  *    The release units are only written and the timer enabled, so the release that runs the handoff keeps running.
- * 4. The scheduler finishes its running commands and starts on the new release ({@see GatewaySchedulerHandoff}).
- * 5. Document cleanup is reconciled and resumed ({@see GatewayCleanupHandoff}).
- * 6. After the drain, `horizon:terminate` lets Laravel Horizon finish its running jobs and start again on the new
- *    release ({@see GatewayHorizon}), and the jobs of the old database queues move to the Gateway queue
- *    ({@see GatewayQueueMove}).
+ * 4. Laravel Horizon moves to the new release ({@see GatewayHorizon}): `horizon:terminate` lets it finish its running
+ *    jobs, and its Process starts it again.
+ * 5. The scheduler finishes its running commands and starts on the new release ({@see GatewaySchedulerHandoff}).
+ * 6. Document cleanup is reconciled and resumed ({@see GatewayCleanupHandoff}), and after the drain the jobs of the
+ *    old database queues move to the Gateway queue ({@see GatewayQueueMove}).
  * 7. The Gateway Node's own `orbit-agent` moves to the release's pin ({@see GatewayNodeAgentUpdate}), which the
  *    fleet rollout never does for the Gateway's machine.
  *
@@ -110,8 +111,8 @@ final readonly class GatewayRuntimeHandoff
     }
 
     /**
-     * What serves requests: Caddy, PHP-FPM, and the units. It runs before verify, so a broken release is
-     * found, and switched back, without waiting for the scheduler.
+     * What serves requests: Caddy, PHP-FPM, the units, and Horizon. It runs before verify, so a broken release is found,
+     * and switched back, without waiting for the scheduler.
      *
      * @return HandoffResult
      *
@@ -128,11 +129,14 @@ final readonly class GatewayRuntimeHandoff
             $this->releaseUnits->converge();
         });
         $this->fleetUnits();
+        // Right after the switch, so Horizon runs the old code no longer than its running jobs need.
+        $horizon = $this->step('horizon', 'gateway.release_units_failed', fn (): string => $this->horizon?->converge($gateway, fn (): Process => $this->scheduler->process($gateway)) ?? 'none');
 
         return [
             'caddy' => $caddy,
             'fpm' => $fpm,
             'agent_view' => 'restarted',
+            'horizon' => $horizon,
         ];
     }
 
@@ -150,7 +154,6 @@ final readonly class GatewayRuntimeHandoff
         $generation = $this->cleanup->generation();
         $scheduler = $this->scheduler->handoff($gateway);
         $cleanup = $this->cleanup->resume($generation, true);
-        $horizon = $this->step('horizon', 'gateway.release_units_failed', fn (): string => $this->horizon?->converge($gateway, $this->scheduler->process($gateway)) ?? 'none');
         // After the drain, no old scheduler worker takes a database job any more.
         $moved = $this->step('queue_move', 'gateway.release_units_failed', fn (): int => $this->queueMove?->move() ?? 0);
         $agent = $this->gatewayAgent($gateway);
@@ -161,7 +164,6 @@ final readonly class GatewayRuntimeHandoff
             'scheduler_drain' => $scheduler['drain'],
             'processes_restarted' => $scheduler['restarted'],
             'queue_moved' => $moved,
-            'horizon' => $horizon,
             'cleanup' => $cleanup['outcome'],
             'cleanup_error_code' => $cleanup['error_code'] ?? null,
             'cleanup_paused' => $cleanup['paused'],

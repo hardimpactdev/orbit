@@ -8,6 +8,7 @@ use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskTickClock;
 use App\Models\GatewayRelease;
 use Carbon\CarbonImmutable;
+use Closure;
 use DateTimeImmutable;
 use Throwable;
 
@@ -29,11 +30,18 @@ final readonly class GatewayReleaseTickConfirmation
     /** How long a verified release has to show a tick from its own scheduler. */
     public const int WindowSeconds = 180;
 
+    /**
+     * @param  (Closure(): bool)|null  $horizonRunning  whether a Horizon master is registered, while the Gateway queue
+     *                                                  is set: `tasks:tick` then runs in Horizon
+     * @param  int  $horizonWaitSeconds  how long a terminated master may wait for its running jobs
+     */
     public function __construct(
         private TaskTickClock $clock,
         private TaskExtensionState $extension,
         private GatewayReleaseAlerts $alerts,
         private int $windowSeconds = self::WindowSeconds,
+        private ?Closure $horizonRunning = null,
+        private int $horizonWaitSeconds = 0,
     ) {}
 
     /**
@@ -138,7 +146,15 @@ final readonly class GatewayReleaseTickConfirmation
             return [...$phase, 'outcome' => 'confirmed', ...$evidence, 'decided_at' => $now->toIso8601ZuluString()];
         }
 
-        if ($now->gte(CarbonImmutable::parse($phase['deadline']))) {
+        $deadline = CarbonImmutable::parse($phase['deadline']);
+
+        // A release during a long job: the old Horizon master waits for it and no master is registered, so no tick runs
+        // yet. The confirmation waits for the new master, at most as long as the longest job.
+        if ($now->gte($deadline) && $this->horizonRunning instanceof Closure && $now->lt($deadline->addSeconds($this->horizonWaitSeconds)) && ! ($this->horizonRunning)()) {
+            return null;
+        }
+
+        if ($now->gte($deadline)) {
             return [...$phase, 'outcome' => 'missed', ...$evidence, 'decided_at' => $now->toIso8601ZuluString()];
         }
 
@@ -181,7 +197,7 @@ final readonly class GatewayReleaseTickConfirmation
             ? sprintf('The last tick started %s and ran version %s.', $lastTickAt, is_string($lastTickVersion) ? $lastTickVersion : 'unknown')
             : 'No tick is remembered.';
         $stored = $this->alerts->schedulerSilent($record, sprintf(
-            'Release %s is live, but its scheduler ran no tasks:tick between %s and %s. %s Check the scheduler unit.',
+            'Release %s is live, but its scheduler ran no tasks:tick between %s and %s. %s Check the scheduler Process, and the horizon Process while the Gateway queue is set.',
             $record->release_id ?? (string) $record->commit(),
             $pending['since'],
             $pending['deadline'],

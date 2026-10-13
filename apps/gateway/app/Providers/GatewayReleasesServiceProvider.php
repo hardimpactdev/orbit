@@ -30,6 +30,7 @@ use App\Infrastructure\Gateway\GatewayApplicationPath;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
 use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Infrastructure\Gateway\GatewayQueueMove;
+use App\Infrastructure\Gateway\GatewayQueueRedis;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
 use App\Infrastructure\GatewayReleases\ActionGatewayDocumentCleanup;
 use App\Infrastructure\GatewayReleases\ArtisanGatewayReleaseRuntime;
@@ -62,6 +63,7 @@ use App\Infrastructure\Processes\ProcessRunner;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\ServiceProvider;
+use Laravel\Horizon\Contracts\MasterSupervisorRepository;
 
 /** Wires the Gateway release pipeline ([Update and recover a Gateway](/reference/gateway-recovery#release-layout)). */
 final class GatewayReleasesServiceProvider extends ServiceProvider
@@ -232,6 +234,10 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 extension: $app->make(TaskExtensionState::class),
                 alerts: $app->make(GatewayReleaseAlerts::class),
                 windowSeconds: Config::integer('orbit.gateway_releases.tick_confirmation_seconds'),
+                horizonRunning: GatewayQueueRedis::configured()
+                    ? static fn (): bool => $app->make(MasterSupervisorRepository::class)->all() !== []
+                    : null,
+                horizonWaitSeconds: GatewayHorizon::longestJobSeconds(),
             ),
         );
         $this->app->bind(
