@@ -154,7 +154,7 @@ it('leaves GitReadScript the only builder of a remote command with a GitHub cred
         ->and($only('/extraheader/i'))->toBe(['app/Domain/GitHub/GitReadEnvironment.php'])
         // The publisher removes the token from Git's error output; the others only unset or filter the variables.
         ->and($only('/x-access-token/'))->toBe(['app/Domain/GitHub/GitReadEnvironment.php', 'app/Infrastructure/Tasks/GitHubTaskPullRequestPublisher.php'])
-        ->and($only('/GIT_CONFIG_VALUE_/'))->toBe(['app/Domain/GitHub/GitReadEnvironment.php', 'app/Infrastructure/Instances/RemoteRegistrationSourceManager.php', 'app/Infrastructure/SourceControl/WorkspaceGit.php'])
+        ->and($only('/GIT_CONFIG_VALUE_/'))->toBe(['app/Domain/GitHub/GitReadEnvironment.php'])
         // GitHub access in the environment of a process on the Gateway, never in a remote command.
         ->and($only('/->variables\b/'))->toBe([
             'app/Domain/GitHub/GitReadEnvironment.php',
