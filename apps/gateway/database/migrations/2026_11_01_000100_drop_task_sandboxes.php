@@ -102,13 +102,20 @@ return new class extends Migration
             ." AND node_roles.role = 'app-dev' AND node_roles.status IN ('active', 'removing')))";
     }
 
-    /** Replaces the clause, matched across any whitespace, and fails unless it occurs exactly `$count` times. */
+    /**
+     * Replaces the clause, matched across any whitespace. A trigger without it is left alone, as on a schema that
+     * never ran the sandbox migration. Any other count than none or `$count` fails.
+     */
     private function replace(string $trigger, string $clause, string $replacement, int $count): void
     {
         $tokens = preg_split('/\s+/', trim($clause), flags: PREG_SPLIT_NO_EMPTY) ?: [];
         $pattern = '/'.implode('\s+', array_map(static fn (string $token): string => preg_quote($token, '/'), $tokens)).'/';
         $sql = DB::table('sqlite_master')->where('type', 'trigger')->where('name', $trigger)->value('sql');
-        if (! is_string($sql) || preg_match_all($pattern, $sql) !== $count) {
+        $found = is_string($sql) ? preg_match_all($pattern, $sql) : false;
+        if ($found === 0) {
+            return;
+        }
+        if (! is_string($sql) || $found !== $count) {
             throw new RuntimeException("The {$trigger} trigger is incompatible.");
         }
         $updated = preg_replace_callback($pattern, static fn (): string => $replacement, $sql);
