@@ -470,7 +470,7 @@ Each `tasks:tick` parks the `ready` task VM of a group when all of these are tru
 
 The last rule keeps a VM that Orbit started again, for example for a removal retry, running that long before it can park again. The row's `ready_at` records when the VM last became `ready`: at its first preparation, and at each resume.
 
-The tick sets the row to `parked` and queues `ParkTaskVm`, which stops the VM with `incus stop`. After three failed attempts, the row keeps its error and stays `parked`, and the group asks for failure assistance with `Task VM could not park: <code>: <message>`. An open direction request stays unchanged. A late failure after the VM wakes changes nothing. A `parked` VM still takes its slot on the host, so a resume never needs a free slot.
+The tick sets the row to `parked` and queues `ParkTaskVm`, which stops the VM with `incus stop`. After three failed attempts, the row keeps its error and stays `parked`, and Orbit logs a warning with the VM and its error. Parking failure does not ask for group assistance or replace an existing request. New subtasks still wake the VM, and a reviewed, green pull request can still merge. A successful resume or park clears the row error. A late failure after the VM wakes changes nothing. A `parked` VM still takes its slot on the host, so a resume never needs a free slot.
 
 Work for the group starts the VM again: a new subtask after a push, a review fix, a reviewer run, a base merge, the workspace removal after a merge, a completion, and a destroy that must first remove the workspace. That work waits while the VM is `parked`. The group shows the reason `Task VM: resuming.`, and Orbit queues `ResumeTaskVm`. The job runs these steps:
 
@@ -574,7 +574,7 @@ A builder VM has the size of a task VM and does not count against `max_vms`. It 
 | `EnrollTaskVm` | Fails at once on a cloud-init error, an absent or stopped VM, or a boot over 10 minutes. Retries other errors twice. Stops after 60 tries, waits included |
 | `PrepareTaskVmRuntime` | Twice, 30 seconds apart |
 | `DestroyTaskVm` | Until it succeeds |
-| `ParkTaskVm` | Twice, 30 seconds apart. After the third failure, the row stays `parked` with its error and the group asks for assistance |
+| `ParkTaskVm` | Twice, 30 seconds apart. A failure stays on the row as its error, and the row stays `parked` |
 | `ResumeTaskVm` | Checks for up to 3 minutes in one run, then again 15 seconds later. After the third run, or on an `incus start` error after three tries, the row becomes `failed` |
 | `SweepTaskVmHosts` | Never. It runs again 10 minutes later |
 | `RefillTaskVmPool` | Never. It runs again a minute later. A failed pool VM makes its host wait, as [Failures](#warm-vm-failures) describes |

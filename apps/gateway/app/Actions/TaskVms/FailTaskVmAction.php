@@ -41,7 +41,7 @@ final readonly class FailTaskVmAction
         });
     }
 
-    /** Asks once for a VM failure, including an exhausted park, and notifies only after the request commits. */
+    /** Asks once for a failed VM, and notifies only after the request commits. */
     public function requestAssistance(TaskVm $vm, string $reason): void
     {
         if ($vm->group_id === null) {

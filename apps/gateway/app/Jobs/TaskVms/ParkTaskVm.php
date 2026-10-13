@@ -4,20 +4,20 @@ declare(strict_types=1);
 
 namespace App\Jobs\TaskVms;
 
-use App\Actions\TaskVms\FailTaskVmAction;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\TaskVm;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
  * Stops a `parked` task VM and keeps its disk. The tick set the row to `parked` first, so no work is admitted
  * while the VM stops. A row that is no longer `parked` was woken meanwhile and stays running. A failure stays
- * on the row as its error, and the row stays `parked`: after the last try the group asks for assistance.
- * The next resume starts the VM whatever its power.
+ * on the row as its error, and the row stays `parked`. After the last try a warning names the VM and error.
+ * Group assistance stays unchanged, so later work can resume the VM whatever its power.
  */
 final class ParkTaskVm implements ShouldBeUnique, ShouldQueue
 {
@@ -52,7 +52,9 @@ final class ParkTaskVm implements ShouldBeUnique, ShouldQueue
             }
             $error = TaskVm::errorFrom($exception);
             $vm->update($error);
-            app(FailTaskVmAction::class)->requestAssistance($vm, "Task VM could not park: {$error['error_code']}: {$error['error_message']}");
+            Log::warning('A task VM could not park; later work can still resume it.', [
+                'task_vm_id' => $vm->id, 'task_vm' => $vm->name, 'group_id' => $vm->group_id, ...$error,
+            ]);
         });
     }
 }
