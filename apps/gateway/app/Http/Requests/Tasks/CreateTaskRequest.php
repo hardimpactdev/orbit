@@ -31,7 +31,7 @@ final class CreateTaskRequest extends FormRequest
             'title' => ['required', 'string', 'max:160'],
             'brief' => ['required', 'string', 'max:8000'],
             'topology' => ['sometimes', 'array', 'list', 'max:3', new TaskTopologyList],
-            'topology.*' => ['required', 'string', 'max:64', 'regex:/\A(?:app-dev|app-prod|app-prod-2)(?:\+(?:ingress|database|websocket))*\z/'],
+            'topology.*' => ['required', 'string', 'max:64', 'regex:/\A(?:app-dev|app-prod|app-prod-2)(?:\+ingress)?\z/'],
             'deliverables' => ['sometimes', 'array', 'list', 'max:5', new DistinctDeliverableIds],
             'deliverables.*' => ['required', 'array:id,type,description,path,change,command,directory,fails_on_base,paths'],
             'deliverables.*.id' => ['required', 'string', 'max:64', 'regex:/\A[a-z0-9]+(?:-[a-z0-9]+)*\z/'],

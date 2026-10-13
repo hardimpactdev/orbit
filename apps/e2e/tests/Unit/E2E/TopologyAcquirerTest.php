@@ -197,7 +197,7 @@ describe('TopologyAcquirer', function () {
         ['acquirer' => $acquirer, 'request' => $request] = acquirerFixture(steps: $steps);
         $timings = [];
 
-        $acquirer->acquire($request, TopologyRecipe::fromOption('app-dev,app-prod+websocket+ingress'), function (string $step) use (&$timings): void {
+        $acquirer->acquire($request, TopologyRecipe::fromOption('app-dev,app-prod+ingress,app-prod-2+ingress'), function (string $step) use (&$timings): void {
             $timings[] = $step;
         });
 
@@ -207,7 +207,7 @@ describe('TopologyAcquirer', function () {
             'converge-operator.sh role-add @operator',
             'converge-operator.sh role-add @operator',
         ])
-            ->and($timings)->toContain('roles.app-prod')
+            ->and($timings)->toContain('roles.app-prod')->toContain('roles.app-prod-2')
             ->and($timings)->not->toContain('roles.app-dev');
     });
 

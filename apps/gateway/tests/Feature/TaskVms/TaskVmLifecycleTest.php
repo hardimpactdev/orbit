@@ -293,10 +293,10 @@ describe('allocation', function (): void {
         Task::query()->create(['parent_id' => $plain->id, 'position' => 2, 'title' => 'Dropped', 'brief' => 'Cancelled', 'status' => TaskStatus::Cancelled, 'topology' => ['app-prod']]);
         $topology = tvm_life_group();
         Task::query()->create(['parent_id' => $topology->id, 'position' => 1, 'title' => 'Prod', 'brief' => 'Prod', 'status' => TaskStatus::Todo, 'topology' => ['app-prod', 'app-dev']]);
-        Task::query()->create(['parent_id' => $topology->id, 'position' => 2, 'title' => 'Dev', 'brief' => 'Dev', 'status' => TaskStatus::Todo, 'topology' => ['app-dev+database']]);
+        Task::query()->create(['parent_id' => $topology->id, 'position' => 2, 'title' => 'Dev', 'brief' => 'Dev', 'status' => TaskStatus::Todo, 'topology' => ['app-prod+ingress']]);
 
         expect(TaskTopology::forGroup($plain))->toBe([])
-            ->and(TaskTopology::forGroup($topology))->toBe(['app-dev+database', 'app-prod']);
+            ->and(TaskTopology::forGroup($topology))->toBe(['app-dev', 'app-prod+ingress']);
 
         $large = app(AllocateTaskVmAction::class)->execute($topology);
         $normal = app(AllocateTaskVmAction::class)->execute($plain);
@@ -328,7 +328,7 @@ describe('allocation', function (): void {
             ->and(app(AllocateTaskVmAction::class)->freeSlots())->toBe([$this->host->id => 4 - $slots]);
     })->with([
         'app-dev' => [['app-dev'], TaskVmSize::Medium, 2],
-        'app-prod with roles' => [['app-prod+ingress+websocket'], TaskVmSize::Medium, 2],
+        'app-prod with a role' => [['app-prod+ingress'], TaskVmSize::Medium, 2],
         'two nodes' => [['app-dev', 'app-prod'], TaskVmSize::Large, 3],
         'three nodes' => [['app-dev', 'app-prod', 'app-prod-2'], TaskVmSize::Large, 3],
     ]);

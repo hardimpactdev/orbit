@@ -12,25 +12,25 @@ use App\Domain\TaskVms\TaskVmSize;
 use Carbon\CarbonImmutable;
 
 it('stores entries with their roles in canonical order', function (): void {
-    expect(TaskTopology::from(['app-prod+websocket+ingress', 'app-dev']))->toBe(['app-prod+ingress+websocket', 'app-dev'])
-        ->and(TaskTopology::nodes(['app-prod+ingress', 'app-dev+database']))->toBe(['app-prod', 'app-dev']);
+    expect(TaskTopology::from(['app-prod+ingress', 'app-dev']))->toBe(['app-prod+ingress', 'app-dev'])
+        ->and(TaskTopology::nodes(['app-prod+ingress', 'app-dev']))->toBe(['app-prod', 'app-dev']);
 });
 
 it('refuses entries that do not fit', function (mixed $topology): void {
     expect(TaskTopology::valid($topology))->toBeFalse()
         ->and(fn () => TaskTopology::from($topology))->toThrow(ResourceOperationException::class, TaskTopology::Invalid);
 })->with([
-    'unknown node' => [['gateway']], 'unknown role' => [['app-dev+router']], 'base role as extra' => [['app-prod+app-prod']],
-    'ingress on app-dev' => [['app-dev+ingress']], 'database on app-prod' => [['app-prod+database']],
-    'repeated node' => [['app-dev', 'app-dev+database']], 'second production node alone' => [['app-prod-2']],
+    'unknown node' => [['gateway']], 'unknown role' => [['app-prod+websocket']], 'base role as extra' => [['app-prod+app-prod']],
+    'ingress on app-dev' => [['app-dev+ingress']], 'repeated role' => [['app-prod+ingress+ingress']],
+    'repeated node' => [['app-prod', 'app-prod+ingress']], 'second production node alone' => [['app-prod-2']],
     'too many' => [['app-dev', 'app-prod', 'app-prod-2', 'app-dev']], 'not a list' => [['a' => 'app-dev']],
 ]);
 
 it('unites declarations per node, each of which must be valid on its own', function (): void {
-    expect(TaskTopology::union([['app-prod+ingress'], null, ['app-dev', 'app-prod+websocket'], []]))->toBe(['app-dev', 'app-prod+ingress+websocket'])
-        ->and(TaskTopology::covers(['app-dev', 'app-prod+ingress+websocket'], ['app-prod+ingress']))->toBeTrue()
-        ->and(TaskTopology::covers(['app-dev'], ['app-dev+database']))->toBeFalse()
-        ->and(TaskTopology::union([['app-dev+database'], ['app-dev+websocket', 'app-prod']]))->toBe(['app-dev+database+websocket', 'app-prod'])
+    expect(TaskTopology::union([['app-prod+ingress'], null, ['app-dev', 'app-prod'], []]))->toBe(['app-dev', 'app-prod+ingress'])
+        ->and(TaskTopology::covers(['app-dev', 'app-prod+ingress'], ['app-prod']))->toBeTrue()
+        ->and(TaskTopology::covers(['app-prod'], ['app-prod+ingress']))->toBeFalse()
+        ->and(TaskTopology::union([['app-prod', 'app-prod-2+ingress'], ['app-dev']]))->toBe(['app-dev', 'app-prod', 'app-prod-2+ingress'])
         ->and(fn () => TaskTopology::union([['app-prod'], ['app-prod-2']]))->toThrow(ResourceOperationException::class, TaskTopology::Invalid);
 });
 
@@ -38,13 +38,13 @@ it('sizes a VM by its test nodes, not by their roles', function (array $topology
     expect(TaskVmSize::forTopology($topology))->toBe($size);
 })->with([
     'none' => [[], TaskVmSize::Normal],
-    'one' => [['app-prod+ingress+websocket'], TaskVmSize::Medium],
+    'one' => [['app-prod+ingress'], TaskVmSize::Medium],
     'two' => [['app-dev', 'app-prod'], TaskVmSize::Large],
 ]);
 
 it('holds a topology only in a VM at least its size', function (): void {
     expect(TaskVmSize::Normal->holds(['app-dev']))->toBeFalse()
-        ->and(TaskVmSize::Medium->holds(['app-dev+database']))->toBeTrue()
+        ->and(TaskVmSize::Medium->holds(['app-prod+ingress']))->toBeTrue()
         ->and(TaskVmSize::Medium->holds(['app-dev', 'app-prod']))->toBeFalse()
         ->and(TaskVmSize::Large->holds(['app-dev', 'app-prod', 'app-prod-2']))->toBeTrue()
         ->and(TaskVmSize::Normal->holds([]))->toBeTrue();

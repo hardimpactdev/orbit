@@ -1097,7 +1097,7 @@ The setup and teardown steps run on the VM as `orbit`. The `seed-dependencies` s
 
 ### Declare a topology
 
-A subtask declares the test nodes it needs in its `topology` field, for example `["app-dev"]` or `["app-dev", "app-prod+ingress"]`. Each entry names one node, `app-dev`, `app-prod`, or `app-prod-2`, at most once. After a `+` it may add the roles `ingress`, `database`, and `websocket`, each once, in any order. `app-prod-2` needs `app-prod` in the same list. A role that conflicts with the node's base role, such as `app-dev+ingress`, is refused, by the [role compatibility](/reference/node-provisioning#role-compatibility) rules. Subtask creation, group creation, and stored task definitions keep the declaration. Only a subtask that has not started can change it.
+A subtask declares the test nodes it needs in its `topology` field, for example `["app-dev"]` or `["app-dev", "app-prod+ingress"]`. Each entry names one node, `app-dev`, `app-prod`, or `app-prod-2`, at most once. After a `+` it may add the role `ingress`. `app-prod-2` needs `app-prod` in the same list. A role that conflicts with the node's base role, such as `app-dev+ingress`, is refused, by the [role compatibility](/reference/node-provisioning#role-compatibility) rules. The format takes more roles once one is proven to converge on a test node. Subtask creation, group creation, and stored task definitions keep the declaration. Only a subtask that has not started can change it.
 
 The group's topology is the union of its subtasks that are not cancelled: each node once, with every role any subtask adds to it. It decides the [VM size](#size-by-declared-topology) at the claim.
 

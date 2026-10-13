@@ -73,23 +73,23 @@ it('round trips its declaration and refuses one out of order', function () {
 });
 
 it('adds the declared roles to their Node, in canonical order', function () {
-    $recipe = TopologyRecipe::fromOption('app-prod+websocket+ingress,app-dev+database');
+    $recipe = TopologyRecipe::fromOption('app-prod+ingress,app-dev');
 
-    expect($recipe->workloads)->toBe(['app-dev+database', 'app-prod+ingress+websocket'])
-        ->and($recipe->node('app-dev')->roles)->toBe(['app-dev', 'database'])
-        ->and($recipe->node('app-prod')->roles)->toBe(['app-prod', 'ingress', 'websocket'])
-        ->and($recipe->extraRoles($recipe->node('app-prod')))->toBe(['ingress', 'websocket'])
-        ->and($recipe->extraRoles($recipe->node('app-dev')))->toBe(['database'])
-        ->and($recipe->assignments()['app-prod'])->toBe(['app-prod', 'ingress', 'websocket'])
+    expect($recipe->workloads)->toBe(['app-dev', 'app-prod+ingress'])
+        ->and($recipe->node('app-dev')->roles)->toBe(['app-dev'])
+        ->and($recipe->node('app-prod')->roles)->toBe(['app-prod', 'ingress'])
+        ->and($recipe->extraRoles($recipe->node('app-prod')))->toBe(['ingress'])
+        ->and($recipe->extraRoles($recipe->node('app-dev')))->toBe([])
+        ->and($recipe->assignments()['app-prod'])->toBe(['app-prod', 'ingress'])
         ->and(TopologyRecipe::fromArray($recipe->toArray())->workloads)->toBe($recipe->workloads)
-        ->and(fn () => TopologyRecipe::fromArray(['workloads' => ['app-dev+database', 'app-prod+websocket+ingress']]))
+        ->and(fn () => TopologyRecipe::fromArray(['workloads' => ['app-prod+ingress', 'app-dev']]))
         ->toThrow(InvalidArgumentException::class, 'out of order');
 });
 
 it('refuses an unknown or repeated extra role', function (string $option, string $message) {
     expect(fn () => TopologyRecipe::fromOption($option))->toThrow(InvalidArgumentException::class, $message);
 })->with([
-    'unknown role' => ['app-prod+router', 'The Node [app-prod] can only add the roles ingress, database, websocket.'],
+    'unknown role' => ['app-prod+router', 'The Node [app-prod] can only add the roles ingress.'],
     'base role again' => ['app-dev+app-dev', 'can only add the roles'],
     'repeated role' => ['app-prod+ingress+ingress', 'The Node [app-prod] adds a role twice.'],
     'same Node twice with other roles' => ['app-prod,app-prod+ingress', 'The Node [app-prod] is declared twice.'],

@@ -18,10 +18,13 @@ final class TaskTopology
     /** The test nodes an entry can name, in composition order. */
     public const array Nodes = ['app-dev', 'app-prod', 'app-prod-2'];
 
-    /** The roles an entry can add to its node, in the order the harness adds them. */
-    public const array ExtraRoles = ['ingress', 'database', 'websocket'];
+    /**
+     * The roles an entry can add to its node, in the order the harness adds them. Each one must converge on a test
+     * node; others did not without more setup, so they wait until a task needs them.
+     */
+    public const array ExtraRoles = ['ingress'];
 
-    public const string Invalid = 'Topology must be a list of distinct app-dev, app-prod, or app-prod-2 nodes, each with optional +ingress, +database, or +websocket roles that fit the node; app-prod-2 needs app-prod.';
+    public const string Invalid = 'Topology must be a list of distinct app-dev, app-prod, or app-prod-2 nodes, each with an optional +ingress role where it fits the node; app-prod-2 needs app-prod.';
 
     private const array BaseRoles = ['app-dev' => 'app-dev', 'app-prod' => 'app-prod', 'app-prod-2' => 'app-prod'];
 
@@ -74,7 +77,7 @@ final class TaskTopology
     }
 
     /**
-     * The extra roles of one node never conflict with each other, so the union of valid declarations is valid.
+     * The union of valid declarations is valid: each node keeps roles that fit its base role.
      *
      * @param  list<mixed>  $declarations
      * @return list<string>
@@ -133,13 +136,6 @@ final class TaskTopology
         foreach ($parts as $role) {
             if (! in_array($role, self::ExtraRoles, true) || $registry->conflicts($base, RoleName::from($role))) {
                 return null;
-            }
-        }
-        foreach ($parts as $i => $role) {
-            foreach (array_slice($parts, $i + 1) as $other) {
-                if ($registry->conflicts(RoleName::from($role), RoleName::from($other))) {
-                    return null;
-                }
             }
         }
 

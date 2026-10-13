@@ -20,8 +20,11 @@ final readonly class TopologyRecipe
     /** What `acquire` composes when the caller declares nothing. */
     public const array DEFAULT_WORKLOADS = ['app-dev', 'app-prod'];
 
-    /** The roles an entry may add to its workload Node, in the order the composer adds them. */
-    public const array EXTRA_ROLES = ['ingress', 'database', 'websocket'];
+    /**
+     * The roles an entry may add to its workload Node, in the order the composer adds them. `ingress` also puts the
+     * Node in its own Cluster `e2e-<node>`, which the role needs.
+     */
+    public const array EXTRA_ROLES = ['ingress'];
 
     /** @var list<TopologyNode> */
     public array $nodes;

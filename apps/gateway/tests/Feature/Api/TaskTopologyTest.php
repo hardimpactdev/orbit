@@ -40,26 +40,26 @@ it('rejects invalid declarations without creating a group', function (mixed $top
     'duplicate' => [['app-dev', 'app-dev']], 'gateway' => [['gateway']], 'live host' => [['beast']],
     'scalar' => ['app-dev'], 'null' => [null], 'object' => [['name' => 'app-dev']],
     'node twice with roles' => [['app-prod', 'app-prod+ingress']], 'unknown role' => [['app-prod+router']],
-    'conflicting role' => [['app-dev+ingress']], 'roles that conflict' => [['app-prod+ingress+database']],
+    'conflicting role' => [['app-dev+ingress']], 'role without a Cluster-free path' => [['app-prod+database']],
     'repeated role' => [['app-prod+ingress+ingress']], 'second production node alone' => [['app-prod-2']],
 ]);
 
-it('stores roles in canonical order and refuses a role that does not fit its node', function (): void {
+it('stores declared roles and refuses a role that does not fit its node', function (): void {
     task_definition_gateway();
     $project = task_definition_project('orbit');
     $group = $this->postJson('/api/v1/task-groups', [
         'project_id' => $project->id, 'title' => 'Roles', 'brief' => 'Declared roles.',
-        'tasks' => [['title' => 'Ingress', 'brief' => 'Public edge.', 'topology' => ['app-prod+websocket+ingress', 'app-dev+database']]],
-    ])->assertCreated()->assertJsonPath('data.tasks.0.topology', ['app-prod+ingress+websocket', 'app-dev+database'])->json('data');
+        'tasks' => [['title' => 'Ingress', 'brief' => 'Public edge.', 'topology' => ['app-prod+ingress', 'app-dev']]],
+    ])->assertCreated()->assertJsonPath('data.tasks.0.topology', ['app-prod+ingress', 'app-dev'])->json('data');
 
-    // database conflicts with app-prod, the base role of the node.
-    $this->postJson('/api/v1/task-groups/'.$group['id'].'/tasks', ['title' => 'Database', 'brief' => 'Same node.', 'topology' => ['app-prod+database']])
+    // ingress conflicts with app-dev, the base role of the node.
+    $this->postJson('/api/v1/task-groups/'.$group['id'].'/tasks', ['title' => 'Dev edge', 'brief' => 'Same node.', 'topology' => ['app-dev+ingress']])
         ->assertUnprocessable();
     $this->postJson('/api/v1/task-groups', [
         'project_id' => $project->id, 'title' => 'Conflict', 'brief' => 'Two subtasks.',
         'tasks' => [
             ['title' => 'One', 'brief' => 'Edge.', 'topology' => ['app-prod+ingress']],
-            ['title' => 'Two', 'brief' => 'Data.', 'topology' => ['app-prod+database']],
+            ['title' => 'Two', 'brief' => 'Data.', 'topology' => ['app-prod+websocket']],
         ],
     ])->assertUnprocessable();
     expect(Task::query()->where('parent_id', $group['id'])->count())->toBe(1);

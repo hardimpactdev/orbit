@@ -122,14 +122,14 @@ it('starts the preparation unit once, waits while it runs, and admits the subtas
 it('prepares the union again when a later subtask declares more than the ready topology holds', function (): void {
     $this->vm->update(['size' => TaskVmSize::Large, 'topology' => ['app-dev'], 'topology_state' => TaskVmTopologyState::Ready]);
     topology_admission_subtask($this->group, ['app-dev']);
-    $later = topology_admission_subtask($this->group, ['app-prod+websocket'], 2);
+    $later = topology_admission_subtask($this->group, ['app-prod+ingress'], 2);
     $ssh = topology_admission_ssh([topology_admission_result('')]);
 
     expect(fn () => app(TaskTopologyAdmission::class)->prepare($this->group, $later))
-        ->toThrow(TaskCapacityException::class, 'Task VM: preparing the topology app-dev, app-prod+websocket.');
-    expect($ssh->commands[0]->arguments[8])->toBe('app-dev,app-prod+websocket')
+        ->toThrow(TaskCapacityException::class, 'Task VM: preparing the topology app-dev, app-prod+ingress.');
+    expect($ssh->commands[0]->arguments[8])->toBe('app-dev,app-prod+ingress')
         ->and($ssh->commands[0]->arguments[9])->toBe('45GiB')
-        ->and($this->vm->fresh()?->topology)->toBe(['app-dev', 'app-prod+websocket']);
+        ->and($this->vm->fresh()?->topology)->toBe(['app-dev', 'app-prod+ingress']);
 });
 
 it('asks for assistance with the step and the redacted log when the unit fails, and forgets the run', function (string $status, string $message): void {

@@ -30,7 +30,7 @@ A retained discovery lease without its topology record is an incomplete acquisit
 
 ## Declared Nodes
 
-Every topology has a `gateway` VM and an `operator` system container. `acquire --nodes=LIST` adds the workload Nodes the work needs. `LIST` is a comma-separated list of entries, in any order. An entry names one of `app-dev`, `app-prod`, and `app-prod-2`, and may add roles after a `+`: `ingress`, `database`, and `websocket`, for example `app-prod+ingress`. `app-prod-2` requires `app-prod`. Without the option, the list is `app-dev,app-prod`. An empty list, `--nodes=`, gives the Gateway and the operator only. A task VM group's subtask `topology` uses the same entries.
+Every topology has a `gateway` VM and an `operator` system container. `acquire --nodes=LIST` adds the workload Nodes the work needs. `LIST` is a comma-separated list of entries, in any order. An entry names one of `app-dev`, `app-prod`, and `app-prod-2`, and may add the role `ingress` after a `+`, for example `app-prod+ingress`. `app-prod-2` requires `app-prod`. Without the option, the list is `app-dev,app-prod`. An empty list, `--nodes=`, gives the Gateway and the operator only. A task VM group's subtask `topology` uses the same entries.
 
 | Node key | Role image | Incus address | WireGuard address | Roles | Checkout |
 | --- | --- | --- | --- | --- | --- |
@@ -42,7 +42,7 @@ Every topology has a `gateway` VM and an `operator` system container. `acquire -
 
 `app-prod-2` is a second `app-prod` Node from the same role image. Each production Node gets its own name as its development TLD, and `app-dev` gets `beast`.
 
-The harness assigns the roles in the table and the roles each entry adds, and nothing else. It creates no Cluster or Router, no other role, and no sample Project, Instance, or Route. Add other things the work needs with the Orbit CLI on the topology, for example `orbit project:create`, and record those steps as evidence. So a topology holds only what the task declared and created.
+The harness assigns the roles in the table and the roles each entry adds, and nothing else. It creates no Router, no Cluster except the one an `ingress` entry needs, no other role, and no sample Project, Instance, or Route. Add other things the work needs with the Orbit CLI on the topology, for example `orbit project:create`, and record those steps as evidence. So a topology holds only what the task declared and created.
 
 | Field | Value |
 | --- | --- |
@@ -107,7 +107,7 @@ An image holds no Gateway database, CA, SSH key, WireGuard key, authorized key, 
 | `bootstrap.gateway` | Prepares the worktree's Gateway `.env` and runs `orbit:bootstrap` at the Gateway's address |
 | `enroll.<node>` | Enrolls each workload Node in table order with `orbit:node-provision` |
 | `enroll.operator` | Registers the roleless operator, grants it Gateway access, and points its CLI at the topology Gateway and CA |
-| `roles.<node>` | For each workload Node whose entry adds roles, runs `orbit node:role:add <node> <role> --json` from the operator for each role, in entry order |
+| `roles.<node>` | For each workload Node whose entry adds a role, runs `orbit node:role:add <node> <role> --json` from the operator. For `ingress`, the Node first joins its own Cluster `e2e-<node>`, which the operator creates, because the role needs Cluster membership and one ingress Node per Cluster. |
 | `readiness` | Runs the readiness probes |
 
 `bootstrap.gateway` writes the Gateway checkout path into the worktree's Gateway `.env` and applies the migrations. `orbit:bootstrap` then creates the Orbit CA, the Gateway SSH key, and the VPN at `10.44.0.1`.
