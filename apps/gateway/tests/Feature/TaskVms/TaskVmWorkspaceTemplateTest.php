@@ -33,6 +33,7 @@ use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplateLifecycle;
 use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplateVolumes;
 use App\Jobs\TaskVms\BuildTaskVmWorkspaceTemplate;
 use App\Jobs\TaskVms\DestroyTaskVm;
+use App\Jobs\TaskVms\FollowTaskVmDefaultBranches;
 use App\Jobs\TaskVms\PublishTaskVmCommit;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
 use App\Jobs\TaskVms\RefreshTaskVmWorkspaceTemplates;
@@ -81,6 +82,9 @@ final class TaskVmTemplateIncus implements SshExecutor
 
     /** What the guest mount script prints. */
     public string $mounted = 'template';
+
+    /** What the mount script prints in a template builder: `template` once the volume holds a template checkout. */
+    public string $builderMounted = '';
 
     /** The `composer.json` of the builder's checkout, or null for none. */
     public ?string $composer = null;
@@ -215,6 +219,7 @@ final class TaskVmTemplateIncus implements SshExecutor
                 $this->dirtyUntilRestored = null;
             }),
             $user[0] === 'sh' && str_contains($user[2], 'composer.json') => $this->answer('composer.json', fn (): string => $this->composer ?? 'absent'),
+            (TaskVmScriptNames::call($user)[0] ?? null) === 'workspace-mount.sh' => $this->answer('exec mount', fn (): string => $this->builderMounted),
             $user[0] === 'sh' && str_contains($user[2], 'id -u') => $this->answer('id', static fn (): string => '1000:1000'),
             // The Gateway sends the default branch from its mirror, and the checkout prints the commit it sent.
             $user[0] === 'bash' && str_contains($user[2] ?? '', 'index-pack') => $this->answer('exec git receive', function () use ($user): void {
@@ -782,7 +787,7 @@ describe('build', function (): void {
             ->and($stages)->toBe(['render', 'sweep', 'launch', 'cloud-init', 'identity', 'volume', 'mount', 'clone', 'php', 'setup:composer-install', 'setup:build-assets', 'warm-check', 'verify', 'detach', 'publish', 'delete-builder', 'prune'])
             ->and($this->incus->volumes)->toBe([$volume => [
                 'user.orbit.project' => (string) $this->project->id, 'user.orbit.commit' => $this->incus->received, 'user.orbit.repository' => REPO,
-                'user.orbit.image' => TVM_IMAGE, 'user.orbit.owner' => '1000:1000', 'user.orbit.layout' => 'workspace', 'user.orbit.ready' => 'true',
+                'user.orbit.image' => TVM_IMAGE, 'user.orbit.owner' => '1000:1000', 'user.orbit.layout' => 'workspace', 'user.orbit.updates' => '0', 'user.orbit.ready' => 'true',
             ]])
             ->and($this->incus->instances)->toBe(['tvm-5'])
             ->and($this->incus->operations())->toContain(
@@ -931,6 +936,228 @@ describe('build', function (): void {
     });
 });
 
+/**
+ * Adds a merge commit to the `main` branch of the local origin, as a merged pull request does, and returns it.
+ */
+function tvm_merge(): string
+{
+    $root = TestOrbitHome::scratch('tvm-template-origins');
+    (new Process(['git', '-C', $root.'/work', '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '--allow-empty', '-m', 'Merge pull request #1']))->mustRun();
+    (new Process(['git', '-C', $root.'/work', 'push', '--quiet', $root.'/origin.git', 'main']))->mustRun();
+
+    return trim((new Process(['git', '-C', $root.'/work', 'rev-parse', 'HEAD']))->mustRun()->getOutput());
+}
+
+describe('update', function (): void {
+    beforeEach(function (): void {
+        ProjectLifecycleStep::query()->create(['project_id' => $this->project->id, 'phase' => LifecyclePhase::Setup->value, 'name' => 'composer-install', 'command' => 'composer install --no-interaction', 'timeout_seconds' => 120, 'position' => 1]);
+        $this->current = 'tvm-template-'.$this->project->id.'-20261012040000';
+        $this->incus->volumes = [$this->current => [...tvm_ready(), 'user.orbit.commit' => str_repeat('a', 40), 'user.orbit.updates' => '3']];
+        $this->incus->builderMounted = 'template';
+        $this->template = fn (): TaskVmWorkspaceTemplate => TaskVmWorkspaceTemplate::fromVolume($this->current, $this->incus->volumes[$this->current]);
+    });
+
+    it('copies the current template, checks out the merge, runs the setup steps on it, and publishes the copy', function (): void {
+        $this->travelTo(now()->setDate(2026, 10, 13)->setTime(9, 0));
+        $merge = tvm_merge();
+        $builder = app(IncusTaskVmWorkspaceTemplateBuilder::class);
+        $stages = [];
+
+        $volume = $builder->update($this->host, $this->hostNode, $this->project, ($this->template)(), $builder->defaultBranchTip($this->project), function (string $stage) use (&$stages): void {
+            $stages[] = $stage;
+        });
+
+        // The copy got the merge from the Gateway's mirror; it was never formatted, created, or cloned anew.
+        $operations = collect($this->incus->operations());
+        expect($volume)->toBe('tvm-template-'.$this->project->id.'-20261013090000')
+            ->and($this->incus->received)->toBe($merge)
+            ->and($stages)->toBe(['render', 'sweep', 'launch', 'cloud-init', 'identity', 'volume', 'mount', 'checkout', 'php', 'setup:composer-install', 'warm-check', 'verify', 'detach', 'publish', 'delete-builder', 'prune'])
+            ->and($operations)->toContain(
+                ['storage', 'volume', 'copy', '--', 'orbit-tasks/'.$this->current, 'orbit-tasks/'.$volume],
+                ['storage', 'volume', 'set', '--', 'orbit-tasks', $volume, 'user.orbit.ready=false'],
+            )
+            ->and($operations->contains(static fn (array $operation): bool => array_slice($operation, 0, 3) === ['storage', 'volume', 'create']))->toBeFalse()
+            ->and($operations->contains(static fn (array $operation): bool => str_contains(implode(' ', $operation), 'mkfs.ext4') || str_contains(implode(' ', $operation), 'git init')))->toBeFalse()
+            ->and($this->incus->steps)->toHaveCount(1)
+            // The copy replaces the older template, with one more update.
+            ->and(array_keys($this->incus->volumes))->toBe([$volume])
+            ->and($this->incus->volumes[$volume])->toMatchArray(['user.orbit.commit' => $merge, 'user.orbit.updates' => '4', 'user.orbit.ready' => 'true'])
+            ->and($this->incus->instances)->toBe([]);
+        // The copy is unfinished from the moment it exists until it is published, so no claim takes it before.
+        $copied = $operations->search(static fn (array $operation): bool => ($operation[2] ?? null) === 'copy');
+        expect($operations[$copied + 1])->toBe(['storage', 'volume', 'set', '--', 'orbit-tasks', $volume, 'user.orbit.ready=false']);
+    });
+
+    it('leaves the current template in place for claims when it fails or stops at any stage', function (string $failure, string $stage): void {
+        $before = $this->incus->volumes;
+        $failure === 'dirty' ? $this->incus->status = "?? public/build/stale.js\n" : $this->incus->fail = $failure;
+        $builder = app(IncusTaskVmWorkspaceTemplateBuilder::class);
+
+        expect(fn () => $builder->update($this->host, $this->hostNode, $this->project, ($this->template)(), str_repeat('b', 40)))
+            ->toThrow(fn (TaskVmException $exception) => expect($exception->errorCode)->toBe('task_vm.workspace_template_failed')->and($exception->getMessage())->toContain("stage [{$stage}]"));
+
+        expect($this->incus->volumes)->toBe($before)
+            ->and($this->incus->instances)->toBe([])
+            ->and(Cache::lock('task-vms:workspace-template:'.$this->hostNode->id, 10)->get())->toBeTrue();
+    })->with([
+        'the copy' => ['storage volume copy', 'volume'],
+        'the mount' => ['exec mount', 'mount'],
+        'the checkout' => ['exec git receive', 'checkout'],
+        'a setup step' => ['setup step [composer install --no-interaction]', 'setup:composer-install'],
+        'a dirty tree' => ['dirty', 'verify'],
+    ]);
+
+    it('sweeps the copy of an update that was killed, and claims never take it', function (): void {
+        // A worker killed during the update left its unfinished copy and its builder.
+        $copy = 'tvm-template-'.$this->project->id.'-20261013090000';
+        $this->incus->volumes[$copy] = [...$this->incus->volumes[$this->current], 'user.orbit.ready' => 'false'];
+        $this->incus->instances = ['tvm-template-20261013090000'];
+        $vm = tvm_template_vm($this->group);
+
+        app(TaskVmWorkspace::class)->template($vm, $this->group, '/home/orbit/apps/mealou');
+        expect(collect($this->incus->operations())->first(static fn (array $operation): bool => ($operation[2] ?? null) === 'copy'))->toBe(['storage', 'volume', 'copy', '--', 'orbit-tasks/'.$this->current, 'orbit-tasks/tvm-1-workspace']);
+
+        app(IncusTaskVmWorkspaceTemplateBuilder::class)->update($this->host, $this->hostNode, $this->project, ($this->template)(), str_repeat('b', 40));
+        expect($this->incus->volumes)->not->toHaveKey($copy);
+    });
+
+    it('refuses to update a template on a builder from another base image or user', function (): void {
+        $this->incus->image = TVM_NEW_IMAGE;
+
+        expect(fn () => app(IncusTaskVmWorkspaceTemplateBuilder::class)->update($this->host, $this->hostNode, $this->project, ($this->template)(), str_repeat('b', 40)))
+            ->toThrow(fn (TaskVmException $exception) => expect($exception->getMessage())->toContain('stage [identity]'));
+        expect(collect($this->incus->operations())->contains(static fn (array $operation): bool => ($operation[2] ?? null) === 'copy'))->toBeFalse();
+    });
+
+    describe(BuildTaskVmWorkspaceTemplate::class, function (): void {
+        it('updates a current template behind the default branch, and does nothing at the tip', function (): void {
+            Log::spy();
+            $merge = tvm_merge();
+            $job = (new BuildTaskVmWorkspaceTemplate($this->hostNode->id, $this->project->id))->withFakeQueueInteractions();
+
+            app()->call([$job, 'handle']);
+
+            $job->assertNotFailed();
+            $job->assertNotReleased();
+            $updated = array_key_last($this->incus->volumes);
+            expect(collect($this->incus->operations())->contains(static fn (array $operation): bool => ($operation[2] ?? null) === 'copy'))->toBeTrue()
+                ->and($this->incus->volumes[$updated])->toMatchArray(['user.orbit.commit' => $merge, 'user.orbit.updates' => '4']);
+            Log::shouldHaveReceived('info')->with('Task VM workspace template updated.', Mockery::on(static fn (array $context): bool => $context['commit'] === $merge && $context['updates'] === 4));
+
+            // At the tip a second job launches no builder.
+            $this->incus->calls = [];
+            app()->call([(new BuildTaskVmWorkspaceTemplate($this->hostNode->id, $this->project->id))->withFakeQueueInteractions(), 'handle']);
+            expect(tvm_builds($this->incus))->toBe(0);
+            Log::shouldHaveReceived('info')->with('Task VM workspace template is at the default branch; no update.', Mockery::any());
+        });
+
+        it('builds from scratch after 20 updates', function (): void {
+            $this->incus->volumes[$this->current]['user.orbit.updates'] = (string) TaskVmWorkspaceTemplateLifecycle::MaxUpdates;
+            $this->incus->builderMounted = '';
+
+            app()->call([(new BuildTaskVmWorkspaceTemplate($this->hostNode->id, $this->project->id))->withFakeQueueInteractions(), 'handle']);
+
+            $operations = collect($this->incus->operations());
+            expect($operations->contains(static fn (array $operation): bool => array_slice($operation, 0, 3) === ['storage', 'volume', 'create']))->toBeTrue()
+                ->and($operations->contains(static fn (array $operation): bool => ($operation[2] ?? null) === 'copy'))->toBeFalse()
+                ->and(array_values($this->incus->volumes)[0])->toMatchArray(['user.orbit.updates' => '0', 'user.orbit.ready' => 'true']);
+        });
+
+        it('marks the template for a full build after a failed update and tries again at once', function (): void {
+            Log::spy();
+            $this->incus->fail = 'exec git receive';
+            $job = (new BuildTaskVmWorkspaceTemplate($this->hostNode->id, $this->project->id))->withFakeQueueInteractions();
+
+            app()->call([$job, 'handle']);
+
+            $job->assertReleased(0);
+            expect($this->incus->volumes[$this->current])->toMatchArray(['user.orbit.ready' => 'true', 'user.orbit.updates' => '20'])
+                ->and(Cache::has(TaskVmWorkspaceTemplateLifecycle::backoffKey($this->hostNode->id, $this->project->id)))->toBeFalse();
+            Log::shouldHaveReceived('warning')->with('Task VM workspace template update failed; the next build is a full one.', Mockery::on(static fn (array $context): bool => str_contains($context['error'], 'stage [checkout]')));
+
+            // The retry builds from scratch.
+            $this->incus->fail = null;
+            $this->incus->builderMounted = '';
+            app()->call([(new BuildTaskVmWorkspaceTemplate($this->hostNode->id, $this->project->id))->withFakeQueueInteractions(), 'handle']);
+            expect(array_values($this->incus->volumes)[0])->toMatchArray(['user.orbit.updates' => '0', 'user.orbit.ready' => 'true']);
+        });
+
+        it('only warns when the default branch cannot be fetched, and keeps the template as it is', function (): void {
+            Log::spy();
+            $this->project->update(['default_branch' => 'gone']);
+            $before = $this->incus->volumes;
+            $job = (new BuildTaskVmWorkspaceTemplate($this->hostNode->id, $this->project->id))->withFakeQueueInteractions();
+
+            app()->call([$job, 'handle']);
+
+            $job->assertNotFailed();
+            $job->assertNotReleased();
+            expect($this->incus->volumes)->toBe($before)
+                ->and(tvm_builds($this->incus))->toBe(0);
+            Log::shouldHaveReceived('warning')->with('Task VM workspace template could not follow its default branch.', Mockery::any());
+        });
+    });
+
+    describe(FollowTaskVmDefaultBranches::class, function (): void {
+        it('queues one update for each host whose template a merge left behind, on the template queue every 5 minutes', function (): void {
+            $shark = Node::query()->create([
+                'name' => 'shark', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64',
+                'public_ssh_host' => '10.44.0.8', 'wireguard_ip' => '10.44.0.8', 'user' => 'nckrtl', 'ssh_host_fingerprint' => 'SHA256:shark',
+            ]);
+            TaskVmSettingsBuilder::bind(['hosts' => [$this->host, new TaskVmHost($shark->id, 'orbit-tasks', 'orbittask0', '10.251.78.0/24', 4, 2, '4GiB', '40GiB')]]);
+            [$current, $behind, $failed, $none] = tvm_projects(4, active: 0);
+            $tip = app(IncusTaskVmWorkspaceTemplateBuilder::class)->defaultBranchTip($this->project);
+            $template = static fn (Project $project, string $commit, string $image = TVM_IMAGE): array => [...tvm_ready($project->repository_url, $image), 'user.orbit.commit' => $commit];
+            // Both hosts share the fake's volumes: each Project's current template is the same on both.
+            $this->incus->volumes = [
+                'tvm-template-'.$current->id.'-20261012040000' => $template($current, $tip),
+                'tvm-template-'.$behind->id.'-20261012040000' => $template($behind, str_repeat('a', 40)),
+                'tvm-template-'.$failed->id.'-20261012040000' => $template($failed, str_repeat('a', 40)),
+                // Another base image: the refresh after the promote builds it from scratch, no update.
+                'tvm-template-'.$none->id.'-20261012040000' => $template($none, str_repeat('a', 40), TVM_NEW_IMAGE),
+            ];
+            Cache::put(TaskVmWorkspaceTemplateLifecycle::backoffKey($shark->id, $failed->id), now()->getTimestamp(), TaskVmWorkspaceTemplateLifecycle::FailureBackoffSeconds);
+
+            app()->call([new FollowTaskVmDefaultBranches, 'handle']);
+            // A burst of merges: a second check finds the updates queued and adds none.
+            app()->call([new FollowTaskVmDefaultBranches, 'handle']);
+
+            $queued = DB::table('jobs')->get()->map(static function (object $job): array {
+                $command = unserialize(json_decode($job->payload, true)['data']['command']);
+
+                return [$job->queue, $command->hostNodeId, $command->projectId];
+            })->all();
+            expect($queued)->toBe([
+                [TaskVmQueue::Templates->value, $this->hostNode->id, $behind->id],
+                [TaskVmQueue::Templates->value, $shark->id, $behind->id],
+                [TaskVmQueue::Templates->value, $this->hostNode->id, $failed->id],
+            ]);
+
+            Artisan::call('schedule:list');
+            $event = collect(app(Schedule::class)->events())->first(static fn ($event): bool => $event instanceof CallbackEvent && $event->description === FollowTaskVmDefaultBranches::class);
+            expect($event?->expression)->toBe('*/5 * * * *');
+            DB::table('jobs')->delete();
+            $event->run(app());
+            expect(DB::table('jobs')->pluck('queue')->all())->toBe([TaskVmQueue::Templates->value]);
+        });
+
+        it('logs a fetch that fails and still follows the other Projects', function (): void {
+            Log::spy();
+            [$broken, $behind] = tvm_projects(2, active: 0);
+            $broken->update(['default_branch' => 'gone']);
+            $this->incus->volumes = [
+                'tvm-template-'.$broken->id.'-20261012040000' => tvm_ready($broken->repository_url),
+                'tvm-template-'.$behind->id.'-20261012040000' => tvm_ready($behind->repository_url),
+            ];
+
+            app()->call([new FollowTaskVmDefaultBranches, 'handle']);
+
+            expect(DB::table('jobs')->count())->toBe(1);
+            Log::shouldHaveReceived('warning')->with('Task VM workspace template could not follow its default branch.', Mockery::on(static fn (array $context): bool => $context['project_id'] === $broken->id));
+        });
+    });
+});
+
 describe(BuildTaskVmWorkspaceTemplate::class, function (): void {
     it('logs a failed build and makes claims ask for no new build for six hours', function (): void {
         Log::spy();
@@ -1002,14 +1229,15 @@ describe('refresh order', function (): void {
             ->and(collect($this->incus->volumes)->filter(static fn (array $config): bool => ($config['user.orbit.image'] ?? null) === TVM_NEW_IMAGE)->count())->toBe(3);
     });
 
-    it('skips a build when the host already has a current template', function (): void {
+    it('skips a build when the host already has a current template at the default branch', function (): void {
         Log::spy();
-        $this->incus->volumes = ['tvm-template-'.$this->project->id.'-20261012040000' => tvm_ready()];
+        $tip = app(IncusTaskVmWorkspaceTemplateBuilder::class)->defaultBranchTip($this->project);
+        $this->incus->volumes = ['tvm-template-'.$this->project->id.'-20261012040000' => [...tvm_ready(), 'user.orbit.commit' => $tip]];
 
         app()->call([(new BuildTaskVmWorkspaceTemplate($this->hostNode->id, $this->project->id))->withFakeQueueInteractions(), 'handle']);
 
         expect(tvm_builds($this->incus))->toBe(0);
-        Log::shouldHaveReceived('info')->with('Task VM workspace template is current; no build.', Mockery::any());
+        Log::shouldHaveReceived('info')->with('Task VM workspace template is at the default branch; no update.', Mockery::any());
 
         // Another owner or image is not current.
         $this->incus->volumes = ['tvm-template-'.$this->project->id.'-20261012040000' => [...tvm_ready(), 'user.orbit.owner' => '1001:1001']];
