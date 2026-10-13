@@ -276,7 +276,7 @@ describe('Composer configuration', function (): void {
             ->toContain('tests/Unit/Architecture')
             ->toContain('tests/Feature/Infrastructure/Instances/ConfiguredOriginReadTest.php')
             ->toContain('tests/Feature/Infrastructure/Caddy/CaddyPublicationLockTest.php')
-            ->toContain('tests/Unit/E2E/ProofFixtureContractTest.php')
+            ->toContain('tests/Unit/E2E/Value/TopologyNodeCatalogTest.php')
             ->toContain('tests/Unit/SuccessRequestIdBoundaryTest.php')
             ->toContain('tests/Unit/RepositoryGuidanceTest.php')
             ->toContain('tests/Unit/Requests/Workspaces/WorkspaceRequestsTest.php')

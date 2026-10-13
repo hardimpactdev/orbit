@@ -1322,7 +1322,7 @@ fi
             'apps/gateway': ['tests/Unit/Architecture',
                              'tests/Feature/Infrastructure/Instances/ConfiguredOriginReadTest.php',
                              'tests/Feature/Infrastructure/Caddy/CaddyPublicationLockTest.php'],
-            'apps/e2e': ['tests/Unit/E2E/ProofFixtureContractTest.php'],
+            'apps/e2e': ['tests/Unit/E2E/Value/TopologyNodeCatalogTest.php'],
             'packages/php-sdk': ['tests/Unit/SuccessRequestIdBoundaryTest.php',
                                  'tests/Unit/RepositoryGuidanceTest.php',
                                  'tests/Unit/Requests/Workspaces/WorkspaceRequestsTest.php',
