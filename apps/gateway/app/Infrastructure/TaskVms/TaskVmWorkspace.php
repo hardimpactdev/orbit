@@ -13,7 +13,6 @@ use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmFailedException;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
-use App\Jobs\TaskVms\ResumeTaskVm;
 use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskVm;
@@ -57,7 +56,7 @@ final readonly class TaskVmWorkspace
         }
 
         if ($vm->state === TaskVmState::Parked) {
-            ResumeTaskVm::dispatch($vm->id);
+            app(WakeTaskVmAction::class)->forVm($vm);
         }
 
         throw new TaskCapacityException(TaskWait::TaskVm, match ($vm->state) {

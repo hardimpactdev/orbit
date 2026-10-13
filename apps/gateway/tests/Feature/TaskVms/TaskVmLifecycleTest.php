@@ -5,7 +5,9 @@ declare(strict_types=1);
 use App\Actions\Tasks\CancelTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\TaskVms\AllocateTaskVmAction;
+use App\Actions\TaskVms\DeleteTaskVmAction;
 use App\Actions\TaskVms\DestroyEndedTaskVmsAction;
+use App\Actions\TaskVms\FailTaskVmAction;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Instances\InstanceRemovalStatus;
@@ -757,6 +759,7 @@ describe(DestroyTaskVm::class, function (): void {
             ->and(Node::query()->find($node->id))->toBeNull()
             ->and($vm->fresh()?->state)->toBe(TaskVmState::Destroyed)
             ->and($vm->fresh()?->destroyed_at)->not->toBeNull()
+            ->and($vm->fresh()?->pi_token)->toBeNull()
             ->and($vm->fresh()?->model_key)->toBeNull()
             ->and($vm->fresh()?->node_id)->toBeNull();
     });
@@ -1082,3 +1085,61 @@ function tvm_life_workspace(Task $group, Node $node): Instance
         'starting_commit' => str_repeat('a', 40), 'status' => InstanceState::SourceResolved,
     ]);
 }
+
+describe('failed VM claims', function (): void {
+    it('keeps an ended group quiet when its VM fails', function (TaskGroupStatus $status): void {
+        $group = tvm_life_group($status);
+        $vm = tvm_life_vm($group, TaskVmState::Ready);
+        $reason = TaskVmFailedException::stoppedReason('task_vm.vm_missing', 'The VM is gone.');
+        mock(CoderSettleNotifier::class)->shouldNotReceive('assistance');
+
+        expect(app(FailTaskVmAction::class)->execute($vm, [TaskVmState::Ready], 'task_vm.vm_missing', 'The VM is gone.', $reason))->toBeTrue();
+
+        expect($group->fresh())->status->toBe($status)->assistance_requested->toBeFalse()->assistance_reason->toBe($reason);
+        expect($vm->fresh()?->state)->toBe(TaskVmState::Failed);
+    })->with([TaskGroupStatus::Completed, TaskGroupStatus::Cancelled]);
+
+    it('notifies Coder once when the failure action asks before the next claim', function (): void {
+        Queue::fake();
+        $group = tvm_life_group(TaskGroupStatus::Todo);
+        $vm = tvm_life_vm($group, TaskVmState::Provisioning);
+        app(TaskExtensionState::class)->enable();
+        $reason = TaskVmFailedException::reason($vm->name, 'task_vm.bootstrap_failed', 'Cloud-init failed.');
+        mock(CoderSettleNotifier::class)->shouldReceive('assistance')->once()
+            ->withArgs(fn (Task $asked, string $actual): bool => $asked->id === $group->id && $actual === $reason);
+
+        expect(app(FailTaskVmAction::class)->execute($vm, [TaskVmState::Provisioning], 'task_vm.bootstrap_failed', 'Cloud-init failed.', $reason))->toBeTrue();
+        expect(app(FailTaskVmAction::class)->execute($vm, [TaskVmState::Provisioning], 'task_vm.bootstrap_failed', 'Cloud-init failed.', $reason))->toBeFalse();
+        app(TaskScheduler::class)->claimNext();
+        app(TaskScheduler::class)->claimNext();
+
+        expect($group->fresh())->assistance_requested->toBeTrue()->assistance_reason->toBe($reason);
+    });
+
+    it('never reserves a failed VM group and still claims a healthy group', function (): void {
+        Queue::fake();
+        $failed = tvm_life_group(TaskGroupStatus::Todo);
+        $failed->update(['capacity_wait_reason' => 'Task VM: provisioning.']);
+        tvm_life_vm($failed, TaskVmState::Failed);
+        $healthy = tvm_life_group(TaskGroupStatus::Todo);
+        $node = tvm_life_node('healthy', '10.44.0.130', role: RoleName::AppDev);
+        tvm_life_vm($healthy, TaskVmState::Ready, $node);
+        tvm_life_provision(static fn (InstanceProvisionIntent $intent): Instance => tvm_life_workspace($intent->group, $node));
+        app(TaskExtensionState::class)->enable();
+        DB::statement("CREATE TRIGGER reject_failed_vm_reservation BEFORE UPDATE OF status ON tasks WHEN NEW.id = {$failed->id} AND NEW.status = 'reserved' BEGIN SELECT RAISE(ABORT, 'failed VM was reserved'); END");
+
+        expect(app(TaskScheduler::class)->claimNext()?->id)->toBe($healthy->id);
+        expect(app(TaskScheduler::class)->claimNext())->toBeNull();
+
+        expect($failed->fresh())->status->toBe(TaskGroupStatus::Todo)->reserved_at->toBeNull()
+            ->capacity_wait_reason->toBeNull()->assistance_requested->toBeTrue();
+    });
+
+    it('clears the Pi token as soon as deletion removes the VM', function (): void {
+        $vm = tvm_life_vm(tvm_life_group(TaskGroupStatus::Cancelled), TaskVmState::Ready);
+
+        app(DeleteTaskVmAction::class)->execute($vm);
+
+        expect($vm->fresh())->state->toBe(TaskVmState::Destroying)->pi_token->toBeNull();
+    });
+});

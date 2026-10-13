@@ -654,7 +654,7 @@ it('does not notify Coder when threshold assistance rolls back', function (): vo
 });
 
 it('provisioning failures raise assistance at a minimum threshold of one', function (): void {
-    config(['orbit.tasks.provisioning_failure_threshold' => 0]);
+    config(['orbit.tasks.provisioning_failure_threshold' => 1]);
     $group = queued_group(scheduler_app('minimum-threshold'), 'Minimum');
     app()->instance(InstanceProvisioning::class, new NullInstanceProvisioning);
 
@@ -3251,4 +3251,49 @@ it('polls a running baseline without mutating topology and rechecks readiness af
     expect($state->calls)->toBe(2)->and(TaskCheck::query()->sole()->status)->toBe(TaskCheckStatus::Passed)
         ->and($spawner->events)->toBe([])
         ->and($group->fresh()->capacity_wait_reason)->toBe('The branch runtime is waiting.');
+});
+
+describe('tick failure assistance', function (): void {
+    it('reports each tick failure while assistance is already open', function (AssistanceKind $kind): void {
+        $group = Task::topLevel()->create([
+            'project_id' => scheduler_app('tick-already-asking')->id, 'title' => 'Waiting', 'brief' => 'Review',
+            'status' => TaskGroupStatus::WaitingForReview, 'pr_url' => 'https://github.com/acme/orbit/pull/7',
+        ]);
+        TaskAssistance::apply($group, $kind, $kind === AssistanceKind::Direction ? 'Which branch?' : null, 'Original request.');
+        mock(TaskPullRequestWatcher::class)->shouldReceive('health')->twice()->andReturnUsing(function (): never {
+            throw new RuntimeException('PR watcher unavailable.');
+        });
+        Exceptions::fake();
+        app(TaskExtensionState::class)->enable();
+
+        app(TaskScheduler::class)->tick();
+        app(TaskScheduler::class)->tick();
+
+        Exceptions::assertReportedCount(2);
+        Exceptions::assertReported(fn (RuntimeException $exception): bool => $exception->getMessage() === 'PR watcher unavailable.');
+        expect($group->fresh())->assistance_kind->toBe($kind)->assistance_reason->toBe('Original request.')
+            ->assistance_question->toBe($kind === AssistanceKind::Direction ? 'Which branch?' : null);
+    })->with(['failure' => AssistanceKind::Failure, 'direction' => AssistanceKind::Direction]);
+
+    it('bounds a long tick failure reason while reporting the full exception', function (): void {
+        $failure = (object) ['message' => null];
+        [$group] = scheduler_two_waiting_groups('tick-long-error', function (Task $group) use ($failure): void {
+            if ($group->title === 'First' && $failure->message !== null) {
+                throw new RuntimeException($failure->message);
+            }
+            throw new TaskCapacityException(TaskWait::Topology, 'Waiting for the topology.');
+        });
+        $failure->message = str_repeat('é', 3000);
+        Exceptions::fake();
+        app(TaskExtensionState::class)->enable();
+
+        app(TaskScheduler::class)->tick();
+        app(TaskScheduler::class)->tick();
+
+        $reason = $group->fresh()?->assistance_reason;
+        expect(mb_strlen($reason ?? ''))->toBe(2000)
+            ->and($reason)->toStartWith(TaskScheduler::TickFailedReason)->toEndWith('…')
+            ->and($group->tasks()->sole()->assistance_reason)->toBe($reason);
+        Exceptions::assertReported(fn (RuntimeException $exception): bool => $exception->getMessage() === $failure->message);
+    });
 });

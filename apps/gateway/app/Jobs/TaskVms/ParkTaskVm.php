@@ -4,17 +4,20 @@ declare(strict_types=1);
 
 namespace App\Jobs\TaskVms;
 
+use App\Actions\TaskVms\FailTaskVmAction;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\TaskVm;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Support\Facades\DB;
 use Throwable;
 
 /**
  * Stops a `parked` task VM and keeps its disk. The tick set the row to `parked` first, so no work is admitted
  * while the VM stops. A row that is no longer `parked` was woken meanwhile and stays running. A failure stays
- * on the row as its error, and the row stays `parked`: the next resume starts the VM whatever its power.
+ * on the row as its error, and the row stays `parked`: after the last try the group asks for assistance.
+ * The next resume starts the VM whatever its power.
  */
 final class ParkTaskVm implements ShouldBeUnique, ShouldQueue
 {
@@ -42,6 +45,14 @@ final class ParkTaskVm implements ShouldBeUnique, ShouldQueue
 
     public function failed(Throwable $exception): void
     {
-        TaskVm::query()->whereKey($this->taskVmId)->where('state', TaskVmState::Parked)->update(TaskVm::errorFrom($exception));
+        DB::transaction(function () use ($exception): void {
+            $vm = TaskVm::query()->whereKey($this->taskVmId)->where('state', TaskVmState::Parked)->lockForUpdate()->first();
+            if (! $vm instanceof TaskVm) {
+                return;
+            }
+            $error = TaskVm::errorFrom($exception);
+            $vm->update($error);
+            app(FailTaskVmAction::class)->requestAssistance($vm, "Task VM could not park: {$error['error_code']}: {$error['error_message']}");
+        });
     }
 }
