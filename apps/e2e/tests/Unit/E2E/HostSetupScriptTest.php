@@ -54,9 +54,9 @@ describe('bin/e2e-topology-host-setup', function () {
     it('gives root a subordinate id range when the files lack one, so Incus can map the operator container', function () {
         $source = (string) file_get_contents(hostSetupScript());
 
-        expect($source)->toContain("for file in /etc/subuid /etc/subgid; do")
-            ->toContain("grep -q '^root:' \"$file\"")
-            ->toContain("printf 'root:1000000:1000000000\\n' >>\"$file\"")
+        expect($source)->toContain('for file in /etc/subuid /etc/subgid; do')
+            ->toContain('grep -q \'^root:\' "$file"')
+            ->toContain('printf \'root:1000000:1000000000\\n\' >>"$file"')
             ->toContain('((idmap_changed == 0)) || systemctl restart incus.service');
     });
 

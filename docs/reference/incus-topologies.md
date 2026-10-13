@@ -107,12 +107,14 @@ An image holds no Gateway database, CA, SSH key, WireGuard key, authorized key, 
 | `bootstrap.gateway` | Prepares the worktree's Gateway `.env` and runs `orbit:bootstrap` at the Gateway's address |
 | `enroll.<node>` | Enrolls each workload Node in table order with `orbit:node-provision` |
 | `enroll.operator` | Registers the roleless operator, grants it Gateway access, and points its CLI at the topology Gateway and CA |
-| `roles.<node>` | For each workload Node whose entry adds a role, runs `orbit node:role:add <node> <role> --json` from the operator. For `ingress`, the Node first joins its own Cluster `e2e-<node>`, which the operator creates, because the role needs Cluster membership and one ingress Node per Cluster. |
+| `roles.<node>` | For each workload Node whose entry adds a role, runs `orbit node:role:add <node> <role> --json` from the operator. `ingress` first puts the Node in its own Cluster. |
 | `readiness` | Runs the readiness probes |
 
 `bootstrap.gateway` writes the Gateway checkout path into the worktree's Gateway `.env` and applies the migrations. `orbit:bootstrap` then creates the Orbit CA, the Gateway SSH key, and the VPN at `10.44.0.1`.
 
 For each workload Node, `enroll.<node>` authorizes the Gateway SSH key and reads the Node's host key. It passes the Node's roles, WireGuard address, and host key fingerprint to `orbit:node-provision`. Enrollment is serial, because it writes the Gateway's SQLite store.
+
+An `ingress` entry needs Cluster membership, and a Cluster holds one ingress Node. So the operator creates the Cluster `e2e-<node>` for that Node and adds the Node to it before it adds the role.
 
 The harness changes guests only through Orbit commands and its own guest scripts. It never edits the Gateway database. A failed acquisition removes every resource it created, drops the lease, and exits nonzero with the step and the redacted error. When cleanup itself fails, the lease stays so `release` can finish it.
 
@@ -145,12 +147,14 @@ A topology also runs inside a VM, such as a task VM, with nested KVM. Run `sudo 
 | Step | What happens |
 | --- | --- |
 | Packages | Installs `incus`, the QEMU system emulator for the machine's architecture, `btrfs-progs`, and `nftables` |
-| Idmap | Adds `root:1000000:1000000000` to `/etc/subuid` and `/etc/subgid` when they have no root entry, and restarts Incus. Incus maps the unprivileged operator container from root's range and refuses to create it without one, as on a task VM whose user came from `useradd`. |
+| Idmap | Adds `root:1000000:1000000000` to `/etc/subuid` and `/etc/subgid` when they have no root entry, and restarts Incus. Without it, Incus refuses the unprivileged operator container. |
 | Incus | Initializes Incus when it has no `orbit-e2e` storage pool |
 | Access | Adds the invoking user to `incus-admin`. The group applies to new logins only, so start the harness in a new session, for example over SSH or with `sudo -u orbit -i`. |
 | AppArmor | Adds `file mr /usr/bin/bash,` to `/etc/apparmor.d/local/wg-quick` and reloads the profile, so `wg-quick` runs in the unprivileged operator container. |
 | Worktrees | Creates `/fast/worktrees/orbit`, the default worktree root, owned by the invoking user |
 | Isolation | Installs the nftables table `orbit-e2e-isolation` and the boot unit `orbit-e2e-isolation.service` that loads it |
+
+A task VM's `/etc/subuid` holds only the range of its user `orbit`, which is why the Idmap step exists.
 
 Incus gets a btrfs pool `orbit-e2e` on a sparse loop file (`--pool-size`, default 45GiB), the bridge `incusbr0` on `10.99.0.1/24`, and a default profile with a root disk and an `eth0` NIC. The harness replaces that NIC for each guest.
 

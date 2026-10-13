@@ -26919,7 +26919,7 @@
                           "maxItems": 3,
                           "items": {
                             "type": "string",
-                            "pattern": "^(?:app-dev|app-prod|app-prod-2)(?:\\+(?:ingress|database|websocket))*$(?![\\s\\S])",
+                            "pattern": "^(?:app-dev|app-prod|app-prod-2)(?:\\+ingress)?$(?![\\s\\S])",
                             "maxLength": 64
                           }
                         },
@@ -27775,7 +27775,7 @@
                     "maxItems": 3,
                     "items": {
                       "type": "string",
-                      "pattern": "^(?:app-dev|app-prod|app-prod-2)(?:\\+(?:ingress|database|websocket))*$(?![\\s\\S])",
+                      "pattern": "^(?:app-dev|app-prod|app-prod-2)(?:\\+ingress)?$(?![\\s\\S])",
                       "maxLength": 64
                     },
                     "description": "JSON array of required workload nodes; [] removes declarations"
@@ -28131,7 +28131,7 @@
                     "maxItems": 3,
                     "items": {
                       "type": "string",
-                      "pattern": "^(?:app-dev|app-prod|app-prod-2)(?:\\+(?:ingress|database|websocket))*$(?![\\s\\S])",
+                      "pattern": "^(?:app-dev|app-prod|app-prod-2)(?:\\+ingress)?$(?![\\s\\S])",
                       "maxLength": 64
                     },
                     "description": "JSON array of required workload nodes; [] removes declarations"
