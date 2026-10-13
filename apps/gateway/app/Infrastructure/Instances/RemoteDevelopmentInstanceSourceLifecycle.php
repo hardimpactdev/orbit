@@ -68,15 +68,23 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                     create_directory "$allowed_root"
                     create_directory "$checkout_parent"
 
-                    if [ -e "$checkout" ] || [ -L "$checkout" ]; then
+                    # A task VM's template is built at the checkout path itself. Until a preparation records itself in
+                    # it, that checkout is the template, taken in place.
+                    in_place=0
+                    if [ -n "$template" ] && [ "$template" = "$checkout" ] && [ -d "$checkout" ] && [ ! -L "$checkout" ] \
+                        && ! [ -e "$(git -c core.fsmonitor=false -C "$checkout" rev-parse --absolute-git-dir 2>/dev/null)/orbit-source-prepare" ]; then
+                        in_place=1
+                    fi
+                    if [ "$in_place" = 0 ] && { [ -e "$checkout" ] || [ -L "$checkout" ]; }; then
                         test "$allow_existing" = 1
                         inspect_prepared_repository
                         share_checkout
                         exit 0
                     fi
 
-                    # A template on the checkout's filesystem becomes the checkout in one rename, with its dependencies.
-                    # A template that fails a check is left alone, and the checkout is cloned as without one.
+                    # A template on the checkout's filesystem becomes the checkout in one rename, with its dependencies,
+                    # or in place when it is already there. A template elsewhere that fails a check is left alone, and
+                    # the checkout is cloned as without one. A template in place that fails a check fails preparation.
                     usable_template() {
                         [ -n "$template" ] && [ -d "$template" ] && [ ! -L "$template" ] \
                             && [ "$(dirname "$template")" = "$checkout_parent" ] \
@@ -85,8 +93,13 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                             && [ "$(git -C "$template" config --get remote.origin.url 2>/dev/null)" = "$repository" ]
                     }
                     if usable_template; then
-                        mv -T -- "$template" "$checkout"
+                        if [ "$in_place" = 0 ]; then
+                            mv -T -- "$template" "$checkout"
+                        fi
                         chmod 0755 -- "$checkout"
+                    elif [ "$in_place" = 1 ]; then
+                        printf 'The workspace template at the checkout path failed its source checks.\n' >&2
+                        exit 1
                     else
                         if [ -n "$template" ] && { [ -e "$template" ] || [ -L "$template" ]; }; then
                             printf '%s\n' template-refused

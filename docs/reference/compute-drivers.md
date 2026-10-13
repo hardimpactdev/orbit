@@ -260,7 +260,7 @@ Each host keeps one template for each Project whose groups run on task VMs, `orb
 
 | Path in the volume | What it holds |
 | --- | --- |
-| `.orbit-workspace-template` | A checkout of the default branch, after the Project's setup steps: `vendor`, `node_modules`, and the build output |
+| `workspace` | A checkout of the default branch, after the Project's setup steps and one run of its task check: `vendor`, `node_modules`, the build output, and the caches that the check fills |
 | `.orbit-cache/ms-playwright` | The Playwright browsers |
 | `.orbit-cache/composer` | The Composer cache |
 | `.pnpm-store` | The pnpm store. pnpm puts it at the root of the filesystem by itself, because the default store is on another filesystem |
@@ -274,15 +274,21 @@ When Orbit creates the workspace on a task VM, it runs these steps before source
 3. It attaches the clone to the running VM as the disk `workspace`.
 4. Over the Node's SSH connection, it mounts the disk at the Project's apps directory and adds it to `/etc/fstab`. It points `~/.cache/ms-playwright` and `~/.cache/composer` at the volume.
 
-5. Source preparation checks the owner and the origin of `.orbit-workspace-template`. Then it renames that directory to the checkout `task-<id>`. The rename keeps the files and their inode. Preparation writes its receipt as for a clone.
+5. Source preparation checks the owner and the origin of `workspace`, and takes it in place. Preparation writes its receipt as for a clone.
 
-The mount never goes over a directory with content. Before it mounts, it checks that `orbit` has the `uid:gid` that the template recorded. After it mounts, it checks that the volume root and `.orbit-workspace-template` belong to that `uid:gid`.
+A task VM workspace's checkout is always `<apps directory>/workspace`, the path where the template was built. A template in place that fails the source checks fails the preparation, because a fresh clone cannot go to its path.
+
+A claim takes only a template with `user.orbit.layout=workspace`. A template from before the fixed checkout path has none. No claim takes it, and the claim queues a new build.
+
+The mount never goes over a directory with content. Before it mounts, it checks that `orbit` has the `uid:gid` that the template recorded. After it mounts, it checks that the volume root and `workspace` belong to that `uid:gid`.
 
 After the Project's repository or the base image changes, no template matches until the next build. The fstab line follows a successful mount and owner check only, so a failed mount never comes back at a later boot over a fresh clone.
 
 When step 3 or 4 fails, the claim undoes the attach before the fresh clone: it removes the cache links into the volume, unmounts it, removes its fstab line, detaches the disk, and deletes the clone. So the fresh clone lands on the VM's own disk, never on a volume with another user's files. When the undo fails too, the claim fails with `task_vm.workspace_template_detach_failed`, and the group asks for assistance.
 
 Then the Gateway sends the group's branches from its [mirror](#git-on-a-task-vm), and the workspace checks out the group's branch. The baseline check runs the setup steps on the workspace. Each step finds the dependencies in place and only installs what the branch changed.
+
+A task VM holds one workspace, so its checkout path is fixed, unlike the `task-<id>` checkout on a shared Node. Caches that record absolute paths, such as Rector's, still match at the claim, so the baseline check finds them warm.
 
 Every step is idempotent, so a claim that runs again finds the clone, the disk, and the mount in place. A warm VM gets its clone at the claim, so warm VMs stay the same for every Project. The base image creates `orbit` with uid and gid 1000, so the files of a template belong to `orbit` on every VM from that image. A template is still only taken on the image it was built on, and the mount checks the owner.
 
@@ -339,16 +345,28 @@ The build runs these stages on the host over SSH, with `sudo -n incus --project 
 | `identity` | Reads the base image that the builder booted, and the `uid:gid` of `orbit` |
 | `volume` | Creates the block volume with the host's `disk` size, and attaches it |
 | `mount` | Formats the volume as ext4, gives its root to `orbit`, and mounts it with the same script as a claim |
-| `clone` | Creates `.orbit-workspace-template` with `git init` as `orbit`, and checks out the default branch, which the Gateway sends from its [mirror](#git-on-a-task-vm) |
+| `clone` | Creates `workspace` with `git init` as `orbit`, and checks out the default branch, which the Gateway sends from its [mirror](#git-on-a-task-vm) |
 | `php` | Installs the `app-dev` PHP packages of the version that `composer.json` selects, with the Instance's program. With the base image, it only checks them |
 | `setup:<step>` | Runs each Project setup step as `orbit` in a login Bash in the checkout, with `VP_HOME` set and stdin closed, as the baseline check does. See below |
+| `warm-check` | Runs the Project's task check once in the checkout, as the baseline check would, so the template brings its caches. See below |
 | `verify` | Requires a clean tree. The setup steps may only add ignored files |
 | `detach` | Unmounts the volume and detaches it |
-| `publish` | Sets `user.orbit.project`, `user.orbit.commit`, `user.orbit.repository`, `user.orbit.image`, `user.orbit.owner`, and `user.orbit.ready=true` on the volume |
+| `publish` | Sets `user.orbit.project`, `user.orbit.commit`, `user.orbit.repository`, `user.orbit.image`, `user.orbit.owner`, `user.orbit.layout=workspace`, and `user.orbit.ready=true` on the volume |
 | `delete-builder` | Deletes the builder VM |
 | `prune` | Deletes the older templates of the Project on the host |
 
 A monorepo whose task workspaces have no Route, such as `orbit`, skips the `php` stage, as its Instance does: the checkout is not one PHP application.
+
+The `warm-check` stage runs the Project's `task_check` like a setup step, within what the build's budget has left less 60 seconds; a Project without one skips it. Its result does not decide the build:
+
+| Outcome | Log | Template |
+| --- | --- | --- |
+| Passes | Info `Task VM workspace template warmed its caches with the task check.` | Published with warm caches |
+| Fails | Warning `Task VM workspace template task check failed; the template keeps the caches it filled.`, with the output tail | Published |
+| Runs out of budget | Warning `Task VM workspace template task check stopped at the build budget …` | Published with the caches filled so far |
+| No budget left | Warning `Task VM workspace template has no warm caches: …` | Published without warm caches |
+
+Each entry carries the command, the exit code, and the duration. When the check changes tracked files or adds unignored ones, the stage restores the checkout and logs the warning `Task VM workspace template task check changed the checkout; the warm-check stage restored it.` with the paths. Ignored files, such as the caches, stay.
 
 The step travels on stdin to a script file, so a long command fits. A [Gateway-owned step](/reference/instance-setup#gateway-owned-setup-steps), such as `@orbit/tia-baseline` or `@orbit/ci-caches`, becomes the same command as in the check. A builder has no Instance, so no SSR port is set. Each step gets its own timeout, but at most what the build's budget has left.
 

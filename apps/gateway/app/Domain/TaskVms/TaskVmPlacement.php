@@ -18,6 +18,12 @@ use App\Models\TaskVm;
  */
 final class TaskVmPlacement
 {
+    /**
+     * The checkout of the one workspace on a task VM, below the Project's directory in the apps root. The name is
+     * fixed, unlike `task-<group id>` on a shared Node, so the workspace template is built at the same path.
+     */
+    public const string WorkspaceCheckout = 'workspace';
+
     /** The live task VM that this Node is, or null for every other Node. */
     public static function forNode(Node $node): ?TaskVm
     {
