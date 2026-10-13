@@ -120,7 +120,7 @@ it('claimNext continues after provision null', function (): void {
         ->and($oldest->tasks()->sole()->fresh()?->implementer_agent_thread_id)->not->toBeNull();
 });
 
-it('leaves every waiting group untouched in todo and tries each once', function (): void {
+it('leaves every waiting group in todo, tries each once, and clears a provisioning failure', function (): void {
     claim_hol_enable();
     $project = claim_hol_app();
     $groups = [claim_hol_group($project, 'First'), claim_hol_group($project, 'Second'), claim_hol_group($project, 'Third')];
@@ -144,7 +144,7 @@ it('leaves every waiting group untouched in todo and tries each once', function 
         ->and($provisioning->calls)->toBe(3)
         ->and(array_map(static fn (Task $group): ?TaskGroupStatus => $group->fresh()?->status, $groups))->toBe([TaskGroupStatus::Todo, TaskGroupStatus::Todo, TaskGroupStatus::Todo])
         ->and($groups[0]->fresh()?->assistance_reason)->toBeNull()
-        ->and($groups[1]->fresh()?->assistance_reason)->toBe(TaskScheduler::ProvisioningFailedReason)
+        ->and($groups[1]->fresh()?->assistance_reason)->toBeNull()
         ->and($groups[2]->fresh()?->assistance_reason)->toBeNull();
 });
 

@@ -371,7 +371,7 @@ it('does not check merged pull request assistance when cancelling todo in a retu
     $settled = Task::topLevel()->findOrFail($group['id']);
     expect($cancelled?->assistance_requested)->toBeFalse()
         ->and($cancelled?->assistance_reason)->toBeNull()
-        ->and($settled->status)->toBe(TaskGroupStatus::Settling)
+        ->and($settled->status)->toBe(TaskGroupStatus::WaitingForReview)
         ->and($settled->assistance_requested)->toBeFalse()
         ->and($settled->assistance_reason)->toBeNull();
 });

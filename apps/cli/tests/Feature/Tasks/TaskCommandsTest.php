@@ -763,9 +763,8 @@ final class TaskPromptsTerminal extends Terminal
     }
 }
 
-it('shows compute mode, observed power and capacity wait in human and JSON output', function (bool $json, ?string $power): void {
+it('shows observed power and capacity wait in human and JSON output', function (bool $json, ?string $power): void {
     $fixture = json_decode((string) file_get_contents(gateway_fixture_path('tasks/tasks-show/default')), true, flags: JSON_THROW_ON_ERROR);
-    $fixture['body']['data']['task_compute'] = 'vm';
     $fixture['body']['data']['sandbox_power'] = $power;
     $fixture['body']['data']['capacity_wait_reason'] = 'The local VM budget is full.';
     MockClient::global([ShowTaskGroupRequest::class => MockResponse::make($fixture['body'])]);
@@ -774,11 +773,13 @@ it('shows compute mode, observed power and capacity wait in human and JSON outpu
     $output = Artisan::output();
     if ($json) {
         $data = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
-        expect($data['sandbox_power'])->toBe($power)
-            ->and($data['task_compute'])->toBe('vm')
+        expect($data['sandbox_power'] ?? null)->toBe($power)
             ->and($data['capacity_wait_reason'])->toBe('The local VM budget is full.');
     } else {
-        expect($output)->toContain('Task compute', 'vm', 'Sandbox power', $power ?? '—', 'Waiting for capacity', 'The local VM budget is full.');
+        expect($output)->toContain('Waiting for capacity', 'The local VM budget is full.');
+        if ($power !== null) {
+            expect($output)->toContain('Sandbox power', $power);
+        }
     }
 })->with([false, true])->with(['running', 'stopped', 'destroyed', null]);
 

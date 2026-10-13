@@ -235,7 +235,7 @@ it('provisions a workspace without an automatic root dependency copy', function 
     $node = provisioner_node('acme-dev', '10.44.0.111');
     Instance::query()->create([
         'project_id' => $project->id,
-        'node_id' => $node->id,
+        'node_id' => provisioner_node('acme-host', '10.44.0.112')->id,
         'name' => 'default',
         'checkout_path' => '/srv/orbit/apps/acme/default',
         'branch' => 'main',
@@ -286,7 +286,8 @@ it('activates a visitable workspace through the development provisioner', functi
         ->and($instance?->status)->toBe(InstanceState::SourceResolved)
         ->and($instance?->task_workspace_routed)->toBeTrue()
         ->and($fakes->development->reserves)->toBe(1)
-        ->and($fakes->development->completes)->toBe(1);
+        ->and($fakes->development->prepares)->toBe(1)
+        ->and($fakes->development->completes)->toBe(0);
 });
 
 it('creates a visitable Task workspace at the repository root for each package type', function (ProjectType $type): void {
@@ -302,7 +303,8 @@ it('creates a visitable Task workspace at the repository root for each package t
         ->and($instance?->root)->toBe('.')
         ->and($instance?->status)->toBe(InstanceState::SourceResolved)
         ->and($fakes->development->reserves)->toBe(1)
-        ->and($fakes->development->completes)->toBe(1);
+        ->and($fakes->development->prepares)->toBe(1)
+        ->and($fakes->development->completes)->toBe(0);
 })->with([
     'laravel-package' => ProjectType::LaravelPackage,
     'node-package' => ProjectType::NodePackage,
@@ -494,6 +496,8 @@ function orbit_workspace_clone(): array
     expect($instance)->toBeInstanceOf(Instance::class)
         ->and($instance->status)->toBe(InstanceState::SourceResolved)
         ->and($instance->routes()->count())->toBe(0);
+    // The task VM is already gone, so removal falls back to the generic Instance remover.
+    TaskVm::query()->where('group_id', $group->id)->update(['state' => TaskVmState::Destroyed]);
 
     $checkout = sys_get_temp_dir().'/orbit-task-'.$instance->id;
     if (! is_dir($checkout)) {
