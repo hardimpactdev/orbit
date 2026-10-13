@@ -697,7 +697,7 @@ A build or sync that stops early cleans up too. A command stopped with SIGINT or
 
 Every night at 03:00, while task VMs are enabled, the Gateway scheduler queues the job `RefreshTaskVmBaseImages` on the `task-vm-images` queue. It builds the base image once, on the first host in `task_vms.incus.hosts`, and syncs it to every other configured host, one after another. While the first host has no base image, the job only reads its image list, so the first build is always `task-vms:build-image`. The job fails with `task_vm.unknown_host` when the first host's Node is not active.
 
-A failed build changes no host. A host whose sync fails keeps its image, and the job fails with `task_vm.image_sync_failed` after the other hosts, so `failed_jobs` records it and the log names each host. The refresh has its own [worker](#jobs), so it delays no other task VM job.
+A failed build changes no host. A host whose sync fails keeps its image, and the job fails with `task_vm.image_sync_failed` after the other hosts, so `failed_jobs` records it and the log names each host. The refresh has its own [worker](#jobs), so it delays no other task VM job. So the build runs beside provisioning: while it runs, the first host holds two extra VMs, the builder and then the smoke VM, next to its task VMs.
 
 ### Sync the base image
 
