@@ -8,7 +8,7 @@ use App\E2E\Git\GitRepository;
 use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
 use App\E2E\Value\AttemptId;
-use App\E2E\Value\FeatureTopology;
+use App\E2E\Value\TopologyRecord;
 use App\E2E\Value\GuestCommand;
 use App\E2E\Value\GuestCommandResult;
 use App\E2E\Value\MountPath;
@@ -25,7 +25,7 @@ use RuntimeException;
 use Throwable;
 
 /**
- * Acquire, sync, verify, and exec on one issue's discovery topology.
+ * Acquire, sync, verify, and exec on one issue's topology.
  *
  * Acquisition composes the declared Nodes: each guest starts from its role image on a new network, the
  * worktree is mounted on the checkout Nodes, a fresh test Gateway is bootstrapped, and every other Node is
@@ -48,7 +48,7 @@ final readonly class TopologyAcquirer
         private TopologyComposer $composer,
         private WorktreeSynchronizer $synchronizer,
         private TopologyVerifier $verifier,
-        private DiscoveryGuestPreparer $guests,
+        private TopologyGuestPreparer $guests,
         private HostCapacity $capacity,
         private StatePaths $hostPaths,
         private OperationId $operation,
@@ -58,7 +58,7 @@ final readonly class TopologyAcquirer
     ) {}
 
     /** @param (Closure(string, float): void)|null $progress hears each composition step and its seconds */
-    public function acquire(TopologyRequest $request, TopologyRecipe $recipe, ?Closure $progress = null): FeatureTopology
+    public function acquire(TopologyRequest $request, TopologyRecipe $recipe, ?Closure $progress = null): TopologyRecord
     {
         $this->assertRequestOwnership($request);
         $state = IssueState::forWorktree($request->issue, $request->worktree);
@@ -66,7 +66,7 @@ final readonly class TopologyAcquirer
         try {
             if ($state->hasAttempt()) {
                 throw new RuntimeException(
-                    "{$request->issue} already has discovery attempt {$state->attemptId()->value}; release it first.",
+                    "{$request->issue} already has topology attempt {$state->attemptId()->value}; release it first, or acquire with --replace.",
                 );
             }
 
@@ -77,13 +77,13 @@ final readonly class TopologyAcquirer
     }
 
     /**
-     * Refresh discovery after a source change and publish the verified source binding.
+     * Refresh the topology after a source change and publish the verified source binding.
      *
      * A quick sync proves the mount, installs the current guest helper scripts, and applies pending Gateway
      * migrations, then stops. It skips the readiness probes and leaves `topology.json` and the guest source
      * marker at the last successful full sync, so standalone `verify` still refuses a changed mount.
      */
-    public function sync(TopologyRequest $request, bool $quick = false): FeatureTopology
+    public function sync(TopologyRequest $request, bool $quick = false): TopologyRecord
     {
         $this->assertRequestOwnership($request);
         $state = IssueState::forWorktree($request->issue, $request->worktree);
@@ -109,7 +109,7 @@ final readonly class TopologyAcquirer
         }
     }
 
-    public function verify(TopologyRequest $request): FeatureTopology
+    public function verify(TopologyRequest $request): TopologyRecord
     {
         $state = IssueState::forWorktree($request->issue, $request->worktree);
         $lock = $this->issueLock($request->issue);
@@ -160,15 +160,15 @@ final readonly class TopologyAcquirer
     }
 
     /** @param Closure(string, float): void $progress */
-    private function create(TopologyRequest $request, IssueState $state, TopologyRecipe $recipe, Closure $progress): FeatureTopology
+    private function create(TopologyRequest $request, IssueState $state, TopologyRecipe $recipe, Closure $progress): TopologyRecord
     {
         $this->assertMountableWorktree($request->worktree);
         $this->assertBootstrappedWorktree($request->worktree);
 
         $attempt = $this->attempts === null ? AttemptId::generate() : ($this->attempts)();
-        $target = TopologyTarget::feature($request->issue, $attempt, $recipe);
+        $target = TopologyTarget::for($request->issue, $attempt, $recipe);
         $mount = [
-            'device' => FeatureTopology::SOURCE_DEVICE,
+            'device' => TopologyRecord::SOURCE_DEVICE,
             'source' => $request->worktree,
             'path' => MountPath::GUEST_SOURCE,
         ];
@@ -176,18 +176,18 @@ final readonly class TopologyAcquirer
         $state->writeAttempt($attempt, $this->operation, $recipe);
         try {
             $mountToken = $state->writeMountToken();
-            $construction = $this->step($progress, 'reserve', fn (): TopologyConstructionInputs => $this->construct($target, $mounts));
-            $this->step($progress, 'start', function () use ($target): void {
+            $construction = StageTimer::run($progress, 'reserve', fn (): TopologyConstructionInputs => $this->construct($target, $mounts));
+            StageTimer::run($progress, 'start', function () use ($target): void {
                 $instances = array_values($target->instances());
                 $this->host->startAll($instances);
                 $this->host->waitForAgents($instances);
                 $this->host->waitForGlobalIpv4($instances);
                 $this->guests->assertSourceMounted($target);
             });
-            $source = $this->step($progress, 'scripts', fn (): SourceState => $this->synchronizer->syncWorkingTree($target, $request->worktree, $mountToken));
-            $this->step($progress, 'compose', fn () => $this->composer->compose($target, $progress));
-            $verification = $this->step($progress, 'readiness', fn (): VerificationReport => $this->ready($target, $source));
-            $topology = new FeatureTopology($construction, $source, $verification, $mounts);
+            $source = StageTimer::run($progress, 'scripts', fn (): SourceState => $this->synchronizer->syncWorkingTree($target, $request->worktree, $mountToken));
+            StageTimer::run($progress, 'compose', fn () => $this->composer->compose($target, $progress));
+            $verification = StageTimer::run($progress, 'readiness', fn (): VerificationReport => $this->ready($target, $source));
+            $topology = new TopologyRecord($construction, $source, $verification, $mounts);
             $state->writeTopology($topology);
 
             return $topology;
@@ -219,7 +219,7 @@ final readonly class TopologyAcquirer
                 'user.orbit.e2e.attempt' => $target->attempt->value,
                 'user.orbit.e2e.operation' => $this->operation->value,
             ];
-            $this->networks->create($target->network(), $slot, $metadata, 14);
+            $this->networks->create($target->network(), $slot, $metadata, $target->recipe->lastAddress());
             $guests = [];
             foreach ($target->recipe->nodes as $node) {
                 $guests[$node->key] = [
@@ -230,6 +230,7 @@ final readonly class TopologyAcquirer
                     'address' => $node->address,
                     'slot' => $slot,
                     'container' => $node->isContainer(),
+                    'memory' => $node->memory,
                     'metadata' => [...$metadata, 'user.orbit.e2e.role-image' => $images[$node->image->value]],
                     ...(isset($mounts[$node->key]) ? ['mount' => $mounts[$node->key]] : []),
                 ];
@@ -250,28 +251,6 @@ final readonly class TopologyAcquirer
         }
 
         return $verification;
-    }
-
-    /**
-     * @template T
-     *
-     * @param  Closure(string, float): void  $progress
-     * @param  Closure(): T  $work
-     * @return T
-     */
-    private function step(Closure $progress, string $name, Closure $work): mixed
-    {
-        $started = microtime(true);
-        try {
-            $result = $work();
-        } catch (Throwable $exception) {
-            throw str_starts_with($exception->getMessage(), 'Step ')
-                ? $exception
-                : new RuntimeException("Step {$name} failed: ".$exception->getMessage(), previous: $exception);
-        }
-        $progress($name, microtime(true) - $started);
-
-        return $result;
     }
 
     /** Roll every intended resource back, drop the lease, and rethrow. */
@@ -308,7 +287,7 @@ final readonly class TopologyAcquirer
         return $state->mountTokenHash() ?? $state->writeMountToken();
     }
 
-    private function ownedInstance(FeatureTopology $topology, string $node): string
+    private function ownedInstance(TopologyRecord $topology, string $node): string
     {
         if (! $topology->target->recipe->hasNode($node)) {
             throw new InvalidArgumentException(
@@ -330,9 +309,9 @@ final readonly class TopologyAcquirer
         return $instance;
     }
 
-    private function withSource(FeatureTopology $topology, SourceState $source, VerificationReport $verification): FeatureTopology
+    private function withSource(TopologyRecord $topology, SourceState $source, VerificationReport $verification): TopologyRecord
     {
-        return new FeatureTopology($topology->construction, $source, $verification, $topology->mounts);
+        return new TopologyRecord($topology->construction, $source, $verification, $topology->mounts);
     }
 
     private function issueLock(string $issue): OperationLock
@@ -358,10 +337,11 @@ final readonly class TopologyAcquirer
 
     private function assertBootstrappedWorktree(string $worktree): void
     {
+        GatewayEnvironment::ensure($worktree);
         foreach (self::REQUIRED_WORKTREE_FILES as $file) {
             if (! is_file($worktree.'/'.$file)) {
                 throw new RuntimeException(
-                    "The worktree is missing {$file}; run bin/bootstrap in the worktree before discovery.",
+                    "The worktree is missing {$file}; run bin/bootstrap in the worktree before acquire.",
                 );
             }
         }

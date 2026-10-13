@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
-use App\E2E\DiscoveryGuestPreparer;
+use App\E2E\TopologyGuestPreparer;
 use App\E2E\Git\GitRepository;
 use App\E2E\GuestTransport;
 use App\E2E\HostCapacity;
@@ -106,7 +106,7 @@ final class AppServiceProvider extends ServiceProvider
 
             return new HostCapacity($app->make(IncusHost::class), $maxVms);
         });
-        $this->app->singleton(DiscoveryGuestPreparer::class);
+        $this->app->singleton(TopologyGuestPreparer::class);
         $this->app->singleton(TopologyComposer::class);
         $this->app->singleton(
             TopologyVerifier::class,
@@ -144,7 +144,7 @@ final class AppServiceProvider extends ServiceProvider
             composer: $app->make(TopologyComposer::class),
             synchronizer: $app->make(WorktreeSynchronizer::class),
             verifier: $app->make(TopologyVerifier::class),
-            guests: $app->make(DiscoveryGuestPreparer::class),
+            guests: $app->make(TopologyGuestPreparer::class),
             capacity: $app->make(HostCapacity::class),
             hostPaths: $app->make(StatePaths::class),
             operation: $app->make(OperationId::class),

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\E2E\DiscoveryGuestPreparer;
+use App\E2E\TopologyGuestPreparer;
 use App\E2E\HostCapacity;
 use App\E2E\IncusHost;
 use App\E2E\IncusNetworkLifecycle;
@@ -16,7 +16,7 @@ use App\E2E\TopologyComposer;
 use App\E2E\TopologyReleaser;
 use App\E2E\TopologyVerifier;
 use App\E2E\Value\AttemptId;
-use App\E2E\Value\FeatureTopology;
+use App\E2E\Value\TopologyRecord;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\RoleImage;
 use App\E2E\Value\TopologyRecipe;
@@ -106,7 +106,7 @@ function acquirerFixture(?Closure $override = null, array &$steps = [], bool $im
     $operation = new OperationId(str_repeat('c', 32));
     $host = new IncusHost(pool: 'orbit-e2e');
     $networks = new IncusNetworkLifecycle($host);
-    $guests = new DiscoveryGuestPreparer($host);
+    $guests = new TopologyGuestPreparer($host);
 
     return [
         'acquirer' => new TopologyAcquirer(
@@ -164,8 +164,8 @@ describe('TopologyAcquirer', function () {
                 'converge-gateway.sh bootstrap @gateway',
                 'prepare-node.sh gateway-authorize @app-dev',
                 'prepare-node.sh gateway-authorize @operator',
-                'converge-app-dev.sh app-dev @gateway',
-                'converge-operator.sh provision @gateway',
+                'converge-node.sh provision @gateway',
+                'converge-node.sh provision @gateway',
                 'converge-operator.sh grant @gateway',
                 'converge-operator.sh configure-cli @operator',
             ])
@@ -176,25 +176,26 @@ describe('TopologyAcquirer', function () {
             ->and(array_column($incus->firewall, 'operation'))->toBe(['ensure']);
     });
 
-    it('enrolls every declared production Node with its own WireGuard address', function () {
+    it('enrolls every declared Node with its catalog role, TLD, and WireGuard address', function () {
         $steps = [];
         ['acquirer' => $acquirer, 'incus' => $incus, 'request' => $request] = acquirerFixture(steps: $steps);
 
-        $acquirer->acquire($request, TopologyRecipe::compose(TopologyRecipe::WORKLOADS));
-        $enrollments = array_values(array_filter($incus->execs, static fn (array $exec): bool => str_contains($exec['argv'][0], 'converge-app-')));
+        $acquirer->acquire($request, TopologyRecipe::fromOption('app-dev,app-prod,app-prod-2'));
+        $enrollments = array_values(array_filter($incus->execs, static fn (array $exec): bool => str_contains($exec['argv'][0], 'converge-node.sh')));
 
-        expect(array_map(static fn (array $exec): array => [basename($exec['argv'][0]), $exec['argv'][1], $exec['argv'][4] ?? null], $enrollments))
+        expect(array_map(static fn (array $exec): array => [$exec['argv'][2], ...array_slice($exec['argv'], 5)], $enrollments))
             ->toBe([
-                ['converge-app-dev.sh', 'app-dev', null],
-                ['converge-app-prod.sh', 'app-prod', '10.44.0.3'],
-                ['converge-app-prod.sh', 'app-prod-2', '10.44.0.4'],
+                ['app-dev', '10.44.0.2', 'app-dev', 'beast'],
+                ['app-prod', '10.44.0.3', 'app-prod', 'app-prod'],
+                ['app-prod-2', '10.44.0.4', 'app-prod', 'app-prod-2'],
+                ['operator', '10.44.0.5'],
             ])
             ->and(array_keys($incus->instances))->toHaveCount(5);
     });
 
     it('adds each declared extra role from the operator after every Node is enrolled', function () {
         $steps = [];
-        ['acquirer' => $acquirer, 'request' => $request] = acquirerFixture(steps: $steps);
+        ['acquirer' => $acquirer, 'incus' => $incus, 'request' => $request] = acquirerFixture(steps: $steps);
         $timings = [];
 
         $acquirer->acquire($request, TopologyRecipe::fromOption('app-dev,app-prod+ingress,app-prod-2+ingress'), function (string $step) use (&$timings): void {
@@ -208,7 +209,14 @@ describe('TopologyAcquirer', function () {
             'converge-operator.sh role-add @operator',
         ])
             ->and($timings)->toContain('roles.app-prod')->toContain('roles.app-prod-2')
-            ->and($timings)->not->toContain('roles.app-dev');
+            ->and($timings)->not->toContain('roles.app-dev')
+            ->and(array_values(array_map(
+                static fn (array $exec): array => array_slice($exec['argv'], 1),
+                array_filter($incus->execs, static fn (array $exec): bool => ($exec['argv'][1] ?? null) === 'role-add'),
+            )))->toBe([
+                ['role-add', 'app-prod', 'ingress', 'e2e-app-prod'],
+                ['role-add', 'app-prod-2', 'ingress', 'e2e-app-prod-2'],
+            ]);
     });
 
     it('fails before creating anything when a role image is missing and names the build command', function () {
@@ -223,13 +231,13 @@ describe('TopologyAcquirer', function () {
 
     it('rolls back every resource and names the step and Orbit error when enrollment fails', function () {
         ['acquirer' => $acquirer, 'incus' => $incus, 'worktree' => $worktree, 'request' => $request] = acquirerFixture(
-            fn (string $instance, array $argv): ?array => $argv[0] === '/usr/local/bin/converge-app-dev.sh'
+            fn (string $instance, array $argv): ?array => $argv[0] === '/usr/local/bin/converge-node.sh' && $argv[2] === 'app-dev'
                 ? ["Node provisioning failed at step [wireguard-peer-install] with error [vpn.peer_config_failed].\n", "wg-quick failed\n", 1]
                 : null,
         );
 
         expect(fn () => $acquirer->acquire($request, TopologyRecipe::compose(['app-dev'])))
-            ->toThrow(RuntimeException::class, 'Step enroll.app-dev failed: guest script converge-app-dev.sh exited 1 on orbit-e2e-tst-9-aaaaaaaa-gateway at Orbit step wireguard-peer-install (vpn.peer_config_failed).')
+            ->toThrow(RuntimeException::class, 'Step enroll.app-dev failed: guest script converge-node.sh exited 1 on orbit-e2e-tst-9-aaaaaaaa-gateway at Orbit step wireguard-peer-install (vpn.peer_config_failed).')
             ->and($incus->instances)->toBe([])
             ->and($incus->networks)->toBe([])
             ->and(array_column($incus->firewall, 'operation'))->toBe(['ensure', 'remove'])
@@ -251,7 +259,7 @@ describe('TopologyAcquirer', function () {
         $acquirer->acquire($request, TopologyRecipe::compose([]));
 
         expect(fn () => $acquirer->acquire($request, TopologyRecipe::compose([])))
-            ->toThrow(RuntimeException::class, 'TST-9 already has discovery attempt '.str_repeat('a', 32).'; release it first.');
+            ->toThrow(RuntimeException::class, 'TST-9 already has topology attempt '.str_repeat('a', 32).'; release it first, or acquire with --replace.');
     });
 
     it('refuses a worktree that bin/bootstrap has not prepared', function () {
@@ -259,7 +267,7 @@ describe('TopologyAcquirer', function () {
         unlink($worktree.'/apps/gateway/.env');
 
         expect(fn () => $acquirer->acquire($request, TopologyRecipe::compose([])))
-            ->toThrow(RuntimeException::class, 'The worktree is missing apps/gateway/.env; run bin/bootstrap in the worktree before discovery.')
+            ->toThrow(RuntimeException::class, 'The worktree is missing apps/gateway/.env; run bin/bootstrap in the worktree before acquire.')
             ->and($incus->instances)->toBe([]);
     });
 
@@ -351,11 +359,11 @@ describe('TopologyAcquirer', function () {
             ->and(IssueState::forWorktree('TST-9', $worktree)->hasAttempt())->toBeTrue();
     });
 
-    it('keeps the feature topology schema the Gateway reads for its acquisition state', function () {
+    it('records schema 6 without the retired attempt purpose', function () {
         ['acquirer' => $acquirer, 'request' => $request] = acquirerFixture();
         $topology = $acquirer->acquire($request, TopologyRecipe::compose([]));
 
-        expect($topology->toArray()['purpose'])->toBe('discovery')
-            ->and(FeatureTopology::SCHEMA)->toBe(5);
+        expect($topology->toArray())->not->toHaveKey('purpose')
+            ->and($topology->toArray()['schema'])->toBe(6);
     });
 });

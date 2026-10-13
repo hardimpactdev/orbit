@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\E2E\Value\AttemptId;
-use App\E2E\Value\AttemptPurpose;
 
 describe('AttemptId', function (): void {
     it('generates exactly 32 lowercase hexadecimal characters', function (): void {
@@ -28,12 +27,5 @@ describe('AttemptId', function (): void {
 
     it('keeps a short readable prefix of the exact identity', function (): void {
         expect(new AttemptId(str_repeat('a', 24).str_repeat('b', 8))->short())->toBe(str_repeat('a', 8));
-    });
-});
-
-describe('attempt purpose', function (): void {
-    it('names discovery as the only purpose', function (): void {
-        expect(AttemptPurpose::cases())->toBe([AttemptPurpose::Discovery])
-            ->and(AttemptPurpose::Discovery->value)->toBe('discovery');
     });
 });

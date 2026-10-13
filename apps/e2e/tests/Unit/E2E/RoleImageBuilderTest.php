@@ -118,6 +118,18 @@ describe('RoleImageBuilder', function () {
             ->and($incus->images)->not->toHaveKey($previous);
     });
 
+    it('gives builders consecutive addresses, a DHCP range that ends at the last one, and their catalog memory', function () {
+        ['builder' => $builder, 'incus' => $incus] = roleImageBuilderFixture();
+        $builder->build([RoleImage::AppProd, RoleImage::Operator]);
+
+        $inits = array_map(static fn (array $init): string => implode(' ', $init), $incus->callsOf('init'));
+        $created = array_values(array_filter($incus->calls, static fn (array $call): bool => array_slice($call, 0, 2) === ['network', 'create']));
+
+        expect($inits[0])->toMatch('/eth0,ipv4\.address=10\.232\.\d+\.10 /')->toContain('limits.memory=1GiB')
+            ->and($inits[1])->toMatch('/eth0,ipv4\.address=10\.232\.\d+\.11 /')->toContain('limits.memory=512MiB')
+            ->and(implode(' ', $created[0]))->toMatch('/ipv4\.dhcp\.ranges=10\.232\.(\d+)\.10-10\.232\.\1\.11( |\z)/');
+    });
+
     it('runs program N of every role before program N+1, then the Gateway identity removal, then the seal', function () {
         ['builder' => $builder, 'incus' => $incus] = roleImageBuilderFixture();
         $builder->build([RoleImage::Gateway, RoleImage::Operator]);

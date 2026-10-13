@@ -6,10 +6,10 @@ namespace App\E2E\Value;
 
 use InvalidArgumentException;
 
-/** One issue's composed discovery topology, as `<worktree>/.e2e/topology.json` records it. */
-final readonly class FeatureTopology
+/** One issue's composed topology, as `<worktree>/.e2e/topology.json` records it. */
+final readonly class TopologyRecord
 {
-    public const int SCHEMA = 5;
+    public const int SCHEMA = 6;
 
     /** The one disk device name a mounted worktree uses on every checkout Node. */
     public const string SOURCE_DEVICE = 'orbit-source';
@@ -24,8 +24,6 @@ final readonly class FeatureTopology
     /** The exact attempt this topology belongs to; two attempts of one issue never share resources. */
     public AttemptId $attempt;
 
-    public AttemptPurpose $purpose;
-
     /**
      * @param  array<string, array{device:string,source:string,path:string}>  $mounts
      */
@@ -37,7 +35,6 @@ final readonly class FeatureTopology
     ) {
         $this->target = $construction->target;
         $this->attempt = $this->target->attempt;
-        $this->purpose = AttemptPurpose::Discovery;
         $this->network = $this->target->network();
         $instances = [];
         foreach ($construction->nodes as $node => $record) {
@@ -88,7 +85,6 @@ final readonly class FeatureTopology
             'schema' => self::SCHEMA,
             'issue' => $this->target->issue,
             'attempt_id' => $this->attempt->value,
-            'purpose' => $this->purpose->value,
             'nodes' => $this->target->recipe->nodeKeys(),
             'construction' => $this->construction->toArray(),
             'network' => $this->network,
@@ -106,7 +102,7 @@ final readonly class FeatureTopology
             $version = json_encode($value['schema'] ?? null, JSON_THROW_ON_ERROR);
 
             throw new InvalidArgumentException(
-                "The feature topology schema {$version} is not supported; release it with the harness that created it.",
+                "The topology record schema {$version} is not supported; release it with the harness that created it.",
             );
         }
 
@@ -115,7 +111,6 @@ final readonly class FeatureTopology
                 'schema',
                 'issue',
                 'attempt_id',
-                'purpose',
                 'nodes',
                 'construction',
                 'network',
@@ -124,13 +119,12 @@ final readonly class FeatureTopology
                 'source',
                 'verification',
             ]
-            || $value['purpose'] !== AttemptPurpose::Discovery->value
             || ! is_array($value['construction'])
             || ! is_array($value['mounts'])
             || ! is_array($value['source'])
             || ! is_array($value['verification'])
         ) {
-            throw new InvalidArgumentException('The feature topology schema is invalid.');
+            throw new InvalidArgumentException('The topology record schema is invalid.');
         }
 
         $topology = new self(
@@ -146,7 +140,7 @@ final readonly class FeatureTopology
             || $value['network'] !== $topology->network
             || $value['instances'] !== $topology->instances
         ) {
-            throw new InvalidArgumentException('The feature topology identity does not match its construction inputs.');
+            throw new InvalidArgumentException('The topology record identity does not match its construction inputs.');
         }
 
         return $topology;

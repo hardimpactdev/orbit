@@ -3,10 +3,11 @@
 declare(strict_types=1);
 
 use App\E2E\IncusHost;
+use App\E2E\Value\TopologyRecipe;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Process;
 
-it('sizes newly created guests by Node with the uniform override', function (?string $override, string $node, string $memory, int $address): void {
+it('sizes newly created guests by their catalog Node, with the uniform override', function (?string $override, string $node, string $memory, int $address): void {
     if ($override !== null) {
         config(['e2e.incus.memory' => $override]);
     }
@@ -20,6 +21,7 @@ it('sizes newly created guests by Node with the uniform override', function (?st
         'address' => $address,
         'slot' => 2,
         'container' => $node === 'operator',
+        'memory' => TopologyRecipe::fromOption('app-dev,app-prod,app-prod-2')->node($node)->memory,
         'metadata' => [],
     ]]);
 

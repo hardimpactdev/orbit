@@ -8,7 +8,7 @@ use App\E2E\Value\TopologyTarget;
 
 function fullRecipe(): TopologyRecipe
 {
-    return TopologyRecipe::compose(TopologyRecipe::WORKLOADS);
+    return TopologyRecipe::fromOption('app-dev,app-prod,app-prod-2');
 }
 
 describe('TopologyTarget', function () {
@@ -27,7 +27,7 @@ describe('TopologyTarget', function () {
     ]);
 
     it('rejects an invalid issue identity', function (string $issue) {
-        expect(fn () => TopologyTarget::feature($issue, AttemptId::generate(), fullRecipe()))
+        expect(fn () => TopologyTarget::for($issue, AttemptId::generate(), fullRecipe()))
             ->toThrow(InvalidArgumentException::class);
     })->with([
         'lowercase prefix' => ['tst-123'],
@@ -38,27 +38,27 @@ describe('TopologyTarget', function () {
     it('uses compact deterministic network names within the managed bridge limit', function () {
         $attempt = new AttemptId(str_repeat('a', 32));
 
-        expect(TopologyTarget::feature('TST-123', $attempt, fullRecipe())->network())->toBe('oe-50fa1830b7de')
-            ->and(strlen(TopologyTarget::feature('ORBIT-123456789', $attempt, fullRecipe())->network()))->toBe(15);
+        expect(TopologyTarget::for('TST-123', $attempt, fullRecipe())->network())->toBe('oe-50fa1830b7de')
+            ->and(strlen(TopologyTarget::for('ORBIT-123456789', $attempt, fullRecipe())->network()))->toBe(15);
     });
 
     it('names one guest per declared Node and refuses an undeclared one', function () {
-        $target = TopologyTarget::feature('TST-123', new AttemptId(str_repeat('a', 32)), TopologyRecipe::compose(['app-dev']));
+        $target = TopologyTarget::for('TST-123', new AttemptId(str_repeat('a', 32)), TopologyRecipe::compose(['app-dev']));
 
         expect($target->instances())->toBe([
             'gateway' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
             'app-dev' => 'orbit-e2e-tst-123-aaaaaaaa-app-dev',
             'operator' => 'orbit-e2e-tst-123-aaaaaaaa-operator',
         ])
-            ->and(strlen(TopologyTarget::feature('ORBITABCDE-123456789', new AttemptId(str_repeat('a', 32)), fullRecipe())->instance('app-prod-2')))
+            ->and(strlen(TopologyTarget::for('ORBITABCDE-123456789', new AttemptId(str_repeat('a', 32)), fullRecipe())->instance('app-prod-2')))
             ->toBeLessThanOrEqual(63)
             ->and(fn () => $target->instance('app-prod'))
             ->toThrow(InvalidArgumentException::class, 'The topology has no Node [app-prod].');
     });
 
     it('never shares resource identities between two attempts of one issue', function () {
-        $first = TopologyTarget::feature('TST-123', new AttemptId(str_repeat('a', 32)), fullRecipe());
-        $second = TopologyTarget::feature('TST-123', new AttemptId(str_repeat('b', 32)), fullRecipe());
+        $first = TopologyTarget::for('TST-123', new AttemptId(str_repeat('a', 32)), fullRecipe());
+        $second = TopologyTarget::for('TST-123', new AttemptId(str_repeat('b', 32)), fullRecipe());
 
         expect($first->network())->not->toBe($second->network())
             ->and($first->instance('gateway'))->not->toBe($second->instance('gateway'))
@@ -66,14 +66,14 @@ describe('TopologyTarget', function () {
     });
 
     it('uses the deterministic network and Node MAC formula', function () {
-        $target = TopologyTarget::feature('TST-123', new AttemptId(str_repeat('a', 32)), fullRecipe());
+        $target = TopologyTarget::for('TST-123', new AttemptId(str_repeat('a', 32)), fullRecipe());
 
         expect($target->mac('gateway'))
             ->toBe('00:16:3e:'.implode(':', str_split(substr(sha1($target->network().':gateway'), 0, 6), 2)));
     });
 
     it('matches the issue as one delimited branch token', function (string $branch, bool $matches) {
-        expect(TopologyTarget::feature('TST-123', AttemptId::generate(), fullRecipe())->matchesBranch($branch))->toBe($matches);
+        expect(TopologyTarget::for('TST-123', AttemptId::generate(), fullRecipe())->matchesBranch($branch))->toBe($matches);
     })->with([
         'prefixed feature branch' => ['feature/TST-123-build-topology', true],
         'lowercase worktree branch' => ['codex/tst-123', true],

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use App\E2E\IssueState;
 use App\E2E\Value\AttemptId;
-use App\E2E\Value\FeatureTopology;
+use App\E2E\Value\TopologyRecord;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\SourceState;
 use App\E2E\Value\TopologyConstructionInputs;
@@ -12,15 +12,15 @@ use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\Value\VerificationReport;
 
-function issueStateTopology(string $issue, AttemptId $attempt, ?TopologyRecipe $recipe = null): FeatureTopology
+function issueStateTopology(string $issue, AttemptId $attempt, ?TopologyRecipe $recipe = null): TopologyRecord
 {
-    $target = TopologyTarget::feature($issue, $attempt, $recipe ?? TopologyRecipe::compose(TopologyRecipe::DEFAULT_WORKLOADS));
+    $target = TopologyTarget::for($issue, $attempt, $recipe ?? TopologyRecipe::fromOption(null));
     $images = [];
     foreach ($target->recipe->images() as $image) {
         $images[$image->value] = str_repeat('f', 64);
     }
 
-    return new FeatureTopology(
+    return new TopologyRecord(
         TopologyConstructionInputs::create($target, 2, $images),
         new SourceState(str_repeat('b', 40), str_repeat('b', 40)),
         new VerificationReport(true, ['fixture' => verificationProbeFixture()]),
@@ -49,7 +49,7 @@ describe('IssueState', function () {
 
         $state->writeAttempt($attempt, $operation, $recipe);
         expect($state->topology())->toBeNull()
-            ->and(fn () => $state->requireTopology())->toThrow(RuntimeException::class, 'has an active discovery lease but no topology record');
+            ->and(fn () => $state->requireTopology())->toThrow(RuntimeException::class, 'has an active lease but no topology record');
 
         $state->writeTopology(issueStateTopology('TST-12', $attempt, $recipe));
         $state->log("acquire attempt={$attempt->value}\nsecond line");
@@ -57,7 +57,7 @@ describe('IssueState', function () {
         expect($state->root())->toBe($worktree.'/.e2e')
             ->and($state->attemptId()->value)->toBe($attempt->value)
             ->and($state->operationId()->value)->toBe($operation->value)
-            ->and($state->attempt()['purpose'])->toBe('discovery')
+            ->and($state->attempt())->not->toHaveKey('purpose')
             ->and($state->recipe()->nodeKeys())->toBe(['gateway', 'app-dev', 'operator'])
             ->and($state->requireTopology()->attempt->value)->toBe($attempt->value)
             ->and(file_get_contents($worktree.'/.e2e/log'))

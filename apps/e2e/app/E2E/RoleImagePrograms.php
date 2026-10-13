@@ -28,12 +28,9 @@ final readonly class RoleImagePrograms
     /** @return list<Program> */
     public function for(RoleImage $image): array
     {
-        $programs = [$this->harness('orbit-e2e-base', 'role-image.sh', ['base'])];
-        if ($image === RoleImage::Gateway) {
-            $programs[] = $this->harness('orbit-e2e-gateway-prerequisites', 'role-image.sh', ['gateway-prerequisites']);
-        }
-        if ($image === RoleImage::Operator) {
-            $programs[] = $this->harness('orbit-e2e-operator-tooling', 'operator-tooling.sh', []);
+        $programs = [];
+        foreach ($image->harnessPrograms() as [$name, $script, $arguments]) {
+            $programs[] = $this->harness($name, $script, $arguments);
         }
         foreach ($this->render($image->programRoles()) as $program) {
             if ($program['name'] === 'bootstrap' && ! $image->runsBootstrapProgram()) {
@@ -98,6 +95,7 @@ final readonly class RoleImagePrograms
      */
     private function render(array $roles): array
     {
+        GatewayEnvironment::ensure($this->repositoryRoot);
         $home = sys_get_temp_dir().'/orbit-e2e-programs-'.bin2hex(random_bytes(8));
         try {
             if (! mkdir($home.'/ssh', 0700, true) || file_put_contents($home.'/ssh/id_ed25519.pub', self::PLACEHOLDER_KEY."\n") === false) {

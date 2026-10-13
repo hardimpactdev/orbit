@@ -72,7 +72,7 @@ function featureTarget(
     string $character = 'a',
     ?TopologyRecipe $recipe = null,
 ): TopologyTarget {
-    return TopologyTarget::feature($issue, attemptId($character), $recipe ?? TopologyRecipe::compose(TopologyRecipe::DEFAULT_WORKLOADS));
+    return TopologyTarget::for($issue, attemptId($character), $recipe ?? TopologyRecipe::fromOption(null));
 }
 
 function topologyConstructionFixture(

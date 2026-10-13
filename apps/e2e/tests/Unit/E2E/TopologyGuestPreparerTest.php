@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\E2E\DiscoveryGuestPreparer;
+use App\E2E\TopologyGuestPreparer;
 use App\E2E\IncusHost;
 use App\E2E\Value\GuestCommand;
 use App\E2E\Value\TopologyTarget;
@@ -89,7 +89,7 @@ describe('mount.source', function () {
         fakePreparerGuests([], $batches, $execs);
         $target = preparerTarget();
 
-        new DiscoveryGuestPreparer(new IncusHost)->assertSourceMounted($target);
+        new TopologyGuestPreparer(new IncusHost)->assertSourceMounted($target);
 
         expect($batches)
             ->toHaveCount(1)
@@ -109,7 +109,7 @@ describe('mount.source', function () {
         $execs = [];
         fakePreparerGuests(['mountpoint.gateway' => 32, 'mountpoint.app-dev' => 32], $batches, $execs);
 
-        expect(fn () => new DiscoveryGuestPreparer(new IncusHost)->assertSourceMounted(preparerTarget()))
+        expect(fn () => new TopologyGuestPreparer(new IncusHost)->assertSourceMounted(preparerTarget()))
             ->toThrow(RuntimeException::class, 'The worktree is not mounted on mountpoint.gateway, mountpoint.app-dev.')
             ->and($execs)
             ->toBe([]);
@@ -121,7 +121,7 @@ describe('mount.source', function () {
         fakePreparerGuests([], $batches, $execs);
         $target = preparerTarget();
 
-        new DiscoveryGuestPreparer(new IncusHost)->placeGatewayEnvironment($target);
+        new TopologyGuestPreparer(new IncusHost)->placeGatewayEnvironment($target);
 
         expect($batches)
             ->toBe([])
@@ -133,7 +133,7 @@ describe('mount.source', function () {
             ->toBe([
                 'sh',
                 '-ec',
-                DiscoveryGuestPreparer::GATEWAY_ENVIRONMENT_SCRIPT,
+                TopologyGuestPreparer::GATEWAY_ENVIRONMENT_SCRIPT,
                 'orbit-e2e',
                 '/home/orbit/orbit/apps/gateway/.env',
                 '/home/orbit/orbit/apps/gateway',
@@ -152,7 +152,7 @@ describe('mount.source', function () {
         chmod($environment, 0o640);
 
         try {
-            $result = Process::run(['sh', '-ec', DiscoveryGuestPreparer::GATEWAY_ENVIRONMENT_SCRIPT, 'orbit-e2e', $environment, '/home/orbit/orbit/apps/gateway']);
+            $result = Process::run(['sh', '-ec', TopologyGuestPreparer::GATEWAY_ENVIRONMENT_SCRIPT, 'orbit-e2e', $environment, '/home/orbit/orbit/apps/gateway']);
 
             expect($result->successful())->toBeTrue()
                 ->and(file_get_contents($environment))->toBe("APP_ENV=local\nORBIT_HOME=/home/orbit/.orbit\nORBIT_GATEWAY_CHECKOUT=/home/orbit/orbit/apps/gateway\n")
@@ -174,7 +174,7 @@ describe('mount.source', function () {
         $inode = fileinode($environment);
 
         try {
-            $result = Process::run(['sh', '-ec', DiscoveryGuestPreparer::GATEWAY_ENVIRONMENT_SCRIPT, 'orbit-e2e', $environment, '/home/orbit/orbit/apps/gateway']);
+            $result = Process::run(['sh', '-ec', TopologyGuestPreparer::GATEWAY_ENVIRONMENT_SCRIPT, 'orbit-e2e', $environment, '/home/orbit/orbit/apps/gateway']);
 
             clearstatcache();
             expect($result->successful())->toBeTrue()
@@ -191,7 +191,7 @@ describe('mount.source', function () {
         mkdir($directory);
 
         try {
-            $result = Process::run(['sh', '-ec', DiscoveryGuestPreparer::GATEWAY_ENVIRONMENT_SCRIPT, 'orbit-e2e', $directory.'/.env', '/home/orbit/orbit/apps/gateway']);
+            $result = Process::run(['sh', '-ec', TopologyGuestPreparer::GATEWAY_ENVIRONMENT_SCRIPT, 'orbit-e2e', $directory.'/.env', '/home/orbit/orbit/apps/gateway']);
 
             expect($result->exitCode())->toBe(66)
                 ->and($result->errorOutput())->toBe("The worktree has no {$directory}/.env; run bin/bootstrap on the host.\n")
@@ -206,7 +206,7 @@ describe('mount.source', function () {
         $execs = [];
         fakePreparerGuests(['environment' => 66], $batches, $execs, ['environment' => "The worktree has no /home/orbit/orbit/apps/gateway/.env; run bin/bootstrap on the host.\n"]);
 
-        expect(fn () => new DiscoveryGuestPreparer(new IncusHost)->placeGatewayEnvironment(preparerTarget()))
+        expect(fn () => new TopologyGuestPreparer(new IncusHost)->placeGatewayEnvironment(preparerTarget()))
             ->toThrow(
                 RuntimeException::class,
                 'The Gateway environment of the mounted worktree could not be prepared: The worktree has no /home/orbit/orbit/apps/gateway/.env; run bin/bootstrap on the host.',
@@ -221,7 +221,7 @@ describe('mount.source', function () {
         fakePreparerGuests([], $batches, $execs);
         $target = preparerTarget();
 
-        new DiscoveryGuestPreparer(new IncusHost)->exposeOrbitCli($target);
+        new TopologyGuestPreparer(new IncusHost)->exposeOrbitCli($target);
 
         expect($batches)
             ->toHaveCount(1)
@@ -241,7 +241,7 @@ describe('mount.source', function () {
         $execs = [];
         fakePreparerGuests(['orbit-cli.app-dev' => 1], $batches, $execs);
 
-        expect(fn () => new DiscoveryGuestPreparer(new IncusHost)->exposeOrbitCli(preparerTarget()))
+        expect(fn () => new TopologyGuestPreparer(new IncusHost)->exposeOrbitCli(preparerTarget()))
             ->toThrow(RuntimeException::class, 'The orbit CLI could not be linked onto the PATH on orbit-cli.app-dev.');
     });
 });
@@ -253,7 +253,7 @@ describe('prepare.schema', function () {
         fakePreparerGuests([], $batches, $execs);
         $target = preparerTarget();
 
-        new DiscoveryGuestPreparer(new IncusHost)->prepareGatewaySchema($target);
+        new TopologyGuestPreparer(new IncusHost)->prepareGatewaySchema($target);
 
         expect($batches)
             ->toBe([])
@@ -286,7 +286,7 @@ describe('prepare.schema', function () {
         $execs = [];
         fakePreparerGuests(['environment' => 73], $batches, $execs);
 
-        expect(fn () => new DiscoveryGuestPreparer(new IncusHost)->prepareGatewaySchema(preparerTarget()))
+        expect(fn () => new TopologyGuestPreparer(new IncusHost)->prepareGatewaySchema(preparerTarget()))
             ->toThrow(RuntimeException::class, 'Gateway schema preparation failed with exit code 73.')
             ->and($execs)
             ->toHaveCount(1);
@@ -297,7 +297,7 @@ describe('prepare.schema', function () {
         $execs = [];
         fakePreparerGuests(['schema-timeout' => 1], $batches, $execs);
 
-        expect(fn () => new DiscoveryGuestPreparer(new IncusHost)->prepareGatewaySchema(preparerTarget()))
+        expect(fn () => new TopologyGuestPreparer(new IncusHost)->prepareGatewaySchema(preparerTarget()))
             ->toThrow(
                 RuntimeException::class,
                 'Gateway schema preparation could not complete: Incus command timed out or could not run: Incus guest command could not run.',

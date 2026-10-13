@@ -7,14 +7,14 @@ namespace App\E2E;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\StatePaths;
 use App\E2E\Value\AttemptId;
-use App\E2E\Value\FeatureTopology;
+use App\E2E\Value\TopologyRecord;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\TopologyRecipe;
 use InvalidArgumentException;
 use RuntimeException;
 
 /**
- * The state of one issue's discovery topology, kept under `<worktree>/.e2e/`.
+ * The state of one issue's topology, kept under `<worktree>/.e2e/`.
  *
  * `attempt.json` is the lease: it names the attempt, the operation, and the declared Nodes before any
  * resource exists, so release can find every guest of a failed acquisition. `topology.json` is the
@@ -50,17 +50,16 @@ final readonly class IssueState
     }
 
     /**
-     * @return array{issue:string,attempt_id:string,purpose:string,operation_id:string,acquired_at:string,recipe:array{workloads:list<string>}}
+     * @return array{issue:string,attempt_id:string,operation_id:string,acquired_at:string,recipe:array{workloads:list<string>}}
      */
     public function attempt(): array
     {
         $lease = $this->store->read(self::ATTEMPT) ?? throw new RuntimeException("{$this->issue} has no active attempt.");
         if (
-            array_keys($lease) !== ['issue', 'attempt_id', 'purpose', 'operation_id', 'acquired_at', 'recipe']
+            array_keys($lease) !== ['issue', 'attempt_id', 'operation_id', 'acquired_at', 'recipe']
             || $lease['issue'] !== $this->issue
             || ! is_string($lease['attempt_id'])
             || preg_match('/\A[0-9a-f]{32}\z/D', $lease['attempt_id']) !== 1
-            || $lease['purpose'] !== 'discovery'
             || ! is_string($lease['operation_id'])
             || preg_match('/\A[0-9a-f]{32}\z/D', $lease['operation_id']) !== 1
             || ! is_string($lease['acquired_at'])
@@ -79,7 +78,6 @@ final readonly class IssueState
         return [
             'issue' => $lease['issue'],
             'attempt_id' => $lease['attempt_id'],
-            'purpose' => 'discovery',
             'operation_id' => $lease['operation_id'],
             'acquired_at' => $lease['acquired_at'],
             'recipe' => $recipe->toArray(),
@@ -106,14 +104,13 @@ final readonly class IssueState
         $this->store->write(self::ATTEMPT, [
             'issue' => $this->issue,
             'attempt_id' => $attempt->value,
-            'purpose' => 'discovery',
             'operation_id' => $operation->value,
             'acquired_at' => gmdate('Y-m-d\TH:i:s\Z'),
             'recipe' => $recipe->toArray(),
         ]);
     }
 
-    public function topology(): ?FeatureTopology
+    public function topology(): ?TopologyRecord
     {
         if (! $this->hasAttempt()) {
             return null;
@@ -122,7 +119,7 @@ final readonly class IssueState
         if ($value === null) {
             return null;
         }
-        $topology = FeatureTopology::fromArray($value);
+        $topology = TopologyRecord::fromArray($value);
         if ($topology->target->issue !== $this->issue) {
             throw new RuntimeException('The topology record belongs to another issue.');
         }
@@ -138,16 +135,16 @@ final readonly class IssueState
     }
 
     /** The topology; its lease and record must name the same attempt. */
-    public function requireTopology(): FeatureTopology
+    public function requireTopology(): TopologyRecord
     {
         $this->attemptId();
 
         return $this->topology() ?? throw new RuntimeException(
-            "{$this->issue} has an active discovery lease but no topology record.",
+            "{$this->issue} has an active lease but no topology record.",
         );
     }
 
-    public function writeTopology(FeatureTopology $topology): void
+    public function writeTopology(TopologyRecord $topology): void
     {
         $this->store->write(self::TOPOLOGY, $topology->toArray());
     }

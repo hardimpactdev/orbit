@@ -27,7 +27,7 @@ final readonly class TopologyTarget
     public static function assertIssue(string $issue): void
     {
         if (preg_match(self::ISSUE_PATTERN, $issue) !== 1) {
-            throw new InvalidArgumentException('The Linear issue ID is invalid.');
+            throw new InvalidArgumentException('The topology issue ID is invalid; it looks like TASK-123.');
         }
     }
 

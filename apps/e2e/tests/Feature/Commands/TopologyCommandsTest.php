@@ -14,7 +14,7 @@ use App\Console\Commands\Topology\SyncCommand;
 use App\Console\Commands\Topology\VerifyCommand;
 use App\Console\Commands\Topology\WebCommand;
 use App\E2E\IssueState;
-use App\E2E\Value\FeatureTopology;
+use App\E2E\Value\TopologyRecord;
 use App\E2E\Value\GuestCommand;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\SourceState;
@@ -48,11 +48,11 @@ function commandPrimaryFixture(string $issue = 'TST-12'): array
     return ['primary' => $primary, 'worktree' => (string) realpath($worktree)];
 }
 
-/** Records a composed discovery topology of app-dev in the worktree, as `acquire` leaves it. */
-function commandTopologyFixture(string $issue, string $worktree, ?TopologyRecipe $recipe = null): FeatureTopology
+/** Records a composed topology of app-dev in the worktree, as `acquire` leaves it. */
+function commandTopologyFixture(string $issue, string $worktree, ?TopologyRecipe $recipe = null): TopologyRecord
 {
     $recipe ??= TopologyRecipe::compose(['app-dev']);
-    $topology = new FeatureTopology(
+    $topology = new TopologyRecord(
         topologyConstructionFixture($issue, 'a', $recipe),
         new SourceState(str_repeat('d', 40), str_repeat('d', 40)),
         new VerificationReport(true, ['nodes.registered' => verificationProbeFixture(probe: 'nodes.registered')]),
@@ -65,7 +65,7 @@ function commandTopologyFixture(string $issue, string $worktree, ?TopologyRecipe
 }
 
 /** The running guests and network of a recorded topology on a fake Incus. */
-function commandIncusFixture(FeatureTopology $topology, ?Closure $responder = null): FakeIncus
+function commandIncusFixture(TopologyRecord $topology, ?Closure $responder = null): FakeIncus
 {
     $incus = new FakeIncus()->install();
     $owner = [
@@ -170,6 +170,24 @@ describe('topology commands', function () {
         'a second production Node alone' => ['app-dev,app-prod-2', 'The Node [app-prod-2] requires [app-prod].'],
     ]);
 
+    it('refuses a held topology, and with --replace releases it before it acquires', function () {
+        ['worktree' => $worktree] = commandPrimaryFixture();
+        $topology = commandTopologyFixture('TST-12', $worktree);
+        $incus = commandIncusFixture($topology);
+
+        $refused = commandJson('topology:acquire', ['issue' => 'TST-12', 'worktree' => $worktree, '--nodes' => 'app-dev']);
+        expect($refused['error'])->toContain('TST-12 already has topology attempt '.$topology->attempt->value.'; release it first, or acquire with --replace.')
+            ->and($incus->instances)->toHaveCount(3);
+
+        $replaced = commandJson('topology:acquire', ['issue' => 'TST-12', 'worktree' => $worktree, '--nodes' => 'app-dev', '--replace' => true]);
+
+        expect($replaced['state'])->toBe('failed')
+            ->and($replaced['error'])->toContain('run bin/bootstrap in the worktree before acquire')
+            ->and($incus->instances)->toBe([])
+            ->and($incus->networks)->toBe([])
+            ->and(IssueState::forWorktree('TST-12', $worktree)->hasAttempt())->toBeFalse();
+    });
+
     it('rejects unsafe command inputs before infrastructure access', function () {
         Process::fake();
 
@@ -186,7 +204,7 @@ describe('topology commands', function () {
             ->expectsOutputToContain('--lines must be')
             ->assertFailed();
         $this->artisan('topology:status', ['issue' => 'not-an-issue'])
-            ->expectsOutputToContain('Linear issue ID is invalid')
+            ->expectsOutputToContain('The topology issue ID is invalid')
             ->assertFailed();
         $this->artisan('topology:acquire', ['issue' => 'TST-12', 'worktree' => 'relative/path'])
             ->expectsOutputToContain('absolute')
@@ -226,7 +244,7 @@ describe('topology commands', function () {
             ->and($incus->calls)->toBe([]);
     });
 
-    it('reports the discovery topology the Gateway reads in text and JSON', function () {
+    it('reports the held topology in text and JSON', function () {
         ['worktree' => $worktree] = commandPrimaryFixture();
         $topology = commandTopologyFixture('TST-12', $worktree);
         $incus = new FakeIncus()->install();
@@ -235,17 +253,16 @@ describe('topology commands', function () {
 
         expect(array_keys($status))->toBe(['state', 'issue', 'attempt_id', 'worktree', 'acquired_at', 'nodes', 'topology'])
             ->and($status)->toMatchArray([
-                'state' => 'discovery',
+                'state' => 'acquired',
                 'issue' => 'TST-12',
                 'attempt_id' => str_repeat('a', 32),
                 'worktree' => $worktree,
                 'nodes' => ['gateway', 'app-dev', 'operator'],
                 'topology' => $topology->toArray(),
             ])
-            ->and($status['topology']['purpose'])->toBe('discovery')
             ->and($status['acquired_at'])->toMatch('/\A\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ\z/')
             ->and(Artisan::call('topology:status', ['issue' => 'TST-12']))->toBe(0)
-            ->and(trim(Artisan::output()))->toBe('discovery '.str_repeat('a', 32))
+            ->and(trim(Artisan::output()))->toBe('acquired '.str_repeat('a', 32))
             ->and($incus->calls)->toBe([]);
     });
 
@@ -255,9 +272,9 @@ describe('topology commands', function () {
 
         $status = commandJson('topology:status', ['issue' => 'TST-12']);
 
-        expect($status)->toMatchArray(['state' => 'discovery', 'nodes' => ['gateway', 'operator'], 'topology' => null])
+        expect($status)->toMatchArray(['state' => 'acquired', 'nodes' => ['gateway', 'operator'], 'topology' => null])
             ->and(Artisan::call('topology:status', ['issue' => 'TST-12']))->toBe(0)
-            ->and(trim(Artisan::output()))->toBe('discovery '.str_repeat('a', 32).' incomplete');
+            ->and(trim(Artisan::output()))->toBe('acquired '.str_repeat('a', 32).' incomplete');
     });
 
     it('executes exact argv as orbit on one declared Node and reports it as JSON', function () {
@@ -330,7 +347,6 @@ describe('topology commands', function () {
         expect($released)->toBe([
             'state' => 'released',
             'issue' => 'TST-12',
-            'purpose' => 'discovery',
             'attempt_id' => str_repeat('a', 32),
             'released' => [
                 'stopped:'.$topology->target->instance('operator'),
