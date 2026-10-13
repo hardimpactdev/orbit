@@ -88,6 +88,8 @@ The files inherit the checkout's default ACL, which gives the managed user `rwX`
 
 ### Credentialed Git
 
+On a task VM none of this runs: the Gateway fetches and pushes in its own mirror and sends no token to the VM. See [Git on a task VM](/reference/compute-drivers#git-on-a-task-vm). The rest of this section covers checkouts on other Nodes.
+
 Fetch, `ls-remote`, and push carry a GitHub token. On a shared checkout the worker can write `.git/config`, and keys such as `credential.helper`, `core.sshCommand`, `remote.<name>.uploadpack`, an `ext::` URL rewrite, or an `include.path` that adds them would run a command as the managed user or send the token elsewhere. So no token-bearing Git process reads a configuration file that the worker can write:
 
 - `ls-remote` runs outside the checkout, against the Project repository URL.

@@ -16,11 +16,11 @@ use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
-use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use App\Models\Project;
@@ -36,7 +36,7 @@ use Throwable;
  * Builds the workspace template of one Project on one task VM host ({@see TaskVmWorkspaceTemplates}). A builder VM
  * `tvm-template-<time>` boots the base image with the task VM user-data and gets a new block volume. The volume is
  * mounted at the Project's apps directory with the same script as a claim. The template records the base image the
- * builder booted and the managed user's `uid:gid`, which own its files. The builder clones the default branch,
+ * builder booted and the managed user's `uid:gid`, which own its files. The builder gets the default branch from the Gateway's mirror,
  * installs the PHP packages that the Project's Instance gets, and runs the Project's setup steps as `orbit`, as the
  * baseline check does. The tree must stay clean. Then the volume is detached and marked ready, the builder goes, and
  * older templates of the Project are deleted. No agent and no group ever ran on the volume.
@@ -78,14 +78,16 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
         rmdir -- "$staging"
         BASH;
 
-    /** Clones the default branch into the template checkout and prints its commit. */
-    private const string Clone = <<<'BASH'
-        checkout=$1
-        branch=$2
-        repository=$3
-        git_read git -c core.hooksPath=/dev/null -c core.fsmonitor=false clone --no-checkout --origin origin -- "$repository" "$checkout"
-        git -C "$checkout" checkout --quiet --force -B "$branch" "refs/remotes/origin/$branch"
-        git -C "$checkout" rev-parse --verify 'HEAD^{commit}'
+    /** Creates the template checkout with the Project repository as `origin`. The Gateway sends its branch. */
+    private const string Init = <<<'BASH'
+        git init --quiet -- "$1"
+        git -C "$1" remote add origin "$2"
+        BASH;
+
+    /** Checks out the default branch that the Gateway sent and prints its commit. */
+    private const string Checkout = <<<'BASH'
+        git -c core.hooksPath=/dev/null -C "$1" checkout --quiet --force -B "$2" "refs/remotes/origin/$2"
+        git -C "$1" rev-parse --verify 'HEAD^{commit}'
         BASH;
 
     /** Writes the step from stdin to a script file and runs it in a login Bash with stdin closed, as the check does. */
@@ -104,6 +106,7 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
         private StorageRootResolver $storageRoots,
         private NodeSettingsNormalizer $nodeSettings,
         private GatewaySetupSteps $gatewaySteps,
+        private TaskVmGit $git,
     ) {}
 
     /**
@@ -282,18 +285,30 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
         ]));
     }
 
+    /**
+     * Creates the template checkout and checks out the default branch, which the Gateway sends from its mirror. No
+     * GitHub token reaches the builder ([Git on a task VM](/reference/compute-drivers#git-on-a-task-vm)).
+     */
     private function cloneDefaultBranch(TaskVmHost $host, Node $node, string $builder, Project $project, string $checkout): string
     {
         $repository = GitRepositoryOrigin::validate($project->repository_url);
-        $script = GitReadScript::for($this->access->for($repository, $project->source_access), self::Clone);
-        $result = $this->checked($builder, 'exec clone', $this->asManagedUser($host, $node, $builder, '/home/'.self::ManagedUser, [
-            'bash', '-seu', '--', $checkout, (string) $project->default_branch, $repository,
-        ], $script->protectedInput ?? $script->input));
-        $commit = trim($result->stdout);
+        $branch = (string) $project->default_branch;
+        $home = '/home/'.self::ManagedUser;
+        $this->checked($builder, 'exec git init', $this->asManagedUser($host, $node, $builder, $home, ['bash', '-ceu', self::Init, '--', $checkout, $repository]));
+        $tips = $this->git->fetch($project, [$branch], $this->access->for($repository, $project->source_access), self::ErrorCode);
+        if ($tips[$branch] === null) {
+            throw IncusHost::invalid("the workspace template builder [{$builder}]", "the repository has no default branch [{$branch}]");
+        }
+        $this->git->send($project, $checkout, $tips, fn (RemoteCommand $command): CommandResult => $this->checked(
+            $builder,
+            'exec git receive',
+            $this->asManagedUser($host, $node, $builder, $home, $command->arguments, $command->protectedInput ?? $command->input, $command->timeout ?? 900.0),
+        ), self::ErrorCode);
+        $commit = trim($this->checked($builder, 'exec git checkout', $this->asManagedUser($host, $node, $builder, $home, ['bash', '-ceu', self::Checkout, '--', $checkout, $branch]))->stdout);
 
-        return preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $commit) === 1
+        return $commit === $tips[$branch]
             ? $commit
-            : throw IncusHost::invalid("the workspace template builder [{$builder}]", 'the clone printed no commit');
+            : throw IncusHost::invalid("the workspace template builder [{$builder}]", 'the checkout is not at the commit that the Gateway sent');
     }
 
     /**

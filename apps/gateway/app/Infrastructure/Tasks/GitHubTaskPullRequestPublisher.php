@@ -13,6 +13,7 @@ use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\SourceControl\GitBranchName;
+use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskRemoteBranch;
@@ -22,6 +23,7 @@ use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\TaskVms\TaskVmGit;
 use App\Models\Instance;
 use App\Models\Task;
 use Illuminate\Support\Facades\Log;
@@ -30,6 +32,7 @@ use SensitiveParameter;
 /**
  * The token reaches the Node only on the SSH process's standard input, as for a read
  * ([ADR 0098](/decisions/0098-read-github-repositories-through-a-gateway-owned-github-app)).
+ * A task VM never gets the token: the Gateway pushes from its mirror ({@see TaskVmGit::publish()}).
  * A failed push names git's error, with the token removed. A missing Workflows permission is named.
  */
 final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPublisher
@@ -46,6 +49,7 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
         private RepositoryPullRequestAccess $access,
         private GitHubApi $github,
         private TaskWorkspaceExecutor $workspaces,
+        private TaskVmGit $git,
     ) {}
 
     public function publish(Task $group, string $body, string $commit): string
@@ -58,7 +62,7 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
 
         try {
             $token = $this->access->token($repository);
-            $this->pushBranch($instance, $branch, $token, $commit);
+            $this->pushBranch($group, $instance, $branch, $token, $commit);
             $opened = $this->github->openPullRequest($token, $repository, new GitHubPullRequestDraft($branch, $base, $group->title, $body));
             $this->requestReviewers($token, $repository, $opened);
 
@@ -107,7 +111,7 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
         [$repository, $instance, $branch] = $this->target($group);
 
         try {
-            $this->pushBranch($instance, $branch, $this->access->token($repository), $commit);
+            $this->pushBranch($group, $instance, $branch, $this->access->token($repository), $commit);
         } catch (GitHubApiException $exception) {
             throw new TaskPullRequestException('The task branch could not be pushed: '.$exception->getMessage(), previous: $exception);
         }
@@ -135,12 +139,17 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
         return [$repository, $instance, TaskRemoteBranch::for($group)];
     }
 
-    private function pushBranch(Instance $instance, string $branch, #[SensitiveParameter] string $token, string $commit): void
+    private function pushBranch(Task $group, Instance $instance, string $branch, #[SensitiveParameter] string $token, string $commit): void
     {
         if (preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $commit) !== 1) {
             throw new TaskPullRequestException('The approved commit is not a Git SHA.');
         }
-        $instance->loadMissing('node');
+        $instance->loadMissing(['node', 'project']);
+        if ($group->task_compute === TaskCompute::Vm) {
+            $this->publishFromVm($group, $instance, $branch, $token, $commit);
+
+            return;
+        }
         $script = GitReadScript::for(GitReadEnvironment::forGitHubToken($token), WorkspaceGit::networkPreamble().<<<'BASH'
             checkout=$1
             branch=$2
@@ -155,6 +164,33 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
                 input: $script->input,
                 protectedInput: $script->protectedInput,
             ), 'task-pull-request-push', 'tasks.push_failed');
+        } catch (RuntimeConvergenceException $exception) {
+            $this->failedPush($exception, $token);
+        }
+    }
+
+    /**
+     * A task VM never gets the token. The Gateway takes the approved commit out of the VM into its mirror and pushes
+     * from there ([Git on a task VM](/reference/compute-drivers#publish-from-the-vm)). The mirror first fetches the
+     * default branch and the task branch, so the VM sends only the new objects.
+     */
+    private function publishFromVm(Task $group, Instance $instance, string $branch, #[SensitiveParameter] string $token, string $commit): void
+    {
+        $project = $instance->project;
+        $access = GitReadEnvironment::forGitHubToken($token);
+        $default = $group->project->default_branch;
+        try {
+            $tips = $this->git->fetch($project, array_values(array_filter([is_string($default) && GitBranchName::isValid($default) ? $default : null, $branch], is_string(...))), $access, 'tasks.push_failed');
+            $this->git->publish(
+                $project,
+                $instance->checkout_path,
+                $commit,
+                $branch,
+                array_values(array_filter($tips, is_string(...))),
+                $access,
+                fn (RemoteCommand $command): CommandResult => $this->workspaces->execute($instance, $command, 'task-pull-request-push', 'tasks.push_failed'),
+                'tasks.push_failed',
+            );
         } catch (RuntimeConvergenceException $exception) {
             $this->failedPush($exception, $token);
         }

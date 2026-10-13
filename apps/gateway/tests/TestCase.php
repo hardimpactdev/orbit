@@ -10,6 +10,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\TaskVms\TaskVmGit;
 use App\Models\Node;
 use App\Models\NodeRole;
 use Illuminate\Contracts\Console\Kernel;
@@ -18,6 +19,7 @@ use Illuminate\Foundation\Testing\CachedState;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Foundation\Testing\WithCachedConfig;
 use Illuminate\Foundation\Testing\WithCachedRoutes;
+use Illuminate\Support\Facades\Config;
 use Tests\Support\HostPathGuardedProcessRunner;
 use Tests\Support\TestDatabaseGuard;
 
@@ -51,6 +53,12 @@ abstract class TestCase extends BaseTestCase
             NativeProcessRunner::class,
             static fn (ProcessRunner $runner): ProcessRunner => new HostPathGuardedProcessRunner($runner),
         );
+        // Each test gets its own task VM mirrors in the test's ORBIT_HOME, and tests point GitHub URLs at local repositories.
+        $app->singleton(TaskVmGit::class, static fn (Application $app): TaskVmGit => new TaskVmGit(
+            $app->make(ProcessRunner::class),
+            rtrim(Config::string('orbit.home'), '/').'/task-vm-git/'.bin2hex(random_bytes(4)),
+            ['https', 'file'],
+        ));
 
         return $app;
     }

@@ -375,10 +375,10 @@ use App\Infrastructure\Ssh\GatewaySshKeys;
 use App\Infrastructure\Ssh\HostKeyScanner;
 use App\Infrastructure\Ssh\KnownHostsRepository;
 use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\NativeSshExecutor;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshHostKeyScanner;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\TaskVms\TaskVmCredentialGuard;
 use App\Infrastructure\Tools\AptToolManager;
 use App\Infrastructure\Tools\ComposerToolManager;
 use App\Infrastructure\Tools\HomebrewCaskToolManager;
@@ -537,7 +537,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         GreenCommitResolver::class => GitHubGreenCommitResolver::class,
         BranchHeadReader::class => GitHubBranchHeadReader::class,
         RepositoryDefaultBranchResolver::class => NativeRepositoryDefaultBranchResolver::class,
-        SshExecutor::class => NativeSshExecutor::class,
+        SshExecutor::class => TaskVmCredentialGuard::class,
         DatabaseInspectionExecutor::class => RegisteredDatabaseInspectionExecutor::class,
         ClusterRouterDnsSelectionReconciler::class => NativeClusterRouterDnsSelectionReconciler::class,
         RoleStateInspector::class => NativeRoleStateInspector::class,

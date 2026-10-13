@@ -17,6 +17,8 @@ final class ProtectedInput
     /** @var resource|null */
     private mixed $hold = null;
 
+    private bool $gitCredential = false;
+
     /** @param resource $stream */
     private function __construct(mixed $stream)
     {
@@ -69,6 +71,34 @@ final class ProtectedInput
         }
 
         return $input;
+    }
+
+    /**
+     * A script that carries a GitHub credential, such as a `GitReadScript`. Orbit never sends one to a task VM
+     * ([Git on a task VM](/reference/compute-drivers#git-on-a-task-vm)).
+     */
+    public static function gitCredential(#[SensitiveParameter] string $script): self
+    {
+        $input = self::fromString($script);
+        $input->gitCredential = true;
+
+        return $input;
+    }
+
+    public function carriesGitCredential(): bool
+    {
+        return $this->gitCredential;
+    }
+
+    /** Streams a file as it is, without a copy, such as a Git pack. The file holds no secret. */
+    public static function openFile(string $path): self
+    {
+        $stream = fopen($path, 'rb');
+        if ($stream === false) {
+            throw new RuntimeException('Unable to read process input.');
+        }
+
+        return new self($stream);
     }
 
     /** Copy bounded file input into the same private spool used for secrets. */
