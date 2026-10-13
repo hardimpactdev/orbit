@@ -55,7 +55,7 @@ final readonly class CreateTaskGroupAction
             throw TaskGroupGuard::deliverablesMissing(array_map(static fn (int $index): string => 'position '.($index + 1).' "'.$data->tasks[$index]->title.'"', $missing));
         }
 
-        TaskTopology::union(array_map(static fn (TaskInputData $task): array => $task->topology, $data->tasks));
+        TaskTopology::assertFits(array_map(static fn (TaskInputData $task): TaskTopology => $task->topology, $data->tasks));
 
         $group = Task::topLevel()->create([
             'project_id' => $data->projectId,
@@ -77,7 +77,7 @@ final readonly class CreateTaskGroupAction
                 'title' => $task->title,
                 'brief' => $task->brief,
                 'deliverables' => $task->deliverables,
-                'topology' => TaskTopology::from($task->topology),
+                'topology' => $task->topology,
                 'status' => TaskStatus::Todo,
             ]);
         }

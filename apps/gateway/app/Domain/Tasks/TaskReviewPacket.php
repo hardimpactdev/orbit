@@ -49,7 +49,6 @@ final readonly class TaskReviewPacket
 
     /**
      * @param  list<TaskDeliverable>  $deliverables
-     * @param  list<string>  $topology  the subtask's declared test nodes
      * @param  list<array{title: string, summary: string}>  $approvals  earlier approved subtasks, oldest first
      * @param  list<array{path: string, insertions: int, deletions: int}>  $diffFiles  tracked and untracked files, empty when the list was cut
      * @param  array{files: int, insertions: int, deletions: int}|null  $diffCounts  full counts when the path list was cut
@@ -80,7 +79,7 @@ final readonly class TaskReviewPacket
         private string $groupStartCommit = '',
         private array $consults = [],
         private int $groupId = 0,
-        private array $topology = [],
+        private TaskTopology $topology = new TaskTopology,
     ) {}
 
     public function render(): string
@@ -103,7 +102,7 @@ final readonly class TaskReviewPacket
                 'The end is cut. '.TaskReviewContext::Path.' holds the full brief.',
             )),
             $this->continued ? '' : $this->section('Deliverables', $this->deliverablesText()),
-            $this->topology === [] ? '' : $this->section('Topology', TaskTurnInstructions::topology($this->groupId, $this->topology, reviewer: true)),
+            $this->topology->isEmpty() ? '' : $this->section('Topology', TaskTurnInstructions::topology($this->groupId, $this->topology, reviewer: true)),
             $this->continued ? '' : $this->section('Earlier approved subtasks', $this->approvalsText()),
             $this->continued || $this->consults === [] ? '' : $this->section('Consults', $this->consultsText()),
             $this->section('Diff stat', $this->diffStat()),

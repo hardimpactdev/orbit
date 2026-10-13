@@ -12,27 +12,25 @@ use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Domain\Tasks\TaskTopologyEvidence;
 use App\Domain\Tasks\TaskTopologyFailedException;
 use App\Domain\Tasks\TaskWait;
+use App\Domain\TaskVms\TaskVmTopologyRun;
+use App\Domain\TaskVms\TaskVmTopologyRunState;
 use App\Domain\TaskVms\TaskVmTopologyState;
-use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskVm;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Log;
-use JsonException;
 
 /**
  * Prepares a group's declared topology nested in its task VM, before a subtask that declares one runs its baseline
- * check or any turn. The first such subtask starts `resources/task-vms/topology.sh` in the VM as a systemd unit, which
- * runs the host setup, builds the role images the VM lacks, and acquires `TASK-<group>` with the union of the group's
- * declarations. Each tick reads the unit's state over SSH until it is ready. A ready topology that holds the subtask's
- * declaration admits it at once, from the row. A failed or lost unit asks for assistance and forgets the run, so a
- * resolution starts it again.
+ * check or any turn. The first such subtask starts a preparation unit ({@see TaskVmTopologyUnit}), which runs the host
+ * setup, builds the role images the VM lacks, and acquires `TASK-<group>` with the union of the group's declarations.
+ * Each tick reads the unit's state until it is ready. A ready topology that holds the subtask's declaration admits it
+ * at once, from the row. A failed or lost unit asks for assistance and forgets the run, so a resolution starts it
+ * again. Evidence comes from {@see TaskVmTopologyEvidenceReader}.
  */
 final readonly class TaskVmTopologyAdmission implements TaskTopologyAdmission
 {
@@ -40,20 +38,19 @@ final readonly class TaskVmTopologyAdmission implements TaskTopologyAdmission
 
     public const string NoWorkspace = 'Task VM: the group has no task VM workspace for its topology yet.';
 
-    private const string Script = 'task-vms/topology.sh';
-
     private const int ReasonLimit = 2000;
 
-    public function __construct(private DevelopmentSshExecutor $ssh, private VpnSettings $vpn) {}
+    public function __construct(private TaskVmTopologyUnit $unit, private TaskVmTopologyEvidenceReader $evidence) {}
 
     public function prepare(Task $group, Task $task): void
     {
-        if (TaskTopology::from($task->topology ?? []) === []) {
+        if ($task->topology->isEmpty()) {
             return;
         }
         $vm = TaskVm::forGroup($group);
+        $node = $vm?->node;
         $instance = $group->taskable;
-        if (! $vm instanceof TaskVm || ! $vm->node instanceof Node || ! $instance instanceof Instance) {
+        if (! $vm instanceof TaskVm || ! $node instanceof Node || ! $instance instanceof Instance) {
             throw new TaskCapacityException(TaskWait::Topology, self::NoWorkspace);
         }
         $topology = TaskTopology::forGroup($group);
@@ -62,22 +59,22 @@ final readonly class TaskVmTopologyAdmission implements TaskTopologyAdmission
         }
 
         if ($vm->topology_state === TaskVmTopologyState::Preparing) {
-            $status = $this->status($vm);
-            match ($status['state'] ?? null) {
-                'running' => throw new TaskCapacityException(TaskWait::Topology, self::preparing($vm->topology ?? [])),
-                'ready' => $vm->update(['topology_state' => TaskVmTopologyState::Ready, 'topology_error' => null]),
-                default => $this->fail($vm, $status),
+            $run = $this->unit->status($node, (string) $vm->topology_run);
+            match ($run->state) {
+                TaskVmTopologyRunState::Running => throw new TaskCapacityException(TaskWait::Topology, self::preparing($vm->topology)),
+                TaskVmTopologyRunState::Ready => $vm->update(['topology_state' => TaskVmTopologyState::Ready, 'topology_error' => null]),
+                default => $this->fail($vm, $run),
             };
         }
-        if ($vm->topology_state === TaskVmTopologyState::Ready && TaskTopology::covers($vm->topology ?? [], $topology)) {
+        if ($vm->topology_state === TaskVmTopologyState::Ready && $vm->topology->covers($topology)) {
             // The VM can restart without a park, and its nested guests stop with it. A run from an earlier boot is
             // stale, so the topology is prepared again; images and host setup stay.
-            if (($this->status($vm)['state'] ?? null) === 'ready') {
+            if ($this->unit->status($node, (string) $vm->topology_run)->state === TaskVmTopologyRunState::Ready) {
                 return;
             }
             Log::warning('The task VM restarted since its topology was ready; preparing it again.', ['task_vm' => $vm->name]);
         }
-        $this->start($vm, $vm->node, $instance, $group, $topology);
+        $this->start($vm, $node, $instance, $group, $topology);
 
         throw new TaskCapacityException(TaskWait::Topology, self::preparing($topology));
     }
@@ -85,36 +82,21 @@ final readonly class TaskVmTopologyAdmission implements TaskTopologyAdmission
     public function evidence(Task $group, CarbonInterface $since): TaskTopologyEvidence
     {
         $vm = TaskVm::forGroup($group);
+        $node = $vm?->node;
         $instance = $group->taskable;
-        if (! $vm instanceof TaskVm || ! $vm->node instanceof Node || ! $instance instanceof Instance) {
-            return TaskTopologyEvidence::parse('', $since, now());
-        }
-        try {
-            // The newest MiB: a record cut at its start no longer has the shape that counts.
-            $result = $this->run($vm->node, new RemoteCommand(
-                ['bash', '-c', 'log="$1/.e2e/evidence.log"; [ -f "$log" ] || exit 0; tail -c 1048576 -- "$log"', 'evidence', (string) $instance->checkout_path],
-                maxOutputBytes: 1100000,
-                timeout: 30,
-            ));
-        } catch (RuntimeConvergenceException $exception) {
-            throw new TaskCheckException('Orbit could not read the topology evidence log: '.$exception->getMessage(), previous: $exception);
-        }
 
-        return TaskTopologyEvidence::parse($result->stdout, $since, now());
+        return $node instanceof Node && $instance instanceof Instance
+            ? $this->evidence->read($node, $instance, $since)
+            : TaskTopologyEvidence::none();
     }
 
-    /** @param list<string> $topology */
-    private static function preparing(array $topology): string
+    private static function preparing(TaskTopology $topology): string
     {
-        return 'Task VM: preparing the topology '.implode(', ', $topology).'.';
+        return 'Task VM: preparing the topology '.implode(', ', $topology->toArray()).'.';
     }
 
-    /**
-     * Records the run first, so a tick that dies after the SSH call finds a run to read, never a second unit.
-     *
-     * @param  list<string>  $topology
-     */
-    private function start(TaskVm $vm, Node $node, Instance $instance, Task $group, array $topology): void
+    /** Records the run first, so a tick that dies after the SSH call finds a run to read, never a second unit. */
+    private function start(TaskVm $vm, Node $node, Instance $instance, Task $group, TaskTopology $topology): void
     {
         $run = bin2hex(random_bytes(8));
         $vm->update([
@@ -124,76 +106,39 @@ final readonly class TaskVmTopologyAdmission implements TaskTopologyAdmission
             'topology_started_at' => now(),
             'topology_error' => null,
         ]);
-        $script = self::script();
         try {
-            $this->run($node, new RemoteCommand(
-                ['bash', '-c', $script, 'topology', 'start', $run, (string) $instance->checkout_path, 'TASK-'.$group->id, implode(',', $topology), $vm->size->topologyPoolSize(), $this->vpn->subnet()],
-                input: $script,
-                maxOutputBytes: 16384,
-                timeout: 60,
-            ));
+            $this->unit->start($node, $run, (string) $instance->checkout_path, 'TASK-'.$group->id, $topology, (string) $vm->size->resources()->topologyPool);
         } catch (RuntimeConvergenceException $exception) {
             // The call can fail after systemd-run started the unit, for example when SSH timed out. A unit that runs
             // or finished is the run; only a run without a unit fails.
             try {
-                $state = $this->status($vm)['state'] ?? null;
+                $state = $this->unit->status($node, $run)->state;
             } catch (TaskCapacityException) {
                 $state = null;
             }
-            if (! in_array($state, ['running', 'ready', 'failed'], true)) {
-                $this->fail($vm, ['step' => 'start', 'log' => $this->output($exception->result) ?: $exception->getMessage()]);
+            if (! in_array($state, [TaskVmTopologyRunState::Running, TaskVmTopologyRunState::Ready, TaskVmTopologyRunState::Failed], true)) {
+                $this->fail($vm, new TaskVmTopologyRun(TaskVmTopologyRunState::Failed, 'start', $this->output($exception->result) ?: $exception->getMessage()));
             }
         }
     }
 
-    /** @return array<string, mixed> */
-    private function status(TaskVm $vm): array
+    private function fail(TaskVm $vm, TaskVmTopologyRun $run): never
     {
-        try {
-            $result = $this->run($vm->node ?? throw new TaskCapacityException(TaskWait::Topology, self::NoWorkspace), new RemoteCommand(
-                ['bash', '-c', self::script(), 'topology', 'status', (string) $vm->topology_run],
-                maxOutputBytes: 65536,
-                timeout: 30,
-            ));
-            $lines = preg_split('/\R/', trim($result->stdout)) ?: [];
-            $status = json_decode((string) end($lines), true, 16, JSON_THROW_ON_ERROR);
-        } catch (RuntimeConvergenceException|JsonException $exception) {
-            throw new TaskCapacityException(TaskWait::Topology, 'Task VM: the topology preparation could not be read: '.$exception->getMessage());
-        }
-
-        return is_array($status) ? $status : [];
-    }
-
-    /** @param array<string, mixed> $status */
-    private function fail(TaskVm $vm, array $status): never
-    {
-        $step = is_string($status['step'] ?? null) ? $status['step'] : null;
-        $log = is_string($status['log'] ?? null) ? trim($status['log']) : '';
         $reason = match (true) {
-            ($status['state'] ?? null) === 'lost' => 'The topology preparation stopped without a result.',
-            $step !== null => "Preparing the topology failed at step {$step}.",
+            $run->state === TaskVmTopologyRunState::Lost => 'The topology preparation stopped without a result.',
+            $run->step !== null => "Preparing the topology failed at step {$run->step}.",
             default => 'Preparing the topology failed.',
         };
-        if ($log !== '') {
-            $reason .= ' The end of its log: '.mb_substr(new CommandActivityInputSanitizer()->redactText($log), -self::ReasonLimit);
+        if ($run->log !== '') {
+            $reason .= ' The end of its log: '.mb_substr(new CommandActivityInputSanitizer()->redactText($run->log), -self::ReasonLimit);
         }
         $vm->update(['topology_state' => null, 'topology_run' => null, 'topology_error' => $reason]);
 
         throw new TaskTopologyFailedException($reason);
     }
 
-    private function run(Node $node, RemoteCommand $command): CommandResult
-    {
-        return $this->ssh->execute($node, $command, 'task-topology', 'task_vm.topology_failed', $command->timeout, 'Task VM topology');
-    }
-
     private function output(?CommandResult $result): string
     {
         return $result instanceof CommandResult ? trim($result->stdout."\n".$result->stderr) : '';
-    }
-
-    private static function script(): string
-    {
-        return (string) file_get_contents(resource_path(self::Script));
     }
 }

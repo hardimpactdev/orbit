@@ -4700,6 +4700,7 @@
                 "properties": {
                   "sql": {
                     "type": "string",
+                    "maxLength": 16384,
                     "minLength": 1,
                     "description": "SQL statement"
                   },
@@ -5127,7 +5128,7 @@
                 "properties": {
                   "username": {
                     "type": "string",
-                    "pattern": "",
+                    "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,31}$(?![\\s\\S])",
                     "maxLength": 32,
                     "description": "Username, a 1-32 character identifier"
                   },
@@ -5324,7 +5325,7 @@
                 "properties": {
                   "slug": {
                     "type": "string",
-                    "pattern": "",
+                    "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
                     "maxLength": 63,
                     "description": "Database server slug"
                   },
@@ -5334,7 +5335,7 @@
                   },
                   "tag": {
                     "type": "string",
-                    "pattern": "",
+                    "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$(?![\\s\\S])",
                     "maxLength": 128,
                     "description": "MySQL image tag. Defaults to 8.4"
                   },
@@ -8757,6 +8758,7 @@
                 "properties": {
                   "hosts": {
                     "type": "array",
+                    "maxItems": 10,
                     "items": {
                       "type": "string",
                       "maxLength": 253
@@ -9778,7 +9780,7 @@
                 "properties": {
                   "prefix": {
                     "type": "string",
-                    "pattern": "",
+                    "pattern": "^[A-Z][A-Z0-9_]{0,31}$(?![\\s\\S])",
                     "description": "Environment key prefix; defaults to DB"
                   }
                 },
@@ -9901,7 +9903,7 @@
                 "properties": {
                   "prefix": {
                     "type": "string",
-                    "pattern": "",
+                    "pattern": "^[A-Z][A-Z0-9_]{0,31}$(?![\\s\\S])",
                     "description": "Environment key prefix; defaults to DB"
                   }
                 },
@@ -22914,7 +22916,8 @@
                 "type": "object",
                 "properties": {
                   "name": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 63
                   },
                   "title": {
                     "type": "string",
@@ -22931,7 +22934,8 @@
                       "additionalProperties": false,
                       "properties": {
                         "name": {
-                          "type": "string"
+                          "type": "string",
+                          "maxLength": 63
                         },
                         "type": {
                           "type": "string",
@@ -22984,7 +22988,8 @@
                       "additionalProperties": false,
                       "properties": {
                         "key": {
-                          "type": "string"
+                          "type": "string",
+                          "maxLength": 63
                         },
                         "title": {
                           "type": "string",
@@ -23013,7 +23018,8 @@
                       "type": "object",
                       "properties": {
                         "key": {
-                          "type": "string"
+                          "type": "string",
+                          "maxLength": 63
                         },
                         "title": {
                           "type": "string",
@@ -23028,7 +23034,8 @@
                           "maxLength": 8000
                         },
                         "phase": {
-                          "type": "string"
+                          "type": "string",
+                          "maxLength": 63
                         },
                         "deliverables": {
                           "type": "array",
@@ -23124,13 +23131,15 @@
                         "options": {
                           "type": "array",
                           "items": {
-                            "type": "string"
+                            "type": "string",
+                            "maxLength": 63
                           }
                         },
                         "evidence": {
                           "type": "array",
                           "items": {
-                            "type": "string"
+                            "type": "string",
+                            "maxLength": 63
                           }
                         },
                         "min_probability": {
@@ -23516,6 +23525,7 @@
                 "properties": {
                   "name": {
                     "type": "string",
+                    "maxLength": 63,
                     "description": "Definition name"
                   },
                   "title": {
@@ -23533,7 +23543,8 @@
                       "additionalProperties": false,
                       "properties": {
                         "name": {
-                          "type": "string"
+                          "type": "string",
+                          "maxLength": 63
                         },
                         "type": {
                           "type": "string",
@@ -23586,7 +23597,8 @@
                       "additionalProperties": false,
                       "properties": {
                         "key": {
-                          "type": "string"
+                          "type": "string",
+                          "maxLength": 63
                         },
                         "title": {
                           "type": "string",
@@ -23615,7 +23627,8 @@
                       "type": "object",
                       "properties": {
                         "key": {
-                          "type": "string"
+                          "type": "string",
+                          "maxLength": 63
                         },
                         "title": {
                           "type": "string",
@@ -23630,7 +23643,8 @@
                           "maxLength": 8000
                         },
                         "phase": {
-                          "type": "string"
+                          "type": "string",
+                          "maxLength": 63
                         },
                         "deliverables": {
                           "type": "array",
@@ -23726,13 +23740,15 @@
                         "options": {
                           "type": "array",
                           "items": {
-                            "type": "string"
+                            "type": "string",
+                            "maxLength": 63
                           }
                         },
                         "evidence": {
                           "type": "array",
                           "items": {
-                            "type": "string"
+                            "type": "string",
+                            "maxLength": 63
                           }
                         },
                         "min_probability": {
@@ -33343,7 +33359,8 @@
               "additionalProperties": false,
               "properties": {
                 "name": {
-                  "type": "string"
+                  "type": "string",
+                  "maxLength": 63
                 },
                 "type": {
                   "type": "string",
@@ -33386,7 +33403,8 @@
               "additionalProperties": false,
               "properties": {
                 "key": {
-                  "type": "string"
+                  "type": "string",
+                  "maxLength": 63
                 },
                 "title": {
                   "type": "string",
@@ -33414,7 +33432,8 @@
               "type": "object",
               "properties": {
                 "key": {
-                  "type": "string"
+                  "type": "string",
+                  "maxLength": 63
                 },
                 "title": {
                   "type": "string",
@@ -33429,7 +33448,8 @@
                   "maxLength": 8000
                 },
                 "phase": {
-                  "type": "string"
+                  "type": "string",
+                  "maxLength": 63
                 },
                 "deliverables": {
                   "type": "array",
@@ -33525,13 +33545,15 @@
                 "options": {
                   "type": "array",
                   "items": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 63
                   }
                 },
                 "evidence": {
                   "type": "array",
                   "items": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 63
                   }
                 },
                 "min_probability": {
