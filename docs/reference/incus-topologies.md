@@ -145,6 +145,7 @@ A topology also runs inside a VM, such as a task VM, with nested KVM. Run `sudo 
 | Step | What happens |
 | --- | --- |
 | Packages | Installs `incus`, the QEMU system emulator for the machine's architecture, `btrfs-progs`, and `nftables` |
+| Idmap | Adds `root:1000000:1000000000` to `/etc/subuid` and `/etc/subgid` when they have no root entry, and restarts Incus. Incus maps the unprivileged operator container from root's range and refuses to create it without one, as on a task VM whose user came from `useradd`. |
 | Incus | Initializes Incus when it has no `orbit-e2e` storage pool |
 | Access | Adds the invoking user to `incus-admin`. The group applies to new logins only, so start the harness in a new session, for example over SSH or with `sudo -u orbit -i`. |
 | AppArmor | Adds `file mr /usr/bin/bash,` to `/etc/apparmor.d/local/wg-quick` and reloads the profile, so `wg-quick` runs in the unprivileged operator container. |

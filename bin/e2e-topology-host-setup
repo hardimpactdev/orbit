@@ -63,6 +63,19 @@ if ((${#missing[@]} > 0)); then
 fi
 [[ -e /dev/kvm ]] || { echo 'e2e-topology-host-setup: /dev/kvm is missing; topology VMs need (nested) KVM.' >&2; exit 1; }
 
+step 'idmap'
+# The operator is an unprivileged container. Incus maps it from root's ranges in /etc/subuid and /etc/subgid, and
+# refuses to create containers when those files exist without a root entry, as on a task VM whose user came from
+# useradd. The range starts above every user range that useradd hands out.
+idmap_changed=0
+for file in /etc/subuid /etc/subgid; do
+    if ! grep -q '^root:' "$file" 2>/dev/null; then
+        printf 'root:1000000:1000000000\n' >>"$file"
+        idmap_changed=1
+    fi
+done
+((idmap_changed == 0)) || systemctl restart incus.service
+
 step 'incus'
 # Each piece on its own, so a run that stopped halfway completes on the next run.
 incus storage show "$pool" >/dev/null 2>&1 || incus storage create "$pool" btrfs size="$pool_size"
