@@ -8,6 +8,7 @@ use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmProvider;
+use App\Domain\TaskVms\TaskVmQueue;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\TaskVms\TaskVmRuntime;
 use App\Models\Task;
@@ -45,7 +46,7 @@ final class ResumeTaskVm implements ShouldBeUnique, ShouldQueue
 
     public function __construct(public int $taskVmId)
     {
-        $this->onConnection('task-vms')->onQueue('task-vms');
+        $this->onConnection('task-vms')->onQueue(TaskVmQueue::Vms->value);
     }
 
     public function uniqueId(): string

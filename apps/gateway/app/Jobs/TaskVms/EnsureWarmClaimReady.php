@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Jobs\TaskVms;
 
+use App\Domain\TaskVms\TaskVmQueue;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\TaskVm;
 use Illuminate\Bus\UniqueLock;
@@ -31,7 +32,7 @@ final class EnsureWarmClaimReady implements ShouldQueue
 
     public function __construct(public int $taskVmId)
     {
-        $this->onConnection('task-vms')->onQueue('task-vms');
+        $this->onConnection('task-vms')->onQueue(TaskVmQueue::Vms->value);
     }
 
     public function handle(): void

@@ -14,6 +14,7 @@ use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
+use App\Domain\TaskVms\TaskVmQueue;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
@@ -22,10 +23,9 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Infrastructure\TaskVms\IncusHost;
+use App\Infrastructure\TaskVms\IncusTaskVmBaseImage;
 use App\Infrastructure\TaskVms\IncusTaskVmProvider;
 use App\Infrastructure\TaskVms\IncusTaskVmWorkspaceTemplateBuilder;
-use App\Infrastructure\TaskVms\TaskVmBaseImage;
 use App\Infrastructure\TaskVms\TaskVmBuilderShell;
 use App\Infrastructure\TaskVms\TaskVmWorkspace;
 use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplates;
@@ -190,7 +190,7 @@ final class TaskVmTemplateIncus implements SshExecutor
     /** @param  list<string>  $command */
     private function exec(array $command): CommandResult
     {
-        if ($command[0] === 'cloud-init') {
+        if (($command[0] === 'timeout' ? $command[2] : $command[0]) === 'cloud-init') {
             return new CommandResult(0, '{"status":"done","errors":[]}', '', 1, false);
         }
         $user = $command[0] === 'runuser' ? array_slice($command, 4) : $command;
@@ -562,7 +562,7 @@ describe('volumes', function (): void {
         expect(TaskVmWorkspaceTemplates::serves($orbit))->toBeFalse();
     });
 
-    it('has no clock of its own: the base image refresh and every promote queue the template refresh', function (): void {
+    it('has no clock of its own: whoever builds or syncs a base image queues the template refresh, not the promote', function (): void {
         Artisan::call('schedule:list');
         $events = collect(app(Schedule::class)->events())->filter(static fn ($event): bool => $event instanceof CallbackEvent);
 
@@ -571,8 +571,8 @@ describe('volumes', function (): void {
 
         Queue::fake();
         $this->incus->alias = TVM_NEW_IMAGE;
-        app(TaskVmBaseImage::class)->promote($this->host, $this->hostNode, TVM_IMAGE);
-        Queue::assertPushed(RefreshTaskVmWorkspaceTemplates::class, 1);
+        app(IncusTaskVmBaseImage::class)->promote($this->host, $this->hostNode, TVM_IMAGE);
+        Queue::assertNotPushed(RefreshTaskVmWorkspaceTemplates::class);
     });
 });
 
@@ -598,11 +598,13 @@ describe('scale', function (): void {
             'tvm-template-'.$projects[3]->id.'-20261011060000' => [],
         ];
 
-        app(TaskVmBaseImage::class)->promote($this->host, $this->hostNode, TVM_NEW_IMAGE);
-        app(TaskVmBaseImage::class)->promote($sharkHost, $shark, TVM_NEW_IMAGE);
+        app(IncusTaskVmBaseImage::class)->promote($this->host, $this->hostNode, TVM_NEW_IMAGE);
+        app(IncusTaskVmBaseImage::class)->promote($sharkHost, $shark, TVM_NEW_IMAGE);
+        // The build and sync queue one refresh when every host is done, as the nightly refresh does.
+        RefreshTaskVmWorkspaceTemplates::dispatch();
 
-        // Both promotes queue one refresh, on the template queue, and nothing on the task VM queue.
-        expect(DB::table('jobs')->pluck('queue')->all())->toBe([TaskVmWorkspaceTemplates::Queue]);
+        // One refresh, on the template queue, and nothing on the task VM queue.
+        expect(DB::table('jobs')->pluck('queue')->all())->toBe([TaskVmQueue::Templates->value]);
 
         app()->call([new RefreshTaskVmWorkspaceTemplates, 'handle']);
 
@@ -624,14 +626,14 @@ describe('scale', function (): void {
             }
         }
         expect($built)->toBe($expected)
-            ->and($builds->pluck('queue')->unique()->all())->toBe([TaskVmWorkspaceTemplates::Queue])
+            ->and($builds->pluck('queue')->unique()->all())->toBe([TaskVmQueue::Templates->value])
             ->and(DB::table('jobs')->where('queue', 'task-vms')->count())->toBe(0);
         Log::shouldHaveReceived('warning')->with('Task VM workspace template cannot be built; workspaces of the Project start from a fresh clone.', Mockery::on(
             static fn (array $context): bool => $context['reason'] === 'the Project has no valid default branch',
         ))->times(5);
     });
 
-    it('keeps task VM jobs ahead of template builds: each queue has its own worker', function (): void {
+    it('keeps task VM jobs ahead of template builds and base image refreshes: each queue has its own worker', function (): void {
         $this->travelTo(now()->setTime(4, 0, 10));
         tvm_projects(25, active: 25);
         app()->call([new RefreshTaskVmWorkspaceTemplates, 'handle']);
@@ -640,11 +642,13 @@ describe('scale', function (): void {
         Artisan::call('schedule:list');
         $events = app(Schedule::class)->events();
         $workers = collect($events)->filter(static fn (Event $event): bool => str_contains((string) $event->command, 'queue:work'))->values();
-        [$vms, $templates] = [$workers[0], $workers[1]];
+        [$vms, $images, $templates] = [$workers[0], $workers[1], $workers[2]];
 
-        expect(DB::table('jobs')->where('queue', TaskVmWorkspaceTemplates::Queue)->count())->toBe(21)
+        expect(DB::table('jobs')->where('queue', TaskVmQueue::Templates->value)->count())->toBe(21)
             ->and($vms->command)->toEndWith("'artisan' queue:work task-vms --queue=task-vms --stop-when-empty --max-time=120 --timeout=1500")
+            ->and($images->command)->toEndWith("'artisan' queue:work task-vms --queue=task-vm-images --stop-when-empty --max-time=120 --timeout=1700")
             ->and($templates->command)->toEndWith("'artisan' queue:work task-vms --queue=task-vm-templates --stop-when-empty --max-time=120 --timeout=1700")
+            ->and([$images->repeatSeconds, $images->withoutOverlapping, $images->expiresAt, $images->runInBackground])->toBe([1, true, 32, false])
             ->and($templates)->toBe(end($events))
             ->and([$templates->repeatSeconds, $templates->withoutOverlapping, $templates->expiresAt, $templates->runInBackground])->toBe([1, true, 32, false])
             // The task VM worker takes the destroy at once, behind no build.
@@ -654,6 +658,12 @@ describe('scale', function (): void {
 
         $this->travelTo(now()->setTime(4, 0, 58));
         expect($templates->filtersPass(app()))->toBeTrue();
+
+        // A base image refresh starts the image worker only in seconds 56 and 57, and never the template worker.
+        RefreshTaskVmBaseImages::dispatch();
+        expect($images->filtersPass(app()))->toBeFalse();
+        $this->travelTo(now()->setTime(4, 1, 56));
+        expect([$images->filtersPass(app()), $templates->filtersPass(app())])->toBe([true, false]);
 
         DB::table('jobs')->where('queue', 'task-vms')->delete();
         expect($vms->filtersPass(app()))->toBeFalse();
@@ -862,7 +872,7 @@ describe('build', function (): void {
     });
 
     it('runs Node programs in the builder as orbit through the host', function (): void {
-        $shell = new TaskVmBuilderShell(app(IncusHost::class), $this->host, $this->hostNode, 'tvm-template-1');
+        $shell = new TaskVmBuilderShell(app(IncusTaskVmBaseImage::class)->shell($this->host, $this->hostNode, 'tvm-template-1'));
 
         $shell->execute(new SshConnection('127.0.0.1', 'orbit', 22, '/k', '/h', commandTimeout: 60.0), new RemoteCommand(['sudo', '-n', 'true'], 'input'));
 
@@ -913,7 +923,7 @@ describe('refresh order', function (): void {
      */
     function tvm_template_worker(): void
     {
-        Artisan::call('queue:work', ['connection' => 'task-vms', '--queue' => TaskVmWorkspaceTemplates::Queue, '--stop-when-empty' => true, '--memory' => 4096]);
+        Artisan::call('queue:work', ['connection' => 'task-vms', '--queue' => TaskVmQueue::Templates->value, '--stop-when-empty' => true, '--memory' => 4096]);
     }
 
     /** @return int the builder VMs that were launched */
@@ -927,15 +937,17 @@ describe('refresh order', function (): void {
         $this->incus->image = TVM_NEW_IMAGE;
         tvm_projects(2, active: 2);
         $promoted = false;
-        // The real order: the first promote queues a refresh, which queues its builds; the next promote lands after it.
+        // The real order: the first promote and its refresh, which queues its builds; the next promote and refresh land after it.
         Queue::after(function (JobProcessed $event) use (&$promoted): void {
             if (! $promoted && $event->job->resolveName() === RefreshTaskVmWorkspaceTemplates::class) {
                 $promoted = true;
-                app(TaskVmBaseImage::class)->promote($this->host, $this->hostNode, TVM_NEW_IMAGE);
+                app(IncusTaskVmBaseImage::class)->promote($this->host, $this->hostNode, TVM_NEW_IMAGE);
+                RefreshTaskVmWorkspaceTemplates::dispatch();
             }
         });
 
-        app(TaskVmBaseImage::class)->promote($this->host, $this->hostNode, TVM_NEW_IMAGE);
+        app(IncusTaskVmBaseImage::class)->promote($this->host, $this->hostNode, TVM_NEW_IMAGE);
+        RefreshTaskVmWorkspaceTemplates::dispatch();
         tvm_template_worker();
 
         // Mealou, app-1 and app-2 are built once. The second refresh finds them current and queues nothing.
@@ -960,15 +972,13 @@ describe('refresh order', function (): void {
         expect(tvm_builds($this->incus))->toBe(1);
     });
 
-    it('queues no refresh at a promote during the nightly base image refresh, which queues one at its end', function (): void {
-        Cache::put(TaskVmBaseImage::RefreshDeferredKey, true, 60);
-
-        app(TaskVmBaseImage::class)->promote($this->host, $this->hostNode, TVM_NEW_IMAGE);
+    it('queues no refresh at a promote, and one from the nightly base image refresh stopped at its timeout', function (): void {
+        app(IncusTaskVmBaseImage::class)->promote($this->host, $this->hostNode, TVM_NEW_IMAGE);
         expect(DB::table('jobs')->count())->toBe(0);
 
-        // A nightly job stopped at its timeout queues it from `failed()`.
+        // A nightly job stopped at its timeout never reached its own refresh: `failed()` queues it, once.
         (new RefreshTaskVmBaseImages)->failed(null);
-        expect(DB::table('jobs')->pluck('queue')->all())->toBe([TaskVmWorkspaceTemplates::Queue])
-            ->and(Cache::has(TaskVmBaseImage::RefreshDeferredKey))->toBeFalse();
+        (new RefreshTaskVmBaseImages)->failed(null);
+        expect(DB::table('jobs')->pluck('queue')->all())->toBe([TaskVmQueue::Templates->value]);
     });
 });

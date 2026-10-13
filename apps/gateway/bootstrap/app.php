@@ -17,6 +17,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskDefinitionInvalid;
 use App\Domain\Tasks\TaskDefinitionViolation;
 use App\Domain\Tasks\TaskSchedule;
+use App\Domain\TaskVms\TaskVmQueue;
 use App\Domain\Tools\ToolOperationException;
 use App\Http\Middleware\AnnounceDesiredCliVersion;
 use App\Http\Middleware\EnsureRequestId;
@@ -30,10 +31,9 @@ use App\Http\Middleware\ValidateDocumentPostSize;
 use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Logging\GatewayExceptionStatus;
-use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplates;
 use App\Jobs\TaskVms\RefillTaskVmPool;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
-use App\Jobs\TaskVms\RefreshUpCloudTaskVmTemplate;
+use App\Jobs\TaskVms\RefreshUpCloudTaskVmBaseImage;
 use App\Jobs\TaskVms\SweepTaskVmHosts;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -76,13 +76,13 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('project-documents:probes:reconcile')->everyMinute()->withoutOverlapping(10);
         $schedule->command('project-documents:cleanup:work')->everyFiveMinutes()->withoutOverlapping(60);
         $schedule->command('orbit:vault-sync')->everyMinute()->withoutOverlapping(15);
-        // The nightly task VM base image refresh, a job on the task VM queue below. It queues the workspace template
-        // refresh when it ends, and every base image promote does too, so templates always follow the image.
+        // The nightly task VM base image refresh, a job on the image queue below, so its build and sync of up to 25
+        // minutes hold up no task VM job. When it ends, it queues one workspace template refresh for every host.
         $schedule->job(new RefreshTaskVmBaseImages)->dailyAt('03:00')
             ->when(static fn (): bool => config('task_vms.enabled') === true);
-        // The nightly UpCloud template refresh, on the template queue, so its build of about 20 minutes holds up no
+        // The nightly UpCloud base image refresh, on the image queue too, so its build of about 20 minutes holds up no
         // task VM job. It runs while the UpCloud token file is set, also with the overflow off.
-        $schedule->job(new RefreshUpCloudTaskVmTemplate)->dailyAt('02:00')
+        $schedule->job(new RefreshUpCloudTaskVmBaseImage)->dailyAt('02:00')
             ->when(static fn (): bool => filled(config('task_vms.upcloud.token_file')));
         // The task VM host sweep: orphaned VMs and clones, and live rows whose VM is gone. It also runs while only the
         // UpCloud token file is set, so no UpCloud server that Orbit created keeps costing money.
@@ -105,16 +105,21 @@ return Application::configure(basePath: dirname(__DIR__))
         // Task VM jobs (ADR 0200). In the foreground and at the end, so a release drain lets a running job finish.
         // One worker run takes a VM from launch to ready, so the next job never waits for the next start.
         // Every second, so a claim outside the task tick waits at most a second for its VM to start.
-        $schedule->command('queue:work task-vms --queue=task-vms --stop-when-empty --max-time=120 --timeout=1500')
+        $schedule->command('queue:work task-vms --queue='.TaskVmQueue::Vms->value.' --stop-when-empty --max-time=120 --timeout=1500')
             ->everySecond()->withoutOverlapping(30)
-            ->when(static fn (): bool => $due('task-vms'));
-        // Workspace template jobs, with their own worker, so a template build never delays a task VM job. One build
-        // runs at a time. A foreground command holds its scheduler run until it ends, so this worker starts only in
-        // the last two seconds of a minute: the next minute's run then polls the task VM queue every second again.
-        // Its overlap lock of 32 minutes outlasts a run: 120 seconds of jobs, then at most one more job of 1700.
-        $schedule->command('queue:work task-vms --queue='.TaskVmWorkspaceTemplates::Queue.' --stop-when-empty --max-time=120 --timeout=1700')
+            ->when(static fn (): bool => $due(TaskVmQueue::Vms->value));
+        // Base image and workspace template jobs, each queue with its own worker, so a base image refresh or a template
+        // build never delays a task VM job, and neither delays the other. Each worker runs one job at a time. A
+        // foreground command holds its scheduler run until it ends, so these workers start only near the end of a
+        // minute, the image worker in seconds 56 and 57 and the template worker in seconds 58 and 59: the next
+        // minute's run then polls the task VM queue every second again, and starts the other worker if it is due.
+        // Each overlap lock of 32 minutes outlasts a run: 120 seconds of jobs, then at most one more job of 1700.
+        $schedule->command('queue:work task-vms --queue='.TaskVmQueue::Images->value.' --stop-when-empty --max-time=120 --timeout=1700')
             ->everySecond()->withoutOverlapping(32)
-            ->when(static fn (): bool => now()->second >= 58 && $due(TaskVmWorkspaceTemplates::Queue));
+            ->when(static fn (): bool => in_array(now()->second, [56, 57], true) && $due(TaskVmQueue::Images->value));
+        $schedule->command('queue:work task-vms --queue='.TaskVmQueue::Templates->value.' --stop-when-empty --max-time=120 --timeout=1700')
+            ->everySecond()->withoutOverlapping(32)
+            ->when(static fn (): bool => now()->second >= 58 && $due(TaskVmQueue::Templates->value));
     })
     ->withCommands()
     ->withMiddleware(function (Middleware $middleware): void {

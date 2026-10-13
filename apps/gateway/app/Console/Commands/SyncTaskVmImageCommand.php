@@ -8,11 +8,15 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmSettings;
+use App\Infrastructure\TaskVms\IncusTaskVmBaseImage;
 use App\Infrastructure\TaskVms\IncusTaskVmImageSync;
-use App\Infrastructure\TaskVms\TaskVmBaseImage;
+use App\Jobs\TaskVms\RefreshTaskVmWorkspaceTemplates;
 use Illuminate\Console\Command;
 
-/** Copies the current base image of the source host to one other host and prints each stage with its time. */
+/**
+ * Copies the current base image of the source host to one other host and prints each stage with its time. Unless the
+ * host already had the image, it queues the workspace template refresh at the end, also after a failure.
+ */
 final class SyncTaskVmImageCommand extends Command
 {
     use ResolvesTaskVmHostNode;
@@ -25,7 +29,7 @@ final class SyncTaskVmImageCommand extends Command
     #[\Override]
     protected $description = 'Copy the current task VM base image from one Incus host to another and point orbit-task-base at it.';
 
-    public function handle(IncusTaskVmImageSync $sync, TaskVmBaseImage $image): int
+    public function handle(IncusTaskVmImageSync $sync, IncusTaskVmBaseImage $image): int
     {
         $started = microtime(true);
         try {
@@ -45,13 +49,21 @@ final class SyncTaskVmImageCommand extends Command
             // A stopped command deletes its smoke VM and frees the host for the next build or sync.
             $this->trap([SIGINT, SIGTERM], function (int $signal) use ($image, $host, $node, $owner): never {
                 $image->abandon($host, $node, $owner);
+                RefreshTaskVmWorkspaceTemplates::dispatch();
                 $this->error("Stopped by signal [{$signal}]. The smoke VM is deleted and the current base image is kept.");
 
                 exit(self::FAILURE);
             });
-            $copied = $sync->sync($sourceHost, $source, $host, $node, $fingerprint, function (string $stage, float $seconds): void {
-                $this->line(sprintf('%-22s %7.1fs', $stage, $seconds));
-            }, $owner);
+            $copied = null;
+            try {
+                $copied = $sync->sync($sourceHost, $source, $host, $node, $fingerprint, function (string $stage, float $seconds): void {
+                    $this->line(sprintf('%-22s %7.1fs', $stage, $seconds));
+                }, $owner);
+            } finally {
+                if ($copied !== false) {
+                    RefreshTaskVmWorkspaceTemplates::dispatch();
+                }
+            }
         } catch (ResourceOperationException $exception) {
             $this->error("[{$exception->errorCode}] {$exception->getMessage()}");
 

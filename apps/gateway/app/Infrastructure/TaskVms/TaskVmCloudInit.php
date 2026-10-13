@@ -20,6 +20,12 @@ use App\Domain\TaskVms\TaskVmException;
  */
 final readonly class TaskVmCloudInit
 {
+    /** The user that every task VM, builder, and smoke VM has. Orbit runs everything in the guest as this user or as root. */
+    public const string User = 'orbit';
+
+    /** The home directory of {@see self::User}. */
+    public const string Home = '/home/'.self::User;
+
     /**
      * The uid and gid of `orbit` in the base image. They are pinned, so a workspace template's files belong to `orbit`
      * on every VM, whatever users a newer stock image or package adds.
@@ -64,8 +70,8 @@ final readonly class TaskVmCloudInit
         // bootcmd runs before cloud-init creates users, so the group exists with its pinned gid. A taken uid or gid
         // makes cloud-init fail, and with it the build.
         return self::document([
-            'bootcmd' => [['sh', '-c', 'getent group orbit >/dev/null || groupadd --gid '.self::Uid.' orbit']],
-            'users' => [[...$this->user($gatewayPublicKey), 'uid' => self::Uid, 'primary_group' => 'orbit', 'no_user_group' => true]],
+            'bootcmd' => [['sh', '-c', 'getent group '.self::User.' >/dev/null || groupadd --gid '.self::Uid.' '.self::User]],
+            'users' => [[...$this->user($gatewayPublicKey), 'uid' => self::Uid, 'primary_group' => self::User, 'no_user_group' => true]],
             'package_update' => true,
             'package_upgrade' => true,
             'packages' => ['openssh-server', ...self::ChromiumLibraries, ...self::WorkspaceTools],
@@ -103,7 +109,7 @@ final readonly class TaskVmCloudInit
         }
 
         return [
-            'name' => 'orbit',
+            'name' => self::User,
             'lock_passwd' => true,
             'shell' => '/bin/bash',
             'sudo' => 'ALL=(ALL) NOPASSWD:ALL',

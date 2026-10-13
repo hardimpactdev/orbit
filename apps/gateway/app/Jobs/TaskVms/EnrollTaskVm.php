@@ -10,6 +10,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmProvider;
+use App\Domain\TaskVms\TaskVmQueue;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\TaskVms\TaskVmBakedPrograms;
 use App\Infrastructure\TaskVms\TaskVmGuest;
@@ -57,7 +58,7 @@ final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
     /** @param  int  $launchedAt  when `ProvisionTaskVm` launched the VM: the boot limit counts from then, not from the row, because jobs run one at a time */
     public function __construct(public int $taskVmId, public int $launchedAt)
     {
-        $this->onConnection('task-vms')->onQueue('task-vms');
+        $this->onConnection('task-vms')->onQueue(TaskVmQueue::Vms->value);
     }
 
     public function handle(TaskVmProvider $provider, TaskVmGuest $guest, ProvisionNodeAction $nodes, TaskVmSettings $settings, TaskVmStepClock $clock, TaskVmBakedPrograms $baked): void

@@ -22,12 +22,6 @@ use App\Models\Process;
 
 final readonly class NodeFirewallRuleCatalog
 {
-    /**
-     * The rules that let a peer task VM host reach the host's Incus API, `orbit:task-vm-image:<peer Node id>`. Hosts
-     * no longer copy images over the Incus API, so Orbit only deletes these rules.
-     */
-    public const string TaskVmImagePrefix = 'orbit:task-vm-image';
-
     public function __construct(
         private PublicRouteEligibility $publicRoutes = new PublicRouteEligibility,
     ) {}

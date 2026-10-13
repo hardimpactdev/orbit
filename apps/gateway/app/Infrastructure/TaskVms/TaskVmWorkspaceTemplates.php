@@ -84,12 +84,6 @@ final readonly class TaskVmWorkspaceTemplates
     /** How long a host waits before a claim asks for another build of a Project whose build failed. */
     public const int FailureBackoffSeconds = 21600;
 
-    /**
-     * The queue of the template jobs, on the `task-vms` connection. Its own worker takes them, so a build never
-     * delays the jobs of task VMs on the `task-vms` queue.
-     */
-    public const string Queue = 'task-vm-templates';
-
     /** A refresh builds templates ahead only for Projects with a group created within this many days. */
     public const int ActiveDays = 7;
 

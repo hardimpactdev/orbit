@@ -15,10 +15,12 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\IncusTaskVmImageSync;
 use App\Infrastructure\TaskVms\TaskVmImagePeers;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
+use App\Jobs\TaskVms\RefreshTaskVmWorkspaceTemplates;
 use App\Models\Cluster;
 use App\Models\Node;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
 use Tests\Support\FakeIncusFleet;
 use Tests\Support\FakeIncusFleetHost;
@@ -140,39 +142,6 @@ describe('image peers', function (): void {
         $line = app(TaskVmImagePeers::class)->keyLine($this->shark, $this->beast, 'orbit-tasks', 'ssh-ed25519 AAAAkey');
 
         expect($line)->toBe("from=\"192.168.6.40\",restrict,command=\"sudo -n /usr/local/libexec/orbit/task-vm-image-receive orbit-tasks\" ssh-ed25519 AAAAkey orbit-task-image-{$this->shark->id}");
-    });
-
-    it('removes what the Incus API copy left, and only that', function (): void {
-        $beast = $this->fleet->host('10.44.0.7');
-        $shark = $this->fleet->host('10.44.0.11');
-        $beast->httpsAddress = '192.168.6.20:8443';
-        $shark->httpsAddress = '0.0.0.0:8443';
-        $beast->clientDirectory = $shark->clientDirectory = true;
-        $beast->trust = [
-            str_repeat('1', 64) => ['name' => "orbit-task-image-{$this->shark->id}", 'type' => 'client', 'restricted' => true, 'projects' => ['orbit-tasks'], 'certificate' => ''],
-            str_repeat('2', 64) => ['name' => 'operator-laptop', 'type' => 'client', 'restricted' => false, 'projects' => [], 'certificate' => ''],
-        ];
-        $beast->ufwRules = [
-            "192.168.6.20 8443/tcp ALLOW IN 192.168.6.40 # orbit:task-vm-image:{$this->shark->id}",
-            '22/tcp ALLOW IN 192.168.1.0/24 # SSH from Main LAN',
-        ];
-        $shark->ufwRules = ["192.168.6.40 8443/tcp ALLOW IN 192.168.6.20 # orbit:task-vm-image:{$this->beast->id}"];
-
-        ($this->link)();
-
-        expect($beast->httpsAddress)->toBe('')
-            ->and($shark->httpsAddress)->toBe('0.0.0.0:8443')
-            ->and(array_column($beast->trust, 'name'))->toBe(['operator-laptop'])
-            ->and([$beast->clientDirectory, $shark->clientDirectory])->toBe([false, false])
-            ->and($beast->ufwRules)->toBe(['22/tcp ALLOW IN 192.168.1.0/24 # SSH from Main LAN'])
-            ->and($shark->ufwRules)->toBe([]);
-
-        $commands = count($this->fleet->commands);
-        ($this->link)();
-
-        $again = array_map(static fn (array $command): string => implode(' ', $command[1]), array_slice($this->fleet->commands, $commands));
-        expect(array_filter($again, static fn (string $command): bool => str_contains($command, 'config unset') || str_contains($command, 'trust remove')
-            || str_contains($command, 'ufw --force delete')))->toBe([]);
     });
 
     it('keeps every other authorized key and replaces the line of a former peer', function (): void {
@@ -363,14 +332,20 @@ describe('task-vms:build-image', function (): void {
 describe('task-vms:sync-image', function (): void {
     it('syncs a host from the first configured host, and then finds it current', function (): void {
         ($this->link)();
+        Queue::fake();
 
         $this->artisan('task-vms:sync-image', ['node' => 'shark'])
             ->expectsOutputToContain('transfer')
             ->expectsOutputToContain('Node [shark] has the base image [orbit-task-base] (bbbbbbbbbbbb) of Node [beast] after')
             ->assertSuccessful();
+        Queue::assertPushed(RefreshTaskVmWorkspaceTemplates::class, 1);
+        // A host that already has the image needs no refresh. A new fake and no unique lock, so a refresh would show.
+        Cache::flush();
+        Queue::fake();
         $this->artisan('task-vms:sync-image', ['node' => 'shark'])
             ->expectsOutputToContain('Node [shark] already has the base image [orbit-task-base] (bbbbbbbbbbbb) of Node [beast].')
             ->assertSuccessful();
+        Queue::assertNotPushed(RefreshTaskVmWorkspaceTemplates::class);
     });
 
     it('copies from another host with --from, and refuses a source without a base image', function (): void {
@@ -446,23 +421,29 @@ describe('task-vms:retire-host', function (): void {
 });
 
 describe('the nightly refresh', function (): void {
-    it('builds once on the first host and syncs every other host', function (): void {
+    it('builds once on the first host, syncs every other host, then queues one template refresh', function (): void {
         ($this->link)();
+        Queue::fake();
 
         app()->call([new RefreshTaskVmBaseImages, 'handle']);
+
+        // Two promotes, one on each host, and one refresh after both.
+        Queue::assertPushed(RefreshTaskVmWorkspaceTemplates::class, 1);
 
         expect($this->fleet->host('10.44.0.11')->images)->toBe([SYNC_NEW => ['orbit-task-base-20261011030000', TaskVmHost::BaseImage]])
             ->and($this->fleet->argv('10.44.0.11'))->not->toContain('incus --project orbit-tasks launch --vm --config limits.cpu=2 --config limits.memory=4GiB --device root,size=20GiB --device eth0,network=orbittask0 --device eth0,security.port_isolation=true -- ubuntu-26.04-vm tvm-image-20261011030000');
     });
 
-    it('changes no host when the build fails', function (): void {
+    it('changes no host when the build fails, and still queues the template refresh', function (): void {
         ($this->link)();
         $this->fleet->host('10.44.0.7')->fail = 'launch';
+        Queue::fake();
 
         expect(fn () => app()->call([new RefreshTaskVmBaseImages, 'handle']))
             ->toThrow(TaskVmException::class, 'The base image build of Node [beast] failed at stage [launch]');
         expect($this->fleet->host('10.44.0.11')->images)->toBe([SYNC_SHARK => ['orbit-task-base-20261010030500', TaskVmHost::BaseImage]])
             ->and($this->fleet->argv('10.44.0.11'))->not->toContain('incus --project orbit-tasks image list --format json');
+        Queue::assertPushed(RefreshTaskVmWorkspaceTemplates::class, 1);
     });
 
     it('fails after the other hosts when a sync fails, and changes nothing while the first host has no base image', function (): void {

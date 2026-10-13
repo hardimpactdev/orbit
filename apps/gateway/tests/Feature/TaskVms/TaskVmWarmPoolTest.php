@@ -36,7 +36,7 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tasks\Pi\PiConnection;
-use App\Infrastructure\TaskVms\TaskVmBaseImage;
+use App\Infrastructure\TaskVms\IncusTaskVmBaseImage;
 use App\Infrastructure\TaskVms\TaskVmHostAudit;
 use App\Infrastructure\TaskVms\TaskVmImagePeers;
 use App\Infrastructure\TaskVms\TaskVmRuntime;
@@ -596,7 +596,7 @@ describe('claim', function (): void {
         $second = tvm_pool_vm();
         app(AllocateTaskVmAction::class)->execute(tvm_pool_group());
 
-        app(TaskVmBaseImage::class)->promote(app(TaskVmSettings::class)->host($this->host->id), $this->host, TVM_POOL_OLD);
+        app(IncusTaskVmBaseImage::class)->promote(app(TaskVmSettings::class)->host($this->host->id), $this->host, TVM_POOL_OLD);
         $claimed = app(AllocateTaskVmAction::class)->execute(tvm_pool_group());
 
         expect($claimed->warmed_at)->toBeNull()->and($second->fresh()?->group_id)->toBeNull();

@@ -36,26 +36,9 @@ final readonly class IncusTaskVmImageSync
      */
     private const float TransferSeconds = 540.0;
 
-    /**
-     * Exports the image `$2` of the project `$3` into the empty directory `$1`, which only root reads, and prints the
-     * path of the one file it writes.
-     */
-    private const string Export = <<<'BASH'
-        install -d -m 0700 -o root -g root -- "$(dirname -- "$(dirname -- "$1")")" "$(dirname -- "$1")"
-        rm -rf -- "$1"
-        install -d -m 0700 -o root -g root -- "$1"
-        incus image export --quiet --project "$3" "$2" "$1/image" >&2
-        set -- "$1"/image*
-        if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then
-            echo "the export is not one image file: $*" >&2
-            exit 1
-        fi
-        printf '%s\n' "$1"
-        BASH;
-
     public function __construct(
         private IncusHost $incus,
-        private TaskVmBaseImage $image,
+        private IncusTaskVmBaseImage $image,
         private TaskVmSettings $settings,
         private TaskVmImagePeers $peers,
     ) {}
@@ -111,7 +94,7 @@ final readonly class IncusTaskVmImageSync
 
     /**
      * Makes `$fingerprint` from `$source` the base image of `$node`. Returns false when it already is.
-     * `$owner` names the target's image lock, so a caller that is killed can {@see TaskVmBaseImage::abandon()}.
+     * `$owner` names the target's image lock, so a caller that is killed can {@see IncusTaskVmBaseImage::abandon()}.
      *
      * @param  (Closure(string, float): void)|null  $progress
      *
@@ -124,7 +107,7 @@ final readonly class IncusTaskVmImageSync
         }
         $lock = $this->image->lock($node, $owner);
 
-        $smoke = TaskVmBaseImage::WorkPrefix.now()->format('YmdHis').'-sync-smoke';
+        $smoke = TaskVmImageRecipe::WorkPrefix.now()->format('YmdHis').'-sync-smoke';
         $copied = null;
         $work = "base image sync of Node [{$node->name}] from Node [{$source->name}]";
 
@@ -169,7 +152,7 @@ final readonly class IncusTaskVmImageSync
      */
     private function stage(string $work, ?Closure $progress, string $name, Closure $stage): mixed
     {
-        return $this->image->stage('task_vm.image_sync_failed', $work, $name, $progress, $stage);
+        return TaskVmBuildStage::run('task_vm.image_sync_failed', $work, $name, $progress, $stage);
     }
 
     /** The source image's dated alias `orbit-task-base-<time>`, which the copy keeps. */
@@ -192,11 +175,11 @@ final readonly class IncusTaskVmImageSync
         return self::ExportDirectory.'/node-'.$target->id;
     }
 
-    /** Exports the image on the source and returns the path of the image file. */
+    /** Exports the image on the source with `image-export.sh` and returns the path of the image file. */
     private function export(TaskVmHost $sourceHost, Node $source, Node $target, string $fingerprint): string
     {
         $directory = self::exportDirectory($target);
-        $result = $this->incus->root($source, ['bash', '-ceu', self::Export, '--', $directory, $fingerprint, $sourceHost->project], timeout: self::ExportSeconds);
+        $result = $this->incus->root($source, TaskVmScripts::bash('image-export.sh', [$directory, $fingerprint, $sourceHost->project]), timeout: self::ExportSeconds);
         if (! $result->succeeded()) {
             throw TaskVmImagePeers::failed("The export of the image [{$fingerprint}] on Node [{$source->name}] failed", $result);
         }

@@ -12,7 +12,6 @@ use App\Domain\Nodes\RoleName;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Firewall\UfwManagedRule;
 use App\Infrastructure\Firewall\UfwRuleOwnership;
-use App\Infrastructure\Firewall\UfwRuleShape;
 use App\Infrastructure\Firewall\UfwStatusParser;
 use App\Infrastructure\Firewall\UfwStoredRuleParser;
 use App\Infrastructure\Firewall\UfwStoredRuleProbe;
@@ -95,28 +94,6 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
     public function pruneRouterLanIngress(Node $router, array $desired, string $managedUser): void
     {
         $this->reconcileFamily($router, RouterLanIngressPolicy::CommentPrefix, $desired, $managedUser, expand: false, prune: true, recovering: false);
-    }
-
-    /**
-     * Deletes every task VM image peer rule on a host. Hosts no longer reach each other's Incus API, so a failed
-     * delete restores nothing: the next run deletes what is left.
-     */
-    public function removeTaskVmImagePeers(Node $host, string $managedUser): void
-    {
-        [$status, $inactive] = $this->status($host, publicConnection: false, managedUser: $managedUser);
-
-        if ($inactive) {
-            $this->fail($host, 'UFW is inactive during task VM image peer rule removal.', $status);
-        }
-
-        $comments = array_values(array_unique(array_map(
-            static fn (UfwRuleShape $shape): string => $shape->comment,
-            $this->statusParser->familyShapes($status->stdout, NodeFirewallRuleCatalog::TaskVmImagePrefix),
-        )));
-
-        if ($comments !== []) {
-            $this->deleteOwnedComments($host, $comments, $managedUser);
-        }
     }
 
     public function trustWireGuardMembers(Node $node, string $managedUser): void

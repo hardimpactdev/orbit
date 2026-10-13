@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Jobs\TaskVms;
 
 use App\Actions\TaskVms\RefillTaskVmPoolAction;
+use App\Domain\TaskVms\TaskVmQueue;
 use App\Models\TaskVm;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -27,7 +28,7 @@ final class RefillTaskVmPool implements ShouldBeUnique, ShouldQueue
 
     public function __construct()
     {
-        $this->onConnection('task-vms')->onQueue('task-vms');
+        $this->onConnection('task-vms')->onQueue(TaskVmQueue::Vms->value);
     }
 
     /**

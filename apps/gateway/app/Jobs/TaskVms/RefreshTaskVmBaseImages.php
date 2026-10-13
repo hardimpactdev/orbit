@@ -7,15 +7,15 @@ namespace App\Jobs\TaskVms;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmImageSyncResult;
+use App\Domain\TaskVms\TaskVmQueue;
 use App\Domain\TaskVms\TaskVmSettings;
+use App\Infrastructure\TaskVms\IncusTaskVmBaseImage;
 use App\Infrastructure\TaskVms\IncusTaskVmImageBuilder;
 use App\Infrastructure\TaskVms\IncusTaskVmImageSync;
-use App\Infrastructure\TaskVms\TaskVmBaseImage;
 use App\Models\Node;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -23,7 +23,8 @@ use Throwable;
  * The nightly refresh: builds the base image once, on the first configured host, and syncs it to every other
  * configured host. The first build is always `task-vms:build-image`, so while the first host has no base image
  * the job changes nothing. A failed build changes no host. A host whose sync fails keeps its image; the job
- * fails after the other hosts.
+ * fails after the other hosts. It runs on the image queue, whose own worker runs one job at a time, so the build and
+ * sync hold up no task VM job.
  */
 final class RefreshTaskVmBaseImages implements ShouldBeUnique, ShouldQueue
 {
@@ -43,7 +44,7 @@ final class RefreshTaskVmBaseImages implements ShouldBeUnique, ShouldQueue
 
     public function __construct()
     {
-        $this->onConnection('task-vms')->onQueue('task-vms');
+        $this->onConnection('task-vms')->onQueue(TaskVmQueue::Images->value);
     }
 
     public function handle(TaskVmSettings $settings, IncusTaskVmImageBuilder $builder, IncusTaskVmImageSync $sync): void
@@ -58,14 +59,12 @@ final class RefreshTaskVmBaseImages implements ShouldBeUnique, ShouldQueue
             return;
         }
 
-        // The templates refresh once, after the build and the sync to every host, also when the build fails. The
-        // promotes on the way queue no refresh of their own, so no refresh sees one host moved and another not.
-        Cache::put(TaskVmBaseImage::RefreshDeferredKey, true, $this->timeout + 60);
+        // The templates refresh once, after the build and the sync to every host, also when the build fails after it
+        // moved an alias. So no refresh sees one host moved and another not.
         try {
             $fingerprint = $builder->build($host, $node, owner: self::LockOwner);
             $results = $sync->distribute($host, $node, $fingerprint, owner: self::LockOwner);
         } finally {
-            Cache::forget(TaskVmBaseImage::RefreshDeferredKey);
             RefreshTaskVmWorkspaceTemplates::dispatch();
         }
         foreach ($results as $result) {
@@ -83,21 +82,19 @@ final class RefreshTaskVmBaseImages implements ShouldBeUnique, ShouldQueue
 
     /**
      * After a timeout the worker stops this job in the middle of a build or sync, so its own cleanup never runs.
-     * The worker calls this first: it deletes the builder and smoke VMs and frees each host's image lock. After
-     * an ordinary failure the build or sync has cleaned up already, and this does nothing.
+     * The worker calls this first: it deletes the builder and smoke VMs, frees each host's image lock, and queues
+     * the template refresh that the job never reached. After an ordinary failure the build or sync has cleaned up
+     * already, and the refresh is queued already: the queue keeps one refresh until it starts.
      */
     public function failed(?Throwable $exception): void
     {
-        $image = app(TaskVmBaseImage::class);
+        $image = app(IncusTaskVmBaseImage::class);
         foreach (app(TaskVmSettings::class)->hosts as $host) {
             $node = Node::query()->find($host->nodeId);
             if ($node instanceof Node) {
                 $image->abandon($host, $node, self::LockOwner);
             }
         }
-        // A job stopped at its timeout never reached its `finally`.
-        if (Cache::pull(TaskVmBaseImage::RefreshDeferredKey) !== null) {
-            RefreshTaskVmWorkspaceTemplates::dispatch();
-        }
+        RefreshTaskVmWorkspaceTemplates::dispatch();
     }
 }

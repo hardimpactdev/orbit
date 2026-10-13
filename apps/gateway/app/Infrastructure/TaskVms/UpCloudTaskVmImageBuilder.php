@@ -10,13 +10,11 @@ use App\Domain\TaskVms\TaskVmUpCloud;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
-use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use Closure;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Sleep;
 use Throwable;
 
 /**
@@ -54,7 +52,6 @@ final readonly class UpCloudTaskVmImageBuilder
         private SshKeyProvider $keys,
         private TaskVmSettings $settings,
         private TaskVmImageRecipe $recipe,
-        private TaskVmBaseImage $image,
     ) {}
 
     /**
@@ -72,7 +69,7 @@ final readonly class UpCloudTaskVmImageBuilder
         }
         $stamp = now()->format('YmdHis');
         Cache::put(self::Running.$stamp, true, self::RunningSeconds);
-        $builder = TaskVmBaseImage::WorkPrefix.$stamp;
+        $builder = TaskVmImageRecipe::WorkPrefix.$stamp;
         $smoke = $builder.'-smoke';
         $title = TaskVmUpCloud::TemplatePrefix.$stamp;
         $template = null;
@@ -81,23 +78,26 @@ final readonly class UpCloudTaskVmImageBuilder
             $programs = $this->stage($progress, 'render', fn (): array => $this->recipe->programs());
             $this->stage($progress, 'sweep', fn () => $this->sweep());
             [$address, $hostKey] = $this->stage($progress, 'launch', fn (): array => $this->launch($builder, $stamp, $this->upcloud()->sourceTemplate, $this->cloudInit->renderImageBuilder($this->keys->publicKey())));
-            $run = function (array $arguments, ?string $input = null, ?ProtectedInput $protected = null) use ($builder, $address, $hostKey): CommandResult {
-                /** @var list<string> $arguments */
-                return $this->run($builder, $address, $hostKey, $arguments, $input, $protected);
-            };
-            $this->stage($progress, 'cloud-init', fn () => $this->awaitCloudInit($builder, $address, $hostKey));
-            $this->stage($progress, 'orbit-user', fn () => $run(['sh', '-euc', TaskVmImageRecipe::OwnerCheck, 'sh', TaskVmCloudInit::Owner]));
+            $shell = new UpCloudGuestShell($this->guest, $address, $hostKey);
+            $this->stage($progress, 'cloud-init', fn () => $this->awaitCloudInit($builder, $shell));
+            $this->stage($progress, 'orbit-user', fn () => $this->checked($builder, $shell->asUser(TaskVmImageRecipe::ownerCheck())));
             foreach ($programs as $name => $program) {
-                $this->stage($progress, $name, fn () => $run($program->arguments, $program->input, $program->protectedInput));
+                $this->stage($progress, $name, fn () => $this->checked($builder, $shell->asUser($program->arguments, $program->protectedInput ?? $program->input)));
             }
-            $this->stage($progress, 'agent-binary', fn () => $run(['sudo', '-n', ...$this->recipe->installAgent($run(['uname', '-m'])->stdout, "the UpCloud builder [{$builder}]")]));
+            $this->stage($progress, 'agent-binary', fn () => $this->checked($builder, $shell->asRoot($this->recipe->installAgent(
+                $this->checked($builder, $shell->asUser(['uname', '-m']))->stdout,
+                "the UpCloud builder [{$builder}]",
+            ))));
             if ($this->settings->piArtifactPath !== null && $this->settings->piArtifactSha256 !== null) {
-                $this->stage($progress, 'pi-artifact', fn () => $run(['bash', '-ceu', TaskVmRuntime::InstallPi, '--', (string) $this->settings->piArtifactSha256], protected: ProtectedInput::fromFile((string) $this->settings->piArtifactPath, '', TaskVmRuntime::ArtifactMaxBytes)));
+                $this->stage($progress, 'pi-artifact', fn () => $this->checked($builder, $shell->asUser(
+                    ['bash', '-ceu', TaskVmRuntime::InstallPi, '--', (string) $this->settings->piArtifactSha256],
+                    ProtectedInput::fromFile((string) $this->settings->piArtifactPath, '', TaskVmRuntime::ArtifactMaxBytes),
+                )));
             }
-            $this->stage($progress, 'masks', fn () => $run(['sudo', '-n', 'sh', '-c', TaskVmImageRecipe::Masks]));
-            $this->stage($progress, 'firewall', fn () => $this->firewall($run));
-            $this->stage($progress, 'manifest', fn () => $run(['sudo', '-n', 'install', '-D', '-o', 'root', '-g', 'root', '-m', '0644', '/dev/stdin', TaskVmBakedPrograms::ManifestPath], TaskVmBakedPrograms::manifest($programs)));
-            $this->stage($progress, 'clean', fn () => $this->clean($builder, $run));
+            $this->stage($progress, 'masks', fn () => $this->checked($builder, $shell->asRoot(['sh', '-c', TaskVmImageRecipe::Masks])));
+            $this->stage($progress, 'firewall', fn () => $this->firewall($builder, $shell));
+            $this->stage($progress, 'manifest', fn () => $this->checked($builder, $shell->asRoot(['install', '-D', '-o', 'root', '-g', 'root', '-m', '0644', '/dev/stdin', TaskVmBakedPrograms::ManifestPath], TaskVmBakedPrograms::manifest($programs))));
+            $this->stage($progress, 'clean', fn () => $this->clean($builder, $shell));
             $template = $this->stage($progress, 'templatize', fn (): string => $this->templatize($builder, $stamp, $title.TaskVmUpCloud::Unverified));
             $this->stage($progress, 'delete-builder', fn () => $this->servers->delete($builder, UpCloudServers::ImageLabel, $stamp, null));
             $this->stage($progress, 'smoke', fn () => $this->smoke($smoke, $stamp, $template));
@@ -171,48 +171,28 @@ final readonly class UpCloudTaskVmImageBuilder
     }
 
     /** Waits over SSH until cloud-init is done without errors. Until sshd has the key from the user-data, SSH fails. */
-    private function awaitCloudInit(string $name, string $address, string $hostKey): void
+    private function awaitCloudInit(string $name, UpCloudGuestShell $shell): void
     {
-        $deadline = now()->getTimestamp() + self::CloudInitSeconds;
-        while (true) {
-            $result = $this->guest->run($address, $hostKey, new RemoteCommand(['timeout', '60', 'cloud-init', 'status', '--wait', '--format=json'], maxOutputBytes: 65536, timeout: 90));
-            $status = json_decode($result->stdout, true);
-            if (is_array($status) && is_string($status['status'] ?? null)) {
-                $errors = $status['errors'] ?? [];
-                if ($status['status'] === 'error' || ($status['status'] === 'done' && $errors !== [])) {
-                    throw new TaskVmException('task_vm.bootstrap_failed', "Cloud-init failed on [{$name}]: ".mb_substr(json_encode($errors, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), 0, 2000), 502);
-                }
-                if ($status['status'] === 'done') {
-                    return;
-                }
-            }
-            if (now()->getTimestamp() >= $deadline) {
-                throw new TaskVmException('task_vm.bootstrap_timeout', "Cloud-init on [{$name}] was not done ".self::CloudInitSeconds.' seconds after launch.', 504);
-            }
-            Sleep::for(5)->seconds();
-        }
+        TaskVmGuest::awaitCloudInit("UpCloud server [{$name}]", self::CloudInitSeconds, static fn (array $command, float $timeout): CommandResult => $shell->asUser($command, timeout: $timeout));
     }
 
     /**
      * Turns ufw on with incoming traffic denied, except the public SSH rule of a new Node on port 22 that enrollment
      * opens itself. ufw keeps the SSH connection of the build, which that rule allows anyway.
-     *
-     * @param  Closure(list<string>, ?string=, ?ProtectedInput=): CommandResult  $run
      */
-    private function firewall(Closure $run): void
+    private function firewall(string $name, UpCloudGuestShell $shell): void
     {
-        $run(['sudo', '-n', 'ufw', 'default', 'deny', 'incoming']);
-        $run((new NodeFirewallRuleCatalog)->publicSshRecovery(new Node(['public_ssh_port' => 22]))->arguments);
-        $run(['sudo', '-n', 'ufw', '--force', 'enable']);
-        if (preg_match('/^Status: active$/m', $run(['sudo', '-n', 'ufw', 'status'])->stdout) !== 1) {
+        $this->checked($name, $shell->asRoot(['ufw', 'default', 'deny', 'incoming']));
+        $this->checked($name, $shell->asUser((new NodeFirewallRuleCatalog)->publicSshRecovery(new Node(['public_ssh_port' => 22]))->arguments));
+        $this->checked($name, $shell->asRoot(['ufw', '--force', 'enable']));
+        if (preg_match('/^Status: active$/m', $this->checked($name, $shell->asRoot(['ufw', 'status']))->stdout) !== 1) {
             throw new TaskVmException('task_vm.image_build_failed', 'ufw is not active after it was enabled.', 502);
         }
     }
 
-    /** @param  Closure(list<string>, ?string=, ?ProtectedInput=): CommandResult  $run */
-    private function clean(string $name, Closure $run): void
+    private function clean(string $name, UpCloudGuestShell $shell): void
     {
-        $result = $run(['sudo', '-n', 'bash', '-s'], $this->recipe->cleanScript());
+        $result = $this->checked($name, $shell->asRoot(['bash', '-s'], $this->recipe->cleanScript()));
         if (trim($result->stdout) !== TaskVmImageRecipe::CleanConfirmation) {
             throw new TaskVmException('task_vm.image_build_failed', "base-image-clean.sh did not confirm on [{$name}].", 502);
         }
@@ -235,11 +215,9 @@ final readonly class UpCloudTaskVmImageBuilder
     private function smoke(string $name, string $stamp, string $template): void
     {
         [$address, $hostKey] = $this->launch($name, $stamp, $template, $this->cloudInit->render($this->keys->publicKey()));
-        $this->awaitCloudInit($name, $address, $hostKey);
-        $this->checked($name, $this->guest->run($address, $hostKey, new RemoteCommand(
-            ['sh', '-euc', TaskVmImageRecipe::OwnerCheck.' && test -s "$2" && test -s /home/orbit/.ssh/authorized_keys && sudo -n ufw status | grep -qx "Status: active"', 'sh', TaskVmCloudInit::Owner, TaskVmBakedPrograms::ManifestPath],
-            timeout: 60,
-        )));
+        $shell = new UpCloudGuestShell($this->guest, $address, $hostKey);
+        $this->awaitCloudInit($name, $shell);
+        $this->checked($name, $shell->asUser(TaskVmImageRecipe::imageCheck(['--ufw']), timeout: 60));
         $this->servers->delete($name, UpCloudServers::ImageLabel, $stamp, null);
     }
 
@@ -284,19 +262,10 @@ final readonly class UpCloudTaskVmImageBuilder
      */
     private function stage(?Closure $progress, string $name, Closure $work): mixed
     {
-        return $this->image->stage('task_vm.image_build_failed', 'UpCloud template build', $name, $progress, $work);
+        return TaskVmBuildStage::run('task_vm.image_build_failed', 'UpCloud template build', $name, $progress, $work);
     }
 
-    /**
-     * Runs a command as `orbit` on the build server, and fails on a non-zero exit.
-     *
-     * @param  list<string>  $arguments
-     */
-    private function run(string $name, string $address, string $hostKey, array $arguments, ?string $input = null, ?ProtectedInput $protected = null): CommandResult
-    {
-        return $this->checked($name, $this->guest->run($address, $hostKey, new RemoteCommand($arguments, $input, $protected, timeout: 900.0)));
-    }
-
+    /** Fails on a non-zero exit of a command on the build or smoke server `$name`. */
     private function checked(string $name, CommandResult $result): CommandResult
     {
         if (! $result->succeeded()) {

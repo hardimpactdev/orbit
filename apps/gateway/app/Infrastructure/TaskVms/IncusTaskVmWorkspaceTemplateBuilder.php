@@ -59,36 +59,7 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
 
     private const int LockSeconds = 1740;
 
-    private const string ManagedUser = 'orbit';
-
-    /** Formats the new volume and gives its root to the managed user. The mount script then mounts it, as at a claim. */
-    private const string Format = <<<'BASH'
-        device=/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_incus_$1
-        for _ in $(seq 1 100); do
-            [ -b "$device" ] && break
-            sleep 0.1
-        done
-        test -b "$device"
-        mkfs.ext4 -q -F -m 0 -L orbit-workspace -E lazy_itable_init=1,lazy_journal_init=1 "$device"
-        staging=$(mktemp -d)
-        mount -- "$device" "$staging"
-        rmdir -- "$staging/lost+found"
-        chown -- "$2:$3" "$staging"
-        umount -- "$staging"
-        rmdir -- "$staging"
-        BASH;
-
-    /** Creates the template checkout with the Project repository as `origin`. The Gateway sends its branch. */
-    private const string Init = <<<'BASH'
-        git init --quiet -- "$1"
-        git -C "$1" remote add origin "$2"
-        BASH;
-
-    /** Checks out the default branch that the Gateway sent and prints its commit. */
-    private const string Checkout = <<<'BASH'
-        git -c core.hooksPath=/dev/null -C "$1" checkout --quiet --force -B "$2" "refs/remotes/origin/$2"
-        git -C "$1" rev-parse --verify 'HEAD^{commit}'
-        BASH;
+    private const string ManagedUser = TaskVmCloudInit::User;
 
     /** The build budget that the warm-up check leaves for `verify`, `detach`, and `publish`. */
     private const int WarmReserveSeconds = 60;
@@ -101,7 +72,7 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
 
     public function __construct(
         private IncusHost $incus,
-        private TaskVmBaseImage $image,
+        private IncusTaskVmBaseImage $image,
         private TaskVmCloudInit $cloudInit,
         private SshKeyProvider $keys,
         private KnownHostsStore $knownHosts,
@@ -207,7 +178,7 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
     {
         return $this->storageRoots->resolveApps(
             $this->nodeSettings->fromStored(null),
-            new ManagedUserAccount(self::ManagedUser, self::ManagedUser, '/home/'.self::ManagedUser),
+            new ManagedUserAccount(self::ManagedUser, self::ManagedUser, TaskVmCloudInit::Home),
         )->append($project->slug)->value;
     }
 
@@ -274,7 +245,7 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
         if (! is_string($image) || $image === '') {
             throw IncusHost::invalid("the workspace template builder [{$builder}]", 'it records no base image');
         }
-        $owner = trim($this->checked($builder, 'exec id', $this->asManagedUser($host, $node, $builder, '/home/'.self::ManagedUser, ['sh', '-c', 'printf "%s:%s" "$(id -u)" "$(id -g)"']))->stdout);
+        $owner = trim($this->checked($builder, 'exec id', $this->asManagedUser($host, $node, $builder, TaskVmCloudInit::Home, ['sh', '-c', 'printf "%s:%s" "$(id -u)" "$(id -g)"']))->stdout);
         if (preg_match('/\A[0-9]+:[0-9]+\z/D', $owner) !== 1) {
             throw IncusHost::invalid("the workspace template builder [{$builder}]", 'the managed user has no numeric uid and gid');
         }
@@ -284,10 +255,10 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
 
     private function mount(TaskVmHost $host, Node $node, string $builder, string $directory, string $owner): void
     {
-        $this->checked($builder, 'exec format', $this->image->exec($host, $node, $builder, [
-            'bash', '-ceu', self::Format, '--', TaskVmWorkspaceTemplates::Device, self::ManagedUser, self::ManagedUser,
-        ]));
-        $this->checked($builder, 'exec mount', $this->asManagedUser($host, $node, $builder, '/home/'.self::ManagedUser, [
+        $this->checked($builder, 'exec format', $this->image->shell($host, $node, $builder)->asRoot(TaskVmScripts::bash('template-format.sh', [
+            TaskVmWorkspaceTemplates::Device, self::ManagedUser, self::ManagedUser,
+        ])));
+        $this->checked($builder, 'exec mount', $this->asManagedUser($host, $node, $builder, TaskVmCloudInit::Home, [
             'bash', '-ceu', TaskVmWorkspaceTemplates::MountScript, '--', TaskVmWorkspaceTemplates::Device, $directory, $owner,
             TaskVmWorkspaceTemplates::CheckoutDirectory, TaskVmWorkspaceTemplates::CacheDirectory, ...TaskVmWorkspaceTemplates::Caches,
         ]));
@@ -301,8 +272,8 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
     {
         $repository = GitRepositoryOrigin::validate($project->repository_url);
         $branch = (string) $project->default_branch;
-        $home = '/home/'.self::ManagedUser;
-        $this->checked($builder, 'exec git init', $this->asManagedUser($host, $node, $builder, $home, ['bash', '-ceu', self::Init, '--', $checkout, $repository]));
+        $home = TaskVmCloudInit::Home;
+        $this->checked($builder, 'exec git init', $this->asManagedUser($host, $node, $builder, $home, TaskVmScripts::bash('template-init.sh', [$checkout, $repository])));
         $tips = $this->git->fetch($project, [$branch], $this->access->for($repository, $project->source_access), self::ErrorCode);
         if ($tips[$branch] === null) {
             throw IncusHost::invalid("the workspace template builder [{$builder}]", "the repository has no default branch [{$branch}]");
@@ -312,7 +283,7 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
             'exec git receive',
             $this->asManagedUser($host, $node, $builder, $home, $command->arguments, $command->protectedInput ?? $command->input, $command->timeout ?? 900.0),
         ), self::ErrorCode);
-        $commit = trim($this->checked($builder, 'exec git checkout', $this->asManagedUser($host, $node, $builder, $home, ['bash', '-ceu', self::Checkout, '--', $checkout, $branch]))->stdout);
+        $commit = trim($this->checked($builder, 'exec git checkout', $this->asManagedUser($host, $node, $builder, $home, TaskVmScripts::bash('template-checkout.sh', [$checkout, $branch])))->stdout);
 
         return $commit === $tips[$branch]
             ? $commit
@@ -340,7 +311,7 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
         if ($version === null) {
             return;
         }
-        $shell = new DevelopmentSshExecutor(new TaskVmBuilderShell($this->incus, $host, $node, $builder), $this->keys, $this->knownHosts);
+        $shell = new DevelopmentSshExecutor(new TaskVmBuilderShell($this->image->shell($host, $node, $builder)), $this->keys, $this->knownHosts);
         $this->php->installForAppDev(new Node(['name' => $builder, 'platform' => 'linux', 'user' => self::ManagedUser, 'wireguard_ip' => '127.0.0.1']), collect([$version]), $shell);
     }
 
@@ -426,35 +397,17 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
         }
     }
 
-    /**
-     * Stops every process of the managed user in the builder, which the setup steps or the warm-up check may have left
-     * running on the volume, such as a test server, then unmounts. The builder is deleted afterwards, so nothing of
-     * value runs there.
-     */
-    private const string Unmount = <<<'BASH'
-        user=$2
-        pkill -KILL -u "$user" || true
-        for _ in $(seq 1 50); do
-            pgrep -u "$user" >/dev/null || break
-            sleep 0.2
-        done
-        sync
-        umount -- "$1"
-        BASH;
-
+    /** Stops what the managed user left running on the volume and unmounts it (`template-unmount.sh`), then detaches it. */
     private function detach(TaskVmHost $host, Node $node, string $builder, string $directory): void
     {
-        $this->checked($builder, 'exec umount', $this->image->exec($host, $node, $builder, ['bash', '-euc', self::Unmount, 'bash', $directory, self::ManagedUser]));
+        $this->checked($builder, 'exec umount', $this->image->shell($host, $node, $builder)->asRoot(TaskVmScripts::bash('template-unmount.sh', [$directory, self::ManagedUser])));
         $this->checked($builder, 'config device remove', $this->incus->run($host, $node, ['config', 'device', 'remove', '--', $builder, TaskVmWorkspaceTemplates::Device]));
     }
 
     /** @param  list<string>  $command */
     private function asManagedUser(TaskVmHost $host, Node $node, string $builder, string $cwd, array $command, string|ProtectedInput|null $input = null, float $timeout = 900.0): CommandResult
     {
-        return $this->incus->run($host, $node, [
-            'exec', '--cwd', $cwd, '--env', 'HOME=/home/'.self::ManagedUser, '--env', 'USER='.self::ManagedUser,
-            '--', $builder, 'runuser', '-u', self::ManagedUser, '--', ...$command,
-        ], $input, $timeout);
+        return $this->image->shell($host, $node, $builder)->asUser($command, $input, $timeout, $cwd);
     }
 
     private function checked(string $builder, string $operation, CommandResult $result): CommandResult
@@ -471,6 +424,6 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
      */
     private function stage(Node $node, ?Closure $progress, string $name, Closure $work): mixed
     {
-        return $this->image->stage(self::ErrorCode, "workspace template build on Node [{$node->name}]", $name, $progress, $work);
+        return TaskVmBuildStage::run(self::ErrorCode, "workspace template build on Node [{$node->name}]", $name, $progress, $work);
     }
 }
