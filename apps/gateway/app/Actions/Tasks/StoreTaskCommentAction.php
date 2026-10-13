@@ -79,10 +79,7 @@ final readonly class StoreTaskCommentAction
                 if (TaskGroupGuard::deliverableGateBlocked($group, $task)) {
                     // Like a baseline retry, but nothing remote must be reset first: no implementer exists to
                     // receive this resolution. Clearing assistance lets the next tick run the path gate again.
-                    $task->update([...TaskAssistance::cleared(), 'communication_failures' => 0]);
-                    if (! $group->tasks()->whereKeyNot($task->id)->where('assistance_requested', true)->exists()) {
-                        $group->update(TaskAssistance::cleared());
-                    }
+                    $this->clearForNextTick($group, $task);
                     $this->log($task, $comment, 'resolution queued deliverable gate retry');
 
                     return $comment;
@@ -104,6 +101,13 @@ final readonly class StoreTaskCommentAction
                     $deliverResolution = $task->assistance_kind !== AssistanceKind::Direction;
                     $deliverDirection = $task->assistance_kind === AssistanceKind::Direction;
                     $retryBaselineQueued = $deliverResolution && $this->retryBaseline->queue($task, $comment);
+                    if ($deliverResolution && ! $retryBaselineQueued && $task->status === TaskStatus::Running && $task->implementer_agent_thread_id === null) {
+                        // No implementer exists to receive it, for example after a failed topology preparation.
+                        // The next tick starts the subtask's work again.
+                        $this->clearForNextTick($group, $task);
+                        $this->log($task, $comment, 'resolution queued subtask start');
+                        $deliverResolution = false;
+                    }
                 }
             }
 
@@ -329,6 +333,15 @@ final readonly class StoreTaskCommentAction
             TaskQuestions::attachResolution($locked, $comment);
             $this->log($locked, $comment, 'resolution delivered');
         });
+    }
+
+    /** Clears the subtask's request, and the group's once no other subtask asks, so the next tick acts again. */
+    private function clearForNextTick(Task $group, Task $task): void
+    {
+        $task->update([...TaskAssistance::cleared(), 'communication_failures' => 0]);
+        if (! $group->tasks()->whereKeyNot($task->id)->where('assistance_requested', true)->exists()) {
+            $group->update(TaskAssistance::cleared());
+        }
     }
 
     private function log(Task $task, TaskComment $comment, string $description): void

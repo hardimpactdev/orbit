@@ -197,7 +197,7 @@ it('retries an ended pull request notice after acceptance but before delivered w
     });
     $driver->state = AgentThreadState::Done;
 
-    expect(fn () => app(TaskScheduler::class)->tick())->toThrow(RuntimeException::class, 'Process stopped');
+    test_tick_reporting(RuntimeException::class, 'Process stopped');
 
     expect($running->fresh())->ended_pr_notice_key->toBe($key)->ended_pr_notice_state->toBe('pending');
     expect($group->fresh())->assistance_requested->toBeTrue();
@@ -411,7 +411,7 @@ it('keeps an ended pull request notice pending with its accepted key when the de
     });
     $driver->state = AgentThreadState::Done;
 
-    expect(fn () => app(TaskScheduler::class)->tick())->toThrow(RuntimeException::class, 'Delivery audit could not be written.');
+    test_tick_reporting(RuntimeException::class, 'Delivery audit could not be written.');
 
     expect($running->fresh())->ended_pr_notice_state->toBe('pending')->ended_pr_notice_key->toBe($key);
     expect($driver->accepted)->toHaveCount(1);
