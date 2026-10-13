@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Actions\Tasks\CancelTaskCheckAction;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tasks\NullTaskWorkspaceStateReader;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckProcess;
 use App\Domain\Tasks\TaskCheckReading;
@@ -23,6 +22,7 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use Tests\Support\FakeTaskCheckRunner;
+use Tests\Support\NullTaskWorkspaceStateReader;
 
 it('starts one baseline check and asks for no assistance when the todo move and the tick race', function (): void {
     $project = Project::query()->create([

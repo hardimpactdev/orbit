@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Domain\Tasks\AgentDriverRegistry;
-use App\Domain\Tasks\NullTaskReviewDiff;
 use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckStatus;
@@ -16,6 +15,7 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use Symfony\Component\Process\Process;
+use Tests\Support\NullTaskReviewDiff;
 
 pest()->group('subprocess');
 

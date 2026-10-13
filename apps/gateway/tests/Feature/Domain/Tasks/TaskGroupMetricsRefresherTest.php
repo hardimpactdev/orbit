@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Actions\Tasks\ShowTaskGroupAction;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tasks\NullTaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupMetricsRefresher;
@@ -17,6 +16,7 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use Tests\Support\AgentSnapshotReader;
+use Tests\Support\NullTaskWorkspaceDiffReader;
 
 beforeEach(function (): void {
     test_bind_snapshot_driver();

@@ -175,12 +175,31 @@ it('posts a direction request to OpsBot and records the headers and body', funct
 
     app(HttpCoderSettleNotifier::class)->assistance($group->fresh() ?? $group, $reason);
 
+    Http::assertSentCount(2);
+    Http::assertSent(function (Request $request) use ($group, $question, $reason): bool {
+        $timestamp = (string) now()->timestamp;
+
+        return $request->url() === 'https://coder.example.test/hooks/settle'
+            && $request->hasHeader('X-Orbit-Signature', 'sha256='.hash_hmac('sha256', $timestamp.'.'.$request->body(), 'coder-secret'))
+            && ! $request->hasHeader('Authorization')
+            && ! $request->hasHeader('X-Automation-Key')
+            && $request->data() === [
+                'event' => 'task_group.assistance_requested',
+                'task_group_id' => $group->id,
+                'title' => 'Settle notify',
+                'kind' => 'direction',
+                'question' => $question,
+                'reason' => $reason,
+            ];
+    });
+
     $recorded = Http::recorded(fn (Request $request): bool => $request->url() === 'https://opsbot.example.test/hooks/direction');
     expect($recorded)->toHaveCount(1);
     [$request] = $recorded->first();
     expect($request->hasHeader('Content-Type', 'application/json'))->toBeTrue()
         ->and($request->hasHeader('Authorization', 'Bearer opsbot-secret'))->toBeTrue()
         ->and($request->hasHeader('X-Automation-Key', 'opsbot-secret'))->toBeTrue()
+        ->and($request->hasHeader('X-Orbit-Signature'))->toBeFalse()
         ->and($request->isJson())->toBeTrue()
         ->and($request->data())->toBe([
             'event' => 'task_group.assistance_requested',

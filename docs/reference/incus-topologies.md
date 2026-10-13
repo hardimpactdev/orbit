@@ -206,6 +206,8 @@ Every command except `status`, `shell`, and `web` holds the lock `topology-<ISSU
 
 An issue holds one topology at a time. `acquire` creates it and `release` removes it. Its state lives under `<worktree>/.e2e/`, in `attempt.json` and `topology.json`, and it dies with the worktree. A lease names the issue, the attempt ID, the operation ID, the declared Nodes, and the acquisition time. There is no reaper. A topology lives until the operator or Orbit releases it.
 
+`release` and `acquire --replace` also accept an older lease with `purpose: discovery`. Cleanup uses the lease's declared Nodes and exact issue and attempt ownership, without reading the older topology record. Other old formats and malformed leases are refused; release them with the harness that created them.
+
 Task agents and reviewers use only the topology allocated to their task. They never acquire or release a topology, receive no sudo, and do not touch the host firewall. Use `exec`, `spawn`, `logs`, and `kill` from the task workspace to work on the allocated topology. Clean up processes you spawn, but leave the topology allocated for teardown.
 
 ### Web session

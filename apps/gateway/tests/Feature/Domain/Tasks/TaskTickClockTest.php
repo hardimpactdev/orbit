@@ -7,6 +7,19 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Exceptions;
 
+describe('one tick observation', function (): void {
+    it('reads the time from the versioned record and leaves no compatibility key', function (): void {
+        $this->travelTo(Carbon::parse('2026-10-07T06:00:00Z'));
+        $clock = new TaskTickClock;
+
+        $clock->record();
+
+        expect(Cache::has('orbit:tasks:tick:started_at'))->toBeFalse();
+        Cache::put('orbit:tasks:tick:started_at', '2026-10-06T06:00:00Z');
+        expect($clock->lastStartedAt())->toBe('2026-10-07T06:00:00.000000Z');
+    });
+});
+
 it('records and reads the start of the last tick', function (): void {
     $this->travelTo(Carbon::parse('2026-10-07T06:00:00Z'));
     $clock = new TaskTickClock;

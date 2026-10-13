@@ -15,7 +15,6 @@ use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\ProcessEnvironmentProjection;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tasks\NullTaskReviewDiff;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskTurnReceipts;
@@ -47,6 +46,7 @@ use Tests\Support\FakeRouterLanIngressReconciler;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskTurnReceipts;
 use Tests\Support\FakeVitePortRuntime;
+use Tests\Support\NullTaskReviewDiff;
 use Tests\Support\TestToolchain;
 use Tests\TestCase;
 

@@ -81,16 +81,18 @@ describe('the topology run', function () use ($runArguments): void {
                 'images ensure --nodes=app-prod+ingress',
                 "acquire acquire TASK-7 {$work}/checkout --nodes=app-prod+ingress --replace",
             ])
-            ->and(array_keys($result))->toBe(['state', 'step', 'seconds', 'retries', 'boot_id', 'log'])
-            ->and($result)->toMatchArray(['state' => 'ready', 'step' => 'acquire', 'retries' => 0, 'boot_id' => topology_boot_id()]);
+            ->and(array_keys($result))->toBe(['state', 'step', 'seconds', 'boot_id', 'log'])
+            ->and($result)->toMatchArray(['state' => 'ready', 'step' => 'acquire', 'boot_id' => topology_boot_id()]);
     });
 
-    it('retries a failed acquire once and counts the retry', function () use ($runArguments): void {
+    it('retries a failed acquire once and records it only in the log', function () use ($runArguments): void {
         [$process, $work] = topology_script($runArguments, ['ACQUIRE_FAILURES' => '1']);
         $result = topology_result($work, 'abcdef0123456789');
 
         expect($process->getExitCode())->toBe(0)
-            ->and($result)->toMatchArray(['state' => 'ready', 'retries' => 1])
+            ->and($result)->toMatchArray(['state' => 'ready'])
+            ->and($result)->not->toHaveKey('retries')
+            ->and(count(file("{$work}/harness.log", FILE_IGNORE_NEW_LINES)))->toBe(4)
             ->and($result['log'])->toContain('topology: warning: acquire failed; retry 1 of 1.');
     });
 
@@ -98,7 +100,7 @@ describe('the topology run', function () use ($runArguments): void {
         [$process, $work] = topology_script($runArguments, ['ACQUIRE_FAILURES' => '2']);
 
         expect($process->getExitCode())->not->toBe(0)
-            ->and(topology_result($work, 'abcdef0123456789'))->toMatchArray(['state' => 'failed', 'step' => 'acquire', 'retries' => 1]);
+            ->and(topology_result($work, 'abcdef0123456789'))->toMatchArray(['state' => 'failed', 'step' => 'acquire']);
     });
 
     it('keeps the log tail as one valid JSON string, whatever the harness printed', function () use ($runArguments): void {
