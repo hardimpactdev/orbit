@@ -8,7 +8,6 @@ use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
-use App\Domain\Tasks\NullTaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskBaseBranchFetcher;
 use App\Domain\Tasks\TaskExtensionState;
@@ -28,6 +27,7 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Tests\Support\AcceptingTaskWorkspaceMcp;
 use Tests\Support\FakeAgentDriver;
+use Tests\Support\NullTaskWorkspaceDiffReader;
 
 /**
  * @return array{0: Project, 1: Node, 2: Instance, 3: Task}

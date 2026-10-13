@@ -40,8 +40,7 @@ final readonly class TopologyReleaser
             if (! $state->hasAttempt()) {
                 throw new RuntimeException("{$request->issue} has no active attempt.");
             }
-            $target = $state->topology()->target
-                ?? TopologyTarget::for($request->issue, $state->attemptId(), $state->recipe());
+            $target = $state->releaseTarget();
             [$released, $absent] = $this->deleteResources($target);
             $state->forgetAttempt();
 

@@ -9,8 +9,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AssistanceKind;
-use App\Domain\Tasks\NullTaskReviewDiff;
-use App\Domain\Tasks\NullTaskWorkspaceDiffReader;
 use App\Domain\Tasks\QuestionAsker;
 use App\Domain\Tasks\QuestionStatus;
 use App\Domain\Tasks\TaskAssistance;
@@ -45,6 +43,8 @@ use Tests\Support\AgentSnapshotReader;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskTurnReceipts;
 use Tests\Support\NullAgentSnapshotReader;
+use Tests\Support\NullTaskReviewDiff;
+use Tests\Support\NullTaskWorkspaceDiffReader;
 
 /** A blocked task in the given status, with an implementer and a reviewer thread. */
 function blocked_task(TaskStatus $status): Task

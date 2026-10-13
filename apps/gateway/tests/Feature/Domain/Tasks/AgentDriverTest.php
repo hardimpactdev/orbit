@@ -10,8 +10,6 @@ use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\AgentThreadObserver;
 use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\CoderSettleNotifier;
-use App\Domain\Tasks\NullCoderSettleNotifier;
-use App\Domain\Tasks\NullTaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
@@ -32,6 +30,8 @@ use Illuminate\Database\QueryException;
 use Laravel\Ai\Classification;
 use Tests\Support\AcceptingTaskWorkspaceMcp;
 use Tests\Support\FakeAgentDriver;
+use Tests\Support\NullCoderSettleNotifier;
+use Tests\Support\NullTaskWorkspaceDiffReader;
 
 beforeEach(function (): void {
     app()->instance(TaskWorkspaceMcp::class, new AcceptingTaskWorkspaceMcp);

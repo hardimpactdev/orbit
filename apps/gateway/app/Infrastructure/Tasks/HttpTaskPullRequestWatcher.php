@@ -43,6 +43,8 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
     /** A run pending for longer than this is infrastructure. One pending for this long or less is not a result yet. */
     private const int PENDING_YOUNG_MINUTES = 60;
 
+    private const int PENDING_CLOCK_SECONDS = 7 * 24 * 60 * 60;
+
     public function __construct(private RepositoryPullRequestAccess $access, private GitHubApi $github) {}
 
     public function updateBranch(Task $group, string $headSha): TaskBranchUpdate
@@ -53,18 +55,15 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
         }
         [$repository, $number] = $target;
         $key = 'tasks:branch-update:'.$group->id.':'.$headSha;
-        $cached = Cache::get($key);
-        if (is_string($cached) && TaskBranchUpdate::tryFrom($cached) !== null) {
-            return TaskBranchUpdate::from($cached);
-        }
-        try {
-            $result = $this->github->updatePullRequestBranch($this->access->token($repository), $repository, $number, $headSha);
-        } catch (Throwable) {
-            $result = TaskBranchUpdate::Unavailable;
-        }
-        Cache::put($key, $result->value, 60);
+        $cached = Cache::remember($key, 60, function () use ($repository, $number, $headSha): string {
+            try {
+                return $this->github->updatePullRequestBranch($this->access->token($repository), $repository, $number, $headSha)->value;
+            } catch (Throwable) {
+                return TaskBranchUpdate::Unavailable->value;
+            }
+        });
 
-        return $result;
+        return TaskBranchUpdate::from($cached);
     }
 
     public function status(Task $group): ?string
@@ -120,7 +119,6 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
         $young = false;
         $stale = [];
         if ($pullRequest->headSha !== null) {
-            $this->rotatePendingHead($repository, $number, $pullRequest->headSha);
             ['young' => $young, 'stale' => $stale] = $this->classifyPending(
                 $this->pendingHeadKey($repository, $number, $pullRequest->headSha),
                 $pending,
@@ -200,20 +198,34 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
             }
             $key = 'tasks:pull-request-reviews:v1:'.strtolower($repository->owner.'/'.$repository->name)
                 .'#'.$number.'@'.$pr->headSha.':'.$trust->revision;
-            $reviews = $fresh ? null : self::cachedReviews(Cache::get($key));
+            $read = function () use ($token, $repository, $number, &$cached): array {
+                $cached = false;
+
+                return self::reviewCachePayload($this->github->reviews($token, $repository, $number));
+            };
+            $cached = ! $fresh;
+            $payload = $fresh ? $read() : Cache::remember($key, 60, $read);
+            $reviews = self::cachedReviews($payload);
             if ($reviews === null) {
-                $reviews = $this->github->reviews($token, $repository, $number);
-                $selection = TaskReviewSelection::select($reviews, $trust, $pr->headSha, $pr->state === GitHubPullRequestState::Open);
-                Cache::put($key, self::reviewCachePayload($reviews), 60);
-            } else {
-                $selection = TaskReviewSelection::select($reviews, $trust, $pr->headSha, $pr->state === GitHubPullRequestState::Open);
-                $cached = true;
+                Cache::forget($key);
+                $payload = Cache::remember($key, 60, $read);
+                $reviews = self::cachedReviews($payload);
+            } elseif ($fresh) {
+                Cache::put($key, $payload, 60);
             }
+            if ($reviews === null) {
+                return new TaskReviewObservation(TaskReviewReadStatus::Unreadable, $repository, $number, $trust, $pr);
+            }
+            $selection = TaskReviewSelection::select($reviews, $trust, $pr->headSha, $pr->state === GitHubPullRequestState::Open);
 
             return new TaskReviewObservation(TaskReviewReadStatus::Complete, $repository, $number, $trust, $pr, $reviews, $selection);
         } catch (GitHubReviewOverflowException) {
+            $cached = false;
+
             return new TaskReviewObservation(TaskReviewReadStatus::Overflow, $repository, $number, $trust, $pr);
         } catch (Throwable) {
+            $cached = false;
+
             return new TaskReviewObservation(TaskReviewReadStatus::Unreadable, $repository, $number, $trust, $pr);
         }
     }
@@ -356,15 +368,15 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
             return ['failed' => [], 'pending' => []];
         }
         $key = 'tasks:pull-request-checks:v3:'.$repository->owner.'/'.$repository->name.'#'.$number.'@'.$pullRequest->headSha;
-        $cached = Cache::get($key);
-        if (! is_array($cached)) {
+        $cached = Cache::remember($key, self::CHECKS_CACHE_SECONDS, function () use ($repository, $pullRequest): ?array {
             $token = $this->access->checksToken($repository);
             if ($token === null) {
-                // Not cached: a missing permission or a passing token failure is re-read next tick.
-                return ['failed' => [], 'pending' => []];
+                // A null cache value is a miss, so permission is checked again next tick.
+                return null;
             }
             $runs = $this->github->checkRuns($token, $repository, $pullRequest->headSha);
-            $cached = [
+
+            return [
                 'failed' => array_values(array_map(
                     static fn (GitHubCheckRun $run): array => ['name' => $run->name, 'conclusion' => (string) $run->conclusion, 'url' => $run->url],
                     array_filter($runs, static fn (GitHubCheckRun $run): bool => $run->failed()),
@@ -374,12 +386,14 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
                     array_filter($runs, static fn (GitHubCheckRun $run): bool => $run->pending()),
                 )),
             ];
-            Cache::put($key, $cached, self::CHECKS_CACHE_SECONDS);
+        });
+        if ($cached === null) {
+            return ['failed' => [], 'pending' => []];
         }
 
         return [
-            'failed' => $this->failedRuns($cached['failed'] ?? null),
-            'pending' => $this->pendingRuns($cached['pending'] ?? null),
+            'failed' => $this->failedRuns($cached['failed']),
+            'pending' => $this->pendingRuns($cached['pending']),
         ];
     }
 
@@ -438,7 +452,7 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
     /**
      * A run with no conclusion is pending. `started_at` ages it from GitHub's clock. Without that time,
      * the first read on this head starts the clock and a later read leaves it. More than 60 minutes is
-     * infrastructure. The clock is dropped when the run completes or the head changes.
+     * infrastructure. Each run/head clock expires after seven days without an index or head pointer.
      *
      * @param  list<GitHubCheckRun>  $pending
      * @return array{young: bool, stale: list<GitHubCheckRun>}
@@ -447,10 +461,8 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
     {
         $young = false;
         $stale = [];
-        $current = [];
         foreach ($pending as $run) {
             $runKey = $run->id !== null ? (string) $run->id : $run->name;
-            $current[$runKey] = true;
             $started = $run->startedAt !== null ? $this->parsedStart($run->startedAt) : null;
             if (! $started instanceof Carbon) {
                 $started = $this->pendingSince($headKey, $runKey);
@@ -461,7 +473,6 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
                 $young = true;
             }
         }
-        $this->forgetFinishedPending($headKey, $current);
 
         return ['young' => $young, 'stale' => $stale];
     }
@@ -479,55 +490,9 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
     private function pendingSince(string $headKey, string $runKey): Carbon
     {
         $key = $this->pendingClockKey($headKey, $runKey);
-        $stored = Cache::get($key);
-        if (! is_string($stored) || $stored === '') {
-            $stored = now()->toIso8601String();
-            Cache::forever($key, $stored);
-            $index = Cache::get($this->pendingIndexKey($headKey));
-            $index = is_array($index) ? $index : [];
-            $index[$runKey] = true;
-            Cache::forever($this->pendingIndexKey($headKey), $index);
-        }
+        $stored = Cache::remember($key, self::PENDING_CLOCK_SECONDS, static fn (): string => now()->toIso8601String());
 
         return Carbon::parse($stored);
-    }
-
-    /** @param  array<string, true>  $current */
-    private function forgetFinishedPending(string $headKey, array $current): void
-    {
-        $stored = Cache::get($this->pendingIndexKey($headKey));
-        if (! is_array($stored)) {
-            return;
-        }
-        $remaining = [];
-        foreach (array_keys($stored) as $runKey) {
-            $runKey = (string) $runKey;
-            if (isset($current[$runKey])) {
-                $remaining[$runKey] = true;
-
-                continue;
-            }
-            Cache::forget($this->pendingClockKey($headKey, $runKey));
-        }
-        if ($remaining === []) {
-            Cache::forget($this->pendingIndexKey($headKey));
-
-            return;
-        }
-        Cache::forever($this->pendingIndexKey($headKey), $remaining);
-    }
-
-    /** Drops clocks for the previous head, so a new push starts pending ages again. */
-    private function rotatePendingHead(GitHubRepository $repository, int $number, string $headSha): void
-    {
-        $pointer = 'tasks:check-pending-head:v1:'.$repository->owner.'/'.$repository->name.'#'.$number;
-        $previous = Cache::get($pointer);
-        if (is_string($previous) && $previous !== '' && $previous !== $headSha) {
-            $this->forgetFinishedPending($this->pendingHeadKey($repository, $number, $previous), []);
-        }
-        if ($previous !== $headSha) {
-            Cache::forever($pointer, $headSha);
-        }
     }
 
     private function pendingHeadKey(GitHubRepository $repository, int $number, string $headSha): string
@@ -537,12 +502,7 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
 
     private function pendingClockKey(string $headKey, string $runKey): string
     {
-        return 'tasks:check-pending-since:v1:'.$headKey.':'.$runKey;
-    }
-
-    private function pendingIndexKey(string $headKey): string
-    {
-        return 'tasks:check-pending-index:v1:'.$headKey;
+        return 'tasks:check-pending-since:v2:'.$headKey.':'.$runKey;
     }
 
     /** @return array{GitHubRepository, int}|null */

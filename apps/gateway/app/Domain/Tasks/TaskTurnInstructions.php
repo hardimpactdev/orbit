@@ -96,7 +96,7 @@ final readonly class TaskTurnInstructions
             .': a test Gateway, an operator, and the declared nodes with their roles. Use it with bin/e2e-topology, for example `bin/e2e-topology exec '.$issue.' operator --argv=\'["orbit","node:list","--json"]\'`, and follow the using-incus-topologies skill. Never acquire or release it.';
 
         return $reviewer
-            ? $text.' `--record` appends to .e2e/evidence.log, which the read-only rule allows: the file is not part of the workspace tree. Prove each deliverable on the declared nodes ('.$nodes.') with `bin/e2e-topology exec '.$issue.' NODE --argv=JSON --record=LABEL`, where LABEL names the deliverable, and cite the labels in your --deliverable evidence and summary. Orbit refuses the approval until the evidence log holds a recorded command that did work on each declared node and exited 0, started after the last handoff, and it adds those commands to your approval.'
+            ? $text.' `--record` appends to .e2e/evidence.jsonl, which the read-only rule allows: the file is not part of the workspace tree. Prove each deliverable on the declared nodes ('.$nodes.') with `bin/e2e-topology exec '.$issue.' NODE --argv=JSON --record=LABEL`, where LABEL names the deliverable, and cite the labels in your --deliverable evidence and summary. Orbit refuses the approval until the evidence log holds a recorded command that did work on each declared node and exited 0, started after the last handoff, and it adds those commands to your approval.'
             : $text.' The reviewer must prove the deliverables on '.$nodes.', so make them work there.';
     }
 

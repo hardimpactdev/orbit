@@ -6,7 +6,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\CoderSettleNotifier;
-use App\Domain\Tasks\NullCoderSettleNotifier;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
@@ -25,6 +24,7 @@ use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeAgentDriver;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskTurnReceipts;
+use Tests\Support\NullCoderSettleNotifier;
 
 /**
  * A running group on an Instance whose first subtask is in its baseline check and whose second waits.

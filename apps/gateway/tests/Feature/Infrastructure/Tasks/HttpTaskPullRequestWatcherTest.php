@@ -618,3 +618,43 @@ it('starts a new pending clock when the check run id changes and clears one that
     expect($watcher->health($group->fresh(['project']))?->checksYoungPending)->toBeTrue()
         ->and($watcher->health($group->fresh(['project']))?->problems)->toBe([]);
 });
+
+describe('bounded pending clocks', function (): void {
+    it('starts a new clock on a new head without writing a pointer or index', function (): void {
+        GitHubTestSupport::storeApp();
+        $this->freezeTime();
+        $pending = ['id' => 11, 'name' => 'Web', 'status' => 'in_progress', 'conclusion' => null];
+        Http::fake([
+            'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
+            'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
+            'https://api.github.com/repos/acme/orbit/pulls/42' => Http::sequence()
+                ->push(['state' => 'open', 'head' => ['sha' => 'old-head']])
+                ->push(['state' => 'open', 'head' => ['sha' => 'new-head']]),
+            'https://api.github.com/repos/acme/orbit/commits/*/check-runs*' => Http::response(['total_count' => 1, 'check_runs' => [$pending]]),
+        ]);
+        $watcher = app(HttpTaskPullRequestWatcher::class);
+        $group = watcher_group();
+
+        expect($watcher->health($group)?->checksYoungPending)->toBeTrue();
+        $this->travel(61)->minutes();
+        expect($watcher->health($group)?->checksYoungPending)->toBeTrue()
+            ->and(Cache::has('tasks:check-pending-head:v1:acme/orbit#42'))->toBeFalse()
+            ->and(Cache::has('tasks:check-pending-index:v1:acme/orbit#42@old-head'))->toBeFalse()
+            ->and(Cache::has('tasks:check-pending-index:v1:acme/orbit#42@new-head'))->toBeFalse();
+    });
+
+    it('expires a fallback clock seven days after its first observation', function (): void {
+        GitHubTestSupport::storeApp();
+        $this->freezeTime();
+        watcher_fake_health([], [['id' => 11, 'name' => 'Web', 'status' => 'in_progress', 'conclusion' => null]]);
+        Cache::forever('tasks:check-pending-since:v1:acme/orbit#42@abc123:11', now()->subDays(8)->toIso8601String());
+        $watcher = app(HttpTaskPullRequestWatcher::class);
+        $group = watcher_group();
+
+        expect($watcher->health($group)?->checksYoungPending)->toBeTrue();
+        $this->travel(6)->days();
+        expect($watcher->health($group)?->checksYoungPending)->toBeFalse();
+        $this->travel(1)->days();
+        expect($watcher->health($group)?->checksYoungPending)->toBeTrue();
+    });
+});

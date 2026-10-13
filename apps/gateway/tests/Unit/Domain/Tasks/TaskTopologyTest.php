@@ -8,6 +8,7 @@ use App\Domain\Tasks\TaskPromptRenderer;
 use App\Domain\Tasks\TaskPromptSubtask;
 use App\Domain\Tasks\TaskTopology;
 use App\Domain\Tasks\TaskTopologyEvidence;
+use App\Domain\Tasks\TaskTurnInstructions;
 use App\Domain\TaskVms\TaskVmSize;
 use Carbon\CarbonImmutable;
 
@@ -96,6 +97,30 @@ function evidence_line(string $start, string $label, string $node, array $argv, 
 {
     return json_encode(['v' => 1, 'start' => $start, 'end' => $start, 'duration_ms' => 5, 'label' => $label, 'node' => $node, 'exit' => $exit, 'argv' => $argv], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n";
 }
+
+describe('JSON topology evidence', function (): void {
+    it('directs reviewers to the JSON evidence file written by the harness', function (): void {
+        expect(TaskTurnInstructions::topology(7, TaskTopology::fromInput(['app-dev']), reviewer: true))
+            ->toContain('`--record` appends to .e2e/evidence.jsonl');
+    });
+
+    it('keeps a UTF-8 label whose bytes contain 0x85 in one record', function (): void {
+        $line = json_encode(['v' => 1, 'start' => '2026-10-13T10:01:00Z', 'end' => '2026-10-13T10:01:00Z', 'label' => 'Ångström probe', 'node' => 'app-dev', 'exit' => 0, 'argv' => ['orbit', 'node:list']], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
+
+        $evidence = TaskTopologyEvidence::fromJsonLines($line."\n", CarbonImmutable::parse('2026-10-13T10:00:00Z'), CarbonImmutable::parse('2026-10-13T11:00:00Z'));
+
+        expect($evidence->missing(['app-dev']))->toBe([])
+            ->and($evidence->summary(['app-dev']))->toContain('Ångström probe');
+    });
+
+    it('points a truncated summary to the JSON evidence file', function (): void {
+        $lines = str_repeat(evidence_line('2026-10-13T10:01:00Z', 'probe', 'app-dev', ['orbit', 'node:list']), 21);
+
+        $evidence = TaskTopologyEvidence::fromJsonLines($lines, CarbonImmutable::parse('2026-10-13T10:00:00Z'), CarbonImmutable::parse('2026-10-13T11:00:00Z'));
+
+        expect($evidence->summary(['app-dev']))->toEndWith('- and 1 more in .e2e/evidence.jsonl');
+    });
+});
 
 it('counts JSON records that exited 0, did work, and started between the handoff and now', function (): void {
     $lines = '{"v":1,"start":"2026-10-13T10:01:00.000Z","label":"cut'."\n"

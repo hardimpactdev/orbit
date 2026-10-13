@@ -75,8 +75,8 @@ case ${1-} in
         }
         # The result is written last and atomically, so `status` never reads half of it.
         result() {
-            printf '{"state":"%s","step":"%s","seconds":%d,"retries":%d,"boot_id":"%s","log":%s}\n' \
-                "$1" "$step" "$((SECONDS - started))" "$retries" "$(</proc/sys/kernel/random/boot_id)" \
+            printf '{"state":"%s","step":"%s","seconds":%d,"boot_id":"%s","log":%s}\n' \
+                "$1" "$step" "$((SECONDS - started))" "$(</proc/sys/kernel/random/boot_id)" \
                 "$(tail -n 40 -- "$log" | json_string)" >"$state/$run.json.new"
             mv -f -- "$state/$run.json.new" "$state/$run.json"
         }
@@ -99,7 +99,7 @@ case ${1-} in
 
         step=acquire
         # A nested guest can miss its readiness window. Acquire removes what it created, and --replace releases a
-        # topology an earlier run left, so it can run again. The result counts the retries for the Gateway.
+        # topology an earlier run left, so it can run again. The log records the retry.
         until bin/e2e-topology acquire "$issue" "$checkout" --nodes="$nodes" --replace; do
             ((retries < 1)) || exit 1
             retries=$((retries + 1))
