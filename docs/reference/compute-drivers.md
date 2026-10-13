@@ -517,31 +517,24 @@ Orbit derives progress inside `provisioning` from facts: the VM exists, the row 
 
 ### Jobs
 
-The task VM jobs run on the `task-vms` database queue, in the Gateway's own database. Each job loads its row again, does nothing when the row has moved on, and is unique for its task VM. While a job on that queue is due, the Gateway scheduler starts this worker every second. A delayed job, such as the guard of a warm claim, starts no worker before its time:
+The task VM jobs run on the `task-vms` database queue, in the Gateway's own database. Each job loads its row again, does nothing when the row has moved on, and is unique for its task VM. The workspace template jobs, `RefreshTaskVmWorkspaceTemplates` and `BuildTaskVmWorkspaceTemplate`, run on the queue `task-vm-templates` in the same table. The nightly base image refreshes, [`RefreshTaskVmBaseImages`](#build-the-base-image) and [`RefreshUpCloudTaskVmBaseImage`](#refresh-the-upcloud-template-every-night), run on the queue `task-vm-images`. The [publish](#publish-from-the-vm) of an approved commit, `PublishTaskVmCommit`, runs on the queue `task-vm-git`.
 
-```text
-queue:work task-vms --queue=task-vms --stop-when-empty --max-time=120 --timeout=1500
-```
+Each queue has its own worker, a systemd unit on the Gateway host. It runs as `orbit` from the stable Gateway path, `/home/orbit/orbit/apps/gateway`:
 
-The worker stops when the queue is empty, or takes no new job after 120 seconds. So one worker run takes a VM from launch to `ready`. A job runs at most 1500 seconds, and a job that stops halfway runs again after 1800 seconds.
+| Unit | Command |
+| --- | --- |
+| `orbit-queue-task-vms.service` | `queue:work task-vms --queue=task-vms --sleep=1 --timeout=1500` |
+| `orbit-queue-task-vm-templates.service` | `queue:work task-vms --queue=task-vm-templates --sleep=1 --timeout=1700` |
+| `orbit-queue-task-vm-images.service` | `queue:work task-vms --queue=task-vm-images --sleep=1 --timeout=1700` |
+| `orbit-queue-task-vm-git.service` | `queue:work task-vms --queue=task-vm-git --sleep=1 --timeout=1700` |
 
-A job is due when its time has come and no worker holds it, or a worker's hold is older than 1800 seconds. A delayed retry or a released job starts no worker before its time. Without a due job, the scheduler only reads the queue table each second. A Gateway release drains the worker like any other scheduled command. Its start does not pause [document cleanup](/reference/project-documents), because it runs only task VM jobs.
+An idle worker reads the queue table once a second, so a job starts about a second after it is due, unless the worker still runs an earlier job of its queue. A delayed job, such as the guard of a warm claim, or a released job waits for its time. The workers run outside the Gateway scheduler, so a long scheduled command, such as `tasks:tick`, never delays a job. A task VM job runs at most 1500 seconds, the other jobs at most 1700 seconds. A job that stops halfway runs again after 1800 seconds. A worker that exits, or runs out of memory, starts again after 5 seconds. Its start does not pause [document cleanup](/reference/project-documents), because it runs only task VM jobs.
 
-The workspace template jobs, `RefreshTaskVmWorkspaceTemplates` and `BuildTaskVmWorkspaceTemplate`, run on the queue `task-vm-templates` in the same table, with a worker of their own. The nightly base image refreshes, [`RefreshTaskVmBaseImages`](#build-the-base-image) and [`RefreshUpCloudTaskVmBaseImage`](#refresh-the-upcloud-template-every-night), run on the queue `task-vm-images`, with a third worker. The [publish](#publish-from-the-vm) of an approved commit, `PublishTaskVmCommit`, runs on the queue `task-vm-git`, with a fourth:
+So a template build, a base image refresh, and a publish never hold up a task VM job or each other. A template build takes about a minute, a base image refresh up to 25 minutes, and a publish seconds. Each worker runs one job at a time, so one template build, one base image refresh, and one publish run in the fleet at a time. The host locks also allow one template build and one base image build or sync per host.
 
-```text
-queue:work task-vms --queue=task-vm-templates --stop-when-empty --max-time=120 --timeout=1700
-queue:work task-vms --queue=task-vm-images --stop-when-empty --max-time=120 --timeout=1700
-queue:work task-vms --queue=task-vm-git --stop-when-empty --max-time=120 --timeout=1700
-```
+`php artisan orbit:gateway-web` and the scheduler phase of each release's [runtime handoff](/reference/gateway-recovery#runtime-handoff) install the units, enable them, and start them while task VMs are enabled, while the UpCloud token file is set, or while a task VM is not `destroyed`. Otherwise they stop and disable the units that exist, and a Gateway that never had them gets none. They read the configuration of the release, so a changed switch applies with the next release or `orbit:gateway-web`. The handoff records `task_vm_workers`: `started`, `stopped`, or `none`. A failed install fails the handoff with `gateway.release_units_failed`, like the other Gateway units.
 
-So a template build, a base image refresh, and a publish never hold up a task VM job or each other. A template build takes about a minute, a base image refresh up to 25 minutes, and a publish seconds. Each runs at most 1700 seconds. Each of these workers runs one job at a time, so one template build, one base image refresh, and one publish run in the fleet at a time. The host locks also allow one template build and one base image build or sync per host.
-
-Each worker's overlap lock lasts 32 minutes, longer than its longest run: 120 seconds of jobs, then one more job of at most 1700 seconds.
-
-These workers have the same due check, but start only at the end of a minute: the Git worker in seconds 54 and 55, the image worker in seconds 56 and 57, the template worker in seconds 58 and 59. So a publish waits up to a minute for its worker. A scheduler run waits for a command that it starts in the foreground, and the scheduler starts a new run each minute. So a long job holds a run that was about to end, and the next run starts the task VM worker each second again, and the other worker when it is due.
-
-A worker stops after 120 seconds and starts again at the end of a minute, so it can idle up to a minute between runs.
+A release never cuts off a job and never waits for one. The scheduler phase installs the units after the scheduler drain, so no scheduled worker of an older release runs beside them, and then runs `queue:restart`. A worker finishes the job it runs, on the release it started on, and exits. systemd starts it again, and it then runs the new release. A stop of a unit lets the running job finish too: the unit waits up to 1800 seconds after SIGTERM, longer than any job.
 
 The template queue runs its jobs in the order they were queued. A claim's build waits behind the builds that a refresh queued. After a nightly promote with 10 active Projects on 2 hosts, that can be 20 to 60 minutes.
 

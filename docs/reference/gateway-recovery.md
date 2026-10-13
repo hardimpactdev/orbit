@@ -178,7 +178,7 @@ After the switch, deploy:
 
 1. runs the serving phase of the runtime handoff: Caddy, PHP-FPM, and the units;
 2. verifies the release, as described below;
-3. runs the scheduler phase of the handoff: the scheduler drain and restart, document cleanup, the Gateway Node's agent update, and the OPcache reset;
+3. runs the scheduler phase of the handoff: the scheduler drain and restart, document cleanup, the task VM queue workers, the Gateway Node's agent update, and the OPcache reset;
 4. switches `web/current` to the release's [web build](#web-build) with one rename;
 5. runs [smoke](#smoke) against the switched release.
 
@@ -230,8 +230,9 @@ The scheduler phase:
 1. moves the scheduler to the new release without cutting off a scheduled command;
 2. restarts every other Gateway Node Process whose directory is in the Gateway application;
 3. resumes [document cleanup](/reference/project-documents#restore-time-cleanup-gate);
-4. updates the Gateway Node's own `orbit-agent` to the release's pin, described below;
-5. resets OPcache, described below.
+4. installs the [task VM queue workers](/reference/compute-drivers#jobs) and runs `queue:restart`, so each worker finishes its running job on its old release and then starts on the new one;
+5. updates the Gateway Node's own `orbit-agent` to the release's pin, described below;
+6. resets OPcache, described below.
 
 PHP-FPM is not restarted for a release. Caddy resolves the `/home/orbit/orbit` link for each request (`resolve_root_symlink`) and passes PHP-FPM the release's real script path. A request that started before the switch finishes on its release, and the next one runs the new release. The `/grafana` authorization resolves the link the same way. A fixed script path through the link would let each PHP-FPM worker keep the old release in its realpath cache for up to two minutes.
 
@@ -264,7 +265,7 @@ The new scheduler pauses document cleanup when it starts. The handoff waits for 
 
 The handoff also installs the [fleet rollout units](#units). A failure there only logs a warning.
 
-When any step fails, the handoff still starts the scheduler unit, so the scheduler never stays down. The handoff prints one JSON object with `caddy`, `fpm`, `opcache`, `scheduler`, `scheduler_unit`, `scheduler_drain`, `processes_restarted`, `cleanup`, `cleanup_error_code`, `agent_view`, `cleanup_paused`, and `gateway_agent`. Run it again by hand after fixing a handoff failure. It takes no release lock, so run it only when no release step is running.
+When any step fails, the handoff still starts the scheduler unit, so the scheduler never stays down. The handoff prints one JSON object with `caddy`, `fpm`, `opcache`, `scheduler`, `scheduler_unit`, `scheduler_drain`, `processes_restarted`, `task_vm_workers`, `cleanup`, `cleanup_error_code`, `agent_view`, `cleanup_paused`, and `gateway_agent`. Run it again by hand after fixing a handoff failure. It takes no release lock, so run it only when no release step is running.
 
 ##### Gateway Node agent
 
