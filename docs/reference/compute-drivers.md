@@ -507,8 +507,10 @@ The sweep and Doctor also report what Orbit does not own on a task VM host, and 
 A **stray instance** is an Incus instance in any project of the host that is none of these:
 
 - a task VM `tvm-<number>` in the host's project, which the [sweep](#sweep-task-vm-hosts) checks against its row;
-- a base image builder or smoke VM `tvm-image-<time>…`, or a workspace template builder `tvm-template-<time>`, in the host's project, for one hour after the `<time>` in its name. A build holds its lock for less than 30 minutes, and the next build deletes what an interrupted one left. An older one is a stray;
+- a base image builder or smoke VM `tvm-image-<time>…`, or a workspace template builder `tvm-template-<time>`, in the host's project, for one hour after the `<time>` in its name;
 - an entry of the host's `operator_owned` list.
+
+A build holds its lock for less than 30 minutes. So a builder VM older than one hour belongs to no running build. It is a stray until the next build deletes it.
 
 A **stray volume** is an Incus custom volume in any project and pool of the host that is none of these:
 
