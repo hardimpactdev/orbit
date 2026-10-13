@@ -433,7 +433,7 @@ A VM sends its pack at its own pace, so the task tick does not publish. The push
 - `pushed`: GitHub has the commit at the branch. The approval continues, and the pull request opens.
 - `failed`: the tick reports the job's error as a [failed push](/reference/tasks#pull-request-and-settle-metrics), once. The next push after its backoff queues the job again.
 
-A job that has not finished 40 minutes after it was queued counts as failed. The job pushes only while the row still names its commit and branch as `queued`, so a repeated or late job changes nothing. It does this:
+The job records its start on the row. A job that has not finished 40 minutes after its start counts as failed. A push that waits behind other jobs stays pending, for up to 2 hours. A push whose job has not started after 2 hours counts as failed too, so a lost job or a worker that never starts cannot hold the group. The job pushes only while the row still names its commit and branch as `queued`, so a repeated or late job changes nothing. It does this:
 
 1. The Gateway fetches the default branch and `task-<id>` into the mirror.
 2. It asks the VM for a pack of the approved commit. The pack leaves out the history of the mirror's commits of those branches.

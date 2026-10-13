@@ -49,10 +49,16 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
     private const int PushErrorBytes = 2000;
 
     /**
-     * A queued push that has not finished after this long failed: the job's 1700 seconds, a minute for its worker to
-     * start, and a margin.
+     * A started push that has not finished after this long failed: the job's 1700 seconds and a margin. The time is
+     * measured from the job's start, so a push that waits behind other jobs never looks lost.
      */
     private const int PublishStaleSeconds = 2400;
+
+    /**
+     * A push whose job has not started after this long is lost too, such as a job row that is gone or a worker that
+     * never starts. The limit is far above any wait behind other publishes, which run in seconds.
+     */
+    private const int PublishUnstartedSeconds = 7200;
 
     private const string WorkflowRefusal = 'GitHub refused a change under .github/workflows/: grant the Orbit GitHub App the Workflows (read and write) permission, or push the commit yourself.';
 
@@ -196,8 +202,14 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
             if ($vm->publish_state === TaskVmPublishState::Pushed) {
                 return;
             }
-            $stale = $vm->publish_state === TaskVmPublishState::Queued
-                && ! ($vm->publish_queued_at?->isAfter(now()->subSeconds(self::PublishStaleSeconds)) ?? false);
+            $lost = match (true) {
+                $vm->publish_state !== TaskVmPublishState::Queued => null,
+                $vm->publish_started_at !== null => $vm->publish_started_at->isBefore(now()->subSeconds(self::PublishStaleSeconds))
+                    ? 'the publish job did not finish within '.self::PublishStaleSeconds.' seconds of its start.' : null,
+                default => ! ($vm->publish_queued_at?->isAfter(now()->subSeconds(self::PublishUnstartedSeconds)) ?? false)
+                    ? 'the publish job did not start within '.self::PublishUnstartedSeconds.' seconds.' : null,
+            };
+            $stale = $lost !== null;
             if ($vm->publish_state === TaskVmPublishState::Queued && ! $stale) {
                 throw TaskPullRequestException::pending("Orbit is pushing commit {$commit} to {$branch}.");
             }
@@ -206,12 +218,12 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
                 ->where('publish_state', $vm->publish_state)->update(['publish_state' => null]);
 
             throw new TaskPullRequestException($stale
-                ? 'The task branch could not be pushed: the publish job did not finish in '.self::PublishStaleSeconds.' seconds.'
+                ? 'The task branch could not be pushed: '.$lost
                 : ($vm->publish_error ?? 'The task branch could not be pushed.'));
         }
         $vm->update([
             'publish_commit' => $commit, 'publish_branch' => $branch, 'publish_state' => TaskVmPublishState::Queued,
-            'publish_error' => null, 'publish_queued_at' => now(),
+            'publish_error' => null, 'publish_queued_at' => now(), 'publish_started_at' => null,
         ]);
         PublishTaskVmCommit::dispatch($vm->id, $commit, $branch);
 
@@ -229,7 +241,7 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
     {
         $queued = static fn () => TaskVm::query()->whereKey($vm->id)->where('publish_commit', $commit)
             ->where('publish_branch', $branch)->where('publish_state', TaskVmPublishState::Queued);
-        if (! $queued()->exists()) {
+        if ($queued()->update(['publish_started_at' => now()]) !== 1) {
             return;
         }
         try {
