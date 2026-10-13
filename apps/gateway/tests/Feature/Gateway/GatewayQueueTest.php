@@ -47,14 +47,14 @@ function gateway_queue_event(string $name): Event
 
 function gateway_queue_legacy_row(string $queue, object $job, int $availableAt, ?int $reservedAt = null): int
 {
-        return DB::table('jobs')->insertGetId([
-            'queue' => $queue,
-            'payload' => json_encode(['data' => ['command' => serialize($job)]], JSON_THROW_ON_ERROR),
-            'attempts' => $reservedAt === null ? 0 : 1,
-            'reserved_at' => $reservedAt,
-            'available_at' => $availableAt,
-            'created_at' => now()->getTimestamp(),
-        ]);
+    return DB::table('jobs')->insertGetId([
+        'queue' => $queue,
+        'payload' => json_encode(['data' => ['command' => serialize($job)]], JSON_THROW_ON_ERROR),
+        'attempts' => $reservedAt === null ? 0 : 1,
+        'reserved_at' => $reservedAt,
+        'available_at' => $availableAt,
+        'created_at' => now()->getTimestamp(),
+    ]);
 }
 
 beforeEach(function (): void {

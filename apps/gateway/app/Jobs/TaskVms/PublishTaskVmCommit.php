@@ -6,7 +6,6 @@ namespace App\Jobs\TaskVms;
 
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmPublishState;
-use App\Domain\Gateway\GatewayQueue;
 use App\Infrastructure\Tasks\GitHubTaskPullRequestPublisher;
 use App\Models\TaskVm;
 use Illuminate\Contracts\Queue\ShouldQueue;

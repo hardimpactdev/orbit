@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Jobs\TaskVms;
 
+use App\Domain\Gateway\GatewayQueue;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmImageSyncResult;
-use App\Domain\Gateway\GatewayQueue;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\TaskVms\IncusTaskVmBaseImage;
 use App\Infrastructure\TaskVms\IncusTaskVmImageBuilder;

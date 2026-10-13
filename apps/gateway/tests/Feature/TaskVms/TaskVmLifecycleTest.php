@@ -75,7 +75,6 @@ use App\Models\RouteTarget;
 use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Http\Client\Request;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;

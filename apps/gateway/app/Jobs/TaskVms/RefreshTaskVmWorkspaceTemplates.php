@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Jobs\TaskVms;
 
+use App\Domain\Gateway\GatewayQueue;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmHost;
-use App\Domain\Gateway\GatewayQueue;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\TaskVms\IncusHost;
 use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplateLifecycle;

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Gateway\GatewayQueue;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Projects\LifecyclePhase;
@@ -13,7 +14,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
-use App\Domain\Gateway\GatewayQueue;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
