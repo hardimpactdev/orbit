@@ -178,7 +178,7 @@ After the switch, deploy:
 
 1. runs the serving phase of the runtime handoff: Caddy, PHP-FPM, and the units;
 2. verifies the release, as described below;
-3. runs the scheduler phase of the handoff: the scheduler drain and restart, document cleanup, the Gateway Node's agent update, and the OPcache reset;
+3. runs the [scheduler phase](#runtime-handoff) of the handoff;
 4. switches `web/current` to the release's [web build](#web-build) with one rename;
 5. runs [smoke](#smoke) against the switched release.
 
@@ -223,15 +223,17 @@ The serving phase:
 
 1. publishes the Gateway Node's Caddyfile when the render changed, with a graceful Caddy reload;
 2. compares the rendered pool with `/etc/php/8.5/fpm/pool.d/orbit-gateway.conf` and reloads PHP-FPM only for a difference, as a reload ends requests in flight;
-3. installs the hibernator, agent-view, and [release units](#release-units) again and restarts agent-view. The units name the stable `/home/orbit/orbit/apps/gateway` path.
+3. installs the hibernator, agent-view, and [release units](#release-units) again and restarts agent-view. The units name the stable `/home/orbit/orbit/apps/gateway` path;
+4. moves [Laravel Horizon](/reference/gateway-queue#releases) to the new release, with `php artisan horizon:terminate` while it runs.
 
 The scheduler phase:
 
 1. moves the scheduler to the new release without cutting off a scheduled command;
-2. restarts every other Gateway Node Process whose directory is in the Gateway application;
+2. restarts every other Gateway Node Process whose directory is in the Gateway application, except the `horizon` Process;
 3. resumes [document cleanup](/reference/project-documents#restore-time-cleanup-gate);
-4. updates the Gateway Node's own `orbit-agent` to the release's pin, described below;
-5. resets OPcache, described below.
+4. moves the jobs left in the old database queues to the [Gateway queue](/reference/gateway-queue#releases);
+5. updates the Gateway Node's own `orbit-agent` to the release's pin, described below;
+6. resets OPcache, described below.
 
 PHP-FPM is not restarted for a release. Caddy resolves the `/home/orbit/orbit` link for each request (`resolve_root_symlink`) and passes PHP-FPM the release's real script path. A request that started before the switch finishes on its release, and the next one runs the new release. The `/grafana` authorization resolves the link the same way. A fixed script path through the link would let each PHP-FPM worker keep the old release in its realpath cache for up to two minutes.
 
@@ -256,7 +258,7 @@ The drain needs the scheduler's PHP to have the `pcntl` extension, so `schedule:
 2. It sends SIGTERM to the `schedule:work` main process only. That process starts no new `schedule:run` and waits for the running ones, so a long command such as a development deploy finishes on the release it started on.
 3. When the main process has exited, it starts the unit, which now runs the new release, and waits until it is active.
 
-Each command ran to its end and released its own overlap lock, so the handoff clears none. While the old scheduler drains, it starts nothing, so `tasks:tick` pauses for the drain at most.
+Each command ran to its end and released its own overlap lock, so the handoff clears none. While the old scheduler drains, it starts nothing, so `tasks:tick` pauses for the drain at most. While the [Gateway queue](/reference/gateway-queue) is set, the scheduler only dispatches, so the drain takes seconds, and a running tick finishes in Laravel Horizon.
 
 The drain waits at most `ORBIT_GATEWAY_RELEASE_SCHEDULER_DRAIN_SECONDS` (default 600). After that limit, the handoff takes the `tasks:tick` lock and stops the unit, which ends what still runs. It then clears the schedule's overlap locks with `schedule:clear-cache`, because the stopped commands cannot release them, and starts the unit. The release record's `handoff.scheduler_drain` shows `outcome` (`drained`, `forced`, or `not_running`), `waited_ms`, the commands that were `running` when the drain began, and, after a forced stop, the commands it `stopped`.
 
@@ -264,7 +266,7 @@ The new scheduler pauses document cleanup when it starts. The handoff waits for 
 
 The handoff also installs the [fleet rollout units](#units). A failure there only logs a warning.
 
-When any step fails, the handoff still starts the scheduler unit, so the scheduler never stays down. The handoff prints one JSON object with `caddy`, `fpm`, `opcache`, `scheduler`, `scheduler_unit`, `scheduler_drain`, `processes_restarted`, `cleanup`, `cleanup_error_code`, `agent_view`, `cleanup_paused`, and `gateway_agent`. Run it again by hand after fixing a handoff failure. It takes no release lock, so run it only when no release step is running.
+When any step fails, the handoff still starts the scheduler unit, so the scheduler never stays down. The handoff prints one JSON object with `caddy`, `fpm`, `opcache`, `scheduler`, `scheduler_unit`, `scheduler_drain`, `processes_restarted`, `horizon`, `queue_moved`, `cleanup`, `cleanup_error_code`, `agent_view`, `cleanup_paused`, and `gateway_agent`. Run it again by hand after fixing a handoff failure. It takes no release lock, so run it only when no release step is running.
 
 ##### Gateway Node agent
 
@@ -315,9 +317,11 @@ A verified release starts with the step `tick` set to `pending`. The step record
 | `confirmed` | A tick started at or after `since` and ran the release's own commit. It records `last_tick_at`, `last_tick_version`, and `decided_at`. A tick that ran during smoke confirms the release at once |
 | `missed` | The first runner tick after `deadline` saw no such tick. It records the last tick it saw and raises at most one [`release_scheduler_silent` alert](#release-alerts), stored as `tick.alert` |
 | `skipped` | The tasks extension is disabled, so the scheduler runs no `tasks:tick` |
+
+While the [Gateway queue](/reference/gateway-queue) is set, Horizon runs `tasks:tick`. During a release, the old Horizon master can wait up to 1700 seconds for a long job, and no master is registered until it exits. While no master is registered, a confirmation past its deadline stays `pending`, for at most those 1700 seconds more. The alert then names the scheduler Process and the `horizon` Process.
 | `superseded` | A newer verified release went live. That release has a confirmation of its own. While another release is only being tried, the step stays `pending`, because a failed attempt switches back |
 
-A missed confirmation does not switch back or pause. The release passed verify and smoke, and its scheduler runs the new code, so a forward fix still ships automatically. The record stays `verified`, and the fleet rollout follows it as usual. Check the scheduler unit with `systemctl status` and its journal. `gateway:release:show` lists the step with the others, and `gateway:release:auto:status` shows it for the current release as `tick_confirmation`.
+A missed confirmation does not switch back or pause. The release passed verify and smoke, and its scheduler runs the new code, so a forward fix still ships automatically. The record stays `verified`, and the fleet rollout follows it as usual. Check the scheduler Process with `orbit process:list` and `orbit process:logs`. While the [Gateway queue](/reference/gateway-queue) is set, check the `horizon` Process too. `gateway:release:show` lists the step with the others, and `gateway:release:auto:status` shows it for the current release as `tick_confirmation`.
 
 Run the same smoke by hand against the live Gateway. It runs `bin/gateway-smoke` of the current release for its commit, or for the commit you name. It changes nothing and writes no release record.
 

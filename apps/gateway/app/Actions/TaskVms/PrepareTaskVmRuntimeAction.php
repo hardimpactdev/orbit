@@ -51,7 +51,15 @@ final readonly class PrepareTaskVmRuntimeAction
             $this->clock->step('queue');
         }
         $this->runtime->prepare($vm, $inline);
-        $vm->update(['state' => TaskVmState::Ready, 'ready_at' => now(), 'error_code' => null, 'error_message' => null]);
+        // Only a row still provisioning becomes ready: a destroy or failure that ran meanwhile wins.
+        $ready = TaskVm::query()->whereKey($vm->id)->where('state', TaskVmState::Provisioning)
+            ->update(['state' => TaskVmState::Ready, 'ready_at' => now(), 'error_code' => null, 'error_message' => null]);
+        $vm->refresh();
+        if ($ready === 0) {
+            $this->clock->stop();
+
+            return;
+        }
         $claimed = ($vm->claimed_at ?? $vm->created_at)?->getTimestamp();
         if ($claimed !== null) {
             $this->clock->start($vm, $claimed);

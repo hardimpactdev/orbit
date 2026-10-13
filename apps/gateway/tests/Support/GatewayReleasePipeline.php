@@ -64,6 +64,9 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
 
     public ?string $failVerify = null;
 
+    /** Whether a Horizon master is registered, while the Gateway queue is set; null without the queue. */
+    public ?\Closure $horizonRunning = null;
+
     /** The commit the resolver reports as green, or null for none. */
     public ?string $green = null;
 
@@ -176,7 +179,7 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
     /** The post-release tick confirmation, with the real tick clock and tasks extension state. */
     public function ticks(): GatewayReleaseTickConfirmation
     {
-        return new GatewayReleaseTickConfirmation(app(TaskTickClock::class), app(TaskExtensionState::class), new GatewayReleaseAlerts($this, $this->source()));
+        return new GatewayReleaseTickConfirmation(app(TaskTickClock::class), app(TaskExtensionState::class), new GatewayReleaseAlerts($this, $this->source()), horizonRunning: $this->horizonRunning, horizonWaitSeconds: 1700);
     }
 
     /** Binds the pipeline into the container, for commands and API requests. */

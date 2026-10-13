@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Jobs\TaskVms;
 
+use App\Domain\Gateway\GatewayQueue;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmPublishState;
-use App\Domain\TaskVms\TaskVmQueue;
 use App\Infrastructure\Tasks\GitHubTaskPullRequestPublisher;
 use App\Models\TaskVm;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -15,7 +15,7 @@ use Throwable;
 /**
  * Pushes a task VM's approved commit from the Gateway's mirror ([Publish from the VM](/reference/compute-drivers#publish-from-the-vm)).
  * The task tick queues it and reads the result from the task VM row, so a VM that sends its pack slowly holds up no
- * group. It runs on the Git queue, whose own worker takes one job at a time. The job acts only while the row still
+ * group. It runs on the `tasks` queue, beside other jobs; the mirror lock keeps one push per Project. The job acts only while the row still
  * names its commit and branch as queued, so a repeated or late job changes nothing. A failure is recorded on the row,
  * and the tick's backoff decides when to queue the push again.
  */
@@ -35,7 +35,7 @@ final class PublishTaskVmCommit implements ShouldQueue
 
     public function __construct(public int $taskVmId, public string $commit, public string $branch)
     {
-        $this->onTaskVmQueue(TaskVmQueue::Git);
+        $this->onTaskVmQueue(GatewayQueue::Tasks);
     }
 
     public function handle(GitHubTaskPullRequestPublisher $publisher): void

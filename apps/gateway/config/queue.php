@@ -35,13 +35,21 @@ return [
             'driver' => 'sync',
         ],
 
-        // Task VM jobs only (ADR 0200). The default connection stays sync; see App\Jobs\TaskVms.
-        'task-vms' => [
+        // The Gateway queue (docs/reference/gateway-queue.md), which Laravel Horizon works. The default connection stays
+        // sync. Tests use the database driver: ORBIT_GATEWAY_QUEUE_DRIVER=database in phpunit.xml.
+        'gateway' => env('ORBIT_GATEWAY_QUEUE_DRIVER', 'redis') === 'database' ? [
             'driver' => 'database',
             'connection' => null,
             'table' => 'jobs',
-            'queue' => 'task-vms',
+            'queue' => 'tasks',
             'retry_after' => 1800,
+            'after_commit' => true,
+        ] : [
+            'driver' => 'redis',
+            'connection' => 'gateway',
+            'queue' => 'tasks',
+            'retry_after' => 1800,
+            'block_for' => 5,
             'after_commit' => true,
         ],
 

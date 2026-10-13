@@ -74,10 +74,7 @@ use App\Models\Route;
 use App\Models\RouteTarget;
 use App\Models\Task;
 use App\Models\TaskVm;
-use Illuminate\Console\Scheduling\Event;
-use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Http\Client\Request;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -222,7 +219,7 @@ describe('allocation', function (): void {
             ->and($vm->host_node_id)->toBe($this->host->id)
             ->and($vm->wireguard_ip)->toBe('10.44.0.129')
             ->and($vm->pi_token)->toMatch('/\A[a-f0-9]{64}\z/');
-        Queue::assertPushedOn('task-vms', ProvisionTaskVm::class, fn (ProvisionTaskVm $job): bool => $job->taskVmId === $vm->id && $job->connection === 'task-vms');
+        Queue::assertPushedOn('task-vms', ProvisionTaskVm::class, fn (ProvisionTaskVm $job): bool => $job->taskVmId === $vm->id && $job->connection === 'gateway');
         Queue::assertPushed(ProvisionTaskVm::class, 1);
     });
 
@@ -1085,47 +1082,3 @@ function tvm_life_workspace(Task $group, Node $node): Instance
         'starting_commit' => str_repeat('a', 40), 'status' => InstanceState::SourceResolved,
     ]);
 }
-
-describe('worker', function (): void {
-    it('runs from the Gateway scheduler, in the foreground before the image and template workers, only while a task VM job waits', function (): void {
-        Artisan::call('schedule:list');
-        $events = app(Schedule::class)->events();
-        $worker = collect($events)->first(fn (Event $event): bool => str_contains((string) $event->command, 'queue:work'));
-
-        expect($worker)->not->toBeNull()
-            ->and($worker->command)->toEndWith("'artisan' queue:work task-vms --queue=task-vms --stop-when-empty --max-time=120 --timeout=1500")
-            ->and($worker)->toBe($events[count($events) - 4])
-            ->and($worker->expression)->toBe('* * * * *')
-            ->and($worker->repeatSeconds)->toBe(1)
-            ->and($worker->withoutOverlapping)->toBeTrue()
-            ->and($worker->expiresAt)->toBe(30)
-            ->and($worker->runInBackground)->toBeFalse()
-            ->and($worker->filtersPass(app()))->toBeFalse();
-
-        DestroyTaskVm::dispatch(tvm_life_vm(tvm_life_group(TaskGroupStatus::Cancelled), TaskVmState::Failed)->id);
-
-        expect($worker->filtersPass(app()))->toBeTrue()
-            ->and(DB::table('jobs')->sole()->queue)->toBe('task-vms');
-    });
-
-    it('starts only for a task VM job that a worker would take now', function (): void {
-        $this->freezeSecond();
-        Artisan::call('schedule:list');
-        $worker = collect(app(Schedule::class)->events())->first(fn (Event $event): bool => str_contains((string) $event->command, 'queue:work'));
-        DestroyTaskVm::dispatch(tvm_life_vm(tvm_life_group(TaskGroupStatus::Cancelled), TaskVmState::Failed)->id)->delay(now()->addSeconds(60));
-        $job = DB::table('jobs')->sole();
-
-        // A delayed retry or release starts no worker until it is due.
-        expect($worker->filtersPass(app()))->toBeFalse();
-
-        $this->travel(60)->seconds();
-        expect($worker->filtersPass(app()))->toBeTrue();
-
-        // A running worker reserved it; a reservation older than retry_after counts as abandoned.
-        DB::table('jobs')->where('id', $job->id)->update(['reserved_at' => now()->getTimestamp()]);
-        expect($worker->filtersPass(app()))->toBeFalse();
-
-        $this->travel(1800)->seconds();
-        expect($worker->filtersPass(app()))->toBeTrue();
-    });
-});

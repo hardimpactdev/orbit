@@ -4,7 +4,7 @@ description: "Task VMs for every Project and their UpCloud overflow."
 covers:
   - apps/gateway/app/{Domain/TaskVms,Infrastructure/TaskVms,Jobs/TaskVms,Actions/TaskVms,Domain/Compute}/**
   - apps/gateway/app/{Models/TaskVm.php,Console/Commands/PrepareTaskVmHostCommand.php,Console/Commands/PrepareTaskVmHubCommand.php,Console/Commands/BuildTaskVmImageCommand.php,Console/Commands/BuildUpCloudTaskVmImageCommand.php,Console/Commands/BuildTaskVmWorkspaceTemplateCommand.php,Console/Commands/SyncTaskVmImageCommand.php,Console/Commands/RetireTaskVmHostCommand.php,Console/Commands/ResolvesTaskVmHostNode.php}
-  - apps/gateway/config/{task_vms,queue}.php
+  - apps/gateway/config/task_vms.php
   - apps/gateway/resources/task-vms/**
   - apps/gateway/database/migrations/*{create_task_vms_table,add_model_proxy_origin_to_task_vms,add_warm_pool_to_task_vms,add_upcloud_to_task_vms,add_size_to_task_vms,add_topology_to_task_vms,create_jobs_table,create_failed_jobs_table,create_task_sandboxes_table,add_fleet_enrollment_to_task_sandboxes,add_pi_ready_at_to_task_sandboxes,close_checks_of_destroyed_task_sandboxes,drop_task_sandboxes}.php
 ---
@@ -199,7 +199,7 @@ Under the placement lock, the claim then makes these changes on the row in one u
 
 Then it gives the row a new random Pi token. It queues `RefillTaskVmPool`, and the guard job `EnsureWarmClaimReady`, delayed by 330 seconds. The claim itself then runs the steps of `PrepareTaskVmRuntime`, which are only the group's steps: the CLIProxyAPI key, the Pi files, and the `pi-server` Process. They take about 1.5 seconds. The row becomes `ready`, and the same claim creates the workspace, as for a new VM.
 
-The steps run in the claim, not on the `task-vms` queue, because its one worker runs one job at a time. Behind an enrollment, a sync, or the nightly build, a queued job would wait minutes. The claim runs in `tasks:tick` after the placement lock is released, and holds no transaction.
+The steps run in the claim, not on the `tasks` queue, because a queued job can wait behind other jobs. The claim runs in `tasks:tick` after the placement lock is released, and holds no transaction.
 
 The claim keeps each step short, and the whole run ends after 60 seconds, well inside the tick lock of 300 seconds. At that deadline every SSH command and CLIProxyAPI request of the run stops, and a step that would start after it fails. So a stalled VM or a stalled CLIProxyAPI cannot hold `tasks:tick` past its lock, and no second tick starts the steps beside it.
 
@@ -337,7 +337,7 @@ Orbit does not watch the default branch for pushes. A template that is behind th
 
 A change to a Project's setup steps or lockfile does not rebuild its templates. The refresh and the build job skip a current template, so the change reaches a template only at the next base image change. When nightly builds fail, that can be days later. Until then each workspace stays correct, because the setup steps in its baseline check run the change, but it saves less time. To rebuild the template of one Project on one host at once, run `php artisan task-vms:build-workspace-template NODE PROJECT` on the Gateway. The command calls the builder directly, so it builds even when the template is current.
 
-Template jobs run on their own queue, `task-vm-templates`, with their own worker, so a build never delays a task VM job. See [Jobs](#jobs).
+Template jobs run on the `builds` queue, so a build never delays a task VM job. See [Jobs](#jobs).
 
 The build runs these stages on the host over SSH, with `sudo -n incus --project <project> …`:
 
@@ -550,35 +550,23 @@ Orbit derives progress inside `provisioning` from facts: the VM exists, the row 
 
 ### Jobs
 
-The task VM jobs run on the `task-vms` database queue, in the Gateway's own database. Each job loads its row again, does nothing when the row has moved on, and is unique for its task VM. While a job on that queue is due, the Gateway scheduler starts this worker every second. A delayed job, such as the guard of a warm claim, starts no worker before its time:
+The task VM jobs run on the [Gateway queue](/reference/gateway-queue), which Laravel Horizon works. Each job loads its row again, does nothing when the row has moved on, and is unique for its task VM. Task VMs need the queue: set `ORBIT_GATEWAY_QUEUE_CONNECTION` before you enable them.
 
-```text
-queue:work task-vms --queue=task-vms --stop-when-empty --max-time=120 --timeout=1500
-```
+| Queue | Task VM jobs |
+| --- | --- |
+| `task-vms` | Provision, enroll, prepare, park, resume, and destroy a VM, the guard of a warm claim, the host sweep, and the pool refill |
+| `tasks` | The [publish](#publish-from-the-vm) of an approved commit (`PublishTaskVmCommit`), beside the scheduled commands |
+| `builds` | The workspace template jobs, `RefreshTaskVmWorkspaceTemplates` and `BuildTaskVmWorkspaceTemplate`, and the nightly base image refreshes, [`RefreshTaskVmBaseImages`](#build-the-base-image) and [`RefreshUpCloudTaskVmBaseImage`](#refresh-the-upcloud-template-every-night) |
 
-The worker stops when the queue is empty, or takes no new job after 120 seconds. So one worker run takes a VM from launch to `ready`. A job runs at most 1500 seconds, and a job that stops halfway runs again after 1800 seconds.
+One worker runs the `task-vms` jobs one at a time and in order, so no two jobs change the same VM at once.
 
-A job is due when its time has come and no worker holds it, or a worker's hold is older than 1800 seconds. A delayed retry or a released job starts no worker before its time. Without a due job, the scheduler only reads the queue table each second. A Gateway release drains the worker like any other scheduled command. Its start does not pause [document cleanup](/reference/project-documents), because it runs only task VM jobs.
+A `task-vms` or `tasks` job starts within about a second while its worker is free, also while a build runs. A delayed job, such as the guard of a warm claim, or a released job waits for its time. A `task-vms` job runs at most 1500 seconds, and any other job at most 1700 seconds. A job that a worker lost runs again after 1800 seconds.
 
-The workspace template jobs, `RefreshTaskVmWorkspaceTemplates` and `BuildTaskVmWorkspaceTemplate`, run on the queue `task-vm-templates` in the same table, with a worker of their own. The nightly base image refreshes, [`RefreshTaskVmBaseImages`](#build-the-base-image) and [`RefreshUpCloudTaskVmBaseImage`](#refresh-the-upcloud-template-every-night), run on the queue `task-vm-images`, with a third worker. The [publish](#publish-from-the-vm) of an approved commit, `PublishTaskVmCommit`, runs on the queue `task-vm-git`, with a fourth:
-
-```text
-queue:work task-vms --queue=task-vm-templates --stop-when-empty --max-time=120 --timeout=1700
-queue:work task-vms --queue=task-vm-images --stop-when-empty --max-time=120 --timeout=1700
-queue:work task-vms --queue=task-vm-git --stop-when-empty --max-time=120 --timeout=1700
-```
-
-So a template build, a base image refresh, and a publish never hold up a task VM job or each other. A template build takes about a minute, a base image refresh up to 25 minutes, and a publish seconds. Each runs at most 1700 seconds. Each of these workers runs one job at a time, so one template build, one base image refresh, and one publish run in the fleet at a time. The host locks also allow one template build and one base image build or sync per host.
-
-Each worker's overlap lock lasts 32 minutes, longer than its longest run: 120 seconds of jobs, then one more job of at most 1700 seconds.
-
-These workers have the same due check, but start only at the end of a minute: the Git worker in seconds 54 and 55, the image worker in seconds 56 and 57, the template worker in seconds 58 and 59. So a publish waits up to a minute for its worker. A scheduler run waits for a command that it starts in the foreground, and the scheduler starts a new run each minute. So a long job holds a run that was about to end, and the next run starts the task VM worker each second again, and the other worker when it is due.
-
-A worker stops after 120 seconds and starts again at the end of a minute, so it can idle up to a minute between runs.
+A template build takes about a minute, a base image refresh up to 25 minutes, and a publish seconds. The `builds` queue has one process, so one template build or base image refresh runs in the fleet at a time. The host locks also allow one template build and one base image build or sync per host.
 
 The template queue runs its jobs in the order they were queued. A claim's build waits behind the builds that a refresh queued. After a nightly promote with 10 active Projects on 2 hosts, that can be 20 to 60 minutes.
 
-A builder VM has the size of a task VM and does not count against `max_vms`. It can run beside a base image build, a smoke VM, and new task VMs on the same host. At most one template builder runs in the fleet. The base image builder and smoke VMs do not count against `max_vms` either, and since they have their own worker, they can run beside new task VMs too.
+A builder VM has the size of a task VM and does not count against `max_vms`. It can run beside new task VMs on the same host. At most one template builder runs in the fleet, and none while a base image build runs, because the `builds` queue has one process. The base image builder and smoke VMs do not count against `max_vms` either, and they can run beside new task VMs too.
 
 | Job | Retries |
 | --- | --- |
@@ -748,7 +736,7 @@ The command deletes the builder and the smoke VM whether the build passes or fai
 
 A build or sync that stops early cleans up too. A command stopped with SIGINT or SIGTERM deletes its builder and smoke VMs, frees each host, and queues the template refresh. When the nightly job runs past its timeout, the worker's failure handler does the same. A build killed with SIGKILL holds the host for at most 25 minutes. The next build or sync deletes every builder and smoke VM that an earlier one left.
 
-Every night at 03:00, while task VMs are enabled, the Gateway scheduler queues the job `RefreshTaskVmBaseImages` on the `task-vm-images` queue. It builds the base image once, on the first host in `task_vms.incus.hosts`, and syncs it to every other configured host, one after another. While the first host has no base image, the job only reads its image list, so the first build is always `task-vms:build-image`. The job fails with `task_vm.unknown_host` when the first host's Node is not active.
+Every night at 03:00, while task VMs are enabled, the Gateway scheduler queues the job `RefreshTaskVmBaseImages` on the `builds` queue. It builds the base image once, on the first host in `task_vms.incus.hosts`, and syncs it to every other configured host, one after another. While the first host has no base image, the job only reads its image list, so the first build is always `task-vms:build-image`. The job fails with `task_vm.unknown_host` when the first host's Node is not active.
 
 A failed build changes no host. A host whose sync fails keeps its image, and the job fails with `task_vm.image_sync_failed` after the other hosts, so `failed_jobs` records it and the log names each host. The refresh has its own [worker](#jobs), so it delays no other task VM job. So the build runs beside provisioning: while it runs, the first host holds two extra VMs, the builder and then the smoke VM, next to its task VMs.
 
@@ -1075,7 +1063,7 @@ One build runs at a time. A build marks its time stamp as running for two hours,
 
 ### Refresh the UpCloud template every night
 
-Every night at 02:00, while the token file is set, the Gateway scheduler queues the job `RefreshUpCloudTaskVmBaseImage` on the `task-vm-images` queue. It runs the same build as `task-vms:build-upcloud-image`, inside UpCloud, and keeps the two newest verified templates. It also runs with the switch off, so the template stays current. While UpCloud has no verified template, the job changes nothing, so the first build is always the command. A failed build keeps the current template.
+Every night at 02:00, while the token file is set, the Gateway scheduler queues the job `RefreshUpCloudTaskVmBaseImage` on the `builds` queue. It runs the same build as `task-vms:build-upcloud-image`, inside UpCloud, and keeps the two newest verified templates. It also runs with the switch off, so the template stays current. While UpCloud has no verified template, the job changes nothing, so the first build is always the command. A failed build keeps the current template.
 
 The build takes about 20 minutes and holds the image worker, so it ends before the 03:00 base image refresh starts on the same worker. When it runs past its 1700 seconds, the worker stops it, and the sweep deletes its servers two hours after its start.
 

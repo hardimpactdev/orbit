@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
-use App\Domain\TaskVms\TaskVmQueue;
 use App\Infrastructure\ProjectDocuments\CleanupGate;
 use App\Infrastructure\ProjectDocuments\CleanupSchedulerSession;
 use App\Infrastructure\ProjectDocuments\DocumentsFilesystem;
@@ -27,10 +26,6 @@ final class DocumentsServiceProvider extends ServiceProvider
         Storage::extend('documents', fn (): AwsS3V3Adapter => app(DocumentsFilesystem::class)->current());
         Event::listen(CommandStarting::class, static function (CommandStarting $event): void {
             if ($event->command === 'schedule:run' && app(CleanupSchedulerSession::class)->isRecurringTick()) {
-                return;
-            }
-            // The task VM workers run only task VM, template, and image jobs, never a document job, so their start keeps authorization.
-            if ($event->command === 'queue:work' && in_array($event->input->getParameterOption('--queue', null, true), array_column(TaskVmQueue::cases(), 'value'), true)) {
                 return;
             }
             if (in_array($event->command, ['schedule:run', 'schedule:work', 'queue:work', 'queue:listen'], true)) {

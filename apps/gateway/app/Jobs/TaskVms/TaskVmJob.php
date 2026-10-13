@@ -4,16 +4,16 @@ declare(strict_types=1);
 
 namespace App\Jobs\TaskVms;
 
-use App\Domain\TaskVms\TaskVmQueue;
+use App\Domain\Gateway\GatewayQueue;
 use Illuminate\Foundation\Queue\Queueable;
 
-/** A job on the `task-vms` database connection. Its constructor picks the queue with {@see self::onTaskVmQueue()}. */
+/** A job on the Gateway queue connection. Its constructor picks the queue with {@see self::onTaskVmQueue()}. */
 trait TaskVmJob
 {
     use Queueable;
 
-    private function onTaskVmQueue(TaskVmQueue $queue = TaskVmQueue::Vms): void
+    private function onTaskVmQueue(GatewayQueue $queue = GatewayQueue::TaskVms): void
     {
-        $this->onConnection(TaskVmQueue::Connection)->onQueue($queue->value);
+        $this->onConnection(GatewayQueue::Connection)->onQueue($queue->value);
     }
 }

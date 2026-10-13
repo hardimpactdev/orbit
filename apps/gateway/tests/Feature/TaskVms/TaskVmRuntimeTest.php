@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\TaskVms\PrepareTaskVmRuntimeAction;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\ProxyCli\ProxyCliState;
@@ -18,7 +19,9 @@ use App\Models\Process;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
+use Illuminate\Http\Client\Events\RequestSending;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
@@ -239,6 +242,20 @@ describe('model proxy origin', function (): void {
     });
 });
 
+describe(PrepareTaskVmRuntimeAction::class, function (): void {
+    it('leaves a row that a destroy took while Pi was prepared', function (): void {
+        tvm_runtime_cliproxy();
+        $vm = tvm_runtime_vm();
+        Event::listen(RequestSending::class, static function () use ($vm): void {
+            TaskVm::query()->whereKey($vm->id)->update(['state' => TaskVmState::Destroying]);
+        });
+
+        app(PrepareTaskVmRuntimeAction::class)->execute($vm->id);
+
+        expect($vm->fresh()?->state)->toBe(TaskVmState::Destroying)->and($vm->fresh()?->ready_at)->toBeNull();
+    });
+});
+
 describe('release', function (): void {
     it('revokes the group key and keeps the anchor', function (): void {
         $keys = tvm_runtime_cliproxy();
@@ -260,6 +277,17 @@ describe('release', function (): void {
         TaskVmSettingsBuilder::bind(['modelProxyOrigin' => 'http://10.44.0.9:8317']);
 
         app(TaskVmRuntime::class)->release($vm->fresh());
+
+        expect($vm->fresh()?->model_key)->toBeNull()->and($keys->getArrayCopy())->toHaveCount(1);
+    });
+
+    it('revokes a key that a stale copy of the row does not show', function (): void {
+        $keys = tvm_runtime_cliproxy();
+        $vm = tvm_runtime_vm();
+        $stale = $vm->fresh();
+        app(TaskVmRuntime::class)->prepare($vm);
+
+        app(TaskVmRuntime::class)->release($stale);
 
         expect($vm->fresh()?->model_key)->toBeNull()->and($keys->getArrayCopy())->toHaveCount(1);
     });

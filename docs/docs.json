@@ -121,6 +121,7 @@
               "reference/service-metrics",
               "reference/analytics",
               "reference/proxycli",
+              "reference/gateway-queue",
               "reference/tasks",
               "reference/compute-drivers",
               "reference/pi-server",

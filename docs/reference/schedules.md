@@ -19,7 +19,7 @@ An Orbit Schedule is not a command on the Gateway's own Laravel schedule. The Ta
 
 While task VMs are enabled, the Gateway queues the [task VM base image refresh](/reference/compute-drivers#build-the-base-image) every night at 03:00, which queues the [workspace template refresh](/reference/compute-drivers#build-a-template) when it ends, and the [task VM host sweep](/reference/compute-drivers#sweep-task-vm-hosts) every 10 minutes. The sweep also runs while only the [UpCloud](/reference/compute-drivers#sweep-upcloud) token file is set. While that file is set, the Gateway queues the [UpCloud template refresh](/reference/compute-drivers#refresh-the-upcloud-template-every-night) every night at 02:00.
 
-It queues the [warm VM pool refill](/reference/compute-drivers#fill-the-pool) every minute while a host also sets `warm_vms`. While task VMs are off, the refill still runs until the pool is empty. It starts the [task VM worker](/reference/compute-drivers#jobs) every second while a task VM job is due, and the workspace template worker in the last two seconds of a minute while a template job is due.
+It queues the [warm VM pool refill](/reference/compute-drivers#fill-the-pool) every minute while a host also sets `warm_vms`. While task VMs are off, the refill still runs until the pool is empty. It runs none of its work itself while the [Gateway queue](/reference/gateway-queue) is set: it dispatches each command as a queued job, and Laravel Horizon runs it.
 
 The Gateway also attempts `project-documents:probes:reconcile` once per minute without overlap. It processes a finite batch from the private probe journal and permanently retains each cleanup record for late PUT recovery. This is an internal attempt schedule, not a promise of object lifetime or a Schedule on a Node. [Reserved probe recovery](/reference/project-documents#recover-reserved-probes) defines its bounds, backoff, repair, and separation from the gate for document-body cleanup.
 
@@ -152,7 +152,7 @@ These reasons explain the design. Check them before you propose a change.
 
 ### Native systemd timers
 
-systemd already gives timing, overlap protection, timeouts, and a journal on every managed Node. The timer also keeps running while the Gateway is down. A central scheduler, queue, or run-history store in the Gateway would duplicate this and make the Gateway responsible for timing. Do not add one. The Gateway's own scheduler and its `task-vms` queue run only Gateway work, such as the [task VM jobs](/reference/compute-drivers#jobs). They never run a Schedule.
+systemd already gives timing, overlap protection, timeouts, and a journal on every managed Node. The timer also keeps running while the Gateway is down. A central scheduler, queue, or run-history store in the Gateway would duplicate this and make the Gateway responsible for timing. Do not add one. The Gateway's own scheduler and its [queue](/reference/gateway-queue) run only Gateway work, such as the [task VM jobs](/reference/compute-drivers#jobs). They never run a Schedule.
 
 ### The command only in a protected script
 

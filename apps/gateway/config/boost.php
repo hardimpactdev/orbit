@@ -14,6 +14,9 @@ return [
         'exclude' => [
             'deployments',
             'spatie/guidelines-skills/core',
+            // Inertia comes with the Horizon dashboard; the Gateway itself has no Inertia pages.
+            'inertia-laravel/core',
+            'inertia-laravel/v3',
         ],
     ],
     'skills' => [

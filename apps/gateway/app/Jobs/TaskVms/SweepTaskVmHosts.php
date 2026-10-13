@@ -35,7 +35,8 @@ use Throwable;
  * host's configured project. While UpCloud is configured, also with task VMs or the overflow off, it does the same for
  * the servers with the task VM label there, and deletes base image build servers and unverified templates older than
  * two hours, except those of a build that is marked as running. On every Incus host and for every `tvm-<number>` Node, it also logs a warning per stray
- * ({@see TaskVmHostAudit::strays()}, {@see TaskVmHostAudit::strayNodes()}) and deletes none. The worker runs one job at a time, so no task VM job creates or deletes a VM while the sweep runs. A failed
+ * ({@see TaskVmHostAudit::strays()}, {@see TaskVmHostAudit::strayNodes()}) and deletes none. The `task-vms` queue runs one job at a time, so no
+ * task VM job creates or deletes a VM while the sweep runs. A failed
  * host is logged, and the other hosts still run.
  */
 final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue

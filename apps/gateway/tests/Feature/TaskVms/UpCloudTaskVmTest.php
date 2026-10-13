@@ -728,7 +728,7 @@ describe('nightly UpCloud base image refresh', function (): void {
         $verified = array_filter($this->upcloud->storages, static fn (array $storage): bool => ! str_ends_with($storage['title'], '-unverified'));
         expect($verified)->toHaveCount(2)->toHaveKey($previous)->not->toHaveKey($old)
             ->and($this->upcloud->servers)->toBe([])
-            ->and([new RefreshUpCloudTaskVmBaseImage()->connection, new RefreshUpCloudTaskVmBaseImage()->queue])->toBe(['task-vms', 'task-vm-images']);
+            ->and([new RefreshUpCloudTaskVmBaseImage()->connection, new RefreshUpCloudTaskVmBaseImage()->queue])->toBe(['gateway', 'builds']);
     });
 
     it('builds nothing before the first template or without the token file', function (?array $upcloud): void {

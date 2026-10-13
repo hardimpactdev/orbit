@@ -14,7 +14,7 @@ This page tells an operator which web pages may call the Gateway API from a brow
 
 ## Allowed callers
 
-The check covers `/api/*`, `/mcp`, and `/mcp/*`. It runs before CORS, routing, and the WireGuard identity check.
+The check covers `/api/*`, `/mcp`, and `/mcp/*`. It runs before CORS, routing, and the WireGuard identity check. The [queue dashboard](/reference/gateway-queue#dashboard) at `/horizon` and `/horizon/*` has its own rule: Laravel's request forgery check admits a request that changes something only when the browser sends `Sec-Fetch-Site: same-origin`.
 
 | Caller | Result |
 | --- | --- |

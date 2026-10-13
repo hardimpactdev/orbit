@@ -57,7 +57,7 @@ The [managed scheduler](/reference/tasks) never claims, provisions, reviews, or 
 
 ### Delivery
 
-The scheduler runs `annotations:dispatch` every ten seconds, with or without a browser. It takes queued annotations in submission order. Each T3 thread gets one unfinished annotation at a time. For each annotation, the Gateway reads the thread through the Instance Node's T3 connection and checks these:
+The scheduler runs `annotations:dispatch` every ten seconds, with or without a browser, as a job on the [Gateway queue](/reference/gateway-queue#scheduled-work). It takes queued annotations in submission order. Each T3 thread gets one unfinished annotation at a time. For each annotation, the Gateway reads the thread through the Instance Node's T3 connection and checks these:
 
 - The thread exists, and is neither archived nor deleted.
 - The thread's worktree is the Instance checkout, or the path that the Instance was registered from.

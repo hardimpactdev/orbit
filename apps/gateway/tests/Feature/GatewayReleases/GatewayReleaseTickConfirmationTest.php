@@ -135,6 +135,39 @@ describe('post-release tick confirmation', function (): void {
             ->and(tick_phase($fix)['outcome'])->toBe('pending');
     });
 
+    it('stays pending while Horizon waits for a long job, and alerts once a master runs or the longest job is over', function (): void {
+        $this->pipeline->adopt();
+        $master = false;
+        $this->pipeline->horizonRunning = static function () use (&$master): bool {
+            return $master;
+        };
+        $waiting = $this->pipeline->fixture->commit('Release during a build');
+        $this->pipeline->deployer()->execute($waiting);
+
+        // The old master still waits for a build: no master is registered, so no tick runs yet.
+        $this->travel(181)->seconds();
+        $this->pipeline->automatic()->execute();
+        expect(tick_phase($waiting)['outcome'])->toBe('pending');
+
+        // The new master runs, but the release still did not tick.
+        $master = true;
+        $this->pipeline->automatic()->execute();
+        expect(tick_phase($waiting)['outcome'])->toBe('missed')
+            ->and($this->pipeline->alerts[0]->summary)->toContain('the horizon Process');
+
+        // A Horizon that never comes back alerts once the longest job is over.
+        $master = false;
+        $silent = $this->pipeline->fixture->commit('Horizon down');
+        $this->pipeline->deployer()->execute($silent);
+        $this->travel(180 + 1699)->seconds();
+        $this->pipeline->automatic()->execute();
+        expect(tick_phase($silent)['outcome'])->toBe('pending');
+
+        $this->travel(2)->seconds();
+        $this->pipeline->automatic()->execute();
+        expect(tick_phase($silent)['outcome'])->toBe('missed');
+    });
+
     it('sets the deadline from the time the release was verified, not from the handoff', function (): void {
         $this->pipeline->adopt();
         $sha = $this->pipeline->fixture->commit('Slow handoff');

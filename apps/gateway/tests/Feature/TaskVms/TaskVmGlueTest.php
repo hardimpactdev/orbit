@@ -5,13 +5,13 @@ declare(strict_types=1);
 use App\Data\Tasks\TaskGroupData;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Compute\SandboxPower;
+use App\Domain\Gateway\GatewayQueue;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentThreadStart;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\TaskVms\TaskVmPublishState;
-use App\Domain\TaskVms\TaskVmQueue;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -169,10 +169,10 @@ describe('publish and fetch', function (): void {
                     expect($exception->pending)->toBeTrue();
                 }
             }
-            Queue::assertPushedOn(TaskVmQueue::Git->value, PublishTaskVmCommit::class);
+            Queue::assertPushedOn(GatewayQueue::Tasks->value, PublishTaskVmCommit::class);
             Queue::assertPushed(PublishTaskVmCommit::class, 1);
             $job = Queue::pushed(PublishTaskVmCommit::class)->sole();
-            expect([$job->connection, $job->commit, $job->branch])->toBe(['task-vms', $commit, 'task-'.$group->id])
+            expect([$job->connection, $job->commit, $job->branch])->toBe(['gateway', $commit, 'task-'.$group->id])
                 ->and($transport->sent)->toHaveCount(2);
 
             $job->handle($publisher);

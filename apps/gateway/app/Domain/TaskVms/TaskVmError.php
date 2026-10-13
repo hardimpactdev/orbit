@@ -65,4 +65,7 @@ enum TaskVmError: string
     case UpCloudInvalid = 'task_vm.upcloud_invalid';
     case UpCloudTimeout = 'task_vm.upcloud_timeout';
     case UpCloudBudgetFull = 'task_vm.upcloud_budget_full';
+
+    // The Gateway host's queue worker units.
+    case WorkersFailed = 'task_vm.workers_failed';
 }

@@ -5,14 +5,18 @@ declare(strict_types=1);
 use App\Domain\AgentView\AgentViewConverger;
 use App\Domain\Fleet\FleetConvergeUnits;
 use App\Domain\GatewayReleases\GatewayDocumentCleanup;
+use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseUnitConverger;
 use App\Domain\Hibernation\RuntimeHibernatorConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
+use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Files\ProtectedFileWriter;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
+use App\Infrastructure\Gateway\GatewayHorizon;
+use App\Infrastructure\Gateway\GatewayQueueMove;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
 use App\Infrastructure\GatewayReleases\GatewayCleanupHandoff;
 use App\Infrastructure\GatewayReleases\GatewayNodeAgentUpdate;
@@ -22,12 +26,16 @@ use App\Infrastructure\Nodes\NodeAgentFootprint;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use App\Jobs\TaskVms\PublishTaskVmCommit;
 use App\Models\Node;
 use App\Models\Process;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Tests\Support\FakeNodeCaddyBuilds;
 use Tests\Support\Fleet\FakeFleetConvergeUnits;
+use Tests\Support\ProcessesApiFakeRuntimeManager;
 
 const HANDOFF_APP = '/home/orbit/orbit/apps/gateway';
 
@@ -187,7 +195,7 @@ final class SchedulerDrainProbe
 /**
  * @return array{GatewayRuntimeHandoff, HandoffProcessRunner, FakeDocumentCleanup, FakeNodeCaddyBuilds, RecordingHandoffUnits, SchedulerDrainProbe}
  */
-function runtime_handoff(?string $livePool = null, int $drainSeconds = 5, ?FleetConvergeUnits $fleet = null, bool $agent = false): array
+function runtime_handoff(?string $livePool = null, int $drainSeconds = 5, ?FleetConvergeUnits $fleet = null, bool $agent = false, ?GatewayHorizon $horizon = null): array
 {
     $processes = new HandoffProcessRunner;
     $probe = new SchedulerDrainProbe;
@@ -238,6 +246,8 @@ function runtime_handoff(?string $livePool = null, int $drainSeconds = 5, ?Fleet
             idleWaitSeconds: 1,
             fleet: $fleet,
             agent: $agent ? new GatewayNodeAgentUpdate($processes) : null,
+            horizon: $horizon,
+            queueMove: new GatewayQueueMove,
         ),
         $processes,
         $cleanup,
@@ -446,6 +456,54 @@ describe('gateway:release:handoff', function (): void {
         expect($schedule['gateway_agent'])->toMatchArray(['outcome' => 'failed', 'error_code' => 'agent.unhealthy'])
             ->and($schedule['scheduler'])->toBe('restarted')
             ->and($schedule['opcache']['outcome'])->toBe('reset');
+    });
+
+    it('moves Horizon in the serving phase, right after the switch, and the old database jobs after the scheduler drain', function (): void {
+        config(['orbit.gateway_queue.connection' => 'services-valkey']);
+        $gateway = handoff_gateway();
+        handoff_scheduler($gateway);
+        $horizon = handoff_scheduler($gateway, name: 'horizon');
+        $horizon->update(['runtime_config' => ['command' => ['/usr/bin/php8.5', 'artisan', 'horizon'], 'environment_file' => '']]);
+        $runtime = new ProcessesApiFakeRuntimeManager;
+        $runtime->statusOverride = 'active';
+        app()->instance(ProcessRuntimeManager::class, $runtime);
+        DB::table('jobs')->insert(['queue' => 'task-vm-git', 'payload' => json_encode(['data' => ['command' => serialize(new PublishTaskVmCommit(7, str_repeat('a', 40), 'task-7'))]]), 'attempts' => 0, 'reserved_at' => null, 'available_at' => now()->getTimestamp(), 'created_at' => now()->getTimestamp()]);
+        Artisan::command('horizon:terminate', function (): void {
+            Cache::increment('handoff-horizon-terminated');
+        });
+        [$handoff, $processes] = runtime_handoff(horizon: app(GatewayHorizon::class));
+        $processes->mainPids = ['4242', '0'];
+
+        $serve = $handoff->serve();
+        $jobsBeforeDrain = DB::table('jobs')->pluck('queue')->all();
+        $schedule = $handoff->schedule();
+
+        expect($serve['horizon'])->toBe('terminated')
+            ->and(Cache::get('handoff-horizon-terminated'))->toBe(1)
+            ->and($jobsBeforeDrain)->toBe(['task-vm-git'])
+            ->and($schedule)->not->toHaveKey('horizon')
+            ->and($schedule)->toMatchArray(['queue_moved' => 1, 'scheduler' => 'restarted'])
+            ->and($schedule['processes_restarted'])->toBe([])
+            ->and($runtime->convergedProcessIds)->toBe([])
+            ->and(implode("\n", $processes->systemctl()))->not->toContain("orbit-process-{$horizon->id}-horizon")
+            ->and(DB::table('jobs')->pluck('queue')->all())->toBe(['tasks']);
+    });
+
+    it('fails the serving phase when Horizon cannot move, so the release switches back', function (): void {
+        config(['orbit.gateway_queue.connection' => 'services-valkey']);
+        $gateway = handoff_gateway();
+        handoff_scheduler($gateway);
+        handoff_scheduler($gateway, name: 'horizon')->update(['runtime_config' => ['command' => ['/usr/bin/php8.5', 'artisan', 'horizon'], 'environment_file' => '']]);
+        $runtime = new ProcessesApiFakeRuntimeManager;
+        $runtime->statusOverride = 'active';
+        app()->instance(ProcessRuntimeManager::class, $runtime);
+        Artisan::command('horizon:terminate', function (): never {
+            throw new RuntimeException('Redis is down.');
+        });
+        [$handoff] = runtime_handoff(horizon: app(GatewayHorizon::class));
+
+        expect(fn () => $handoff->serve())
+            ->toThrow(fn (GatewayReleaseException $exception) => expect([$exception->errorCode, $exception->getMessage()])->toBe(['gateway.release_units_failed', 'Runtime handoff step [horizon] failed: Redis is down.']));
     });
 
     it('reloads FPM only when the rendered pool differs from the live pool', function (): void {

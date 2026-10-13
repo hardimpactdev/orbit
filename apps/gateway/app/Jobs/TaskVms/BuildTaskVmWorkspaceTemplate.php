@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Jobs\TaskVms;
 
+use App\Domain\Gateway\GatewayQueue;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
-use App\Domain\TaskVms\TaskVmQueue;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\TaskVms\IncusHost;
 use App\Infrastructure\TaskVms\IncusTaskVmWorkspaceTemplateBuilder;
@@ -24,8 +24,8 @@ use Throwable;
 /**
  * Builds the workspace template of one Project on one task VM host. A claim queues it when the Project has no
  * template for the VM's base image, and the template refresh queues it for each recently active `vm` Project on
- * every host. It runs on the template queue, whose own worker takes one job at a time, so a build never delays task
- * VM jobs. A host that already has a ready template of the Project on its current base image, from the Project's
+ * every host. It runs on the `builds` queue, whose one process runs one build at a time, so a build never delays
+ * task VM jobs. A host that already has a ready template of the Project on its current base image, from the Project's
  * repository and owned by the image's user, gets no build. While another template build runs on the host, the job waits a minute and tries again. A Project without
  * a valid default branch or repository is logged and skipped, without a retry. A failed build logs an error, and
  * claims ask for no new build of that Project on that host for 6 hours; their workspaces start from a fresh clone.
@@ -45,7 +45,7 @@ final class BuildTaskVmWorkspaceTemplate implements ShouldBeUnique, ShouldQueue
 
     public function __construct(public int $hostNodeId, public int $projectId)
     {
-        $this->onTaskVmQueue(TaskVmQueue::Templates);
+        $this->onTaskVmQueue(GatewayQueue::Builds);
     }
 
     public function uniqueId(): string
