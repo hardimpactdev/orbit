@@ -87,8 +87,8 @@ A task moves through these statuses from preparation to its end.
 | `reserved` | The scheduler claimed it and provisions its workspace. |
 | `running` | A subtask is running: its baseline check, its implementer, or its handoff check. |
 | `reviewing` | A subtask waits for its reviewer, or Orbit publishes its approved commit. |
-| `settling` | Every subtask has ended. Shared tasks watch the pull request here; VM tasks wait here until publication is recorded. |
-| `waiting_for_review` | A VM task has published its pull request and waits for human review and CI. VM power is separate from this status. |
+| `settling` | Every subtask has ended. The task waits here until publication is recorded. |
+| `waiting_for_review` | The task has published its pull request and waits for human review and CI. VM power is separate from this status. |
 | `completed` | The pull request merged, or an operator completed the task. The workspace is removed. |
 | `failed` | An agent could not start. |
 | `cancelled` | An operator cancelled the task. |
@@ -593,7 +593,7 @@ Each tick runs these steps in order:
 2. Advance each `running` and `reviewing` subtask. See [Session routing](#session-routing).
 3. Return tasks that stayed `reserved` too long to `todo`.
 4. Remove the workspaces of ended tasks. See [Complete and cleanup](#complete-and-cleanup).
-5. Claim `todo` tasks while Node capacity lasts.
+5. Claim `todo` tasks.
 
 Steps 1 and 2 run each task on its own. A failure in one task does not stop the other tasks, and the tick does not fail. Orbit reports the error with the task id, and the next tick tries that task again.
 
@@ -601,17 +601,7 @@ When the task fails on two ticks in a row, the task and its open subtasks ask fo
 
 ### Claim and provision
 
-A claim takes the oldest `todo` task that fits and moves it to `reserved`. The provisioner then creates the [task workspace](#shared-instance) on a Node that fits:
-
-- an active Linux Node with an active `app-dev` role and a WireGuard address;
-- not excluded from the Project by a [development node exclusion](/reference/development-node-exclusions);
-- an active `pi-server` Process with desired state `running`;
-- not the Node of a [task VM](/reference/compute-drivers#task-vms) that is not `destroyed`;
-- with fewer than 10 active tasks. Active tasks are `reserved`, `running`, `reviewing`, and `settling`.
-
-Among the Nodes that fit, the one with the fewest active tasks wins. There is no per-Project limit, and the scheduler never polls Nodes for capacity.
-
-A group of a Project with `task_compute: vm` skips this selection. It gets its own task VM, and its workspace goes on that VM's Node. See [Task VM workspace](#task-vm-workspace).
+A claim takes the oldest `todo` task and moves it to `reserved`. Every task runs on its own [task VM](/reference/compute-drivers#task-vms). The claim gets the VM, and the provisioner creates the [task workspace](#task-workspace) on that VM's Node. [Task VM workspace](#task-vm-workspace) describes the steps. Until the VM is `ready`, the task returns to `todo` with a `Task VM:` reason.
 
 When the workspace is ready, the task becomes `running`, and its first subtask starts. When a claim fails, the task returns to `todo`, and the claim continues with the next task. A tick tries each failing task once.
 
@@ -619,8 +609,8 @@ The claim records `reserved_at` when it reserves the task. It clears `reserved_a
 
 | Cause | Result |
 | --- | --- |
-| Every fitting Node is full | The task waits without a reason. When no `app-dev` Node has capacity, claims stop until the next tick. |
-| No Node fits, source defaults are invalid, or provisioning throws | Count consecutive failures per group in cache. Request `failure` assistance at `ORBIT_TASKS_PROVISIONING_FAILURE_THRESHOLD` (default `3`, minimum `1`). |
+| The task VM is not ready yet | The task returns to `todo` with a [`Task VM:` reason](/reference/compute-drivers#from-claim-to-workspace), and the next tick tries again. |
+| Source defaults are invalid, or provisioning throws | Count consecutive failures per group in cache. Request `failure` assistance at `ORBIT_TASKS_PROVISIONING_FAILURE_THRESHOLD` (default `3`, minimum `1`). |
 | Provisioning failure with a known cause | Prefix `Workspace provisioning did not return an instance.` followed by the constraint or exception class, step, and message, such as `app-instance-source-prepare` for an existing checkout. |
 | Workspace creation exception | Log the exception through Laravel `report()` before returning a typed failure. |
 | Provisioner returns null | Use the fixed reason `Workspace provisioning did not return an instance.` |
@@ -648,21 +638,15 @@ The opening prompt tells the implementer to finish the assigned work on its own.
 
 When the implementer cannot start, the subtask and the task become `failed`, and the Gateway logs which spawn failed. A task created in `todo` can therefore answer create as `failed`.
 
-## Shared Instance
+## Task workspace
 
-The task workspace is one fresh Instance that every subtask of the task shares. Its name and its branch are `task-{id}`. It lives in the Node's apps root like any development Instance: at `<project>/task-{id}` on a shared Node, and at `<project>/workspace` on a [task VM](/reference/compute-drivers#claim-with-a-template), which holds only this workspace. Its Project setup steps [copy dependencies](/domains/applications#dependency-copy) from the successful `default` release on the same Node.
+The task workspace is one fresh Instance that every subtask of the task shares. Its name and its branch are `task-{id}`. It lives at `<project>/workspace` on the task's own [task VM](/reference/compute-drivers#claim-with-a-template), which holds only this workspace. Its checkout starts from the Project's [workspace template](/reference/compute-drivers#start-the-workspace-from-a-template) when the VM's host has one.
 
-Before returning the workspace or activating its Route, Orbit inspects its source and repairs worker and managed-user ACLs. A linked worktree also needs access to its private Git administration directory and the shared refs and objects. An inspection failure leaves the workspace unexposed and the claim fails. Project setup owns dependency copies; the [task check](#project-check) runs as the managed user and shares entries it creates with the worker before returning.
+Before returning the workspace or activating its Route, Orbit inspects its source. An inspection failure leaves the workspace unexposed and the claim fails. Project setup owns dependency copies.
 
-A visitable Laravel task workspace inherits the configured web root; a nested root such as `apps/site/public` uses the shared [application directory](/reference/projects#application-directory) for environment and runtime consumers. Preparation and inspection still verify Git identity, checkout ownership, task metadata, and recursive ACLs over the whole repository. Unrouted workspaces skip application classification; inspection does not discover a nested app.
+A visitable Laravel task workspace inherits the configured web root; a nested root such as `apps/site/public` uses the shared [application directory](/reference/projects#application-directory) for environment and runtime consumers. Preparation and inspection still verify Git identity, checkout ownership, and task metadata over the whole repository. Unrouted workspaces skip application classification; inspection does not discover a nested app.
 
-The checkout directory stays owned by the Node's managed user and group. `ORBIT_TASKS_WORKER_USER` selects the worker account, normally `orbit-worker`. It applies on every `app-dev` Node that does not [opt out](/reference/node-settings#opt-out-of-the-task-worker), and to every checkout marked `worker_shared`. When it is unset, or the Node opts out, prepare leaves checkout access unchanged. On a Node that uses the worker but lacks the account, prepare fails. Shared groups never place a workspace on an opted-out Node. Otherwise, prepare and inspect grant both users `rwX` access and default ACLs on the checkout, including `.git`.
-
-Default ACLs are installed before worker write access, so a partial grant cannot expose a directory without inheritance. Files the worker creates inherit the managed user's access, so removal can delete them without changing the checkout owner. Inspection repairs ACLs on entries the managed user owns. Entries the worker owns keep the ACLs they inherited. The grant does not cover either user's home.
-
-A worker command can leave a directory the managed user cannot enter, such as a check receipt that Python's `mkdtemp` created with mode `0700`. Prepare and inspect skip such a directory instead of failing. The worker owns everything below it, so no managed-user entry misses its grant. Linked worktrees share one Git common directory, so one such directory would otherwise stop every new workspace.
-
-`.git/orbit` is mode `0775`. `.git/config` and `.git/hooks` are read-only for the worker, but the writable checkout root means that protection is not a trust boundary. Git creates `index.lock` in `.git`. Git 2.55 also refuses the tree because the owner is the managed user. Prepare adds the absolute path to `safe.directory` in `orbit-worker`'s global Git config. [Checkout access](/reference/instance-setup#checkout-access) states both. [One user for every task agent](/reference/pi-server#one-user-for-every-task-agent) explains the account and ACL choices.
+The VM's managed user `orbit` owns the checkout and runs the agents, the setup steps, and the checks. So the workspace needs no ACLs and no `safe.directory` entry. [One user for every task agent](/reference/pi-server#one-user-for-every-task-agent) explains the choice.
 
 | Project setting | New workspace |
 | --- | --- |
@@ -708,9 +692,9 @@ Set `ORBIT_TASKS_IMPLEMENTER_EFFORT` and `ORBIT_TASKS_REVIEWER_EFFORT` in the Ga
 
 The Gateway reads effort when it creates a thread, not when it creates the group. A change applies to the next thread of every open group. An existing thread keeps its stored `effort`. The Gateway passes the value to the driver unchanged; the agent runtime validates it.
 
-**Pi.** The `pi` driver runs threads on the [Pi server](/reference/pi-server) of the workspace's Node. The Gateway chooses the session id. Each send carries a key, and a retry reuses it, so an ambiguous failure never starts a second turn.
+**Pi.** The `pi` driver runs threads on the [Pi server](/reference/pi-server) of the task's VM. The Gateway chooses the session id. Each send carries a key, and a retry reuses it, so an ambiguous failure never starts a second turn.
 
-The driver maps a model name to Pi's `provider/model` form. With `ORBIT_PI_PROVIDER` set, every plain name uses that provider. Otherwise `gpt-` and `o`-series names use `openai-codex`, and `grok-` names use `xai`. The driver refuses a Claude model, including a name that starts with `claude` and a `provider/model` whose provider is `anthropic`, and the turn does not start on another runtime. Pi threads never ask for input, and they report no per-thread line counts.
+The driver maps a model name to Pi's `provider/model` form. Every model uses the VM's one provider, `orbit-task-vm`; see [Run Pi on a task VM](/reference/pi-server#run-pi-on-a-task-vm). The driver refuses a Claude model, including a name that starts with `claude` and a `provider/model` whose provider is `anthropic`, and the turn does not start on another runtime. Pi threads never ask for input, and they report no per-thread line counts.
 
 ### Archive finished threads
 
@@ -728,7 +712,7 @@ An operator's [resolution](#assistance-and-resolution) is not a scheduler send. 
 
 Before every agent turn, the Gateway fetches `origin` in the task workspace. The fetch runs before the message is sent. That message is the opening prompt, a reminder, a review, a resumed turn, or an operator message that starts a turn.
 
-The command is `git fetch --no-tags`. It uses the repository [read token](/reference/github-app#how-orbit-reads-a-repository), not the token that publishes the pull request. The read token is `contents: read` for that one repository. It is passed through the environment of that one command, as for any other read. It never appears in the origin URL, the arguments, `.git/config`, or a file on the Node. For a task VM workspace, the Gateway runs this fetch in its own mirror and sends the refs to the VM, so the token never reaches the VM. See [Git on a task VM](/reference/compute-drivers#git-on-a-task-vm).
+The command is `git fetch --no-tags`. It uses the repository [read token](/reference/github-app#how-orbit-reads-a-repository), not the token that publishes the pull request. The read token is `contents: read` for that one repository. The Gateway runs this fetch in its own mirror of the Project and sends the refs to the task VM, so the token never reaches the VM. The token never appears in the origin URL, the arguments, or `.git/config`. See [Git on a task VM](/reference/compute-drivers#git-on-a-task-vm).
 
 The fetch asks for the Project's default branch and for `task-{id}`. When the pull request base is not the default branch, the fetch asks for that base too. A missing `task-{id}` ref is not a failure of this fetch, with or without a pull request. That exemption belongs to the turn. [Resumed preparation](#fix-a-settling-pull-request) decides a missing task branch on its own. The fetch updates remote-tracking refs and does not move `HEAD`. It does not check out, merge, or rebase.
 
@@ -749,13 +733,13 @@ Before each review turn, opening or continued, the Gateway also writes `$(git re
 | Role | Outcomes |
 | --- | --- |
 | Implementer | `ready_for_review`, `blocked` |
-| Reviewer | `approved`, `changes_requested`, `blocked`, `topology_requested` |
-| Reviewer in a consult | `answered`, `blocked`, `topology_requested` |
-| Reviewer in a relay | `answered`, `blocked`, `topology_requested` |
+| Reviewer | `approved`, `changes_requested`, `blocked` |
+| Reviewer in a consult | `answered`, `blocked` |
+| Reviewer in a relay | `answered`, `blocked` |
 
 The command refuses an outcome of the other role, an empty summary, a repeated flag, and an unknown argument. `blocked` needs `--question="One specific question"`. An implementer's question goes to its reviewer first, and a reviewer's question goes to the operator. The command refuses `--question` with any outcome other than `blocked`.
 
-`answered` is valid in a consult and in a relay. A relay is not a consult. A reviewer's `answered` and `blocked`, in a consult or a relay, need `--cause=CAUSE`, one of the [question causes](#questions). The review outcome that answers a direction resolution also needs `--cause`, and that value becomes the question's cause. `topology_requested` is a resource request, not an answer: it refuses `--cause` even in a consult, relay, or review following a direction resolution. The resumed reviewer supplies the cause when it answers normally. Every other turn refuses `--cause`.
+`answered` is valid in a consult and in a relay. A relay is not a consult. A reviewer's `answered` and `blocked`, in a consult or a relay, need `--cause=CAUSE`, one of the [question causes](#questions). The review outcome that answers a direction resolution also needs `--cause`, and that value becomes the question's cause. Every other turn refuses `--cause`.
 
 A blocked relay creates no second question record. The same direction record stays `escalated`. Its `question` becomes the reviewer's `--question`, and its `cause` becomes that turn's `--cause`. That receipt sets `assistance_requested`, `assistance_kind` `direction`, and `assistance_question` on the subtask and the task. The subtask asks for direction again.
 
@@ -765,9 +749,9 @@ When the acting thread stops, the tick reads `$(git rev-parse --git-path orbit)/
 
 ### Task VM workspace
 
-A group of a Project with `task_compute: vm`, `orbit` included, runs in its own [task VM](/reference/compute-drivers#task-vms). The claim sizes the VM by the topology its subtasks [declare](/reference/compute-drivers#size-by-declared-topology) and by the Project: a Project in `task_vms.medium_projects` gets a medium VM. A subtask that declares a topology runs with it nested in the VM. Orbit [prepares](/reference/compute-drivers#prepare-the-topology) it before the subtask's baseline check or implementer, and the reviewer [proves](/reference/compute-drivers#prove-work-on-a-topology) the deliverables on the declared nodes with recorded evidence.
+Every task group runs in its own [task VM](/reference/compute-drivers#task-vms). The claim sizes the VM by the topology its subtasks [declare](/reference/compute-drivers#size-by-declared-topology) and by the Project: a Project in `task_vms.medium_projects` gets a medium VM. A subtask that declares a topology runs with it nested in the VM. Orbit [prepares](/reference/compute-drivers#prepare-the-topology) it before the subtask's baseline check or implementer, and the reviewer [proves](/reference/compute-drivers#prove-work-on-a-topology) the deliverables on the declared nodes with recorded evidence.
 
-For a normal VM the claim takes a [warm VM](/reference/compute-drivers#keep-warm-vms) when its host keeps one, or else it creates a VM. Then it waits until the VM is `ready`. Until then, the task returns to `todo` with a [`Task VM:` reason](/reference/compute-drivers#from-claim-to-workspace), and the next tick tries again. Then Orbit creates the workspace on the VM's Node, as for a shared group: the Instance `task-{id}`, and its private Route when the workspace is routed.
+For a normal VM the claim takes a [warm VM](/reference/compute-drivers#keep-warm-vms) when its host keeps one, or else it creates a VM. Then it waits until the VM is `ready`. Until then, the task returns to `todo` with a [`Task VM:` reason](/reference/compute-drivers#from-claim-to-workspace), and the next tick tries again. Then Orbit creates the workspace on the VM's Node: the Instance `task-{id}`, and its private Route when the workspace is routed.
 
 The checkout starts from the Project's [workspace template](/reference/compute-drivers#start-the-workspace-from-a-template) when the VM's host has one, so the setup steps of the baseline check find the dependencies in place. Without a template, it starts from a fresh clone. The check log shows at most the first 4096 characters of each setup command.
 
@@ -775,31 +759,11 @@ A routed workspace on a task VM starts its baseline check before its Route. The 
 
 Work that uses the Route waits for it. Before the first implementer or the final review starts, Orbit finishes a Route that is still pending. A Route that fails there counts as a communication failure, and Orbit tries again on the next ticks. After the fifth failure, the subtask asks for assistance with the reason `The task workspace Route could not be finished, so no agent started.` and the error. No agent starts on a workspace whose Route failed. A failure at the claim only logs a warning, because the gate tries again. See [From claim to workspace](/reference/compute-drivers#from-claim-to-workspace).
 
-Inside the VM, everything runs as the managed user `orbit`, which has passwordless sudo. There is no `orbit-worker`, so the workspace needs no ACLs and no `safe.directory` entry. Implementers and reviewers run on the VM's own [Pi server](/reference/pi-server#run-pi-on-a-task-vm). The baseline and handoff checks run over SSH as `orbit`. No GitHub token enters the VM. The Gateway fetches and pushes in its own mirror of the Project, and moves Git objects to and from the VM over SSH. See [Git on a task VM](/reference/compute-drivers#git-on-a-task-vm).
+Inside the VM, everything runs as the managed user `orbit`, which has passwordless sudo. The workspace needs no ACLs and no `safe.directory` entry. Implementers and reviewers run on the VM's own [Pi server](/reference/pi-server#run-pi-on-a-task-vm). The baseline and handoff checks run over SSH as `orbit`. No GitHub token enters the VM. The Gateway fetches and pushes in its own mirror of the Project, and moves Git objects to and from the VM over SSH. See [Git on a task VM](/reference/compute-drivers#git-on-a-task-vm).
 
 A task that waits for review stops its VM after `ORBIT_TASK_VMS_PARK_AFTER_MINUTES`, and its next work starts the VM again with the same workspace. Meanwhile the task shows the reason `Task VM: resuming.` See [Park and resume](/reference/compute-drivers#park-and-resume).
 
 When the task ends, Orbit removes the workspace with the VM. See [Destroy a task VM](/reference/compute-drivers#destroy-a-task-vm).
-
-### Request a topology
-
-Orbit task workspaces have no Incus topology by default. Provisioning does not acquire one. A reviewer that needs discovery ends its review, consult, or relay turn through the existing receipt command:
-
-```bash
-"$(git rev-parse --git-path orbit)/turn" --thread=ID --outcome=topology_requested --summary="Why this group needs a topology"
-```
-
-A reviewer in a [task VM](#task-vm-workspace) group cannot request a topology: Orbit refuses the request, and the reviewer continues in its workspace. A task VM group [declares](/reference/compute-drivers#declare-a-topology) its topology instead. Shared workspaces use the discovery topology below. Agent prompts do not offer the request, because Orbit's own groups run on task VMs. Phase 5 removes it with shared mode.
-
-Only a reviewer turn may use `topology_requested`. The command refuses it from an implementer turn and tells the implementer to ask the reviewer through the [existing consult](#consult-the-reviewer). There is no separate agent CLI or API acquisition command. Agents run as `orbit-worker` without sudo; acquisition changes host firewall rules.
-
-Orbit consumes this receipt, acquires the group's one `TASK-<group>` topology as the managed user, and resumes the requesting reviewer with the acquisition result or failure. An existing group topology is reused, so requests never allocate a second topology. The request does not approve or reject the subtask. Orbit resumes the same reviewer thread in its original review, consult, or relay context with the acquisition result or failure. Acquisition failure or absence of a topology never prevents approval: topologies are for discovery, not required proofs.
-
-During a consult, the pending consult stays open while Orbit acquires the topology. The implementer remains paused. The resource request does not answer the consult, change its cause, or escalate it to the operator, even when acquisition fails. The resumed reviewer can then answer the implementer normally with `answered` or ask for direction with `blocked`. A relay or unresolved direction resolution likewise stays pending until the reviewer records its normal answer or review outcome.
-
-`topology_requested` requires a summary but refuses `--question`, `--cause`, and pull request flags. It leaves question records and assistance flags as they were; it does not create or resolve a direction request. Orbit records the requesting turn before sending the reply. A lost send response or a crash after the send never changes that source turn: Orbit reconciles an accepted or later turn instead of sending the resource reply again. If the resumed turn stops without a usable receipt, the normal missing-receipt reminder applies. The original context's outcome and cause rules apply again after resumption.
-
-The topology is shared by the group's subtasks and review turns. Orbit releases it when it removes the group's workspace, including any web session and loopback publication. A [task VM](/reference/compute-drivers#destroy-a-task-vm) workspace never holds a host topology. Its declared topology runs inside the VM and goes with it. [Incus topologies](/reference/incus-topologies#topologies-on-the-reviewers-request) owns the guest and command contract.
 
 ### Rubric and reminders
 
@@ -816,7 +780,7 @@ When the acting thread is `idle`, `done`, or `asking_for_input`, the tick checks
 | `pull_request_fields` | The approval that opens the pull request describes it |
 | `brief_coverage` | The change list covers every subtask. See [Pull request](#pull-request-and-settle-metrics) |
 | `topology_evidence` | On approval of a subtask with a topology, each declared node has a successful recorded command since the last handoff. See [Prove work on a topology](/reference/compute-drivers#prove-work-on-a-topology) |
-| `topology_required` | At handoff in a `vm` group, the subtask's diff changes no path in the Project's `task_vms.topology_paths`, or a subtask of the group declares a topology |
+| `topology_required` | At handoff, the subtask's diff changes no path in the Project's `task_vms.topology_paths`, or a subtask of the group declares a topology |
 
 When items fail, the Gateway sends one reminder to the acting thread. It names every failed item and ends with the role's turn-command instructions. The implementer's reminder starts with "Orbit could not confirm the brief is complete." The reviewer's starts with "Orbit could not confirm the review is complete." The Gateway installs the turn command again before it sends. Each attempt gets one reminder. When an item still fails at the next stop, the subtask asks for assistance, and the reason names each remaining item. The same pending input does not count as that next stop.
 
@@ -874,7 +838,7 @@ When the reviewer answers a consult, that record becomes `answered` with `answer
 
 Each record change is keyed to the stored comment that caused it: a turn receipt, an operator `assistance_requested` comment, or a `resolution` comment. Orbit writes that change in one transaction with `assistance_requested`, `assistance_kind`, and `assistance_question` on the subtask and the task. A tick that applies the same comment again creates no second record and does not count a second consult.
 
-The consult limit counts consult records for the current `completion_attempt`. A consult record is the row created when an implementer's `blocked` receipt starts a consult. A relay, a third block, a reviewer's `blocked` during a review, and an operator comment are not consult records. A `topology_requested` receipt creates no question record and consumes no additional consult; the existing consult remains open until answered or escalated normally.
+The consult limit counts consult records for the current `completion_attempt`. A consult record is the row created when an implementer's `blocked` receipt starts a consult. A relay, a third block, a reviewer's `blocked` during a review, and an operator comment are not consult records.
 
 [`tasks:question:list`](/cli/tasks#orbit-tasksquestionlist) is `GET /api/v1/task-questions`. Any authorized peer can call it. The filters are `project_id`, `cause`, `status`, and `since`. `since` is an ISO 8601 date or time, and the list holds questions asked at or after it, newest first.
 
@@ -925,9 +889,9 @@ When the subtask is `running` and its reviewer has started, Orbit sends the reso
 
 When the subtask is `reviewing`, Orbit does not send an `answered` turn to the implementer. This covers a reviewer who asked during the review, and an operator `assistance_requested` comment posted during the review. Orbit delivers the resolution, clears the assistance flag in that send, and continues the review. The question stays `escalated` until the next review receipt.
 
-A `topology_requested` receipt leaves that resolution and question pending, needs no cause, and resumes the same reviewer in this context after acquisition. The subsequent normal review receipt needs `--cause`. It marks the question `answered`, with `answered_by` `operator`, the resolution body as the answer, and that cause. The delivery counts as that reviewer's next review request. A `blocked` outcome also creates the new direction record a review block always creates.
+The review receipt needs `--cause`. It marks the question `answered`, with `answered_by` `operator`, the resolution body as the answer, and that cause. The delivery counts as that reviewer's next review request. A `blocked` outcome also creates the new direction record a review block always creates.
 
-When the subtask is `running` and no reviewer has started, Orbit starts the reviewer, as a consult does, and sends the resolution as a relay. The message is that relay, not an opening review packet, because the implementer has not handed off. The relay rules apply: `answered` and `blocked` require `--cause`, while `topology_requested` refuses it and leaves the resolution pending until the resumed reviewer answers normally.
+When the subtask is `running` and no reviewer has started, Orbit starts the reviewer, as a consult does, and sends the resolution as a relay. The message is that relay, not an opening review packet, because the implementer has not handed off. The relay rules apply: `answered` and `blocked` require `--cause`.
 
 Clearing the flag on send is keyed to the `resolution` comment and does not change the question record. The receipt that follows is keyed to its turn-receipt comment. A failed send keeps the flag set and leaves the record unchanged.
 
@@ -961,33 +925,21 @@ The check process exports `VP_HOME` to the Node's [resolved Vite+ store](/refere
 
 When the workspace Instance has an [assigned SSR port](/reference/assigned-ssr-ports), the check process also exports `ORBIT_SSR_PORT` and `INERTIA_SSR_URL`. Setup, the Project check, and command deliverables inherit them, so browser and SSR gates in two workspaces on one Node reach their own SSR servers. The check still runs in the workspace on its Node.
 
-Setup steps, baseline checks, handoff checks, and command deliverables inherit a host `TMPDIR` owned by the managed user: `/tmp/orbit-check-<uid>-<random>`. That directory is unique to the check and is removed when the check ends, including when an operator cancels it. Agent bash commands and documentation lookup processes use `<absolute-workspace-git-dir>/orbit/tmp/agent-<uid>` instead. The separate directories prevent restrictive tool caches created by either Unix user from blocking the other role.
+Setup steps, baseline checks, handoff checks, and command deliverables inherit a host `TMPDIR` owned by the managed user: `/tmp/orbit-check-<uid>-<random>`. That directory is unique to the check and is removed when the check ends, including when an operator cancels it. Agent bash commands and documentation lookup processes use `<absolute-workspace-git-dir>/orbit/tmp/agent-<uid>` instead. The separate directories prevent restrictive tool caches created by one role from blocking the other.
 
 The check directory has mode `0711` and no inherited sharing ACL, so another user can traverse to a child that grants it access while temporary files can retain private permissions. With a listable `/tmp`, a local user who learns the directory name can open a child created with the default umask; files a tool writes as private stay private. The agent directory has mode `0700` and no inherited sharing ACL.
 
-Checkout inspection and the access grants before and after a check skip the resolved workspace temp subtrees, including those in linked-worktree common metadata. The parent retains the workspace's sharing ACL. Agent temp files stay outside the tracked tree and disappear with the workspace. The check `TMPDIR` lives under `/tmp`, outside the ACL-shared checkout, and is not reused as the agent directory. Orbit does not change host-wide caches or application PHPStan configuration.
+Checkout inspection skips the resolved workspace temp subtrees, including those in linked-worktree common metadata. Agent temp files stay outside the tracked tree and disappear with the workspace. The check `TMPDIR` lives under `/tmp`, outside the checkout, and is not reused as the agent directory. Orbit does not change host-wide caches or application PHPStan configuration.
 
 Tests that switch Unix users need fixtures with traversable ancestors; granting access on a fixture cannot open a private `0700` `TMPDIR` parent. The check `TMPDIR` is already traversable.
 
 Gateway test bootstrap gives each test process a fresh canonical `orbit-gateway-tests-<pid>-<random>` fixture root with mode `0755` and replaces `TMPDIR` only inside that test process. The root is under the inherited `TMPDIR`, or under `/tmp` when the process inherits a workspace role directory or that check directory. A process that a test starts reuses the root it inherits. Pi's cross-user test uses a fresh `/tmp/pi-shared-fixture-<random>` root instead of its inherited agent `TMPDIR`. Tests grant access on their own fixtures and clean them up. Tool caches outside those test processes still use the private role directories.
 
-The check process runs as the Node's managed user, the account the Gateway connects as. A Project check can need that account's passwordless sudo, ACL tools, or access to the `caddy` account. The Gateway writes metadata only into administration directories owned by the managed user, without following symbolic links. It validates a linked worktree's `.git` pointer and its return pointer before opening that worktree's private administration directory. Status, cancel, and the workspace snapshot run as the same user. [The candidate gate runs as the managed user](/reference/pi-server#the-candidate-gate-runs-as-the-managed-user) explains the choice and its cost.
-
-When `ORBIT_TASKS_WORKER_USER` names an account on the Node, normally `orbit-worker`, the check shares what it created with that worker before it writes `$(git rev-parse --git-path orbit)/check.json`. It grants the worker and the managed user `rwX` on every checkout entry the managed user owns, with default ACLs on directories first, as [workspace inspection](/reference/instance-setup#checkout-access) does. `.git/config` and `.git/hooks` keep their read-only worker access. The grant skips directories that the managed user cannot enter, such as private directories that the worker created. Their owner already has access.
-
-A linked worktree's Git common directory is outside the checkout. There, the check grants the same entries only in `<git-common-dir>/orbit-checks`, where `bin/review-check` writes its reports. Setting the named entries recalculates the ACL mask. This repairs a report directory that a private mode left with `mask::---`, which disables every named entry. `bin/review-check` creates each `review-*` directory with mode `0750`, so its mask keeps inherited named entries readable while other users stay closed out.
-
-Before setup and the command, the check does the reverse. It runs `find` and `setfacl` as the worker with `sudo -n -u orbit-worker -H`, because only an entry's owner can change its ACL. It grants the managed user `rwX` on every checkout entry the worker owns, and on the worker's entries in a linked worktree's `<git-common-dir>/orbit-checks`, with default ACLs on directories first. It skips `.git/config`, `.git/hooks`, and directories the worker cannot enter.
-
-A package manager that the agent ran can leave directories with mode `0755`, whose ACL mask hides the managed user's write. After this grant, the check can replace them.
-
-When sudo cannot switch, the check fails with `check_error` and the reason `The managed user cannot run commands as orbit-worker.` When the grant fails, the check fails with `check_error` and the log shows the error.
-
-The worker's next turn can then read and change the check log, `check.json`, and reports such as `.git/orbit-checks`, even when a command created them with a private mode. A cancelled check also shares before it exits. A check killed from outside shares nothing. When the grant fails, the check fails with `check_error`, and the log names the failed command. When the account does not exist, the check runs and changes no ACL.
+The check process runs as the task VM's managed user `orbit`, the account the Gateway connects as. The agents run as the same user. A Project check can need that account's passwordless sudo, ACL tools, or access to the `caddy` account. The Gateway writes metadata only into administration directories owned by the managed user, without following symbolic links. It validates a linked worktree's `.git` pointer and its return pointer before opening that worktree's private administration directory. Status, cancel, and the workspace snapshot run as the same user. [One user for every task agent](/reference/pi-server#one-user-for-every-task-agent) explains the choice.
 
 Managed writes of the check, turn command, turn context, and MCP configuration use verified directory descriptors and exclusive, no-follow file descriptors. Replacing a candidate or metadata directory cannot redirect writes into another file. The Gateway reads receipts and updates Git's exclude file without following links, and refuses unsafe entries.
 
-Gateway `git` commands in the workspace pass `-c core.hooksPath=/dev/null` and `-c core.fsmonitor=false`. The Project check, baseline setup commands, and deliverable commands, including their start-commit runs, run in that process. Orbit workspace commits and fast-forward merges run as the worker. The Gateway keeps token-bearing network reads under the managed account; a merge and any checkout filter it starts receive no credential environment. For commits and merges, an unset worker keeps the managed-user behavior during rollout; a configured worker never falls back to it.
+Gateway `git` commands in the workspace pass `-c core.hooksPath=/dev/null` and `-c core.fsmonitor=false`. The Project check, baseline setup commands, and deliverable commands, including their start-commit runs, run in that process. Orbit workspace commits and fast-forward merges run as the same user. A merge and any checkout filter it starts receive no credential environment, because the Gateway fetches and pushes in its own mirror.
 
 | Check state | Result |
 | --- | --- |
@@ -1363,7 +1315,7 @@ Set `review_and_merge` and `merge_check` on the Project. [Projects: Review and m
 orbit project:update 46 --review-and-merge=true --merge-check="Required checks"
 ```
 
-The flow needs `source_access: github_app` and `task_compute: shared`. It is off by default. Turning it on affects open tasks at the next tick: an approval that is not pushed yet waits for a final review.
+The flow needs `source_access: github_app`. It is off by default. Each task still runs on its own task VM; CI on the pull request is the merge gate, and Orbit destroys the VM when the task completes after the merge. Turning it on affects open tasks at the next tick: an approval that is not pushed yet waits for a final review.
 
 ### Final review
 
@@ -1405,7 +1357,7 @@ At most once a minute, each `tasks:tick` lists the open pull requests of every r
 
 For each eligible pull request, Orbit creates a task in `todo` titled `Review #{number}: {title}`, with the pull request description in its brief. The task stores the pull request as `pr_url` and its head branch as `pr_branch`. It has one final review, which records the head it was created for. The workspace's local branch stays `task-{id}`. Orbit fetches, watches, and pushes `pr_branch` instead of `task-{id}`. Completing or cancelling the task stops Orbit from reviewing that pull request again. A settling task with a pull request cannot be cancelled, so complete it. The task keeps the review-and-merge rules until it ends, even when the Project turns the flow off.
 
-Before the first final review, Orbit runs the [baseline check](#baseline-check) on the fresh workspace, so setup serves the fixups that follow. Then it fetches `pr_branch` and moves `task-{id}` to the head the pull request has at that moment, which can be newer than the head the task was created for. It moves the workspace only when no approved work is unpushed and the tree has no tracked changes. The tracked-change check and the move compare work tree content, which can start filters, so both run as the task worker.
+Before the first final review, Orbit runs the [baseline check](#baseline-check) on the fresh workspace, so setup serves the fixups that follow. Then it fetches `pr_branch` and moves `task-{id}` to the head the pull request has at that moment, which can be newer than the head the task was created for. It moves the workspace only when no approved work is unpushed and the tree has no tracked changes. The tracked-change check and the move run as the VM's managed user `orbit`, without a credential environment.
 
 The author can push while Orbit's reviewed fixups wait. Orbit's push is then not a fast-forward, and GitHub refuses it. Orbit then completes the final review and starts the final-review fixup `Merge origin/{pr_branch}`, so the author's commits are merged and reviewed before the next push.
 
@@ -1419,7 +1371,7 @@ The App can review the pull request because the pull request author is a person,
 
 ### Merge on green
 
-Each tick, after the [settling watch](#settling), Orbit evaluates a review-and-merge task that is `settling` with an open pull request, no open subtask, and no assistance. It merges when all of these hold on the current head:
+Each tick, after the [settling watch](#settling), Orbit evaluates a review-and-merge task that is `settling` or `waiting_for_review` with an open pull request, no open subtask, and no assistance. It merges when all of these hold on the current head:
 
 1. The head SHA is one Orbit recorded as fully reviewed for this task, and no newer approved work waits for its final review.
 2. The `merge_check` runs on that SHA pass by the [green-commit rules](/reference/github-app#find-the-newest-green-commit).
@@ -1526,9 +1478,9 @@ The Gateway tests inject these completion failures:
 - The parent update fails inside the completion transaction. The subtask cancellations roll back. Resume uses the receipt and does not call GitHub.
 - Stop after the task is `completed` and before workspace removal. The next complete retries removal and does not call GitHub.
 
-Cancel, complete, and the sweep remove a workspace the same way. The forced Instance remover deletes the recorded checkout and the workspace's Routes. It writes a removal record, and it deletes the Instance row only after the checkout is gone.
+Cancel, complete, and the sweep remove a workspace the same way. Orbit runs the Project's teardown steps in the workspace, then destroys the task VM with the workspace and its Routes. See [Destroy a task VM](/reference/compute-drivers#destroy-a-task-vm).
 
-The Instance remover runs the Project's teardown steps before deleting the checkout. A failed teardown keeps the checkout and Instance for retry. On a completed or cancelled task, that failure does not ask for assistance and keeps the reason. On any other task, it asks for assistance through the normal task cleanup path. The engine has no Orbit bridge cleanup hook. The Orbit Project records its bridge cleanup as a [teardown step](/reference/instance-setup#configure-orbits-task-policy); [Incus topologies](/reference/incus-topologies#task-workspace-clones) defines its ownership checks. Orbit releases any acquired Incus topology before removing the group's workspace. A group without a topology needs no acquisition or release.
+A failed teardown keeps the workspace, its Instance, and its VM for retry. On a completed or cancelled task, that failure does not ask for assistance and keeps the reason. On any other task, it asks for assistance through the normal task cleanup path. The engine has no Orbit bridge cleanup hook. The Orbit Project records its bridge cleanup as a [teardown step](/reference/instance-setup#configure-orbits-task-policy); [Incus topologies](/reference/incus-topologies#task-workspace-clones) defines its ownership checks. A declared topology runs inside the VM and goes with it.
 
 When a manual complete cannot remove the workspace, the task is already `completed` and keeps its Instance. Open subtasks cancelled in the completion transaction stay `cancelled`. It does not ask for assistance. It keeps the reason `Workspace removal failed: `. The retry does not read GitHub.
 
@@ -1547,7 +1499,6 @@ These Gateway environment keys configure the extension.
 
 | Environment key | Meaning |
 | --- | --- |
-| `ORBIT_TASKS_WORKER_USER` | The worker account granted checkout ACLs on [Nodes that use it](/reference/instance-setup#task-work-nodes). Unset leaves checkout access unchanged during rollout |
 | `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER`, `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` | The drivers of new tasks. Both default to `pi`. Any other value is `tasks.agent_driver_unavailable` |
 | `ORBIT_TASKS_IMPLEMENTER_MODEL`, `ORBIT_TASKS_REVIEWER_MODEL` | The models of new tasks. Both default to `gpt-5.6-luna`. A Claude model is refused |
 | `ORBIT_TASKS_IMPLEMENTER_EFFORT`, `ORBIT_TASKS_REVIEWER_EFFORT` | The effort of new implementer and reviewer threads. Unset or empty keeps `high`. See [Drivers](#drivers) for when changes apply and runtime validation |
@@ -1558,7 +1509,7 @@ These Gateway environment keys configure the extension.
 | `ORBIT_TASKS_PROVISIONING_FAILURE_THRESHOLD` | Consecutive provisioning failures before failure assistance. Default `3`, at least `1`. A successful start resets the count |
 | `ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS` | How long a task may stay `reserved`. Default `3600`, at least `60`. Keep it above the slowest workspace provision |
 | `ORBIT_T3_PORT`, `ORBIT_T3_TOKEN` | The T3 port, default `3773`, and bearer token for [annotations](#coder-settle-webhook). Task agents do not use them |
-| `ORBIT_PI_PORT`, `ORBIT_PI_TOKEN`, `ORBIT_PI_PROVIDER` | The Pi server port, default `3774`, its bearer token, and the provider for plain model names |
+| `ORBIT_PI_PORT` | The port of the Pi server on each task VM, default `3774`. Each VM has its own token |
 | `ORBIT_CODER_WEBHOOK_URL`, `ORBIT_CODER_WEBHOOK_SECRET` | The Coder webhook endpoint and its HMAC secret. The Gateway never returns the secret |
 | `ORBIT_OPSBOT_WEBHOOK_URL`, `ORBIT_OPSBOT_WEBHOOK_SECRET` | The OpsBot webhook endpoint and its bearer secret. The Gateway never returns the secret. Unset skips the direction POST |
 | `TYPESAFE_API_KEY` | The key for Jev calls |
@@ -1584,7 +1535,7 @@ When the Project's default has not deployed on that Node, Orbit creates an indep
 
 ### Routing and cleanup
 
-[Task workspace routing](/reference/projects#task-workspace-routing) decides whether a new workspace is visitable. It defaults to routed, and a change applies only to a workspace Orbit creates afterward. An unrouted workspace stays healthy in `source_resolved`. Orbit provisions the workspace without a topology. Only the [reviewer's turn request](#request-a-topology) acquires the group's one [Incus topology](/reference/incus-topologies#task-workspace-clones). Orbit releases it before removing the workspace; a failed acquisition or missing topology never prevents approval.
+[Task workspace routing](/reference/projects#task-workspace-routing) decides whether a new workspace is visitable. It defaults to routed, and a change applies only to a workspace Orbit creates afterward. An unrouted workspace stays healthy in `source_resolved`. A group has an [Incus topology](/reference/incus-topologies) only when its subtasks [declare](/reference/compute-drivers#declare-a-topology) one. It runs inside the VM and goes with it.
 
 Orbit-specific cleanup, including a task bridge worktree, is a Project teardown step. The engine has no bridge cleanup hook. [Configure Orbit's task policy](/reference/instance-setup#configure-orbits-task-policy) records Orbit's check, setup, and installed helper. [Task workspace clones](/reference/incus-topologies#task-workspace-clones) defines that helper's ownership checks.
 
@@ -1608,13 +1559,11 @@ Three alternatives were rejected. Selecting one Project's behavior by its slug w
 
 Shared prompts stay free of Project policy. They do not name a feature contract or an Orbit lease rule. The repository's instructions and `orbit-tasks` skill carry that policy.
 
-### Agents run as orbit-worker
+### Every task group runs on its own task VM
 
-Task agents and task teardown run as `orbit-worker`, so a program an agent starts cannot read the managed user's home. The baseline and handoff checks are the exception: they run as the managed user, because host-dependent tests need its sudo, ACL, and `caddy` access. [The candidate gate runs as the managed user](/reference/pi-server#the-candidate-gate-runs-as-the-managed-user) records that choice and its cost.
+Each task group gets its own [task VM](#task-vm-workspace). Inside it, one user, `orbit`, runs the agents, the setup steps, the checks, and teardown, so agents and checks see the same environment. The VM edge is the boundary. [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) records that choice.
 
-Teardown's command is the root-owned helper `/usr/local/lib/orbit/e2e-task-cleanup`, which `orbit-worker` can execute and cannot write. Privileged removal is separate: the managed user deletes the tree and does not run a checkout program. The Pi server runs as `orbit-worker`, and an agent can read the server token and the provider sign-in. [Pi server limits](/reference/pi-server#limits) records the root-equivalent `incus-admin` access.
-
-A [task VM](#task-vm-workspace) needs no `orbit-worker`. The VM edge is the boundary there, so agents and checks share `orbit` and see the same environment. [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) records that choice.
+Groups once shared host Nodes, and agents ran there as a separate account without sudo. That account needed checkout ACLs, a second Git trust list, and a worker handoff in every check, and tests that need sudo failed for agents but passed in the gate. Orbit deleted that shared mode once every Project ran on task VMs. No fallback to a host Node exists: a task waits for its VM.
 
 ### Backlog before Todo
 
@@ -1684,7 +1633,7 @@ An agent states its outcome with `"$(git rev-parse --git-path orbit)/turn"`, the
 
 One check decides for every driver, because it does not depend on tool output. It runs detached, and the process state shows whether it still runs. A time limit would fail a slow check that is not broken, so an operator cancels a check that hangs. The workspace is not copied, because nobody edits it between handoff and review, and the tree comparison catches an edit.
 
-The check `TMPDIR` is created under `/tmp` with mode `0711`, not under the ACL-shared workspace tree, and the check removes that exact directory when it ends. A private `0700` ancestor in that tree blocked cross-user fixtures even when children granted access.
+The check `TMPDIR` is created under `/tmp` with mode `0711`, not under the workspace tree, and the check removes that exact directory when it ends. A private `0700` ancestor in that tree blocked cross-user fixtures even when children granted access.
 
 ### Deliverables are checked, not read
 

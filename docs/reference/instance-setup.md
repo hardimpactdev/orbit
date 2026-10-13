@@ -70,59 +70,23 @@ Authorized reads return the commands. [Activity](/cli/activity) records no input
 
 ## Checkout access
 
-The Gateway prepares a development checkout as the Node's managed user. The checkout directory stays owned by that user and group. Production releases are unchanged.
+The Gateway prepares a development checkout as the Node's managed user. The checkout and the files in it stay owned by that user and group. Every Gateway Git command on the checkout runs as the managed user. Production releases are unchanged.
 
-### Task work Nodes
+Every Gateway Git call sets `core.hooksPath=/dev/null` and `core.fsmonitor=false`, so a hook path or a filesystem monitor in `.git/config` never runs. A linked worktree is added without a checkout; the branch checkout at resolve writes its files. Caddy can read only the web root and the public storage target; [Caddy access](/reference/routes#caddy-access) describes the walk.
 
-`ORBIT_TASKS_WORKER_USER`, normally `orbit-worker`, applies to every Node with an `app-dev` role. Configuration decides this, not the state of a Process: a Node uses the worker until its [settings](/reference/node-settings#opt-out-of-the-task-worker) record `tasks.worker: none`. A task VM Node never uses the worker.
+A task workspace is a checkout inside its own [task VM](/reference/compute-drivers#task-vms). There the VM's managed user `orbit` owns it and runs the agents, the setup steps, and the checks.
 
-On a Node that uses the worker, Gateway Git that can start checkout filters runs as the worker. That covers checkout sharing, the branch checkout when a source resolves, registration, candidate inspection for cloning, transfer, removal checks, and [Project branch switches](/reference/projects#update-a-project). The Node must have the account. When it is missing, these operations fail and name it; they never fall back to the managed user.
+The Gateway names the Instance's Git directory from its records: `<seed>/.git` for a worktree of a seed, otherwise `<checkout>/.git`. It never asks Git for it, because Git follows `.git/commondir` and a `.git` file in the checkout.
 
-A linked worktree is added without a checkout; the branch checkout at resolve writes its files. Every Gateway Git call also sets `core.hooksPath=/dev/null`, so a hook path in `.git/config` never runs.
-
-The development default's deployment also runs `git status` and its checkouts through the worker. Its deploy steps are the Project's own commands and run as the managed user.
-
-The worker owns the files its checkout writes, and nothing changes them back. Root never walks the checkout. The worker can replace any directory in it with a symlink, and a root `chown` that resolves paths by name could then follow one outside the checkout.
-
-The files inherit the checkout's default ACL, which gives the managed user `rwX`. So `.env`, SQLite setup, and deploy steps still work. [Caddy access](/reference/routes#node-scope) changes each entry's ACL as its owner. The worker never rewrites `.git/config`: a branch switch checks out with `--no-track`, and the managed user then records the upstream.
+The managed user writes task metadata under `$(git rev-parse --git-path orbit)`. In a linked worktree this is its private administration directory, not a directory under the `.git` pointer file. The Gateway validates both the pointer and its return path, and pins owned directories before publishing metadata.
 
 ### Credentialed Git
 
-On a task VM none of this runs: the Gateway fetches and pushes in its own mirror and sends no token to the VM. See [Git on a task VM](/reference/compute-drivers#git-on-a-task-vm). The rest of this section covers checkouts on other Nodes.
+On a task VM none of this runs: the Gateway fetches and pushes in its own mirror and sends no token to the VM. See [Git on a task VM](/reference/compute-drivers#git-on-a-task-vm). The rest of this section covers development checkouts on other Nodes.
 
-Fetch, `ls-remote`, and push carry a GitHub token. On a shared checkout the worker can write `.git/config`, and keys such as `credential.helper`, `core.sshCommand`, `remote.<name>.uploadpack`, an `ext::` URL rewrite, or an `include.path` that adds them would run a command as the managed user or send the token elsewhere. So no token-bearing Git process reads a configuration file that the worker can write:
+A fetch and `ls-remote` carry a GitHub token. `ls-remote` runs outside the checkout. A fetch runs in the checkout as the managed user, against the Project repository URL with explicit refspecs, never against a configured remote. It sets `credential.helper` empty, `http.followRedirects` to `false`, and `protocol.ext.allow` to `never`, besides the hook and fsmonitor overrides above. The token exists only in the environment of that one `git` command. It travels on the standard input of the SSH process, never in an argument or a file.
 
-- `ls-remote` runs outside the checkout, against the Project repository URL.
-- A fetch runs in a private bare repository from `mktemp -d`. That repository has a fresh configuration and uses the Project repository URL.
-- The private repository borrows the objects of the Instance's Git directory as an alternate. The fetch then downloads only what is missing.
-- The fetch sets `core.alternateRefsCommand=true`, so it starts no Git process in an alternate.
-- A local fetch then copies the refs into the checkout, as the worker on a shared checkout. That step has no token.
-- An ACL gives only the worker read access to the private repository for the local fetch.
-- A push runs from the same kind of private repository.
-
-The Gateway names the Instance's Git directory from its records: `<seed>/.git` for a worktree of a seed, otherwise `<checkout>/.git`. It never asks Git, because Git follows `.git/commondir` and a `.git` file, which the worker can rewrite. The directory and its `objects` must be real directories at exactly that path, owned by the managed user.
-
-By default, a fetch from a repository with alternates starts `git for-each-ref` in each alternate. That child would read the alternate's configuration with the token in its environment. `core.alternateRefsCommand=true` replaces the child with `true`. Objects that an alternate chain names are only read.
-
-Per-key `-c` overrides are not used: they cannot cover an `include.path` or every URL-scoped key. The token stays in the managed user's process; the worker never receives it.
-
-A checkout placed on a Node that uses the worker is marked `worker_shared` from then on. The worker may have written its `.git/config` or planted a filter, and a move does not undo that. So that Git always runs as the worker on a marked checkout, also after a transfer. A transfer of a marked checkout to an opted-out Node is refused with `instance.transfer_worker_shared`. A clone does not copy the candidate checkout: the production Instance deploys from the repository.
-
-Only a Node that opts out runs that Git as its managed user. Use the opt-out for a Node where no agent ever runs, such as one without the worker account. Removal still cleans up worker-owned files and trust entries on any Node that has the account.
-
-On a Node that uses the worker, prepare grants recursive access and default ACLs on the checkout, including `.git`. Both ACLs name the worker and the managed user with `rwX`. Prepare and inspect finish the default ACLs before granting worker write access. A partial access grant then still lets the managed user write and remove entries the worker creates. Execute is granted on directories and on files that already have it. Other write stays off.
-
-Inspection and retries repair entries the managed user owns; entries the worker owns keep their inherited ACLs. They exclude [task temp directories](/reference/tasks#project-check) from all grants, including populated caches in the common repository and other linked-worktree administration directories. A pruned traversal replaces the recursive access-grant fast path so private caches never acquire sharing ACLs during reinspection. Linked worktrees also grant access to their administration directory and the shared repository's refs and objects, while its configuration and hooks remain read-only for the worker. The Gateway creates `.git/orbit` during prepare with mode `0775`. `.git/config` and `.git/hooks` are read-only for the worker. See the [beast checkout grant](/reference/pi-server#roll-out-orbit-worker-on-beast).
-
-`git add`, `git checkout`, and `git commit` create `index.lock` in `.git` and rename it to `index`. They also create `HEAD.lock`, `packed-refs.lock`, `ORIG_HEAD`, `FETCH_HEAD`, and `COMMIT_EDITMSG` there. The `.git` directory has to be writable. The checkout root is writable too, so `orbit-worker` can rename `.git` and replace it. An ACL that skips `.git/config` or `.git/hooks` does not keep those files.
-
-Git 2.55 also refuses the checkout because the managed user owns it. The ACL does not change that owner, so a worker `git` command fails closed until the path is trusted. Prepare and inspect add the checkout's absolute path to `safe.directory` in `orbit-worker`'s global Git config. Git reads that key only from protected config, so a value in `.git/config` does not count. The value is that path, not `*`. Removal deletes that one value and preserves entries for other checkouts.
-
-If deletion finishes before Git trust cleanup, completion revalidation authenticates the removal journal and receipt, then retries that exact-path cleanup before reporting success. A config write failure keeps removal incomplete until the retry succeeds.
-
-The ACL is not applied to the apps root or to either home. New files in the checkout stay readable and deletable by the other user. When the setting is unset or the account does not exist, prepare sets no ACL and succeeds. When `setfacl` fails, prepare fails with `instance.clone_failed` and inspect fails with `instance.source_identity_invalid`. Neither records a new checkout. The managed user writes task metadata under `$(git rev-parse --git-path orbit)`. In a linked worktree this is its private administration directory, not a directory under the `.git` pointer file. The Gateway validates both the pointer and its return path, and pins owned directories before publishing metadata.
-
-[Tasks](/reference/tasks#shared-instance) uses this ACL so task agents can write the workspace. [Host setup](/reference/pi-server#host-setup) creates the account. [Instance removal](/reference/instance-removal#checks-before-removal) still requires the managed user to own the directory.
+Only the managed user and the operator write the checkout's `.git/config`, so the fetch may read it. Orbit runs no task agent in a development checkout on a host Node.
 
 ## Run setup
 
@@ -177,13 +141,7 @@ Orbit keeps the Instance, with its setup marked failed, in three cases:
 
 Incomplete or unconfirmed cleanup keeps the setup error's classification and details. When setup was unavailable, the error also keeps its step, Node, and not-found diagnostic alongside the cleanup annotation. Inspect the Instance before you retry.
 
-On a Node that [uses the worker](#task-work-nodes), registration inspection, in-place adoption, and relocation verification run Git content-status checks as the worker. Clean and process filters receive no Gateway credential environment. The managed account checks ownership and moves the source only when its path differs from the managed destination.
-
-[Registration](/domains/applications#register-an-existing-checkout) verifies the source's own state, not unrelated refs in its shared repository. In-place adoption records the verified destination before it closes the environment file's permissions. For a nested Laravel root such as `apps/site/public`, that file is `apps/site/.env`; checks for cached Laravel configuration also use `apps/site/bootstrap/cache/config.php`. Git identity and recursive checkout ACLs keep their repository-wide scope. A retry after that checkpoint checks the destination's Git identity rather than the pre-adoption digest, so Orbit's own permission change does not prevent recovery. Setup still runs only after adoption completes.
-
-It pins the source and Git directory before discovering the common directory, then checks those identities before every read grant. It never resolves a replacement link as a new grant target. Read grants preserve the worker's existing effective permissions, including workspace edits and Git locks. They do not follow links or grant access to either user's home. Parent directories must already be traversable by the worker.
-
-A grant skips a directory of another account that the managed user cannot open, such as a worker's private `review-*` report under `.git/orbit-checks`, and the Gateway log names it. The managed user can grant nothing inside it. A directory the managed user owns but cannot open still stops registration. Git trusts only the exact checked path for that command. Registration stops if the worker is missing, sudo fails, or Git cannot read the content, including content in a skipped directory. It never falls back to the managed account.
+[Registration](/domains/applications#register-an-existing-checkout) verifies the source's own state, not unrelated refs in its shared repository. In-place adoption records the verified destination before it closes the environment file's permissions. For a nested Laravel root such as `apps/site/public`, that file is `apps/site/.env`; checks for cached Laravel configuration also use `apps/site/bootstrap/cache/config.php`. Git identity keeps its repository-wide scope. A retry after that checkpoint checks the destination's Git identity rather than the pre-adoption digest, so Orbit's own permission change does not prevent recovery. Setup still runs only after adoption completes.
 
 `instance:register` runs no setup. `instance:register --setup` runs the setup list after adoption. `instance:setup` runs the list again on an active development Instance. Both keep the Instance when a command fails and return `instance.setup_step_failed`, or `instance.setup_step_unavailable` when the command is missing or not executable. Every run starts at the first step.
 
@@ -292,7 +250,7 @@ A setup list whose timeouts cannot fit is cut with `command.deadline_exceeded`. 
 
 ### Install the helper
 
-Install the reviewed `bin/e2e-task-cleanup` as `$HOME/.local/lib/orbit/e2e-task-cleanup` for the managed user on every eligible Node. Copy that blob from the reviewed commit. Do not copy it from an old checkout: clones created before this change do not contain the file. Create-time rollback runs teardown as the managed user, before any agent has written the checkout. Task-workspace teardown runs as `orbit-worker`. Its command is the absolute path below, not `$HOME` and not a file in the checkout.
+Install the reviewed `bin/e2e-task-cleanup` as `$HOME/.local/lib/orbit/e2e-task-cleanup` for the managed user on every eligible Node. Copy that blob from the reviewed commit. Do not copy it from an old checkout: clones created before this change do not contain the file. Create-time rollback runs teardown as the managed user, before any agent has written the checkout. Task-workspace teardown runs the absolute path below, not `$HOME` and not a file in the checkout.
 
 Save the reviewed blob first. A failed `git show` must not start the copy. Stage that blob, check that it is non-empty and that its digest matches, and only then rename it onto the destination in the same directory. `set -o pipefail` makes a failed producer fail the copy.
 
@@ -328,7 +286,7 @@ ssh MANAGED_USER@NODE 'sha256sum "$HOME/.local/lib/orbit/e2e-task-cleanup"'
 git show "$rev:bin/e2e-task-cleanup" | sha256sum
 ```
 
-A match means the home copy finished. It does not prove the root path. Publish by staging in the root directory, checking that stage, and renaming onto the live path. `orbit-worker` must be able to execute the live file and must not be able to write it. `install` onto the live path was rejected: an interrupted `install` can replace a valid helper with a short file.
+A match means the home copy finished. It does not prove the root path. Publish by staging in the root directory, checking that stage, and renaming onto the live path. Only root may write the live file. `install` onto the live path was rejected: an interrupted `install` can replace a valid helper with a short file.
 
 ```bash
 ssh MANAGED_USER@NODE "sudo env EXPECTED=$expected bash -eu -c '
@@ -365,9 +323,9 @@ The helper returns success without changing anything for an ordinary checkout. F
 
 The installed helper and `bin/e2e-clone-bridge` look up the primary in three places, in order. First is `$XDG_STATE_HOME/orbit/e2e-primary-checkouts/{origin key}` when `XDG_STATE_HOME` is set. Second is `$HOME/.local/state/orbit/e2e-primary-checkouts/{origin key}`. Third is `/var/lib/orbit/e2e-primary-checkouts/{origin key}`.
 
-The third directory is root-owned and mode `0755`. `orbit-worker` can read the symlinks and cannot replace them. The primary's owner must be the invoking user, or the owner of the invoking checkout. A primary owned by neither user is ignored. A missing registration exits successfully and changes nothing. That success is only for a checkout with no primary. A registration copied to the shared directory must be found.
+The third directory is root-owned and mode `0755`. Other accounts can read the symlinks and cannot replace them. The primary's owner must be the invoking user, or the owner of the invoking checkout. A primary owned by neither user is ignored. A missing registration exits successfully and changes nothing. That success is only for a checkout with no primary. A registration copied to the shared directory must be found.
 
-Copy the managed user's links before task teardown runs as `orbit-worker`. Do not change the owner of the primary checkout. On the same filesystem, copy into a staging directory, check every link, and rename the directory into place. When `/var/lib/orbit/e2e-primary-checkouts` already exists, stop and do not merge over it.
+Copy the managed user's links there. Do not change the owner of the primary checkout. On the same filesystem, copy into a staging directory, check every link, and rename the directory into place. When `/var/lib/orbit/e2e-primary-checkouts` already exists, stop and do not merge over it.
 
 ```bash
 src=$HOME/.local/state/orbit/e2e-primary-checkouts
@@ -378,10 +336,6 @@ fi
 ```
 
 For each staged link, `readlink` equals the source link, and the target directory exists. A broken link is not copied. `sudo mv` the staging directory to `/var/lib/orbit/e2e-primary-checkouts` only after that check. A rename on the same filesystem is one replacement. When the copy is interrupted, delete the staging directory and copy again. The source directory stays in place.
-
-The copied link is not enough. `orbit-worker` must walk every parent of the primary and of its worktree root. That root is the primary's `orbit.worktreeRoot`, and the default is `/fast/worktrees/orbit`. Grant `orbit-worker` and the managed user `rwX` on the primary's `.git`, including the directory root, with the same default ACL a task checkout gets. Grant write and execute on the worktree root, and the same recursive ACL on each existing bridge directory under it. Set the default ACL on the worktree root so a new bridge stays removable. Do not grant this on the managed home or on `.ssh`, `.config`, or `.pi`.
-
-Add the primary's absolute path, and the absolute path of each bridge, to `safe.directory` in `orbit-worker`'s global Git config. Use the checkout path itself, not `*`. Teardown and `bin/e2e-clone-bridge` run `git` in those trees as `orbit-worker`, and Git 2.55 rejects them while the managed user owns them.
 
 ### Record teardown
 
@@ -511,9 +465,9 @@ Teardown is the operator's cleanup. Removal continues only after that cleanup su
 
 Orbit's task bridge is this repository's cleanup, so the Orbit Project runs `bin/e2e-task-cleanup` as a teardown step. A Gateway hook for that bridge was rejected, because another Project would inherit Orbit's worktree layout. The installed helper, not the Gateway, performs the ownership checks in [Task workspace clones](/reference/incus-topologies#task-workspace-clones).
 
-### Task setup runs as orbit-worker
+### Task setup runs in the task check
 
-Create-time setup runs as the managed user, before an agent uses the Instance. A task workspace skips that path. Its baseline runs the setup list as the managed user inside the task check, so host-dependent setup and tests keep that user's access. [The candidate gate runs as the managed user](/reference/pi-server#the-candidate-gate-runs-as-the-managed-user) records the cost. Task teardown runs as `orbit-worker`, and its program is the root-owned helper. Privileged removal then deletes the tree as the managed user and runs no checkout program.
+Create-time setup runs as the managed user, before an agent uses the Instance. A task workspace skips that path. Its baseline runs the setup list inside the task check on the task VM, as the VM's managed user `orbit`, which also runs the agents. That user has sudo, so host-dependent setup and tests work. [One user for every task agent](/reference/pi-server#one-user-for-every-task-agent) explains why the VM needs no second user. Task teardown runs as the same user before the Gateway destroys the VM.
 
 ### Gateway-owned baseline delivery
 
