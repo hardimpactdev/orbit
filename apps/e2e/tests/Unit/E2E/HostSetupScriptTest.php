@@ -69,6 +69,7 @@ describe('bin/e2e-topology-host-setup', function () {
                 'iifname "oe*" oifname "orbit" drop',
                 'iifname "incusbr0" oifname "orbit" drop',
                 'iifname "oe*" ip daddr 10.44.0.0/24 drop',
+                'iifname "incusbr0" ip daddr 10.44.0.0/24 drop',
             ])
             ->and($table)
             ->toContain('type filter hook forward priority -10; policy accept;')

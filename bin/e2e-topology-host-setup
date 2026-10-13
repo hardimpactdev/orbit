@@ -112,6 +112,7 @@ table inet orbit-e2e-isolation {
     chain input {
         type filter hook input priority -10; policy accept;
         iifname "oe*" ip daddr $wireguard_subnet drop
+        iifname "$bridge" ip daddr $wireguard_subnet drop
     }
 }
 NFT

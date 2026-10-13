@@ -72,6 +72,30 @@ it('round trips its declaration and refuses one out of order', function () {
         ->toThrow(InvalidArgumentException::class, 'schema is invalid');
 });
 
+it('adds the declared roles to their Node, in canonical order', function () {
+    $recipe = TopologyRecipe::fromOption('app-prod+websocket+ingress,app-dev+database');
+
+    expect($recipe->workloads)->toBe(['app-dev+database', 'app-prod+ingress+websocket'])
+        ->and($recipe->node('app-dev')->roles)->toBe(['app-dev', 'database'])
+        ->and($recipe->node('app-prod')->roles)->toBe(['app-prod', 'ingress', 'websocket'])
+        ->and($recipe->extraRoles($recipe->node('app-prod')))->toBe(['ingress', 'websocket'])
+        ->and($recipe->extraRoles($recipe->node('app-dev')))->toBe(['database'])
+        ->and($recipe->assignments()['app-prod'])->toBe(['app-prod', 'ingress', 'websocket'])
+        ->and(TopologyRecipe::fromArray($recipe->toArray())->workloads)->toBe($recipe->workloads)
+        ->and(fn () => TopologyRecipe::fromArray(['workloads' => ['app-dev+database', 'app-prod+websocket+ingress']]))
+        ->toThrow(InvalidArgumentException::class, 'out of order');
+});
+
+it('refuses an unknown or repeated extra role', function (string $option, string $message) {
+    expect(fn () => TopologyRecipe::fromOption($option))->toThrow(InvalidArgumentException::class, $message);
+})->with([
+    'unknown role' => ['app-prod+router', 'The Node [app-prod] can only add the roles ingress, database, websocket.'],
+    'base role again' => ['app-dev+app-dev', 'can only add the roles'],
+    'repeated role' => ['app-prod+ingress+ingress', 'The Node [app-prod] adds a role twice.'],
+    'same Node twice with other roles' => ['app-prod,app-prod+ingress', 'The Node [app-prod] is declared twice.'],
+    'empty role' => ['app-prod+', 'can only add the roles'],
+]);
+
 it('names a missing Node', function () {
     expect(fn () => TopologyRecipe::compose(['app-dev'])->node('app-prod'))
         ->toThrow(InvalidArgumentException::class, 'The topology has no Node [app-prod].');

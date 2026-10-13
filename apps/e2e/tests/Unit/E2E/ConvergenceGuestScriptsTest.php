@@ -311,7 +311,17 @@ describe('operator convergence', function () {
         'grant Node name' => [['grant', 'operator', 'gate way']],
         'configure-cli arity' => [['configure-cli']],
         'configure-cli Gateway host' => [['configure-cli', '-gateway']],
-    ])->skip(fn (): bool => posix_geteuid() === 0, 'grant and configure-cli re-run themselves through sudo as root.');
+        'role-add arity' => [['role-add', 'app-prod']],
+        'role-add Node' => [['role-add', 'gateway', 'ingress']],
+        'role-add role' => [['role-add', 'app-prod', 'router']],
+    ])->skip(fn (): bool => posix_geteuid() === 0, 'grant, configure-cli, and role-add re-run themselves through sudo as root.');
+
+    it('adds a declared role to a workload Node through the topology Gateway', function () {
+        $fixture = operatorFixture();
+
+        expect(runGuestScript($fixture, ['role-add', 'app-prod', 'ingress'])->getExitCode())->toBe(0)
+            ->and(commandLog($fixture))->toBe(['orbit node:role:add app-prod ingress --json']);
+    })->skip(fn (): bool => posix_geteuid() === 0, 'role-add re-runs itself through sudo as root.');
 
     it('skips provisioning when the operator is already active in the Gateway store', function () {
         $fixture = operatorFixture();

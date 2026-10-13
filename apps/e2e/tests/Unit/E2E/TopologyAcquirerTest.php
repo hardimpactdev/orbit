@@ -192,6 +192,25 @@ describe('TopologyAcquirer', function () {
             ->and(array_keys($incus->instances))->toHaveCount(5);
     });
 
+    it('adds each declared extra role from the operator after every Node is enrolled', function () {
+        $steps = [];
+        ['acquirer' => $acquirer, 'request' => $request] = acquirerFixture(steps: $steps);
+        $timings = [];
+
+        $acquirer->acquire($request, TopologyRecipe::fromOption('app-dev,app-prod+websocket+ingress'), function (string $step) use (&$timings): void {
+            $timings[] = $step;
+        });
+
+        expect(array_slice($steps, -4))->toBe([
+            'converge-operator.sh grant @gateway',
+            'converge-operator.sh configure-cli @operator',
+            'converge-operator.sh role-add @operator',
+            'converge-operator.sh role-add @operator',
+        ])
+            ->and($timings)->toContain('roles.app-prod')
+            ->and($timings)->not->toContain('roles.app-dev');
+    });
+
     it('fails before creating anything when a role image is missing and names the build command', function () {
         ['acquirer' => $acquirer, 'incus' => $incus, 'worktree' => $worktree, 'request' => $request] = acquirerFixture(images: false);
 

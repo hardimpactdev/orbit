@@ -62,5 +62,14 @@ case ${1-} in
     rm -f "$ca.new"
     "$orbit" gateway:add "https://$2" --name=e2e --ca="$ca" --use --json
     ;;
+  role-add)
+    # On the operator: add one declared role to a workload Node through the topology Gateway.
+    [[ "$(id -u)" -eq 0 ]] && exec "${as_orbit[@]}" bash "$0" "$@"
+    [[ $# -eq 3 && "$2" =~ ^app-(dev|prod|prod-2)$ && "$3" =~ ^(ingress|database|websocket)$ ]] || { echo "converge-operator: invalid role-add arguments" >&2; exit 64; }
+    if ! output=$("$orbit" node:role:add "$2" "$3" --json 2>&1); then
+      printf 'node:role:add %s %s failed: %s\n' "$2" "$3" "$output" >&2
+      exit 1
+    fi
+    ;;
   *) exit 64 ;;
 esac
