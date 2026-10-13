@@ -17,6 +17,7 @@ use App\Infrastructure\TaskVms\TaskVmHostAudit;
 use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplates;
 use App\Infrastructure\TaskVms\UpCloudServers;
 use App\Infrastructure\TaskVms\UpCloudTaskVmImageBuilder;
+use App\Models\Node;
 use App\Models\TaskVm;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -30,10 +31,11 @@ use Throwable;
  * clones `tvm-<number>-workspace` that no live row owns, and fails the
  * `warm`, `ready`, or `parked` rows whose VM is gone on two sweeps in a row, so their groups ask for assistance. A
  * failed warm VM has no group: the pool refill destroys it. The
- * first sweep that misses a VM only marks it in the cache; a sweep that finds the VM clears the mark. It reads and changes only the
+ * first sweep that misses a VM only marks it in the cache; a sweep that finds the VM clears the mark. It changes only the
  * host's configured project. While UpCloud is configured, also with task VMs or the overflow off, it does the same for
  * the servers with the task VM label there, and deletes base image build servers and unverified templates older than
- * two hours, except those of a build that is marked as running. The worker runs one job at a time, so no task VM job creates or deletes a VM while the sweep runs. A failed
+ * two hours, except those of a build that is marked as running. On every Incus host and for every `tvm-<number>` Node, it also logs a warning per stray
+ * ({@see TaskVmHostAudit::strays()}, {@see TaskVmHostAudit::strayNodes()}) and deletes none. The worker runs one job at a time, so no task VM job creates or deletes a VM while the sweep runs. A failed
  * host is logged, and the other hosts still run.
  */
 final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
@@ -65,10 +67,14 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
                     Log::warning('Deleted an orphaned task VM workspace clone.', ['node_id' => $node->id, 'volume' => $name]);
                 }
                 $this->misses(TaskVm::query()->live()->where('host_node_id', $node->id), $found['missing']);
+                $this->reportStrays($audit->strays($host, $node), $node);
             } catch (Throwable $exception) {
                 Log::error('The task VM host sweep failed.', ['node_id' => $node->id, 'error' => $exception->getMessage()]);
                 $failures[] = "Node [{$node->name}]: ".TaskVmException::codeOf($exception);
             }
+        }
+        foreach ($settings->enabled ? TaskVmHostAudit::strayNodes() : [] as $stray) {
+            Log::warning('A task VM Node has no live task VM record.', ['node_id' => $stray->id, 'name' => $stray->name]);
         }
         if ($settings->upcloud !== null) {
             try {
@@ -83,6 +89,24 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
 
         if ($failures !== []) {
             throw new TaskVmException(TaskVmError::HostCommandFailed, 'The task VM host sweep failed on '.implode(', ', $failures).'.', 502);
+        }
+    }
+
+    /**
+     * Logs one warning per stray, every sweep. Nothing deletes a stray: the operator decides.
+     *
+     * @param  array{instances: list<string>, volumes: list<string>, records: list<TaskVm>}  $strays
+     */
+    private function reportStrays(array $strays, Node $node): void
+    {
+        foreach ($strays['instances'] as $instance) {
+            Log::warning('A task VM host has an Incus instance that Orbit does not own.', ['node_id' => $node->id, 'instance' => $instance]);
+        }
+        foreach ($strays['volumes'] as $volume) {
+            Log::warning('A task VM host has an Incus custom volume that Orbit does not own.', ['node_id' => $node->id, 'volume' => $volume]);
+        }
+        foreach ($strays['records'] as $vm) {
+            Log::warning('A task VM is ready or parked without an open group.', ['task_vm_id' => $vm->id, 'name' => $vm->name, 'state' => $vm->state->value, 'group_id' => $vm->group_id]);
         }
     }
 

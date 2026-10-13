@@ -23,6 +23,10 @@ enum NodeDoctorIssueCode: string implements DoctorIssueCode
     case TaskVmOrphaned = 'node.task_vm_orphaned';
     case TaskVmMissing = 'node.task_vm_missing';
     case TaskVmInspectionFailed = 'node.task_vm_inspection_failed';
+    case TaskVmStrayInstance = 'node.task_vm_stray_instance';
+    case TaskVmStrayVolume = 'node.task_vm_stray_volume';
+    case TaskVmStrayRecord = 'node.task_vm_stray_record';
+    case TaskVmStrayNode = 'node.task_vm_stray_node';
     case TaskVmParked = 'node.task_vm_parked';
     case InspectionFailed = 'node.inspection_failed';
 

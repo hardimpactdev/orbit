@@ -494,11 +494,43 @@ The job fails a missing VM only when two sweeps in a row miss it. The first miss
 
 Cancel or complete the group of a missing VM to destroy its Node, as for [a VM that dies before its group ends](#a-vm-that-dies-before-its-group-ends).
 
-The job reads and changes only the host's configured Incus project, such as `orbit-tasks`. It never touches another project, an instance whose name is not `tvm-<number>`, the base image builder VMs `tvm-image-<time>`, or a workspace template. Rows in `provisioning`, `failed`, or `destroying` are never missing: their own jobs check the VM.
+The job changes only the host's configured Incus project, such as `orbit-tasks`. It reads the other projects only to [report strays](#report-strays). It never changes another project, an instance whose name is not `tvm-<number>`, the base image builder VMs `tvm-image-<time>`, or a workspace template. Rows in `provisioning`, `failed`, or `destroying` are never missing: their own jobs check the VM.
 
 [Doctor](/cli/doctor) reports the VM findings in the `node` family of the host, without changes. It has no finding for an orphaned clone, a leftover template builder `tvm-template-<time>`, or an unfinished template: the sweep deletes the clone, and the next template build deletes the other two. Doctor's codes are `node.task_vm_orphaned` for an orphaned VM and `node.task_vm_missing` for a missing one. Doctor reports a missing VM on its first miss. A host whose project does not exist or cannot be listed reports `node.task_vm_inspection_failed`. Doctor checks a host only while it is in `task_vms.incus.hosts` and reachable over SSH. The fleet rollout ignores these codes.
 
 Doctor does not inspect the Node of a `parked` task VM, because the VM is stopped on purpose. Its `node` family reports one informational `node.task_vm_parked`, and the other families check nothing. So no problem is filed for a parked VM.
+
+### Report strays
+
+The sweep and Doctor also report what Orbit does not own on a task VM host, and the records that should be gone. They never delete or change any of it: the operator decides. The sweep logs one warning per stray on every run, and Doctor reports one finding per stray in the host's `node` family.
+
+A **stray instance** is an Incus instance in any project of the host that is none of these:
+
+- a task VM `tvm-<number>` in the host's project, which the [sweep](#sweep-task-vm-hosts) checks against its row;
+- a base image builder or smoke VM `tvm-image-<time>…`, or a workspace template builder `tvm-template-<time>`, in the host's project, for one hour after the `<time>` in its name;
+- an entry of the host's `operator_owned` list.
+
+A build holds its lock for less than 30 minutes. So a builder VM older than one hour belongs to no running build. It is a stray until the next build deletes it.
+
+A **stray volume** is an Incus custom volume in any project and pool of the host that is none of these:
+
+- a workspace template `tvm-template-<project id>-<time>` or a claim clone `tvm-<number>-workspace` in the host's project and pool;
+- an entry of the host's `operator_owned` list.
+
+The report lists every project with `incus query /1.0/instances?all-projects=true`, and the custom volumes of every storage pool with `incus query /1.0/storage-pools/<pool>/volumes/custom?all-projects=true`. Images, networks, and profiles are not part of it. A host whose list fails reports `node.task_vm_inspection_failed`, and the sweep fails that host.
+
+A **stray record** is a `ready` or `parked` task VM row on the host with no group, or whose group is `completed` or `cancelled`, for more than one hour. The hour counts from the later change of the row and its group. A `warm` row has no group by design and is never a stray record. A group that `failed` is still open: its VM stays for the operator. Normally the [destroy of ended VMs](#destroy-a-task-vm) removes such a VM within minutes, so a stray record means that destroy is stuck.
+
+A **stray Node** is a Node named `tvm-<number>` that has no task VM row that is not `destroyed`, 15 minutes after the Node was created. Enrollment creates the Node and links it to its row in the same job, so 15 minutes covers a slow enrollment. Doctor reports it in the Node's own `node` family, also while the Node is unreachable. The sweep logs it while task VMs are enabled.
+
+| Code | Kind | Meaning |
+| --- | --- | --- |
+| `node.task_vm_stray_instance` | drift | A stray instance, observed as `<project>/<name>` |
+| `node.task_vm_stray_volume` | drift | A stray volume, observed as `<project>/<pool>/<name>` |
+| `node.task_vm_stray_record` | drift | A stray record, observed as the task VM name and its state |
+| `node.task_vm_stray_node` | drift | A stray Node |
+
+To clear a finding, delete the stray after you check it, or add an operator-owned guest to `operator_owned`. For a stray record, cancel or complete its group, or destroy the VM. For a stray Node, remove the Node with `orbit node:remove`.
 
 ### States
 
@@ -843,6 +875,7 @@ Each host is a JSON object with these snake_case keys. Other keys are an error.
 | `memory` | No | `4GiB` | The memory of each normal VM, in `MiB` or `GiB` |
 | `disk` | No | `20GiB` | The root disk of each normal VM, and the size of each workspace template, in `MiB` or `GiB` |
 | `warm_vms` | No | `0` | How many [warm VMs](#keep-warm-vms) the host keeps for claims, from 0 to `max_vms`. They take slots of `max_vms` |
+| `operator_owned` | No | `[]` | The Incus instances and custom volumes on the host that the operator owns, such as CI runners. Each entry is `<project>/<name>`, or `<project>/*` for a whole project. The [stray report](#report-strays) skips them |
 
 For example, `ORBIT_TASK_VMS_INCUS_HOSTS='[{"node_id":7,"cidr":"10.251.77.0/24","max_vms":4,"warm_vms":1}]'`.
 
