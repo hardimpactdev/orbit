@@ -122,3 +122,9 @@ These commands inspect and control Horizon on the Gateway.
 | Retry failed jobs | `php artisan queue:retry all` |
 
 Run each `php artisan` command as `orbit` in `/home/orbit/orbit/apps/gateway`.
+
+## Why it works this way
+
+The scheduler used to run its work, and the task VM workers, as foreground commands. A foreground command holds the scheduler's run for that minute, so a slow tick or a VM job could hold a publish for minutes. With dispatch only, the scheduler's run takes milliseconds, and each queue's workers decide when a job starts.
+
+Horizon needs Redis. The fleet already runs Valkey on the `database` role, so the Gateway uses that registered connection instead of a second server on its own host. Orbit's records keep its address, as for every other Database connection.

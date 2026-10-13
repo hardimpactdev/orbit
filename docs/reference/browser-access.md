@@ -14,7 +14,7 @@ This page tells an operator which web pages may call the Gateway API from a brow
 
 ## Allowed callers
 
-The check covers `/api/*`, `/mcp`, and `/mcp/*`. It runs before CORS, routing, and the WireGuard identity check.
+The check covers `/api/*`, `/mcp`, and `/mcp/*`. It runs before CORS, routing, and the WireGuard identity check. The [queue dashboard](/reference/gateway-queue#dashboard) at `/horizon` and `/horizon/*` is stricter: it admits only requests from the Gateway's own origin, by the same `Origin` and `Sec-Fetch-Site` rules, and no other Orbit origin.
 
 | Caller | Result |
 | --- | --- |

@@ -40,6 +40,7 @@ An installed Gateway caches its configuration, so an edit takes effect only afte
 | `DB_CONNECTION` | Laravel database connection. The Gateway uses SQLite. |
 | `SESSION_DRIVER`, `SESSION_LIFETIME`, `SESSION_ENCRYPT`, `SESSION_PATH`, `SESSION_DOMAIN` | Laravel sessions. The API is stateless, so the example uses the `array` driver. |
 | `FILESYSTEM_DISK`, `QUEUE_CONNECTION`, `CACHE_STORE` | Laravel storage, queue, and cache drivers. |
+| `ORBIT_GATEWAY_QUEUE_CONNECTION`, `ORBIT_GATEWAY_QUEUE_REDIS_DATABASE` | The Redis Database connection and database index of the [Gateway queue](/reference/gateway-queue), which Laravel Horizon works. Empty, the scheduler runs its commands itself. Tests set `ORBIT_GATEWAY_QUEUE_DRIVER=database` to keep the queue in SQLite. |
 | `ORBIT_WEBSOCKET_REPOSITORY`, `ORBIT_WEBSOCKET_REF`, `ORBIT_WEBSOCKET_INSTALL_PATH`, `ORBIT_WEBSOCKET_PORT` | Defaults for the `websocket` Node role. See [Realtime events with Reverb](/solutions/realtime-reverb). |
 | `TYPESAFE_API_KEY` | Key for the Jev classifier in [Tasks](/reference/tasks). |
 | `ORBIT_TASKS_REVIEW_REQUEST_LOGINS` | GitHub logins requested as reviewers on a task pull request. See [Tasks](/reference/tasks). |

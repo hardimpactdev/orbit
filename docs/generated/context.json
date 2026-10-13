@@ -1577,6 +1577,25 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/reference/gateway-queue.md",
+            "title": "Gateway queue",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Activity",
+                "Extension",
+                "Gateway",
+                "Node",
+                "Process",
+                "Project",
+                "Schedule",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/reference/gateway-recovery.md",
             "title": "Update and recover a Gateway",
             "kind": "reference",

@@ -46,7 +46,7 @@ A new release without such a directory fails at source preparation. Like any oth
 
 A `default` Instance on an `app-dev` Node is a plain Git checkout that Orbit keeps at the newest commit of the Project's default branch. Other development Instances on the Node start from it. `orbit instance:deploy ID`, the existing deployment API (`POST /api/v1/instances/{instance}/deploy` with `{}`), and MCP's Instance deploy operation can deploy a default by hand. The Project's default branch supplies the target commit; production branch overrides do not apply.
 
-The Gateway checks development defaults every minute with `orbit:deploy-development-defaults`. The GitHub App currently has no push webhook, so this schedule is the push fallback. It fetches the default branch inside the Instance operation lock and skips a commit that already deployed. Pushes that arrive during a deployment are picked up on the next tick; intermediate commits coalesce to the newest fetched commit. Only one deployment runs per Instance, including manual requests.
+The Gateway checks development defaults every minute with `orbit:deploy-development-defaults`, a job on the [Gateway queue](/reference/gateway-queue#scheduled-work). The GitHub App currently has no push webhook, so this schedule is the push fallback. It fetches the default branch inside the Instance operation lock and skips a commit that already deployed. Pushes that arrive during a deployment are picked up on the next tick; intermediate commits coalesce to the newest fetched commit. Only one deployment runs per Instance, including manual requests.
 
 An unchanged tick creates no deployment history row.
 

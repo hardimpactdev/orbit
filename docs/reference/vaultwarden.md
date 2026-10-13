@@ -62,7 +62,7 @@ The note says that Orbit manages the item. Orbit overwrites changes made in Vaul
 
 ## Sync
 
-The scheduler runs `orbit:vault-sync` every minute while Vaultwarden is set up. The command builds the wanted items from the database records and compares them with the published items it recorded:
+The scheduler runs `orbit:vault-sync` every minute while Vaultwarden is set up, as a job on the [Gateway queue](/reference/gateway-queue#scheduled-work). The command builds the wanted items from the database records and compares them with the published items it recorded:
 
 | Wanted item | Published item | Action |
 | --- | --- | --- |
