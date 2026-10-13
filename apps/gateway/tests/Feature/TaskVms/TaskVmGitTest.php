@@ -91,6 +91,8 @@ describe('send branches to the VM', function (): void {
 
         expect($tips)->toBe(['main' => $this->main, 'task-7' => null])
             ->and(tvm_git($this->root.'/vm', ['rev-parse', 'refs/remotes/origin/main']))->toBe($this->main)
+            // As after a clone: Pest's test selection reads the default branch from origin/HEAD.
+            ->and(tvm_git($this->root.'/vm', ['symbolic-ref', 'refs/remotes/origin/HEAD']))->toBe('refs/remotes/origin/main')
             ->and(tvm_git($this->root.'/vm', ['fsck', '--no-dangling', '--connectivity-only']))->toBe('');
         tvm_git_expect_no_token();
     });
