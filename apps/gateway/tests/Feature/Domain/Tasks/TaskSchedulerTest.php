@@ -47,6 +47,7 @@ use App\Domain\Tasks\TaskConcurrencyGuard;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupMetricsRefresher;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskHierarchyException;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestHealth;
 use App\Domain\Tasks\TaskPullRequestPublisher;
@@ -64,7 +65,6 @@ use App\Domain\Tasks\TaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadObservation;
 use App\Domain\Tasks\TaskThreadRole;
-use App\Domain\Tasks\TaskHierarchyException;
 use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Domain\Tasks\TaskTopologyEvidence;
 use App\Domain\Tasks\TaskTopologyFailedException;
@@ -3352,14 +3352,17 @@ it('prepares a failed topology again after a resolution on a subtask that has no
         ->and($group->fresh()?->capacity_wait_reason)->toBe('Task VM: preparing the topology app-prod+ingress.');
 });
 
-/** Two claimed groups, each in its own workspace, whose subtasks wait for their topology. */
+/**
+ * Two claimed groups, each in its own task VM, whose subtasks wait for their topology.
+ *
+ * @return array{Task, Task}
+ */
 function scheduler_two_waiting_groups(string $slug, Closure $prepare): array
 {
     $project = scheduler_app($slug);
     $project->update(['task_check' => 'composer check']);
-    $node = scheduler_node($slug.'-node', '10.44.0.99');
-    $first = queued_group($project, 'First', scheduler_instance($project, $node, 'first'));
-    $second = queued_group($project, 'Second', scheduler_instance($project, $node, 'second'));
+    $first = queued_group($project, 'First', scheduler_instance($project, scheduler_node($slug.'-first', '10.44.0.99'), 'first'));
+    $second = queued_group($project, 'Second', scheduler_instance($project, scheduler_node($slug.'-second', '10.44.0.100'), 'second'));
     app()->instance(InstanceProvisioning::class, new class implements InstanceProvisioning
     {
         public function provision(InstanceProvisionIntent $intent): ?Instance
@@ -3406,7 +3409,7 @@ it('keeps ticking the other groups when a group row breaks the task model, and a
 });
 
 it('reports a failing group, asks for assistance on its second failure in a row, and resets on success', function (): void {
-    $fail = (object) ['first' => true];
+    $fail = (object) ['first' => false];
     [$first, $second] = scheduler_two_waiting_groups('tick-transient', function (Task $group) use ($fail): void {
         if ($fail->first && $group->title === 'First') {
             throw new RuntimeException('The Node did not answer.');
@@ -3414,6 +3417,7 @@ it('reports a failing group, asks for assistance on its second failure in a row,
 
         throw new TaskCapacityException(TaskWait::Topology, 'Waiting for the topology.');
     });
+    $fail->first = true;
     Exceptions::fake();
     app(TaskExtensionState::class)->enable();
 
