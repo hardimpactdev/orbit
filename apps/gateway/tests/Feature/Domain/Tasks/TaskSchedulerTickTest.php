@@ -39,6 +39,7 @@ use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskCommentType;
+use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGitHubReviewConsumption;
@@ -76,6 +77,7 @@ use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Domain\Tasks\TaskWorkspaceTopology;
+use App\Domain\TaskVms\TaskVmProvider;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshExecutor;
@@ -118,6 +120,7 @@ use Tests\Support\FakeTaskPullRequestReviewWatcher;
 use Tests\Support\FakeTaskTurnReceipts;
 use Tests\Support\FakeTaskWorkspaceTopology;
 use Tests\Support\LocalShellSshExecutor;
+use Tests\Support\RecordingTaskVmProvider;
 use Tests\Support\UnreachableSshExecutor;
 
 use function Pest\Laravel\mock;
@@ -126,9 +129,21 @@ beforeEach(function (): void {
     test_bind_snapshot_driver();
     // The tick Node's address is not a test host. A test that reaches it over SSH sees it fail at once.
     app()->instance(SshExecutor::class, new UnreachableSshExecutor);
+    // Workspace removal of a task VM group destroys the VM; the provider records it.
+    app()->instance(TaskVmProvider::class, new RecordingTaskVmProvider);
 });
 
-function tick_group(): Task
+/** The task VM provider of the test. It records each VM that workspace removal destroys. */
+function tick_vm_provider(): RecordingTaskVmProvider
+{
+    $provider = app(TaskVmProvider::class);
+    assert($provider instanceof RecordingTaskVmProvider);
+
+    return $provider;
+}
+
+/** A running group on its own task VM, unless a test needs shared compute. */
+function tick_group(TaskCompute $compute = TaskCompute::Vm): Task
 {
     $project = Project::query()->create([
         'name' => 'tick-app',
@@ -136,6 +151,7 @@ function tick_group(): Task
         'repository_url' => 'git@example.test:tick.git',
         'default_branch' => 'main',
         'task_check' => 'composer check',
+        'root' => 'public',
     ]);
     $node = Node::query()->create([
         'name' => 'tick-node',
@@ -173,7 +189,7 @@ function tick_group(): Task
 
     test_link_agent_threads($group);
 
-    return $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
+    return $compute === TaskCompute::Vm ? test_vm_group($group) : ($group->fresh(['project', 'tasks', 'taskable']) ?? $group);
 }
 
 /** @return array{thread: array<string, mixed>} */
@@ -282,9 +298,9 @@ function tick_dispatcher(): AgentCommandDispatcher
 }
 
 /** @return array{0: Task, 1: Task, 2: TaskComment, 3: TaskQuestion} */
-function tick_held_relay(): array
+function tick_held_relay(TaskCompute $compute = TaskCompute::Vm): array
 {
-    $group = tick_group();
+    $group = tick_group($compute);
     $task = $group->tasks->sole();
     AgentThread::query()->where('task_group_id', $group->id)->where('role', 'reviewer')->update(['task_id' => $task->id]);
     $resolution = TaskComment::query()->create([
@@ -348,9 +364,9 @@ function tick_relay_runtime(FakeTaskTurnReceipts $receipts, AgentCommandDispatch
  *
  * @return array{0: Task, 1: Task, 2: FakeTaskTurnReceipts, 3: AgentCommandDispatcher, 4: object}
  */
-function tick_consult_exchange(bool $loseResponse, ?array $receiptContents = null): array
+function tick_consult_exchange(bool $loseResponse, ?array $receiptContents = null, TaskCompute $compute = TaskCompute::Vm): array
 {
-    $group = tick_group();
+    $group = tick_group($compute);
     $task = $group->tasks->sole();
     $answer = 'Yes. The contract allows the intl extension.';
     $receipts = new FakeTaskTurnReceipts($receiptContents ?? [
@@ -584,7 +600,7 @@ it('resumes a settling group without a pull request and opens the pull request w
         ->and($publishing->publisher->pushes)->toBe([$group->id])
         ->and($publishing->publisher->bodies)->toBe([TaskPullRequestDescription::render(new TaskTurnPullRequest('Adds tick routing.', ['Tasks store their records.'], []), 1, $group->project->taskCheckCommand())])
         ->and($group->fresh()?->pr_url)->toBe('https://github.com/acme/orbit/pull/42')
-        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::WaitingForReview)
         ->and($task->fresh()?->status)->toBe(TaskStatus::Completed);
 });
 
@@ -622,13 +638,6 @@ it('continues watching a prior settling PR and completes only after it merges', 
     $group->tasks()->update(['status' => TaskStatus::Completed]);
     app(TaskExtensionState::class)->enable();
     GitHubTestSupport::storeApp();
-    mock(InstanceRemover::class)->shouldReceive('execute')->once()->withArgs(
-        fn (Instance $instance, bool $force): bool => $instance->id === $group->taskable_id && $force,
-    )->andReturnUsing(function (Instance $instance): InstanceRemoval {
-        $instance->delete();
-
-        return new InstanceRemoval;
-    });
     Http::preventStrayRequests();
     Http::fake([
         'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
@@ -645,13 +654,14 @@ it('continues watching a prior settling PR and completes only after it merges', 
 
     $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'completed', 'pr_url' => $group->pr_url, 'taskable_id' => null]);
     $this->assertDatabaseMissing('instances', ['id' => $group->taskable_id]);
+    expect(tick_vm_provider()->destroyed)->toBe(['tvm-'.$group->id]);
     Http::assertSentCount(6);
 });
 
 /** A settling group whose pull request the tick reads through the faked GitHub App. */
-function tick_settling_group(): Task
+function tick_settling_group(TaskCompute $compute = TaskCompute::Vm): Task
 {
-    $group = tick_group();
+    $group = tick_group($compute);
     $group->project->update(['repository_url' => 'https://github.com/acme/orbit.git']);
     $group->update(['status' => TaskGroupStatus::Settling, 'pr_url' => 'https://github.com/acme/orbit/pull/42']);
     $group->tasks()->update(['status' => TaskStatus::Completed]);
@@ -939,7 +949,7 @@ it('retains consumption but skips feedback spawning when the PR closes after app
     expect($group->tasks()->where('fixup_problem', 'review:42')->sole()->status)->toBe(TaskStatus::Cancelled)
         ->and($agents->spawned)->toBe([])
         ->and(DB::table('task_github_review_consumptions')->count())->toBe(1)
-        ->and($group->fresh()->status)->toBe(TaskGroupStatus::Settling);
+        ->and($group->fresh()->status)->toBe(TaskGroupStatus::WaitingForReview);
 });
 
 it('publishes a consumed feedback fixup once to the same PR and requires fresh external re-review', function (): void {
@@ -970,12 +980,12 @@ it('publishes a consumed feedback fixup once to the same PR and requires fresh e
         ->and($signer->messages)->toHaveCount(1)
         ->and($publisher->bodies)->toBe([])
         ->and($publisher->pushes)->toBe([$group->id, $group->id])
-        ->and($group->fresh()->status)->toBe(TaskGroupStatus::Settling);
+        ->and($group->fresh()->status)->toBe(TaskGroupStatus::WaitingForReview);
     app(TaskScheduler::class)->tick();
     expect(DB::table('task_github_review_consumptions')->count())->toBe(1);
     $source->observation = FeedbackFixtures::observation([FeedbackFixtures::review(102, head: str_repeat('c', 40))], head: str_repeat('c', 40));
     app(TaskScheduler::class)->tick();
-    expect($group->fresh()->status)->toBe(TaskGroupStatus::Settling)
+    expect($group->fresh()->status)->toBe(TaskGroupStatus::WaitingForReview)
         ->and(DB::table('task_github_review_consumptions')->count())->toBe(1);
     $source->observation = FeedbackFixtures::observation([FeedbackFixtures::review(103, GitHubReviewState::ChangesRequested, str_repeat('c', 40))], head: str_repeat('c', 40));
     tick_running_agents();
@@ -1083,7 +1093,6 @@ it('does not replace an open direction request when the pull request needs atten
 it('withdraws its pull request assistance request when the pull request merges', function (): void {
     $group = tick_settling_group();
     $group->update(['assistance_requested' => true, 'assistance_reason' => 'The pull request needs attention: It conflicts with main; merge main into the task branch and push.']);
-    mock(InstanceRemover::class)->shouldReceive('execute')->once()->andReturn(new InstanceRemoval);
     Http::preventStrayRequests();
     Http::fake([
         'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
@@ -1094,12 +1103,12 @@ it('withdraws its pull request assistance request when the pull request merges',
     app(TaskScheduler::class)->tick();
 
     $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'completed', 'assistance_requested' => false, 'assistance_reason' => null]);
+    expect(tick_vm_provider()->destroyed)->toBe(['tvm-'.$group->id]);
 });
 
 it('keeps another assistance reason without asking when the pull request merges', function (): void {
     $group = tick_settling_group();
     $group->update(['assistance_requested' => true, 'assistance_reason' => 'The operator asked to hold this group.']);
-    mock(InstanceRemover::class)->shouldReceive('execute')->once()->andReturn(new InstanceRemoval);
     Http::preventStrayRequests();
     Http::fake([
         'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
@@ -1110,16 +1119,13 @@ it('keeps another assistance reason without asking when the pull request merges'
     app(TaskScheduler::class)->tick();
 
     $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'completed', 'assistance_requested' => false, 'assistance_reason' => 'The operator asked to hold this group.']);
+    expect(tick_vm_provider()->destroyed)->toBe(['tvm-'.$group->id]);
 });
 
 it('backs off a merged pull request cleanup and retries it on a later tick', function (): void {
     $group = tick_settling_group();
-    $calls = 0;
-    mock(InstanceRemover::class)->shouldReceive('execute')->andReturnUsing(function () use (&$calls): never {
-        $calls++;
-
-        throw new RuntimeException('disk full');
-    });
+    $provider = tick_vm_provider();
+    $provider->destroyFailure = new RuntimeException('disk full');
     Http::preventStrayRequests();
     Http::fake([
         'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
@@ -1130,7 +1136,7 @@ it('backs off a merged pull request cleanup and retries it on a later tick', fun
     app(TaskScheduler::class)->tick();
     app(TaskScheduler::class)->tick();
 
-    expect($calls)->toBe(1)
+    expect($provider->destroyed)->toHaveCount(1)
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
         ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
         ->and($group->fresh()?->assistance_question)->toBeNull()
@@ -1139,7 +1145,7 @@ it('backs off a merged pull request cleanup and retries it on a later tick', fun
     $this->travel(TaskScheduler::AbandonedWorkspaceBackoffSeconds + 1)->seconds();
     app(TaskScheduler::class)->tick();
 
-    expect($calls)->toBe(2)
+    expect($provider->destroyed)->toHaveCount(2)
         ->and($group->fresh()?->taskable_id)->toBe($group->taskable_id);
 });
 
@@ -1161,7 +1167,7 @@ it('preserves labeled merge evidence and report metrics when cleanup retries los
         'answers' => ['subtask_'.$task->id => ['value' => true, 'selected_answer_probability' => 0.97]],
         'latency_ms' => 25,
     ]);
-    mock(InstanceRemover::class)->shouldReceive('execute')->andThrow(new RuntimeException('disk full'));
+    tick_vm_provider()->destroyFailure = new RuntimeException('disk full');
     Http::preventStrayRequests();
     Http::fake([
         'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
@@ -1199,7 +1205,7 @@ it('preserves labeled merge evidence and report metrics when cleanup retries los
 });
 
 it('uses backoff for publication and removal retries and retries a failed manual complete', function (): void {
-    [$group, $task, , , $publisher] = tick_review([FakeTaskTurnReceipts::contents('approved', 'Checked the models.')]);
+    [$group, $task, , , $publisher] = tick_review([FakeTaskTurnReceipts::contents('approved', 'Checked the models.')], compute: TaskCompute::Shared);
     $publisher->pushFailures = 1;
     $hold = 'The operator asked to hold this group.';
 
@@ -1344,7 +1350,7 @@ it('uses backoff for publication and removal retries and retries a failed manual
 it('replaces its pull request assistance request with the cleanup failure when a merged group cannot complete', function (): void {
     $group = tick_settling_group();
     $group->update(['assistance_requested' => true, 'assistance_reason' => 'The pull request needs attention: It conflicts with main; merge main into the task branch and push.']);
-    mock(InstanceRemover::class)->shouldReceive('execute')->once()->andThrow(new RuntimeException('disk full'));
+    tick_vm_provider()->destroyFailure = new RuntimeException('disk full');
     Http::preventStrayRequests();
     Http::fake([
         'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
@@ -1367,7 +1373,7 @@ it('does not replace an open direction request when merged pull request cleanup 
         'assistance_question' => $question,
         'assistance_reason' => $reason,
     ]);
-    mock(InstanceRemover::class)->shouldReceive('execute')->once()->andThrow(new RuntimeException('disk full'));
+    tick_vm_provider()->destroyFailure = new RuntimeException('disk full');
     Http::preventStrayRequests();
     Http::fake([
         'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
@@ -1813,7 +1819,6 @@ it('does not start an appended subtask when the pull request merges', function (
     $group = tick_settling_group();
     $todo = tick_appended_subtask($group);
     $agents = tick_running_agents();
-    mock(InstanceRemover::class)->shouldReceive('execute')->never();
     tick_watch_pulls([['merged' => true, 'state' => 'closed']]);
     Http::fake(['https://api.github.com/repos/acme/orbit/pulls?*' => Http::response([
         ['number' => 42, 'html_url' => $group->pr_url, 'state' => 'closed', 'merged_at' => '2026-10-08T10:00:00Z'],
@@ -1824,7 +1829,8 @@ it('does not start an appended subtask when the pull request merges', function (
     expect($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
         ->and($group->fresh()?->assistance_reason)->toBe('Watched pull request ended: '.$group->pr_url.' is merged. Open subtasks: #'.$todo->id.' '.$todo->title.'.')
         ->and($todo->fresh()?->status)->toBe(TaskStatus::Todo)
-        ->and($agents->spawned)->toBe([]);
+        ->and($agents->spawned)->toBe([])
+        ->and(tick_vm_provider()->destroyed)->toBe([]);
 });
 
 it('starts an interrupted check fixup on the next tick without appending another', function (TaskStatus $status): void {
@@ -1887,7 +1893,7 @@ it('cancels a stale conflict fixup before its implementer starts and returns to 
         'id' => $fixup->id, 'status' => 'cancelled', 'implementer_agent_thread_id' => null,
         'completion_summary' => 'Cancelled because the pull request is mergeable again; no conflict fixup is needed.',
     ]);
-    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => false]);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'waiting_for_review', 'assistance_requested' => false]);
     expect($fixup->fresh()?->settled_at)->not->toBeNull();
     expect($agents->spawned)->toBe([]);
     expect(AgentThread::query()->where('task_id', $fixup->id)->exists())->toBeFalse();
@@ -1911,11 +1917,11 @@ it('cancels an unstarted conflict fixup when its pull request closes and lets se
         'id' => $fixup->id, 'status' => 'cancelled', 'implementer_agent_thread_id' => null,
         'completion_summary' => 'Cancelled because the pull request closed without merging; no conflict fixup can proceed.',
     ]);
-    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling']);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'waiting_for_review']);
 
     app(TaskScheduler::class)->tick();
 
-    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true,
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'waiting_for_review', 'assistance_requested' => true,
         'assistance_reason' => 'The expected pull request closed without merging.', 'taskable_id' => $group->taskable_id]);
     expect($agents->spawned)->toBe([]);
 });
@@ -1929,16 +1935,8 @@ it('cancels an unstarted conflict fixup on merge and preserves orphaned approval
         'task_group_id' => $group->id, 'task_id' => $group->tasks()->sole()->id,
         'type' => 'approved', 'body' => 'Approved.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => $commit,
     ]);
-    $remover = mock(InstanceRemover::class);
     if ($orphaned) {
-        $remover->shouldNotReceive('execute');
         tick_assistance_notifier();
-    } else {
-        $remover->shouldReceive('execute')->once()->andReturnUsing(function (Instance $instance): InstanceRemoval {
-            $instance->delete();
-
-            return new InstanceRemoval;
-        });
     }
     tick_running_agents(fetchFails: true);
     $merged = tick_open_pull(['merged' => true, 'state' => 'closed', 'mergeable' => null]);
@@ -1954,17 +1952,18 @@ it('cancels an unstarted conflict fixup on merge and preserves orphaned approval
         'id' => $fixup->id, 'status' => 'cancelled', 'implementer_agent_thread_id' => null,
         'completion_summary' => 'Cancelled because the pull request merged; no conflict fixup is needed.',
     ]);
-    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling']);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'waiting_for_review']);
 
     app(TaskScheduler::class)->tick();
 
     if ($orphaned) {
-        $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'taskable_id' => $group->taskable_id]);
+        $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'waiting_for_review', 'assistance_requested' => true, 'taskable_id' => $group->taskable_id]);
         expect($group->fresh()?->assistance_reason)->toStartWith(TaskScheduler::OrphanedCommitPrefix.'Commit '.$commit);
     } else {
         $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'completed', 'taskable_id' => null]);
     }
     expect($agents->spawned)->toBe([]);
+    expect(tick_vm_provider()->destroyed)->toBe($orphaned ? [] : ['tvm-'.$group->id]);
 })->with(['merged approval' => false, 'approval missed merge' => true]);
 
 it('retains an orphaned approval after interruption between settling and recording its hold', function (bool $otherAssistance, bool $direction): void {
@@ -1976,13 +1975,6 @@ it('retains an orphaned approval after interruption between settling and recordi
         'task_group_id' => $group->id, 'task_id' => $group->tasks()->sole()->id,
         'type' => 'approved', 'body' => 'Approved.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => $commit,
     ]);
-    $removals = 0;
-    mock(InstanceRemover::class)->shouldReceive('execute')->andReturnUsing(function (Instance $instance) use (&$removals): InstanceRemoval {
-        $removals++;
-        $instance->delete();
-
-        return new InstanceRemoval;
-    });
     mock(TaskSettleMetricsCollector::class)->shouldNotReceive('collect');
     $notifier = tick_assistance_notifier();
     tick_running_agents(fetchFails: true);
@@ -2012,7 +2004,7 @@ it('retains an orphaned approval after interruption between settling and recordi
 
     $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'taskable_id' => $instanceId]);
     $this->assertDatabaseHas('instances', ['id' => $instanceId]);
-    expect($removals)->toBe(0);
+    expect(tick_vm_provider()->destroyed)->toBe([]);
     if ($direction) {
         expect($group->fresh()?->assistance_reason)->toBe('Another assistance cause.')
             ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Direction)
@@ -2052,7 +2044,7 @@ it('waits without cancelling or spawning a conflict fixup when mergeability is u
     app(TaskScheduler::class)->tick();
 
     $this->assertDatabaseHas('tasks', ['id' => $fixup->id, 'status' => 'cancelled']);
-    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling']);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'waiting_for_review']);
     expect($agents->spawned)->toBe([]);
 });
 
@@ -3093,7 +3085,7 @@ it('recovers a stopped receiptless topology resume after lost Pi responses or a 
         null, // Accepted resume stops without a usable receipt.
         null, // The normal missing-receipt reminder must still run.
         FakeTaskTurnReceipts::contents('answered', 'Continue with the contract.', cause: 'environment'),
-    ]);
+    ], compute: TaskCompute::Shared);
     $topology = new FakeTaskWorkspaceTopology;
     app()->instance(TaskWorkspaceTopology::class, $topology);
     app(TaskScheduler::class)->tick();
@@ -3227,7 +3219,7 @@ it('keeps a consult open and the implementer paused through a topology request, 
         FakeTaskTurnReceipts::contents('blocked', 'Discovery needs a topology.', 'Can you request one?'),
         FakeTaskTurnReceipts::contents('topology_requested', 'Need Nodes to answer.'),
         FakeTaskTurnReceipts::contents('answered', 'Continue with the contract.', cause: 'environment'),
-    ]);
+    ], compute: TaskCompute::Shared);
     $topology = new FakeTaskWorkspaceTopology;
     $topology->fails = $fails;
     app()->instance(TaskWorkspaceTopology::class, $topology);
@@ -4636,9 +4628,9 @@ function tick_review_baseline(): array
     ];
 }
 
-function tick_review(array $receipts, bool $onBranch = true, bool $last = false): array
+function tick_review(array $receipts, bool $onBranch = true, bool $last = false, TaskCompute $compute = TaskCompute::Vm): array
 {
-    $group = tick_group();
+    $group = tick_group($compute);
     $task = $group->tasks->sole();
     if (! $last) {
         Task::query()->create(['parent_id' => $group->id, 'position' => 2, 'title' => 'Routes', 'brief' => 'Add the routes.', 'status' => TaskStatus::Todo]);
@@ -5023,7 +5015,7 @@ it('starts a reviewer for a held direction resolution and answers from the relay
 });
 
 it('keeps a direction relay and its question pending through a topology request', function (): void {
-    [$group, $task, $resolution, $question] = tick_held_relay();
+    [$group, $task, $resolution, $question] = tick_held_relay(TaskCompute::Shared);
     $receipts = new FakeTaskTurnReceipts([
         FakeTaskTurnReceipts::contents('topology_requested', 'Need Nodes to interpret direction.'),
         FakeTaskTurnReceipts::contents('answered', 'Use the public mirror.', cause: 'scope'),
@@ -5824,7 +5816,7 @@ it('continues an approval tick after Jev recording fails and reaches later work'
 
     expect($signer->messages)->toBe(["Models\n\nChecked the feature."])
         ->and($publisher->pushes)->toBe([$group->id])
-        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::WaitingForReview)
         ->and($task->fresh()?->status)->toBe(TaskStatus::Completed);
     Exceptions::assertReported(QueryException::class);
 });
@@ -5838,7 +5830,7 @@ it('publishes when a change starts with the last subtask title, without asking J
     Classification::assertNothingClassified();
     expect($signer->messages)->toBe(["Models\n\nChecked the feature."])
         ->and($publisher->pushes)->toBe([$group->id])
-        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::WaitingForReview)
         ->and($task->fresh()?->status)->toBe(TaskStatus::Completed);
 });
 
@@ -5868,7 +5860,7 @@ it('commits the last approved subtask, opens the pull request with the reviewer 
         ->and($publishing->coverage->approvalCommentId)->toBe($approval->id)
         ->and($publishing->coverage->approvalChanges)->toBe(['Tasks store their records.'])
         ->and($group->fresh()?->pr_url)->toBe('https://github.com/acme/orbit/pull/42')
-        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::WaitingForReview)
         ->and($group->fresh()?->assistance_requested)->toBeFalse()
         ->and($task->fresh()?->status)->toBe(TaskStatus::Completed);
 });
@@ -5934,7 +5926,7 @@ it('retries opening the pull request without storing the approval twice', functi
         ->and($publishing->publisher->pushes)->toBe([$group->id, $group->id])
         ->and($publishing->publisher->bodies)->toHaveCount(2)
         ->and($group->fresh()?->pr_url)->toBe('https://github.com/acme/orbit/pull/42')
-        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling);
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::WaitingForReview);
 });
 
 it('retries publication after Orbit commits and changes HEAD itself', function (): void {
@@ -5973,7 +5965,7 @@ it('retries publication after Orbit commits and changes HEAD itself', function (
     expect($signer->commits)->toBe(1)
         ->and($publishing->publisher->bodies)->toHaveCount(2)
         ->and($task->fresh()?->assistance_requested)->toBeFalse()
-        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling);
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::WaitingForReview);
 });
 
 it('refuses a reset to the pre-approval HEAD after Orbit committed', function (): void {
