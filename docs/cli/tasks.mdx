@@ -43,7 +43,7 @@ Every command accepts `--json`. JSON output is the Gateway record with `request_
 
 [Trusted GitHub requested changes](/reference/tasks#trusted-github-feedback) can append a normal fixup subtask. `tasks:show --json` exposes its source review and findings in the existing `brief`. The Gateway API's `fixup_problem` is `review:{reviewer_id}`; the CLI keeps its existing brief and deliverable fields without adding an identity field. Use the existing cancel or operator-subtask commands when that scope needs intervention. No command configures reviewer trust, submits a GitHub review, requests external re-review, or merges a pull request. In a Project with [review and merge](/reference/tasks#review-and-merge) on, the Gateway itself reviews and merges; the CLI only shows that state. The Gateway's automatic findings packet has its own 64 KiB bound; the CLI's 8,000-character input limit remains unchanged.
 
-Subtask creation and update accept `--topology='["app-dev"]'`. Repeat the required names inside the JSON array: `app-dev`, `app-prod`, or `app-prod-2`, without duplicates. On update, omit the option to keep the declaration or pass `--topology='[]'` to clear it. Each object in a `--subtasks` JSON file can carry the same `topology` array. A started subtask cannot change its declaration. The [compute driver](/reference/compute-drivers#orbit-project) sizes the group's VM by these declarations at the claim. No task VM runs a topology yet, so a subtask that declares one waits.
+Subtask creation and update accept `--topology='["app-dev","app-prod+ingress"]'`. Each entry in the JSON array names a node, `app-dev`, `app-prod`, or `app-prod-2`, once, and may add roles after `+`: `ingress`, `database`, or `websocket`. The Gateway validates the entries. On update, omit the option to keep the declaration or pass `--topology='[]'` to clear it. Each object in a `--subtasks` JSON file can carry the same `topology` array. A started subtask cannot change its declaration. The [compute driver](/reference/compute-drivers#declare-a-topology) sizes the group's VM by these declarations at the claim and prepares the nodes nested in it.
 
 ## Select a task or subtask
 
@@ -205,7 +205,7 @@ orbit tasks:subtask:create [group] [title] [--brief=TEXT] [--deliverables=FILE] 
 | `title` | prompt | Short name of the step. |
 | `--brief=TEXT` | prompt | Goal and acceptance of the step. |
 | `--deliverables=FILE` | none | JSON file with an array of at most five [deliverables](/reference/tasks#deliverables), of type `file`, `command`, or `review`. Only a command deliverable may set `fails_on_base` to `true` or `false` and supply `paths`. When `fails_on_base` is `true`, `paths` must list at least one workspace-relative file for the base run. The CLI refuses these fields on any other type. |
-| `--topology=JSON` | none | JSON array of the workload Nodes the subtask needs, such as `["app-dev","app-prod"]`. See [compute drivers](/reference/compute-drivers). |
+| `--topology=JSON` | none | JSON array of the test nodes the subtask needs, such as `["app-dev","app-prod+ingress"]`. See [Declare a topology](/reference/compute-drivers#declare-a-topology). |
 
 ```bash
 orbit tasks:subtask:create 13 "Document the export" --brief="$(cat step.md)" --deliverables=deliverables.json
@@ -234,7 +234,7 @@ orbit tasks:subtask:update [group] [subtask] [--title=TEXT] [--brief=TEXT] [--po
 | `--brief=TEXT` | New brief. |
 | `--position=N` | New position, starting at 1. |
 | `--deliverables=FILE` | JSON file with an array of at most five [deliverables](/reference/tasks#deliverables). It replaces the whole list. |
-| `--topology=JSON` | JSON array of the workload Nodes the subtask needs. `[]` removes the declaration. Only a subtask that has not started can change it. |
+| `--topology=JSON` | JSON array of the test nodes the subtask needs. `[]` removes the declaration. Only a subtask that has not started can change it. |
 
 ```bash
 orbit tasks:subtask:update 58 88 --deliverables=deliverables.json

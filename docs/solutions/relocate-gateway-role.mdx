@@ -6,7 +6,6 @@ covers:
   - apps/gateway/app/Actions/Nodes/GrantGatewayRoleAccessAction.php
   - apps/gateway/app/Infrastructure/AppDev/DnsmasqPrivateDnsManager.php
   - apps/gateway/app/Domain/Gateway/GatewayServingHost.php
-  - apps/e2e/resources/proofs/rename-and-relocate-gateway-role.sh
 ---
 
 # Relocate the gateway role
@@ -74,4 +73,4 @@ orbit doctor --node=<new-node-id>
 curl --fail https://gateway.orbit/up
 ```
 
-On disposable Incus, run [`apps/e2e/resources/proofs/rename-and-relocate-gateway-role.sh`](https://github.com/nckrtl/orbit/blob/main/apps/e2e/resources/proofs/rename-and-relocate-gateway-role.sh) `<source-name> <target-name>` on the Gateway checkout Node. The script renames the source to `vpn`, relocates `gateway` onto the target, and renames the target to `gateway`. After relocate, `orbit node:show` on the new Gateway must list access to the `vpn` Node. To prove the split DNS path, converge a Route or Metrics from the new Gateway and confirm that `/var/lib/orbit/private-dns/catalog.json` changes on the `vpn` Node, not on the Gateway.
+After relocate, `orbit node:show` on the new Gateway must list access to the `vpn` Node. To prove the split DNS path, converge a Route or Metrics from the new Gateway and confirm that `/var/lib/orbit/private-dns/catalog.json` changes on the `vpn` Node, not on the Gateway.

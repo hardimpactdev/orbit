@@ -14,9 +14,13 @@ covers:
 
 This page is for the contributor, agent, or reviewer who runs Orbit on disposable Incus machines. The `apps/e2e` harness composes one topology per issue from the Nodes the issue declares. Each Node starts from a prepared role image, and the harness then bootstraps a fresh test Gateway and enrolls the Nodes. `bin/e2e-topology` controls a topology, `bin/e2e-topology-images` builds the role images, and `bin/e2e-topology-host-setup` prepares a machine, such as a task VM, to run topologies nested. The [using-incus-topologies](https://github.com/nckrtl/orbit/blob/main/.agents/skills/using-incus-topologies/SKILL.md) skill covers the working habits.
 
+## Declared topologies in task VM groups
+
+An Orbit task group on a [task VM](/reference/compute-drivers#task-vms) gets a topology only when its subtasks [declare](/reference/compute-drivers#declare-a-topology) one. Orbit prepares it nested in the group's VM as `TASK-<group>`, with `--nodes` set to the union of the declarations, before the subtask's baseline check or implementer. Agents use it and never acquire or release it. The reviewer records evidence on each declared node, and Orbit refuses the approval without it. See [Prove work on a topology](/reference/compute-drivers#prove-work-on-a-topology).
+
 ## Topologies on the reviewer's request
 
-An Orbit task group has no topology by default. Workspace provisioning never acquires one. The reviewer decides whether discovery needs a topology and ends a turn with `topology_requested` through the [turn receipt](/reference/tasks#request-a-topology). An implementer asks the reviewer through the existing consult instead. Agents run as `orbit-worker` without sudo; they do not acquire topologies themselves.
+This section applies to shared task workspaces only. An Orbit task group has no topology by default. Workspace provisioning never acquires one. The reviewer decides whether discovery needs a topology and ends a turn with `topology_requested` through the [turn receipt](/reference/tasks#request-a-topology). An implementer asks the reviewer through the existing consult instead. Agents run as `orbit-worker` without sudo; they do not acquire topologies themselves.
 
 Orbit consumes the receipt, acquires `TASK-<group>` as the managed user, and resumes the same requesting reviewer thread in its original review, consult, or relay context with the acquisition result or failure. A consult stays open and its implementer stays paused during acquisition; a resource request neither answers it nor escalates it to the operator. The resumed reviewer answers normally under the original context's outcome and cause rules.
 
@@ -26,7 +30,7 @@ A retained discovery lease without its topology record is an incomplete acquisit
 
 ## Declared Nodes
 
-Every topology has a `gateway` VM and an `operator` system container. `acquire --nodes=LIST` adds the workload Nodes the work needs. `LIST` is a comma-separated subset of `app-dev`, `app-prod`, and `app-prod-2`, in any order. `app-prod-2` requires `app-prod`. Without the option, the list is `app-dev,app-prod`. An empty list, `--nodes=`, gives the Gateway and the operator only.
+Every topology has a `gateway` VM and an `operator` system container. `acquire --nodes=LIST` adds the workload Nodes the work needs. `LIST` is a comma-separated list of entries, in any order. An entry names one of `app-dev`, `app-prod`, and `app-prod-2`, and may add roles after a `+`: `ingress`, `database`, and `websocket`, for example `app-prod+ingress`. `app-prod-2` requires `app-prod`. Without the option, the list is `app-dev,app-prod`. An empty list, `--nodes=`, gives the Gateway and the operator only. A task VM group's subtask `topology` uses the same entries.
 
 | Node key | Role image | Incus address | WireGuard address | Roles | Checkout |
 | --- | --- | --- | --- | --- | --- |
@@ -38,7 +42,7 @@ Every topology has a `gateway` VM and an `operator` system container. `acquire -
 
 `app-prod-2` is a second `app-prod` Node from the same role image. Each production Node gets its own name as its development TLD, and `app-dev` gets `beast`.
 
-The harness assigns only the roles in the table. It creates no Cluster, Router, Ingress, Metrics, database, or WebSocket role, and no sample Project, Instance, or Route. Add what the work needs with the Orbit CLI on the topology, for example `orbit node:role:add 2 ingress --converge` or `orbit project:create`, and record those steps as evidence. So a topology holds only what the task declared and created.
+The harness assigns the roles in the table and the roles each entry adds, and nothing else. It creates no Cluster or Router, no other role, and no sample Project, Instance, or Route. Add other things the work needs with the Orbit CLI on the topology, for example `orbit project:create`, and record those steps as evidence. So a topology holds only what the task declared and created.
 
 | Field | Value |
 | --- | --- |
@@ -103,6 +107,7 @@ An image holds no Gateway database, CA, SSH key, WireGuard key, authorized key, 
 | `bootstrap.gateway` | Prepares the worktree's Gateway `.env` and runs `orbit:bootstrap` at the Gateway's address |
 | `enroll.<node>` | Enrolls each workload Node in table order with `orbit:node-provision` |
 | `enroll.operator` | Registers the roleless operator, grants it Gateway access, and points its CLI at the topology Gateway and CA |
+| `roles.<node>` | For each workload Node whose entry adds roles, runs `orbit node:role:add <node> <role> --json` from the operator for each role, in entry order |
 | `readiness` | Runs the readiness probes |
 
 `bootstrap.gateway` writes the Gateway checkout path into the worktree's Gateway `.env` and applies the migrations. `orbit:bootstrap` then creates the Orbit CA, the Gateway SSH key, and the VPN at `10.44.0.1`.
@@ -117,7 +122,7 @@ Readiness runs these probes on the Nodes the topology has. A probe that fails is
 
 | Probe | Node | Passes when |
 | --- | --- | --- |
-| `nodes.registered` | `gateway` | `orbit node:list` shows exactly the declared Nodes, each `active` with the roles from the table, and the operator roleless |
+| `nodes.registered` | `gateway` | `orbit node:list` shows exactly the declared Nodes, each `active` with the roles from the table and its entry, and the operator roleless |
 | `service.gateway` | `gateway` | Caddy and PHP-FPM are active |
 | `service.vpn` | `gateway` | `wg-quick@orbit` is active |
 | `wireguard.reachability` | `gateway` | Every other Node answers a ping on its WireGuard address |
@@ -135,7 +140,7 @@ Nested guests boot about three times slower than on a bare host, so the windows 
 
 ## Run topologies nested in a task VM
 
-A topology also runs inside a VM, such as a task VM, with nested KVM. Run `sudo bin/e2e-topology-host-setup` once in that VM before the first `bin/e2e-topology-images build`. The script is idempotent. Orbit does not run it for task groups yet; run it by hand.
+A topology also runs inside a VM, such as a task VM, with nested KVM. Run `sudo bin/e2e-topology-host-setup` once in that VM before the first `bin/e2e-topology-images build`. The script is idempotent. Orbit [runs it](/reference/compute-drivers#prepare-the-topology) in a task VM group that declares a topology.
 
 | Step | What happens |
 | --- | --- |
@@ -155,6 +160,7 @@ The isolation table keeps topology guests away from the machine's own WireGuard 
 | Forward from `oe*` to the WireGuard interface | Topology guests reaching fleet Nodes through the machine's tunnel |
 | Forward from `incusbr0` to the WireGuard interface | Other inner guests doing the same |
 | Input from `oe*` to the WireGuard subnet | Topology guests reaching the machine's own WireGuard address |
+| Input from `incusbr0` to the WireGuard subnet | Other inner guests doing the same |
 
 A topology guest needs none of these paths: it talks to its own Gateway over its own WireGuard network. Its public egress and the WireGuard traffic between topology Nodes keep working.
 
@@ -314,9 +320,9 @@ Every network named `oe-*` belongs to the harness and never outlives its topolog
 
 These reasons explain the design. Check them before you propose a change.
 
-### The reviewer requests discovery
+### The reviewer requests discovery on a shared host
 
-Ordinary groups use no topology resources. Acquisition at workspace provisioning was rejected because most groups do not need discovery and startup should not depend on it. The reviewer decides when discovery helps; the existing consult gives implementers a way to ask without granting agents host sudo or adding another request API. Orbit owns acquisition because it changes host firewall rules. A topology is not proof of correctness, so acquisition failure or absence never prevents approval. This serves lean resource use and the principle that agents operate while humans steer.
+This reason applies to shared task workspaces. A task VM group declares its topology up front, because the declaration decides the VM size and the reviewer must prove the work on those nodes. Ordinary groups use no topology resources. Acquisition at workspace provisioning was rejected because most groups do not need discovery and startup should not depend on it. The reviewer decides when discovery helps; the existing consult gives implementers a way to ask without granting agents host sudo or adding another request API. Orbit owns acquisition because it changes host firewall rules. A topology is not proof of correctness, so acquisition failure or absence never prevents approval. This serves lean resource use and the principle that agents operate while humans steer.
 
 ### Composed from role images
 
@@ -330,7 +336,7 @@ The images run the programs that enrollment renders, the way the task VM base im
 
 ### Declared roles only
 
-The harness assigns the base roles of each declared Node and nothing else. The old profile also added a Cluster, Router, Ingress, Metrics, a database role, WebSocket, and sample Laravel applications to every topology. Building and hydrating those samples was the slowest and most fragile part of preparation, and most tasks did not need them. A task that needs one adds it with the CLI, which also exercises the product path the task changes.
+The harness assigns the base roles of each declared Node and the roles its entry adds, and nothing else. The old profile also added a Cluster, Router, Ingress, Metrics, a database role, WebSocket, and sample Laravel applications to every topology. Building and hydrating those samples was the slowest and most fragile part of preparation, and most tasks did not need them. A declared role is added with `orbit node:role:add`, the product path the fleet uses, so the topology is set up the way a real one is. Anything else a task needs, it adds with the CLI.
 
 ### Nested in the task VM
 

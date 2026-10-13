@@ -3,8 +3,6 @@ title: "Pi server"
 description: "How the Pi server runs Pi agent sessions on a Node for the Gateway's pi driver: configuration, sign-in, the orbit-worker install, Pi on a task VM, agent tools, API, thread states, and restart behavior."
 covers:
   - apps/pi-server/**
-  - apps/e2e/resources/proofs/orbit-worker{.sh,.php,-provider.ts}
-  - apps/e2e/tests/Unit/E2E/OrbitWorkerProofRecoveryTest.php
   - apps/gateway/app/Infrastructure/Tasks/Pi/{PiConnection,PiModel,PiNodeEligibility}.php
 ---
 
@@ -126,26 +124,6 @@ Three limits bound what `orbit-worker` separates.
 An agent is a process of the Pi server and shares its user. It can read `/home/orbit-worker/.pi/agent/orbit-token` and the provider sign-in in that home. The design does not give each agent a separate user. The GitHub token is a different secret: the agent does not receive it. [What the App does not cover](/reference/github-app#what-the-app-does-not-cover) states that enforcement.
 
 The candidate gate runs as the managed user. The baseline and handoff checks run programs that the workspace names, including code an agent wrote. Those programs can read the managed user's home and use its sudo. `orbit-worker` separates the agent, not the code the agent leaves for the check. [The candidate gate runs as the managed user](#the-candidate-gate-runs-as-the-managed-user) explains why.
-
-## Prove the account on Incus
-
-Run the [orbit-worker proof script](https://github.com/nckrtl/orbit/blob/main/apps/e2e/resources/proofs/orbit-worker.sh) from the task workspace on a fresh [allocated Incus lease](/reference/incus-topologies#task-workspace-clones). Replace `TASK-820` with the issue named by your branch:
-
-```bash
-bin/e2e-topology acquire TASK-820 .
-bash apps/e2e/resources/proofs/orbit-worker.sh TASK-820
-bin/e2e-topology release TASK-820
-```
-
-The script creates the account by the host setup above and registers a real `pi-server` Process with `--user=orbit-worker`. A deterministic local model response makes Pi run one bash tool call. That call refuses readable managed homes, sudo access, or SSH access as the managed user; writes a workspace file; tests its contents; and runs `incus list` against a daemon inside app-dev.
-
-The Gateway's real task components provision the checkout, run the baseline and handoff checks as the managed user, read its turn receipt, commit its file, and remove the workspace. The proof also reads the committed blob and checks that the checkout remains managed-owned while the file belongs to the worker.
-
-The proof driver calls the task components directly. It does not exercise scheduler review policy, a live model, or GitHub publication. Its disposable monorepo Project declares the repository root as `.` and uses no Route. It installs Incus only inside the disposable guest and never exposes the harness host's socket. Membership of `incus-admin` still has the [root-equivalent limit](#limits); the denied home, sudo, and SSH checks do not prove isolation against that power.
-
-Every proof step uses `--record` labels. `worker-agent-and-gateway-commit` contains the actual Pi tool result, its five `WORKER_*` markers, the handoff check, and the new commit SHA. `worker-commit-readback` verifies the blob and author. `worker-gateway-removal`, `worker-checkout-removal-audit`, `worker-account-cleanup`, and `worker-final-audit` check the database, checkout, scoped Git trust, account, processes, and fixture files after cleanup.
-
-An unexpected result exits nonzero. A cleanup failure keeps the recorded state for diagnosis rather than claiming success. The final Process-list audit runs before state deletion, so a failed read or assertion preserves the recovery file. Repeat the proof on a fresh lease, not by adopting leftover fixtures.
 
 ## Roll out orbit-worker on beast
 

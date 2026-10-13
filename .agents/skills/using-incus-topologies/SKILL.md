@@ -5,11 +5,17 @@ description: Use when exploring or checking behavior on a task group's Incus top
 
 # Using Incus topologies
 
-A task group's topology is a disposable fleet composed from the declared Nodes: a `gateway` VM, a roleless `operator` container, and the workload VMs the work needs (`app-dev`, `app-prod`, `app-prod-2`; Orbit's default is `app-dev` and `app-prod`). It is for discovery. The implementer uses it to explore and check behavior while building, and the reviewer reproduces the feature on it. Subtasks do not carry proofs or proof scripts; tests and the review accept the work. The [Incus topology registry](../../../docs/reference/incus-topologies.md) is the reference for every command.
+A task group's topology is a disposable fleet composed from the declared Nodes: a `gateway` VM, a roleless `operator` container, and the workload VMs the work needs (`app-dev`, `app-prod`, `app-prod-2`, each with any roles its entry adds, such as `app-prod+ingress`). The implementer uses it to explore and check behavior while building, and the reviewer proves the deliverables on it. Subtasks do not carry proof scripts; tests and the review accept the work. The [Incus topology registry](../../../docs/reference/incus-topologies.md) is the reference for every command.
 
-## Use the allocated topology
+## Use the declared topology
 
-A new task workspace has no topology. When discovery needs one, the reviewer ends its turn with `"$(git rev-parse --git-path orbit)/turn" --thread=ID --outcome=topology_requested --summary="Why discovery needs a topology"`. Do not pass `--question`, `--cause`, or pull request flags. Orbit acquires the group's one `TASK-<group>` as the managed user and resumes the same reviewer with ready, already held, or the failure reason. The review, consult, or relay context stays unchanged. A consult stays open and the implementer stays paused until the reviewer answers normally.
+In a task VM group, a subtask that declares a `topology` runs with `TASK-<group>` nested in the VM. Orbit prepares it before the subtask starts, and your prompt names its nodes. Agents never acquire or release it.
+
+When you review such a subtask, prove each deliverable on the declared nodes with `exec ... --record=LABEL`, where LABEL names the deliverable. Orbit refuses your approval until the evidence log holds a recorded command that exited 0 on each node the subtask declares, started after the implementer's last handoff. Cite the labels in your `--deliverable` evidence and summary.
+
+## Use the allocated topology on a shared host
+
+A new shared task workspace has no topology. When discovery needs one, the reviewer ends its turn with `"$(git rev-parse --git-path orbit)/turn" --thread=ID --outcome=topology_requested --summary="Why discovery needs a topology"`. Do not pass `--question`, `--cause`, or pull request flags. Orbit acquires the group's one `TASK-<group>` as the managed user and resumes the same reviewer with ready, already held, or the failure reason. The review, consult, or relay context stays unchanged. A consult stays open and the implementer stays paused until the reviewer answers normally.
 
 An implementer asks the reviewer through a `blocked` consult, not a topology request or a direct operator request. Acquisition failure does not ask for operator assistance. A missing topology does not block approval; continue with tests and code review and record the discovery limitation. The implementer and reviewer share any acquired topology. Check it with `bin/e2e-topology status TASK-<group>`. Agents never acquire or release topologies, receive no sudo, and do not touch the host firewall. Orbit releases the topology before removing the workspace.
 
@@ -63,7 +69,7 @@ A task workspace clone reaches the Nodes through its bridge worktree, and every 
 
 ## Add what the task needs
 
-The topology has only the base roles of its Nodes: `gateway` and `vpn` on `gateway`, `app-dev` on `app-dev`, and `app-prod` on the production Nodes. It has no Cluster, extra roles, or sample Projects. Add them through the CLI on `gateway`, for example `orbit node:role:add NODE ingress --converge` or `orbit project:create`, and record each step with `--record=LABEL`. That is part of the evidence that the deliverable works on these Nodes.
+The topology has the base roles of its Nodes, `gateway` and `vpn` on `gateway`, `app-dev` on `app-dev`, and `app-prod` on the production Nodes, plus the roles each entry declares. It has no Cluster or sample Projects. Add what else the work needs through the CLI on `operator`, for example `orbit project:create`, and record each step with `--record=LABEL`. That is part of the evidence that the deliverable works on these Nodes.
 
 ## Converge instead of reprovisioning
 
