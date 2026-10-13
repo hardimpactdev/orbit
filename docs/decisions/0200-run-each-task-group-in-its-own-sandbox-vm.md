@@ -10,7 +10,7 @@ Principle: [Security fits the real threat model](/mission#principles). The bound
 
 ## Context
 
-Today a task group shares a node with other groups ([Shared Instance](/reference/tasks#shared-instance)). Agents run as `orbit-worker` without sudo ([One user for every task agent](/reference/pi-server#one-user-for-every-task-agent)). The handoff check runs as the managed user. Measurements from 7 Oct 2026 (groups with IDs of at least 600, 219 check reports on beast):
+Today a task group shares a node with other groups (then called Shared Instance, now [Task workspace](/reference/tasks#task-workspace)). Agents run as `orbit-worker` without sudo ([One user for every task agent](/reference/pi-server#one-user-for-every-task-agent)). The handoff check runs as the managed user. Measurements from 7 Oct 2026 (groups with IDs of at least 600, 219 check reports on beast):
 
 - **The two environments disagree.** `composer check` run by agents as `orbit-worker` failed 53 of 65 times (82%). Orbit's handoff check passed 130 of 154 times. About 77 Gateway tests need `sudo setfacl` or worker ACLs. Check directories owned by the managed user with mode `0700` return `EACCES` to agents.
 - **Blocked turns.** 91 of 233 blocked or assistance requests name the user or permission split. Another 45 name Incus or topology acquisition. Blocked time up to a resolution adds up to 210 h.
@@ -26,7 +26,7 @@ A spike on beast on 12 Oct 2026 ran Orbit's E2E topology nested inside one task 
 
 ## Decision
 
-Orbit assigns each task group its own task VM. This amendment of 9 Oct 2026 replaced the web-lane design of the first build. The amendment of 12 Oct 2026 replaces the separate Orbit lane: the `orbit` Project uses the same task VMs as every other Project. See [Orbit Project](#orbit-project). The amendment of 13 Oct 2026 keeps every GitHub token out of task VMs; see item 5.
+Orbit assigns each task group its own task VM. This amendment of 9 Oct 2026 replaced the web-lane design of the first build. The amendment of 12 Oct 2026 replaces the separate Orbit lane: the `orbit` Project uses the same task VMs as every other Project. See [Orbit Project](#orbit-project). The amendment of 13 Oct 2026 keeps every GitHub token out of task VMs; see item 5. A second amendment of 13 Oct 2026 deletes shared mode: every task group runs on a task VM, and `task_compute` and `orbit-worker` are gone; see item 7 of [Orbit Project](#orbit-project).
 
 ### Task VMs
 
@@ -39,7 +39,7 @@ Orbit assigns each task group its own task VM. This amendment of 9 Oct 2026 repl
 7. **State.** The `task_vms` table holds one row for each VM. `TaskVmState` has seven cases: `provisioning`, `warm`, `ready`, `parked`, `destroying`, `destroyed`, and `failed`. There are no marker timestamps. The provider validates host output once, and `TaskVmGuest` guest output. The Gateway trusts its own rows.
 8. **Jobs.** `ProvisionTaskVm`, `EnrollTaskVm`, `PrepareTaskVmRuntime`, `ParkTaskVm`, `ResumeTaskVm`, `DestroyTaskVm`, `SweepTaskVmHosts`, `RefillTaskVmPool`, and `EnsureWarmClaimReady` are queued jobs on the `task-vms` database queue. While a job is due, the Gateway scheduler starts the worker every second. A delayed retry or the guard of a warm claim starts no worker before its time. A long-running worker Process was rejected: a release would stop it within the unit's stop timeout, in the middle of an enrollment, while the scheduler drain lets a running job finish, up to its drain limit.
 9. **Lifecycle.** The VM is destroyed when the group ends, in this order: Instance removal, the `destroying` state, model key revocation, VM deletion, offline Node removal, and the `destroyed` state. A group that waits for review longer than `task_vms.park_after_minutes` parks its VM: Orbit stops it, and ZFS keeps its disk. No snapshot is taken. The next work for the group starts the VM and waits for the Node agent and Pi before it continues. A parked VM keeps its slot on the host. A group whose workspace removal or merge cleanup failed never parks, and a VM that was started again runs at least that long before it parks again. A sweep every 10 minutes deletes `tvm-<number>` instances in the host's project that have no live row, and fails live rows whose VM is gone on two sweeps in a row. It fails closed when the project does not exist. Doctor reports both on the host, and skips a parked VM's Node.
-10. **No guard.** Generic Instance operations need no sandbox guard. One placement invariant protects task VM Nodes. Task VM Nodes are left out of the fleet rollout and of shared-group placement.
+10. **No guard.** Generic Instance operations need no sandbox guard. One placement invariant protects task VM Nodes. Task VM Nodes are left out of the fleet rollout.
 11. **Public egress.** Task VMs reach public addresses on every port. The VM edge and the hub filter are the boundary, and CI on the pushed commit is the gate.
 12. **Placement.** Each host has `max_vms` slots. A new VM goes to the active host with the most free slots, and config order breaks ties. Placement never overcommits a host. A `failed` VM holds no slot, so it never blocks placement: its group asks for assistance at once and gets no other VM until it is cancelled. When every host is full, the group waits with `Task VM: no capacity.`
 13. **Accepted risk.** A VM can query port 53 on any host address, because Incus accepts DNS before the ACL. It can read instance names from the DNS of other bridges on that host. This risk is accepted.
@@ -61,7 +61,7 @@ A group of the `orbit` Project runs on a task VM, exactly like a web Project's g
    - **Safety net.** The Gateway setting `task_vms.topology_paths` lists, for each Project, the paths that need real machines; for Orbit, its Node, agent, guest, deployment, and routing code. A handoff check fails when the subtask's diff touches one of them and no subtask of the group declares a topology.
 5. **Isolation inside the VM.** The test Gateway and the test nodes never join the live fleet. They live on a private bridge inside the VM and reach the internet through its NAT. Rules inside the VM drop their traffic to the VM's own WireGuard interface, and from the topology bridges and the inner bridge `incusbr0` to the VM's own WireGuard address. So they cannot reach the live fleet even when their own WireGuard is down. The task VM's bridge ACL already keeps them away from the host and other private networks.
 6. **Main caches.** The Project's setup step `@orbit/ci-caches` imports the test-impact graph and the Pint and PHPStan caches of the newest successful CI run on `main` into the checkout, in the workspace template and in a workspace from a fresh clone. The Gateway reads them with its GitHub App, and `bin/tia-cache import-ci` checks them in the VM. So an Orbit check runs only the affected tests, as on beast. No readable caches fail the step. A cache that does not fit the checkout leaves that project cold, with the reason in the check log.
-7. **Shared mode goes.** After one Orbit group has run on a task VM, Phase 5 deletes shared mode, the `task_compute` setting, and `orbit-worker`.
+7. **Shared mode is gone.** After Orbit groups ran on task VMs, Phase 5 deleted shared mode, the `task_compute` setting, `orbit-worker`, the `tasks.worker` Node setting, the per-Node task ceilings, and the reviewer's topology request. Every task group runs on its own task VM. A Project may still opt in to [review and merge](/reference/tasks#review-and-merge); CI is the merge gate, and the VM goes when the task completes.
 
 All items are built.
 
@@ -75,9 +75,9 @@ There is no `orbit-worker` in a task VM. Agents, the Pi server, and the task che
 - **Task status and VM power are separate.** After the last approval Orbit opens the PR, and the group moves to the status `waiting_for_review`.
 - **Base updates** come from the GitHub update-branch API, not an agent fixup.
 
-Each Project has the setting `task_compute: shared | vm`. `shared` keeps today's flow and stays the default. A Project moves to `vm` once its groups are proven there. Every web Project runs `vm`. The `orbit` Project moves after one of its groups ran on a task VM, and then Phase 5 deletes `shared`. A group never switches mode while it runs. A `vm` group that cannot get a task VM waits with a visible reason and never falls back to `shared`.
+During the rollout, each Project had the setting `task_compute: shared | vm`, and Projects moved to `vm` once their groups were proven there. Since the amendment of 13 Oct 2026 the setting is gone: every group runs on a task VM. A group that cannot get a task VM waits with a visible reason.
 
-This decision changes [Shared Instance](/reference/tasks#shared-instance) and [One user for every task agent](/reference/pi-server#one-user-for-every-task-agent) for `vm` groups. Once no Project uses `shared`, the `orbit-worker` account and its `incus-admin` membership are retired.
+This decision changes [Task workspace](/reference/tasks#task-workspace) and [One user for every task agent](/reference/pi-server#one-user-for-every-task-agent). The `orbit-worker` account and its `incus-admin` membership are retired with shared mode.
 
 ## Rejected alternatives
 
@@ -118,8 +118,8 @@ This decision changes [Shared Instance](/reference/tasks#shared-instance) and [O
 ## Consequences
 
 - Agents get the same verdict as the gate. The largest source of blocked turns and failed local checks goes away.
-- The privileged tests run inside the sandbox. The ACL, `safe.directory`, and check-directory ownership work is removed for `vm` groups.
-- A task VM uses the same enrollment, Instance, Route, check, and publication code as a shared group. The new code is one table, one enum, one provider, four jobs, a cloud-init renderer, two setup scripts, and SSH jump support.
+- The privileged tests run inside the sandbox. The ACL, `safe.directory`, and check-directory ownership work is removed.
+- A task VM uses the same enrollment, Instance, Route, check, and publication code as the shared groups did. The new code is one table, one enum, one provider, four jobs, a cloud-init renderer, two setup scripts, and SSH jump support.
 - Phase 1 deletes the code of the first web-lane build that the new lane leaves unused. Phase 3 replaces the old UpCloud driver with the UpCloud task VM provider. Phase 5 deletes shared mode, `orbit-worker`, and the old Incus controller.
 - An UpCloud task VM costs money while it exists, also while it is parked. The overflow is off by default, `max_vms` caps it, and the sweep deletes servers without a live row. Its template is refreshed by hand.
 - Each host needs a base image before it can start task VMs. The nightly build keeps it at most a day old, and the build queues behind other task VM jobs. Every sync copies the whole image. If copy time becomes a problem, ZFS send and receive can copy only the changes.
