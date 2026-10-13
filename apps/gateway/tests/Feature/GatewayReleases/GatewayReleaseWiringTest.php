@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Actions\GatewayReleases\AdoptGatewayReleaseAction;
-use App\Infrastructure\Gateway\GatewayHorizonUnit;
 use App\Actions\GatewayReleases\ConfigureGatewayReleaseAction;
 use App\Actions\GatewayReleases\DeployGatewayReleaseAction;
 use App\Actions\GatewayReleases\PrepareGatewayReleaseAction;
@@ -12,6 +11,7 @@ use App\Actions\GatewayReleases\RunAutomaticGatewayReleaseAction;
 use App\Domain\GatewayReleases\GatewayReleaseDatabase;
 use App\Domain\GatewayReleases\GatewayReleaseRuntime;
 use App\Domain\GatewayReleases\GatewayReleaseVerifier;
+use App\Infrastructure\Gateway\GatewayHorizonUnit;
 use App\Infrastructure\GatewayReleases\ArtisanGatewayReleaseRuntime;
 use App\Infrastructure\GatewayReleases\GatewayNodeAgentUpdate;
 use App\Infrastructure\GatewayReleases\GatewayReleaseAdopter;
