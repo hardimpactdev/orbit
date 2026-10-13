@@ -269,7 +269,7 @@ Each host keeps one template for each Project whose groups run on task VMs, `orb
 
 When Orbit creates the workspace on a task VM, it runs these steps before source preparation:
 
-1. It lists the storage volumes of the host's project, and reads the base image that the VM booted (`volatile.base_image`). It takes the newest ready template of the Project from the current `repository_url` and that base image, with `user.orbit.layout=workspace`. A template from before the fixed checkout path has no layout, so no claim takes it, and the claim queues a new build.
+1. It lists the storage volumes of the host's project, and reads the base image that the VM booted (`volatile.base_image`). It takes the newest ready template of the Project from the current `repository_url` and that base image, with `user.orbit.layout=workspace`.
 2. It clones the template as `tvm-<id>-workspace` with `incus storage volume copy`. On ZFS that is a clone of a snapshot: it took under 0.1 seconds on beast and shares every block with the template.
 3. It attaches the clone to the running VM as the disk `workspace`.
 4. Over the Node's SSH connection, it mounts the disk at the Project's apps directory and adds it to `/etc/fstab`. It points `~/.cache/ms-playwright` and `~/.cache/composer` at the volume.
@@ -277,6 +277,8 @@ When Orbit creates the workspace on a task VM, it runs these steps before source
 5. Source preparation checks the owner and the origin of `workspace`, and takes it in place. Preparation writes its receipt as for a clone.
 
 A task VM workspace's checkout is always `<apps directory>/workspace`, the path where the template was built. A template in place that fails the source checks fails the preparation, because a fresh clone cannot go to its path.
+
+A template from before the fixed checkout path has no `user.orbit.layout`. No claim takes it, and the claim queues a new build.
 
 The mount never goes over a directory with content. Before it mounts, it checks that `orbit` has the `uid:gid` that the template recorded. After it mounts, it checks that the volume root and `workspace` belong to that `uid:gid`.
 
