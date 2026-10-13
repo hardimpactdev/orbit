@@ -180,6 +180,7 @@ afterEach(function (): void {
 });
 
 it('creates a task VM workspace from the Gateway mirror, with no clone or fetch in the VM', function (): void {
+    orb76_https_origin($this);
     GitRemoteRedirect::global($this->repository, $this->remoteOrigin);
     $host = Node::query()->create(['name' => 'beast', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '10.44.0.7', 'wireguard_ip' => '10.44.0.7', 'user' => 'nckrtl']);
     $group = Task::topLevel()->create(['project_id' => $this->orbitApp->id, 'title' => 'Export', 'brief' => 'Add an export.', 'status' => TaskGroupStatus::Running, 'task_compute' => TaskCompute::Vm]);
@@ -308,6 +309,7 @@ it('starts a task VM workspace from the template checkout next to it, with its i
 });
 
 it('takes a task VM template built at the checkout path in place, and the prepared checkout on a retry', function (): void {
+    orb76_https_origin($this);
     config()->set('orbit.tasks.worker_user', null);
     $workspace = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-7', 'task-7');
     orb76_task_vm($this->node);
@@ -3981,6 +3983,14 @@ function orb76_source_instance(
             'status' => InstanceState::Reserved,
         ])
         ->load(['project', 'node']);
+}
+
+/** The task VM mirror reaches a repository over HTTPS only, so a task VM test names its repository that way. */
+function orb76_https_origin(object $test): void
+{
+    $test->remoteOrigin = 'https://example.test/acme/site.git';
+    $test->transport->remoteOrigin = $test->remoteOrigin;
+    $test->orbitApp->update(['repository_url' => $test->remoteOrigin]);
 }
 
 /** Makes the Node the Node of a live task VM, whose one workspace lives at the fixed checkout path. */

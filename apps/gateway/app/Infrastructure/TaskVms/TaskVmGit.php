@@ -5,16 +5,19 @@ declare(strict_types=1);
 namespace App\Infrastructure\TaskVms;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\ProcessCancelledException;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessOutput;
 use App\Infrastructure\Processes\ProcessOutputStream;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
+use App\Jobs\TaskVms\PublishTaskVmCommit;
 use App\Models\Project;
 use Closure;
 use Illuminate\Contracts\Cache\LockTimeoutException;
@@ -31,7 +34,12 @@ use Illuminate\Support\Str;
  * The VM is untrusted. The Gateway takes only commit IDs and pack data from it, never a path, ref name, or config.
  * Mirror Git runs with the Gateway's own config and the settings in `git()`. A commit ID from the VM only shrinks a
  * pack, and `index-pack --strict` checks every object that comes back, as `transfer.fsckObjects` would for a fetch.
- * Fetches from GitHub skip those checks: an old commit in a real repository can fail them.
+ * Fetches from GitHub skip those checks: an old commit in a real repository can fail them. A pack from a VM is indexed
+ * into a quarantine object directory and joins the mirror only after the checks pass.
+ *
+ * The mirror lock serializes the commands that write the mirror. It covers no work at a VM's pace: a VM sends and
+ * receives its packs outside the lock. Mirror commands never collect garbage themselves; {@see collectGarbage()} does,
+ * outside the lock.
  */
 final readonly class TaskVmGit
 {
@@ -41,9 +49,16 @@ final readonly class TaskVmGit
     /** At most this many of a VM's ref tips shrink a pack. More are ignored, which only makes the pack larger. */
     private const int MaxHaves = 1000;
 
-    private const int LockSeconds = 1800;
+    /**
+     * Outlasts the longest work under the lock: a fetch's `ls-remote` of 300 seconds and its fetch of 1800 seconds, or
+     * a pack of 1800 seconds, with a margin. The lock cannot expire while its holder still writes the mirror.
+     */
+    private const int LockSeconds = 2400;
 
     private const int LockWaitSeconds = 300;
+
+    /** The automatic garbage collection threshold that {@see collectGarbage()} applies, Git's default. */
+    private const int GcAutoObjects = 6700;
 
     /** Prints the commit IDs of the checkout's refs. */
     private const string ReadRefs = <<<'BASH'
@@ -90,11 +105,15 @@ final readonly class TaskVmGit
         } | git pack-objects --revs --thin --stdout --delta-base-offset --quiet
         BASH;
 
-    /** @param  list<string>  $protocols  the protocols the mirror may fetch and push with */
+    /**
+     * @param  list<string>  $protocols  the protocols the mirror may fetch and push with
+     * @param  int  $maxPackBytes  the largest pack that a VM may send back
+     */
     public function __construct(
         private ProcessRunner $processes,
         private ?string $directory = null,
         private array $protocols = ['https'],
+        private int $maxPackBytes = self::MaxPackBytes,
     ) {}
 
     /**
@@ -102,11 +121,12 @@ final readonly class TaskVmGit
      * repository does not have.
      *
      * @param  list<string>  $branches
+     * @param  float|null  $deadline  a `microtime(true)` that no Git command may outlast
      * @return array<string, string|null>
      *
      * @throws RuntimeConvergenceException
      */
-    public function fetch(Project $project, array $branches, GitReadEnvironment $access, string $errorCode): array
+    public function fetch(Project $project, array $branches, GitReadEnvironment $access, string $errorCode, ?float $deadline = null): array
     {
         $branches = array_values(array_unique($branches));
         foreach ($branches as $branch) {
@@ -114,13 +134,13 @@ final readonly class TaskVmGit
                 throw new RuntimeConvergenceException('task-vm-git-fetch', $errorCode, 'A task VM branch name is invalid.');
             }
         }
-        $url = GitRepositoryOrigin::validate($project->repository_url);
+        $url = $this->url($project, $errorCode);
 
-        return $this->locked($project, $errorCode, function () use ($project, $branches, $access, $url, $errorCode): array {
+        return $this->locked($project, $errorCode, function () use ($project, $branches, $access, $url, $errorCode, $deadline): array {
             $mirror = $this->mirror($project, $errorCode);
             $advertised = $this->checked('task-vm-git-ls-remote', $errorCode, $this->git($mirror, [
                 'ls-remote', '--heads', '--', $url, ...array_map(static fn (string $branch): string => 'refs/heads/'.$branch, $branches),
-            ], $access));
+            ], $access, timeout: $this->timeout($deadline, 300.0, $errorCode)));
             $present = [];
             foreach (preg_split('/\R/', trim($advertised->stdout)) ?: [] as $line) {
                 if (preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\trefs\/heads\/(.+)\z/D', $line, $match) === 1 && in_array($match[1], $branches, true)) {
@@ -131,7 +151,7 @@ final readonly class TaskVmGit
                 $this->checked('task-vm-git-fetch', $errorCode, $this->git($mirror, [
                     'fetch', '--quiet', '--no-tags', '--no-write-fetch-head', '--', $url,
                     ...array_map(static fn (string $branch): string => "+refs/heads/{$branch}:refs/heads/{$branch}", $present),
-                ], $access, timeout: 1800.0));
+                ], $access, timeout: $this->timeout($deadline, 1800.0, $errorCode)));
             }
             $tips = [];
             foreach ($branches as $branch) {
@@ -179,76 +199,116 @@ final readonly class TaskVmGit
 
     /**
      * Takes the approved commit out of the VM's checkout into the mirror and pushes it to `refs/heads/<branch>` with
-     * the write access. The pack leaves out the history of `$haves`.
+     * the write access. The pack leaves out the history of `$haves`. Its objects go to a quarantine directory first and
+     * join the mirror only when the approved commit and its whole history are there, so a refused pack leaves nothing.
+     * It runs in a queued job ({@see PublishTaskVmCommit}), never in the task tick.
      *
      * @param  list<string>  $haves  commits of the mirror, such as those {@see fetch()} returned for the default and task branches
      * @param  Closure(RemoteCommand): CommandResult  $run
+     * @param  float|null  $deadline  a `microtime(true)` that no Git command may outlast
      *
      * @throws RuntimeConvergenceException `task-pull-request-push` with the push result when GitHub refuses the push
      */
-    public function publish(Project $project, string $checkout, string $commit, string $branch, array $haves, GitReadEnvironment $write, Closure $run, string $errorCode): void
+    public function publish(Project $project, string $checkout, string $commit, string $branch, array $haves, GitReadEnvironment $write, Closure $run, string $errorCode, ?float $deadline = null): void
     {
         if (preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $commit) !== 1 || ! GitBranchName::isValid($branch)) {
             throw new RuntimeConvergenceException('task-vm-git-publish', $errorCode, 'The approved commit or its branch is invalid.');
         }
-        $url = GitRepositoryOrigin::validate($project->repository_url);
+        $url = $this->url($project, $errorCode);
+        $mirror = $this->mirror($project, $errorCode);
         $scratch = $this->scratch($errorCode);
         try {
             $pack = $scratch.'/receive.pack';
-            $this->receive($checkout, $commit, $haves, $pack, $run, $errorCode);
-            $this->locked($project, $errorCode, function () use ($project, $commit, $branch, $write, $url, $pack, $errorCode): void {
-                $mirror = $this->mirror($project, $errorCode);
-                $this->checked('task-vm-git-index-pack', $errorCode, $this->git($mirror, [
-                    'index-pack', '--strict', '--fix-thin', '--stdin', '--max-input-size='.self::MaxPackBytes,
-                ], input: ProtectedInput::openFile($pack), timeout: 1800.0));
-                $type = $this->git($mirror, ['cat-file', '-t', $commit]);
-                // Fails on any object that the history of the commit lacks, up to the mirror's own refs.
-                $complete = $this->git($mirror, ['rev-list', '--objects', '--quiet', $commit, '--not', '--all']);
-                if (! $type->succeeded() || trim($type->stdout) !== 'commit' || ! $complete->succeeded()) {
-                    throw new RuntimeConvergenceException('task-vm-git-verify', $errorCode, 'The task VM did not send the approved commit with its whole history.');
-                }
-                $pushed = $this->git($mirror, ['push', '--quiet', '--', $url, "{$commit}:refs/heads/{$branch}"], $write, timeout: 1800.0);
-                if (! $pushed->succeeded()) {
-                    throw new RuntimeConvergenceException('task-pull-request-push', $errorCode, 'The task branch could not be pushed.', result: $pushed);
-                }
-                $this->git($mirror, ['update-ref', 'refs/heads/'.$branch, $commit]);
-            });
+            $this->receive($checkout, $commit, $haves, $pack, $run, $errorCode, $deadline);
+            $quarantine = $scratch.'/objects';
+            File::ensureDirectoryExists($quarantine.'/pack', 0700);
+            $this->checked('task-vm-git-index-pack', $errorCode, $this->git($mirror, [
+                'index-pack', '--strict', '--fix-thin', '--stdin', '--max-input-size='.$this->maxPackBytes,
+            ], input: ProtectedInput::openFile($pack), timeout: $this->timeout($deadline, 1800.0, $errorCode), quarantine: $quarantine));
+            $type = $this->git($mirror, ['cat-file', '-t', $commit], timeout: $this->timeout($deadline, 300.0, $errorCode), quarantine: $quarantine);
+            // Fails on any object that the history of the commit lacks, up to the mirror's own refs.
+            $complete = $this->git($mirror, ['rev-list', '--objects', '--quiet', $commit, '--not', '--all'], timeout: $this->timeout($deadline, 1800.0, $errorCode), quarantine: $quarantine);
+            if (! $type->succeeded() || trim($type->stdout) !== 'commit' || ! $complete->succeeded()) {
+                throw new RuntimeConvergenceException('task-vm-git-verify', $errorCode, 'The task VM did not send the approved commit with its whole history.');
+            }
+            $this->locked($project, $errorCode, fn () => $this->migrate($quarantine, $mirror, $errorCode));
+            $pushed = $this->git($mirror, ['push', '--quiet', '--', $url, "{$commit}:refs/heads/{$branch}"], $write, timeout: $this->timeout($deadline, 1800.0, $errorCode));
+            if (! $pushed->succeeded()) {
+                throw new RuntimeConvergenceException('task-pull-request-push', $errorCode, 'The task branch could not be pushed.', result: $pushed);
+            }
+            $this->git($mirror, ['update-ref', 'refs/heads/'.$branch, $commit]);
         } finally {
             File::deleteDirectory($scratch);
         }
     }
 
     /**
-     * Streams the VM's pack to `$pack`. The VM leaves out the history of the commits it has of `$haves`.
+     * Packs the mirror when Git's automatic threshold says so. It runs outside the mirror lock, after a publish, so no
+     * fetch or pack in the task tick waits for it. Git's own `gc.pid` lock keeps two collections apart.
+     *
+     * @throws RuntimeConvergenceException
+     */
+    public function collectGarbage(Project $project, ?float $deadline = null): void
+    {
+        $mirror = $this->root().'/'.$project->id.'.git';
+        if (is_dir($mirror)) {
+            $this->checked('task-vm-git-gc', 'task_vm.git_gc', $this->git($mirror, ['-c', 'gc.auto='.self::GcAutoObjects, 'gc', '--auto', '--quiet'], timeout: $this->timeout($deadline, 1800.0, 'task_vm.git_gc')));
+        }
+    }
+
+    /**
+     * Streams the VM's pack to `$pack`. The VM leaves out the history of the commits it has of `$haves`. A pack over
+     * the limit stops the VM's command and fails with that limit, as any other failed push does.
      *
      * @param  list<string>  $haves
      * @param  Closure(RemoteCommand): CommandResult  $run
      */
-    private function receive(string $checkout, string $commit, array $haves, string $pack, Closure $run, string $errorCode): void
+    private function receive(string $checkout, string $commit, array $haves, string $pack, Closure $run, string $errorCode, ?float $deadline): void
     {
         $file = fopen($pack, 'xb');
         if ($file === false) {
             throw new RuntimeConvergenceException('task-vm-git-receive', $errorCode, 'The pack file could not be created.');
         }
         $size = 0;
+        $max = $this->maxPackBytes;
         try {
             $run(new RemoteCommand(
                 arguments: ['bash', '-c', self::Emit, '--', $checkout, $commit, ...$haves],
                 maxOutputBytes: 65_536,
-                output: static function (ProcessOutput $output) use ($file): void {
-                    if ($output->stream === ProcessOutputStream::Stdout && ftell($file) <= self::MaxPackBytes) {
+                output: static function (ProcessOutput $output) use ($file, $max): void {
+                    if ($output->stream === ProcessOutputStream::Stdout && ftell($file) <= $max) {
                         fwrite($file, $output->value);
                     }
                 },
-                cancelled: static fn (): bool => ftell($file) > self::MaxPackBytes,
-                timeout: 1800.0,
+                cancelled: static fn (): bool => ftell($file) > $max,
+                timeout: $this->timeout($deadline, 1800.0, $errorCode),
             ));
+        } catch (ProcessCancelledException $exception) {
+            if (ftell($file) <= $max) {
+                throw $exception;
+            }
         } finally {
             $size = (int) ftell($file);
             fclose($file);
         }
-        if ($size > self::MaxPackBytes) {
-            throw new RuntimeConvergenceException('task-vm-git-receive', $errorCode, 'The task VM sent a pack over '.self::MaxPackBytes.' bytes.');
+        if ($size > $max) {
+            throw new RuntimeConvergenceException('task-vm-git-receive', $errorCode, 'The task VM sent a pack over '.self::size($max).'.');
+        }
+    }
+
+    /**
+     * Moves the quarantined pack into the mirror. Each index moves last, so Git sees no pack before its data is there.
+     * A pack that the mirror already has stays where it is.
+     */
+    private function migrate(string $quarantine, string $mirror, string $errorCode): void
+    {
+        $files = glob($quarantine.'/pack/pack-*') ?: [];
+        usort($files, static fn (string $left, string $right): int => [str_ends_with($left, '.idx'), $left] <=> [str_ends_with($right, '.idx'), $right]);
+        foreach ($files as $file) {
+            $target = $mirror.'/objects/pack/'.basename($file);
+            if (! is_file($target) && ! @rename($file, $target)) {
+                throw new RuntimeConvergenceException('task-vm-git-migrate', $errorCode, 'The verified pack could not be moved into the mirror.');
+            }
         }
     }
 
@@ -306,6 +366,43 @@ final readonly class TaskVmGit
             : throw new RuntimeConvergenceException('task-vm-git-fetch', $errorCode, "The mirror has no commit for [{$ref}].");
     }
 
+    /**
+     * The HTTPS URL that the mirror fetches from and pushes to. The token goes in an HTTPS header, so a `git@` or
+     * `ssh://` URL of a `github.com` repository becomes its HTTPS URL. Another SSH URL fails.
+     */
+    private function url(Project $project, string $errorCode): string
+    {
+        $origin = GitRepositoryOrigin::validate((string) $project->repository_url);
+        if (str_starts_with($origin, 'https://')) {
+            return $origin;
+        }
+        $repository = GitHubRepository::fromOrigin($origin);
+        if (! $repository instanceof GitHubRepository) {
+            throw new RuntimeConvergenceException('task-vm-git-url', $errorCode, 'Task VM Git reaches a repository over HTTPS only. Give the Project an https:// repository URL.');
+        }
+
+        return "https://github.com/{$repository->owner}/{$repository->name}.git";
+    }
+
+    private static function size(int $bytes): string
+    {
+        return $bytes % (1024 ** 3) === 0 ? ($bytes / 1024 ** 3).' GiB' : $bytes.' bytes';
+    }
+
+    /** The step's own timeout, cut to what is left before the deadline. A deadline that has passed fails the step. */
+    private function timeout(?float $deadline, float $timeout, string $errorCode): float
+    {
+        if ($deadline === null) {
+            return $timeout;
+        }
+        $left = $deadline - microtime(true);
+        if ($left < 1.0) {
+            throw new RuntimeConvergenceException('task-vm-git-deadline', $errorCode, 'Task VM Git ran out of time.');
+        }
+
+        return min($timeout, $left);
+    }
+
     /** The Project's mirror, created on first use. */
     private function mirror(Project $project, string $errorCode): string
     {
@@ -352,12 +449,17 @@ final readonly class TaskVmGit
         }
     }
 
-    /** @param  list<string>  $arguments */
-    private function git(string $mirror, array $arguments, ?GitReadEnvironment $access = null, ?ProtectedInput $input = null, ?string $stdin = null, float $timeout = 300.0): CommandResult
+    /**
+     * Runs Git in the mirror. With `$quarantine`, Git writes objects there and reads the mirror's objects as alternates,
+     * and refuses to change a ref, as during `receive-pack`.
+     *
+     * @param  list<string>  $arguments
+     */
+    private function git(string $mirror, array $arguments, ?GitReadEnvironment $access = null, ?ProtectedInput $input = null, ?string $stdin = null, float $timeout = 300.0, ?string $quarantine = null): CommandResult
     {
         $settings = [
             'core.hooksPath=/dev/null', 'core.fsmonitor=false', 'credential.helper=', 'http.followRedirects=false',
-            'gc.autoDetach=false', 'protocol.allow=never',
+            'gc.auto=0', 'gc.autoDetach=false', 'protocol.allow=never',
             ...array_map(static fn (string $protocol): string => "protocol.{$protocol}.allow=always", $this->protocols),
         ];
         $options = [];
@@ -371,7 +473,10 @@ final readonly class TaskVmGit
             timeout: $timeout,
             input: $stdin,
             protectedInput: $input,
-            environment: [...($access->variables ?? []), 'GIT_TERMINAL_PROMPT' => '0', 'GIT_CONFIG_NOSYSTEM' => '1'],
+            environment: [
+                ...($access->variables ?? []), 'GIT_TERMINAL_PROMPT' => '0', 'GIT_CONFIG_NOSYSTEM' => '1',
+                ...($quarantine === null ? [] : ['GIT_OBJECT_DIRECTORY' => $quarantine, 'GIT_ALTERNATE_OBJECT_DIRECTORIES' => $mirror.'/objects', 'GIT_QUARANTINE_PATH' => $quarantine]),
+            ],
         ));
     }
 
