@@ -380,7 +380,7 @@ describe('placement', function (): void {
         $group = tvm_up_group();
         Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Dev', 'brief' => 'Dev', 'status' => TaskStatus::Todo, 'topology' => ['app-dev']]);
 
-        expect(fn () => app(AllocateTaskVmAction::class)->execute($group))->toThrow(TaskCapacityException::class, AllocateTaskVmAction::NoLargeCapacity)
+        expect(fn () => app(AllocateTaskVmAction::class)->execute($group))->toThrow(TaskCapacityException::class, AllocateTaskVmAction::noCapacityFor(TaskVmSize::Large))
             ->and(TaskVm::query()->where('provider', TaskVmProviderKind::UpCloud)->count())->toBe(0)
             ->and(TaskVmSize::forGroup($group))->toBe(TaskVmSize::Large);
     });

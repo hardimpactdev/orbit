@@ -2,8 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Actions\TaskVms\AllocateTaskVmAction;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCompute;
+use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
@@ -71,6 +73,21 @@ it('knows what each provider can do', function (TaskVmProviderKind $provider, bo
     'incus' => [TaskVmProviderKind::Incus, true, TaskVmSize::cases(), true, false],
     'upcloud' => [TaskVmProviderKind::UpCloud, false, [TaskVmSize::Normal], false, true],
 ]);
+
+it('defines what each size takes in one place', function (): void {
+    $host = new TaskVmHost($this->host->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 4, 2, '4GiB', '20GiB');
+    $takes = static fn (TaskVmSize $size): array => [
+        $size->slots(), $size->resources()->warmEligible, $size->resources()->cpusOn($host), $size->resources()->memoryOn($host), $size->resources()->diskOn($host), $size->resources()->qemuConfig !== null,
+    ];
+
+    expect(array_map($takes, TaskVmSize::cases()))->toBe([
+        [1, true, 2, '4GiB', '20GiB', false],
+        [2, false, 4, '8GiB', '20GiB', false],
+        [3, false, 6, '12GiB', '60GiB', true],
+    ])
+        ->and(AllocateTaskVmAction::noCapacityFor(TaskVmSize::Medium))->toBe('Task VM: no host has 2 free slots for a medium VM.')
+        ->and(AllocateTaskVmAction::noCapacityFor(TaskVmSize::Large))->toBe('Task VM: no host has 3 free slots for a large VM.');
+});
 
 it('encrypts the Pi token and model key at rest and hides them', function (): void {
     ($this->vm)(['model_key' => 'model-secret']);
