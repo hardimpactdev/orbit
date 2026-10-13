@@ -22,11 +22,6 @@ final readonly class GuardBrowserOrigins
     {
         config(['cors.allowed_origins' => []]);
 
-        // The Horizon dashboard takes no CSRF token, because the Gateway keeps no session: only its own pages may call it.
-        if ($request->is('horizon', 'horizon/*')) {
-            return $this->sameOrigin($request) ? $next($request) : $this->refuse();
-        }
-
         if (! $request->is('api/*', 'mcp', 'mcp/*')) {
             return $next($request);
         }
@@ -51,15 +46,6 @@ final readonly class GuardBrowserOrigins
         config(['cors.allowed_origins' => [$origin]]);
 
         return $next($request);
-    }
-
-    private function sameOrigin(Request $request): bool
-    {
-        $origin = $request->headers->get('Origin');
-
-        return $origin === null
-            ? in_array($request->headers->get('Sec-Fetch-Site'), [null, 'same-origin', 'none'], strict: true)
-            : $origin === $request->getSchemeAndHttpHost();
     }
 
     private function refuse(): Response

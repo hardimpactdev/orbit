@@ -6,14 +6,14 @@ use App\Console\Scheduling\GatewaySchedule;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Gateway\GatewayQueue;
 use App\Domain\Nodes\NodeProvisioningException;
+use App\Domain\Processes\DesiredProcessState;
+use App\Domain\Processes\ProcessRuntime;
+use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskExtensionState;
-use App\Infrastructure\Gateway\GatewayHorizonUnit;
+use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Infrastructure\Gateway\GatewayQueueMove;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProcessInvocation;
-use App\Infrastructure\Processes\ProcessRunner;
 use App\Jobs\RunScheduledCommand;
 use App\Jobs\TaskVms\DestroyTaskVm;
 use App\Jobs\TaskVms\EnrollTaskVm;
@@ -27,20 +27,18 @@ use App\Jobs\TaskVms\ResumeTaskVm;
 use App\Jobs\TaskVms\SweepTaskVmHosts;
 use App\Models\DatabaseConnection;
 use App\Models\Node;
-use App\Providers\GatewayQueueServiceProvider;
+use App\Models\Process;
 use Illuminate\Bus\UniqueLock;
 use Illuminate\Console\Scheduling\CallbackEvent;
 use Illuminate\Console\Scheduling\Event;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
-use Laravel\Horizon\MasterSupervisor;
-use Tests\Support\FakeGatewayHorizonRuntime;
-use Tests\Support\RecordingProcessRunner;
+use Tests\Support\ProcessesApiFakeRuntimeManager;
 
 /** @return list<Event> */
 function gateway_queue_schedule(): array
@@ -172,12 +170,22 @@ describe(GatewayQueueRedis::class, function (): void {
 describe('Horizon', function (): void {
     it('works tasks with three processes, task-vms and builds with one each, below the connection retry_after', function (): void {
         expect(config('horizon.use'))->toBe(GatewayQueue::Connection)
-            ->and(config('horizon.fast_termination'))->toBeTrue()
+            ->and(config('horizon.fast_termination'))->toBeFalse()
             ->and([config('horizon.defaults.tasks.queue'), config('horizon.defaults.tasks.minProcesses'), config('horizon.defaults.tasks.maxProcesses')])->toBe([['tasks'], 3, 3])
             ->and([config('horizon.defaults.builds.queue'), config('horizon.defaults.builds.minProcesses'), config('horizon.defaults.builds.maxProcesses')])->toBe([['builds'], 1, 1])
             ->and([config('horizon.defaults.task-vms.queue'), config('horizon.defaults.task-vms.minProcesses'), config('horizon.defaults.task-vms.maxProcesses')])->toBe([['task-vms'], 1, 1])
             ->and(config('horizon.defaults.builds.timeout'))->toBeLessThan(config('queue.connections.gateway.retry_after'))
             ->and(array_keys(config('horizon.environments')))->toBe(['*']);
+    });
+
+    it('gives the task-vms worker a timeout no task VM job exceeds, so no job is killed early', function (): void {
+        $jobs = [ProvisionTaskVm::class, EnrollTaskVm::class, PrepareTaskVmRuntime::class, ParkTaskVm::class, ResumeTaskVm::class, DestroyTaskVm::class, EnsureWarmClaimReady::class, RefillTaskVmPool::class, SweepTaskVmHosts::class];
+        $supervisor = config('horizon.defaults.task-vms.timeout');
+        // A job without its own timeout runs under the supervisor's.
+        $timeouts = array_map(static fn (string $class): int => (int) ((new ReflectionClass($class))->getDefaultProperties()['timeout'] ?? $supervisor), $jobs);
+
+        expect(max($timeouts))->toBeLessThanOrEqual($supervisor)
+            ->and(new ProvisionTaskVm(1)->queue)->toBe(GatewayQueue::TaskVms->value);
     });
 
     it('shows the New Dawn dashboard only to a WireGuard peer with Gateway access', function (): void {
@@ -190,137 +198,72 @@ describe('Horizon', function (): void {
         $this->withServerVariables(['REMOTE_ADDR' => '192.0.2.50'])->get('/horizon')->assertForbidden();
     });
 
-    it('refuses a dashboard request from another site, which a CSRF token would otherwise stop', function (): void {
+    it('admits a dashboard change only from the Gateway origin, because the dashboard has no CSRF token', function (): void {
         $gateway = Node::query()->create(['name' => 'gateway', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '192.0.2.2', 'wireguard_ip' => '10.44.0.2']);
         $this->markAsGateway($gateway);
+        // Laravel skips its request forgery check while unit tests run.
+        app()->detectEnvironment(static fn (): string => 'production');
         $peer = $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.2']);
 
-        $peer->withHeaders(['Origin' => 'https://evil.example'])->post('/horizon/api/jobs/retry/1')->assertForbidden();
-        $peer->withHeaders(['Sec-Fetch-Site' => 'cross-site'])->get('/horizon')->assertForbidden();
+        $peer->withHeaders(['Sec-Fetch-Site' => 'cross-site'])->post('/horizon/api/jobs/retry/1')->assertForbidden();
+        $peer->withHeaders(['Sec-Fetch-Site' => 'same-site'])->post('/horizon/api/jobs/retry/1')->assertForbidden();
+        $peer->withHeaders([])->post('/horizon/api/jobs/retry/1')->assertForbidden();
+        expect($peer->withHeaders(['Sec-Fetch-Site' => 'same-origin'])->post('/horizon/api/jobs/retry/1')->status())->not->toBe(403);
     });
 });
 
-describe(GatewayHorizonUnit::class, function (): void {
+describe(GatewayHorizon::class, function (): void {
     beforeEach(function (): void {
-        $this->unitDirectory = sys_get_temp_dir().'/gateway-horizon-'.bin2hex(random_bytes(4));
-        File::ensureDirectoryExists($this->unitDirectory);
-    });
-
-    afterEach(function (): void {
-        File::deleteDirectory($this->unitDirectory);
-    });
-
-    it('renders one unit that starts only on a release with Horizon and stops only the master', function (): void {
-        $unit = new GatewayHorizonUnit(new RecordingProcessRunner, new FakeGatewayHorizonRuntime, phpBinary: '/usr/bin/php8.5')->render('/home/orbit/orbit/apps/gateway', '/home/orbit/.orbit');
-
-        expect($unit)->toContain(
-            "StartLimitIntervalSec=0\n",
-            "User=orbit\n",
-            "WorkingDirectory=/home/orbit/orbit/apps/gateway\n",
-            "Environment=PATH=/usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin\n",
-            "Environment=NODE_USE_SYSTEM_CA=1\n",
-            'ExecCondition="/usr/bin/test" "-f" "/home/orbit/orbit/apps/gateway/config/horizon.php"'."\n",
-            'ExecStart="/usr/bin/php8.5" "/home/orbit/orbit/apps/gateway/artisan" "horizon"'."\n",
-            "Restart=always\n",
-            "RestartSec=5\n",
-            "KillMode=process\n",
-        )->and(is_file(base_path(GatewayHorizonUnit::Marker)))->toBeTrue();
-    });
-
-    it('installs and starts Horizon, and reports started only once a master registered', function (): void {
         config(['orbit.gateway_queue.connection' => 'services-valkey']);
-        $processes = new RecordingProcessRunner;
-        $runtime = new FakeGatewayHorizonRuntime;
-
-        $outcome = new GatewayHorizonUnit($processes, $runtime, applicationPath: '/a', orbitHome: '/h', unitDirectory: $this->unitDirectory)->converge();
-
-        expect($outcome)->toBe(['outcome' => 'started', 'task_vm_wait_ms' => 0])
-            ->and(array_map(static fn (array $arguments): string => implode(' ', array_slice($arguments, 0, 4)), $processes->ran))->toBe([
-                'sudo install -m 0644',
-                'sudo systemctl daemon-reload',
-                'sudo systemctl enable --now',
-            ])
-            // Nothing ran before, so the task-vms queue is never paused.
-            ->and($runtime->calls)->toBe(['terminate']);
+        $this->gateway = $this->markAsGateway(Node::query()->create(['name' => 'gateway', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '192.0.2.2', 'wireguard_ip' => '10.44.0.2', 'user' => 'orbit']));
+        $this->scheduler = Process::query()->create([
+            'owner_type' => Node::class,
+            'owner_id' => $this->gateway->id,
+            'name' => 'schedule-work',
+            'runtime' => ProcessRuntime::Systemd,
+            'working_directory' => '/home/orbit/orbit/apps/gateway',
+            'runtime_config' => ['command' => ['/usr/bin/php8.5', 'artisan', 'schedule:work'], 'environment_file' => ''],
+            'restart_policy' => 'always',
+            'desired_state' => DesiredProcessState::Running,
+            'status' => LifecycleStatus::Active,
+        ]);
+        $this->runtime = new ProcessesApiFakeRuntimeManager;
+        app()->instance(ProcessRuntimeManager::class, $this->runtime);
+        // The command's closure is bound to the command, so it counts in the cache.
+        Artisan::command('horizon:terminate', function (): void {
+            Cache::increment('gateway-horizon-terminated');
+        });
     });
 
-    it('keeps the task-vms queue paused until the old task-vms worker is done, so task VM jobs stay in order', function (): void {
-        config(['orbit.gateway_queue.connection' => 'services-valkey']);
-        $runtime = new FakeGatewayHorizonRuntime;
-        $runtime->masterNames = ['old-master'];
-        $runtime->workers = [4242];
+    it('creates and starts a horizon Process beside the scheduler when the Gateway has none', function (): void {
+        expect(app(GatewayHorizon::class)->converge($this->gateway, $this->scheduler))->toBe('created');
 
-        $outcome = new GatewayHorizonUnit(new RecordingProcessRunner, $runtime, applicationPath: '/a', orbitHome: '/h', unitDirectory: $this->unitDirectory)->converge();
-
-        expect($outcome['outcome'])->toBe('started')
-            ->and($runtime->calls)->toBe(['pause:'.GatewayHorizonUnit::taskVmPauseSeconds(), 'terminate', 'worker-gone', 'resume']);
+        $horizon = Process::query()->where('name', 'horizon')->sole();
+        expect($horizon->runtime)->toBe(ProcessRuntime::Systemd)
+            ->and($horizon->runtime_config['command'])->toBe(['/usr/bin/php8.5', 'artisan', 'horizon'])
+            ->and($horizon->working_directory)->toBe('/home/orbit/orbit/apps/gateway')
+            ->and($horizon->restart_policy)->toBe('always')
+            ->and($horizon->desired_state)->toBe(DesiredProcessState::Running)
+            ->and($this->runtime->convergedProcessIds)->toBe([$horizon->id])
+            ->and((int) Cache::get('gateway-horizon-terminated'))->toBe(0);
     });
 
-    it('fails and keeps the task-vms queue paused when the old worker outlasts the wait, so two task VM jobs never overlap', function (): void {
-        config(['orbit.gateway_queue.connection' => 'services-valkey']);
-        $runtime = new FakeGatewayHorizonRuntime;
-        $runtime->masterNames = ['old-master'];
-        $runtime->workers = [4242];
-        $runtime->workerChecksLeft = null;
+    it('terminates the running master and leaves its Process alone, so no restart kills a running job', function (): void {
+        app(GatewayHorizon::class)->converge($this->gateway, $this->scheduler);
+        $this->runtime->convergedProcessIds = [];
 
-        expect(fn () => new GatewayHorizonUnit(new RecordingProcessRunner, $runtime, applicationPath: '/a', orbitHome: '/h', unitDirectory: $this->unitDirectory, taskVmWaitSeconds: 0)->converge())
-            ->toThrow(fn (NodeProvisioningException $exception) => expect([$exception->errorCode, $exception->step])->toBe(['gateway.horizon_unit_failed', 'horizon-task-vms']))
-            ->and($runtime->calls)->toBe(['pause:'.GatewayHorizonUnit::taskVmPauseSeconds(), 'terminate']);
+        expect(app(GatewayHorizon::class)->converge($this->gateway, $this->scheduler))->toBe('terminated')
+            ->and((int) Cache::get('gateway-horizon-terminated'))->toBe(1)
+            ->and($this->runtime->convergedProcessIds)->toBe([])
+            ->and(Process::query()->where('name', 'horizon')->count())->toBe(1);
     });
 
-    it('waits longer than any task-vms job runs, and pauses longer than it waits', function (): void {
-        $jobs = [ProvisionTaskVm::class, EnrollTaskVm::class, PrepareTaskVmRuntime::class, ParkTaskVm::class, ResumeTaskVm::class, DestroyTaskVm::class, EnsureWarmClaimReady::class, RefillTaskVmPool::class, SweepTaskVmHosts::class];
-        // A job without its own timeout runs under the supervisor's.
-        $timeouts = array_map(static fn (string $class): int => (int) ((new ReflectionClass($class))->getDefaultProperties()['timeout'] ?? GatewayHorizonUnit::taskVmJobSeconds()), $jobs);
-
-        expect(max($timeouts))->toBeLessThanOrEqual(GatewayHorizonUnit::taskVmJobSeconds())
-            ->and(GatewayHorizonUnit::taskVmJobSeconds())->toBe(config('horizon.defaults.task-vms.timeout'))
-            ->and(GatewayHorizonUnit::taskVmWaitSeconds())->toBeGreaterThan(GatewayHorizonUnit::taskVmJobSeconds())
-            ->and(GatewayHorizonUnit::taskVmPauseSeconds())->toBeGreaterThan(GatewayHorizonUnit::taskVmWaitSeconds())
-            ->and(new ProvisionTaskVm(1)->queue)->toBe(GatewayQueue::TaskVms->value);
-    });
-
-    it('fails when no new Horizon master registers', function (): void {
-        config(['orbit.gateway_queue.connection' => 'services-valkey']);
-        $runtime = new FakeGatewayHorizonRuntime;
-        $runtime->newMasterStarts = false;
-
-        expect(fn () => new GatewayHorizonUnit(new RecordingProcessRunner, $runtime, applicationPath: '/a', orbitHome: '/h', unitDirectory: $this->unitDirectory, startSeconds: 0)->converge())
-            ->toThrow(fn (NodeProvisioningException $exception) => expect([$exception->errorCode, $exception->step])->toBe(['gateway.horizon_unit_failed', 'horizon-start']));
-    });
-
-    it('changes nothing without the Gateway queue when it never had the unit, and removes a unit it finds', function (): void {
+    it('does nothing without the Gateway queue', function (): void {
         config(['orbit.gateway_queue.connection' => '']);
-        $processes = new RecordingProcessRunner;
-        $unit = new GatewayHorizonUnit($processes, new FakeGatewayHorizonRuntime, unitDirectory: $this->unitDirectory);
 
-        expect($unit->converge())->toBe(['outcome' => 'none'])->and($processes->ran)->toBe([]);
-
-        File::put($this->unitDirectory.'/orbit-horizon.service', '');
-
-        expect($unit->converge())->toBe(['outcome' => 'stopped'])
-            ->and(array_map(static fn (array $arguments): string => implode(' ', $arguments), $processes->ran))->toBe([
-                'sudo systemctl disable --now --no-block orbit-horizon.service',
-                "sudo rm -f {$this->unitDirectory}/orbit-horizon.service",
-                'sudo systemctl daemon-reload',
-            ]);
-    });
-
-    it('fails when systemd refuses the unit, and still resumes a paused task-vms queue', function (): void {
-        config(['orbit.gateway_queue.connection' => 'services-valkey']);
-        $processes = new class implements ProcessRunner
-        {
-            public function run(ProcessInvocation $invocation): CommandResult
-            {
-                return $invocation->arguments[2] === 'enable' ? new CommandResult(1, '', 'denied', 1, false) : new CommandResult(0, '', '', 1, false);
-            }
-        };
-        $runtime = new FakeGatewayHorizonRuntime;
-        $runtime->workers = [4242];
-
-        expect(fn () => new GatewayHorizonUnit($processes, $runtime, applicationPath: '/a', orbitHome: '/h', unitDirectory: $this->unitDirectory)->converge())
-            ->toThrow(fn (NodeProvisioningException $exception) => expect($exception->errorCode)->toBe('gateway.horizon_unit_failed'))
-            ->and(end($runtime->calls))->toBe('resume');
+        expect(app(GatewayHorizon::class)->converge($this->gateway, $this->scheduler))->toBe('none')
+            ->and(Process::query()->where('name', 'horizon')->exists())->toBeFalse()
+            ->and((int) Cache::get('gateway-horizon-terminated'))->toBe(0);
     });
 });
 
@@ -360,34 +303,5 @@ describe(GatewayQueueMove::class, function (): void {
         expect(fn () => new GatewayQueueMove()->move())
             ->toThrow(fn (NodeProvisioningException $exception) => expect($exception->errorCode)->toBe('gateway.queue_move_failed'))
             ->and(DB::table('jobs')->sole()->queue)->toBe('task-vms');
-    });
-});
-
-describe('the release watch of a Horizon master', function (): void {
-    beforeEach(function (): void {
-        $this->release = sys_get_temp_dir().'/gateway-release-'.bin2hex(random_bytes(4));
-        File::ensureDirectoryExists($this->release.'/config');
-        config(['orbit.gateway_checkout' => $this->release]);
-    });
-
-    afterEach(function (): void {
-        File::deleteDirectory($this->release);
-    });
-
-    it('terminates the master once the stable path switches back to a release without Horizon', function (): void {
-        $master = Mockery::mock(MasterSupervisor::class);
-        $master->working = true;
-        $master->shouldReceive('terminate')->once();
-
-        GatewayQueueServiceProvider::watchRelease($master, realpath(base_path()));
-    });
-
-    it('leaves a move to a release with Horizon to the handoff, which keeps the task-vms queue in order', function (): void {
-        File::put($this->release.'/config/horizon.php', '<?php return [];');
-        $master = Mockery::mock(MasterSupervisor::class);
-        $master->working = true;
-        $master->shouldNotReceive('terminate');
-
-        GatewayQueueServiceProvider::watchRelease($master, realpath(base_path()));
     });
 });

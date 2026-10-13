@@ -18,7 +18,7 @@ use App\Infrastructure\Files\ProtectedFileWriter;
 use App\Infrastructure\Gateway\FpmPoolConnections;
 use App\Infrastructure\Gateway\FpmScriptRequest;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
-use App\Infrastructure\Gateway\GatewayHorizonUnit;
+use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Infrastructure\Gateway\GatewayQueueMove;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
 use App\Models\Node;
@@ -36,9 +36,9 @@ use Throwable;
  *    The release units are only written and the timer enabled, so the release that runs the handoff keeps running.
  * 4. The scheduler finishes its running commands and starts on the new release ({@see GatewaySchedulerHandoff}).
  * 5. Document cleanup is reconciled and resumed ({@see GatewayCleanupHandoff}).
- * 6. Laravel Horizon starts on the new release before the scheduler moves, and after the drain the jobs of the old
- *    database queues move to the Gateway queue
- *    ({@see GatewayQueueMove}, {@see GatewayHorizonUnit}).
+ * 6. After the drain, `horizon:terminate` lets Laravel Horizon finish its running jobs and start again on the new
+ *    release ({@see GatewayHorizon}), and the jobs of the old database queues move to the Gateway queue
+ *    ({@see GatewayQueueMove}).
  * 7. The Gateway Node's own `orbit-agent` moves to the release's pin ({@see GatewayNodeAgentUpdate}), which the
  *    fleet rollout never does for the Gateway's machine.
  *
@@ -86,7 +86,7 @@ final readonly class GatewayRuntimeHandoff
         private int $idleWaitSeconds = 60,
         private ?FleetConvergeUnits $fleet = null,
         private ?GatewayNodeAgentUpdate $agent = null,
-        private ?GatewayHorizonUnit $horizon = null,
+        private ?GatewayHorizon $horizon = null,
         private ?GatewayQueueMove $queueMove = null,
     ) {
         $this->readLivePool = $readLivePool ?? static fn (string $path): string|false => @file_get_contents($path);
@@ -148,26 +148,11 @@ final readonly class GatewayRuntimeHandoff
     {
         $gateway = $this->gateway();
         $generation = $this->cleanup->generation();
-        // Horizon first: it reads only Redis, so it never races the old scheduler's database workers. Its failure fails
-        // the handoff, but only after the scheduler moved on.
-        $horizonFailure = null;
-
-        try {
-            $horizon = $this->step('horizon', 'gateway.release_units_failed', fn (): array => $this->horizon?->converge() ?? ['outcome' => 'none']);
-        } catch (GatewayReleaseException $exception) {
-            $horizonFailure = $exception;
-            $horizon = ['outcome' => 'failed', 'error_code' => $exception->errorCode];
-        }
-
         $scheduler = $this->scheduler->handoff($gateway);
         $cleanup = $this->cleanup->resume($generation, true);
-        // After the drain, no old worker takes a database job any more.
+        $horizon = $this->step('horizon', 'gateway.release_units_failed', fn (): string => $this->horizon?->converge($gateway, $this->scheduler->process($gateway)) ?? 'none');
+        // After the drain, no old scheduler worker takes a database job any more.
         $moved = $this->step('queue_move', 'gateway.release_units_failed', fn (): int => $this->queueMove?->move() ?? 0);
-
-        if ($horizonFailure instanceof GatewayReleaseException) {
-            throw $horizonFailure;
-        }
-
         $agent = $this->gatewayAgent($gateway);
 
         return [

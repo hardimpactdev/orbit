@@ -7,6 +7,7 @@ namespace App\Infrastructure\GatewayReleases;
 use App\Domain\AgentView\AgentProcessView;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\Processes\ProcessRuntime;
+use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Models\Node;
@@ -152,7 +153,8 @@ final readonly class GatewaySchedulerHandoff
         foreach ($this->systemdProcesses($gateway) as $process) {
             $directory = rtrim($process->working_directory, '/');
 
-            if ($process->is($scheduler) || ($directory !== $current && ! str_starts_with($directory, $current.'/'))) {
+            // Horizon moves with horizon:terminate, which lets its running jobs finish; a restart would kill them.
+            if ($process->is($scheduler) || GatewayHorizon::runs($process) || ($directory !== $current && ! str_starts_with($directory, $current.'/'))) {
                 continue;
             }
 

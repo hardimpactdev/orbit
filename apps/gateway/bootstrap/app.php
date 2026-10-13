@@ -106,8 +106,8 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withCommands()
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->replace(ValidatePostSize::class, ValidateDocumentPostSize::class);
-        // Horizon takes no CSRF token: the Gateway keeps no session, and GuardBrowserOrigins admits only same-origin calls.
-        $middleware->validateCsrfTokens(except: ['horizon', 'horizon/*']);
+        // The Gateway keeps no session, so the Horizon dashboard has no CSRF token: only Sec-Fetch-Site: same-origin passes.
+        $middleware->preventRequestForgery(originOnly: true);
         $middleware->trimStrings(except: [ValidateDocumentPostSize::preservesExactJson(...)]);
         $middleware->convertEmptyStringsToNull(except: [ValidateDocumentPostSize::preservesExactJson(...)]);
         $middleware->prepend(GuardBrowserOrigins::class);

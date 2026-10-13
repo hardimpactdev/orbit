@@ -28,7 +28,7 @@ use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Files\ProtectedFileWriter;
 use App\Infrastructure\Gateway\GatewayApplicationPath;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
-use App\Infrastructure\Gateway\GatewayHorizonUnit;
+use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Infrastructure\Gateway\GatewayQueueMove;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
 use App\Infrastructure\GatewayReleases\ActionGatewayDocumentCleanup;
@@ -105,9 +105,9 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
             static fn (Application $app): ArtisanGatewayReleaseRuntime => new ArtisanGatewayReleaseRuntime(
                 layout: $app->make(GatewayReleaseLayout::class),
                 processes: $app->make(ProcessRunner::class),
-                // Horizon's wait for the old task-vms worker and its start, the scheduler drain, a forced stop's wait for the
-                // tick lock, the rest of the handoff, and the Gateway Node's agent update.
-                timeout: (float) (GatewayHorizonUnit::taskVmWaitSeconds() + GatewayHorizonUnit::StartSeconds + self::drainSeconds() + 330 + 600 + GatewayNodeAgentUpdate::TimeoutSeconds),
+                // The scheduler drain, a forced stop's wait for the tick lock, the rest of the handoff, and the Gateway
+                // Node's agent update.
+                timeout: (float) (self::drainSeconds() + 330 + 600 + GatewayNodeAgentUpdate::TimeoutSeconds),
                 stepLock: self::stepLock(),
                 fallback: new LocalGatewayReleaseRuntime($app->make(GatewayRuntimeHandoff::class)),
             ),
@@ -133,7 +133,7 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 orbitHome: rtrim(Config::string('orbit.home'), '/'),
                 fleet: $app->make(FleetConvergeUnits::class),
                 agent: new GatewayNodeAgentUpdate($app->make(ProcessRunner::class)),
-                horizon: $app->make(GatewayHorizonUnit::class),
+                horizon: $app->make(GatewayHorizon::class),
                 queueMove: new GatewayQueueMove,
             ),
         );

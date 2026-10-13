@@ -4,8 +4,7 @@ declare(strict_types=1);
 
 /*
  * Laravel Horizon works the Gateway queue (docs/reference/gateway-queue.md): one supervisor per queue, so a long build
- * never holds up a short job. The `orbit-horizon.service` unit starts only while this file exists in the current
- * release, so a switch back to a release without Horizon leaves it stopped.
+ * never holds up a short job. It runs as the Gateway Node's `horizon` Process.
  */
 return [
     'name' => 'orbit-gateway',
@@ -13,8 +12,8 @@ return [
     'path' => 'horizon',
     'use' => 'gateway',
     'prefix' => 'orbit-gateway-horizon:',
-    // The dashboard admits WireGuard peers with Gateway access (GatewayQueueServiceProvider); GuardBrowserOrigins admits
-    // only same-origin requests, because the dashboard takes no CSRF token.
+    // The dashboard admits WireGuard peers with Gateway access (GatewayQueueServiceProvider). The web group's request
+    // forgery check runs origin-only (bootstrap/app.php), because the dashboard has no CSRF token.
     'middleware' => ['web'],
     'waits' => [
         'gateway:tasks' => 60,
@@ -37,9 +36,9 @@ return [
             'queue' => 24,
         ],
     ],
-    // A release terminates the master at once. Each running job finishes in its old worker process, and the restarted
-    // master starts new workers on the new release right away.
-    'fast_termination' => true,
+    // A release runs horizon:terminate. The master waits for its running jobs before it exits and its Process starts it
+    // again on the new release, so a new task-vms worker never runs beside an old one.
+    'fast_termination' => false,
     'memory_limit' => 256,
     'defaults' => [
         'tasks' => [
@@ -55,8 +54,8 @@ return [
             'timeout' => 1700,
             'nice' => 0,
         ],
-        // One worker, so task VM jobs run one at a time and in order. A release pauses the queue until the old worker is
-        // done (GatewayHorizonUnit). The timeout is the longest task VM job, EnrollTaskVm; no task-vms job may exceed it.
+        // One worker, so task VM jobs run one at a time and in order. The timeout is the longest task VM job, EnrollTaskVm;
+        // no task-vms job may exceed it.
         'task-vms' => [
             'connection' => 'gateway',
             'queue' => ['task-vms'],

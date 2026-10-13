@@ -34,7 +34,6 @@ final readonly class NativeGatewayWebConverger implements GatewayWebConverger
         private AgentViewConverger $agentView,
         private GatewayReleaseUnitConverger $releaseUnits,
         private ?FleetConvergeUnits $fleet = null,
-        private ?GatewayHorizonUnit $horizon = null,
     ) {}
 
     /**
@@ -62,7 +61,6 @@ final readonly class NativeGatewayWebConverger implements GatewayWebConverger
         $this->agentView->converge();
         $this->releaseUnits->converge();
         $this->fleet?->converge();
-        $this->horizon?->converge();
     }
 
     private function build(Node $node): void

@@ -11,7 +11,6 @@ use App\Actions\GatewayReleases\RunAutomaticGatewayReleaseAction;
 use App\Domain\GatewayReleases\GatewayReleaseDatabase;
 use App\Domain\GatewayReleases\GatewayReleaseRuntime;
 use App\Domain\GatewayReleases\GatewayReleaseVerifier;
-use App\Infrastructure\Gateway\GatewayHorizonUnit;
 use App\Infrastructure\GatewayReleases\ArtisanGatewayReleaseRuntime;
 use App\Infrastructure\GatewayReleases\GatewayNodeAgentUpdate;
 use App\Infrastructure\GatewayReleases\GatewayReleaseAdopter;
@@ -73,7 +72,7 @@ describe('the Gateway release pipeline from the container', function (): void {
             ->and($runtime)->toBeInstanceOf(ArtisanGatewayReleaseRuntime::class)
             ->and(wired($runtime, 'fallback'))->toBeInstanceOf(LocalGatewayReleaseRuntime::class)
             ->and(wired($runtime, 'stepLock'))->toBe('/home/orbit/.orbit/gateway-release-step.lock')
-            ->and(wired($runtime, 'timeout'))->toBe((float) (GatewayHorizonUnit::taskVmWaitSeconds() + GatewayHorizonUnit::StartSeconds + 450 + 330 + 600 + 480))
+            ->and(wired($runtime, 'timeout'))->toBe(450.0 + 330 + 600 + 480)
             ->and($database)->toBeInstanceOf(SqliteGatewayReleaseDatabase::class)
             ->and(wired($database, 'stepLock'))->toBe('/home/orbit/.orbit/gateway-release-step.lock')
             ->and(wired($database, 'keptSnapshots'))->toBe(3)

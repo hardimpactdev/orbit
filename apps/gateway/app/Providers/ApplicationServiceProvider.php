@@ -261,7 +261,6 @@ use App\Infrastructure\Fleet\GitReleaseHistory;
 use App\Infrastructure\Gateway\GatewayApplicationPath;
 use App\Infrastructure\Gateway\GatewayCheckoutAccessConverger;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
-use App\Infrastructure\Gateway\GatewayHorizonUnit;
 use App\Infrastructure\Gateway\GatewayWebDirectoryConverger;
 use App\Infrastructure\Gateway\NativeGatewayCaddyInstaller;
 use App\Infrastructure\Gateway\NativeGatewayCertificatePublisher;
@@ -878,7 +877,6 @@ final class ApplicationServiceProvider extends ServiceProvider
                 agentView: app(AgentViewConverger::class),
                 releaseUnits: app(GatewayReleaseUnitConverger::class),
                 fleet: app(FleetConvergeUnits::class),
-                horizon: app(GatewayHorizonUnit::class),
             ),
         );
         $this->app->singleton(
