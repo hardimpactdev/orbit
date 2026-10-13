@@ -14,7 +14,7 @@ use App\Domain\WireGuard\Ipv4Subnet;
  * missing, `task-vms:prepare-host` creates it from `zfsDataset`. `warmVms` is how many enrolled VMs
  * without a group the host keeps ready for claims; they take slots of `maxVms` like any other VM. `operatorOwned` lists the
  * Incus instances and custom volumes on the host that the operator owns, as `<project>/<name>` or `<project>/*`: the
- * stray report skips them ({@see \App\Infrastructure\TaskVms\TaskVmHostAudit::strays()}).
+ * stray report skips them.
  */
 final readonly class TaskVmHost
 {
