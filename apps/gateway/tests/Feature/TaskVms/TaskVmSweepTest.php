@@ -28,6 +28,7 @@ use App\Models\TaskVm;
 use Illuminate\Console\Scheduling\CallbackEvent;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Log;
 use Tests\Support\TaskVmSettingsBuilder;
 
 use function Pest\Laravel\mock;
@@ -45,9 +46,20 @@ final class TaskVmSweepIncus implements SshExecutor
 
     public bool $projectMissing = false;
 
+    /** @var array<string, list<string>> instances outside the task VM project, as `project/name`, per host address */
+    public array $foreign = [];
+
+    /** @var array<string, list<string>> custom volumes as `project/pool/name`, per host address */
+    public array $volumes = [];
+
+    public bool $failInventory = false;
+
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
         $this->calls[] = [$connection->host, $command->arguments];
+        if (array_slice($command->arguments, 0, 5) === ['sudo', '-n', 'incus', 'query', '--']) {
+            return $this->failInventory ? new CommandResult(1, '', 'Error: forbidden', 1, false) : $this->query($connection->host, $command->arguments[5]);
+        }
         $arguments = array_slice($command->arguments, 5);
         if ($arguments === ['project', 'show', '--', 'orbit-tasks']) {
             // Incus answers `list` for a missing project with an empty list, so only this call tells.
@@ -71,6 +83,27 @@ final class TaskVmSweepIncus implements SshExecutor
         }
 
         throw new RuntimeException('Unexpected command: '.implode(' ', $command->arguments));
+    }
+
+    /** Answers the inventory GETs as Incus does: URLs, with `?project=` except in `default`. */
+    private function query(string $host, string $path): CommandResult
+    {
+        $url = static fn (string $base, string $project, string $name): string => $base.rawurlencode($name).($project === 'default' ? '' : '?project='.$project);
+        $volumes = array_map(static fn (string $volume): array => explode('/', $volume, 3), $this->volumes[$host] ?? []);
+        $urls = match (true) {
+            $path === '/1.0/instances?all-projects=true' => [
+                ...array_map(static fn (string $name): string => $url('/1.0/instances/', 'orbit-tasks', $name), $this->instances[$host] ?? []),
+                ...array_map(static fn (string $instance): string => $url('/1.0/instances/', ...explode('/', $instance, 2)), $this->foreign[$host] ?? []),
+            ],
+            $path === '/1.0/storage-pools' => ['/1.0/storage-pools/default', '/1.0/storage-pools/orbit-tasks'],
+            preg_match('#\A/1\.0/storage-pools/([a-z0-9-]+)/volumes/custom\?all-projects=true\z#', $path, $pool) === 1 => array_values(array_map(
+                static fn (array $volume): string => $url("/1.0/storage-pools/{$pool[1]}/volumes/custom/", $volume[0], $volume[2]),
+                array_filter($volumes, static fn (array $volume): bool => $volume[1] === $pool[1]),
+            )),
+            default => throw new RuntimeException('Unexpected query: '.$path),
+        };
+
+        return new CommandResult(0, json_encode($urls, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), '', 1, false);
     }
 }
 
@@ -146,7 +179,8 @@ describe(SweepTaskVmHosts::class, function (): void {
             '10.44.0.7' => [$ready->name, 'tvm-image-20261010030000', 'dev-box'],
             '10.44.0.8' => [$provisioning->name],
         ])
-            ->and(collect($this->incus->calls)->every(static fn (array $call): bool => array_slice($call[1], 0, 5) === ['sudo', '-n', 'incus', '--project', 'orbit-tasks']))->toBeTrue()
+            ->and(collect($this->incus->calls)->every(static fn (array $call): bool => array_slice($call[1], 0, 5) === ['sudo', '-n', 'incus', '--project', 'orbit-tasks']
+                || (array_slice($call[1], 0, 5) === ['sudo', '-n', 'incus', 'query', '--'] && count($call[1]) === 6)))->toBeTrue()
             ->and($ready->fresh()?->state)->toBe(TaskVmState::Ready);
     });
 
@@ -301,5 +335,124 @@ describe('Doctor', function (): void {
         app()->instance(TaskVmSettings::class, TaskVmSettingsBuilder::off());
         expect(tvm_sweep_doctor($this->beast))->toBe([])
             ->and($this->incus->calls)->toBe([]);
+    });
+});
+
+describe('strays', function (): void {
+    /** @return list<array{string, string}> code and observed value of the stray issues */
+    function tvm_stray_doctor(Node $node, bool $reachable = true): array
+    {
+        $report = app(NodeDoctorProbe::class)->inspect(new DoctorNodeContext($node, new NodeInspectionData($reachable, 'linux', 'x86_64', true)));
+
+        return array_values(array_map(
+            static fn ($issue): array => [$issue->code, (string) $issue->observed],
+            array_filter($report->issues, static fn ($issue): bool => str_starts_with($issue->code, 'node.task_vm_')),
+        ));
+    }
+
+    /** A live row of `$state` on `$host` whose group has `$status`, or no group, last changed `$minutes` ago. */
+    function tvm_stray_vm(Node $host, TaskVmState $state, ?TaskGroupStatus $status, int $minutes, string $wireguardIp): TaskVm
+    {
+        $vm = tvm_sweep_vm($host, $state, $wireguardIp);
+        $at = now()->subMinutes($minutes);
+        if ($status === null) {
+            TaskVm::query()->whereKey($vm->id)->update(['group_id' => null, 'updated_at' => $at]);
+        } else {
+            Task::query()->withoutGlobalScopes()->whereKey($vm->group_id)->update(['status' => $status->value, 'updated_at' => $at]);
+            TaskVm::query()->whereKey($vm->id)->update(['updated_at' => $at]);
+        }
+
+        return $vm->fresh() ?? throw new RuntimeException('The row is gone.');
+    }
+
+    beforeEach(function (): void {
+        $this->travelTo(now()->setDate(2026, 10, 13)->setTime(14, 0));
+        TaskVmSettingsBuilder::bind(['hosts' => [
+            TaskVmSettingsBuilder::host($this->beast->id, ['maxVms' => 4, 'operatorOwned' => ['orbit-ci/*', 'default/ow-exp-20261006']]),
+        ]]);
+    });
+
+    it('reports instances and custom volumes that Orbit does not own, on every project and pool, and deletes none', function (): void {
+        $ready = tvm_sweep_vm($this->beast, TaskVmState::Ready, '10.44.0.129');
+        $this->incus->instances = ['10.44.0.7' => [$ready->name, 'tvm-image-20261013133000', 'tvm-image-20261013133000-smoke', 'tvm-template-20261013120000', 'dev-box']];
+        $this->incus->foreign = ['10.44.0.7' => ['orbit-ci/ci-beast-1', 'default/ow-exp-20261006', 'default/renewed-ghost', 'orbit-templates/orbit-template-agent-base']];
+        $this->incus->volumes = ['10.44.0.7' => [
+            'orbit-tasks/orbit-tasks/tvm-template-46-20261013083819', 'orbit-tasks/orbit-tasks/'.$ready->name.'-workspace',
+            'orbit-tasks/orbit-tasks/scratch', 'orbit-tasks/default/tvm-template-46-20261013083819', 'orbit-ci/default/runner-cache',
+        ]];
+        Log::spy();
+
+        app()->call([new SweepTaskVmHosts, 'handle']);
+
+        $expected = [
+            ['node.task_vm_stray_instance', 'orbit-tasks/tvm-template-20261013120000'],
+            ['node.task_vm_stray_instance', 'orbit-tasks/dev-box'],
+            ['node.task_vm_stray_instance', 'default/renewed-ghost'],
+            ['node.task_vm_stray_instance', 'orbit-templates/orbit-template-agent-base'],
+            ['node.task_vm_stray_volume', 'orbit-tasks/orbit-tasks/scratch'],
+            ['node.task_vm_stray_volume', 'orbit-tasks/default/tvm-template-46-20261013083819'],
+        ];
+        foreach ($expected as [$code, $stray]) {
+            $instance = $code === 'node.task_vm_stray_instance';
+            Log::shouldHaveReceived('warning')->once()->with(
+                $instance ? 'A task VM host has an Incus instance that Orbit does not own.' : 'A task VM host has an Incus custom volume that Orbit does not own.',
+                ['node_id' => $this->beast->id, $instance ? 'instance' : 'volume' => $stray],
+            );
+        }
+        expect(collect($this->incus->calls)->contains(static fn (array $call): bool => in_array('delete', $call[1], true)))->toBeFalse()
+            ->and(tvm_stray_doctor($this->beast))->toBe($expected);
+    });
+
+    it('reports ready and parked rows without an open group after an hour, but never warm rows or failed groups', function (): void {
+        $noGroup = tvm_stray_vm($this->beast, TaskVmState::Ready, null, 61, '10.44.0.129');
+        $completed = tvm_stray_vm($this->beast, TaskVmState::Parked, TaskGroupStatus::Completed, 90, '10.44.0.130');
+        tvm_stray_vm($this->beast, TaskVmState::Ready, TaskGroupStatus::Cancelled, 30, '10.44.0.131');
+        tvm_stray_vm($this->beast, TaskVmState::Ready, TaskGroupStatus::Failed, 600, '10.44.0.132');
+        tvm_stray_vm($this->beast, TaskVmState::Parked, TaskGroupStatus::WaitingForReview, 600, '10.44.0.133');
+        tvm_stray_vm($this->beast, TaskVmState::Warm, null, 600, '10.44.0.134');
+        $this->incus->instances = ['10.44.0.7' => TaskVm::query()->pluck('name')->all()];
+        Log::spy();
+
+        app()->call([new SweepTaskVmHosts, 'handle']);
+
+        expect(tvm_stray_doctor($this->beast))->toBe([
+            ['node.task_vm_stray_record', $noGroup->name.' ready'],
+            ['node.task_vm_stray_record', $completed->name.' parked'],
+        ]);
+        Log::shouldHaveReceived('warning')->once()->with('A task VM is ready or parked without an open group.', ['task_vm_id' => $noGroup->id, 'name' => $noGroup->name, 'state' => 'ready', 'group_id' => null]);
+        Log::shouldHaveReceived('warning')->once()->with('A task VM is ready or parked without an open group.', ['task_vm_id' => $completed->id, 'name' => $completed->name, 'state' => 'parked', 'group_id' => $completed->group_id]);
+        expect($noGroup->fresh()?->state)->toBe(TaskVmState::Ready)
+            ->and($completed->fresh()?->state)->toBe(TaskVmState::Parked);
+    });
+
+    it('reports a tvm Node without a live record after 15 minutes, also while it is unreachable', function (): void {
+        $stray = tvm_sweep_node('tvm-41', '10.44.0.141');
+        $destroyed = tvm_sweep_vm($this->beast, TaskVmState::Destroyed, '10.44.0.141');
+        $destroyed->update(['node_id' => $stray->id]);
+        $live = tvm_sweep_node('tvm-42', '10.44.0.142');
+        tvm_sweep_vm($this->beast, TaskVmState::Ready, '10.44.0.142')->update(['node_id' => $live->id]);
+        $named = tvm_sweep_node('tvm-template-box', '10.44.0.143');
+        $this->travel(16)->minutes();
+        $young = tvm_sweep_node('tvm-43', '10.44.0.144');
+        $this->incus->instances = ['10.44.0.7' => TaskVm::query()->live()->pluck('name')->all()];
+        Log::spy();
+
+        app()->call([new SweepTaskVmHosts, 'handle']);
+
+        Log::shouldHaveReceived('warning')->once()->with('A task VM Node has no live task VM record.', ['node_id' => $stray->id, 'name' => 'tvm-41']);
+        Log::shouldNotHaveReceived('warning', ['A task VM Node has no live task VM record.', ['node_id' => $young->id, 'name' => 'tvm-43']]);
+        expect(tvm_stray_doctor($stray, reachable: false))->toBe([['node.task_vm_stray_node', 'none']])
+            ->and(tvm_stray_doctor($live))->toBe([])
+            ->and(tvm_stray_doctor($named))->toBe([])
+            ->and(tvm_stray_doctor($young))->toBe([])
+            ->and(Node::query()->whereKey($stray->id)->exists())->toBeTrue();
+    });
+
+    it('fails the host in the sweep and reports it as unverifiable in Doctor when the inventory cannot be read', function (): void {
+        $this->incus->failInventory = true;
+
+        expect(fn () => app()->call([new SweepTaskVmHosts, 'handle']))
+            ->toThrow(TaskVmException::class, 'Node [beast]: task_vm.host_command_failed')
+            ->and(tvm_stray_doctor($this->beast))->toBe([['node.task_vm_inspection_failed', 'task_vm.host_command_failed']]);
     });
 });

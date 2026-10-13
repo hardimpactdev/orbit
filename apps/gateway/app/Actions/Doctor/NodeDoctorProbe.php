@@ -72,6 +72,13 @@ final readonly class NodeDoctorProbe implements DoctorFamilyProbe
                 observed: implode(',', $residue->steps),
             );
         }
+        // Stored state: a `tvm-<number>` Node that no live task VM row is, so the report holds while it is down.
+        if (TaskVmHostAudit::isStrayNode($node)) {
+            $issues[] = new DoctorIssueData(
+                NodeDoctorIssueCode::TaskVmStrayNode, DoctorIssueKind::Drift, 'node', $node->id, $node->name,
+                'The Node is named like a task VM, but no live task VM record is this Node.', expected: 'a live task VM record', observed: 'none',
+            );
+        }
         if (! $this->eligibility->isManagedForObservation($node)) {
             return DoctorFamilyReportData::fromIssues(DoctorFamily::Node, 1, $issues);
         }
@@ -282,7 +289,8 @@ final readonly class NodeDoctorProbe implements DoctorFamilyProbe
 
     /**
      * On a reachable task VM host: `tvm-<number>` instances in its project without a live row, and `ready` or
-     * `parked` rows whose VM is gone. Doctor only reports them; the sweep job cleans them up. A Node that is not
+     * `parked` rows whose VM is gone. Doctor only reports them; the sweep job cleans them up. Then the strays
+     * ({@see TaskVmHostAudit::strays()}), which nothing cleans up. A Node that is not
      * a configured host, or a task VM config that does not parse, reports nothing here.
      *
      * @return list<DoctorIssueData>
@@ -298,8 +306,9 @@ final readonly class NodeDoctorProbe implements DoctorFamilyProbe
         } catch (TaskVmException) {
             return [];
         }
+        $audit = $this->taskVms ?? app(TaskVmHostAudit::class);
         try {
-            $found = ($this->taskVms ?? app(TaskVmHostAudit::class))->audit($host, $node);
+            $found = $audit->audit($host, $node);
         } catch (Throwable $exception) {
             return [new DoctorIssueData(
                 NodeDoctorIssueCode::TaskVmInspectionFailed, DoctorIssueKind::Unverifiable, 'node', $node->id, $node->name,
@@ -318,6 +327,34 @@ final readonly class NodeDoctorProbe implements DoctorFamilyProbe
             $issues[] = new DoctorIssueData(
                 NodeDoctorIssueCode::TaskVmMissing, DoctorIssueKind::Drift, 'node', $node->id, $node->name,
                 "Task VM [{$vm->name}] is {$vm->state->value} but gone from Incus project [{$host->project}].", expected: $vm->name, observed: 'absent',
+            );
+        }
+        try {
+            $strays = $audit->strays($host, $node);
+        } catch (Throwable $exception) {
+            $issues[] = new DoctorIssueData(
+                NodeDoctorIssueCode::TaskVmInspectionFailed, DoctorIssueKind::Unverifiable, 'node', $node->id, $node->name,
+                'The Incus instances and custom volumes of the host could not be listed.', expected: null, observed: TaskVmException::codeOf($exception),
+            );
+
+            return $issues;
+        }
+        foreach ($strays['instances'] as $instance) {
+            $issues[] = new DoctorIssueData(
+                NodeDoctorIssueCode::TaskVmStrayInstance, DoctorIssueKind::Drift, 'node', $node->id, $node->name,
+                "Incus instance [{$instance}] is not Orbit's and not in operator_owned.", expected: 'absent', observed: $instance,
+            );
+        }
+        foreach ($strays['volumes'] as $volume) {
+            $issues[] = new DoctorIssueData(
+                NodeDoctorIssueCode::TaskVmStrayVolume, DoctorIssueKind::Drift, 'node', $node->id, $node->name,
+                "Incus custom volume [{$volume}] is not Orbit's and not in operator_owned.", expected: 'absent', observed: $volume,
+            );
+        }
+        foreach ($strays['records'] as $vm) {
+            $issues[] = new DoctorIssueData(
+                NodeDoctorIssueCode::TaskVmStrayRecord, DoctorIssueKind::Drift, 'node', $node->id, $node->name,
+                "Task VM [{$vm->name}] is {$vm->state->value} without an open group.", expected: 'destroyed', observed: "{$vm->name} {$vm->state->value}",
             );
         }
 
