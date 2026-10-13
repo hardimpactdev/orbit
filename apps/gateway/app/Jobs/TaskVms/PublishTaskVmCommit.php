@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace App\Jobs\TaskVms;
 
+use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmPublishState;
 use App\Domain\TaskVms\TaskVmQueue;
 use App\Infrastructure\Tasks\GitHubTaskPullRequestPublisher;
 use App\Models\TaskVm;
 use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Queue\Queueable;
 use Throwable;
 
 /**
@@ -21,7 +21,7 @@ use Throwable;
  */
 final class PublishTaskVmCommit implements ShouldQueue
 {
-    use Queueable;
+    use TaskVmJob;
 
     public int $tries = 1;
 
@@ -35,7 +35,7 @@ final class PublishTaskVmCommit implements ShouldQueue
 
     public function __construct(public int $taskVmId, public string $commit, public string $branch)
     {
-        $this->onConnection('task-vms')->onQueue(TaskVmQueue::Git->value);
+        $this->onTaskVmQueue(TaskVmQueue::Git);
     }
 
     public function handle(GitHubTaskPullRequestPublisher $publisher): void
@@ -51,6 +51,6 @@ final class PublishTaskVmCommit implements ShouldQueue
     {
         TaskVm::query()->whereKey($this->taskVmId)->where('publish_commit', $this->commit)->where('publish_branch', $this->branch)
             ->where('publish_state', TaskVmPublishState::Queued)
-            ->update(['publish_state' => TaskVmPublishState::Failed, 'publish_error' => 'The task branch could not be pushed: '.mb_substr($exception?->getMessage() ?? 'the publish job stopped.', 0, 2000)]);
+            ->update(['publish_state' => TaskVmPublishState::Failed, 'publish_error' => 'The task branch could not be pushed: '.($exception instanceof Throwable ? TaskVmException::messageOf($exception) : 'the publish job stopped.')]);
     }
 }

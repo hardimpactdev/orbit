@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Domain\TaskVms\TaskVmException;
-use App\Domain\TaskVms\TaskVmPlacement;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -34,7 +33,7 @@ final class NodeAccess extends Model
     {
         self::saving(static function (self $access): void {
             $consumer = Node::query()->find($access->consumer_node_id);
-            if ($consumer instanceof Node && TaskVmPlacement::forNode($consumer) !== null) {
+            if ($consumer instanceof Node && TaskVm::forNode($consumer) !== null) {
                 throw new TaskVmException('task_vm.access_refused', "Node [{$consumer->id}] is a task VM and cannot access other Nodes.");
             }
         });

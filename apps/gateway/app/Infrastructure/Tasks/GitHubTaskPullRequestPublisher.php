@@ -18,8 +18,8 @@ use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskRemoteBranch;
 use App\Domain\Tasks\TaskReviewRequestLogins;
-use App\Domain\TaskVms\TaskVmPlacement;
 use App\Domain\TaskVms\TaskVmPublishState;
+use App\Domain\TaskVms\TaskVmWorkspaceGuard;
 use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\SourceControl\WorkspaceGit;
@@ -143,7 +143,7 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
         $instance = $group->taskable;
         if (! $instance instanceof Instance || $instance->checkout_path === ''
             || $instance->project_id !== $group->project_id
-            || ! TaskVmPlacement::allowsWorkspace($group, $instance)) {
+            || ! TaskVmWorkspaceGuard::allowsWorkspace($group, $instance)) {
             throw new TaskPullRequestException('The task workspace is unavailable.');
         }
 
@@ -191,7 +191,7 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
      */
     private function publishFromVm(Task $group, string $branch, string $commit): void
     {
-        $vm = TaskVmPlacement::forGroup($group) ?? throw new TaskPullRequestException('The task workspace is unavailable.');
+        $vm = TaskVm::forGroup($group) ?? throw new TaskPullRequestException('The task workspace is unavailable.');
         if ($vm->publish_commit === $commit && $vm->publish_branch === $branch && $vm->publish_state instanceof TaskVmPublishState) {
             if ($vm->publish_state === TaskVmPublishState::Pushed) {
                 return;

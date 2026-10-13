@@ -15,7 +15,6 @@ use App\Models\Project;
 use App\Models\Task;
 use Illuminate\Contracts\Queue\ShouldBeUniqueUntilProcessing;
 use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -34,7 +33,7 @@ use Throwable;
  */
 final class RefreshTaskVmWorkspaceTemplates implements ShouldBeUniqueUntilProcessing, ShouldQueue
 {
-    use Queueable;
+    use TaskVmJob;
 
     public int $tries = 1;
 
@@ -44,7 +43,7 @@ final class RefreshTaskVmWorkspaceTemplates implements ShouldBeUniqueUntilProces
 
     public function __construct()
     {
-        $this->onConnection('task-vms')->onQueue(TaskVmQueue::Templates->value);
+        $this->onTaskVmQueue(TaskVmQueue::Templates);
     }
 
     public function handle(TaskVmSettings $settings, TaskVmWorkspaceTemplates $templates, IncusHost $incus): void

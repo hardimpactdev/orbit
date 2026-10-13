@@ -252,7 +252,7 @@ final readonly class TaskVmGit
     {
         $mirror = $this->root().'/'.$project->id.'.git';
         if (is_dir($mirror)) {
-            $this->checked('task-vm-git-gc', 'task_vm.git_gc', $this->git($mirror, ['-c', 'gc.auto='.self::GcAutoObjects, 'gc', '--auto', '--quiet'], timeout: $this->timeout($deadline, 1800.0, 'task_vm.git_gc')));
+            $this->checked('task-vm-git-gc', 'tasks.push_failed', $this->git($mirror, ['-c', 'gc.auto='.self::GcAutoObjects, 'gc', '--auto', '--quiet'], timeout: $this->timeout($deadline, 1800.0, 'tasks.push_failed')));
         }
     }
 

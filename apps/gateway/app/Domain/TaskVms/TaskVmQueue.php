@@ -10,6 +10,9 @@ namespace App\Domain\TaskVms;
  */
 enum TaskVmQueue: string
 {
+    /** The database queue connection of every task VM job. */
+    public const string Connection = 'task-vms';
+
     /** Provision, enroll, prepare, park, resume, and destroy task VMs; refill the pool; sweep the hosts. */
     case Vms = 'task-vms';
 

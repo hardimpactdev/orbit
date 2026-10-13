@@ -43,9 +43,11 @@ use App\Domain\Tasks\TaskTopology;
 use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Domain\Tasks\TaskWait;
 use App\Domain\Tasks\TaskWorkspaceTopology;
+use App\Domain\TaskVms\TaskVmCapacity;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmFailedException;
 use App\Domain\TaskVms\TaskVmHost;
+use App\Domain\TaskVms\TaskVmPlacementPolicy;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
@@ -303,15 +305,15 @@ describe('allocation', function (): void {
 
         expect($large->refresh()->size)->toBe(TaskVmSize::Large)
             ->and($normal->refresh()->size)->toBe(TaskVmSize::Normal)
-            ->and(app(AllocateTaskVmAction::class)->freeSlots())->toBe([$this->host->id => 0])
-            ->and(fn () => app(AllocateTaskVmAction::class)->execute(tvm_life_group()))->toThrow(TaskCapacityException::class, AllocateTaskVmAction::NoCapacity);
+            ->and(app(TaskVmCapacity::class)->freeSlots(app(TaskVmCapacity::class)->activeHosts()))->toBe([$this->host->id => 0])
+            ->and(fn () => app(AllocateTaskVmAction::class)->execute(tvm_life_group()))->toThrow(TaskCapacityException::class, TaskVmPlacementPolicy::NoCapacity);
 
         $normal->update(['state' => TaskVmState::Destroyed]);
         $again = tvm_life_group();
         Task::query()->create(['parent_id' => $again->id, 'position' => 1, 'title' => 'Dev', 'brief' => 'Dev', 'status' => TaskStatus::Todo, 'topology' => ['app-dev']]);
 
         // One slot is free, so a medium VM for one test node waits, while a normal one still fits.
-        expect(fn () => app(AllocateTaskVmAction::class)->execute($again))->toThrow(TaskCapacityException::class, AllocateTaskVmAction::noCapacityFor(TaskVmSize::Medium))
+        expect(fn () => app(AllocateTaskVmAction::class)->execute($again))->toThrow(TaskCapacityException::class, TaskVmPlacementPolicy::noCapacityFor(TaskVmSize::Medium))
             ->and(app(AllocateTaskVmAction::class)->execute(tvm_life_group())->size)->toBe(TaskVmSize::Normal);
         Queue::assertPushed(ProvisionTaskVm::class, 3);
     });
@@ -325,7 +327,7 @@ describe('allocation', function (): void {
         $vm = app(AllocateTaskVmAction::class)->execute($group)->refresh();
 
         expect($vm->size)->toBe($size)
-            ->and(app(AllocateTaskVmAction::class)->freeSlots())->toBe([$this->host->id => 4 - $slots]);
+            ->and(app(TaskVmCapacity::class)->freeSlots(app(TaskVmCapacity::class)->activeHosts()))->toBe([$this->host->id => 4 - $slots]);
     })->with([
         'app-dev' => [['app-dev'], TaskVmSize::Medium, 2],
         'app-prod with a role' => [['app-prod+ingress'], TaskVmSize::Medium, 2],
@@ -345,8 +347,8 @@ describe('allocation', function (): void {
 
         expect($medium->refresh()->size)->toBe(TaskVmSize::Medium)
             ->and(TaskVmSize::forGroup($topology, [$this->project->id]))->toBe(TaskVmSize::Large)
-            ->and(app(AllocateTaskVmAction::class)->freeSlots())->toBe([$this->host->id => 1])
-            ->and(fn () => app(AllocateTaskVmAction::class)->execute(tvm_life_group()))->toThrow(TaskCapacityException::class, AllocateTaskVmAction::noCapacityFor(TaskVmSize::Medium));
+            ->and(app(TaskVmCapacity::class)->freeSlots(app(TaskVmCapacity::class)->activeHosts()))->toBe([$this->host->id => 1])
+            ->and(fn () => app(AllocateTaskVmAction::class)->execute(tvm_life_group()))->toThrow(TaskCapacityException::class, TaskVmPlacementPolicy::noCapacityFor(TaskVmSize::Medium));
     });
 
     it('waits while another placement holds the lock and records nothing', function (): void {

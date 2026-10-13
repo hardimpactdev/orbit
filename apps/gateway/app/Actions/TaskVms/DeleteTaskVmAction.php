@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Actions\TaskVms;
 
-use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\TaskVms\TaskVmRuntime;
@@ -33,7 +32,7 @@ final readonly class DeleteTaskVmAction
             $this->provider->destroy($vm);
             $this->workspaces->execute($vm);
         } catch (Throwable $exception) {
-            $vm->update(['error_code' => TaskVmException::codeOf($exception), 'error_message' => mb_substr($exception->getMessage(), 0, 2000)]);
+            $vm->recordError($exception);
 
             throw $exception;
         }

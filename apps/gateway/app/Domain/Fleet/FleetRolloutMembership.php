@@ -8,7 +8,6 @@ use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\TaskVms\TaskVmPlacement;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\TaskVm;
@@ -111,7 +110,7 @@ final readonly class FleetRolloutMembership
      */
     public function exclusion(Node $node): ?string
     {
-        if (TaskVmPlacement::forNode($node) instanceof TaskVm) {
+        if (TaskVm::forNode($node) instanceof TaskVm) {
             return 'sandbox';
         }
 

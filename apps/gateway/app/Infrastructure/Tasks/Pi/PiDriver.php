@@ -14,7 +14,7 @@ use App\Domain\Tasks\AgentThreadStart;
 use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\TaskVms\TaskVmException;
-use App\Domain\TaskVms\TaskVmPlacement;
+use App\Domain\TaskVms\TaskVmWorkspaceGuard;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Infrastructure\TaskVms\TaskVmRuntime;
 use App\Models\AgentThread;
@@ -61,7 +61,7 @@ final readonly class PiDriver implements AgentDriver
             'id' => $id,
             'cwd' => $cwd,
             'model' => match (true) {
-                TaskVmPlacement::forNode($node) instanceof TaskVm => PiModel::onlyProvider($intent->model, TaskVmRuntime::PiProvider),
+                TaskVm::forNode($node) instanceof TaskVm => PiModel::onlyProvider($intent->model, TaskVmRuntime::PiProvider),
                 default => PiModel::forModel($intent->model, $this->configuredProvider()),
             },
             'thinkingLevel' => $intent->effort,
@@ -355,7 +355,7 @@ final readonly class PiDriver implements AgentDriver
         if ($group?->task_compute === TaskCompute::Vm) {
             // A task VM is a normal Node: the thread stays on the Node of the group's ready task VM.
             if ($thread->runtime_key !== 'node:'.$node->id || ! $workspace instanceof Instance
-                || ! TaskVmPlacement::allowsWorkspace($group, $workspace) || $workspace->node_id !== $node->id) {
+                || ! TaskVmWorkspaceGuard::allowsWorkspace($group, $workspace) || $workspace->node_id !== $node->id) {
                 throw new AgentDriverException('The original task VM Pi server is unavailable.');
             }
 
@@ -375,7 +375,7 @@ final readonly class PiDriver implements AgentDriver
             throw new AgentDriverException('The original workspace Pi server is unavailable.');
         }
         try {
-            TaskVmPlacement::assertOwnedWorkspace($workspace);
+            TaskVmWorkspaceGuard::assertOwnedWorkspace($workspace);
         } catch (TaskVmException) {
             throw new AgentDriverException('The original workspace Pi server is unavailable.');
         }
