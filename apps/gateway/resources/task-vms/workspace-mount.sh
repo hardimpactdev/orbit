@@ -2,7 +2,7 @@
 # Mounts the workspace volume, the Incus disk device $1, at the Project apps directory $2 as the managed user, at a
 # claim and in a template builder. It refuses before it mounts when the user is not the template owner $3 (uid:gid),
 # and after it mounts when the volume root or the template checkout $4 is not owned by it. Only then does it keep the
-# mount in /etc/fstab and point the caches $6... at $5 on the volume. It prints "template" when the checkout is there.
+# mount in the fstab and point the caches $6... at $5 on the volume. It prints "template" when the checkout is there.
 set -eu
 device=/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_incus_$1
 directory=$2
