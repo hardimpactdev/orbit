@@ -31,8 +31,10 @@ Laravel Horizon runs three queues on the connection. Each has its own supervisor
 | Queue | Processes | Jobs |
 | --- | --- | --- |
 | `tasks` | 3 | The scheduled commands below and the publish of an approved commit. The Git mirror's lock keeps one push per Project at a time |
-| `task-vms` | 1 | Task VM provision, enroll, prepare, park, resume, and destroy, the guard of a warm claim, the host sweep, and the pool refill. They run one at a time and in order, so no two jobs change the same VM at once |
+| `task-vms` | 1 | Task VM provision, enroll, prepare, park, resume, and destroy, the guard of a warm claim, the host sweep, and the pool refill |
 | `builds` | 1 | The [base image refreshes](/reference/compute-drivers#build-the-base-image), the [UpCloud template refresh](/reference/compute-drivers#refresh-the-upcloud-template-every-night), and the [workspace template](/reference/compute-drivers#build-a-template) refreshes and builds |
+
+The `task-vms` jobs run one at a time and in order, so no two jobs change the same VM at once.
 
 A job runs at most 1700 seconds. A job that a worker lost, for example when its process was killed, runs again after 1800 seconds. An idle worker waits on the queue with a blocking read, so a job starts within about a second when a process is free.
 
@@ -84,9 +86,11 @@ The Redis server needs `maxmemory-policy noeviction`, so that it never drops a q
 
 A release moves the queue in the scheduler phase:
 
-1. Before the scheduler moves, it installs the unit and enables it. When Horizon already runs, it pauses the `task-vms` queue and sends SIGTERM to the running master, which is what `php artisan horizon:terminate` does. It waits up to 600 seconds for the old `task-vms` worker to finish its job, then lets the queue run again. It reports Horizon started only once a new master is registered in Redis.
+1. Before the scheduler moves, it moves Horizon to the new release, as described below.
 2. It moves the scheduler, as described in the [runtime handoff](/reference/gateway-recovery#runtime-handoff).
 3. After the scheduler's drain, it moves the jobs left in the old database queues to the Gateway queue, as described below.
+
+To move Horizon, the handoff installs the unit and enables it. When Horizon already runs, it pauses the `task-vms` queue and sends SIGTERM to the running master, which is what `php artisan horizon:terminate` does. It waits up to 600 seconds for the old `task-vms` worker to finish its job, then lets the queue run again. It reports Horizon started only once a new master is registered in Redis.
 
 Horizon reads only Redis, so step 1 never races a worker of an older release on the database queues. When step 1 fails, steps 2 and 3 still run, and the handoff then fails with `gateway.release_units_failed`. The handoff records step 1 as `horizon`, with `outcome` (`started`, `stopped`, or `none`), `task_vm_wait_ms`, and `task_vm_overlap`. `task_vm_overlap` is true when the old `task-vms` job outlasted the wait, so two task VM jobs ran at once for a while.
 

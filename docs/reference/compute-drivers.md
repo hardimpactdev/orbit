@@ -554,9 +554,11 @@ The task VM jobs run on the [Gateway queue](/reference/gateway-queue), which Lar
 
 | Queue | Task VM jobs |
 | --- | --- |
-| `task-vms` | Provision, enroll, prepare, park, resume, and destroy a VM, the guard of a warm claim, the host sweep, and the pool refill. One worker runs them one at a time and in order |
+| `task-vms` | Provision, enroll, prepare, park, resume, and destroy a VM, the guard of a warm claim, the host sweep, and the pool refill |
 | `tasks` | The [publish](#publish-from-the-vm) of an approved commit (`PublishTaskVmCommit`), beside the scheduled commands |
 | `builds` | The workspace template jobs, `RefreshTaskVmWorkspaceTemplates` and `BuildTaskVmWorkspaceTemplate`, and the nightly base image refreshes, [`RefreshTaskVmBaseImages`](#build-the-base-image) and [`RefreshUpCloudTaskVmBaseImage`](#refresh-the-upcloud-template-every-night) |
+
+One worker runs the `task-vms` jobs one at a time and in order, so no two jobs change the same VM at once.
 
 A `task-vms` or `tasks` job starts within about a second while its worker is free, also while a build runs. A delayed job, such as the guard of a warm claim, or a released job waits for its time. A job runs at most 1700 seconds, and a job that a worker lost runs again after 1800 seconds.
 

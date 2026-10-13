@@ -1585,6 +1585,7 @@
             ],
             "concepts": [
                 "Activity",
+                "Doctor",
                 "Extension",
                 "Gateway",
                 "Node",
