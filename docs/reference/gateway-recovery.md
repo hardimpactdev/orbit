@@ -178,7 +178,7 @@ After the switch, deploy:
 
 1. runs the serving phase of the runtime handoff: Caddy, PHP-FPM, and the units;
 2. verifies the release, as described below;
-3. runs the scheduler phase of the handoff: the scheduler drain and restart, document cleanup, the task VM queue workers, the Gateway Node's agent update, and the OPcache reset;
+3. runs the [scheduler phase](#runtime-handoff) of the handoff;
 4. switches `web/current` to the release's [web build](#web-build) with one rename;
 5. runs [smoke](#smoke) against the switched release.
 
@@ -230,7 +230,7 @@ The scheduler phase:
 1. moves the scheduler to the new release without cutting off a scheduled command;
 2. restarts every other Gateway Node Process whose directory is in the Gateway application;
 3. resumes [document cleanup](/reference/project-documents#restore-time-cleanup-gate);
-4. installs the [task VM queue workers](/reference/compute-drivers#jobs) and runs `queue:restart`, so each worker finishes its running job on its old release and then starts on the new one;
+4. moves the [task VM queue workers](/reference/compute-drivers#jobs) to the new release after their running jobs;
 5. updates the Gateway Node's own `orbit-agent` to the release's pin, described below;
 6. resets OPcache, described below.
 

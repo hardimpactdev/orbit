@@ -189,12 +189,7 @@ final readonly class GatewayRuntimeHandoff
      */
     private function workers(): string
     {
-        $outcome = 'none';
-        $this->step('task_vm_workers', 'gateway.release_units_failed', function () use (&$outcome): void {
-            $outcome = $this->workers?->converge() ?? 'none';
-        });
-
-        return $outcome;
+        return $this->step('task_vm_workers', 'gateway.release_units_failed', fn (): string => $this->workers?->converge() ?? 'none');
     }
 
     /**
@@ -329,11 +324,16 @@ final readonly class GatewayRuntimeHandoff
         }
     }
 
-    /** @param Closure(): void $operation */
-    private function step(string $name, string $errorCode, Closure $operation): void
+    /**
+     * @template T
+     *
+     * @param  Closure(): T  $operation
+     * @return T
+     */
+    private function step(string $name, string $errorCode, Closure $operation): mixed
     {
         try {
-            $operation();
+            return $operation();
         } catch (GatewayReleaseException $exception) {
             throw $exception;
         } catch (NodeProvisioningException $exception) {

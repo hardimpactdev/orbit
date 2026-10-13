@@ -528,7 +528,9 @@ Each queue has its own worker, a systemd unit on the Gateway host. It runs as `o
 | `orbit-queue-task-vm-images.service` | `queue:work task-vms --queue=task-vm-images --sleep=1 --timeout=1700` |
 | `orbit-queue-task-vm-git.service` | `queue:work task-vms --queue=task-vm-git --sleep=1 --timeout=1700` |
 
-An idle worker reads the queue table once a second, so a job starts about a second after it is due, unless the worker still runs an earlier job of its queue. A delayed job, such as the guard of a warm claim, or a released job waits for its time. The workers run outside the Gateway scheduler, so a long scheduled command, such as `tasks:tick`, never delays a job. A task VM job runs at most 1500 seconds, the other jobs at most 1700 seconds. A job that stops halfway runs again after 1800 seconds. A worker that exits, or runs out of memory, starts again after 5 seconds. Its start does not pause [document cleanup](/reference/project-documents), because it runs only task VM jobs.
+An idle worker reads the queue table once a second, so a job starts about a second after it is due, unless the worker still runs an earlier job of its queue. A delayed job, such as the guard of a warm claim, or a released job waits for its time. The workers run outside the Gateway scheduler, so a long scheduled command, such as `tasks:tick`, never delays a job.
+
+A task VM job runs at most 1500 seconds, the other jobs at most 1700 seconds. A job that stops halfway runs again after 1800 seconds. A worker that exits, or runs out of memory, starts again after 5 seconds. A worker's start does not pause [document cleanup](/reference/project-documents), because it runs only task VM jobs.
 
 So a template build, a base image refresh, and a publish never hold up a task VM job or each other. A template build takes about a minute, a base image refresh up to 25 minutes, and a publish seconds. Each worker runs one job at a time, so one template build, one base image refresh, and one publish run in the fleet at a time. The host locks also allow one template build and one base image build or sync per host.
 
