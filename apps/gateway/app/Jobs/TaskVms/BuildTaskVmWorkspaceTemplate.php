@@ -7,6 +7,7 @@ namespace App\Jobs\TaskVms;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
+use App\Domain\TaskVms\TaskVmQueue;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\TaskVms\IncusHost;
 use App\Infrastructure\TaskVms\IncusTaskVmWorkspaceTemplateBuilder;
@@ -44,7 +45,7 @@ final class BuildTaskVmWorkspaceTemplate implements ShouldBeUnique, ShouldQueue
 
     public function __construct(public int $hostNodeId, public int $projectId)
     {
-        $this->onConnection('task-vms')->onQueue(TaskVmWorkspaceTemplates::Queue);
+        $this->onConnection('task-vms')->onQueue(TaskVmQueue::Templates->value);
     }
 
     public function uniqueId(): string

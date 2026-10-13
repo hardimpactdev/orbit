@@ -11,6 +11,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmQueue;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\TaskVms\TaskVmGuest;
 use App\Models\Instance;
@@ -48,7 +49,7 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
 
     public function __construct(public int $taskVmId)
     {
-        $this->onConnection('task-vms')->onQueue('task-vms');
+        $this->onConnection('task-vms')->onQueue(TaskVmQueue::Vms->value);
     }
 
     public function uniqueId(): string

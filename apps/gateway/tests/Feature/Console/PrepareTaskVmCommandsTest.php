@@ -66,8 +66,6 @@ describe('task-vms:prepare-host', function (): void {
 
         $fleet->host('10.44.0.7')->lan = '192.168.6.20';
         $fleet->host('10.44.0.11')->lan = '192.168.6.40';
-        $fleet->host('10.44.0.11')->httpsAddress = '192.168.6.40:8443';
-        $fleet->host('10.44.0.11')->ufwRules = ["192.168.6.40 8443/tcp ALLOW IN 192.168.6.20 # orbit:task-vm-image:{$beast->id}"];
 
         $this->artisan('task-vms:prepare-host', ['node' => 'shark'])
             ->expectsOutputToContain('Node [beast] accepts base images from 1 other hosts.')
@@ -78,9 +76,7 @@ describe('task-vms:prepare-host', function (): void {
 
         expect($fleet->commands[0][0])->toBe('10.44.0.11')
             ->and($fleet->host('10.44.0.7')->authorizedKeys)->toHaveCount(1)
-            ->and($fleet->host('10.44.0.7')->authorizedKeys[0])->toEndWith("orbit-task-image-{$shark->id}")
-            ->and($fleet->host('10.44.0.11')->httpsAddress)->toBe('')
-            ->and($fleet->host('10.44.0.11')->ufwRules)->toBe([]);
+            ->and($fleet->host('10.44.0.7')->authorizedKeys[0])->toEndWith("orbit-task-image-{$shark->id}");
     });
 
     it('passes the ZFS dataset that creates a missing pool', function (): void {

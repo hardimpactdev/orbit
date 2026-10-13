@@ -7,7 +7,6 @@ namespace Tests\Support;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Infrastructure\Processes\CommandResult;
 use Closure;
-use OpenSSLAsymmetricKey;
 use RuntimeException;
 
 /** One fake task VM host. */
@@ -18,14 +17,6 @@ final class FakeIncusFleetHost
 
     /** @var array<string, ?string> name => base image */
     public array $instances = [];
-
-    /** What the earlier Incus API copy left: the listen address, trust entries, and the client directory. */
-    public string $httpsAddress = '';
-
-    /** @var array<string, array{name: string, type: string, restricted: bool, projects: list<string>, certificate: string}> */
-    public array $trust = [];
-
-    public bool $clientDirectory = false;
 
     public ?string $lan = null;
 
@@ -52,9 +43,6 @@ final class FakeIncusFleetHost
     /** @var list<string> each fingerprint the receiver imported */
     public array $received = [];
 
-    /** @var list<string> each `ufw status numbered` rule line */
-    public array $ufwRules = [];
-
     /** An operation that fails, such as `transfer`, `launch`, or `ssh-keygen`. */
     public ?string $fail = null;
 
@@ -77,18 +65,6 @@ final class FakeIncusFleetHost
     public static function publicKey(): string
     {
         return 'ssh-ed25519 '.base64_encode("\0\0\0\x0bssh-ed25519\0\0\0\x20".random_bytes(32));
-    }
-
-    /** @return array{string, string} a self-signed PEM certificate and its key */
-    public static function certificateWithKey(string $name): array
-    {
-        $key = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'prime256v1']);
-        assert($key instanceof OpenSSLAsymmetricKey);
-        $csr = openssl_csr_new(['commonName' => $name.'-'.bin2hex(random_bytes(4))], $key, ['digest_alg' => 'sha256']);
-        $certificate = openssl_csr_sign($csr, null, $key, 365, ['digest_alg' => 'sha256']);
-        openssl_x509_export($certificate, $pem);
-
-        return [$pem, ''];
     }
 
     /** @param  list<string>  $operation  the arguments after `incus --project <project>` */
@@ -136,30 +112,6 @@ final class FakeIncusFleetHost
         };
     }
 
-    /** @param  list<string>  $arguments */
-    public function ufw(array $arguments): CommandResult
-    {
-        if ($arguments === ['status', 'numbered']) {
-            $lines = array_map(static fn (int $index, string $line): string => sprintf('[%2d] %s', $index + 1, $line), array_keys($this->ufwRules), $this->ufwRules);
-
-            return new CommandResult(0, "Status: active\n\n     To                         Action      From\n     --                         ------      ----\n".implode("\n", $lines)."\n", '', 1, false);
-        }
-        if ($arguments[0] === '--force' && $arguments[1] === 'delete') {
-            array_splice($this->ufwRules, (int) $arguments[2] - 1, 1);
-
-            return new CommandResult(0, "Rule deleted\n", '', 1, false);
-        }
-        if ($this->fail === 'ufw allow') {
-            return new CommandResult(1, '', "ERROR: ufw failed\n", 1, false);
-        }
-        // allow in [on <interface>] proto tcp from <source> to <destination> port <port> comment <comment>
-        $on = $arguments[2] === 'on' ? $arguments[3] : null;
-        $rest = array_slice($arguments, $on === null ? 2 : 4);
-        $this->ufwRules[] = sprintf('%s %s/tcp%s ALLOW IN %s # %s', $rest[5], $rest[7], $on === null ? '' : " on {$on}", $rest[3], $rest[9]);
-
-        return new CommandResult(0, "Rule added\n", '', 1, false);
-    }
-
     /** @param  Closure(): mixed|null  $effect */
     public function answer(string $operation, ?Closure $effect = null): CommandResult
     {
@@ -186,6 +138,15 @@ final class FakeIncusFleetHost
     /** @param  list<string>  $command */
     private function exec(array $command): CommandResult
     {
+        // `timeout <seconds> <command>`, as the cloud-init status read runs.
+        if ($command[0] === 'timeout') {
+            $command = array_slice($command, 2);
+        }
+        // A resource script runs as `bash -ceu <script> -- <arguments>`; it answers by its name.
+        if ($command[0] === 'bash' && ($command[1] ?? null) === '-ceu') {
+            return $this->answer(TaskVmScriptNames::of($command[2]) ?? 'exec');
+        }
+
         return match ($command[0]) {
             // The guest agent is not up on the first poll.
             'cloud-init' => $this->cloudInitPolls++ % 2 === 0

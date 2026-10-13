@@ -64,7 +64,7 @@ final readonly class UpCloudGuest
         return 'SHA256:'.rtrim(base64_encode(hash('sha256', (string) base64_decode($match[1], true), true)), '=');
     }
 
-    /** Runs `$command` as `orbit` on the server at `$address`, which must present `$publicKey`. */
+    /** Runs `$command` as {@see TaskVmCloudInit::User} on the server at `$address`, which must present `$publicKey`. */
     public function run(string $address, string $publicKey, RemoteCommand $command, int $connectTimeout = 10): CommandResult
     {
         preg_match(self::PublicKeyPattern, trim($publicKey), $match);
@@ -72,7 +72,7 @@ final readonly class UpCloudGuest
 
         return $this->ssh->execute(new SshConnection(
             host: $address,
-            user: 'orbit',
+            user: TaskVmCloudInit::User,
             port: 22,
             identityFile: $this->keys->privateKeyPath(),
             knownHostsFile: $this->knownHosts->path(),

@@ -13,9 +13,8 @@ use RuntimeException;
 
 /**
  * Task VM hosts that answer the Gateway's SSH commands by argv, keyed by WireGuard address. Each host keeps its
- * images, instances, transfer key, receiver, `authorized_keys`, host key, image exports, and ufw rules, plus what the
- * earlier Incus API copy left: a listen address, trust entries, and a client directory. A transfer succeeds only as
- * sshd and the receiver would allow it: the source sends from the address and with the key that the target's
+ * images, instances, transfer key, receiver, `authorized_keys`, host key, and image exports. Host scripts answer by their
+ * name in `resources/task-vms`. A transfer succeeds only as sshd and the receiver would allow it: the source sends from the address and with the key that the target's
  * `authorized_keys` names, the pinned host key is the target's, and the target has the receiver.
  */
 final class FakeIncusFleet implements SshExecutor
@@ -48,9 +47,6 @@ final class FakeIncusFleet implements SshExecutor
         $argv = $command->arguments;
         $this->commands[] = [$connection->host, $argv, $command->input];
         $host = $this->host($connection->host);
-        if ($argv[0] === 'sudo' && $argv[1] === 'ufw') {
-            return $host->ufw(array_slice($argv, 2));
-        }
         if ($argv[0] !== 'sudo' || $argv[1] !== '-n') {
             throw new RuntimeException('Unexpected command: '.implode(' ', $argv));
         }
@@ -59,12 +55,11 @@ final class FakeIncusFleet implements SshExecutor
             'incus' => $argv[3] === '--project'
                 ? $host->project(array_slice($argv, 5), $command->input)
                 : $this->incus($connection->host, array_slice($argv, 3)),
-            'bash' => $argv[3] === '-s' ? new CommandResult(0, $this->setupOutput, '', 1, false) : $this->bash($host, $argv[4], array_slice($argv, 6), (string) $command->input),
+            'bash' => $argv[3] === '-s' ? new CommandResult(0, $this->setupOutput, '', 1, false) : $this->script($host, $argv[4], array_slice($argv, 6), (string) $command->input),
             'cat' => $host->answer('read the host key', static fn (): string => $host->hostKey." root@{$host->address}\n"),
             'rm' => $host->answer('rm', static function () use ($host, $argv): void {
                 foreach (array_slice($argv, 5) as $path) {
                     match (true) {
-                        $path === '/etc/orbit/task-vms/incus' => $host->clientDirectory = false,
                         $path === TaskVmImagePeers::KeyDirectory => $host->transferKey = null,
                         $path === TaskVmImagePeers::Receiver => $host->receiver = null,
                         $path === TaskVmImagePeers::WorkDirectory => $host->exports = [],
@@ -94,18 +89,6 @@ final class FakeIncusFleet implements SshExecutor
         $host = $this->host($address);
 
         return match (true) {
-            $argv === ['config', 'get', 'core.https_address'] => $host->answer('config get', fn (): string => $host->httpsAddress."\n"),
-            $argv === ['config', 'unset', 'core.https_address'] => $host->answer('config unset', function () use ($host): void {
-                $host->httpsAddress = '';
-            }),
-            $argv === ['config', 'trust', 'list', '--format', 'json'] => $host->answer('trust list', fn (): string => (string) json_encode(array_values(array_map(
-                static fn (string $fingerprint, array $entry): array => ['fingerprint' => $fingerprint, ...$entry],
-                array_keys($host->trust),
-                $host->trust,
-            )))),
-            $argv[0] === 'config' && $argv[2] === 'remove' => $host->answer('trust remove', function () use ($host, $argv): void {
-                unset($host->trust[$argv[3]]);
-            }),
             $argv[0] === 'query' && $host->fail === 'query reply' => (function () use ($host, $argv): CommandResult {
                 $host->retarget(json_decode($argv[4], true)['target']);
 
@@ -117,19 +100,19 @@ final class FakeIncusFleet implements SshExecutor
     }
 
     /** @param  list<string>  $arguments */
-    private function bash(FakeIncusFleetHost $host, string $script, array $arguments, string $input): CommandResult
+    private function script(FakeIncusFleetHost $host, string $script, array $arguments, string $input): CommandResult
     {
-        return match (true) {
-            str_contains($script, 'ssh-keygen') => $host->answer('ssh-keygen transfer key', static function () use ($host, $arguments): string {
+        return match (TaskVmScriptNames::of($script)) {
+            'peer-identity.sh' => $host->answer('ssh-keygen transfer key', static function () use ($host, $arguments): string {
                 $host->transferKey ??= FakeIncusFleetHost::publicKey();
 
                 return $host->transferKey.' '.$arguments[1]."\n";
             }),
-            str_contains($script, 'install -D') => $host->answer('install the receiver', static function () use ($host, $arguments, $input): void {
+            'peer-install-receiver.sh' => $host->answer('install the receiver', static function () use ($host, $arguments, $input): void {
                 expect($arguments[0])->toBe(TaskVmImagePeers::Receiver);
                 $host->receiver = $input;
             }),
-            str_contains($script, 'authorized_keys') => $host->answer('authorized_keys', static function () use ($host, $arguments, $input): void {
+            'peer-authorized-keys.sh' => $host->answer('authorized_keys', static function () use ($host, $arguments, $input): void {
                 $host->user = $arguments[0];
                 $kept = array_values(array_filter($host->authorizedKeys, static function (string $line) use ($arguments): bool {
                     $fields = preg_split('/\s+/', trim($line));
@@ -138,8 +121,8 @@ final class FakeIncusFleet implements SshExecutor
                 }));
                 $host->authorizedKeys = [...$kept, ...array_values(array_filter(explode("\n", $input), static fn (string $line): bool => $line !== ''))];
             }),
-            str_contains($script, 'incus image export') => $this->export($host, $arguments),
-            str_contains($script, 'UserKnownHostsFile') => $this->send($host, $arguments),
+            'image-export.sh' => $this->export($host, $arguments),
+            'peer-send.sh' => $this->send($host, $arguments),
             default => throw new RuntimeException('Unexpected script: '.$script),
         };
     }

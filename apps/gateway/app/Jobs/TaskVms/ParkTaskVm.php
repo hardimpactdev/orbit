@@ -6,6 +6,7 @@ namespace App\Jobs\TaskVms;
 
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmProvider;
+use App\Domain\TaskVms\TaskVmQueue;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\TaskVm;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -33,7 +34,7 @@ final class ParkTaskVm implements ShouldBeUnique, ShouldQueue
 
     public function __construct(public int $taskVmId)
     {
-        $this->onConnection('task-vms')->onQueue('task-vms');
+        $this->onConnection('task-vms')->onQueue(TaskVmQueue::Vms->value);
     }
 
     public function uniqueId(): string

@@ -11,7 +11,7 @@ use App\Domain\TaskVms\TaskVmPlacementTarget;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\TaskVms\IncusHost;
-use App\Infrastructure\TaskVms\TaskVmBaseImage;
+use App\Infrastructure\TaskVms\IncusTaskVmBaseImage;
 use App\Jobs\TaskVms\DestroyTaskVm;
 use App\Jobs\TaskVms\ProvisionTaskVm;
 use App\Models\Node;
@@ -54,7 +54,7 @@ final readonly class RefillTaskVmPoolAction
         private TaskVmSettings $settings,
         private AllocateTaskVmAction $allocate,
         private IncusHost $incus,
-        private TaskVmBaseImage $images,
+        private IncusTaskVmBaseImage $images,
     ) {}
 
     /** @return array{created: int, destroying: int} */

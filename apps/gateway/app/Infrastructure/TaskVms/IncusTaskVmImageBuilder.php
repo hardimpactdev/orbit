@@ -7,8 +7,8 @@ namespace App\Infrastructure\TaskVms;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmSettings;
+use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
-use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use Closure;
@@ -18,10 +18,10 @@ use Symfony\Component\Yaml\Yaml;
 use Throwable;
 
 /**
- * Builds the task VM base image on one host. A builder VM boots the stock image with the builder user-data,
- * runs the programs that enrollment runs on an `app-dev` Node through `incus exec`, installs the pinned agent
- * binary and the pinned Pi executable, lets a VM from the image boot once and lean, records the programs in
- * the image manifest ({@see TaskVmBakedPrograms}), and removes its identity with `base-image-clean.sh`.
+ * Builds the task VM base image on one host. A builder VM boots the stock image with the builder user-data, runs the
+ * programs that enrollment runs on an `app-dev` Node through its {@see IncusGuestShell}, installs the pinned agent
+ * binary and the pinned Pi executable, lets a VM from the image boot once and lean (`lean-boot.sh`), records the
+ * programs in the image manifest ({@see TaskVmBakedPrograms}), and removes its identity with `base-image-clean.sh`.
  * Incus publishes its disk as `orbit-task-base-<time>`. A smoke VM boots the new image, which also creates
  * its volume on the ZFS pool. Then the alias `orbit-task-base` moves to it in one
  * request, and older base images that no VM uses go. A failed build keeps the current image and leaves no
@@ -37,35 +37,9 @@ final readonly class IncusTaskVmImageBuilder
 
     private const string CloudInitDropIn = '/etc/systemd/system/cloud-init-main.service.d/orbit-incus-agent.conf';
 
-    /**
-     * Keeps work off a task VM's boot. The network is online once IPv4 routes: the task bridge has no IPv6,
-     * and waiting for the IPv6 link-local address costs a second. So the Ethernet link takes DHCPv4 only, from
-     * a networkd file that sorts before netplan's and otherwise matches it. The wait-online drop-in sorts after
-     * netplan's and replaces its command. `systemd-firstboot` runs on every first boot, and the apt timers and
-     * unattended upgrades would hold the dpkg lock while a task runs. Masks hold through the first-boot preset
-     * policy, which would enable a merely disabled unit again. Docker stays enabled at boot: Doctor expects it
-     * active on an `app-dev` Node, and it brings back restart-policy containers after a resume.
-     */
-    private const string LeanBoot = <<<'BASH'
-        printf '%s\n' '[Match]' 'Type=ether' 'Name=en*' '' '[Network]' 'DHCP=ipv4' 'LinkLocalAddressing=no' '' '[DHCP]' 'RouteMetric=100' 'UseMTU=true' \
-            > /etc/systemd/network/00-orbit-task-vm.network
-        install -d -m 0755 /etc/systemd/system/systemd-networkd-wait-online.service.d
-        printf '%s\n' '[Service]' 'ExecStart=' 'ExecStart=/usr/lib/systemd/systemd-networkd-wait-online --any --ipv4 --dns --operational-state=routable' \
-            > /etc/systemd/system/systemd-networkd-wait-online.service.d/zz-orbit-ipv4.conf
-        BASH;
-
-    private const string LeanBootCheck = <<<'BASH'
-        test "$(systemctl is-enabled systemd-firstboot.service)" = masked
-        test "$(systemctl is-active docker.service)" = active
-        systemctl cat systemd-networkd-wait-online.service | tail -n 1 | grep -q -- '--ipv4'
-        networkctl status --no-pager -- "$(ip -o -4 route show default | awk '{print $5; exit}')" | grep -q '00-orbit-task-vm.network'
-        test -s "$1"
-        test "$(id -u orbit):$(id -g orbit)" = "$2"
-        BASH;
-
     public function __construct(
         private IncusHost $incus,
-        private TaskVmBaseImage $image,
+        private IncusTaskVmBaseImage $image,
         private TaskVmCloudInit $cloudInit,
         private SshKeyProvider $keys,
         private TaskVmSettings $settings,
@@ -80,7 +54,7 @@ final readonly class IncusTaskVmImageBuilder
 
     /**
      * Builds the host's base image and returns its fingerprint. `$progress` hears each stage with its seconds.
-     * `$owner` names the host's image lock, so a caller that is killed can {@see TaskVmBaseImage::abandon()} its
+     * `$owner` names the host's image lock, so a caller that is killed can {@see IncusTaskVmBaseImage::abandon()} its
      * own build.
      *
      * @param  (Closure(string, float): void)|null  $progress
@@ -92,7 +66,7 @@ final readonly class IncusTaskVmImageBuilder
         $lock = $this->image->lock($node, $owner);
 
         $stamp = now()->format('YmdHis');
-        $builder = TaskVmBaseImage::WorkPrefix.$stamp;
+        $builder = TaskVmImageRecipe::WorkPrefix.$stamp;
         $smoke = $builder.'-smoke';
         $alias = TaskVmHost::BaseImage.'-'.$stamp;
         $unused = null;
@@ -102,23 +76,30 @@ final readonly class IncusTaskVmImageBuilder
             $this->stage($node, $progress, 'sweep', fn () => $this->image->sweep($host, $node));
             $this->stage($node, $progress, 'launch', fn () => $this->image->launch($host, $node, $builder, TaskVmHost::SourceImage, $this->cloudInit->renderImageBuilder($this->keys->publicKey())));
             $this->stage($node, $progress, 'cloud-init', fn () => $this->image->awaitCloudInit($host, $node, $builder));
-            $this->stage($node, $progress, 'orbit-user', fn () => $this->image->checked($builder, 'exec orbit-user', $this->image->exec($host, $node, $builder, ['sh', '-euc', TaskVmImageRecipe::OwnerCheck, 'sh', TaskVmCloudInit::Owner])));
+            $shell = $this->image->shell($host, $node, $builder);
+            $this->stage($node, $progress, 'orbit-user', fn () => $this->checked($shell, 'orbit-user', $shell->asRoot(TaskVmImageRecipe::ownerCheck())));
             foreach ($programs as $name => $program) {
-                $this->stage($node, $progress, $name, fn () => $this->runProgram($host, $node, $builder, $name, $program));
+                $this->stage($node, $progress, $name, fn () => $this->checked($shell, $name, $shell->asUser($program->arguments, $program->protectedInput ?? $program->input)));
             }
-            $this->stage($node, $progress, 'agent-binary', fn () => $this->installAgent($host, $node, $builder));
+            $this->stage($node, $progress, 'agent-binary', fn () => $this->checked($shell, 'agent-binary', $shell->asRoot($this->recipe->installAgent(
+                $this->checked($shell, 'uname', $shell->asRoot(['uname', '-m']))->stdout,
+                "the base image build VM [{$builder}]",
+            ))));
             if ($this->settings->piArtifactPath !== null && $this->settings->piArtifactSha256 !== null) {
-                $this->stage($node, $progress, 'pi-artifact', fn () => $this->installPi($host, $node, $builder, (string) $this->settings->piArtifactPath, (string) $this->settings->piArtifactSha256));
+                $this->stage($node, $progress, 'pi-artifact', fn () => $this->checked($shell, 'pi-artifact', $shell->asUser(
+                    ['bash', '-ceu', TaskVmRuntime::InstallPi, '--', (string) $this->settings->piArtifactSha256],
+                    ProtectedInput::fromFile((string) $this->settings->piArtifactPath, '', TaskVmRuntime::ArtifactMaxBytes),
+                )));
             }
-            $this->stage($node, $progress, 'single-boot', fn () => $this->singleBoot($host, $node, $builder));
-            $this->stage($node, $progress, 'lean-boot', fn () => $this->image->checked($builder, 'exec lean-boot', $this->image->exec($host, $node, $builder, ['bash', '-ceu', self::LeanBoot."\n".TaskVmImageRecipe::Masks])));
-            $this->stage($node, $progress, 'manifest', fn () => $this->image->checked($builder, 'exec manifest', $this->image->exec($host, $node, $builder, [
+            $this->stage($node, $progress, 'single-boot', fn () => $this->singleBoot($host, $node, $shell));
+            $this->stage($node, $progress, 'lean-boot', fn () => $this->checked($shell, 'lean-boot', $shell->asRoot(['bash', '-ceu', TaskVmScripts::read('lean-boot.sh').TaskVmImageRecipe::Masks])));
+            $this->stage($node, $progress, 'manifest', fn () => $this->checked($shell, 'manifest', $shell->asRoot([
                 'install', '-D', '-o', 'root', '-g', 'root', '-m', '0644', '/dev/stdin', TaskVmBakedPrograms::ManifestPath,
             ], TaskVmBakedPrograms::manifest($programs))));
-            $this->stage($node, $progress, 'clean', fn () => $this->clean($host, $node, $builder));
+            $this->stage($node, $progress, 'clean', fn () => $this->clean($shell));
             $unused = $published = $this->stage($node, $progress, 'publish', fn (): string => $this->publish($host, $node, $builder, $alias));
             $this->stage($node, $progress, 'delete-builder', fn () => $this->image->delete($host, $node, $builder));
-            $this->stage($node, $progress, 'smoke', fn () => $this->image->smoke($host, $node, $smoke, $alias, fn () => $this->checkLeanBoot($host, $node, $smoke)));
+            $this->stage($node, $progress, 'smoke', fn () => $this->image->smoke($host, $node, $smoke, $alias, $this->checkImage(...)));
             $this->stage($node, $progress, 'promote', fn () => $this->image->promote($host, $node, $published));
             // The new image is the base image now, so a failed prune leaves it in place.
             $unused = null;
@@ -143,41 +124,13 @@ final readonly class IncusTaskVmImageBuilder
      */
     private function stage(Node $node, ?Closure $progress, string $name, Closure $work): mixed
     {
-        return $this->image->stage('task_vm.image_build_failed', "base image build of Node [{$node->name}]", $name, $progress, $work);
+        return TaskVmBuildStage::run('task_vm.image_build_failed', "base image build of Node [{$node->name}]", $name, $progress, $work);
     }
 
-    /**
-     * Runs one enrollment program as `orbit` from its home, as enrollment does over SSH: each program
-     * starts with `sudo`, and the Vite+ installer needs a working directory that `orbit` can read.
-     */
-    private function runProgram(TaskVmHost $host, Node $node, string $name, string $stage, RemoteCommand $program): void
+    /** Fails with the stage's name when a command in the builder failed. */
+    private function checked(IncusGuestShell $shell, string $stage, CommandResult $result): CommandResult
     {
-        $result = $this->incus->run($host, $node, [
-            'exec', '--cwd', '/home/orbit', '--env', 'HOME=/home/orbit', '--env', 'USER=orbit',
-            '--', $name, 'runuser', '-u', 'orbit', '--', ...$program->arguments,
-        ], $program->input);
-        if (! $result->succeeded()) {
-            throw IncusHost::failed("the base image build VM [{$name}]", "exec {$stage}", $result);
-        }
-    }
-
-    /** Installs the pinned Node agent binary for the VM's architecture. The agent itself is configured at enrollment. */
-    private function installAgent(TaskVmHost $host, Node $node, string $name): void
-    {
-        $architecture = $this->image->checked($name, 'exec uname', $this->image->exec($host, $node, $name, ['uname', '-m']))->stdout;
-        $this->image->checked($name, 'exec agent-binary', $this->image->exec($host, $node, $name, $this->recipe->installAgent($architecture, "the base image build VM [{$name}]")));
-    }
-
-    /**
-     * Installs the Gateway's pinned Pi executable for `orbit`, with the script that prepares Pi on a task VM.
-     * A VM from the image then skips the upload while the pin is the same.
-     */
-    private function installPi(TaskVmHost $host, Node $node, string $name, string $artifact, string $digest): void
-    {
-        $this->image->checked($name, 'exec pi-artifact', $this->incus->run($host, $node, [
-            'exec', '--cwd', '/home/orbit', '--env', 'HOME=/home/orbit', '--env', 'USER=orbit',
-            '--', $name, 'runuser', '-u', 'orbit', '--', 'bash', '-ceu', TaskVmRuntime::InstallPi, '--', $digest,
-        ], ProtectedInput::fromFile($artifact, '', TaskVmRuntime::ArtifactMaxBytes)));
+        return $result->succeeded() ? $result : throw IncusHost::failed("the base image build VM [{$shell->vm}]", "exec {$stage}", $result);
     }
 
     /**
@@ -186,12 +139,13 @@ final readonly class IncusTaskVmImageBuilder
      * templates, cloud-init reads the user-data from the agent's socket through its `LXD` data source, so it
      * must wait for the agent. The other templates, such as `/etc/hostname`, stay.
      */
-    private function singleBoot(TaskVmHost $host, Node $node, string $name): void
+    private function singleBoot(TaskVmHost $host, Node $node, IncusGuestShell $shell): void
     {
-        $this->image->checked($name, 'exec cloud-init drop-in', $this->image->exec($host, $node, $name, [
+        $this->checked($shell, 'cloud-init drop-in', $shell->asRoot([
             'install', '-D', '-o', 'root', '-g', 'root', '-m', '0644', '/dev/stdin', self::CloudInitDropIn,
         ], self::CloudInitAfterAgent));
 
+        $name = $shell->vm;
         $subject = "the base image build VM [{$name}]";
         $shown = $this->image->checked($name, 'config metadata show', $this->incus->run($host, $node, ['config', 'metadata', 'show', '--', $name]));
         // Maps stay objects, so an empty map such as `properties: {}` keeps its type for Incus.
@@ -214,21 +168,20 @@ final readonly class IncusTaskVmImageBuilder
 
     /**
      * A VM from the new image kept the lean boot through its first boot, when systemd applies the preset
-     * policy, holds the manifest that enrollment reads, and has `orbit` with the pinned uid and gid.
+     * policy, holds the manifest that enrollment reads, and has the managed user with the pinned uid and gid.
      */
-    private function checkLeanBoot(TaskVmHost $host, Node $node, string $name): void
+    private function checkImage(IncusGuestShell $smoke): void
     {
-        $result = $this->image->exec($host, $node, $name, ['sh', '-euc', self::LeanBootCheck, 'sh', TaskVmBakedPrograms::ManifestPath, TaskVmCloudInit::Owner]);
-        if (! $result->succeeded()) {
-            throw IncusHost::invalid("the base image smoke VM [{$name}]", 'it did not keep the lean boot, the image manifest, or the pinned orbit uid and gid');
+        if (! $smoke->asRoot(TaskVmImageRecipe::imageCheck(['--lean-boot']))->succeeded()) {
+            throw IncusHost::invalid("the base image smoke VM [{$smoke->vm}]", 'it did not keep the lean boot, the image manifest, or the pinned '.TaskVmCloudInit::User.' uid and gid');
         }
     }
 
-    private function clean(TaskVmHost $host, Node $node, string $name): void
+    private function clean(IncusGuestShell $shell): void
     {
-        $result = $this->image->exec($host, $node, $name, ['bash', '-s'], $this->recipe->cleanScript());
+        $result = $shell->asRoot(['bash', '-s'], $this->recipe->cleanScript());
         if (! $result->succeeded() || trim($result->stdout) !== TaskVmImageRecipe::CleanConfirmation) {
-            throw IncusHost::failed("the base image build VM [{$name}]", 'exec base-image-clean.sh', $result);
+            throw IncusHost::failed("the base image build VM [{$shell->vm}]", 'exec base-image-clean.sh', $result);
         }
     }
 

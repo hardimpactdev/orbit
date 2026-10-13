@@ -15,26 +15,18 @@ use Closure;
 use Illuminate\Cache\Lock;
 use Illuminate\Contracts\Cache\Lock as CacheLock;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Sleep;
-use Throwable;
 
 /**
- * The steps that the base image build and the base image sync share on one host: the host's image lock, the
- * smoke boot, the alias move, and the prune. Builder and smoke VMs are named `tvm-image-<time>…`, so a later
- * build or sync of the host deletes what an interrupted one left.
+ * The Incus steps that the base image build and the base image sync share on one host: the host's image lock, the
+ * smoke boot, the alias move, and the prune. Builder and smoke VMs are named `tvm-image-<time>…`
+ * ({@see TaskVmImageRecipe::WorkPrefix}), so a later build or sync of the host deletes what an interrupted one left.
+ * The workspace template build launches and deletes its builder VM with it too.
  */
-final readonly class TaskVmBaseImage
+final readonly class IncusTaskVmBaseImage
 {
-    public const string WorkPrefix = 'tvm-image-';
-
-    /** While set, a promote queues no template refresh: the nightly refresh queues one after all hosts. */
-    public const string RefreshDeferredKey = 'task-vms:template-refresh-deferred';
-
     private const string FingerprintPattern = '/\A256 SHA256:[A-Za-z0-9+\/]{43} .* \(ED25519\)\n?\z/D';
 
     private const int BootSeconds = 600;
-
-    private const int PollSeconds = 3;
 
     /** A lock that a killed process cannot release lasts as long as the refresh job may run. */
     private const int LockSeconds = 1500;
@@ -75,35 +67,11 @@ final readonly class TaskVmBaseImage
         }
     }
 
-    /**
-     * Runs one stage and reports its seconds. A failure becomes `$code` and names `$work` and the stage.
-     *
-     * @template T
-     *
-     * @param  (Closure(string, float): void)|null  $progress
-     * @param  Closure(): T  $stage
-     * @return T
-     */
-    public function stage(string $code, string $work, string $name, ?Closure $progress, Closure $stage): mixed
-    {
-        $started = microtime(true);
-        try {
-            $result = $stage();
-        } catch (Throwable $exception) {
-            throw new TaskVmException($code, "The {$work} failed at stage [{$name}]: ".mb_substr($exception->getMessage(), 0, 2000), 502, $exception);
-        }
-        if ($progress instanceof Closure) {
-            $progress($name, round(microtime(true) - $started, 1));
-        }
-
-        return $result;
-    }
-
     /** Deletes builder and smoke VMs that an interrupted build or sync left. */
     public function sweep(TaskVmHost $host, Node $node): void
     {
         foreach (array_keys($this->instances($host, $node)) as $name) {
-            if (str_starts_with($name, self::WorkPrefix)) {
+            if (str_starts_with($name, TaskVmImageRecipe::WorkPrefix)) {
                 $this->delete($host, $node, $name);
             }
         }
@@ -117,31 +85,17 @@ final readonly class TaskVmBaseImage
         }
     }
 
+    /** The guest shell of the VM `$name` on the host. */
+    public function shell(TaskVmHost $host, Node $node, string $name): IncusGuestShell
+    {
+        return new IncusGuestShell($this->incus, $host, $node, $name);
+    }
+
     /** Waits until cloud-init is done without errors. */
     public function awaitCloudInit(TaskVmHost $host, Node $node, string $name): void
     {
-        $deadline = now()->getTimestamp() + self::BootSeconds;
-        while (true) {
-            $result = $this->exec($host, $node, $name, ['cloud-init', 'status', '--format=json']);
-            // Until the guest agent runs, `incus exec` fails and prints nothing on stdout.
-            if ($result->succeeded() || trim($result->stdout) !== '') {
-                $status = IncusHost::json("the base image VM [{$name}]", $result);
-                $errors = $status['errors'] ?? null;
-                if (! is_string($status['status'] ?? null) || ! is_array($errors) || ! array_is_list($errors)) {
-                    throw IncusHost::invalid("the base image VM [{$name}]", 'the cloud-init status has no status or errors');
-                }
-                if ($status['status'] === 'error' || ($status['status'] === 'done' && $errors !== [])) {
-                    throw new TaskVmException('task_vm.bootstrap_failed', "Cloud-init failed on [{$name}]: ".mb_substr(json_encode($errors, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), 0, 2000), 502);
-                }
-                if ($status['status'] === 'done') {
-                    return;
-                }
-            }
-            if (now()->getTimestamp() >= $deadline) {
-                throw new TaskVmException('task_vm.bootstrap_timeout', "Cloud-init on [{$name}] was not done ".self::BootSeconds.' seconds after launch.', 504);
-            }
-            Sleep::for(self::PollSeconds)->seconds();
-        }
+        $shell = $this->shell($host, $node, $name);
+        TaskVmGuest::awaitCloudInit("VM [{$name}]", self::BootSeconds, static fn (array $command, float $timeout): CommandResult => $shell->asRoot($command, timeout: $timeout));
     }
 
     /**
@@ -150,35 +104,35 @@ final readonly class TaskVmBaseImage
      * also creates the image volume on the host's pool, so the first task VM is a clone too. `$check` runs on the
      * booted smoke VM before it goes, for checks only a new build can pass.
      *
-     * @param  (Closure(): void)|null  $check
+     * @param  (Closure(IncusGuestShell): void)|null  $check
      */
     public function smoke(TaskVmHost $host, Node $node, string $name, string $image, ?Closure $check = null): void
     {
         $this->launch($host, $node, $name, $image, $this->cloudInit->render($this->keys->publicKey()));
         $this->awaitCloudInit($host, $node, $name);
-        $result = $this->checked($name, 'exec ssh-keygen', $this->exec($host, $node, $name, ['ssh-keygen', '-l', '-f', '/etc/ssh/ssh_host_ed25519_key.pub']));
+        $shell = $this->shell($host, $node, $name);
+        $result = $this->checked($name, 'exec ssh-keygen', $shell->asRoot(['ssh-keygen', '-l', '-f', '/etc/ssh/ssh_host_ed25519_key.pub']));
         if (preg_match(self::FingerprintPattern, $result->stdout) !== 1) {
             throw IncusHost::invalid("the base image smoke VM [{$name}]", 'it has no ed25519 SSH host key');
         }
         // Cloud-init found the user-data without the seed: the Gateway's key is in place.
-        if (! $this->exec($host, $node, $name, ['test', '-s', '/home/orbit/.ssh/authorized_keys'])->succeeded()) {
-            throw IncusHost::invalid("the base image smoke VM [{$name}]", 'cloud-init did not read its user-data, so orbit has no authorized key');
+        if (! $shell->asRoot(['test', '-s', TaskVmCloudInit::Home.'/.ssh/authorized_keys'])->succeeded()) {
+            throw IncusHost::invalid("the base image smoke VM [{$name}]", 'cloud-init did not read its user-data, so '.TaskVmCloudInit::User.' has no authorized key');
         }
-        $boots = $this->checked($name, 'exec journalctl', $this->exec($host, $node, $name, ['journalctl', '--list-boots', '--no-pager', '--quiet']));
+        $boots = $this->checked($name, 'exec journalctl', $shell->asRoot(['journalctl', '--list-boots', '--no-pager', '--quiet']));
         if (count(array_filter(explode("\n", trim($boots->stdout)), static fn (string $line): bool => trim($line) !== '')) !== 1) {
             throw IncusHost::invalid("the base image smoke VM [{$name}]", 'it rebooted during its first boot');
         }
         if ($check instanceof Closure) {
-            $check();
+            $check($shell);
         }
         $this->delete($host, $node, $name);
     }
 
     /**
      * Points `orbit-task-base` at `$fingerprint` in one request, or creates the alias on the first image. Workspace
-     * templates belong to the image they were built on, so a moved alias queues the template refresh on the template
-     * queue, unless the nightly base image refresh runs: that one queues it after every host. The refresh deletes the
-     * templates of the old image, and builds ahead only for active Projects.
+     * templates belong to the image they were built on, so whoever builds or syncs queues
+     * {@see RefreshTaskVmWorkspaceTemplates} once it is done with every host.
      */
     public function promote(TaskVmHost $host, Node $node, string $fingerprint): void
     {
@@ -188,9 +142,6 @@ final readonly class TaskVmBaseImage
             : $this->incus->query($host, $node, 'PATCH', '/1.0/images/aliases/'.TaskVmHost::BaseImage, json_encode(['target' => $fingerprint], JSON_THROW_ON_ERROR));
             if (! $result->succeeded()) {
                 throw IncusHost::failed("the base image of Node [{$node->name}]", 'image alias', $result);
-            }
-            if (! Cache::has(self::RefreshDeferredKey)) {
-                RefreshTaskVmWorkspaceTemplates::dispatch();
             }
         } finally {
             // A claim reads the alias again, also when the reply to the move was lost.
@@ -285,12 +236,6 @@ final readonly class TaskVmBaseImage
         }
 
         return $instances;
-    }
-
-    /** @param  list<string>  $command */
-    public function exec(TaskVmHost $host, Node $node, string $name, array $command, ?string $input = null): CommandResult
-    {
-        return $this->incus->run($host, $node, ['exec', '--', $name, ...$command], $input);
     }
 
     public function checked(string $name, string $operation, CommandResult $result): CommandResult

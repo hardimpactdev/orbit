@@ -12,28 +12,32 @@ use App\Infrastructure\Nodes\NodeBootstrapCommandFactory;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\Nodes\Roles\NodeRolePrerequisiteCommandFactory;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\TaskVms\IncusTaskVmBaseImage;
 use App\Infrastructure\TaskVms\IncusTaskVmImageBuilder;
 use App\Infrastructure\TaskVms\TaskVmBakedPrograms;
-use App\Infrastructure\TaskVms\TaskVmBaseImage;
-use App\Infrastructure\TaskVms\TaskVmImageRecipe;
 use App\Infrastructure\TaskVms\TaskVmRuntime;
+use App\Infrastructure\TaskVms\TaskVmScripts;
 use App\Infrastructure\Tools\ComposerToolManager;
 use App\Infrastructure\Tools\VpToolManager;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
+use App\Jobs\TaskVms\RefreshTaskVmWorkspaceTemplates;
 use App\Models\Node;
 use Illuminate\Console\Scheduling\CallbackEvent;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
 use Symfony\Component\Yaml\Yaml;
+use Tests\Support\IncusGuestCall;
 use Tests\Support\TaskVmSettingsBuilder;
 
 const IMAGE_KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeGatewayPublicKeyMaterial0123456789abcd orbit@gateway';
@@ -89,6 +93,9 @@ final class FakeIncusImageHost implements SshExecutor
     /** @var list<RemoteCommand> */
     public array $commands = [];
 
+    /** @var list<IncusGuestCall> what ran in a guest, in order */
+    public array $guest = [];
+
     /** @var array<string, list<string>> */
     public array $images = [];
 
@@ -126,7 +133,7 @@ final class FakeIncusImageHost implements SshExecutor
                 $this->images,
             ))),
             $operation[0] === 'launch' => $this->answer('launch', fn () => $this->instances[end($operation)] = $this->fingerprintOf($operation[count($operation) - 2])),
-            $operation[0] === 'exec' => $this->exec($operation[array_search('--', $operation, true) + 1], array_slice($operation, array_search('--', $operation, true) + 2)),
+            $operation[0] === 'exec' => $this->exec($this->guest[] = IncusGuestCall::decode($command)),
             $operation[0] === 'config' && $operation[2] === 'show' => $this->answer('metadata show', static fn (): string => IMAGE_METADATA),
             $operation[0] === 'config' && $operation[2] === 'edit' => $this->answer('metadata edit', function () use ($operation, $command): void {
                 $this->metadata[end($operation)] = $command->input;
@@ -144,9 +151,14 @@ final class FakeIncusImageHost implements SshExecutor
         };
     }
 
-    /** @param  list<string>  $command */
-    private function exec(string $name, array $command): CommandResult
+    private function exec(IncusGuestCall $call): CommandResult
     {
+        if ($call->user !== 'root') {
+            return $this->answer('program');
+        }
+        // `timeout <seconds> <command>`, as the cloud-init status read runs.
+        $command = $call->argv[0] === 'timeout' ? array_slice($call->argv, 2) : $call->argv;
+
         return match ($command[0]) {
             // The guest agent is not up on the first poll, cloud-init runs on the second.
             'cloud-init' => match (true) {
@@ -158,12 +170,16 @@ final class FakeIncusImageHost implements SshExecutor
             'uname' => new CommandResult(0, "x86_64\n", '', 1, false),
             'journalctl' => new CommandResult(0, implode('', array_map(static fn (int $boot): string => "{$boot} 0f1e2d3c4b5a69788796a5b4c3d2e1f0 Sat 2026-10-10 03:01:00 UTC\n", range(1 - $this->boots, 0))), '', 1, false),
             'test' => $this->answer('authorized key'),
-            'sh' => $this->answer(str_contains($command[2], 'systemctl') ? 'lean boot' : 'orbit user'),
+            'sh' => $this->answer('orbit user'),
             'ssh-keygen' => $this->answer('ssh-keygen', static fn (): string => "256 SHA256:tHGyu/bpS80ShKGdwihLDLg9TzFRZCdsWqnuyInfRsg root@smoke (ED25519)\n"),
             'bash' => $command[1] === '-s'
                 ? ($this->fail === 'clean' ? new CommandResult(1, '', "base-image-clean: an SSH host key remains\n", 1, false) : new CommandResult(0, "{\"ok\":true}\n", '', 1, false))
-                : $this->answer('agent'),
-            default => $this->answer($command[0] === 'runuser' ? 'program' : 'exec'),
+                : $this->answer(match ($call->script) {
+                    'image-check.sh' => 'lean boot',
+                    'install-agent.sh' => 'agent',
+                    default => 'exec',
+                }),
+            default => $this->answer('exec'),
         };
     }
 
@@ -251,16 +267,14 @@ describe('a build', function (): void {
             app(VpToolManager::class)->materializeCommand($node),
             app(ComposerToolManager::class)->materializeCommand($node),
             ...array_values(app(RemotePhpPackageManager::class)->appDevPrograms(['8.5', '8.4'])),
-            new RemoteCommand(['bash', '-ceu', TaskVmImageRecipe::InstallRust]),
+            new RemoteCommand(TaskVmScripts::bash('install-rust.sh')),
         ];
-        $execs = array_values(array_filter($this->incus->commands, static fn (RemoteCommand $command): bool => array_slice($command->arguments, 5, 11) === [
-            'exec', '--cwd', '/home/orbit', '--env', 'HOME=/home/orbit', '--env', 'USER=orbit', '--', 'tvm-image-20261010030000', 'runuser', '-u',
-        ]));
+        $programsRun = array_values(array_filter($this->incus->guest, static fn (IncusGuestCall $call): bool => $call->vm === 'tvm-image-20261010030000' && $call->user === 'orbit' && $call->cwd === '/home/orbit'));
         $launches = array_values(array_filter($this->incus->commands, static fn (RemoteCommand $command): bool => $command->arguments[5] === 'launch'));
 
         expect($fingerprint)->toBe(IMAGE_NEW)
             ->and($stages)->toBe(['render', 'sweep', 'launch', 'cloud-init', 'orbit-user', 'bootstrap', 'caddy-package', 'app-dev-prerequisites', 'vp-manager', 'composer-manager', 'app-dev-php-source', 'app-dev-php-8-5', 'app-dev-php-8-4', 'rust-toolchain', 'agent-binary', 'single-boot', 'lean-boot', 'manifest', 'clean', 'publish', 'delete-builder', 'smoke', 'promote', 'prune'])
-            ->and(array_map(static fn (RemoteCommand $command): array => [array_slice($command->arguments, 18), $command->input], $execs))
+            ->and(array_map(static fn (IncusGuestCall $call): array => [$call->argv, $call->input], $programsRun))
             ->toBe(array_map(static fn (?RemoteCommand $program): array => [$program?->arguments, $program?->input], $programs))
             ->and(array_slice($launches[0]->arguments, -3))->toBe(['--', 'ubuntu-26.04-vm', 'tvm-image-20261010030000'])
             ->and($launches[0]->input)->toContain('package_upgrade')->toContain('libnss3')->toContain('openssh-server')->toContain('bind9-dnsutils')
@@ -276,9 +290,10 @@ describe('a build', function (): void {
             ->and($this->incus->images)->toBe([IMAGE_STOCK => ['ubuntu-26.04-vm'], IMAGE_NEW => ['orbit-task-base-20261010030000', 'orbit-task-base']])
             ->and($this->incus->instances)->toBe([]);
 
-        $agent = collect($this->incus->commands)->first(static fn (RemoteCommand $command): bool => ($command->arguments[8] ?? null) === 'bash' && $command->arguments[9] === '-ceu');
-        $clean = collect($this->incus->commands)->first(static fn (RemoteCommand $command): bool => array_slice($command->arguments, 8) === ['bash', '-s']);
-        expect(array_slice($agent->arguments, -2))->toBe([NodeAgentFootprint::downloadUrl('x86_64'), NodeAgentFootprint::checksum('x86_64')])
+        $agent = collect($this->incus->guest)->first(static fn (IncusGuestCall $call): bool => $call->script === 'install-agent.sh');
+        $clean = collect($this->incus->guest)->first(static fn (IncusGuestCall $call): bool => $call->argv === ['bash', '-s']);
+        expect([$agent->user, $clean->user])->toBe(['root', 'root'])
+            ->and(array_slice($agent->argv, -2))->toBe([NodeAgentFootprint::downloadUrl('x86_64'), NodeAgentFootprint::checksum('x86_64')])
             ->and($clean->input)->toBe(file_get_contents(resource_path('task-vms/base-image-clean.sh')));
     });
 
@@ -295,14 +310,11 @@ describe('a build', function (): void {
             unlink($artifact);
         }
 
-        $pi = collect($this->incus->commands)->first(static fn (RemoteCommand $command): bool => $command->protectedInput !== null);
+        $pi = collect($this->incus->guest)->first(static fn (IncusGuestCall $call): bool => $call->input instanceof ProtectedInput);
         expect($stages)->toContain('pi-artifact')
             ->and(array_search('pi-artifact', $stages, true))->toBe(array_search('agent-binary', $stages, true) + 1)
-            ->and(array_slice($pi->arguments, 5, 16))->toBe([
-                'exec', '--cwd', '/home/orbit', '--env', 'HOME=/home/orbit', '--env', 'USER=orbit', '--', 'tvm-image-'.now()->format('YmdHis'),
-                'runuser', '-u', 'orbit', '--', 'bash', '-ceu', TaskVmRuntime::InstallPi,
-            ])
-            ->and(array_slice($pi->arguments, -2))->toBe(['--', $digest]);
+            ->and([$pi->vm, $pi->user, $pi->cwd])->toBe(['tvm-image-'.now()->format('YmdHis'), 'orbit', '/home/orbit'])
+            ->and($pi->argv)->toBe(['bash', '-ceu', TaskVmRuntime::InstallPi, '--', $digest]);
     });
 
     it('drops the seed templates, so a VM from the image boots once and cloud-init reads its user-data from the Incus agent', function (): void {
@@ -327,21 +339,21 @@ describe('a build', function (): void {
 
         $node = new Node(['name' => 'task-vm-base-image', 'platform' => 'linux', 'user' => 'orbit']);
         $manifest = collect($this->incus->commands)->first(static fn (RemoteCommand $command): bool => Arr::last($command->arguments) === TaskVmBakedPrograms::ManifestPath);
-        $lean = collect($this->incus->commands)->first(static fn (RemoteCommand $command): bool => ($command->arguments[9] ?? null) === '-ceu' && str_contains((string) Arr::last($command->arguments), 'systemctl mask'));
-        $check = collect($this->incus->commands)->first(static fn (RemoteCommand $command): bool => ($command->arguments[8] ?? null) === 'sh' && str_contains($command->arguments[10], 'systemd-firstboot'));
+        $lean = collect($this->incus->guest)->first(static fn (IncusGuestCall $call): bool => $call->argv[0] === 'bash' && $call->argv[1] === '-ceu' && str_contains($call->argv[2], 'systemctl mask'));
+        $check = collect($this->incus->guest)->first(static fn (IncusGuestCall $call): bool => $call->script === 'image-check.sh');
         $programs = json_decode((string) $manifest->input, true);
 
         expect($programs['schema'])->toBe(1)
             ->and(array_keys($programs['programs']))->toBe(['bootstrap', 'caddy-package', 'app-dev-prerequisites', 'vp-manager', 'composer-manager', 'app-dev-php-source', 'app-dev-php-8-5', 'app-dev-php-8-4', 'rust-toolchain'])
-            ->and($programs['programs']['rust-toolchain'])->toBe(TaskVmBakedPrograms::fingerprint(new RemoteCommand(['bash', '-ceu', TaskVmImageRecipe::InstallRust])))
+            ->and($programs['programs']['rust-toolchain'])->toBe(TaskVmBakedPrograms::fingerprint(new RemoteCommand(TaskVmScripts::bash('install-rust.sh'))))
             ->and($programs['programs']['bootstrap'])->toBe(TaskVmBakedPrograms::fingerprint(app(NodeBootstrapCommandFactory::class)->makeWithPasswordlessSudo($node, 'orbit')))
             ->and($programs['programs']['composer-manager'])->toBe(TaskVmBakedPrograms::fingerprint(app(ComposerToolManager::class)->materializeCommand($node)))
             ->and($programs['programs']['app-dev-php-8-4'])->toBe(TaskVmBakedPrograms::fingerprint(app(RemotePhpPackageManager::class)->appDevPrograms(['8.5', '8.4'])['8.4']))
             ->and(array_slice($manifest->arguments, 5, 4))->toBe(['exec', '--', 'tvm-image-20261010030000', 'install'])
-            ->and(Arr::last($lean->arguments))->toContain('systemd-firstboot.service', 'apt-daily.timer', 'LinkLocalAddressing=no', '--ipv4')->not->toContain('docker')
-            ->and($check->arguments[7])->toBe('tvm-image-20261010030000-smoke')
-            ->and(array_slice($check->arguments, -2))->toBe([TaskVmBakedPrograms::ManifestPath, '1000:1000'])
-            ->and($check->arguments[10])->toContain('test "$(id -u orbit):$(id -g orbit)" = "$2"');
+            ->and([$lean->user, $lean->argv[2]])->toBe(['root', TaskVmScripts::read('lean-boot.sh').'systemctl mask systemd-firstboot.service apt-daily.timer apt-daily-upgrade.timer motd-news.timer unattended-upgrades.service'])
+            ->and($lean->argv[2])->toContain('LinkLocalAddressing=no', '--ipv4')->not->toContain('docker')
+            ->and([$check->vm, $check->user])->toBe(['tvm-image-20261010030000-smoke', 'root'])
+            ->and(array_slice($check->argv, 3))->toBe(['--', 'orbit', '1000:1000', TaskVmBakedPrograms::ManifestPath, '--lean-boot']);
     });
 
     it('stops right after cloud-init when orbit did not get the pinned uid and gid', function (): void {
@@ -353,8 +365,8 @@ describe('a build', function (): void {
         })->toThrow(TaskVmException::class, 'stage [orbit-user]');
         expect($stages)->toBe(['render', 'sweep', 'launch', 'cloud-init'])
             ->and($this->incus->instances)->toBe([]);
-        $owner = collect($this->incus->commands)->first(static fn (RemoteCommand $command): bool => ($command->arguments[8] ?? null) === 'sh');
-        expect(array_slice($owner->arguments, 8))->toBe(['sh', '-euc', 'test "$(id -u orbit):$(id -g orbit)" = "$1"', 'sh', '1000:1000']);
+        $owner = collect($this->incus->guest)->first(static fn (IncusGuestCall $call): bool => $call->argv[0] === 'sh');
+        expect($owner->argv)->toBe(['sh', '-euc', 'test "$(id -u -- "$2"):$(id -g -- "$2")" = "$1"', 'sh', '1000:1000', 'orbit']);
     });
 
     it('fails the smoke test when a VM from the new image lost the lean boot', function (): void {
@@ -394,6 +406,14 @@ describe('a build', function (): void {
         expect(array_keys($this->incus->images))->toBe([IMAGE_STOCK, IMAGE_NEW]);
     });
 
+    it('queues no template refresh: whoever builds queues one when it is done with every host', function (): void {
+        Queue::fake();
+
+        ($this->build)();
+
+        Queue::assertNotPushed(RefreshTaskVmWorkspaceTemplates::class);
+    });
+
     it('deletes the builder and smoke VMs that an interrupted build left', function (): void {
         $this->incus->instances = ['tvm-image-20261009030000' => IMAGE_STOCK, 'tvm-image-20261009030000-smoke' => null, 'tvm-7' => IMAGE_OLD];
 
@@ -431,7 +451,7 @@ describe('a failed build', function (): void {
         $lock->get();
         $this->incus->instances = ['tvm-image-20261010030000' => IMAGE_STOCK, 'tvm-5' => IMAGE_OLD];
 
-        app(TaskVmBaseImage::class)->abandon($host, $this->host, 'command-other');
+        app(IncusTaskVmBaseImage::class)->abandon($host, $this->host, 'command-other');
         expect(array_keys($this->incus->instances))->toBe(['tvm-image-20261010030000', 'tvm-5'])
             ->and(Cache::lock('task-vms:image-build:'.$this->host->id, 10)->get())->toBeFalse();
 
@@ -484,6 +504,15 @@ describe('task-vms:build-image', function (): void {
             ->assertFailed();
     });
 
+    it('queues one template refresh at the end, also after a failed build', function (?string $fail): void {
+        Queue::fake();
+        $this->incus->fail = $fail;
+
+        $this->artisan('task-vms:build-image', ['node' => 'beast'])->run();
+
+        Queue::assertPushed(RefreshTaskVmWorkspaceTemplates::class, 1);
+    })->with(['a build' => [null], 'a failed promote' => ['query']]);
+
     it('refuses a Node that is not a task VM host', function (): void {
         Node::query()->create(['name' => 'shark', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '192.0.2.8', 'wireguard_ip' => '10.44.0.11', 'user' => 'nckrtl']);
 
@@ -495,7 +524,7 @@ describe('task-vms:build-image', function (): void {
 });
 
 describe('the nightly refresh', function (): void {
-    it('is queued on the task VM queue every night at 03:00 while task VMs are enabled', function (): void {
+    it('is queued on the image queue every night at 03:00 while task VMs are enabled', function (): void {
         Artisan::call('schedule:list');
         $refresh = collect(app(Schedule::class)->events())->first(static fn ($event): bool => $event instanceof CallbackEvent && $event->description === RefreshTaskVmBaseImages::class);
 
@@ -503,7 +532,7 @@ describe('the nightly refresh', function (): void {
         expect($refresh)->not->toBeNull()
             ->and($refresh->expression)->toBe('0 3 * * *')
             ->and($refresh->filtersPass(app()))->toBeFalse()
-            ->and([new RefreshTaskVmBaseImages()->connection, new RefreshTaskVmBaseImages()->queue])->toBe(['task-vms', 'task-vms']);
+            ->and([new RefreshTaskVmBaseImages()->connection, new RefreshTaskVmBaseImages()->queue])->toBe(['task-vms', 'task-vm-images']);
 
         config(['task_vms.enabled' => true]);
         expect($refresh->filtersPass(app()))->toBeTrue();

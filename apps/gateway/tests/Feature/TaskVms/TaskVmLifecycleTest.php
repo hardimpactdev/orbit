@@ -1100,14 +1100,14 @@ function tvm_life_workspace(Task $group, Node $node): Instance
 }
 
 describe('worker', function (): void {
-    it('runs from the Gateway scheduler, in the foreground before the template worker, only while a task VM job waits', function (): void {
+    it('runs from the Gateway scheduler, in the foreground before the image and template workers, only while a task VM job waits', function (): void {
         Artisan::call('schedule:list');
         $events = app(Schedule::class)->events();
         $worker = collect($events)->first(fn (Event $event): bool => str_contains((string) $event->command, 'queue:work'));
 
         expect($worker)->not->toBeNull()
             ->and($worker->command)->toEndWith("'artisan' queue:work task-vms --queue=task-vms --stop-when-empty --max-time=120 --timeout=1500")
-            ->and($worker)->toBe($events[count($events) - 2])
+            ->and($worker)->toBe($events[count($events) - 3])
             ->and($worker->expression)->toBe('* * * * *')
             ->and($worker->repeatSeconds)->toBe(1)
             ->and($worker->withoutOverlapping)->toBeTrue()

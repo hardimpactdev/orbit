@@ -6,6 +6,7 @@ namespace App\Jobs\TaskVms;
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmHost;
+use App\Domain\TaskVms\TaskVmQueue;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\TaskVms\IncusHost;
 use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplates;
@@ -19,17 +20,17 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * The template refresh. Every base image promote queues it, and so does the end of the nightly base image refresh,
- * so templates follow the image. It runs on the template queue, so it never delays task VM jobs. On every configured
- * host whose Node is active, it deletes each ready template that no claim can take any more: templates of Projects
- * that no longer run task VMs, from an earlier repository, or built on another base image than the host's current
- * one, and all but the newest template of each Project. Then it queues one build for each Project that had a group
+ * The template refresh. Whatever builds or syncs a base image queues it once when it is done with every host: the
+ * build and sync commands and the nightly base image refresh. So templates follow the image. It runs on the template
+ * queue, so it never delays task VM jobs. On every configured host whose Node is active, it deletes each ready template
+ * that no claim can take any more: templates of Projects that no longer run task VMs, from an earlier repository, or
+ * built on another base image than the host's current one, and all but the newest template of each Project. Then it queues one build for each Project that had a group
  * created within {@see TaskVmWorkspaceTemplates::ActiveDays} days and has no current template on the host. Other
  * Projects get their template at their next claim. A Project that cannot have a template is logged and skipped, and
  * its templates are deleted. A host that fails is logged, and the other hosts still run.
  *
- * It is unique until it starts, so a promote during a running refresh queues one more, which sees the new alias.
- * That one skips every template that is already current, so it builds only for the hosts whose alias moved.
+ * It is unique until it starts, so a build or sync that ends during a running refresh queues one more, which sees the
+ * new alias. That one skips every template that is already current, so it builds only for the hosts whose alias moved.
  */
 final class RefreshTaskVmWorkspaceTemplates implements ShouldBeUniqueUntilProcessing, ShouldQueue
 {
@@ -43,7 +44,7 @@ final class RefreshTaskVmWorkspaceTemplates implements ShouldBeUniqueUntilProces
 
     public function __construct()
     {
-        $this->onConnection('task-vms')->onQueue(TaskVmWorkspaceTemplates::Queue);
+        $this->onConnection('task-vms')->onQueue(TaskVmQueue::Templates->value);
     }
 
     public function handle(TaskVmSettings $settings, TaskVmWorkspaceTemplates $templates, IncusHost $incus): void

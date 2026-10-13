@@ -8,15 +8,17 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageSyncResult;
 use App\Domain\TaskVms\TaskVmSettings;
+use App\Infrastructure\TaskVms\IncusTaskVmBaseImage;
 use App\Infrastructure\TaskVms\IncusTaskVmImageBuilder;
 use App\Infrastructure\TaskVms\IncusTaskVmImageSync;
-use App\Infrastructure\TaskVms\TaskVmBaseImage;
+use App\Jobs\TaskVms\RefreshTaskVmWorkspaceTemplates;
 use App\Models\Node;
 use Illuminate\Console\Command;
 
 /**
  * Builds the base image on one task VM host, then syncs it to every other configured host. Prints each stage
- * with its time, and one line for each host.
+ * with its time, and one line for each host. At the end it queues one workspace template refresh, also after a
+ * failure, so the templates follow every alias that moved.
  */
 final class BuildTaskVmImageCommand extends Command
 {
@@ -28,7 +30,16 @@ final class BuildTaskVmImageCommand extends Command
     #[\Override]
     protected $description = 'Build the task VM base image on one Incus host, point orbit-task-base at it, and sync it to every other host.';
 
-    public function handle(IncusTaskVmImageBuilder $builder, IncusTaskVmImageSync $sync, TaskVmBaseImage $image): int
+    public function handle(IncusTaskVmImageBuilder $builder, IncusTaskVmImageSync $sync, IncusTaskVmBaseImage $image): int
+    {
+        try {
+            return $this->buildAndSync($builder, $sync, $image);
+        } finally {
+            RefreshTaskVmWorkspaceTemplates::dispatch();
+        }
+    }
+
+    private function buildAndSync(IncusTaskVmImageBuilder $builder, IncusTaskVmImageSync $sync, IncusTaskVmBaseImage $image): int
     {
         $started = microtime(true);
         try {
@@ -44,6 +55,7 @@ final class BuildTaskVmImageCommand extends Command
                         $image->abandon($each, $eachNode, $owner);
                     }
                 }
+                RefreshTaskVmWorkspaceTemplates::dispatch();
                 $this->error("Stopped by signal [{$signal}]. The builder and smoke VMs are deleted and each host keeps its current base image.");
 
                 exit(self::FAILURE);

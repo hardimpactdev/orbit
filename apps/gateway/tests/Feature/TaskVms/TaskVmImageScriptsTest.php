@@ -2,13 +2,12 @@
 
 declare(strict_types=1);
 
-use App\Infrastructure\TaskVms\IncusTaskVmImageSync;
-use App\Infrastructure\TaskVms\TaskVmImagePeers;
+use App\Infrastructure\TaskVms\TaskVmScripts;
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
 
 /**
- * Runs the image transfer scripts with bash, with stubs for the commands that need root, Incus, or a peer.
+ * Runs a script of `resources/task-vms` with bash, with stubs for the commands that need root, Incus, or a peer.
  *
  * @param  array<string, string>  $stubs  command => shell body
  * @param  list<string>  $arguments
@@ -23,17 +22,12 @@ function image_script(string $script, array $arguments, array $stubs, string $in
         chmod("{$work}/bin/{$name}", 0755);
     }
     $bash = new ExecutableFinder()->find('bash') ?? '/bin/bash';
-    $process = new Process([$bash, '-ceu', $script, '--', ...$arguments]);
+    $process = new Process([$bash, TaskVmScripts::path($script), ...$arguments]);
     $process->setInput($input);
     $process->setEnv(['PATH' => $work.'/bin:'.getenv('PATH'), 'WORK' => $work]);
     $process->run();
 
     return [$process, $work];
-}
-
-function image_script_constant(string $class, string $name): string
-{
-    return (string) new ReflectionClassConstant($class, $name)->getValue();
 }
 
 afterEach(function (): void {
@@ -44,7 +38,6 @@ afterEach(function (): void {
 
 describe('the receiver', function (): void {
     beforeEach(function (): void {
-        $this->receiver = (string) file_get_contents(resource_path('task-vms/image-receive.sh'));
         $this->stubs = [
             'install' => ':',
             'find' => ':',
@@ -54,7 +47,7 @@ describe('the receiver', function (): void {
     });
 
     it('imports the image into the project from its argument and prints its fingerprint', function (): void {
-        [$process, $work] = image_script($this->receiver, ['orbit-tasks'], $this->stubs, 'the image bytes');
+        [$process, $work] = image_script('image-receive.sh', ['orbit-tasks'], $this->stubs, 'the image bytes');
 
         expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
             ->and($process->getOutput())->toBe(hash('sha256', 'the image bytes')."\n")
@@ -65,7 +58,7 @@ describe('the receiver', function (): void {
     });
 
     it('answers a probe with ready and imports nothing', function (): void {
-        [$process, $work] = image_script($this->receiver, ['orbit-tasks'], $this->stubs);
+        [$process, $work] = image_script('image-receive.sh', ['orbit-tasks'], $this->stubs);
 
         expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
             ->and($process->getOutput())->toBe("ready\n")
@@ -74,7 +67,7 @@ describe('the receiver', function (): void {
 
     it('fails loudly and removes the staging file when the import fails', function (): void {
         $this->stubs['incus'] = 'echo "Error: Image with same fingerprint already exists" >&2; exit 1';
-        [$process, $work] = image_script($this->receiver, ['orbit-tasks'], $this->stubs, 'the image bytes');
+        [$process, $work] = image_script('image-receive.sh', ['orbit-tasks'], $this->stubs, 'the image bytes');
 
         expect($process->getExitCode())->toBe(1)
             ->and($process->getOutput())->toBe('')
@@ -88,7 +81,7 @@ describe('the source scripts', function (): void {
         $work = sys_get_temp_dir().'/orbit-image-script-'.bin2hex(random_bytes(6));
         $directory = "{$work}/export/node-13";
         mkdir($directory.'/stale', 0700, true);
-        [$process] = image_script(image_script_constant(IncusTaskVmImageSync::class, 'Export'), [$directory, str_repeat('a', 64), 'orbit-tasks'], [
+        [$process] = image_script('image-export.sh', [$directory, str_repeat('a', 64), 'orbit-tasks'], [
             'install' => 'for path; do case $path in /*) mkdir -p -- "$path" ;; esac; done',
             'incus' => 'echo "incus $*" >> "$WORK/incus.log"; printf image > "$7.tar"',
         ]);
@@ -100,7 +93,7 @@ describe('the source scripts', function (): void {
     });
 
     it('sends with the transfer key from the source address and pins the target host key', function (): void {
-        [$process, $work] = image_script(image_script_constant(TaskVmImagePeers::class, 'Send'), [
+        [$process, $work] = image_script('peer-send.sh', [
             '/dev/null', '/etc/orbit/task-vms/image-transfer/id_ed25519', '192.168.6.20', 'ssh-ed25519 AAAAhost', 'nckrtl', '192.168.6.40',
         ], [
             'ssh' => 'printf "%s\n" "$@" > "$WORK/ssh.args"; for arg; do case $arg in UserKnownHostsFile=*) cp "${arg#UserKnownHostsFile=}" "$WORK/known_hosts" ;; esac; done; echo ready',
@@ -121,20 +114,19 @@ describe('the peer key writer', function (): void {
         $work = sys_get_temp_dir().'/orbit-image-script-'.bin2hex(random_bytes(6));
         mkdir($work.'/home/.ssh', 0700, true);
         file_put_contents($work.'/home/.ssh/authorized_keys', "ssh-ed25519 AAAAnick nick@mac\nfrom=\"192.168.6.99\",restrict,command=\"x\" ssh-ed25519 AAAAold orbit-task-image-99\n\nssh-ed25519 AAAAorbit orbit@gateway\n");
-        $script = image_script_constant(TaskVmImagePeers::class, 'AuthorizedKeys');
         $stubs = [
             'getent' => 'echo "nckrtl:x:1000:1000::$WORK/home:/bin/bash"',
             'id' => 'echo nckrtl',
             'chown' => ':',
         ];
         // The stubs and the home are in the same work directory, so the helper must see it.
-        $run = static function (string $drop, string $input) use ($script, $stubs, $work): Process {
+        $run = static function (string $drop, string $input) use ($stubs, $work): Process {
             mkdir($work.'/bin', 0700, true);
             foreach ($stubs as $name => $body) {
                 file_put_contents("{$work}/bin/{$name}", "#!/bin/sh\n{$body}\n");
                 chmod("{$work}/bin/{$name}", 0755);
             }
-            $process = new Process([new ExecutableFinder()->find('bash') ?? '/bin/bash', '-ceu', $script, '--', 'nckrtl', $drop]);
+            $process = new Process([new ExecutableFinder()->find('bash') ?? '/bin/bash', TaskVmScripts::path('peer-authorized-keys.sh'), 'nckrtl', $drop]);
             $process->setInput($input);
             $process->setEnv(['PATH' => $work.'/bin:'.getenv('PATH'), 'WORK' => $work]);
             $process->run();
@@ -156,4 +148,39 @@ describe('the peer key writer', function (): void {
             ->and(glob($work.'/home/.ssh/.authorized_keys.*'))->toBe([]);
         new Process(['rm', '-rf', '--', $work])->run();
     });
+});
+
+describe('the image check', function (): void {
+    beforeEach(function (): void {
+        $this->work = sys_get_temp_dir().'/orbit-image-script-'.bin2hex(random_bytes(6));
+        mkdir($this->work.'/home/.ssh', 0700, true);
+        file_put_contents($this->work.'/home/.ssh/authorized_keys', "ssh-ed25519 AAAAgateway orbit@gateway\n");
+        file_put_contents($this->work.'/image.json', "{\"schema\":1,\"programs\":{}}\n");
+        $this->stubs = [
+            'id' => 'echo 1000',
+            'getent' => 'echo "orbit:x:1000:1000::'.$this->work.'/home:/bin/bash"',
+            'sudo' => 'echo "Status: active"',
+        ];
+    });
+
+    it('passes for the pinned uid and gid, the manifest, and the Gateway key, plus ufw on request', function (): void {
+        [$process] = image_script('image-check.sh', ['orbit', '1000:1000', $this->work.'/image.json', '--ufw'], $this->stubs);
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+    });
+
+    it('fails for another uid, a missing manifest, a missing key, an inactive ufw, or an unknown check', function (string $change): void {
+        $arguments = ['orbit', '1000:1000', $this->work.'/image.json', '--ufw'];
+        $stubs = $this->stubs;
+        match ($change) {
+            'uid' => $stubs['id'] = 'echo 1001',
+            'manifest' => $arguments[2] = $this->work.'/missing.json',
+            'key' => unlink($this->work.'/home/.ssh/authorized_keys'),
+            'ufw' => $stubs['sudo'] = 'echo "Status: inactive"',
+            'check' => $arguments[3] = '--unknown',
+        };
+        [$process] = image_script('image-check.sh', $arguments, $stubs);
+
+        expect($process->getExitCode())->not->toBe(0);
+    })->with(['uid', 'manifest', 'key', 'ufw', 'check']);
 });

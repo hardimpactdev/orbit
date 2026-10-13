@@ -317,7 +317,7 @@ Run `task-vms:build-workspace-template {node} {project}` to build the template o
 
 Templates are built on demand. A claim that finds no template for its VM's base image queues `BuildTaskVmWorkspaceTemplate`, and the refresh below builds ahead only for active Projects. Most `vm` Projects get few groups, so a build for every Project after each promote would mostly make templates that the next promote replaces unused.
 
-Templates belong to the base image they were built on, so they follow it. Every promote of a base image, by a build or a sync, queues `RefreshTaskVmWorkspaceTemplates`. The nightly base image refresh at 03:00 is the exception: its promotes queue nothing, and it queues one refresh when it ends, after the build and the sync to every host, also when its build fails. A refresh that is already queued absorbs another one. A promote while a refresh runs queues one more, which sees the new alias.
+Templates belong to the base image they were built on, so they follow it. Whatever builds or syncs a base image queues `RefreshTaskVmWorkspaceTemplates` once when it ends, after every host it changed, also when it fails: `task-vms:build-image`, the nightly base image refresh at 03:00, and `task-vms:sync-image` unless the host already had the image. The promote itself queues nothing, so no refresh sees one host moved and another not. A refresh that is already queued absorbs another one. A refresh queued while one runs queues one more, which sees the new alias.
 
 The refresh runs on every configured host whose Node is active. It reads the host's current `orbit-task-base` and deletes each ready template that no claim can take:
 
@@ -510,19 +510,24 @@ The worker stops when the queue is empty, or takes no new job after 120 seconds.
 
 A job is due when its time has come and no worker holds it, or a worker's hold is older than 1800 seconds. A delayed retry or a released job starts no worker before its time. Without a due job, the scheduler only reads the queue table each second. A Gateway release drains the worker like any other scheduled command. Its start does not pause [document cleanup](/reference/project-documents), because it runs only task VM jobs.
 
-The workspace template jobs, `RefreshTaskVmWorkspaceTemplates` and `BuildTaskVmWorkspaceTemplate`, and the [nightly UpCloud template refresh](#refresh-the-upcloud-template-every-night) `RefreshUpCloudTaskVmTemplate` run on the queue `task-vm-templates` in the same table, with a worker of their own:
+The workspace template jobs, `RefreshTaskVmWorkspaceTemplates` and `BuildTaskVmWorkspaceTemplate`, run on the queue `task-vm-templates` in the same table, with a worker of their own. The nightly base image refreshes, [`RefreshTaskVmBaseImages`](#build-the-base-image) and [`RefreshUpCloudTaskVmBaseImage`](#refresh-the-upcloud-template-every-night), run on the queue `task-vm-images`, with a third worker:
 
 ```text
 queue:work task-vms --queue=task-vm-templates --stop-when-empty --max-time=120 --timeout=1700
+queue:work task-vms --queue=task-vm-images --stop-when-empty --max-time=120 --timeout=1700
 ```
 
-So a template build, which takes about a minute and at most 1700 seconds, never holds up a task VM job. Only one template worker runs at a time, so one build runs in the fleet at a time. The host lock also allows one build per host. The worker's overlap lock lasts 32 minutes, longer than its longest run: 120 seconds of jobs, then one more job of at most 1700 seconds.
+So a template build, which takes about a minute and at most 1700 seconds, and a base image refresh, which takes up to 25 minutes, never hold up a task VM job or each other. Each of these workers runs one job at a time, so one template build and one base image refresh run in the fleet at a time. The host locks also allow one template build and one base image build or sync per host.
 
-The template worker has the same due check, but starts only in the last two seconds of a minute. A scheduler run waits for a command that it starts in the foreground, and the scheduler starts a new run each minute. So a long build holds a run that was about to end, and the next run starts the task VM worker each second again. The worker stops after 120 seconds and starts again at the end of a minute, so it can idle up to a minute between runs.
+Each worker's overlap lock lasts 32 minutes, longer than its longest run: 120 seconds of jobs, then one more job of at most 1700 seconds.
+
+These workers have the same due check, but start only at the end of a minute: the image worker in seconds 56 and 57, the template worker in seconds 58 and 59. A scheduler run waits for a command that it starts in the foreground, and the scheduler starts a new run each minute. So a long job holds a run that was about to end, and the next run starts the task VM worker each second again, and the other worker when it is due.
+
+A worker stops after 120 seconds and starts again at the end of a minute, so it can idle up to a minute between runs.
 
 The template queue runs its jobs in the order they were queued. A claim's build waits behind the builds that a refresh queued. After a nightly promote with 10 active Projects on 2 hosts, that can be 20 to 60 minutes.
 
-A builder VM has the size of a task VM and does not count against `max_vms`. It can run beside a base image build, a smoke VM, and new task VMs on the same host. At most one builder runs in the fleet.
+A builder VM has the size of a task VM and does not count against `max_vms`. It can run beside a base image build, a smoke VM, and new task VMs on the same host. At most one template builder runs in the fleet. The base image builder and smoke VMs do not count against `max_vms` either, and since they have their own worker, they can run beside new task VMs too.
 
 | Job | Retries |
 | --- | --- |
@@ -536,8 +541,8 @@ A builder VM has the size of a task VM and does not count against `max_vms`. It 
 | `RefillTaskVmPool` | Never. It runs again a minute later. A failed pool VM makes its host wait, as [Failures](#warm-vm-failures) describes |
 | `EnsureWarmClaimReady` | Never. It queues `PrepareTaskVmRuntime`, which has its own retries |
 | `RefreshTaskVmBaseImages` | Never. The next night runs it again |
-| `RefreshTaskVmWorkspaceTemplates` | Never. The next promote or night queues it again |
-| `RefreshUpCloudTaskVmTemplate` | Never. The next night runs it again |
+| `RefreshTaskVmWorkspaceTemplates` | Never. The next base image build, sync, or night queues it again |
+| `RefreshUpCloudTaskVmBaseImage` | Never. The next night runs it again |
 | `BuildTaskVmWorkspaceTemplate` | Waits a minute while another template build runs on the host, up to 10 times. A failed build or a Project without a default branch is not retried; see [Template failures](#template-failures) |
 
 The jobs log each step with its seconds as `Task VM step done.`. The wait for the worker is a step of its own, apart from the work: `queue` before `create` in `ProvisionTaskVm`, and `enroll-queue` before `boot` in `EnrollTaskVm`. The guest boots during `enroll-queue`. A `boot` after a released try counts from the launch.
@@ -630,16 +635,7 @@ A peer key reaches only the receiver. Root on a host that an attacker controls c
 
 On the LAN, a host masquerades its Docker containers and NAT Incus bridges behind its LAN address. The `from` restriction admits that address. Those guests still cannot use the key, because only root on the host reads it.
 
-#### Remove the Incus API copy
-
-Hosts once copied the image with `incus image copy`, between their Incus APIs. `task-vms:prepare-host` removes what that left on every host, before it sets up the keys. Each step does nothing when its part is gone:
-
-- `core.https_address` with the host's own LAN or WireGuard address on port 8443, which Orbit set. Orbit leaves any other value alone.
-- Every trust entry named `orbit-task-image-*`. Other entries stay.
-- The client directory `/etc/orbit/task-vms/incus`.
-- Every `orbit:task-vm-image:*` firewall rule. A failed delete restores nothing, and the next run deletes the rest.
-
-The project restrictions stay. No peer reaches Incus now, so they guard against nothing from a peer. They cost nothing, and they limit what anything in the project can ask Incus for.
+No peer reaches a host's Incus API. The task VM project keeps its restrictions anyway: they cost nothing, and they limit what anything in the project can ask Incus for.
 
 ### Build the base image
 
@@ -663,11 +659,11 @@ Run `task-vms:build-image {node}` to build the base image on one host. It prints
 | `promote` | Points the alias `orbit-task-base` at the new image in one step |
 | `prune` | Deletes every other `orbit-task-base-<time>` image that no VM in the project uses |
 
-The smoke VM must finish cloud-init without errors. It must have an ed25519 SSH host key and the Gateway's key for `orbit`. Its journal must list one boot only. After a build, it must also have kept the lean boot through its first boot, hold the manifest, and have `orbit` with uid and gid 1000. A [sync](#sync-the-base-image) does not check those two, so it can still copy an image built before them.
+The smoke VM must finish cloud-init without errors. It must have an ed25519 SSH host key and the Gateway's key for `orbit`. Its journal must list one boot only. After a build, `resources/task-vms/image-check.sh --lean-boot` also requires that it kept the lean boot through its first boot, holds the manifest, and has `orbit` with uid and gid 1000. The [UpCloud smoke](#build-the-upcloud-template) runs the same script with `--ufw`. A [sync](#sync-the-base-image) does not check those two, so it can still copy an image built before them.
 
 A VM from the stock image boots twice. Its Incus templates write the NoCloud seed, but cloud-init starts before the Incus agent writes it, so the agent reboots the VM. That costs about 10 seconds. The `single-boot` stage drops the templates under `/var/lib/cloud/seed/` from the image metadata, and keeps the others, such as `/etc/hostname`. It also orders `cloud-init-main.service` after `incus-agent.service`. Cloud-init then reads the user-data from the Incus agent through its `LXD` data source, and each VM gets its own instance ID from Incus.
 
-The `lean-boot` stage keeps work off the boot. A VM from the image reaches cloud-init's end about a second sooner:
+The `lean-boot` stage runs `resources/task-vms/lean-boot.sh` and masks units, which keeps work off the boot. A VM from the image reaches cloud-init's end about a second sooner:
 
 - The Ethernet link takes DHCPv4 only. The file `/etc/systemd/network/00-orbit-task-vm.network` sorts before the netplan file and otherwise matches it.
 - The task bridge has no IPv6. The wait for an IPv6 link-local address cost about a second of each boot.
@@ -697,11 +693,11 @@ The builder never enrolls, so the image has no WireGuard key, agent secret, Cadd
 
 The command deletes the builder and the smoke VM whether the build passes or fails. A failed build keeps the current base image on every host. It deletes the new image when it already published one, and fails with `task_vm.image_build_failed`, which names the stage. Only one build or sync of a host runs at a time. A second one fails with `task_vm.image_build_running`.
 
-A build or sync that stops early cleans up too. A command stopped with SIGINT or SIGTERM deletes its builder and smoke VMs and frees each host. When the nightly job runs past its timeout, the worker's failure handler does the same. A build killed with SIGKILL holds the host for at most 25 minutes. The next build or sync deletes every builder and smoke VM that an earlier one left.
+A build or sync that stops early cleans up too. A command stopped with SIGINT or SIGTERM deletes its builder and smoke VMs, frees each host, and queues the template refresh. When the nightly job runs past its timeout, the worker's failure handler does the same. A build killed with SIGKILL holds the host for at most 25 minutes. The next build or sync deletes every builder and smoke VM that an earlier one left.
 
-Every night at 03:00, while task VMs are enabled, the Gateway scheduler queues the job `RefreshTaskVmBaseImages` on the `task-vms` queue. It builds the base image once, on the first host in `task_vms.incus.hosts`, and syncs it to every other configured host, one after another. While the first host has no base image, the job only reads its image list, so the first build is always `task-vms:build-image`. The job fails with `task_vm.unknown_host` when the first host's Node is not active.
+Every night at 03:00, while task VMs are enabled, the Gateway scheduler queues the job `RefreshTaskVmBaseImages` on the `task-vm-images` queue. It builds the base image once, on the first host in `task_vms.incus.hosts`, and syncs it to every other configured host, one after another. While the first host has no base image, the job only reads its image list, so the first build is always `task-vms:build-image`. The job fails with `task_vm.unknown_host` when the first host's Node is not active.
 
-A failed build changes no host. A host whose sync fails keeps its image, and the job fails with `task_vm.image_sync_failed` after the other hosts, so `failed_jobs` records it and the log names each host. The worker runs one job at a time, so a refresh delays other task VM jobs while it runs.
+A failed build changes no host. A host whose sync fails keeps its image, and the job fails with `task_vm.image_sync_failed` after the other hosts, so `failed_jobs` records it and the log names each host. The refresh has its own [worker](#jobs), so it delays no other task VM job.
 
 ### Sync the base image
 
@@ -749,7 +745,7 @@ To retire a host:
 2. Remove its entry and apply the change with `gateway:release:configure`.
 3. Run `task-vms:retire-host {node id}`. It refuses a host that is still configured with `task_vm.host_configured`, and a host that still has a task VM with `task_vm.host_in_use`.
 
-`task-vms:retire-host` first sets up the remaining hosts again. That removes the old host's key from each of them. Then it removes the old host's own setup: its peer key lines, `/etc/orbit/task-vms/image-transfer`, the receiver, `/var/lib/orbit-task-vm-image`, and what the [Incus API copy](#remove-the-incus-api-copy) left. When the Node record is gone, it only cleans the remaining hosts. When SSH cannot reach the old host, the command fails after the remaining hosts are clean, and the old host keeps its own setup. Only then can [Node removal](/reference/node-provisioning#remove-a-node) remove the Node, if you want it gone.
+`task-vms:retire-host` first sets up the remaining hosts again. That removes the old host's key from each of them. Then it removes the old host's own setup: its peer key lines, `/etc/orbit/task-vms/image-transfer`, the receiver, and `/var/lib/orbit-task-vm-image`. When the Node record is gone, it only cleans the remaining hosts. When SSH cannot reach the old host, the command fails after the remaining hosts are clean, and the old host keeps its own setup. Only then can [Node removal](/reference/node-provisioning#remove-a-node) remove the Node, if you want it gone.
 
 The old host's Incus project, images, [workspace templates](#start-the-workspace-from-a-template) `tvm-template-<project id>-<time>`, bridge, ACL, and pool stay. Remove them by hand. Delete the template volumes before the project, because Incus refuses to delete a project that still holds volumes.
 
@@ -1025,9 +1021,9 @@ One build runs at a time. A build marks its time stamp as running for two hours,
 
 ### Refresh the UpCloud template every night
 
-Every night at 02:00, while the token file is set, the Gateway scheduler queues the job `RefreshUpCloudTaskVmTemplate` on the template queue. It runs the same build as `task-vms:build-upcloud-image`, inside UpCloud, and keeps the two newest verified templates. It also runs with the switch off, so the template stays current. While UpCloud has no verified template, the job changes nothing, so the first build is always the command. A failed build keeps the current template.
+Every night at 02:00, while the token file is set, the Gateway scheduler queues the job `RefreshUpCloudTaskVmBaseImage` on the `task-vm-images` queue. It runs the same build as `task-vms:build-upcloud-image`, inside UpCloud, and keeps the two newest verified templates. It also runs with the switch off, so the template stays current. While UpCloud has no verified template, the job changes nothing, so the first build is always the command. A failed build keeps the current template.
 
-The build takes about 20 minutes and holds the template worker, so it runs before the 03:00 base image refresh queues template builds. When it runs past its 1700 seconds, the worker stops it, and the sweep deletes its servers two hours after its start.
+The build takes about 20 minutes and holds the image worker, so it ends before the 03:00 base image refresh starts on the same worker. When it runs past its 1700 seconds, the worker stops it, and the sweep deletes its servers two hours after its start.
 
 ### Sweep UpCloud
 

@@ -22,15 +22,17 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\IncusTaskVmProvider;
+use App\Infrastructure\TaskVms\TaskVmBakedPrograms;
 use App\Infrastructure\TaskVms\TaskVmGuest;
 use App\Infrastructure\TaskVms\TaskVmImageRecipe;
 use App\Infrastructure\TaskVms\TaskVmProviders;
+use App\Infrastructure\TaskVms\TaskVmScripts;
 use App\Infrastructure\TaskVms\TaskVmWorkspace;
 use App\Infrastructure\TaskVms\UpCloudServers;
 use App\Infrastructure\TaskVms\UpCloudTaskVmImageBuilder;
 use App\Infrastructure\TaskVms\UpCloudTaskVmProvider;
 use App\Jobs\TaskVms\ProvisionTaskVm;
-use App\Jobs\TaskVms\RefreshUpCloudTaskVmTemplate;
+use App\Jobs\TaskVms\RefreshUpCloudTaskVmBaseImage;
 use App\Jobs\TaskVms\SweepTaskVmHosts;
 use App\Models\Node;
 use App\Models\Project;
@@ -672,9 +674,10 @@ describe('image build', function (): void {
                 'sudo -n ufw status',
             ])
             ->and(array_search('sudo -n ufw --force enable', $commands, true))->toBeLessThan(array_search('sudo -n bash -s', $commands, true))
-            ->and(end($commands))->toContain('ufw status | grep -qx "Status: active"')
+            ->and(end($commands))->toBe(implode(' ', TaskVmImageRecipe::imageCheck(['--ufw'])))
+            ->and(end($commands))->toEndWith(' -- orbit 1000:1000 '.TaskVmBakedPrograms::ManifestPath.' --ufw')
             ->and(Cache::get('task-vms:upcloud-image-build:running:'.substr((string) $this->upcloud->storages[$template]['title'], -14)))->toBeNull()
-            ->and(array_filter($commands, static fn (string $command): bool => str_starts_with($command, 'sudo -n bash -ceu '.TaskVmImageRecipe::InstallAgent)))->toHaveCount(1)
+            ->and(array_filter($commands, static fn (string $command): bool => str_starts_with($command, 'sudo -n bash -ceu '.TaskVmScripts::read('install-agent.sh'))))->toHaveCount(1)
             ->and(json_decode(substr($this->upcloud->created[0]['user_data'], 14), true)['packages'])->toContain('openssh-server');
     });
 
@@ -717,23 +720,23 @@ describe('image build', function (): void {
     });
 });
 
-describe('nightly template refresh', function (): void {
-    it('builds a new template on the template queue and keeps the two newest', function (): void {
+describe('nightly UpCloud base image refresh', function (): void {
+    it('builds a new template on the image queue and keeps the two newest', function (): void {
         $old = $this->upcloud->template('orbit-task-base-20261001000000');
         $previous = $this->upcloud->template('orbit-task-base-20261002000000');
 
-        app()->call([new RefreshUpCloudTaskVmTemplate, 'handle']);
+        app()->call([new RefreshUpCloudTaskVmBaseImage, 'handle']);
 
         $verified = array_filter($this->upcloud->storages, static fn (array $storage): bool => ! str_ends_with($storage['title'], '-unverified'));
         expect($verified)->toHaveCount(2)->toHaveKey($previous)->not->toHaveKey($old)
             ->and($this->upcloud->servers)->toBe([])
-            ->and([new RefreshUpCloudTaskVmTemplate()->connection, new RefreshUpCloudTaskVmTemplate()->queue])->toBe(['task-vms', 'task-vm-templates']);
+            ->and([new RefreshUpCloudTaskVmBaseImage()->connection, new RefreshUpCloudTaskVmBaseImage()->queue])->toBe(['task-vms', 'task-vm-images']);
     });
 
     it('builds nothing before the first template or without the token file', function (?array $upcloud): void {
         tvm_up_settings($upcloud);
 
-        app()->call([new RefreshUpCloudTaskVmTemplate, 'handle']);
+        app()->call([new RefreshUpCloudTaskVmBaseImage, 'handle']);
 
         expect($this->upcloud->created)->toBe([]);
     })->with([
@@ -743,7 +746,7 @@ describe('nightly template refresh', function (): void {
 
     it('is queued every night at 02:00 while the UpCloud token file is set', function (): void {
         Artisan::call('schedule:list');
-        $refresh = collect(app(Schedule::class)->events())->first(static fn ($event): bool => $event instanceof CallbackEvent && $event->description === RefreshUpCloudTaskVmTemplate::class);
+        $refresh = collect(app(Schedule::class)->events())->first(static fn ($event): bool => $event instanceof CallbackEvent && $event->description === RefreshUpCloudTaskVmBaseImage::class);
 
         config(['task_vms.enabled' => true, 'task_vms.upcloud.token_file' => null]);
         expect($refresh)->not->toBeNull()

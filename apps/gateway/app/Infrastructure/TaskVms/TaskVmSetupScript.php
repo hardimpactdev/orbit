@@ -33,9 +33,9 @@ final readonly class TaskVmSetupScript
     /** @param  list<string>  $arguments */
     public function run(Node $node, string $script, array $arguments): void
     {
-        $source = file_get_contents(resource_path('task-vms/'.$script));
+        $source = TaskVmScripts::read($script);
 
-        if (! is_string($source) || ! is_string($node->wireguard_ip) || $node->wireguard_ip === '') {
+        if (! is_string($node->wireguard_ip) || $node->wireguard_ip === '') {
             throw new TaskVmException('task_vm.setup_unavailable', "Cannot run [{$script}] on Node [{$node->name}].");
         }
 
