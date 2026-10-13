@@ -6,144 +6,102 @@ namespace App\E2E\Value;
 
 use InvalidArgumentException;
 
+/**
+ * The Nodes of one topology: the Gateway and the operator always, plus the declared workload Nodes.
+ * The declared list alone determines every Node, its role image, address, roles, and checkout.
+ */
 final readonly class TopologyRecipe
 {
-    public const string BASE_IMAGE = 'orbit-base-ubuntu-26.04-runtime';
+    /** The workload Nodes a topology can declare, in composition order. */
+    public const array WORKLOADS = ['app-dev', 'app-prod', 'app-prod-2'];
 
-    public const string OPERATOR_IMAGE = 'orbit-base-ubuntu-26.04-operator';
+    /** What `acquire` composes when the caller declares nothing. */
+    public const array DEFAULT_WORKLOADS = ['app-dev', 'app-prod'];
+
+    /** @var list<TopologyNode> */
+    public array $nodes;
 
     /** @var array<string, TopologyNode> */
     private array $nodesByKey;
 
-    /** @param non-empty-list<TopologyNode> $nodes */
-    public function __construct(
-        public string $id,
-        public array $nodes,
-    ) {
-        $this->nodesByKey = $this->validateNodes($id, $nodes);
-    }
-
-    public static function registered(string $image = self::BASE_IMAGE): self
+    /** @param list<string> $workloads */
+    private function __construct(public array $workloads)
     {
-        return new self(TopologyProfile::NAME, [
-            new TopologyNode(
-                'gateway',
-                $image,
-                TopologyNodePurpose::Gateway,
-                10,
-                true,
-                TopologyProfile::ASSIGNMENTS['gateway'],
-            ),
-            new TopologyNode(
-                'app-dev',
-                $image,
-                TopologyNodePurpose::Workload,
-                11,
-                true,
-                TopologyProfile::ASSIGNMENTS['app-dev'],
-            ),
-            new TopologyNode(
-                'app-prod',
-                $image,
-                TopologyNodePurpose::Workload,
-                12,
-                false,
-                TopologyProfile::ASSIGNMENTS['app-prod'],
-            ),
-            new TopologyNode('operator', self::OPERATOR_IMAGE, TopologyNodePurpose::Operator, 14, true, []),
-        ]);
+        $nodes = [new TopologyNode('gateway', RoleImage::Gateway, TopologyNodePurpose::Gateway, 10, true, ['gateway', 'vpn'])];
+        foreach ($workloads as $workload) {
+            $nodes[] = match ($workload) {
+                'app-dev' => new TopologyNode('app-dev', RoleImage::AppDev, TopologyNodePurpose::Workload, 11, true, ['app-dev']),
+                'app-prod' => new TopologyNode('app-prod', RoleImage::AppProd, TopologyNodePurpose::Workload, 12, false, ['app-prod']),
+                'app-prod-2' => new TopologyNode('app-prod-2', RoleImage::AppProd, TopologyNodePurpose::Workload, 13, false, ['app-prod']),
+                default => throw new InvalidArgumentException("The Node [{$workload}] cannot be declared."),
+            };
+        }
+        $nodes[] = new TopologyNode('operator', RoleImage::Operator, TopologyNodePurpose::Operator, 14, true, []);
+
+        $this->nodes = $nodes;
+        $byKey = [];
+        foreach ($nodes as $node) {
+            $byKey[$node->key] = $node;
+        }
+        $this->nodesByKey = $byKey;
     }
 
-    public static function extendedAppProd(string $image = self::BASE_IMAGE): self
+    /**
+     * @param  array<array-key, mixed>  $workloads
+     */
+    public static function compose(array $workloads): self
     {
-        $registered = self::registered($image);
+        $declared = [];
+        foreach ($workloads as $workload) {
+            if (! is_string($workload) || ! in_array($workload, self::WORKLOADS, true)) {
+                throw new InvalidArgumentException(
+                    'A declared Node must be one of '.implode(', ', self::WORKLOADS).'.',
+                );
+            }
+            if (isset($declared[$workload])) {
+                throw new InvalidArgumentException("The Node [{$workload}] is declared twice.");
+            }
+            $declared[$workload] = true;
+        }
+        if (isset($declared['app-prod-2']) && ! isset($declared['app-prod'])) {
+            throw new InvalidArgumentException('The Node [app-prod-2] requires [app-prod].');
+        }
 
-        return new self(TopologyProfile::NAME.'_app-prod', [
-            ...$registered->nodes,
-            new TopologyNode(
-                'app-prod-2',
-                $image,
-                TopologyNodePurpose::Extension,
-                13,
-                false,
-                ['app-prod'],
-            ),
-        ]);
+        return new self(array_values(array_filter(
+            self::WORKLOADS,
+            static fn (string $workload): bool => isset($declared[$workload]),
+        )));
     }
 
-    public static function coldAcceptance(string $image = self::BASE_IMAGE): self
+    /** The `--nodes` option: absent gives the default, an empty string gives no workload Node. */
+    public static function fromOption(?string $option): self
     {
-        return new self('cold-acceptance', [
-            new TopologyNode('gateway', $image, TopologyNodePurpose::Gateway, 10, true, ['gateway', 'vpn']),
-            new TopologyNode('app-dev', $image, TopologyNodePurpose::Workload, 11, true, ['app-dev', 'metrics']),
-            new TopologyNode('app-prod', $image, TopologyNodePurpose::Workload, 12, false, ['app-prod']),
-            new TopologyNode('extra', $image, TopologyNodePurpose::Extension, 13, false, []),
-            new TopologyNode('operator', self::OPERATOR_IMAGE, TopologyNodePurpose::Operator, 14, true, []),
-        ]);
+        if ($option === null) {
+            return self::compose(self::DEFAULT_WORKLOADS);
+        }
+        $option = trim($option);
+
+        return self::compose($option === '' ? [] : array_map(trim(...), explode(',', $option)));
     }
 
-    /** @return array{id:string,nodes:list<array{key:string,image:string,purpose:string,address:int,checkout:bool,roles:list<string>}>} */
+    /** @return array{workloads:list<string>} */
     public function toArray(): array
     {
-        return [
-            'id' => $this->id,
-            'nodes' => array_map(static fn (TopologyNode $node): array => [
-                'key' => $node->key,
-                'image' => $node->image,
-                'purpose' => $node->purpose->value,
-                'address' => $node->address,
-                'checkout' => $node->checkout,
-                'roles' => $node->roles,
-            ], $this->nodes),
-        ];
+        return ['workloads' => $this->workloads];
     }
 
     /** @param array<array-key, mixed> $value */
     public static function fromArray(array $value): self
     {
-        if (array_keys($value) !== ['id', 'nodes'] || ! is_string($value['id']) || ! is_array($value['nodes'])) {
+        if (array_keys($value) !== ['workloads'] || ! is_array($value['workloads']) || ! array_is_list($value['workloads'])) {
             throw new InvalidArgumentException('The topology recipe schema is invalid.');
         }
-
-        $nodes = [];
-        foreach ($value['nodes'] as $node) {
-            if (
-                ! is_array($node)
-                || array_keys($node) !== ['key', 'image', 'purpose', 'address', 'checkout', 'roles']
-                || ! is_string($node['key'])
-                || ! is_string($node['image'])
-                || ! is_string($node['purpose'])
-                || ! is_int($node['address'])
-                || ! is_bool($node['checkout'])
-                || ! is_array($node['roles'])
-            ) {
-                throw new InvalidArgumentException('A topology recipe Node schema is invalid.');
-            }
-            $purpose = TopologyNodePurpose::tryFrom($node['purpose']);
-            if ($purpose === null) {
-                throw new InvalidArgumentException('A topology recipe Node purpose is invalid.');
-            }
-
-            $roles = SerializedArrays::stringList($node['roles']);
-            $nodes[] = new TopologyNode(
-                $node['key'],
-                $node['image'],
-                $purpose,
-                $node['address'],
-                $node['checkout'],
-                $roles,
-            );
-        }
-        if ($nodes === []) {
-            throw new InvalidArgumentException('The topology recipe identity or Node inventory is invalid.');
+        $recipe = self::compose($value['workloads']);
+        if ($recipe->workloads !== $value['workloads']) {
+            throw new InvalidArgumentException('The topology recipe declares its Nodes out of order.');
         }
 
-        return new self($value['id'], $nodes);
-    }
-
-    public function fingerprint(): string
-    {
-        return hash('sha256', json_encode($this->toArray(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+        return $recipe;
     }
 
     /** @return list<string> */
@@ -154,7 +112,7 @@ final readonly class TopologyRecipe
 
     public function vmCount(): int
     {
-        return count(array_filter($this->nodes, static fn (TopologyNode $node): bool => $node->purpose !== TopologyNodePurpose::Operator));
+        return count(array_filter($this->nodes, static fn (TopologyNode $node): bool => ! $node->isContainer()));
     }
 
     /** @return list<string> */
@@ -163,6 +121,15 @@ final readonly class TopologyRecipe
         return array_values(array_map(
             static fn (TopologyNode $node): string => $node->key,
             array_filter($this->nodes, static fn (TopologyNode $node): bool => $node->checkout),
+        ));
+    }
+
+    /** @return list<TopologyNode> */
+    public function workloadNodes(): array
+    {
+        return array_values(array_filter(
+            $this->nodes,
+            static fn (TopologyNode $node): bool => $node->purpose === TopologyNodePurpose::Workload,
         ));
     }
 
@@ -177,6 +144,17 @@ final readonly class TopologyRecipe
         return $assignments;
     }
 
+    /** @return list<RoleImage> */
+    public function images(): array
+    {
+        $images = [];
+        foreach ($this->nodes as $node) {
+            $images[$node->image->value] = $node->image;
+        }
+
+        return array_values($images);
+    }
+
     public function hasNode(string $key): bool
     {
         return isset($this->nodesByKey[$key]);
@@ -184,75 +162,6 @@ final readonly class TopologyRecipe
 
     public function node(string $key): TopologyNode
     {
-        return $this->nodesByKey[$key] ?? throw new InvalidArgumentException("Topology recipe Node [{$key}] is absent.");
-    }
-
-    public function nodeForRole(string $role): TopologyNode
-    {
-        $matches = array_values(array_filter(
-            $this->nodes,
-            static fn (TopologyNode $node): bool => in_array($role, $node->roles, true),
-        ));
-        if (count($matches) !== 1) {
-            throw new InvalidArgumentException("Topology role [{$role}] must resolve to exactly one physical Node.");
-        }
-
-        return $matches[0];
-    }
-
-    /** @return list<TopologyNode> */
-    public function nodesForRole(string $role): array
-    {
-        return array_values(array_filter(
-            $this->nodes,
-            static fn (TopologyNode $node): bool => in_array($role, $node->roles, true),
-        ));
-    }
-
-    public function resolveNode(string $nodeOrRole): TopologyNode
-    {
-        return $this->hasNode($nodeOrRole) ? $this->node($nodeOrRole) : $this->nodeForRole($nodeOrRole);
-    }
-
-    /**
-     * @param  array<array-key, mixed>  $nodes
-     * @return array<string, TopologyNode>
-     */
-    private function validateNodes(string $id, array $nodes): array
-    {
-        if (preg_match('/\A[a-z][a-z0-9_-]{0,62}\z/D', $id) !== 1 || $nodes === [] || ! array_is_list($nodes)) {
-            throw new InvalidArgumentException('The topology recipe identity or Node inventory is invalid.');
-        }
-
-        $nodesByKey = [];
-        $addresses = [];
-        foreach ($nodes as $node) {
-            if (! $node instanceof TopologyNode) {
-                throw new InvalidArgumentException('Every topology recipe entry must be a Node.');
-            }
-            if (isset($nodesByKey[$node->key])) {
-                throw new InvalidArgumentException('Topology recipe Node keys must be unique.');
-            }
-            if (isset($addresses[$node->address])) {
-                throw new InvalidArgumentException('Topology recipe Node address positions must be unique.');
-            }
-            $nodesByKey[$node->key] = $node;
-            $addresses[$node->address] = true;
-        }
-        foreach ($nodes as $node) {
-            foreach ($node->roles as $role) {
-                if (
-                    isset($nodesByKey[$role])
-                    && $role !== $node->key
-                    && ! in_array($role, $nodesByKey[$role]->roles, true)
-                ) {
-                    throw new InvalidArgumentException(
-                        "Topology recipe Node key [{$role}] collides with a role assigned to another Node.",
-                    );
-                }
-            }
-        }
-
-        return $nodesByKey;
+        return $this->nodesByKey[$key] ?? throw new InvalidArgumentException("The topology has no Node [{$key}].");
     }
 }

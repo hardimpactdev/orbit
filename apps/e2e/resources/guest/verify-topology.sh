@@ -1,100 +1,23 @@
 #!/usr/bin/env bash
+# One readiness probe on one Node of a composed topology. Prints one JSON line of passing evidence and
+# exits 0, or exits nonzero with the reason on stderr.
+# Usage: verify-topology.sh PROBE SOURCE_SHA INSTANCE [ARGUMENT...]
 set -euo pipefail
 umask 077
-
-# Mounted source probes carry one extra trailing argument: the expected SHA-256 of
-# the worktree `.git` pointer file the host mounted at $source_root.
-# Two probes read the whole fleet. `role.assignments` always takes the encoded
-# required assignment map, filtered to the nodes the proof declares present.
-# `wireguard.reachability` takes those declared nodes except the gateway. Without
-# a declaration, both probes receive the complete canonical topology.
-[[ $# -ge 4 ]]
-case "$1" in
-  source.gateway|source.app-dev|source.operator) [[ $# -eq 4 || $# -eq 5 ]] ;;
-  source.manifest) [[ $# -eq 6 || $# -eq 7 ]] ;;
-  role.app-dev|laravel.dev) [[ $# -eq 4 || $# -eq 5 ]] ;;
-  role.app-prod|php-fpm.app-prod|caddy.app-prod|laravel.prod) [[ $# -eq 4 || $# -eq 5 ]] ;;
-  cluster.shared) [[ $# -eq 7 ]] ;;
-  wireguard.reachability) [[ $# -ge 5 ]] ;;
-  role.assignments|metrics.publication) [[ $# -eq 5 ]] ;;
-  *) [[ $# -eq 4 ]] ;;
-esac
+[[ $# -ge 3 ]] || exit 64
 probe=$1
-mode=$2
-identity=$3
-instance=$4
-expected_pointer=
-typed_checkout=
-production_placement=
-case "$probe" in
-  source.gateway|source.app-dev|source.operator) [[ $# -eq 4 ]] || expected_pointer=$5 ;;
-  source.manifest) [[ $# -eq 6 ]] || expected_pointer=$7 ;;
-  role.app-dev|laravel.dev) [[ $# -eq 4 ]] || typed_checkout=$5 ;;
-  role.app-prod|php-fpm.app-prod|caddy.app-prod|laravel.prod) [[ $# -eq 4 ]] || production_placement=$5 ;;
-esac
-[[ -z "$expected_pointer" || "$expected_pointer" =~ ^[0-9a-f]{64}$ ]]
-[[ -z "$typed_checkout" || "$typed_checkout" == /* ]]
-[[ -z "$production_placement" || "$production_placement" =~ ^[A-Za-z0-9+/]*={0,2}$ ]]
-[[ "$mode" == readiness || "$mode" == proof ]]
-[[ "$identity" =~ ^[0-9a-f]{40}$ ]]
-[[ "$instance" =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]]
-peer_names=()
-required_assignments=
-if [[ "$probe" == wireguard.reachability ]]; then
-  peer_names=("${@:5}")
-  for peer_name in "${peer_names[@]}"; do
-    [[ "$peer_name" =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,62}$ ]]
-  done
-  # One name per node: a repeated peer would prove one node twice and the other never.
-  [[ "$(printf '%s\n' "${peer_names[@]}" | sort | uniq -d | wc -l)" -eq 0 ]]
-fi
-if [[ "$probe" == role.assignments || "$probe" == metrics.publication ]]; then
-  required_assignments=$5
-  [[ "$required_assignments" =~ ^[A-Za-z0-9+/]*={0,2}$ ]]
-fi
-expected=healthy
-observed=healthy
-production=()
-if [[ -n "$production_placement" ]]; then
-  mapfile -t production < <(/usr/bin/php -r '$value=json_decode(base64_decode($argv[1], true), true, 16, JSON_THROW_ON_ERROR); $base=["layout","instance_id","user","home","checkout_path","effective_root","environment_path","database_path","service","socket","current_target"]; $keys=is_array($value)&&!array_is_list($value)?array_keys($value):[]; if(!is_array($value) || array_is_list($value) || array_slice($keys,0,count($base))!==$base || array_slice($keys, count($base))!==["domain"] || !in_array($value["layout"], ["flat","release"], true) || !is_int($value["instance_id"]) || $value["instance_id"]<1 || !is_string($value["user"]) || preg_match("/\\A[a-z_][a-z0-9_-]{0,31}\\z/D", $value["user"])!==1 || !is_string($value["service"]) || preg_match("/\\A[a-zA-Z0-9@_.-]{1,128}\\z/D", $value["service"])!==1 ) exit(65); $ok=static fn(mixed $e): bool => is_string($e) && preg_match("/\\A[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?\\z/D", $e)===1; if(!$ok($value["domain"])) exit(65); $path=function(mixed $path, bool $nullable=false): string { if($nullable && $path===null) return ""; if(!is_string($path) || !str_starts_with($path, "/") || str_contains($path, "//") || str_contains($path, "\\n") || str_contains($path, "\\r") || preg_match("#(?:\\A|/)\\.\\.?(/|\\z)#D", $path)===1) exit(65); return $path; }; if(($value["layout"]==="flat")!==($value["current_target"]===null)) exit(65); echo $value["layout"], "\n", $value["instance_id"], "\n", $value["user"], "\n", $path($value["home"]), "\n", $path($value["checkout_path"]), "\n", $path($value["effective_root"]), "\n", $path($value["environment_path"]), "\n", $path($value["database_path"], true), "\n", $value["service"], "\n", $path($value["socket"]), "\n", $path($value["current_target"], true), "\n", $value["domain"], "\n";' -- "$production_placement")
-  [[ "${#production[@]}" -eq 12 ]]
-  production_layout=${production[0]}
-  production_instance_id=${production[1]}
-  production_user=${production[2]}
-  production_home=${production[3]}
-  production_checkout=${production[4]}
-  production_root=${production[5]}
-  production_environment=${production[6]}
-  production_database=${production[7]}
-  production_service=${production[8]}
-  production_socket=${production[9]}
-  production_current=${production[10]}
-  production_domain=${production[11]}
-fi
-assert_production_placement() {
-  [[ -n "$production_placement" ]]
-  [[ -d "$production_home" && -d "$production_checkout" && -d "$production_root" ]]
-  [[ -f "$production_checkout/artisan" && -f "$production_environment" ]]
-  [[ "$(stat -c %U -- "$production_home")" == "$production_user" ]]
-  if [[ "$production_layout" == flat ]]; then
-    [[ -z "$production_current" && ! -L "$production_checkout" ]]
-  else
-    [[ -n "$production_current" && -L "$production_checkout" ]]
-    [[ "$(readlink -f -- "$production_checkout")" == "$production_current" ]]
-    case "$production_current" in "$production_home"/releases/*) ;; *) return 1 ;; esac
-    [[ "$production_environment" == "$production_home/.env" ]]
-    if [[ -n "$production_database" ]]; then
-      [[ "$production_database" == "$production_home/database/database.sqlite" && -f "$production_database" ]]
-    fi
-  fi
-}
-assert_production_runtime() {
-  assert_production_placement
-  [[ "$(systemctl is-active "$production_service" 2>/dev/null)" == active ]]
-  [[ -S "$production_socket" ]]
-  [[ "$(stat -c %U -- "$production_socket")" == "$production_user" ]]
-}
-# A Node Caddy build (ADR 0141) writes one live Caddyfile with every site of the Node.
+identity=$2
+instance=$3
+shift 3
+[[ "$identity" =~ ^[0-9a-f]{40}$ ]] || exit 64
+[[ "$instance" =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]] || exit 64
+as_orbit=(sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite)
+orbit=/home/orbit/orbit/apps/cli/orbit
+source_root=/home/orbit/orbit
+source_marker=/var/lib/orbit-e2e/source-state
+mount_token=$source_root/.e2e/mount-token
+
+# A Node Caddy build writes one live Caddyfile with every site of the Node.
 built_caddyfile() {
   local live_main
   live_main=$(readlink -f -- /etc/caddy/Caddyfile) || return 1
@@ -102,299 +25,105 @@ built_caddyfile() {
     /etc/caddy/orbit-versions/*/Caddyfile) ;;
     *) return 1 ;;
   esac
-  [[ "$(head -n 1 -- "$live_main")" == '# Managed by Orbit: Node Caddy build' ]] || return 1
-  printf '%s\n' "$live_main"
+  [[ "$(head -n 1 -- "$live_main")" == '# Managed by Orbit: Node Caddy build' ]]
 }
-assert_production_caddy() {
-  assert_production_runtime
-  caddy_state=$(systemctl is-active caddy 2>/dev/null)
-  [[ "$caddy_state" == active ]]
-  caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1
-  caddyfile=$(built_caddyfile)
-  [[ "$(grep -Fc -- "https://$production_domain {" "$caddyfile")" -eq 1 ]]
-  [[ "$(grep -Fc -- "root * $production_root" "$caddyfile")" -eq 1 ]]
-  [[ "$(grep -Fc -- "php_fastcgi unix/$production_socket" "$caddyfile")" -eq 1 ]]
-}
-repo_git() {
-  if [[ "$(id -u)" -eq 0 ]]; then
-    sudo -u orbit -- env HOME=/home/orbit "$@"
-  else
-    "$@"
-  fi
-}
-# A discovery topology mounts the host worktree over the checkout; its `.git` is a
-# pointer file guest git cannot follow, so the host records the exact identity here.
-# The guest still proves the mount itself: the path must be a mountpoint carrying
-# the pointer file and the gateway tree, and the pointer hash must match both the
-# marker and the host argument.
-source_root=/home/orbit/orbit
-source_marker=/var/lib/orbit-e2e/source-state
-mounted_source_state() {
-  /usr/bin/php -r '$state = json_decode(file_get_contents($argv[1]), true, 8, JSON_THROW_ON_ERROR); if (($state["mounted"] ?? null) !== true) exit(66); $sha = $state["sha"] ?? null; $tree = $state["tree"] ?? null; $pointer = $state["git_pointer_sha256"] ?? null; if (!is_string($sha) || !preg_match("/\\A[0-9a-f]{40}\\z/D", $sha) || !is_string($tree) || !preg_match("/\\A[0-9a-f]{64}\\z/D", $tree) || !is_string($pointer) || !preg_match("/\\A[0-9a-f]{64}\\z/D", $pointer)) exit(65); echo $sha, " ", $tree, " ", $pointer, "\n";' -- "$1"
-}
-# Sets marker_sha, marker_tree, and observed_pointer; every check fails closed.
-assert_mounted_source() {
-  [[ -n "$expected_pointer" && -f "$source_marker" ]]
-  mountpoint -q -- "$source_root"
-  [[ -f "$source_root/.git" && -f "$source_root/apps/gateway/artisan" ]]
-  read -r marker_sha marker_tree marker_pointer < <(mounted_source_state "$source_marker")
-  observed_pointer=$(sha256sum -- "$source_root/.git" | cut -d ' ' -f 1)
-  [[ "$observed_pointer" =~ ^[0-9a-f]{64}$ ]]
-  [[ "$marker_pointer" == "$expected_pointer" && "$observed_pointer" == "$expected_pointer" ]]
+caddy_ready() {
+  built_caddyfile || { echo 'no Node Caddy build wrote /etc/caddy/Caddyfile' >&2; return 1; }
+  [[ "$(systemctl is-active caddy 2>/dev/null)" == active ]] || { echo 'caddy is not active' >&2; return 1; }
+  caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1 || { echo 'the Caddyfile is invalid' >&2; return 1; }
 }
 
 case "$probe" in
-  vm.gateway.running|vm.app-dev.running|vm.app-prod.running|vm.app-prod-2.running) state=$(systemctl is-system-running 2>/dev/null) || { [[ "$state" == degraded ]] || exit 1; }; expected='running|degraded'; observed=$state; [[ "$state" == running || "$state" == degraded ]] ;;
-  role.gateway) [[ -f /home/orbit/orbit/apps/gateway/artisan && -f /home/orbit/orbit/apps/gateway/.env && -f /home/orbit/.orbit/gateway.app-key && -f /home/orbit/.orbit/gateway.sqlite && "$(stat -c '%U:%a' /home/orbit/.orbit/gateway.sqlite 2>/dev/null)" == orbit:600 && -f /etc/wireguard/orbit.conf && -f /etc/caddy/Caddyfile ]]; expected='gateway,vpn:configured'; observed=$expected ;;
-  cluster.shared)
-    "$(dirname "$0")/converge-sample-app.sh" verify-cluster "$5" "$6" "$7" >/dev/null
-    [[ "$(systemctl is-active docker)" == active ]]
-    expected='shared-cluster:active,gateway-router,app-prod-ingress,database-docker'
-    observed=$expected
+  nodes.registered)
+    # Exactly the declared Nodes are active, each with at least its declared roles; the operator has none.
+    [[ $# -eq 1 && "$1" =~ ^[A-Za-z0-9+/]*={0,2}$ ]] || exit 64
+    nodes=$("${as_orbit[@]}" "$orbit" node:list --json)
+    read -r expected observed < <(php -r '
+      $required = json_decode(base64_decode($argv[1], true), true, 16, JSON_THROW_ON_ERROR);
+      $listed = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR)["nodes"] ?? null;
+      if (!is_array($required) || array_is_list($required) || !is_array($listed)) { fwrite(STDERR, "invalid node inventory\n"); exit(65); }
+      $observed = [];
+      foreach ($listed as $node) {
+        $name = $node["name"] ?? null;
+        if (!is_string($name) || isset($observed[$name])) { fwrite(STDERR, "invalid or duplicate Node in node:list\n"); exit(65); }
+        if (($node["status"] ?? null) !== "active") { fwrite(STDERR, "Node $name is not active\n"); exit(1); }
+        $roles = is_array($node["roles"] ?? null) ? $node["roles"] : [];
+        sort($roles);
+        $observed[$name] = $roles;
+      }
+      $names = array_keys($observed); sort($names); $declared = array_keys($required); sort($declared);
+      if ($names !== $declared) { fwrite(STDERR, "registered Nodes [".implode(",", $names)."] differ from declared [".implode(",", $declared)."]\n"); exit(1); }
+      $expected = []; $seen = [];
+      foreach ($required as $name => $roles) {
+        if (!is_array($roles)) exit(65);
+        $missing = array_diff($roles, $observed[$name]);
+        if ($missing !== []) { fwrite(STDERR, "Node $name lacks roles [".implode(",", $missing)."]\n"); exit(1); }
+        if ($roles === [] && $observed[$name] !== []) { fwrite(STDERR, "Node $name must stay roleless\n"); exit(1); }
+        $expected[] = $name.":".($roles === [] ? "none" : implode("+", $roles));
+        $seen[] = $name.":".($observed[$name] === [] ? "none" : implode("+", $observed[$name]));
+      }
+      echo implode(",", $expected), " ", implode(",", $seen), "\n";
+    ' -- "$1" <<<"$nodes")
     ;;
-  role.assignments)
-    db=/home/orbit/.orbit/gateway.sqlite
-    [[ -r "$db" ]]
-    # Every declared physical Node with roles must be active in the registry;
-    # every declared roleless Node must remain absent. Undeclared Node names are
-    # rejected, while additional active roles on a declared Node remain valid
-    # for mutating feature proofs.
-    read -r expected extra < <(php -r '$pdo = new PDO("sqlite:".$argv[1]); $required = json_decode(base64_decode($argv[2], true), true, 16, JSON_THROW_ON_ERROR); if (!is_array($required) || array_is_list($required) || $required === []) exit(65); $base=[]; $parts=[]; $registered=[]; foreach ($required as $node => $roles) { if (!is_string($node) || preg_match("/\\A[a-z][a-z0-9-]{0,22}\\z/D", $node)!==1 || !is_array($roles) || !array_is_list($roles)) exit(65); $parts[]=$node.":".($roles===[] ? "none" : implode("+", $roles)); if ($roles===[] && $node!=="operator") continue; $registered[$node]=true; foreach ($roles as $role) { if (!is_string($role) || preg_match("/\\A[a-z][a-z0-9-]{0,31}\\z/D", $role)!==1) exit(65); $base[]=$node.":".$role; } } $nodeRows=$pdo->query("SELECT name, status FROM nodes ORDER BY name")->fetchAll(PDO::FETCH_ASSOC); $seenNodes=[]; foreach ($nodeRows as $row) { $node=$row["name"]; if (!is_string($node) || !isset($registered[$node]) || isset($seenNodes[$node]) || $row["status"]!=="active") exit(1); $seenNodes[$node]=true; } if (array_keys($seenNodes)!==array_keys($registered)) { $seen=array_keys($seenNodes); $expectedNodes=array_keys($registered); sort($seen, SORT_STRING); sort($expectedNodes, SORT_STRING); if ($seen!==$expectedNodes) exit(1); } $rows=$pdo->query("SELECT n.name, n.status AS node_status, r.role, r.status AS role_status FROM nodes n INNER JOIN node_roles r ON r.node_id = n.id ORDER BY n.name, r.role")->fetchAll(PDO::FETCH_ASSOC); $seen=[]; $extra=[]; foreach ($rows as $row) { if (!isset($registered[$row["name"]]) || $row["node_status"]!=="active" || $row["role_status"]!=="active") exit(1); $key=$row["name"].":".$row["role"]; if (in_array($key, $base, true)) { $seen[]=$key; continue; } if ($row["name"]==="operator") exit(1); $extra[]=$key; } foreach ($base as $key) { if (!in_array($key, $seen, true)) exit(1); } echo implode(",", $parts), ":active ", implode(",", $extra), "\n";' -- "$db" "$required_assignments")
-    observed=$expected
-    if [[ -n "$extra" ]]; then
-      observed="${expected}+${extra}"
-    fi
+  service.gateway)
+    caddy_state=$(systemctl is-active caddy 2>/dev/null || true)
+    php_state=$(systemctl is-active php8.5-fpm 2>/dev/null || true)
+    expected='caddy=active,php8.5-fpm=active'
+    observed="caddy=$caddy_state,php8.5-fpm=$php_state"
+    [[ "$observed" == "$expected" ]] || { echo "$observed" >&2; exit 1; }
     ;;
-  sample.fixtures)
-    /usr/local/bin/converge-sample-fixtures.sh verify >/dev/null
-    expected='databases,typed-projects,queue,schedule:ready'
-    observed=$expected
+  service.vpn)
+    vpn_state=$(systemctl is-active wg-quick@orbit 2>/dev/null || true)
+    expected='wg-quick@orbit=active'
+    observed="wg-quick@orbit=$vpn_state"
+    [[ "$observed" == "$expected" ]] || { echo "$observed" >&2; exit 1; }
     ;;
-  appinstance.routes)
-    db=/home/orbit/.orbit/gateway.sqlite
-    [[ -r "$db" ]]
-    read -r active associations < <(php -r '$pdo=new PDO("sqlite:".$argv[1], null, null, [PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]); $statement=$pdo->prepare("SELECT ai.id, a.type, COUNT(rt.id) AS association_count FROM instances ai INNER JOIN projects a ON a.id = ai.project_id LEFT JOIN route_targets rt ON rt.instance_id = ai.id WHERE ai.status = ? GROUP BY ai.id ORDER BY ai.id"); $statement->execute(["active"]); $rows=$statement->fetchAll(PDO::FETCH_ASSOC); $associations=0; foreach($rows as $row) { if(!is_array($row) || !ctype_digit((string)($row["id"] ?? "")) || (int)$row["id"]<1 || !ctype_digit((string)($row["association_count"] ?? "")) || (int)$row["association_count"]!==($row["type"]==="laravel-app" ? 1 : 0)) exit(1); $associations+=(int)$row["association_count"]; } echo count($rows), " ", $associations, "\n";' -- "$db")
-    expected="active-appinstances=$active,route-associations=$associations"
-    observed="active-appinstances=$active,route-associations=$associations"
-    [[ "$observed" == "$expected" ]]
-    ;;
-  metrics.publication)
-    db=/home/orbit/.orbit/gateway.sqlite
-    [[ -r "$db" ]]
-    read -r publication gateway_address metrics_address < <(php -r '$pdo=new PDO("sqlite:".$argv[1]); $required=json_decode(base64_decode($argv[2], true), true, 16, JSON_THROW_ON_ERROR); if (!is_array($required) || array_is_list($required) || $required===[]) exit(65); foreach ($required as $node=>$roles) { if (!is_string($node) || preg_match("/\\A[a-z][a-z0-9-]{0,22}\\z/D", $node)!==1 || !is_array($roles) || !array_is_list($roles)) exit(65); foreach ($roles as $role) { if (!is_string($role) || preg_match("/\\A[a-z][a-z0-9-]{0,31}\\z/D", $role)!==1) exit(65); } } $nodeForRole=static function(string $role) use ($required): ?string { $matches=[]; foreach ($required as $node=>$roles) { if (in_array($role, $roles, true)) $matches[]=$node; } if (count($matches)>1) exit(65); return $matches[0] ?? null; }; $address=static function (string $node, string $role) use ($pdo): string { $statement=$pdo->prepare("SELECT n.wireguard_ip FROM nodes n INNER JOIN node_roles r ON r.node_id = n.id WHERE n.name = ? AND n.status = ? AND r.role = ? AND r.status = ?"); $statement->execute([$node, "active", $role, "active"]); $addresses=$statement->fetchAll(PDO::FETCH_COLUMN); if (count($addresses)!==1 || !is_string($addresses[0]) || filter_var($addresses[0], FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)===false) exit(1); return $addresses[0]; }; $gatewayNode=$nodeForRole("gateway"); if ($gatewayNode===null) exit(65); $gateway=$address($gatewayNode, "gateway"); $metricsNode=$nodeForRole("metrics"); if ($metricsNode===null) { echo "absent ", $gateway, " -\n"; exit; } echo "present ", $gateway, " ", $address($metricsNode, "metrics"), "\n";' -- "$db" "$required_assignments")
-    live_main=$(built_caddyfile)
-    certificate_current=/etc/caddy/orbit-metrics-cert-current
-    dns_output=$(dig +time=3 +tries=1 +short metrics.orbit A @"$gateway_address")
-    mapfile -t resolved < <(printf '%s' "$dns_output" | awk 'NF')
-    if [[ "$publication" == absent ]]; then
-      [[ "${#resolved[@]}" -eq 0 ]]
-      [[ ! -e "$certificate_current" && ! -L "$certificate_current" ]]
-      if grep -qx '# orbit: metrics metrics.orbit' "$live_main"; then
-        exit 1
-      fi
-      expected='metrics.orbit:absent'
-      observed=$expected
-    elif [[ "$publication" == present ]]; then
-      [[ "$gateway_address" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ && "$metrics_address" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]
-      [[ "${#resolved[@]}" -eq 1 && "${resolved[0]}" == "$gateway_address" ]]
-      [[ -L "$certificate_current" && -s "$certificate_current/metrics.pem" && -s "$certificate_current/metrics.key" ]]
-      certificate_target=$(readlink -f -- "$certificate_current")
-      case "$certificate_target" in
-        /etc/caddy/orbit-metrics-cert-versions/*) ;;
-        *) exit 1 ;;
-      esac
-      expected_site=$(mktemp)
-      trap 'rm -f -- "$expected_site"' EXIT
-      # ADR 0157 writes the WireGuard client guard after this publication's bind line.
-      # The admitted range is the fleet VPN subnet, exactly, and the whole site must match.
-      /usr/bin/php -r 'require $argv[1]; $pdo=new PDO("sqlite:".$argv[4]); $statement=$pdo->prepare("SELECT value, is_secret FROM settings WHERE scope_type = ? AND scope_id = ? AND key = ?"); if ($statement===false || $statement->execute(["gateway", 0, "vpn.subnet"])===false) exit(1); $rows=$statement->fetchAll(PDO::FETCH_ASSOC); if (!is_array($rows) || count($rows)>1) exit(1); $subnet="10.44.0.0/24"; if (count($rows)===1) { $value=$rows[0]["value"] ?? null; $secret=$rows[0]["is_secret"] ?? 0; if ($secret===1 || $secret==="1" || $secret===true) exit(1); if ($value===null) { $value=$subnet; } if (!is_string($value)) exit(1); $subnet=$value; } if (preg_match("/\\A(?:(?:25[0-5]|2[0-4]\\d|[01]?\\d\\d?)\\.){3}(?:25[0-5]|2[0-4]\\d|[01]?\\d\\d?)\\/(?:[8-9]|[12]\\d|30)\\z/", $subnet)!==1) exit(1); $body=(new App\Infrastructure\Metrics\MetricsPublicationRenderer)->caddy($argv[2], $argv[3]); echo App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer::admitOnly($body, $subnet);' -- "$source_root/apps/gateway/vendor/autoload.php" "$metrics_address" "$gateway_address" "$db" >"$expected_site"
-      php -r 'exit(str_contains(file_get_contents($argv[1]), "# orbit: metrics metrics.orbit\n".rtrim(file_get_contents($argv[2]))."\n") ? 0 : 1);' -- "$live_main" "$expected_site"
-      openssl verify -CAfile /home/orbit/.orbit/ca/root.pem "$certificate_current/metrics.pem" >/dev/null
-      openssl x509 -in "$certificate_current/metrics.pem" -noout -checkhost metrics.orbit >/dev/null
-      ufw_status=$(ssh -n -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/orbit/.orbit/ssh/known_hosts -i /home/orbit/.orbit/ssh/id_ed25519 "orbit@$metrics_address" sudo ufw status numbered)
-      php -r '$status=stream_get_contents(STDIN); if (preg_match("/^Status:\\s+active$/mi", $status) !== 1) exit(1); $marker="# orbit:metrics-grafana-upstream"; $owned=array_values(array_filter(preg_split("/\\R/", $status) ?: [], static fn(string $line): bool => str_ends_with(rtrim($line), $marker))); if (count($owned) !== 1) exit(1); $pattern="/\\A\\s*\\[\\s*\\d+\\]\\s+".preg_quote($argv[1], "/")."\\s+3000\\/tcp on orbit\\s+ALLOW IN\\s+".preg_quote($argv[2], "/")."\\s+\\# orbit:metrics-grafana-upstream\\s*\\z/D"; if (preg_match($pattern, $owned[0]) !== 1) exit(1);' -- "$metrics_address" "$gateway_address" <<<"$ufw_status"
-      health=$(curl --fail --silent --show-error --max-time 10 --cacert /home/orbit/.orbit/ca/root.pem --resolve "metrics.orbit:443:$gateway_address" https://metrics.orbit/api/health)
-      php -r '$health=json_decode(stream_get_contents(STDIN), true, 16, JSON_THROW_ON_ERROR); if (($health["database"] ?? null) !== "ok") exit(1);' <<<"$health"
-      site_sha=$(sha256sum -- "$expected_site" | cut -d ' ' -f 1)
-      expected='metrics.orbit:current-product-publication'
-      observed="dns=$gateway_address,caddy=$site_sha,certificate=metrics.orbit+orbit-ca,firewall=$gateway_address>$metrics_address:3000/tcp,grafana.database=ok"
-      rm -f -- "$expected_site"
-      trap - EXIT
-    else
-      exit 65
-    fi
-    ;;
-  role.app-dev)
-    if [[ -n "$typed_checkout" ]]; then
-      [[ -d "$typed_checkout" ]]
-      expected='app-dev,typed-source:prepared'
-    else
-      [[ -d /home/orbit/apps/laravel && -d /home/orbit/.orbit/worktrees/laravel/e2e ]]
-      expected='app-dev,workspace:prepared'
-    fi
-    observed=$expected
-    ;;
-  role.app-prod)
-    if [[ -n "$production_placement" ]]; then
-      assert_production_placement
-      expected="app-prod:$production_layout:prepared"
-    else
-      [[ -d /var/www/laravel/e2e-prod ]]
-      expected='app-prod:prepared'
-    fi
-    observed=$expected
-    ;;
-  role.app-prod-2) [[ -d /var/www && -f /etc/caddy/Caddyfile ]]; expected='app-prod-2:services-prepared'; observed=$expected ;;
-  service.gateway) caddy_state=$(systemctl is-active caddy 2>/dev/null); php_state=$(systemctl is-active php8.5-fpm 2>/dev/null); expected='caddy=active,php8.5-fpm=active'; observed="caddy=$caddy_state,php8.5-fpm=$php_state"; [[ "$observed" == "$expected" ]] ;;
-  service.vpn) vpn_state=$(systemctl is-active wg-quick@orbit 2>/dev/null); expected='wg-quick@orbit=active'; observed="wg-quick@orbit=$vpn_state"; [[ "$observed" == "$expected" ]] ;;
   wireguard.reachability)
-    command -v wg >/dev/null
-    command -v php >/dev/null
-    command -v ssh >/dev/null
+    # Every other Node has a WireGuard route on the Gateway and answers a ping on its address.
+    [[ $# -ge 1 ]] || exit 64
     db=/home/orbit/.orbit/gateway.sqlite
-    key=/home/orbit/.orbit/ssh/id_ed25519
-    known_hosts=/home/orbit/.orbit/ssh/known_hosts
-    [[ -r "$db" && -r "$key" && -r "$known_hosts" ]]
-    # Every declared route first, then every SSH: one missing route must not
-    # reach any node, whatever order the peers were declared in.
     routes=$(wg show orbit allowed-ips)
-    peer_addresses=()
-    for peer_name in "${peer_names[@]}"; do
-      peer_address=$(php -r '$pdo = new PDO("sqlite:".$argv[1]); $statement = $pdo->prepare("SELECT wireguard_ip FROM nodes WHERE name = ? AND status = ?"); $statement->execute([$argv[2], "active"]); $address = $statement->fetchColumn(); if (!is_string($address) || !preg_match("/\\A(?:[0-9]{1,3}\\.){3}[0-9]{1,3}\\z/D", $address)) exit(1); echo $address;' -- "$db" "$peer_name")
-      printf '%s\n' "$routes" | awk -v expected="$peer_address/32" '{ for (i = 1; i <= NF; i++) if ($i == expected) found = 1 } END { exit !found }'
-      peer_addresses+=("$peer_address")
+    for name in "$@"; do
+      [[ "$name" =~ ^[a-z][a-z0-9-]{0,22}$ ]] || exit 64
+      address=$(php -r '$pdo = new PDO("sqlite:".$argv[1]); $statement = $pdo->prepare("SELECT wireguard_ip FROM nodes WHERE name = ? AND status = ?"); $statement->execute([$argv[2], "active"]); $address = $statement->fetchColumn(); if (!is_string($address) || !preg_match("/\\A(?:[0-9]{1,3}\\.){3}[0-9]{1,3}\\z/D", $address)) exit(1); echo $address;' -- "$db" "$name") || { echo "Node $name has no active WireGuard address" >&2; exit 1; }
+      awk -v expected="$address/32" '{ for (i = 1; i <= NF; i++) if ($i == expected) found = 1 } END { exit !found }' <<<"$routes" || { echo "no WireGuard route to $name at $address" >&2; exit 1; }
+      ping -c 1 -W 3 "$address" >/dev/null || { echo "$name at $address does not answer over WireGuard" >&2; exit 1; }
     done
-    for peer_address in "${peer_addresses[@]}"; do
-      sudo -u orbit -- env HOME=/home/orbit ssh -n -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$known_hosts" -i "$key" "orbit@$peer_address" true
-    done
-    expected="$(IFS=,; printf '%s' "${peer_names[*]}"):wireguard-route+ssh"
+    expected="$(IFS=,; printf '%s' "$*"):wireguard-route+ping"
     observed=$expected
     ;;
-  https.gateway-internal)
-    # One late WireGuard DNS reply right after convergence must not fail the
-    # topology: bounded retry, 3 tries of 3 s with 2 s between them.
-    dns_tries=0
-    resolved=
-    while ((dns_tries < 3)); do
-      dns_tries=$((dns_tries + 1))
-      resolved=$(dig +time=3 +tries=1 +short gateway.orbit @10.44.0.1 2>/dev/null | awk 'NF { print; exit }') || resolved=
-      if [[ "$resolved" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
-        break
-      fi
-      resolved=
-      if ((dns_tries < 3)); then
-        sleep 2
-      fi
-    done
-    [[ "$resolved" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]
-    curl --fail --silent --show-error --max-time 5 --cacert /home/orbit/.orbit/e2e-gateway-root-ca.pem --resolve "gateway.orbit:443:$resolved" https://gateway.orbit/up >/dev/null
-    expected='https://gateway.orbit/up:vpn-dns+reachable,tries<=3'
-    observed="https://gateway.orbit/up:vpn-dns+reachable,tries=$dns_tries"
-    ;;
-  php.app-prod-2) php -r 'exit(PHP_VERSION_ID >= 80500 ? 0 : 1);'; expected='php>=8.5:usable'; observed=$expected ;;
-  php-fpm.app-prod)
-    if [[ -n "$production_placement" ]]; then
-      assert_production_runtime
-      expected="$production_service=active,socket=$production_socket,owner=$production_user"
-      observed=$expected
-    else
-      php_state=$(systemctl is-active php8.5-fpm 2>/dev/null); expected='php8.5-fpm=active'; observed="php8.5-fpm=$php_state"; [[ "$observed" == "$expected" ]]
-    fi
-    ;;
-  php-fpm.app-dev|php-fpm.app-prod-2) php_state=$(systemctl is-active php8.5-fpm 2>/dev/null); expected='php8.5-fpm=active'; observed="php8.5-fpm=$php_state"; [[ "$observed" == "$expected" ]] ;;
-  caddy.app-prod)
-    if [[ -n "$production_placement" ]]; then
-      assert_production_caddy
-      expected="caddy=active,domain=$production_domain,root=$production_root,socket=$production_socket"
-      observed=$expected
-    else
-      caddy_state=$(systemctl is-active caddy 2>/dev/null); caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; expected='caddy=active,config=valid'; observed="caddy=$caddy_state,config=valid"; [[ "$observed" == "$expected" ]]
-    fi
-    ;;
-  caddy.app-dev) built_caddyfile >/dev/null; caddy_state=$(systemctl is-active caddy 2>/dev/null); caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; expected='caddy=active,config=valid'; observed="caddy=$caddy_state,config=valid"; [[ "$observed" == "$expected" ]] ;;
-  caddy.app-prod-2) caddy_state=$(systemctl is-active caddy 2>/dev/null); caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; expected='caddy=active,config=valid'; observed="caddy=$caddy_state,config=valid"; [[ "$observed" == "$expected" ]] ;;
-  laravel.dev)
-    laravel_checkout=${typed_checkout:-/home/orbit/apps/laravel}
-    [[ -f "$laravel_checkout/artisan" ]] && php "$laravel_checkout/artisan" --version >/dev/null
-    expected='app-dev-laravel:operational'
+  caddy.app-dev|caddy.app-prod|caddy.app-prod-2)
+    caddy_ready
+    expected='caddy=active,config=valid,node-caddy-build'
     observed=$expected
     ;;
-  laravel.prod)
-    if [[ -n "$production_placement" ]]; then
-      assert_production_caddy
-      sudo -u "$production_user" -- env HOME="$production_home" php "$production_checkout/artisan" migrate:status --no-interaction >/dev/null
-      # Retry-After can extend curl's waits; TERM at 18s and KILL at 19s enforce failure.
-      timeout --kill-after=1s 18s curl --fail --silent --show-error --retry 2 --retry-delay 1 --retry-connrefused --retry-all-errors --connect-timeout 2 --max-time 5 --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt "https://$production_domain/" >/dev/null
-      expected="app-prod-laravel:$production_layout:https-operational"
-      observed=$expected
-    else
-      [[ -f /var/www/laravel/e2e-prod/artisan ]] && php /var/www/laravel/e2e-prod/artisan --version >/dev/null && timeout --kill-after=1s 18s curl --fail --silent --show-error --retry 2 --retry-delay 1 --retry-connrefused --retry-all-errors --connect-timeout 2 --max-time 5 --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt --resolve laravel.internal:443:127.0.0.1 https://laravel.internal/ >/dev/null
-      expected='app-prod-laravel:https-operational'; observed=$expected
-    fi
+  php-fpm.app-prod|php-fpm.app-prod-2)
+    php_state=$(systemctl is-active php8.5-fpm 2>/dev/null || true)
+    expected='php8.5-fpm=active'
+    observed="php8.5-fpm=$php_state"
+    [[ "$observed" == "$expected" ]] || { echo "$observed" >&2; exit 1; }
     ;;
-  workspace.app-dev) [[ -d /home/orbit/.orbit/worktrees/laravel/e2e && -f /home/orbit/.orbit/worktrees/laravel/e2e/artisan ]]; expected='app-dev-workspace:operational'; observed=$expected ;;
+  operator.gateway)
+    [[ -s /etc/wireguard/orbit.conf ]] || { echo 'the operator has no WireGuard configuration' >&2; exit 1; }
+    [[ -s /home/orbit/.orbit/e2e-gateway-root-ca.pem ]] || { echo 'the operator does not trust the topology CA' >&2; exit 1; }
+    (cd / && "${as_orbit[@]}" "$orbit" gateway:status --json >/dev/null)
+    (cd / && "${as_orbit[@]}" "$orbit" node:list --json >/dev/null)
+    expected='operator:gateway-access+wireguard+ca'
+    observed=$expected
+    ;;
   source.gateway|source.app-dev|source.operator)
-    if [[ -n "$expected_pointer" ]]; then
-      assert_mounted_source
-      expected="$identity:git-pointer=$expected_pointer"
-      observed="$marker_sha:git-pointer=$observed_pointer"
-    else
-      # A transferred checkout must not carry a mounted marker.
-      [[ ! -e "$source_marker" ]]
-      source_sha=$(repo_git git -C "$source_root" rev-parse HEAD 2>/dev/null)
-      expected=$identity; observed=$source_sha
-    fi
-    [[ "$observed" == "$expected" ]] ;;
-  source.manifest)
-    repo=$source_root
-    expected_tree=$5
-    expected_manifest=$6
-    [[ "$expected_tree" == - || "$expected_tree" =~ ^[0-9a-f]{64}$ ]]
-    [[ "$expected_manifest" =~ ^[A-Za-z0-9+/]*={0,2}$ ]]
-    if [[ -n "$expected_pointer" ]]; then
-      assert_mounted_source
-      [[ "$marker_sha" == "$identity" ]]
-      if [[ "$expected_tree" == - ]]; then
-        expected_tree=$marker_tree
-      else
-        [[ "$marker_tree" == "$expected_tree" ]]
-      fi
-      expected="$identity:$expected_tree:git-pointer=$expected_pointer"
-      observed="$marker_sha:$marker_tree:git-pointer=$observed_pointer"
-    else
-      [[ ! -e "$source_marker" ]]
-      [[ -f "$repo/.git/orbit-overlay.paths" && -f "$repo/.git/orbit-source-state" ]]
-      printf '%s' "$expected_manifest" | base64 --decode | cmp -s - "$repo/.git/orbit-overlay.paths"
-      read -r marker_sha marker_tree < <(/usr/bin/php -r '$state = json_decode(file_get_contents($argv[1]), true, 8, JSON_THROW_ON_ERROR); $sha = $state["sha"] ?? null; $tree = $state["tree"] ?? null; if (!is_string($sha) || !preg_match("/\\A[0-9a-f]{40}\\z/D", $sha) || !is_string($tree) || !preg_match("/\\A[0-9a-f]{64}\\z/D", $tree)) exit(65); echo $sha, " ", $tree, "\n";' -- "$repo/.git/orbit-source-state")
-      [[ "$marker_sha" == "$identity" ]]
-      index=$(repo_git mktemp)
-      trap 'rm -f -- "$index"' EXIT
-      rm -f -- "$index"
-      repo_git env GIT_INDEX_FILE="$index" git -C "$repo" read-tree HEAD
-      repo_git env GIT_INDEX_FILE="$index" git -C "$repo" add -A -- .
-      actual_tree=$(repo_git env GIT_INDEX_FILE="$index" git -C "$repo" write-tree)
-      actual_tree_hash=$(printf '%s' "$actual_tree" | sha256sum | cut -d ' ' -f 1)
-      rm -f -- "$index"
-      trap - EXIT
-      [[ "$marker_tree" == "$actual_tree_hash" ]]
-      if [[ "$expected_tree" == - ]]; then
-        [[ -z "$(git -C "$repo" status --porcelain=v1 --untracked-files=all)" ]]
-        expected_tree=$actual_tree_hash
-      else
-        [[ "$actual_tree_hash" == "$expected_tree" ]]
-      fi
-      expected="$identity:$expected_tree"
-      observed="$marker_sha:$actual_tree_hash"
-    fi
+    # The worktree is mounted, and its mount token hashes to what the host recorded.
+    [[ $# -eq 1 && "$1" =~ ^[0-9a-f]{64}$ ]] || exit 64
+    mountpoint -q -- "$source_root" || { echo "$source_root is not a mountpoint" >&2; exit 1; }
+    [[ -f "$source_root/apps/gateway/artisan" && -f "$source_marker" && -f "$mount_token" ]] || { echo 'the mounted source or its marker is missing' >&2; exit 1; }
+    read -r marker_sha marker_token < <(php -r '$state = json_decode(file_get_contents($argv[1]), true, 8, JSON_THROW_ON_ERROR); $sha = $state["sha"] ?? null; $token = $state["mount_token_sha256"] ?? null; if (($state["mounted"] ?? null) !== true || !is_string($sha) || !is_string($token)) exit(65); echo $sha, " ", $token, "\n";' -- "$source_marker")
+    observed_token=$(sha256sum -- "$mount_token" | cut -d ' ' -f 1)
+    expected="$identity:mount-token=$1"
+    observed="$marker_sha:mount-token=$observed_token"
+    [[ "$marker_token" == "$1" && "$observed" == "$expected" ]] || { echo "observed $observed" >&2; exit 1; }
     ;;
-  operator.container)
-    [[ -s /etc/wireguard/orbit.conf && -s /home/orbit/.orbit/e2e-gateway-root-ca.pem ]]
-    sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite /home/orbit/orbit/apps/cli/orbit node:list --json >/dev/null
-    expected='operator:gateway-access+wireguard+ca'; observed=$expected ;;
-  operator.app-dev) sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite /home/orbit/orbit/apps/cli/orbit gateway:status --json >/dev/null; expected='gateway:status=available'; observed=$expected ;;
   *) exit 64 ;;
 esac
 
 checked_at=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
-evidence_ref="incus://$instance/$probe"
-/usr/bin/php -r 'echo json_encode(["probe" => $argv[1], "passed" => true, "identity" => $argv[2], "checked_at" => $argv[3], "expected" => $argv[4], "observed" => $argv[5], "evidence_ref" => $argv[6]], JSON_THROW_ON_ERROR), "\n";' -- "$probe" "$identity" "$checked_at" "$expected" "$observed" "$evidence_ref"
+php -r 'echo json_encode(["probe" => $argv[1], "passed" => true, "identity" => $argv[2], "checked_at" => $argv[3], "expected" => $argv[4], "observed" => $argv[5], "evidence_ref" => $argv[6]], JSON_THROW_ON_ERROR), "\n";' -- "$probe" "$identity" "$checked_at" "$expected" "$observed" "incus://$instance/$probe"

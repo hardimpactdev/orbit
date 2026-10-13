@@ -27,15 +27,6 @@ case ${1-} in
       printf 'ORBIT_GATEWAY_CHECKOUT=%s\n' "$gateway" >>"$gateway/.env"
     fi
     ;;
-  private-dns)
-    [[ $# -eq 3 && "$2" =~ ^[a-z][a-z0-9-]{0,22}$ && "$3" =~ ^[a-z][a-z0-9-]{0,22}$ ]] || exit 64
-    cd "$gateway"
-    systemctl reset-failed orbit-private-dns
-    "${orbit_env[@]}" php -r 'require "vendor/autoload.php"; $app=require "bootstrap/app.php"; $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap(); $app->make(App\Domain\AppDev\PrivateDnsManager::class)->converge();'
-    systemctl restart orbit-private-dns
-    "${orbit_env[@]}" php artisan orbit:node-dns-repair "$2" --no-interaction
-    "${orbit_env[@]}" php artisan orbit:node-dns-repair "$3" --no-interaction
-    ;;
   bootstrap)
     [[ $# -eq 2 && "$2" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ ]]
     install -d -o orbit -g orbit -m 0700 /home/orbit/.orbit

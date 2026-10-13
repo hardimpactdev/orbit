@@ -2,11 +2,6 @@
 
 declare(strict_types=1);
 
-use App\E2E\ColdTopologyConstructor;
-use App\E2E\SnapshotScenarioRunner;
-use App\E2E\State\AtomicJsonStore;
-use App\E2E\State\ScenarioRunStore;
-use App\E2E\State\StatePaths;
 use App\E2E\Value\AttemptId;
 use App\E2E\Value\TopologyConstructionInputs;
 use App\E2E\Value\TopologyRecipe;
@@ -44,22 +39,6 @@ foreach ([
 }
 
 uses(TestCase::class)->in('Feature');
-uses(TestCase::class)->beforeEach(function (): void {
-    $primary = getenv('ORBIT_SCENARIO_PRIMARY_ROOT');
-    if (! is_string($primary) || ! str_starts_with($primary, '/')) {
-        throw new RuntimeException('Run scenario tests through bin/e2e-scenarios.');
-    }
-
-    $this->app->instance(StatePaths::class, StatePaths::forPrimary($primary));
-    foreach ([
-        AtomicJsonStore::class,
-        ScenarioRunStore::class,
-        ColdTopologyConstructor::class,
-        SnapshotScenarioRunner::class,
-    ] as $service) {
-        $this->app->forgetInstance($service);
-    }
-})->in('Scenario');
 
 pest()
     ->tia()
@@ -69,30 +48,6 @@ pest()
 $tiaDirectory = getenv('ORBIT_TIA_DIRECTORY');
 
 pest()->tia()->directory(is_string($tiaDirectory) && $tiaDirectory !== '' ? $tiaDirectory : dirname(__DIR__).'/.orbit-tia');
-
-$scenarioTiaDirectory = getenv('ORBIT_SCENARIO_TIA_DIRECTORY');
-$scenarioPrimary = getenv('ORBIT_SCENARIO_PRIMARY_ROOT');
-
-if (is_string($scenarioTiaDirectory) && is_string($scenarioPrimary)) {
-    $scenarioTiaRoot = rtrim($scenarioPrimary, '/').'/.e2e/scenarios/runs/';
-
-    if (! str_starts_with($scenarioTiaDirectory, $scenarioTiaRoot)) {
-        throw new RuntimeException('The scenario TIA directory is invalid.');
-    }
-
-    pest()->tia()->directory($scenarioTiaDirectory);
-}
-
-/** Serialized with the pre-operator value classes from commit 9f1e79c70. */
-function preOperatorTopologyRecord(): array
-{
-    return json_decode(
-        file_get_contents(__DIR__.'/Fixtures/topology/pre-operator-schema-2.json'),
-        true,
-        512,
-        JSON_THROW_ON_ERROR,
-    );
-}
 
 /** @return array{passed:bool,checked_at:string,expected:string,observed:string,evidence_ref:string} */
 function verificationProbeFixture(bool $passed = true, string $probe = 'fixture'): array
@@ -117,16 +72,21 @@ function featureTarget(
     string $character = 'a',
     ?TopologyRecipe $recipe = null,
 ): TopologyTarget {
-    return TopologyTarget::feature($issue, attemptId($character), $recipe);
+    return TopologyTarget::feature($issue, attemptId($character), $recipe ?? TopologyRecipe::compose(TopologyRecipe::DEFAULT_WORKLOADS));
 }
 
 function topologyConstructionFixture(
     string $issue = 'AUX-99',
     string $character = 'a',
+    ?TopologyRecipe $recipe = null,
 ): TopologyConstructionInputs {
-    $target = featureTarget($issue, $character);
+    $target = featureTarget($issue, $character, $recipe);
+    $images = [];
+    foreach ($target->recipe->images() as $index => $image) {
+        $images[$image->value] = str_repeat(dechex($index + 10), 64);
+    }
 
-    return TopologyConstructionInputs::forGeneration($target, 'fixture-generation', 2);
+    return TopologyConstructionInputs::create($target, 2, $images);
 }
 
 function temporaryDirectory(): string

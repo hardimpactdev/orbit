@@ -3,1070 +3,305 @@
 declare(strict_types=1);
 
 use App\Console\Commands\Topology\AcquireCommand;
-use App\Console\Commands\Topology\CandidateCommand;
-use App\Console\Commands\Topology\CaptureCommand;
-use App\Console\Commands\Topology\CloseoutCommand;
-use App\Console\Commands\Topology\EquivalenceCommand;
 use App\Console\Commands\Topology\ExecCommand;
 use App\Console\Commands\Topology\KillCommand;
 use App\Console\Commands\Topology\LogsCommand;
-use App\Console\Commands\Topology\ProveCommand;
 use App\Console\Commands\Topology\ReleaseCommand;
-use App\Console\Commands\Topology\ReviewCommand;
 use App\Console\Commands\Topology\ShellCommand;
 use App\Console\Commands\Topology\SpawnCommand;
 use App\Console\Commands\Topology\StatusCommand;
 use App\Console\Commands\Topology\SyncCommand;
 use App\Console\Commands\Topology\VerifyCommand;
 use App\Console\Commands\Topology\WebCommand;
-use App\E2E\DiscoveryGuestPreparer;
-use App\E2E\HostCapacity;
-use App\E2E\IncusHost;
-use App\E2E\IncusNetworkLifecycle;
 use App\E2E\IssueState;
-use App\E2E\IssueTopologyConstructor;
-use App\E2E\PreparedStateFingerprint;
-use App\E2E\State\AtomicJsonStore;
-use App\E2E\State\StatePaths;
-use App\E2E\TopologyAcquirer;
-use App\E2E\TopologyConverger;
-use App\E2E\TopologySnapshotManifestStore;
-use App\E2E\TopologySnapshotReplacementStore;
-use App\E2E\TopologyVerifier;
-use App\E2E\Value\AttemptId;
-use App\E2E\Value\AttemptPurpose;
-use App\E2E\Value\CapturedProof;
 use App\E2E\Value\FeatureTopology;
 use App\E2E\Value\GuestCommand;
-use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\OperationId;
-use App\E2E\Value\ProofCloseoutRecord;
-use App\E2E\Value\ProofInputManifest;
-use App\E2E\Value\ProofReviewAction;
-use App\E2E\Value\ProofReviewEvaluation;
-use App\E2E\Value\ProofReviewRecord;
 use App\E2E\Value\SourceState;
-use App\E2E\Value\TopologyConstructionInputs;
-use App\E2E\Value\TopologyExtension;
-use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyRecipe;
-use App\E2E\Value\TopologyRequest;
-use App\E2E\Value\TopologySnapshotGeneration;
-use App\E2E\Value\TopologySnapshotIdentity;
-use App\E2E\Value\TopologySnapshotReplacementInstallation;
-use App\E2E\Value\TopologyTarget;
 use App\E2E\Value\VerificationReport;
 use App\E2E\WorktreeLocator;
-use App\E2E\WorktreeSynchronizer;
 use Illuminate\Console\Command;
-use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Process;
+use Tests\Support\FakeIncus;
 
-/** A primary checkout with one registered external issue worktree. */
+/**
+ * A primary checkout with one registered issue worktree on the branch `<issue>-feature`.
+ *
+ * @return array{primary:string,worktree:string}
+ */
 function commandPrimaryFixture(string $issue = 'TST-12'): array
 {
     $primary = temporaryPath('orbit-command-primary-', 6);
     $worktree = $primary.'-worktrees/'.strtolower($issue);
     mkdir($primary, 0700, true);
     foreach ([
-        ['init', '-b', 'main'],
-        ['config', 'user.name', 'Orbit'],
-        ['config', 'user.email', 'orbit@example.test'],
-        ['commit', '--allow-empty', '-m', 'fixture'],
-        ['worktree', 'add', '-b', strtolower($issue).'-feature', $worktree],
+        ['init', '-q', '-b', 'main'],
+        ['-c', 'user.name=Orbit', '-c', 'user.email=orbit@example.test', 'commit', '-q', '--allow-empty', '-m', 'fixture'],
+        ['worktree', 'add', '-q', '-b', strtolower($issue).'-feature', $worktree],
     ] as $arguments) {
         new Symfony\Component\Process\Process(['git', ...$arguments], $primary)->mustRun();
     }
     app()->instance(WorktreeLocator::class, new WorktreeLocator($primary));
 
-    return ['primary' => $primary, 'worktree' => realpath($worktree)];
+    return ['primary' => $primary, 'worktree' => (string) realpath($worktree)];
+}
+
+/** Records a composed discovery topology of app-dev in the worktree, as `acquire` leaves it. */
+function commandTopologyFixture(string $issue, string $worktree, ?TopologyRecipe $recipe = null): FeatureTopology
+{
+    $recipe ??= TopologyRecipe::compose(['app-dev']);
+    $topology = new FeatureTopology(
+        topologyConstructionFixture($issue, 'a', $recipe),
+        new SourceState(str_repeat('d', 40), str_repeat('d', 40)),
+        new VerificationReport(true, ['nodes.registered' => verificationProbeFixture(probe: 'nodes.registered')]),
+    );
+    $state = IssueState::forWorktree($issue, $worktree);
+    $state->writeAttempt($topology->attempt, new OperationId(str_repeat('c', 32)), $recipe);
+    $state->writeTopology($topology);
+
+    return $topology;
+}
+
+/** The running guests and network of a recorded topology on a fake Incus. */
+function commandIncusFixture(FeatureTopology $topology, ?Closure $responder = null): FakeIncus
+{
+    $incus = new FakeIncus()->install();
+    $owner = [
+        'user.orbit.e2e.owner' => 'orbit-e2e',
+        'user.orbit.e2e.issue' => $topology->target->issue,
+        'user.orbit.e2e.attempt' => $topology->attempt->value,
+    ];
+    foreach ($topology->instances as $node => $instance) {
+        $incus->instances[$instance] = [
+            'type' => $node === 'operator' ? 'container' : 'virtual-machine',
+            'status' => 'Running',
+            'config' => $owner,
+            'devices' => ['root' => ['type' => 'disk', 'pool' => 'orbit-e2e', 'path' => '/'], 'eth0' => ['type' => 'nic', 'network' => $topology->network]],
+        ];
+    }
+    $incus->networks[$topology->network] = ['config' => ['ipv4.address' => '10.232.2.1/24', ...$owner]];
+    if ($responder !== null) {
+        $incus->respond($responder);
+    }
+
+    return $incus;
+}
+
+/** @return array<string, mixed> */
+function commandJson(string $command, array $parameters): array
+{
+    Artisan::call($command, [...$parameters, '--json' => true]);
+
+    return json_decode(trim(Artisan::output()), true, 32, JSON_THROW_ON_ERROR);
 }
 
 describe('topology commands', function () {
-    it('registers the issue-only command family', function () {
-        expect([
-            new AcquireCommand()->getName(),
-            new ShellCommand()->getName(),
-            new ExecCommand()->getName(),
-            new SpawnCommand()->getName(),
-            new WebCommand()->getName(),
-            new LogsCommand()->getName(),
-            new KillCommand()->getName(),
-            new SyncCommand()->getName(),
-            new VerifyCommand()->getName(),
-            new ProveCommand()->getName(),
-            new CaptureCommand()->getName(),
-            new ReviewCommand()->getName(),
-            new EquivalenceCommand()->getName(),
-            new CandidateCommand()->getName(),
-            new CloseoutCommand()->getName(),
-            new StatusCommand()->getName(),
-            new ReleaseCommand()->getName(),
-        ])->toBe([
+    it('registers the discovery command family and none of the removed commands', function () {
+        $names = array_keys(Artisan::all());
+        $harness = array_values(array_filter($names, static fn (string $name): bool => preg_match('/\A(topology|topology-images|topology-snapshot|scenario|legacy):/', $name) === 1));
+        sort($harness);
+
+        expect($harness)->toBe([
+            'topology-images:build',
+            'topology-images:status',
             'topology:acquire',
-            'topology:shell',
             'topology:exec',
-            'topology:spawn',
-            'topology:web',
-            'topology:logs',
             'topology:kill',
+            'topology:logs',
+            'topology:release',
+            'topology:shell',
+            'topology:spawn',
+            'topology:status',
             'topology:sync',
             'topology:verify',
-            'topology:prove',
-            'topology:capture',
-            'topology:review',
-            'topology:equivalence',
-            'topology:candidate',
-            'topology:closeout',
-            'topology:status',
-            'topology:release',
+            'topology:web',
         ]);
     });
 
-    it('refuses web without an acquired topology rather than acquiring or using a live profile', function () {
-        commandPrimaryFixture();
-        Process::fake();
-        $this->artisan('topology:web', ['issue' => 'TST-12', '--json' => true])->assertFailed();
-        Process::assertNothingRan();
-    });
+    it('takes the issue and a Node; only acquire names the worktree as an argument', function () {
+        $arguments = static fn (Command $command): array => array_keys($command->getDefinition()->getArguments());
+        $options = static fn (Command $command): array => array_keys($command->getDefinition()->getOptions());
 
-    it('takes the issue and finds the worktree; only acquire names the worktree as an argument', function () {
-        $arguments = static fn (Command $command): array => array_keys(
-            $command->getDefinition()->getArguments(),
-        );
+        expect($arguments(new AcquireCommand))->toBe(['issue', 'worktree'])
+            ->and($options(new AcquireCommand))->toBe(['nodes', 'json'])
+            ->and($arguments(new ShellCommand))->toBe(['issue', 'node'])
+            ->and($arguments(new ExecCommand))->toBe(['issue', 'node'])
+            ->and($options(new ExecCommand))->toBe(['worktree', 'argv', 'argv-file', 'timeout', 'record', 'json'])
+            ->and($arguments(new SpawnCommand))->toBe(['issue', 'node', 'name'])
+            ->and($options(new SpawnCommand))->toBe(['worktree', 'argv', 'argv-file', 'json'])
+            ->and($arguments(new LogsCommand))->toBe(['issue', 'node', 'name'])
+            ->and($options(new LogsCommand))->toBe(['worktree', 'since', 'lines', 'record', 'json'])
+            ->and($arguments(new KillCommand))->toBe(['issue', 'node', 'name'])
+            ->and($options(new SyncCommand))->toBe(['worktree', 'quick', 'json'])
+            ->and($options(new ReleaseCommand))->toBe(['worktree', 'json'])
+            ->and($options(new ShellCommand))->toBe(['worktree', 'json']);
 
-        expect($arguments(new AcquireCommand))
-            ->toBe(['issue', 'worktree'])
-            ->and($arguments(new ShellCommand))
-            ->toBe(['issue', 'role'])
-            ->and($arguments(new ExecCommand))
-            ->toBe(['issue', 'role'])
-            ->and($arguments(new SpawnCommand))
-            ->toBe(['issue', 'role', 'name'])
-            ->and($arguments(new LogsCommand))
-            ->toBe(['issue', 'role', 'name'])
-            ->and($arguments(new KillCommand))
-            ->toBe(['issue', 'role', 'name'])
-            ->and($arguments(new SyncCommand))
-            ->toBe(['issue'])
-            ->and($arguments(new VerifyCommand))
-            ->toBe(['issue'])
-            ->and($arguments(new ProveCommand))
-            ->toBe(['issue'])
-            ->and($arguments(new CaptureCommand))
-            ->toBe(['issue'])
-            ->and($arguments(new ReviewCommand))
-            ->toBe(['issue'])
-            ->and($arguments(new EquivalenceCommand))
-            ->toBe(['issue'])
-            ->and($arguments(new CandidateCommand))
-            ->toBe(['issue'])
-            ->and($arguments(new CloseoutCommand))
-            ->toBe(['issue'])
-            ->and($arguments(new StatusCommand))
-            ->toBe(['issue'])
-            ->and($arguments(new ReleaseCommand))
-            ->toBe(['issue'])
-            ->and(
-                new ProveCommand()
-                    ->getDefinition()
-                    ->hasOption('plan'),
-            )
-            ->toBeTrue()
-            ->and(
-                new ProveCommand()
-                    ->getDefinition()
-                    ->hasOption('candidate-sha'),
-            )
-            ->toBeFalse()
-            ->and(
-                new CaptureCommand()
-                    ->getDefinition()
-                    ->hasOption('plan'),
-            )
-            ->toBeTrue()
-            ->and(
-                new ReviewCommand()
-                    ->getDefinition()
-                    ->hasOption('complete'),
-            )
-            ->toBeTrue()
-            ->and(
-                new ReviewCommand()
-                    ->getDefinition()
-                    ->hasOption('result'),
-            )
-            ->toBeTrue()
-            ->and(
-                new ReviewCommand()
-                    ->getDefinition()
-                    ->hasOption('finding'),
-            )
-            ->toBeTrue()
-            ->and(
-                new CloseoutCommand()
-                    ->getDefinition()
-                    ->hasOption('candidate'),
-            )
-            ->toBeTrue()
-            ->and(
-                new CloseoutCommand()
-                    ->getDefinition()
-                    ->hasOption('artifact'),
-            )
-            ->toBeTrue()
-            ->and(
-                new CloseoutCommand()
-                    ->getDefinition()
-                    ->hasOption('merge'),
-            )
-            ->toBeTrue()
-            ->and(
-                new CloseoutCommand()
-                    ->getDefinition()
-                    ->hasOption('main-sha'),
-            )
-            ->toBeTrue()
-            ->and(
-                new ExecCommand()
-                    ->getDefinition()
-                    ->hasOption('argv-file'),
-            )
-            ->toBeTrue()
-            ->and(
-                new ShellCommand()
-                    ->getDefinition()
-                    ->hasOption('proof'),
-            )
-            ->toBeTrue()
-            ->and(
-                new ExecCommand()
-                    ->getDefinition()
-                    ->hasOption('proof'),
-            )
-            ->toBeTrue()
-            ->and(new ExecCommand()->getDefinition()->hasOption('review-action'))
-            ->toBeTrue()
-            ->and(new ExecCommand()->getDefinition()->hasOption('record'))
-            ->toBeTrue()
-            ->and(new LogsCommand()->getDefinition()->hasOption('record'))
-            ->toBeTrue()
-            ->and(new SpawnCommand()->getDefinition()->hasOption('record'))
-            ->toBeFalse()
-            ->and(new SyncCommand()->getDefinition()->hasOption('quick'))
-            ->toBeTrue()
-            ->and(new VerifyCommand()->getDefinition()->hasOption('quick'))
-            ->toBeFalse()
-            ->and(new ExecCommand()->getDefinition()->hasOption('required'))
-            ->toBeTrue()
-            ->and(new ShellCommand()->getDefinition()->hasOption('review-action'))
-            ->toBeTrue()
-            ->and(new ShellCommand()->getDefinition()->hasOption('required'))
-            ->toBeTrue()
-            ->and(new ReleaseCommand()->getDefinition()->hasOption('replace'))
-            ->toBeTrue()
-            ->and(new ReleaseCommand()->getDefinition()->hasOption('abandon'))
-            ->toBeTrue()
-            ->and(
-                new ReleaseCommand()
-                    ->getDefinition()
-                    ->hasOption('proof'),
-            )
-            ->toBeTrue()
-            ->and(
-                new ReleaseCommand()
-                    ->getDefinition()
-                    ->hasOption('candidate'),
-            )
-            ->toBeTrue()
-            ->and(
-                new ReleaseCommand()
-                    ->getDefinition()
-                    ->hasOption('recover-extension'),
-            )
-            ->toBeTrue()
-            ->and(
-                new ReleaseCommand()
-                    ->getDefinition()
-                    ->hasOption('expected-attempt'),
-            )
-            ->toBeTrue();
-
-        foreach ([
-            new ShellCommand,
-            new ExecCommand,
-            new SyncCommand,
-            new VerifyCommand,
-            new ProveCommand,
-            new CaptureCommand,
-            new ReviewCommand,
-            new EquivalenceCommand,
-            new CandidateCommand,
-            new CloseoutCommand,
-            new StatusCommand,
-            new ReleaseCommand,
-        ] as $command) {
-            expect($command->getDefinition()->hasOption('worktree'))
-                ->toBeTrue()
-                ->and($command->getDefinition()->hasOption('json'))
-                ->toBeTrue();
+        foreach ([new SyncCommand, new VerifyCommand, new StatusCommand, new ReleaseCommand, new WebCommand] as $command) {
+            expect($arguments($command))->toBe(['issue'])
+                ->and($options($command))->toContain('worktree', 'json');
         }
     });
 
     it('opens the shell with the exec environment and a login shell in the checkout', function () {
         expect(ShellCommand::shellArgv('/home/orbit/orbit'))->toBe([
-            'runuser',
-            '-u',
-            'orbit',
-            '--',
-            'env',
-            '-C',
-            '/home/orbit/orbit',
+            'runuser', '-u', 'orbit', '--',
+            'env', '-C', '/home/orbit/orbit',
             'HOME=/home/orbit',
             'ORBIT_HOME=/home/orbit/.orbit',
             'DB_DATABASE=/home/orbit/.orbit/gateway.sqlite',
-            'bash',
-            '-l',
+            'bash', '-l',
         ]);
     });
 
-    it('rejects unsafe command inputs before infrastructure access', function () {
-        $this
-            ->artisan('topology:exec', ['issue' => 'TST-12', 'role' => 'gateway'])
-            ->expectsOutputToContain('argv JSON file')
-            ->assertFailed();
-        $this
-            ->artisan('topology:exec', ['issue' => 'TST-12', 'role' => 'gateway', '--argv' => '["true"]', '--timeout' => '3601'])
-            ->expectsOutputToContain('--timeout must be a whole number of seconds from 1 to 3600')
-            ->assertFailed();
-        $this
-            ->artisan('topology:spawn', ['issue' => 'TST-12', 'role' => 'app-dev', 'name' => 'Viewer_1', '--argv' => '["sleep","60"]'])
-            ->expectsOutputToContain('The process name must be')
-            ->assertFailed();
-        $this
-            ->artisan('topology:logs', ['issue' => 'TST-12', 'role' => 'app-dev', 'name' => 'viewer', '--lines' => 'all'])
-            ->expectsOutputToContain('--lines must be')
-            ->assertFailed();
-        $this
-            ->artisan('topology:status', ['issue' => 'not-an-issue'])
-            ->expectsOutputToContain('Linear issue ID is invalid')
-            ->assertFailed();
-        $this
-            ->artisan('topology:acquire', ['issue' => 'TST-12', 'worktree' => 'relative/path'])
-            ->expectsOutputToContain('absolute')
-            ->assertFailed();
-    });
+    it('refuses invalid declared Nodes as JSON before it touches Incus', function (string $nodes, string $error) {
+        ['worktree' => $worktree] = commandPrimaryFixture();
+        $incus = new FakeIncus()->install();
 
-    it('refuses an invalid record label and a recorded review action before any process runs', function () {
+        expect(commandJson('topology:acquire', ['issue' => 'TST-12', 'worktree' => $worktree, '--nodes' => $nodes]))
+            ->toBe(['state' => 'failed', 'error' => $error])
+            ->and($incus->calls)->toBe([])
+            ->and(IssueState::forWorktree('TST-12', $worktree)->hasAttempt())->toBeFalse();
+    })->with([
+        'unknown Node' => ['app-dev,web', 'A declared Node must be one of app-dev, app-prod, app-prod-2.'],
+        'the Gateway' => ['gateway', 'A declared Node must be one of app-dev, app-prod, app-prod-2.'],
+        'a repeated Node' => ['app-dev, app-dev', 'The Node [app-dev] is declared twice.'],
+        'a second production Node alone' => ['app-dev,app-prod-2', 'The Node [app-prod-2] requires [app-prod].'],
+    ]);
+
+    it('rejects unsafe command inputs before infrastructure access', function () {
         Process::fake();
 
-        $this
-            ->artisan('topology:exec', ['issue' => 'TST-12', 'role' => 'gateway', '--argv' => '["true"]', '--record' => 'no/slash'])
+        $this->artisan('topology:exec', ['issue' => 'TST-12', 'node' => 'gateway'])
+            ->expectsOutputToContain('argv JSON file')
+            ->assertFailed();
+        $this->artisan('topology:exec', ['issue' => 'TST-12', 'node' => 'gateway', '--argv' => '["true"]', '--timeout' => '3601'])
+            ->expectsOutputToContain('--timeout must be a whole number of seconds from 1 to 3600')
+            ->assertFailed();
+        $this->artisan('topology:spawn', ['issue' => 'TST-12', 'node' => 'app-dev', 'name' => 'Viewer_1', '--argv' => '["sleep","60"]'])
+            ->expectsOutputToContain('The process name must be')
+            ->assertFailed();
+        $this->artisan('topology:logs', ['issue' => 'TST-12', 'node' => 'app-dev', 'name' => 'viewer', '--lines' => 'all'])
+            ->expectsOutputToContain('--lines must be')
+            ->assertFailed();
+        $this->artisan('topology:status', ['issue' => 'not-an-issue'])
+            ->expectsOutputToContain('Linear issue ID is invalid')
+            ->assertFailed();
+        $this->artisan('topology:acquire', ['issue' => 'TST-12', 'worktree' => 'relative/path'])
+            ->expectsOutputToContain('absolute')
+            ->assertFailed();
+        $this->artisan('topology:exec', ['issue' => 'TST-12', 'node' => 'gateway', '--argv' => '["true"]', '--record' => 'no/slash'])
             ->expectsOutputToContain('The --record label must be 1 to 80')
             ->assertFailed();
-        $this
-            ->artisan('topology:exec', ['issue' => 'TST-12', 'role' => 'gateway', '--argv' => '["true"]', '--record' => ''])
-            ->expectsOutputToContain('The --record label must be 1 to 80')
-            ->assertFailed();
-        $this
-            ->artisan('topology:exec', [
-                'issue' => 'TST-12',
-                'role' => 'gateway',
-                '--argv' => '["true"]',
-                '--proof' => true,
-                '--review-action' => 'inspect',
-                '--record' => 'inspect',
-            ])
-            ->expectsOutputToContain('--record does not apply to a review action')
-            ->assertFailed();
-        $this
-            ->artisan('topology:logs', ['issue' => 'TST-12', 'role' => 'app-dev', 'name' => 'viewer', '--record' => str_repeat('x', 81)])
+        $this->artisan('topology:logs', ['issue' => 'TST-12', 'node' => 'app-dev', 'name' => 'viewer', '--record' => str_repeat('x', 81)])
             ->expectsOutputToContain('The --record label must be 1 to 80')
             ->assertFailed();
 
         Process::assertNothingRan();
     });
 
-    it('names a missing worktree and refuses two candidates', function () {
-        ['primary' => $primary] = commandPrimaryFixture();
+    it('finds the worktree by branch, names a missing one, and refuses two candidates', function () {
+        ['primary' => $primary, 'worktree' => $worktree] = commandPrimaryFixture();
 
-        $this
-            ->artisan('topology:status', ['issue' => 'TST-13'])
+        expect(commandJson('topology:status', ['issue' => 'TST-12'])['worktree'])->toBe($worktree);
+        $this->artisan('topology:status', ['issue' => 'TST-13'])
             ->expectsOutputToContain('No registered worktree matches TST-13')
             ->assertFailed();
 
-        new Symfony\Component\Process\Process(['git', 'worktree', 'add', '-b', 'tst-12-other', $primary.'-other'], $primary)->mustRun();
-        $this
-            ->artisan('topology:status', ['issue' => 'TST-12'])
+        new Symfony\Component\Process\Process(['git', 'worktree', 'add', '-q', '-b', 'tst-12-other', $primary.'-other'], $primary)->mustRun();
+        $this->artisan('topology:status', ['issue' => 'TST-12'])
             ->expectsOutputToContain('More than one worktree matches')
             ->assertFailed();
+        expect(commandJson('topology:status', ['issue' => 'TST-12', '--worktree' => $worktree])['worktree'])->toBe($worktree);
     });
 
-    it('reports an absent attempt from the worktree state without touching Incus', function () {
+    it('reports an absent topology in text and JSON without touching Incus', function () {
         ['worktree' => $worktree] = commandPrimaryFixture();
+        $incus = new FakeIncus()->install();
 
-        $this->withoutMockingConsoleOutput()->artisan('topology:status', ['issue' => 'TST-12', '--json' => true]);
+        expect(commandJson('topology:status', ['issue' => 'TST-12']))->toBe(['state' => 'absent', 'issue' => 'TST-12', 'worktree' => $worktree])
+            ->and(Artisan::call('topology:status', ['issue' => 'TST-12']))->toBe(0)
+            ->and(trim(Artisan::output()))->toBe('absent')
+            ->and($incus->calls)->toBe([]);
+    });
 
-        expect(json_decode(Artisan::output(), true, 8, JSON_THROW_ON_ERROR))
-            ->toBe([
-                'state' => 'absent',
+    it('reports the discovery topology the Gateway reads in text and JSON', function () {
+        ['worktree' => $worktree] = commandPrimaryFixture();
+        $topology = commandTopologyFixture('TST-12', $worktree);
+        $incus = new FakeIncus()->install();
+
+        $status = commandJson('topology:status', ['issue' => 'TST-12']);
+
+        expect(array_keys($status))->toBe(['state', 'issue', 'attempt_id', 'worktree', 'acquired_at', 'nodes', 'topology'])
+            ->and($status)->toMatchArray([
+                'state' => 'discovery',
                 'issue' => 'TST-12',
+                'attempt_id' => str_repeat('a', 32),
                 'worktree' => $worktree,
-                'proof' => null,
-                'captured_topology' => null,
-            ]);
+                'nodes' => ['gateway', 'app-dev', 'operator'],
+                'topology' => $topology->toArray(),
+            ])
+            ->and($status['topology']['purpose'])->toBe('discovery')
+            ->and($status['acquired_at'])->toMatch('/\A\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ\z/')
+            ->and(Artisan::call('topology:status', ['issue' => 'TST-12']))->toBe(0)
+            ->and(trim(Artisan::output()))->toBe('discovery '.str_repeat('a', 32))
+            ->and($incus->calls)->toBe([]);
     });
 
-    it('reports captured evidence in both human and JSON status after release', function () {
+    it('reports an attempt without a topology record as incomplete', function () {
         ['worktree' => $worktree] = commandPrimaryFixture();
-        $state = IssueState::forWorktree('TST-12', $worktree);
-        $topology = commandTopologyFixture('TST-12', attemptId());
-        $capture = commandCapturedProofFixture($topology);
-        $state->writeProof($capture->proof);
-        $state->captureProof($capture);
+        IssueState::forWorktree('TST-12', $worktree)->writeAttempt(attemptId(), new OperationId(str_repeat('c', 32)), TopologyRecipe::compose([]));
 
-        $this
-            ->artisan('topology:status', ['issue' => 'TST-12'])
-            ->expectsOutput('captured '.attemptId()->value)
-            ->assertSuccessful();
-        $this->withoutMockingConsoleOutput()->artisan('topology:status', [
-            'issue' => 'TST-12',
-            '--json' => true,
-        ]);
-        $output = json_decode(Artisan::output(), true, 8, JSON_THROW_ON_ERROR);
+        $status = commandJson('topology:status', ['issue' => 'TST-12']);
 
-        expect($output['state'])
-            ->toBe('captured')
-            ->and($output['capture']['fingerprint'])
-            ->toBe($capture->fingerprint())
-            ->and($output['retained_topology'])
-            ->toBeNull();
+        expect($status)->toMatchArray(['state' => 'discovery', 'nodes' => ['gateway', 'operator'], 'topology' => null])
+            ->and(Artisan::call('topology:status', ['issue' => 'TST-12']))->toBe(0)
+            ->and(trim(Artisan::output()))->toBe('discovery '.str_repeat('a', 32).' incomplete');
     });
 
-    it('reports active clean replacement recovery with retained evidence', function (): void {
+    it('executes exact argv as orbit on one declared Node and reports it as JSON', function () {
         ['worktree' => $worktree] = commandPrimaryFixture();
-        $state = IssueState::forWorktree('TST-12', $worktree);
-        $topology = commandTopologyFixture('TST-12', attemptId());
-        $capture = commandCapturedProofFixture($topology);
-        $state->writeProof($capture->proof);
-        $state->captureProof($capture);
-        $paths = new StatePaths(temporaryPath('orbit-command-replacement-host-', 6));
-        $store = new TopologySnapshotReplacementStore(new AtomicJsonStore($paths));
-        $old = $topology->generation;
-        $mainSha = str_repeat('7', 40);
-        $new = new TopologySnapshotGeneration(
-            'replacement-generation',
-            $mainSha,
-            array_fill_keys(TopologyProfile::ROLES, 'main-replacement-generation'),
-            str_repeat('8', 64),
-            $old->baseImageFingerprint,
-            $old->laravel,
-            str_repeat('9', 64),
-            2,
-            'ubuntu-26.04-amd64-v1',
-            $old->baseImageAlias,
-            TopologyProfile::NAME,
-            TopologyProfile::ROLES,
-            TopologyProfile::CHECKOUT_ROLES,
-            $old->id,
-            TopologyProfile::ASSIGNMENTS, operatorBaseImageFingerprint: str_repeat('b', 64),
-        );
-        $replacementAttempt = new AttemptId(str_repeat('c', 32));
-        $temporary = TopologyTarget::disposableCold(
-            'TST-12',
-            $replacementAttempt,
-            TopologyRecipe::registered(),
-        );
-        $canonical = TopologyTarget::topologySnapshot(TopologySnapshotIdentity::primary());
-        $temporaryInstances = [];
-        $canonicalInstances = [];
-        $nextInstances = [];
-        $oldInstances = [];
-        foreach (TopologyProfile::ROLES as $role) {
-            $temporaryInstances[$role] = $temporary->instance($role);
-            $canonicalInstances[$role] = $canonical->instance($role);
-            $nextInstances[$role] = $canonical->instance($role).'-next';
-            $oldInstances[$role] = $canonical->instance($role).'-old';
-        }
-        $recovery = $store->start(new TopologySnapshotReplacementInstallation(
-            'TST-12',
-            $capture->attempt,
-            $replacementAttempt,
-            new OperationId(str_repeat('d', 32)),
-            str_repeat('d', 40),
-            str_repeat('e', 40),
-            str_repeat('f', 40),
-            $mainSha,
-            $capture->fingerprint(),
-            $capture->manifestSha256,
-            $old,
-            $new,
-            $old->baseImageAlias,
-            $old->baseImageFingerprint,
-            $temporary->network(),
-            $temporaryInstances,
-            $canonicalInstances,
-            $nextInstances,
-            $oldInstances,
-        ), '2026-09-10T10:05:00Z');
-        app()->instance(TopologySnapshotReplacementStore::class, $store);
+        $topology = commandTopologyFixture('TST-12', $worktree);
+        $incus = commandIncusFixture($topology, static fn (string $instance, array $argv): array => ["{\"nodes\":[]}\n", "warning\n", 3]);
 
-        $this->withoutMockingConsoleOutput()->artisan('topology:status', [
-            'issue' => 'TST-12',
-            '--json' => true,
-        ]);
-        $output = json_decode(Artisan::output(), true, 16, JSON_THROW_ON_ERROR);
-
-        expect($output['state'])
-            ->toBe('captured')
-            ->and($output['snapshot_replacement']['installation']['issue'])
-            ->toBe('TST-12')
-            ->and($output['snapshot_replacement']['phase'])
-            ->toBe($recovery->phase)
-            ->and($output['snapshot_replacement']['installation']['new_generation']['id'])
-            ->toBe('replacement-generation');
-    });
-
-    it('reports retained capture, review evaluation, and closeout state separately', function (): void {
-        ['worktree' => $worktree] = commandPrimaryFixture();
-        $state = IssueState::forWorktree('TST-12', $worktree);
-        $topology = commandTopologyFixture('TST-12', attemptId());
-        $capture = commandCapturedProofFixture($topology);
-        $state->writeAttempt(attemptId(), AttemptPurpose::Proof, new OperationId(str_repeat('b', 32)));
-        $state->writeTopology($topology);
-        $state->writeProof($capture->proof);
-        $state->captureProof($capture);
-        $action = ProofReviewAction::incomplete(
-            'inspect-runtime',
-            'exec',
-            'app-dev',
-            true,
-            ['orbit', 'doctor'],
-            null,
-            '2026-09-10T10:01:00Z',
-        )->complete('failed', 1, '', 'doctor failed', 'Fix required.', '2026-09-10T10:02:00Z');
-        $review = ProofReviewRecord::empty(
-            'TST-12',
-            $capture->candidateSha,
-            $capture->attempt,
-            '2026-09-10T10:01:00Z',
-        )->withAction($action, '2026-09-10T10:02:00Z');
-        $state->writeReviewRecord($review);
-        $state->writeReviewEvaluation(ProofReviewEvaluation::forRecord($review, '2026-09-10T10:03:00Z'));
-        $state->writeCloseoutRecord(new ProofCloseoutRecord(
-            'refresh-failed',
-            'TST-12',
-            $capture->attempt,
-            $capture->candidateSha,
-            str_repeat('a', 40),
-            str_repeat('b', 40),
-            str_repeat('c', 40),
-            null,
-            'Snapshot refresh failed.',
-            '2026-09-10T10:04:00Z',
-        ));
-
-        $this->withoutMockingConsoleOutput()->artisan('topology:status', [
-            'issue' => 'TST-12',
-            '--json' => true,
-        ]);
-
-        $output = json_decode(Artisan::output(), true, 8, JSON_THROW_ON_ERROR);
-
-        expect($output['state'])
-            ->toBe('proof')
-            ->and($output['capture']['attempt_id'])
-            ->toBe(attemptId()->value)
-            ->and($output['capture']['candidate_sha'])
-            ->toBe($capture->candidateSha)
-            ->and($output['capture']['fingerprint'])
-            ->toBe($capture->fingerprint())
-            ->and($output['retained_topology']['attempt_id'])
-            ->toBe(attemptId()->value)
-            ->and($output['review_record']['attempt_id'])
-            ->toBe(attemptId()->value)
-            ->and($output['review_record']['actions'][0]['id'])
-            ->toBe('inspect-runtime')
-            ->and($output['review_record']['actions'][0]['status'])
-            ->toBe('failed')
-            ->and($output['review_evaluation']['status'])
-            ->toBe('blocked')
-            ->and($output['review_evaluation']['required_failed'])
-            ->toBe(['inspect-runtime'])
-            ->and($output['closeout']['state'])
-            ->toBe('refresh-failed')
-            ->and($output['closeout']['attempt_id'])
-            ->toBe(attemptId()->value);
-    });
-
-    it('reports the active proof attempt and its result from the worktree state', function () {
-        ['worktree' => $worktree] = commandPrimaryFixture();
-        $state = IssueState::forWorktree('TST-12', $worktree);
-        $state->writeAttempt(attemptId(), AttemptPurpose::Proof, new OperationId(str_repeat('b', 32)));
-        $state->writeProof(['status' => 'proved', 'attempt_id' => attemptId()->value]);
-
-        $this
-            ->artisan('topology:status', ['issue' => 'TST-12'])
-            ->expectsOutput('proof '.attemptId()->value.' proved')
-            ->assertSuccessful();
-        $this
-            ->artisan('topology:status', ['issue' => 'TST-12', '--worktree' => $worktree, '--json' => true])
-            ->expectsOutputToContain('"proved":true')
-            ->assertSuccessful();
-    });
-
-    it('reports discovery and proof attempts together', function () {
-        ['worktree' => $worktree] = commandPrimaryFixture();
-        $state = IssueState::forWorktree('TST-12', $worktree);
-        $discovery = new AttemptId(str_repeat('a', 32));
-        $proof = new AttemptId(str_repeat('b', 32));
-        $state->writeAttempt($discovery, AttemptPurpose::Discovery, new OperationId(str_repeat('c', 32)));
-        $state->writeAttempt($proof, AttemptPurpose::Proof, new OperationId(str_repeat('d', 32)));
-        $state->writeProof(['status' => 'diagnosis', 'attempt_id' => $proof->value]);
-
-        $this
-            ->artisan('topology:status', ['issue' => 'TST-12'])
-            ->expectsOutput("discovery {$discovery->value}; proof {$proof->value} diagnosis")
-            ->assertSuccessful();
-        $this->withoutMockingConsoleOutput()->artisan('topology:status', [
-            'issue' => 'TST-12',
-            '--worktree' => $worktree,
-            '--json' => true,
-        ]);
-
-        expect(json_decode(Artisan::output(), true, 8, JSON_THROW_ON_ERROR))
-            ->toMatchArray([
-                'state' => 'discovery+proof',
-                'issue' => 'TST-12',
-                'attempt_id' => $discovery->value,
-                'proof_attempt_id' => $proof->value,
-                'proved' => false,
-            ]);
-    });
-
-    it('reports candidate convergence beside retained proof and discovery', function (): void {
-        ['worktree' => $worktree] = commandPrimaryFixture('AUX-7');
-        $state = IssueState::forWorktree('AUX-7', $worktree);
-        $discovery = new AttemptId(str_repeat('a', 32));
-        $proof = new AttemptId(str_repeat('b', 32));
-        $candidate = new AttemptId(str_repeat('c', 32));
-        $state->writeAttempt($discovery, AttemptPurpose::Discovery, new OperationId(str_repeat('d', 32)));
-        $state->writeAttempt($proof, AttemptPurpose::Proof, new OperationId(str_repeat('e', 32)));
-        $state->writeAttempt($candidate, AttemptPurpose::CandidateConvergence, new OperationId(str_repeat('f', 32)));
-
-        $this
-            ->artisan('topology:status', ['issue' => 'AUX-7'])
-            ->expectsOutput('discovery+proof+candidate-convergence '.$candidate->value)
-            ->assertSuccessful();
-    });
-
-    it('refuses selecting proof and candidate release together', function (): void {
-        commandPrimaryFixture();
-
-        $this
-            ->artisan('topology:release', [
-                'issue' => 'TST-12',
-                '--proof' => true,
-                '--candidate' => true,
-            ])
-            ->expectsOutputToContain('Select only one of --proof or --candidate.')
-            ->assertFailed();
-    });
-
-    it('requires exact paired legacy recovery options before state or Incus mutation', function (): void {
-        ['worktree' => $worktree] = commandPrimaryFixture();
-        $state = IssueState::forWorktree('TST-12', $worktree);
-        $attempt = new AttemptId(str_repeat('a', 32));
-        $state->writeAttempt($attempt, AttemptPurpose::Discovery, new OperationId(str_repeat('b', 32)));
-        $leasePath = $worktree.'/.e2e/'.IssueState::ATTEMPT;
-        $lease = file_get_contents($leasePath);
-        Process::fake();
-
-        $this
-            ->artisan('topology:release', [
-                'issue' => 'TST-12',
-                '--recover-extension' => 'app-prod',
-            ])
-            ->expectsOutputToContain('Use --recover-extension and --expected-attempt together.')
-            ->assertFailed();
-        $this
-            ->artisan('topology:release', [
-                'issue' => 'TST-12',
-                '--recover-extension' => 'other',
-                '--expected-attempt' => $attempt->value,
-            ])
-            ->expectsOutputToContain('must be none or app-prod')
-            ->assertFailed();
-        $this
-            ->artisan('topology:release', [
-                'issue' => 'TST-12',
-                '--recover-extension' => 'none',
-                '--expected-attempt' => 'short',
-            ])
-            ->expectsOutputToContain('attempt ID is invalid')
-            ->assertFailed();
-
-        expect(file_get_contents($leasePath))->toBe($lease);
-        Process::assertNothingRan();
-    });
-
-    it('refuses sync and exec on a proved extended attempt before touching Incus', function () {
-        ['primary' => $primary, 'worktree' => $worktree] = commandPrimaryFixture();
-        Process::run(['git', '-C', $primary, 'worktree', 'remove', $worktree])->throw();
-        Process::run(['git', '-C', $primary, 'branch', '-d', 'tst-12-feature'])->throw();
-        file_put_contents($primary.'/README.md', "fixture\n");
-        Process::run(['git', '-C', $primary, 'init', '--quiet', '-b', 'main'])->throw();
-        Process::run(['git', '-C', $primary, 'config', 'user.email', 'orbit@example.test'])->throw();
-        Process::run(['git', '-C', $primary, 'config', 'user.name', 'Orbit'])->throw();
-        Process::run(['git', '-C', $primary, 'add', '.'])->throw();
-        Process::run(['git', '-C', $primary, 'commit', '--quiet', '-m', 'fixture'])->throw();
-        Process::run(['git', '-C', $primary, 'worktree', 'add', '--quiet', '-b', 'tst-12-feature', $worktree])->throw();
-        $state = IssueState::forWorktree('TST-12', $worktree);
-        $proof = new AttemptId(str_repeat('c', 32));
-        $state->writeAttempt(
-            $proof,
-            AttemptPurpose::Proof,
-            new OperationId(str_repeat('b', 32)),
-            TopologyExtension::AppProd,
-        );
-        $state->writeProof(['status' => 'proved', 'attempt_id' => $proof->value]);
-        $state->writeTopology(commandTopologyFixture(
-            'TST-12',
-            $proof,
-            recipe: TopologyRecipe::extendedAppProd(),
-        ));
-        app()->instance(
-            StatePaths::class,
-            new StatePaths(temporaryPath('orbit-command-host-', 6)),
-        );
-        app()->instance(TopologyAcquirer::class, new TopologyAcquirer(
-            app(IncusHost::class),
-            app(IncusNetworkLifecycle::class),
-            app(PreparedStateFingerprint::class),
-            app(TopologySnapshotManifestStore::class),
-            app(WorktreeSynchronizer::class),
-            app(TopologyVerifier::class),
-            app(DiscoveryGuestPreparer::class),
-            app(HostCapacity::class),
-            app(StatePaths::class),
-            app(OperationId::class),
-            app(TopologySnapshotIdentity::class),
-            $primary,
-            converger: app(TopologyConverger::class),
-            constructor: app(IssueTopologyConstructor::class),
-        ));
-        $commands = [];
-        Process::fake(function (PendingProcess $process) use (&$commands) {
-            $command = $process->command;
-            assert(is_array($command));
-            $commands[] = $command;
-            if (($command[0] ?? null) === 'git') {
-                $gitCommand = ['git', '-C', $process->path ?? getcwd(), ...array_slice($command, 1)];
-                $output = [];
-                $exitCode = 0;
-                exec(implode(' ', array_map(escapeshellarg(...), $gitCommand)).' 2>&1', $output, $exitCode);
-
-                return Process::result(implode("\n", $output), exitCode: $exitCode);
-            }
-
-            return Process::result();
-        });
-
-        $this
-            ->artisan('topology:exec', [
-                'issue' => 'TST-12',
-                'role' => 'gateway',
-                '--argv' => '["orbit","doctor"]',
-                '--proof' => true,
-            ])
-            ->expectsOutputToContain('is proved; release it before changing it')
-            ->assertFailed();
-        $exitCode = $this->withoutMockingConsoleOutput()->artisan('topology:sync', ['issue' => 'TST-12']);
-        expect($exitCode)
-            ->toBe(1)
-            ->and(Artisan::output())
-            ->toContain('has no active discovery attempt');
-
-        expect(array_filter($commands, static fn (array $command): bool => ($command[0] ?? null) === 'incus'))
-            ->toBe([]);
-    });
-
-    it('executes captured successful proof through a redacted review action', function (): void {
-        ['worktree' => $worktree] = commandPrimaryFixture();
-        mkdir($worktree.'/.loop', 0700, true);
-        file_put_contents($worktree.'/.loop/flow.json', "{\"schema\":1,\"flow\":\"proof\"}\n");
-        $state = IssueState::forWorktree('TST-12', $worktree);
-        $topology = commandTopologyFixture('TST-12', attemptId());
-        $capture = commandCapturedProofFixture($topology);
-        $state->writeAttempt(attemptId(), AttemptPurpose::Proof, new OperationId(str_repeat('b', 32)));
-        $state->writeTopology($topology);
-        $state->writeProof($capture->proof);
-        $state->captureProof($capture);
-        $hostPaths = new StatePaths(temporaryPath('orbit-command-review-host-', 6));
-        app()->instance(StatePaths::class, $hostPaths);
-        new AtomicJsonStore($hostPaths)->write(
-            'proof-evidence/TST-12/'.attemptId()->value.'.json',
-            $capture->toArray(),
-        );
-        Process::fake(function (PendingProcess $process) use ($topology) {
-            $command = $process->command;
-            assert(is_array($command));
-            if (($command[3] ?? null) === 'list') {
-                return Process::result(json_encode([
-                    commandInstanceFixture($topology, 'gateway'),
-                ], JSON_THROW_ON_ERROR));
-            }
-
-            return Process::result("review-ok\n");
-        });
-
-        $this
-            ->artisan('topology:exec', [
-                'issue' => 'TST-12',
-                'role' => 'gateway',
-                '--argv' => '["printf","--token=secret-value"]',
-                '--proof' => true,
-                '--review-action' => 'inspect-gateway',
-                '--required' => true,
-            ])
-            ->expectsOutput("review-ok\n")
-            ->assertSuccessful();
-        $this
-            ->artisan('topology:review', ['issue' => 'TST-12'])
-            ->expectsOutput('review ready')
-            ->assertSuccessful();
-
-        expect($state->reviewRecord()?->action('inspect-gateway')?->status)
-            ->toBe('passed')
-            ->and($state->reviewRecord()?->action('inspect-gateway')?->argv)
-            ->toBe(['printf', '--token=[REDACTED]'])
-            ->and((string) file_get_contents($worktree.'/.e2e/log'))
-            ->not->toContain('secret-value')
-            ->and($state->capturedProof()?->fingerprint())
-            ->toBe($capture->fingerprint());
-    });
-
-    it('executes on app-prod-2 and rejects an unrecorded physical Node key', function (): void {
-        ['worktree' => $worktree] = commandPrimaryFixture('AUX-132');
-        $state = IssueState::forWorktree('AUX-132', $worktree);
-        $attempt = new AttemptId(str_repeat('a', 32));
-        $topology = commandTopologyFixture(
-            'AUX-132',
-            $attempt,
-            AttemptPurpose::Discovery,
-            TopologyRecipe::extendedAppProd(),
-        );
-        $state->writeAttempt(
-            $attempt,
-            AttemptPurpose::Discovery,
-            new OperationId(str_repeat('b', 32)),
-            TopologyExtension::AppProd,
-        );
-        $state->writeTopology($topology);
-        app()->instance(
-            StatePaths::class,
-            new StatePaths(temporaryPath('orbit-command-host-', 6)),
-        );
-        $commands = [];
-        Process::fake(function (PendingProcess $process) use (&$commands, $topology) {
-            $command = $process->command;
-            assert(is_array($command));
-            $commands[] = $command;
-
-            if (($command[3] ?? null) === 'list') {
-                return Process::result(json_encode([
-                    commandInstanceFixture($topology, 'app-prod-2'),
-                ], JSON_THROW_ON_ERROR));
-            }
-
-            return Process::result("extra-node-ok\n");
-        });
-
-        $shellInstance = app(TopologyAcquirer::class)->instance(
-            new TopologyRequest('AUX-132', $worktree),
-            'app-prod-2',
-        );
-
-        $this
-            ->artisan('topology:exec', [
-                'issue' => 'AUX-132',
-                'role' => 'app-prod-2',
-                '--argv' => '["php","-v"]',
-            ])
-            ->expectsOutput("extra-node-ok\n")
-            ->assertSuccessful();
-        $this
-            ->artisan('topology:exec', [
-                'issue' => 'AUX-132',
-                'role' => 'app-prod-3',
-                '--argv' => '["php","-v"]',
-            ])
-            ->expectsOutputToContain('Topology role [app-prod-3] must resolve to exactly one physical Node.')
-            ->assertFailed();
-        $this
-            ->artisan('topology:shell', [
-                'issue' => 'AUX-132',
-                'role' => 'app-prod-3',
-            ])
-            ->expectsOutputToContain('Topology role [app-prod-3] must resolve to exactly one physical Node.')
-            ->assertFailed();
-
-        expect($shellInstance)
-            ->toBe($topology->target->instance('app-prod-2'))
-            ->and(array_values(array_filter(
-                $commands,
-                static fn (array $command): bool => ($command[3] ?? null) === 'exec',
-            )))
-            ->toBe([[
-                'incus',
-                '--project',
-                'default',
-                'exec',
-                'local:'.$topology->target->instance('app-prod-2'),
-                '--',
-                ...GuestCommand::ORBIT_USER_PREFIX,
-                'php',
-                '-v',
-            ]]);
-    });
-
-    it('executes on discovery by default and on a retained failed proof when selected', function () {
-        ['worktree' => $worktree] = commandPrimaryFixture('AUX-7');
-        $state = IssueState::forWorktree('AUX-7', $worktree);
-        $discovery = new AttemptId(str_repeat('a', 32));
-        $proof = new AttemptId(str_repeat('b', 32));
-        $discoveryTopology = commandTopologyFixture('AUX-7', $discovery, AttemptPurpose::Discovery);
-        $proofTopology = commandTopologyFixture('AUX-7', $proof);
-        $state->writeAttempt($discovery, AttemptPurpose::Discovery, new OperationId(str_repeat('c', 32)));
-        $state->writeTopology($discoveryTopology);
-        $state->writeAttempt($proof, AttemptPurpose::Proof, new OperationId(str_repeat('d', 32)));
-        $state->writeTopology($proofTopology);
-        $state->writeProof(['status' => 'diagnosis', 'attempt_id' => $proof->value]);
-        app()->instance(
-            StatePaths::class,
-            new StatePaths(temporaryPath('orbit-command-host-', 6)),
-        );
-        $commands = [];
-        Process::fake(function (PendingProcess $process) use (&$commands, $discoveryTopology, $proofTopology) {
-            $command = $process->command;
-            assert(is_array($command));
-            $commands[] = $command;
-
-            if (($command[3] ?? null) === 'list') {
-                $name = preg_replace('/\A[^:]+:/', '', (string) ($command[4] ?? ''));
-                $topology = $name === $discoveryTopology->target->instance('gateway')
-                    ? $discoveryTopology
-                    : $proofTopology;
-
-                return Process::result(json_encode([commandInstanceFixture(
-                    $topology,
-                    'gateway',
-                )], JSON_THROW_ON_ERROR));
-            }
-
-            return Process::result("ok\n");
-        });
-
-        $this
-            ->artisan('topology:exec', [
-                'issue' => 'AUX-7',
-                'role' => 'gateway',
-                '--argv' => '["orbit","doctor"]',
-            ])
-            ->expectsOutput("ok\n")
-            ->assertSuccessful();
-        $this
-            ->artisan('topology:exec', [
-                'issue' => 'AUX-7',
-                'role' => 'gateway',
-                '--argv' => '["orbit","doctor"]',
-                '--proof' => true,
-            ])
-            ->expectsOutput("ok\n")
-            ->assertSuccessful();
-
-        $execCommands = array_values(array_filter(
-            $commands,
-            static fn (array $command): bool => ($command[3] ?? null) === 'exec',
-        ));
-        expect($execCommands)
-            ->toHaveCount(2)
-            ->and($execCommands[0])
-            ->toBe([
-                'incus',
-                '--project',
-                'default',
-                'exec',
-                'local:'.$discoveryTopology->target->instance('gateway'),
-                '--',
-                ...GuestCommand::ORBIT_USER_PREFIX,
-                'orbit',
-                'doctor',
-            ])
-            ->and($execCommands[1])
-            ->toBe([
-                'incus',
-                '--project',
-                'default',
-                'exec',
-                'local:'.$proofTopology->target->instance('gateway'),
-                '--',
-                ...GuestCommand::ORBIT_USER_PREFIX,
-                'orbit',
-                'doctor',
-            ]);
+        expect(Artisan::call('topology:exec', ['issue' => 'TST-12', 'node' => 'app-dev', '--argv' => '["orbit","node:list","--json"]', '--json' => true]))->toBe(1)
+            ->and(json_decode(trim(Artisan::output()), true, 8, JSON_THROW_ON_ERROR))
+            ->toBe(['state' => 'executed', 'exit_code' => 3, 'stdout' => "{\"nodes\":[]}\n", 'stderr' => "warning\n"])
+            ->and($incus->execs)->toBe([[
+                'instance' => $topology->target->instance('app-dev'),
+                'argv' => [...GuestCommand::ORBIT_USER_PREFIX, 'orbit', 'node:list', '--json'],
+                'stdin' => null,
+            ]])
+            ->and(commandJson('topology:exec', ['issue' => 'TST-12', 'node' => 'app-prod', '--argv' => '["true"]']))
+            ->toBe(['state' => 'failed', 'error' => 'The topology has no Node [app-prod]; it has gateway, app-dev, operator.'])
+            ->and($incus->execs)->toHaveCount(1)
+            ->and(file_get_contents($worktree.'/.e2e/log'))->toContain('topology:exec node=app-dev exit=3 argv=["orbit","node:list","--json"]');
     });
 
     it('records exec and logs evidence without changing their output or exit code', function () {
         ['worktree' => $worktree] = commandPrimaryFixture('AUX-8');
-        $state = IssueState::forWorktree('AUX-8', $worktree);
-        $attempt = new AttemptId(str_repeat('a', 32));
-        $topology = commandTopologyFixture('AUX-8', $attempt, AttemptPurpose::Discovery);
-        $state->writeAttempt($attempt, AttemptPurpose::Discovery, new OperationId(str_repeat('c', 32)));
-        $state->writeTopology($topology);
-        app()->instance(
-            StatePaths::class,
-            new StatePaths(temporaryPath('orbit-command-host-', 6)),
+        commandIncusFixture(
+            commandTopologyFixture('AUX-8', $worktree),
+            static fn (string $instance, array $argv): array => in_array('journalctl', $argv, true)
+                ? ["2026-09-24T06:40:00.123456+00:00 app-dev bun[42]: joined presence\n", '', 0]
+                : ["Bearer secret-token\n", 'failed once', 7],
         );
-        Process::fake(function (PendingProcess $process) use ($topology) {
-            $command = $process->command;
-            assert(is_array($command));
-            if (($command[3] ?? null) === 'list') {
-                return Process::result(json_encode([
-                    commandInstanceFixture($topology, 'gateway'),
-                    commandInstanceFixture($topology, 'app-dev'),
-                ], JSON_THROW_ON_ERROR));
-            }
-            if (in_array('journalctl', $command, true)) {
-                return Process::result("2026-09-24T06:40:00.123456+00:00 app-dev bun[42]: joined presence\n");
-            }
 
-            return Process::result("Bearer secret-token\n", 'failed once', 7);
-        });
-
-        $this
-            ->artisan('topology:exec', [
-                'issue' => 'AUX-8',
-                'role' => 'gateway',
-                '--argv' => '["orbit","node:list","--password=hunter2"]',
-                '--record' => 'node list after crash',
-            ])
+        $this->artisan('topology:exec', [
+            'issue' => 'AUX-8',
+            'node' => 'gateway',
+            '--argv' => '["orbit","node:list","--password=hunter2"]',
+            '--record' => 'node list after crash',
+        ])
             ->expectsOutput("Bearer secret-token\n")
             ->assertExitCode(1);
-        $this
-            ->artisan('topology:logs', [
-                'issue' => 'AUX-8',
-                'role' => 'app-dev',
-                'name' => 'viewer',
-                '--record' => 'viewer.log',
-            ])
+        $this->artisan('topology:logs', ['issue' => 'AUX-8', 'node' => 'app-dev', 'name' => 'viewer', '--record' => 'viewer.log'])
             ->expectsOutput('2026-09-24T06:40:00.123456+00:00 app-dev bun[42]: joined presence')
             ->assertSuccessful();
 
         $evidence = (string) file_get_contents($worktree.'/.e2e/evidence.log');
-        expect(fileperms($worktree.'/.e2e/evidence.log') & 0777)
-            ->toBe(0600)
+        expect(fileperms($worktree.'/.e2e/evidence.log') & 0777)->toBe(0600)
             ->and($evidence)
             ->toMatch('/\A=== \d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z node list after crash node=gateway exit=7 duration=\d+ms end=\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z\n'
                 .preg_quote("\$ orbit node:list '--password=[REDACTED]'\n--- stdout\nBearer [REDACTED]\n--- stderr\nfailed once\n\n", '/')
@@ -1077,148 +312,58 @@ describe('topology commands', function () {
             ->not->toContain('hunter2', 'secret-token');
     });
 
-    it('reads the attempt from the worktree and names an absent one', function () {
-        ['worktree' => $worktree] = commandPrimaryFixture();
-        app()->instance(
-            StatePaths::class,
-            new StatePaths(temporaryPath('orbit-command-host-', 6)),
-        );
+    it('refuses web without a topology rather than acquiring one', function () {
+        commandPrimaryFixture();
+        Process::fake();
 
-        $this
-            ->artisan('topology:release', ['issue' => 'TST-12', '--json' => true])
-            ->expectsOutputToContain('TST-12 has no active attempt.')
+        $this->artisan('topology:web', ['issue' => 'TST-12', '--json' => true])->assertFailed();
+        Process::assertNothingRan();
+    });
+
+    it('releases every guest and the network, then reports the topology absent', function () {
+        ['worktree' => $worktree] = commandPrimaryFixture();
+        $topology = commandTopologyFixture('TST-12', $worktree);
+        $incus = commandIncusFixture($topology);
+
+        $released = commandJson('topology:release', ['issue' => 'TST-12']);
+
+        expect($released)->toBe([
+            'state' => 'released',
+            'issue' => 'TST-12',
+            'purpose' => 'discovery',
+            'attempt_id' => str_repeat('a', 32),
+            'released' => [
+                'stopped:'.$topology->target->instance('operator'),
+                'stopped:'.$topology->target->instance('app-dev'),
+                'stopped:'.$topology->target->instance('gateway'),
+                'deleted:'.$topology->target->instance('operator'),
+                'deleted:'.$topology->target->instance('app-dev'),
+                'deleted:'.$topology->target->instance('gateway'),
+                'deleted:'.$topology->network,
+            ],
+            'already_absent' => [],
+            'networks_reaped' => [],
+        ])
+            ->and($incus->instances)->toBe([])
+            ->and($incus->networks)->toBe([])
+            ->and(commandJson('topology:status', ['issue' => 'TST-12'])['state'])->toBe('absent')
+            ->and(file_get_contents($worktree.'/.e2e/log'))->toContain('topology:release attempt='.str_repeat('a', 32).' ok');
+    });
+
+    it('prints the released attempt in text and names an absent one', function () {
+        ['worktree' => $worktree] = commandPrimaryFixture();
+        commandIncusFixture(commandTopologyFixture('TST-12', $worktree));
+
+        $this->artisan('topology:release', ['issue' => 'TST-12'])
+            ->expectsOutput('released '.str_repeat('a', 32))
+            ->assertSuccessful();
+        $this->artisan('topology:release', ['issue' => 'TST-12', '--json' => true])
+            ->expectsOutput('{"state":"failed","error":"TST-12 has no active attempt."}')
             ->assertFailed();
-        $this
-            ->artisan('topology:verify', ['issue' => 'TST-12'])
+        $this->artisan('topology:verify', ['issue' => 'TST-12'])
             ->expectsOutputToContain('TST-12 has no active attempt.')
             ->assertFailed();
         expect(file_get_contents($worktree.'/.e2e/log'))
-            ->toContain('topology:release failed: TST-12 has no active attempt.')
-            ->toContain('topology:verify failed: TST-12 has no active attempt.');
+            ->toContain('topology:release failed: TST-12 has no active attempt.');
     });
 });
-
-function commandTopologyFixture(
-    string $issue,
-    AttemptId $attempt,
-    AttemptPurpose $purpose = AttemptPurpose::Proof,
-    ?TopologyRecipe $recipe = null,
-): FeatureTopology {
-    $target = TopologyTarget::feature($issue, $attempt, $recipe);
-    $generation = new TopologySnapshotGeneration(
-        'g-'.str_repeat('a', 12),
-        str_repeat('b', 40),
-        ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod', 'operator' => 'main-operator'],
-        str_repeat('c', 64),
-        str_repeat('d', 64),
-        new LaravelRelease('v13.10.1', '5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0'),
-        str_repeat('e', 64),
-        2,
-        'ubuntu-26.04-amd64-v1',
-        'orbit-base-ubuntu-26.04-runtime',
-        'gateway_app-dev_app-prod',
-        ['gateway', 'app-dev', 'app-prod', 'operator'],
-        ['gateway', 'app-dev', 'operator'], operatorBaseImageFingerprint: str_repeat('b', 64),
-    );
-    $construction = $recipe?->nodeKeys() === TopologyRecipe::extendedAppProd()->nodeKeys()
-        ? TopologyConstructionInputs::create(
-            $target,
-            $generation,
-            2,
-            TopologyExtension::AppProd,
-            str_repeat('f', 64),
-        )
-        : TopologyConstructionInputs::create($target, $generation, 2);
-
-    return new FeatureTopology(
-        $construction,
-        $purpose,
-        $generation,
-        new SourceState(str_repeat('d', 40), str_repeat('d', 40)),
-        new VerificationReport(true, ['ready' => verificationProbeFixture(probe: 'ready')]),
-    );
-}
-
-function commandCapturedProofFixture(FeatureTopology $topology): CapturedProof
-{
-    $candidateSha = $topology->source->hostSha;
-    $planSha256 = str_repeat('1', 64);
-    $manifest = new ProofInputManifest(
-        3,
-        $candidateSha,
-        $topology->generation->mainSha,
-        [],
-        [],
-        '.loop/proof/'.$topology->target->issue.'.json',
-        [],
-        $topology->construction,
-        null,
-        [
-            'static_classification' => true,
-            'proof_contract' => true,
-            'checkout_literals' => true,
-            'observed_processes' => true,
-            'observed_paths' => true,
-            'pcov_cleanup' => true,
-        ],
-    );
-    $proof = [
-        'status' => 'proved',
-        'issue' => $topology->target->issue,
-        'attempt_id' => $topology->attempt->value,
-        'candidate_sha' => $candidateSha,
-        'plan_sha256' => $planSha256,
-        'manifest_sha256' => $manifest->fingerprint(),
-    ];
-
-    return new CapturedProof(
-        $topology->target->issue,
-        $topology->attempt,
-        $candidateSha,
-        $planSha256,
-        $manifest->fingerprint(),
-        $proof,
-        $topology,
-        $manifest->toArray(),
-        '2026-09-10T10:00:00Z',
-    );
-}
-
-/** @return array<string, mixed> */
-function commandInstanceFixture(FeatureTopology $topology, string $role): array
-{
-    return [
-        'name' => $topology->target->instance($role),
-        'type' => $role === 'operator' ? 'container' : 'virtual-machine',
-        'status' => 'Running',
-        'status_code' => 103,
-        'config' => [
-            'user.orbit.e2e.owner' => 'orbit-e2e',
-            'user.orbit.e2e.issue' => $topology->target->issue,
-            'user.orbit.e2e.attempt' => $topology->attempt->value,
-        ],
-        'devices' => [
-            'root' => ['pool' => 'orbit-e2e'],
-            'eth0' => ['network' => $topology->network],
-        ],
-    ];
-}
-
-it('refuses proof-only commands before transport without an explicit proof selection', function (
-    string $command,
-    bool $explicit,
-): void {
-    ['worktree' => $worktree] = commandPrimaryFixture();
-    if ($explicit) {
-        mkdir($worktree.'/.loop', 0700, true);
-        file_put_contents($worktree.'/.loop/flow.json', '{"schema":1,"flow":"discovery"}');
-    }
-    Process::fake();
-
-    $this
-        ->artisan($command, ['issue' => 'TST-12', '--json' => true])
-        ->expectsOutputToContain('discovery flow disables proof')
-        ->assertFailed();
-
-    Process::assertNothingRan();
-})->with(['topology:prove', 'topology:equivalence', 'topology:candidate'])->with([false, true]);

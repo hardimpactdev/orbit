@@ -65,9 +65,7 @@ class CleanupWorld:
             'GIT_COMMITTER_EMAIL': 'orbit@example.test',
         }
         self._init_repo(self.primary, 'main', origin)
-        (self.primary / '.e2e' / 'topology-snapshot').mkdir(parents=True)
-        (self.primary / '.e2e' / 'topology-snapshot' / 'promoted.json').write_text('{}\n')
-        (self.primary / '.e2e' / 'topologies').mkdir()
+        (self.primary / '.e2e' / 'topologies').mkdir(parents=True)
         (self.primary / '.e2e' / 'topologies' / 'lease.json').write_text('{"lease":"keep"}\n')
         git(self.primary, 'config', 'orbit.worktreeRoot', str(self.worktrees))
         self._init_repo(self.checkout, task, origin)
@@ -173,7 +171,6 @@ class TaskCleanupTest(unittest.TestCase):
         self.assertEqual(git(world.checkout, 'symbolic-ref', '--short', 'HEAD').stdout.strip(), world.task)
         self.assertTrue(world.caller_worktree.is_dir())
         self.assertTrue((world.caller_worktree / 'C').is_file())
-        self.assertEqual((world.primary / '.e2e' / 'topology-snapshot' / 'promoted.json').read_text(), '{}\n')
         self.assertEqual((world.primary / '.e2e' / 'topologies' / 'lease.json').read_text(), '{"lease":"keep"}\n')
         self.assertFalse(world.invoked.exists(), world.invoked.read_text() if world.invoked.exists() else '')
 
@@ -381,20 +378,11 @@ class TaskCleanupTest(unittest.TestCase):
         self.assertTrue(world.has_ref(f'refs/orbit/e2e-bridge/{world.task}'))
         self.assert_unchanged_caller_and_topology()
 
-    def test_missing_snapshot_or_linked_primary_leaves_the_bridge(self):
+    def test_linked_primary_leaves_the_bridge(self):
         world = self.world
         world.add_matching_bridge()
-        promoted = world.primary / '.e2e' / 'topology-snapshot' / 'promoted.json'
-        promoted.unlink()
-        missing = world.cleanup()
-        self.assertEqual(missing.returncode, 0, missing.stderr)
-        self.assertTrue(world.bridge.is_dir())
-        promoted.write_text('{}\n')
-
         linked = world.root / 'linked'
         git(world.primary, 'worktree', 'add', '-q', '-b', 'linked-primary', str(linked))
-        (linked / '.e2e' / 'topology-snapshot').mkdir(parents=True)
-        (linked / '.e2e' / 'topology-snapshot' / 'promoted.json').write_text('{}\n')
         git(linked, 'config', 'orbit.worktreeRoot', str(world.worktrees))
         world.register(primary=linked)
         result = world.cleanup()

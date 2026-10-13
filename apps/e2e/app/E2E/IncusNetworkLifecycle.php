@@ -155,12 +155,7 @@ final readonly class IncusNetworkLifecycle
         $this->host->deleteNetwork($name);
     }
 
-    /**
-     * Delete one orphaned harness network. A managed `oe-*` network also loses
-     * its host firewall rules; a legacy `orbit-e2e-*` network never had harness
-     * rules and the firewall helper refuses its name, so it is deleted directly.
-     * Ownership metadata is not required: legacy networks never carried it.
-     */
+    /** Delete one orphaned harness network and its host firewall rules. Ownership metadata is not required. */
     public function deleteOrphan(string $name): void
     {
         if (! OrphanNetworkSweep::isHarnessNetworkName($name)) {
@@ -168,9 +163,8 @@ final readonly class IncusNetworkLifecycle
         }
         $this->assertLocalRemote();
 
-        if (preg_match(self::MANAGED_NETWORK_PATTERN, $name) === 1) {
-            $this->reconcileRules('remove', $name);
-        }
+        $this->assertManagedNetworkName($name);
+        $this->reconcileRules('remove', $name);
         $this->host->deleteOrphanNetwork($name);
     }
 

@@ -10,12 +10,9 @@ use App\E2E\Value\GuestCommandResult;
 use App\E2E\Value\IncusInstance;
 use App\E2E\Value\IncusNetwork;
 use App\E2E\Value\MountPath;
-use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologyTarget;
-use Carbon\Exceptions\InvalidFormatException;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Process\Pool;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Process;
 use InvalidArgumentException;
 use JsonException;
@@ -26,12 +23,13 @@ final class IncusHost implements GuestTransport
 {
     private const int GUEST_READINESS_POLL_INTERVAL_MICROSECONDS = 1_000_000;
 
+    /** The Incus configuration keys a guest may set besides limits and ownership metadata. */
+    private const array GUEST_CONFIGURATION_KEYS = ['cloud-init.user-data'];
+
     private const string DEFAULT_ROUTE_INTERFACE_RESOLUTION = 'interface=$(ip -4 route show default | awk \'$1 == "default" { for (i = 2; i < NF; i++) if ($i == "dev") { print $(i + 1); exit } }\') && [ -n "$interface" ]';
 
     private const string GLOBAL_IPV4_PROBE =
         self::DEFAULT_ROUTE_INTERFACE_RESOLUTION.' && ip -4 -o addr show dev "$interface" scope global';
-
-    private const string CLONED_HOST_STATE_RESET_SUFFIX = ' && systemctl restart systemd-journald && for directory in /run/systemd/netif/leases /var/lib/systemd/network; do if [ -e "$directory" ]; then [ -d "$directory" ] && [ ! -L "$directory" ] || exit 1; find "$directory" -mindepth 1 -maxdepth 1 -type f -delete || exit 1; fi; done && ip -4 addr flush dev "$interface" scope global && ip link set dev "$interface" down && ip link set dev "$interface" up && (systemctl restart systemd-networkd || systemctl restart NetworkManager)';
 
     /** @var array<string, IncusInstance> */
     private array $ownedInstanceCache = [];
@@ -61,28 +59,6 @@ final class IncusHost implements GuestTransport
         foreach ($ownershipMetadata as $key => $value) {
             $this->validateMetadata($key, $value);
         }
-    }
-
-    /**
-     * The harness metadata of every harness-owned instance on the host, keyed by
-     * name. Capacity and generation pinning read this inventory instead of a ledger.
-     *
-     * @return array<string, array<string, string>>
-     */
-    public function harnessInstanceMetadata(): array
-    {
-        $instances = [];
-        foreach ($this->readJson(['list', "{$this->remote}:", '--format=json']) as $resource) {
-            if (! is_array($resource) || ! is_string($resource['name'] ?? null)) {
-                continue;
-            }
-            $metadata = $this->metadata($resource);
-            if (($metadata['user.orbit.e2e.owner'] ?? null) === 'orbit-e2e') {
-                $instances[$resource['name']] = $metadata;
-            }
-        }
-
-        return $instances;
     }
 
     /** @return array<string, array<string, string>> */
@@ -264,113 +240,90 @@ final class IncusHost implements GuestTransport
         return new IncusNetwork($this->remote, $this->project, $name, $this->e2eMetadata($configuration));
     }
 
-    /** @param array<string, string> $creationMetadata */
-    public function initVm(string $image, string $name, string $network, array $creationMetadata = []): IncusInstance
-    {
-        $this->validateImage($image);
-        $this->validateName($name, 'instance');
-        $this->validateName($network, 'network');
-        $this->validateStringMap($creationMetadata, 'creation metadata');
-        foreach ($creationMetadata as $key => $value) {
-            $this->validateMetadata($key, $value);
-            if (array_key_exists($key, $this->ownershipMetadata)) {
-                throw new RuntimeException('Incus creation metadata cannot override ownership metadata.');
-            }
-        }
-        $metadata = [...$this->ownershipMetadata, ...$creationMetadata];
-        [$imageRemote, $imageSelector] = $this->imageSelector($image);
-        $image = $imageRemote.$imageSelector;
-        $arguments = [
-            'init',
-            $image,
-            $this->target($name),
-            '--vm',
-            '--storage',
-            $this->pool,
-            '--config',
-            'limits.cpu='.$this->incusLimit('cpu', '1'),
-            '--config',
-            'limits.memory='.$this->incusLimit('memory', '2GiB'),
-            '--device',
-            'root,pool='.$this->pool,
-            '--device',
-            'root,size='.$this->incusLimit('root_size', '16GiB'),
-            '--network',
-            $network,
-        ];
-        foreach ($metadata as $key => $value) {
-            $arguments[] = '--config';
-            $arguments[] = "{$key}={$value}";
-        }
-
-        $this->run($arguments, 300);
-
-        return new IncusInstance(
-            $this->remote,
-            $this->project,
-            $name,
-            $this->pool,
-            $metadata,
-            network: $network,
-        );
-    }
-
     /**
-     * @param  array<string, array{image:string,name:string,network:string,role:string,address?:int,topology:string,slot:int,metadata:array<string,string>}>  $vms
+     * Creates guests in one parallel batch. Each one gets its fixed Incus address and MAC on the network, the
+     * harness ownership metadata, and, when given, the worktree mount. A container gets an unprivileged,
+     * nesting-capable container; every other guest is a VM.
+     *
+     * @param  array<string, array{image:string,name:string,network:string,node:string,address:int,slot:int,container:bool,metadata:array<string,string>,config?:array<string,string>,mount?:array{device:string,source:string,path:string}}>  $guests
      * @return array<string, IncusInstance>
      */
-    public function initVms(array $vms): array
+    public function initGuests(array $guests): array
     {
-        if ($vms === []) {
-            throw new RuntimeException('Incus VM initialization batch must be non-empty.');
+        if ($guests === []) {
+            throw new RuntimeException('Incus guest initialization batch must be non-empty.');
         }
         $commands = [];
+        $mounts = [];
         $instances = [];
         $targets = [];
-        foreach ($vms as $label => $vm) {
-            $this->validateName($label, 'VM initialization label');
-            $this->validateImage($vm['image']);
-            $this->validateName($vm['name'], 'instance');
-            $this->validateName($vm['network'], 'network');
-            $this->validateName($vm['role'], 'role');
-            $this->validateName($vm['topology'], 'topology');
-            if (isset($targets[$vm['name']])) {
-                throw new RuntimeException('Incus VM initialization targets must be unique.');
+        foreach ($guests as $label => $guest) {
+            $this->validateName($label, 'guest initialization label');
+            $this->validateImage($guest['image']);
+            $this->validateName($guest['name'], 'instance');
+            $this->validateName($guest['network'], 'network');
+            $this->validateName($guest['node'], 'node');
+            if (isset($targets[$guest['name']])) {
+                throw new RuntimeException('Incus guest initialization targets must be unique.');
             }
-            $targets[$vm['name']] = true;
-            $this->validateStringMap($vm['metadata'], 'creation metadata');
-            foreach ($vm['metadata'] as $key => $value) {
+            $targets[$guest['name']] = true;
+            $this->validateStringMap($guest['metadata'], 'creation metadata');
+            foreach ($guest['metadata'] as $key => $value) {
                 $this->validateMetadata($key, $value);
                 if (array_key_exists($key, $this->ownershipMetadata)) {
                     throw new RuntimeException('Incus creation metadata cannot override ownership metadata.');
                 }
             }
-            [$remote, $selector] = $this->imageSelector($vm['image']);
-            $container = $vm['role'] === 'operator';
+            [$remote, $selector] = $this->imageSelector($guest['image']);
+            $container = $guest['container'];
             $arguments = [
                 'init',
                 $remote.$selector,
-                $this->target($vm['name']),
-                ...($container ? [] : ['--vm']),
-                ...($container ? ['--config', 'security.privileged=false', '--config', 'security.nesting=true'] : []),
+                $this->target($guest['name']),
+                ...($container ? ['--config', 'security.privileged=false', '--config', 'security.nesting=true'] : ['--vm']),
                 '--storage',
                 $this->pool,
                 '--config',
                 'limits.cpu='.$this->incusLimit('cpu', '1'),
                 '--config',
-                'limits.memory='.$this->incusLimit('memory', '2GiB', $vm['role']),
+                'limits.memory='.$this->incusLimit('memory', '2GiB', $guest['node']),
                 '--device',
                 'root,pool='.$this->pool,
                 '--device',
                 'root,size='.$this->incusLimit('root_size', '16GiB'),
                 '--device',
-                'eth0,network='.$vm['network'],
+                'eth0,network='.$guest['network'],
                 '--device',
-                'eth0,ipv4.address='.TopologyTarget::ipv4For($vm['slot'], $vm['address'] ?? $vm['role']),
+                'eth0,ipv4.address='.TopologyTarget::ipv4For($guest['slot'], $guest['address']),
                 '--device',
-                'eth0,hwaddr='.$this->deterministicMac($vm['topology'], $vm['role']),
+                'eth0,hwaddr='.$this->deterministicMac($guest['network'], $guest['node']),
             ];
-            foreach ([...$this->ownershipMetadata, ...$vm['metadata']] as $key => $value) {
+            $disks = [];
+            $mount = $guest['mount'] ?? null;
+            if ($mount !== null) {
+                $this->validateMount($mount);
+                // `init --device` only overrides profile devices, so the mount is added after creation.
+                $mounts[$label] = [
+                    'config',
+                    'device',
+                    'add',
+                    $this->target($guest['name']),
+                    $mount['device'],
+                    'disk',
+                    "source={$mount['source']}",
+                    "path={$mount['path']}",
+                    ...($container ? ['shift=true'] : []),
+                ];
+                $disks[$mount['device']] = ['source' => $mount['source'], 'path' => $mount['path']];
+            }
+            foreach ([...$this->ownershipMetadata, ...$guest['metadata']] as $key => $value) {
+                $arguments[] = '--config';
+                $arguments[] = "{$key}={$value}";
+            }
+            foreach ($guest['config'] ?? [] as $key => $value) {
+                if (! in_array($key, self::GUEST_CONFIGURATION_KEYS, true)) {
+                    throw new RuntimeException("Incus guest configuration [{$key}] is not allowed.");
+                }
                 $arguments[] = '--config';
                 $arguments[] = "{$key}={$value}";
             }
@@ -378,232 +331,139 @@ final class IncusHost implements GuestTransport
             $instances[$label] = new IncusInstance(
                 $this->remote,
                 $this->project,
-                $vm['name'],
+                $guest['name'],
                 $this->pool,
-                [...$this->ownershipMetadata, ...$vm['metadata']],
-                network: $vm['network'],
+                [...$this->ownershipMetadata, ...$guest['metadata']],
+                network: $guest['network'],
+                disks: $disks,
             );
         }
-        $this->runParallel($commands, 300, failureMessage: 'Incus VM initialization batch failed');
-
-        return $instances;
-    }
-
-    /** @param array<string, string> $acquisitionMetadata */
-    public function copySnapshot(
-        string $source,
-        string $snapshot,
-        string $target,
-        array $acquisitionMetadata = [],
-    ): IncusInstance {
-        $copy = $this->snapshotCopy($source, $snapshot, $target, $acquisitionMetadata);
-        [$command, $instance] = $copy;
-        $this->run($command, 300);
-
-        return $instance;
-    }
-
-    /**
-     * @param  array<string, array{source:string,snapshot:string,target:string,metadata:array<string, string>,network?:string,role?:string,topology?:string,slot?:int,mount?:array{device:string,source:string,path:string}}>  $copies
-     * @return array<string, IncusInstance>
-     */
-    public function copySnapshots(array $copies): array
-    {
-        if ($copies === []) {
-            throw new RuntimeException('Incus snapshot copy batch must be non-empty.');
+        $this->runParallel($commands, 900, failureMessage: 'Incus guest initialization batch failed');
+        if ($mounts !== []) {
+            $this->runParallel($mounts, 120, failureMessage: 'Incus worktree mount batch failed');
         }
-
-        $commands = [];
-        $instances = [];
-        $targets = [];
-        foreach ($copies as $label => $copy) {
-            $this->validateName($label, 'snapshot copy label');
-            $source = $copy['source'];
-            $snapshot = $copy['snapshot'];
-            $target = $copy['target'];
-            $metadata = $copy['metadata'];
-            if (isset($targets[$target])) {
-                throw new RuntimeException('Incus snapshot copy targets must be unique.');
-            }
-            $targets[$target] = true;
-        }
-        $this->validateSnapshotCopies($copies);
-        foreach ($copies as $label => $copy) {
-            $copyResult = $this->snapshotCopy(
-                $copy['source'],
-                $copy['snapshot'],
-                $copy['target'],
-                $copy['metadata'],
-                $copy['network'] ?? null,
-                $copy['role'] ?? null,
-                $copy['topology'] ?? null,
-                $copy['slot'] ?? null,
-                false,
-                $copy['mount'] ?? null,
-            );
-            [$commands[$label], $instances[$label]] = $copyResult;
-        }
-
-        $this->runParallel($commands, 300, failureMessage: 'Incus snapshot copy batch failed');
 
         return $instances;
     }
 
     /**
-     * Copy whole stopped instances, without their snapshots, under new names on
-     * one network. The copies carry the source configuration; the ownership
-     * metadata and the given metadata override it.
+     * Every image in the project: fingerprint, type, aliases, properties, and creation time.
      *
-     * @param  array<string, array{source:string,target:string,metadata:array<string, string>,network:string,role:string,topology:string,slot:int}>  $copies
-     * @return array<string, IncusInstance>
+     * @return list<array{fingerprint:string,type:string,aliases:list<string>,properties:array<string,string>,created_at:string}>
      */
-    public function copyInstances(array $copies): array
+    public function images(): array
     {
-        if ($copies === []) {
-            throw new RuntimeException('Incus instance copy batch must be non-empty.');
-        }
-        $sources = array_values(array_unique(array_column($copies, 'source')));
-        foreach ($this->ownedInstances($sources, 'instance copy') as $name => $instance) {
-            if (! $instance->isStopped()) {
-                throw new RuntimeException("Incus instance {$name} must be stopped before it is copied.");
+        $images = [];
+        foreach ($this->readJson(['image', 'list', "{$this->remote}:", '--format=json']) as $image) {
+            $fingerprint = is_array($image) ? ($image['fingerprint'] ?? null) : null;
+            if (! is_string($fingerprint) || preg_match('/\A[a-f0-9]{64}\z/D', $fingerprint) !== 1) {
+                throw new RuntimeException('Incus returned an invalid image inventory.');
             }
-        }
-
-        $commands = [];
-        $instances = [];
-        $targets = [];
-        foreach ($copies as $label => $copy) {
-            $this->validateName($label, 'instance copy label');
-            if (isset($targets[$copy['target']])) {
-                throw new RuntimeException('Incus instance copy targets must be unique.');
+            $aliases = [];
+            foreach (is_array($image['aliases'] ?? null) ? $image['aliases'] : [] as $alias) {
+                if (is_array($alias) && is_string($alias['name'] ?? null)) {
+                    $aliases[] = $alias['name'];
+                }
             }
-            $targets[$copy['target']] = true;
-            $copyResult = $this->snapshotCopy(
-                $copy['source'],
-                null,
-                $copy['target'],
-                $copy['metadata'],
-                $copy['network'],
-                $copy['role'],
-                $copy['topology'],
-                $copy['slot'],
-                false,
-            );
-            [$commands[$label], $instances[$label]] = $copyResult;
-        }
-
-        $this->runParallel($commands, 900, failureMessage: 'Incus instance copy batch failed');
-
-        return $instances;
-    }
-
-    /** Rename one stopped Orbit-owned instance; the new name must be free. */
-    public function renameInstance(string $from, string $to): void
-    {
-        $this->validateName($to, 'instance');
-        if (! $this->validatedOwnedVm($from)->isStopped()) {
-            throw new RuntimeException("Incus instance {$from} must be stopped before it is renamed.");
-        }
-        if ($this->instance($to) !== null) {
-            throw new RuntimeException("Incus instance {$to} already exists.");
-        }
-        $this->run(['rename', $this->target($from), $to], 300);
-        if ($this->instance($to) === null) {
-            throw new RuntimeException("Incus instance {$to} does not exist after rename.");
-        }
-    }
-
-    /**
-     * Drop harness metadata keys from one Orbit-owned instance; the ownership keys stay.
-     *
-     * @param  list<string>  $keys
-     */
-    public function unsetMetadata(string $instance, array $keys): void
-    {
-        if ($keys === []) {
-            throw new RuntimeException('Incus metadata keys cannot be empty.');
-        }
-        foreach ($keys as $key) {
-            $this->validateMetadata($key, '');
-            if (array_key_exists($key, $this->ownershipMetadata)) {
-                throw new RuntimeException('Incus ownership metadata cannot be unset.');
+            $properties = [];
+            foreach (is_array($image['properties'] ?? null) ? $image['properties'] : [] as $key => $value) {
+                if (is_string($key) && is_string($value)) {
+                    $properties[$key] = $value;
+                }
             }
-        }
-        $this->validatedOwnedVm($instance);
-        foreach ($keys as $key) {
-            $this->run(['config', 'unset', $this->target($instance), $key]);
-        }
-    }
-
-    public function setNetwork(string $instance, string $network, string $role): void
-    {
-        $this->validatedOwnedVm($instance);
-        $resource = $this->network($network);
-        if ($resource === null) {
-            throw new RuntimeException("Incus network {$network} does not exist.");
-        }
-
-        $this->assertOwned($resource->metadata, "network {$network}");
-        $slot = $this->networkSlot($resource);
-        $this->run([
-            'config',
-            'device',
-            'override',
-            $this->target($instance),
-            'eth0',
-            "network={$network}",
-            'ipv4.address='.TopologyTarget::ipv4For($slot, $role),
-            'hwaddr='.$this->deterministicMac($network, $role),
-        ]);
-    }
-
-    /** @param array<string, string> $instancesByRole */
-    public function configureCloneNetworks(array $instancesByRole, string $network): void
-    {
-        $this->validateName($network, 'network');
-        $this->validateUniqueInstances(array_values($instancesByRole), 'clone configuration');
-        $resource = $this->network($network);
-        if ($resource === null) {
-            throw new RuntimeException("Incus network {$network} does not exist.");
-        }
-        $this->assertOwned($resource->metadata, "network {$network}");
-        $slot = $this->networkSlot($resource);
-
-        $commands = [];
-        $ownedInstances = $this->ownedInstances(array_values($instancesByRole), 'clone network configuration');
-        foreach ($instancesByRole as $role => $instance) {
-            $this->validateName($role, 'role');
-            if (! isset($ownedInstances[$instance])) {
-                throw new RuntimeException("Incus instance {$instance} does not exist.");
-            }
-            $commands[$role] = [
-                'config',
-                'device',
-                'override',
-                $this->target($instance),
-                'eth0',
-                "network={$network}",
-                'ipv4.address='.TopologyTarget::ipv4For($slot, $role),
-                'hwaddr='.$this->deterministicMac($network, $role),
+            $images[] = [
+                'fingerprint' => $fingerprint,
+                'type' => is_string($image['type'] ?? null) ? $image['type'] : '',
+                'aliases' => $aliases,
+                'properties' => $properties,
+                'created_at' => is_string($image['created_at'] ?? null) ? $image['created_at'] : '',
             ];
         }
 
-        $this->runParallel($commands, 60, failureMessage: 'Incus clone network configuration batch failed');
+        return $images;
     }
 
-    /** @param array<string, string> $instancesByRole */
-    public function assertTopologyNetworkIdentity(
-        array $instancesByRole,
-        string $network,
-        ?TopologyTarget $target = null,
-        bool $requireRunning = false,
-    ): void {
-        $recipe = $target->recipe ?? TopologyRecipe::registered();
-        $this->validateName($network, 'network');
-        $this->validateUniqueInstances(array_values($instancesByRole), 'topology network validation');
-        foreach (array_keys($instancesByRole) as $role) {
-            $this->validateName($role, 'role');
+    /**
+     * Stops nothing: the guest must already be stopped. Publishes its disk under `$alias` with the given
+     * image properties and returns the new image's fingerprint.
+     *
+     * @param  array<string, string>  $properties
+     */
+    public function publish(string $instance, string $alias, array $properties, string $type): string
+    {
+        $this->validatedOwnedVm($instance);
+        $this->validateName($alias, 'image alias');
+        $arguments = ['publish', $this->target($instance), "{$this->remote}:", '--alias', $alias, '--compression', 'none'];
+        foreach ($properties as $key => $value) {
+            if (preg_match('/\A[a-z][a-z0-9_.-]{0,63}\z/D', $key) !== 1 || preg_match('/\A[\x21-\x7e]{1,255}\z/D', $value) !== 1) {
+                throw new RuntimeException('Invalid Incus image property.');
+            }
+            $arguments[] = "{$key}={$value}";
         }
+        $this->run($arguments, 1800);
+
+        return $this->imageFingerprint($alias, $type);
+    }
+
+    /** Points `$alias` at `$fingerprint` in one request, creating the alias when it is new. */
+    public function pointAlias(string $alias, string $fingerprint): void
+    {
+        $this->validateName($alias, 'image alias');
+        if (preg_match('/\A[a-f0-9]{64}\z/D', $fingerprint) !== 1) {
+            throw new RuntimeException('Invalid Incus image fingerprint.');
+        }
+        $exists = array_any($this->images(), static fn (array $image): bool => in_array($alias, $image['aliases'], true));
+        if ($exists) {
+            $this->run([
+                'query',
+                '--request',
+                'PATCH',
+                '--data',
+                json_encode(['target' => $fingerprint], JSON_THROW_ON_ERROR),
+                "{$this->remote}:/1.0/images/aliases/{$alias}?project={$this->project}",
+            ]);
+
+            return;
+        }
+        $this->run(['image', 'alias', 'create', "{$this->remote}:{$alias}", $fingerprint]);
+    }
+
+    public function deleteImage(string $fingerprint): void
+    {
+        if (preg_match('/\A[a-f0-9]{64}\z/D', $fingerprint) !== 1) {
+            throw new RuntimeException('Invalid Incus image fingerprint.');
+        }
+        $this->run(['image', 'delete', "{$this->remote}:{$fingerprint}"]);
+    }
+
+    /**
+     * The image fingerprint each instance in the project started from.
+     *
+     * @return array<string, string> instance name => fingerprint
+     */
+    public function instanceBaseImages(): array
+    {
+        $images = [];
+        foreach ($this->readJson(['list', "{$this->remote}:", '--format=json']) as $resource) {
+            if (! is_array($resource) || ! is_string($resource['name'] ?? null)) {
+                continue;
+            }
+            $base = $this->configuration($resource)['volatile.base_image'] ?? null;
+            if (is_string($base) && $base !== '') {
+                $images[$resource['name']] = $base;
+            }
+        }
+
+        return $images;
+    }
+
+    /** Every guest of the target is on its network with its fixed MAC and address, and owned by the harness. */
+    public function assertTopologyNetworkIdentity(TopologyTarget $target, bool $requireRunning = false): void
+    {
+        $recipe = $target->recipe;
+        $network = $target->network();
+        $instancesByRole = $target->instances();
+        $this->validateUniqueInstances(array_values($instancesByRole), 'topology network validation');
 
         $resource = $this->network($network);
         if ($resource === null) {
@@ -614,12 +474,12 @@ final class IncusHost implements GuestTransport
 
         $resources = $this->instanceInventory(array_values($instancesByRole), 'topology network validation');
         foreach ($instancesByRole as $role => $instance) {
-            $node = $recipe->resolveNode($role);
+            $node = $recipe->node($role);
             $resource = $resources[$instance] ?? null;
             if ($resource === null) {
                 throw new RuntimeException("Incus instance {$instance} does not exist.");
             }
-            $expectedType = $node->key === 'operator' ? 'container' : 'virtual-machine';
+            $expectedType = $node->image->instanceType();
             if (($resource['type'] ?? null) !== $expectedType) {
                 throw new RuntimeException("Incus instance {$instance} type does not match topology.");
             }
@@ -639,40 +499,6 @@ final class IncusHost implements GuestTransport
                 throw new RuntimeException("Incus instance {$instance} IPv4 identity does not match topology.");
             }
         }
-    }
-
-    /** @param array<string, string> $metadata */
-    public function setMetadata(string $resource, array $metadata): void
-    {
-        $this->validateName($resource, 'resource');
-        if ($metadata === []) {
-            throw new RuntimeException('Incus metadata cannot be empty.');
-        }
-
-        $this->validateStringMap($metadata, 'metadata');
-        foreach ($metadata as $key => $value) {
-            $this->validateMetadata($key, $value);
-        }
-
-        $instance = $this->instance($resource);
-        if ($instance !== null) {
-            $this->assertOwned($instance->metadata, "instance {$resource}");
-            $arguments = ['config', 'set', $this->target($resource)];
-        } else {
-            $network = $this->network($resource);
-            if ($network === null) {
-                throw new RuntimeException("Incus resource {$resource} does not exist.");
-            }
-
-            $this->assertOwned($network->metadata, "network {$resource}");
-            $arguments = ['network', 'set', "{$this->remote}:{$resource}"];
-        }
-
-        foreach ($metadata as $key => $value) {
-            $arguments[] = "{$key}={$value}";
-        }
-
-        $this->run($arguments);
     }
 
     /** @param array<string, string> $configuration */
@@ -866,11 +692,6 @@ final class IncusHost implements GuestTransport
         }
     }
 
-    public function globalIpv4(string $instance): string
-    {
-        return $this->globalIpv4All([$instance => $instance])[$instance];
-    }
-
     /**
      * @param  array<string, string>  $instances
      * @return array<string, string>
@@ -936,219 +757,12 @@ final class IncusHost implements GuestTransport
         return array_values(array_unique($addresses));
     }
 
-    public function resetClonedHostState(string $instance): void
-    {
-        $this->resetClonedHostStates([$instance]);
-    }
-
-    /** @param list<string> $instances */
-    public function resetClonedHostStates(array $instances): void
-    {
-        $this->validateUniqueInstances($instances, 'cloned host-state reset');
-        $commands = [];
-        foreach ($this->ownedInstances($instances, 'cloned host-state reset') as $instance => $_vm) {
-            $commands[$instance] = [
-                'exec',
-                $this->target($instance),
-                '--',
-                'sh',
-                '-c',
-                $this->clonedHostStateResetScript($instance),
-            ];
-        }
-
-        try {
-            $this->runParallel($commands, 60, failureMessage: 'Failed to reset cloned host state');
-        } catch (Throwable $exception) {
-            throw new RuntimeException('Failed to reset cloned host state: '.$exception->getMessage(), 0, $exception);
-        }
-    }
-
-    /**
-     * Advance each clone independently instead of waiting for the slowest role
-     * at three separate global barriers.
-     *
-     * @param  list<string>  $instances
-     */
-    public function prepareClonedHostStates(array $instances): void
-    {
-        $this->validateUniqueInstances($instances, 'cloned host-state preparation');
-        $this->operationOwnedInstances($instances, 'cloned host-state preparation');
-
-        $states = array_fill_keys($instances, 'agent');
-        $deadline = microtime(true) + $this->guestReadinessTimeoutSeconds;
-        while ($states !== [] && microtime(true) < $deadline) {
-            $commands = [];
-            foreach ($states as $instance => $state) {
-                $commands[$instance] = match ($state) {
-                    'agent' => ['exec', $this->target($instance), '--', '/bin/true'],
-                    'pre-reset-ipv4', 'ipv4' => [
-                        'exec',
-                        $this->target($instance),
-                        '--',
-                        'sh',
-                        '-c',
-                        self::GLOBAL_IPV4_PROBE,
-                    ],
-                    'reset' => [
-                        'exec',
-                        $this->target($instance),
-                        '--',
-                        'sh',
-                        '-c',
-                        $this->clonedHostStateResetScript($instance),
-                    ],
-                    default => throw new RuntimeException('Cloned host-state preparation entered an invalid state.'),
-                };
-            }
-
-            try {
-                $results = $this->runParallel($commands, 60, false);
-            } catch (Throwable) {
-                $results = [];
-            }
-
-            $advanced = false;
-            foreach ($states as $instance => $state) {
-                $result = $results[$instance] ?? null;
-                if ($state === 'reset') {
-                    if (! $result instanceof ProcessResult) {
-                        continue;
-                    }
-                    if (! $result->successful()) {
-                        throw new RuntimeException('Failed to reset cloned host state.');
-                    }
-                    $states[$instance] = 'ipv4';
-                    $advanced = true;
-
-                    continue;
-                }
-                if (! $result instanceof ProcessResult || ! $result->successful()) {
-                    continue;
-                }
-                if ($state === 'agent') {
-                    $states[$instance] = 'pre-reset-ipv4';
-                    $advanced = true;
-
-                    continue;
-                }
-                if (! $this->hasUsableGlobalIpv4($result->output())) {
-                    continue;
-                }
-                if ($state === 'pre-reset-ipv4') {
-                    $states[$instance] = 'reset';
-                    $advanced = true;
-
-                    continue;
-                }
-                unset($states[$instance]);
-                $advanced = true;
-            }
-
-            if ($states !== [] && ! $advanced) {
-                usleep(self::GUEST_READINESS_POLL_INTERVAL_MICROSECONDS);
-            }
-        }
-
-        if ($states !== []) {
-            throw new RuntimeException('Timed out preparing cloned Incus guest identities.');
-        }
-    }
-
-    /**
-     * Wait for restored guests without changing their machine identity.
-     *
-     * @param  array<array-key, string>  $instances
-     */
-    public function waitForRestoredHostStates(array $instances): void
-    {
-        assert(array_is_list($instances));
-        $this->validateUniqueInstances($instances, 'restored host-state readiness');
-        $this->operationOwnedInstances($instances, 'restored host-state readiness');
-
-        $states = array_fill_keys($instances, 'agent');
-        $deadline = microtime(true) + $this->guestReadinessTimeoutSeconds;
-        while ($states !== [] && microtime(true) < $deadline) {
-            $commands = [];
-            foreach ($states as $instance => $state) {
-                $commands[$instance] = match ($state) {
-                    'agent' => ['exec', $this->target($instance), '--', '/bin/true'],
-                    default => [
-                        'exec',
-                        $this->target($instance),
-                        '--',
-                        'sh',
-                        '-c',
-                        self::GLOBAL_IPV4_PROBE,
-                    ],
-                };
-            }
-
-            try {
-                $results = $this->runParallel($commands, 10, false);
-            } catch (Throwable) {
-                $results = [];
-            }
-
-            $advanced = false;
-            foreach ($states as $instance => $state) {
-                $result = $results[$instance] ?? null;
-                if (! $result instanceof ProcessResult || ! $result->successful()) {
-                    continue;
-                }
-                if ($state === 'agent') {
-                    $states[$instance] = 'ipv4';
-                    $advanced = true;
-                } elseif ($this->hasUsableGlobalIpv4($result->output())) {
-                    unset($states[$instance]);
-                    $advanced = true;
-                }
-            }
-
-            if ($states !== [] && ! $advanced) {
-                usleep(self::GUEST_READINESS_POLL_INTERVAL_MICROSECONDS);
-            }
-        }
-
-        if ($states !== []) {
-            throw new RuntimeException('Timed out waiting for restored Incus guests to become ready.');
-        }
-    }
-
-    public function setDeterministicMac(string $instance, string $topologyId, string $role): void
-    {
-        $this->validatedOwnedVm($instance);
-        $this->run([
-            'config',
-            'device',
-            'override',
-            $this->target($instance),
-            'eth0',
-            'hwaddr='.$this->deterministicMac($topologyId, $role),
-        ]);
-    }
-
     private function deterministicMac(string $topologyId, string $role): string
     {
         $this->validateName($topologyId, 'topology');
         $this->validateName($role, 'role');
 
         return TopologyTarget::macFor($topologyId, $role);
-    }
-
-    private function clonedHostStateResetScript(string $instance): string
-    {
-        $machineId = substr(
-            hash('sha256', implode(':', [$this->remote, $this->project, $this->pool, $instance])),
-            0,
-            32,
-        );
-        $machineIdReset = sprintf(
-            "rm -f /etc/machine-id /var/lib/dbus/machine-id && printf '%%s\\n' '%s' > /etc/machine-id && ln -s /etc/machine-id /var/lib/dbus/machine-id",
-            $machineId,
-        );
-
-        return self::DEFAULT_ROUTE_INTERFACE_RESOLUTION.' && '.$machineIdReset.self::CLONED_HOST_STATE_RESET_SUFFIX;
     }
 
     private function incusLimit(string $key, string $default, ?string $node = null): string
@@ -1212,8 +826,10 @@ final class IncusHost implements GuestTransport
         if ($commands !== []) {
             try {
                 $this->runParallel($commands, 120, false);
+            } catch (Interrupted $interrupted) {
+                throw $interrupted;
             } catch (Throwable) {
-                $results = [];
+                // A guest that does not stop in time is forced below.
             }
             $forced = [];
             $observed = $this->instances(array_keys($commands));
@@ -1241,184 +857,6 @@ final class IncusHost implements GuestTransport
         }
         if ($commands !== []) {
             $this->runParallel($commands, 120, failureMessage: 'Incus forced stop batch failed');
-        }
-    }
-
-    /** @param array<string,string> $snapshots */
-    public function snapshotAll(array $snapshots): void
-    {
-        if ($snapshots === []) {
-            throw new RuntimeException('Incus snapshot batch must be non-empty.');
-        }
-        $this->ownedInstances(array_keys($snapshots), 'snapshot creation');
-        $commands = [];
-        foreach ($snapshots as $instance => $snapshot) {
-            $this->validateName($snapshot, 'snapshot');
-            $commands[$instance] = ['snapshot', 'create', $this->target($instance), $snapshot];
-        }
-        $this->runParallel($commands, 300, failureMessage: 'Incus snapshot batch failed');
-    }
-
-    /** @param array<string,string> $snapshots */
-    public function restoreAll(array $snapshots): void
-    {
-        if ($snapshots === []) {
-            throw new RuntimeException('Incus restore batch must be non-empty.');
-        }
-        $this->assertOwnedSnapshots($snapshots);
-        $commands = [];
-        foreach ($snapshots as $instance => $snapshot) {
-            $commands[$instance] = ['snapshot', 'restore', $this->target($instance), $snapshot];
-        }
-        $this->runParallel($commands, 300, failureMessage: 'Incus restore batch failed');
-    }
-
-    public function snapshot(string $instance, string $snapshot): void
-    {
-        $this->validatedOwnedVm($instance);
-        $this->validateName($snapshot, 'snapshot');
-        $this->run(['snapshot', 'create', $this->target($instance), $snapshot], 300);
-    }
-
-    public function restore(string $instance, string $snapshot): void
-    {
-        $this->validatedOwnedSnapshot($instance, $snapshot);
-        $this->run(['snapshot', 'restore', $this->target($instance), $snapshot], 300);
-    }
-
-    /** Assert that an exact, Orbit-owned snapshot exists on an exact VM. */
-    public function assertOwnedSnapshot(string $instance, string $snapshot): void
-    {
-        $this->validatedOwnedSnapshot($instance, $snapshot);
-    }
-
-    /** @param array<string, string> $snapshots */
-    public function assertOwnedSnapshots(array $snapshots): void
-    {
-        if ($snapshots === []) {
-            throw new RuntimeException('Incus snapshot validation batch must be non-empty.');
-        }
-
-        foreach ($snapshots as $instance => $snapshot) {
-            $this->validateName($instance, 'instance');
-            $this->validateName($snapshot, 'snapshot');
-        }
-
-        $instances = $this->ownedInstances(array_keys($snapshots), 'snapshot validation');
-        $existing = $this->existingOwnedSnapshots($snapshots, $instances);
-        if (count($existing) === count($snapshots)) {
-            return;
-        }
-
-        $missing = array_keys(array_diff_key($snapshots, $existing));
-
-        throw new RuntimeException('Incus snapshots do not exist: '.implode(', ', $missing).'.');
-    }
-
-    /**
-     * @param  list<string>  $instanceNames
-     * @return array<string, list<array{name:string,created_at:string}>>
-     */
-    public function ownedSnapshotNames(array $instanceNames): array
-    {
-        $instances = $this->ownedInstances($instanceNames, 'snapshot inventory');
-        $commands = [];
-        foreach ($instanceNames as $instance) {
-            $commands[$instance] = ['snapshot', 'list', $this->target($instance), '--format=json'];
-        }
-        $results = $this->runParallel($commands, 60, failureMessage: 'Incus snapshot inventory batch failed');
-        $snapshots = [];
-        foreach ($instanceNames as $instance) {
-            try {
-                $resources = json_decode($results[$instance]->output(), true, 512, JSON_THROW_ON_ERROR);
-            } catch (JsonException $exception) {
-                throw new RuntimeException('Incus returned malformed snapshot JSON.', 0, $exception);
-            }
-            if (! is_array($resources)) {
-                throw new RuntimeException('Incus returned malformed snapshot JSON.');
-            }
-            $names = [];
-            foreach ($resources as $resource) {
-                if (! is_array($resource) || ! is_string($resource['name'] ?? null)) {
-                    throw new RuntimeException('Incus snapshot identity is invalid.');
-                }
-                $name = $resource['name'];
-                if (str_contains($name, '/')) {
-                    [$parent, $name] = explode('/', $name, 2);
-                    if ($parent !== $instance) {
-                        throw new RuntimeException('Incus snapshot identity is invalid.');
-                    }
-                }
-                $this->validateName($name, 'snapshot');
-                $metadata = $this->metadata($resource);
-                $this->assertOwned(
-                    $metadata === [] ? $instances[$instance]->metadata : $metadata,
-                    "snapshot {$instance}/{$name}",
-                );
-                if (isset($names[$name])) {
-                    throw new RuntimeException('Incus snapshot identity appears more than once.');
-                }
-                $createdAt = $resource['created_at'] ?? null;
-                if (! is_string($createdAt) || $createdAt === '') {
-                    throw new RuntimeException('Incus snapshot creation metadata is invalid.');
-                }
-                try {
-                    Carbon::parse($createdAt);
-                } catch (InvalidFormatException) {
-                    throw new RuntimeException('Incus snapshot creation metadata is invalid.');
-                }
-                $names[$name] = ['name' => $name, 'created_at' => $createdAt];
-            }
-            $snapshots[$instance] = array_values($names);
-            usort($snapshots[$instance], static fn (array $a, array $b): int => $a['name'] <=> $b['name']);
-        }
-
-        return $snapshots;
-    }
-
-    public function deleteSnapshot(string $instance, string $snapshot): void
-    {
-        $this->validatedOwnedSnapshot($instance, $snapshot);
-        $this->run(['snapshot', 'delete', $this->target($instance), $snapshot], 300);
-    }
-
-    public function deleteSnapshotIfExists(string $instance, string $snapshot): void
-    {
-        if (! $this->ownedSnapshotExists($instance, $snapshot)) {
-            return;
-        }
-
-        $this->run(['snapshot', 'delete', $this->target($instance), $snapshot], 300);
-    }
-
-    /** @param array<string, string> $snapshots */
-    public function deleteSnapshotsIfExist(array $snapshots): void
-    {
-        if ($snapshots === []) {
-            throw new RuntimeException('Incus snapshot deletion batch must be non-empty.');
-        }
-        foreach ($snapshots as $instance => $snapshot) {
-            $this->validateName($instance, 'instance');
-            $this->validateName($snapshot, 'snapshot');
-        }
-
-        $instances = $this->ownedInstances(array_keys($snapshots), 'snapshot deletion');
-        $existing = $this->existingOwnedSnapshots($snapshots, $instances);
-        if ($existing === []) {
-            return;
-        }
-
-        $commands = [];
-        foreach ($existing as $instance => $snapshot) {
-            $commands[$instance] = ['snapshot', 'delete', $this->target($instance), $snapshot];
-        }
-        $this->runParallel($commands, 300, failureMessage: 'Incus snapshot deletion batch failed');
-
-        $remaining = $this->existingOwnedSnapshots($existing, $instances);
-        if ($remaining !== []) {
-            throw new RuntimeException(
-                'Incus snapshots still exist after deletion: '.implode(', ', array_keys($remaining)).'.',
-            );
         }
     }
 
@@ -1458,10 +896,8 @@ final class IncusHost implements GuestTransport
     }
 
     /**
-     * Delete one orphaned harness network. The name must carry a harness prefix,
-     * must not be the topology snapshot network, and must still have no users at deletion
-     * time; legacy harness networks carry no ownership metadata, so the prefix
-     * is the ownership rule here.
+     * Delete one orphaned harness network. The name must carry the harness prefix and the network must still
+     * have no users at deletion time; the prefix is the ownership rule here.
      */
     public function deleteOrphanNetwork(string $network): void
     {
@@ -1620,6 +1056,8 @@ final class IncusHost implements GuestTransport
             if (array_keys($results) !== array_keys($full)) {
                 throw new RuntimeException('Batch helper returned incomplete results.');
             }
+        } catch (Interrupted $interrupted) {
+            throw $interrupted;
         } catch (Throwable $exception) {
             $message = $this->redactor->redact($exception->getMessage());
 
@@ -1794,82 +1232,6 @@ final class IncusHost implements GuestTransport
         return $instance;
     }
 
-    private function validatedOwnedSnapshot(string $instance, string $snapshot): void
-    {
-        if (! $this->ownedSnapshotExists($instance, $snapshot)) {
-            throw new RuntimeException('Incus snapshot identity changed before mutation.');
-        }
-    }
-
-    private function ownedSnapshotExists(string $instance, string $snapshot): bool
-    {
-        $vm = $this->validatedOwnedVm($instance);
-        $this->validateName($snapshot, 'snapshot');
-        $resources = $this->readJson(['snapshot', 'list', $this->target($instance), '--format=json']);
-        $expectedNames = [$snapshot, "{$instance}/{$snapshot}"];
-        $resource = array_find(
-            $resources,
-            fn ($candidate) => is_array($candidate) && in_array($candidate['name'] ?? null, $expectedNames, true),
-        );
-        if (! is_array($resource)) {
-            return false;
-        }
-        $observedName = $resource['name'];
-
-        if ($observedName !== $snapshot && $observedName !== "{$instance}/{$snapshot}") {
-            throw new RuntimeException('Incus snapshot identity changed before mutation.');
-        }
-
-        $metadata = $this->metadata($resource);
-        $this->assertOwned($metadata === [] ? $vm->metadata : $metadata, "snapshot {$instance}/{$snapshot}");
-
-        return true;
-    }
-
-    /**
-     * @param  array<string, string>  $snapshots
-     * @param  array<string, IncusInstance>  $instances
-     * @return array<string, string>
-     */
-    private function existingOwnedSnapshots(array $snapshots, array $instances): array
-    {
-        $commands = [];
-        foreach ($snapshots as $instance => $_snapshot) {
-            $commands[$instance] = ['snapshot', 'list', $this->target($instance), '--format=json'];
-        }
-        $results = $this->runParallel($commands, 60, failureMessage: 'Incus snapshot inventory batch failed');
-
-        $existing = [];
-        foreach ($snapshots as $instance => $snapshot) {
-            try {
-                $resources = json_decode($results[$instance]->output(), true, 512, JSON_THROW_ON_ERROR);
-            } catch (JsonException $exception) {
-                throw new RuntimeException('Incus returned malformed snapshot JSON.', 0, $exception);
-            }
-            if (! is_array($resources)) {
-                throw new RuntimeException('Incus returned malformed snapshot JSON.');
-            }
-            $expectedNames = [$snapshot, "{$instance}/{$snapshot}"];
-            $resource = array_find(
-                $resources,
-                static fn (mixed $candidate): bool => (
-                    is_array($candidate) && in_array($candidate['name'] ?? null, $expectedNames, true)
-                ),
-            );
-            if (! is_array($resource)) {
-                continue;
-            }
-            $metadata = $this->metadata($resource);
-            $this->assertOwned(
-                $metadata === [] ? $instances[$instance]->metadata : $metadata,
-                "snapshot {$instance}/{$snapshot}",
-            );
-            $existing[$instance] = $snapshot;
-        }
-
-        return $existing;
-    }
-
     /** @param array<string, string> $metadata */
     private function assertOwned(array $metadata, string $resource): void
     {
@@ -1949,6 +1311,8 @@ final class IncusHost implements GuestTransport
                     $pool->as($label)->timeout($timeout)->command($command);
                 }
             })->run()->collect()->all();
+        } catch (Interrupted $interrupted) {
+            throw $interrupted;
         } catch (Throwable $exception) {
             $message = $this->redactor->redact($exception->getMessage());
 
@@ -1993,100 +1357,6 @@ final class IncusHost implements GuestTransport
     }
 
     /**
-     * @param  array<string, string>  $acquisitionMetadata
-     * @param  array{device:string,source:string,path:string}|null  $mount  A host directory attached as a virtiofs disk at copy time.
-     * @return array{list<string>, IncusInstance}
-     */
-    private function snapshotCopy(
-        string $source,
-        ?string $snapshot,
-        string $target,
-        array $acquisitionMetadata,
-        ?string $network = null,
-        ?string $role = null,
-        ?string $topology = null,
-        ?int $slot = null,
-        bool $validateSource = true,
-        ?array $mount = null,
-    ): array {
-        $this->validateName($source, 'instance');
-        if ($snapshot !== null) {
-            $this->validateName($snapshot, 'snapshot');
-        }
-        $this->validateName($target, 'instance');
-        $this->validateStringMap($acquisitionMetadata, 'acquisition metadata');
-        foreach ($acquisitionMetadata as $key => $value) {
-            $this->validateMetadata($key, $value);
-            if (array_key_exists($key, $this->ownershipMetadata)) {
-                throw new RuntimeException('Incus acquisition metadata cannot override ownership metadata.');
-            }
-        }
-        if ($validateSource && $snapshot !== null) {
-            $this->assertOwnedSnapshot($source, $snapshot);
-        }
-        $metadata = [...$this->ownershipMetadata, ...$acquisitionMetadata];
-        $configuration = [];
-        foreach ($metadata as $key => $value) {
-            $configuration[] = '--config';
-            $configuration[] = "{$key}={$value}";
-        }
-        if ($network !== null || $role !== null || $topology !== null || $slot !== null) {
-            if (! is_string($network) || ! is_string($role) || ! is_string($topology)) {
-                throw new RuntimeException('Incus snapshot copy network identity is incomplete.');
-            }
-            if ($slot === null) {
-                throw new RuntimeException('Incus snapshot copy network identity is incomplete.');
-            }
-            $this->validateName($network, 'network');
-            $this->validateName($role, 'role');
-            $this->validateName($topology, 'topology');
-            $configuration[] = '--device';
-            $configuration[] = 'eth0,network='.$network;
-            $configuration[] = '--device';
-            $configuration[] = 'eth0,ipv4.address='.TopologyTarget::ipv4For($slot, $role);
-            $configuration[] = '--device';
-            $configuration[] = 'eth0,hwaddr='.$this->deterministicMac($topology, $role);
-        }
-        $disks = [];
-        if ($mount !== null) {
-            $this->validateMount($mount);
-            // Incus takes one --device flag per key.
-            $configuration[] = '--device';
-            $configuration[] = "{$mount['device']},type=disk";
-            $configuration[] = '--device';
-            $configuration[] = "{$mount['device']},source={$mount['source']}";
-            $configuration[] = '--device';
-            $configuration[] = "{$mount['device']},path={$mount['path']}";
-            if ($role === 'operator') {
-                $configuration[] = '--device';
-                $configuration[] = "{$mount['device']},shift=true";
-            }
-            $disks[$mount['device']] = ['source' => $mount['source'], 'path' => $mount['path']];
-        }
-
-        return [
-            [
-                'copy',
-                $snapshot === null ? $this->target($source) : "{$this->target($source)}/{$snapshot}",
-                $this->target($target),
-                ...($snapshot === null ? ['--instance-only'] : []),
-                '--storage',
-                $this->pool,
-                '--config',
-                'limits.cpu='.$this->incusLimit('cpu', '1'),
-                '--config',
-                'limits.memory='.$this->incusLimit('memory', '2GiB', $role),
-                '--device',
-                'root,pool='.$this->pool,
-                '--device',
-                'root,size='.$this->incusLimit('root_size', '16GiB'),
-                ...$configuration,
-            ],
-            new IncusInstance($this->remote, $this->project, $target, $this->pool, $metadata, disks: $disks),
-        ];
-    }
-
-    /**
      * A source mount must name an existing host directory; the guest path and the
      * device name are passed to Incus verbatim, so they must be free of separators.
      *
@@ -2121,45 +1391,6 @@ final class IncusHost implements GuestTransport
         }
 
         return $slot;
-    }
-
-    /**
-     * @param array<string, array{
-     *     source:string,
-     *     snapshot:string,
-     *     target:string,
-     *     metadata:array<string,string>,
-     *     network?:string,
-     *     role?:string,
-     *     topology?:string,
-     *     slot?:int,
-     *     mount?:array{device:string,source:string,path:string}
-     * }> $copies
-     */
-    private function validateSnapshotCopies(array $copies): void
-    {
-        $sources = array_values(array_unique(array_column($copies, 'source')));
-        $this->ownedInstances($sources, 'snapshot copy');
-        $commands = [];
-        foreach ($copies as $label => $copy) {
-            $commands[$label] = ['snapshot', 'list', $this->target($copy['source']), '--format=json'];
-        }
-        $results = $this->runParallel($commands, 60, failureMessage: 'Incus snapshot validation batch failed');
-        foreach ($copies as $label => $copy) {
-            $resources = json_decode($results[$label]->output(), true);
-            if (! is_array($resources)) {
-                throw new RuntimeException('Incus returned malformed snapshot JSON.');
-            }
-            $expected = [$copy['snapshot'], $copy['source'].'/'.$copy['snapshot']];
-            $resource = array_find(
-                $resources,
-                fn ($candidate): bool => is_array($candidate) && in_array($candidate['name'] ?? null, $expected, true),
-            );
-            if (! is_array($resource)) {
-                throw new RuntimeException('Incus snapshot identity changed before mutation.');
-            }
-            $this->assertOwned($this->metadata($resource), "snapshot {$copy['source']}/{$copy['snapshot']}");
-        }
     }
 
     /** @param list<string> $instances */
@@ -2228,7 +1459,10 @@ final class IncusHost implements GuestTransport
         bool $failOnError = true,
         ?string $stdin = null,
     ): ProcessResult {
-        $command = ['incus', '--project', $this->project, ...$arguments];
+        // `incus query` refuses --project; its URL names the project instead.
+        $command = ($arguments[0] ?? '') === 'query'
+            ? ['incus', ...$arguments]
+            : ['incus', '--project', $this->project, ...$arguments];
 
         try {
             $process = Process::timeout($timeout);
@@ -2236,6 +1470,8 @@ final class IncusHost implements GuestTransport
                 $process = $process->input($stdin);
             }
             $result = $process->run($command);
+        } catch (Interrupted $interrupted) {
+            throw $interrupted;
         } catch (Throwable $exception) {
             $message = $this->redactor->redact($exception->getMessage());
             if ($this->isGuestExecCommand($command)) {

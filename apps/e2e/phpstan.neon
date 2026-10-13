@@ -19,6 +19,6 @@ parameters:
     ignoreErrors:
         -
             identifier: larastan.console.undefinedOption
-            message: '#^Command "(?:topology\-snapshot:rebuild|topology\-snapshot:recover\-legacy|topology\-snapshot:refresh|topology\-snapshot:restore|topology:acquire)" does not have option "worktree"\.$#'
+            message: '#^Command "(?:topology\-images:build|topology\-images:status|topology:acquire)" does not have option "worktree"\.$#'
             path: app/Console/Commands/E2ECommand.php
-            count: 5
+            count: 3

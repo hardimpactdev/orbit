@@ -17,8 +17,13 @@ fail() {
 main() {
     exec 3>&1 1>&2 </dev/null
 
-    # Stop the services that write per-install IDs, so none writes one again before the VM stops.
-    systemctl stop caddy.service docker.service docker.socket containerd.service
+    # Stop the services that write per-install IDs, so none writes one again before the VM stops. The E2E
+    # harness runs this script on its role image builders too, and some of those have no Docker.
+    local unit units=()
+    for unit in caddy.service docker.service docker.socket containerd.service; do
+        if [ "$(systemctl show --property=LoadState --value "$unit")" = loaded ]; then units+=("$unit"); fi
+    done
+    if [ "${#units[@]}" -gt 0 ]; then systemctl stop "${units[@]}"; fi
     apt-get clean
     # Per-install IDs that a service writes on its first start: Docker's engine ID, containerd's UUID, Caddy's
     # instance UUID, its storage clean record and saved config, and systemd's credential secret. Each VM
@@ -39,7 +44,13 @@ main() {
     find /var/log -type f \( -name '*.gz' -o -name '*.[0-9]' \) -delete
     find /var/log -type f -exec truncate -s 0 {} +
     # Instance state, seed, logs and generated network and SSH configuration; machine-id becomes "uninitialized".
-    cloud-init clean --logs --seed --machine-id --configs all
+    # An E2E container builder has no cloud-init, so it only resets the machine ID.
+    if command -v cloud-init >/dev/null; then
+        cloud-init clean --logs --seed --machine-id --configs all
+    else
+        printf 'uninitialized\n' >/etc/machine-id
+        rm -f /var/lib/dbus/machine-id
+    fi
 
     # The identity must be gone before the disk becomes an image.
     if compgen -G '/etc/ssh/ssh_host_*' >/dev/null; then fail 'an SSH host key remains'; fi

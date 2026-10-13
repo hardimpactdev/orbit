@@ -5,8 +5,6 @@ declare(strict_types=1);
 use App\E2E\DiscoveryGuestPreparer;
 use App\E2E\IncusHost;
 use App\E2E\Value\GuestCommand;
-use App\E2E\Value\TopologyProfile;
-use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologyTarget;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Process\PendingProcess;
@@ -23,6 +21,7 @@ uses(TestCase::class);
  * @param  array<string, int>  $failures
  * @param  list<array{labels:list<string>,instances:list<string>,argv:list<list<string>>}>  $batches
  * @param  list<array{instance:string,argv:list<string>,stdin:?string,timeout:int}>  $execs
+ * @param  array<string, string>  $outputs  stdout of a batch label, or stderr of the direct `environment` exec
  */
 function fakePreparerGuests(array $failures, array &$batches, array &$execs, array $outputs = []): void
 {
@@ -39,10 +38,7 @@ function fakePreparerGuests(array $failures, array &$batches, array &$execs, arr
                 $batch['stdin'][] = $request['stdin'];
                 $results[] = [
                     'label' => $request['label'],
-                    'stdout' => $outputs[$request['label']] ?? (in_array($request['label'], ['gateway', 'app-dev', 'app-prod', 'operator'], true)
-                        ? '2: enp5s0    inet 10.44.0.'.(10 + count($batch['labels']))."/24 scope global enp5s0\n"
-                        : ($request['label'] === 'retarget-gateway'
-                            ? '{"app-dev":"10.44.0.11:51820","app-prod":"10.44.0.11:51820","operator":"10.44.0.11:51820"}' : '')),
+                    'stdout' => $outputs[$request['label']] ?? '',
                     'stderr' => '',
                     'exit_code' => $failures[$request['label']] ?? 0,
                 ];
@@ -62,7 +58,7 @@ function fakePreparerGuests(array $failures, array &$batches, array &$execs, arr
                     'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
                     'devices' => ['root' => ['pool' => 'default']],
                 ],
-                TopologyProfile::ROLES,
+                preparerTarget()->recipe->nodeKeys(),
             ), JSON_THROW_ON_ERROR));
         }
         expect($command[3] ?? null)->toBe('exec');
@@ -77,7 +73,7 @@ function fakePreparerGuests(array $failures, array &$batches, array &$execs, arr
             throw new RuntimeException('simulated timeout with private output');
         }
 
-        return Process::result('', '', $failures['environment'] ?? 0);
+        return Process::result('', $outputs['environment'] ?? '', $failures['environment'] ?? 0);
     });
 }
 
@@ -119,7 +115,7 @@ describe('mount.source', function () {
             ->toBe([]);
     });
 
-    it('places the preserved gateway environment and points it at the mounted checkout', function () {
+    it('points the mounted gateway environment at the mounted checkout', function () {
         $batches = [];
         $execs = [];
         fakePreparerGuests([], $batches, $execs);
@@ -140,7 +136,6 @@ describe('mount.source', function () {
                 DiscoveryGuestPreparer::GATEWAY_ENVIRONMENT_SCRIPT,
                 'orbit-e2e',
                 '/home/orbit/orbit/apps/gateway/.env',
-                '/var/lib/orbit-e2e/gateway.env',
                 '/home/orbit/orbit/apps/gateway',
             ])
             ->and($execs[0]['stdin'])
@@ -157,7 +152,7 @@ describe('mount.source', function () {
         chmod($environment, 0o640);
 
         try {
-            $result = Process::run(['sh', '-ec', DiscoveryGuestPreparer::GATEWAY_ENVIRONMENT_SCRIPT, 'orbit-e2e', $environment, $directory.'/missing-copy', '/home/orbit/orbit/apps/gateway']);
+            $result = Process::run(['sh', '-ec', DiscoveryGuestPreparer::GATEWAY_ENVIRONMENT_SCRIPT, 'orbit-e2e', $environment, '/home/orbit/orbit/apps/gateway']);
 
             expect($result->successful())->toBeTrue()
                 ->and(file_get_contents($environment))->toBe("APP_ENV=local\nORBIT_HOME=/home/orbit/.orbit\nORBIT_GATEWAY_CHECKOUT=/home/orbit/orbit/apps/gateway\n")
@@ -179,7 +174,7 @@ describe('mount.source', function () {
         $inode = fileinode($environment);
 
         try {
-            $result = Process::run(['sh', '-ec', DiscoveryGuestPreparer::GATEWAY_ENVIRONMENT_SCRIPT, 'orbit-e2e', $environment, $directory.'/missing-copy', '/home/orbit/orbit/apps/gateway']);
+            $result = Process::run(['sh', '-ec', DiscoveryGuestPreparer::GATEWAY_ENVIRONMENT_SCRIPT, 'orbit-e2e', $environment, '/home/orbit/orbit/apps/gateway']);
 
             clearstatcache();
             expect($result->successful())->toBeTrue()
@@ -191,15 +186,30 @@ describe('mount.source', function () {
         }
     });
 
-    it('names the refresh remedy when the preserved gateway environment is absent', function () {
+    it('fails with the bootstrap remedy when the worktree has no gateway environment', function () {
+        $directory = temporaryDirectory().'/orbit-e2e-env-'.bin2hex(random_bytes(4));
+        mkdir($directory);
+
+        try {
+            $result = Process::run(['sh', '-ec', DiscoveryGuestPreparer::GATEWAY_ENVIRONMENT_SCRIPT, 'orbit-e2e', $directory.'/.env', '/home/orbit/orbit/apps/gateway']);
+
+            expect($result->exitCode())->toBe(66)
+                ->and($result->errorOutput())->toBe("The worktree has no {$directory}/.env; run bin/bootstrap on the host.\n")
+                ->and(glob($directory.'/*'))->toBe([]);
+        } finally {
+            (new Filesystem)->deleteDirectory($directory);
+        }
+    });
+
+    it('reports the guest error when the gateway environment cannot be prepared', function () {
         $batches = [];
         $execs = [];
-        fakePreparerGuests(['environment' => 1], $batches, $execs);
+        fakePreparerGuests(['environment' => 66], $batches, $execs, ['environment' => "The worktree has no /home/orbit/orbit/apps/gateway/.env; run bin/bootstrap on the host.\n"]);
 
         expect(fn () => new DiscoveryGuestPreparer(new IncusHost)->placeGatewayEnvironment(preparerTarget()))
             ->toThrow(
                 RuntimeException::class,
-                'the promoted topology snapshot generation must be refreshed so it preserves /var/lib/orbit-e2e/gateway.env.',
+                'The Gateway environment of the mounted worktree could not be prepared: The worktree has no /home/orbit/orbit/apps/gateway/.env; run bin/bootstrap on the host.',
             )
             ->and($execs)
             ->toHaveCount(1);
@@ -294,119 +304,5 @@ describe('prepare.schema', function () {
             )
             ->and($execs)
             ->toHaveCount(1);
-    });
-});
-
-describe('repair.identity', function () {
-    it('retargets the nodes at the cloned gateway address, then restarts PHP-FPM on the checkout roles', function () {
-        $batches = [];
-        $execs = [];
-        fakePreparerGuests([], $batches, $execs);
-        $target = preparerTarget();
-
-        new DiscoveryGuestPreparer(new IncusHost)->repairCloneIdentity($target);
-
-        expect(array_column($batches, 'labels'))
-            ->toBe([
-                ['gateway', 'app-dev', 'app-prod', 'operator'],
-                ['retarget-gateway'],
-                ['retarget-vpn.app-dev', 'retarget-vpn.app-prod', 'retarget-vpn.operator'],
-                ['php-fpm.gateway', 'php-fpm.app-dev', 'php-fpm.operator'],
-            ])
-            ->and($batches[1]['instances'])->toBe(['local:'.$target->instance('gateway')])
-            ->and($batches[1]['argv'])->toBe([[
-                ...GuestCommand::ORBIT_USER_PREFIX,
-                'php', '/home/orbit/orbit/apps/e2e/resources/guest/retarget-gateway.php', '/home/orbit/.orbit/gateway.sqlite', '10.44.0.11', '10.44.0.12', '10.44.0.13', '10.44.0.14',
-            ]])
-            ->and($batches[1]['stdin'])->toBe([null])
-            ->and($batches[2]['instances'])
-            ->toBe(['local:'.$target->instance('app-dev'), 'local:'.$target->instance('app-prod'), 'local:'.$target->instance('operator')])
-            ->and($batches[2]['argv'])
-            ->each->toBe(['bash', '-s', '--', '10.44.0.11', '10.44.0.11:51820'])
-            ->and($batches[2]['stdin'])->each->toBe(file_get_contents(dirname(__DIR__, 3).'/resources/guest/retarget-vpn.sh'))
-            ->and($batches[3]['instances'])->toBe([
-                'local:'.$target->instance('gateway'),
-                'local:'.$target->instance('app-dev'),
-                'local:'.$target->instance('operator'),
-            ])->and($batches[3]['argv'])
-            ->each->toBe(['systemctl', 'restart', 'php8.5-fpm'])->and($execs)->toBe([]);
-    });
-
-    it('repairs only the snapshot clones in an extended topology', function () {
-        $batches = [];
-        $execs = [];
-        fakePreparerGuests([], $batches, $execs);
-        $target = featureTarget('TST-123', recipe: TopologyRecipe::extendedAppProd());
-
-        new DiscoveryGuestPreparer(new IncusHost)->repairCloneIdentity($target);
-
-        expect(array_column($batches, 'labels'))
-            ->toBe([
-                ['gateway', 'app-dev', 'app-prod', 'operator'],
-                ['retarget-gateway'],
-                ['retarget-vpn.app-dev', 'retarget-vpn.app-prod', 'retarget-vpn.operator'],
-                ['php-fpm.gateway', 'php-fpm.app-dev', 'php-fpm.operator'],
-            ])
-            ->and(collect($batches)->flatMap(fn (array $batch): array => $batch['instances'])->all())
-            ->not->toContain('local:'.$target->instance('app-prod-2'));
-    });
-
-    it('stops before the PHP-FPM restart when retargeting fails', function () {
-        $batches = [];
-        $execs = [];
-        fakePreparerGuests(['retarget-vpn.app-prod' => 1], $batches, $execs);
-
-        expect(fn () => new DiscoveryGuestPreparer(new IncusHost)->repairCloneIdentity(preparerTarget()))
-            ->toThrow(RuntimeException::class, 'WireGuard retargeting failed on retarget-vpn.app-prod.')
-            ->and(array_column($batches, 'labels'))
-            ->toHaveCount(3);
-    });
-
-    it('reports a failed PHP-FPM restart by role', function () {
-        $batches = [];
-        $execs = [];
-        fakePreparerGuests(['php-fpm.gateway' => 1], $batches, $execs);
-
-        expect(fn () => new DiscoveryGuestPreparer(new IncusHost)->repairCloneIdentity(preparerTarget()))
-            ->toThrow(RuntimeException::class, 'PHP-FPM restart failed on php-fpm.gateway.');
-    });
-
-    it('stops before peer mutation when Gateway identity publication fails', function () {
-        $batches = [];
-        $execs = [];
-        fakePreparerGuests(['retarget-gateway' => 65], $batches, $execs);
-
-        expect(fn () => new DiscoveryGuestPreparer(new IncusHost)->repairCloneIdentity(preparerTarget()))
-            ->toThrow(RuntimeException::class, 'Gateway clone identity preparation failed on retarget-gateway.')
-            ->and(array_column($batches, 'labels'))->toBe([
-                ['gateway', 'app-dev', 'app-prod', 'operator'], ['retarget-gateway'],
-            ]);
-    });
-
-    it('refuses an invalid Gateway result before peer mutation', function (string $output) {
-        $batches = [];
-        $execs = [];
-        fakePreparerGuests([], $batches, $execs, ['retarget-gateway' => $output]);
-
-        expect(fn () => new DiscoveryGuestPreparer(new IncusHost)->repairCloneIdentity(preparerTarget()))
-            ->toThrow(RuntimeException::class, 'Gateway clone identity preparation returned')
-            ->and($batches)->toHaveCount(2);
-    })->with([
-        'invalid JSON' => 'not JSON',
-        'missing peer' => '{"app-dev":"10.44.0.11:51820"}',
-        'unknown peer' => '{"app-dev":"10.44.0.11:51820","app-prod":"10.44.0.11:51820","extra":"10.44.0.11:51820"}',
-        'snapshot endpoint' => '{"app-dev":"10.232.1.10:51820","app-prod":"10.44.0.11:51820","operator":"10.44.0.11:51820"}',
-        'invalid port' => '{"app-dev":"10.44.0.11:65536","app-prod":"10.44.0.11:51820","operator":"10.44.0.11:51820"}',
-        'wrong type' => '{"app-dev":null,"app-prod":"10.44.0.11:51820","operator":"10.44.0.11:51820"}',
-    ]);
-
-    it('refuses duplicate clone addresses before publishing identity', function () {
-        $batches = [];
-        $execs = [];
-        fakePreparerGuests([], $batches, $execs, ['app-prod' => "2: eth0 inet 10.44.0.11/24 scope global eth0\n"]);
-
-        expect(fn () => new DiscoveryGuestPreparer(new IncusHost)->repairCloneIdentity(preparerTarget()))
-            ->toThrow(RuntimeException::class, 'Cloned Nodes must have distinct global IPv4 addresses.')
-            ->and($batches)->toHaveCount(1);
     });
 });

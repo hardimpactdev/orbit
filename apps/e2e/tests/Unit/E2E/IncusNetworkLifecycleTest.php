@@ -522,6 +522,36 @@ describe('IncusNetworkLifecycle', function (): void {
             );
     });
 
+    it('removes the rules of an orphan without ownership metadata before deleting it', function (): void {
+        $commands = [];
+        Process::fake(function (PendingProcess $process) use (&$commands) {
+            $commands[] = $process->command;
+            if ($process->command === lifecycleIncus('network', 'list', 'local:', '--format=json')) {
+                return Process::result(json_encode([['name' => 'oe-tst-123', 'used_by' => []]], JSON_THROW_ON_ERROR));
+            }
+            if ($process->command === lifecycleFirewallHelper()) {
+                return Process::result("{\"changed\":false}\n");
+            }
+            if ($process->command === lifecycleIncus('network', 'delete', 'local:oe-tst-123')) {
+                return Process::result();
+            }
+
+            return Process::result('', 'Unexpected command.', 2);
+        });
+
+        new IncusNetworkLifecycle(lifecycleHost())->deleteOrphan('oe-tst-123');
+
+        expect(array_search(lifecycleFirewallHelper(), $commands, true))
+            ->toBeLessThan(array_search(lifecycleIncus('network', 'delete', 'local:oe-tst-123'), $commands, true));
+    });
+
+    it('refuses an orphan outside the managed oe- name before any mutation', function (): void {
+        expect(fn () => new IncusNetworkLifecycle(lifecycleHost())->deleteOrphan('oe-Legacy_net'))
+            ->toThrow(RuntimeException::class, 'Incus network name is outside the managed interface prefix.');
+
+        Process::assertNothingRan();
+    });
+
     it('refuses foreign ownership before firewall or Incus mutation', function (): void {
         $commands = [];
         Process::fake(function (PendingProcess $process) use (&$commands) {

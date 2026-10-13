@@ -6,6 +6,7 @@ use App\E2E\IncusHost;
 use App\E2E\State\SecretRedactor;
 use App\E2E\Value\GuestCommand;
 use App\E2E\Value\IncusInstance;
+use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologyTarget;
 use Illuminate\Config\Repository;
 use Illuminate\Container\Container;
@@ -132,14 +133,6 @@ function vmResource(): array
     )[0];
 }
 
-function snapshotJson(string $name, string $owner = 'orbit-e2e'): string
-{
-    return json_encode([[
-        'name' => $name,
-        'config' => ['user.orbit.e2e.owner' => $owner],
-    ]], JSON_THROW_ON_ERROR);
-}
-
 function incusHost(?SecretRedactor $redactor = null, int $guestReadinessTimeoutSeconds = 600): IncusHost
 {
     return new IncusHost(
@@ -149,6 +142,62 @@ function incusHost(?SecretRedactor $redactor = null, int $guestReadinessTimeoutS
         redactor: $redactor ?? new SecretRedactor,
         guestReadinessTimeoutSeconds: $guestReadinessTimeoutSeconds,
     );
+}
+
+/**
+ * @return array{image:string,name:string,network:string,node:string,address:int,slot:int,container:bool,metadata:array<string,string>}
+ */
+function incusGuestSpec(string $node, int $address, bool $container = false): array
+{
+    return [
+        'image' => $container ? 'orbit-e2e-operator' : 'images:ubuntu/26.04',
+        'name' => "orbit-e2e-tst-123-aaaaaaaa-{$node}",
+        'network' => 'oe-b32d6c83af72',
+        'node' => $node,
+        'address' => $address,
+        'slot' => 30,
+        'container' => $container,
+        'metadata' => ['user.orbit.e2e.operation' => 'op-1'],
+    ];
+}
+
+/** @return array<string, array<array-key, mixed>> Node key => the instance resource that matches the target. */
+function topologyIdentityResources(TopologyTarget $target, int $slot): array
+{
+    $resources = [];
+    foreach ($target->recipe->nodes as $node) {
+        $resources[$node->key] = json_decode(
+            vmJson(
+                $target->instance($node->key),
+                type: $node->image->instanceType(),
+                network: $target->network(),
+                mac: $target->mac($node->key),
+                ipv4: TopologyTarget::ipv4For($slot, $node->address),
+            ),
+            true,
+            16,
+            JSON_THROW_ON_ERROR,
+        )[0];
+    }
+
+    return $resources;
+}
+
+/** @param array<string, array<array-key, mixed>> $resources */
+function fakeTopologyIdentity(TopologyTarget $target, array $resources, string $owner = 'orbit-e2e'): void
+{
+    Process::fake(function (PendingProcess $process) use ($target, $resources, $owner) {
+        return match ($process->command) {
+            incusCommand('network', 'list', incusTarget(), '--format=json') => Process::result(json_encode([[
+                'name' => $target->network(),
+                'config' => ['user.orbit.e2e.owner' => $owner, 'ipv4.address' => '10.232.30.1/24'],
+            ]], JSON_THROW_ON_ERROR)),
+            incusCommand('list', incusTarget(), '--format=json') => Process::result(
+                json_encode(array_values($resources), JSON_THROW_ON_ERROR),
+            ),
+            default => Process::result('', 'Unexpected command.', 1),
+        };
+    });
 }
 
 describe('IncusHost reads', function () {
@@ -384,7 +433,7 @@ describe('IncusHost reads', function () {
             ]);
         });
 
-        expect(incusHost()->globalIpv4('orbit-e2e-tst-123-aaaaaaaa-gateway'))->toBe('192.0.2.44');
+        expect(incusHost()->globalIpv4All(['gateway' => 'orbit-e2e-tst-123-aaaaaaaa-gateway']))->toBe(['gateway' => '192.0.2.44']);
     });
 
     it('fails when the IPv4 probe fails', function () {
@@ -399,7 +448,7 @@ describe('IncusHost reads', function () {
                 'exit_code' => 1,
             ]);
         });
-        expect(fn () => incusHost()->globalIpv4('orbit-e2e-tst-123-aaaaaaaa-gateway'))
+        expect(fn () => incusHost()->globalIpv4All(['gateway' => 'orbit-e2e-tst-123-aaaaaaaa-gateway']))
             ->toThrow(RuntimeException::class, 'Failed to read global IPv4 address');
     });
 
@@ -415,7 +464,7 @@ describe('IncusHost reads', function () {
                 'exit_code' => 0,
             ]);
         });
-        expect(fn () => incusHost()->globalIpv4('orbit-e2e-tst-123-aaaaaaaa-gateway'))
+        expect(fn () => incusHost()->globalIpv4All(['gateway' => 'orbit-e2e-tst-123-aaaaaaaa-gateway']))
             ->toThrow(RuntimeException::class, 'has no usable global IPv4 address');
     });
 
@@ -433,7 +482,7 @@ describe('IncusHost reads', function () {
             ]);
         });
 
-        expect(fn () => incusHost()->globalIpv4('orbit-e2e-tst-123-aaaaaaaa-gateway'))
+        expect(fn () => incusHost()->globalIpv4All(['gateway' => 'orbit-e2e-tst-123-aaaaaaaa-gateway']))
             ->toThrow(RuntimeException::class, 'does not have exactly one usable global IPv4 address');
     });
 
@@ -444,257 +493,63 @@ describe('IncusHost reads', function () {
         expect($method->invoke($host, '1: lo inet 127.0.0.1/8'))->toBeFalse();
     });
 
-    it('assigns the legacy deterministic Incus MAC address', function () {
-        Process::fake(function (PendingProcess $process) {
-            return match ($process->command) {
-                incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json') => Process::result(
-                    vmJson(),
-                ),
-                incusCommand(
-                    'config',
-                    'device',
-                    'override',
-                    incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
-                    'eth0',
-                    'hwaddr=00:16:3e:5e:4b:52',
-                ) => Process::result(''),
-                default => Process::result('', 'Unexpected command.', 1),
-            };
-        });
+    it('validates every guest of a composed recipe from one instance inventory', function () {
+        $target = featureTarget('TST-123', recipe: TopologyRecipe::compose(['app-dev']));
+        fakeTopologyIdentity($target, topologyIdentityResources($target, 30));
 
-        incusHost()->setDeterministicMac('orbit-e2e-tst-123-aaaaaaaa-gateway', 'run', 'gateway');
+        incusHost()->assertTopologyNetworkIdentity($target);
 
-        Process::assertRan(incusCommand(
-            'config',
-            'device',
-            'override',
-            incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
-            'eth0',
-            'hwaddr=00:16:3e:5e:4b:52',
-        ));
+        Process::assertRanTimes(incusCommand('list', incusTarget(), '--format=json'), 1);
     });
 
-    it('configures cloned networks and deterministic MACs in one validated parallel phase', function () {
-        $instanceReads = 0;
-        $networkReads = 0;
-        Process::fake(function (PendingProcess $process) use (&$instanceReads, &$networkReads) {
-            if ($process->command === incusCommand('list', incusTarget(), '--format=json')) {
-                $instanceReads++;
-
-                return Process::result(json_encode(array_map(
-                    static fn (string $role): array => json_decode(
-                        vmJson("orbit-e2e-tst-123-aaaaaaaa-{$role}"),
-                        true,
-                        16,
-                        JSON_THROW_ON_ERROR,
-                    )[0],
-                    ['gateway', 'app-dev', 'app-prod'],
-                ), JSON_THROW_ON_ERROR));
-            }
-            if (array_slice($process->command, 3, 2) === ['network', 'list']) {
-                $networkReads++;
-
-                return Process::result(json_encode([[
-                    'name' => 'oe-b32d6c83af72',
-                    'config' => ['user.orbit.e2e.owner' => 'orbit-e2e', 'ipv4.address' => '10.232.30.1/24'],
-                ]], JSON_THROW_ON_ERROR));
-            }
-
-            return Process::result('2: eth0 inet 192.0.2.1/24 scope global eth0');
-        });
-
-        incusHost()->configureCloneNetworks([
-            'gateway' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
-            'app-dev' => 'orbit-e2e-tst-123-aaaaaaaa-app-dev',
-            'app-prod' => 'orbit-e2e-tst-123-aaaaaaaa-app-prod',
-        ], 'oe-b32d6c83af72');
-
-        expect($instanceReads)
-            ->toBe(1)
-            ->and($networkReads)
-            ->toBe(1);
-        foreach (['gateway', 'app-dev', 'app-prod'] as $role) {
-            $hash = substr(sha1("oe-b32d6c83af72:{$role}"), 0, 6);
-            $mac = '00:16:3e:'.implode(':', str_split($hash, 2));
-            Process::assertRan(incusCommand(
-                'config',
-                'device',
-                'override',
-                incusTarget('orbit-e2e-tst-123-aaaaaaaa-'.$role),
-                'eth0',
-                'network=oe-b32d6c83af72',
-                'ipv4.address='.match ($role) {
-                    'gateway' => '10.232.30.10',
-                    'app-dev' => '10.232.30.11',
-                    'app-prod' => '10.232.30.12',
-                },
-                "hwaddr={$mac}",
-            ));
+    it('rejects a guest whose identity does not match its recipe Node', function (
+        string $node,
+        string $field,
+        string $value,
+        string $message,
+    ) {
+        $target = featureTarget('TST-123', recipe: TopologyRecipe::compose(['app-dev']));
+        $resources = topologyIdentityResources($target, 30);
+        if ($field === 'type') {
+            $resources[$node]['type'] = $value;
+        } else {
+            $resources[$node]['devices']['eth0'][$field] = $value;
         }
+        fakeTopologyIdentity($target, $resources);
+
+        expect(fn () => incusHost()->assertTopologyNetworkIdentity($target))
+            ->toThrow(RuntimeException::class, $message);
+    })->with([
+        'operator as a VM' => ['operator', 'type', 'virtual-machine', 'type does not match topology'],
+        'another network' => ['app-dev', 'network', 'oe-other', 'network identity does not match topology'],
+        'another MAC' => ['gateway', 'hwaddr', '00:16:3e:00:00:00', 'MAC identity does not match topology'],
+        'another Node address' => ['app-dev', 'ipv4.address', '10.232.30.12', 'IPv4 identity does not match topology'],
+    ]);
+
+    it('rejects a composed topology with a missing guest', function () {
+        $target = featureTarget('TST-123', recipe: TopologyRecipe::compose(['app-dev']));
+        $resources = topologyIdentityResources($target, 30);
+        unset($resources['operator']);
+        fakeTopologyIdentity($target, $resources);
+
+        expect(fn () => incusHost()->assertTopologyNetworkIdentity($target))
+            ->toThrow(RuntimeException::class, 'Incus instance '.$target->instance('operator').' does not exist.');
     });
 
-    it('validates owned topology network and MAC identity from one instance inventory', function () {
-        $network = 'oe-b32d6c83af72';
-        $resources = [];
-        foreach (['gateway', 'app-dev', 'app-prod'] as $offset => $role) {
-            $hash = substr(sha1("{$network}:{$role}"), 0, 6);
-            $mac = '00:16:3e:'.implode(':', str_split($hash, 2));
-            $resources[] = json_decode(
-                vmJson(
-                    "orbit-e2e-tst-123-aaaaaaaa-{$role}",
-                    network: $network,
-                    mac: $mac,
-                    ipv4: '10.232.30.'.(10 + $offset),
-                ),
-                true,
-                16,
-                JSON_THROW_ON_ERROR,
-            )[0];
-        }
-        $reads = 0;
-        Process::fake(function (PendingProcess $process) use ($resources, &$reads) {
-            if ($process->command === incusCommand('network', 'list', incusTarget(), '--format=json')) {
-                return Process::result(json_encode([[
-                    'name' => 'oe-b32d6c83af72',
-                    'config' => [
-                        'user.orbit.e2e.owner' => 'orbit-e2e',
-                        'ipv4.address' => '10.232.30.1/24',
-                    ],
-                ]], JSON_THROW_ON_ERROR));
-            }
+    it('rejects a stopped guest when the topology must be running', function () {
+        $target = featureTarget('TST-123', recipe: TopologyRecipe::compose(['app-dev']));
+        fakeTopologyIdentity($target, topologyIdentityResources($target, 30));
 
-            if ($process->command === incusCommand('list', incusTarget(), '--format=json')) {
-                $reads++;
-
-                return Process::result(json_encode($resources, JSON_THROW_ON_ERROR));
-            }
-
-            return Process::result('', 'Unexpected command.', 1);
-        });
-
-        incusHost()->assertTopologyNetworkIdentity([
-            'gateway' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
-            'app-dev' => 'orbit-e2e-tst-123-aaaaaaaa-app-dev',
-            'app-prod' => 'orbit-e2e-tst-123-aaaaaaaa-app-prod',
-        ], $network);
-
-        expect($reads)->toBe(1);
-    });
-
-    it('rejects a topology instance whose deterministic MAC does not match', function () {
-        Process::fake(function (PendingProcess $process) {
-            if ($process->command === incusCommand('network', 'list', incusTarget(), '--format=json')) {
-                return Process::result(json_encode([[
-                    'name' => 'oe-b32d6c83af72',
-                    'config' => [
-                        'user.orbit.e2e.owner' => 'orbit-e2e',
-                        'ipv4.address' => '10.232.30.1/24',
-                    ],
-                ]], JSON_THROW_ON_ERROR));
-            }
-
-            if ($process->command !== incusCommand('list', incusTarget(), '--format=json')) {
-                return Process::result('', 'Unexpected command.', 1);
-            }
-
-            return Process::result(vmJson(
-                'orbit-e2e-tst-123-aaaaaaaa-gateway',
-                network: 'oe-b32d6c83af72',
-                mac: '00:16:3e:00:00:00',
-            ));
-        });
-
-        expect(fn () => incusHost()->assertTopologyNetworkIdentity([
-            'gateway' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
-        ], 'oe-b32d6c83af72'))
-            ->toThrow(RuntimeException::class, 'MAC identity does not match topology');
-    });
-
-    it('rejects a topology instance whose fixed IPv4 address does not match its role', function () {
-        $network = 'oe-b32d6c83af72';
-        $mac = '00:16:3e:'.implode(':', str_split(substr(sha1("{$network}:gateway"), 0, 6), 2));
-        Process::fake(function (PendingProcess $process) use ($network, $mac) {
-            if ($process->command === incusCommand('network', 'list', incusTarget(), '--format=json')) {
-                return Process::result(json_encode([[
-                    'name' => $network,
-                    'config' => [
-                        'user.orbit.e2e.owner' => 'orbit-e2e',
-                        'ipv4.address' => '10.232.30.1/24',
-                    ],
-                ]], JSON_THROW_ON_ERROR));
-            }
-
-            return Process::result(vmJson(
-                network: $network,
-                mac: $mac,
-                ipv4: '10.232.30.11',
-            ));
-        });
-
-        expect(fn () => incusHost()->assertTopologyNetworkIdentity([
-            'gateway' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
-        ], $network))
-            ->toThrow(RuntimeException::class, 'IPv4 identity does not match topology');
+        expect(fn () => incusHost()->assertTopologyNetworkIdentity($target, requireRunning: true))
+            ->toThrow(RuntimeException::class, 'Incus instance '.$target->instance('gateway').' is not running.');
     });
 
     it('rejects topology identity on a network that Orbit does not own', function () {
-        $network = 'oe-b32d6c83af72';
-        $hash = substr(sha1("{$network}:gateway"), 0, 6);
-        $mac = '00:16:3e:'.implode(':', str_split($hash, 2));
-        Process::fake(function (PendingProcess $process) use ($network, $mac) {
-            return match ($process->command) {
-                incusCommand('list', incusTarget(), '--format=json') => Process::result(vmJson(
-                    'orbit-e2e-tst-123-aaaaaaaa-gateway',
-                    network: $network,
-                    mac: $mac,
-                )),
-                incusCommand('network', 'list', incusTarget(), '--format=json') => Process::result(json_encode([[
-                    'name' => $network,
-                    'config' => ['user.orbit.e2e.owner' => 'someone-else'],
-                ]], JSON_THROW_ON_ERROR)),
-                default => Process::result('', 'Unexpected command.', 1),
-            };
-        });
+        $target = featureTarget('TST-123', recipe: TopologyRecipe::compose(['app-dev']));
+        fakeTopologyIdentity($target, topologyIdentityResources($target, 30), 'someone-else');
 
-        expect(fn () => incusHost()->assertTopologyNetworkIdentity([
-            'gateway' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
-        ], $network))
-            ->toThrow(RuntimeException::class, 'network oe-b32d6c83af72 ownership metadata does not match');
-    });
-
-    it('attaches a network only with the deterministic topology MAC', function () {
-        Process::fake(function (PendingProcess $process) {
-            return match ($process->command) {
-                incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json') => Process::result(
-                    vmJson(),
-                ),
-                incusCommand('network', 'list', incusTarget(), '--format=json') => Process::result(json_encode([[
-                    'name' => 'oe-b32d6c83af72',
-                    'config' => [
-                        'user.orbit.e2e.owner' => 'orbit-e2e',
-                        'ipv4.address' => '10.232.30.1/24',
-                    ],
-                ]], JSON_THROW_ON_ERROR)),
-                default => Process::result(),
-            };
-        });
-
-        incusHost()->setNetwork(
-            'orbit-e2e-tst-123-aaaaaaaa-gateway',
-            'oe-b32d6c83af72',
-            'gateway',
-        );
-
-        Process::assertRan(incusCommand(
-            'config',
-            'device',
-            'override',
-            incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
-            'eth0',
-            'network=oe-b32d6c83af72',
-            'ipv4.address=10.232.30.10',
-            'hwaddr=00:16:3e:a1:e4:eb',
-        ));
+        expect(fn () => incusHost()->assertTopologyNetworkIdentity($target))
+            ->toThrow(RuntimeException::class, 'network '.$target->network().' ownership metadata does not match');
     });
 
     it('reads exact VM, network, and image identities as JSON', function () {
@@ -703,9 +558,6 @@ describe('IncusHost reads', function () {
             return match ($process->command) {
                 incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json') => Process::result(
                     vmJson(),
-                ),
-                incusCommand('list', incusTarget('orbit-e2e-topology-snapshot-gateway'), '--format=json') => Process::result(
-                    vmJson('orbit-e2e-topology-snapshot-gateway'),
                 ),
                 incusCommand('network', 'list', incusTarget(), '--format=json') => Process::result(json_encode([
                     ['name' => 'orbit-e2e-tst-123', 'config' => ['user.orbit.e2e.owner' => 'orbit-e2e']],
@@ -780,53 +632,24 @@ describe('IncusHost reads', function () {
         expect(incusHost()->imageFingerprint('orbit-base'))->toBe($fingerprint);
     });
 
-    it('passes an external image alias as the exact init image operand', function () {
-        Process::fake(function (PendingProcess $process) {
-            expect($process->command)->toBe(incusCommand(
-                'init',
-                'images:ubuntu/26.04',
-                incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
-                '--vm',
-                '--storage',
-                'orbit-e2e',
-                '--config',
-                'limits.cpu=1',
-                '--config',
-                'limits.memory=2GiB',
-                '--device',
-                'root,pool=orbit-e2e',
-                '--device',
-                'root,size=16GiB',
-                '--network',
-                'orbit-e2e-tst-123',
-                '--config',
-                'user.orbit.e2e.owner=orbit-e2e',
-            ));
-
-            return Process::result();
-        });
-
-        incusHost()->initVm('images:ubuntu/26.04', 'orbit-e2e-tst-123-aaaaaaaa-gateway', 'orbit-e2e-tst-123');
-    });
-
-    it('creates a VM when the CPU limit is configured as an integer', function () {
+    it('creates a guest with integer CPU and per-Node memory limits', function () {
         app()->instance('config', new Repository([
             'e2e' => [
                 'incus' => [
                     'cpu' => 2,
-                    'memory' => '2GiB',
+                    'memory' => ['default' => '2GiB', 'operator' => '1GiB'],
                     'root_size' => '16GiB',
                 ],
             ],
         ]));
         try {
             Process::fake(function (PendingProcess $process) {
-                expect($process->command)->toContain('--config', 'limits.cpu=2');
+                expect($process->command)->toContain('--config', 'limits.cpu=2', 'limits.memory=1GiB');
 
                 return Process::result();
             });
 
-            incusHost()->initVm('images:ubuntu/26.04', 'orbit-e2e-tst-123-aaaaaaaa-gateway', 'orbit-e2e-tst-123');
+            incusHost()->initGuests(['operator' => incusGuestSpec('operator', 14, container: true)]);
         } finally {
             app()->forgetInstance('config');
         }
@@ -837,34 +660,21 @@ describe('IncusHost reads', function () {
             'e2e' => ['incus' => ['cpu' => ['1']]],
         ]));
         try {
-            expect(fn () => incusHost()->initVm(
-                'images:ubuntu/26.04',
-                'orbit-e2e-tst-123-aaaaaaaa-gateway',
-                'orbit-e2e-tst-123',
-            ))->toThrow(InvalidArgumentException::class, 'Incus CPU limit must be a positive integer.');
+            expect(fn () => incusHost()->initGuests(['gateway' => incusGuestSpec('gateway', 10)]))
+                ->toThrow(InvalidArgumentException::class, 'Incus CPU limit must be a positive integer.');
         } finally {
             app()->forgetInstance('config');
         }
     });
 
-    it('accepts validated creation metadata without allowing ownership override', function () {
-        Process::fake(function (PendingProcess $process) {
-            expect($process->command)
-                ->toContain('--config', 'user.orbit.e2e.operation=op-1', '--config', 'user.orbit.e2e.evidence=ev-1');
-
-            return Process::result();
-        });
-
-        incusHost()->initVm('images:ubuntu/26.04', 'orbit-e2e-tst-123-aaaaaaaa-gateway', 'orbit-e2e-tst-123', [
-            'user.orbit.e2e.operation' => 'op-1',
-            'user.orbit.e2e.evidence' => 'ev-1',
-        ]);
-    });
-
     it('rejects creation metadata that overrides ownership', function () {
-        expect(fn () => incusHost()->initVm('orbit-base', 'orbit-e2e-tst-123-aaaaaaaa-gateway', 'orbit-e2e-tst-123', [
-            'user.orbit.e2e.owner' => 'attacker',
-        ]))->toThrow(RuntimeException::class, 'cannot override ownership metadata');
+        Process::fake();
+
+        expect(fn () => incusHost()->initGuests(['gateway' => [
+            ...incusGuestSpec('gateway', 10),
+            'metadata' => ['user.orbit.e2e.owner' => 'attacker'],
+        ]]))->toThrow(RuntimeException::class, 'cannot override ownership metadata');
+        Process::assertNothingRan();
     });
 
     it('rejects missing or contradictory VM power status', function () {
@@ -912,39 +722,197 @@ describe('IncusHost network creation', function () {
     });
 });
 
-describe('IncusHost mutations', function () {
-    it('rejects duplicate VM targets before starting any process', function () {
-        Process::fake();
-        $vm = [
-            'image' => 'orbit-base',
-            'name' => 'orbit-e2e-duplicate',
-            'network' => 'oe-topo-snap',
-            'role' => 'gateway',
-            'topology' => 'oe-topo-snap',
-            'slot' => 1,
-            'metadata' => [],
-        ];
-        expect(fn () => incusHost()->initVms(['one' => $vm, 'two' => [...$vm, 'role' => 'app-dev']]))
-            ->toThrow(RuntimeException::class, 'targets must be unique');
-        Process::assertNothingRan();
+describe('IncusHost images', function () {
+    it('reads every image with its aliases, string properties, and creation time', function () {
+        Process::fake(function (PendingProcess $process) {
+            expect($process->command)->toBe(incusCommand('image', 'list', incusTarget(), '--format=json'));
+
+            return Process::result(json_encode([
+                [
+                    'fingerprint' => str_repeat('a', 64),
+                    'type' => 'virtual-machine',
+                    'aliases' => [['name' => 'orbit-e2e-gateway'], ['name' => 'orbit-e2e-gateway-20261012000000']],
+                    'properties' => ['orbit.e2e.role' => 'gateway', 'size' => 12],
+                    'created_at' => '2026-10-12T00:00:00Z',
+                ],
+                ['fingerprint' => str_repeat('b', 64), 'type' => 'container'],
+            ], JSON_THROW_ON_ERROR));
+        });
+
+        expect(incusHost()->images())->toBe([
+            [
+                'fingerprint' => str_repeat('a', 64),
+                'type' => 'virtual-machine',
+                'aliases' => ['orbit-e2e-gateway', 'orbit-e2e-gateway-20261012000000'],
+                'properties' => ['orbit.e2e.role' => 'gateway'],
+                'created_at' => '2026-10-12T00:00:00Z',
+            ],
+            [
+                'fingerprint' => str_repeat('b', 64),
+                'type' => 'container',
+                'aliases' => [],
+                'properties' => [],
+                'created_at' => '',
+            ],
+        ]);
     });
 
-    it('does not reuse cached ownership for cloned host reset', function () {
-        $reads = 0;
-        Process::fake(function (PendingProcess $process) use (&$reads) {
-            if ($process->command === incusCommand('list', incusTarget(), '--format=json')) {
-                $reads++;
+    it('rejects an image inventory row without a valid fingerprint', function (mixed $row) {
+        Process::fake(['*' => Process::result(json_encode([$row], JSON_THROW_ON_ERROR))]);
 
-                return Process::result(vmJson(owner: $reads === 1 ? 'orbit-e2e' : 'other'));
+        expect(fn () => incusHost()->images())->toThrow(RuntimeException::class, 'Incus returned an invalid image inventory.');
+    })->with([
+        'short fingerprint' => [['fingerprint' => 'abc', 'type' => 'container']],
+        'not an object' => ['image'],
+    ]);
+
+    it('publishes an owned guest uncompressed with its properties and returns the new fingerprint', function () {
+        $builder = 'orbit-e2e-image-aaaaaaaa-operator';
+        $alias = 'orbit-e2e-operator-20261012000000';
+        $publish = incusCommand(
+            'publish',
+            incusTarget($builder),
+            incusTarget(),
+            '--alias',
+            $alias,
+            '--compression',
+            'none',
+            'orbit.e2e.role=operator',
+            'orbit.e2e.commit='.str_repeat('d', 40),
+        );
+        Process::fake(function (PendingProcess $process) use ($builder, $alias, $publish) {
+            return match ($process->command) {
+                incusCommand('list', incusTarget($builder), '--format=json') => Process::result(vmJson($builder, type: 'container')),
+                $publish => Process::result(),
+                incusCommand('image', 'list', incusTarget(), $alias, '--format=json') => Process::result(json_encode([[
+                    'fingerprint' => str_repeat('c', 64),
+                    'type' => 'container',
+                    'aliases' => [['name' => $alias]],
+                ]], JSON_THROW_ON_ERROR)),
+                default => Process::result('', 'Unexpected command.', 1),
+            };
+        });
+
+        $fingerprint = incusHost()->publish(
+            $builder,
+            $alias,
+            ['orbit.e2e.role' => 'operator', 'orbit.e2e.commit' => str_repeat('d', 40)],
+            'container',
+        );
+
+        expect($fingerprint)->toBe(str_repeat('c', 64));
+        Process::assertRan($publish);
+    });
+
+    it('refuses an invalid image property before publishing', function (array $properties) {
+        Process::fake(['*' => Process::result(vmJson('orbit-e2e-image-aaaaaaaa-gateway'))]);
+
+        expect(fn () => incusHost()->publish(
+            'orbit-e2e-image-aaaaaaaa-gateway',
+            'orbit-e2e-gateway-20261012000000',
+            $properties,
+            'virtual-machine',
+        ))->toThrow(RuntimeException::class, 'Invalid Incus image property.');
+        Process::assertNotRan(static fn (PendingProcess $process): bool => ($process->command[3] ?? null) === 'publish');
+    })->with([
+        'uppercase key' => [['Orbit.role' => 'gateway']],
+        'empty value' => [['orbit.e2e.role' => '']],
+        'space in value' => [['orbit.e2e.role' => 'two words']],
+    ]);
+
+    it('refuses to publish a guest that Orbit does not own', function () {
+        Process::fake(['*' => Process::result(vmJson('orbit-e2e-image-aaaaaaaa-gateway', owner: 'someone-else'))]);
+
+        expect(fn () => incusHost()->publish(
+            'orbit-e2e-image-aaaaaaaa-gateway',
+            'orbit-e2e-gateway-20261012000000',
+            [],
+            'virtual-machine',
+        ))->toThrow(RuntimeException::class, 'ownership metadata does not match');
+        Process::assertNotRan(static fn (PendingProcess $process): bool => ($process->command[3] ?? null) === 'publish');
+    });
+
+    it('points an alias at a fingerprint in one request', function (string $existingAlias, array $mutation) {
+        $commands = [];
+        Process::fake(function (PendingProcess $process) use ($existingAlias, &$commands) {
+            if ($process->command === incusCommand('image', 'list', incusTarget(), '--format=json')) {
+                return Process::result(json_encode([[
+                    'fingerprint' => str_repeat('a', 64),
+                    'type' => 'virtual-machine',
+                    'aliases' => [['name' => $existingAlias]],
+                ]], JSON_THROW_ON_ERROR));
             }
+            $commands[] = $process->command;
 
             return Process::result();
         });
-        $host = incusHost();
-        $host->instances(['orbit-e2e-tst-123-aaaaaaaa-gateway']);
-        expect(fn () => $host->resetClonedHostState('orbit-e2e-tst-123-aaaaaaaa-gateway'))
-            ->toThrow(RuntimeException::class, 'ownership metadata');
-        expect($reads)->toBe(2);
+
+        incusHost()->pointAlias('orbit-e2e-gateway', str_repeat('c', 64));
+
+        expect($commands)->toBe([$mutation[0] === 'query' ? ['incus', ...$mutation] : incusCommand(...$mutation)]);
+    })->with([
+        'existing alias, with the project in the URL because incus query refuses --project' => [
+            'orbit-e2e-gateway',
+            [
+                'query',
+                '--request',
+                'PATCH',
+                '--data',
+                '{"target":"'.str_repeat('c', 64).'"}',
+                'lab:/1.0/images/aliases/orbit-e2e-gateway?project=orbit',
+            ],
+        ],
+        'new alias' => [
+            'orbit-e2e-gateway-20261012000000',
+            ['image', 'alias', 'create', 'lab:orbit-e2e-gateway', str_repeat('c', 64)],
+        ],
+    ]);
+
+    it('deletes an image by its exact fingerprint', function () {
+        Process::fake();
+
+        incusHost()->deleteImage(str_repeat('c', 64));
+
+        Process::assertRan(incusCommand('image', 'delete', incusTarget(str_repeat('c', 64))));
+    });
+
+    it('rejects an invalid fingerprint before touching an alias or image', function (string $method, array $arguments) {
+        Process::fake();
+
+        expect(fn () => incusHost()->{$method}(...$arguments))
+            ->toThrow(RuntimeException::class, 'Invalid Incus image fingerprint.');
+        Process::assertNothingRan();
+    })->with([
+        'point alias' => ['pointAlias', ['orbit-e2e-gateway', 'not-a-fingerprint']],
+        'delete image' => ['deleteImage', [str_repeat('A', 64)]],
+    ]);
+
+    it('maps each instance to the image it started from', function () {
+        Process::fake(function (PendingProcess $process) {
+            expect($process->command)->toBe(incusCommand('list', incusTarget(), '--format=json'));
+
+            return Process::result(json_encode([
+                ['name' => 'orbit-e2e-image-aaaaaaaa-gateway', 'config' => ['volatile.base_image' => str_repeat('a', 64)]],
+                ['name' => 'orbit-e2e-image-aaaaaaaa-operator', 'config' => ['volatile.base_image' => str_repeat('b', 64)]],
+                ['name' => 'unrelated', 'config' => []],
+            ], JSON_THROW_ON_ERROR));
+        });
+
+        expect(incusHost()->instanceBaseImages())->toBe([
+            'orbit-e2e-image-aaaaaaaa-gateway' => str_repeat('a', 64),
+            'orbit-e2e-image-aaaaaaaa-operator' => str_repeat('b', 64),
+        ]);
+    });
+});
+
+describe('IncusHost mutations', function () {
+    it('rejects duplicate guest targets before starting any process', function () {
+        Process::fake();
+        $guest = incusGuestSpec('gateway', 10);
+
+        expect(fn () => incusHost()->initGuests(['one' => $guest, 'two' => [...$guest, 'node' => 'app-dev']]))
+            ->toThrow(RuntimeException::class, 'targets must be unique');
+        Process::assertNothingRan();
     });
 
     it('force-stops every running target when graceful pool throws', function () {
@@ -980,102 +948,105 @@ describe('IncusHost mutations', function () {
         Process::assertRan(incusCommand('stop', incusTarget('orbit-e2e-tst-123-aaaaaaaa-app-dev'), '--force'));
     });
 
-    it('initializes topology snapshot VMs in parallel with deterministic topology MAC addresses', function () {
+    it('creates VMs and unprivileged nesting containers in one batch with fixed network identity', function () {
         Process::fake(['*' => Process::result()]);
-        $host = incusHost();
 
-        $instances = $host->initVms(array_combine(
-            ['gateway', 'app-dev', 'app-prod'],
-            array_map(static fn (string $role): array => [
-                'image' => 'orbit-base',
-                'name' => "orbit-e2e-topology-snapshot-{$role}",
-                'network' => 'oe-topo-snap',
-                'role' => $role,
-                'topology' => 'oe-topo-snap',
-                'slot' => 1,
-                'metadata' => ['user.orbit.e2e.operation' => str_repeat('a', 32)],
-            ], ['gateway', 'app-dev', 'app-prod']),
+        $instances = incusHost()->initGuests([
+            'gateway' => incusGuestSpec('gateway', 10),
+            'operator' => incusGuestSpec('operator', 14, container: true),
+        ]);
+
+        $init = static fn (string $node, string $image, array $type, string $ipv4): array => incusCommand(...[
+            'init',
+            $image,
+            incusTarget("orbit-e2e-tst-123-aaaaaaaa-{$node}"),
+            ...$type,
+            '--storage',
+            'orbit-e2e',
+            '--config',
+            'limits.cpu=1',
+            '--config',
+            'limits.memory=2GiB',
+            '--device',
+            'root,pool=orbit-e2e',
+            '--device',
+            'root,size=16GiB',
+            '--device',
+            'eth0,network=oe-b32d6c83af72',
+            '--device',
+            "eth0,ipv4.address={$ipv4}",
+            '--device',
+            'eth0,hwaddr='.TopologyTarget::macFor('oe-b32d6c83af72', $node),
+            '--config',
+            'user.orbit.e2e.owner=orbit-e2e',
+            '--config',
+            'user.orbit.e2e.operation=op-1',
+        ]);
+        Process::assertRan($init('gateway', 'images:ubuntu/26.04', ['--vm'], '10.232.30.10'));
+        Process::assertRan($init(
+            'operator',
+            incusTarget('orbit-e2e-operator'),
+            ['--config', 'security.privileged=false', '--config', 'security.nesting=true'],
+            '10.232.30.14',
         ));
-
-        expect(array_keys($instances))->toBe(['gateway', 'app-dev', 'app-prod']);
-        foreach (['gateway', 'app-dev', 'app-prod'] as $role) {
-            $hash = substr(sha1("oe-topo-snap:{$role}"), 0, 6);
-            $mac = '00:16:3e:'.implode(':', str_split($hash, 2));
-            $ipv4 = match ($role) {
-                'gateway' => '10.232.1.10',
-                'app-dev' => '10.232.1.11',
-                'app-prod' => '10.232.1.12',
-            };
-            Process::assertRan(incusCommand(
-                'init',
-                incusTarget('orbit-base'),
-                incusTarget("orbit-e2e-topology-snapshot-{$role}"),
-                '--vm',
-                '--storage',
-                'orbit-e2e',
-                '--config',
-                'limits.cpu=1',
-                '--config',
-                'limits.memory=2GiB',
-                '--device',
-                'root,pool=orbit-e2e',
-                '--device',
-                'root,size=16GiB',
-                '--device',
-                'eth0,network=oe-topo-snap',
-                '--device',
-                "eth0,ipv4.address={$ipv4}",
-                '--device',
-                "eth0,hwaddr={$mac}",
-                '--config',
-                'user.orbit.e2e.owner=orbit-e2e',
-                '--config',
-                'user.orbit.e2e.operation='.str_repeat('a', 32),
-            ));
-        }
+        Process::assertNotRan(static fn (PendingProcess $process): bool => ($process->command[3] ?? null) === 'config');
+        expect(array_keys($instances))
+            ->toBe(['gateway', 'operator'])
+            ->and($instances['operator']->network)
+            ->toBe('oe-b32d6c83af72')
+            ->and($instances['operator']->metadata)
+            ->toBe(['user.orbit.e2e.owner' => 'orbit-e2e', 'user.orbit.e2e.operation' => 'op-1'])
+            ->and($instances['operator']->disks)
+            ->toBe([]);
     });
 
-    it('regenerates cloned guest network identity with a fixed script', function () {
-        Process::fake(function (PendingProcess $process) {
-            if ($process->command === incusCommand('list', incusTarget(), '--format=json')) {
-                return Process::result(vmJson());
-            }
-
-            expect($process->command)->toBe(incusCommand(
-                'exec',
-                incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
-                '--',
-                'sh',
-                '-c',
-                "interface=\$(ip -4 route show default | awk '\$1 == \"default\" { for (i = 2; i < NF; i++) if (\$i == \"dev\") { print \$(i + 1); exit } }') && [ -n \"\$interface\" ] && rm -f /etc/machine-id /var/lib/dbus/machine-id && printf '%s\\n' '226764929ff6d15ed83b16e0f6459e9c' > /etc/machine-id && ln -s /etc/machine-id /var/lib/dbus/machine-id && systemctl restart systemd-journald && for directory in /run/systemd/netif/leases /var/lib/systemd/network; do if [ -e \"\$directory\" ]; then [ -d \"\$directory\" ] && [ ! -L \"\$directory\" ] || exit 1; find \"\$directory\" -mindepth 1 -maxdepth 1 -type f -delete || exit 1; fi; done && ip -4 addr flush dev \"\$interface\" scope global && ip link set dev \"\$interface\" down && ip link set dev \"\$interface\" up && (systemctl restart systemd-networkd || systemctl restart NetworkManager)",
-            ));
+    it('adds the worktree mount after every guest exists, shifted for containers', function () {
+        $worktree = temporaryPath('orbit-incus-mount-', 4);
+        mkdir($worktree, 0700, true);
+        $mount = ['device' => 'orbit-source', 'source' => $worktree, 'path' => '/home/orbit/orbit'];
+        $commands = [];
+        Process::fake(function (PendingProcess $process) use (&$commands) {
+            $commands[] = $process->command;
 
             return Process::result();
         });
 
-        incusHost()->resetClonedHostState('orbit-e2e-tst-123-aaaaaaaa-gateway');
+        $instances = incusHost()->initGuests([
+            'app-dev' => [...incusGuestSpec('app-dev', 11), 'mount' => $mount],
+            'operator' => [...incusGuestSpec('operator', 14, container: true), 'mount' => $mount],
+        ]);
 
-        Process::assertRan(incusCommand(
-            'exec',
-            incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
-            '--',
-            'sh',
-            '-c',
-            "interface=\$(ip -4 route show default | awk '\$1 == \"default\" { for (i = 2; i < NF; i++) if (\$i == \"dev\") { print \$(i + 1); exit } }') && [ -n \"\$interface\" ] && rm -f /etc/machine-id /var/lib/dbus/machine-id && printf '%s\\n' '226764929ff6d15ed83b16e0f6459e9c' > /etc/machine-id && ln -s /etc/machine-id /var/lib/dbus/machine-id && systemctl restart systemd-journald && for directory in /run/systemd/netif/leases /var/lib/systemd/network; do if [ -e \"\$directory\" ]; then [ -d \"\$directory\" ] && [ ! -L \"\$directory\" ] || exit 1; find \"\$directory\" -mindepth 1 -maxdepth 1 -type f -delete || exit 1; fi; done && ip -4 addr flush dev \"\$interface\" scope global && ip link set dev \"\$interface\" down && ip link set dev \"\$interface\" up && (systemctl restart systemd-networkd || systemctl restart NetworkManager)",
-        ));
+        $add = static fn (string $node, string ...$shift): array => incusCommand(
+            'config',
+            'device',
+            'add',
+            incusTarget("orbit-e2e-tst-123-aaaaaaaa-{$node}"),
+            'orbit-source',
+            'disk',
+            "source={$worktree}",
+            'path=/home/orbit/orbit',
+            ...$shift,
+        );
+        expect(array_map(static fn (array $command): string => $command[3], $commands))
+            ->toBe(['init', 'init', 'config', 'config'])
+            ->and(array_slice($commands, 2))
+            ->toEqualCanonicalizing([$add('app-dev'), $add('operator', 'shift=true')])
+            ->and($instances['app-dev']->disks)
+            ->toBe(['orbit-source' => ['source' => $worktree, 'path' => '/home/orbit/orbit']]);
     });
 
-    it('fails when guest network identity regeneration fails', function () {
-        Process::fake(function (PendingProcess $process) {
-            if ($process->command === incusCommand('list', incusTarget(), '--format=json')) {
-                return Process::result(vmJson());
-            }
+    it('adds no mount when the guest initialization batch fails', function () {
+        $worktree = temporaryPath('orbit-incus-mount-', 4);
+        mkdir($worktree, 0700, true);
+        Process::fake(static fn (PendingProcess $process): ProcessResult => ($process->command[3] ?? null) === 'init'
+            ? Process::result('', 'image missing', 1)
+            : Process::result());
 
-            return Process::result('', 'restart failed', 1);
-        });
-
-        expect(fn () => incusHost()->resetClonedHostState('orbit-e2e-tst-123-aaaaaaaa-gateway'))
-            ->toThrow(RuntimeException::class, 'Failed to reset cloned host state');
+        expect(fn () => incusHost()->initGuests(['app-dev' => [
+            ...incusGuestSpec('app-dev', 11),
+            'mount' => ['device' => 'orbit-source', 'source' => $worktree, 'path' => '/home/orbit/orbit'],
+        ]]))->toThrow(RuntimeException::class, 'Incus guest initialization batch failed for app-dev: image missing');
+        Process::assertNotRan(static fn (PendingProcess $process): bool => ($process->command[3] ?? null) === 'config');
     });
 
     it('rejects a non-positive guest readiness timeout', function () {
@@ -1304,152 +1275,6 @@ describe('IncusHost mutations', function () {
         Process::assertRan(incusCommand('exec', incusTarget($instance), '--', ...guestIpv4Probe()));
     });
 
-    it('waits for restored guests on their default-route interfaces', function () {
-        $instance = 'orbit-e2e-tst-123-aaaaaaaa-gateway';
-        Process::fake(function (PendingProcess $process) use ($instance) {
-            return match ($process->command) {
-                incusCommand('list', incusTarget(), '--format=json') => Process::result(vmJson($instance)),
-                incusCommand('exec', incusTarget($instance), '--', '/bin/true') => Process::result(),
-                incusCommand('exec', incusTarget($instance), '--', ...guestIpv4Probe()) => Process::result(
-                    "2: enp5s0 inet 10.44.0.10/24 scope global enp5s0\n",
-                ),
-                default => Process::result('', 'unexpected command', 1),
-            };
-        });
-
-        incusHost(guestReadinessTimeoutSeconds: 1)->waitForRestoredHostStates([$instance]);
-
-        Process::assertRan(incusCommand('exec', incusTarget($instance), '--', ...guestIpv4Probe()));
-    });
-
-    it('waits for IPv4 then resets each cloned guest without a global role barrier', function () {
-        $gateway = 'orbit-e2e-tst-123-aaaaaaaa-gateway';
-        $appDev = 'orbit-e2e-tst-123-aaaaaaaa-app-dev';
-        $appDevAgentProbes = 0;
-        $events = [];
-        Process::fake(function (PendingProcess $process) use ($gateway, $appDev, &$appDevAgentProbes, &$events) {
-            $command = $process->command;
-            if ($command === incusCommand('list', incusTarget(), '--format=json')) {
-                $events[] = 'inventory';
-                $gatewayVm = json_decode(vmJson($gateway), true, 16, JSON_THROW_ON_ERROR)[0];
-                $appDevVm = json_decode(vmJson($appDev), true, 16, JSON_THROW_ON_ERROR)[0];
-
-                return Process::result(json_encode([$gatewayVm, $appDevVm], JSON_THROW_ON_ERROR));
-            }
-
-            $instance = str_replace('lab:', '', (string) ($command[4] ?? ''));
-            $guest = array_slice($command, 6);
-            if ($guest === ['/bin/true']) {
-                $events[] = 'agent:'.$instance;
-                if ($instance === $appDev && ++$appDevAgentProbes === 1) {
-                    return Process::result('', 'not ready', 1);
-                }
-
-                return Process::result();
-            }
-            if (($guest[0] ?? null) === 'sh' && str_contains((string) ($guest[2] ?? ''), "printf '%s\\n'")) {
-                $events[] = 'reset:'.$instance;
-
-                return Process::result();
-            }
-            if (($guest[0] ?? null) === 'sh' && str_contains((string) ($guest[2] ?? ''), 'route show default')) {
-                expect($guest)->toBe(guestIpv4Probe());
-                $events[] = 'ipv4:'.$instance;
-
-                return Process::result("2: enp5s0 inet 10.44.0.10/24 scope global enp5s0\n");
-            }
-
-            return Process::result('', 'unexpected command', 1);
-        });
-
-        incusHost()->prepareClonedHostStates([$gateway, $appDev]);
-
-        expect($events)->toBe([
-            'inventory',
-            'agent:'.$gateway,
-            'agent:'.$appDev,
-            'ipv4:'.$gateway,
-            'agent:'.$appDev,
-            'reset:'.$gateway,
-            'ipv4:'.$appDev,
-            'ipv4:'.$gateway,
-            'reset:'.$appDev,
-            'ipv4:'.$appDev,
-        ]);
-    });
-
-    it('retries an idempotent clone identity reset after a transient pool failure', function () {
-        $instance = 'orbit-e2e-tst-123-aaaaaaaa-gateway';
-        $resetAttempts = 0;
-        Process::fake(function (PendingProcess $process) use ($instance, &$resetAttempts) {
-            if ($process->command === incusCommand('list', incusTarget(), '--format=json')) {
-                return Process::result(vmJson($instance));
-            }
-
-            $guest = array_slice($process->command, 6);
-            if ($guest === ['/bin/true']) {
-                return Process::result();
-            }
-            if (($guest[0] ?? null) === 'sh' && str_contains((string) ($guest[2] ?? ''), "printf '%s\\n'")) {
-                if (++$resetAttempts === 1) {
-                    throw new RuntimeException('transient pool failure');
-                }
-
-                return Process::result();
-            }
-            if (($guest[0] ?? null) === 'sh' && str_contains((string) ($guest[2] ?? ''), 'route show default')) {
-                expect($guest)->toBe(guestIpv4Probe());
-
-                return Process::result("2: enp5s0 inet 10.232.2.10/24 scope global enp5s0\n");
-            }
-
-            return Process::result('', 'unexpected command', 1);
-        });
-
-        incusHost()->prepareClonedHostStates([$instance]);
-
-        expect($resetAttempts)->toBe(2);
-    });
-
-    it('waits for default-route IPv4 before resetting a cloned guest identity', function () {
-        $instance = 'orbit-e2e-tst-123-aaaaaaaa-gateway';
-        $ipv4Probes = 0;
-        $resetAttempts = 0;
-        Process::fake(function (PendingProcess $process) use ($instance, &$ipv4Probes, &$resetAttempts) {
-            if ($process->command === incusCommand('list', incusTarget(), '--format=json')) {
-                return Process::result(vmJson($instance));
-            }
-
-            $guest = array_slice($process->command, 6);
-            if ($guest === ['/bin/true']) {
-                return Process::result();
-            }
-            if (($guest[0] ?? null) === 'sh' && str_contains((string) ($guest[2] ?? ''), "printf '%s\\n'")) {
-                $resetAttempts++;
-
-                return $ipv4Probes >= 2
-                    ? Process::result()
-                    : Process::result('', 'default route is not ready', 1);
-            }
-            if ($guest === guestIpv4Probe()) {
-                $ipv4Probes++;
-
-                return $ipv4Probes === 1
-                    ? Process::result('', 'default route is not ready', 1)
-                    : Process::result("2: enp5s0 inet 10.232.2.10/24 scope global enp5s0\n");
-            }
-
-            return Process::result('', 'unexpected command', 1);
-        });
-
-        incusHost(guestReadinessTimeoutSeconds: 2)->prepareClonedHostStates([$instance]);
-
-        expect($ipv4Probes)
-            ->toBe(3)
-            ->and($resetAttempts)
-            ->toBe(1);
-    });
-
     it('passes guest stdin through process input without adding it to argv', function () {
         $observedInput = null;
         $secret = 'token='.bin2hex(random_bytes(8))."\n";
@@ -1483,216 +1308,22 @@ describe('IncusHost mutations', function () {
         );
     });
 
-    it('uses argument arrays with global scope, storage, and exact identities', function () {
-        Process::fake(function (PendingProcess $process) {
-            return match ($process->command) {
-                incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json') => Process::result(
-                    vmJson(),
-                ),
-                incusCommand('list', incusTarget('orbit-e2e-topology-snapshot-gateway'), '--format=json') => Process::result(
-                    vmJson('orbit-e2e-topology-snapshot-gateway'),
-                ),
-                incusCommand('image', 'list', incusTarget(), 'orbit-base', '--format=json') => Process::result(
-                    json_encode([[
-                        'fingerprint' => str_repeat('a', 64),
-                        'type' => 'virtual-machine',
-                        'aliases' => [['name' => 'orbit-base']],
-                    ]], JSON_THROW_ON_ERROR),
-                ),
-                incusCommand('network', 'list', incusTarget(), '--format=json') => Process::result(json_encode([
-                    [
-                        'name' => 'oe-b32d6c83af72',
-                        'config' => ['user.orbit.e2e.owner' => 'orbit-e2e', 'ipv4.address' => '10.232.30.1/24'],
-                    ],
-                ], JSON_THROW_ON_ERROR)),
-                incusCommand('snapshot', 'list', incusTarget('orbit-e2e-topology-snapshot-gateway'), '--format=json') => Process::result(
-                    snapshotJson('main-g1'),
-                ),
-                default => Process::result(),
-            };
-        });
-        $host = incusHost();
+    it('creates a network with argument arrays and ownership metadata', function () {
+        Process::fake();
 
-        $network = $host->createNetwork('oe-b32d6c83af72', ['ipv4.address' => '10.232.30.1/24']);
-        $instance = $host->initVm('orbit-base', 'orbit-e2e-tst-123-aaaaaaaa-gateway', 'oe-b32d6c83af72');
-        $copy = $host->copySnapshot(
-            'orbit-e2e-topology-snapshot-gateway',
-            'main-g1',
-            'orbit-e2e-tst-123-aaaaaaaa-gateway',
-            [
-                'user.orbit.e2e.issue' => 'TST-123',
-                'user.orbit.e2e.generation' => 'generation-1',
-                'user.orbit.e2e.operation' => 'operation-1',
-            ],
-        );
-        $host->setNetwork(
-            'orbit-e2e-tst-123-aaaaaaaa-gateway',
-            'oe-b32d6c83af72',
-            'gateway',
-        );
-        $host->setMetadata('orbit-e2e-tst-123-aaaaaaaa-gateway', ['user.orbit.e2e.issue' => 'TST-123']);
+        $network = incusHost()->createNetwork('oe-b32d6c83af72', ['ipv4.address' => '10.232.30.1/24']);
 
         expect($network->name)
             ->toBe('oe-b32d6c83af72')
             ->and($network->metadata['user.orbit.e2e.owner'])
-            ->toBe('orbit-e2e')
-            ->and($instance->pool)
-            ->toBe('orbit-e2e')
-            ->and($copy->name)
-            ->toBe('orbit-e2e-tst-123-aaaaaaaa-gateway');
-
-        foreach ([
-            incusCommand(
-                'network',
-                'create',
-                incusTarget('oe-b32d6c83af72'),
-                'ipv4.address=10.232.30.1/24',
-                'user.orbit.e2e.owner=orbit-e2e',
-            ),
-            incusCommand(
-                'init',
-                incusTarget('orbit-base'),
-                incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
-                '--vm',
-                '--storage',
-                'orbit-e2e',
-                '--config',
-                'limits.cpu=1',
-                '--config',
-                'limits.memory=2GiB',
-                '--device',
-                'root,pool=orbit-e2e',
-                '--device',
-                'root,size=16GiB',
-                '--network',
-                'oe-b32d6c83af72',
-                '--config',
-                'user.orbit.e2e.owner=orbit-e2e',
-            ),
-            incusCommand(
-                'copy',
-                incusTarget('orbit-e2e-topology-snapshot-gateway/main-g1'),
-                incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
-                '--storage',
-                'orbit-e2e',
-                '--config',
-                'limits.cpu=1',
-                '--config',
-                'limits.memory=2GiB',
-                '--device',
-                'root,pool=orbit-e2e',
-                '--device',
-                'root,size=16GiB',
-                '--config',
-                'user.orbit.e2e.owner=orbit-e2e',
-                '--config',
-                'user.orbit.e2e.issue=TST-123',
-                '--config',
-                'user.orbit.e2e.generation=generation-1',
-                '--config',
-                'user.orbit.e2e.operation=operation-1',
-            ),
-            incusCommand(
-                'config',
-                'device',
-                'override',
-                incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
-                'eth0',
-                'network=oe-b32d6c83af72',
-                'ipv4.address=10.232.30.10',
-                'hwaddr=00:16:3e:a1:e4:eb',
-            ),
-            incusCommand(
-                'config',
-                'set',
-                incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
-                'user.orbit.e2e.issue=TST-123',
-            ),
-        ] as $command) {
-            Process::assertRan($command);
-        }
-    });
-
-    it('rejects acquisition metadata that attempts to override ownership', function () {
-        expect(fn () => incusHost()->copySnapshot(
-            'orbit-e2e-topology-snapshot-gateway',
-            'main-g1',
-            'orbit-e2e-tst-123-aaaaaaaa-gateway',
-            ['user.orbit.e2e.owner' => 'attacker'],
-        ))
-            ->toThrow(RuntimeException::class, 'cannot override ownership metadata');
-    });
-
-    it('sets metadata only on exact owned instances and networks', function (string $resource) {
-        Process::fake(function (PendingProcess $process) use ($resource) {
-            return match ($process->command) {
-                incusCommand('list', incusTarget($resource), '--format=json') => Process::result(
-                    $resource === 'orbit-e2e-tst-123-aaaaaaaa-gateway' ? vmJson() : '[]',
-                ),
-                incusCommand('network', 'list', incusTarget(), '--format=json') => Process::result(json_encode([
-                    ['name' => 'orbit-e2e-tst-123', 'config' => ['user.orbit.e2e.owner' => 'orbit-e2e']],
-                ], JSON_THROW_ON_ERROR)),
-                default => Process::result(),
-            };
-        });
-
-        incusHost()->setMetadata($resource, ['user.orbit.e2e.issue' => 'TST-123']);
-
-        $command = $resource === 'orbit-e2e-tst-123-aaaaaaaa-gateway'
-            ? incusCommand('config', 'set', incusTarget($resource), 'user.orbit.e2e.issue=TST-123')
-            : incusCommand('network', 'set', incusTarget($resource), 'user.orbit.e2e.issue=TST-123');
-        Process::assertRan($command);
-    })->with(['orbit-e2e-tst-123-aaaaaaaa-gateway', 'orbit-e2e-tst-123']);
-
-    it('does not set metadata when exact resource ownership does not match', function () {
-        Process::fake(function (PendingProcess $process) {
-            return match ($process->command) {
-                incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json') => Process::result(
-                    vmJson(owner: 'someone-else'),
-                ),
-                default => Process::result(),
-            };
-        });
-
-        expect(fn () => incusHost()->setMetadata(
-            'orbit-e2e-tst-123-aaaaaaaa-gateway',
-            ['user.orbit.e2e.issue' => 'TST-123'],
-        ))
-            ->toThrow(RuntimeException::class, 'ownership metadata does not match');
-
-        Process::assertDidntRun(incusCommand(
-            'config',
-            'set',
-            incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
-            'user.orbit.e2e.issue=TST-123',
+            ->toBe('orbit-e2e');
+        Process::assertRan(incusCommand(
+            'network',
+            'create',
+            incusTarget('oe-b32d6c83af72'),
+            'ipv4.address=10.232.30.1/24',
+            'user.orbit.e2e.owner=orbit-e2e',
         ));
-    });
-
-    it('validates the exact owned network before attaching it', function () {
-        Process::fake(function (PendingProcess $process) {
-            return match ($process->command) {
-                incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json') => Process::result(
-                    vmJson(),
-                ),
-                incusCommand('network', 'list', incusTarget(), '--format=json') => Process::result(json_encode([
-                    ['name' => 'orbit-e2e-tst-123', 'config' => ['user.orbit.e2e.owner' => 'someone-else']],
-                ], JSON_THROW_ON_ERROR)),
-                default => Process::result(),
-            };
-        });
-
-        expect(
-            fn () => incusHost()->setNetwork(
-                'orbit-e2e-tst-123-aaaaaaaa-gateway',
-                'orbit-e2e-tst-123',
-                'gateway',
-            ),
-        )
-            ->toThrow(RuntimeException::class, 'network orbit-e2e-tst-123 ownership metadata does not match');
-
-        Process::assertNotRan(
-            fn (PendingProcess $process): bool => ($process->command[3] ?? null) === 'config',
-        );
     });
 
     it('re-reads and verifies ownership before destructive instance calls', function () {
@@ -1826,338 +1457,6 @@ describe('IncusHost mutations', function () {
             ->toThrow(RuntimeException::class, 'Incus command failed');
     });
 
-    it('re-reads exact snapshots before restore and deletion', function (string $operation) {
-        Process::fake([
-            '*' => Process::sequence()
-                ->push(vmJson())
-                ->push(json_encode([[
-                    'name' => 'main-g1',
-                    'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
-                ]], JSON_THROW_ON_ERROR))
-                ->push(Process::result()),
-        ]);
-
-        incusHost()->{$operation}('orbit-e2e-tst-123-aaaaaaaa-gateway', 'main-g1');
-
-        Process::assertRanInOrder([
-            incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json'),
-            incusCommand(
-                'snapshot',
-                'list',
-                incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
-                '--format=json',
-            ),
-            incusCommand(
-                'snapshot',
-                $operation === 'restore' ? 'restore' : 'delete',
-                incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
-                'main-g1',
-            ),
-        ]);
-    })->with(['restore', 'deleteSnapshot']);
-
-    it('validates one source snapshot and copies role clones in parallel with exact identity', function () {
-        $sourceReads = 0;
-        $snapshotReads = [];
-        Process::fake(function (PendingProcess $process) use (&$sourceReads, &$snapshotReads) {
-            if ($process->command === incusCommand('list', incusTarget(), '--format=json')) {
-                $sourceReads++;
-
-                return Process::result(json_encode(array_map(
-                    static fn (string $role): array => json_decode(
-                        vmJson("orbit-e2e-topology-snapshot-{$role}"),
-                        true,
-                        16,
-                        JSON_THROW_ON_ERROR,
-                    )[0],
-                    ['gateway', 'app-dev', 'app-prod'],
-                ), JSON_THROW_ON_ERROR));
-            }
-            if (array_slice($process->command, 3, 2) === ['snapshot', 'list']) {
-                $source = preg_replace('/\A[^:]+:/', '', (string) $process->command[5]);
-                $snapshotReads[$source] = ($snapshotReads[$source] ?? 0) + 1;
-
-                return Process::result(snapshotJson('main-g1'));
-            }
-
-            return Process::result();
-        });
-
-        $instances = incusHost()->copySnapshots([
-            'gateway' => [
-                'source' => 'orbit-e2e-topology-snapshot-gateway',
-                'snapshot' => 'main-g1',
-                'target' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
-                'metadata' => ['user.orbit.e2e.operation' => 'op-1'],
-                'network' => 'oe-b32d6c83af72',
-                'role' => 'gateway',
-                'topology' => 'oe-b32d6c83af72',
-                'slot' => 30,
-            ],
-            'app-dev' => [
-                'source' => 'orbit-e2e-topology-snapshot-app-dev',
-                'snapshot' => 'main-g1',
-                'target' => 'orbit-e2e-tst-123-aaaaaaaa-app-dev',
-                'metadata' => ['user.orbit.e2e.evidence' => 'ev-1'],
-                'network' => 'oe-b32d6c83af72',
-                'role' => 'app-dev',
-                'topology' => 'oe-b32d6c83af72',
-                'slot' => 30,
-            ],
-            'app-prod' => [
-                'source' => 'orbit-e2e-topology-snapshot-app-prod',
-                'snapshot' => 'main-g1',
-                'target' => 'orbit-e2e-tst-123-aaaaaaaa-app-prod',
-                'metadata' => ['user.orbit.e2e.evidence' => 'ev-2'],
-                'network' => 'oe-b32d6c83af72',
-                'role' => 'app-prod',
-                'topology' => 'oe-b32d6c83af72',
-                'slot' => 30,
-            ],
-        ]);
-
-        expect(array_keys($instances))
-            ->toBe(['gateway', 'app-dev', 'app-prod'])
-            ->and($sourceReads)
-            ->toBe(1)
-            ->and($snapshotReads)
-            ->toBe([
-                'orbit-e2e-topology-snapshot-gateway' => 1,
-                'orbit-e2e-topology-snapshot-app-dev' => 1,
-                'orbit-e2e-topology-snapshot-app-prod' => 1,
-            ]);
-        Process::assertRan(incusCommand(
-            'copy',
-            incusTarget('orbit-e2e-topology-snapshot-gateway').'/main-g1',
-            incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
-            '--storage',
-            'orbit-e2e',
-            '--config',
-            'limits.cpu=1',
-            '--config',
-            'limits.memory=2GiB',
-            '--device',
-            'root,pool=orbit-e2e',
-            '--device',
-            'root,size=16GiB',
-            '--config',
-            'user.orbit.e2e.owner=orbit-e2e',
-            '--config',
-            'user.orbit.e2e.operation=op-1',
-            '--device',
-            'eth0,network=oe-b32d6c83af72',
-            '--device',
-            'eth0,ipv4.address=10.232.30.10',
-            '--device',
-            'eth0,hwaddr=00:16:3e:a1:e4:eb',
-        ));
-        Process::assertRan(incusCommand(
-            'copy',
-            incusTarget('orbit-e2e-topology-snapshot-app-dev').'/main-g1',
-            incusTarget('orbit-e2e-tst-123-aaaaaaaa-app-dev'),
-            '--storage',
-            'orbit-e2e',
-            '--config',
-            'limits.cpu=1',
-            '--config',
-            'limits.memory=2GiB',
-            '--device',
-            'root,pool=orbit-e2e',
-            '--device',
-            'root,size=16GiB',
-            '--config',
-            'user.orbit.e2e.owner=orbit-e2e',
-            '--config',
-            'user.orbit.e2e.evidence=ev-1',
-            '--device',
-            'eth0,network=oe-b32d6c83af72',
-            '--device',
-            'eth0,ipv4.address=10.232.30.11',
-            '--device',
-            'eth0,hwaddr=00:16:3e:43:00:72',
-        ));
-        Process::assertRan(incusCommand(
-            'copy',
-            incusTarget('orbit-e2e-topology-snapshot-app-prod').'/main-g1',
-            incusTarget('orbit-e2e-tst-123-aaaaaaaa-app-prod'),
-            '--storage',
-            'orbit-e2e',
-            '--config',
-            'limits.cpu=1',
-            '--config',
-            'limits.memory=2GiB',
-            '--device',
-            'root,pool=orbit-e2e',
-            '--device',
-            'root,size=16GiB',
-            '--config',
-            'user.orbit.e2e.owner=orbit-e2e',
-            '--config',
-            'user.orbit.e2e.evidence=ev-2',
-            '--device',
-            'eth0,network=oe-b32d6c83af72',
-            '--device',
-            'eth0,ipv4.address=10.232.30.12',
-            '--device',
-            'eth0,hwaddr=00:16:3e:39:69:0b',
-        ));
-    });
-
-    it('copies stopped instances without snapshots onto the topology snapshot network', function () {
-        Process::fake(function (PendingProcess $process) {
-            if ($process->command === incusCommand('list', incusTarget(), '--format=json')) {
-                return Process::result(json_encode(array_map(
-                    static fn (string $role): array => json_decode(
-                        vmJson("orbit-e2e-tst-123-aaaaaaaa-{$role}", network: 'oe-b32d6c83af72'),
-                        true,
-                        16,
-                        JSON_THROW_ON_ERROR,
-                    )[0],
-                    ['gateway', 'app-dev', 'app-prod'],
-                ), JSON_THROW_ON_ERROR));
-            }
-
-            return Process::result();
-        });
-
-        $instances = incusHost()->copyInstances([
-            'gateway' => [
-                'source' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
-                'target' => 'orbit-e2e-topology-snapshot-gateway-next',
-                'metadata' => ['user.orbit.e2e.operation' => 'op-2'],
-                'network' => 'oe-topo-snap',
-                'role' => 'gateway',
-                'topology' => 'oe-topo-snap',
-                'slot' => 1,
-            ],
-        ]);
-
-        expect(array_keys($instances))->toBe(['gateway']);
-        Process::assertRan(incusCommand(
-            'copy',
-            incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
-            incusTarget('orbit-e2e-topology-snapshot-gateway-next'),
-            '--instance-only',
-            '--storage',
-            'orbit-e2e',
-            '--config',
-            'limits.cpu=1',
-            '--config',
-            'limits.memory=2GiB',
-            '--device',
-            'root,pool=orbit-e2e',
-            '--device',
-            'root,size=16GiB',
-            '--config',
-            'user.orbit.e2e.owner=orbit-e2e',
-            '--config',
-            'user.orbit.e2e.operation=op-2',
-            '--device',
-            'eth0,network=oe-topo-snap',
-            '--device',
-            'eth0,ipv4.address=10.232.1.10',
-            '--device',
-            'eth0,hwaddr='.TopologyTarget::macFor('oe-topo-snap', 'gateway'),
-        ));
-        Process::assertNotRan(
-            static fn (PendingProcess $process): bool => array_slice($process->command, 3, 2) === ['snapshot', 'list'],
-        );
-    });
-
-    it('refuses to copy a running instance', function () {
-        Process::fake(fn (): ProcessResult => Process::result(json_encode([[
-            'name' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
-            'type' => 'virtual-machine',
-            'status' => 'Running',
-            'status_code' => 103,
-            'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
-            'devices' => ['root' => ['pool' => 'orbit-e2e']],
-        ]], JSON_THROW_ON_ERROR)));
-
-        expect(fn () => incusHost()->copyInstances([
-            'gateway' => [
-                'source' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
-                'target' => 'orbit-e2e-topology-snapshot-gateway-next',
-                'metadata' => [],
-                'network' => 'oe-topo-snap',
-                'role' => 'gateway',
-                'topology' => 'oe-topo-snap',
-                'slot' => 1,
-            ],
-        ]))
-            ->toThrow(RuntimeException::class, 'must be stopped before it is copied');
-        Process::assertNotRan(static fn (PendingProcess $process): bool => ($process->command[3] ?? null) === 'copy');
-    });
-
-    it('renames a stopped owned instance onto a free name and proves the result', function () {
-        $renamed = false;
-        Process::fake(function (PendingProcess $process) use (&$renamed) {
-            if (($process->command[3] ?? null) === 'rename') {
-                $renamed = true;
-
-                return Process::result();
-            }
-            $name = preg_replace('/\A[^:]+:/', '', (string) ($process->command[4] ?? ''));
-            if ($name === 'orbit-e2e-topology-snapshot-gateway') {
-                return Process::result($renamed ? vmJson('orbit-e2e-topology-snapshot-gateway') : '[]');
-            }
-
-            return Process::result(vmJson('orbit-e2e-topology-snapshot-gateway-next'));
-        });
-
-        incusHost()->renameInstance('orbit-e2e-topology-snapshot-gateway-next', 'orbit-e2e-topology-snapshot-gateway');
-
-        Process::assertRan(incusCommand(
-            'rename',
-            incusTarget('orbit-e2e-topology-snapshot-gateway-next'),
-            'orbit-e2e-topology-snapshot-gateway',
-        ));
-    });
-
-    it('refuses to rename onto an existing instance', function () {
-        Process::fake(function (PendingProcess $process) {
-            $name = preg_replace('/\A[^:]+:/', '', (string) ($process->command[4] ?? ''));
-
-            return Process::result(vmJson($name));
-        });
-
-        expect(
-            fn () => incusHost()->renameInstance(
-                'orbit-e2e-topology-snapshot-gateway-next',
-                'orbit-e2e-topology-snapshot-gateway',
-            ),
-        )
-            ->toThrow(RuntimeException::class, 'already exists');
-        Process::assertNotRan(static fn (PendingProcess $process): bool => ($process->command[3] ?? null) === 'rename');
-    });
-
-    it('unsets harness metadata keys but never the ownership key', function () {
-        Process::fake(fn (): ProcessResult => Process::result(vmJson('orbit-e2e-topology-snapshot-gateway-next')));
-        $host = incusHost();
-
-        $host->unsetMetadata('orbit-e2e-topology-snapshot-gateway-next', [
-            'user.orbit.e2e.issue',
-            'user.orbit.e2e.attempt',
-        ]);
-
-        Process::assertRan(incusCommand(
-            'config',
-            'unset',
-            incusTarget('orbit-e2e-topology-snapshot-gateway-next'),
-            'user.orbit.e2e.issue',
-        ));
-        Process::assertRan(incusCommand(
-            'config',
-            'unset',
-            incusTarget('orbit-e2e-topology-snapshot-gateway-next'),
-            'user.orbit.e2e.attempt',
-        ));
-        expect(fn () => $host->unsetMetadata('orbit-e2e-topology-snapshot-gateway-next', ['user.orbit.e2e.owner']))
-            ->toThrow(RuntimeException::class, 'ownership metadata cannot be unset');
-        expect(fn () => $host->unsetMetadata('orbit-e2e-topology-snapshot-gateway-next', ['limits.cpu']))
-            ->toThrow(RuntimeException::class, 'Invalid Incus ownership metadata');
-    });
-
     it('reads identity from expanded devices when local devices are empty', function () {
         Process::fake(function (PendingProcess $process) {
             expect($process->command)
@@ -2185,161 +1484,6 @@ describe('IncusHost mutations', function () {
             ->toBe('oe-b32d6c83af72')
             ->and($instance?->mac)
             ->toBe('00:16:3e:5e:4b:52');
-    });
-
-    it('treats an already absent snapshot as a completed idempotent deletion', function () {
-        Process::fake([
-            '*' => Process::sequence()
-                ->push(vmJson())
-                ->push('[]'),
-        ]);
-
-        incusHost()->deleteSnapshotIfExists('orbit-e2e-tst-123-aaaaaaaa-gateway', 'main-g1');
-
-        Process::assertDidntRun(incusCommand(
-            'snapshot',
-            'delete',
-            incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
-            'main-g1',
-        ));
-    });
-
-    it('creates snapshots in parallel after one owned instance inventory', function () {
-        $inventoryReads = 0;
-        Process::fake(function (PendingProcess $process) use (&$inventoryReads) {
-            if ($process->command === incusCommand('list', incusTarget(), '--format=json')) {
-                $inventoryReads++;
-
-                return Process::result(json_encode([
-                    json_decode(vmJson('orbit-e2e-topology-snapshot-gateway'), true, 16, JSON_THROW_ON_ERROR)[0],
-                    json_decode(vmJson('orbit-e2e-topology-snapshot-app-dev'), true, 16, JSON_THROW_ON_ERROR)[0],
-                ], JSON_THROW_ON_ERROR));
-            }
-
-            return Process::result();
-        });
-
-        incusHost()->snapshotAll([
-            'orbit-e2e-topology-snapshot-gateway' => 'main-g1',
-            'orbit-e2e-topology-snapshot-app-dev' => 'main-g1',
-        ]);
-
-        expect($inventoryReads)->toBe(1);
-        foreach (['orbit-e2e-topology-snapshot-gateway', 'orbit-e2e-topology-snapshot-app-dev'] as $instance) {
-            Process::assertRan(incusCommand('snapshot', 'create', incusTarget($instance), 'main-g1'));
-        }
-    });
-
-    it('restores snapshots in parallel after batched ownership validation', function () {
-        $inventoryReads = 0;
-        $snapshotReads = [];
-        Process::fake(function (PendingProcess $process) use (&$inventoryReads, &$snapshotReads) {
-            if ($process->command === incusCommand('list', incusTarget(), '--format=json')) {
-                $inventoryReads++;
-
-                return Process::result(json_encode([
-                    json_decode(vmJson('orbit-e2e-topology-snapshot-gateway'), true, 16, JSON_THROW_ON_ERROR)[0],
-                    json_decode(vmJson('orbit-e2e-topology-snapshot-app-dev'), true, 16, JSON_THROW_ON_ERROR)[0],
-                ], JSON_THROW_ON_ERROR));
-            }
-            if (array_slice($process->command, 3, 2) === ['snapshot', 'list']) {
-                $instance = preg_replace('/\Alab:/', '', (string) ($process->command[5] ?? ''));
-                $snapshotReads[] = $instance;
-
-                return Process::result(snapshotJson('main-g1'));
-            }
-
-            return Process::result();
-        });
-
-        incusHost()->restoreAll([
-            'orbit-e2e-topology-snapshot-gateway' => 'main-g1',
-            'orbit-e2e-topology-snapshot-app-dev' => 'main-g1',
-        ]);
-
-        sort($snapshotReads);
-        expect($inventoryReads)
-            ->toBe(1)
-            ->and($snapshotReads)
-            ->toBe(['orbit-e2e-topology-snapshot-app-dev', 'orbit-e2e-topology-snapshot-gateway']);
-        foreach (['orbit-e2e-topology-snapshot-gateway', 'orbit-e2e-topology-snapshot-app-dev'] as $instance) {
-            Process::assertRan(incusCommand('snapshot', 'restore', incusTarget($instance), 'main-g1'));
-        }
-    });
-
-    it('deletes existing snapshots in parallel after complete prevalidation and verifies absence', function () {
-        $snapshotReads = [];
-        Process::fake(function (PendingProcess $process) use (&$snapshotReads) {
-            if ($process->command === incusCommand('list', incusTarget(), '--format=json')) {
-                return Process::result(json_encode([
-                    json_decode(vmJson('orbit-e2e-tst-123-aaaaaaaa-gateway'), true, 16, JSON_THROW_ON_ERROR)[0],
-                    json_decode(vmJson('orbit-e2e-tst-123-aaaaaaaa-app-dev'), true, 16, JSON_THROW_ON_ERROR)[0],
-                ], JSON_THROW_ON_ERROR));
-            }
-            if (array_slice($process->command, 3, 2) === ['snapshot', 'list']) {
-                $instance = preg_replace('/\Alab:/', '', (string) ($process->command[5] ?? ''));
-                $snapshotReads[$instance] = ($snapshotReads[$instance] ?? 0) + 1;
-
-                return Process::result(
-                    $snapshotReads[$instance] === 1 ? snapshotJson('main-g1') : '[]',
-                );
-            }
-
-            return Process::result();
-        });
-
-        incusHost()->deleteSnapshotsIfExist([
-            'orbit-e2e-tst-123-aaaaaaaa-gateway' => 'main-g1',
-            'orbit-e2e-tst-123-aaaaaaaa-app-dev' => 'main-g1',
-        ]);
-
-        expect($snapshotReads)->toBe([
-            'orbit-e2e-tst-123-aaaaaaaa-gateway' => 2,
-            'orbit-e2e-tst-123-aaaaaaaa-app-dev' => 2,
-        ]);
-        foreach (['orbit-e2e-tst-123-aaaaaaaa-gateway', 'orbit-e2e-tst-123-aaaaaaaa-app-dev'] as $instance) {
-            Process::assertRan(incusCommand('snapshot', 'delete', incusTarget($instance), 'main-g1'));
-        }
-    });
-
-    it('accepts a fully qualified snapshot identity for the requested instance', function () {
-        Process::fake([
-            '*' => Process::sequence()
-                ->push(vmJson())
-                ->push(json_encode([[
-                    'name' => 'orbit-e2e-tst-123-aaaaaaaa-gateway/main-g1',
-                    'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
-                ]], JSON_THROW_ON_ERROR))
-                ->push(Process::result()),
-        ]);
-
-        incusHost()->restore('orbit-e2e-tst-123-aaaaaaaa-gateway', 'main-g1');
-        Process::assertRan(incusCommand(
-            'snapshot',
-            'restore',
-            incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
-            'main-g1',
-        ));
-    });
-
-    it('rejects a fully qualified snapshot identity for another instance', function () {
-        Process::fake([
-            '*' => Process::sequence()
-                ->push(vmJson())
-                ->push(json_encode([[
-                    'name' => 'other-instance/main-g1',
-                    'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
-                ]], JSON_THROW_ON_ERROR)),
-        ]);
-
-        expect(fn () => incusHost()->restore('orbit-e2e-tst-123-aaaaaaaa-gateway', 'main-g1'))
-            ->toThrow(RuntimeException::class, 'snapshot identity changed');
-        Process::assertDidntRun(incusCommand(
-            'snapshot',
-            'restore',
-            incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
-            'main-g1',
-        ));
     });
 
     it('rejects ownership mismatch without destructive mutation', function () {
@@ -2708,50 +1852,6 @@ describe('IncusHost mutations', function () {
         expect($reads)->toBe(1);
     });
 
-    it('inventories every owned snapshot name for exact recovery cleanup', function () {
-        $gateway = 'orbit-e2e-tst-123-aaaaaaaa-gateway';
-        $appDev = 'orbit-e2e-tst-123-aaaaaaaa-app-dev';
-        Process::fake(function (PendingProcess $process) use ($gateway, $appDev) {
-            if ($process->command === incusCommand('list', incusTarget(), '--format=json')) {
-                return Process::result(json_encode([
-                    json_decode(vmJson($gateway), true, 16, JSON_THROW_ON_ERROR)[0],
-                    json_decode(vmJson($appDev), true, 16, JSON_THROW_ON_ERROR)[0],
-                ], JSON_THROW_ON_ERROR));
-            }
-            if (($process->command[3] ?? null) === 'snapshot' && ($process->command[4] ?? null) === 'list') {
-                $instance = preg_replace('/\A[^:]+:/', '', (string) ($process->command[5] ?? ''));
-
-                return Process::result(json_encode([
-                    [
-                        'name' => "{$instance}/main-promoted",
-                        'created_at' => '2026-01-01T00:00:00Z',
-                        'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
-                    ],
-                    [
-                        'name' => 'main-orphan',
-                        'created_at' => '2026-01-02T00:00:00Z',
-                        'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
-                    ],
-                ], JSON_THROW_ON_ERROR));
-            }
-
-            return Process::result('', 'unexpected command', 1);
-        });
-
-        $snapshots = incusHost()->ownedSnapshotNames([$gateway, $appDev]);
-
-        expect($snapshots)->toBe([
-            $gateway => [
-                ['name' => 'main-orphan', 'created_at' => '2026-01-02T00:00:00Z'],
-                ['name' => 'main-promoted', 'created_at' => '2026-01-01T00:00:00Z'],
-            ],
-            $appDev => [
-                ['name' => 'main-orphan', 'created_at' => '2026-01-02T00:00:00Z'],
-                ['name' => 'main-promoted', 'created_at' => '2026-01-01T00:00:00Z'],
-            ],
-        ]);
-    });
-
     it('pushes labeled guest files in one validated parallel batch', function () {
         $instanceReads = 0;
         Process::fake(function (PendingProcess $process) use (&$instanceReads) {
@@ -2926,100 +2026,20 @@ describe('IncusHost failures', function () {
 
         expect(fn () => incusHost()->deleteInstance('orbit-e2e-*'))
             ->toThrow(RuntimeException::class, 'Invalid')
-            ->and(fn () => incusHost()->setMetadata('safe', ['user.other.owner' => 'orbit-e2e']))
+            ->and(fn () => incusHost()->initGuests(['gateway' => [
+                ...incusGuestSpec('gateway', 10),
+                'metadata' => ['user.other.owner' => 'orbit-e2e'],
+            ]]))
             ->toThrow(RuntimeException::class, 'ownership metadata');
         Process::assertNothingRan();
     });
-    it('attaches a validated host worktree as the source disk device at copy time', function () {
-        $worktree = temporaryPath('orbit-incus-mount-', 4);
-        mkdir($worktree, 0700, true);
-        Process::fake(function (PendingProcess $process) {
-            if ($process->command === incusCommand('list', incusTarget(), '--format=json')) {
-                return Process::result(json_encode([
-                    json_decode(vmJson('orbit-e2e-topology-snapshot-gateway'), true, 16, JSON_THROW_ON_ERROR)[0],
-                ], JSON_THROW_ON_ERROR));
-            }
-            if (array_slice($process->command, 3, 2) === ['snapshot', 'list']) {
-                return Process::result(snapshotJson('main-g1'));
-            }
 
-            return Process::result();
-        });
+    it('rejects an unsafe or missing source mount before creating any guest', function (array $mount, string $message) {
+        Process::fake();
 
-        $instances = incusHost()->copySnapshots([
-            'gateway' => [
-                'source' => 'orbit-e2e-topology-snapshot-gateway',
-                'snapshot' => 'main-g1',
-                'target' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
-                'metadata' => ['user.orbit.e2e.operation' => 'op-1'],
-                'network' => 'oe-b32d6c83af72',
-                'role' => 'gateway',
-                'topology' => 'oe-b32d6c83af72',
-                'slot' => 30,
-                'mount' => ['device' => 'orbit-source', 'source' => $worktree, 'path' => '/home/orbit/orbit'],
-            ],
-        ]);
-
-        expect($instances['gateway']->disks)
-            ->toBe(['orbit-source' => ['source' => $worktree, 'path' => '/home/orbit/orbit']]);
-        Process::assertRan(incusCommand(
-            'copy',
-            incusTarget('orbit-e2e-topology-snapshot-gateway').'/main-g1',
-            incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
-            '--storage',
-            'orbit-e2e',
-            '--config',
-            'limits.cpu=1',
-            '--config',
-            'limits.memory=2GiB',
-            '--device',
-            'root,pool=orbit-e2e',
-            '--device',
-            'root,size=16GiB',
-            '--config',
-            'user.orbit.e2e.owner=orbit-e2e',
-            '--config',
-            'user.orbit.e2e.operation=op-1',
-            '--device',
-            'eth0,network=oe-b32d6c83af72',
-            '--device',
-            'eth0,ipv4.address=10.232.30.10',
-            '--device',
-            'eth0,hwaddr=00:16:3e:a1:e4:eb',
-            '--device',
-            'orbit-source,type=disk',
-            '--device',
-            'orbit-source,source='.$worktree,
-            '--device',
-            'orbit-source,path=/home/orbit/orbit',
-        ));
-    });
-
-    it('rejects an unsafe or missing source mount before copying', function (array $mount, string $message) {
-        Process::fake(function (PendingProcess $process) {
-            if ($process->command === incusCommand('list', incusTarget(), '--format=json')) {
-                return Process::result(json_encode([
-                    json_decode(vmJson('orbit-e2e-topology-snapshot-gateway'), true, 16, JSON_THROW_ON_ERROR)[0],
-                ], JSON_THROW_ON_ERROR));
-            }
-            if (array_slice($process->command, 3, 2) === ['snapshot', 'list']) {
-                return Process::result(snapshotJson('main-g1'));
-            }
-
-            return Process::result();
-        });
-
-        expect(fn () => incusHost()->copySnapshots([
-            'gateway' => [
-                'source' => 'orbit-e2e-topology-snapshot-gateway',
-                'snapshot' => 'main-g1',
-                'target' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
-                'metadata' => [],
-                'mount' => $mount,
-            ],
-        ]))
+        expect(fn () => incusHost()->initGuests(['gateway' => [...incusGuestSpec('gateway', 10), 'mount' => $mount]]))
             ->toThrow(RuntimeException::class, $message);
-        Process::assertNotRan(static fn (PendingProcess $process): bool => ($process->command[3] ?? null) === 'copy');
+        Process::assertNothingRan();
     })->with([
         'relative source' => [
             ['device' => 'orbit-source', 'source' => 'relative', 'path' => '/home/orbit/orbit'],

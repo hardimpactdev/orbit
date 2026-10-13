@@ -24,19 +24,6 @@ it('matches guest response fields to the OpenAPI schemas', function (): void {
     expect(guest_script_field_problems())->toBe([]);
 });
 
-it('compiles embedded guest python', function (): void {
-    $checked = 0;
-    foreach (guest_script_shell_files() as $path) {
-        $source = (string) file_get_contents($path);
-        if (! str_contains($source, "<<'PYTHON'")) {
-            continue;
-        }
-        $checked++;
-        expect(guest_script_python_calls($source)['error'])->toBeNull();
-    }
-    expect($checked)->toBeGreaterThan(0);
-});
-
 it('rejects an extra positional, an undefined python field, and a drifted orbit binary path', function (): void {
     $commands = guest_script_cli_commands();
     $calls = guest_script_orbit_invocations(<<<'SH'

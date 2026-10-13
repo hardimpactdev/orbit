@@ -4,1428 +4,170 @@ declare(strict_types=1);
 
 use App\E2E\IncusHost;
 use App\E2E\TopologyVerifier;
-use App\E2E\Value\AttemptId;
 use App\E2E\Value\SourceState;
-use App\E2E\Value\TopologyEndState;
-use App\E2E\Value\TopologyNodePurpose;
-use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologyTarget;
-use App\E2E\Value\VerificationMode;
-use App\E2E\Value\VerificationReport;
 use Illuminate\Container\Container;
-use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Process\Factory as ProcessFactory;
-use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Facade;
-use Illuminate\Support\Facades\Process;
+use Tests\Support\FakeIncus;
 
-/** @return array<string, string> */
-function topologyVerifierProbeRoles(): array
+/** A running topology of the recipe in FakeIncus, on slot 2. */
+function verifierTopology(FakeIncus $incus, TopologyRecipe $recipe): TopologyTarget
 {
-    return [
-        'vm.gateway.running' => 'gateway',
-        'vm.app-dev.running' => 'app-dev',
-        'vm.app-prod.running' => 'app-prod',
-        'role.gateway' => 'gateway',
-        'role.app-dev' => 'app-dev',
-        'role.app-prod' => 'app-prod',
-        'role.assignments' => 'gateway',
-        'appinstance.routes' => 'gateway',
-        'metrics.publication' => 'gateway',
-        'service.gateway' => 'gateway',
-        'service.vpn' => 'gateway',
-        'wireguard.reachability' => 'gateway',
-        'operator.app-dev' => 'app-dev',
-        'operator.container' => 'operator',
-        'source.operator' => 'operator',
-        'https.gateway-internal' => 'app-dev',
-        'php-fpm.app-dev' => 'app-dev',
-        'caddy.app-dev' => 'app-dev',
-        'laravel.dev' => 'app-dev',
-        'workspace.app-dev' => 'app-dev',
-        'php-fpm.app-prod' => 'app-prod',
-        'caddy.app-prod' => 'app-prod',
-        'laravel.prod' => 'app-prod',
-        'source.gateway' => 'gateway',
-        'source.app-dev' => 'app-dev',
-        'source.manifest' => 'gateway',
-        'cluster.shared' => 'app-dev',
-        'sample.fixtures' => 'app-dev',
-    ];
-}
-
-function setUpTopologyVerifierProcessFacade(): void
-{
-    $container = new Container;
-    $container->instance(ProcessFactory::class, new ProcessFactory);
-    Facade::clearResolvedInstances();
-    Facade::setFacadeApplication($container);
-}
-
-function isTopologyVerifierHelper(PendingProcess $process): bool
-{
-    return
-        is_array($process->command)
-        && count($process->command) === 2
-        && ($process->command[0] ?? null) === 'python3'
-        && is_string($process->command[1] ?? null)
-        && str_ends_with($process->command[1], '/resources/host/exec-all.py');
-}
-
-function isDirectTopologyVerifierProbe(PendingProcess $process): bool
-{
-    return
-        is_array($process->command)
-        && ($process->command[0] ?? null) === 'incus'
-        && in_array('exec', $process->command, true);
-}
-
-function isGlobalIpv4TopologyVerifierProbe(array $argv): bool
-{
-    return $argv === [
-        'sh',
-        '-c',
-        'interface=$(ip -4 route show default | awk \'$1 == "default" { for (i = 2; i < NF; i++) if ($i == "dev") { print $(i + 1); exit } }\') && [ -n "$interface" ] && ip -4 -o addr show dev "$interface" scope global',
-    ];
-}
-
-function topologyVerifierInventory(
-    PendingProcess $process,
-    ?TopologyTarget $topologyTarget = null,
-    bool $invalidExtraMac = false,
-    bool $stoppedExtra = false,
-): ?ProcessResult {
-    $command = $process->command;
-    if (! is_array($command) || ($command[array_key_last($command)] ?? null) !== '--format=json') {
-        return null;
-    }
-
-    if (in_array('network', $command, true)) {
-        $network = $topologyTarget?->network() ?? 'oe-topo-snap';
-
-        return Process::result(json_encode([[
-            'name' => $network,
-            'config' => [
-                'user.orbit.e2e.owner' => 'orbit-e2e',
-                'ipv4.address' => '10.232.'.($topologyTarget === null ? '1' : '2').'.1/24',
-            ],
-        ]], JSON_THROW_ON_ERROR));
-    }
-
-    $selector = $command[array_key_last($command) - 1];
-    $name = str_contains($selector, ':') ? substr($selector, strpos($selector, ':') + 1) : $selector;
-    if ($topologyTarget !== null) {
-        $nodes = array_values(array_filter(
-            $topologyTarget->recipe->nodeKeys(),
-            fn (string $node): bool => $name === '' || $topologyTarget->instance($node) === $name,
-        ));
-
-        return Process::result(json_encode(array_map(
-            static function (string $node) use ($topologyTarget, $invalidExtraMac, $stoppedExtra): array {
-                $instance = $topologyTarget->instance($node);
-                $extension =
-                    $topologyTarget->recipe->node($node)->purpose === TopologyNodePurpose::Extension;
-                $stopped = $stoppedExtra && $extension;
-
-                return [
-                    'name' => $instance,
-                    'type' => $node === 'operator' ? 'container' : 'virtual-machine',
-                    'status' => $stopped ? 'Stopped' : 'Running',
-                    'status_code' => $stopped ? 102 : 103,
-                    'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
-                    'devices' => [
-                        'root' => ['pool' => 'orbit-e2e'],
-                        'eth0' => [
-                            'network' => $topologyTarget->network(),
-                            'ipv4.address' => TopologyTarget::ipv4For(2, $topologyTarget->recipe->node($node)->address),
-                            'hwaddr' => $invalidExtraMac && $extension
-                                ? '00:16:3e:00:00:00'
-                                : $topologyTarget->mac($node),
-                        ],
-                    ],
-                ];
-            },
-            $nodes,
-        ), JSON_THROW_ON_ERROR));
-    }
-
-    $roles = $name === ''
-        ? ['gateway', 'app-dev', 'app-prod', 'operator']
-        : [
-            str_ends_with($name, '-gateway')
-                ? 'gateway'
-                : (str_ends_with($name, '-app-dev') ? 'app-dev' : (str_ends_with($name, '-operator') ? 'operator' : 'app-prod')),
-        ];
-
-    return Process::result(json_encode(array_map(static function (string $role): array {
-        $name = 'orbit-e2e-topology-snapshot-'.$role;
-        $mac = implode(':', str_split(substr(sha1('oe-topo-snap:'.$role), 0, 6), 2));
-
-        $ipv4 = ['gateway' => '10.232.1.10', 'app-dev' => '10.232.1.11', 'app-prod' => '10.232.1.12', 'operator' => '10.232.1.14'][$role];
-
-        return [
-            'name' => $name,
-            'type' => str_ends_with($name, '-operator') ? 'container' : 'virtual-machine',
+    $target = featureTarget('TST-9', 'a', $recipe);
+    $incus->networks[$target->network()] = ['config' => ['ipv4.address' => '10.232.2.1/24', 'user.orbit.e2e.owner' => 'orbit-e2e']];
+    foreach ($recipe->nodes as $node) {
+        $incus->instances[$target->instance($node->key)] = [
+            'type' => $node->image->instanceType(),
             'status' => 'Running',
-            'status_code' => 103,
             'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
             'devices' => [
-                'root' => ['pool' => 'orbit-e2e'],
-                'eth0' => [
-                    'network' => 'oe-topo-snap',
-                    'ipv4.address' => $ipv4,
-                    'hwaddr' => '00:16:3e:'.$mac,
-                ],
+                'root' => ['type' => 'disk', 'path' => '/', 'pool' => 'orbit-e2e'],
+                'eth0' => ['type' => 'nic', 'network' => $target->network(), 'hwaddr' => $target->mac($node->key), 'ipv4.address' => TopologyTarget::ipv4For(2, $node->address)],
             ],
         ];
-    }, $roles), JSON_THROW_ON_ERROR));
+    }
+
+    return $target;
 }
 
-/** @param array{label:string,instance:string,argv:list<string>} $request */
-function topologyVerifierEvidence(array $request, string $sha): string
+/** @param array<string, int> $failures probe => remaining failing attempts */
+function verifierResponder(string $sha, array &$failures = []): Closure
 {
-    $probe = $request['label'];
-    if ($probe === 'sample-app-state') {
-        return '';
-    }
-    $instance = preg_replace('/^[^:]+:/', '', $request['instance']);
-
-    return json_encode([
-        'probe' => $probe,
-        'passed' => true,
-        'identity' => $sha,
-        'checked_at' => '2026-08-29T12:34:56+00:00',
-        'expected' => 'healthy',
-        'observed' => 'healthy',
-        'evidence_ref' => "incus://{$instance}/{$probe}",
-    ], JSON_THROW_ON_ERROR);
-}
-
-/**
- * @param  array{label:string,project:string,instance:string,argv:list<string>,timeout:int,stdin:?string}  $request
- * @param  array<string, string>  $probeRoles
- */
-function assertTopologyVerifierRequest(array $request, array $probeRoles, string $sha): void
-{
-    $probe = $request['label'];
-    if ($probe === 'sample-app-state') {
-        expect($request)->toBe([
-            'label' => 'sample-app-state',
-            'project' => 'default',
-            'instance' => 'local:orbit-e2e-topology-snapshot-app-dev',
-            'argv' => ['/usr/local/bin/converge-sample-app.sh', 'inspect-state'],
-            'timeout' => 30,
-            'stdin' => null,
-        ]);
-
-        return;
-    }
-    $role = $probeRoles[$probe] ?? null;
-    expect($role)->not->toBeNull();
-
-    $arguments = [
-        '/usr/local/bin/verify-topology.sh',
-        $probe,
-        'readiness',
-        $sha,
-        'orbit-e2e-topology-snapshot-'.$role,
-    ];
-    if ($probe === 'cluster.shared') {
-        array_push($arguments, 'gateway', 'app-dev', 'app-prod');
-    } elseif ($probe === 'wireguard.reachability') {
-        $arguments[] = 'app-dev';
-        $arguments[] = 'app-prod';
-        $arguments[] = 'operator';
-    } elseif (in_array($probe, ['role.assignments', 'metrics.publication'], true)) {
-        $arguments[] = base64_encode(json_encode(TopologyProfile::ASSIGNMENTS, JSON_THROW_ON_ERROR));
-    } elseif ($probe === 'source.manifest') {
-        $arguments[] = '-';
-        $arguments[] = '';
-    }
-
-    expect($request)->toBe([
-        'label' => $probe,
-        'project' => 'default',
-        'instance' => 'local:orbit-e2e-topology-snapshot-'.$role,
-        'argv' => $arguments,
-        'timeout' => $probe === 'sample.fixtures' ? 60 : 30,
-        'stdin' => null,
-    ]);
-}
-
-describe('TopologyVerifier mounted source', function () {
-    it('passes the expected git pointer hash only to the source probes of a mounted source', function () {
-        setUpTopologyVerifierProcessFacade();
-        $sha = str_repeat('a', 40);
-        $pointer = str_repeat('f', 64);
-        $argv = [];
-
-        Process::fake(function (PendingProcess $process) use ($sha, &$argv) {
-            $inventory = topologyVerifierInventory($process);
-            if ($inventory instanceof ProcessResult) {
-                return $inventory;
-            }
-            $payload = json_decode((string) $process->input, true, 512, JSON_THROW_ON_ERROR);
-            $results = [];
-            foreach ($payload['requests'] as $request) {
-                $argv[$request['label']] = $request['argv'];
-                $results[] = [
-                    'label' => $request['label'],
-                    'stdout' => isGlobalIpv4TopologyVerifierProbe($request['argv'] ?? [])
-                        ? '2: enp5s0    inet 192.0.2.1/24 scope global'
-                        : topologyVerifierEvidence($request, $sha),
-                    'stderr' => '',
-                    'exit_code' => 0,
-                ];
-            }
-
-            return Process::result(json_encode($results, JSON_THROW_ON_ERROR));
-        });
-
-        $target = TopologyTarget::topologySnapshot();
-        new TopologyVerifier(
-            new IncusHost(pool: 'orbit-e2e'),
-            readinessTimeoutSeconds: 60,
-            readinessPollIntervalMicroseconds: 0,
-        )->verify(
-            $target,
-            VerificationMode::Readiness,
-            new SourceState($sha, $sha, mounted: true, pointerHash: $pointer),
-        );
-
-        expect($argv['cluster.shared'] ?? null)->toBe([
-            '/home/orbit/orbit/apps/e2e/resources/guest/verify-topology.sh',
-            'cluster.shared', 'readiness', $sha, $target->instance('app-dev'), 'gateway', 'app-dev', 'app-prod',
-        ]);
-        $script = '/usr/local/bin/verify-topology.sh';
-        expect($argv['source.gateway'] ?? null)
-            ->toBe([$script, 'source.gateway', 'readiness', $sha, $target->instance('gateway'), $pointer])
-            ->and($argv['source.app-dev'] ?? null)
-            ->toBe([$script, 'source.app-dev', 'readiness', $sha, $target->instance('app-dev'), $pointer])
-            ->and($argv['source.manifest'] ?? null)
-            ->toBe([$script, 'source.manifest', 'readiness', $sha, $target->instance('gateway'), '-', '', $pointer])
-            ->and($argv['role.gateway'] ?? null)
-            ->toBe([$script, 'role.gateway', 'readiness', $sha, $target->instance('gateway')]);
-    });
-});
-
-describe('TopologyVerifier probe failures', function (): void {
-    it('reports laravel.prod guest command exit and stderr tail even after timed_out', function (bool $laterTimeout): void {
-        setUpTopologyVerifierProcessFacade();
-        $sha = str_repeat('a', 40);
-        $attempts = 0;
-        Process::fake(function (PendingProcess $process) use ($sha, &$attempts): ProcessResult {
-            $inventory = topologyVerifierInventory($process);
-            if ($inventory instanceof ProcessResult) {
-                return $inventory;
-            }
-            $payload = json_decode((string) $process->input, true, 512, JSON_THROW_ON_ERROR);
-            $results = [];
-            foreach ($payload['requests'] as $request) {
-                $failed = $request['label'] === 'laravel.prod';
-                $timeout = $failed && ++$attempts > 1;
-                if ($timeout) {
-                    usleep(1_000_000);
-                }
-                $results[] = [
-                    'label' => $request['label'],
-                    'stdout' => isGlobalIpv4TopologyVerifierProbe($request['argv'] ?? [])
-                        ? '2: enp5s0    inet 192.0.2.1/24 scope global'
-                        : ($failed ? '' : topologyVerifierEvidence($request, $sha)),
-                    'stderr' => $failed ? ($timeout ? '' : 'curl: (22) The requested URL returned error: 500') : '',
-                    'exit_code' => $failed ? ($timeout ? 124 : 22) : 0,
-                    'timed_out' => $timeout,
-                ];
-            }
-
-            return Process::result(json_encode($results, JSON_THROW_ON_ERROR));
-        });
-
-        $report = new TopologyVerifier(
-            new IncusHost(pool: 'orbit-e2e'),
-            readinessTimeoutSeconds: 1,
-            readinessPollIntervalMicroseconds: 0,
-        )->verify(
-            TopologyTarget::topologySnapshot(),
-            $laterTimeout ? VerificationMode::Readiness : VerificationMode::Proof,
-            new SourceState($sha, $sha),
-        );
-
-        expect($report->passed)->toBeFalse();
-        expect($report->probes['laravel.prod']['observed'])->toBe($laterTimeout
-            ? "guest exit 124; last non-timeout failure: guest exit 22\ncurl: (22) The requested URL returned error: 500"
-            : "guest exit 22\ncurl: (22) The requested URL returned error: 500");
-        expect($attempts)->toBe($laterTimeout ? 2 : 1);
-    })->with(['non-timeout failure' => false, 'final timeout' => true]);
-
-    it('fails laravel.prod within its wall-clock bound when HTTP 500 requests Retry-After beyond the deadline', function (int $path): void {
-        $script = file_get_contents(__DIR__.'/../../../resources/guest/verify-topology.sh');
-        preg_match_all('/(?:timeout [^\n]*? )?curl --fail[^\n]+/', substr($script, strpos($script, "  laravel.prod)\n")), $matches);
-        $invocation = $matches[0][$path];
-        $server = stream_socket_server('tcp://127.0.0.1:0');
-        expect($server)->not->toBeFalse();
-        $address = stream_socket_get_name($server, false);
-        $invocation = preg_replace('/--cacert \S+ |--resolve \S+ /', '', $invocation);
-        $invocation = preg_replace('/"?https:\/\/[^\s"]+"?/', 'http://'.$address.'/', $invocation);
-        $process = Symfony\Component\Process\Process::fromShellCommandline($invocation);
-        $process->setTimeout(25);
-        $started = microtime(true);
-
-        try {
-            $process->start();
-            $connection = stream_socket_accept($server, 5);
-            expect($connection)->not->toBeFalse();
-            stream_set_timeout($connection, 5);
-            while (($line = fgets($connection)) !== false && trim($line) !== '') {
-                // Read the request before sending the retryable failure.
-            }
-            fwrite($connection, "HTTP/1.1 500 Internal Server Error\r\nRetry-After: 60\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
-            fclose($connection);
-            $exit = $process->wait();
-
-            expect($exit)->not->toBe(0);
-            expect(microtime(true) - $started)->toBeLessThan(22);
-            expect($process->getErrorOutput())->toContain('500');
-        } finally {
-            $process->stop(0);
-            fclose($server);
+    return function (string $instance, array $argv) use (&$failures): ?array {
+        if ($argv[0] !== '/usr/local/bin/verify-topology.sh') {
+            return null;
         }
-    })->with(['native placement' => 0, 'legacy placement' => 1]);
+        [$probe, $identity, $evidenceInstance] = array_slice($argv, 1, 3);
+        if (($failures[$probe] ?? 0) > 0) {
+            $failures[$probe]--;
 
-    it('keeps both laravel.prod curl retry budgets below the 30 second guest command timeout', function (): void {
-        $script = file_get_contents(__DIR__.'/../../../resources/guest/verify-topology.sh');
-        preg_match_all('/timeout --kill-after=(\d+)s (\d+)s curl[^\n]+/', substr($script, strpos($script, "  laravel.prod)\n")), $matches);
-        expect($matches[1])->toBe(['1', '1']);
-        expect($matches[2])->toBe(['18', '18']);
-        expect($matches[0])->toHaveCount(2);
-        foreach ($matches[0] as $curl) {
-            preg_match('/--retry (\d+) /', $curl, $retries);
-            preg_match('/--retry-delay (\d+) /', $curl, $delay);
-            preg_match('/--max-time (\d+) /', $curl, $maximum);
-            preg_match('/--connect-timeout (\d+) /', $curl, $connect);
-            $budget = ((int) $retries[1] + 1) * (int) $maximum[1] + (int) $retries[1] * (int) $delay[1];
-
-            expect($budget)->toBeLessThan(30);
-            expect((int) $connect[1])->toBeLessThanOrEqual((int) $maximum[1]);
+            return ['', "{$probe} is not ready\n", 1];
         }
-    });
-});
+
+        return [json_encode([
+            'probe' => $probe,
+            'passed' => true,
+            'identity' => $identity,
+            'checked_at' => '2026-10-12T12:00:00Z',
+            'expected' => 'ready',
+            'observed' => 'ready',
+            'evidence_ref' => "incus://{$evidenceInstance}/{$probe}",
+        ], JSON_THROW_ON_ERROR)."\n", '', 0];
+    };
+}
 
 describe('TopologyVerifier', function () {
-    it('runs all named probes through one concurrent host helper and preserves evidence', function () {
-        setUpTopologyVerifierProcessFacade();
+    beforeEach(function () {
+        $container = new Container;
+        $container->instance(ProcessFactory::class, new ProcessFactory);
+        Facade::clearResolvedInstances();
+        Facade::setFacadeApplication($container);
+    });
+
+    it('runs exactly the probes of the declared Nodes on the Node each belongs to', function (array $workloads, array $probes) {
         $sha = str_repeat('a', 40);
-        $probeRoles = topologyVerifierProbeRoles();
-        $batches = [];
-        $inventoryReads = 0;
+        $incus = new FakeIncus()->install();
+        $target = verifierTopology($incus, TopologyRecipe::compose($workloads));
+        $incus->respond(verifierResponder($sha));
 
-        Process::fake(function (PendingProcess $process) use ($sha, $probeRoles, &$batches, &$inventoryReads) {
-            $inventory = topologyVerifierInventory($process);
-            if ($inventory instanceof ProcessResult) {
-                $inventoryReads++;
+        $report = new TopologyVerifier(new IncusHost(pool: 'orbit-e2e'), 60, 0)
+            ->verify($target, new SourceState($sha, $sha, mounted: true, mountTokenHash: str_repeat('e', 64)));
 
-                return $inventory;
-            }
-
-            expect(isTopologyVerifierHelper($process))->toBeTrue();
-            $payload = json_decode((string) $process->input, true, 512, JSON_THROW_ON_ERROR);
-            expect(array_keys($payload))->toBe(['requests']);
-            $batches[] = array_column($payload['requests'], 'label');
-            $results = [];
-            foreach ($payload['requests'] as $request) {
-                if (isGlobalIpv4TopologyVerifierProbe($request['argv'] ?? [])) {
-                    $results[] = [
-                        'label' => $request['label'],
-                        'stdout' => '2: enp5s0    inet 192.0.2.'
-                                .['gateway' => 1, 'app-dev' => 2, 'app-prod' => 3][$request['label']]
-                                .'/24 scope global',
-                        'stderr' => '',
-                        'exit_code' => 0,
-                    ];
-
-                    continue;
-                }
-                assertTopologyVerifierRequest($request, $probeRoles, $sha);
-                $results[] = [
-                    'label' => $request['label'],
-                    'stdout' => topologyVerifierEvidence($request, $sha),
-                    'stderr' => '',
-                    'exit_code' => 0,
-                ];
-            }
-
-            return Process::result(json_encode($results, JSON_THROW_ON_ERROR));
-        });
-
-        $report = new TopologyVerifier(
-            new IncusHost(pool: 'orbit-e2e'),
-            readinessTimeoutSeconds: 60,
-            readinessPollIntervalMicroseconds: 0,
-        )->verify(
-            TopologyTarget::topologySnapshot(),
-            VerificationMode::Readiness,
-            new SourceState($sha, $sha),
-        );
-
-        expect($report->passed)
-            ->toBeTrue()
-            ->and($report->probes)
-            ->toHaveCount(28)
-            ->and($report->probes['service.vpn'] ?? null)
-            ->toBe([
-                'passed' => true,
-                'checked_at' => '2026-08-29T12:34:56+00:00',
-                'expected' => 'healthy',
-                'observed' => 'healthy',
-                'evidence_ref' => 'incus://orbit-e2e-topology-snapshot-gateway/service.vpn',
-            ])
-            ->and($batches)
-            ->toBe([['sample-app-state'], array_keys($probeRoles)])
-            ->and($inventoryReads)
-            ->toBe(4);
-        Process::assertRanTimes(isTopologyVerifierHelper(...), 2);
-        Process::assertNotRan(isDirectTopologyVerifierProbe(...));
-    });
-});
-
-describe('TopologyVerifier typed application state', function () {
-    it('rejects legacy sample state for a declared replacement before topology probes', function (): void {
-        setUpTopologyVerifierProcessFacade();
-        $sampleArguments = null;
-        Process::fake(function (PendingProcess $process) use (&$sampleArguments): ProcessResult {
-            $inventory = topologyVerifierInventory($process);
-            if ($inventory instanceof ProcessResult) {
-                return $inventory;
-            }
-
-            $payload = json_decode((string) $process->input, true, 512, JSON_THROW_ON_ERROR);
-            $request = $payload['requests'][0];
-            $sampleArguments = $request['argv'];
-
-            return Process::result(json_encode([[
-                'label' => 'sample-app-state',
-                'stdout' => '',
-                'stderr' => '',
-                'exit_code' => 65,
-            ]], JSON_THROW_ON_ERROR));
-        });
-
-        expect(fn () => new TopologyVerifier(new IncusHost(pool: 'orbit-e2e'))->verify(
-            TopologyTarget::topologySnapshot(),
-            VerificationMode::Proof,
-            new SourceState(str_repeat('a', 40), str_repeat('a', 40)),
-            nativeSamplesOnly: true,
-        ))->toThrow(RuntimeException::class, 'Failed to inspect the sample App convergence state.')
-            ->and($sampleArguments)
-            ->toBe(['/usr/local/bin/converge-sample-app.sh', 'inspect-state', 'native']);
-    });
-
-    it('names the script, exit code, and redacted stderr tail when sample state inspection fails', function (): void {
-        setUpTopologyVerifierProcessFacade();
-        Process::fake(function (PendingProcess $process): ProcessResult {
-            $inventory = topologyVerifierInventory($process);
-            if ($inventory instanceof ProcessResult) {
-                return $inventory;
-            }
-
-            return Process::result(json_encode([[
-                'label' => 'sample-app-state',
-                'stdout' => '',
-                'stderr' => "sample-app: boom\nAuthorization: Bearer private-token\n",
-                'exit_code' => 65,
-            ]], JSON_THROW_ON_ERROR));
-        });
-
-        expect(fn () => new TopologyVerifier(new IncusHost(pool: 'orbit-e2e'))->verify(
-            TopologyTarget::topologySnapshot(),
-            VerificationMode::Proof,
-            new SourceState(str_repeat('a', 40), str_repeat('a', 40)),
-        ))->toThrow(
-            RuntimeException::class,
-            "Failed to inspect the sample App convergence state. Guest convergence script converge-sample-app.sh failed on orbit-e2e-topology-snapshot-app-dev with exit code 65.\n"
-            ."sample-app: boom\n"
-            .'Authorization: [REDACTED]',
-        );
-    });
-
-    it('refuses incomplete native production state instead of omitting production readiness', function (): void {
-        setUpTopologyVerifierProcessFacade();
-        $sha = str_repeat('a', 40);
-        $checkout = '/srv/orbit/apps/laravel-typed/e2e-dev';
-        $batches = [];
-        $argv = [];
-
-        Process::fake(function (PendingProcess $process) use ($sha, $checkout, &$argv, &$batches): ProcessResult {
-            $inventory = topologyVerifierInventory($process);
-            if ($inventory instanceof ProcessResult) {
-                return $inventory;
-            }
-
-            $payload = json_decode((string) $process->input, true, 512, JSON_THROW_ON_ERROR);
-            $batches[] = array_column($payload['requests'], 'label');
-            $results = [];
-            foreach ($payload['requests'] as $request) {
-                if ($request['label'] === 'sample-app-state') {
-                    $results[] = [
-                        'label' => 'sample-app-state',
-                        'stdout' => json_encode([
-                            'shape' => 'instances',
-                            'project_id' => 1,
-                            'node_id' => 2,
-                            'name' => 'e2e-dev',
-                            'checkout_path' => $checkout,
-                            'effective_root' => 'public',
-                        ], JSON_THROW_ON_ERROR),
-                        'stderr' => '',
-                        'exit_code' => 0,
-                    ];
-
-                    continue;
-                }
-                if (isGlobalIpv4TopologyVerifierProbe($request['argv'] ?? [])) {
-                    $results[] = [
-                        'label' => $request['label'],
-                        'stdout' => '2: enp5s0    inet 192.0.2.1/24 scope global',
-                        'stderr' => '',
-                        'exit_code' => 0,
-                    ];
-
-                    continue;
-                }
-                $argv[$request['label']] = $request['argv'];
-                $results[] = [
-                    'label' => $request['label'],
-                    'stdout' => topologyVerifierEvidence($request, $sha),
-                    'stderr' => '',
-                    'exit_code' => 0,
-                ];
-            }
-
-            return Process::result(json_encode($results, JSON_THROW_ON_ERROR));
-        });
-
-        expect(fn () => new TopologyVerifier(
-            new IncusHost(pool: 'orbit-e2e'),
-            readinessTimeoutSeconds: 60,
-            readinessPollIntervalMicroseconds: 0,
-        )->verify(
-            TopologyTarget::topologySnapshot(),
-            VerificationMode::Readiness,
-            new SourceState($sha, $sha),
-        ))->toThrow(RuntimeException::class, 'Native sample production placement is missing');
-        expect($argv)->toBe([]);
-    });
-
-    it('passes the exact recorded production placement to every production probe', function (array $production): void {
-        setUpTopologyVerifierProcessFacade();
-        $sha = str_repeat('a', 40);
-        $encoded = base64_encode(json_encode($production, JSON_THROW_ON_ERROR));
-        $argv = [];
-        Process::fake(function (PendingProcess $process) use ($sha, $production, &$argv): ProcessResult {
-            $inventory = topologyVerifierInventory($process);
-            if ($inventory instanceof ProcessResult) {
-                return $inventory;
-            }
-            $payload = json_decode((string) $process->input, true, 512, JSON_THROW_ON_ERROR);
-            $results = [];
-            foreach ($payload['requests'] as $request) {
-                if ($request['label'] === 'sample-app-state') {
-                    $results[] = [
-                        'label' => 'sample-app-state',
-                        'stdout' => json_encode([
-                            'shape' => 'instances',
-                            'project_id' => 1,
-                            'node_id' => 2,
-                            'name' => 'e2e-dev',
-                            'checkout_path' => '/srv/orbit/apps/laravel-typed/e2e-dev',
-                            'effective_root' => 'public',
-                            'production' => $production,
-                        ], JSON_THROW_ON_ERROR),
-                        'stderr' => '',
-                        'exit_code' => 0,
-                    ];
-
-                    continue;
-                }
-                if (isGlobalIpv4TopologyVerifierProbe($request['argv'] ?? [])) {
-                    $results[] = [
-                        'label' => $request['label'],
-                        'stdout' => '2: enp5s0    inet 192.0.2.1/24 scope global',
-                        'stderr' => '',
-                        'exit_code' => 0,
-                    ];
-
-                    continue;
-                }
-                $argv[$request['label']] = $request['argv'];
-                $results[] = [
-                    'label' => $request['label'],
-                    'stdout' => topologyVerifierEvidence($request, $sha),
-                    'stderr' => '',
-                    'exit_code' => 0,
-                ];
-            }
-
-            return Process::result(json_encode($results, JSON_THROW_ON_ERROR));
-        });
-
-        $report = new TopologyVerifier(new IncusHost(pool: 'orbit-e2e'))->verify(
-            TopologyTarget::topologySnapshot(),
-            VerificationMode::Readiness,
-            new SourceState($sha, $sha),
-        );
-
-        expect($report->passed)->toBeTrue();
-        foreach (['role.app-prod', 'php-fpm.app-prod', 'caddy.app-prod', 'laravel.prod'] as $probe) {
-            expect($argv[$probe][array_key_last($argv[$probe])] ?? null)->toBe($encoded);
+        $ran = [];
+        foreach ($incus->execs as $exec) {
+            $ran[$exec['argv'][1]] = substr($exec['instance'], strlen('orbit-e2e-tst-9-aaaaaaaa-'));
         }
-        expect(array_keys($report->probes))->not->toContain('workspace.app-dev');
+        expect($report->passed)->toBeTrue()
+            ->and($ran)->toBe($probes)
+            ->and($report->probes['service.vpn']['evidence_ref'])->toBe('incus://'.$target->instance('gateway').'/service.vpn');
     })->with([
-        'flat shared' => [[
-            'layout' => 'flat',
-            'instance_id' => 7,
-            'user' => 'orbit-laravel',
-            'home' => '/var/www/laravel',
-            'checkout_path' => '/var/www/laravel/e2e-prod',
-            'effective_root' => '/var/www/laravel/e2e-prod/public',
-            'environment_path' => '/var/www/laravel/e2e-prod/.env',
-            'database_path' => '/var/www/laravel/e2e-prod/database/database.sqlite',
-            'service' => 'php8.5-fpm.service',
-            'socket' => '/run/php/orbit-prod-instance-7.sock',
-            'current_target' => null,
-            'domain' => 'laravel.internal',
+        'gateway only' => [[], [
+            'nodes.registered' => 'gateway', 'service.gateway' => 'gateway', 'service.vpn' => 'gateway', 'wireguard.reachability' => 'gateway',
+            'operator.gateway' => 'operator', 'source.gateway' => 'gateway', 'source.operator' => 'operator',
         ]],
-        'release dedicated' => [[
-            'layout' => 'release',
-            'instance_id' => 7,
-            'user' => 'orbit-laravel',
-            'home' => '/var/www/laravel',
-            'checkout_path' => '/var/www/laravel/current',
-            'effective_root' => '/var/www/laravel/current/public',
-            'environment_path' => '/var/www/laravel/.env',
-            'database_path' => null,
-            'service' => 'orbit-orbit-laravel-php8.5-fpm.service',
-            'socket' => '/run/php/orbit-laravel.sock',
-            'current_target' => '/var/www/laravel/releases/20260910T120000Z',
-            'domain' => 'e2e-prod.orbit.test',
+        'full' => [['app-dev', 'app-prod', 'app-prod-2'], [
+            'nodes.registered' => 'gateway', 'service.gateway' => 'gateway', 'service.vpn' => 'gateway', 'wireguard.reachability' => 'gateway',
+            'caddy.app-dev' => 'app-dev', 'caddy.app-prod' => 'app-prod', 'php-fpm.app-prod' => 'app-prod',
+            'caddy.app-prod-2' => 'app-prod-2', 'php-fpm.app-prod-2' => 'app-prod-2',
+            'operator.gateway' => 'operator', 'source.gateway' => 'gateway', 'source.app-dev' => 'app-dev', 'source.operator' => 'operator',
         ]],
     ]);
 
-    it('passes a domain-shaped production placement to every production probe', function (): void {
-        setUpTopologyVerifierProcessFacade();
+    it('tells the fleet probes the declared assignments, peers, and mount token', function () {
         $sha = str_repeat('a', 40);
-        $domain = [
-            'layout' => 'release',
-            'instance_id' => 7,
-            'user' => 'orbit-laravel',
-            'home' => '/var/www/laravel',
-            'checkout_path' => '/var/www/laravel/current',
-            'effective_root' => '/var/www/laravel/current/public',
-            'environment_path' => '/var/www/laravel/.env',
-            'database_path' => null,
-            'service' => 'orbit-orbit-laravel-php8.5-fpm.service',
-            'socket' => '/run/php/orbit-laravel.sock',
-            'current_target' => '/var/www/laravel/releases/20260910T120000Z',
-            'domain' => 'e2e-prod.orbit.test',
-        ];
-        $encoded = base64_encode(json_encode($domain, JSON_THROW_ON_ERROR));
-        $argv = [];
-        Process::fake(function (PendingProcess $process) use ($sha, $domain, &$argv): ProcessResult {
-            $inventory = topologyVerifierInventory($process);
-            if ($inventory instanceof ProcessResult) {
-                return $inventory;
-            }
-            $payload = json_decode((string) $process->input, true, 512, JSON_THROW_ON_ERROR);
-            $results = [];
-            foreach ($payload['requests'] as $request) {
-                if ($request['label'] === 'sample-app-state') {
-                    $results[] = [
-                        'label' => 'sample-app-state',
-                        'stdout' => json_encode([
-                            'shape' => 'instances',
-                            'project_id' => 1,
-                            'node_id' => 2,
-                            'name' => 'e2e-dev',
-                            'checkout_path' => '/srv/orbit/apps/laravel-typed/e2e-dev',
-                            'effective_root' => 'public',
-                            'production' => $domain,
-                        ], JSON_THROW_ON_ERROR),
-                        'stderr' => '',
-                        'exit_code' => 0,
-                    ];
+        $incus = new FakeIncus()->install();
+        $target = verifierTopology($incus, TopologyRecipe::compose(['app-dev']));
+        $incus->respond(verifierResponder($sha));
 
-                    continue;
-                }
-                if (isGlobalIpv4TopologyVerifierProbe($request['argv'] ?? [])) {
-                    $results[] = [
-                        'label' => $request['label'],
-                        'stdout' => '2: enp5s0    inet 192.0.2.1/24 scope global',
-                        'stderr' => '',
-                        'exit_code' => 0,
-                    ];
+        new TopologyVerifier(new IncusHost(pool: 'orbit-e2e'), 60, 0)
+            ->verify($target, new SourceState($sha, $sha, mounted: true, mountTokenHash: str_repeat('e', 64)));
 
-                    continue;
-                }
-                $argv[$request['label']] = $request['argv'];
-                $results[] = [
-                    'label' => $request['label'],
-                    'stdout' => topologyVerifierEvidence($request, $sha),
-                    'stderr' => '',
-                    'exit_code' => 0,
-                ];
-            }
-
-            return Process::result(json_encode($results, JSON_THROW_ON_ERROR));
-        });
-
-        $report = new TopologyVerifier(new IncusHost(pool: 'orbit-e2e'))->verify(
-            TopologyTarget::topologySnapshot(),
-            VerificationMode::Readiness,
-            new SourceState($sha, $sha),
-        );
-
-        expect($report->passed)->toBeTrue();
-        foreach (['role.app-prod', 'php-fpm.app-prod', 'caddy.app-prod', 'laravel.prod'] as $probe) {
-            expect($argv[$probe][array_key_last($argv[$probe])] ?? null)->toBe($encoded);
+        $arguments = [];
+        foreach ($incus->execs as $exec) {
+            $arguments[$exec['argv'][1]] = array_slice($exec['argv'], 4);
         }
+        expect(json_decode(base64_decode($arguments['nodes.registered'][0]), true))
+            ->toBe(['gateway' => ['gateway', 'vpn'], 'app-dev' => ['app-dev'], 'operator' => []])
+            ->and($arguments['wireguard.reachability'])->toBe(['app-dev', 'operator'])
+            ->and($arguments['source.app-dev'])->toBe([str_repeat('e', 64)])
+            ->and($arguments['service.gateway'])->toBe([]);
     });
 
-    it('refuses a present invalid production domain without falling back to hostname', function (): void {
-        setUpTopologyVerifierProcessFacade();
+    it('retries only the pending probes and records the last failure when the window ends', function () {
         $sha = str_repeat('a', 40);
-        $placement = [
-            'layout' => 'release',
-            'instance_id' => 7,
-            'user' => 'orbit-laravel',
-            'home' => '/var/www/laravel',
-            'checkout_path' => '/var/www/laravel/current',
-            'effective_root' => '/var/www/laravel/current/public',
-            'environment_path' => '/var/www/laravel/.env',
-            'database_path' => null,
-            'service' => 'orbit-orbit-laravel-php8.5-fpm.service',
-            'socket' => '/run/php/orbit-laravel.sock',
-            'current_target' => '/var/www/laravel/releases/20260910T120000Z',
-            'hostname' => 'e2e-prod.orbit.test',
-            'domain' => '',
-        ];
-        Process::fake(function (PendingProcess $process) use ($placement): ProcessResult {
-            $inventory = topologyVerifierInventory($process);
-            if ($inventory instanceof ProcessResult) {
-                return $inventory;
-            }
-            $payload = json_decode((string) $process->input, true, 512, JSON_THROW_ON_ERROR);
-            $results = [];
-            foreach ($payload['requests'] as $request) {
-                if ($request['label'] === 'sample-app-state') {
-                    $results[] = [
-                        'label' => 'sample-app-state',
-                        'stdout' => json_encode([
-                            'shape' => 'instances',
-                            'project_id' => 1,
-                            'node_id' => 2,
-                            'name' => 'e2e-dev',
-                            'checkout_path' => '/srv/orbit/apps/laravel-typed/e2e-dev',
-                            'effective_root' => 'public',
-                            'production' => $placement,
-                        ], JSON_THROW_ON_ERROR),
-                        'stderr' => '',
-                        'exit_code' => 0,
-                    ];
+        $incus = new FakeIncus()->install();
+        $target = verifierTopology($incus, TopologyRecipe::compose(['app-dev']));
+        $failures = ['caddy.app-dev' => 2, 'operator.gateway' => PHP_INT_MAX];
+        $incus->respond(verifierResponder($sha, $failures));
 
-                    continue;
-                }
-                $results[] = [
-                    'label' => $request['label'],
-                    'stdout' => '',
-                    'stderr' => '',
-                    'exit_code' => 0,
-                ];
+        $report = new TopologyVerifier(new IncusHost(pool: 'orbit-e2e'), 1, 0)
+            ->verify($target, new SourceState($sha, $sha));
+        $runs = array_count_values(array_map(static fn (array $exec): string => $exec['argv'][1], $incus->execs));
+
+        expect($report->passed)->toBeFalse()
+            ->and($report->probes['operator.gateway']['passed'])->toBeFalse()
+            ->and($report->probes['operator.gateway']['observed'])->toContain('operator.gateway is not ready')
+            ->and($report->failedSummary())->toContain('operator.gateway (expected passing evidence for source')
+            ->and($runs['service.gateway'])->toBe(1)
+            ->and($runs['operator.gateway'])->toBeGreaterThan(1);
+    });
+
+    it('refuses evidence for another source, probe, or Node', function (string $field, string $value) {
+        $sha = str_repeat('a', 40);
+        $incus = new FakeIncus()->install();
+        $target = verifierTopology($incus, TopologyRecipe::compose([]));
+        $honest = verifierResponder($sha);
+        $incus->respond(function (string $instance, array $argv, ?string $stdin) use ($honest, $field, $value): ?array {
+            $answer = $honest($instance, $argv, $stdin);
+            if ($answer !== null && $argv[1] === 'service.vpn') {
+                $evidence = json_decode($answer[0], true);
+                $evidence[$field] = $value;
+                $answer[0] = json_encode($evidence);
             }
 
-            return Process::result(json_encode($results, JSON_THROW_ON_ERROR));
+            return $answer;
         });
 
-        expect(fn () => new TopologyVerifier(new IncusHost(pool: 'orbit-e2e'))->verify(
-            TopologyTarget::topologySnapshot(),
-            VerificationMode::Readiness,
-            new SourceState($sha, $sha),
-        ))->toThrow(RuntimeException::class, 'Sample production placement is invalid.');
-    });
+        $report = new TopologyVerifier(new IncusHost(pool: 'orbit-e2e'), 1, 0)->verify($target, new SourceState($sha, $sha));
 
-    it('refuses a hostname-only production placement without fallback', function (): void {
-        setUpTopologyVerifierProcessFacade();
-        $sha = str_repeat('a', 40);
-        $placement = [
-            'layout' => 'release',
-            'instance_id' => 7,
-            'user' => 'orbit-laravel',
-            'home' => '/var/www/laravel',
-            'checkout_path' => '/var/www/laravel/current',
-            'effective_root' => '/var/www/laravel/current/public',
-            'environment_path' => '/var/www/laravel/.env',
-            'database_path' => null,
-            'service' => 'orbit-orbit-laravel-php8.5-fpm.service',
-            'socket' => '/run/php/orbit-laravel.sock',
-            'current_target' => '/var/www/laravel/releases/20260910T120000Z',
-            'hostname' => 'e2e-prod.orbit.test',
-        ];
-        Process::fake(function (PendingProcess $process) use ($placement): ProcessResult {
-            $inventory = topologyVerifierInventory($process);
-            if ($inventory instanceof ProcessResult) {
-                return $inventory;
-            }
-            $payload = json_decode((string) $process->input, true, 512, JSON_THROW_ON_ERROR);
-            $results = [];
-            foreach ($payload['requests'] as $request) {
-                if ($request['label'] === 'sample-app-state') {
-                    $results[] = [
-                        'label' => 'sample-app-state',
-                        'stdout' => json_encode([
-                            'shape' => 'instances',
-                            'project_id' => 1,
-                            'node_id' => 2,
-                            'name' => 'e2e-dev',
-                            'checkout_path' => '/srv/orbit/apps/laravel-typed/e2e-dev',
-                            'effective_root' => 'public',
-                            'production' => $placement,
-                        ], JSON_THROW_ON_ERROR),
-                        'stderr' => '',
-                        'exit_code' => 0,
-                    ];
-
-                    continue;
-                }
-                $results[] = [
-                    'label' => $request['label'],
-                    'stdout' => '',
-                    'stderr' => '',
-                    'exit_code' => 0,
-                ];
-            }
-
-            return Process::result(json_encode($results, JSON_THROW_ON_ERROR));
-        });
-
-        expect(fn () => new TopologyVerifier(new IncusHost(pool: 'orbit-e2e'))->verify(
-            TopologyTarget::topologySnapshot(),
-            VerificationMode::Readiness,
-            new SourceState($sha, $sha),
-        ))->toThrow(RuntimeException::class, 'Sample production placement is invalid.');
-    });
-});
-
-describe('TopologyVerifier failures and retries', function () {
-    it('fails closed when the host helper returns malformed output', function () {
-        setUpTopologyVerifierProcessFacade();
-        Process::fake(function (PendingProcess $process) {
-            return topologyVerifierInventory($process) ?? Process::result('{');
-        });
-        $sha = str_repeat('a', 40);
-
-        expect(fn () => new TopologyVerifier(new IncusHost(pool: 'orbit-e2e'))->verify(
-            TopologyTarget::topologySnapshot(),
-            VerificationMode::Proof,
-            new SourceState($sha, $sha),
-        ))
-            ->toThrow(RuntimeException::class, 'Incus guest command batch failed: Syntax error');
-        Process::assertRanTimes(isTopologyVerifierHelper(...), 1);
-        Process::assertNotRan(isDirectTopologyVerifierProbe(...));
-    });
-
-    it('does not retry readiness after a host helper failure', function () {
-        setUpTopologyVerifierProcessFacade();
-        $helperCalls = 0;
-        Process::fake(function (PendingProcess $process) use (&$helperCalls) {
-            $inventory = topologyVerifierInventory($process);
-            if ($inventory instanceof ProcessResult) {
-                return $inventory;
-            }
-
-            $helperCalls++;
-
-            return Process::result('', 'helper unavailable', 9);
-        });
-
-        expect(fn () => new TopologyVerifier(
-            new IncusHost(pool: 'orbit-e2e'),
-            readinessTimeoutSeconds: 60,
-            readinessPollIntervalMicroseconds: 1_000,
-        )->verify(
-            TopologyTarget::topologySnapshot(),
-            VerificationMode::Readiness,
-            new SourceState(str_repeat('a', 40), str_repeat('a', 40)),
-        ))
-            ->toThrow(RuntimeException::class, 'Batch helper failed: helper unavailable.')
-            ->and($helperCalls)
-            ->toBe(1);
-        Process::assertNotRan(isDirectTopologyVerifierProbe(...));
-    });
-
-    it('retries only pending readiness probes together and preserves attempt results', function () {
-        setUpTopologyVerifierProcessFacade();
-        $sha = str_repeat('a', 40);
-        $probeRoles = topologyVerifierProbeRoles();
-        $attempts = array_fill_keys(array_keys($probeRoles), 0);
-        $batches = [];
-        $transient = ['service.vpn', 'wireguard.reachability'];
-
-        Process::fake(function (PendingProcess $process) use ($sha, $probeRoles, $transient, &$attempts, &$batches) {
-            $inventory = topologyVerifierInventory($process);
-            if ($inventory instanceof ProcessResult) {
-                return $inventory;
-            }
-
-            expect(isTopologyVerifierHelper($process))->toBeTrue();
-            $payload = json_decode((string) $process->input, true, 512, JSON_THROW_ON_ERROR);
-            $batches[] = array_column($payload['requests'], 'label');
-            $results = [];
-            foreach ($payload['requests'] as $request) {
-                if (isGlobalIpv4TopologyVerifierProbe($request['argv'] ?? [])) {
-                    $results[] = [
-                        'label' => $request['label'],
-                        'stdout' => '2: enp5s0    inet 192.0.2.'
-                                .['gateway' => 1, 'app-dev' => 2, 'app-prod' => 3][$request['label']]
-                                .'/24 scope global',
-                        'stderr' => '',
-                        'exit_code' => 0,
-                    ];
-
-                    continue;
-                }
-                assertTopologyVerifierRequest($request, $probeRoles, $sha);
-                if ($request['label'] === 'sample-app-state') {
-                    $results[] = [
-                        'label' => 'sample-app-state',
-                        'stdout' => topologyVerifierEvidence($request, $sha),
-                        'stderr' => '',
-                        'exit_code' => 0,
-                    ];
-
-                    continue;
-                }
-                $attempts[$request['label']]++;
-                $results[] = [
-                    'label' => $request['label'],
-                    'stdout' => topologyVerifierEvidence($request, $sha),
-                    'stderr' => in_array($request['label'], $transient, true) && $attempts[$request['label']] === 1
-                        ? 'not ready'
-                        : '',
-                    'exit_code' => in_array($request['label'], $transient, true) && $attempts[$request['label']] === 1
-                        ? 1
-                        : 0,
-                ];
-            }
-
-            return Process::result(json_encode($results, JSON_THROW_ON_ERROR));
-        });
-
-        $report = new TopologyVerifier(
-            new IncusHost(pool: 'orbit-e2e'),
-            readinessTimeoutSeconds: 60,
-            readinessPollIntervalMicroseconds: 0,
-        )->verify(
-            TopologyTarget::topologySnapshot(),
-            VerificationMode::Readiness,
-            new SourceState($sha, $sha),
-        );
-
-        $singleAttempts = array_diff_key($attempts, array_flip($transient));
-        expect($report->passed)
-            ->toBeTrue()
-            ->and($batches)
-            ->toBe([['sample-app-state'], array_keys($probeRoles), $transient])
-            ->and(array_values(array_unique($singleAttempts)))
-            ->toBe([1])
-            ->and(array_intersect_key($attempts, array_flip($transient)))
-            ->toBe(['service.vpn' => 2, 'wireguard.reachability' => 2]);
-        Process::assertRanTimes(isTopologyVerifierHelper(...), 3);
-        Process::assertNotRan(isDirectTopologyVerifierProbe(...));
-    });
-});
-
-/**
- * Run one verification against a fake host that answers every probe, failing
- * exactly the named ones. Returns the report and the argv of each probe.
- *
- * @param  list<string>  $failing
- * @return array{report:VerificationReport,argv:array<string, list<string>>,batches:list<list<string>>}
- */
-function runTopologyVerifierWithEndState(
-    ?TopologyEndState $endState,
-    array $failing = [],
-    ?TopologyTarget $target = null,
-): array {
-    setUpTopologyVerifierProcessFacade();
-    $sha = str_repeat('a', 40);
-    $argv = [];
-    $batches = [];
-
-    $target ??= TopologyTarget::topologySnapshot();
-    Process::fake(function (PendingProcess $process) use ($sha, $failing, &$argv, &$batches, $target) {
-        $inventory = topologyVerifierInventory($process, $target->isTopologySnapshot() ? null : $target);
-        if ($inventory instanceof ProcessResult) {
-            return $inventory;
-        }
-        $payload = json_decode((string) $process->input, true, 512, JSON_THROW_ON_ERROR);
-        $labels = [];
-        $results = [];
-        foreach ($payload['requests'] as $request) {
-            if (isGlobalIpv4TopologyVerifierProbe($request['argv'] ?? [])) {
-                $results[] = [
-                    'label' => $request['label'],
-                    'stdout' => '2: enp5s0    inet 192.0.2.'
-                            .$target->recipe->node($request['label'])->address
-                            .'/24 scope global',
-                    'stderr' => '',
-                    'exit_code' => 0,
-                ];
-
-                continue;
-            }
-            $labels[] = $request['label'];
-            $argv[$request['label']] = $request['argv'];
-            $failed = in_array($request['label'], $failing, true);
-            $results[] = [
-                'label' => $request['label'],
-                'stdout' => $failed ? '' : topologyVerifierEvidence($request, $sha),
-                'stderr' => $failed ? 'probe refused' : '',
-                'exit_code' => $failed ? 1 : 0,
-            ];
-        }
-        $batches[] = $labels;
-
-        return Process::result(json_encode($results, JSON_THROW_ON_ERROR));
-    });
-
-    $report = new TopologyVerifier(
-        new IncusHost(pool: 'orbit-e2e'),
-        readinessTimeoutSeconds: 60,
-        readinessPollIntervalMicroseconds: 0,
-    )->verify($target, VerificationMode::Proof, new SourceState($sha, $sha), $endState);
-
-    return ['report' => $report, 'argv' => $argv, 'batches' => $batches];
-}
-
-describe('TopologyVerifier declared end state', function (): void {
-    it('targets every extended physical Node and requires the extra app-prod runtime probes', function (): void {
-        $target = featureTarget('AUX-106', 'a', TopologyRecipe::extendedAppProd());
-        $run = runTopologyVerifierWithEndState(null, target: $target);
-        $sha = str_repeat('a', 40);
-        $gateway = $target->instance('gateway');
-
-        expect($run['report']->passed)
-            ->toBeTrue()
-            ->and(array_keys($run['report']->probes))
-            ->toContain(
-                'vm.app-prod-2.running',
-                'role.app-prod-2',
-                'php.app-prod-2',
-                'php-fpm.app-prod-2',
-                'caddy.app-prod-2',
-            )
-            ->and($run['argv']['php.app-prod-2'] ?? null)
-            ->toBe([
-                '/usr/local/bin/verify-topology.sh',
-                'php.app-prod-2',
-                'proof',
-                $sha,
-                $target->instance('app-prod-2'),
-            ])
-            ->and($run['argv']['role.assignments'] ?? null)
-            ->toBe([
-                '/usr/local/bin/verify-topology.sh',
-                'role.assignments',
-                'proof',
-                $sha,
-                $gateway,
-                base64_encode(json_encode($target->recipe->assignments(), JSON_THROW_ON_ERROR)),
-            ])
-            ->and($run['argv']['wireguard.reachability'] ?? null)
-            ->toBe([
-                '/usr/local/bin/verify-topology.sh',
-                'wireguard.reachability',
-                'proof',
-                $sha,
-                $gateway,
-                'app-dev',
-                'app-prod',
-                'operator',
-                'app-prod-2',
-            ]);
-    });
-
-    it('fails proof when an extended-node runtime probe refuses its condition', function (string $probe): void {
-        $target = featureTarget('AUX-106', 'a', TopologyRecipe::extendedAppProd());
-        $run = runTopologyVerifierWithEndState(null, [$probe], $target);
-
-        expect($run['report']->passed)
-            ->toBeFalse()
-            ->and($run['report']->probes[$probe]['passed'] ?? null)
-            ->toBeFalse();
+        expect($report->probes['service.vpn']['passed'])->toBeFalse()
+            ->and($report->probes['service.vpn']['observed'])->toBe('malformed evidence');
     })->with([
-        'extra VM state' => 'vm.app-prod-2.running',
-        'extra app-prod role' => 'role.app-prod-2',
-        'extra PHP runtime' => 'php.app-prod-2',
-        'extra PHP-FPM service' => 'php-fpm.app-prod-2',
-        'extra Caddy service and configuration' => 'caddy.app-prod-2',
+        'source' => ['identity', str_repeat('b', 40)],
+        'probe' => ['probe', 'service.gateway'],
+        'Node' => ['evidence_ref', 'incus://elsewhere/service.vpn'],
     ]);
 
-    it('refuses an extended Node with invalid network identity or stopped state', function (bool $invalidMac): void {
-        setUpTopologyVerifierProcessFacade();
-        $target = featureTarget('AUX-106', 'a', TopologyRecipe::extendedAppProd());
-        Process::fake(function (PendingProcess $process) use ($target, $invalidMac) {
-            return
-                topologyVerifierInventory(
-                    $process,
-                    $target,
-                    invalidExtraMac: $invalidMac,
-                    stoppedExtra: ! $invalidMac,
-                ) ?? Process::result('', 'Unexpected command.', 2);
-        });
-
-        expect(fn () => new TopologyVerifier(new IncusHost(pool: 'orbit-e2e'))->verify(
-            $target,
-            VerificationMode::Proof,
-            new SourceState(str_repeat('a', 40), str_repeat('a', 40)),
-        ))
-            ->toThrow(RuntimeException::class, $invalidMac ? 'MAC identity does not match' : 'is not running');
-    })->with([
-        'invalid MAC' => true,
-        'stopped VM' => false,
-    ]);
-
-    it('uses the complete cold recipe assignment map and physical peer names', function (): void {
-        $target = TopologyTarget::disposableCold(
-            'AUX-106',
-            new AttemptId(str_repeat('a', 32)),
-            TopologyRecipe::coldAcceptance(),
-        );
-        $run = runTopologyVerifierWithEndState(null, target: $target);
-        $gateway = $target->instance('gateway');
+    it('refuses a topology whose guest left its network identity before any probe runs', function () {
         $sha = str_repeat('a', 40);
+        $incus = new FakeIncus()->install();
+        $target = verifierTopology($incus, TopologyRecipe::compose(['app-dev']));
+        $incus->instances[$target->instance('app-dev')]['devices']['eth0']['hwaddr'] = '00:16:3e:00:00:01';
 
-        expect($run['report']->passed)
-            ->toBeTrue()
-            ->and($run['argv']['role.assignments'] ?? null)
-            ->toBe([
-                '/usr/local/bin/verify-topology.sh',
-                'role.assignments',
-                'proof',
-                $sha,
-                $gateway,
-                base64_encode(json_encode(TopologyRecipe::coldAcceptance()->assignments(), JSON_THROW_ON_ERROR)),
-            ])
-            ->and($run['argv']['wireguard.reachability'] ?? null)
-            ->toBe([
-                '/usr/local/bin/verify-topology.sh',
-                'wireguard.reachability',
-                'proof',
-                $sha,
-                $gateway,
-                'app-dev',
-                'app-prod',
-                'extra',
-                'operator',
-            ]);
-    });
-
-    it('rejects invalid network identity on the roleless cold recipe Node', function (): void {
-        setUpTopologyVerifierProcessFacade();
-        $target = TopologyTarget::disposableCold(
-            'AUX-106',
-            new AttemptId(str_repeat('a', 32)),
-            TopologyRecipe::coldAcceptance(),
-        );
-        Process::fake(function (PendingProcess $process) use ($target) {
-            return
-                topologyVerifierInventory($process, $target, invalidExtraMac: true) ?? Process::result(
-                    '',
-                    'Unexpected command.',
-                    2,
-                );
-        });
-
-        expect(fn () => new TopologyVerifier(new IncusHost(pool: 'orbit-e2e'))->verify(
-            $target,
-            VerificationMode::Proof,
-            new SourceState(str_repeat('a', 40), str_repeat('a', 40)),
-        ))
-            ->toThrow(RuntimeException::class, 'MAC identity does not match topology');
-    });
-
-    it('rejects a stopped roleless cold recipe Node', function (): void {
-        setUpTopologyVerifierProcessFacade();
-        $target = TopologyTarget::disposableCold(
-            'AUX-106',
-            new AttemptId(str_repeat('a', 32)),
-            TopologyRecipe::coldAcceptance(),
-        );
-        Process::fake(function (PendingProcess $process) use ($target) {
-            return
-                topologyVerifierInventory($process, $target, stoppedExtra: true) ?? Process::result(
-                    '',
-                    'Unexpected command.',
-                    2,
-                );
-        });
-
-        expect(fn () => new TopologyVerifier(new IncusHost(pool: 'orbit-e2e'))->verify(
-            $target,
-            VerificationMode::Proof,
-            new SourceState(str_repeat('a', 40), str_repeat('a', 40)),
-        ))
-            ->toThrow(RuntimeException::class, 'is not running');
-    });
-
-    it('runs every probe when the plan declares nothing', function (): void {
-        expect(TopologyVerifier::probesFor(TopologyEndState::complete()))
-            ->toBe(topologyVerifierProbeRoles())
-            ->and(TopologyVerifier::skippedProbes(TopologyEndState::complete()))
-            ->toBe([]);
-    });
-
-    it('skips only the probes that run on a declared-absent node', function (): void {
-        $endState = TopologyEndState::fromArray(['nodes' => ['gateway', 'app-dev', 'operator']]);
-
-        expect(TopologyVerifier::skippedProbes($endState))
-            ->toBe(['vm.app-prod.running', 'role.app-prod', 'php-fpm.app-prod', 'caddy.app-prod', 'laravel.prod', 'cluster.shared', 'sample.fixtures'])
-            ->and(array_keys(TopologyVerifier::probesFor($endState)))
-            ->toContain('role.assignments', 'wireguard.reachability', 'role.app-dev', 'source.manifest');
-    });
-
-    it('drops the reachability probe only when no node is left to reach', function (): void {
-        expect(TopologyVerifier::skippedProbes(TopologyEndState::fromArray(['nodes' => ['gateway']])))
-            ->toContain('wireguard.reachability', 'role.app-dev', 'operator.app-dev', 'source.app-dev')
-            ->and(TopologyVerifier::probesFor(TopologyEndState::fromArray(['nodes' => ['gateway']])))
-            ->toBe([
-                'vm.gateway.running' => 'gateway',
-                'role.gateway' => 'gateway',
-                'role.assignments' => 'gateway',
-                'appinstance.routes' => 'gateway',
-                'metrics.publication' => 'gateway',
-                'service.gateway' => 'gateway',
-                'service.vpn' => 'gateway',
-                'source.gateway' => 'gateway',
-                'source.manifest' => 'gateway',
-            ]);
-    });
-
-    it('tells the fleet probes which nodes to expect and runs nothing on the absent node', function (): void {
-        $run = runTopologyVerifierWithEndState(TopologyEndState::fromArray(['nodes' => ['gateway', 'app-dev', 'operator']]));
-        $sha = str_repeat('a', 40);
-        $script = '/usr/local/bin/verify-topology.sh';
-        $gateway = TopologyTarget::topologySnapshot()->instance('gateway');
-
-        expect($run['report']->passed)
-            ->toBeTrue()
-            ->and($run['argv']['role.assignments'] ?? null)
-            ->toBe([
-                $script,
-                'role.assignments',
-                'proof',
-                $sha,
-                $gateway,
-                base64_encode(json_encode([
-                    'gateway' => ['gateway', 'vpn', 'websocket', 'router'],
-                    'app-dev' => ['app-dev', 'metrics', 'database'],
-                    'operator' => [],
-                ], JSON_THROW_ON_ERROR)),
-            ])
-            ->and($run['argv']['wireguard.reachability'] ?? null)
-            ->toBe([$script, 'wireguard.reachability', 'proof', $sha, $gateway, 'app-dev', 'operator'])
-            ->and($run['argv']['metrics.publication'] ?? null)
-            ->toBe([
-                $script,
-                'metrics.publication',
-                'proof',
-                $sha,
-                $gateway,
-                base64_encode(json_encode([
-                    'gateway' => ['gateway', 'vpn', 'websocket', 'router'],
-                    'app-dev' => ['app-dev', 'metrics', 'database'],
-                    'operator' => [],
-                ], JSON_THROW_ON_ERROR)),
-            ])
-            ->and(array_keys($run['argv']))
-            ->not
-            ->toContain('role.app-prod')
-            ->and($run['batches'])
-            ->toBe([
-                ['sample-app-state'],
-                array_keys(TopologyVerifier::probesFor(
-                    TopologyEndState::fromArray(['nodes' => ['gateway', 'app-dev', 'operator']]),
-                )),
-            ]);
-    });
-
-    it('calls the fleet probes exactly as before when the plan declares nothing', function (): void {
-        $run = runTopologyVerifierWithEndState(null);
-        $sha = str_repeat('a', 40);
-        $script = '/usr/local/bin/verify-topology.sh';
-        $gateway = TopologyTarget::topologySnapshot()->instance('gateway');
-
-        expect($run['argv']['role.assignments'] ?? null)
-            ->toBe([
-                $script,
-                'role.assignments',
-                'proof',
-                $sha,
-                $gateway,
-                base64_encode(json_encode(TopologyProfile::ASSIGNMENTS, JSON_THROW_ON_ERROR)),
-            ])
-            ->and($run['argv']['wireguard.reachability'] ?? null)
-            ->toBe([$script, 'wireguard.reachability', 'proof', $sha, $gateway, 'app-dev', 'app-prod', 'operator'])
-            ->and($run['report']->probes)
-            ->toHaveCount(28);
-    });
-
-    it('keeps the Gateway publication probe when app-dev is declared absent', function (): void {
-        $endState = TopologyEndState::fromArray(['nodes' => ['gateway', 'app-prod']]);
-        $run = runTopologyVerifierWithEndState($endState);
-        $sha = str_repeat('a', 40);
-
-        expect($run['report']->passed)
-            ->toBeTrue()
-            ->and($run['argv']['metrics.publication'] ?? null)
-            ->toBe([
-                '/usr/local/bin/verify-topology.sh',
-                'metrics.publication',
-                'proof',
-                $sha,
-                TopologyTarget::topologySnapshot()->instance('gateway'),
-                base64_encode(json_encode([
-                    'gateway' => ['gateway', 'vpn', 'websocket', 'router'],
-                    'app-prod' => ['app-prod', 'ingress'],
-                ], JSON_THROW_ON_ERROR)),
-            ])
-            ->and(TopologyVerifier::skippedProbes($endState))
-            ->not->toContain('metrics.publication');
-    });
-
-    it('fails when a node declared absent is still registered', function (): void {
-        // The gateway registry probe is what sees it, and a declaration never skips it.
-        $run = runTopologyVerifierWithEndState(
-            TopologyEndState::fromArray(['nodes' => ['gateway', 'app-dev', 'operator']]),
-            ['role.assignments'],
-        );
-
-        expect($run['report']->passed)
-            ->toBeFalse()
-            ->and($run['report']->probes['role.assignments']['passed'] ?? null)
-            ->toBeFalse()
-            ->and($run['report']->failedSummary())
-            ->toContain('role.assignments');
-    });
-
-    it('fails when a node is removed without a declaration', function (): void {
-        $run = runTopologyVerifierWithEndState(null, ['role.app-prod', 'role.assignments']);
-
-        expect($run['report']->passed)
-            ->toBeFalse()
-            ->and($run['report']->probes['role.app-prod']['passed'] ?? null)
-            ->toBeFalse()
-            ->and($run['report']->probes['laravel.prod']['passed'] ?? null)
-            ->toBeTrue();
+        expect(fn () => new TopologyVerifier(new IncusHost(pool: 'orbit-e2e'), 1, 0)->verify($target, new SourceState($sha, $sha)))
+            ->toThrow(RuntimeException::class, 'MAC identity does not match topology')
+            ->and($incus->execs)->toBe([]);
     });
 });
