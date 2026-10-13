@@ -385,7 +385,7 @@ describe('claim', function (): void {
 
     it('makes a subtask whose topology needs a larger VM wait with its cause', function (): void {
         $group = tvm_life_group(TaskGroupStatus::Running);
-        $group->update(['task_compute' => TaskCompute::Vm, 'taskable_type' => (new Instance)->getMorphClass(), 'taskable_id' => Instance::query()->create(['node_id' => $this->host->id, 'project_id' => $this->project->id, 'name' => 'task-'.$group->id, 'checkout_path' => '/home/orbit/apps/orbit/workspace'])->id]);
+        $group->update(['taskable_type' => (new Instance)->getMorphClass(), 'taskable_id' => Instance::query()->create(['node_id' => $this->host->id, 'project_id' => $this->project->id, 'name' => 'task-'.$group->id, 'checkout_path' => '/home/orbit/apps/orbit/workspace'])->id]);
         $vm = tvm_life_vm($group, TaskVmState::Ready);
         $vm->update(['node_id' => $this->host->id]);
         $subtask = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Dev', 'brief' => 'Dev', 'status' => TaskStatus::Todo, 'topology' => ['app-dev']]);
@@ -400,8 +400,10 @@ describe('claim', function (): void {
     });
 
     it('makes a shared group\'s subtask with a topology wait', function (): void {
-        $group = tvm_life_group(TaskGroupStatus::Running);
-        $group->update(['task_compute' => TaskCompute::Shared]);
+        $group = Task::topLevel()->create([
+            'project_id' => $this->project->id, 'title' => 'Shared', 'brief' => 'Work', 'status' => TaskGroupStatus::Running,
+            'task_compute' => TaskCompute::Shared, 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
+        ]);
         $subtask = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Dev', 'brief' => 'Dev', 'status' => TaskStatus::Todo, 'topology' => ['app-dev']]);
 
         expect(fn () => app(TaskTopologyAdmission::class)->prepare($group->refresh(), $subtask))->toThrow(TaskCapacityException::class, TaskVmTopologyAdmission::SharedGroup);

@@ -14,6 +14,7 @@ use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\TaskVmTopologyState;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\TaskVmTopologyAdmission;
@@ -46,6 +47,8 @@ function topology_admission_ssh(array $results): AppDevFakeSshExecutor
         {
             return '/tmp/orbit-test-known-hosts';
         }
+
+        public function put(string $host, int $port, HostKey $key): void {}
     }));
 
     return $ssh;
@@ -164,8 +167,11 @@ it('makes a subtask wait when its group cannot run its topology', function (): v
 
     expect(fn () => app(TaskTopologyAdmission::class)->prepare($this->group, $subtask))->toThrow(TaskCapacityException::class, TaskVmTopologyAdmission::TooSmall);
 
-    $this->group->update(['task_compute' => TaskCompute::Shared]);
-    expect(fn () => app(TaskTopologyAdmission::class)->prepare($this->group->fresh(), $subtask))->toThrow(TaskCapacityException::class, TaskVmTopologyAdmission::SharedGroup);
+    $shared = Task::topLevel()->create([
+        'project_id' => $this->group->project_id, 'title' => 'Shared', 'brief' => 'Work', 'status' => TaskGroupStatus::Running,
+        'task_compute' => TaskCompute::Shared, 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
+    ]);
+    expect(fn () => app(TaskTopologyAdmission::class)->prepare($shared, topology_admission_subtask($shared, ['app-dev'])))->toThrow(TaskCapacityException::class, TaskVmTopologyAdmission::SharedGroup);
 });
 
 it('reads the evidence log headers and names the declared nodes without a successful entry since the handoff', function (): void {

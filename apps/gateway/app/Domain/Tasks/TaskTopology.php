@@ -21,8 +21,6 @@ final class TaskTopology
     /** The roles an entry can add to its node, in the order the harness adds them. */
     public const array ExtraRoles = ['ingress', 'database', 'websocket'];
 
-    public const string Conflict = 'The group\'s subtasks declare roles that do not fit together on one node.';
-
     public const string Invalid = 'Topology must be a list of distinct app-dev, app-prod, or app-prod-2 nodes, each with optional +ingress, +database, or +websocket roles that fit the node; app-prod-2 needs app-prod.';
 
     private const array BaseRoles = ['app-dev' => 'app-dev', 'app-prod' => 'app-prod', 'app-prod-2' => 'app-prod'];
@@ -55,7 +53,13 @@ final class TaskTopology
             throw new ResourceOperationException('tasks.invalid_topology', self::Invalid, 422);
         }
 
-        return array_values(array_map(static fn (string $entry): string => self::entry(...self::parse($entry) ?? ['', []]), $value));
+        $entries = [];
+        foreach ($value as $entry) {
+            [$node, $roles] = is_string($entry) ? self::parse($entry) ?? ['', []] : ['', []];
+            $entries[] = self::entry($node, $roles);
+        }
+
+        return $entries;
     }
 
     /**
@@ -66,23 +70,11 @@ final class TaskTopology
      */
     public static function forGroup(Task $group): array
     {
-        return self::union(self::forGroupDeclarations($group));
+        return self::union(array_values($group->tasks()->where('status', '!=', TaskStatus::Cancelled->value)->pluck('topology')->all()));
     }
 
     /**
-     * The stored declarations of the group's subtasks that are not cancelled, optionally without one subtask.
-     *
-     * @return list<mixed>
-     */
-    public static function forGroupDeclarations(Task $group, ?Task $except = null): array
-    {
-        return array_values($group->tasks()->where('status', '!=', TaskStatus::Cancelled->value)
-            ->when($except instanceof Task, static fn ($query) => $query->whereKeyNot($except?->id))
-            ->pluck('topology')->all());
-    }
-
-    /**
-     * Refuses declarations whose union does not compose, such as two subtasks that add conflicting roles to one node.
+     * The extra roles of one node never conflict with each other, so the union of valid declarations is valid.
      *
      * @param  list<mixed>  $declarations
      * @return list<string>
@@ -102,9 +94,6 @@ final class TaskTopology
                 $union[] = self::entry($node, array_values(array_intersect(self::ExtraRoles, $roles[$node])));
             }
         }
-        if (! self::valid($union)) {
-            throw new ResourceOperationException('tasks.invalid_topology', self::Conflict, 422);
-        }
 
         return $union;
     }
@@ -117,7 +106,7 @@ final class TaskTopology
      */
     public static function nodes(array $topology): array
     {
-        return array_values(array_map(static fn (string $entry): string => explode('+', $entry)[0], $topology));
+        return array_map(static fn (string $entry): string => explode('+', $entry)[0], $topology);
     }
 
     /**

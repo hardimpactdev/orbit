@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Domain\Tasks\TaskDeliverable;
-use App\Domain\Tasks\TaskTopology;
 use App\Domain\Tasks\TaskDeliverableEvidence;
 use App\Domain\Tasks\TaskPromptGroup;
 use App\Domain\Tasks\TaskPromptRenderer;
 use App\Domain\Tasks\TaskPromptSubtask;
 use App\Domain\Tasks\TaskReviewPacket;
+use App\Domain\Tasks\TaskTopology;
 use Illuminate\Console\Command;
 use InvalidArgumentException;
 use JsonException;

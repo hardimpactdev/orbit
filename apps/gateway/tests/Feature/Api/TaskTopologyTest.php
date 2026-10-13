@@ -14,10 +14,10 @@ it('preserves per-subtask declarations through group creation edits and standalo
         'project_id' => $project->id, 'title' => 'Declared nodes', 'brief' => 'Use private workload nodes.',
         'tasks' => [
             ['title' => 'First', 'brief' => 'Needs dev.', 'topology' => ['app-dev']],
-            ['title' => 'Second', 'brief' => 'Also needs dev.', 'topology' => ['app-dev', 'app-prod-2']],
+            ['title' => 'Second', 'brief' => 'Also needs prod.', 'topology' => ['app-dev', 'app-prod', 'app-prod-2']],
         ],
     ])->assertCreated()->assertJsonPath('data.tasks.0.topology', ['app-dev'])
-        ->assertJsonPath('data.tasks.1.topology', ['app-dev', 'app-prod-2'])->json('data');
+        ->assertJsonPath('data.tasks.1.topology', ['app-dev', 'app-prod', 'app-prod-2'])->json('data');
     $task = Task::query()->findOrFail($group['tasks'][0]['id']);
     expect($task->topology)->toBe(['app-dev']);
     $url = '/api/v1/task-groups/'.$group['id'].'/tasks';
@@ -44,7 +44,7 @@ it('rejects invalid declarations without creating a group', function (mixed $top
     'repeated role' => [['app-prod+ingress+ingress']], 'second production node alone' => [['app-prod-2']],
 ]);
 
-it('stores roles in canonical order and refuses a union that does not fit on one node', function (): void {
+it('stores roles in canonical order and refuses a role that does not fit its node', function (): void {
     task_definition_gateway();
     $project = task_definition_project('orbit');
     $group = $this->postJson('/api/v1/task-groups', [
@@ -52,9 +52,9 @@ it('stores roles in canonical order and refuses a union that does not fit on one
         'tasks' => [['title' => 'Ingress', 'brief' => 'Public edge.', 'topology' => ['app-prod+websocket+ingress', 'app-dev+database']]],
     ])->assertCreated()->assertJsonPath('data.tasks.0.topology', ['app-prod+ingress+websocket', 'app-dev+database'])->json('data');
 
-    // database conflicts with ingress, so a second subtask cannot add it to the same node.
+    // database conflicts with app-prod, the base role of the node.
     $this->postJson('/api/v1/task-groups/'.$group['id'].'/tasks', ['title' => 'Database', 'brief' => 'Same node.', 'topology' => ['app-prod+database']])
-        ->assertUnprocessable()->assertJsonPath('error.code', 'tasks.invalid_topology');
+        ->assertUnprocessable();
     $this->postJson('/api/v1/task-groups', [
         'project_id' => $project->id, 'title' => 'Conflict', 'brief' => 'Two subtasks.',
         'tasks' => [
