@@ -16,7 +16,7 @@ final class LogsCommand extends E2ECommand
 
     #[\Override]
     protected $signature =
-        'topology:logs {issue} {role} {name} '
+        'topology:logs {issue} {node} {name} '
         .self::WORKTREE_OPTION
         .' {--since= : A journalctl time, such as "-5min" or "2026-09-24 06:40:00"}'
         .' {--lines= : Only the last N lines}'
@@ -41,7 +41,7 @@ final class LogsCommand extends E2ECommand
                 is_string($lines) ? (int) $lines : null,
             );
             $request = $this->request();
-            $role = (string) $this->argument('role');
+            $role = (string) $this->argument('node');
             $startedAt = $this->evidenceClock();
             $result = $acquirer->execute($request, $role, $argv);
             $this->recordEvidence($label, $request, $role, $argv, $result, $startedAt, $this->evidenceClock());

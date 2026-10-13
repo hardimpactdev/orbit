@@ -1,0 +1,189 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\E2E;
+
+use App\E2E\Value\ConvergenceReport;
+use App\E2E\Value\GuestCommand;
+use App\E2E\Value\GuestCommandResult;
+use App\E2E\Value\TopologyNode;
+use App\E2E\Value\TopologyTarget;
+use Closure;
+use RuntimeException;
+
+/**
+ * Wires the started guests of one topology into a fleet: bootstraps a fresh test Gateway, then enrolls each
+ * declared workload Node and the operator through it. Everything goes through Orbit commands and the
+ * harness guest scripts; nothing edits the Gateway database. Enrollment is serial, because every step
+ * writes the Gateway's SQLite store.
+ */
+final readonly class TopologyComposer
+{
+    private const int STEP_SECONDS = 900;
+
+    public function __construct(
+        private IncusHost $host,
+        private DiscoveryGuestPreparer $guests,
+    ) {}
+
+    /** @param (Closure(string, float): void)|null $progress hears each step and its seconds */
+    public function compose(TopologyTarget $target, ?Closure $progress = null): ConvergenceReport
+    {
+        $progress ??= static function (string $step, float $seconds): void {};
+        $instances = $target->instances();
+        $addresses = $this->host->globalIpv4All($instances);
+        $gateway = $instances['gateway'];
+        $steps = [];
+
+        $this->step($progress, 'bootstrap.gateway', function () use ($target, $gateway, $addresses): void {
+            $this->guests->placeGatewayEnvironment($target);
+            $this->guests->exposeOrbitCli($target);
+            $this->run('bootstrap.gateway', $gateway, 'converge-gateway.sh', ['prerequisites']);
+            $this->run('bootstrap.gateway', $gateway, 'converge-gateway.sh', ['bootstrap', $addresses['gateway']]);
+        });
+        $steps['bootstrap.gateway'] = true;
+
+        $enrolled = [...$target->recipe->workloadNodes(), $target->recipe->node('operator')];
+        $key = $this->gatewayPublicKey($gateway);
+        $authorize = [];
+        foreach ($enrolled as $node) {
+            $authorize[$node->key] = [
+                'instance' => $instances[$node->key],
+                'command' => new GuestCommand(['/usr/local/bin/prepare-node.sh', 'gateway-authorize', $key], 60),
+            ];
+        }
+        $this->assertBatch('authorize.gateway-ssh', $authorize);
+        $enrolledInstances = [];
+        foreach ($enrolled as $node) {
+            $enrolledInstances[$node->key] = $instances[$node->key];
+        }
+        $architectures = $this->architectures($enrolledInstances);
+
+        foreach ($target->recipe->workloadNodes() as $node) {
+            $name = 'enroll.'.$node->key;
+            $this->step($progress, $name, fn () => $this->run($name, $gateway, ...$this->enrollment($node, $addresses[$node->key], $architectures[$node->key])));
+            $steps[$name] = true;
+        }
+
+        $operator = $target->recipe->node('operator');
+        $this->step($progress, 'enroll.operator', function () use ($gateway, $instances, $addresses, $architectures, $operator): void {
+            $this->run('enroll.operator', $gateway, 'converge-operator.sh', [
+                'provision',
+                $addresses['operator'],
+                $architectures['operator'],
+                $operator->wireGuardAddress(),
+            ]);
+            $this->run('enroll.operator', $gateway, 'converge-operator.sh', ['grant', 'operator', 'gateway']);
+            $this->run('enroll.operator', $instances['operator'], 'converge-operator.sh', ['configure-cli', '10.44.0.1']);
+        });
+        $steps['enroll.operator'] = true;
+
+        return ConvergenceReport::successful($steps);
+    }
+
+    /** @return array{0:string, 1:list<string>} the script and arguments that enroll one workload Node */
+    private function enrollment(TopologyNode $node, string $address, string $architecture): array
+    {
+        return in_array('app-dev', $node->roles, true)
+            ? ['converge-app-dev.sh', [$node->key, $address, $architecture]]
+            : ['converge-app-prod.sh', [$node->key, $address, $architecture, $node->wireGuardAddress()]];
+    }
+
+    /**
+     * @param  Closure(string, float): void  $progress
+     * @param  callable(): mixed  $work
+     */
+    private function step(Closure $progress, string $name, callable $work): void
+    {
+        $started = microtime(true);
+        try {
+            $work();
+            $progress($name, microtime(true) - $started);
+        } catch (RuntimeException $exception) {
+            throw str_starts_with($exception->getMessage(), "Step {$name} ")
+                ? $exception
+                : new RuntimeException("Step {$name} failed: ".$exception->getMessage(), previous: $exception);
+        }
+    }
+
+    /** @param list<string> $arguments */
+    private function run(string $step, string $instance, string $script, array $arguments): GuestCommandResult
+    {
+        $result = $this->host->exec(
+            $instance,
+            new GuestCommand(['/usr/local/bin/'.$script, ...$arguments], self::STEP_SECONDS),
+        );
+        if (! $result->successful()) {
+            throw new RuntimeException((new GuestFailureDetail)->append(
+                "Step {$step} failed: guest script {$script} exited {$result->exitCode} on {$instance}"
+                .$this->provisioningSuffix($script, $result).'.',
+                $result->stderr,
+            ));
+        }
+
+        return $result;
+    }
+
+    /** @param array<string, array{instance:string,command:GuestCommand}> $commands */
+    private function assertBatch(string $step, array $commands): void
+    {
+        $failed = [];
+        foreach ($this->host->execAll($commands) as $label => $result) {
+            if (! $result->successful()) {
+                $failed[] = (new GuestFailureDetail)->append("{$label} exited {$result->exitCode}", $result->stderr);
+            }
+        }
+        if ($failed !== []) {
+            throw new RuntimeException("Step {$step} failed: ".implode('; ', $failed));
+        }
+    }
+
+    private function gatewayPublicKey(string $gateway): string
+    {
+        $result = $this->host->exec($gateway, new GuestCommand(['ssh-keygen', '-y', '-f', '/home/orbit/.orbit/ssh/id_ed25519'], 10));
+        $key = trim($result->stdout);
+        if (! $result->successful() || preg_match('/\A(ssh-ed25519 [A-Za-z0-9+\/]+={0,2})(?: [^\r\n]+)?\z/D', $key, $matches) !== 1) {
+            throw new RuntimeException('Step authorize.gateway-ssh failed: the Gateway SSH public key is missing or invalid.');
+        }
+
+        return $matches[1];
+    }
+
+    /**
+     * @param  array<string, string>  $instances
+     * @return array<string, string>
+     */
+    private function architectures(array $instances): array
+    {
+        $requests = [];
+        foreach ($instances as $node => $instance) {
+            $requests[$node] = ['instance' => $instance, 'command' => new GuestCommand(['uname', '-m'], 10)];
+        }
+        $architectures = [];
+        foreach ($this->host->execAll($requests) as $node => $result) {
+            $architecture = trim($result->stdout);
+            if (! $result->successful() || preg_match('/\A(?:x86_64|aarch64)\z/', $architecture) !== 1) {
+                throw new RuntimeException("Node {$node} reported no valid machine architecture.");
+            }
+            $architectures[$node] = $architecture;
+        }
+
+        return $architectures;
+    }
+
+    private function provisioningSuffix(string $script, GuestCommandResult $result): string
+    {
+        $pattern = match (true) {
+            $script === 'converge-gateway.sh' && $result->exitCode === 71 => '/(?:\A|\R)Gateway bootstrap failed at step \[([a-z0-9:-]+)\] with error \[([a-z0-9._-]+)\]\.(?:\R|\z)/D',
+            in_array($script, ['converge-app-dev.sh', 'converge-app-prod.sh', 'converge-operator.sh'], true) => '/(?:\A|\R)Node provisioning failed at step \[([a-z0-9:-]+)\] with error \[([a-z0-9._-]+)\]\.(?:\R|\z)/D',
+            default => null,
+        };
+
+        if ($pattern === null || preg_match($pattern, $result->stdout."\n".$result->stderr, $failure) !== 1) {
+            return '';
+        }
+
+        return " at Orbit step {$failure[1]} ({$failure[2]})";
+    }
+}

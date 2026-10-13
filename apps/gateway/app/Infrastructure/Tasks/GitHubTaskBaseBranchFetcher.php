@@ -14,12 +14,15 @@ use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\Tasks\TaskBaseBranchFetcher;
+use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskRemoteBranch;
 use App\Domain\TaskVms\TaskVmPlacement;
 use App\Infrastructure\GitHub\GitReadScript;
+use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\TaskVms\TaskVmGit;
 use App\Models\Instance;
 use App\Models\Task;
 use SensitiveParameter;
@@ -39,6 +42,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
         private RepositoryReadAccess $reads,
         private GitHubApi $github,
         private TaskWorkspaceExecutor $workspaces,
+        private TaskVmGit $git,
     ) {}
 
     public function fetch(Task $group, string $base): void
@@ -57,6 +61,11 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
         }
 
         try {
+            if ($group->task_compute === TaskCompute::Vm) {
+                $this->sendToVm($instance, [$base], [], GitReadEnvironment::forGitHubToken($this->access->token($repository)), 'task-base-fetch', 'The base branch could not be fetched.');
+
+                return;
+            }
             $this->fetchRef($instance, $base, $this->access->token($repository));
         } catch (GitHubApiException $exception) {
             throw new TaskPullRequestException('The base branch could not be fetched.', previous: $exception);
@@ -259,6 +268,11 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
         }
 
         $pullBase = $this->pullRequestBase($group, $repository, $default, $taskBranch);
+        if ($group->task_compute === TaskCompute::Vm) {
+            $this->sendToVm($instance, array_filter([$default, $pullBase], is_string(...)), [$taskBranch], $environment, 'task-turn-fetch', 'The workspace refs could not be fetched.');
+
+            return;
+        }
         $this->fetchRefs($instance, $environment, $default, $taskBranch, $pullBase);
     }
 
@@ -291,6 +305,31 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
         }
 
         return $base;
+    }
+
+    /**
+     * A task VM gets its refs from the Gateway's mirror, so no token reaches it
+     * ([Git on a task VM](/reference/compute-drivers#git-on-a-task-vm)). A missing optional branch loses its ref.
+     *
+     * @param  list<string>  $required
+     * @param  list<string>  $optional
+     *
+     * @throws TaskPullRequestException
+     */
+    private function sendToVm(Instance $instance, array $required, array $optional, GitReadEnvironment $access, string $step, string $failure): void
+    {
+        $project = $instance->loadMissing(['project', 'node'])->project;
+        try {
+            $tips = $this->git->fetch($project, [...$required, ...$optional], $access, 'tasks.fetch_failed');
+            foreach ($required as $branch) {
+                if ($tips[$branch] === null) {
+                    throw new TaskPullRequestException($failure." The repository has no branch [{$branch}].");
+                }
+            }
+            $this->git->send($project, $instance->checkout_path, $tips, fn (RemoteCommand $command): CommandResult => $this->workspaces->execute($instance, $command, $step, 'tasks.fetch_failed'), 'tasks.fetch_failed');
+        } catch (RuntimeConvergenceException $exception) {
+            throw new TaskPullRequestException($failure, previous: $exception);
+        }
     }
 
     private function fetchRefs(Instance $instance, GitReadEnvironment $environment, string $default, string $taskBranch, ?string $pullBase): void

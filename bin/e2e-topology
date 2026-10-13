@@ -7,36 +7,24 @@ if [[ $# -lt 1 ]]; then
     cat >&2 <<'USAGE'
 usage: bin/e2e-topology <action> ISSUE [...]
 
-  acquire ISSUE WORKTREE          fresh discovery topology on the mounted worktree
-  shell   ISSUE NODE [--proof --review-action=ID --required]
-                                  shell on a recorded physical Node key (including app-prod-2 when declared);
-                                  successful proof starts a review action
+  acquire ISSUE WORKTREE [--nodes=LIST]
+                                  compose a discovery topology on the mounted worktree; LIST is a comma-separated
+                                  subset of app-dev, app-prod, app-prod-2 (default app-dev,app-prod)
+  shell   ISSUE NODE              login shell as orbit on one Node
   exec    ISSUE NODE --argv=JSON [--timeout=SECONDS] [--record=LABEL]
-                [--proof --review-action=ID --required]
-                                  run on a recorded physical Node key; successful proof records a review action;
-                                  --record appends the command and output to <worktree>/.e2e/evidence.log
+                                  run on one Node; --record appends the command and output to <worktree>/.e2e/evidence.log
   spawn   ISSUE NODE NAME --argv=JSON
-                                  start a long-lived process on a discovery Node and return at once
+                                  start a long-lived process on a Node and return at once
   logs    ISSUE NODE NAME [--since=TIME] [--lines=N] [--record=LABEL]
-                                  print the timestamped output of a spawned process;
-                                  --record appends it to <worktree>/.e2e/evidence.log
+                                  print the timestamped output of a spawned process
   kill    ISSUE NODE NAME         stop a spawned process; its logs stay readable
   sync    ISSUE [--quick]         migrate the Gateway and re-verify the mounted source identity;
                                   --quick skips readiness verification and keeps the recorded binding
   web     ISSUE                   foreground web dev session in the operator; publishes on host loopback
   verify  ISSUE                   verify the discovery topology
-  prove   ISSUE [--plan=PATH]     prove the worktree HEAD (default .loop/proof/ISSUE.json)
-  capture ISSUE [--plan=PATH]     capture successful-proof evidence before interactive review
-  review  ISSUE [--complete=ID --result=passed|failed --finding=TEXT]
-                                  complete an action and evaluate the separate proof-review record
-  equivalence ISSUE [--plan=PATH] compare HEAD with the immutable inputs of its retained proof
-  candidate ISSUE                converge and verify an equivalent accepted candidate
-  closeout ISSUE --candidate=SHA --artifact=SHA --merge=SHA --main-sha=SHA
-                                  refresh from verified merged main, then release the retained proof
-  status  ISSUE                   report discovery and proof from <worktree>/.e2e/
-  release ISSUE [--proof|--candidate] [--replace|--abandon]
-                [--recover-extension=none|app-prod --expected-attempt=ID]
-                                  release or recover the selected topology
+  status  ISSUE                   report discovery from <worktree>/.e2e/
+  release ISSUE                   release the topology
+  register [--force]              register this checkout as the primary for task workspace clones
 
 Every action except acquire finds the issue among registered Git worktrees
 or takes --worktree=PATH. State lives in <worktree>/.e2e/.
@@ -51,10 +39,13 @@ action=$1
 shift
 
 case "$action" in
-    acquire|shell|exec|spawn|logs|kill|sync|web|verify|prove|capture|review|equivalence|candidate|closeout|status|release)
+    acquire|shell|exec|spawn|logs|kill|sync|web|verify|status|release)
         # In a task workspace clone, run through a bridge worktree of the registered primary (ADR 0135).
         # Transfer the public PID through the bridge to PHP, including TERM/HUP ownership.
         exec python3 "$root/bin/e2e-clone-bridge" dispatch "$root" "$action" "$@"
+        ;;
+    register)
+        exec python3 "$root/bin/e2e-clone-bridge" register "$root" "$@"
         ;;
     *)
         echo "unknown topology action: $action" >&2

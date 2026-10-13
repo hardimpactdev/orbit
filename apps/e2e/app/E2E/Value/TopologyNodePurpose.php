@@ -9,5 +9,4 @@ enum TopologyNodePurpose: string
     case Gateway = 'gateway';
     case Operator = 'operator';
     case Workload = 'workload';
-    case Extension = 'extension';
 }

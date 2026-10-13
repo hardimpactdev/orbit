@@ -6,6 +6,7 @@ namespace App\Infrastructure\Instances;
 
 use App\Actions\Instances\SelectInstanceSeedAction;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Instances\DevelopmentInstanceBranchInspector;
 use App\Domain\Instances\DevelopmentInstanceSourceLifecycle;
@@ -18,12 +19,16 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Domain\SourceControl\GitRepositoryOrigin;
+use App\Domain\TaskVms\TaskVmPlacement;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\GitHub\GitReadScript;
+use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Tasks\TaskWorkerUser;
+use App\Infrastructure\TaskVms\TaskVmGit;
 use App\Models\Instance;
+use App\Models\TaskVm;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 
@@ -34,6 +39,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
         private ManagedUserAccountResolver $accounts,
         private CheckoutRemovalBoundary $removal,
         private RepositoryReadAccess $access,
+        private TaskVmGit $git,
     ) {}
 
     public function prepare(Instance $instance, bool $allowExisting, ?string $template = null): void
@@ -43,7 +49,8 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
             $instance->update(['source_layout' => InstanceSourceLayout::Worktree->value]);
         }
         $context = $this->context($instance);
-        $script = GitReadScript::for($this->access->for($context['repository'], $instance->project->source_access), self::preparedRepositoryGuard($instance->source_prepare_id, $instance->seed_repository).<<<'BASH'
+        $taskVm = $this->onTaskVm($instance);
+        $script = GitReadScript::for($this->readAccess($instance, $context['repository'], $taskVm), self::preparedRepositoryGuard($instance->source_prepare_id, $instance->seed_repository).<<<'BASH'
                     repository=$1
                     checkout=$2
                     allowed_root=$3
@@ -54,6 +61,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                     seed_repository=$8
                     seed_commit=$9
                     template=${10}
+                    network=${11}
                     checkout_parent=$(dirname "$checkout")
 
                     guard_parent_chain "$checkout_parent" "$allowed_root"
@@ -105,8 +113,12 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                         test "$(git -C "$seed_repository" config --get remote.origin.url)" = "$repository"
                         # Resolve writes the files. On a shared seed that checkout can start filters, so it runs as the worker.
                         git -c core.hooksPath=/dev/null -C "$seed_repository" worktree add --no-checkout --detach -- "$checkout" "$seed_commit"
-                    else
+                    elif [ "$network" = 1 ]; then
                         git_read git -c core.hooksPath=/dev/null -c core.fsmonitor=false clone --no-checkout --origin origin -- "$repository" "$checkout"
+                    else
+                        # A task VM gets no token. Resolve sends its branches from the Gateway's mirror.
+                        git init --quiet -- "$checkout"
+                        git -C "$checkout" remote add origin "$repository"
                     fi
                     git_directory=$(git -C "$checkout" rev-parse --absolute-git-dir)
                     if [ -n "$prepare_id" ]; then
@@ -118,7 +130,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
         $result = $this->ssh->execute(
             $instance->node,
             new RemoteCommand(
-                arguments: [...$this->arguments($instance, $context), $allowExisting ? '1' : '0', $this->workerUser($instance), $instance->seed_repository ?? '', $instance->seed_commit ?? '', $template ?? ''],
+                arguments: [...$this->arguments($instance, $context), $allowExisting ? '1' : '0', $this->workerUser($instance), $instance->seed_repository ?? '', $instance->seed_commit ?? '', $template ?? '', $taskVm ? '0' : '1'],
                 input: $script->input,
                 protectedInput: $script->protectedInput,
             ),
@@ -160,8 +172,12 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
     {
         $context = $this->context($instance);
         $defaultBranch = $this->defaultBranch($instance);
+        $taskVm = $this->onTaskVm($instance);
+        if ($taskVm) {
+            $this->sendToTaskVm($instance, $defaultBranch);
+        }
         // The checkout writes the work tree and can start filters. On a checkout shared with the worker it runs as the worker.
-        $script = GitReadScript::for($this->access->for($context['repository'], $instance->project->source_access), self::preparedRepositoryGuard($instance->source_prepare_id, $instance->seed_repository).WorkspaceGit::workerPreamble(TaskWorkerUser::forCheckout($instance)).WorkspaceGit::networkPreamble().<<<'BASH'
+        $script = GitReadScript::for($this->readAccess($instance, $context['repository'], $taskVm), self::preparedRepositoryGuard($instance->source_prepare_id, $instance->seed_repository).WorkspaceGit::workerPreamble(TaskWorkerUser::forCheckout($instance)).WorkspaceGit::networkPreamble().<<<'BASH'
                     repository=$1
                     checkout=$2
                     allowed_root=$3
@@ -171,11 +187,14 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                     default_branch=$7
                     branch_override=$8
                     seed_commit=$9
+                    network=${10}
                     checkout_parent=$(dirname "$checkout")
 
                     guard_parent_chain "$checkout_parent" "$allowed_root"
                     inspect_prepared_repository
-                    isolated_fetch "$checkout" "$common_directory" "$repository" 1 '+refs/heads/*:refs/remotes/origin/*'
+                    if [ "$network" = 1 ]; then
+                        isolated_fetch "$checkout" "$common_directory" "$repository" 1 '+refs/heads/*:refs/remotes/origin/*'
+                    fi
 
                     branch=${branch_override:-$instance_name}
                     if [ -n "$seed_commit" ]; then
@@ -206,6 +225,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                     $defaultBranch,
                     $instance->branch_override ?? '',
                     $instance->seed_commit ?? '',
+                    $taskVm ? '0' : '1',
                 ],
                 input: $script->input,
                 protectedInput: $script->protectedInput,
@@ -327,6 +347,31 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
             $context['managedUser'],
             $context['managedGroup'],
         ];
+    }
+
+    /** A task VM gets no GitHub token: it fetches nothing itself, and resolve sends its branches from the Gateway's mirror. */
+    private function onTaskVm(Instance $instance): bool
+    {
+        return TaskVmPlacement::forNode($instance->node) instanceof TaskVm;
+    }
+
+    private function readAccess(Instance $instance, string $repository, bool $taskVm): GitReadEnvironment
+    {
+        return $taskVm ? GitReadEnvironment::none() : $this->access->for($repository, $instance->project->source_access);
+    }
+
+    /**
+     * Sends the default branch and the Instance's branch, when the repository has it, to the checkout on the task VM
+     * ([Git on a task VM](/reference/compute-drivers#send-branches-to-the-vm)).
+     */
+    private function sendToTaskVm(Instance $instance, string $defaultBranch): void
+    {
+        $project = $instance->project;
+        $tips = $this->git->fetch($project, [$defaultBranch, $this->selectedBranch($instance)], $this->access->for($project->repository_url, $project->source_access), 'instance.branch_resolution_failed');
+        if ($tips[$defaultBranch] === null) {
+            throw new RuntimeConvergenceException('app-instance-source-resolve', 'instance.branch_resolution_failed', "The repository of Instance [{$instance->name}] has no default branch [{$defaultBranch}].");
+        }
+        $this->git->send($project, $instance->checkout_path, $tips, fn (RemoteCommand $command): CommandResult => $this->ssh->execute($instance->node, $command, 'app-instance-source-resolve', 'instance.branch_resolution_failed'), 'instance.branch_resolution_failed');
     }
 
     /** Only a Node that hosts shared task work shares checkouts with the worker. */

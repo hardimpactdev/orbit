@@ -17,7 +17,7 @@ it('accepts a numeric Incus VM capacity', function (int|float|string $capacity):
         range(1, 24),
     ), JSON_THROW_ON_ERROR))]);
 
-    expect(fn () => app(HostCapacity::class)->reserveSlot())
+    expect(fn () => app(HostCapacity::class)->reserveSlot(1))
         ->toThrow(RuntimeException::class, 'the limit is 24');
 })->with([
     'integer' => 24,

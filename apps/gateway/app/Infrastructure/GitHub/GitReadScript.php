@@ -26,6 +26,6 @@ final readonly class GitReadScript
 
         return $environment->isEmpty()
             ? new self($script, null)
-            : new self(null, ProtectedInput::fromString($script));
+            : new self(null, ProtectedInput::gitCredential($script));
     }
 }

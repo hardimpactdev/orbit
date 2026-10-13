@@ -29,13 +29,13 @@ Lease a topology, apply four fixture patterns with `bin/e2e-topology exec`, and 
 
 ### Lease the topology
 
-Run `bin/e2e-topology acquire ISSUE .` from the worktree, where the branch name contains the issue. Run `bin/e2e-topology status ISSUE` to see the lease. In a task workspace clone, every command runs through the bridge worktree, and the evidence log is in the bridge.
+Run `bin/e2e-topology acquire ISSUE . --nodes=app-dev,app-prod` from the worktree, where the branch name contains the issue. Run `bin/e2e-topology status ISSUE` to see the lease. In a task workspace clone, every command runs through the bridge worktree, and the evidence log is in the bridge.
 
 Every `exec` below runs one argument vector as `orbit` on one Node. Run the Orbit CLI on `gateway`. An action on `app-prod`, which has no checkout, uses `sudo` or a short `sh -c` string. `exec` allows 60 seconds, so pass `--timeout=SECONDS` when a Doctor request needs more.
 
 Each `--record` appends the command, its UTC start and end times, its exit code, and its redacted output to `<worktree>/.e2e/evidence.log`. `orbit doctor` exits `0` when the report is healthy and `1` when it has a finding. The log records both.
 
-Find the numeric ID of `app-prod` and the production user of one production Instance on it, such as the sample Instance `e2e-prod`.
+Find the numeric ID of `app-prod` and the production user of one production Instance on it. A composed topology has no sample workloads, so first create a development Instance on `app-dev` and clone it to `app-prod` with the Orbit CLI, and record those steps.
 
 ```bash
 bin/e2e-topology exec ISSUE gateway --argv='["orbit","node:list","--json"]' --record="node list"
@@ -46,7 +46,7 @@ bin/e2e-topology exec ISSUE gateway --argv='["orbit","instance:list","--json"]' 
 
 ### Baseline
 
-A leased topology is a clone of the promoted snapshot generation, which the last snapshot refresh converged and verified. Record one Doctor request for all registered Nodes as the healthy baseline.
+A leased topology is composed from role images and enrolled by its own Gateway from the mounted worktree, and `acquire` verified its readiness. Record one Doctor request for all registered Nodes as the healthy baseline.
 
 ```bash
 bin/e2e-topology exec ISSUE gateway --argv='["orbit","doctor","--json"]' --record="doctor baseline"
@@ -121,8 +121,8 @@ Copy the evidence log entries that you need, then run `bin/e2e-topology release 
 
 These fixtures depend on these properties of the harness and the Nodes.
 
-- `acquire` does not converge the three standard Nodes. The baseline depends on the convergence that the last [snapshot refresh](/reference/topology-snapshot#refresh) ran.
-- The Gateway runs Doctor from the mounted worktree. The Nodes keep the state that the promoted generation wrote. A branch that changes an expected projection shows drift in the baseline until you converge the role.
+- `acquire` enrolls the Nodes with the Gateway code of the worktree at that moment. A later edit that changes an expected projection shows drift in the baseline until you converge the role.
+- The Gateway runs Doctor from the mounted worktree.
 - A converge rewrites the files Orbit owns on the Node, including the pool file. Converge before the first scan, never during a fixture.
 - Denying one sudo command works because sudoers applies the last matching entry. So the drop-in name must sort after `/etc/sudoers.d/orbit`, which holds Orbit's grant.
 - The drop-in name must not contain a dot, because sudo skips such a file.

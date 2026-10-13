@@ -30,8 +30,12 @@ use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Symfony\Component\Process\Process;
 use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\GitRemoteRedirect;
+use Tests\Support\StreamingLocalShellSshExecutor;
+use Tests\Support\TestOrbitHome;
 
 use function Pest\Laravel\mock;
 
@@ -142,18 +146,42 @@ describe('publish and fetch', function (): void {
         ]);
     });
 
-    it('pushes and fetches on the ready task VM with the token on standard input', function (): void {
-        $transport = tvm_glue_ssh();
+    it('fetches and pushes for the ready task VM in the Gateway mirror, and no VM command carries the token', function (): void {
+        $root = TestOrbitHome::scratch('tvm-glue');
+        mkdir($root, 0700, true);
+        $git = static fn (string $directory, string ...$arguments): string => trim((new Process(['git', '-C', $directory, '-c', 'user.name=t', '-c', 'user.email=t@t', ...$arguments]))->mustRun()->getOutput());
+        (new Process(['git', 'init', '--quiet', '--bare', '-b', 'main', $root.'/origin.git']))->mustRun();
+        (new Process(['git', 'init', '--quiet', '-b', 'main', $root.'/upstream']))->mustRun();
+        $git($root.'/upstream', 'commit', '--quiet', '--allow-empty', '-m', 'Start');
+        $git($root.'/upstream', 'push', '--quiet', $root.'/origin.git', 'main');
+        GitRemoteRedirect::global($root.'/origin.git', 'git@github.com:acme/shop.git');
+        (new Process(['git', 'init', '--quiet', $root.'/vm']))->mustRun();
+        $git($root.'/vm', 'remote', 'add', 'origin', 'git@github.com:acme/shop.git');
         $group = tvm_glue_group();
-        $commit = str_repeat('a', 40);
+        tvm_glue_workspace($group)->forceFill(['checkout_path' => $root.'/vm'])->saveQuietly();
+        $group = $group->fresh() ?? $group;
+        $transport = new StreamingLocalShellSshExecutor;
+        app()->instance(SshExecutor::class, $transport);
 
-        app(GitHubTaskPullRequestPublisher::class)->push($group, $commit);
-        app(GitHubTaskBaseBranchFetcher::class)->fetch($group, 'main');
+        try {
+            app(GitHubTaskBaseBranchFetcher::class)->fetch($group, 'main');
+            $git($root.'/vm', 'checkout', '--quiet', '-B', 'task-'.$group->id, 'refs/remotes/origin/main');
+            $git($root.'/vm', 'commit', '--quiet', '--allow-empty', '-m', 'Export');
+            $commit = $git($root.'/vm', 'rev-parse', 'HEAD');
+            app(GitHubTaskPullRequestPublisher::class)->push($group, $commit);
 
-        expect($transport->connections[0]->host)->toBe('10.44.0.130')
-            ->and($transport->commands[0]->arguments)->toBe(['bash', '-seu', '--', '/home/orbit/apps/shop/task-'.$group->id, 'task-'.$group->id, $commit, 'git@github.com:acme/shop.git', '/home/orbit/apps/shop/task-'.$group->id.'/.git'])
-            ->and(stream_get_contents($transport->commands[0]->protectedInput?->stream()))->toContain(base64_encode('x-access-token:ghs_push'))
-            ->and($transport->connections[1]->host)->toBe('10.44.0.130');
+            expect($git($root.'/origin.git', 'rev-parse', 'refs/heads/task-'.$group->id))->toBe($commit)
+                ->and($transport->sent)->not->toBeEmpty();
+            foreach ($transport->sent as [$connection, $command]) {
+                $input = $command->protectedInput?->stream();
+                expect($connection->host)->toBe('10.44.0.130')
+                    ->and(implode("\n", $command->arguments).($command->input ?? '').(is_resource($input) ? stream_get_contents($input) : ''))
+                    ->not->toContain('ghs_push')->not->toContain(base64_encode('x-access-token:ghs_push'));
+            }
+        } finally {
+            GitRemoteRedirect::clear();
+            TestOrbitHome::clearScratch();
+        }
     });
 
     it('refuses to push or fetch once the task VM is not ready', function (TaskVmState $state): void {

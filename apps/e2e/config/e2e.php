@@ -18,10 +18,17 @@ return [
         'root_size' => env('ORBIT_E2E_INCUS_ROOT_SIZE', '16GiB'),
         'max_vms' => (int) env('ORBIT_E2E_INCUS_MAX_VMS', 24),
         'operation_id' => env('ORBIT_E2E_OPERATION_ID'),
-        // Diagnosis only: a failed cold snapshot build keeps its guests; the next recover-legacy removes them.
-        'keep_failed_cold_build' => (bool) env('ORBIT_E2E_KEEP_FAILED_COLD_BUILD', false),
         'ownership' => [
             'user.orbit.e2e.owner' => 'orbit-e2e',
         ],
+    ],
+    // Nested guests boot about three times slower than on a bare host.
+    'readiness' => [
+        'guest_seconds' => env('ORBIT_E2E_GUEST_READINESS_SECONDS', 900),
+        'seconds' => env('ORBIT_E2E_READINESS_SECONDS', 600),
+    ],
+    'images' => [
+        'vm_source' => env('ORBIT_E2E_IMAGE_VM_SOURCE', 'images:ubuntu/26.04/cloud'),
+        'container_source' => env('ORBIT_E2E_IMAGE_CONTAINER_SOURCE', 'images:ubuntu/26.04'),
     ],
 ];

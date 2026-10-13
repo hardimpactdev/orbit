@@ -4,15 +4,13 @@ declare(strict_types=1);
 
 namespace App\E2E;
 
-use App\E2E\Value\TopologySnapshotIdentity;
 use RuntimeException;
 
 /**
  * Host capacity comes from Incus itself: the harness VMs that exist now and
  * the deterministic `10.232.<slot>.0/24` subnets in use. There is no ledger.
  *
- * The persistent topology snapshot and every disposable discovery or proof
- * topology count against the same host budget.
+ * Every topology and every role image build count against the same host budget.
  */
 final readonly class HostCapacity
 {
@@ -20,15 +18,13 @@ final readonly class HostCapacity
         private IncusHost $host,
         private int $maxVms,
     ) {
-        if ($maxVms < 9) {
-            throw new RuntimeException(
-                'Incus host capacity cannot fit the topology snapshot, discovery, and proof.',
-            );
+        if ($maxVms < 4) {
+            throw new RuntimeException('Incus host capacity cannot fit a full topology.');
         }
     }
 
     /** Refuse when the requested recipe would exceed the VM budget; return its free network slot. */
-    public function reserveSlot(int $requiredVms = 3): int
+    public function reserveSlot(int $requiredVms): int
     {
         if ($requiredVms < 1 || $requiredVms > $this->maxVms) {
             throw new RuntimeException('The requested topology VM count is outside host capacity.');
@@ -42,7 +38,7 @@ final readonly class HostCapacity
         }
 
         $occupied = $this->occupiedNetworkSlots();
-        for ($slot = 2; $slot <= 200; $slot++) {
+        for ($slot = 1; $slot <= 200; $slot++) {
             if (! isset($occupied[$slot])) {
                 return $slot;
             }
@@ -55,7 +51,6 @@ final readonly class HostCapacity
     private function occupiedNetworkSlots(): array
     {
         $occupied = [];
-        $occupied[TopologySnapshotIdentity::primary()->slot] = true;
         foreach ($this->host->networks() as $network) {
             $address = $network->config['ipv4.address'] ?? null;
             if ($address === null) {

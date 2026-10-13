@@ -6,11 +6,12 @@ namespace App\E2E\Value;
 
 use InvalidArgumentException;
 
+/** One issue's composed discovery topology, as `<worktree>/.e2e/topology.json` records it. */
 final readonly class FeatureTopology
 {
-    public const int SCHEMA = 4;
+    public const int SCHEMA = 5;
 
-    /** The one disk device name a mounted worktree uses on every checkout role. */
+    /** The one disk device name a mounted worktree uses on every checkout Node. */
     public const string SOURCE_DEVICE = 'orbit-source';
 
     public TopologyTarget $target;
@@ -23,54 +24,39 @@ final readonly class FeatureTopology
     /** The exact attempt this topology belongs to; two attempts of one issue never share resources. */
     public AttemptId $attempt;
 
+    public AttemptPurpose $purpose;
+
     /**
      * @param  array<string, array{device:string,source:string,path:string}>  $mounts
      */
     public function __construct(
         public TopologyConstructionInputs $construction,
-        public AttemptPurpose $purpose,
-        public TopologySnapshotGeneration $generation,
         public SourceState $source,
         public VerificationReport $verification,
         public array $mounts = [],
     ) {
-        $this->target = $this->construction->target;
-
-        $target = $this->target;
-        if ($target->isTopologySnapshot() || $target->attempt === null) {
-            throw new InvalidArgumentException('A feature topology requires an attempt-scoped target.');
-        }
-
-        $this->attempt = $target->attempt;
-        $constructionMatchesGeneration = $this->construction->snapshotReplacement
-            ? $this->construction->sourceGeneration === TopologyConstructionInputs::GENERIC_BASE
-                && $this->construction->imageAlias === $generation->baseImageAlias
-                && $this->construction->imageFingerprint === $generation->baseImageFingerprint
-                && $this->construction->operatorBaseImageFingerprint === $generation->operatorBaseImageFingerprint
-            : $this->construction->sourceGeneration === $generation->id;
-        if (! $constructionMatchesGeneration) {
-            throw new InvalidArgumentException('The topology construction inputs do not match the target.');
-        }
-
-        $this->network = $target->network();
+        $this->target = $construction->target;
+        $this->attempt = $this->target->attempt;
+        $this->purpose = AttemptPurpose::Discovery;
+        $this->network = $this->target->network();
         $instances = [];
-        foreach ($this->construction->nodes as $role => $node) {
-            $instances[$role] = $node['instance'];
+        foreach ($construction->nodes as $node => $record) {
+            $instances[$node] = $record['instance'];
         }
         $this->instances = $instances;
 
-        self::validateMounts($mounts, $source->mounted ? $target->recipe->checkoutNodeKeys() : []);
+        self::validateMounts($mounts, $source->mounted ? $this->target->recipe->checkoutNodeKeys() : []);
     }
 
     /**
-     * A mounted source names one identical device on every checkout role and nothing else.
+     * A mounted source names one identical device on every checkout Node and nothing else.
      *
      * @param  array<array-key, mixed>  $mounts
-     * @param  list<string>  $mountedRoles
+     * @param  list<string>  $mountedNodes
      */
-    private static function validateMounts(array $mounts, array $mountedRoles): void
+    private static function validateMounts(array $mounts, array $mountedNodes): void
     {
-        if (array_keys($mounts) !== $mountedRoles) {
+        if (array_keys($mounts) !== $mountedNodes) {
             throw new InvalidArgumentException('The topology mounts do not match the source state.');
         }
 
@@ -103,9 +89,8 @@ final readonly class FeatureTopology
             'issue' => $this->target->issue,
             'attempt_id' => $this->attempt->value,
             'purpose' => $this->purpose->value,
-            'profile' => TopologyProfile::NAME,
+            'nodes' => $this->target->recipe->nodeKeys(),
             'construction' => $this->construction->toArray(),
-            'generation' => $this->generation->toArray(),
             'network' => $this->network,
             'instances' => $this->instances,
             'mounts' => $this->mounts,
@@ -117,39 +102,30 @@ final readonly class FeatureTopology
     /** @param array<array-key, mixed> $value */
     public static function fromArray(array $value): self
     {
-        $keys = [
-            'schema',
-            'issue',
-            'attempt_id',
-            'purpose',
-            'profile',
-            'construction',
-            'generation',
-            'network',
-            'instances',
-            'mounts',
-            'source',
-            'verification',
-        ];
-
         if (($value['schema'] ?? null) !== self::SCHEMA) {
             $version = json_encode($value['schema'] ?? null, JSON_THROW_ON_ERROR);
 
             throw new InvalidArgumentException(
-                "The feature topology schema {$version} is not supported; release with the previous harness.",
+                "The feature topology schema {$version} is not supported; release it with the harness that created it.",
             );
         }
 
         if (
-            array_keys($value) !== $keys
-            || $value['profile'] !== TopologyProfile::NAME
-            || ! is_string($value['issue'])
-            || ! is_string($value['attempt_id'])
-            || ! is_string($value['purpose'])
-            || ! is_string($value['network'])
+            array_keys($value) !== [
+                'schema',
+                'issue',
+                'attempt_id',
+                'purpose',
+                'nodes',
+                'construction',
+                'network',
+                'instances',
+                'mounts',
+                'source',
+                'verification',
+            ]
+            || $value['purpose'] !== AttemptPurpose::Discovery->value
             || ! is_array($value['construction'])
-            || ! is_array($value['generation'])
-            || ! is_array($value['instances'])
             || ! is_array($value['mounts'])
             || ! is_array($value['source'])
             || ! is_array($value['verification'])
@@ -157,27 +133,16 @@ final readonly class FeatureTopology
             throw new InvalidArgumentException('The feature topology schema is invalid.');
         }
 
-        $purpose = AttemptPurpose::tryFrom($value['purpose']);
-
-        if ($purpose === null) {
-            throw new InvalidArgumentException('The feature topology attempt purpose is invalid.');
-        }
-
-        $mounts = SerializedArrays::mounts($value['mounts']);
-
-        $construction = TopologyConstructionInputs::fromArray($value['construction']);
-
         $topology = new self(
-            $construction,
-            $purpose,
-            TopologySnapshotGeneration::fromArray($value['generation']),
+            TopologyConstructionInputs::fromArray($value['construction']),
             SourceState::fromArray($value['source']),
             VerificationReport::fromArray($value['verification']),
-            $mounts,
+            SerializedArrays::mounts($value['mounts']),
         );
         if (
             $value['issue'] !== $topology->target->issue
             || $value['attempt_id'] !== $topology->attempt->value
+            || $value['nodes'] !== $topology->target->recipe->nodeKeys()
             || $value['network'] !== $topology->network
             || $value['instances'] !== $topology->instances
         ) {

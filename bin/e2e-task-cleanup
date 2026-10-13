@@ -86,7 +86,6 @@ for registry in "${registries[@]}"; do
     [[ -d $candidate ]] || continue
     owner=$(stat -c %u "$candidate")
     [[ $owner == "$caller_owner" || $owner == "$checkout_owner" ]] || continue
-    [[ -f $candidate/.e2e/topology-snapshot/promoted.json ]] || continue
     git_dir=$(git -C "$candidate" rev-parse --path-format=absolute --git-dir)
     common=$(git -C "$candidate" rev-parse --path-format=absolute --git-common-dir)
     [[ -n $git_dir && $git_dir == "$common" ]] || continue

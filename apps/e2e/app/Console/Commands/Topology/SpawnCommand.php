@@ -17,7 +17,7 @@ final class SpawnCommand extends E2ECommand
 
     #[\Override]
     protected $signature =
-        'topology:spawn {issue} {role} {name} '
+        'topology:spawn {issue} {node} {name} '
         .self::WORKTREE_OPTION
         .' {--argv=} {--argv-file=} {--json}';
 
@@ -33,7 +33,7 @@ final class SpawnCommand extends E2ECommand
             }
             $process = new GuestProcess((string) $this->argument('name'));
             $request = $this->request();
-            $role = (string) $this->argument('role');
+            $role = (string) $this->argument('node');
             $result = $acquirer->execute($request, $role, $process->spawnArgv($argv));
             $redactedArgv = json_encode($redactor->redactArgv($argv), JSON_THROW_ON_ERROR);
             $this->log($request, "role={$role} spawn={$process->name} exit={$result->exitCode} argv={$redactedArgv}");

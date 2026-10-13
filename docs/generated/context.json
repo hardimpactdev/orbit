@@ -1696,7 +1696,7 @@
         },
         {
             "path": "docs/reference/incus-topologies.md",
-            "title": "Incus topology registry",
+            "title": "Incus topologies",
             "kind": "reference",
             "components": [
                 "apps/cli",
@@ -1717,7 +1717,6 @@
                 "Role",
                 "Roleless Node",
                 "Route",
-                "Schedule",
                 "Task",
                 "Task workspace",
                 "Turn receipt"
@@ -2391,34 +2390,6 @@
             "governing_adrs": []
         },
         {
-            "path": "docs/reference/topology-snapshot.md",
-            "title": "Topology snapshot",
-            "kind": "reference",
-            "components": [
-                "apps/e2e",
-                "apps/web"
-            ],
-            "concepts": [
-                "Access grant",
-                "Cluster",
-                "Deployment",
-                "Doctor",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Placement",
-                "Process",
-                "Project",
-                "Role",
-                "Roleless Node",
-                "Route",
-                "Schedule",
-                "Task",
-                "Task workspace"
-            ],
-            "governing_adrs": []
-        },
-        {
             "path": "docs/reference/vaultwarden.md",
             "title": "Vaultwarden",
             "kind": "reference",
@@ -2546,6 +2517,7 @@
                 "Extension",
                 "Gateway",
                 "Node",
+                "Role",
                 "Task"
             ],
             "governing_adrs": []

@@ -57,9 +57,9 @@ def registry_path(key):
     return Path(state) / 'orbit/e2e-primary-checkouts' / key
 
 
-def is_snapshot_primary(root):
-    """A checkout that owns the topology snapshot: not a linked worktree, and holding a promoted generation."""
-    return (Path(root) / '.e2e/topology-snapshot/promoted.json').is_file() and not is_linked_worktree(root)
+def is_primary(root):
+    """A checkout that can hold the host locks: a repository's main checkout, not a linked worktree."""
+    return not is_linked_worktree(root)
 
 
 def registered_primary(key, checkout=None):
@@ -75,7 +75,7 @@ def registered_primary(key, checkout=None):
                 continue
             target = link.resolve(strict=True)
             if (target.is_dir() and target.stat().st_uid in owners
-                    and is_snapshot_primary(target) and origin_key(target) == key):
+                    and is_primary(target) and origin_key(target) == key):
                 return target
         except (OSError, RuntimeError, BridgeFailure):
             continue
@@ -92,10 +92,8 @@ def primary_of(root):
 
 
 def register(root, force=False):
-    """Register a snapshot primary for its origin. The first live primary keeps the registration unless forced."""
+    """Register a primary checkout for its origin. The first live primary keeps the registration unless forced."""
     root = primary_of(root)
-    if not is_snapshot_primary(root):
-        raise BridgeFailure(f'{root} holds no promoted topology snapshot generation, so it cannot be registered.')
     key = origin_key(root)
     if key is None:
         raise BridgeFailure(f'{root} has no origin remote.')
@@ -222,13 +220,6 @@ def rewrite(arguments, clone, bridge, cwd):
 
 def route(root, action, arguments):
     clone = toplevel(root)
-    if is_snapshot_primary(primary_of(clone)):
-        # The primary and its linked worktrees run in place and keep the primary registered.
-        try:
-            register(clone)
-        except BridgeFailure:
-            pass
-        return None
     primary = bridge_primary(clone)
     if primary is None:
         return None
@@ -263,12 +254,10 @@ def main(argv):
         os.execvp(command[0], command)
     if len(argv) >= 2 and argv[0] == 'register':
         arguments = argv[2:]
-        unknown = [argument for argument in arguments if argument not in ('--force', '--if-primary', '--json')]
+        unknown = [argument for argument in arguments if argument not in ('--force', '--json')]
         if unknown:
             return fail(f'unknown register option: {unknown[0]}', arguments)
         root = primary_of(argv[1])
-        if '--if-primary' in arguments and not is_snapshot_primary(root):
-            return 0
         try:
             changed = register(root, force='--force' in arguments)
         except BridgeFailure as exception:
@@ -276,10 +265,10 @@ def main(argv):
         key = origin_key(root)
         if '--json' in arguments:
             print(json.dumps({'state': 'registered', 'primary': str(registered_primary(key)), 'changed': changed}))
-        elif '--if-primary' not in arguments:
+        else:
             print(f'Registered {registered_primary(key)} for task workspace clones: {registry_path(key)}')
         return 0
-    print('usage: bin/e2e-clone-bridge route|dispatch ROOT ACTION [ARGS...] | register ROOT [--force] [--if-primary] [--json]', file=sys.stderr)
+    print('usage: bin/e2e-clone-bridge route|dispatch ROOT ACTION [ARGS...] | register ROOT [--force] [--json]', file=sys.stderr)
     return 64
 
 

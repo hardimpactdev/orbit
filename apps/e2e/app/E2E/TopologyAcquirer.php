@@ -8,18 +8,16 @@ use App\E2E\Git\GitRepository;
 use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
 use App\E2E\Value\AttemptId;
-use App\E2E\Value\AttemptPurpose;
 use App\E2E\Value\FeatureTopology;
 use App\E2E\Value\GuestCommand;
 use App\E2E\Value\GuestCommandResult;
 use App\E2E\Value\MountPath;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\SourceState;
+use App\E2E\Value\TopologyConstructionInputs;
 use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologyRequest;
-use App\E2E\Value\TopologySnapshotIdentity;
 use App\E2E\Value\TopologyTarget;
-use App\E2E\Value\VerificationMode;
 use App\E2E\Value\VerificationReport;
 use Closure;
 use InvalidArgumentException;
@@ -29,54 +27,50 @@ use Throwable;
 /**
  * Acquire, sync, verify, and exec on one issue's discovery topology.
  *
- * The attempt lives in `<worktree>/.e2e/`. The three VMs are cloned from the
- * promoted topology snapshot, the worktree is mounted on the checkout roles, and
- * the topology stays alive until `release`.
+ * Acquisition composes the declared Nodes: each guest starts from its role image on a new network, the
+ * worktree is mounted on the checkout Nodes, a fresh test Gateway is bootstrapped, and every other Node is
+ * enrolled through it. The attempt lives in `<worktree>/.e2e/` and the topology stays until `release`.
  */
 final readonly class TopologyAcquirer
 {
-    /** Host `bin/bootstrap` owns vendor; guests never run composer in discovery. */
-    private const array REQUIRED_VENDOR_AUTOLOADS = [
+    /** Host `bin/bootstrap` owns vendor and the Gateway `.env`; guests never run Composer. */
+    private const array REQUIRED_WORKTREE_FILES = [
         'apps/gateway/vendor/autoload.php',
         'apps/cli/vendor/autoload.php',
         'packages/php-sdk/vendor/autoload.php',
+        'apps/gateway/.env',
     ];
 
     public function __construct(
         private IncusHost $host,
         private IncusNetworkLifecycle $networks,
-        private PreparedStateFingerprint $fingerprints,
-        private TopologySnapshotManifestStore $topologySnapshot,
+        private RoleImages $images,
+        private TopologyComposer $composer,
         private WorktreeSynchronizer $synchronizer,
         private TopologyVerifier $verifier,
         private DiscoveryGuestPreparer $guests,
         private HostCapacity $capacity,
         private StatePaths $hostPaths,
         private OperationId $operation,
-        private TopologySnapshotIdentity $topologySnapshotIdentity,
         private string $repositoryRoot = '',
         /** @var (Closure(): AttemptId)|null Mints the attempt identity; injectable so tests pin resource names. */
         private ?Closure $attempts = null,
-        private ?TopologyConverger $converger = null,
-        private ?IssueTopologyConstructor $constructor = null,
-        private ?PromotedTopologySnapshotResolver $snapshotResolver = null,
     ) {}
 
-    public function acquire(TopologyRequest $request): FeatureTopology
+    /** @param (Closure(string, float): void)|null $progress hears each composition step and its seconds */
+    public function acquire(TopologyRequest $request, TopologyRecipe $recipe, ?Closure $progress = null): FeatureTopology
     {
         $this->assertRequestOwnership($request);
         $state = IssueState::forWorktree($request->issue, $request->worktree);
         $lock = $this->issueLock($request->issue);
         try {
-            if ($state->hasAttempt(AttemptPurpose::Discovery)) {
+            if ($state->hasAttempt()) {
                 throw new RuntimeException(
-                    "{$request->issue} already has discovery attempt "
-                    .$state->attemptId(AttemptPurpose::Discovery)->value
-                    .'; release it first.',
+                    "{$request->issue} already has discovery attempt {$state->attemptId()->value}; release it first.",
                 );
             }
 
-            return $this->create($request, $state);
+            return $this->create($request, $state, $recipe, $progress ?? static function (string $step, float $seconds): void {});
         } finally {
             $lock->release();
         }
@@ -85,10 +79,9 @@ final readonly class TopologyAcquirer
     /**
      * Refresh discovery after a source change and publish the verified source binding.
      *
-     * A quick sync proves the mount, installs the current guest helper scripts, and
-     * applies pending Gateway migrations, then stops. It skips the extension converge
-     * and the readiness probes, and leaves `topology.json` and the guest source marker
-     * at the last successful full sync, so standalone `verify` still refuses a changed mount.
+     * A quick sync proves the mount, installs the current guest helper scripts, and applies pending Gateway
+     * migrations, then stops. It skips the readiness probes and leaves `topology.json` and the guest source
+     * marker at the last successful full sync, so standalone `verify` still refuses a changed mount.
      */
     public function sync(TopologyRequest $request, bool $quick = false): FeatureTopology
     {
@@ -96,11 +89,7 @@ final readonly class TopologyAcquirer
         $state = IssueState::forWorktree($request->issue, $request->worktree);
         $lock = $this->issueLock($request->issue);
         try {
-            $topology = $this->mutableTopology($state, AttemptPurpose::Discovery);
-            $this->promotedSnapshotResolver()->assertExistingGenerationColdBase(
-                $request->worktree,
-                $topology->generation,
-            );
+            $topology = $state->requireTopology();
             $this->networks->reconcile($topology->target->network());
             $this->guests->assertSourceMounted($topology->target);
             if ($quick) {
@@ -109,21 +98,9 @@ final readonly class TopologyAcquirer
 
                 return $topology;
             }
-            $source = $this->synchronizer->syncWorkingTree($topology->target, $request->worktree);
+            $source = $this->synchronizer->syncWorkingTree($topology->target, $request->worktree, $this->mountToken($state));
             $this->guests->prepareGatewaySchema($topology->target);
-            if ($topology->construction->extension !== null) {
-                $this->topologyConverger()->converge($topology->target, $source, $topology->generation->laravel);
-            }
-            $verification = $this->verifier->verify(
-                $topology->target,
-                VerificationMode::Readiness,
-                $source,
-                requiredAssignments: $topology->target->recipe->assignments(),
-            );
-            if (! $verification->passed) {
-                throw new RuntimeException('Feature topology verification failed.'.$verification->failedSummary());
-            }
-            $updated = $this->withSource($topology, $source, $verification);
+            $updated = $this->withSource($topology, $source, $this->ready($topology->target, $source));
             $state->writeTopology($updated);
 
             return $updated;
@@ -137,26 +114,16 @@ final readonly class TopologyAcquirer
         $state = IssueState::forWorktree($request->issue, $request->worktree);
         $lock = $this->issueLock($request->issue);
         try {
-            $topology = $state->requireTopology(AttemptPurpose::Discovery);
+            $topology = $state->requireTopology();
             $this->synchronizer->assertWorkingTreeMatches(
                 $topology->target,
                 $request->worktree,
                 $topology->source,
+                $state->mountTokenHash(),
             );
             $this->networks->reconcile($topology->target->network());
-            if ($topology->source->mounted) {
-                $this->guests->assertSourceMounted($topology->target);
-            }
-            $report = $this->verifier->verify(
-                $topology->target,
-                VerificationMode::Readiness,
-                $topology->source,
-                requiredAssignments: $topology->target->recipe->assignments(),
-            );
-            if (! $report->passed) {
-                throw new RuntimeException('Feature topology verification failed.'.$report->failedSummary());
-            }
-            $updated = $this->withSource($topology, $topology->source, $report);
+            $this->guests->assertSourceMounted($topology->target);
+            $updated = $this->withSource($topology, $topology->source, $this->ready($topology->target, $topology->source));
             $state->writeTopology($updated);
 
             return $updated;
@@ -168,16 +135,15 @@ final readonly class TopologyAcquirer
     /** @param list<string> $argv */
     public function execute(
         TopologyRequest $request,
-        string $role,
+        string $node,
         array $argv,
         ?string $stdin = null,
-        AttemptPurpose $purpose = AttemptPurpose::Discovery,
         int $timeout = 60,
     ): GuestCommandResult {
         $state = IssueState::forWorktree($request->issue, $request->worktree);
         $lock = $this->issueLock($request->issue);
         try {
-            $instance = $this->ownedInstance($this->mutableTopology($state, $purpose), $role);
+            $instance = $this->ownedInstance($state->requireTopology(), $node);
 
             return $this->host->exec($instance, GuestCommand::asOrbitUser($argv, $timeout, $stdin));
         } finally {
@@ -185,89 +151,43 @@ final readonly class TopologyAcquirer
         }
     }
 
-    /** The exact VM of one role, revalidated against the record; `shell` attaches to it. */
-    public function instance(
-        TopologyRequest $request,
-        string $role,
-        AttemptPurpose $purpose = AttemptPurpose::Discovery,
-    ): string {
+    /** The exact guest of one Node, revalidated against the record; `shell` attaches to it. */
+    public function instance(TopologyRequest $request, string $node): string
+    {
         $state = IssueState::forWorktree($request->issue, $request->worktree);
 
-        return $this->ownedInstance($this->mutableTopology($state, $purpose), $role);
+        return $this->ownedInstance($state->requireTopology(), $node);
     }
 
-    private function create(TopologyRequest $request, IssueState $state): FeatureTopology
+    /** @param Closure(string, float): void $progress */
+    private function create(TopologyRequest $request, IssueState $state, TopologyRecipe $recipe, Closure $progress): FeatureTopology
     {
-        $proofPlan = ProofPlanFile::forAcquisition($request)?->plan;
-        $recipe = $proofPlan?->recipe() ?? TopologyRecipe::registered();
-        $generation = $this->promotedSnapshotResolver()->resolve($request->worktree);
         $this->assertMountableWorktree($request->worktree);
-        $this->assertVendorHydrated($request->worktree);
+        $this->assertBootstrappedWorktree($request->worktree);
 
-        $attempt = $this->mintAttempt();
+        $attempt = $this->attempts === null ? AttemptId::generate() : ($this->attempts)();
         $target = TopologyTarget::feature($request->issue, $attempt, $recipe);
-        $mounts = [];
-        foreach ($recipe->checkoutNodeKeys() as $role) {
-            $mounts[$role] = [
-                'device' => FeatureTopology::SOURCE_DEVICE,
-                'source' => $request->worktree,
-                'path' => MountPath::GUEST_SOURCE,
-            ];
-        }
-        $metadata = [
-            'user.orbit.e2e.issue' => $request->issue,
-            'user.orbit.e2e.attempt' => $attempt->value,
-            'user.orbit.e2e.operation' => $this->operation->value,
+        $mount = [
+            'device' => FeatureTopology::SOURCE_DEVICE,
+            'source' => $request->worktree,
+            'path' => MountPath::GUEST_SOURCE,
         ];
-        $state->writeAttempt(
-            $attempt,
-            AttemptPurpose::Discovery,
-            $this->operation,
-            $proofPlan?->extension,
-        );
-        $instances = array_map($target->instance(...), $recipe->nodeKeys());
+        $mounts = array_fill_keys($recipe->checkoutNodeKeys(), $mount);
+        $state->writeAttempt($attempt, $this->operation, $recipe);
         try {
-            $construction = $this->issueConstructor()->construct(
-                $target,
-                $generation,
-                $metadata,
-                $mounts,
-                $proofPlan?->extension,
-            );
-            $this->host->startAll($instances);
-            $this->host->prepareClonedHostStates($instances);
-            $this->guests->assertSourceMounted($target);
-            $this->guests->placeGatewayEnvironment($target);
-            $this->guests->exposeOrbitCli($target);
-            $this->guests->repairCloneIdentity($target);
-            $source = $this->synchronizer->syncWorkingTree($target, $request->worktree);
-            $this->guests->prepareGatewaySchema($target);
-            if ($proofPlan?->extension !== null) {
-                $this->topologyConverger()->converge($target, $source, $generation->laravel);
-            }
-            $verification = $this->verifier->verify(
-                $target,
-                VerificationMode::Readiness,
-                $source,
-                requiredAssignments: $proofPlan?->extension === null
-                    ? $generation->topologyAssignments ?? throw new RuntimeException(
-                        'The pinned generation has no assignment declaration.',
-                    )
-                    : $recipe->assignments(),
-            );
-            if (! $verification->passed) {
-                throw new RuntimeException(
-                    'Feature topology readiness verification failed.'.$verification->failedSummary(),
-                );
-            }
-            $topology = new FeatureTopology(
-                $construction,
-                AttemptPurpose::Discovery,
-                $generation,
-                $source,
-                $verification,
-                $mounts,
-            );
+            $mountToken = $state->writeMountToken();
+            $construction = $this->step($progress, 'reserve', fn (): TopologyConstructionInputs => $this->construct($target, $mounts));
+            $this->step($progress, 'start', function () use ($target): void {
+                $instances = array_values($target->instances());
+                $this->host->startAll($instances);
+                $this->host->waitForAgents($instances);
+                $this->host->waitForGlobalIpv4($instances);
+                $this->guests->assertSourceMounted($target);
+            });
+            $source = $this->step($progress, 'scripts', fn (): SourceState => $this->synchronizer->syncWorkingTree($target, $request->worktree, $mountToken));
+            $this->step($progress, 'compose', fn () => $this->composer->compose($target, $progress));
+            $verification = $this->step($progress, 'readiness', fn (): VerificationReport => $this->ready($target, $source));
+            $topology = new FeatureTopology($construction, $source, $verification, $mounts);
             $state->writeTopology($topology);
 
             return $topology;
@@ -276,10 +196,88 @@ final readonly class TopologyAcquirer
         }
     }
 
+    /**
+     * Under the host creation lock: reserve capacity, create the network, and create every guest from the
+     * role image its alias names right now.
+     *
+     * @param  array<string, array{device:string,source:string,path:string}>  $mounts
+     */
+    private function construct(TopologyTarget $target, array $mounts): TopologyConstructionInputs
+    {
+        if ($this->host->network($target->network()) !== null || $this->host->instances(array_values($target->instances())) !== []) {
+            throw new RuntimeException('A resource of this attempt already exists and cannot be adopted.');
+        }
+        $creation = new OperationLock($this->hostPaths);
+        if (! $creation->acquire(OrphanNetworkSweep::CREATION_LOCK, $this->operation, timeoutSeconds: 600)) {
+            throw new RuntimeException('Another topology creation holds the host.');
+        }
+        try {
+            $images = $this->images->resolve($target->recipe->images());
+            $slot = $this->capacity->reserveSlot($target->recipe->vmCount());
+            $metadata = [
+                'user.orbit.e2e.issue' => $target->issue,
+                'user.orbit.e2e.attempt' => $target->attempt->value,
+                'user.orbit.e2e.operation' => $this->operation->value,
+            ];
+            $this->networks->create($target->network(), $slot, $metadata, 14);
+            $guests = [];
+            foreach ($target->recipe->nodes as $node) {
+                $guests[$node->key] = [
+                    'image' => $images[$node->image->value],
+                    'name' => $target->instance($node->key),
+                    'network' => $target->network(),
+                    'node' => $node->key,
+                    'address' => $node->address,
+                    'slot' => $slot,
+                    'container' => $node->isContainer(),
+                    'metadata' => [...$metadata, 'user.orbit.e2e.role-image' => $images[$node->image->value]],
+                    ...(isset($mounts[$node->key]) ? ['mount' => $mounts[$node->key]] : []),
+                ];
+            }
+            $this->host->initGuests($guests);
+
+            return TopologyConstructionInputs::create($target, $slot, $images);
+        } finally {
+            $creation->release();
+        }
+    }
+
+    private function ready(TopologyTarget $target, SourceState $source): VerificationReport
+    {
+        $verification = $this->verifier->verify($target, $source);
+        if (! $verification->passed) {
+            throw new RuntimeException('Topology readiness verification failed.'.$verification->failedSummary());
+        }
+
+        return $verification;
+    }
+
+    /**
+     * @template T
+     *
+     * @param  Closure(string, float): void  $progress
+     * @param  Closure(): T  $work
+     * @return T
+     */
+    private function step(Closure $progress, string $name, Closure $work): mixed
+    {
+        $started = microtime(true);
+        try {
+            $result = $work();
+        } catch (Throwable $exception) {
+            throw str_starts_with($exception->getMessage(), 'Step ')
+                ? $exception
+                : new RuntimeException("Step {$name} failed: ".$exception->getMessage(), previous: $exception);
+        }
+        $progress($name, microtime(true) - $started);
+
+        return $result;
+    }
+
     /** Roll every intended resource back, drop the lease, and rethrow. */
     private function rollback(TopologyTarget $target, IssueState $state, Throwable $exception): never
     {
-        $resources = [$target->network(), ...array_map($target->instance(...), $target->recipe->nodeKeys())];
+        $resources = [$target->network(), ...array_values($target->instances())];
         $rollback = AcquisitionRollback::forHost($this->host, $this->networks, $target);
         $refused = [];
         try {
@@ -300,36 +298,24 @@ final readonly class TopologyAcquirer
                 previous: $exception,
             );
         }
-        $state->forgetAttempt(AttemptPurpose::Discovery);
+        $state->forgetAttempt();
 
         throw new RuntimeException('Topology acquisition failed: '.$exception->getMessage(), previous: $exception);
     }
 
-    /** A proved attempt stays as proved: nothing may change it before release. */
-    private function mutableTopology(IssueState $state, AttemptPurpose $purpose): FeatureTopology
+    private function mountToken(IssueState $state): string
     {
-        $topology = $state->requireTopology($purpose);
-        if ($purpose === AttemptPurpose::Proof && $state->isProved()) {
-            throw new RuntimeException(
-                "{$state->issue} attempt {$topology->attempt->value} is proved; release it before changing it.",
-            );
-        }
-        if ($purpose === AttemptPurpose::Proof) {
-            $proof = $state->proof();
-            if (
-                ($proof['status'] ?? null) !== 'diagnosis'
-                || ($proof['attempt_id'] ?? null) !== $topology->attempt->value
-            ) {
-                throw new RuntimeException('Only a retained failed proof can be inspected or debugged.');
-            }
-        }
-
-        return $topology;
+        return $state->mountTokenHash() ?? $state->writeMountToken();
     }
 
-    private function ownedInstance(FeatureTopology $topology, string $role): string
+    private function ownedInstance(FeatureTopology $topology, string $node): string
     {
-        $instance = $topology->target->instance($role);
+        if (! $topology->target->recipe->hasNode($node)) {
+            throw new InvalidArgumentException(
+                "The topology has no Node [{$node}]; it has ".implode(', ', $topology->target->recipe->nodeKeys()).'.',
+            );
+        }
+        $instance = $topology->target->instance($node);
         $owned = $this->host->instance($instance);
         if (
             $owned === null
@@ -344,19 +330,9 @@ final readonly class TopologyAcquirer
         return $instance;
     }
 
-    private function withSource(
-        FeatureTopology $topology,
-        SourceState $source,
-        VerificationReport $verification,
-    ): FeatureTopology {
-        return new FeatureTopology(
-            $topology->construction,
-            $topology->purpose,
-            $topology->generation,
-            $source,
-            $verification,
-            $topology->mounts,
-        );
+    private function withSource(FeatureTopology $topology, SourceState $source, VerificationReport $verification): FeatureTopology
+    {
+        return new FeatureTopology($topology->construction, $source, $verification, $topology->mounts);
     }
 
     private function issueLock(string $issue): OperationLock
@@ -367,39 +343,6 @@ final readonly class TopologyAcquirer
         }
 
         return $lock;
-    }
-
-    private function mintAttempt(): AttemptId
-    {
-        return $this->attempts === null ? AttemptId::generate() : ($this->attempts)();
-    }
-
-    private function topologyConverger(): TopologyConverger
-    {
-        return $this->converger ?? new TopologyConverger($this->host);
-    }
-
-    private function issueConstructor(): IssueTopologyConstructor
-    {
-        return
-            $this->constructor ?? new IssueTopologyConstructor(
-                $this->host,
-                $this->networks,
-                $this->capacity,
-                $this->hostPaths,
-                $this->operation,
-                $this->topologySnapshot,
-                $this->topologySnapshotIdentity,
-            );
-    }
-
-    private function promotedSnapshotResolver(): PromotedTopologySnapshotResolver
-    {
-        return $this->snapshotResolver ?? new PromotedTopologySnapshotResolver(
-            $this->fingerprints,
-            $this->topologySnapshot,
-            new TopologySnapshotAvailability($this->host, $this->topologySnapshotIdentity),
-        );
     }
 
     /** The worktree becomes an Incus disk source verbatim, so it must satisfy the mount path rule. */
@@ -413,12 +356,12 @@ final readonly class TopologyAcquirer
         }
     }
 
-    private function assertVendorHydrated(string $worktree): void
+    private function assertBootstrappedWorktree(string $worktree): void
     {
-        foreach (self::REQUIRED_VENDOR_AUTOLOADS as $autoload) {
-            if (! is_file($worktree.'/'.$autoload)) {
+        foreach (self::REQUIRED_WORKTREE_FILES as $file) {
+            if (! is_file($worktree.'/'.$file)) {
                 throw new RuntimeException(
-                    "The worktree is missing {$autoload}; run bin/bootstrap in the worktree before discovery.",
+                    "The worktree is missing {$file}; run bin/bootstrap in the worktree before discovery.",
                 );
             }
         }

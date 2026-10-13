@@ -4,52 +4,25 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
-use App\E2E\ColdTopologyConstructor;
 use App\E2E\DiscoveryGuestPreparer;
 use App\E2E\Git\GitRepository;
 use App\E2E\GuestTransport;
 use App\E2E\HostCapacity;
-use App\E2E\HostRelativeDeleter;
 use App\E2E\IncusHost;
 use App\E2E\IncusNetworkLifecycle;
-use App\E2E\IssueTopologyConstructor;
-use App\E2E\LaravelReleaseResolver;
-use App\E2E\LegacyIncusRevalidator;
-use App\E2E\LegacyRetirement;
-use App\E2E\LegacyRetirementHost;
-use App\E2E\ObservedPhpInputCollector;
 use App\E2E\OrphanNetworkSweep;
-use App\E2E\PreparedStateFingerprint;
-use App\E2E\PromotedTopologySnapshotResolver;
-use App\E2E\ProofCaptureService;
-use App\E2E\ProofCloseoutService;
-use App\E2E\ProofEquivalenceEvaluator;
-use App\E2E\ProofFixtureStager;
-use App\E2E\ProofInputManifestBuilder;
-use App\E2E\ProofReviewService;
-use App\E2E\ScenarioPestProcess;
-use App\E2E\SnapshotScenarioRunner;
+use App\E2E\RoleImageBuilder;
+use App\E2E\RoleImagePrograms;
+use App\E2E\RoleImages;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\OperationLock;
 use App\E2E\State\SecretRedactor;
 use App\E2E\State\StatePaths;
-use App\E2E\StaticProofInputPolicy;
 use App\E2E\TopologyAcquirer;
-use App\E2E\TopologyConverger;
-use App\E2E\TopologyProofRunner;
+use App\E2E\TopologyComposer;
 use App\E2E\TopologyReleaser;
-use App\E2E\TopologySnapshotAvailability;
-use App\E2E\TopologySnapshotBuilder;
-use App\E2E\TopologySnapshotManifestStore;
-use App\E2E\TopologySnapshotPromoter;
-use App\E2E\TopologySnapshotPromotionStore;
-use App\E2E\TopologySnapshotRebuilder;
-use App\E2E\TopologySnapshotRefresher;
-use App\E2E\TopologySnapshotReplacementInstaller;
-use App\E2E\TopologySnapshotReplacementStore;
 use App\E2E\TopologyVerifier;
 use App\E2E\Value\OperationId;
-use App\E2E\Value\TopologySnapshotIdentity;
 use App\E2E\WorktreeLocator;
 use App\E2E\WorktreeSynchronizer;
 use Illuminate\Contracts\Config\Repository;
@@ -67,54 +40,20 @@ final class AppServiceProvider extends ServiceProvider
 
             return new OperationId($value);
         });
-        $this->app->singleton(
-            TopologySnapshotIdentity::class,
-            static fn (): TopologySnapshotIdentity => TopologySnapshotIdentity::primary(),
-        );
         $repositoryRoot = dirname(__DIR__, 4);
         $this->app->singleton(GitRepository::class, fn (): GitRepository => new GitRepository($repositoryRoot));
-        $this->app->singleton(
-            ScenarioPestProcess::class,
-            fn (): ScenarioPestProcess => new ScenarioPestProcess(dirname(__DIR__, 2)),
-        );
-        $this->app->singleton(SnapshotScenarioRunner::class);
-        // Host-wide state (topology snapshot generation, locks) lives in the primary checkout's `.e2e/`.
+        // Host-wide state (locks) lives in the primary checkout's `.e2e/`.
         $this->app->singleton(
             StatePaths::class,
             fn (): StatePaths => StatePaths::forPrimary(self::primaryCheckout($repositoryRoot)),
         );
         $this->app->singleton(AtomicJsonStore::class);
-        $this->app->singleton(TopologySnapshotPromotionStore::class);
-        $this->app->singleton(TopologySnapshotReplacementStore::class);
         $this->app->singleton(
             WorktreeLocator::class,
             fn (): WorktreeLocator => new WorktreeLocator(self::primaryCheckout($repositoryRoot)),
         );
         $this->app->singleton(SecretRedactor::class);
-        $this->app->singleton(StaticProofInputPolicy::class);
-        $this->app->singleton(ProofInputManifestBuilder::class);
-        $this->app->singleton(ObservedPhpInputCollector::class);
         $this->app->bind(OperationLock::class);
-        $this->app->singleton(LegacyRetirementHost::class, fn (): LegacyRetirementHost => new LegacyRetirementHost(
-            new LegacyIncusRevalidator,
-            new HostRelativeDeleter(dirname(__DIR__, 2).'/resources/host/delete-relative.py'),
-        ));
-        $this->app->singleton(LegacyRetirement::class, function (Application $app): LegacyRetirement {
-            $host = $app->make(LegacyRetirementHost::class);
-
-            return new LegacyRetirement(
-                $host->observe(...),
-                $host->mutate(...),
-                fn (): \DateTimeImmutable => new \DateTimeImmutable('now'),
-                $app->make(OperationLock::class),
-                $app->make(OperationId::class),
-                $host->observeCurrent(...),
-            );
-        });
-        $this->app->singleton(
-            PreparedStateFingerprint::class,
-            fn (Application $app): PreparedStateFingerprint => new PreparedStateFingerprint($app->make(GitRepository::class)),
-        );
         $this->app->singleton(
             WorktreeSynchronizer::class,
             fn (Application $app): WorktreeSynchronizer => new WorktreeSynchronizer(
@@ -151,6 +90,7 @@ final class AppServiceProvider extends ServiceProvider
                 pool: $pool,
                 ownershipMetadata: $ownership,
                 redactor: $app->make(SecretRedactor::class),
+                guestReadinessTimeoutSeconds: self::seconds($configuration, 'e2e.readiness.guest_seconds'),
             );
         });
         $this->app->bind(GuestTransport::class, fn (Application $app): IncusHost => $app->make(IncusHost::class));
@@ -166,70 +106,50 @@ final class AppServiceProvider extends ServiceProvider
 
             return new HostCapacity($app->make(IncusHost::class), $maxVms);
         });
-        $this->app->singleton(ColdTopologyConstructor::class, fn (Application $app): ColdTopologyConstructor => new ColdTopologyConstructor(
-            $app->make(IncusHost::class),
-            $app->make(IncusNetworkLifecycle::class),
-            $app->make(WorktreeSynchronizer::class),
-            $app->make(TopologyConverger::class),
-            $app->make(HostCapacity::class),
-            $app->make(StatePaths::class),
-        ));
-        $this->app->singleton(TopologySnapshotManifestStore::class, fn (Application $app): TopologySnapshotManifestStore => new TopologySnapshotManifestStore(
-            $app->make(AtomicJsonStore::class),
-            $app->make(StatePaths::class),
-            $app->make(IncusHost::class),
-        ));
         $this->app->singleton(DiscoveryGuestPreparer::class);
-        $this->app->singleton(IssueTopologyConstructor::class);
-        $this->app->singleton(PromotedTopologySnapshotResolver::class);
+        $this->app->singleton(TopologyComposer::class);
+        $this->app->singleton(
+            TopologyVerifier::class,
+            fn (Application $app): TopologyVerifier => new TopologyVerifier(
+                $app->make(IncusHost::class),
+                self::seconds($app->make(Repository::class), 'e2e.readiness.seconds'),
+            ),
+        );
+        $this->app->singleton(RoleImagePrograms::class, fn (): RoleImagePrograms => new RoleImagePrograms($repositoryRoot));
+        $this->app->singleton(RoleImages::class);
+        $this->app->singleton(RoleImageBuilder::class, function (Application $app) use ($repositoryRoot): RoleImageBuilder {
+            $configuration = $app->make(Repository::class);
+            $vmSource = $configuration->get('e2e.images.vm_source');
+            $containerSource = $configuration->get('e2e.images.container_source');
+            if (! is_string($vmSource) || $vmSource === '' || ! is_string($containerSource) || $containerSource === '') {
+                throw new \RuntimeException('The role image source configuration is invalid.');
+            }
+
+            return new RoleImageBuilder(
+                $app->make(IncusHost::class),
+                $app->make(IncusNetworkLifecycle::class),
+                $app->make(HostCapacity::class),
+                $app->make(StatePaths::class),
+                $app->make(OperationId::class),
+                $app->make(RoleImagePrograms::class),
+                $repositoryRoot,
+                $vmSource,
+                $containerSource,
+            );
+        });
         $this->app->singleton(TopologyAcquirer::class, fn (Application $app): TopologyAcquirer => new TopologyAcquirer(
             host: $app->make(IncusHost::class),
             networks: $app->make(IncusNetworkLifecycle::class),
-            fingerprints: $app->make(PreparedStateFingerprint::class),
-            topologySnapshot: $app->make(TopologySnapshotManifestStore::class),
+            images: $app->make(RoleImages::class),
+            composer: $app->make(TopologyComposer::class),
             synchronizer: $app->make(WorktreeSynchronizer::class),
             verifier: $app->make(TopologyVerifier::class),
             guests: $app->make(DiscoveryGuestPreparer::class),
             capacity: $app->make(HostCapacity::class),
             hostPaths: $app->make(StatePaths::class),
             operation: $app->make(OperationId::class),
-            topologySnapshotIdentity: $app->make(TopologySnapshotIdentity::class),
             repositoryRoot: $repositoryRoot,
-            converger: $app->make(TopologyConverger::class),
-            constructor: $app->make(IssueTopologyConstructor::class),
-            snapshotResolver: $app->make(PromotedTopologySnapshotResolver::class),
         ));
-        $this->app->singleton(
-            TopologyProofRunner::class,
-            fn (Application $app): TopologyProofRunner => new TopologyProofRunner(
-                $app->make(IncusHost::class),
-                $app->make(IncusNetworkLifecycle::class),
-                $app->make(TopologySnapshotManifestStore::class),
-                $app->make(WorktreeSynchronizer::class),
-                $app->make(TopologyConverger::class),
-                $app->make(TopologyVerifier::class),
-                new ProofFixtureStager($app->make(IncusHost::class), $app->make(OperationId::class)),
-                $app->make(HostCapacity::class),
-                $app->make(StatePaths::class),
-                $app->make(OperationId::class),
-                $app->make(TopologySnapshotIdentity::class),
-                $app->make(ProofInputManifestBuilder::class),
-                $app->make(ObservedPhpInputCollector::class),
-                $repositoryRoot,
-                constructor: $app->make(IssueTopologyConstructor::class),
-                coldConstructor: $app->make(ColdTopologyConstructor::class),
-            ),
-        );
-        $this->app->singleton(ProofEquivalenceEvaluator::class, fn (Application $app): ProofEquivalenceEvaluator => new ProofEquivalenceEvaluator(
-            $app->make(StaticProofInputPolicy::class),
-            $app->make(ProofInputManifestBuilder::class),
-            $app->make(StatePaths::class),
-            $app->make(OperationId::class),
-            $app->make(IncusHost::class),
-            $repositoryRoot,
-        ));
-        $this->app->singleton(ProofCaptureService::class);
-        $this->app->singleton(ProofReviewService::class);
         $this->app->singleton(OrphanNetworkSweep::class, fn (Application $app): OrphanNetworkSweep => new OrphanNetworkSweep(
             $app->make(IncusHost::class),
             $app->make(IncusNetworkLifecycle::class),
@@ -242,93 +162,20 @@ final class AppServiceProvider extends ServiceProvider
             $app->make(StatePaths::class),
             $app->make(OperationId::class),
             $app->make(OrphanNetworkSweep::class),
-            function ($request, $capture) use ($app): void {
-                $app->make(TopologySnapshotReplacementInstaller::class)->abandon($request, $capture);
-            },
         ));
+    }
 
-        $this->app->singleton(TopologySnapshotBuilder::class, fn (Application $app): TopologySnapshotBuilder => new TopologySnapshotBuilder(
-            $app->make(ColdTopologyConstructor::class),
-            $app->make(TopologySnapshotManifestStore::class),
-            $app->make(AtomicJsonStore::class),
-            $repositoryRoot,
-            $app->make(TopologySnapshotIdentity::class),
-        ));
-        $this->app->singleton(TopologySnapshotPromoter::class, fn (Application $app): TopologySnapshotPromoter => new TopologySnapshotPromoter(
-            $app->make(IncusHost::class),
-            $app->make(PreparedStateFingerprint::class),
-            $app->make(TopologyVerifier::class),
-            $app->make(TopologySnapshotManifestStore::class),
-            $app->make(TopologyReleaser::class),
-            $app->make(OperationLock::class),
-            new OperationLock($app->make(StatePaths::class)),
-            $app->make(StatePaths::class),
-            new GitRepository(self::primaryCheckout($repositoryRoot)),
-            $app->make(OperationId::class),
-            $app->make(TopologySnapshotIdentity::class),
-            $app->make(TopologySnapshotPromotionStore::class),
-            $app->make(TopologySnapshotReplacementStore::class),
-        ));
-        $this->app->singleton(TopologySnapshotRefresher::class, fn (Application $app): TopologySnapshotRefresher => new TopologySnapshotRefresher(
-            $app->make(IncusHost::class),
-            $app->make(IncusNetworkLifecycle::class),
-            $app->make(PreparedStateFingerprint::class),
-            $app->make(TopologySnapshotManifestStore::class),
-            $app->make(TopologySnapshotBuilder::class),
-            $app->make(WorktreeSynchronizer::class),
-            $app->make(TopologyConverger::class),
-            $app->make(TopologyVerifier::class),
-            $app->make(LaravelReleaseResolver::class),
-            $app->make(OperationLock::class),
-            new OperationLock($app->make(StatePaths::class)),
-            $app->make(AtomicJsonStore::class),
-            $app->make(GitRepository::class),
-            $repositoryRoot,
-            $app->make(OperationId::class),
-            $app->make(TopologySnapshotIdentity::class),
-            $app->make(TopologySnapshotAvailability::class),
-            replacements: $app->make(TopologySnapshotReplacementStore::class),
-            keepFailedColdBuild: config('e2e.incus.keep_failed_cold_build') === true,
-        ));
-        $this->app->singleton(TopologySnapshotAvailability::class, fn (Application $app): TopologySnapshotAvailability => new TopologySnapshotAvailability(
-            $app->make(IncusHost::class),
-            $app->make(TopologySnapshotIdentity::class),
-            $app->make(TopologySnapshotReplacementStore::class),
-        ));
-        $this->app->singleton(TopologySnapshotReplacementInstaller::class, fn (Application $app): TopologySnapshotReplacementInstaller => new TopologySnapshotReplacementInstaller(
-            $app->make(IncusHost::class),
-            $app->make(ColdTopologyConstructor::class),
-            $app->make(PreparedStateFingerprint::class),
-            $app->make(TopologyVerifier::class),
-            $app->make(TopologySnapshotManifestStore::class),
-            $app->make(TopologySnapshotPromotionStore::class),
-            $app->make(TopologySnapshotReplacementStore::class),
-            $app->make(OperationLock::class),
-            new OperationLock($app->make(StatePaths::class)),
-            new GitRepository(self::primaryCheckout($repositoryRoot)),
-            $app->make(OperationId::class),
-            $app->make(TopologySnapshotIdentity::class),
-            self::primaryCheckout($repositoryRoot),
-            $app->make(SecretRedactor::class),
-        ));
-        $this->app->singleton(ProofCloseoutService::class, fn (Application $app): ProofCloseoutService => new ProofCloseoutService(
-            new GitRepository(self::primaryCheckout($repositoryRoot)),
-            $app->make(StatePaths::class),
-            $app->make(OperationId::class),
-            $app->make(SecretRedactor::class),
-            $app->make(TopologySnapshotRefresher::class)->request(...),
-            fn ($request, $capture): array => $app->make(TopologyReleaser::class)
-                ->releaseCapturedProof($request, $capture, issueLockHeld: true),
-            $app->make(TopologySnapshotReplacementInstaller::class)->install(...),
-        ));
-        $this->app->singleton(TopologySnapshotRebuilder::class, fn (Application $app): TopologySnapshotRebuilder => new TopologySnapshotRebuilder(
-            $app->make(IncusHost::class),
-            $app->make(IncusNetworkLifecycle::class),
-            $app->make(TopologySnapshotManifestStore::class),
-            $app->make(OperationLock::class),
-            $app->make(OperationId::class),
-            $app->make(TopologySnapshotIdentity::class),
-        ));
+    private static function seconds(Repository $configuration, string $key): int
+    {
+        $value = $configuration->get($key);
+        if (is_string($value) && preg_match('/\A[1-9][0-9]{0,5}\z/D', $value) === 1) {
+            $value = (int) $value;
+        }
+        if (! is_int($value) || $value < 1) {
+            throw new \RuntimeException("The setting [{$key}] must be a positive number of seconds.");
+        }
+
+        return $value;
     }
 
     /**

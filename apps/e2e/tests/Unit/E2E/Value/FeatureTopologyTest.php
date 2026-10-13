@@ -2,85 +2,56 @@
 
 declare(strict_types=1);
 
-use App\E2E\Value\AttemptId;
-use App\E2E\Value\AttemptPurpose;
 use App\E2E\Value\FeatureTopology;
 use App\E2E\Value\IncusInstance;
-use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\MountPath;
 use App\E2E\Value\SourceState;
 use App\E2E\Value\TopologyConstructionInputs;
-use App\E2E\Value\TopologyExtension;
-use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyRecipe;
-use App\E2E\Value\TopologySnapshotGeneration;
-use App\E2E\Value\TopologyTarget;
 use App\E2E\Value\VerificationReport;
 use Illuminate\Filesystem\Filesystem;
 
-function mountedTopologyFixture(bool $mounted = true, ?array $mounts = null): FeatureTopology
+/** @param array<string, array{device:string,source:string,path:string}>|null $mounts */
+function mountedTopologyFixture(bool $mounted = true, ?array $mounts = null, ?TopologyRecipe $recipe = null): FeatureTopology
 {
-    $target = TopologyTarget::feature('TST-321', new AttemptId(str_repeat('a', 32)));
-    $mounts ??= $mounted
-        ? [
-            'gateway' => ['device' => 'orbit-source', 'source' => '/srv/wt', 'path' => '/home/orbit/orbit'],
-            'app-dev' => ['device' => 'orbit-source', 'source' => '/srv/wt', 'path' => '/home/orbit/orbit'],
-            'operator' => ['device' => 'orbit-source', 'source' => '/srv/wt', 'path' => '/home/orbit/orbit'],
-        ]
-        : [];
-    $generation = new TopologySnapshotGeneration(
-        'g1',
-        str_repeat('a', 40),
-        ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod', 'operator' => 'main-operator'],
-        str_repeat('c', 64),
-        str_repeat('d', 64),
-        new LaravelRelease('v13.10.1', str_repeat('e', 40)),
-        str_repeat('f', 64),
-        2,
-        'ubuntu-26.04-amd64-v1',
-        'orbit-base-ubuntu-26.04-runtime',
-        TopologyProfile::NAME,
-        TopologyProfile::ROLES,
-        TopologyProfile::CHECKOUT_ROLES, operatorBaseImageFingerprint: str_repeat('b', 64),
-    );
+    $construction = topologyConstructionFixture('TST-321', 'a', $recipe);
+    $mount = ['device' => 'orbit-source', 'source' => '/srv/wt', 'path' => '/home/orbit/orbit'];
+    $mounts ??= $mounted ? array_fill_keys($construction->target->recipe->checkoutNodeKeys(), $mount) : [];
 
     return new FeatureTopology(
-        TopologyConstructionInputs::create($target, $generation, 2),
-        AttemptPurpose::Discovery,
-        $generation,
+        $construction,
         new SourceState(
             str_repeat('b', 40),
             str_repeat('b', 40),
             mounted: $mounted,
-            pointerHash: $mounted ? str_repeat('e', 64) : null,
+            mountTokenHash: $mounted ? str_repeat('e', 64) : null,
         ),
         new VerificationReport(true, ['fixture' => verificationProbeFixture()]),
         $mounts,
     );
 }
 
-describe('feature topology mounts', function () {
-    it('round-trips the mounts and the mounted source state', function () {
-        $topology = mountedTopologyFixture();
+describe('feature topology', function () {
+    it('round-trips the declared Nodes, role images, mounts, and mounted source state', function (array $workloads) {
+        $topology = mountedTopologyFixture(recipe: TopologyRecipe::compose($workloads));
+        $value = $topology->toArray();
 
-        expect($topology->toArray()['mounts'])
-            ->toBe([
-                'gateway' => ['device' => 'orbit-source', 'source' => '/srv/wt', 'path' => '/home/orbit/orbit'],
-                'app-dev' => ['device' => 'orbit-source', 'source' => '/srv/wt', 'path' => '/home/orbit/orbit'],
-                'operator' => ['device' => 'orbit-source', 'source' => '/srv/wt', 'path' => '/home/orbit/orbit'],
-            ])
-            ->and($topology->toArray()['source']['mounted'])
-            ->toBeTrue()
-            ->and(FeatureTopology::fromArray($topology->toArray())->toArray())
-            ->toBe($topology->toArray())
-            ->and(mountedTopologyFixture(false)->toArray()['mounts'])
-            ->toBe([]);
-    });
+        expect($value['purpose'])->toBe('discovery')
+            ->and($value['nodes'])->toBe($topology->target->recipe->nodeKeys())
+            ->and(array_keys($value['construction']['images']))->toBe(array_map(
+                static fn ($image): string => $image->value,
+                $topology->target->recipe->images(),
+            ))
+            ->and(array_keys($value['mounts']))->toBe($topology->target->recipe->checkoutNodeKeys())
+            ->and(FeatureTopology::fromArray($value)->toArray())->toBe($value)
+            ->and(mountedTopologyFixture(false)->toArray()['mounts'])->toBe([]);
+    })->with([
+        'gateway only' => [[]],
+        'default' => [['app-dev', 'app-prod']],
+        'full' => [['app-dev', 'app-prod', 'app-prod-2']],
+    ]);
 
-    it('rejects each redundant wire identity that conflicts with construction inputs', function (
-        string $field,
-        string $replacement,
-    ): void {
+    it('rejects each redundant wire identity that conflicts with construction inputs', function (string $field, mixed $replacement): void {
         $value = mountedTopologyFixture(false)->toArray();
         if ($field === 'instances') {
             $value['instances']['gateway'] = $replacement;
@@ -93,174 +64,55 @@ describe('feature topology mounts', function () {
     })->with([
         'issue' => ['issue', 'TST-322'],
         'attempt' => ['attempt_id', str_repeat('b', 32)],
+        'nodes' => ['nodes', ['gateway', 'operator']],
         'network' => ['network', 'oe-forged'],
         'instances' => ['instances', 'orbit-e2e-forged'],
     ]);
 
-    it('requires one identical mount per checkout role exactly when the source is mounted', function () {
+    it('requires one identical mount per checkout Node exactly when the source is mounted', function () {
+        $mount = static fn (string $source = '/srv/wt', string $device = 'orbit-source'): array => ['device' => $device, 'source' => $source, 'path' => '/home/orbit/orbit'];
+
         expect(fn () => mountedTopologyFixture(true, []))
             ->toThrow(InvalidArgumentException::class, 'do not match the source state')
-            ->and(fn () => mountedTopologyFixture(false, [
-                'gateway' => ['device' => 'orbit-source', 'source' => '/srv/wt', 'path' => '/home/orbit/orbit'],
-                'app-dev' => ['device' => 'orbit-source', 'source' => '/srv/wt', 'path' => '/home/orbit/orbit'],
-                'operator' => ['device' => 'orbit-source', 'source' => '/srv/wt', 'path' => '/home/orbit/orbit'],
-            ]))
+            ->and(fn () => mountedTopologyFixture(false, ['gateway' => $mount(), 'app-dev' => $mount(), 'operator' => $mount()]))
             ->toThrow(InvalidArgumentException::class, 'do not match the source state')
-            ->and(fn () => mountedTopologyFixture(true, [
-                'gateway' => ['device' => 'orbit-source', 'source' => '/srv/wt', 'path' => '/home/orbit/orbit'],
-                'app-prod' => ['device' => 'orbit-source', 'source' => '/srv/wt', 'path' => '/home/orbit/orbit'],
-            ]))
+            ->and(fn () => mountedTopologyFixture(true, ['gateway' => $mount(), 'app-prod' => $mount()]))
             ->toThrow(InvalidArgumentException::class, 'do not match the source state')
-            ->and(fn () => mountedTopologyFixture(true, [
-                'gateway' => ['device' => 'orbit-source', 'source' => '/srv/wt', 'path' => '/home/orbit/orbit'],
-                'app-dev' => ['device' => 'orbit-source', 'source' => '/srv/other', 'path' => '/home/orbit/orbit'],
-                'operator' => ['device' => 'orbit-source', 'source' => '/srv/other', 'path' => '/home/orbit/orbit'],
-            ]))
+            ->and(fn () => mountedTopologyFixture(true, ['gateway' => $mount(), 'app-dev' => $mount('/srv/other'), 'operator' => $mount('/srv/other')]))
             ->toThrow(InvalidArgumentException::class, 'share one source')
-            ->and(fn () => mountedTopologyFixture(true, [
-                'gateway' => ['device' => 'other', 'source' => '/srv/wt', 'path' => '/home/orbit/orbit'],
-                'app-dev' => ['device' => 'other', 'source' => '/srv/wt', 'path' => '/home/orbit/orbit'],
-                'operator' => ['device' => 'other', 'source' => '/srv/wt', 'path' => '/home/orbit/orbit'],
-            ]))
+            ->and(fn () => mountedTopologyFixture(true, ['gateway' => $mount(device: 'other'), 'app-dev' => $mount(device: 'other'), 'operator' => $mount(device: 'other')]))
             ->toThrow(InvalidArgumentException::class, 'mount is invalid')
-            ->and(fn () => mountedTopologyFixture(true, [
-                'gateway' => ['device' => 'orbit-source', 'source' => 'relative', 'path' => '/home/orbit/orbit'],
-                'app-dev' => ['device' => 'orbit-source', 'source' => 'relative', 'path' => '/home/orbit/orbit'],
-                'operator' => ['device' => 'orbit-source', 'source' => 'relative', 'path' => '/home/orbit/orbit'],
-            ]))
-            ->toThrow(InvalidArgumentException::class, 'mount is invalid')
-            ->and(fn () => mountedTopologyFixture(true, [
-                'gateway' => ['device' => 'orbit-source', 'source' => '/srv/a,b', 'path' => '/home/orbit/orbit'],
-                'app-dev' => ['device' => 'orbit-source', 'source' => '/srv/a,b', 'path' => '/home/orbit/orbit'],
-                'operator' => ['device' => 'orbit-source', 'source' => '/srv/a,b', 'path' => '/home/orbit/orbit'],
-            ]))
+            ->and(fn () => mountedTopologyFixture(true, ['gateway' => $mount('relative'), 'app-dev' => $mount('relative'), 'operator' => $mount('relative')]))
             ->toThrow(InvalidArgumentException::class, 'mount is invalid');
     });
 
-    it('refuses a manifest without the mounts field', function () {
-        $value = mountedTopologyFixture()->toArray();
-        unset($value['mounts']);
-
-        expect(fn () => FeatureTopology::fromArray($value))
-            ->toThrow(InvalidArgumentException::class, 'schema is invalid');
-    });
-
-    it('names the previous harness for any other manifest schema', function (mixed $schema) {
+    it('names the harness that created a record of another schema', function (mixed $schema) {
         $value = mountedTopologyFixture()->toArray();
         $value['schema'] = $schema;
         $version = json_encode($schema, JSON_THROW_ON_ERROR);
 
-        expect(FeatureTopology::SCHEMA)
-            ->toBe(4)
+        expect(FeatureTopology::SCHEMA)->toBe(5)
             ->and(fn () => FeatureTopology::fromArray($value))
-            ->toThrow(
-                InvalidArgumentException::class,
-                "schema {$version} is not supported; release with the previous harness",
-            );
-    })->with(['schema 3' => [3], 'schema 2' => [2], 'string schema' => ['4']]);
-});
+            ->toThrow(InvalidArgumentException::class, "schema {$version} is not supported; release it with the harness that created it");
+    })->with(['schema 4' => [4], 'string schema' => ['5']]);
 
-it('round-trips the exact extended mixed-source construction inventory', function (): void {
-    $recipe = TopologyRecipe::extendedAppProd();
-    $target = TopologyTarget::feature('TST-321', attemptId(), $recipe);
-    $generation = mountedTopologyFixture(false)->generation;
-    $construction = TopologyConstructionInputs::create(
-        $target,
-        $generation,
-        7,
-        TopologyExtension::AppProd,
-        str_repeat('f', 64),
-    );
-    $topology = new FeatureTopology(
-        $construction,
-        AttemptPurpose::Proof,
-        $generation,
-        new SourceState(str_repeat('b', 40), str_repeat('b', 40)),
-        new VerificationReport(true, ['fixture' => verificationProbeFixture()]),
-    );
+    it('refuses a construction record whose images or Nodes do not match its declaration', function () {
+        $value = mountedTopologyFixture(false)->toArray()['construction'];
+        $missingImage = $value;
+        unset($missingImage['images']['operator']);
+        $badFingerprint = $value;
+        $badFingerprint['images']['gateway'] = 'short';
+        $foreignNode = $value;
+        $foreignNode['nodes']['app-dev']['incus_address'] = '10.232.9.11';
 
-    expect($topology->construction->nodes['app-prod-2'])
-        ->toBe([
-            'source' => 'image',
-            'instance' => $target->instance('app-prod-2'),
-            'incus_address' => '10.232.7.13',
-            'wireguard_address' => '10.44.0.4',
-        ])
-        ->and(FeatureTopology::fromArray($topology->toArray())->toArray())
-        ->toBe($topology->toArray());
-});
-
-it('round-trips a cold replacement with exact generic-base inputs for every registered Node', function (): void {
-    $generation = mountedTopologyFixture(false)->generation;
-    $target = TopologyTarget::feature(
-        'TST-321',
-        attemptId(),
-        TopologyRecipe::registered($generation->baseImageAlias),
-    );
-    $construction = TopologyConstructionInputs::forSnapshotReplacement(
-        $target,
-        7,
-        $generation->baseImageAlias,
-        $generation->baseImageFingerprint, operatorBaseImageFingerprint: str_repeat('b', 64),
-    );
-    $topology = new FeatureTopology(
-        $construction,
-        AttemptPurpose::Proof,
-        $generation,
-        new SourceState(str_repeat('b', 40), str_repeat('b', 40)),
-        new VerificationReport(true, ['fixture' => verificationProbeFixture()]),
-    );
-
-    expect($construction->snapshotReplacement)
-        ->toBeTrue()
-        ->and($construction->sourceGeneration)
-        ->toBe(TopologyConstructionInputs::GENERIC_BASE)
-        ->and(array_column($construction->nodes, 'source'))
-        ->toBe(['image', 'image', 'image', 'image'])
-        ->and($construction->imageAlias)
-        ->toBe($generation->baseImageAlias)
-        ->and($construction->imageFingerprint)
-        ->toBe($generation->baseImageFingerprint)
-        ->and($construction->operatorBaseImageFingerprint)
-        ->toBe($generation->operatorBaseImageFingerprint)
-        ->and(FeatureTopology::fromArray($topology->toArray())->toArray())
-        ->toBe($topology->toArray());
-
-    $changed = $topology->toArray();
-    $changed['construction']['operator_base_image']['fingerprint'] = str_repeat('f', 64);
-    expect(fn () => FeatureTopology::fromArray($changed))
-        ->toThrow(InvalidArgumentException::class, 'The topology construction inputs do not match the target.');
-});
-
-it('reads exact pre-operator construction inputs without expanding cleanup authority', function (int $schema): void {
-    $value = preOperatorTopologyRecord()['construction'];
-    if ($schema === 1) {
-        $value['schema'] = 1;
-        unset($value['snapshot_replacement']);
-    }
-
-    $construction = TopologyConstructionInputs::fromArray($value);
-
-    expect($construction->snapshotReplacement)
-        ->toBeFalse()
-        ->and($construction->sourceGeneration)
-        ->toBe('g1')
-        ->and(array_column($construction->nodes, 'source'))
-        ->toBe(['snapshot', 'snapshot', 'snapshot'])
-        ->and($construction->target->recipe->nodeKeys())
-        ->toBe(['gateway', 'app-dev', 'app-prod'])
-        ->and($construction->toArray())
-        ->toBe($value);
-})->with([1, 2]);
-
-it('requires the operator for new construction records and rejects forged historical identities', function (): void {
-    $old = preOperatorTopologyRecord()['construction'];
-    $target = TopologyConstructionInputs::fromArray($old)->target;
-    expect(fn () => TopologyConstructionInputs::forGeneration($target, 'g1', 2))
-        ->toThrow(InvalidArgumentException::class, 'recipe does not match its schema');
-    $old['nodes']['gateway']['instance'] = 'another-task-gateway';
-    expect(fn () => TopologyConstructionInputs::fromArray($old))
-        ->toThrow(InvalidArgumentException::class, 'Node [gateway] is invalid');
+        expect(TopologyConstructionInputs::fromArray($value)->toArray())->toBe($value)
+            ->and(fn () => TopologyConstructionInputs::fromArray($missingImage))
+            ->toThrow(InvalidArgumentException::class, 'role images do not match its Nodes')
+            ->and(fn () => TopologyConstructionInputs::fromArray($badFingerprint))
+            ->toThrow(InvalidArgumentException::class, 'fingerprint is invalid')
+            ->and(fn () => TopologyConstructionInputs::fromArray($foreignNode))
+            ->toThrow(InvalidArgumentException::class, 'Topology construction Node [app-dev] is invalid.');
+    });
 });
 
 describe('mount paths', function () {
@@ -305,17 +157,17 @@ describe('source state', function () {
             str_repeat('b', 40),
             str_repeat('b', 40),
             mounted: true,
-            pointerHash: str_repeat('e', 64),
+            mountTokenHash: str_repeat('e', 64),
         );
         $value = $state->toArray();
 
         expect($value['mounted'])
             ->toBeTrue()
-            ->and($value['git_pointer_sha256'])
+            ->and($value['mount_token_sha256'])
             ->toBe(str_repeat('e', 64))
             ->and(SourceState::fromArray($value)->mounted)
             ->toBeTrue()
-            ->and(SourceState::fromArray($value)->pointerHash)
+            ->and(SourceState::fromArray($value)->mountTokenHash)
             ->toBe(str_repeat('e', 64))
             ->and(new SourceState(str_repeat('b', 40), str_repeat('b', 40))->mounted)
             ->toBeFalse();
@@ -328,26 +180,26 @@ describe('source state', function () {
             ->toThrow(InvalidArgumentException::class, 'schema is invalid');
     });
 
-    it('binds the git pointer hash to the mounted flag', function () {
+    it('binds the mount token hash to the mounted flag', function () {
         $value = new SourceState(
             str_repeat('b', 40),
             str_repeat('b', 40),
             mounted: true,
-            pointerHash: str_repeat('e', 64),
+            mountTokenHash: str_repeat('e', 64),
         )->toArray();
-        unset($value['git_pointer_sha256']);
+        unset($value['mount_token_sha256']);
 
         expect(fn () => new SourceState(str_repeat('b', 40), str_repeat('b', 40), mounted: true))
-            ->toThrow(InvalidArgumentException::class, 'exactly one git pointer hash')
-            ->and(fn () => new SourceState(str_repeat('b', 40), str_repeat('b', 40), pointerHash: str_repeat('e', 64)))
-            ->toThrow(InvalidArgumentException::class, 'exactly one git pointer hash')
+            ->toThrow(InvalidArgumentException::class, 'exactly one mount token hash')
+            ->and(fn () => new SourceState(str_repeat('b', 40), str_repeat('b', 40), mountTokenHash: str_repeat('e', 64)))
+            ->toThrow(InvalidArgumentException::class, 'exactly one mount token hash')
             ->and(fn () => new SourceState(
                 str_repeat('b', 40),
                 str_repeat('b', 40),
                 mounted: true,
-                pointerHash: 'short',
+                mountTokenHash: 'short',
             ))
-            ->toThrow(InvalidArgumentException::class, 'git pointer hash is invalid')
+            ->toThrow(InvalidArgumentException::class, 'mount token hash is invalid')
             ->and(fn () => SourceState::fromArray($value))
             ->toThrow(InvalidArgumentException::class, 'schema is invalid');
     });

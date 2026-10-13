@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\E2E;
 
 use App\E2E\Git\GitRepository;
-use App\E2E\Value\CandidateSync;
 use App\E2E\Value\GuestCommand;
 use App\E2E\Value\GuestCommandResult;
 use App\E2E\Value\OperationId;
@@ -13,46 +12,29 @@ use App\E2E\Value\SourceState;
 use App\E2E\Value\TopologyTarget;
 use Illuminate\Support\Facades\Process;
 use InvalidArgumentException;
-use JsonException;
 use RuntimeException;
+use Throwable;
 
+/**
+ * Installs the worktree's guest scripts on every Node and records the identity of the mounted worktree.
+ * The guests read application source from the live mount; nothing is copied.
+ */
 final readonly class WorktreeSynchronizer
 {
     /** @var list<string> */
-    private const array REQUIRED_GUEST_SCRIPTS = [
-        'bootstrap-operator.sh',
+    public const array GUEST_SCRIPTS = [
         'converge-app-dev.sh',
         'converge-app-prod.sh',
         'converge-gateway.sh',
         'converge-operator.sh',
-        'converge-sample-app.sh',
-        'converge-sample-fixtures.sh',
-        'hydrate-orbit.sh',
-        'observe-php.sh',
         'prepare-node.sh',
-        'receive-source.sh',
-        'retarget-vpn.sh',
         'verify-topology.sh',
     ];
 
-    /** Git in the guest checkout as the `orbit` user. */
-    private const array GUEST_GIT = [
-        'runuser',
-        '-u',
-        'orbit',
-        '--',
-        'env',
-        'HOME=/home/orbit',
-        'git',
-        '-C',
-        '/home/orbit/orbit',
-    ];
-
-    /** Where a mounted checkout records its host identity; guests cannot read a worktree `.git` pointer file. */
+    /** Where a mounted checkout records its host identity for the readiness probes. */
     public const string SOURCE_STATE_MARKER = '/var/lib/orbit-e2e/source-state';
 
-    /** The gateway `.env` is preserved outside the checkout so a mounted worktree can receive it. */
-    public const string GATEWAY_ENV_COPY = '/var/lib/orbit-e2e/gateway.env';
+    private const string SCRIPT_MARKER = '/var/lib/orbit-e2e/guest-scripts.sha256';
 
     public function __construct(
         private GuestTransport $incus,
@@ -61,19 +43,18 @@ final readonly class WorktreeSynchronizer
     ) {}
 
     /**
-     * Record the host identity of a worktree that is mounted into every checkout
-     * role. The guests read application source from the mount. Refresh their
-     * installed helper scripts before recording the source identity.
+     * Install the current guest scripts on every Node, then record the host identity of the mounted
+     * worktree on every checkout Node.
      */
-    public function syncWorkingTree(TopologyTarget $target, string $worktree): SourceState
+    public function syncWorkingTree(TopologyTarget $target, string $worktree, string $mountTokenHash): SourceState
     {
         $repository = $this->installWorkingTreeGuestScriptsFrom($target, $worktree);
-        ['source' => $source, 'effectiveTreeHash' => $treeHash] = $this->mountedSourceState($repository, $worktree);
+        ['source' => $source, 'effectiveTreeHash' => $treeHash] = $this->mountedSourceState($repository, $mountTokenHash);
         $marker = json_encode([
             'sha' => $source->hostSha,
             'tree' => $treeHash,
             'mounted' => true,
-            'git_pointer_sha256' => $source->pointerHash,
+            'mount_token_sha256' => $source->mountTokenHash,
         ], JSON_THROW_ON_ERROR);
 
         $commands = [];
@@ -96,10 +77,7 @@ final readonly class WorktreeSynchronizer
         return $source;
     }
 
-    /**
-     * Install the mounted worktree's current guest scripts without writing the
-     * guest source marker; `sync --quick` records no source identity.
-     */
+    /** Install the worktree's guest scripts without writing the source marker; `sync --quick` records nothing. */
     public function installWorkingTreeGuestScripts(TopologyTarget $target, string $worktree): void
     {
         $this->installWorkingTreeGuestScriptsFrom($target, $worktree);
@@ -110,17 +88,20 @@ final readonly class WorktreeSynchronizer
         TopologyTarget $target,
         string $worktree,
         SourceState $expected,
+        ?string $mountTokenHash,
     ): void {
         $repository = new GitRepository($worktree);
         $this->validateWorktree($repository, $target);
-        ['source' => $current] = $this->mountedSourceState($repository, $worktree);
+        if ($mountTokenHash === null) {
+            throw new RuntimeException('The worktree mount token is missing; run topology sync.');
+        }
+        ['source' => $current] = $this->mountedSourceState($repository, $mountTokenHash);
         $matches = $expected->mounted
             && $current->hostSha === $expected->hostSha
-            && $current->guestSha === $expected->guestSha
             && $current->dirty === $expected->dirty
             && $current->treeHash === $expected->treeHash
             && $current->overlayPaths === $expected->overlayPaths
-            && $current->pointerHash === $expected->pointerHash;
+            && $current->mountTokenHash === $expected->mountTokenHash;
 
         if (! $matches) {
             throw new RuntimeException(
@@ -130,33 +111,23 @@ final readonly class WorktreeSynchronizer
     }
 
     /** @return array{source:SourceState,effectiveTreeHash:string} */
-    private function mountedSourceState(GitRepository $repository, string $worktree): array
+    private function mountedSourceState(GitRepository $repository, string $mountTokenHash): array
     {
         $hostSha = $repository->commit();
         $overlay = $repository->dirtyOverlay();
-        $dirty = $overlay !== null;
-        $treeHash = null;
-        $paths = [];
-        if ($overlay === null) {
-            $effectiveTreeHash = $repository->effectiveTreeHash();
-        } else {
-            $treeHash = $overlay->treeHash;
-            $paths = $overlay->paths;
-            $effectiveTreeHash = $overlay->treeHash;
-        }
 
         return [
             'source' => new SourceState(
                 $hostSha,
                 $hostSha,
-                $dirty,
-                $treeHash,
-                $paths,
+                $overlay !== null,
+                $overlay?->treeHash,
+                $overlay->paths ?? [],
                 $this->operation->value,
                 true,
-                $this->gitPointerHash($worktree),
+                $mountTokenHash,
             ),
-            'effectiveTreeHash' => $effectiveTreeHash,
+            'effectiveTreeHash' => $overlay->treeHash ?? $repository->effectiveTreeHash(),
         ];
     }
 
@@ -164,430 +135,43 @@ final readonly class WorktreeSynchronizer
     {
         $repository = new GitRepository($worktree);
         $this->validateWorktree($repository, $target);
-        $this->syncWorkingTreeGuestScripts($target, $repository);
+        $this->installGuestScripts($target, $repository->root());
 
         return $repository;
     }
 
-    /** Install the mounted worktree's current guest scripts on every physical Node. */
-    private function syncWorkingTreeGuestScripts(TopologyTarget $target, GitRepository $repository): void
+    /** Install the worktree's guest scripts on every Node whose installed scripts differ. */
+    private function installGuestScripts(TopologyTarget $target, string $worktreeRoot): void
     {
-        $temporaryDirectory = $this->temporaryDirectory();
+        $scripts = $this->guestScripts($worktreeRoot);
+        $hash = $this->guestScriptHash($scripts);
+        $status = $this->unchangedGuestScripts($target, $scripts, $hash);
+        $changed = [];
+        foreach ($target->recipe->nodeKeys() as $node) {
+            if (! $status[$node]) {
+                $changed[$node] = $target->instance($node);
+            }
+        }
+        if ($changed === []) {
+            return;
+        }
+
+        $markerFile = sys_get_temp_dir().'/orbit-e2e-guest-scripts-'.bin2hex(random_bytes(12));
         try {
-            $scripts = $this->guestScripts($repository->root());
-            $hash = $this->guestScriptHash($scripts);
-            ['markerFile' => $markerFile] = $this->stageTransferFiles(
-                $repository,
-                $temporaryDirectory,
-                [],
-                $hash,
-            );
-            $status = $this->unchangedGuestScripts($target, $scripts, $hash);
-            $changed = [];
-            foreach ($target->recipe->nodeKeys() as $node) {
-                if (! $status[$node]) {
-                    $changed[$node] = $target->instance($node);
-                }
+            if (file_put_contents($markerFile, $hash."\n", LOCK_EX) === false || ! chmod($markerFile, 0600)) {
+                throw new RuntimeException('Could not create the guest script marker.');
             }
-            $this->installGuestScripts($changed, $scripts, $markerFile, $this->operation->value);
-        } catch (\Throwable $primary) {
-            $this->failAfterTemporaryCleanup($temporaryDirectory, $primary);
-        }
-        $this->cleanupTemporaryDirectory($temporaryDirectory);
-    }
-
-    /**
-     * A linked worktree keeps a `.git` pointer file naming its repository; the
-     * guests hash the same file through the mount, so its content is the one
-     * piece of tree evidence both sides can compute independently.
-     */
-    private function gitPointerHash(string $worktree): string
-    {
-        $pointer = $worktree.'/.git';
-        if (is_link($pointer) || ! is_file($pointer)) {
-            throw new RuntimeException('The mounted source must be a linked git worktree with a `.git` pointer file.');
-        }
-        $content = file_get_contents($pointer);
-        if ($content === false || $content === '') {
-            throw new RuntimeException('The worktree `.git` pointer file cannot be read.');
-        }
-
-        return hash('sha256', $content);
-    }
-
-    public function sync(TopologyTarget $target, string $worktree): SourceState
-    {
-        $repository = new GitRepository($worktree);
-        $this->validateWorktree($repository, $target);
-        $hostSha = $repository->commit();
-        $overlay = $repository->dirtyOverlay();
-        $operationId = $this->operation->value;
-        $temporaryDirectory = $this->temporaryDirectory();
-
-        try {
-            $guestScripts = $this->guestScripts($repository->root());
-            $guestScriptHash = $this->guestScriptHash($guestScripts);
-            $paths = $overlay->paths ?? [];
-            [
-                'archive' => $archive,
-                'manifest' => $manifest,
-                'deletions' => $deletions,
-                'markerFile' => $markerFile,
-            ] = $this->stageTransferFiles($repository, $temporaryDirectory, $paths, $guestScriptHash);
-
-            $effectiveTreeHash = $overlay->treeHash ?? $repository->effectiveTreeHash();
-            [$guestShas, $scriptStatus] = $this->guestPreflight($target, $guestScripts, $guestScriptHash);
-            $roles = [];
-            foreach ($target->recipe->checkoutNodeKeys() as $node) {
-                $instance = $target->instance($node);
-                $guestSha = is_array($guestShas[$node]) ? $guestShas[$node]['sha'] : null;
-                $bundleRequired = $guestSha !== $hostSha;
-                $roles[$node] = [
-                    'instance' => $instance,
-                    'bundleRequired' => $bundleRequired,
-                    'prerequisite' => $bundleRequired
-                        ? $this->bundlePrerequisite($repository, $guestSha, $hostSha)
-                        : null,
-                    'bundle' => null,
-                ];
+            $this->pushGuestScripts($changed, $scripts, $markerFile);
+        } finally {
+            if (is_file($markerFile)) {
+                unlink($markerFile);
             }
-
-            $changedScriptRoles = [];
-            foreach ($target->recipe->nodeKeys() as $node) {
-                if (! $scriptStatus[$node]) {
-                    $changedScriptRoles[$node] = $target->instance($node);
-                }
-            }
-            $this->installGuestScripts($changedScriptRoles, $guestScripts, $markerFile, $operationId);
-            $roles = array_filter(
-                $roles,
-                fn (array $_transfer, string $role): bool => ! $this->sourceStateMatchesRole(
-                    $guestShas[$role] ?? null,
-                    $hostSha,
-                    $effectiveTreeHash,
-                    $overlay === null,
-                ),
-                ARRAY_FILTER_USE_BOTH,
-            );
-            if ($roles === []) {
-                $state = new SourceState(
-                    $hostSha,
-                    $hostSha,
-                    $overlay !== null,
-                    $overlay?->treeHash,
-                    $paths,
-                    $operationId,
-                );
-                $this->cleanupTemporaryDirectory($temporaryDirectory);
-
-                return $state;
-            }
-            $roles = $this->createBundles($repository, $roles, $hostSha, $temporaryDirectory);
-            $guestShas = $this->transfer(
-                $roles,
-                $hostSha,
-                $effectiveTreeHash,
-                $archive,
-                $manifest,
-                $deletions,
-                $operationId,
-            );
-
-            if (array_unique($guestShas) !== [$hostSha]) {
-                throw new RuntimeException('Guest source SHAs do not match the host SHA.');
-            }
-
-            $state = new SourceState(
-                $hostSha,
-                $hostSha,
-                $overlay !== null,
-                $overlay?->treeHash,
-                $paths,
-                $operationId,
-            );
-        } catch (\Throwable $primary) {
-            $this->failAfterTemporaryCleanup($temporaryDirectory, $primary);
-        }
-
-        $this->cleanupTemporaryDirectory($temporaryDirectory);
-
-        return $state;
-    }
-
-    /**
-     * Transfer one exact candidate commit into every checkout role for a proof.
-     *
-     * Only the requested commit travels: the host worktree may be dirty or moved
-     * on past the candidate, and neither its files nor its guest scripts are
-     * read; the scripts are taken from the candidate commit itself. Each checkout
-     * ends detached at the candidate with a clean status, proved by the guest
-     * before hydration. The candidate must be a full SHA that a repository
-     * reference still reaches, and the topology snapshot baseline is never a target.
-     */
-    public function syncCommit(TopologyTarget $target, string $repository, string $candidateSha): CandidateSync
-    {
-        if ($target->isTopologySnapshot()) {
-            throw new InvalidArgumentException('A proof candidate cannot be synced into the topology snapshot.');
-        }
-        $git = new GitRepository($repository);
-        $this->validateRepositoryIdentity($git);
-        $candidateTree = $git->tree($candidateSha);
-        $treeHash = hash('sha256', $candidateTree);
-        $operationId = $this->operation->value;
-        $temporaryDirectory = $this->temporaryDirectory();
-
-        try {
-            $guestScripts = $this->materializeCandidateGuestScripts($git, $candidateSha, $temporaryDirectory);
-            $guestScriptHash = $this->guestScriptHash($guestScripts);
-            [
-                'archive' => $archive,
-                'manifest' => $manifest,
-                'deletions' => $deletions,
-                'markerFile' => $markerFile,
-            ] = $this->stageTransferFiles($git, $temporaryDirectory, [], $guestScriptHash);
-
-            [$guestShas, $scriptStatus] = $this->guestPreflight($target, $guestScripts, $guestScriptHash);
-            $roles = [];
-            foreach ($target->recipe->checkoutNodeKeys() as $node) {
-                $guestSha = is_array($guestShas[$node]) ? $guestShas[$node]['sha'] : null;
-                $bundleRequired = $guestSha !== $candidateSha;
-                $roles[$node] = [
-                    'instance' => $target->instance($node),
-                    'bundleRequired' => $bundleRequired,
-                    'prerequisite' => $bundleRequired
-                        ? $this->bundlePrerequisite($git, $guestSha, $candidateSha)
-                        : null,
-                    'bundle' => null,
-                ];
-            }
-            $changedScriptRoles = [];
-            foreach ($target->recipe->nodeKeys() as $node) {
-                if (! $scriptStatus[$node]) {
-                    $changedScriptRoles[$node] = $target->instance($node);
-                }
-            }
-            $this->installGuestScripts($changedScriptRoles, $guestScripts, $markerFile, $operationId);
-            $roles = $this->createBundles($git, $roles, $candidateSha, $temporaryDirectory);
-            $guestShas = $this->transfer(
-                $roles,
-                $candidateSha,
-                $treeHash,
-                $archive,
-                $manifest,
-                $deletions,
-                $operationId,
-                $candidateTree,
-            );
-            if (array_unique($guestShas) !== [$candidateSha]) {
-                throw new RuntimeException('Guest source SHAs do not match the candidate SHA.');
-            }
-
-            $state = new CandidateSync($candidateSha, $candidateTree, $guestScriptHash, $operationId);
-        } catch (\Throwable $primary) {
-            $this->failAfterTemporaryCleanup($temporaryDirectory, $primary);
-        }
-
-        $this->cleanupTemporaryDirectory($temporaryDirectory);
-
-        return $state;
-    }
-
-    /**
-     * Write the candidate commit's guest scripts under the temporary directory in
-     * the layout `guestScripts()` expects, so the proof installs and hashes the
-     * scripts of the commit under proof rather than the host working tree.
-     *
-     * @return list<string>
-     */
-    private function materializeCandidateGuestScripts(
-        GitRepository $repository,
-        string $candidateSha,
-        string $temporaryDirectory,
-    ): array {
-        $blobs = $repository->blobs($candidateSha, ['apps/e2e/resources/guest/*.sh']);
-        $expected = array_map(
-            static fn (string $name): string => 'apps/e2e/resources/guest/'.$name,
-            self::REQUIRED_GUEST_SCRIPTS,
-        );
-        $found = array_keys($blobs);
-        sort($expected, SORT_STRING);
-        sort($found, SORT_STRING);
-        if ($found !== $expected) {
-            throw new RuntimeException('Guest script inventory is invalid.');
-        }
-
-        $root = $temporaryDirectory.'/candidate';
-        $directory = $root.'/apps/e2e/resources/guest';
-        if (! mkdir($directory, 0700, true)) {
-            throw new RuntimeException('Could not stage the candidate guest scripts.');
-        }
-        foreach ($blobs as $path => $content) {
-            $script = $root.'/'.$path;
-            if (file_put_contents($script, $content, LOCK_EX) === false || ! chmod($script, 0755)) {
-                throw new RuntimeException('Could not stage the candidate guest scripts.');
-            }
-        }
-
-        return $this->guestScripts($root);
-    }
-
-    private function failAfterTemporaryCleanup(string $temporaryDirectory, \Throwable $primary): never
-    {
-        try {
-            $this->cleanupTemporaryDirectory($temporaryDirectory);
-        } catch (\Throwable $cleanupFailure) {
-            throw new RuntimeException(
-                'Source synchronization failed; temporary-directory cleanup also failed: '
-                    .$cleanupFailure->getMessage(),
-                0,
-                $primary,
-            );
-        }
-
-        throw $primary;
-    }
-
-    /**
-     * Write the overlay archive, path manifest, deletion manifest, and guest script
-     * marker the guests receive; an empty path list produces empty overlay files.
-     *
-     * @param  list<string>  $paths
-     * @return array{archive:string, manifest:string, deletions:string, markerFile:string}
-     */
-    private function stageTransferFiles(
-        GitRepository $repository,
-        string $temporaryDirectory,
-        array $paths,
-        string $guestScriptHash,
-    ): array {
-        $archive = $temporaryDirectory.'/overlay.tar';
-        $manifest = $temporaryDirectory.'/overlay.paths';
-        $deletions = $temporaryDirectory.'/overlay.deletions';
-        $markerFile = $temporaryDirectory.'/guest-scripts.sha256';
-        if (
-            file_put_contents($markerFile, $guestScriptHash."\n", LOCK_EX) === false
-            || ! chmod($markerFile, 0600)
-        ) {
-            throw new RuntimeException('Could not create the guest script marker.');
-        }
-        $repository->createOverlayArchive($archive, $paths);
-        if (file_put_contents($manifest, $paths === [] ? '' : implode("\0", $paths)."\0", LOCK_EX) === false) {
-            throw new RuntimeException('Could not create the source manifest.');
-        }
-        $root = $repository->root();
-        $deletedPaths = array_values(array_filter(
-            $paths,
-            fn (string $path): bool => ! file_exists($root.'/'.$path),
-        ));
-        if (
-            file_put_contents($deletions, $deletedPaths === [] ? '' : implode("\0", $deletedPaths)."\0", LOCK_EX)
-            === false
-        ) {
-            throw new RuntimeException('Could not create the source deletion manifest.');
-        }
-        if (! chmod($archive, 0600) || ! chmod($manifest, 0600) || ! chmod($deletions, 0600)) {
-            throw new RuntimeException('Could not secure the source transfer files.');
-        }
-
-        return compact('archive', 'manifest', 'deletions', 'markerFile');
-    }
-
-    /**
-     * Create one bundle per distinct prerequisite for the roles that need the commit.
-     *
-     * @param  array<string, array{instance:string, bundleRequired:bool, prerequisite:?string, bundle:?string}>  $roles
-     * @return array<string, array{instance:string, bundleRequired:bool, prerequisite:?string, bundle:?string}>
-     */
-    private function createBundles(
-        GitRepository $repository,
-        array $roles,
-        string $sha,
-        string $temporaryDirectory,
-    ): array {
-        $bundles = [];
-        foreach ($roles as $role => $transfer) {
-            if (! $transfer['bundleRequired']) {
-                continue;
-            }
-            $bundleKey = $transfer['prerequisite'] ?? 'full';
-            if (! isset($bundles[$bundleKey])) {
-                $bundles[$bundleKey] = $temporaryDirectory.'/source-'.$bundleKey.'.bundle';
-                $repository->createBundle($bundles[$bundleKey], $sha, $transfer['prerequisite']);
-            }
-            $roles[$role]['bundle'] = $bundles[$bundleKey];
-        }
-
-        return $roles;
-    }
-
-    /**
-     * A guest commit serves as the bundle prerequisite only when the host has it
-     * and the commit being sent is not already reachable from it: a guest sitting
-     * on the commit or a descendant would leave Git refusing an empty bundle. A
-     * diverged sibling stays a valid prerequisite.
-     */
-    private function bundlePrerequisite(GitRepository $repository, ?string $guestSha, string $hostSha): ?string
-    {
-        if ($guestSha === null || $guestSha === $hostSha) {
-            return null;
-        }
-
-        try {
-            return $repository->hasCommit($guestSha) && ! $repository->isAncestor($hostSha, $guestSha)
-                ? $guestSha
-                : null;
-        } catch (InvalidArgumentException) {
-            return null;
-        }
-    }
-
-    private function cleanupTemporaryDirectory(string $directory): void
-    {
-        $entries = scandir($directory);
-        if ($entries === false) {
-            throw new RuntimeException('Could not inspect the temporary source directory.');
-        }
-
-        foreach ($entries as $entry) {
-            if ($entry === '.' || $entry === '..') {
-                continue;
-            }
-
-            $path = $directory.'/'.$entry;
-            if (is_link($path)) {
-                throw new RuntimeException('Could not remove a temporary source file.');
-            }
-            if (is_dir($path)) {
-                $this->cleanupTemporaryDirectory($path);
-
-                continue;
-            }
-            if (is_file($path) && ! unlink($path)) {
-                throw new RuntimeException('Could not remove a temporary source file.');
-            }
-        }
-
-        if (! rmdir($directory)) {
-            throw new RuntimeException('Could not remove the temporary source directory.');
         }
     }
 
     private function validateWorktree(GitRepository $repository, TopologyTarget $target): void
     {
         $this->validateRepositoryIdentity($repository);
-
-        if ($target->isTopologySnapshot()) {
-            if ($repository->dirtyOverlay() !== null) {
-                throw new InvalidArgumentException('The topology snapshot source worktree must be clean.');
-            }
-
-            return;
-        }
-
-        if (! $repository->isLinkedWorktree()) {
-            throw new InvalidArgumentException('Feature source must use a registered linked worktree.');
-        }
-
         if (! $target->matchesBranch($repository->branch())) {
             throw new InvalidArgumentException('The worktree branch does not match the issue.');
         }
@@ -613,463 +197,14 @@ final readonly class WorktreeSynchronizer
         }
     }
 
-    /**
-     * @param  list<string>  $scripts
-     * @return array{0: array<string, array{sha: string, markerSha: ?string, tree: ?string, clean: bool, hydrated: bool}|null>, 1: array<string, bool>}
-     */
-    private function guestPreflight(TopologyTarget $target, array $scripts, string $scriptHash): array
-    {
-        $commands = [];
-        foreach ($target->recipe->checkoutNodeKeys() as $node) {
-            $commands["guest-sha.{$node}"] = [
-                'instance' => $target->instance($node),
-                'command' => new GuestCommand([
-                    'runuser',
-                    '-u',
-                    'orbit',
-                    '--',
-                    'env',
-                    'HOME=/home/orbit',
-                    'git',
-                    '-C',
-                    '/home/orbit/orbit',
-                    'rev-parse',
-                    '--verify',
-                    'HEAD^{commit}',
-                ]),
-            ];
-            $commands["guest-marker.{$node}"] = [
-                'instance' => $target->instance($node),
-                'command' => new GuestCommand(['cat', '/home/orbit/orbit/.git/orbit-source-state']),
-            ];
-            $commands["guest-status.{$node}"] = [
-                'instance' => $target->instance($node),
-                'command' => new GuestCommand([
-                    'runuser',
-                    '-u',
-                    'orbit',
-                    '--',
-                    'env',
-                    'HOME=/home/orbit',
-                    'git',
-                    '-C',
-                    '/home/orbit/orbit',
-                    'status',
-                    '--porcelain=v1',
-                    '--untracked-files=all',
-                ]),
-            ];
-            $commands["guest-hydration.{$node}"] = [
-                'instance' => $target->instance($node),
-                'command' => new GuestCommand(['cat', '/home/orbit/orbit/.git/orbit-hydrated.sha']),
-            ];
-        }
-        $installedScripts = array_map(
-            static fn (string $script): string => '/usr/local/bin/'.basename($script),
-            $scripts,
-        );
-        $expectedContentHashes = $this->guestScriptContentHashes($installedScripts, $scripts);
-        foreach ($target->recipe->nodeKeys() as $node) {
-            $commands["script-marker.{$node}"] = [
-                'instance' => $target->instance($node),
-                'command' => new GuestCommand(['cat', '/var/lib/orbit-e2e/guest-scripts.sha256']),
-            ];
-            $commands["script-content.{$node}"] = [
-                'instance' => $target->instance($node),
-                'command' => new GuestCommand(['sha256sum', '--', ...$installedScripts]),
-            ];
-        }
-        $results = $this->incus->execAll($commands);
-        $guestShas = [];
-        foreach ($target->recipe->checkoutNodeKeys() as $node) {
-            $result = $results["guest-sha.{$node}"] ?? null;
-            if (! $result instanceof GuestCommandResult) {
-                throw new RuntimeException('Guest SHA batch result is invalid.');
-            }
-            $sha = strtolower(trim($result->stdout));
-            $marker = $results["guest-marker.{$node}"] ?? null;
-            $status = $results["guest-status.{$node}"] ?? null;
-            $hydration = $results["guest-hydration.{$node}"] ?? null;
-            $tree = null;
-            if ($marker instanceof GuestCommandResult && $marker->exitCode === 0) {
-                try {
-                    $markerState = json_decode(trim($marker->stdout), true, 512, JSON_THROW_ON_ERROR);
-                    $markerSha = null;
-                    $tree = null;
-                    if (is_array($markerState)) {
-                        $markerSha = $markerState['sha'] ?? null;
-                        $tree = $markerState['tree'] ?? null;
-                    }
-                    if (
-                        ! is_string($markerSha)
-                        || preg_match('/\A[0-9a-f]{40}\z/D', strtolower($markerSha)) !== 1
-                    ) {
-                        $markerSha = null;
-                    }
-                } catch (JsonException) {
-                    $markerSha = null;
-                }
-            } else {
-                $markerSha = null;
-            }
-            $guestShas[$node] =
-                $result->exitCode === 0 && preg_match('/\A[0-9a-f]{40}\z/D', $sha) === 1
-                    ? [
-                        'sha' => $sha,
-                        'markerSha' => $markerSha,
-                        'tree' => is_string($tree) && preg_match('/\A[0-9a-f]{64}\z/D', $tree) === 1
-                            ? strtolower($tree)
-                            : null,
-                        'clean' => $status instanceof GuestCommandResult
-                                && $status->successful()
-                                && trim($status->stdout) === '',
-                        'hydrated' => $hydration instanceof GuestCommandResult
-                                && $hydration->successful()
-                                && trim($hydration->stdout) === $sha,
-                    ]
-                    : null;
-        }
-
-        $scriptStatus = [];
-        foreach ($target->recipe->nodeKeys() as $node) {
-            $markerProbe = $results["script-marker.{$node}"] ?? null;
-            $contentProbe = $results["script-content.{$node}"] ?? null;
-            if (! $markerProbe instanceof GuestCommandResult || ! $contentProbe instanceof GuestCommandResult) {
-                throw new RuntimeException('Guest script probe batch result is invalid.');
-            }
-            $scriptStatus[$node] =
-                $markerProbe->successful()
-                && trim($markerProbe->stdout) === $scriptHash
-                && $contentProbe->successful()
-                && trim($contentProbe->stdout) === $expectedContentHashes;
-        }
-
-        return [$guestShas, $scriptStatus];
-    }
-
-    private function sourceStateMatchesRole(mixed $state, string $sha, string $tree, bool $mustBeClean): bool
-    {
-        return
-            is_array($state)
-            && ($state['sha'] ?? null) === $sha
-            && ($state['markerSha'] ?? null) === $sha
-            && ($state['tree'] ?? null) === $tree
-            && ($state['hydrated'] ?? false) === true
-            && (! $mustBeClean || ($state['clean'] ?? false) === true);
-    }
-
-    /**
-     * @param array<string, array{
-     *     instance:string,
-     *     bundleRequired:bool,
-     *     prerequisite:?string,
-     *     bundle:?string
-     * }> $roles
-     * @param  ?string  $candidateTree  When set, each checkout is detached at `$sha` and must prove this tree.
-     * @return list<string>
-     */
-    private function transfer(
-        array $roles,
-        string $sha,
-        string $treeHash,
-        string $archive,
-        string $manifest,
-        string $deletions,
-        string $operationId,
-        ?string $candidateTree = null,
-    ): array {
-        $prefix = "/var/lib/orbit-e2e/source/{$operationId}";
-        $archiveName = $this->fileHash($archive).'.tar';
-        $manifestName = $this->fileHash($manifest).'.paths';
-        $deletionsName = $this->fileHash($deletions).'.deletions';
-        $transfers = [];
-        foreach ($roles as $role => $transfer) {
-            $files = [];
-            if ($transfer['bundle'] !== null) {
-                $bundleName = $this->fileHash($transfer['bundle']).'.bundle';
-                $files['bundle'] = [$transfer['bundle'], "{$prefix}/{$bundleName}"];
-            }
-            $files += [
-                'archive' => [$archive, "{$prefix}/{$archiveName}"],
-                'manifest' => [$manifest, "{$prefix}/{$manifestName}"],
-                'deletions' => [$deletions, "{$prefix}/{$deletionsName}"],
-            ];
-            $transfers[$role] = [
-                'instance' => $transfer['instance'],
-                'files' => $files,
-            ];
-        }
-        $staged = array_map(static fn (array $transfer): string => $transfer['instance'], $transfers);
-        try {
-            $prepare = [];
-            foreach ($transfers as $role => $transfer) {
-                $prepare["source-prepare.{$role}"] = [
-                    'instance' => $transfer['instance'],
-                    'command' => new GuestCommand([
-                        'install',
-                        '-d',
-                        '-o',
-                        'orbit',
-                        '-g',
-                        'orbit',
-                        '-m',
-                        '0700',
-                        $prefix,
-                    ]),
-                ];
-            }
-            $this->assertBatchSuccessful($this->incus->execAll($prepare), 'Guest source staging failed.');
-
-            $pushes = [];
-            foreach ($transfers as $role => $transfer) {
-                foreach ($transfer['files'] as $name => [$source, $destination]) {
-                    $pushes["source-push.{$role}.{$name}"] = compact('source', 'destination')
-                    + [
-                        'instance' => $transfer['instance'],
-                    ];
-                }
-            }
-            $this->incus->pushFiles($pushes);
-
-            $ownership = [];
-            foreach ($transfers as $role => $transfer) {
-                $ownership["source-ownership.{$role}"] = [
-                    'instance' => $transfer['instance'],
-                    'command' => new GuestCommand([
-                        'chown',
-                        'orbit:orbit',
-                        ...array_column($transfer['files'], 1),
-                    ]),
-                ];
-            }
-            $this->assertBatchSuccessful(
-                $this->incus->execAll($ownership),
-                'Guest source staging ownership failed.',
-            );
-
-            $receive = [];
-            foreach ($transfers as $role => $transfer) {
-                $bundle = $transfer['files']['bundle'][1] ?? '-';
-                $receive["source-receive.{$role}"] = [
-                    'instance' => $transfer['instance'],
-                    'command' => new GuestCommand([
-                        'runuser',
-                        '-u',
-                        'orbit',
-                        '--',
-                        'env',
-                        'HOME=/home/orbit',
-                        '/usr/local/bin/receive-source.sh',
-                        '/home/orbit/orbit',
-                        $sha,
-                        $bundle,
-                        $transfer['files']['archive'][1],
-                        $transfer['files']['manifest'][1],
-                        $transfer['files']['deletions'][1],
-                        $treeHash,
-                    ], 300),
-                ];
-            }
-            $receiveResults = $this->incus->execAll($receive);
-            $this->assertBatchSuccessful($receiveResults, 'Guest source installation failed.');
-            $this->validateSourceEvidence($receiveResults, $transfers, $sha, $treeHash);
-            if ($candidateTree !== null) {
-                $this->detachCheckouts($transfers, $sha, $candidateTree);
-            }
-
-            $hydrate = [];
-            foreach ($transfers as $role => $transfer) {
-                $hydrate["source-hydrate.{$role}"] = [
-                    'instance' => $transfer['instance'],
-                    'command' => new GuestCommand([
-                        'runuser',
-                        '-u',
-                        'orbit',
-                        '--',
-                        'env',
-                        'HOME=/home/orbit',
-                        'ORBIT_HOME=/home/orbit/.orbit',
-                        'ORBIT_GATEWAY_CHECKOUT=/home/orbit/orbit/apps/gateway',
-                        'DB_DATABASE=/home/orbit/.orbit/gateway.sqlite',
-                        '/usr/local/bin/hydrate-orbit.sh',
-                        '/home/orbit/orbit',
-                        $sha,
-                    ], 900),
-                ];
-            }
-            $this->assertBatchSuccessful($this->incus->execAll($hydrate), 'Guest source hydration failed.');
-            $this->exposeOrbitCli($transfers);
-            $this->preserveGatewayEnvironment($transfers);
-
-            $cleanupInstances = $staged;
-            $staged = [];
-            $this->cleanupSourceStaging($cleanupInstances, $prefix, 'Guest source staging cleanup failed.');
-
-            return array_fill(0, count($transfers), $sha);
-        } catch (JsonException $exception) {
-            $primary = new RuntimeException('Guest source evidence is invalid.', 0, $exception);
-            if ($staged !== []) {
-                $this->cleanupSourceAfterFailure($staged, $prefix, 'Guest source staging cleanup failed.', $primary);
-            }
-            throw $primary;
-        } catch (RuntimeException $primary) {
-            if ($staged !== []) {
-                $this->cleanupSourceAfterFailure($staged, $prefix, 'Guest source staging cleanup failed.', $primary);
-            }
-            throw $primary;
-        }
-    }
-
-    /**
-     * The bundled checkout has no profile on the orbit user's `PATH`, so the CLI is
-     * linked into `/usr/local/bin` on every checkout role once the source is in place.
-     *
-     * @param  array<string, array{instance:string, files:array<string, array{string, string}>}>  $transfers
-     */
-    private function exposeOrbitCli(array $transfers): void
-    {
-        $link = [];
-        foreach ($transfers as $role => $transfer) {
-            $link["source-orbit-cli.{$role}"] = [
-                'instance' => $transfer['instance'],
-                'command' => GuestCommand::linkOrbitCli(),
-            ];
-        }
-        $this->assertBatchSuccessful($this->incus->execAll($link), 'Guest orbit CLI linking failed.');
-    }
-
-    /**
-     * Detach every checkout at the exact commit, then let each guest prove its
-     * `HEAD`, `HEAD^{tree}`, and an empty status before hydration continues.
-     *
-     * @param  array<string, array{instance:string, files:array<string, array{string, string}>}>  $transfers
-     */
-    private function detachCheckouts(array $transfers, string $sha, string $candidateTree): void
-    {
-        $detach = [];
-        foreach ($transfers as $role => $transfer) {
-            $detach["source-detach.{$role}"] = [
-                'instance' => $transfer['instance'],
-                'command' => new GuestCommand([...self::GUEST_GIT, 'checkout', '--detach', '--quiet', $sha], 300),
-            ];
-        }
-        $this->assertBatchSuccessful($this->incus->execAll($detach), 'Guest checkout detach failed.');
-
-        $instances = array_map(static fn (array $transfer): string => $transfer['instance'], $transfers);
-        $this->probeCheckoutIdentityOf($instances, $sha, $candidateTree);
-    }
-
-    /**
-     * Prove every checkout role still sits detached at the exact candidate: `HEAD`
-     * is the commit, `HEAD^{tree}` is its tree, and the status is empty. The proof
-     * runner re-runs this after convergence.
-     */
-    public function probeCheckoutIdentity(TopologyTarget $target, string $sha, string $tree): void
-    {
-        $instances = [];
-        foreach ($target->recipe->checkoutNodeKeys() as $node) {
-            $instances[$node] = $target->instance($node);
-        }
-        $this->probeCheckoutIdentityOf($instances, $sha, $tree);
-    }
-
-    /** @param array<string, string> $instances */
-    private function probeCheckoutIdentityOf(array $instances, string $sha, string $tree): void
-    {
-        $probes = [];
-        foreach ($instances as $role => $instance) {
-            $probes["source-head.{$role}"] = [
-                'instance' => $instance,
-                'command' => new GuestCommand([...self::GUEST_GIT, 'rev-parse', '--verify', 'HEAD^{commit}']),
-            ];
-            $probes["source-tree.{$role}"] = [
-                'instance' => $instance,
-                'command' => new GuestCommand([...self::GUEST_GIT, 'rev-parse', '--verify', 'HEAD^{tree}']),
-            ];
-            $probes["source-status.{$role}"] = [
-                'instance' => $instance,
-                'command' => new GuestCommand([
-                    ...self::GUEST_GIT,
-                    'status',
-                    '--porcelain=v1',
-                    '--untracked-files=all',
-                ]),
-            ];
-        }
-        $results = $this->incus->execAll($probes);
-        $this->assertBatchSuccessful($results, 'Guest checkout identity probes failed.');
-        foreach (array_keys($instances) as $role) {
-            $head = $results["source-head.{$role}"] ?? null;
-            $treeResult = $results["source-tree.{$role}"] ?? null;
-            $status = $results["source-status.{$role}"] ?? null;
-            if (
-                ! $head instanceof GuestCommandResult
-                || ! $treeResult instanceof GuestCommandResult
-                || ! $status instanceof GuestCommandResult
-            ) {
-                throw new RuntimeException('Guest checkout identity batch result is invalid.');
-            }
-            if (strtolower(trim($head->stdout)) !== $sha) {
-                throw new RuntimeException("Guest checkout [{$role}] HEAD does not match the candidate commit.");
-            }
-            if (strtolower(trim($treeResult->stdout)) !== $tree) {
-                throw new RuntimeException("Guest checkout [{$role}] tree does not match the candidate tree.");
-            }
-            if (trim($status->stdout) !== '') {
-                throw new RuntimeException("Guest checkout [{$role}] is not clean after the candidate checkout.");
-            }
-        }
-    }
-
-    /**
-     * Keep a root-owned copy of the hydrated gateway `.env` outside the checkout.
-     * A discovery mount hides the snapshot checkout, so the copy is the only way
-     * the mounted worktree receives the gateway environment.
-     *
-     * @param  array<string, array{instance:string, files:array<string, array{string, string}>}>  $transfers
-     */
-    private function preserveGatewayEnvironment(array $transfers): void
-    {
-        $gateway = $transfers['gateway'] ?? null;
-        if ($gateway === null) {
-            return;
-        }
-
-        $this->assertBatchSuccessful(
-            $this->incus->execAll([
-                'source-preserve-env.gateway' => [
-                    'instance' => $gateway['instance'],
-                    'command' => new GuestCommand([
-                        'install',
-                        '-o',
-                        'root',
-                        '-g',
-                        'root',
-                        '-m',
-                        '0600',
-                        '--',
-                        '/home/orbit/orbit/apps/gateway/.env',
-                        self::GATEWAY_ENV_COPY,
-                    ], 30),
-                ],
-            ]),
-            'Guest gateway environment preservation failed.',
-        );
-    }
-
     /** @return list<string> */
     private function guestScripts(string $worktreeRoot): array
     {
         $directory = $worktreeRoot.'/apps/e2e/resources/guest';
         $paths = [];
-        foreach (self::REQUIRED_GUEST_SCRIPTS as $name) {
+        foreach (self::GUEST_SCRIPTS as $name) {
             $path = $directory.'/'.$name;
-            if (
-                is_link($path)
-                || ! is_file($path)
-                || ! is_executable($path)
-                || preg_match('/\A[a-z0-9][a-z0-9.-]*\.sh\z/D', $name) !== 1
-            ) {
+            if (is_link($path) || ! is_file($path) || ! is_executable($path)) {
                 throw new RuntimeException('Guest script inventory is invalid.');
             }
 
@@ -1086,15 +221,11 @@ final readonly class WorktreeSynchronizer
         $context = hash_init('sha256');
         foreach ($scripts as $script) {
             $permissions = fileperms($script);
-            if ($permissions === false) {
-                throw new RuntimeException('Could not read guest script permissions.');
-            }
-            hash_update($context, basename($script)."\0".sprintf('%o', $permissions & 07777)."\0");
             $contents = file_get_contents($script);
-            if ($contents === false) {
+            if ($permissions === false || $contents === false) {
                 throw new RuntimeException('Could not read guest script inventory.');
             }
-            hash_update($context, $contents."\0");
+            hash_update($context, basename($script)."\0".sprintf('%o', $permissions & 07777)."\0".$contents."\0");
         }
 
         return hash_final($context);
@@ -1111,13 +242,12 @@ final readonly class WorktreeSynchronizer
             $scripts,
         );
         $expectedContentHashes = $this->guestScriptContentHashes($installedScripts, $scripts);
-        $marker = '/var/lib/orbit-e2e/guest-scripts.sha256';
         $commands = [];
         foreach ($target->recipe->nodeKeys() as $node) {
             $instance = $target->instance($node);
             $commands["script-marker.{$node}"] = [
                 'instance' => $instance,
-                'command' => new GuestCommand(['cat', $marker]),
+                'command' => new GuestCommand(['cat', self::SCRIPT_MARKER]),
             ];
             $commands["script-content.{$node}"] = [
                 'instance' => $instance,
@@ -1146,23 +276,13 @@ final readonly class WorktreeSynchronizer
      * @param  array<string, string>  $instances
      * @param  list<string>  $scripts
      */
-    private function installGuestScripts(
-        array $instances,
-        array $scripts,
-        string $markerFile,
-        string $operationId,
-    ): void {
-        if ($instances === []) {
-            return;
-        }
-
-        $marker = '/var/lib/orbit-e2e/guest-scripts.sha256';
-        $prefix = "/var/lib/orbit-e2e/scripts/{$operationId}";
-        $staged = $instances;
+    private function pushGuestScripts(array $instances, array $scripts, string $markerFile): void
+    {
+        $prefix = "/var/lib/orbit-e2e/scripts/{$this->operation->value}";
         try {
             $prepare = [];
-            foreach ($instances as $role => $instance) {
-                $prepare["script-prepare.{$role}"] = [
+            foreach ($instances as $node => $instance) {
+                $prepare["script-prepare.{$node}"] = [
                     'instance' => $instance,
                     'command' => new GuestCommand(['install', '-d', '-m', '0700', $prefix]),
                 ];
@@ -1170,16 +290,16 @@ final readonly class WorktreeSynchronizer
             $this->assertBatchSuccessful($this->incus->execAll($prepare), 'Guest script staging failed.');
 
             $pushes = [];
-            foreach ($instances as $role => $instance) {
+            foreach ($instances as $node => $instance) {
                 foreach ($scripts as $script) {
                     $name = basename($script);
-                    $pushes["script-push.{$role}.{$name}"] = [
+                    $pushes["script-push.{$node}.{$name}"] = [
                         'instance' => $instance,
                         'source' => $script,
                         'destination' => "{$prefix}/{$name}",
                     ];
                 }
-                $pushes["script-push.{$role}.marker"] = [
+                $pushes["script-push.{$node}.marker"] = [
                     'instance' => $instance,
                     'source' => $markerFile,
                     'destination' => "{$prefix}/guest-scripts.sha256",
@@ -1188,65 +308,34 @@ final readonly class WorktreeSynchronizer
             $this->incus->pushFiles($pushes);
 
             $installs = [];
-            foreach ($instances as $role => $instance) {
+            foreach ($instances as $node => $instance) {
+                $commands = [];
                 foreach ($scripts as $script) {
                     $name = basename($script);
-                    $installs["script-install.{$role}.{$name}"] = [
-                        'instance' => $instance,
-                        'command' => new GuestCommand([
-                            'install',
-                            '-o',
-                            'root',
-                            '-g',
-                            'root',
-                            '-m',
-                            '0755',
-                            "{$prefix}/{$name}",
-                            "/usr/local/bin/{$name}",
-                        ]),
-                    ];
+                    $commands[] = 'install -o root -g root -m 0755 '.escapeshellarg("{$prefix}/{$name}")
+                        .' '.escapeshellarg("/usr/local/bin/{$name}");
                 }
-            }
-            $this->assertBatchSuccessful($this->incus->execAll($installs), 'Guest script installation failed.');
-
-            $markers = [];
-            foreach ($instances as $role => $instance) {
-                $markers["script-marker-install.{$role}"] = [
+                $commands[] = 'install -o root -g root -m 0644 '.escapeshellarg("{$prefix}/guest-scripts.sha256")
+                    .' '.escapeshellarg(self::SCRIPT_MARKER);
+                $installs["script-install.{$node}"] = [
                     'instance' => $instance,
-                    'command' => new GuestCommand([
-                        'install',
-                        '-o',
-                        'root',
-                        '-g',
-                        'root',
-                        '-m',
-                        '0644',
-                        "{$prefix}/guest-scripts.sha256",
-                        $marker,
-                    ]),
+                    'command' => new GuestCommand(['sh', '-ec', implode("\n", $commands)]),
                 ];
             }
-            $this->assertBatchSuccessful($this->incus->execAll($markers), 'Guest script marker installation failed.');
-
-            $cleanupInstances = $staged;
-            $staged = [];
-            $this->cleanupStagingBatch(
-                $cleanupInstances,
-                $prefix,
-                'script-cleanup',
-                'Guest script staging cleanup failed.',
-            );
-        } catch (RuntimeException $primary) {
-            if ($staged !== []) {
-                $this->cleanupStagingAfterFailure(
-                    $staged,
-                    $prefix,
-                    'script-cleanup',
-                    'Guest script staging cleanup failed.',
-                    $primary,
-                );
+            $this->assertBatchSuccessful($this->incus->execAll($installs), 'Guest script installation failed.');
+        } finally {
+            $cleanup = [];
+            foreach ($instances as $node => $instance) {
+                $cleanup["script-cleanup.{$node}"] = [
+                    'instance' => $instance,
+                    'command' => new GuestCommand(['rm', '-rf', '--', $prefix]),
+                ];
             }
-            throw $primary;
+            try {
+                $this->assertBatchSuccessful($this->incus->execAll($cleanup), 'Guest script staging cleanup failed.');
+            } catch (Throwable) {
+                // A staging directory left behind holds only copies of the public scripts.
+            }
         }
     }
 
@@ -1282,83 +371,6 @@ final readonly class WorktreeSynchronizer
         }
     }
 
-    /**
-     * @param  array<string, GuestCommandResult>  $results
-     * @param  array<string, array{instance:string, files:array<string, array{string, string}>}>  $transfers
-     *
-     * @throws JsonException
-     */
-    private function validateSourceEvidence(array $results, array $transfers, string $sha, string $treeHash): void
-    {
-        foreach ($transfers as $role => $_transfer) {
-            $result = $results["source-receive.{$role}"] ?? null;
-            if (! $result instanceof GuestCommandResult) {
-                throw new RuntimeException('Guest source batch result is invalid.');
-            }
-            $evidence = json_decode(trim($result->stdout), true, 16, JSON_THROW_ON_ERROR);
-            if (
-                ! is_array($evidence)
-                || ($evidence['sha'] ?? null) !== $sha
-                || ($evidence['tree_hash'] ?? null) !== $treeHash
-            ) {
-                throw new RuntimeException('Guest source evidence does not match the host.');
-            }
-        }
-    }
-
-    /** @param array<string, string> $instances */
-    private function cleanupSourceAfterFailure(
-        array $instances,
-        string $prefix,
-        string $message,
-        RuntimeException $primary,
-    ): void {
-        $this->cleanupStagingAfterFailure($instances, $prefix, 'source-cleanup', $message, $primary);
-    }
-
-    /** @param array<string, string> $instances */
-    private function cleanupSourceStaging(array $instances, string $prefix, string $message): void
-    {
-        $this->cleanupStagingBatch($instances, $prefix, 'source-cleanup', $message);
-    }
-
-    /** @param array<string, string> $instances */
-    private function cleanupStagingAfterFailure(
-        array $instances,
-        string $prefix,
-        string $labelPrefix,
-        string $message,
-        RuntimeException $primary,
-    ): void {
-        try {
-            $this->cleanupStagingBatch($instances, $prefix, $labelPrefix, $message);
-        } catch (RuntimeException $cleanupFailure) {
-            throw new RuntimeException(
-                $message.' Primary operation failed: '.$primary->getMessage().'; cleanup also failed: '
-                    .$cleanupFailure->getMessage(),
-                0,
-                $primary,
-            );
-        }
-    }
-
-    /** @param array<string, string> $instances */
-    private function cleanupStagingBatch(
-        array $instances,
-        string $prefix,
-        string $labelPrefix,
-        string $message,
-    ): void {
-        $commands = [];
-        foreach ($instances as $role => $instance) {
-            $commands["{$labelPrefix}.{$role}"] = [
-                'instance' => $instance,
-                'command' => new GuestCommand(['rm', '-rf', '--', $prefix]),
-            ];
-        }
-        $this->assertBatchSuccessful($this->incus->execAll($commands), $message);
-    }
-
     /** @param list<string> $arguments */
     private function git(string $path, array $arguments): string
     {
@@ -1368,25 +380,5 @@ final readonly class WorktreeSynchronizer
         }
 
         return $result->output();
-    }
-
-    private function temporaryDirectory(): string
-    {
-        $path = sys_get_temp_dir().'/orbit-source-'.bin2hex(random_bytes(12));
-        if (! mkdir($path, 0700)) {
-            throw new RuntimeException('Could not create the source transfer directory.');
-        }
-
-        return $path;
-    }
-
-    private function fileHash(string $path): string
-    {
-        $hash = hash_file('sha256', $path);
-        if ($hash === false) {
-            throw new RuntimeException('Could not hash a source transfer file.');
-        }
-
-        return $hash;
     }
 }

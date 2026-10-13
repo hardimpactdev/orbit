@@ -50,7 +50,7 @@ These pages help contributors design, verify, and maintain Orbit.
 
 - [Bun and Rust projects](/reference/bun-and-rust-projects) shows how to run and check the web app, the Pi server, the Node agent, and the desktop app.
 - [CLI design standard](/reference/cli-ux) guides command authors and reviewers through input, output, consent, terminal behavior, and verification.
-- Development reference pages describe the [Incus topology registry](/reference/incus-topologies) and the [Topology snapshot](/reference/topology-snapshot).
+- Development reference pages describe [Incus topologies](/reference/incus-topologies).
 - [API reference generation](/reference/api-reference) names the inputs `bin/docs-openapi` reads and the same-checkout rule for `docs/openapi.json`.
 - [Solutions](/solutions/README) collects useful fixes and lessons from past
   work.

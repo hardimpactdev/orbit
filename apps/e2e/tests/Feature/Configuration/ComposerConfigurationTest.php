@@ -18,7 +18,6 @@ describe('Composer configuration', function (): void {
             'apps/docs/composer.json',
             'apps/gateway/composer.json',
             'apps/e2e/composer.json',
-            'apps/e2e/app/E2E/ScenarioPestProcess.php',
             'packages/php-sdk/composer.json',
         ] as $path) {
             $contents = file_get_contents(base_path('../../'.$path));
@@ -153,28 +152,12 @@ describe('Composer configuration', function (): void {
             ->toBe('vendor/bin/pest --parallel --tia --fresh --compact')
             ->and($composer['scripts']['guidance:check'])
             ->toBe('../../bin/guidance-check');
-        expect($composer['scripts'])->not->toHaveKey('test:scenario-cold');
-        expect($composer['scripts']['scenario:cold'])
-            ->toBe([
-                'Composer\\Config::disableProcessTimeout',
-                '@php artisan scenario:cold',
-            ]);
-        expect($composer['scripts']['scenario:snapshot'])
-            ->toBe([
-                'Composer\\Config::disableProcessTimeout',
-                '@php artisan scenario:snapshot',
-            ]);
-        expect($composer['scripts']['scenario:run'])
-            ->toBe([
-                'Composer\\Config::disableProcessTimeout',
-                '@php artisan scenario:run',
-            ]);
-        expect($composer['scripts']['scenario:cleanup'])->toBe('@php artisan scenario:cleanup');
-        expect(file_get_contents(base_path('phpunit.xml')))->not->toContain('<directory>tests/Scenario</directory>');
-        expect(file_get_contents(base_path('phpunit.scenario-cold.xml')))
-            ->toContain('<file>tests/Scenario/ColdTopologyAcceptanceTest.php</file>');
-        expect(file_get_contents(base_path('phpunit.scenario-snapshot.xml')))
-            ->toContain('<file>tests/Scenario/SnapshotTopologyAcceptanceTest.php</file>');
+        expect(array_filter(
+            array_keys($composer['scripts']),
+            static fn (string $script): bool => str_starts_with($script, 'scenario:') || str_contains($script, 'scenario-'),
+        ))->toBe([]);
+        expect(glob(base_path('phpunit.scenario-*.xml')))->toBe([])
+            ->and(is_dir(base_path('tests/Scenario')))->toBeFalse();
         expect(file_get_contents(base_path('../../bin/test')))
             ->toContain('--tia')
             ->not->toContain('incus-live');
@@ -294,7 +277,6 @@ describe('Composer configuration', function (): void {
             ->toContain('tests/Feature/Infrastructure/Instances/ConfiguredOriginReadTest.php')
             ->toContain('tests/Feature/Infrastructure/Caddy/CaddyPublicationLockTest.php')
             ->toContain('tests/Unit/E2E/ProofFixtureContractTest.php')
-            ->toContain('tests/Unit/E2E/ProofFixtureShellContractTest.php')
             ->toContain('tests/Unit/SuccessRequestIdBoundaryTest.php')
             ->toContain('tests/Unit/RepositoryGuidanceTest.php')
             ->toContain('tests/Unit/Requests/Workspaces/WorkspaceRequestsTest.php')

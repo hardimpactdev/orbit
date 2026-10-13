@@ -142,7 +142,6 @@
               "reference/incus-topologies",
               "reference/api-reference",
               "reference/gateway-response-fixtures",
-              "reference/topology-snapshot",
               "reference/cli-command-vocabulary",
               "reference/cli-ux",
               "reference/web-verification",
@@ -1025,7 +1024,7 @@
     },
     {
       "source": "/decisions/0005-rolling-incus-development-topology",
-      "destination": "/reference/topology-snapshot#why-it-works-this-way"
+      "destination": "/reference/incus-topologies#composed-from-role-images"
     },
     {
       "source": "/decisions/0006-topology-led-feature-development",
@@ -1045,7 +1044,7 @@
     },
     {
       "source": "/decisions/0019-run-disposable-incus-scenario-lanes",
-      "destination": "/reference/incus-topologies#on-demand-scenarios"
+      "destination": "/reference/incus-topologies#composed-from-role-images"
     },
     {
       "source": "/decisions/0022-track-the-issue-workspace-and-delete-it-before-merge",
@@ -1053,15 +1052,15 @@
     },
     {
       "source": "/decisions/0035-close-out-mutating-proofs-by-refreshing-the-topology-snapshot",
-      "destination": "/reference/topology-snapshot#refresh"
+      "destination": "/reference/incus-topologies#composed-from-role-images"
     },
     {
       "source": "/decisions/0037-promote-fresh-three-node-topology-snapshots",
-      "destination": "/reference/topology-snapshot#rebuild-and-recover"
+      "destination": "/reference/incus-topologies#composed-from-role-images"
     },
     {
       "source": "/decisions/0040-extend-issue-proof-with-one-app-prod-node",
-      "destination": "/reference/incus-topologies#the-app-prod-2-extension"
+      "destination": "/reference/incus-topologies#declared-nodes"
     },
     {
       "source": "/decisions/0049-keep-delivery-artifacts-off-the-merge-head",
@@ -1081,7 +1080,7 @@
     },
     {
       "source": "/decisions/0114-expand-the-three-node-incus-cluster",
-      "destination": "/reference/incus-topologies#three-nodes"
+      "destination": "/reference/incus-topologies#declared-roles-only"
     },
     {
       "source": "/decisions/0135-run-incus-topologies-for-task-workspace-clones-through-a-bridge-worktree",
