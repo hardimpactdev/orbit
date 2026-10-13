@@ -271,7 +271,7 @@ Each host keeps one template for each Project whose groups run on task VMs, `orb
 
 When Orbit creates the workspace on a task VM, it runs these steps before source preparation:
 
-1. It lists the storage volumes of the host's project, and reads the base image that the VM booted (`volatile.base_image`). It takes the newest ready template of the Project from the current `repository_url` and that base image.
+1. It lists the storage volumes of the host's project, and reads the base image that the VM booted (`volatile.base_image`). It takes the newest ready template of the Project from the current `repository_url` and that base image, whose files belong to `1000:1000` (`user.orbit.owner`), the `uid:gid` of `orbit` on the base image.
 2. It clones the template as `tvm-<id>-workspace` with `incus storage volume copy`. On ZFS that is a clone of a snapshot: it took under 0.1 seconds on beast and shares every block with the template.
 3. It attaches the clone to the running VM as the disk `workspace`.
 4. Over the Node's SSH connection, it mounts the disk at the Project's apps directory and adds it to `/etc/fstab`. It points `~/.cache/ms-playwright` and `~/.cache/composer` at the volume.
@@ -292,7 +292,7 @@ Then the Gateway sends the group's branches from its [mirror](#git-on-a-task-vm)
 
 A task VM holds one workspace, so its checkout path is fixed, unlike the `task-<id>` checkout on a shared Node. Caches that record absolute paths, such as Rector's, still match at the claim, so the baseline check finds them warm.
 
-Every step is idempotent, so a claim that runs again finds the clone, the disk, and the mount in place. A warm VM gets its clone at the claim, so warm VMs stay the same for every Project. The base image creates `orbit` with uid and gid 1000, so the files of a template belong to `orbit` on every VM from that image. A template is still only taken on the image it was built on, and the mount checks the owner.
+Every step is idempotent, so a claim that runs again finds the clone, the disk, and the mount in place. A warm VM gets its clone at the claim, so warm VMs stay the same for every Project. The base image creates `orbit` with uid and gid 1000, so the files of a template belong to `orbit` on every VM from that image. A template is still only taken on the image it was built on and with the owner `1000:1000`, and the mount checks the owner again on the VM.
 
 On beast, mealou's setup steps took about 13 seconds on a new VM with a template, against about 36 seconds without one. `vp install` always runs `npm audit`, which reaches the network.
 
@@ -300,7 +300,7 @@ On beast, mealou's setup steps took about 13 seconds on a new VM with a template
 
 The workspace starts from a fresh clone, as before, in these cases:
 
-- The host has no ready template for the Project. Orbit logs the warning `Task VM workspace has no template; it starts from a fresh clone.` and queues a build of the template. See [Template failures](#template-failures) for the wait after a failed build.
+- The host has no ready template for the Project, or none whose owner is `1000:1000`. Orbit logs the warning `Task VM workspace has no template; it starts from a fresh clone.` and queues a build of the template. See [Template failures](#template-failures) for the wait after a failed build.
 - A build of the template runs. An unfinished template is never taken, and the claim queues no second build.
 - The Project has no valid default branch or repository URL. Orbit logs `Task VM workspace template cannot be built; workspaces of the Project start from a fresh clone.` with the reason, and queues no build.
 - The Project's templates were built on another base image than the VM's, and the VM runs the host's current `orbit-task-base`. Orbit logs `Task VM workspace template was built on another base image; it starts from a fresh clone, and a new build is queued.` and queues a build.
