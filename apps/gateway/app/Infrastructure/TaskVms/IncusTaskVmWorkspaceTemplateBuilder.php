@@ -154,6 +154,7 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
                 TaskVmWorkspaceTemplates::RepositoryKey.'='.$project->repository_url,
                 TaskVmWorkspaceTemplates::ImageKey.'='.$image,
                 TaskVmWorkspaceTemplates::OwnerKey.'='.$owner,
+                TaskVmWorkspaceTemplates::LayoutKey.'='.TaskVmWorkspaceTemplates::Layout,
                 TaskVmWorkspaceTemplates::Ready.'=true',
             ])));
             $published = true;
@@ -357,7 +358,7 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
      * that the check fills: static analysis, formatters, and test selection. The checkout is at the workspace's path, so
      * caches keyed by absolute path still match after the claim. The result does not decide the build: a failed check
      * or one stopped at the build budget is logged with its outcome and duration, and the template keeps what the check
-     * cached so far. A check that changes the tree fails the build at `verify`.
+     * cached so far. Files that the check changes are restored, with a warning, and ignored caches stay.
      */
     private function warmCheck(TaskVmHost $host, Node $node, string $builder, Project $project, string $checkout, float $deadline, string $volume): void
     {
@@ -374,7 +375,7 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
         }
         $environment = 'if vp=$(command -v vp); then export VP_HOME="$(dirname "$(dirname "$vp")")"; fi'."\n";
         $started = microtime(true);
-        $result = $this->asManagedUser($host, $node, $builder, $checkout, ['timeout', (string) $seconds, 'bash', '-c', self::WarmStep], $environment.$command, $seconds + 30.0);
+        $result = $this->asManagedUser($host, $node, $builder, $checkout, ['timeout', '-k', '10', (string) $seconds, 'bash', '-c', self::WarmStep], $environment.$command, $seconds + 30.0);
         $context['seconds'] = round(microtime(true) - $started, 1);
         $context['exit_code'] = $result->exitCode;
         match ($result->exitCode) {
@@ -382,6 +383,23 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
             124 => Log::warning("Task VM workspace template task check stopped at the build budget after {$seconds} seconds; the template keeps only the caches it filled so far.", $context),
             default => Log::warning('Task VM workspace template task check failed; the template keeps the caches it filled.', [...$context, 'output' => mb_substr(trim($result->stdout."\n".$result->stderr), -2000)]),
         };
+        $this->undoWarmCheckChanges($host, $node, $builder, $checkout, $context);
+    }
+
+    /**
+     * Restores the tracked files and removes the unignored ones that the warm-up check changed, so the template stays a
+     * clean checkout of its commit. Ignored files, such as the caches, stay. A warning names the stage and the paths.
+     *
+     * @param  array<string, mixed>  $context
+     */
+    private function undoWarmCheckChanges(TaskVmHost $host, Node $node, string $builder, string $checkout, array $context): void
+    {
+        $status = trim($this->checked($builder, 'exec git status', $this->asManagedUser($host, $node, $builder, $checkout, ['git', 'status', '--porcelain']))->stdout);
+        if ($status === '') {
+            return;
+        }
+        $this->checked($builder, 'exec git restore', $this->asManagedUser($host, $node, $builder, $checkout, ['sh', '-ec', 'git checkout -q -- . && git clean -fdq']));
+        Log::warning('Task VM workspace template task check changed the checkout; the warm-check stage restored it.', [...$context, 'changes' => mb_substr($status, 0, 500)]);
     }
 
     /** The setup steps may only add ignored files, so a claim's checkout of its branch starts from a clean tree. */

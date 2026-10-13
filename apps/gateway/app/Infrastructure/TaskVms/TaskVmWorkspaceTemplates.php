@@ -70,6 +70,14 @@ final readonly class TaskVmWorkspaceTemplates
     /** The base image the builder VM booted. A claim takes a template only for a VM from the same image. */
     public const string ImageKey = 'user.orbit.image';
 
+    /**
+     * The layout of the volume: `workspace` while the checkout lives at {@see self::CheckoutDirectory}. A template
+     * without it, from before the fixed checkout path, is never current, so a claim queues a new build.
+     */
+    public const string LayoutKey = 'user.orbit.layout';
+
+    public const string Layout = 'workspace';
+
     /** The managed user's `uid:gid` on the builder, which owns the files. The mount refuses a VM where it differs. */
     public const string OwnerKey = 'user.orbit.owner';
 
@@ -502,8 +510,8 @@ final readonly class TaskVmWorkspaceTemplates
     }
 
     /**
-     * The newest ready template of the Project that was cloned from `$repository`, and with `$image` built on that
-     * base image. After the Project's repository or the base image changes, no template matches, so the claim starts
+     * The newest ready template of the Project that was cloned from `$repository`, with the current layout, and with
+     * `$image` built on that base image. After the Project's repository or the base image changes, no template matches, so the claim starts
      * from a fresh clone.
      *
      * @param  array<string, array<string, string>>  $volumes
@@ -515,6 +523,7 @@ final readonly class TaskVmWorkspaceTemplates
             static fn (string $name): bool => self::projectOf($name) === $projectId
                 && ($volumes[$name][self::Ready] ?? null) === 'true'
                 && ($volumes[$name][self::RepositoryKey] ?? null) === $repository
+                && ($volumes[$name][self::LayoutKey] ?? null) === self::Layout
                 && ($image === null || ($volumes[$name][self::ImageKey] ?? null) === $image),
         );
         rsort($ready, SORT_STRING);

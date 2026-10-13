@@ -1027,7 +1027,7 @@ describe('task VMs', function (): void {
             new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 4, 2, '4GiB', '20GiB'),
         ], 'http://10.44.0.3:8317', null, null, []));
         $volumes = $ready ? [['name' => 'tvm-template-'.$project->id.'-20261011040000', 'type' => 'custom', 'config' => [
-            'user.orbit.ready' => 'true', 'user.orbit.repository' => $project->repository_url, 'user.orbit.image' => 'base-image', 'user.orbit.owner' => '1000:1000',
+            'user.orbit.ready' => 'true', 'user.orbit.repository' => $project->repository_url, 'user.orbit.image' => 'base-image', 'user.orbit.owner' => '1000:1000', 'user.orbit.layout' => 'workspace',
         ]]] : [];
         app()->instance(SshExecutor::class, new class($volumes) implements SshExecutor
         {

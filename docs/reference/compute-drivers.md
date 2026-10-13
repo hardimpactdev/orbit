@@ -269,7 +269,7 @@ Each host keeps one template for each Project whose groups run on task VMs, `orb
 
 When Orbit creates the workspace on a task VM, it runs these steps before source preparation:
 
-1. It lists the storage volumes of the host's project, and reads the base image that the VM booted (`volatile.base_image`). It takes the newest ready template of the Project from the current `repository_url` and that base image.
+1. It lists the storage volumes of the host's project, and reads the base image that the VM booted (`volatile.base_image`). It takes the newest ready template of the Project from the current `repository_url` and that base image, with `user.orbit.layout=workspace`. A template from before the fixed checkout path has no layout, so no claim takes it, and the claim queues a new build.
 2. It clones the template as `tvm-<id>-workspace` with `incus storage volume copy`. On ZFS that is a clone of a snapshot: it took under 0.1 seconds on beast and shares every block with the template.
 3. It attaches the clone to the running VM as the disk `workspace`.
 4. Over the Node's SSH connection, it mounts the disk at the Project's apps directory and adds it to `/etc/fstab`. It points `~/.cache/ms-playwright` and `~/.cache/composer` at the volume.
@@ -347,9 +347,9 @@ The build runs these stages on the host over SSH, with `sudo -n incus --project 
 | `php` | Installs the `app-dev` PHP packages of the version that `composer.json` selects, with the Instance's program. With the base image, it only checks them |
 | `setup:<step>` | Runs each Project setup step as `orbit` in a login Bash in the checkout, with `VP_HOME` set and stdin closed, as the baseline check does. See below |
 | `warm-check` | Runs the Project's task check once in the checkout, as the baseline check would, so the template brings its caches. See below |
-| `verify` | Requires a clean tree. The setup steps and the task check may only add ignored files |
+| `verify` | Requires a clean tree. The setup steps may only add ignored files |
 | `detach` | Unmounts the volume and detaches it |
-| `publish` | Sets `user.orbit.project`, `user.orbit.commit`, `user.orbit.repository`, `user.orbit.image`, `user.orbit.owner`, and `user.orbit.ready=true` on the volume |
+| `publish` | Sets `user.orbit.project`, `user.orbit.commit`, `user.orbit.repository`, `user.orbit.image`, `user.orbit.owner`, `user.orbit.layout=workspace`, and `user.orbit.ready=true` on the volume |
 | `delete-builder` | Deletes the builder VM |
 | `prune` | Deletes the older templates of the Project on the host |
 
@@ -364,7 +364,7 @@ The `warm-check` stage runs the Project's `task_check` like a setup step, within
 | Runs out of budget | Warning `Task VM workspace template task check stopped at the build budget …` | Published with the caches filled so far |
 | No budget left | Warning `Task VM workspace template has no warm caches: …` | Published without warm caches |
 
-Each entry carries the command, the exit code, and the duration. A check that changes the tree fails the build at `verify`.
+Each entry carries the command, the exit code, and the duration. When the check changes tracked files or adds unignored ones, the stage restores the checkout and logs the warning `Task VM workspace template task check changed the checkout; the warm-check stage restored it.` with the paths. Ignored files, such as the caches, stay.
 
 The step travels on stdin to a script file, so a long command fits. A [Gateway-owned step](/reference/instance-setup#gateway-owned-setup-steps), such as `@orbit/tia-baseline` or `@orbit/ci-caches`, becomes the same command as in the check. A builder has no Instance, so no SSR port is set. Each step gets its own timeout, but at most what the build's budget has left.
 

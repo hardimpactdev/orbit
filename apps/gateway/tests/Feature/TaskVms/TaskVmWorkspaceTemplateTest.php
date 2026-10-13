@@ -81,6 +81,9 @@ final class TaskVmTemplateIncus implements SshExecutor
     /** The exit code of an operation that does not fail with 1, such as a timed-out step (124). */
     public array $exitCodes = [];
 
+    /** What `git status --porcelain` prints until the builder restores the checkout. */
+    public ?string $dirtyUntilRestored = null;
+
     /** What `git status --porcelain` prints in the builder. */
     public string $status = '';
 
@@ -189,7 +192,10 @@ final class TaskVmTemplateIncus implements SshExecutor
         return match (true) {
             // The step script arrives on stdin. Its command follows the line that sets VP_HOME.
             $user[0] === 'timeout' => $this->answer('setup step ['.$this->step().']'),
-            $user[0] === 'git' => $this->answer('git status', fn (): string => $this->status),
+            $user[0] === 'git' => $this->answer('git status', fn (): string => $this->dirtyUntilRestored ?? $this->status),
+            $user[0] === 'sh' && str_contains($user[2], 'git clean') => $this->answer('git restore', function (): void {
+                $this->dirtyUntilRestored = null;
+            }),
             $user[0] === 'sh' && str_contains($user[2], 'composer.json') => $this->answer('composer.json', fn (): string => $this->composer ?? 'absent'),
             $user[0] === 'sh' && str_contains($user[2], 'id -u') => $this->answer('id', static fn (): string => '1000:1000'),
             $user[0] === 'bash' && $user[1] === '-seu' => $this->answer('clone', static fn (): string => str_repeat('a', 40)."\n"),
@@ -232,7 +238,7 @@ const TVM_NEW_IMAGE = '2d91037503adbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
  */
 function tvm_ready(string $repository = REPO, string $image = TVM_IMAGE): array
 {
-    return ['user.orbit.ready' => 'true', 'user.orbit.repository' => $repository, 'user.orbit.image' => $image, 'user.orbit.owner' => '1000:1000'];
+    return ['user.orbit.ready' => 'true', 'user.orbit.repository' => $repository, 'user.orbit.image' => $image, 'user.orbit.owner' => '1000:1000', 'user.orbit.layout' => 'workspace'];
 }
 
 function tvm_template_vm(Task $group, string $name = 'tvm-1'): TaskVm
@@ -681,7 +687,7 @@ describe('build', function (): void {
             ->and($stages)->toBe(['render', 'sweep', 'launch', 'cloud-init', 'identity', 'volume', 'mount', 'clone', 'php', 'setup:composer-install', 'setup:build-assets', 'warm-check', 'verify', 'detach', 'publish', 'delete-builder', 'prune'])
             ->and($this->incus->volumes)->toBe([$volume => [
                 'user.orbit.project' => (string) $this->project->id, 'user.orbit.commit' => str_repeat('a', 40), 'user.orbit.repository' => REPO,
-                'user.orbit.image' => TVM_IMAGE, 'user.orbit.owner' => '1000:1000', 'user.orbit.ready' => 'true',
+                'user.orbit.image' => TVM_IMAGE, 'user.orbit.owner' => '1000:1000', 'user.orbit.layout' => 'workspace', 'user.orbit.ready' => 'true',
             ]])
             ->and($this->incus->instances)->toBe(['tvm-5'])
             ->and($this->incus->operations())->toContain(
@@ -775,7 +781,8 @@ describe('build', function (): void {
             ->and(array_slice($stages, array_search('setup:build-assets', $stages, true), 3))->toBe(['setup:build-assets', 'warm-check', 'verify'])
             ->and(last($this->incus->steps))->toEndWith("\ncomposer check");
         $warm = collect($this->incus->operations())->first(static fn (array $operation): bool => in_array('timeout', $operation, true) && str_contains((string) end($operation), 'tail -c 2000'));
-        expect((int) $warm[array_search('timeout', $warm, true) + 1])->toBeGreaterThan(1000);
+        expect(array_slice($warm, array_search('timeout', $warm, true) + 1, 2))->toBe(['-k', '10'])
+            ->and((int) $warm[array_search('timeout', $warm, true) + 3])->toBeGreaterThan(1000);
         Log::shouldHaveReceived($level)->with(Mockery::on(static fn (string $text): bool => str_starts_with($text, $message)), Mockery::on(static fn (array $context): bool => $context['command'] === 'composer check' && is_float($context['seconds'])));
     })->with([
         'passes' => [null, 'info', 'Task VM workspace template warmed its caches with the task check.'],
@@ -783,12 +790,23 @@ describe('build', function (): void {
         'runs out of budget' => [124, 'warning', 'Task VM workspace template task check stopped at the build budget'],
     ]);
 
-    it('fails the template when the warm-up check changes the tree', function (): void {
+    it('restores what the warm-up check changed and names the stage', function (): void {
+        Log::spy();
         $this->project->update(['task_check' => 'composer check']);
-        $this->incus->status = " M composer.lock\n";
+        $this->incus->dirtyUntilRestored = " M composer.lock\n";
 
-        expect(fn () => app(IncusTaskVmWorkspaceTemplateBuilder::class)->build($this->host, $this->hostNode, $this->project))
-            ->toThrow(fn (TaskVmException $exception) => expect($exception->getMessage())->toContain('stage [verify]'));
+        $volume = app(IncusTaskVmWorkspaceTemplateBuilder::class)->build($this->host, $this->hostNode, $this->project);
+
+        expect($this->incus->volumes[$volume]['user.orbit.ready'])->toBe('true');
+        Log::shouldHaveReceived('warning')->with('Task VM workspace template task check changed the checkout; the warm-check stage restored it.', Mockery::on(static fn (array $context): bool => $context['changes'] === 'M composer.lock'));
+    });
+
+    it('treats a template from before the fixed checkout path as not current, so it is rebuilt', function (): void {
+        $old = tvm_ready();
+        unset($old['user.orbit.layout']);
+
+        expect(TaskVmWorkspaceTemplates::isCurrent(['tvm-template-'.$this->project->id.'-20261011040000' => $old], $this->project, TVM_IMAGE))->toBeFalse()
+            ->and(TaskVmWorkspaceTemplates::isCurrent(['tvm-template-'.$this->project->id.'-20261011040000' => tvm_ready()], $this->project, TVM_IMAGE))->toBeTrue();
     });
 
     it('refuses a second build on the host while one runs', function (): void {
