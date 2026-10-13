@@ -1387,9 +1387,9 @@ it('reports runtime certificate firewall and DNS publication boundaries before a
         phpVersion: $boundary === 'runtime' ? '8.5' : null,
     );
     $failure = match ($boundary) {
-        // The access walk's arguments are the worker, then each checkout, Web root, and application directory.
+        // The access walk's arguments are each checkout, Web root, and application directory.
         'source-access' => static fn (RemoteCommand $command): bool => (
-            ($command->arguments[4] ?? null) === $instance->checkout_path
+            ($command->arguments[3] ?? null) === $instance->checkout_path
         ),
         'runtime' => static fn (RemoteCommand $command): bool => str_contains(
             $command->input ?? '',
@@ -1808,9 +1808,7 @@ function route_access_walked_checkouts(Orb127RouteSshExecutor $ssh): array
 {
     $access = collect($ssh->commands)->sole(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'u:caddy:r-X'));
 
-    expect($access->arguments[3])->toBe('');
-
-    return collect(array_slice($access->arguments, 4))->chunk(3)->map(static fn ($site): mixed => $site->first())->values()->all();
+    return collect(array_slice($access->arguments, 3))->chunk(3)->map(static fn ($site): mixed => $site->first())->values()->all();
 }
 
 function orb368_projection_transfer(

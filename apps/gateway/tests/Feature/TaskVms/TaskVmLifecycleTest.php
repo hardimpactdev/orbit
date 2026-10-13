@@ -41,6 +41,7 @@ use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskTopology;
 use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Domain\Tasks\TaskWait;
+use App\Domain\TaskVms\TaskVmCapacity;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmFailedException;
 use App\Domain\TaskVms\TaskVmHost;

@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\TaskVms\TaskVmError;
+use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmPlacementPolicy;
 use App\Domain\TaskVms\TaskVmProviderKind;

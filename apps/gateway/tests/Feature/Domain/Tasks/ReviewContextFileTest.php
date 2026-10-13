@@ -381,6 +381,7 @@ function review_context_opening(): array
     ]);
     $group->taskable()->associate($instance);
     $group->save();
+    test_vm_group($group);
     $earlier = Task::query()->create([
         'parent_id' => $group->id,
         'position' => 1,

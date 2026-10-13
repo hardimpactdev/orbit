@@ -88,7 +88,6 @@ function tvm_glue_ssh(): AppDevFakeSshExecutor
 beforeEach(function (): void {
     mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/keys/private');
     mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/keys/known_hosts');
-    config(['orbit.pi.token' => 'gateway-wide-pi-token-with-32-characters']);
 });
 
 describe('workspace commands', function (): void {
@@ -189,8 +188,8 @@ describe('Pi', function (): void {
         expect(app(PiConnection::class)->token($node))->toBe(TVM_GLUE_PI_TOKEN)
             ->and(app(PiConnection::class)->secrets($node))->toBe([TVM_GLUE_PI_TOKEN, TVM_GLUE_MODEL_KEY])
             ->and(app(PiConnection::class)->baseUrl($node))->toBe('http://10.44.0.130:3774')
-            ->and(app(PiConnection::class)->token($other))->toBe('gateway-wide-pi-token-with-32-characters')
-            ->and(app(PiConnection::class)->secrets($other))->toBe(['gateway-wide-pi-token-with-32-characters']);
+            ->and(app(PiConnection::class)->secrets($other))->toBe([])
+            ->and(fn () => app(PiConnection::class)->token($other))->toThrow(AgentDriverException::class, 'The Node is no task VM, so it has no Pi server.');
     });
 
     it('starts a session on the task VM through its only provider', function (): void {

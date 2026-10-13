@@ -441,7 +441,7 @@ describe('final review before every push', function (): void {
             ->and($runtime->bodies)->toHaveCount(1)
             ->and($runtime->bodies[0])->toContain('Adds the feature.')
             ->and($group->fresh()?->pr_url)->toBe(RM_PR_URL)
-            ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
+            ->and($group->fresh()?->status)->toBe(TaskGroupStatus::WaitingForReview)
             ->and($final->fresh()?->status)->toBe(TaskStatus::Completed)
             ->and($reviewed->sha)->toBe(RM_COMMIT)
             ->and($reviewed->source)->toBe(TaskReviewedCommitSource::OrbitPush)
@@ -840,7 +840,7 @@ describe('incoming pull requests', function (): void {
             ->and($reviewed->source)->toBe(TaskReviewedCommitSource::PullRequestReview)
             ->and($reviewed->github_review_id)->toBe(7001)
             ->and($final->fresh()?->status)->toBe(TaskStatus::Completed)
-            ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
+            ->and($group->fresh()?->status)->toBe(TaskGroupStatus::WaitingForReview)
             ->and(rm_activity($group))->toContain('pull request approved');
     });
 
