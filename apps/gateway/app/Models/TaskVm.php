@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
 use Illuminate\Database\Eloquent\Attributes\Scope;
@@ -23,7 +24,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $group_id
  * @property int|null $host_node_id
  * @property int|null $node_id
- * @property string $provider
+ * @property TaskVmProviderKind $provider
  * @property TaskVmSize $size
  * @property string|null $provider_id
  * @property string|null $ssh_host_key
@@ -49,10 +50,6 @@ use Illuminate\Support\Carbon;
  */
 final class TaskVm extends Model
 {
-    public const string Incus = 'incus';
-
-    public const string UpCloud = 'upcloud';
-
     /** @var list<string> */
     #[\Override]
     protected $fillable = [
@@ -74,6 +71,7 @@ final class TaskVm extends Model
     protected function casts(): array
     {
         return [
+            'provider' => TaskVmProviderKind::class,
             'state' => TaskVmState::class,
             'size' => TaskVmSize::class,
             'pi_token' => 'encrypted',
@@ -90,6 +88,19 @@ final class TaskVm extends Model
     protected function live(Builder $query): void
     {
         $query->where('state', '!=', TaskVmState::Destroyed);
+    }
+
+    /**
+     * The live VMs of the provider that count against its `max_vms`: every one but a failed VM, which counts only where
+     * {@see TaskVmProviderKind::countsFailedVms()}.
+     *
+     * @param  Builder<self>  $query
+     */
+    #[Scope]
+    protected function countedAgainstCap(Builder $query, TaskVmProviderKind $provider): void
+    {
+        $query->where('state', '!=', TaskVmState::Destroyed)->where('provider', $provider)
+            ->when(! $provider->countsFailedVms(), static fn (Builder $query) => $query->where('state', '!=', TaskVmState::Failed));
     }
 
     /** @param Builder<self> $query */

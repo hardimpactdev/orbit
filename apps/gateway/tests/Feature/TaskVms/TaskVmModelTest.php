@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCompute;
+use App\Domain\TaskVms\TaskVmProviderKind;
+use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\Node;
 use App\Models\Project;
@@ -37,6 +39,38 @@ it('casts the state and timestamps', function (): void {
         ->and($vm->hostNode->is($this->host))->toBeTrue()
         ->and($vm->node)->toBeNull();
 });
+
+it('casts the provider to its kind', function (): void {
+    ($this->vm)();
+
+    expect(TaskVm::query()->sole()->provider)->toBe(TaskVmProviderKind::Incus);
+});
+
+it('counts against a cap every live VM of the provider, and a failed one only at UpCloud', function (): void {
+    $states = [TaskVmState::Ready, TaskVmState::Parked, TaskVmState::Failed, TaskVmState::Destroyed];
+    foreach ([TaskVmProviderKind::Incus, TaskVmProviderKind::UpCloud] as $p => $provider) {
+        foreach ($states as $s => $state) {
+            $index = $p * 10 + $s;
+            ($this->vm)([
+                'group_id' => null, 'provider' => $provider, 'host_node_id' => $provider->needsHostNode() ? $this->host->id : null,
+                'name' => 'tvm-cap-'.$index, 'wireguard_ip' => '10.44.0.'.(140 + $index), 'state' => $state,
+            ]);
+        }
+    }
+
+    expect(TaskVm::query()->countedAgainstCap(TaskVmProviderKind::Incus)->orderBy('id')->pluck('name')->all())->toBe(['tvm-cap-0', 'tvm-cap-1'])
+        ->and(TaskVm::query()->countedAgainstCap(TaskVmProviderKind::UpCloud)->orderBy('id')->pluck('name')->all())->toBe(['tvm-cap-10', 'tvm-cap-11', 'tvm-cap-12']);
+});
+
+it('knows what each provider can do', function (TaskVmProviderKind $provider, bool $hostNode, array $sizes, bool $templates, bool $failedCount): void {
+    expect($provider->needsHostNode())->toBe($hostNode)
+        ->and(array_values(array_filter(TaskVmSize::cases(), $provider->supports(...))))->toBe($sizes)
+        ->and($provider->hasWorkspaceTemplates())->toBe($templates)
+        ->and($provider->countsFailedVms())->toBe($failedCount);
+})->with([
+    'incus' => [TaskVmProviderKind::Incus, true, TaskVmSize::cases(), true, false],
+    'upcloud' => [TaskVmProviderKind::UpCloud, false, [TaskVmSize::Normal], false, true],
+]);
 
 it('encrypts the Pi token and model key at rest and hides them', function (): void {
     ($this->vm)(['model_key' => 'model-secret']);

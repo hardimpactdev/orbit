@@ -10,6 +10,7 @@ use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmProvider;
+use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
@@ -264,7 +265,7 @@ function tvm_up_group(?Project $project = null): Task
 function tvm_up_vm(TaskVmState $state = TaskVmState::Provisioning, ?string $hostKey = null): TaskVm
 {
     $vm = TaskVm::query()->create([
-        'group_id' => tvm_up_group()->id, 'host_node_id' => null, 'provider' => TaskVm::UpCloud, 'name' => 'tvm-pending-'.Str::uuid(),
+        'group_id' => tvm_up_group()->id, 'host_node_id' => null, 'provider' => TaskVmProviderKind::UpCloud, 'name' => 'tvm-pending-'.Str::uuid(),
         'state' => $state, 'wireguard_ip' => '10.44.0.'.(129 + TaskVm::query()->count()), 'pi_token' => str_repeat('p', 64),
         'ssh_host_key' => $hostKey,
     ]);
@@ -357,7 +358,7 @@ describe('placement', function (): void {
         Queue::fake();
         // beast's one slot is taken.
         TaskVm::query()->create([
-            'group_id' => tvm_up_group()->id, 'host_node_id' => $this->host->id, 'provider' => TaskVm::Incus, 'name' => 'tvm-full',
+            'group_id' => tvm_up_group()->id, 'host_node_id' => $this->host->id, 'provider' => TaskVmProviderKind::Incus, 'name' => 'tvm-full',
             'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.200', 'pi_token' => str_repeat('p', 64),
         ]);
     });
@@ -365,7 +366,7 @@ describe('placement', function (): void {
     it('places an opted-in group at UpCloud only when no host has a free slot', function (): void {
         $vm = app(AllocateTaskVmAction::class)->execute(tvm_up_group());
 
-        expect($vm->provider)->toBe(TaskVm::UpCloud)
+        expect($vm->provider)->toBe(TaskVmProviderKind::UpCloud)
             ->and($vm->host_node_id)->toBeNull()
             ->and($vm->name)->toBe('tvm-'.$vm->id)
             ->and($vm->state)->toBe(TaskVmState::Provisioning);
@@ -379,21 +380,21 @@ describe('placement', function (): void {
         Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Dev', 'brief' => 'Dev', 'status' => TaskStatus::Todo, 'topology' => ['app-dev']]);
 
         expect(fn () => app(AllocateTaskVmAction::class)->execute($group))->toThrow(TaskCapacityException::class, AllocateTaskVmAction::NoLargeCapacity)
-            ->and(TaskVm::query()->where('provider', TaskVm::UpCloud)->count())->toBe(0)
+            ->and(TaskVm::query()->where('provider', TaskVmProviderKind::UpCloud)->count())->toBe(0)
             ->and(TaskVmSize::forGroup($group))->toBe(TaskVmSize::Large);
     });
 
     it('prefers a free Incus slot', function (): void {
         tvm_up_settings(maxVms: 2);
 
-        expect(app(AllocateTaskVmAction::class)->execute(tvm_up_group())->provider)->toBe(TaskVm::Incus);
+        expect(app(AllocateTaskVmAction::class)->execute(tvm_up_group())->provider)->toBe(TaskVmProviderKind::Incus);
     });
 
     it('keeps the group waiting without the switch, the opt-in, or the configuration', function (?array $upcloud): void {
         tvm_up_settings($upcloud);
 
         expect(fn () => app(AllocateTaskVmAction::class)->execute(tvm_up_group()))->toThrow(TaskCapacityException::class, AllocateTaskVmAction::NoCapacity)
-            ->and(TaskVm::query()->where('provider', TaskVm::UpCloud)->count())->toBe(0);
+            ->and(TaskVm::query()->where('provider', TaskVmProviderKind::UpCloud)->count())->toBe(0);
     })->with([
         'switch off' => [['enabled' => false]],
         'Project not opted in' => [['projectIds' => [999]]],
@@ -420,7 +421,7 @@ describe('provider', function (): void {
         $providers = new ReflectionClass(TaskVmProviders::class);
         $for = $providers->getMethod('for');
         $router = app(TaskVmProviders::class);
-        $incus = TaskVm::query()->make(['provider' => TaskVm::Incus, 'name' => 'tvm-1']);
+        $incus = TaskVm::query()->make(['provider' => TaskVmProviderKind::Incus, 'name' => 'tvm-1']);
 
         expect($for->invoke($router, tvm_up_vm()))->toBeInstanceOf(UpCloudTaskVmProvider::class)
             ->and($for->invoke($router, $incus))->toBeInstanceOf(IncusTaskVmProvider::class)
