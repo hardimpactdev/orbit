@@ -54,7 +54,8 @@ final readonly class TaskVmGit
     private const string Apply = <<<'BASH'
         set -eu
         checkout=$1
-        shift
+        head=$2
+        shift 2
         git() { command git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" "$@"; }
         git index-pack --stdin --fix-thin >/dev/null
         while [ "$#" -ge 2 ]; do
@@ -65,6 +66,10 @@ final readonly class TaskVmGit
             fi
             shift 2
         done
+        # origin/HEAD names the default branch, as a clone sets it. Pest's test selection reads it.
+        if [ -n "$head" ] && git rev-parse --verify --quiet "refs/remotes/origin/$head" >/dev/null; then
+            git symbolic-ref refs/remotes/origin/HEAD "refs/remotes/origin/$head"
+        fi
         BASH;
 
     /** Writes a pack of the commit to stdout, without the history of those of the following commits it has. */
@@ -145,7 +150,9 @@ final readonly class TaskVmGit
 
     /**
      * Sets `refs/remotes/origin/<branch>` in the VM's checkout to each commit of the mirror, and deletes it for null.
-     * The pack holds the objects that the history of the checkout's own commits lacks.
+     * `refs/remotes/origin/HEAD` points at the Project's default branch, as after a clone, so tools that read the
+     * default branch from it, such as Pest's test selection, find it. The pack holds the objects that the history of the
+     * checkout's own commits lacks.
      *
      * @param  array<string, string|null>  $tips  from {@see fetch()}
      * @param  Closure(RemoteCommand): CommandResult  $run
@@ -163,7 +170,8 @@ final readonly class TaskVmGit
                 $updates[] = 'refs/remotes/origin/'.$branch;
                 $updates[] = $commit ?? '-';
             }
-            $run(new RemoteCommand(['bash', '-c', self::Apply, '--', $checkout, ...$updates], protectedInput: ProtectedInput::openFile($pack), timeout: 1800.0));
+            $head = is_string($project->default_branch) && GitBranchName::isValid($project->default_branch) && array_key_exists($project->default_branch, $tips) ? $project->default_branch : '';
+            $run(new RemoteCommand(['bash', '-c', self::Apply, '--', $checkout, $head, ...$updates], protectedInput: ProtectedInput::openFile($pack), timeout: 1800.0));
         } finally {
             File::deleteDirectory($scratch);
         }

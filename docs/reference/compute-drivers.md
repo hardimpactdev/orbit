@@ -406,6 +406,7 @@ Each Project with task VM work has one bare repository on the Gateway: `storage/
 2. It reads the commit IDs of the refs in the VM's checkout. It keeps those that the mirror holds as commits.
 3. It packs the objects of the branches that are not in the history of those commits.
 4. It sends the pack on the standard input of one SSH command. The VM indexes the pack and sets `refs/remotes/origin/<branch>` to the mirror's commit. A missing `task-<id>` loses its ref.
+5. When the default branch was sent, the VM points `refs/remotes/origin/HEAD` at it, as a clone does. Pest's test selection reads the default branch there.
 
 | Operation | Branches |
 | --- | --- |
