@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\TaskVms;
 
+use App\Infrastructure\Nodes\EnrollmentProgram;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
 use App\Models\TaskVm;
@@ -11,7 +12,7 @@ use Illuminate\Support\Facades\Log;
 use JsonException;
 
 /**
- * The enrollment programs that a task VM's base image already ran. The image build runs each program and
+ * The enrollment programs that a task VM's base image already ran, named as {@see EnrollmentProgram} names them. The image build runs each program and
  * records its fingerprint, the SHA-256 of its exact arguments and input, in {@see self::ManifestPath}.
  * `EnrollTaskVm` reads that manifest before enrollment and loads it here. Enrollment then skips a program
  * only while it renders the same fingerprint for the same name: the image ran that exact program, and each
@@ -27,22 +28,6 @@ final class TaskVmBakedPrograms
     public const string ManifestPath = '/var/lib/orbit-task-vm/image.json';
 
     public const int ManifestSchema = 1;
-
-    public const string Bootstrap = 'bootstrap';
-
-    public const string CaddyPackage = 'caddy-package';
-
-    public const string AppDevPrerequisites = 'app-dev-prerequisites';
-
-    public const string VpManager = 'vp-manager';
-
-    public const string ComposerManager = 'composer-manager';
-
-    /**
-     * Prefix of the `app-dev` PHP programs: `app-dev-php-source` and one per PHP version, such as `app-dev-php-8-5`.
-     * Enrollment does not run them; an Instance's route does, and finds the packages in place.
-     */
-    public const string AppDevPhp = 'app-dev-php';
 
     /** The stable Rust toolchain for `orbit`. Enrollment does not run it; it only serves Projects with Rust code. */
     public const string RustToolchain = 'rust-toolchain';

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Tools;
 
+use App\Infrastructure\Nodes\EnrollmentProgram;
 use App\Domain\Tools\SemverVersionNormalizer;
 use App\Domain\Tools\SupportsToolAdoption;
 use App\Domain\Tools\ToolAdoptionFact;
@@ -127,7 +128,7 @@ final readonly class ComposerToolManager implements SupportsToolAdoption, ToolMa
 
         $command = $this->materializeCommand($node);
         // A task VM whose base image ran this exact program skips it.
-        if (app(TaskVmBakedPrograms::class)->holds($node, TaskVmBakedPrograms::ComposerManager, $command)) {
+        if (app(TaskVmBakedPrograms::class)->holds($node, EnrollmentProgram::ComposerManager, $command)) {
             return;
         }
 

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Infrastructure\Nodes\EnrollmentProgram;
 use App\Domain\Analytics\AnalyticsClickhouseConfigurationManager;
 use App\Domain\Analytics\AnalyticsPublicationManager;
 use App\Domain\Analytics\AnalyticsRoleSettings;
@@ -105,8 +106,8 @@ it('skips the app development programs that a task VM image ran and runs a chang
     [$node, $assignment] = role_baseline_models(RoleName::AppDev, 'tvm-31');
     $commands = new NodeRolePrerequisiteCommandFactory;
     app(TaskVmBakedPrograms::class)->load(new TaskVm(['name' => 'tvm-31']), TaskVmBakedPrograms::manifest([
-        TaskVmBakedPrograms::CaddyPackage => $commands->caddyPackage($node, RoleName::AppDev),
-        TaskVmBakedPrograms::AppDevPrerequisites => new RemoteCommand(['sudo', 'bash', '-seu', '--', 'an older program']),
+        EnrollmentProgram::CaddyPackage => $commands->caddyPackage($node, RoleName::AppDev),
+        EnrollmentProgram::prerequisites(RoleName::AppDev) => new RemoteCommand(['sudo', 'bash', '-seu', '--', 'an older program']),
     ]));
     Log::spy();
 

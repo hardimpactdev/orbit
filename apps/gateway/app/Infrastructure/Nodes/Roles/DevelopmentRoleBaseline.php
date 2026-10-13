@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Nodes\Roles;
 
+use App\Infrastructure\Nodes\EnrollmentProgram;
 use App\Domain\AppDev\AppDevCaddyManager;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Hibernation\RuntimeHibernation;
@@ -48,11 +49,11 @@ final readonly class DevelopmentRoleBaseline implements RoleBaseline
         // A task VM whose base image ran these exact programs skips them.
         $baked = app(TaskVmBakedPrograms::class);
         $caddyPackage = $this->commands->caddyPackage($node, RoleName::AppDev);
-        if ($caddyPackage instanceof RemoteCommand && ! $baked->holds($node, TaskVmBakedPrograms::CaddyPackage, $caddyPackage)) {
+        if ($caddyPackage instanceof RemoteCommand && ! $baked->holds($node, EnrollmentProgram::CaddyPackage, $caddyPackage)) {
             $this->ssh->execute($node, $caddyPackage, 'caddy-package-source', 'app-dev.prerequisite_failed', failureLabel: CaddyRoleFailure::sshLabel(RoleName::AppDev));
         }
         $prerequisites = $this->commands->make($node, RoleName::AppDev, $account);
-        if (! $baked->holds($node, TaskVmBakedPrograms::AppDevPrerequisites, $prerequisites)) {
+        if (! $baked->holds($node, EnrollmentProgram::prerequisites(RoleName::AppDev), $prerequisites)) {
             $this->ssh->execute(
                 $node,
                 $prerequisites,
