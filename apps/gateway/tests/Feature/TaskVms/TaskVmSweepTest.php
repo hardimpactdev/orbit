@@ -225,6 +225,9 @@ describe(SweepTaskVmHosts::class, function (): void {
             ->and([new SweepTaskVmHosts()->connection, new SweepTaskVmHosts()->queue])->toBe(['gateway', 'tasks']);
 
         config(['task_vms.enabled' => true]);
+        expect($sweep->filtersPass(app()))->toBeFalse();
+
+        config(['orbit.gateway_queue.connection' => 'services-valkey']);
         expect($sweep->filtersPass(app()))->toBeTrue();
 
         config(['task_vms.enabled' => false, 'task_vms.upcloud.token_file' => '/home/orbit/upcloud.yaml']);
