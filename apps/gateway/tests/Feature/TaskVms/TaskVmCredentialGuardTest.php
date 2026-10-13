@@ -122,3 +122,62 @@ it('refuses a GitHub credential on a task VM host, where incus exec would hand i
         ->toThrow(TaskVmException::class, 'A command that carries a GitHub credential cannot run on a task VM.');
     expect($transport->runs)->toBe([]);
 });
+
+/** @return array<string, string> every PHP file under app/, by its path relative to the Gateway */
+function tvm_guard_sources(): array
+{
+    $base = dirname(__DIR__, 3);
+    $sources = [];
+    foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($base.'/app', FilesystemIterator::SKIP_DOTS)) as $file) {
+        if ($file instanceof SplFileInfo && $file->getExtension() === 'php') {
+            $sources[substr($file->getPathname(), strlen($base) + 1)] = (string) file_get_contents($file->getPathname());
+        }
+    }
+    ksort($sources);
+
+    return $sources;
+}
+
+/**
+ * The guard sees a credential only on input that GitReadScript marked. Code that builds the credential itself, or a
+ * new path that sends remote commands with GitHub access in reach, would pass it unseen. Such a change fails here and
+ * must use GitReadScript, or Gateway-side Git for task VMs, and then join the list on purpose.
+ */
+it('leaves GitReadScript the only builder of a remote command with a GitHub credential', function (): void {
+    $sources = tvm_guard_sources();
+    $only = static function (string $pattern) use ($sources): array {
+        return array_keys(array_filter($sources, static fn (string $source): bool => preg_match($pattern, $source) === 1));
+    };
+
+    expect($only('/->bashPreamble\(/'))->toBe(['app/Infrastructure/GitHub/GitReadScript.php'])
+        ->and($only('/ProtectedInput::gitCredential\(/'))->toBe(['app/Infrastructure/GitHub/GitReadScript.php'])
+        ->and($only('/extraheader/i'))->toBe(['app/Domain/GitHub/GitReadEnvironment.php'])
+        // The publisher removes the token from Git's error output; the others only unset or filter the variables.
+        ->and($only('/x-access-token/'))->toBe(['app/Domain/GitHub/GitReadEnvironment.php', 'app/Infrastructure/Tasks/GitHubTaskPullRequestPublisher.php'])
+        ->and($only('/GIT_CONFIG_VALUE_/'))->toBe(['app/Domain/GitHub/GitReadEnvironment.php', 'app/Infrastructure/Instances/RemoteRegistrationSourceManager.php', 'app/Infrastructure/SourceControl/WorkspaceGit.php'])
+        // GitHub access in the environment of a process on the Gateway, never in a remote command.
+        ->and($only('/->variables\b/'))->toBe([
+            'app/Domain/GitHub/GitReadEnvironment.php',
+            'app/Infrastructure/GatewayReleases/GatewayReleaseBuilder.php',
+            'app/Infrastructure/SourceControl/NativeRepositoryDefaultBranchResolver.php',
+            'app/Infrastructure/TaskVms/TaskVmGit.php',
+            'app/Infrastructure/Tasks/NativeDeliverablePathRepository.php',
+        ]);
+
+    $remote = $only('/\b(?:RemoteCommand|SshExecutor)\b/');
+    $access = $only('/\b(?:RepositoryPullRequestAccess|RepositoryReadAccess|GitReadEnvironment)\b/');
+    expect(array_values(array_intersect($remote, $access)))->toBe([
+        'app/Infrastructure/Instances/RemoteDevelopmentDeployment.php',
+        'app/Infrastructure/Instances/RemoteDevelopmentInstanceSourceLifecycle.php',
+        'app/Infrastructure/Instances/RemoteDevelopmentInstanceSourceRemoval.php',
+        'app/Infrastructure/Instances/RemoteInstanceCloneCandidateInspector.php',
+        'app/Infrastructure/Instances/RemoteProductionDeployment.php',
+        'app/Infrastructure/Instances/RemoteProductionInstanceSourceLifecycle.php',
+        'app/Infrastructure/Projects/RemoteProjectUpdateSourceMutator.php',
+        'app/Infrastructure/TaskVms/IncusTaskVmWorkspaceTemplateBuilder.php',
+        'app/Infrastructure/TaskVms/TaskVmGit.php',
+        'app/Infrastructure/Tasks/GitHubTaskBaseBranchFetcher.php',
+        'app/Infrastructure/Tasks/GitHubTaskPullRequestPublisher.php',
+        'app/Infrastructure/Tasks/NativeDeliverablePathRepository.php',
+    ]);
+});
