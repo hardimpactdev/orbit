@@ -329,13 +329,11 @@ The refresh runs on every configured host whose Node is active. It reads the hos
 
 So after a promote, each host keeps at most one template for each Project, and none from the old image.
 
-Then the refresh queues one build on each host for each Project that had a group created in the last 7 days, unless the host already has a current template of it. A current template is ready, comes from the Project's repository, was built on the host's current base image, and belongs to uid and gid 1000. So a second refresh builds only what the first one did not, and the build job skips a current template too.
+Then the refresh queues one build on each host for each Project that had a group created in the last 7 days, unless the host already has a current template of it. A current template is ready, comes from the Project's repository, was built on the host's current base image, and belongs to uid and gid 1000. So a second refresh builds only what the first one did not. The build job does not build a current template again: it [updates](#update-a-template-after-a-merge) it to the default branch, and does nothing when the template is at the branch tip.
 
 Other Projects get their template at their next claim. A Project without a valid default branch or repository URL gets no build. The refresh logs the warning `Task VM workspace template cannot be built; workspaces of the Project start from a fresh clone.` for it each time.
 
-Orbit does not watch the default branch for pushes. A template that is behind the branch is still correct: the fetch and the setup steps bring the workspace up to date. A template is rebuilt when the base image changes, which the nightly build does each night it succeeds. So the template of an active Project is at most a day old while the nightly build succeeds. The template of another Project is as old as its last build.
-
-A change to a Project's setup steps or lockfile does not rebuild its templates. The refresh and the build job skip a current template, so the change reaches a template only at the next base image change. When nightly builds fail, that can be days later. Until then each workspace stays correct, because the setup steps in its baseline check run the change, but it saves less time. To rebuild the template of one Project on one host at once, run `php artisan task-vms:build-workspace-template NODE PROJECT` on the Gateway. The command calls the builder directly, so it builds even when the template is current.
+A template follows its Project's default branch: every merge leads to an [update](#update-a-template-after-a-merge) within minutes. A template that is behind the branch is still correct: the fetch and the setup steps bring the workspace up to date. A lockfile change comes with a merge, so the next update installs it. A change to a Project's setup steps alone reaches its templates at the next merge or base image change. To rebuild the template of one Project on one host at once, run `php artisan task-vms:build-workspace-template NODE PROJECT` on the Gateway. The command calls the builder directly and always runs a full build, also when the template is current.
 
 Template jobs run on their own queue, `task-vm-templates`, with their own worker, so a build never delays a task VM job. See [Jobs](#jobs).
 
@@ -354,7 +352,7 @@ The build runs these stages on the host over SSH, with `sudo -n incus --project 
 | `warm-check` | Runs the Project's task check once in the checkout, as the baseline check would, so the template brings its caches. See below |
 | `verify` | Requires a clean tree. The setup steps may only add ignored files |
 | `detach` | Stops every process of `orbit` in the builder, which a setup step or the task check may leave running on the volume, then unmounts the volume and detaches it |
-| `publish` | Sets `user.orbit.project`, `user.orbit.commit`, `user.orbit.repository`, `user.orbit.image`, `user.orbit.owner`, `user.orbit.layout=workspace`, and `user.orbit.ready=true` on the volume |
+| `publish` | Sets `user.orbit.project`, `user.orbit.commit`, `user.orbit.repository`, `user.orbit.image`, `user.orbit.owner`, `user.orbit.layout=workspace`, `user.orbit.updates`, and last `user.orbit.ready=true` on the volume |
 | `delete-builder` | Deletes the builder VM |
 | `prune` | Deletes the older templates of the Project on the host |
 
@@ -377,11 +375,41 @@ A build runs within a budget of 1500 seconds. The queued job's timeout of 1700 s
 
 A second one fails with `task_vm.workspace_template_running`, and the queued job waits a minute and tries again. The template worker takes one job at a time, so one build runs in the whole fleet at a time.
 
+#### Update a template after a merge
+
+Every merge to a Project's default branch updates the Project's templates: a task group's merge, an auto-merge, a human merge, and a direct push alike. The Gateway sees all of them in one place, the default branch on GitHub. The GitHub App sends no webhooks to the Gateway, and the task group events see only Orbit's own merges.
+
+Every 5 minutes the scheduler queues `FollowTaskVmDefaultBranches` on the template queue. On every configured host whose Node is active, it reads the current template of each Project: the newest one that a claim on the host's current base image can take. For each Project with a current template on some host, it fetches the default branch into the Gateway's [mirror](#git-on-a-task-vm). When a template's `user.orbit.commit` is not the branch tip, it queues `BuildTaskVmWorkspaceTemplate` for that Project on that host. It queues nothing while a failed build of the Project on the host waits out its 6 hours. A Project whose fetch fails is logged with the warning `Task VM workspace template could not follow its default branch.` and checked again 5 minutes later.
+
+The build job is unique for its host and Project, and reads the branch tip when it runs. So a burst of merges queues one job, and that job updates the template to the newest commit. A merge during a running update reaches the template at the next check.
+
+When the host has a current template, the build job updates it in these stages, and keeps the full build's stages from `php` on:
+
+| Stage | What it does |
+| --- | --- |
+| `fetch` | Fetches the default branch into the Gateway's mirror. At the template's own commit, the job ends here and logs `Task VM workspace template is at the default branch; no update.` |
+| `render`, `sweep`, `launch`, `cloud-init`, `identity` | As in a full build. The builder's base image and the `uid:gid` of `orbit` must be the template's |
+| `volume` | Copies the current template to a new template volume with `incus storage volume copy`, sets `user.orbit.ready=false` on the copy at once, and attaches it. On ZFS the copy is a clone and takes under a second |
+| `mount` | Mounts the copy with the same script as a claim. The copy must hold the template checkout |
+| `checkout` | The Gateway sends the new commit from its mirror, and the checkout moves to it. The pack holds only what the template's commit lacks |
+
+The setup steps then find `vendor`, `node_modules`, and the caches in place, so they only install what the merge changed. The task check of the `warm-check` stage finds its caches warm, and its test selection runs only the tests that the merge affects. `publish` writes the new commit and `user.orbit.updates`, the number of updates since the template's last full build, and sets `user.orbit.ready=true` last. `prune` then deletes the older template.
+
+An update is safe to stop at any point. Until `publish`, the copy is unfinished, so no claim takes it, and the next build sweeps it. The older template stays in place, and claims keep taking it. The copy comes from a ready template, so a claim that takes it in the instant before `user.orbit.ready=false` gets the same files as from the older template.
+
+The build job runs a full build instead of an update in these cases:
+
+- The host has no current template, for example after a base image promote or for a Project's first template.
+- The current template has 20 updates. A full build then starts the checkout clean, without the ignored files that older commits generated, and frees the ZFS data that the chain of updates keeps (see [Disk use and pruning](#disk-use-and-pruning)).
+- The last update failed. The job logs the warning `Task VM workspace template update failed; the next build is a full one.` with the error, sets `user.orbit.updates=20` on the current template, and tries again at once as a full build.
+
+An update never starts from a group's workspace. It starts from a template, which only a builder wrote, and from the commit that the Gateway fetched from GitHub.
+
 #### Template failures
 
 A build that fails before `publish` deletes its builder VM and its volume, and the Project keeps its current template. After `publish` the new template is ready. A failed `delete-builder` or `prune` then only logs the warning `Task VM workspace template is ready, but a cleanup stage failed; the next build retries it.`
 
- It fails with `task_vm.workspace_template_failed`, which names the stage. The job logs the error `Task VM workspace template build failed; workspaces of the Project start from a fresh clone.`, and claims queue no new build of that Project on that host for 6 hours. A later claim or the next refresh for an active Project tries again. A build stopped with SIGINT or SIGTERM, or past its job timeout, deletes its builder and frees the host. A build killed with SIGKILL holds the host for at most 25 minutes, and the next build sweeps what it left.
+ It fails with `task_vm.workspace_template_failed`, which names the stage. The job logs the error `Task VM workspace template build failed; workspaces of the Project start from a fresh clone.`, and claims and `FollowTaskVmDefaultBranches` queue no new build of that Project on that host for 6 hours. A later claim, the next refresh for an active Project, or the next check after the 6 hours tries again. A build stopped with SIGINT or SIGTERM, or past its job timeout, deletes its builder and frees the host. A build killed with SIGKILL holds the host for at most 25 minutes, and the next build sweeps what it left.
 
 #### Disk use and pruning
 
@@ -389,7 +417,7 @@ A template takes the size of its files on the pool, compressed. The mealou templ
 
 Each host holds at most one template for each Project, plus one clone for each task VM that has a workspace. After a promote, only Projects with a recent group or a new claim get a template again. A clone takes only the blocks that its group changes. The volume is sparse, so its size limit, the host's `disk`, reserves nothing.
 
-A new template replaces the older ones of its Project at once. Incus keeps the data of a deleted template until its last clone is gone, so a running group never loses its workspace. The refresh after each promote deletes the templates that no claim can take, as [Build a template](#build-a-template) lists. Destroy deletes a VM's clone after the VM, and the sweep deletes a clone whose VM has no row. A template holds no secret. No GitHub token reaches the builder: it gets the default branch from the Gateway's [mirror](#git-on-a-task-vm).
+A new template replaces the older ones of its Project at once. Incus keeps the data of a deleted template until its last clone is gone, so a running group never loses its workspace. An update is a clone of the template before it, so each template of a chain of updates keeps the data of the ones before it. The chain holds the blocks that each update changed, and Incus frees it when its newest template and their last clone are gone. A full build after at most 20 updates, and the full builds after each promote, start a new chain. The refresh after each promote deletes the templates that no claim can take, as [Build a template](#build-a-template) lists. Destroy deletes a VM's clone after the VM, and the sweep deletes a clone whose VM has no row. A template holds no secret. No GitHub token reaches the builder: it gets the default branch from the Gateway's [mirror](#git-on-a-task-vm).
 
 #### Park, resume, and security
 
@@ -560,7 +588,7 @@ The worker stops when the queue is empty, or takes no new job after 120 seconds.
 
 A job is due when its time has come and no worker holds it, or a worker's hold is older than 1800 seconds. A delayed retry or a released job starts no worker before its time. Without a due job, the scheduler only reads the queue table each second. A Gateway release drains the worker like any other scheduled command. Its start does not pause [document cleanup](/reference/project-documents), because it runs only task VM jobs.
 
-The workspace template jobs, `RefreshTaskVmWorkspaceTemplates` and `BuildTaskVmWorkspaceTemplate`, run on the queue `task-vm-templates` in the same table, with a worker of their own. The nightly base image refreshes, [`RefreshTaskVmBaseImages`](#build-the-base-image) and [`RefreshUpCloudTaskVmBaseImage`](#refresh-the-upcloud-template-every-night), run on the queue `task-vm-images`, with a third worker. The [publish](#publish-from-the-vm) of an approved commit, `PublishTaskVmCommit`, runs on the queue `task-vm-git`, with a fourth:
+The workspace template jobs, `RefreshTaskVmWorkspaceTemplates`, `FollowTaskVmDefaultBranches`, and `BuildTaskVmWorkspaceTemplate`, run on the queue `task-vm-templates` in the same table, with a worker of their own. The nightly base image refreshes, [`RefreshTaskVmBaseImages`](#build-the-base-image) and [`RefreshUpCloudTaskVmBaseImage`](#refresh-the-upcloud-template-every-night), run on the queue `task-vm-images`, with a third worker. The [publish](#publish-from-the-vm) of an approved commit, `PublishTaskVmCommit`, runs on the queue `task-vm-git`, with a fourth:
 
 ```text
 queue:work task-vms --queue=task-vm-templates --stop-when-empty --max-time=120 --timeout=1700
@@ -593,8 +621,9 @@ A builder VM has the size of a task VM and does not count against `max_vms`. It 
 | `EnsureWarmClaimReady` | Never. It queues `PrepareTaskVmRuntime`, which has its own retries |
 | `RefreshTaskVmBaseImages` | Never. The next night runs it again |
 | `RefreshTaskVmWorkspaceTemplates` | Never. The next base image build, sync, or night queues it again |
+| `FollowTaskVmDefaultBranches` | Never. It runs again 5 minutes later |
 | `RefreshUpCloudTaskVmBaseImage` | Never. The next night runs it again |
-| `BuildTaskVmWorkspaceTemplate` | Waits a minute while another template build runs on the host, up to 10 times. A failed build or a Project without a default branch is not retried; see [Template failures](#template-failures) |
+| `BuildTaskVmWorkspaceTemplate` | Waits a minute while another template build runs on the host, up to 10 times. A failed update tries again at once as a full build. A failed build or a Project without a default branch is not retried; see [Template failures](#template-failures) |
 
 The jobs log each step with its seconds as `Task VM step done.`. The wait for the worker is a step of its own, apart from the work: `queue` before `create` in `ProvisionTaskVm`, and `enroll-queue` before `boot` in `EnrollTaskVm`. The guest boots during `enroll-queue`. A `boot` after a released try counts from the launch.
 
