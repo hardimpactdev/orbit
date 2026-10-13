@@ -21,10 +21,10 @@ use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\TaskVms\TaskVmException;
-use App\Domain\TaskVms\TaskVmPlacement;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
+use App\Domain\TaskVms\TaskVmWorkspaceGuard;
 use App\Domain\TaskVms\VmObservation;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -319,8 +319,8 @@ describe('wake', function (): void {
         $workspace = tvm_park_workspace($group, $vm);
         $vm->update(['state' => TaskVmState::Parked]);
 
-        expect(fn () => TaskVmPlacement::assertWorkspace($group, $workspace))->toThrow(TaskVmException::class, 'is parked')
-            ->and(TaskVmPlacement::allowsWorkspace($group, $workspace))->toBeFalse();
+        expect(fn () => TaskVmWorkspaceGuard::assertWorkspace($group, $workspace))->toThrow(TaskVmException::class, 'is parked')
+            ->and(TaskVmWorkspaceGuard::allowsWorkspace($group, $workspace))->toBeFalse();
     });
 
     it('keeps the workspace of a parked VM and starts the VM instead of removing it', function (): void {

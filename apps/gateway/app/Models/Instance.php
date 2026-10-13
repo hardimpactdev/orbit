@@ -9,7 +9,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\ApplicationDirectory;
-use App\Domain\TaskVms\TaskVmPlacement;
+use App\Domain\TaskVms\TaskVmWorkspaceGuard;
 use App\Infrastructure\Tasks\TaskWorkerUser;
 use App\Models\Relations\DualSafeMorphMany;
 use Illuminate\Database\Eloquent\Builder;
@@ -125,7 +125,7 @@ final class Instance extends Model
     {
         self::saving(static function (self $instance): void {
             if (! $instance->exists || $instance->isDirty(['node_id', 'project_id', 'name'])) {
-                TaskVmPlacement::assertInstance($instance);
+                TaskVmWorkspaceGuard::assertInstance($instance);
             }
             if (! $instance->worker_shared && (! $instance->exists || $instance->isDirty('node_id'))) {
                 $node = Node::query()->find($instance->node_id);

@@ -4,10 +4,11 @@ declare(strict_types=1);
 
 namespace App\Actions\TaskVms;
 
-use App\Domain\Shared\LifecycleStatus;
+use App\Domain\TaskVms\TaskVmCapacity;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmPlacementTarget;
+use App\Domain\TaskVms\TaskVmPoolBackoff;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\TaskVms\IncusHost;
@@ -17,7 +18,6 @@ use App\Jobs\TaskVms\ProvisionTaskVm;
 use App\Models\Node;
 use App\Models\TaskVm;
 use Illuminate\Contracts\Cache\LockTimeoutException;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -35,9 +35,10 @@ use Throwable;
  *    host's budget, and the new VM can start before the old one goes.
  *
  * A pool row still `provisioning` an hour after it was recorded has lost its job. The run fails it loudly, and
- * destroys it with the failed rows. *
- * A host whose pool VM failed waits before it creates another: 1 minute after the first failure, doubling up to
- * 1 hour. Each failure logs an error, and each skipped refill a warning. A warm VM that becomes `warm` clears it.
+ * destroys it with the failed rows.
+ *
+ * A host whose pool VM failed waits before it creates another ({@see TaskVmPoolBackoff}). Each skipped refill logs a
+ * warning.
  */
 final readonly class RefillTaskVmPoolAction
 {
@@ -46,13 +47,11 @@ final readonly class RefillTaskVmPoolAction
     /** Minutes a pool row may stay `provisioning` before the refill fails it. */
     public const int StartMinutes = 60;
 
-    private const int BackoffSeconds = 60;
-
-    private const int MaxBackoffSeconds = 3600;
-
     public function __construct(
         private TaskVmSettings $settings,
-        private AllocateTaskVmAction $allocate,
+        private TaskVmCapacity $capacity,
+        private RecordTaskVmAction $record,
+        private TaskVmPoolBackoff $backoff,
         private IncusHost $incus,
         private IncusTaskVmBaseImage $images,
     ) {}
@@ -60,13 +59,13 @@ final readonly class RefillTaskVmPoolAction
     /** @return array{created: int, destroying: int} */
     public function execute(): array
     {
-        $hosts = $this->activeHosts();
+        $hosts = $this->capacity->activeHosts();
         foreach ($hosts as [$host, $node]) {
             $this->replaceStale($host, $node);
         }
 
         try {
-            $created = AllocateTaskVmAction::locked(fn (): array => DB::transaction(fn (): array => $this->balance($hosts)));
+            $created = $this->capacity->withPlacementLock(fn (): array => DB::transaction(fn (): array => $this->balance($hosts)));
         } catch (LockTimeoutException) {
             Log::warning('The task VM pool refill waits for another placement; the next run tries again.');
             $created = [];
@@ -84,42 +83,6 @@ final readonly class RefillTaskVmPoolAction
         }
 
         return ['created' => count($created), 'destroying' => $destroying->count()];
-    }
-
-    /** A pool VM failed: the host waits before its next pool VM, and the log says why and until when. */
-    public static function failed(TaskVm $vm, string $code, string $message): void
-    {
-        $key = self::backoffKey((int) $vm->host_node_id);
-        $failures = self::backoff((int) $vm->host_node_id)['failures'] + 1;
-        $wait = min(self::MaxBackoffSeconds, self::BackoffSeconds * 2 ** min($failures - 1, 6));
-        $until = now()->getTimestamp() + $wait;
-        Cache::put($key, ['failures' => $failures, 'until' => $until], self::MaxBackoffSeconds * 2);
-        Log::error('A warm task VM failed; its host creates no pool VM until the wait ends.', [
-            'task_vm' => $vm->name, 'node_id' => $vm->host_node_id, 'error_code' => $code, 'error' => $message,
-            'failures' => $failures, 'retry_at' => date(DATE_ATOM, $until),
-        ]);
-    }
-
-    /** A pool VM became warm, so its host's failures are forgotten. */
-    public static function warmed(TaskVm $vm): void
-    {
-        Cache::forget(self::backoffKey((int) $vm->host_node_id));
-    }
-
-    /** @return list<array{TaskVmHost, Node}> the configured hosts whose Node is active, in config order */
-    private function activeHosts(): array
-    {
-        $nodes = Node::query()->whereKey(array_map(static fn (TaskVmHost $host): int => $host->nodeId, $this->settings->hosts))
-            ->where('status', LifecycleStatus::Active)->get()->keyBy('id');
-        $hosts = [];
-        foreach ($this->settings->hosts as $host) {
-            $node = $nodes->get($host->nodeId);
-            if ($node instanceof Node) {
-                $hosts[] = [$host, $node];
-            }
-        }
-
-        return $hosts;
     }
 
     /**
@@ -172,7 +135,8 @@ final readonly class RefillTaskVmPoolAction
             $this->failStuck($node);
             TaskVm::query()->pool()->where('host_node_id', $node->id)->where('state', TaskVmState::Failed)->update(['state' => TaskVmState::Destroying]);
         }
-        $free = $this->allocate->freeSlots();
+        // Read again under the lock, so a Node that stopped being active meanwhile gets no new VM.
+        $free = $this->capacity->freeSlots($this->capacity->activeHosts());
         $created = [];
         foreach ($hosts as [$host, $node]) {
             $pool = TaskVm::query()->live()->pool()->where('host_node_id', $node->id)->orderBy('id')->get();
@@ -189,14 +153,14 @@ final readonly class RefillTaskVmPoolAction
             if ($missing <= 0) {
                 continue;
             }
-            $until = self::backoff($node->id)['until'];
+            $until = $this->backoff->until($node->id);
             if ($until > now()->getTimestamp()) {
                 Log::warning('The task VM pool of a host waits after a failed warm VM.', ['node_id' => $node->id, 'missing' => $missing, 'retry_at' => date(DATE_ATOM, $until)]);
 
                 continue;
             }
             for ($index = 0; $index < $missing; $index++) {
-                $created[] = $this->allocate->record(null, TaskVmPlacementTarget::incusHost($node->id))->id;
+                $created[] = $this->record->execute(null, TaskVmPlacementTarget::incusHost($node->id))->id;
             }
         }
 
@@ -217,7 +181,7 @@ final readonly class RefillTaskVmPoolAction
             $failed = TaskVm::query()->whereKey($vm->id)->pool()->where('state', TaskVmState::Provisioning)
                 ->update(['state' => TaskVmState::Failed, 'error_code' => self::StartTimeoutCode, 'error_message' => $message]);
             if ($failed === 1) {
-                self::failed($vm, self::StartTimeoutCode, $message);
+                $this->backoff->failed($vm, self::StartTimeoutCode, $message);
             }
         }
     }
@@ -234,21 +198,5 @@ final readonly class RefillTaskVmPoolAction
         foreach ($stranded as $vm) {
             Log::error('A pool task VM is on a host that is not an active configured host; the pool cannot drain it.', ['task_vm' => $vm->name, 'node_id' => $vm->host_node_id]);
         }
-    }
-
-    /** @return array{failures: int, until: int} */
-    private static function backoff(int $hostNodeId): array
-    {
-        $backoff = Cache::get(self::backoffKey($hostNodeId));
-
-        return [
-            'failures' => is_array($backoff) && is_int($backoff['failures'] ?? null) ? $backoff['failures'] : 0,
-            'until' => is_array($backoff) && is_int($backoff['until'] ?? null) ? $backoff['until'] : 0,
-        ];
-    }
-
-    private static function backoffKey(int $hostNodeId): string
-    {
-        return 'task-vms:pool-backoff:'.$hostNodeId;
     }
 }

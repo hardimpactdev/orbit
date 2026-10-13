@@ -8,6 +8,7 @@ use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmPlacementPolicy;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSettings;
@@ -379,7 +380,7 @@ describe('placement', function (): void {
         $group = tvm_up_group();
         Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Dev', 'brief' => 'Dev', 'status' => TaskStatus::Todo, 'topology' => ['app-dev', 'app-prod']]);
 
-        expect(fn () => app(AllocateTaskVmAction::class)->execute($group))->toThrow(TaskCapacityException::class, AllocateTaskVmAction::noCapacityFor(TaskVmSize::Large))
+        expect(fn () => app(AllocateTaskVmAction::class)->execute($group))->toThrow(TaskCapacityException::class, TaskVmPlacementPolicy::noCapacityFor(TaskVmSize::Large))
             ->and(TaskVm::query()->where('provider', TaskVmProviderKind::UpCloud)->count())->toBe(0)
             ->and(TaskVmSize::forGroup($group))->toBe(TaskVmSize::Large);
     });
@@ -393,7 +394,7 @@ describe('placement', function (): void {
     it('keeps the group waiting without the switch, the opt-in, or the configuration', function (?array $upcloud): void {
         tvm_up_settings($upcloud);
 
-        expect(fn () => app(AllocateTaskVmAction::class)->execute(tvm_up_group()))->toThrow(TaskCapacityException::class, AllocateTaskVmAction::NoCapacity)
+        expect(fn () => app(AllocateTaskVmAction::class)->execute(tvm_up_group()))->toThrow(TaskCapacityException::class, TaskVmPlacementPolicy::NoCapacity)
             ->and(TaskVm::query()->where('provider', TaskVmProviderKind::UpCloud)->count())->toBe(0);
     })->with([
         'switch off' => [['enabled' => false]],
@@ -406,7 +407,7 @@ describe('placement', function (): void {
         tvm_up_vm(TaskVmState::Failed);
         tvm_up_vm(TaskVmState::Parked);
 
-        expect(fn () => app(AllocateTaskVmAction::class)->execute(tvm_up_group()))->toThrow(TaskCapacityException::class, AllocateTaskVmAction::NoCapacity);
+        expect(fn () => app(AllocateTaskVmAction::class)->execute(tvm_up_group()))->toThrow(TaskCapacityException::class, TaskVmPlacementPolicy::NoCapacity);
     });
 
     it('gives an UpCloud VM no workspace template', function (): void {

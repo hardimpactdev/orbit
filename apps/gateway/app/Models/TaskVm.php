@@ -125,6 +125,18 @@ final class TaskVm extends Model
         $query->whereNull('group_id');
     }
 
+    /** The group's live task VM, or null when it has none. */
+    public static function forGroup(Task $group): ?self
+    {
+        return self::query()->live()->where('group_id', $group->id)->first();
+    }
+
+    /** The live task VM that this Node is, or null for every other Node. */
+    public static function forNode(Node|int $node): ?self
+    {
+        return self::query()->live()->where('node_id', $node instanceof Node ? $node->id : $node)->first();
+    }
+
     /** @return BelongsTo<Task, $this> */
     public function group(): BelongsTo
     {

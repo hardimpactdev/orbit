@@ -5,8 +5,8 @@ declare(strict_types=1);
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\TaskVms\TaskVmException;
-use App\Domain\TaskVms\TaskVmPlacement;
 use App\Domain\TaskVms\TaskVmState;
+use App\Domain\TaskVms\TaskVmWorkspaceGuard;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
@@ -53,16 +53,16 @@ describe('forNode', function (): void {
     it('finds the live task VM of a Node', function (): void {
         $vm = task_vm_row($this->group, $this->host, $this->vmNode);
 
-        expect(TaskVmPlacement::forNode($this->vmNode)?->is($vm))->toBeTrue()
-            ->and(TaskVmPlacement::forNode($this->host))->toBeNull()
-            ->and(TaskVmPlacement::forGroup($this->group)?->is($vm))->toBeTrue();
+        expect(TaskVm::forNode($this->vmNode)?->is($vm))->toBeTrue()
+            ->and(TaskVm::forNode($this->host))->toBeNull()
+            ->and(TaskVm::forGroup($this->group)?->is($vm))->toBeTrue();
     });
 
     it('ignores destroyed task VMs', function (): void {
         task_vm_row($this->group, $this->host, $this->vmNode, TaskVmState::Destroyed);
 
-        expect(TaskVmPlacement::forNode($this->vmNode))->toBeNull()
-            ->and(TaskVmPlacement::forGroup($this->group))->toBeNull();
+        expect(TaskVm::forNode($this->vmNode))->toBeNull()
+            ->and(TaskVm::forGroup($this->group))->toBeNull();
     });
 });
 
@@ -70,8 +70,8 @@ describe('assertInstance', function (): void {
     it('allows the group workspace on its task VM and any Instance on other Nodes', function (): void {
         task_vm_row($this->group, $this->host, $this->vmNode, TaskVmState::Provisioning);
 
-        TaskVmPlacement::assertInstance(task_vm_instance($this->project, $this->vmNode, 'task-'.$this->group->id));
-        TaskVmPlacement::assertInstance(task_vm_instance($this->other, $this->shared, 'main'));
+        TaskVmWorkspaceGuard::assertInstance(task_vm_instance($this->project, $this->vmNode, 'task-'.$this->group->id));
+        TaskVmWorkspaceGuard::assertInstance(task_vm_instance($this->other, $this->shared, 'main'));
 
         expect(true)->toBeTrue();
     });
@@ -80,7 +80,7 @@ describe('assertInstance', function (): void {
         task_vm_row($this->group, $this->host, $this->vmNode);
         $instance = task_vm_instance($this->{$project}, $this->vmNode, str_replace('{group}', (string) $this->group->id, $name));
 
-        expect(fn () => TaskVmPlacement::assertInstance($instance))
+        expect(fn () => TaskVmWorkspaceGuard::assertInstance($instance))
             ->toThrow(TaskVmException::class, "Node [{$this->vmNode->id}] is a task VM and serves only the workspace of task group [{$this->group->id}].");
     })->with([
         'other Project' => ['other', 'task-{group}'],
@@ -91,7 +91,7 @@ describe('assertInstance', function (): void {
     it('still protects a task VM that is being destroyed or failed', function (TaskVmState $state): void {
         task_vm_row($this->group, $this->host, $this->vmNode, $state);
 
-        expect(fn () => TaskVmPlacement::assertInstance(task_vm_instance($this->other, $this->vmNode, 'main')))
+        expect(fn () => TaskVmWorkspaceGuard::assertInstance(task_vm_instance($this->other, $this->vmNode, 'main')))
             ->toThrow(TaskVmException::class);
     })->with([TaskVmState::Destroying, TaskVmState::Failed]);
 });
@@ -100,7 +100,7 @@ describe('assertWorkspace', function (): void {
     it('accepts a vm group workspace on its ready task VM', function (): void {
         task_vm_row($this->group, $this->host, $this->vmNode);
 
-        TaskVmPlacement::assertWorkspace($this->group, task_vm_instance($this->project, $this->vmNode, 'task-'.$this->group->id));
+        TaskVmWorkspaceGuard::assertWorkspace($this->group, task_vm_instance($this->project, $this->vmNode, 'task-'.$this->group->id));
 
         expect(true)->toBeTrue();
     });
@@ -111,7 +111,7 @@ describe('assertWorkspace', function (): void {
         }
         $workspace = task_vm_instance($this->project, $this->{$node}, str_replace('{group}', (string) $this->group->id, $name));
 
-        expect(fn () => TaskVmPlacement::assertWorkspace($this->group, $workspace))
+        expect(fn () => TaskVmWorkspaceGuard::assertWorkspace($this->group, $workspace))
             ->toThrow(TaskVmException::class, "Task group [{$this->group->id}] has no workspace on its ready task VM.");
     })->with([
         'no task VM' => [null, 'vmNode', 'task-{group}'],
@@ -125,14 +125,14 @@ describe('assertWorkspace', function (): void {
         task_vm_row($this->group, $this->host, $this->vmNode);
         $shared = task_vm_group($this->project, TaskCompute::Shared);
 
-        expect(fn () => TaskVmPlacement::assertWorkspace($shared, task_vm_instance($this->project, $this->vmNode, 'task-'.$shared->id)))
+        expect(fn () => TaskVmWorkspaceGuard::assertWorkspace($shared, task_vm_instance($this->project, $this->vmNode, 'task-'.$shared->id)))
             ->toThrow(TaskVmException::class, "Task group [{$shared->id}] does not own the task VM that serves its workspace.");
     });
 
     it('accepts a shared group workspace on a shared Node', function (): void {
         $shared = task_vm_group($this->project, TaskCompute::Shared);
 
-        TaskVmPlacement::assertWorkspace($shared, task_vm_instance($this->project, $this->shared, 'task-'.$shared->id));
+        TaskVmWorkspaceGuard::assertWorkspace($shared, task_vm_instance($this->project, $this->shared, 'task-'.$shared->id));
 
         expect(true)->toBeTrue();
     });

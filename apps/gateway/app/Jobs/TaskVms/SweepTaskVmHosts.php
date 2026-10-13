@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Jobs\TaskVms;
 
-use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
+use App\Domain\TaskVms\TaskVmCapacity;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmQueue;
@@ -17,7 +17,6 @@ use App\Infrastructure\TaskVms\TaskVmHostAudit;
 use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplates;
 use App\Infrastructure\TaskVms\UpCloudServers;
 use App\Infrastructure\TaskVms\UpCloudTaskVmImageBuilder;
-use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -56,14 +55,10 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
         $this->onConnection('task-vms')->onQueue(TaskVmQueue::Vms->value);
     }
 
-    public function handle(TaskVmSettings $settings, TaskVmHostAudit $audit, TaskVmWorkspaceTemplates $templates, UpCloudServers $servers, UpCloudTaskVmImageBuilder $images): void
+    public function handle(TaskVmSettings $settings, TaskVmCapacity $capacity, TaskVmHostAudit $audit, TaskVmWorkspaceTemplates $templates, UpCloudServers $servers, UpCloudTaskVmImageBuilder $images): void
     {
         $failures = [];
-        foreach ($settings->enabled ? $settings->hosts : [] as $host) {
-            $node = Node::query()->whereKey($host->nodeId)->where('status', LifecycleStatus::Active)->first();
-            if (! $node instanceof Node) {
-                continue;
-            }
+        foreach ($settings->enabled ? $capacity->activeHosts() : [] as [$host, $node]) {
             try {
                 $found = $audit->audit($host, $node);
                 foreach ($found['orphaned'] as $name) {

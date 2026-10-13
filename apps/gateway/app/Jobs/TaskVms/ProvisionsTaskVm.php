@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Jobs\TaskVms;
 
-use App\Actions\TaskVms\RefillTaskVmPoolAction;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmFailedException;
+use App\Domain\TaskVms\TaskVmPoolBackoff;
 use App\Domain\TaskVms\TaskVmQueue;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\Task;
@@ -56,7 +56,7 @@ trait ProvisionsTaskVm
         $vm = TaskVm::query()->find($this->taskVmId);
         if ($failed === 1 && $vm instanceof TaskVm && $vm->group_id === null) {
             // A pool VM has no group to ask: its host waits before the next one, and the refill destroys it.
-            RefillTaskVmPoolAction::failed($vm, $code, $message);
+            app(TaskVmPoolBackoff::class)->failed($vm, $code, $message);
 
             return;
         }

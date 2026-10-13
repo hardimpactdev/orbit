@@ -11,7 +11,6 @@ use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskWait;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmFailedException;
-use App\Domain\TaskVms\TaskVmPlacement;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Jobs\TaskVms\ResumeTaskVm;
@@ -37,7 +36,7 @@ final readonly class TaskVmWorkspace
      */
     public function node(Task $group): Node
     {
-        $vm = TaskVmPlacement::forGroup($group);
+        $vm = TaskVm::forGroup($group);
         if (! $vm instanceof TaskVm) {
             try {
                 if (! app(TaskVmSettings::class)->enabled) {
@@ -71,7 +70,7 @@ final readonly class TaskVmWorkspace
     /** The group's task VM that is not destroyed, or null for a group without one. */
     public function vm(Task $group): ?TaskVm
     {
-        return TaskVmPlacement::forGroup($group);
+        return TaskVm::forGroup($group);
     }
 
     /**

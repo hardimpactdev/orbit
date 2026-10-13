@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\TaskVms;
 
-use App\Actions\TaskVms\AllocateTaskVmAction;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Infrastructure\Processes\CommandResult;
@@ -35,6 +34,7 @@ final readonly class IncusTaskVmBaseImage
         private IncusHost $incus,
         private TaskVmCloudInit $cloudInit,
         private SshKeyProvider $keys,
+        private TaskVmBaseImageCache $claimImages,
     ) {}
 
     /**
@@ -145,7 +145,7 @@ final readonly class IncusTaskVmBaseImage
             }
         } finally {
             // A claim reads the alias again, also when the reply to the move was lost.
-            AllocateTaskVmAction::forgetImage($node->id);
+            $this->claimImages->forget($node->id);
         }
     }
 
