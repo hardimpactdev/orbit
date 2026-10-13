@@ -302,7 +302,7 @@ describe('task VM setup scripts', function (): void {
         array_map(unlink(...), glob($bin.'/*') ?: []);
         rmdir($bin);
 
-        $restrict = array_search('incus project set orbit-tasks restricted=true restricted.networks.access=orbittask0', $calls, true);
+        $restrict = array_search('incus project set orbit-tasks restricted=true restricted.networks.access=orbittask0 restricted.virtual-machines.lowlevel=allow', $calls, true);
         expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
             ->and($process->getOutput())->toBe("{\"ok\":true}\n")
             ->and($restrict)->toBeInt()

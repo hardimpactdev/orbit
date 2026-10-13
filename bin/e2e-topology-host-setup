@@ -146,6 +146,16 @@ WantedBy=multi-user.target
 UNIT
 systemctl daemon-reload
 systemctl enable orbit-e2e-isolation.service >/dev/null
+# An enrolled Node, such as a task VM, runs UFW with incoming and routed traffic denied. Topology guests then get no
+# DHCP or DNS from their bridge and cannot route out. Allow exactly that; the table above still drops their traffic to
+# the WireGuard network, because a drop in any table is final.
+if ufw status 2>/dev/null | grep -qx 'Status: active'; then
+    for interface in "$bridge" 'oe+'; do
+        ufw allow in on "$interface" to any port 67 proto udp comment 'orbit-e2e dhcp' >/dev/null
+        ufw allow in on "$interface" to any port 53 proto udp comment 'orbit-e2e dns' >/dev/null
+        ufw route allow in on "$interface" comment 'orbit-e2e guests' >/dev/null
+    done
+fi
 systemctl restart orbit-e2e-isolation.service
 nft list table inet orbit-e2e-isolation >/dev/null
 

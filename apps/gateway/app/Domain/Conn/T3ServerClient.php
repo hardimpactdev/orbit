@@ -19,7 +19,7 @@ interface T3ServerClient
     /** GET /api/auth/session: the scopes and expiry of `$adminSession`. A session T3 does not accept is rejected. */
     public function session(string $baseUrl, #[SensitiveParameter] string $adminSession): T3AdminSession;
 
-    /** POST /api/auth/pairing-token */
+    /** POST /api/auth/pairing-token, with the administrative scopes so the device can manage access. */
     public function issuePairingCredential(string $baseUrl, #[SensitiveParameter] string $adminSession, string $label): T3PairingCredential;
 
     /**
