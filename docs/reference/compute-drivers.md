@@ -1126,9 +1126,8 @@ Before a subtask that declares a topology runs its baseline check or its impleme
 | Step | What happens |
 | --- | --- |
 | `host-setup` | `sudo bin/e2e-topology-host-setup --pool-size=SIZE`: Incus, the btrfs pool, and the [isolation table](/reference/incus-topologies#run-topologies-nested-in-a-task-vm). The pool is 25 GiB in a medium VM and 45 GiB in a large VM. |
-| `images` | `bin/e2e-topology-images build` for each [role image](/reference/incus-topologies#role-images) that the declared nodes need and the VM does not have yet. A first build takes about 9 minutes. |
-| `release` | Releases `TASK-<group>` when the VM still holds it from an earlier subtask |
-| `acquire` | `bin/e2e-topology acquire TASK-<group> <checkout> --nodes=<union>`, once more after a failure |
+| `images` | `bin/e2e-topology-images ensure --nodes=<union>`: the harness builds each [role image](/reference/incus-topologies#role-images) that the declared nodes need and the VM does not have yet. A first build takes about 9 minutes. |
+| `acquire` | `bin/e2e-topology acquire TASK-<group> <checkout> --nodes=<union> --replace`, which first releases the topology the VM still holds from an earlier subtask. After a failure it runs once more; the log warns, and the result counts the retry in `retries`. |
 
 Every task VM's user `orbit` is in the `incus-admin` group from its first boot, so agents can run `bin/e2e-topology` once Incus is installed. The row stores the union in `topology`, its state in `topology_state` (`preparing` or `ready`), and the run in `topology_run`.
 
