@@ -1097,7 +1097,9 @@ The setup and teardown steps run on the VM as `orbit`. The `seed-dependencies` s
 
 ### Declare a topology
 
-A subtask declares the test nodes it needs in its `topology` field, for example `["app-dev"]` or `["app-dev", "app-prod+ingress"]`. Each entry names one node, `app-dev`, `app-prod`, or `app-prod-2`, at most once. The subtasks of a group declare at most two test nodes together: in the spike, a 12 GiB VM was full with two, so a third would run it out of memory. After a `+` it may add the role `ingress`. `app-prod-2` needs `app-prod` in the same list. A role that conflicts with the node's base role, such as `app-dev+ingress`, is refused, by the [role compatibility](/reference/node-provisioning#role-compatibility) rules. The format takes more roles once one is proven to converge on a test node. Subtask creation, group creation, and stored task definitions keep the declaration. Only a subtask that has not started can change it.
+A subtask declares the test nodes it needs in its `topology` field, for example `["app-dev"]` or `["app-dev", "app-prod+ingress"]`. Each entry names one node, `app-dev`, `app-prod`, or `app-prod-2`, at most once. After a `+` it may add the role `ingress`. `app-prod-2` needs `app-prod` in the same list. A role that conflicts with the node's base role, such as `app-dev+ingress`, is refused, by the [role compatibility](/reference/node-provisioning#role-compatibility) rules. The format takes more roles once one is proven to converge on a test node. Subtask creation, group creation, and stored task definitions keep the declaration. Only a subtask that has not started can change it.
+
+The subtasks of a group declare at most two test nodes together. In the spike, a 12 GiB VM was full with two, so a third would run it out of memory.
 
 The group's topology is the union of its subtasks that are not cancelled: each node once, with every role any subtask adds to it. It decides the [VM size](#size-by-declared-topology) at the claim.
 
@@ -1124,9 +1126,12 @@ The implementer and the reviewer use the topology with `bin/e2e-topology`, as th
 
 The reviewer proves each deliverable on the declared nodes with `bin/e2e-topology exec TASK-<group> NODE --argv=JSON --record=LABEL`. The harness writes the node, the command, the exit code, and the output to the [evidence log](/reference/incus-topologies#evidence-log). When the reviewer approves a subtask that declares a topology, Orbit reads the newest MiB of that log. The approval passes only when the log holds, for each node the subtask declares, a record that counts. Otherwise Orbit reminds the reviewer with the nodes that lack evidence, and the subtask is not approved. A record counts when:
 
-- it has the harness's shape: a blank line or the start of the file, the `===` header, the `$` command line, and `--- stdout`, so a header inside command output does not count;
-- its command exited 0, started after the implementer's last handoff, and did not start after the time Orbit reads the log;
-- its command does work: `true`, `:`, `false`, `exit`, `echo`, `printf`, `sleep`, and `yes`, also inside `sh -c` or `bash -c`, do not count.
+- it has the shape the harness writes, described below;
+- its command exited 0;
+- it started after the implementer's last handoff, and not after the time Orbit reads the log;
+- its command does work on the node. These commands do not count, also inside `sh -c` or `bash -c`: `true`, `:`, `false`, `exit`, `echo`, `printf`, `sleep`, and `yes`.
+
+The harness writes a blank line or the start of the file, then the `===` header, the `$` command line, and `--- stdout`. A header inside command output lacks that shape, so command output cannot forge a record.
 
 Orbit adds the counted records, with their time, node, label, and command, to the approval, and so to its commit, for a person to audit. Appending to `.e2e/evidence.log` is not a workspace change: the file is ignored, and the reviewer's prompt says so.
 

@@ -176,13 +176,14 @@ it('makes a subtask wait when its group cannot run its topology', function (): v
 
 it('reads the newest MiB of the evidence log and counts its records since the handoff', function (): void {
     $entry = static fn (string $start, string $label, string $node, int $exit): string => "=== {$start} {$label} node={$node} exit={$exit} duration=10ms end={$start}\n\$ orbit node:list\n--- stdout\nok\n--- stderr\n\n";
+    $at = static fn (int $minutes): string => CarbonImmutable::now()->utc()->subMinutes($minutes)->format('Y-m-d\\TH:i:s.v\\Z');
     $ssh = topology_admission_ssh([topology_admission_result(
-        $entry('2026-10-13T10:00:00.000Z', 'before handoff', 'app-dev', 0)
-        .$entry('2026-10-13T11:00:00.000Z', 'ingress check', 'app-prod', 1)
-        .$entry('2026-10-13T11:01:00.000Z', 'node list', 'app-dev', 0),
+        $entry($at(60), 'before handoff', 'app-dev', 0)
+        .$entry($at(10), 'ingress check', 'app-prod', 1)
+        .$entry($at(5), 'node list', 'app-dev', 0),
     )]);
 
-    $evidence = app(TaskTopologyAdmission::class)->evidence($this->group, CarbonImmutable::parse('2026-10-13T10:30:00Z'));
+    $evidence = app(TaskTopologyAdmission::class)->evidence($this->group, CarbonImmutable::now()->subMinutes(30));
 
     expect($evidence->missing(['app-dev', 'app-prod']))->toBe(['app-prod'])
         ->and(array_slice($ssh->commands[0]->arguments, 3))->toBe(['evidence', '/home/orbit/apps/orbit/workspace'])

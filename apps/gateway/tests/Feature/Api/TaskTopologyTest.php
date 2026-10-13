@@ -46,7 +46,7 @@ it('rejects invalid declarations without creating a group', function (mixed $top
     'node twice with roles' => [['app-prod', 'app-prod+ingress']], 'unknown role' => [['app-prod+router']],
     'conflicting role' => [['app-dev+ingress']], 'role without a Cluster-free path' => [['app-prod+database']],
     'repeated role' => [['app-prod+ingress+ingress']], 'second production node alone' => [['app-prod-2']],
-    'three nodes' => [['app-dev', 'app-prod', 'app-prod-2']]
+    'three nodes' => [['app-dev', 'app-prod', 'app-prod-2']],
 ]);
 
 it('stores declared roles and refuses a role that does not fit its node', function (): void {

@@ -825,5 +825,5 @@ describe('declared topology', function (): void {
         expect(Artisan::call('tasks:subtask:create', ['group' => '13', 'title' => 'Step', '--brief' => 'Work', '--topology' => $value, '--json' => true]))->toBe(1);
         expect(json_decode(Artisan::output(), true)['error']['code'])->toBe('tasks.topology_invalid');
         $mock->assertNothingSent();
-    })->with(['[""]', '["app-dev","app-dev"]', '[1]', '["app-dev","app-prod","app-prod-2","app-prod"]', '{}', 'null', 'app-dev']);
+    })->with(['[""]', '["app-dev","app-dev"]', '[1]', '["app-dev","app-prod","app-prod-2"]', '{}', 'null', 'app-dev']);
 });

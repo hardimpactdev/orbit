@@ -26916,7 +26916,7 @@
                         },
                         "topology": {
                           "type": "array",
-                          "maxItems": 3,
+                          "maxItems": 2,
                           "items": {
                             "type": "string",
                             "pattern": "^(?:app-dev|app-prod|app-prod-2)(?:\\+ingress)?$(?![\\s\\S])",
@@ -27772,7 +27772,7 @@
                   },
                   "topology": {
                     "type": "array",
-                    "maxItems": 3,
+                    "maxItems": 2,
                     "items": {
                       "type": "string",
                       "pattern": "^(?:app-dev|app-prod|app-prod-2)(?:\\+ingress)?$(?![\\s\\S])",
@@ -28128,7 +28128,7 @@
                   },
                   "topology": {
                     "type": "array",
-                    "maxItems": 3,
+                    "maxItems": 2,
                     "items": {
                       "type": "string",
                       "pattern": "^(?:app-dev|app-prod|app-prod-2)(?:\\+ingress)?$(?![\\s\\S])",

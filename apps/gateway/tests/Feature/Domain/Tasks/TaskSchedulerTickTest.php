@@ -78,8 +78,8 @@ use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Domain\Tasks\TaskWorkspaceTopology;
-use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmProvider;
+use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshExecutor;
@@ -6425,7 +6425,6 @@ describe('topology paths at handoff', function (): void {
             ['status' => 'M', 'path' => 'apps/agent/src/main.rs'],
             ['status' => 'M', 'path' => 'docs/reference/tasks.md'],
         ]]));
-        $group->update(['task_compute' => TaskCompute::Vm]);
         ($this->topologyPaths)($group);
 
         $reminder = tick_deliverable_reminder();
@@ -6434,10 +6433,9 @@ describe('topology paths at handoff', function (): void {
             ->and($reminder)->toContain('This subtask changes paths that need real machines (apps/agent/src/main.rs), but no subtask of the group declares a topology');
     });
 
-    it('passes the handoff when a subtask of the group declares a topology, the change avoids the paths, or the group is shared', function (string $case): void {
+    it('passes the handoff when a subtask of the group declares a topology or the change avoids the paths', function (string $case): void {
         $diff = $case === 'other path' ? [['status' => 'M', 'path' => 'docs/reference/tasks.md']] : [['status' => 'M', 'path' => 'apps/gateway/app/Domain/Nodes/RoleName.php']];
         [$group, $task] = tick_deliverables([], [], tick_evidence(['diff' => $diff]));
-        $group->update(['task_compute' => $case === 'shared' ? TaskCompute::Shared : TaskCompute::Vm]);
         if ($case === 'declared') {
             Task::query()->create(['parent_id' => $group->id, 'position' => 9, 'title' => 'Prove', 'brief' => 'On nodes', 'status' => TaskStatus::Todo, 'topology' => ['app-dev']]);
             mock(TaskTopologyAdmission::class)->shouldReceive('prepare');
@@ -6448,7 +6446,7 @@ describe('topology paths at handoff', function (): void {
         app(TaskScheduler::class)->tick();
 
         expect($task->fresh()?->status)->toBe(TaskStatus::Reviewing);
-    })->with(['declared', 'other path', 'shared']);
+    })->with(['declared', 'other path']);
 });
 
 describe('subtask deliverables at handoff', function (): void {
