@@ -58,7 +58,7 @@ final readonly class TaskTopologyEvidence
             if (! is_array($record) || ($record['v'] ?? null) !== 1 || ($record['exit'] ?? null) !== 0
                 || ! is_string($record['start'] ?? null) || ! is_string($record['label'] ?? null)
                 || ! is_string($record['node'] ?? null) || preg_match(self::Node, $record['node']) !== 1
-                || ! is_array($record['argv'] ?? null) || ! array_is_list($record['argv']) || ! array_all($record['argv'], is_string(...))) {
+                || ! is_array($record['argv'] ?? null) || ! array_is_list($record['argv']) || ! array_all($record['argv'], static fn (mixed $word): bool => is_string($word))) {
                 continue;
             }
             /** @var list<string> $argv */

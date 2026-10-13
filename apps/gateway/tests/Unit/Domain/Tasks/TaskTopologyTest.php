@@ -46,7 +46,7 @@ it('unites declarations per node and refuses a union larger than the largest VM'
         ->and($topology(['app-prod'])->covers($topology(['app-prod+ingress'])))->toBeFalse()
         ->and(TaskTopology::union([$topology(['app-prod', 'app-prod-2+ingress']), $topology(['app-prod'])])->toArray())->toBe(['app-prod', 'app-prod-2+ingress'])
         ->and(fn () => TaskTopology::assertFits([$topology(['app-prod', 'app-prod-2']), $topology(['app-dev'])]))->toThrow(ResourceOperationException::class, TaskTopology::tooManyMessage());
-    TaskTopology::assertFits([$topology(['app-prod']), $topology(['app-prod-2'])]);
+    TaskTopology::assertFits([$topology(['app-prod']), $topology(['app-dev']), $topology(['app-prod+ingress'])]);
 });
 
 it('derives the entry pattern and the messages from the catalog', function (): void {
