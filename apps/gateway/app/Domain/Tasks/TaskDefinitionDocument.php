@@ -163,7 +163,7 @@ final readonly class TaskDefinitionDocument
             $this->copyString($row, $subtask, 'question');
 
             if (array_key_exists('topology', $subtask)) {
-                $row['topology'] = TaskTopology::from($subtask['topology']);
+                $row['topology'] = TaskTopology::fromInput($subtask['topology'])->toArray();
             }
 
             if (isset($subtask['deliverables']) && is_array($subtask['deliverables']) && $subtask['deliverables'] !== []) {

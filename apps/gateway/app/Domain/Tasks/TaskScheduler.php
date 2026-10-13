@@ -1594,7 +1594,7 @@ final readonly class TaskScheduler
      */
     private function topologyEvidenceItem(Task $group, Task $task): array
     {
-        $nodes = TaskTopology::nodes(TaskTopology::from($task->topology ?? []));
+        $nodes = $task->topology->nodes();
         if ($nodes === []) {
             return [null, null];
         }
@@ -1619,7 +1619,7 @@ final readonly class TaskScheduler
             return null;
         }
         $patterns = app(TaskVmSettings::class)->topologyPaths[(int) $group->project_id] ?? [];
-        if ($patterns === [] || TaskTopology::forGroup($group) !== []) {
+        if ($patterns === [] || ! TaskTopology::forGroup($group)->isEmpty()) {
             return null;
         }
         if (! $evidence instanceof TaskDeliverableEvidence || $evidence->diff === null) {

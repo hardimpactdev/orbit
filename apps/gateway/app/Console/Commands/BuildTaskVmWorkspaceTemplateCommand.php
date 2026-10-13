@@ -8,7 +8,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\TaskVms\IncusTaskVmWorkspaceTemplateBuilder;
-use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplates;
+use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplateLifecycle;
 use App\Models\Project;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
@@ -51,7 +51,7 @@ final class BuildTaskVmWorkspaceTemplateCommand extends Command
 
             return self::FAILURE;
         }
-        Cache::forget(TaskVmWorkspaceTemplates::backoffKey($node->id, $project->id));
+        Cache::forget(TaskVmWorkspaceTemplateLifecycle::backoffKey($node->id, $project->id));
 
         $this->info(sprintf('Node [%s] has the workspace template [%s] of Project [%s] after %.1fs.', $node->name, $volume, $project->slug, microtime(true) - $started));
 
@@ -64,10 +64,10 @@ final class BuildTaskVmWorkspaceTemplateCommand extends Command
             ? Project::query()->find((int) $reference)
             : Project::query()->where('slug', $reference)->first();
 
-        if (! $project instanceof Project || ! TaskVmWorkspaceTemplates::serves($project)) {
+        if (! $project instanceof Project || ! TaskVmWorkspaceTemplateLifecycle::serves($project)) {
             throw new TaskVmException('task_vm.invalid_config', "Project [{$reference}] does not run its groups on task VMs.", 422);
         }
-        $reason = TaskVmWorkspaceTemplates::unbuildable($project);
+        $reason = TaskVmWorkspaceTemplateLifecycle::unbuildable($project);
         if ($reason !== null) {
             throw new TaskVmException('task_vm.invalid_config', "Project [{$reference}] cannot have a workspace template: {$reason}.", 422);
         }

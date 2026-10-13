@@ -30,7 +30,7 @@ final readonly class CreateTaskAction
             throw TaskGroupGuard::deliverablesRequired();
         }
 
-        TaskTopology::union([...TaskTopology::declarations($group), $data->topology]);
+        TaskTopology::assertFits([...TaskTopology::declarations($group), $data->topology]);
         $position = StoredInteger::fromOrZero($group->tasks()->max('position')) + 1;
 
         return Task::query()->create([
@@ -39,7 +39,7 @@ final readonly class CreateTaskAction
             'title' => $data->title,
             'brief' => $data->brief,
             'deliverables' => $data->deliverables,
-            'topology' => TaskTopology::from($data->topology),
+            'topology' => $data->topology,
             'status' => TaskStatus::Todo,
         ]);
     }

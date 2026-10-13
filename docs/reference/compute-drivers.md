@@ -153,7 +153,9 @@ At the claim, Orbit decides the size of the group's VM once. It takes the union 
 | `medium` | The topology has one test node, or no subtask declares a topology and the Project is in `task_vms.medium_projects` | 4 vCPU, 8 GiB of memory, and a 40 GiB disk | 2 | Never: always a new VM, and never at UpCloud |
 | `large` | The topology has two test nodes | 6 vCPU, 12 GiB of memory, and a 60 GiB disk | 3 | Never: always a new VM, and never at UpCloud |
 
-A test node is `app-dev`, `app-prod`, or `app-prod-2`, whatever roles its entry adds. The [test Gateway and the operator](/reference/incus-topologies#declared-nodes) run in every topology and do not count. The sizes come from the nested topology spike on beast. There, the test Gateway, an `app-dev` node, and the operator used about 2.7 GiB together. A large VM that ran four test machines used all of its 12 GiB on the host under IO.
+A test node is `app-dev`, `app-prod`, or `app-prod-2`, whatever roles its entry adds. The [test Gateway and the operator](/reference/incus-topologies#declared-nodes) run in every topology and do not count. Each size defines how many test nodes it holds, one in a medium VM and two in a large VM, and the group gets the smallest size that holds its topology. The largest size sets the most test nodes a group may declare.
+
+The sizes come from the nested topology spike on beast. There, the test Gateway, an `app-dev` node, and the operator used about 2.7 GiB together. A large VM that ran four test machines used all of its 12 GiB on the host under IO.
 
 The sizes are caps, not reservations. Incus does not pin the vCPUs, and the guest takes host memory only when it first uses it. Medium and large VMs have free page reporting on their memory balloon, so the host gets back the memory that the guest frees, but not the guest's page cache. Plan for a VM that runs a topology to use all of its memory on the host. Warm VMs hold their slots, so a host fits a large VM only when `max_vms` minus its other VMs, warm VMs included, leaves three slots.
 
@@ -282,6 +284,8 @@ A task VM workspace's checkout is always `<apps directory>/workspace`, the path 
 
 A claim takes only a template with `user.orbit.layout=workspace`. A template from before the fixed checkout path has none. No claim takes it, and the claim queues a new build.
 
+A claim also takes only a template whose files belong to `1000:1000` (`user.orbit.owner`), the `uid:gid` of `orbit` on the base image. For another owner, the claim queues a new build.
+
 The mount never goes over a directory with content. Before it mounts, it checks that `orbit` has the `uid:gid` that the template recorded. After it mounts, it checks that the volume root and `workspace` belong to that `uid:gid`.
 
 After the Project's repository or the base image changes, no template matches until the next build. The fstab line follows a successful mount and owner check only, so a failed mount never comes back at a later boot over a fresh clone.
@@ -292,7 +296,7 @@ Then the Gateway sends the group's branches from its [mirror](#git-on-a-task-vm)
 
 A task VM holds one workspace, so its checkout path is fixed, unlike the `task-<id>` checkout on a shared Node. Caches that record absolute paths, such as Rector's, still match at the claim, so the baseline check finds them warm.
 
-Every step is idempotent, so a claim that runs again finds the clone, the disk, and the mount in place. A warm VM gets its clone at the claim, so warm VMs stay the same for every Project. The base image creates `orbit` with uid and gid 1000, so the files of a template belong to `orbit` on every VM from that image. A template is still only taken on the image it was built on, and the mount checks the owner.
+Every step is idempotent, so a claim that runs again finds the clone, the disk, and the mount in place. A warm VM gets its clone at the claim, so warm VMs stay the same for every Project. The base image creates `orbit` with uid and gid 1000, so the files of a template belong to `orbit` on every VM from that image. A template is still only taken on the image it was built on and with the owner `1000:1000`, and the mount checks the owner again on the VM.
 
 On beast, mealou's setup steps took about 13 seconds on a new VM with a template, against about 36 seconds without one. `vp install` always runs `npm audit`, which reaches the network.
 
@@ -300,7 +304,7 @@ On beast, mealou's setup steps took about 13 seconds on a new VM with a template
 
 The workspace starts from a fresh clone, as before, in these cases:
 
-- The host has no ready template for the Project. Orbit logs the warning `Task VM workspace has no template; it starts from a fresh clone.` and queues a build of the template. See [Template failures](#template-failures) for the wait after a failed build.
+- The host has no ready template for the Project, or none whose owner is `1000:1000`. Orbit logs the warning `Task VM workspace has no template; it starts from a fresh clone.` and queues a build of the template. See [Template failures](#template-failures) for the wait after a failed build.
 - A build of the template runs. An unfinished template is never taken, and the claim queues no second build.
 - The Project has no valid default branch or repository URL. Orbit logs `Task VM workspace template cannot be built; workspaces of the Project start from a fresh clone.` with the reason, and queues no build.
 - The Project's templates were built on another base image than the VM's, and the VM runs the host's current `orbit-task-base`. Orbit logs `Task VM workspace template was built on another base image; it starts from a fresh clone, and a new build is queued.` and queues a build.
@@ -1115,7 +1119,9 @@ The setup and teardown steps run on the VM as `orbit`. The `seed-dependencies` s
 
 A subtask declares the test nodes it needs in its `topology` field, for example `["app-dev"]` or `["app-dev", "app-prod+ingress"]`. Each entry names one node, `app-dev`, `app-prod`, or `app-prod-2`, at most once. After a `+` it may add the role `ingress`. `app-prod-2` needs `app-prod` in the same list. A role that conflicts with the node's base role, such as `app-dev+ingress`, is refused, by the [role compatibility](/reference/node-provisioning#role-compatibility) rules. The format takes more roles once one is proven to converge on a test node. Subtask creation, group creation, and stored task definitions keep the declaration. Only a subtask that has not started can change it.
 
-The subtasks of a group declare at most two test nodes together. In the spike, a 12 GiB VM was full with two, so a third would run it out of memory.
+The subtasks of a group declare at most two test nodes together, as many as a large VM holds. In the spike, a 12 GiB VM was full with two, so a third would run it out of memory. A group that declares more is refused with `tasks.invalid_topology`.
+
+The Gateway validates a declaration once, when a request, a task definition, or `tasks:render-prompt` gives it. It trusts a stored declaration. So a node or role that leaves the format later never fails a tick or a response for a subtask that declares it; the harness refuses that node when the topology is prepared.
 
 The group's topology is the union of its subtasks that are not cancelled: each node once, with every role any subtask adds to it. It decides the [VM size](#size-by-declared-topology) at the claim.
 
@@ -1141,14 +1147,15 @@ When the unit fails, or stops without a result, the subtask asks for assistance 
 
 The implementer and the reviewer use the topology with `bin/e2e-topology`, as the [using-incus-topologies](https://github.com/nckrtl/orbit/blob/main/.agents/skills/using-incus-topologies/SKILL.md) skill describes. Their prompts name the declared nodes. They never acquire or release it.
 
-The reviewer proves each deliverable on the declared nodes with `bin/e2e-topology exec TASK-<group> NODE --argv=JSON --record=LABEL`. The harness writes the node, the command, the exit code, and the output to the [evidence log](/reference/incus-topologies#evidence-log). When the reviewer approves a subtask that declares a topology, Orbit reads the newest MiB of that log. The approval passes only when the log holds, for each node the subtask declares, a record that counts. Otherwise Orbit reminds the reviewer with the nodes that lack evidence, and the subtask is not approved. A record counts when:
+The reviewer proves each deliverable on the declared nodes with `bin/e2e-topology exec TASK-<group> NODE --argv=JSON --record=LABEL`. The harness writes the node, the command, the exit code, and the output to the [evidence log](/reference/incus-topologies#evidence-log). When the reviewer approves a subtask that declares a topology, Orbit reads the newest MiB of the evidence. The approval passes only when the evidence holds, for each node the subtask declares, a record that counts. Otherwise Orbit reminds the reviewer with the nodes that lack evidence, and the subtask is not approved.
 
-- it has the shape the harness writes, described below;
+Orbit reads `.e2e/evidence.jsonl` when the workspace has it. Each line is one JSON record: `{"v":1,"start":"…","end":"…","label":"…","node":"…","exit":0,"argv":["…"]}`, with UTC times in milliseconds and the redacted argv as a list. Orbit skips a line that is not such a record, for example one cut at the start of the newest MiB, and ignores keys it does not use. A workspace without that file falls back to the text log `.e2e/evidence.log`, whose `===` header, `$` command line, and `--- stdout` line Orbit parses. A record counts when:
+
 - its command exited 0;
-- it started after the implementer's last handoff, and not after the time Orbit reads the log;
+- it started after the implementer's last handoff, and not after the time Orbit reads the evidence;
 - its command does work on the node. These commands do not count, also inside `sh -c` or `bash -c`: `true`, `:`, `false`, `exit`, `echo`, `printf`, `sleep`, and `yes`.
 
-The harness writes a blank line or the start of the file, then the `===` header, the `$` command line, and `--- stdout`. A header inside command output lacks that shape, so command output cannot forge a record.
+The gate is a cooperative check, not a control against forgery. The agent owns the VM and can write the file directly. The gate catches a reviewer that did not run anything on a declared node, and a person audits the records.
 
 Orbit adds the counted records, with their time, node, label, and command, to the approval, and so to its commit, for a person to audit. Appending to `.e2e/evidence.log` is not a workspace change: the file is ignored, and the reviewer's prompt says so.
 
