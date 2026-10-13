@@ -104,7 +104,9 @@ Tasks publish only through the App. Creating a task for a `gh_cli` Project fails
 
 ## How Orbit publishes a task pull request
 
-After the Gateway commits an approved subtask, it asks GitHub for a token with `contents: write` and `pull_requests: write` for the Project repository. The token stays on the Gateway. The Gateway takes the commit out of the task VM into its own mirror, and `git` pushes the stored commit from there as `<commit_sha>:refs/heads/task-{id}`, never using `HEAD`. See [Git on a task VM](/reference/compute-drivers#publish-from-the-vm). After the last approval, the Gateway opens the pull request with the same kind of token. When `ORBIT_TASKS_REVIEW_REQUEST_LOGINS` is set, it then requests those GitHub logins as reviewers with that write token, skipping the pull request author. A failed reviewer request does not block publication. [Tasks](/reference/tasks#pull-request-and-settle-metrics) describes the request.
+After the Gateway commits an approved subtask, it asks GitHub for a token with `contents: write` and `pull_requests: write` for the Project repository. The token stays on the Gateway. The Gateway takes the commit out of the task VM into its own mirror, and `git` pushes the stored commit from there as `<commit_sha>:refs/heads/task-{id}`, never using `HEAD`. See [Git on a task VM](/reference/compute-drivers#publish-from-the-vm).
+
+After the last approval, the Gateway opens the pull request with the same kind of token. When `ORBIT_TASKS_REVIEW_REQUEST_LOGINS` is set, it then requests those GitHub logins as reviewers with that write token, skipping the pull request author. A failed reviewer request does not block publication. [Tasks](/reference/tasks#pull-request-and-settle-metrics) describes the request.
 
 Publishing has no path without the App. Without an installation that covers the repository, the task counts a communication failure and then asks for assistance. [Tasks](/reference/tasks#pull-request-and-settle-metrics) describes the retry.
 
