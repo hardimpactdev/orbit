@@ -76,9 +76,13 @@ final readonly class NativePublicRouteEdgeProjector implements PublicRouteEdgePr
         $this->firewall->converge($ingress, RoleName::Ingress, $ingress->user);
     }
 
-    public function rollbackPublicEdge(Route $route): void
+    /** @param list<int> $skippedNodeIds */
+    public function rollbackPublicEdge(Route $route, array $skippedNodeIds = []): void
     {
-        $ingress = $this->buildEdge($route);
+        $ingress = $this->buildEdge($route, $skippedNodeIds);
+        if (in_array($ingress->id, $skippedNodeIds, true)) {
+            return;
+        }
         $this->firewall->converge($ingress, RoleName::Ingress, $ingress->user);
         $this->certificates->removeRouteIngress($route, $ingress);
     }
@@ -91,11 +95,19 @@ final readonly class NativePublicRouteEdgeProjector implements PublicRouteEdgePr
     /**
      * Builds the Ingress Node, and the Router when it is another Node: a Router that forwards to a target
      * on the Ingress Node changes how it verifies that target while the Route is public.
+     *
+     * @param  list<int>  $skippedNodeIds
      */
-    private function buildEdge(Route $route): Node
+    private function buildEdge(Route $route, array $skippedNodeIds = []): Node
     {
-        $ingress = $this->sites->ingressNode($route);
-        $this->caddy->build($ingress);
+        $route->loadMissing('cluster.ingressAssignment.node');
+        $assigned = $route->cluster?->ingressAssignment?->node;
+        $ingress = $assigned instanceof Node && in_array($assigned->id, $skippedNodeIds, true)
+            ? $assigned
+            : $this->sites->ingressNode($route);
+        if (! in_array($ingress->id, $skippedNodeIds, true)) {
+            $this->caddy->build($ingress);
+        }
 
         try {
             $router = $this->sites->routerNode($route);
@@ -108,7 +120,7 @@ final readonly class NativePublicRouteEdgeProjector implements PublicRouteEdgePr
             return $ingress;
         }
 
-        if (! $router->is($ingress)) {
+        if (! $router->is($ingress) && ! in_array($router->id, $skippedNodeIds, true)) {
             $this->caddy->build($router);
         }
 

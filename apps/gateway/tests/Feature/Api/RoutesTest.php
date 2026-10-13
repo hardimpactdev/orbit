@@ -1659,3 +1659,29 @@ function route_cluster(string $name, ?string $tld): array
 
     return [$cluster, $router];
 }
+
+describe('offline public replacement withdrawal', function (): void {
+    it('leaves a skipped Ingress unchanged and still rebuilds the Router', function (LifecycleStatus $status): void {
+        [$cluster, $router, $ingress] = route_public_topology($this->orbitApp, name: 'offline-edge', createRoute: false);
+        $ingress->update(['status' => $status]);
+        $route = Route::query()->create([
+            'project_id' => $this->orbitApp->id,
+            'cluster_id' => $cluster->id,
+            'domain' => 'offline.example.test',
+            'provenance' => RouteProvenance::Explicit,
+            'publication' => RoutePublication::Public,
+            'status' => RouteStatus::Failed,
+            'failed_step' => 'withdrawal',
+            'error_code' => 'route.replacement_withdrawn',
+        ]);
+        $firewall = Mockery::mock(NodeRoleFirewallManager::class);
+        $firewall->shouldNotReceive('converge');
+        app()->instance(NodeRoleFirewallManager::class, $firewall);
+        $builds = new FakeNodeCaddyBuilds;
+        app()->instance(NodeCaddyBuilds::class, $builds);
+
+        app(NativePublicRouteEdgeProjector::class)->rollbackPublicEdge($route, [$ingress->id]);
+
+        expect($builds->built)->toBe([$router->name]);
+    })->with([LifecycleStatus::Active, LifecycleStatus::Failed]);
+});
