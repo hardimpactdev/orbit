@@ -741,7 +741,7 @@ describe('build', function (): void {
     it('stops what the managed user left running in the builder before it unmounts the volume', function (): void {
         app(IncusTaskVmWorkspaceTemplateBuilder::class)->build($this->host, $this->hostNode, $this->project);
 
-        $unmount = collect($this->incus->operations())->first(static fn (array $operation): bool => str_contains(implode(' ', $operation), 'umount --'));
+        $unmount = collect($this->incus->operations())->first(static fn (array $operation): bool => str_contains(implode(' ', $operation), 'pkill -KILL'));
         expect(array_slice($unmount, -2))->toBe(['/home/orbit/apps/mealou', 'orbit'])
             ->and((string) $unmount[count($unmount) - 4])->toContain('pkill -KILL -u "$user"')
             ->and(strpos((string) $unmount[count($unmount) - 4], 'pkill'))->toBeLessThan(strpos((string) $unmount[count($unmount) - 4], 'umount --'));
