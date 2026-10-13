@@ -532,7 +532,7 @@ describe('the nightly refresh', function (): void {
         expect($refresh)->not->toBeNull()
             ->and($refresh->expression)->toBe('0 3 * * *')
             ->and($refresh->filtersPass(app()))->toBeFalse()
-            ->and([new RefreshTaskVmBaseImages()->connection, new RefreshTaskVmBaseImages()->queue])->toBe(['task-vms', 'task-vm-images']);
+            ->and([new RefreshTaskVmBaseImages()->connection, new RefreshTaskVmBaseImages()->queue])->toBe(['gateway', 'builds']);
 
         config(['task_vms.enabled' => true]);
         expect($refresh->filtersPass(app()))->toBeTrue();

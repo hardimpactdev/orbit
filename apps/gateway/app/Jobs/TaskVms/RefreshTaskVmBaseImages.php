@@ -7,7 +7,7 @@ namespace App\Jobs\TaskVms;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmImageSyncResult;
-use App\Domain\TaskVms\TaskVmQueue;
+use App\Domain\Gateway\GatewayQueue;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\TaskVms\IncusTaskVmBaseImage;
 use App\Infrastructure\TaskVms\IncusTaskVmImageBuilder;
@@ -22,7 +22,7 @@ use Throwable;
  * The nightly refresh: builds the base image once, on the first configured host, and syncs it to every other
  * configured host. The first build is always `task-vms:build-image`, so while the first host has no base image
  * the job changes nothing. A failed build changes no host. A host whose sync fails keeps its image; the job
- * fails after the other hosts. It runs on the image queue, whose own worker runs one job at a time, so the build and
+ * fails after the other hosts. It runs on the `builds` queue, whose one process runs one build at a time, so the build and
  * sync hold up no task VM job.
  */
 final class RefreshTaskVmBaseImages implements ShouldBeUnique, ShouldQueue
@@ -43,7 +43,7 @@ final class RefreshTaskVmBaseImages implements ShouldBeUnique, ShouldQueue
 
     public function __construct()
     {
-        $this->onTaskVmQueue(TaskVmQueue::Images);
+        $this->onTaskVmQueue(GatewayQueue::Builds);
     }
 
     public function handle(TaskVmSettings $settings, IncusTaskVmImageBuilder $builder, IncusTaskVmImageSync $sync): void

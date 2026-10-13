@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Console\Scheduling\GatewaySchedule;
 use App\Data\Instances\InstanceRemovalData;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Firewall\FirewallOperationException;
@@ -30,6 +31,7 @@ use App\Http\Middleware\RequireNodeAccess;
 use App\Http\Middleware\ValidateDocumentPostSize;
 use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
+use App\Infrastructure\Gateway\GatewayQueueRedis;
 use App\Infrastructure\Logging\GatewayExceptionStatus;
 use App\Jobs\TaskVms\RefillTaskVmPool;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
@@ -68,24 +70,29 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withSchedule(function (Schedule $schedule): void {
         app(TaskSchedule::class)->register($schedule);
-        $schedule->command('annotations:dispatch')->everyTenSeconds()->withoutOverlapping();
-        $schedule->command('orbit:deploy-development-defaults')->everyMinute()->withoutOverlapping(90);
-        $schedule->command('orbit:desired-fleet-state')->everyFiveMinutes()->withoutOverlapping(10);
-        $schedule->command('orbit:activity-finalize-interrupted')->everyFiveMinutes()->withoutOverlapping(10);
+        // Work runs on the Gateway queue; the scheduler only dispatches (docs/reference/gateway-queue.md#scheduled-work).
+        GatewaySchedule::command($schedule, 'annotations:dispatch', uniqueFor: 600, overlapMinutes: 1440)->everyTenSeconds();
+        GatewaySchedule::command($schedule, 'orbit:deploy-development-defaults', uniqueFor: 1800, overlapMinutes: 90)->everyMinute();
+        GatewaySchedule::command($schedule, 'orbit:desired-fleet-state', uniqueFor: 600, overlapMinutes: 10)->everyFiveMinutes();
+        GatewaySchedule::command($schedule, 'orbit:activity-finalize-interrupted', uniqueFor: 600, overlapMinutes: 10)->everyFiveMinutes();
+        GatewaySchedule::command($schedule, 'orbit:vault-sync', uniqueFor: 900, overlapMinutes: 15)->everyMinute();
+        // Horizon's metrics for its dashboard, only while Horizon runs.
+        GatewaySchedule::command($schedule, 'horizon:snapshot', uniqueFor: 300)->everyFiveMinutes()
+            ->when(static fn (): bool => GatewayQueueRedis::configured());
+        // Document cleanup stays in the scheduler: its permit belongs to the scheduler's start.
         $schedule->command('project-documents:probes:reconcile')->everyMinute()->withoutOverlapping(10);
         $schedule->command('project-documents:cleanup:work')->everyFiveMinutes()->withoutOverlapping(60);
-        $schedule->command('orbit:vault-sync')->everyMinute()->withoutOverlapping(15);
-        // The nightly task VM base image refresh, a job on the image queue below, so its build and sync of up to 25
-        // minutes hold up no task VM job. When it ends, it queues one workspace template refresh for every host.
-        $schedule->job(new RefreshTaskVmBaseImages)->dailyAt('03:00')
+        // The nightly task VM base image refresh, on the builds queue. When it ends, it queues one workspace template
+        // refresh for every host.
+        GatewaySchedule::job($schedule, new RefreshTaskVmBaseImages)->dailyAt('03:00')
             ->when(static fn (): bool => TaskVmSettings::scheduled()->enabled);
-        // The nightly UpCloud base image refresh, on the image queue too, so its build of about 20 minutes holds up no
-        // task VM job. It runs while the UpCloud token file is set, also with the overflow off.
-        $schedule->job(new RefreshUpCloudTaskVmBaseImage)->dailyAt('02:00')
+        // The nightly UpCloud base image refresh, on the builds queue too. It runs while the UpCloud token file is set,
+        // also with the overflow off.
+        GatewaySchedule::job($schedule, new RefreshUpCloudTaskVmBaseImage)->dailyAt('02:00')
             ->when(static fn (): bool => TaskVmSettings::scheduled()->upcloudConfigured);
         // The task VM host sweep: orphaned VMs and clones, and live rows whose VM is gone. It also runs while only the
         // UpCloud token file is set, so no UpCloud server that Orbit created keeps costing money.
-        $schedule->job(new SweepTaskVmHosts)->everyTenMinutes()
+        GatewaySchedule::job($schedule, new SweepTaskVmHosts)->everyTenMinutes()
             ->when(static function (): bool {
                 $taskVms = TaskVmSettings::scheduled();
 
@@ -93,14 +100,14 @@ return Application::configure(basePath: dirname(__DIR__))
             });
         // The task VM pool: warm VMs up to each host's warm_vms, and a drain while task VMs are off. Inert while no
         // host has warm_vms and no pool VM exists.
-        $schedule->job(new RefillTaskVmPool)->everyMinute()
+        GatewaySchedule::job($schedule, new RefillTaskVmPool)->everyMinute()
             ->when(static fn (): bool => RefillTaskVmPool::due());
-        // The task VM queue workers run as systemd units outside the scheduler (TaskVmWorkerUnits), so a long command
-        // here never delays a job.
     })
     ->withCommands()
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->replace(ValidatePostSize::class, ValidateDocumentPostSize::class);
+        // Horizon takes no CSRF token: the Gateway keeps no session, and GuardBrowserOrigins admits only same-origin calls.
+        $middleware->validateCsrfTokens(except: ['horizon', 'horizon/*']);
         $middleware->trimStrings(except: [ValidateDocumentPostSize::preservesExactJson(...)]);
         $middleware->convertEmptyStringsToNull(except: [ValidateDocumentPostSize::preservesExactJson(...)]);
         $middleware->prepend(GuardBrowserOrigins::class);

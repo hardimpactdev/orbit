@@ -106,7 +106,8 @@ function orb247_cached_configuration(array $database): string
     /** @var array<string, mixed> $configuration */
     $configuration = require $cache;
     $configuration['app']['env'] = 'testing';
-    $configuration['database'] = $database;
+    // The Redis connections stay: Horizon reads the Gateway queue connection when it registers.
+    $configuration['database'] = [...$database, 'redis' => $configuration['database']['redis']];
     file_put_contents($cache, '<?php return '.var_export($configuration, true).';');
 
     return $cache;

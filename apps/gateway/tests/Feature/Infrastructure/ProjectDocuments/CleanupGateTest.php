@@ -260,16 +260,16 @@ describe('Gateway startup entry points', function (): void {
         'queue listener' => ['queue:listen', []],
     ]);
 
-    it('keeps authorization when a task VM worker starts, because it runs no document job', function (string $queue): void {
+    it('keeps authorization when a Horizon command starts, because Horizon runs no document job', function (): void {
         $gate = app(CleanupGate::class);
         $first = $gate->invalidate();
         cleanup_gate_permit($this->gateDirectory);
 
-        cleanup_gate_command($this->gateDirectory, 'queue:work', ['task-vms', "--queue={$queue}", '--stop-when-empty'])->run();
+        cleanup_gate_command($this->gateDirectory, 'horizon:status', [])->run();
 
         expect(file_exists($this->gateDirectory.'/permit.json'))->toBeTrue()
             ->and($gate->status()->generation)->toBe($first->generation);
-    })->with(['task-vms', 'task-vm-templates', 'task-vm-images', 'task-vm-git']);
+    });
 
     it('refuses consumer startup when the gate cannot be invalidated', function (): void {
         app(CleanupGate::class)->invalidate();

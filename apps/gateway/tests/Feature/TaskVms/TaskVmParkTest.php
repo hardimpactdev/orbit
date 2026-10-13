@@ -124,7 +124,7 @@ describe('park', function (): void {
 
         expect(app(ParkIdleTaskVmsAction::class)->execute())->toBe(1)
             ->and($vm->fresh()?->state)->toBe(TaskVmState::Parked);
-        Queue::assertPushedOn('task-vms', ParkTaskVm::class, fn (ParkTaskVm $job): bool => $job->taskVmId === $vm->id);
+        Queue::assertPushedOn('tasks', ParkTaskVm::class, fn (ParkTaskVm $job): bool => $job->taskVmId === $vm->id);
     });
 
     it('keeps every VM running whose group still works, previews, has no pull request, or settled recently', function (): void {
@@ -307,7 +307,7 @@ describe('wake', function (): void {
 
         expect(app(WakeTaskVmAction::class)->forGroup($group))->toBeFalse()
             ->and($group->fresh()?->capacity_wait_reason)->toBe(WakeTaskVmAction::Resuming);
-        Queue::assertPushedOn('task-vms', ResumeTaskVm::class, fn (ResumeTaskVm $job): bool => $job->taskVmId === $vm->id);
+        Queue::assertPushedOn('tasks', ResumeTaskVm::class, fn (ResumeTaskVm $job): bool => $job->taskVmId === $vm->id);
 
         $vm->update(['state' => TaskVmState::Ready]);
         expect(app(WakeTaskVmAction::class)->forGroup($group->fresh() ?? $group))->toBeTrue()

@@ -21,6 +21,9 @@ use SensitiveParameter;
 
 final readonly class SystemdProcessRenderer
 {
+    /** The `PATH` of every Process unit, also of the Gateway scheduler. */
+    public const string Path = '/usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin';
+
     public static function viteEnvironmentPath(int $instanceId): string
     {
         if ($instanceId < 1) {
@@ -90,7 +93,7 @@ final readonly class SystemdProcessRenderer
             'Type=simple',
             "User={$user}",
             'WorkingDirectory='.$this->escapeDirectivePath($process->working_directory),
-            'Environment=PATH=/usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin',
+            'Environment=PATH='.self::Path,
             'Environment=NODE_USE_SYSTEM_CA=1',
             ...$environmentFileLine,
             ...$this->managedEnvironmentDirectives($process, is_int($target->instance?->ssr_port)),

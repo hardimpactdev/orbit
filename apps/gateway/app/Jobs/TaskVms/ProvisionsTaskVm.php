@@ -13,7 +13,7 @@ use Throwable;
 
 /**
  * The shared shape of the jobs that bring a task VM to `ready`: one job per row at a time on the
- * `task-vms` queue, a no-op once the row has left `provisioning`, and a `failed` row with the
+ * `tasks` queue, a no-op once the row has left `provisioning`, and a `failed` row with the
  * error once the job has no retries left.
  */
 trait ProvisionsTaskVm

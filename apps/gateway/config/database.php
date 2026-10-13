@@ -36,6 +36,19 @@ return [
         ],
     ],
 
+    // The Gateway queue's Redis server. GatewayQueueRedis fills in host, port, and password from the registered
+    // Database connection named by ORBIT_GATEWAY_QUEUE_CONNECTION when a process first uses Redis.
+    'redis' => [
+        'client' => 'predis',
+        'gateway' => [
+            'host' => '127.0.0.1',
+            'port' => 6379,
+            'password' => null,
+            'database' => (int) env('ORBIT_GATEWAY_QUEUE_REDIS_DATABASE', 1),
+            'options' => ['prefix' => 'orbit-gateway:'],
+        ],
+    ],
+
     'migrations' => [
         'table' => 'migrations',
         'update_date_on_publish' => true,

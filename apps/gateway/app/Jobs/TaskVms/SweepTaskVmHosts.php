@@ -33,7 +33,7 @@ use Throwable;
  * first sweep that misses a VM only marks it in the cache; a sweep that finds the VM clears the mark. It reads and changes only the
  * host's configured project. While UpCloud is configured, also with task VMs or the overflow off, it does the same for
  * the servers with the task VM label there, and deletes base image build servers and unverified templates older than
- * two hours, except those of a build that is marked as running. The worker runs one job at a time, so no task VM job creates or deletes a VM while the sweep runs. A failed
+ * two hours, except those of a build that is marked as running. A row is recorded before its VM is created and marked `destroyed` only after the VM is gone, so a VM job that runs beside the sweep never looks orphaned. A failed
  * host is logged, and the other hosts still run.
  */
 final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue

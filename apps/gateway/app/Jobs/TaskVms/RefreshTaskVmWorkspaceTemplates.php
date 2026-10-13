@@ -6,7 +6,7 @@ namespace App\Jobs\TaskVms;
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmHost;
-use App\Domain\TaskVms\TaskVmQueue;
+use App\Domain\Gateway\GatewayQueue;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\TaskVms\IncusHost;
 use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplateLifecycle;
@@ -21,7 +21,7 @@ use Throwable;
 
 /**
  * The template refresh. Whatever builds or syncs a base image queues it once when it is done with every host: the
- * build and sync commands and the nightly base image refresh. So templates follow the image. It runs on the template
+ * build and sync commands and the nightly base image refresh. So templates follow the image. It runs on the `builds`
  * queue, so it never delays task VM jobs. On every configured host whose Node is active, it deletes each ready template
  * that no claim can take any more: templates of Projects that no longer run task VMs, from an earlier repository, or
  * built on another base image than the host's current one, and all but the newest template of each Project. Then it queues one build for each Project that had a group
@@ -44,7 +44,7 @@ final class RefreshTaskVmWorkspaceTemplates implements ShouldBeUniqueUntilProces
 
     public function __construct()
     {
-        $this->onTaskVmQueue(TaskVmQueue::Templates);
+        $this->onTaskVmQueue(GatewayQueue::Builds);
     }
 
     public function handle(TaskVmSettings $settings, TaskVmWorkspaceTemplateVolumes $volumes, TaskVmWorkspaceTemplateLifecycle $lifecycle, IncusHost $incus): void

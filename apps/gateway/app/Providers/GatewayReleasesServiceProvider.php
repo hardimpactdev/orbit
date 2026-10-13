@@ -47,6 +47,8 @@ use App\Infrastructure\GatewayReleases\GatewayReleaseSupersession;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSwitcher;
 use App\Infrastructure\GatewayReleases\GatewayReleaseTickConfirmation;
 use App\Infrastructure\GatewayReleases\GatewayRuntimeHandoff;
+use App\Infrastructure\Gateway\GatewayHorizonUnit;
+use App\Infrastructure\Gateway\GatewayQueueMove;
 use App\Infrastructure\GatewayReleases\GatewaySchedulerHandoff;
 use App\Infrastructure\GatewayReleases\GitHubArtifactWebBuild;
 use App\Infrastructure\GatewayReleases\HttpGatewayReleaseVerifier;
@@ -57,7 +59,6 @@ use App\Infrastructure\GatewayReleases\SqliteGatewayReleaseDatabase;
 use App\Infrastructure\GatewayReleases\SystemdGatewayReleaseUnitStarter;
 use App\Infrastructure\GitHub\GitHubActionsReader;
 use App\Infrastructure\Processes\ProcessRunner;
-use App\Infrastructure\TaskVms\TaskVmWorkerUnits;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\ServiceProvider;
@@ -132,7 +133,8 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 orbitHome: rtrim(Config::string('orbit.home'), '/'),
                 fleet: $app->make(FleetConvergeUnits::class),
                 agent: new GatewayNodeAgentUpdate($app->make(ProcessRunner::class)),
-                workers: $app->make(TaskVmWorkerUnits::class),
+                horizon: $app->make(GatewayHorizonUnit::class),
+                queueMove: new GatewayQueueMove,
             ),
         );
         $this->app->singleton(

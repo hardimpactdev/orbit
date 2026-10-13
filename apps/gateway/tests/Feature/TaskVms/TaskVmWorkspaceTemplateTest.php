@@ -13,7 +13,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
-use App\Domain\TaskVms\TaskVmQueue;
+use App\Domain\Gateway\GatewayQueue;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
@@ -27,7 +27,6 @@ use App\Infrastructure\TaskVms\IncusTaskVmProvider;
 use App\Infrastructure\TaskVms\IncusTaskVmWorkspaceTemplateBuilder;
 use App\Infrastructure\TaskVms\TaskVmBuilderShell;
 use App\Infrastructure\TaskVms\TaskVmScripts;
-use App\Infrastructure\TaskVms\TaskVmWorkerUnits;
 use App\Infrastructure\TaskVms\TaskVmWorkspace;
 use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplate;
 use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplateLifecycle;
@@ -54,7 +53,6 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
 use Symfony\Component\Process\Process;
 use Tests\Support\GitRemoteRedirect;
-use Tests\Support\RecordingProcessRunner;
 use Tests\Support\TaskVmScriptNames;
 use Tests\Support\TaskVmSettingsBuilder;
 use Tests\Support\TestOrbitHome;
@@ -637,8 +635,8 @@ describe('scale', function (): void {
         // The build and sync queue one refresh when every host is done, as the nightly refresh does.
         RefreshTaskVmWorkspaceTemplates::dispatch();
 
-        // One refresh, on the template queue, and nothing on the task VM queue.
-        expect(DB::table('jobs')->pluck('queue')->all())->toBe([TaskVmQueue::Templates->value]);
+        // One refresh, on the builds queue, and nothing on the tasks queue.
+        expect(DB::table('jobs')->pluck('queue')->all())->toBe([GatewayQueue::Builds->value]);
 
         app()->call([new RefreshTaskVmWorkspaceTemplates, 'handle']);
 
@@ -660,31 +658,25 @@ describe('scale', function (): void {
             }
         }
         expect($built)->toBe($expected)
-            ->and($builds->pluck('queue')->unique()->all())->toBe([TaskVmQueue::Templates->value])
-            ->and(DB::table('jobs')->where('queue', 'task-vms')->count())->toBe(0);
+            ->and($builds->pluck('queue')->unique()->all())->toBe([GatewayQueue::Builds->value])
+            ->and(DB::table('jobs')->where('queue', GatewayQueue::Tasks->value)->count())->toBe(0);
         Log::shouldHaveReceived('warning')->with('Task VM workspace template cannot be built; workspaces of the Project start from a fresh clone.', Mockery::on(
             static fn (array $context): bool => $context['reason'] === 'the Project has no valid default branch',
         ))->times(5);
     });
 
-    it('keeps task VM jobs ahead of template builds and base image refreshes: each queue has its own worker', function (): void {
+    it('keeps task VM jobs and publishes on the tasks queue, apart from template builds and base image refreshes', function (): void {
         tvm_projects(25, active: 25);
         app()->call([new RefreshTaskVmWorkspaceTemplates, 'handle']);
         DestroyTaskVm::dispatch(tvm_template_vm($this->group)->id);
         RefreshTaskVmBaseImages::dispatch();
         PublishTaskVmCommit::dispatch(1, str_repeat('a', 40), 'task-1');
-        $units = new TaskVmWorkerUnits(new RecordingProcessRunner);
-        $workers = collect(TaskVmQueue::cases())->mapWithKeys(fn (TaskVmQueue $queue): array => [
-            $queue->value => $units->render($queue, '/home/orbit/orbit/apps/gateway', '/home/orbit/.orbit'),
-        ]);
 
-        // Every queue holds its own jobs, and every queue has a unit that works only that queue.
-        expect(DB::table('jobs')->where('queue', TaskVmQueue::Templates->value)->count())->toBe(21)
-            ->and(DB::table('jobs')->where('queue', TaskVmQueue::Vms->value)->count())->toBe(1)
-            ->and(DB::table('jobs')->where('queue', TaskVmQueue::Images->value)->count())->toBe(1)
-            ->and(DB::table('jobs')->where('queue', TaskVmQueue::Git->value)->count())->toBe(1)
-            ->and($workers->keys()->all())->toBe(['task-vms', 'task-vm-templates', 'task-vm-images', 'task-vm-git'])
-            ->and($workers->every(fn (string $unit, string $queue): bool => substr_count($unit, '"--queue=') === 1 && str_contains($unit, "\"--queue={$queue}\"")))->toBeTrue();
+        // 21 template builds and the base image refresh wait on builds; the destroy and the publish never wait behind them.
+        expect(DB::table('jobs')->where('queue', GatewayQueue::Builds->value)->count())->toBe(22)
+            ->and(DB::table('jobs')->where('queue', GatewayQueue::Tasks->value)->count())->toBe(2)
+            ->and(config('horizon.defaults.tasks.queue'))->toBe([GatewayQueue::Tasks->value])
+            ->and(config('horizon.defaults.builds.queue'))->toBe([GatewayQueue::Builds->value]);
     });
 
     it('starts a claim from a fresh clone while its template builds, and queues no second build', function (): void {
@@ -937,7 +929,7 @@ describe('refresh order', function (): void {
      */
     function tvm_template_worker(): void
     {
-        Artisan::call('queue:work', ['connection' => 'task-vms', '--queue' => TaskVmQueue::Templates->value, '--stop-when-empty' => true, '--memory' => 4096]);
+        Artisan::call('queue:work', ['connection' => GatewayQueue::Connection, '--queue' => GatewayQueue::Builds->value, '--stop-when-empty' => true, '--memory' => 4096]);
     }
 
     /** @return int the builder VMs that were launched */
@@ -993,6 +985,6 @@ describe('refresh order', function (): void {
         // A nightly job stopped at its timeout never reached its own refresh: `failed()` queues it, once.
         (new RefreshTaskVmBaseImages)->failed(null);
         (new RefreshTaskVmBaseImages)->failed(null);
-        expect(DB::table('jobs')->pluck('queue')->all())->toBe([TaskVmQueue::Templates->value]);
+        expect(DB::table('jobs')->pluck('queue')->all())->toBe([GatewayQueue::Builds->value]);
     });
 });

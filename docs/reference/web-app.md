@@ -38,11 +38,12 @@ Open `https://gateway.orbit` from a machine on the Orbit WireGuard network. The 
 
 ## How the Gateway site routes requests
 
-The Gateway's Caddy site sends each request to one of three places.
+The Gateway's Caddy site sends each request to one of these places.
 
 | Path | Destination |
 | --- | --- |
-| `/api/*`, `/mcp`, `/mcp/*`, `/up`, `/.well-known/*` | Laravel. |
+| `/api/*`, `/mcp`, `/mcp/*`, `/up`, `/.well-known/*`, `/horizon`, `/horizon/*` | Laravel. `/horizon` is the [queue dashboard](/reference/gateway-queue#dashboard). |
+| `/vendor/horizon-new-dawn/*` | The dashboard's compiled assets in the current Gateway release. |
 | `/grafana/*` | The `metrics.orbit` site on the same Caddy, after the Metrics access check. |
 | Everything else | The current web release. |
 

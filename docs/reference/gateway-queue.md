@@ -4,7 +4,7 @@ description: "The Gateway's Redis queue, its two queues, Laravel Horizon, and ho
 covers:
   - apps/gateway/app/Domain/Gateway/GatewayQueue.php
   - apps/gateway/app/{Infrastructure/Gateway/GatewayQueue*,Infrastructure/Gateway/GatewayHorizon*,Console/Scheduling/**,Jobs/RunScheduledCommand.php,Providers/GatewayQueueServiceProvider.php}
-  - apps/gateway/config/{horizon,queue}.php
+  - apps/gateway/config/{horizon,horizon-new-dawn,queue}.php
 ---
 
 # Gateway queue
@@ -51,6 +51,7 @@ The scheduler dispatches each of these as a unique job. While the job waits or r
 | `orbit:activity-finalize-interrupted` | 5 minutes | `tasks` | 600 seconds |
 | `problems:collect` | 10 minutes | `tasks` | 900 seconds |
 | `problems:file` | hour | `tasks` | 1800 seconds |
+| `horizon:snapshot` | 5 minutes | `tasks` | 300 seconds |
 
 The job runs the command in its own PHP process, as the scheduler did, so a command keeps no state from an earlier run. A command that exits nonzero is logged as an error. `tasks:tick` keeps its own lock of 300 seconds. The "unique for" time only matters when a worker is lost: the lock then frees itself after that time.
 
@@ -68,7 +69,15 @@ While `ORBIT_GATEWAY_QUEUE_CONNECTION` is empty, the scheduler runs the commands
 
 `php artisan orbit:gateway-web` and the scheduler phase of each release's [runtime handoff](/reference/gateway-recovery#runtime-handoff) install it while `ORBIT_GATEWAY_QUEUE_CONNECTION` is set. While it is empty, they stop and remove the unit if it exists. The handoff records the outcome as `horizon`: `started`, `stopped`, or `none`. A failed step of the unit fails with `gateway.horizon_unit_failed`, and the handoff then fails with `gateway.release_units_failed`. A failed move of database jobs fails with `gateway.queue_move_failed` and fails the handoff the same way.
 
-The Horizon dashboard is off: every request to `/horizon` gets 403.
+## Dashboard
+
+Open `https://gateway.orbit/horizon` in a browser on a machine that is a WireGuard peer with Gateway access, the same access that the Orbit CLI needs for Gateway commands. The dashboard is [Horizon New Dawn](https://github.com/nckrtl/horizon-new-dawn), a React interface for Horizon. Any other address gets 403.
+
+The dashboard can retry, cancel, and clear jobs, and pause queues, so anyone with Gateway access can change the queue. It takes no CSRF token, because the Gateway keeps no browser session. Instead, the Gateway refuses a dashboard request that comes from another site: the browser's `Origin` must be the Gateway's own, or `Sec-Fetch-Site` must be `same-origin` or `none`. Bulk actions run as jobs on the `tasks` queue.
+
+Each release publishes the dashboard's compiled assets during `composer install` in [prepare](/reference/gateway-recovery#prepare-a-release), with `php artisan horizon-new-dawn:assets`. The first release with the dashboard runs its migration, which adds the table `horizon_new_dawn_batch_metadata`. The scheduler runs `horizon:snapshot` every five minutes for the dashboard's metrics.
+
+The Redis server needs `maxmemory-policy noeviction`, so that it never drops a queued job to free memory. `services-valkey` has it. It has no `maxmemory`, so it can use the memory of `services`; a limit for the Gateway's use is a follow-up.
 
 ## Releases
 

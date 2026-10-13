@@ -29,6 +29,11 @@ return [
         string: env(key: 'ORBIT_GATEWAY_CHECKOUT', default: '/home/orbit/orbit/apps/gateway'),
         characters: '/',
     ),
+    // The Gateway queue (docs/reference/gateway-queue.md): the slug of a Redis Database connection, and its database index.
+    'gateway_queue' => [
+        'connection' => (string) env('ORBIT_GATEWAY_QUEUE_CONNECTION', ''),
+        'redis_database' => (int) env('ORBIT_GATEWAY_QUEUE_REDIS_DATABASE', 1),
+    ],
     // Gateway release limits (docs/reference/gateway-recovery.md#release-layout).
     'gateway_releases' => [
         'min_free_mb' => (int) env('ORBIT_GATEWAY_RELEASE_MIN_FREE_MB', 1024),

@@ -21,7 +21,8 @@ it('routes Gateway paths to Laravel, Grafana through Metrics authorization, and 
         ->toContain(
             'gateway.orbit, 10.44.0.2 {',
             'bind 10.44.0.2',
-            '@gateway path /api/* /mcp /mcp/* /up /.well-known/*',
+            '@gateway path /api/* /mcp /mcp/* /up /.well-known/* /horizon /horizon/*',
+            "handle /vendor/horizon-new-dawn/* {\n        root * /home/orbit/orbit/apps/gateway/public\n        file_server\n",
             'root * /home/orbit/orbit/apps/gateway/public',
             'php_fastcgi unix//run/php/orbit-gateway.sock',
             'uri /index.php',

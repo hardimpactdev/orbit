@@ -14,6 +14,8 @@ use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Files\ProtectedFileWriter;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
+use App\Infrastructure\Gateway\GatewayHorizonUnit;
+use App\Infrastructure\Gateway\GatewayQueueMove;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
 use App\Infrastructure\GatewayReleases\GatewayCleanupHandoff;
 use App\Infrastructure\GatewayReleases\GatewayNodeAgentUpdate;
@@ -23,10 +25,11 @@ use App\Infrastructure\Nodes\NodeAgentFootprint;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
-use App\Infrastructure\TaskVms\TaskVmWorkerUnits;
+use App\Jobs\TaskVms\PublishTaskVmCommit;
 use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Tests\Support\FakeNodeCaddyBuilds;
 use Tests\Support\Fleet\FakeFleetConvergeUnits;
@@ -240,9 +243,10 @@ function runtime_handoff(?string $livePool = null, int $drainSeconds = 5, ?Fleet
             idleWaitSeconds: 1,
             fleet: $fleet,
             agent: $agent ? new GatewayNodeAgentUpdate($processes) : null,
-            workers: $workerUnits === null ? null : new TaskVmWorkerUnits($processes, applicationPath: HANDOFF_APP, orbitHome: $orbitHome, unitDirectory: $workerUnits, restartWorkers: static function () use ($processes): void {
-                $processes->ran[] = ['queue:restart'];
+            horizon: $workerUnits === null ? null : new GatewayHorizonUnit($processes, applicationPath: HANDOFF_APP, orbitHome: $orbitHome, unitDirectory: $workerUnits, terminate: static function () use ($processes): void {
+                $processes->ran[] = ['horizon:terminate'];
             }),
+            queueMove: new GatewayQueueMove,
         ),
         $processes,
         $cleanup,
@@ -453,11 +457,11 @@ describe('gateway:release:handoff', function (): void {
             ->and($schedule['opcache']['outcome'])->toBe('reset');
     });
 
-    it('starts the task VM queue workers after the old scheduler drained, so no scheduled worker runs beside them', function (): void {
-        config(['task_vms.enabled' => true]);
+    it('moves the old database jobs and restarts Horizon after the old scheduler drained, and only in the scheduler phase', function (): void {
+        config(['orbit.gateway_queue.connection' => 'services-valkey']);
         handoff_scheduler(handoff_gateway());
-        $directory = sys_get_temp_dir().'/handoff-workers-'.bin2hex(random_bytes(4));
-        [$handoff, $processes] = runtime_handoff(workerUnits: $directory);
+        DB::table('jobs')->insert(['queue' => 'task-vm-git', 'payload' => json_encode(['data' => ['command' => serialize(new PublishTaskVmCommit(7, str_repeat('a', 40), 'task-7'))]]), 'attempts' => 0, 'reserved_at' => null, 'available_at' => now()->getTimestamp(), 'created_at' => now()->getTimestamp()]);
+        [$handoff, $processes] = runtime_handoff(workerUnits: sys_get_temp_dir().'/handoff-horizon-'.bin2hex(random_bytes(4)));
         $processes->mainPids = ['4242', '0'];
         $commands = static fn (): array => array_map(static fn (array $arguments): string => implode(' ', array_slice($arguments, 0, 3)), $processes->ran);
 
@@ -467,19 +471,19 @@ describe('gateway:release:handoff', function (): void {
         $ran = $commands();
         $start = array_search('sudo systemctl start', $ran, true);
 
-        expect($serve)->not->toHaveKey('task_vm_workers')
-            ->and($beforeVerify)->not->toContain('queue:restart')
-            ->and($schedule['task_vm_workers'])->toBe('started')
-            ->and($schedule['scheduler'])->toBe('restarted')
+        expect($serve)->not->toHaveKey('horizon')
+            ->and($beforeVerify)->not->toContain('horizon:terminate')
+            ->and($schedule)->toMatchArray(['horizon' => 'started', 'queue_moved' => 1, 'scheduler' => 'restarted'])
+            ->and(DB::table('jobs')->pluck('queue')->all())->toBe(['tasks'])
             ->and($start)->toBeInt()
-            ->and(array_search('queue:restart', $ran, true))->toBeGreaterThan($start)
-            ->and(array_search('sudo systemctl enable', $ran, true))->toBeGreaterThan(array_search('queue:restart', $ran, true));
+            ->and(array_search('sudo systemctl enable', $ran, true))->toBeGreaterThan($start)
+            ->and(array_search('horizon:terminate', $ran, true))->toBeGreaterThan(array_search('sudo systemctl enable', $ran, true));
     });
 
-    it('fails the scheduler phase when the task VM queue workers cannot be installed', function (): void {
-        config(['task_vms.enabled' => true]);
+    it('fails the scheduler phase when the Horizon unit cannot be installed', function (): void {
+        config(['orbit.gateway_queue.connection' => 'services-valkey']);
         handoff_scheduler(handoff_gateway());
-        [$handoff, $processes] = runtime_handoff(workerUnits: sys_get_temp_dir().'/handoff-workers-'.bin2hex(random_bytes(4)));
+        [$handoff, $processes] = runtime_handoff(workerUnits: sys_get_temp_dir().'/handoff-horizon-'.bin2hex(random_bytes(4)));
         $processes->results['sudo systemctl enable'] = new CommandResult(1, '', 'denied', 1, false);
 
         expect(fn () => $handoff->schedule())

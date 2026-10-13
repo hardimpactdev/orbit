@@ -41,8 +41,7 @@ final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
     /**
      * A VM from the base image is done with cloud-init about 10 seconds after launch. Once the guest agent
      * runs, one check waits in the guest until cloud-init is done. Before that the job checks every second,
-     * for up to 2 minutes in one run, because a released job waits for the worker's next start: the worker
-     * stops as soon as no job is due.
+     * for up to 2 minutes in one run, so the VM is ready without a release and a second pass through the queue.
      */
     private const int InlinePollSeconds = 1;
 

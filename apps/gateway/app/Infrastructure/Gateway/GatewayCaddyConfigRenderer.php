@@ -5,7 +5,8 @@ declare(strict_types=1);
 namespace App\Infrastructure\Gateway;
 
 /**
- * Renders the Gateway site: Laravel owns its API, MCP, health, and well-known paths; `/grafana`
+ * Renders the Gateway site: Laravel owns its API, MCP, health, well-known, and Horizon paths, and the release serves
+ * the Horizon dashboard assets under `/vendor/horizon-new-dawn/`; `/grafana`
  * reaches the published Metrics site after the browser's own WireGuard authorization; every other
  * path serves the current web app release ([ADR 0123](/decisions/0123-serve-the-web-app-from-the-gateway-origin)).
  *
@@ -33,7 +34,7 @@ final readonly class GatewayCaddyConfigRenderer
                 tls /etc/caddy/orbit-cert-current/gateway.pem /etc/caddy/orbit-cert-current/gateway.key
                 encode zstd gzip
 
-                @gateway path /api/* /mcp /mcp/* /up /.well-known/*
+                @gateway path /api/* /mcp /mcp/* /up /.well-known/* /horizon /horizon/*
                 handle @gateway {
                     root * {$checkoutPath}/public
                     php_fastcgi unix//run/php/orbit-gateway.sock {
@@ -43,6 +44,11 @@ final readonly class GatewayCaddyConfigRenderer
                         write_timeout 600s
                         flush_interval 1ms
                     }
+                }
+
+                handle /vendor/horizon-new-dawn/* {
+                    root * {$checkoutPath}/public
+                    file_server
                 }
 
                 handle_path /grafana/* {

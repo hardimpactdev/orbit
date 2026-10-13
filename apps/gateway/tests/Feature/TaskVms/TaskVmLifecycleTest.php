@@ -57,7 +57,6 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\TaskVmBakedPrograms;
 use App\Infrastructure\TaskVms\TaskVmTopologyAdmission;
-use App\Infrastructure\TaskVms\TaskVmWorkerUnits;
 use App\Infrastructure\TaskVms\TaskVmWorkspace;
 use App\Jobs\TaskVms\DestroyTaskVm;
 use App\Jobs\TaskVms\EnrollTaskVm;
@@ -75,8 +74,6 @@ use App\Models\Route;
 use App\Models\RouteTarget;
 use App\Models\Task;
 use App\Models\TaskVm;
-use Illuminate\Console\Scheduling\Event;
-use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
@@ -223,7 +220,7 @@ describe('allocation', function (): void {
             ->and($vm->host_node_id)->toBe($this->host->id)
             ->and($vm->wireguard_ip)->toBe('10.44.0.129')
             ->and($vm->pi_token)->toMatch('/\A[a-f0-9]{64}\z/');
-        Queue::assertPushedOn('task-vms', ProvisionTaskVm::class, fn (ProvisionTaskVm $job): bool => $job->taskVmId === $vm->id && $job->connection === 'task-vms');
+        Queue::assertPushedOn('tasks', ProvisionTaskVm::class, fn (ProvisionTaskVm $job): bool => $job->taskVmId === $vm->id && $job->connection === 'gateway');
         Queue::assertPushed(ProvisionTaskVm::class, 1);
     });
 
@@ -425,7 +422,7 @@ describe(ProvisionTaskVm::class, function (): void {
 
         expect($this->provider->calls)->toBe(['create'])
             ->and($this->provider->userData)->toStartWith("#cloud-config\n")->toContain('ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGatewayKey gateway');
-        Queue::assertPushedOn('task-vms', EnrollTaskVm::class, fn (EnrollTaskVm $job): bool => $job->taskVmId === $vm->id && abs($job->launchedAt - now()->getTimestamp()) <= 5);
+        Queue::assertPushedOn('tasks', EnrollTaskVm::class, fn (EnrollTaskVm $job): bool => $job->taskVmId === $vm->id && abs($job->launchedAt - now()->getTimestamp()) <= 5);
     });
 
     it('logs the wait for the worker as its own step, apart from the launch', function (): void {
@@ -484,7 +481,7 @@ describe(ProvisionTaskVm::class, function (): void {
     it('retries a failed create once and is unique for its task VM', function (): void {
         $job = new ProvisionTaskVm(7);
 
-        expect($job->tries)->toBe(2)->and($job->uniqueId())->toBe('7')->and($job->queue)->toBe('task-vms')
+        expect($job->tries)->toBe(2)->and($job->uniqueId())->toBe('7')->and($job->queue)->toBe('tasks')
             ->and($job->failOnTimeout)->toBeTrue()
             ->and((new EnrollTaskVm(7, 0))->tries)->toBe(60)
             ->and((new EnrollTaskVm(7, 0))->failOnTimeout)->toBeTrue()
@@ -592,7 +589,7 @@ describe(EnrollTaskVm::class, function (): void {
             ->and($node->cluster_id)->toBe($this->cluster->id)
             ->and($node->roles()->pluck('role')->all())->toBe([RoleName::AppDev])
             ->and($this->provider->calls)->toBe(['observe', 'cloud-init', 'fingerprint', 'manifest']);
-        Queue::assertPushedOn('task-vms', PrepareTaskVmRuntime::class, fn (PrepareTaskVmRuntime $job): bool => $job->taskVmId === $vm->id);
+        Queue::assertPushedOn('tasks', PrepareTaskVmRuntime::class, fn (PrepareTaskVmRuntime $job): bool => $job->taskVmId === $vm->id);
     });
 
     it('loads the image manifest for the enrollment and drops it afterwards', function (): void {
@@ -1086,25 +1083,3 @@ function tvm_life_workspace(Task $group, Node $node): Instance
         'starting_commit' => str_repeat('a', 40), 'status' => InstanceState::SourceResolved,
     ]);
 }
-
-describe('worker', function (): void {
-    it('runs outside the Gateway scheduler, so no scheduled command delays a task VM job', function (): void {
-        Artisan::call('schedule:list');
-
-        expect(collect(app(Schedule::class)->events())->filter(fn (Event $event): bool => str_contains((string) $event->command, 'queue:work')))->toBeEmpty();
-    });
-
-    it('keeps its unit while a task VM is not destroyed, also with task VMs off, so the drain of what remains runs', function (): void {
-        config(['task_vms.enabled' => false, 'task_vms.upcloud.token_file' => null]);
-        expect(TaskVmWorkerUnits::wanted())->toBeFalse();
-
-        $vm = tvm_life_vm(tvm_life_group(TaskGroupStatus::Cancelled), TaskVmState::Failed);
-        expect(TaskVmWorkerUnits::wanted())->toBeTrue();
-
-        $vm->update(['state' => TaskVmState::Destroyed]);
-        expect(TaskVmWorkerUnits::wanted())->toBeFalse();
-
-        config(['task_vms.enabled' => true]);
-        expect(TaskVmWorkerUnits::wanted())->toBeTrue();
-    });
-});
