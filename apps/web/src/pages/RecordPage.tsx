@@ -313,7 +313,8 @@ function InstanceOverview({ fleet, instance }: { fleet: Fleet; instance: Instanc
                         title="Deployments"
                         className="w-full min-h-[160px] max-h-[40vh] md:max-h-none"
                         columns={deploymentColumns}
-                        rows={deployments.data ?? []}
+                        rows={(deployments.data ?? []).slice(0, 25)}
+                        topRight={(deployments.data?.length ?? 0) > 25 ? "Latest 25" : undefined}
                         rowId={(d) => String(d.id)}
                         warn={(d) => !deploymentHealthy(d)}
                         target={(row) => ({ kind: "deployments", row })}
@@ -405,7 +406,13 @@ function DatabasePage({ fleet, database }: { fleet: Fleet; database: Database })
                 columns={tableColumns}
                 rows={tableRows}
                 rowId={(table) => table.name}
-                empty={tables.isPending ? "Loading…" : "No tables."}
+                empty={
+                    tables.isPending
+                        ? "Loading…"
+                        : tables.isError
+                          ? `Could not load tables: ${tables.error.message}`
+                          : "No tables."
+                }
             />
             {users.isError ? (
                 <Frame title="Users">

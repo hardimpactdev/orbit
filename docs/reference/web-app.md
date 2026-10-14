@@ -382,3 +382,5 @@ The opaque status bar alone does not stop the glass edge effect. iOS 26 still bl
 An Instance has a Dependencies section with separate Composer and npm tables. Each table shows package names, installed versions from the saved scan, and runtime or development scope. The page reads `GET /api/v1/instances/{instance}/dependencies` and refreshes the saved inventory using the normal polling fallback. Opening this section does not start a scan or update packages.
 
 The page shows when each snapshot was observed and distinguishes unscanned, absent, stale, failed, and empty inventories. A failed scan can still show the previous snapshot, labelled with the failure. Dependencies remains available when the Tasks extension is disabled.
+
+The Instance overview shows the latest 25 deployments, in the order returned by the Gateway. The database Tables panel shows a query error when a table read fails, instead of reporting an empty database. MySQL inspection requires the MySQL PDO driver in the Gateway PHP runtime.
