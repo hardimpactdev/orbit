@@ -3040,7 +3040,7 @@
       "name": "gateway-release-rollback",
       "extension": null,
       "title": "gateway:release:rollback",
-      "description": "Queues a rollback to a retained release, named by its 12-digit id, and starts its release unit. Refuses a target that lacks a migration of the current release unless `force` is true. Answers 202 with the queued release record. See /reference/gateway-recovery#roll-back.",
+      "description": "Queues a rollback to a retained release, named by its 12-digit id, and starts its release unit. Switches code only; restoring a database snapshot is an explicit operator step. Answers 202 with the queued release record. See /reference/gateway-recovery#roll-back.",
       "method": "POST",
       "path": "/api/v1/gateway/releases/{release}/rollback",
       "path_inputs": [
@@ -3053,10 +3053,6 @@
         "properties": {
           "release": {
             "type": "string"
-          },
-          "force": {
-            "type": "boolean",
-            "description": "Switch the code across a migration the target release does not have"
           }
         },
         "additionalProperties": false,

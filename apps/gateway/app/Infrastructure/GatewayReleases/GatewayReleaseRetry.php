@@ -22,7 +22,6 @@ final readonly class GatewayReleaseRetry
         'gateway.release_conflict',
         'gateway.release_current_incomplete',
         'gateway.release_downgrade',
-        'gateway.release_migration_crossed',
         'gateway.release_migrate_failed',
         'gateway.release_switch_back_failed',
         'gateway.release_scheduler_missing',

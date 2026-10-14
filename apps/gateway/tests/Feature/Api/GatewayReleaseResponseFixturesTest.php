@@ -43,19 +43,8 @@ final class RecordingReleaseUnitProcesses implements ProcessRunner
     }
 }
 
-final class GatewayReleaseMigrationFiles implements GatewayReleaseDatabase
+final class FakeGatewayReleaseDatabase implements GatewayReleaseDatabase
 {
-    /** @var array<string, list<string>> */
-    public array $files = [];
-
-    /** @var list<string> */
-    public array $applied = [];
-
-    public function pending(string $releasePath): array
-    {
-        return [];
-    }
-
     public function snapshot(string $id): string
     {
         return '/home/orbit/.orbit/backups/pre-'.$id.'.sqlite';
@@ -63,19 +52,9 @@ final class GatewayReleaseMigrationFiles implements GatewayReleaseDatabase
 
     public function migrate(string $releasePath): void {}
 
-    public function applied(): array
-    {
-        return $this->applied;
-    }
-
     public function snapshotBytes(): int
     {
         return 0;
-    }
-
-    public function migrations(string $releasePath): array
-    {
-        return $this->files[basename($releasePath)] ?? [];
     }
 }
 
@@ -270,11 +249,11 @@ function gateway_release_scenario(string $scenario): array
         'rolled-back' => [
             'trigger' => 'rollback',
             'requested' => $target,
-            'force' => true,
+            'force' => false,
             'previous_release_id' => $current,
             'snapshot_path' => '/home/orbit/.orbit/backups/pre-'.$current.'.sqlite',
             'phases' => [
-                'rollback' => ['outcome' => 'started', 'force' => true, 'snapshot' => '/home/orbit/.orbit/backups/pre-'.$current.'.sqlite'],
+                'rollback' => ['outcome' => 'started', 'snapshot' => '/home/orbit/.orbit/backups/pre-'.$current.'.sqlite'],
                 ...array_intersect_key($live, array_flip(['configuration', 'switch', 'handoff', 'verify', 'scheduler', 'web', 'smoke'])),
             ],
             'duration_ms' => 19_000,
@@ -299,7 +278,7 @@ beforeEach(function (): void {
     config(['orbit.home' => $this->base.'/home', 'orbit.gateway_checkout' => $this->base.'/orbit/apps/gateway']);
     $this->layout = gateway_release_api_layout($this->base);
     $this->processes = new RecordingReleaseUnitProcesses;
-    $this->database = new GatewayReleaseMigrationFiles;
+    $this->database = new FakeGatewayReleaseDatabase;
     $this->lock = new GatewayReleaseLock($this->base.'/home/gateway-release.lock');
     app()->instance(GatewayReleaseLayout::class, $this->layout);
     app()->instance(GatewayReleaseLock::class, $this->lock);
@@ -375,28 +354,27 @@ describe('gateway release API', function (): void {
             ->assertJsonPath('error.code', 'gateway.release_not_adopted');
     });
 
-    it('refuses a rollback across a migration without force and queues it with force', function (): void {
-        $this->database->files = [
-            substr(RELEASE_CURRENT, 0, 12) => ['2026_10_01_000000_one.php', '2026_10_02_000000_two.php'],
-            substr(RELEASE_TARGET, 0, 12) => ['2026_10_01_000000_one.php'],
-        ];
-        $this->database->applied = ['2026_10_01_000000_one', '2026_10_02_000000_two'];
+    it('queues a code rollback without a force field', function (): void {
         $id = substr(RELEASE_TARGET, 0, 12);
-
-        $refused = $this->postJson("/api/v1/gateway/releases/{$id}/rollback", ['force' => false])->assertStatus(409)
-            ->assertJsonPath('error.code', 'gateway.release_migration_crossed');
-        expect(GatewayRelease::query()->count())->toBe(0);
-        record_fixture($refused, 'gateway-releases/gateway-release-rollback/migration-crossed', 'Orbit\\Sdk\\Requests\\GatewayReleases\\RollbackGatewayReleaseRequest', 'POST /api/v1/gateway/releases/{release}/rollback');
-
-        $queued = $this->postJson("/api/v1/gateway/releases/{$id}/rollback", ['force' => true])->assertStatus(202)
+        $queued = $this->postJson("/api/v1/gateway/releases/{$id}/rollback")->assertStatus(202)
             ->assertJsonPath('data.trigger', 'rollback')
-            ->assertJsonPath('data.force', true)
+            ->assertJsonPath('data.force', false)
             ->assertJsonPath('data.sha', RELEASE_TARGET);
+
+        expect($this->processes->ran)->not->toBeEmpty();
         record_fixture($queued, 'gateway-releases/gateway-release-rollback/queued', 'Orbit\\Sdk\\Requests\\GatewayReleases\\RollbackGatewayReleaseRequest', 'POST /api/v1/gateway/releases/{release}/rollback');
     });
 
+    it('rejects the removed rollback force field before it queues anything', function (): void {
+        $id = substr(RELEASE_TARGET, 0, 12);
+
+        $this->postJson("/api/v1/gateway/releases/{$id}/rollback", ['force' => true])->assertUnprocessable();
+
+        expect(GatewayRelease::query()->count())->toBe(0);
+    });
+
     it('refuses a rollback to a release that is not retained', function (): void {
-        $this->postJson('/api/v1/gateway/releases/aaaaaaaaaaaa/rollback', ['force' => false])
+        $this->postJson('/api/v1/gateway/releases/aaaaaaaaaaaa/rollback')
             ->assertStatus(422)
             ->assertJsonPath('error.code', 'gateway.release_not_prepared');
     });

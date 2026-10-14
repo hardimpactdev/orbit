@@ -63,7 +63,6 @@ describe('the Gateway release pipeline from the container', function (): void {
 
         expect(wired($deploy, 'guard'))->toBeInstanceOf(GatewayReleaseGuard::class)
             ->and($promoter)->toBeInstanceOf(GatewayReleasePromoter::class)
-            ->and(wired($promoter, 'guard'))->toBeInstanceOf(GatewayReleaseGuard::class)
             ->and(wired($promoter, 'keptReleases'))->toBe(4)
             ->and(wired($promoter, 'verifier'))->toBeInstanceOf(HttpGatewayReleaseVerifier::class)
             ->and(wired($promoter, 'ticks'))->toBeInstanceOf(GatewayReleaseTickConfirmation::class)
@@ -82,14 +81,13 @@ describe('the Gateway release pipeline from the container', function (): void {
             ->and(wired($builder, 'minimumFreeBytes'))->toBe(2048 * 1_048_576);
     });
 
-    it('wires rollback with the guard and adopt with the in-process handoff and the deploy path', function (): void {
+    it('wires rollback and adopt with the in-process handoff and the deploy path', function (): void {
         $adopter = wired(app(AdoptGatewayReleaseAction::class), 'adopter');
 
-        expect(wired(app(RollbackGatewayReleaseAction::class), 'guard'))->toBeInstanceOf(GatewayReleaseGuard::class)
+        expect(app(RollbackGatewayReleaseAction::class))->toBeInstanceOf(RollbackGatewayReleaseAction::class)
             ->and($adopter)->toBeInstanceOf(GatewayReleaseAdopter::class)
             ->and(wired($adopter, 'runtime'))->toBeInstanceOf(LocalGatewayReleaseRuntime::class)
             ->and(wired($adopter, 'deploy'))->toBeInstanceOf(DeployGatewayReleaseAction::class)
-            ->and(wired($adopter, 'guard'))->toBeInstanceOf(GatewayReleaseGuard::class)
             ->and(wired($adopter, 'verifier'))->toBeInstanceOf(HttpGatewayReleaseVerifier::class);
     });
 

@@ -17,6 +17,8 @@ Each command is one noun family and one last segment. The last segment is a verb
 
 `CommandVocabulary` in `apps/cli` holds these lists. `CommandSurfaceTest` fails when a registered command, or a Gateway route that serves one, breaks them. It also fails when this page and the lists differ. Keep this test's command count and family names aligned when commands are removed as part of legacy cleanup.
 
+`gateway:release:rollback` switches Gateway code to a retained release. It leaves the database in place; [Gateway recovery](/reference/gateway-recovery#roll-back) describes database restoration.
+
 ## Verb pairs
 
 The CLI uses one pair for each kind of change.

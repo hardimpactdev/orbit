@@ -9,13 +9,13 @@ use App\Actions\GatewayReleases\RollbackGatewayReleaseAction;
 final class RollbackGatewayReleaseCommand extends GatewayReleaseCommand
 {
     #[\Override]
-    protected $signature = 'gateway:release:rollback {release : First 12 hex digits of the release to restore} {--force : Switch even when the current release has migrations the target does not}';
+    protected $signature = 'gateway:release:rollback {release : First 12 hex digits of the release to restore}';
 
     #[\Override]
     protected $description = 'Switch the Gateway back to a retained release.';
 
     public function handle(RollbackGatewayReleaseAction $action): int
     {
-        return $this->report(fn (): array => $action->execute((string) $this->argument('release'), (bool) $this->option('force'))->toArray());
+        return $this->report(fn (): array => $action->execute((string) $this->argument('release'))->toArray());
     }
 }

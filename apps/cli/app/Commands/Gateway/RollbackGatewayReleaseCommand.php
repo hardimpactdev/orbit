@@ -20,8 +20,7 @@ final class RollbackGatewayReleaseCommand extends GatewayReleaseFollowCommand
     #[\Override]
     protected $signature = 'gateway:release:rollback
         {release? : Release id, the first 12 hex digits of a retained release}
-        {--force : Switch the code across a migration the target release does not have}
-        {--yes : Confirm --force without a prompt}
+        {--yes : Confirm the code rollback without a prompt}
         {--json : Return the final release record as JSON}';
 
     #[\Override]
@@ -54,9 +53,7 @@ final class RollbackGatewayReleaseCommand extends GatewayReleaseFollowCommand
             );
         }
 
-        $force = $this->option('force') === true;
-
-        if ($force && ! $this->confirmAction(
+        if (! $this->confirmAction(
             "Roll the Gateway back to release {$release} and leave the database schema of the current release in place?",
             'The rollback was not confirmed.',
         )) {
@@ -73,7 +70,7 @@ final class RollbackGatewayReleaseCommand extends GatewayReleaseFollowCommand
             $connector,
             'Roll back Gateway to release '.$release,
             ['switch', 'handoff', 'verify', 'scheduler', 'web', 'smoke'],
-            fn (): GatewayReleaseResponse => $this->sendOrThrow($connector, new RollbackGatewayReleaseRequest($release, $force), GatewayReleaseResponse::class),
+            fn (): GatewayReleaseResponse => $this->sendOrThrow($connector, new RollbackGatewayReleaseRequest($release), GatewayReleaseResponse::class),
         );
     }
 

@@ -10,15 +10,12 @@ use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use Closure;
-use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
 /**
- * The Gateway's SQLite database during a release. A release's pending migrations are the migration files it ships
- * that the `migrations` table has not recorded. Before they run, `VACUUM INTO` writes a consistent copy of the live
- * database to `$ORBIT_HOME/backups/pre-<id>.sqlite`, which needs no `sqlite3` binary and does not block writers for
- * long. The new release then migrates with its own code, before the switch.
+ * Before Laravel's migrator runs, VACUUM INTO writes a consistent, private SQLite snapshot.
+ * Laravel discovers and applies migrations with the prepared release's code, including vendor paths.
  */
 final readonly class SqliteGatewayReleaseDatabase implements GatewayReleaseDatabase
 {
@@ -67,39 +64,6 @@ final readonly class SqliteGatewayReleaseDatabase implements GatewayReleaseDatab
         }
 
         return $bytes;
-    }
-
-    public function applied(): array
-    {
-        try {
-            $ran = DB::connection($this->connection)->table(Config::string('database.migrations.table', 'migrations'))->pluck('migration')->all();
-        } catch (Throwable $exception) {
-            throw new GatewayReleaseException(
-                step: 'snapshot',
-                errorCode: 'gateway.release_migrations_unreadable',
-                message: 'The Gateway migrations table cannot be read.',
-                status: 500,
-                previous: $exception,
-            );
-        }
-
-        return array_values(array_filter($ran, is_string(...)));
-    }
-
-    public function pending(string $releasePath): array
-    {
-        $recorded = array_fill_keys($this->applied(), true);
-        $pending = [];
-
-        foreach ($this->migrations($releasePath) as $file) {
-            $name = substr($file, 0, -4);
-
-            if (! isset($recorded[$name])) {
-                $pending[] = $name;
-            }
-        }
-
-        return $pending;
     }
 
     public function snapshot(string $id): string
@@ -164,23 +128,6 @@ final readonly class SqliteGatewayReleaseDatabase implements GatewayReleaseDatab
                 result: $result,
             );
         }
-    }
-
-    public function migrations(string $releasePath): array
-    {
-        $entries = @scandir($releasePath.'/apps/gateway/database/migrations');
-
-        if ($entries === false) {
-            return [];
-        }
-
-        $files = array_values(array_filter(
-            $entries,
-            static fn (string $entry): bool => preg_match('/\A[0-9A-Za-z_]+\.php\z/D', $entry) === 1,
-        ));
-        sort($files);
-
-        return $files;
     }
 
     /** Refuses before writing when the snapshot would leave less than the floor free. */

@@ -10,7 +10,7 @@
             "sha": "fedcba9876543210fedcba9876543210fedcba98",
             "requested": "fedcba987654",
             "trigger": "rollback",
-            "force": true,
+            "force": false,
             "outcome": "queued",
             "finished": false,
             "migrations_ran": false,

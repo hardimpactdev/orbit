@@ -153,23 +153,18 @@ describe('gateway release contract', function (): void {
             ->and(json_decode(Artisan::output(), true)['error']['code'])->toBe('gateway.release_commit_invalid');
     });
 
-    it('rolls back with consent for --force and follows the rollback', function (): void {
-        $mock = gateway_release_follow('gateway-releases/gateway-release-rollback/queued', ['gateway-releases/gateway-release-show/rolled-back'], 'gateway:release:rollback', ['release' => 'fedcba987654', '--force' => true, '--yes' => true], 'gateway-releases/gateway-release-rollback/rolled-back.human.txt', 0);
+    it('rolls back with consent and follows the rollback', function (): void {
+        $mock = gateway_release_follow('gateway-releases/gateway-release-rollback/queued', ['gateway-releases/gateway-release-show/rolled-back'], 'gateway:release:rollback', ['release' => 'fedcba987654', '--yes' => true], 'gateway-releases/gateway-release-rollback/rolled-back.human.txt', 0);
 
-        $mock->assertSent(static fn ($request): bool => $request instanceof RollbackGatewayReleaseRequest && $request->body()->all() === ['force' => true]);
+        $mock->assertSent(static fn ($request): bool => $request instanceof RollbackGatewayReleaseRequest);
     });
 
-    it('requires --yes for a forced rollback without a terminal and asks nothing of the Gateway', function (): void {
+    it('requires --yes for a code rollback without a terminal and asks nothing of the Gateway', function (): void {
         $mock = MockClient::global([]);
 
-        expect(Artisan::call('gateway:release:rollback', ['release' => 'fedcba987654', '--force' => true, '--json' => true]))->toBe(1)
+        expect(Artisan::call('gateway:release:rollback', ['release' => 'fedcba987654', '--json' => true]))->toBe(1)
             ->and(json_decode(Artisan::output(), true)['error']['code'])->toBe('input.confirmation_required');
         $mock->assertNothingSent();
-    });
-
-    it('reports a rollback that would cross a migration', function (): void {
-        run_contract('gateway-releases/gateway-release-rollback/migration-crossed', 'gateway:release:rollback', ['release' => 'fedcba987654'], 'gateway-releases/gateway-release-rollback/migration-crossed.human.txt', 1);
-        run_contract('gateway-releases/gateway-release-rollback/migration-crossed', 'gateway:release:rollback', ['release' => 'fedcba987654', '--json' => true], 'gateway-releases/gateway-release-rollback/migration-crossed.json', 1);
     });
 
     it('runs smoke against the live Gateway and renders each check', function (): void {

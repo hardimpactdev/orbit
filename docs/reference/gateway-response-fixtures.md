@@ -38,6 +38,8 @@ Gateway release fixtures under `gateway-releases` record one release record at e
 
 Project Document fixtures record a complete file lifecycle, reads of earlier versions, revision conflicts, and redacted storage status. The SDK and CLI replay the same envelopes, preserving IDs, revisions, checksums, cursors, and request IDs. Human show, list, and version-history expectations live under `apps/cli/tests/Expected/project-documents`; raw read and download tests check exact bytes separately.
 
+Gateway rollback fixtures record a queued code switch with `force: false` and no force member in the rollback phase. The request is bodyless. The crossing-refusal fixture is removed because Laravel owns migration discovery; [Gateway recovery](/reference/gateway-recovery#laravel-owns-migrations) explains the decision.
+
 ## Record a fixture
 
 A Gateway fixture test sends a request with deterministic data and calls `record_fixture()` from `apps/gateway/tests/Support/ResponseFixtures.php` with the fixture name, the SDK request class that sends the route, and the route.

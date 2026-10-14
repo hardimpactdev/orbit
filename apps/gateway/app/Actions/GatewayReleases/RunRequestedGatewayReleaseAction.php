@@ -45,7 +45,7 @@ final readonly class RunRequestedGatewayReleaseAction
 
         try {
             if ($row->trigger === 'rollback') {
-                $this->rollback->execute((string) $row->requested, $row->force, $row);
+                $this->rollback->execute((string) $row->requested, $row);
             } else {
                 $this->deploy->execute((string) $row->requested, force: $row->force, trigger: 'deploy', record: $row);
             }

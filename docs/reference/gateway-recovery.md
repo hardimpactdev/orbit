@@ -162,12 +162,11 @@ Deploy is the manual release. Before it changes anything, it:
 
 1. prepares the commit;
 2. refuses a commit that does not descend from the current release, with `gateway.release_downgrade`;
-3. refuses a commit that lacks a migration the `migrations` table has applied, with `gateway.release_migration_crossed`;
-4. caches the release's configuration again from the shared env file, so a broken env file stops the release before any migration.
+3. caches the release's configuration again from the shared env file, so a broken env file stops the release before any migration.
 
-An unreadable `migrations` table refuses with `gateway.release_migrations_unreadable`. `--force` skips these refusals. It never migrates backwards.
+`--force` skips only the commit ancestry check. Laravel owns migration discovery, including migrations registered by vendor service providers.
 
-Then it migrates when needed and switches `/home/orbit/orbit` to the release with one `mv -T`. The switch runs only when the current path is already a release link. An in-place checkout, or a link to something else, is refused until `gateway:release:adopt`.
+Then it takes the pre-release database snapshot, runs `php artisan migrate --force`, and switches `/home/orbit/orbit` to the release with one `mv -T`. The switch runs only when the current path is already a release link. An in-place checkout, or a link to something else, is refused until `gateway:release:adopt`.
 
 ```bash
 php /home/orbit/orbit/apps/gateway/artisan gateway:release:deploy <SHA>
@@ -188,16 +187,11 @@ Verify checks `GET /up` and Gateway status at `ORBIT_GATEWAY_VERIFY_ORIGIN` (def
 
 Each request has a 15-second overall deadline. HTTPS trusts only `/etc/caddy/orbit-cert-current/root-ca.pem`, with the system CA directory disabled. A missing CA file fails verification. Laravel's HTTP client retries the complete check, including status and version validation. After the last failure, it reports `gateway.release_verify_failed` at the `verify` step with the failed endpoint or the observed status and version.
 
-Smoke does not run before the web switch. Any failure after the switch counts, also an error the release code did not expect (`gateway.release_unexpected_failure`):
+Smoke runs after the web switch. Any failure after the switch counts, including `gateway.release_unexpected_failure`.
 
-- Without migrations, deploy switches back to the previous release and repeats the handoff phases that started. `web/current` returns to its earlier build. The outcome is `switched_back`.
-- A previous release whose code has no handoff command, or no phases, gets the handoff from the deploying process's code.
-- A previous release that lacks a migration the database applied gets no switch-back. Deploy pauses instead. This can follow an earlier pause.
-- When the `migrations` table cannot be read, deploy pauses too, because it cannot rule that out.
-- After migrations, deploy pauses. It writes `ORBIT_HOME/gateway-release.paused` and records outcome `paused`. It never switches back onto a schema the previous code has not run.
-- A switch that fails after migrations pauses too. The previous code then serves the new schema.
+Deploy pauses after running the migrator. It writes `ORBIT_HOME/gateway-release.paused` and records outcome `paused`. This also applies when Laravel has no pending migrations. Deploy does not inspect migration files or infer schema compatibility. A failed switch pauses too; the previous code then still serves.
 
-To decide, deploy compares the migrations the database has applied with the previous release's files, never with what is pending now. A killed attempt of the same commit can leave such a migration.
+Rollback does not run migrations. A failed rollback switches back to the previous release and restores `web/current`. It repeats the handoff phases that started before the failure. A previous release whose code has no handoff command or phases gets the handoff from the deploying process's code.
 
 After a verified release, deploy removes old releases. It keeps at most `ORBIT_GATEWAY_RELEASES_KEEP` releases, 3 by default and at least 2: the current one and the previous one, whatever their age, and then the newest others. After a rollback to an older release, the previous release takes the place of the oldest of the newest others, so the count never grows.
 
@@ -207,9 +201,7 @@ Deploy keeps an incomplete directory that is the current or the previous release
 
 #### Migrations and the snapshot
 
-Before the switch, deploy compares the migration files the release ships with the `migrations` table. When none are pending, it neither snapshots nor migrates.
-
-When some are pending, deploy first writes a consistent copy of the Gateway database to `ORBIT_HOME/backups/pre-<id>-<time>-<random>.sqlite`, with mode `0600`. Each attempt writes its own file, so a retry after a failed migration never replaces the clean copy. A retry of a paused commit keeps naming the copy from before its first attempt, in its record and in the pause marker. It uses SQLite `VACUUM INTO`, so it needs no `sqlite3` binary. Then the release migrates with its own code, `php releases/<id>/apps/gateway/artisan migrate --force`, while the previous release still serves.
+Before every deploy switch, deploy first writes a consistent copy of the Gateway database to `ORBIT_HOME/backups/pre-<id>-<time>-<random>.sqlite`, with mode `0600`. Each attempt writes its own file, so a retry after a failed migration never replaces the clean copy. A retry of a paused commit keeps naming the copy from before its first attempt, in its record and in the pause marker. It uses SQLite `VACUUM INTO`, so it needs no `sqlite3` binary. Then the release migrates with its own code, `php releases/<id>/apps/gateway/artisan migrate --force`, while the previous release still serves.
 
 - The Gateway keeps the newest `ORBIT_GATEWAY_RELEASE_SNAPSHOTS_KEEP` snapshots (default 5), and always the one the pause marker names.
 - The release migrates with `migrate --isolated`, so a second migration waits for a running one.
@@ -395,7 +387,6 @@ The unit runs `gateway:release:run <record>`, which claims the record and runs t
 | `gateway.release_not_adopted` | `/home/orbit/orbit` is still an in-place checkout. |
 | `gateway.release_not_prepared` | The release id is not a finished release. |
 | `gateway.release_switch_failed` | The current link could not be replaced. It stays on the previous release. |
-| `gateway.release_migrations_unreadable` | The `migrations` table could not be read. Nothing changed. |
 | `gateway.release_snapshot_failed`, `gateway.release_snapshot_unavailable` | The pre-migration snapshot failed, or the database is not SQLite. Nothing changed. |
 | `gateway.release_migrate_failed` | The release's migrations failed. The release pauses. |
 | `gateway.release_caddy_failed`, `gateway.release_fpm_failed`, `gateway.release_units_failed` | The handoff could not publish Caddy, reload PHP-FPM, or install the Gateway units. Caddy also fails while task VMs are configured and `task_vms.wireguard_range` is invalid: see [Refuse task VMs in Caddy](/reference/compute-drivers#refuse-task-vms-in-caddy). |
@@ -413,7 +404,6 @@ The unit runs `gateway:release:run <record>`, which claims the record and runs t
 | `gateway.release_switch_back_failed` | The failure was real, and returning to the previous release also failed. |
 | `gateway.release_configuration_failed` | The release's configuration could not be cached again. It runs before migrations, so nothing changed. |
 | `gateway.release_unexpected_failure` | A step failed with an error the release code did not expect. The message names it. |
-| `gateway.release_migration_crossed` | The database has applied a migration the target release does not ship. |
 | `gateway.release_downgrade` | The commit does not descend from the current release. |
 | `gateway.release_scheduler_missing`, `gateway.release_scheduler_mismatch` | The Gateway Node has no scheduler Process, or it runs outside the Gateway application path. |
 | `gateway.release_unit_failed` | systemd did not start the release unit for a requested release. |
@@ -429,10 +419,14 @@ Roll back to return the Gateway to a release it still keeps, for example after a
 
 ```bash
 php /home/orbit/orbit/apps/gateway/artisan gateway:release:rollback <id>
-php /home/orbit/orbit/apps/gateway/artisan gateway:release:rollback <id> --force
+php /home/orbit/orbit/apps/gateway/artisan gateway:release:rollback <id>
 ```
 
-`<id>` is the first 12 hex digits of a retained release. With the default of 3, a rollback can reach the previous release and one other retained release. Rollback switches to it and runs the same handoff, verify, web switch, and smoke as a deploy. It refuses when the database has applied a migration the target does not ship. `--force` switches the code anyway and names the newest pre-migration snapshot. It does not migrate backwards. A failed verification switches back to the release that was current, because rollback itself does not migrate.
+`<id>` is the first 12 hex digits of a retained release. With the default of 3, a rollback can reach the previous release and one other retained release. Rollback switches to it and runs the same handoff, verify, web switch, and smoke as a deploy.
+
+Rollback switches code only. It names the newest pre-release snapshot for recovery, but never runs migrations or restores the database. Check that the target code can use the current database.
+
+If a database restore is needed, keep access and automation paused and follow [Recover a failed update](#recover-a-failed-update) with the matching snapshot; restore is an explicit operator step. A failed verification switches back to the release that was current, because rollback itself does not migrate.
 
 Rollback switches the web app to the target's build. Pruning a Gateway release removes its web build too, so every retained release keeps its own, and a manual `bin/web-deploy` never prunes it. When the build is gone anyway, rollback installs it from the commit's CI artifact, which exists for 14 days. When the artifact has expired too, a rollback does not block the code on assets: it leaves `web/current` as it is, records the web step as `kept` with a warning, and smoke skips its `web` check. A deploy always fails without its web build.
 
@@ -511,7 +505,7 @@ A manual deploy or rollback still runs during a pause. A manual deploy, an autom
 
 When a manual deploy goes live, the Gateway asks GitHub whether a newer green commit exists. It stores the answer on the record as the `newest_green` step: `superseded` with that commit, `newest`, or `unknown` when GitHub did not answer. `superseded` and `unknown` make the next tick pause with `manual_deploy`, so a pin is never undone on a guess. After a GitHub outage, a manual deploy may need one `resume`. A manual deploy of the newest green commit hands back to automation, and a newer commit that turns green later is released as usual.
 
-After a failure, decide between a forward fix, a [rollback](#roll-back) with `--force`, and a restore from the snapshot. Then clear a pause that is left:
+After a failure, decide between a forward fix, a [rollback](#roll-back), and a restore from the snapshot. Then clear a pause that is left:
 
 ```bash
 orbit gateway:release:auto:resume
@@ -897,7 +891,7 @@ Automatic releases and the fleet rollout have these limits.
 
 ### Release limits
 
-A release that fails after its migrations ran pauses automatic releases until an operator acts. A release never switches back over a migration, because migrations follow no compatibility policy, such as expand and contract. Orbit cannot prove that older code runs on a migrated schema.
+A release that fails after its migrations ran pauses automatic releases until an operator acts. A deploy never switches back automatically after its migrator ran. Orbit cannot prove that older code runs on the resulting schema.
 
 Pre-migration snapshots stay on the Gateway host, in `ORBIT_HOME/backups`. Orbit does not copy them off the host. Keep a [complete state set](#preserve-a-complete-state-set) elsewhere.
 
@@ -950,9 +944,17 @@ Copying the current release's `vendor/` into the next one when `composer.lock` i
 
 A PHP-FPM restart or reload ends the requests in flight, and a Gateway request may run 600 seconds. Caddy resolves the release link for each request instead, so a running request finishes on its release and the next one runs the new release.
 
-### Pause after migrations, never switch back
+### Pause after the migrator
 
-Older code on a newer schema is untested, and it can damage live data without a visible error. So a release that fails after its migrations pauses, and a person chooses between a forward fix, a forced rollback, and a restore from the snapshot. Refusing automatic releases for commits with migrations was rejected: most commits that change the Gateway ship a migration, so automation would rarely run. The snapshot and the pause cover the risk.
+Older code on a newer schema is untested, and it can damage live data without a visible error. So a release that fails after its migrations pauses, and a person chooses between a forward fix, a code rollback, and a restore from the snapshot. Refusing automatic releases for commits with migrations was rejected: most commits that change the Gateway ship a migration, so automation would rarely run. The snapshot and the pause cover the risk.
+
+### Laravel owns migrations
+
+A Gateway deploy follows a Laravel production deploy: take the pre-release database snapshot, run `php artisan migrate --force`, and switch code. The snapshot implementation, retention, permissions, and protection of a paused release's clean copy stay the safety net. Rollback switches code; restoring a database snapshot is an explicit operator decision.
+
+This supersedes the migration-crossing part of ADR 0201. Release 200 (`fa72c0f1e`) was blocked because `nckrtl/horizon-new-dawn` registers a migration with `loadMigrationsFrom()`. Laravel had applied it at batch 145 during release `fbeeb79d5`, but the guard looked only in the Gateway's own migration directory. Identical package code in every release therefore looked incompatible.
+
+Extending the guard to vendor directories is rejected: it duplicates Laravel's migration discovery and still cannot prove that code and schema are compatible. Deploy leaves migration discovery to Laravel. Every deploy runs the migrator, including a release with only vendor migrations or none pending. A failure after the migrator runs pauses the release. A person chooses recovery.
 
 ### The Gateway is not an Orbit Instance
 
