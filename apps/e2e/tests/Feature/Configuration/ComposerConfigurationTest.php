@@ -355,13 +355,13 @@ describe('Composer configuration', function (): void {
         expect($ignored->getExitCode())->toBe(0, 'The hosted TIA graph must stay out of the candidate tree.');
     });
 
-    it('persists per-project Pint and Rector caches around the quality checks', function (): void {
+    it('persists per-project Pint caches without reusing Rector caches around the quality checks', function (): void {
         $workflow = file_get_contents(base_path('../../.github/workflows/ci.yml'));
 
         expect($workflow)
             ->toBeString()
             ->toContain('${{ matrix.directory }}/vendor/pint.cache')
-            ->toContain('${{ matrix.directory }}/vendor/rector/cache')
+            ->not->toContain('${{ matrix.directory }}/vendor/rector/cache')
             ->toContain("format('{0}/pint.json', matrix.directory)")
             ->toContain("format('{0}/rector.php', matrix.directory)")
             ->toContain('orbit-lint-php8.5-${{ matrix.directory }}-')
@@ -370,11 +370,11 @@ describe('Composer configuration', function (): void {
             ->toContain("\${{ github.event_name != 'pull_request' && format('orbit-lint-php8.5-{0}-', matrix.directory) || '' }}");
 
         expect(strpos($workflow, 'Install dependencies'))
-            ->toBeLessThan(strpos($workflow, 'Restore Pint and Rector caches'));
-        expect(strpos($workflow, 'Restore Pint and Rector caches'))
+            ->toBeLessThan(strpos($workflow, 'Restore Pint cache'));
+        expect(strpos($workflow, 'Restore Pint cache'))
             ->toBeLessThan(strpos($workflow, 'Run project quality checks'));
         expect(strpos($workflow, 'Run project quality checks'))
-            ->toBeLessThan(strpos($workflow, 'Save Pint and Rector caches'));
+            ->toBeLessThan(strpos($workflow, 'Save Pint cache'));
     });
 
     it('persists per-project portable PHPStan result caches after install', function (): void {
@@ -408,7 +408,7 @@ describe('Composer configuration', function (): void {
 
         // actions/cache tries every restore key in a pull request's own scope before main's, so a saved pull request
         // cache would shadow the main cache on the next run of that pull request.
-        foreach (['Save PHPStan result cache', 'Save Pint and Rector caches', 'Save Pest TIA graph'] as $name) {
+        foreach (['Save PHPStan result cache', 'Save Pint cache', 'Save Pest TIA graph'] as $name) {
             expect($steps[$name]['if'])->toBe("success() && matrix.part != 'subprocess' && github.event_name != 'pull_request'");
         }
     });
@@ -531,7 +531,7 @@ describe('Composer configuration', function (): void {
                 || str_starts_with($step['uses'] ?? '', 'actions/upload-artifact')
                 || in_array($step['name'], [
                     'Validate Composer metadata', 'Compute PHPStan result cache prefix', 'Restore PHPStan result cache',
-                    'Compute Pint and Rector cache prefix', 'Restore Pint and Rector caches', 'Run project quality checks',
+                    'Compute Pint cache prefix', 'Restore Pint cache', 'Run project quality checks',
                     'Check classification fakes', 'Require the Pest TIA graph to describe this commit', 'Export main caches',
                     'Read the Gateway test plan',
                 ], true)) {
