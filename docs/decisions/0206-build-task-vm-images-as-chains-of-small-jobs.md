@@ -50,7 +50,7 @@ A base image build is one Laravel job chain (`Bus::chain`) on the `builds` queue
 
 The programs are the ones that enrollment renders today, rendered by the same code. A new tool or package is a new program and one new step in the chain. The build of a host's image never edits one shared script.
 
-Each step is idempotent. A step that runs again finds its work done, so a step can fail, retry, or run after a release without harm. A step that waits, such as `AwaitImageBuilderBoot` or `SmokeImage`, checks once and releases itself back to the queue with a delay instead of holding the worker. Laravel counts each release as an attempt, so polling jobs use `tries=0` and enforce a 600-second deadline from the step's durable `started_at`. They do not use `retryUntil()`, which Laravel fixes in the queued payload and would count time before execution. No job runs longer than its step needs, so a release never waits long for a build.
+Each step is idempotent. A step that runs again finds its work done, so a step can fail, retry, or run after a release without harm. `AwaitImageBuilderBoot` and `SmokeImage` read cloud-init status first and poll within the worker run for up to 600 seconds. Queue wait never consumes this boot budget, including on redelivery. Polling in one run avoids repeatedly joining the back of the single `builds` queue behind template builds. It can hold that worker for the boot window; other steps still remain separate jobs. These jobs use `tries=0` for redelivery and do not use `retryUntil()`, which Laravel fixes in the queued payload and would count time before execution.
 
 ### The build row holds the state
 
@@ -105,7 +105,7 @@ Each of these gets its own pull request after the base image chain is built, as 
 - A nightly build that starts from the current image does less work. Its time depends on what changed.
 - A build is no longer byte-for-byte reproducible from the stock image each night. The weekly full build limits the drift to a week.
 - A task VM can run software that is up to a day older than the Gateway's programs. A tool that the image lacks shows only when a setup step or a check that needs it fails. Run `task-vms:build-image` after a change to a program.
-- The `builds` queue runs one job at a time in the fleet, so the steps of a base image build and of a template build take turns. A build takes longer from start to end, but no single job holds the queue.
+- The `builds` queue runs one job at a time in the fleet, so the steps of a base image build and of a template build take turns. A build takes longer from start to end. Each job holds the worker only for its step, including at most 600 seconds of cloud-init polling.
 - This change removes the image manifest, the image host lock with its expiry time, the build's signal trap and `failed()` cleanup, and the stage runner of the base image build.
 
 ## Affects

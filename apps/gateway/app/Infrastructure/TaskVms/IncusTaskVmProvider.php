@@ -81,8 +81,13 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
         }
 
         $state = $instance['state'] ?? null;
+        $config = $instance['config'] ?? null;
+        $imageFingerprint = is_array($config) ? $config['volatile.base_image'] ?? null : null;
+        if ($imageFingerprint !== null && (! is_string($imageFingerprint) || preg_match('/\A[a-f0-9]{64}\z/D', $imageFingerprint) !== 1)) {
+            throw $this->invalid($vm, 'the base image fingerprint is not a SHA256 digest');
+        }
 
-        return new VmObservation($status === 'Running', $this->address($vm, is_array($state) ? $state['network'] ?? null : null));
+        return new VmObservation($status === 'Running', $this->address($vm, is_array($state) ? $state['network'] ?? null : null), $imageFingerprint);
     }
 
     public function sshHostFingerprint(TaskVm $vm): string

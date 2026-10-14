@@ -156,6 +156,22 @@ it('launches a medium VM with 4 vCPU, 8 GiB, a 40 GiB disk, and free page report
         ]]);
 });
 
+it('observes the image the VM actually booted rather than the current base alias', function (): void {
+    $instance = incusInstance();
+    $instance['config'] = ['volatile.base_image' => str_repeat('b', 64)];
+    ($this->answer)(incusList($instance));
+
+    expect($this->provider->observe($this->vm)?->imageFingerprint)->toBe(str_repeat('b', 64));
+});
+
+it('rejects an invalid observed image fingerprint', function (mixed $fingerprint): void {
+    $instance = incusInstance();
+    $instance['config'] = ['volatile.base_image' => $fingerprint];
+    ($this->answer)(incusList($instance));
+
+    expect(fn () => $this->provider->observe($this->vm))->toThrow(TaskVmException::class, 'base image fingerprint');
+})->with(['not-a-digest', 42, ['nested']]);
+
 it('does not launch a VM that runs', function (): void {
     ($this->answer)(incusList(incusInstance()));
 
