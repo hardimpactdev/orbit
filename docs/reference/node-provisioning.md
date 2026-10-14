@@ -3,10 +3,10 @@ title: "Node provisioning"
 description: "How node:add bootstraps or converges a Node, how roles share and lock a Node, how the Orbit CLI and footprint reach it, and how node:remove hands it back."
 covers:
   - apps/gateway/app/Actions/Nodes/{ProvisionNodeAction,EnrollMacOsNodeAction,RemoveNodeAction,AddNodeRoleAction,RemoveNodeRoleAction,AssignRoleAction}.php
-  - apps/gateway/app/Domain/Nodes/RoleRegistry.php
   - apps/gateway/app/Infrastructure/{Gateway/NativeGatewayCaddyInstaller.php,Nodes/{NativeNodeConverger,MacOsNodeConverger,NodeSshJump,NodeBootstrapCommandFactory,NodeBootstrapDnsProgram,NodeBootstrapPackageCatalog,CaddyPackage*,RemotePhpPackageManager,NodeLocks,NodeLock}.php}
   - apps/gateway/app/Infrastructure/WireGuard/NativeGatewayPeerProjectionManager.php
-  - apps/gateway/app/Console/Commands/ProvisionNodeCommand.php
+  - apps/gateway/app/Console/Commands/{ProvisionNodeCommand,ConvergeNodeRecipeCommand}.php
+  - apps/gateway/{app/{Actions/Fleet/ConvergeNodeRecipeAction.php,Data/Fleet/NodeRecipePlan.php,Infrastructure/MachineSoftware/NodeRecipe*.php,Domain/Nodes/RoleRegistry.php},resources/machine-software/converge-node.py}
   - apps/gateway/app/Infrastructure/{Firewall/NodeFirewallRuleCatalog,Ssh/NativeSshExecutor,Ssh/SshConnection,Ssh/SshHostKeyScanner,Ssh/HostKeyScanner}.php
   - apps/gateway/database/migrations/*_{create_nodes_table,add_ssh_jump_node_id_to_nodes}.php
   - apps/gateway/app/{Infrastructure/Nodes/*Cli*.php,Domain/Nodes/NodeCli*.php,Domain/Fleet/NodeFootprint*.php,Domain/Fleet/NodeCliConvergence.php,Infrastructure/Fleet/Footprint/**,Actions/Fleet/ConvergeNodeFootprintAction.php,Http/Controllers/Api/NodeFootprintsController.php}
@@ -81,6 +81,26 @@ Each failure names the check or step that stopped the request.
 | `node.architecture_mismatch` | The requested architecture differs from the observed one. HTTP 409 at `machine-architecture`. |
 | `node.role_convergence_failed` | A role failed to converge. The step is `role:<step>`. |
 | `node.agent_install_failed` | The Node agent failed to install. |
+
+## Converge a Node to a recipe
+
+On the Gateway, run `php artisan node:converge-recipe <node> [--recipe=sha256:<digest>] [--dry-run]`. The target is a Node name or ID. The command uses the repository [machine software recipe](/reference/compute-drivers#machine-software-recipe). An optional full recipe identity guards against running a different version. To select an older version, check out its recipe before running the command; arbitrary Git revisions and remote recipe URLs are not inputs.
+
+The command requires an active managed Ubuntu Node and a supported architecture. It unions the Node's active role profiles, including common tools once. A Node without roles uses `operator`. The service-role profiles match the existing role prerequisite catalog. A prerequisite absent from the recipe, an unsupported artifact, or an incompatible managed Tool constraint stops the operation before package changes. It never installs the base image's development-only tool set on a production Node.
+
+`--dry-run` reads installed versions and managed Tool intent, then prints JSON with the snapshot, recipe identity, selected tools, exact target versions, observed versions, and planned changes. It writes no files, refreshes no apt indexes, takes no remote lock, and restarts nothing. Dependencies are resolved from the snapshot during application; the dry-run lists explicit package and tool changes, not an apt dependency simulation. It reads Vite+ metadata and exact cached runtimes directly. An unknown version is `null` and plans an installation; it never invokes a moving runtime shim or an uninitialized Vite+ binary.
+
+Application shares the role-converge and self-update locks with Node convergence and fleet rollout. It holds the existing Tool Manager scope locks while applying and checking the recipe. It configures an isolated Ubuntu snapshot source, downloads and verifies pinned release artifacts, installs only the selected exact pins and their dependencies with package removal disabled, and verifies installed versions.
+
+Package hooks are prevented from restarting services during installation. Only active services belonging to changed packages restart; PHP package changes also restart active FPM units for that PHP version.
+
+Vite+ keeps its existing global store. The pinned CLI receives its initialization marker before it runs, so it cannot launch an unpinned installer. A Vite+ package change requires its existing dependencies to match the new distribution’s exact versions. A missing or changed dependency stops at the tools stage instead of fetching inputs absent from the recipe.
+
+The command then checks service health, existing managed Tool intent, and the Node and role Doctor families. It uses the fleet verifier with no tolerated preexisting issues. It stops at the first failure and reports the failed stage with a nonzero exit code. It makes no automatic rollback. Package application is not retried; Doctor uses the fleet verifier’s settling checks.
+
+After all checks pass, `settings.machine_recipe` stores the complete recipe identity, snapshot, and completion time on the Node record. `php artisan node:converge-recipe --status` lists the recorded identity for every Node without SSH, including Nodes with no success marker. A failed attempt clears the previous success marker before mutation: the Node may be partly changed and must not appear converged. Node settings unrelated to the recipe stay intact. To recover manually, pin the previous snapshot date and tool pins in a reviewed recipe, then converge the Node again. Snapshot pinning alone does not undo changed third-party tool pins.
+
+This is a synchronous per-Node operation. It does not schedule nightly work or advance to another Node. The [fleet rollout reference](/reference/gateway-recovery#recipe-convergence) describes its relationship to rollout.
 
 ## macOS Nodes
 

@@ -2384,6 +2384,7 @@
                 "Node",
                 "Node agent",
                 "Process",
+                "Role",
                 "Tool"
             ],
             "governing_adrs": []

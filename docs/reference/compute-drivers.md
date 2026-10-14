@@ -36,7 +36,7 @@ The recipe is UTF-8 JSON, not executable PHP or a list of shell commands. The lo
 | `architectures` | Non-empty list drawn from `amd64` and `arm64`, using Debian architecture names |
 | `tools` | Object keyed by the loader's known tool identifiers; each value has an exact `version` and a `source` of `ubuntu`, `artifact`, or `internal` |
 | `common` | Tool identifiers included in every role and the base image |
-| `roles` | Object with exactly `gateway`, `app-dev`, `app-prod`, and `operator`; each value is a list of additional tool identifiers |
+| `roles` | Object requiring `gateway`, `app-dev`, `app-prod`, and `operator`; optional profiles use known Node role names. Each value lists additional tool identifiers |
 | `base` | List of additional tool identifiers for the task VM base image; this is an image profile, not a Node role |
 
 An `ubuntu` tool names its Debian `package`. Its `version` is the complete Debian version, including epoch and distribution revision when present, not just an upstream release or a constraint. It resolves only from the selected Ubuntu snapshot's signed package indexes for the declared release and architectures. The release's archive, updates, and security pockets are checked; a package available only from today's rolling archive does not satisfy the recipe.
@@ -51,7 +51,7 @@ Internal pins do not require publishing HTTPS releases. Third-party tools still 
 
 The initial Pi pin comes from `apps/pi-server` at source commit `e5933d4c8696`, file `pi-server-e5933d4c8696-linux-x64`, SHA-256 `286620c586b13b60fce4ce71f286d282da185fd95f7971c4109fb52bc8f0a78c`. It supports `amd64` only. The base profile therefore supports only `amd64`; `--architecture=arm64 --role=base` fails rather than inventing a Pi artifact. Other profiles support the intersection of their tools' architectures. Validation checks all artifacts actually declared, including Pi, without requiring nonexistent Pi arm64 bytes.
 
-A profile's effective set is the union of `common` and its own list, sorted by tool identifier. Profiles cannot refer to other profiles, so role inheritance cannot hide software or form cycles. A multi-role Node's eventual set is the union of its roles, not the base image set.
+A profile's effective set is the union of `common` and its own list, sorted by tool identifier. Profiles cannot refer to other profiles, so role inheritance cannot hide software or form cycles. A multi-role Node's set is the union of its roles, not the base image set.
 
 ### Role and base tool sets
 
@@ -76,9 +76,11 @@ The seed resolves the existing programs' selectors on 2026-10-14. It uses snapsh
 
 PHP's required readline packages and Sury's `libgd3` are explicit artifact inputs, alongside the selectable-version profiles. Other Ubuntu dependencies resolve from the same authenticated snapshot.
 
-Caddy and the Node agent retain the constants and checksums in their current installers. PHP artifacts use the Sury `resolute` package indexes, authenticated with the existing installer's pinned Sury key (`apt.gpg`, SHA-256 `b486fd5488185c4c46467960fa69c53d5085fec492cf76b9eaf3db33561c9d7c`). Vite+ and pnpm tarballs match npm's release `dist.integrity`; Vite+'s JavaScript package and platform CLI are separate pins.
+Caddy and the Node agent retain the constants and checksums in their current installers. PHP artifacts use the Sury `resolute` package indexes, authenticated with the existing installer's pinned Sury key (`apt.gpg`, SHA-256 `b486fd5488185c4c46467960fa69c53d5085fec492cf76b9eaf3db33561c9d7c`). Vite+'s JavaScript package and pnpm tarballs match npm's release `dist.integrity`. The standalone Vite+ CLI uses the versioned GitHub release tarball and its release-asset SHA-256 digest; the similarly named npm platform package is a Node addon, not the standalone executable. These are separate pins.
 
 Node resolves the current LTS from `nodejs.org/dist/index.json`, with both distributions checked against that release's `SHASUMS256.txt`; the distribution also pins its bundled npm/npx. Bun's distributions match the release asset digests. Rust uses the stable channel's versioned distribution manifest and its hashes for rustc, Cargo, the standard library, clippy, and rustfmt, rather than retaining `stable` or an unpinned rustup installer. Pi uses the operator-approved source commit and digest above. The JSON holds the resolved versions and hashes; none of these moving discovery endpoints is consulted by validation.
+
+Service-role profiles add the existing Node prerequisite sets to the four required image/operator profiles. The VPN profile pins `dnsmasq` to `2.92-1ubuntu0.5`, the highest Debian version in the selected snapshot pockets for both architectures. Consumers reject a Node role missing from a recipe instead of broadening its tool set.
 
 ### Pins outside the Ubuntu snapshot
 
@@ -98,11 +100,11 @@ Every separately fetched input needed for a pinned tool must be covered by its a
 
 The recipe identity is `sha256:<digest>`, computed from the validated document's canonical JSON after removing internal-artifact filenames. Internal source commits and digests remain in the identity; relocating identical internal bytes does not change it. Canonicalization recursively sorts object keys by byte order, preserves array order, emits no insignificant whitespace, leaves slashes and Unicode unescaped, and adds no final newline. Only JSON integers, strings, arrays, objects, booleans, and null are permitted; schema fields further restrict their types. Duplicate keys are rejected before hashing. The identity is derived, not stored as a self-referential field in the recipe.
 
-Whitespace and object-key order do not change the identity. Changing a snapshot, version pin, source commit, digest, role assignment, schema version, or list order does. The identity covers all profiles together; there is no independent version counter for each role and no Git commit SHA masquerading as the recipe version. Git history provides provenance, while the content hash names the exact software intent even when the same recipe appears in another commit. Later image and Node consumers record this complete identity; schema version `1` and a short display hash are not substitutes.
+Whitespace and object-key order do not change the identity. Changing a snapshot, version pin, source commit, digest, role assignment, schema version, or list order does. The identity covers all profiles together; there is no independent version counter for each role and no Git commit SHA masquerading as the recipe version. Git history provides provenance, while the content hash names the exact software intent even when the same recipe appears in another commit. [Node recipe convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) records this complete identity after verification; image identity recording remains separate work. Schema version `1` and a short display hash are not substitutes.
 
 ### Show and validate the recipe
 
-The Gateway command `php artisan orbit:machine-recipe` shows the repository recipe's identity, snapshot, exact tool pins, and effective profile tool sets. `--role=gateway`, `--role=app-dev`, `--role=app-prod`, or `--role=operator` selects one role; `--role=base` selects the base image profile. `--path=<file>` selects a candidate recipe for review or a validation fixture. `--architecture=amd64` or `--architecture=arm64` requires each displayed profile to support that architecture; without it, the output lists each profile's supported architectures.
+The Gateway command `php artisan orbit:machine-recipe` shows the repository recipe's identity, snapshot, exact tool pins, and effective profile tool sets. `--role=gateway`, `--role=app-dev`, `--role=app-prod`, or `--role=operator` selects one role; service profiles also cover `vpn`, `router`, `ingress`, `metrics`, `database`, `websocket`, and `analytics`; `--role=base` selects the base image profile. `--path=<file>` selects a candidate recipe for review or a validation fixture. `--architecture=amd64` or `--architecture=arm64` requires each displayed profile to support that architecture; without it, the output lists each profile's supported architectures.
 
 Showing a recipe always performs structural validation and makes no claim about remote availability. Add `--json` for the complete recipe (including URLs, digests, internal filenames, and source commits), its identity, validation state, and selected effective profiles. JSON errors contain only an `error` message and exit nonzero; failed validation never emits a success state.
 

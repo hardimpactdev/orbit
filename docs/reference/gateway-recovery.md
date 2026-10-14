@@ -969,3 +969,9 @@ The Instance pipeline deploys to Nodes over SSH and runs one PHP-FPM pool per In
 Converging Nodes in parallel is faster, but a bad release would break many Nodes at once. A failed Node halts the rollout, because the next Node would most likely fail the same way, and one broken Node is easier to repair than a fleet. A fleet failure never rolls the Gateway back, because the Gateway already verified and serves.
 
 An unreachable Node changed nothing, so it does not halt the fleet; the catch-up converges it. Halting on it would let one offline Node block every other. A missing CLI release is the normal state for a few minutes after each deploy, so it waits instead of failing. The rollout is off by default, so a Gateway release that adds the units does not reach Nodes before an operator prepared them.
+
+## Recipe convergence
+
+`php artisan node:converge-recipe <node> [--recipe=sha256:<digest>] [--dry-run]` is the synchronous [recipe maintenance operation](/reference/node-provisioning#converge-a-node-to-a-recipe) for one Node. It shares the fleet rollout’s Node role lock, self-update lock, SSH transport, and Doctor machinery. A package, inventory, service health, or Doctor failure returns a failure immediately and leaves the Node partly changed; it neither rolls back nor visits another Node. Only a fully checked Node receives the recipe success marker.
+
+The release rollout and its catch-up timer do not invoke recipe convergence. Nightly recipe changes, image builds, smoke tests, Node ordering, and operator notifications remain ADR 0207 step 9. Before advancing a future recipe rollout, require this operation to succeed for the current Node. Manual recovery pins the previous recipe snapshot and any previous third-party tool pins.
