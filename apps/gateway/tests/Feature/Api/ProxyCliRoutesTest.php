@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\Broadcasting\RecordBroadcast;
+use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Extensions\ExtensionStore;
@@ -33,6 +35,7 @@ use App\Models\Process;
 use App\Models\Route as OrbitRoute;
 use Illuminate\Routing\Route;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 
 function proxycli_gateway(): Node
@@ -119,6 +122,7 @@ it('requires Gateway authorization for every proxycli action', function (): void
 });
 
 it('enables proxycli when shared Valkey sits on a database Node', function (): void {
+    config(['task_vms.enabled' => false, 'task_vms.model_proxy_origin' => 'http://10.44.0.3:8317']);
     $gateway = proxycli_gateway();
     $node = proxycli_node();
     proxycli_valkey($node);
@@ -155,6 +159,121 @@ it('enables proxycli when shared Valkey sits on a database Node', function (): v
         ->and($environment['PROXYCLI_CACHE_HOST'])->toBe('10.44.0.8')
         ->and($environment['PROXYCLI_CACHE_PORT'])->toBe('6379');
 });
+
+it('refuses a mismatching task VM origin with 422 before changing settings, collector or publication', function (bool $alreadyEnabled): void {
+    config(['task_vms.enabled' => false]);
+    $gateway = proxycli_gateway();
+    $node = proxycli_node();
+    proxycli_valkey($node);
+    $payload = [
+        'node_id' => $node->id,
+        'cache_connection' => 'valkey',
+        'cliproxy_url' => 'http://127.0.0.1:8317',
+        'cliproxy_management_key' => 'replacement-management-key',
+    ];
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
+    if ($alreadyEnabled) {
+        $this->postJson('/api/v1/proxycli', [
+            ...$payload,
+            'cliproxy_url' => 'http://10.44.0.3:8317',
+            'cliproxy_management_key' => 'original-management-key',
+        ])->assertCreated();
+    }
+    config(['task_vms.enabled' => true, 'task_vms.model_proxy_origin' => 'http://10.44.0.3:8317']);
+    $settings = DB::table('settings')->orderBy('id')->get()->toArray();
+    $processes = Process::query()->get()->toArray();
+    $routes = OrbitRoute::query()->get()->toArray();
+    $runtime = app(RecordingProxyCliRuntimeLifecycle::class);
+    $publication = app(RecordingProxyCliPublicationManager::class);
+    $runtime->converged = false;
+    $publication->converged = false;
+
+    $this->postJson('/api/v1/proxycli', $payload)
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed')
+        ->assertJsonPath('error.details.cliproxy_url.0', 'The cliproxy_url must equal task_vms.model_proxy_origin while task VMs are enabled.');
+
+    expect(DB::table('settings')->orderBy('id')->get()->toArray())->toEqual($settings);
+    expect(Process::query()->get()->toArray())->toBe($processes);
+    expect(OrbitRoute::query()->get()->toArray())->toBe($routes);
+    expect($runtime->converged)->toBeFalse();
+    expect($publication->converged)->toBeFalse();
+})->with(['first setup' => false, 'existing setup' => true]);
+
+it('enables proxycli with the matching task VM origin and normalizes trailing slashes', function (string $url, string $origin): void {
+    config(['task_vms.enabled' => true, 'task_vms.model_proxy_origin' => $origin]);
+    $gateway = proxycli_gateway();
+    $node = proxycli_node();
+    proxycli_valkey($node);
+
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
+        ->postJson('/api/v1/proxycli', [
+            'node_id' => $node->id,
+            'cache_connection' => 'valkey',
+            'cliproxy_url' => $url,
+            'cliproxy_management_key' => 'management-key',
+        ])
+        ->assertCreated()
+        ->assertJsonPath('data.enabled', true);
+
+    expect(app(ProxyCliState::class)->cliproxyUrl())->toBe('http://10.44.0.3:8317');
+    expect(app(RecordingProxyCliRuntimeLifecycle::class)->environment['PROXYCLI_CLIPROXY_URL'])->toBe('http://10.44.0.3:8317');
+    expect(Process::query()->where('name', ProxyCliProcess::NAME)->firstOrFail()->runtime_config['environment']['PROXYCLI_CLIPROXY_URL'])
+        ->toBe('http://10.44.0.3:8317');
+    expect(app(RecordingProxyCliPublicationManager::class)->converged)->toBeTrue();
+})->with([
+    'exact origin' => ['http://10.44.0.3:8317', 'http://10.44.0.3:8317'],
+    'setup trailing slash' => ['http://10.44.0.3:8317/', 'http://10.44.0.3:8317'],
+    'configured trailing slash' => ['http://10.44.0.3:8317', 'http://10.44.0.3:8317/'],
+]);
+
+it('reconverges the selected collector after a Database connection update', function (): void {
+    $gateway = proxycli_gateway();
+    $node = proxycli_node();
+    $connection = proxycli_valkey($node);
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
+        ->postJson('/api/v1/proxycli', [
+            'node_id' => $node->id, 'cache_connection' => 'valkey',
+            'cliproxy_url' => 'http://127.0.0.1:8317', 'cliproxy_management_key' => 'management-key',
+        ])->assertCreated();
+    $process = Process::query()->where('name', ProxyCliProcess::NAME)->sole();
+    $tokens = [app(ProxyCliState::class)->readToken(), app(ProxyCliState::class)->controlToken()];
+    $this->patchJson('/api/v1/database-connections/'.$connection->slug, [
+        'host' => '10.44.0.9', 'port' => 6380, 'username' => 'collector', 'password' => 'new-cache-secret',
+    ])->assertOk()->assertDontSee('new-cache-secret');
+    expect($process->refresh()->runtime_config['environment'])->toMatchArray([
+        'PROXYCLI_CACHE_HOST' => '10.44.0.9', 'PROXYCLI_CACHE_PORT' => '6380',
+        'PROXYCLI_CACHE_USERNAME' => 'collector', 'PROXYCLI_CACHE_PASSWORD' => 'new-cache-secret',
+        'PROXYCLI_READ_TOKEN' => $tokens[0], 'PROXYCLI_CONTROL_TOKEN' => $tokens[1],
+    ])->and(Process::query()->where('name', ProxyCliProcess::NAME)->sole()->id)->toBe($process->id);
+});
+
+it('refuses incompatible proposed selected connections without changing connection or collector', function (string $change, string $error): void {
+    $gateway = proxycli_gateway();
+    $node = proxycli_node();
+    $connection = proxycli_valkey($node);
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
+        ->postJson('/api/v1/proxycli', [
+            'node_id' => $node->id, 'cache_connection' => 'valkey',
+            'cliproxy_url' => 'http://127.0.0.1:8317', 'cliproxy_management_key' => 'management-key',
+        ])->assertCreated();
+    $process = Process::query()->where('name', ProxyCliProcess::NAME)->sole();
+    Event::fake([RecordBroadcast::class]);
+    $beforeConnection = $connection->refresh()->getRawOriginal();
+    $beforeProcess = $process->getRawOriginal();
+    $beforeEnvironment = app(RecordingProxyCliRuntimeLifecycle::class)->environment;
+    $tokens = [app(ProxyCliState::class)->readToken(), app(ProxyCliState::class)->controlToken()];
+    $body = $change === 'sqlite'
+        ? ['driver' => 'sqlite', 'path' => '/tmp/cache.sqlite', 'database' => null, 'host' => null, 'port' => null]
+        : ['node_id' => proxycli_node('without-database', '10.44.0.9')->id, 'host' => '10.44.0.9', 'password' => 'refused-secret'];
+    $this->patchJson('/api/v1/database-connections/'.$connection->slug, $body)
+        ->assertUnprocessable()->assertJsonPath('error.code', $error);
+    Event::assertNotDispatched(RecordBroadcast::class, fn (RecordBroadcast $event): bool => $event->type === RecordEventType::DatabaseUpdated);
+    expect($connection->refresh()->getRawOriginal())->toBe($beforeConnection)
+        ->and($process->refresh()->getRawOriginal())->toBe($beforeProcess)
+        ->and(app(RecordingProxyCliRuntimeLifecycle::class)->environment)->toBe($beforeEnvironment)
+        ->and([app(ProxyCliState::class)->readToken(), app(ProxyCliState::class)->controlToken()])->toBe($tokens);
+})->with(['driver' => ['sqlite', 'proxycli.cache_invalid'], 'placement' => ['node', 'proxycli.cache_unplaced']]);
 
 it('keeps the management key out of activity for every enable outcome', function (bool $placed, int $status): void {
     $gateway = proxycli_gateway();

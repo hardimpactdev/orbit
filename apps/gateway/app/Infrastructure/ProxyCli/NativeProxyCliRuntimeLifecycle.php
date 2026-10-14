@@ -6,6 +6,9 @@ namespace App\Infrastructure\ProxyCli;
 
 use App\Actions\Processes\CreateProcessAction;
 use App\Actions\Processes\DestroyProcessAction;
+use App\Actions\Processes\RestartProcessAction;
+use App\Actions\Processes\UpdateProcessAction;
+use App\Domain\Processes\DesiredProcessState;
 use App\Domain\ProxyCli\ProxyCliProcess;
 use App\Domain\ProxyCli\ProxyCliRuntimeLifecycle;
 use App\Domain\Shared\ResourceOperationException;
@@ -27,6 +30,7 @@ final readonly class NativeProxyCliRuntimeLifecycle implements ProxyCliRuntimeLi
         private SshExecutor $ssh,
         private SshKeyProvider $keys,
         private KnownHostsStore $knownHosts,
+        private UpdateProcessAction $update,
     ) {}
 
     public function converge(
@@ -35,20 +39,47 @@ final readonly class NativeProxyCliRuntimeLifecycle implements ProxyCliRuntimeLi
         array $environment,
         int $port = ProxyCliProcess::PORT,
     ): void {
-        $this->publishSource($node);
+        $script = $this->script();
+        $revision = hash('sha256', $script);
+        $existing = Process::query()->where('owner_type', Node::class)
+            ->where('owner_id', $node->id)->where('name', ProxyCliProcess::NAME)->first();
+        if ($existing !== null && (($existing->proxycli_source_revision !== null && $existing->proxycli_source_revision !== $revision)
+            || ! $this->sourceMatches($node, $revision))) {
+            // Inspect before publishing: a legacy null revision is not pending intent.
+            $existing->proxycli_source_activation_pending = true;
+            $existing->proxycli_source_revision = null;
+            $existing->save();
+        }
+        $sourceChanged = $this->publishSource($node, $script);
+        if ($sourceChanged && $existing !== null) {
+            $existing->proxycli_source_activation_pending = true;
+            $existing->proxycli_source_revision = null;
+            $existing->save();
+        }
         $data = ProxyCliProcess::data($node, $environment, $port);
 
         try {
-            $this->add->execute($data);
+            $result = $this->add->execute($data);
+            $process = $result['process'];
         } catch (ResourceOperationException $exception) {
             if ($exception->errorCode !== 'process.name_taken') {
                 throw $exception;
             }
 
-            $this->remove($node);
-            $this->publishSource($node);
-            $this->add->execute($data);
+            $process = Process::query()->where('owner_type', Node::class)
+                ->where('owner_id', $node->id)->where('name', ProxyCliProcess::NAME)->sole();
+            $process = $this->update->execute($process, $data);
         }
+
+        // The source file can be current even when its Python process is still old.
+        if ($existing !== null && ($process->proxycli_source_activation_pending
+            || ($process->proxycli_source_revision !== null && $process->proxycli_source_revision !== $revision))
+            && $process->desired_state === DesiredProcessState::Running) {
+            app(RestartProcessAction::class)->execute($process);
+        }
+        $process->proxycli_source_revision = $revision;
+        $process->proxycli_source_activation_pending = false;
+        $process->save();
     }
 
     public function remove(Node $node): void
@@ -70,7 +101,29 @@ final readonly class NativeProxyCliRuntimeLifecycle implements ProxyCliRuntimeLi
         }
     }
 
-    private function publishSource(Node $node): void
+    private function sourceMatches(Node $node, string $revision): bool
+    {
+        $result = $this->ssh->execute($this->sourceConnection($node), $this->source->inspectCommand());
+
+        return $result->succeeded() && str_starts_with($result->stdout, $revision.' ');
+    }
+
+    private function publishSource(Node $node, string $script): bool
+    {
+        $result = $this->ssh->execute($this->sourceConnection($node), $this->source->command($script));
+
+        if (! $result->succeeded()) {
+            throw new ResourceOperationException(
+                'proxycli.source_publication_failed',
+                "Could not install the proxycli collector on node [{$node->name}].",
+                422,
+            );
+        }
+
+        return trim($result->stdout) === ProxyCliSourcePublisher::Published;
+    }
+
+    private function sourceConnection(Node $node): SshConnection
     {
         $address = $node->wireguard_ip;
 
@@ -82,15 +135,7 @@ final readonly class NativeProxyCliRuntimeLifecycle implements ProxyCliRuntimeLi
             );
         }
 
-        $result = $this->ssh->execute($this->connection($node, $address), $this->source->command($this->script()));
-
-        if (! $result->succeeded()) {
-            throw new ResourceOperationException(
-                'proxycli.source_publication_failed',
-                "Could not install the proxycli collector on node [{$node->name}].",
-                422,
-            );
-        }
+        return $this->connection($node, $address);
     }
 
     private function script(): string

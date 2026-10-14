@@ -1649,8 +1649,7 @@ final readonly class TaskScheduler
         $group = $task->parent;
         $start = $task->subtask_start_commit;
         if ($group->project->slug === 'orbit' && is_string($start)
-            && preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $start) === 1
-            && $group->tasks()->where('position', '>', $task->position)->whereNotIn('status', [TaskStatus::Completed, TaskStatus::Cancelled])->exists()) {
+            && preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $start) === 1) {
             return [...($deliverables ?? ['start' => $start, 'commands' => []]), 'test_base' => $start];
         }
 

@@ -283,7 +283,7 @@ it('adds and lists a Node-targeted Docker process', function (): void {
         ->assertJsonPath('data.target_id', $this->node->id)
         ->assertJsonPath('data.name', 'postgres')
         ->assertJsonPath('data.runtime', 'docker')
-        ->assertJsonPath('data.working_directory', '/app')
+        ->assertJsonPath('data.working_directory', null)
         ->assertJsonMissingPath('data.node_id');
 
     $this->assertDatabaseHas('activity_log', [

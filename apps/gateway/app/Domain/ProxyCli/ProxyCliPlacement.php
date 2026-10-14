@@ -25,6 +25,11 @@ final readonly class ProxyCliPlacement
             );
         }
 
+        return $this->validateConnection($connection);
+    }
+
+    public function validateConnection(DatabaseConnection $connection): DatabaseConnection
+    {
         if ($connection->driver !== DatabaseDriver::Redis) {
             throw new ResourceOperationException(
                 'proxycli.cache_invalid',

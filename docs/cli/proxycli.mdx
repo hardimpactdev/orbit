@@ -40,10 +40,10 @@ orbit proxycli:setup --node=<node> --cache-connection=<slug> --cliproxy-url=<url
 | --- | --- | --- |
 | `--node` | yes | Node ID or name that runs CLIProxyAPI. |
 | `--cache-connection` | yes | Redis Database connection slug for shared Valkey. |
-| `--cliproxy-url` | yes | CLIProxyAPI Management API origin, for example `http://127.0.0.1:8317`. |
+| `--cliproxy-url` | yes | CLIProxyAPI Management API origin. When task VMs are enabled, it must equal `ORBIT_TASK_VMS_MODEL_PROXY_ORIGIN`; otherwise a collector-local origin such as `http://127.0.0.1:8317` is allowed. |
 | `--cliproxy-management-key-file` | yes | File that contains only the management key. The CLI never accepts the key as an argument. |
 
-The output shows `enabled`, `hostname`, `node_id`, `cache_connection`, and `collected_at`. It never includes a token or the management key. Setup can run again with the same options. That run rewrites the collector script and recreates the Process. The management key is the only CLIProxyAPI credential. The script uses it for `/v0/management`, including auth-file models. A collector set up before that read stores no models until setup runs again and the next poll finishes.
+The output shows `enabled`, `hostname`, `node_id`, `cache_connection`, and `collected_at`. It never includes a token or the management key. Setup can run again with the same options. That run rewrites the collector script when needed and reconverges the same Process in place, keeping its ID. An unchanged, completed collector stays running without a restart. When task VMs are enabled, the Gateway refuses a URL that differs from their configured model proxy origin before saving settings or changing the collector. See [Set up](/reference/proxycli#set-up) for the shared-origin constraint. The management key is the only CLIProxyAPI credential. The script uses it for `/v0/management`, including auth-file models. A collector set up before that read stores no models until setup runs again and the next poll finishes.
 
 ## orbit proxycli:teardown
 
@@ -131,6 +131,7 @@ When a model has no `owned_by`, `provider` comes from that model's auth file, us
 | `proxycli.key_required` | `proxycli:setup` has no `--cliproxy-management-key-file`. |
 | `proxycli.key_invalid` | The key file is unreadable or empty. |
 | `proxycli.url_invalid` | `--cliproxy-url` is not a URL. |
+| `validation.failed` | The Gateway refuses setup input, including a `cliproxy_url` that differs from the configured task VM model proxy origin while task VMs are enabled. |
 | `proxycli.state_required` | `proxycli:update` needs exactly one of `--disabled` and `--enabled`. |
 | `proxycli.disabled` | The collector is not set up. |
 

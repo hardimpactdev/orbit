@@ -922,6 +922,8 @@ Each Project stores one task check command in `task_check`. Orbit runs it on the
 
 The Gateway installs `$(git rev-parse --git-path orbit)/check` and starts it over SSH as a detached process group. The check records HEAD and a hash of the whole working tree, uncommitted and untracked files included, without touching the Git index. It runs the command in a login shell at the workspace's repository root, even when the Laravel [application directory](/reference/projects#application-directory) is nested, writes the output to `$(git rev-parse --git-path orbit)/check.log`, and writes `$(git rev-parse --git-path orbit)/check.json` when the command ends. The subtask stays `running` while the check runs. There is no time limit.
 
+A `project-check` command deliverable with the exact current task check command at the repository root reuses that run's exit code and output on the same HEAD and tree. The evidence names the reused tree. Failure records a failed deliverable without running it again; other command deliverables still wait for a passing task check. Reuse never carries a result from an earlier handoff, and commands in other directories or with different text run separately.
+
 The check process exports `VP_HOME` to the Node's [resolved Vite+ store](/reference/tools#tool-managers). Setup, the Project check, and command deliverables inherit that value, including when they invoke project-local `vp` without a login shell. An absent, conflicting, or unreadable store makes check start a communication failure, before the check launches. Orbit releases the unstarted baseline claim so the next tick can retry. Status, cancellation, and workspace snapshots do not need another Vite+ store probe.
 
 When the workspace Instance has an [assigned SSR port](/reference/assigned-ssr-ports), the check process also exports `ORBIT_SSR_PORT` and `INERTIA_SSR_URL`. Setup, the Project check, and command deliverables inherit them, so browser and SSR gates in two workspaces on one Node reach their own SSR servers. The check still runs in the workspace on its Node.
@@ -1029,6 +1031,17 @@ The reviewer prompt says the turn is read-only. It says not to re-run the Projec
 `php artisan tasks:render-prompt {role}` renders the implementer prompt, the opening review packet (`reviewer`), or a continued review turn (`reviewer-continue`) from one JSON object on standard input. It prints `{"role", "prompt", "source_commit"}`, where `source_commit` is the Gateway's `APP_VERSION`, or `dev`. It uses the production prompt code and reads no database, workspace, or network, so an offline evaluation can render frozen cases. It rejects unknown input fields. `task.start_commit` is the workspace starting commit, or null when none was recorded. The prompts name it only when it is 40 or 64 hexadecimal characters.
 
 ### Reviewer outcomes
+
+The reviewer first traces the main path and one ordinary failure path end to end, such as a failed build followed by a resume. Rule 1 permits a blocking finding only for:
+
+- (a) A defect likely in normal operation: ordinary use, routine deploys, common operator mistakes, or normal overlap of scheduled jobs.
+- (b) Data loss, a security issue, or a state that no supported command can recover.
+- (c) An unmet brief item or deliverable.
+- (d) A regression of existing behaviour.
+
+Each blocking finding states its normal-operation trigger. P1 blocks. P2 is a follow-up and never blocks approval. A finding that needs a crash, a lost reply, or a timeout between two specific steps is a follow-up unless a deliverable names that guarantee. The reviewer lists follow-ups under `Follow-ups` in the approval. The reviewer prefers an operator recovery command and does not prescribe new markers, fences, or locks.
+
+After two `changes_requested` outcomes on one subtask, only (c) and (d) findings may block. Every other finding becomes a follow-up. This rule is prompt-only: receipts hold free-text findings, so the engine does not classify them or enforce their severity.
 
 When the Gateway sends the review request, it records the workspace HEAD and the working-tree hash. When the reviewer's receipt arrives, it reads them again.
 
@@ -1184,7 +1197,9 @@ Project slugs and CI job names do not change that order. A task gets at most two
 
 The base may already fix a failed check. Before Orbit appends a check fixup, it reads the tip of the pull request base. When that tip is strictly ahead of its merge base with the head, and the Project's `merge_check` passed on it, the brief starts with `Merge origin/{base} first; base may already fix this.` Without a `merge_check`, Orbit reads `Required checks`. The check runs follow the [green-commit rules](/reference/github-app#find-the-newest-green-commit). The title, identity, and caps do not change. A failed read leaves the brief as shown above.
 
-Conflict and check fixups use the Project's task check as configured when Orbit creates the fixup. When it exists, the fixup has one `command` deliverable, `project-check`, which runs that exact command in `.`. Without a configured check, the fixup has one `review` deliverable, `fixup-review`, that asks the reviewer to confirm the conflict or failed check is resolved from the available evidence. The Gateway adds no CI reproduction command. Changing the Project check later does not rewrite an existing fixup's deliverables; subsequent handoffs use the current Project check as usual.
+Conflict and check fixups use the Project's task check as configured when Orbit creates the fixup. When it exists, the fixup has one `command` deliverable, `project-check`, which requires that exact command in `.`. When it equals the current Project task check, the handoff check runs it once and records that result and output as the deliverable evidence on the same tree. A failing task check fails the deliverable without a rerun. If the snapshotted command differs from the current check, it runs separately after the current check passes.
+
+Without a configured check, the fixup has one `review` deliverable, `fixup-review`, that asks the reviewer to confirm the conflict or failed check is resolved from the available evidence. The Gateway adds no CI reproduction command. Changing the Project check later does not rewrite an existing fixup's deliverables; subsequent handoffs use the current Project check as usual.
 
 A fixup records the head it was created for. No new fixup starts while the head is still that commit. These guards and the shared caps apply to feedback, CI, and conflict fixups together. Completing an operator subtask resets the cap window, but never resets review consumption.
 
@@ -1324,6 +1339,8 @@ The flow needs `source_access: github_app`. It is off by default. Each task stil
 
 A final review is a subtask with `type` `final_review` and the title `Final review`. Orbit appends one when a review-and-merge task has no open subtask and its latest approved commit has no final review. It has no implementer and runs no task check. It starts in `reviewing` with a fresh reviewer.
 
+The final reviewer blocks only on [rule-1 findings](#reviewer-outcomes) that are new since the subtask approvals. It does not reopen hardening that the subtask reviews already covered.
+
 Its start commit is the merge base of the workspace `HEAD` and `origin/{default branch}`. So the [review packet](#review-packet) holds the whole branch diff, the task brief, and the earlier approvals. Its one deliverable is the `review` deliverable `final-review`, which the reviewer confirms. When the task has no pull request yet, the final review opens it: its approval needs `--pr-summary`, `--pr-change`, and `--pr-breaking`, and Jev checks [brief coverage](#pull-request-and-settle-metrics) then. Ordinary subtask approvals in the task need no pull request fields.
 
 | Outcome | Orbit |
@@ -1334,9 +1351,11 @@ Its start commit is the merge base of the workspace `HEAD` and `origin/{default 
 
 A final review commits nothing. Orbit checks that the workspace still holds the reviewed `HEAD` and tree, as for any [reviewer outcome](#reviewer-outcomes). The approval stores that `HEAD` as its `commit_sha`. A failed push or pull request open keeps the final review in `reviewing` and retries on the [publication backoff](#pull-request-and-settle-metrics).
 
-The fixup has the `project-check` command deliverable when the Project has a task check, and the `review` deliverable `final-review-findings`. Its `fixup_problem` is `final-review`. It runs the normal implementer, task check, and fresh subtask reviewer. Its approval is held, and a new final review follows.
+The fixup addresses each blocking finding with the smallest change, or explains in its handoff why the finding does not apply within the task brief. It lists follow-ups in the handoff instead of implementing them.
 
-At most three final-review fixups run in one window. The window ends at the latest completed operator subtask, as for [settling fixups](#fix-a-settling-pull-request). At the fourth set of findings, Orbit completes the final review, settles the task, and asks for assistance with a reason that starts with `The final review keeps requesting changes: `. Append an operator subtask to continue. It resumes the task and clears that request, and its completion opens a new window. Final reviews and their fixups do not count toward the settling fixup caps, and a final review does not open a new window.
+The fixup has the `project-check` command deliverable when the Project has a task check, and the `review` deliverable `final-review-findings`. As with settling fixups, the handoff check reuses the task check result for `project-check` when its command matches and its directory is the repository root; it does not run the same check twice. Its `fixup_problem` is `final-review`. It runs the normal implementer, task check, and fresh subtask reviewer. Its approval is held, and a new final review follows.
+
+At most two final-review fixups run in one window. The window ends at the latest completed operator subtask, as for [settling fixups](#fix-a-settling-pull-request). At the third set of findings, Orbit completes the final review, settles the task, and asks for assistance with a reason that starts with `The final review keeps requesting changes: `. Append an operator subtask to continue. It resumes the task and clears that request, and its completion opens a new window. Final reviews and their fixups do not count toward the settling fixup caps, and a final review does not open a new window.
 
 ### Every push is reviewed
 
@@ -1687,6 +1706,12 @@ If any working thread paused a subtask, an operator who talks to the reviewer wo
 
 A long-lived reviewer would carry the context of every earlier review into each new one, and that inherited context would be most of its tokens. A fresh thread with a capped packet reviews only this subtask. The retrieval commands print the diff the caps cut, and every cut note names `$(git rev-parse --git-path orbit)/context.md`, which holds the full task brief, subtask brief, deliverables, earlier approval bodies, and held resolution. The file is in the workspace, so it works on every driver. A re-review continues the same thread, so the reviewer keeps its own findings.
 
+### Reviews focus on ordinary failures
+
+An audit of eight task groups found 11 real bugs likely in normal operation, 23 rare crash-window findings, and 15 small findings. None were wrong. The crash-window findings led to fence code that hid ordinary bugs: group 1479 missed five of them. The fixes also introduced regressions: in group 1517, comment 3291 led to comment 3313.
+
+Blocking every missing guarantee against injected failures was rejected because it spent review and implementation effort on narrow failure windows before the main paths were understood. Reviewers trace ordinary paths first, block on rule 1, and retain other findings as follow-ups. This serves [lean](/mission#principles). Operator recovery commands keep recovery available without new markers, fences, or locks. After two change requests, the reviewer blocks only on unmet work or regressions, so each subtask has a bounded repair loop. Final reviews check new findings across the whole branch instead of repeating hardening already covered by subtask approvals.
+
 ### The reviewer does not edit
 
 The approval commit must hold only the work that the implementer handed off. So a reviewer that edits the workspace gets a reminder to revert and to request the change. A silent revert would hide the edit.
@@ -1743,7 +1768,7 @@ On 2026-10-08 the maintainer decided that Orbit does not use or rely on cloud ag
 
 Pushing each subtask and reviewing only before the merge was rejected. A pushed commit is unreviewed, and a person or a fleet reviewer acts on what GitHub shows. A separate final-review state machine on the task was rejected. It would repeat the reviewer thread, receipt, reminder, restart, topology, and direction handling that a subtask already has. So a final review is a subtask without an implementer.
 
-The cost is that approved work waits in the workspace. A lost workspace loses it, and cancel does not push it. The cap of three final-review fixups in one window stops a reviewer and an implementer from passing findings back and forth without end, as the [fixup caps](#fixups-are-bounded) do for settling.
+The cost is that approved work waits in the workspace. A lost workspace loses it, and cancel does not push it. The cap of two final-review fixups in one window stops a reviewer and an implementer from passing findings back and forth without end, as the [fixup caps](#fixups-are-bounded) do for settling.
 
 ### Incoming pull requests become tasks
 

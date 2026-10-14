@@ -41,7 +41,7 @@ Bind Valkey on the `database` Node's WireGuard address. The collector Node and t
 
 ## Set up
 
-Place Valkey, register it, enable the extension, then set up the collector:
+Place Valkey, register it, enable the extension, then set up the collector. This example uses a loopback URL with task VMs off; with task VMs enabled, replace it with `ORBIT_TASK_VMS_MODEL_PROXY_ORIGIN`:
 
 ```bash
 orbit node:role:add db-1 database
@@ -53,9 +53,35 @@ orbit proxycli:setup --node=beast --cache-connection=valkey --cliproxy-url=http:
 
 The collector Node must be an active Linux Node with a WireGuard address. Otherwise setup fails with `proxycli.node_invalid`.
 
-`--cliproxy-url` is the CLIProxyAPI Management API origin, as the collector Node sees it. Use `http://127.0.0.1:8317` when CLIProxyAPI runs on that Node. The Gateway stores the management key as a secret setting and passes it to the collector Process. No API response contains it.
+`--cliproxy-url` is the CLIProxyAPI Management API origin, as the collector Node sees it. With task VMs off, use `http://127.0.0.1:8317` when CLIProxyAPI runs on that Node.
 
-Setup can run again. It keeps the read and control tokens, writes the collector script, recreates the collector Process, and publishes the hostname again. The [fleet rollout](/reference/node-provisioning#converge-the-orbit-footprint) and `orbit node:converge` also write a changed script after a Gateway release and restart the collector Process. A script that already matches stays, and the collector keeps running. Setup with another `--node` sets up only the new Node and leaves the old Node's collector in place. To move the collector, run `proxycli:teardown` first.
+When task VMs are enabled (`ORBIT_TASK_VMS_ENABLED`), the URL must equal `ORBIT_TASK_VMS_MODEL_PROXY_ORIGIN` (`task_vms.model_proxy_origin`), the CLIProxyAPI origin used by Pi on the VMs. Use that configured reachable origin, for example `http://10.44.0.3:8317`, rather than copying a collector's old loopback URL. Setup refuses a mismatching URL before saving settings or changing the collector, with HTTP 422 `validation.failed` for `cliproxy_url`. It never silently changes the task VM origin. This check belongs to proxycli setup; it does not change task VM provisioning or scheduling. [Configure task VMs](/reference/compute-drivers#configure-task-vms) owns that origin's format and reachability requirements.
+
+The Gateway stores the management key as a secret setting and passes it to the collector Process. No API response contains it.
+
+Setup can run again. It keeps the read and control tokens, writes the collector script, updates the collector Process in place, and publishes the hostname again. On the same Node, the collector keeps its Process ID rather than being destroyed and created again. The [fleet rollout](/reference/node-provisioning#converge-the-orbit-footprint) and `orbit node:converge` also write a changed script after a Gateway release and restart the collector Process.
+
+A script that already matches stays, and a completed collector keeps running. A legacy collector without a source revision first compares the remote source without changing it; matching source does not require restart. Before publishing changed source, the Gateway records pending source activation on the Process; it clears that intent and records the revision only after activation succeeds. An interruption after publication leaves activation pending, so retry restarts an existing running collector even when the source file is already current. A completed unchanged retry does not restart the collector.
+
+Setup with another `--node` sets up only the new Node and leaves the old Node's collector in place. To move the collector, run `proxycli:teardown` first.
+
+## Follow the cache connection
+
+The collector depends on the configured Database connection, not a permanent copy of its credentials. Changing that connection's host, port, username, or password reconverges the dependent Process environment. The Gateway rebuilds the collector's Redis environment from the current connection and updates the same Process in place. A running collector restarts to use the new values; a stopped collector stays stopped. Its Process ID, configured cache connection, management key, read token, and control token stay the same. No manual teardown or second setup is needed for a connection update.
+
+The environment is a name-to-value map, including for this Gateway-owned systemd Process. The connection-derived keys are `PROXYCLI_CACHE_HOST`, `PROXYCLI_CACHE_PORT`, `PROXYCLI_CACHE_USERNAME`, and `PROXYCLI_CACHE_PASSWORD`; the port is a string value too. Rebuilding these keys preserves the collector's other required environment values. Responses, Activity, errors, and logs do not reveal credentials. [Processes and schedules](/reference/processes-and-schedules#environment-contract) owns the shared representation and redaction contract.
+
+The Gateway reconverges only dependent Processes, not every Process on the Node. An invalid cache connection is refused by the same placement and driver checks as setup. Before accepting a connection update, the Gateway validates both the connection fields and these dependent-use constraints. A validation refusal leaves the stored connection and collector unchanged.
+
+### Connection persistence and retry recovery
+
+After validation, the Gateway persists the connection change before reconverging its dependent Processes. The connection record is the source of truth for rebuilding their environment. A failure in remote convergence does not roll back the connection or restore the old credentials. The caller receives failure, and each failed Process records its lifecycle failure rather than claiming that the collector has refreshed. Other dependents may already have converged; a Database connection update is not an atomic transaction across all runtimes.
+
+Every accepted connection update, including an identical retry with no changed connection fields, rebuilds and checks the environment of its dependents. It must not skip this work merely because the stored connection already matches the request. This repairs a crash after the connection was saved but before any dependent was updated, as well as a failure partway through updating several dependents. Each Process follows the [persisted intent and retry recovery](/reference/processes-and-schedules#persisted-intent-and-retry-recovery) contract: stale or incomplete work reconverges in place, while an unchanged, completed runtime is not restarted.
+
+If a response is lost or the Gateway crashes, inspect the saved connection and dependent Process states, then repeat the identical connection update after fixing the cause. Retry can resume from either the old collector environment or an already saved but unapplied environment; both are rebuilt from the current connection. Do not interpret a saved connection as proof of completion, or overwrite a newer connection change by blindly replaying an older request.
+
+Setup on the same Node can also reconverge the collector with the current connection, preserving its ID and tokens. These retries may repeat an unrecorded restart; they do not promise exactly one remote operation.
 
 ## What setup deploys
 
@@ -77,7 +103,7 @@ While setup holds the collector, `process:destroy` refuses to remove the Process
 
 Before it changes anything, setup checks for a Route on `collector.cli-proxy-api.orbit`. It takes over a custom proxy Route on the collector Node to `http://127.0.0.1:8787` with no Process target: one Caddy reload moves the name to the collector site, and setup then removes the Route. Any other Route on that name fails setup with `proxycli.hostname_taken` (409).
 
-Setup runs the shared [Caddy package step](/reference/node-provisioning#package-sources) before it publishes the Caddy site and recreates the collector Process. An installed Caddy at or above the floor stays in place. The site retries the loopback collector for up to 5 seconds, so a request that arrives during the restart waits instead of failing.
+Setup runs the shared [Caddy package step](/reference/node-provisioning#package-sources) before it publishes the Caddy site and updates the collector Process in place. An installed Caddy at or above the floor stays in place. The site retries the loopback collector for up to 5 seconds, so a request that arrives during the restart waits instead of failing.
 
 ## Collection
 
@@ -177,6 +203,7 @@ These codes come from the Gateway on setup, teardown, reads, and toggles.
 | --- | --- | --- |
 | `extension.disabled` | 409 | The `proxycli` extension is disabled. |
 | `proxycli.disabled` | 409 | A read, the model list, or a toggle runs while the collector is not set up. |
+| `validation.failed` | 422 | Invalid setup input, including a `cliproxy_url` that differs from `task_vms.model_proxy_origin` while task VMs are enabled. |
 | `proxycli.cache_missing` | 422 | No Database connection has the cache slug. |
 | `proxycli.cache_invalid` | 422 | The cache connection is not Redis. |
 | `proxycli.cache_unplaced` | 422 | The cache connection's Node is not in the fleet or has no active `database` role. |

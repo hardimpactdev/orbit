@@ -500,7 +500,8 @@
                 "Gateway",
                 "Node",
                 "Placement",
-                "Process"
+                "Process",
+                "Task"
             ],
             "governing_adrs": []
         },
@@ -1169,6 +1170,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Process",
                 "Project",
                 "Project Documents",
                 "Route",
@@ -2238,7 +2240,8 @@
                 "Project",
                 "Role",
                 "Route",
-                "Schedule"
+                "Schedule",
+                "Tool"
             ],
             "governing_adrs": []
         },
@@ -2302,6 +2305,7 @@
                 "apps/web"
             ],
             "concepts": [
+                "Activity",
                 "Extension",
                 "Gateway",
                 "Node",
@@ -2309,7 +2313,8 @@
                 "Process",
                 "Role",
                 "Route",
-                "Schedule"
+                "Schedule",
+                "Task"
             ],
             "governing_adrs": []
         },
@@ -2661,6 +2666,7 @@
                 "Instance",
                 "Node",
                 "Node agent",
+                "Process",
                 "Role"
             ],
             "governing_adrs": []

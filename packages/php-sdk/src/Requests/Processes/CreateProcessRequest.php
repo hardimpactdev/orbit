@@ -71,7 +71,7 @@ final class CreateProcessRequest extends GatewayRequest implements HasBody
         ];
 
         if ($this->environment !== null) {
-            $body['environment'] = $this->environment;
+            $body['environment'] = $this->environment === [] ? (object) [] : $this->environment;
         }
 
         if ($this->ports !== null) {

@@ -49,6 +49,11 @@ final readonly class ProxyCliSourcePublisher
         );
     }
 
+    public function inspectCommand(): RemoteCommand
+    {
+        return new RemoteCommand(arguments: ['sudo', 'sha256sum', '--', ProxyCliFootprint::SourcePath]);
+    }
+
     public function removeCommand(): RemoteCommand
     {
         return new RemoteCommand(
