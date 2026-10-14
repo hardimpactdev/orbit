@@ -76,6 +76,7 @@ it('fails when a project drifts from the baseline', function (string $relative, 
     'renamed script' => ['apps/cli/composer.json', '"guidance:update"', '"guidance:generate"', 'apps/cli/composer.json is missing script guidance:update.'],
     'changed script' => ['apps/e2e/composer.json', '--processes=2', '--processes=4', 'apps/e2e/composer.json script test:affected is'],
     'inline guidance check' => ['packages/php-sdk/composer.json', '"../../bin/guidance-check"', '"vendor/bin/pest --configuration=phpunit.guidance.xml"', 'packages/php-sdk/composer.json script guidance:check is'],
+    'unsafe Rector cache reuse' => ['apps/gateway/composer.json', ' --clear-cache', '', 'apps/gateway/composer.json script rector is'],
     'missing check step' => ['apps/docs/composer.json', '"@rector",', '', 'apps/docs/composer.json check is missing @rector.'],
     'undeclared check step' => ['apps/e2e/composer.json', '"@analyse"', '"@analyse", "@extra"', 'apps/e2e/composer.json check runs undeclared step "@extra".'],
     'lower PHPStan level' => ['apps/gateway/phpstan.neon', 'level: 9', 'level: 8', 'apps/gateway/phpstan.neon level is 8, expected 9.'],
@@ -104,6 +105,43 @@ it('accepts the declared differences', function (): void {
         $process = toolingBaselineCheck($root);
 
         expect($process->getExitCode())->toBe(0, $process->getOutput().$process->getErrorOutput());
+    } finally {
+        toolingBaselineRemove($root);
+    }
+});
+
+it('detects an unchanged child after only its parent gains a property with a warm Rector cache', function (): void {
+    $root = toolingBaselineFixture();
+    try {
+        mkdir($root.'/src');
+        mkdir($root.'/container');
+        $parent = "<?php\nnamespace RectorCacheRegression;\nclass ParentClass {\n%s\n}\n";
+        file_put_contents($root.'/src/ParentClass.php', sprintf($parent, ''));
+        $child = "<?php\nnamespace RectorCacheRegression;\nfinal class ChildClass extends ParentClass\n{\n    public string \$name = '';\n}\n";
+        file_put_contents($root.'/src/ChildClass.php', $child);
+        file_put_contents($root.'/rector.php', <<<'PHP'
+<?php
+use Rector\Config\RectorConfig;
+return RectorConfig::configure()
+    ->withCache(__DIR__.'/cache', null, __DIR__.'/container')
+    ->withoutParallel()
+    ->withPaths([__DIR__.'/src'])
+    ->withPhpSets();
+PHP);
+        $composer = json_decode((string) file_get_contents($root.'/apps/gateway/composer.json'), true, flags: JSON_THROW_ON_ERROR);
+        $command = [...explode(' ', $composer['scripts']['rector']), '--config', $root.'/rector.php'];
+        $project = dirname(__DIR__, 2);
+        $warm = new Process($command, $project);
+        $warm->run();
+        expect($warm->getExitCode())->toBe(0, $warm->getOutput().$warm->getErrorOutput());
+
+        file_put_contents($root.'/src/ParentClass.php', sprintf($parent, "    public string \$name = '';"));
+        $check = new Process($command, $project);
+        $check->run();
+
+        expect($check->getExitCode())->toBe(2, $check->getOutput().$check->getErrorOutput())
+            ->and($check->getOutput())->toContain('ChildClass.php', 'AddOverrideAttributeToOverriddenPropertiesRector', '+    #[\\Override]')
+            ->and(file_get_contents($root.'/src/ChildClass.php'))->toBe($child);
     } finally {
         toolingBaselineRemove($root);
     }

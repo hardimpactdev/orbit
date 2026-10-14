@@ -45,7 +45,7 @@
         "format:check": "vendor/bin/pint --test",
         "guidance:check": "../../bin/guidance-check",
         "lint": "@format:check",
-        "rector": "vendor/bin/rector process --dry-run --no-progress-bar",
+        "rector": "vendor/bin/rector process --dry-run --no-progress-bar --clear-cache",
         "test": "../../bin/pest-plain vendor/bin/pest --parallel --tia --compact --colors=never"
     },
     "config": {
