@@ -257,6 +257,7 @@ it('renders the same prompt for the implementer with optional command fields, in
         ->and($deliverable['paths'])->toBe(['apps/gateway/tests/PromptTest.php'])
         ->and($prompt)->toBe($production['prompt'])
         ->and($prompt)->toContain("The group started at {$groupStart}.\ngit diff --stat {$groupStart}..HEAD")
+        ->and($prompt)->toContain("Feature: {$production['group']['title']}\n\nGroup brief\n{$production['group']['brief']}\n\nOrbit subtask #")
         ->and($prompt)->toContain('Follow this repository\'s task instructions.')
         ->and($prompt)->not->toContain('feature\'s contract')
         ->and($prompt)->not->toContain('Build to them.');
@@ -376,7 +377,7 @@ it('omits the group start lines when the workspace commit is missing or not a re
 });
 
 it('renders the blocking rule and follow-up policy for opening and continued reviews but not for implementers', function (): void {
-    $sentence = 'Block only for: (a) a defect likely in normal operation (ordinary use, routine deploys, common operator mistakes, normal overlap of scheduled jobs); (b) data loss, a security issue, or a state that no supported command can recover; (c) an unmet brief item or deliverable; (d) a regression of existing behaviour. For each blocking finding, state the normal-operation trigger. A finding that needs a crash, a lost reply or a timeout between two specific steps is a follow-up, unless a deliverable names that guarantee. List follow-ups under \'Follow-ups\' in the approval. Do not prescribe new markers, fences or locks; prefer an operator recovery command. Rule 1 is the blocking rule above. P1 blocks; P2 is a follow-up and never blocks approval. After two changes_requested on one subtask, only (c) and (d) findings may block; everything else becomes a follow-up.';
+    $sentence = 'Block only for: (a) a defect likely in normal operation (ordinary use, routine deploys, common operator mistakes, normal overlap of scheduled jobs); (b) data loss, a security issue, or a state that no supported command can recover; (c) an unmet brief item or deliverable; (d) a regression of existing behaviour. For each blocking finding, state the normal-operation trigger. A finding that needs a crash, a lost reply or a timeout between two specific steps is a follow-up, unless a deliverable names that guarantee. List follow-ups under \'Follow-ups\' in the approval; they never block. Do not prescribe new markers, fences or locks; prefer an operator recovery command. After two changes_requested on one subtask, only (b), (c) and (d) findings may block; everything else becomes a follow-up.';
     $payload = [
         'group' => render_task_prompt_group(),
         'subtask' => render_task_prompt_subtask(),

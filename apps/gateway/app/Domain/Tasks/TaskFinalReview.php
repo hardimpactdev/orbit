@@ -63,14 +63,14 @@ final readonly class TaskFinalReview
             return 'Review pull request '.$group->pr_url.' as a whole before Orbit approves it on GitHub and merges it. '
                 .'The diff runs from its merge base with origin/'.$default.' to the pull request head. '
                 .'Approve only when the complete change is correct, tested, documented, and ready to merge as it is. '
-                .'Block only on rule-1 findings that are new since the subtask approvals. Do not reopen hardening that the subtask reviews already covered. '
+                .'Block only on findings that meet the blocking rule and are new since the subtask approvals. Do not reopen hardening that the subtask reviews already covered. '
                 .'Otherwise request changes and list each finding with its file and what must change. Orbit applies the findings in a new subtask.';
         }
 
         return 'Review the whole task branch before Orbit pushes it'.(is_string($group->pr_url) && $group->pr_url !== '' ? ' to '.$group->pr_url : ' and opens the pull request').'. '
             .'The diff runs from its merge base with origin/'.$default.' to HEAD, and covers every approved subtask. '
             .'Approve only when the complete change meets the task brief, is tested and documented, and is ready to merge. '
-            .'Block only on rule-1 findings that are new since the subtask approvals. Do not reopen hardening that the subtask reviews already covered. '
+            .'Block only on findings that meet the blocking rule and are new since the subtask approvals. Do not reopen hardening that the subtask reviews already covered. '
             .'Otherwise request changes and list each finding with its file and what must change. Orbit applies the findings in a new subtask.';
     }
 

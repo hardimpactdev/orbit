@@ -17,6 +17,7 @@ final readonly class TaskPromptRenderer
             'Implement this subtask in the shared workspace. '.TaskTurnInstructions::implementer($deliverables, $group->taskCheck, $threadId),
             'Orbit task group #'.$group->id,
             'Feature: '.$group->title,
+            $group->brief === '' ? '' : "Group brief\n".$group->brief,
             'Orbit subtask #'.$task->id,
             'Subtask: '.$task->title,
             $task->brief,

@@ -115,14 +115,17 @@ final readonly class RemoveTaskWorkspaceAction
     /**
      * A task VM holds one group's workspace, and its checkout may live on a workspace volume that goes with the VM.
      * So the VM goes instead of the checkout: the Project's teardown runs in the guest while it is ready, unless an
-     * earlier removal attempt ran it, then the VM is deleted and the workspace records are forgotten offline. The
-     * queued `DestroyTaskVm` removes the Node.
+     * earlier removal attempt ran it. The agent transcripts are copied to the Gateway, then the VM is deleted and the
+     * workspace records are forgotten offline. The queued `DestroyTaskVm` removes the Node.
      */
     private function removeWithTaskVm(Instance $instance, TaskVm $vm): void
     {
         $started = ! in_array($instance->status, [InstanceState::Reserved, InstanceState::CheckoutPrepared], true);
         if ($vm->state === TaskVmState::Ready && $started && ! $instance->removalMember()->exists()) {
             app(ProjectLifecycleRunner::class)->run($instance, LifecyclePhase::Teardown);
+        }
+        if ($vm->state === TaskVmState::Ready && $vm->group_id !== null && $vm->node_id !== null) {
+            app(ArchiveAgentTranscriptsAction::class)->execute($vm->group_id, $vm->node_id);
         }
         app(DeleteTaskVmAction::class)->execute($vm);
         DestroyTaskVm::dispatch($vm->id);

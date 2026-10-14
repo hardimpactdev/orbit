@@ -32,10 +32,12 @@ it('does not assume a Project task check when none was supplied', function (): v
         ->not->toContain('composer check');
 });
 
-it('tells the reviewer that the turn is read-only', function (): void {
+it('tells the reviewer to leave the workspace tree unchanged but lets it verify outside the workspace', function (): void {
     expect(TaskTurnInstructions::reviewer())
-        ->toContain('This review is read-only. Do not create, edit, reset, or delete workspace files, including disposable fixtures.')
-        ->toContain('Request changes from the implementer instead.')
+        ->toContain('Leave the workspace tree as you found it: Orbit checks that no tracked or untracked workspace file changed when your turn ends.')
+        ->toContain('You may run commands, use sudo, and create disposable files outside the workspace, such as under /tmp, to verify behaviour.')
+        ->toContain('Request changes from the implementer instead of editing the code.')
+        ->not->toContain('read-only')
         ->toContain('--outcome=approved')
         ->toContain('--outcome=changes_requested')
         ->not->toContain('This is a consult')
@@ -73,7 +75,7 @@ it('uses consult and relay instructions only for those turns', function (): void
 it('tells the implementer to pass the Project task check, or only to finish the brief without one', function (): void {
     expect(TaskTurnInstructions::implementer([], 'vp run check'))
         ->toContain('When the brief is complete and vp run check passes, end your turn')
-        ->toContain('Orbit runs vp run check again at handoff with access you do not have, such as sudo. When it fails for you only because you lack that access, hand off anyway.')
+        ->not->toContain('access you do not have')
         ->and(TaskTurnInstructions::implementer([], null))
         ->toContain('When the brief is complete, end your turn')
         ->not->toContain('composer check')
