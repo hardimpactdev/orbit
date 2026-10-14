@@ -64,6 +64,7 @@ A top-level task holds the task workspace, the branch, the reviewed pull request
 | `ended_pr_notice_state` | subtask | `pending` or `delivered` |
 | `notify_coder` | task | Whether settle posts the [Coder webhook](#coder-settle-webhook) |
 | `execution_mode` | task | `managed` for every task on this page |
+| `vm_power` | task | [VM power](/reference/compute-drivers#vm-power), separate from task status: `running`, `stopped`, `destroyed`, or `null` |
 | `tokens`, `line_diff`, `lines_added`, `lines_deleted`, `duration_ms` | both | [Settle metrics](#settle-metrics). Settle stores task tokens as subtask tokens plus every started reviewer thread, and the task line diff as the whole branch against the default branch |
 
 Clearing the assistance flag can keep the last reason.
