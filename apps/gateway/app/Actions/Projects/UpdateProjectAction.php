@@ -113,7 +113,7 @@ final readonly class UpdateProjectAction
 
         $result = $this->operations->run(
             $instanceIds,
-            fn (): Project => $this->applyProjectCommands($this->executeOwned($project->fresh() ?? $project, $data), $data),
+            fn (): Project => $this->applyProjectCommands($this->executeOwned($project->fresh() ?? $project, $data, mayRollBackAbandoned: $instanceIds !== []), $data),
         );
 
         ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
@@ -176,9 +176,11 @@ final readonly class UpdateProjectAction
         return $project->fresh() ?? $project;
     }
 
-    private function executeOwned(Project $project, UpdateProjectData $data): Project
+    private function executeOwned(Project $project, UpdateProjectData $data, bool $mayRollBackAbandoned): Project
     {
-        $this->rollBackAbandoned($project, $data);
+        if ($mayRollBackAbandoned) {
+            $this->rollBackAbandoned($project, $data);
+        }
         $update = $this->reserve($project, $data);
 
         try {

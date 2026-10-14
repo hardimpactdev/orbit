@@ -46,7 +46,7 @@ use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\AppProd\ProductionSshExecutor;
 use App\Infrastructure\Gateway\GatewayPrivateDnsResolver;
-use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
+use App\Infrastructure\Nodes\CaddyPackageProgram;
 use App\Infrastructure\Nodes\Roles\AnalyticsRoleBaseline;
 use App\Infrastructure\Nodes\Roles\DatabaseRoleBaseline;
 use App\Infrastructure\Nodes\Roles\DevelopmentRoleBaseline;
@@ -579,9 +579,9 @@ it('installs pinned Caddy before the gateway role firewall and stops when it can
         })
         ->and($events)->toBe(['ssh:caddy-source'])
         ->and($ssh->commands[0]->arguments)
-        ->toBe(['sudo', 'bash', '-seu', '--', ...CaddyPackageSourceProgram::arguments()])
+        ->toBe(['sudo', 'bash', '-seu', '--', ...CaddyPackageProgram::arguments()])
         ->and($ssh->commands[0]->input)
-        ->toBe(CaddyPackageSourceProgram::render());
+        ->toBe(CaddyPackageProgram::render());
 });
 
 it('routes the private domain on the Gateway machine to the configured VPN DNS address', function (
@@ -1528,7 +1528,7 @@ function baseline_ssh(array &$events): SshExecutor
         public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
         {
             $label = $command->arguments[4] ?? 'unknown';
-            $this->events[] = 'ssh:'.(in_array(CaddyPackageSourceProgram::RELEASE_URL, $command->arguments, true) ? 'caddy-source' : $label);
+            $this->events[] = 'ssh:'.(in_array(CaddyPackageProgram::RELEASE_URL, $command->arguments, true) ? 'caddy-source' : $label);
 
             return new CommandResult(0, '', '', 1, false);
         }

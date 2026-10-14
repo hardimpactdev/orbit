@@ -262,6 +262,7 @@
               "DELETE /api/v1/nodes/{node}/roles/{role}",
               "POST /api/v1/nodes/{node}/roles/{role}/relocate",
               "PATCH /api/v1/nodes/{node}/settings",
+              "PATCH /api/v1/nodes/{node}/wireguard-key",
               "DELETE /api/v1/nodes/{serving_node}/access/{consumer_node}",
               "PUT /api/v1/nodes/{serving_node}/access/{consumer_node}"
             ]
@@ -661,7 +662,8 @@
               "decisions/0198-keep-delivery-line-proofs-as-repo-commands",
               "decisions/0200-run-each-task-group-in-its-own-sandbox-vm",
               "decisions/0205-publish-database-credentials-to-vaultwarden",
-              "decisions/0206-build-task-vm-images-as-chains-of-small-jobs"
+              "decisions/0206-build-task-vm-images-as-chains-of-small-jobs",
+              "decisions/0207-one-image-recipe-shared-package-cache-no-workspace-templates"
             ]
           }
         ]

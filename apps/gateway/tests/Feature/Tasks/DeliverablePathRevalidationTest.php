@@ -12,7 +12,6 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\DeliverablePathChecker;
 use App\Domain\Tasks\DeliverablePathRepository;
-use App\Domain\Tasks\NullTaskWorkspaceStateReader;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskCommentType;
@@ -40,6 +39,7 @@ use Illuminate\Validation\ValidationException;
 use Symfony\Component\Process\InputStream;
 use Symfony\Component\Process\Process;
 use Tests\Support\DeliverablePathWorkspace;
+use Tests\Support\NullTaskWorkspaceStateReader;
 use Tests\Support\TestOrbitHome;
 
 /** @param list<array<string, mixed>> $deliverables */

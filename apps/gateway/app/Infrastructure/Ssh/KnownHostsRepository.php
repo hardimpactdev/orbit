@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Ssh;
 
+use Closure;
+use Illuminate\Support\Sleep;
 use InvalidArgumentException;
 use RuntimeException;
 
@@ -13,8 +15,10 @@ final readonly class KnownHostsRepository implements KnownHostsStore
 
     private const int LockTimeoutNanoseconds = 10_000_000_000;
 
+    /** @param (Closure(): int)|null $monotonicNanoseconds */
     public function __construct(
         private string $path,
+        private ?Closure $monotonicNanoseconds = null,
     ) {}
 
     public function path(): string
@@ -89,7 +93,7 @@ final readonly class KnownHostsRepository implements KnownHostsStore
                 );
             }
 
-            usleep(min(
+            Sleep::usleep(min(
                 self::LockRetryMicroseconds,
                 max(1, intdiv($remainingNanoseconds, 1_000)),
             ));
@@ -155,7 +159,7 @@ final readonly class KnownHostsRepository implements KnownHostsStore
 
     private function monotonicNanoseconds(): int
     {
-        return (int) hrtime(true);
+        return $this->monotonicNanoseconds !== null ? ($this->monotonicNanoseconds)() : (int) hrtime(true);
     }
 
     /** @return list<string> */

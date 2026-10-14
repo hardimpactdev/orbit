@@ -13,7 +13,6 @@ use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmFailedException;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
-use App\Jobs\TaskVms\ResumeTaskVm;
 use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskVm;
@@ -46,6 +45,10 @@ final readonly class TaskVmWorkspace
             } catch (TaskVmException $exception) {
                 throw new TaskCapacityException(TaskWait::TaskVm, "Task VM: {$exception->errorCode}: {$exception->getMessage()}");
             }
+        } elseif ($vm->state === TaskVmState::Provisioning && $vm->warmed_at !== null && $vm->claimed_at !== null) {
+            // Later claims recover a warm claim committed before its job was accepted.
+            // Cold allocations wait for provisioning and enrollment to enqueue their own preparation.
+            app(AllocateTaskVmAction::class)->dispatchPreparation($vm);
         }
 
         if ($vm->state === TaskVmState::Failed) {
@@ -57,7 +60,7 @@ final readonly class TaskVmWorkspace
         }
 
         if ($vm->state === TaskVmState::Parked) {
-            ResumeTaskVm::dispatch($vm->id);
+            app(WakeTaskVmAction::class)->forVm($vm);
         }
 
         throw new TaskCapacityException(TaskWait::TaskVm, match ($vm->state) {

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\CaddyRelease;
 use App\Domain\Nodes\RoleName;
-use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
+use App\Infrastructure\Nodes\CaddyPackageProgram;
 use App\Infrastructure\Nodes\Roles\NodeRolePrerequisiteCommandFactory;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
@@ -38,6 +38,14 @@ describe('Caddy release floor', function (): void {
 });
 
 describe('Caddy package', function (): void {
+    it('keeps the command byte-equivalent to main before the shared factory and rename', function (): void {
+        $before = json_decode((string) file_get_contents(base_path('tests/Fixtures/Caddy/package-command-main.json')), true, flags: JSON_THROW_ON_ERROR);
+        $after = CaddyPackageProgram::command();
+
+        expect($after->arguments)->toBe($before['arguments']);
+        expect($after->input)->toBe($before['input']);
+    });
+
     it('installs the package only for the roles that serve through Caddy', function (RoleName $role, bool $needed): void {
         $command = new NodeRolePrerequisiteCommandFactory()->caddyPackage(new Node, $role);
 
@@ -76,7 +84,7 @@ describe('Caddy package', function (): void {
     });
 
     it('never refreshes apt sources, removes a package, or trusts an unpinned download', function (): void {
-        $script = CaddyPackageSourceProgram::render();
+        $script = CaddyPackageProgram::render();
 
         expect($script)->toContain(
             "curl --fail --silent --show-error --location --proto '=https' --tlsv1.2",

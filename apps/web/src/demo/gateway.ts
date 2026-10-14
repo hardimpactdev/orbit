@@ -583,6 +583,32 @@ export function createDemoGateway() {
                         collected_at: proxycliConfigured ? "2026-09-20T12:00:00Z" : null,
                     }),
             ],
+            [
+                "GET",
+                /^\/api\/v1\/instances\/(\d+)\/dependencies$/,
+                ([id]) => {
+                    const inventory = byRoute.get(
+                        `GET /api/v1/instances/{instance}/dependencies#${id}`,
+                    );
+                    if (inventory !== undefined) return ok(inventory);
+                    if (!instances.some((instance) => String(instance.id) === id))
+                        return notFound("Instance");
+                    const unknown = (ecosystem: string) => ({
+                        ecosystem,
+                        state: "unknown",
+                        succeeded: null,
+                        attempted_at: null,
+                        error_code: null,
+                        snapshot: null,
+                    });
+                    return ok({
+                        instance_id: Number(id),
+                        succeeded: null,
+                        composer: unknown("composer"),
+                        javascript: unknown("npm"),
+                    });
+                },
+            ],
             ["GET", /^\/api\/v1\/tasks\/status$/, () => ok({ enabled: tasksEnabled })],
             [
                 "GET",

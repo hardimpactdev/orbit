@@ -43,7 +43,7 @@ final readonly class TaskGroupResponse
         public array $tasks,
         public string $requestId,
         public ?string $capacityWaitReason = null,
-        public ?string $sandboxPower = null,
+        public ?string $vmPower = null,
         public bool $preview = false,
         public ?TaskReviewAndMergeResponse $reviewAndMerge = null,
     ) {}
@@ -85,7 +85,7 @@ final readonly class TaskGroupResponse
             requestId: $requestId,
             capacityWaitReason: TaskFields::nullableText($data, 'capacity_wait_reason'),
             preview: ($data['preview'] ?? false) === true,
-            sandboxPower: in_array($data['sandbox_power'] ?? null, ['running', 'stopped', 'destroyed'], true) ? $data['sandbox_power'] : null,
+            vmPower: in_array($data['vm_power'] ?? null, ['running', 'stopped', 'destroyed'], true) ? $data['vm_power'] : null,
             reviewAndMerge: TaskReviewAndMergeResponse::fromGatewayData($data['review_and_merge'] ?? null, $requestId),
         );
     }
@@ -140,7 +140,7 @@ final readonly class TaskGroupResponse
                 return $data;
             }, $this->tasks),
             ...($this->capacityWaitReason === null ? [] : ['capacity_wait_reason' => $this->capacityWaitReason]),
-            ...($this->sandboxPower === null ? [] : ['sandbox_power' => $this->sandboxPower]),
+            ...($this->vmPower === null ? [] : ['vm_power' => $this->vmPower]),
             'preview' => $this->preview,
             ...($this->reviewAndMerge === null ? [] : ['review_and_merge' => $this->reviewAndMerge->toArray()]),
             'request_id' => $this->requestId,

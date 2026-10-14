@@ -2,8 +2,9 @@
 
 declare(strict_types=1);
 
-namespace App\Domain\Tasks;
+namespace Tests\Support;
 
+use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Models\Instance;
 
 final readonly class NullTaskWorkspaceDiffReader implements TaskWorkspaceDiffReader

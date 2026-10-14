@@ -20,10 +20,6 @@ use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\BriefCoverageLabeler;
 use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\DeliverablePathRepository;
-use App\Domain\Tasks\NullAgentSpawner;
-use App\Domain\Tasks\NullCoderSettleNotifier;
-use App\Domain\Tasks\NullTaskReviewDiff;
-use App\Domain\Tasks\NullTaskWorkspaceDiffReader;
 use App\Domain\Tasks\PrunePendingTaskThreads;
 use App\Domain\Tasks\QuestionAsker;
 use App\Domain\Tasks\QuestionCause;
@@ -118,6 +114,10 @@ use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskPullRequestReviewWatcher;
 use Tests\Support\FakeTaskTurnReceipts;
 use Tests\Support\LocalShellSshExecutor;
+use Tests\Support\NullAgentSpawner;
+use Tests\Support\NullCoderSettleNotifier;
+use Tests\Support\NullTaskReviewDiff;
+use Tests\Support\NullTaskWorkspaceDiffReader;
 use Tests\Support\RecordingTaskVmProvider;
 use Tests\Support\UnreachableSshExecutor;
 
@@ -4728,7 +4728,7 @@ it('answers a direction question from the reviewer receipt that follows the oper
         ->and(app(TaskTurnReceipts::class)->modes)->toContain('cause')
         ->and(app(TaskTurnReceipts::class)->modes)->not->toContain('relay');
     $reviewerSend = collect(app(AgentCommandDispatcher::class)->commands)->first(fn (array $command): bool => ($command['type'] ?? null) === 'send');
-    expect($reviewerSend['message']['text'] ?? null)->toContain('Follow ADR 0098.')
+    expect($reviewerSend['message']['text'] ?? null)->toContain('Follow ADR 0098.', '--outcome=changes_requested --summary="The findings the implementer must address" --cause=CAUSE')
         ->and($reviewerSend['message']['text'] ?? null)->not->toContain('This is a relay');
 
     app(TaskScheduler::class)->tick();

@@ -30,7 +30,7 @@ final readonly class TaskRubricReminder
             $role === TaskThreadRole::Implementer => TaskTurnInstructions::implementer($deliverables, $check, $threadId),
             $mode?->consult === true => TaskTurnInstructions::consult($threadId),
             $mode?->relay === true => TaskTurnInstructions::relay($threadId),
-            default => TaskTurnInstructions::reviewer($final, $deliverables, $threadId),
+            default => TaskTurnInstructions::reviewer($final, $deliverables, $threadId, $mode),
         };
 
         return implode(' ', [$role === TaskThreadRole::Implementer ? self::ImplementerLead : self::ReviewerLead, ...$sentences, $instructions]);

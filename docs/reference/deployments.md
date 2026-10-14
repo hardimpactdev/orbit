@@ -79,24 +79,6 @@ A deployment records that the default's Route projection is pending before it co
 
 A new development Instance on the same Node starts from the default: Orbit records the default's checkout as its `seed_path` and the default's `seed_commit`, and creates a linked worktree of the default's repository at that commit. [Setup steps](/reference/instance-setup#run-setup) receive the two values as `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT` and copy dependency folders from the checkout. The checkout can change while they copy, because a deployment can run at the same time. A copied folder is a quick start, not a matching set: setup must still run its locked installs. A default's own setup gets no seed.
 
-### Converting the old release layout
-
-Earlier Gateways served a default from `releases/<name>` through a `current` link. The first deployment after an upgrade turns that layout back into a plain checkout, once.
-
-First, Orbit lists the selected release's untracked and ignored files. When it cannot list them, the conversion stops before it changes anything. Then Orbit checks out the release's commit in the checkout, on the default branch, after it deletes leftovers in directories that the commit does not have, as a [deployment](#development-defaults) does. When tracked files have uncommitted changes, it refuses with `deployment.checkout_dirty`, and when the local branch has commits that the release's commit does not contain, with `deployment.branch_diverged`. Either refusal changes nothing.
-
-Then Orbit copies the selected release's untracked and ignored files into the checkout. They replace the checkout's own copies. They hold the dependencies, caches, and runtime data, such as SQLite databases, that the Instance served. A link into the release now points into the checkout. The release keeps serving while Orbit copies, so a write to a database in the few seconds before the Route switches is lost.
-
-The checkout keeps its own `.env` and `.env.testing`, because synchronization wrote them there. It also keeps its other files that the release does not have, such as old logs.
-
-Next, the Gateway serves the Route from the checkout and records the checkout as the default's seed. Every Instance whose seed named one of the releases now names the checkout.
-
-Last, Orbit removes `current`, the releases, and the layout's state. It waits while an Instance seeded from the default runs a setup step, a teardown step, or a [task baseline](/reference/tasks#project-check): a baseline reads its seed once, when it starts. Orbit holds those Instances' lifecycle locks while it removes. A failed removal does not fail the deployment, and a later deployment retries it.
-
-Orbit keeps a release folder without its ownership receipt, because it does not own it. The deployment output names each such folder, and the Gateway logs one warning. The layout's state goes anyway, so Orbit does not retry. Delete the folder by hand.
-
-A repeated conversion does nothing more. Until it succeeds, the Route keeps serving the selected release.
-
 ## Deploy steps
 
 Development deploy steps run at the checkout's repository root, and production deploy steps at the release's repository root, not at a nested application's directory. For root `apps/site/public`, an Artisan step must say `cd apps/site && php artisan migrate --force`. Changing the web root does not change the scope of a repository-owned command.

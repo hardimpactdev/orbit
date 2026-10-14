@@ -17,11 +17,6 @@ use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Projects\DevelopmentDeployStep;
 use App\Domain\Projects\ProjectDevelopmentDeployStepStore;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\TaskCheckKind;
-use App\Domain\Tasks\TaskCheckStatus;
-use App\Domain\Tasks\TaskExecutionMode;
-use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskStatus;
 use App\Infrastructure\AppDev\DevelopmentCaddyConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Processes\CommandResult;
@@ -30,9 +25,6 @@ use App\Models\InstanceDeployment;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
-use App\Models\Task;
-use App\Models\TaskCheck;
-use Illuminate\Support\Facades\Log;
 
 beforeEach(function (): void {
     $this->remote = new Dev935Deployment;
@@ -80,128 +72,6 @@ describe('development default deployments', function (): void {
             ->and($instance->fresh()->development_projection_pending)->toBeFalse();
         // A deployment in place does not move the Route, so it does not converge it again.
         expect(app(DeployDefaultInstanceAction::class)->execute($instance)?->succeeded)->toBeTrue();
-    });
-
-    it('converts an old release layout once, serves the checkout, and moves seeds off the releases', function (): void {
-        $instance = $this->instance;
-        $release = $instance->checkout_path.'/releases/20261005112105-a200f174bf2565c7';
-        $instance->update(['development_release_layout' => true, 'development_projection_pending' => false, 'root' => 'public', 'selected_php_version' => '8.5', 'source_is_laravel' => true,
-            'seed_path' => $instance->checkout_path.'/releases/20261009164518-56c418b8ebd18e71', 'seed_commit' => str_repeat('a', 40), 'seed_repository' => $instance->checkout_path]);
-        $worktree = Instance::query()->create(['project_id' => $instance->project_id, 'node_id' => $instance->node_id, 'name' => 't3code-36e980ba', 'checkout_path' => '/fast/apps/dev935/t3code-36e980ba',
-            'source_layout' => 'worktree', 'status' => 'active', 'seed_selected' => true, 'seed_path' => $release, 'seed_commit' => str_repeat('f', 40), 'seed_repository' => $instance->checkout_path]);
-        $elsewhere = Instance::query()->create(['project_id' => $instance->project_id, 'node_id' => $instance->node_id, 'name' => 'cold', 'checkout_path' => '/fast/apps/dev935/cold',
-            'source_layout' => 'checkout', 'status' => 'active', 'seed_selected' => true]);
-        $route = Route::query()->create(['project_id' => $instance->project_id, 'node_id' => $instance->node_id, 'domain' => 'convert935.example.test', 'provenance' => 'explicit', 'publication' => 'public', 'status' => 'pending']);
-        $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
-        $route->update(['status' => 'active']);
-        $this->remote->convertedCommit = str_repeat('a', 40);
-        $this->remote->releasesRemain = true;
-        $this->remote->targetCommit = str_repeat('a', 40);
-        $projector = Mockery::mock(DevelopmentRouteProjector::class);
-        $projector->shouldReceive('converge')->once()->andReturnUsing(function (Instance $projected): void {
-            expect(new DevelopmentSiteRepository()->forNode($projected->node)->sole()->checkoutPath)->toBe($projected->checkout_path)
-                ->and($this->remote->trace)->toBe(['convert']);
-        });
-        app()->instance(DevelopmentRouteProjector::class, $projector);
-
-        $first = app(DeployDefaultInstanceAction::class)->execute($instance, onlyChanged: true, triggeredBy: 'schedule');
-        $instance->refresh();
-
-        expect($first)->toBeNull()
-            ->and($this->remote->trace)->toBe(['convert', 'target:main', 'remove-releases:/fast/apps/dev935/t3code-36e980ba'])
-            ->and($instance->development_release_layout)->toBeFalse()
-            ->and($instance->development_projection_pending)->toBeFalse()
-            ->and($instance->seed_path)->toBe($instance->checkout_path)
-            ->and($instance->seed_commit)->toBe(str_repeat('a', 40))
-            ->and($worktree->fresh()->seed_path)->toBe($instance->checkout_path)
-            ->and($worktree->fresh()->seed_commit)->toBe(str_repeat('f', 40))
-            ->and($elsewhere->fresh()->seed_path)->toBeNull()
-            ->and(InstanceDeployment::query()->count())->toBe(0);
-
-        $this->remote->trace = [];
-        $this->remote->releasesRemain = false;
-        expect(app(DeployDefaultInstanceAction::class)->execute($instance, onlyChanged: true, triggeredBy: 'schedule'))->toBeNull()
-            ->and($this->remote->trace)->toBe(['target:main']);
-    });
-
-    it('keeps deploying when the old releases cannot be removed yet', function (): void {
-        $this->instance->update(['seed_path' => $this->instance->checkout_path, 'seed_commit' => str_repeat('a', 40), 'seed_repository' => $this->instance->checkout_path]);
-        $this->remote->releasesRemain = true;
-        $this->remote->removalFailure = new ResourceOperationException('instance.lifecycle_busy', 'A setup or teardown step is running in the checkout.', 409);
-        $events = [];
-        $result = app(DeployDefaultInstanceAction::class)->execute($this->instance, new DeploymentRequest(static function (DeploymentEvent $event) use (&$events): void {
-            $events[] = $event;
-        }));
-
-        expect($result?->succeeded)->toBeTrue()
-            ->and($this->remote->trace)->toBe(['target:main', 'remove-releases:', 'checkout:'.str_repeat('b', 40)])
-            ->and($events[0]->step)->toBe('cleanup')
-            ->and($events[0]->value)->toContain('later deployment retries');
-    });
-
-    it('waits for a running task baseline in a seeded Instance before it removes the old releases', function (): void {
-        $instance = $this->instance;
-        $instance->update(['seed_path' => $instance->checkout_path, 'seed_commit' => str_repeat('a', 40), 'seed_repository' => $instance->checkout_path]);
-        $workspace = Instance::query()->create(['project_id' => $instance->project_id, 'node_id' => $instance->node_id, 'name' => 'task-1', 'checkout_path' => '/fast/apps/dev935/task-1',
-            'source_layout' => 'worktree', 'status' => 'active', 'seed_selected' => true, 'seed_path' => $instance->checkout_path.'/releases/initial', 'seed_commit' => str_repeat('a', 40), 'seed_repository' => $instance->checkout_path]);
-        $group = Task::topLevel()->create(['project_id' => $instance->project_id, 'title' => 'Baseline', 'brief' => 'Baseline.', 'status' => TaskGroupStatus::Running, 'execution_mode' => TaskExecutionMode::Managed]);
-        $group->taskable()->associate($workspace);
-        $group->save();
-        $subtask = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'First', 'brief' => 'First.', 'status' => TaskStatus::Running]);
-        $check = TaskCheck::query()->create(['task_id' => $subtask->id, 'kind' => TaskCheckKind::Baseline, 'status' => TaskCheckStatus::Running, 'pid' => 4100,
-            'process_started' => 'Fri Oct  9 18:00:00 2026', 'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('b', 40), 'started_at' => now()]);
-        $this->remote->releasesRemain = true;
-        $events = [];
-
-        $result = app(DeployDefaultInstanceAction::class)->execute($instance, new DeploymentRequest(static function (DeploymentEvent $event) use (&$events): void {
-            $events[] = $event;
-        }));
-
-        expect($result?->succeeded)->toBeTrue()
-            ->and($this->remote->trace)->toBe(['target:main', 'checkout:'.str_repeat('b', 40)])
-            ->and($events[0]->value)->toContain('task baseline')
-            ->and($workspace->fresh()->seed_path)->toBe($instance->checkout_path);
-
-        $check->update(['status' => TaskCheckStatus::Passed]);
-        $this->remote->trace = [];
-        app(DeployDefaultInstanceAction::class)->execute($instance);
-
-        expect($this->remote->trace)->toBe(['target:main', 'remove-releases:/fast/apps/dev935/task-1', 'checkout:'.str_repeat('b', 40)]);
-    });
-
-    it('names release folders it does not own once and does not retry them', function (): void {
-        $this->instance->update(['seed_path' => $this->instance->checkout_path, 'seed_commit' => str_repeat('a', 40), 'seed_repository' => $this->instance->checkout_path]);
-        $this->remote->releasesRemain = true;
-        $this->remote->kept = ['20261007052308-1b0d6f48ae4d81bd'];
-        Log::spy();
-        $events = [];
-
-        $result = app(DeployDefaultInstanceAction::class)->execute($this->instance, new DeploymentRequest(static function (DeploymentEvent $event) use (&$events): void {
-            $events[] = $event;
-        }));
-        app(DeployDefaultInstanceAction::class)->execute($this->instance);
-
-        expect($result?->succeeded)->toBeTrue()
-            ->and($events[0]->important)->toBeTrue()
-            ->and($events[0]->value)->toContain('remove them by hand: 20261007052308-1b0d6f48ae4d81bd')
-            ->and(array_values(array_filter($this->remote->trace, static fn (string $entry): bool => str_starts_with($entry, 'remove-releases'))))->toHaveCount(1);
-        Log::shouldHaveReceived('warning')->once()->with('Orbit kept release folders it does not own; remove them by hand.', [
-            'instance_id' => $this->instance->id, 'releases' => ['20261007052308-1b0d6f48ae4d81bd'],
-        ]);
-    });
-
-    it('fails without changing the seed when a conversion fails', function (): void {
-        $this->instance->update(['development_release_layout' => true, 'seed_path' => $this->instance->checkout_path.'/releases/initial', 'seed_commit' => str_repeat('a', 40), 'seed_repository' => $this->instance->checkout_path]);
-        $this->remote->convertFailure = new ResourceOperationException('deployment.checkout_dirty', 'The checkout has uncommitted changes to tracked files.', 409);
-
-        $result = app(DeployDefaultInstanceAction::class)->execute($this->instance, onlyChanged: true, triggeredBy: 'schedule');
-
-        expect($result?->failure?->errorCode)->toBe('deployment.checkout_dirty')
-            ->and($result?->failure?->boundary)->toBe(DeploymentFailureBoundary::Preparation)
-            ->and($this->remote->trace)->toBe(['convert'])
-            ->and($this->instance->fresh()->development_release_layout)->toBeTrue()
-            ->and($this->instance->fresh()->seed_path)->toBe($this->instance->checkout_path.'/releases/initial')
-            ->and(InstanceDeployment::query()->sole()->status)->toBe('failed');
     });
 
     it('retries a failed route projection before skipping an unchanged scheduled tick', function (): void {
@@ -410,46 +280,24 @@ final class Dev935Deployment implements DevelopmentDeployment
 
     public string $targetCommit;
 
-    public string $convertedCommit;
-
-    public bool $releasesRemain = false;
-
     public ?string $pushDuringCheckout = null;
 
     public ?string $failedStep = null;
 
     public bool $noisyFailure = false;
 
-    public ?Throwable $convertFailure = null;
-
     public ?Throwable $checkoutFailure = null;
-
-    public ?Throwable $removalFailure = null;
-
-    /** @var list<string> */
-    public array $kept = [];
 
     public function __construct()
     {
         $this->targetCommit = str_repeat('b', 40);
-        $this->convertedCommit = str_repeat('a', 40);
-    }
-
-    public function convert(Instance $instance): string
-    {
-        $this->trace[] = 'convert';
-        if ($this->convertFailure !== null) {
-            throw $this->convertFailure;
-        }
-
-        return $this->convertedCommit;
     }
 
     public function target(Instance $instance): DevelopmentTarget
     {
         $this->trace[] = 'target:'.$instance->project->default_branch;
 
-        return new DevelopmentTarget($this->targetCommit, $this->releasesRemain);
+        return new DevelopmentTarget($this->targetCommit);
     }
 
     public function checkout(Instance $instance, string $commit, DeploymentRequest $request): void
@@ -477,16 +325,5 @@ final class Dev935Deployment implements DevelopmentDeployment
         }
 
         return new CommandResult(0, '', '', 1, false);
-    }
-
-    public function removeReleases(Instance $instance, array $consumers): array
-    {
-        $this->trace[] = 'remove-releases:'.implode(',', $consumers);
-        if ($this->removalFailure !== null) {
-            throw $this->removalFailure;
-        }
-        $this->releasesRemain = false;
-
-        return $this->kept;
     }
 }

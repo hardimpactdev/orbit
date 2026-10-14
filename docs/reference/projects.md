@@ -85,6 +85,8 @@ orbit project:create leden laravel-app git@github.com:acme/leden.git --source-ac
 
 The CLI root defaults to `.` for package types and `public` for other types. The API and SDK require `root`. Without `--default-branch`, the Gateway reads the remote default branch once and stores it. A later change on the remote does not update the Project. An explicit branch must exist on the remote. The Gateway reads the remote with the Project's [source access](#source-access).
 
+A Project's development `default` [deploys in its checkout](/reference/deployments#development-defaults). Its [setup steps](/reference/instance-setup#run-setup) can use that checkout as a dependency seed for other development Instances on the same Node.
+
 Creation is idempotent. A retry with the same values returns the existing Project. A retry that omits the default branch does not read the remote again. A retry with any different value, including another URL for the same repository, returns `project.identity_conflict` and changes nothing.
 
 ## Source access
@@ -188,7 +190,9 @@ An update is published once a new value is visible: a replacement Route has cut 
 
 The update then ends in `rolled_back`, and other updates can run. A retry after a fix starts again. A rollback that fails stays `rolling_back`, and an identical retry continues it. A failure after publication stays in place, and an identical retry continues forward.
 
-A different update while one is published but incomplete returns `project.update_in_progress`. An update holds the locks of every Instance of the Project while it runs, so an unpublished incomplete update that another request finds is not running: an update that stopped before this rule, or a rollback that failed. Orbit rolls it back first and then runs the new request. When that rollback fails, the request returns the rollback's error and the old update stays `rolling_back`.
+A different update while one is published but incomplete returns `project.update_in_progress`. An update holds the locks of every Instance of the Project while it runs, so an unpublished incomplete update that another request finds is not running: an update that stopped before this rule, or a rollback that failed. Orbit rolls it back first and then runs the new request. When that rollback fails, the request returns the rollback's error and the old update stays `rolling_back`. A Project without Instances has no Instance lock. Its incomplete update requires an identical retry; a different request returns `project.update_in_progress` without rolling it back.
+
+Slug rollback withdraws only the recorded replacement or a fresh replacement for the same proposed domain. It leaves an unrelated domain change in place.
 
 A slug change synchronizes the stored environment of each development Instance that has one, against the replacement Route. An Instance without stored configuration has nothing to synchronize. Orbit skips that step and records `environment: skipped` with the reason `env.configuration_missing` in the update evidence; Route convergence still writes the new `APP_URL` into the `.env` of the [application directory](#application-directory). See [Project update boundary](/reference/environment-variables#project-update-boundary).
 

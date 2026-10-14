@@ -63,7 +63,7 @@ function document_storage_input(): array
  */
 function document_storage_provider(?string $failure = null): object
 {
-    $provider = (object) ['calls' => [], 'body' => '', 'failure' => $failure, 'failOn' => 'PutObject', 'corrupt' => false, 'chunkSize' => 8192, 'stall' => false];
+    $provider = (object) ['calls' => [], 'body' => '', 'failure' => $failure, 'failOn' => 'PutObject', 'corrupt' => false, 'chunkSize' => 8192, 'stall' => false, 'reads' => 0];
     config(['filesystems.disks.documents.handler' => function (CommandInterface $command, RequestInterface $request) use ($provider): PromiseInterface {
         $provider->calls[] = ['operation' => $command->getName(), 'command' => $command->toArray(), 'request' => $request];
         if ($provider->failure === 'ConnectionFailure' && $command->getName() === $provider->failOn) {
@@ -93,6 +93,8 @@ function document_storage_provider(?string $failure = null): object
 
             public function read(int $length): string
             {
+                $this->provider->reads++;
+
                 return $this->provider->stall ? '' : $this->stream->read(min($length, $this->provider->chunkSize));
             }
         };
@@ -249,10 +251,9 @@ describe('Project document storage', function (): void {
         document_storage_gateway();
         $provider = document_storage_provider();
         $provider->stall = true;
-        $started = hrtime(true);
 
         $this->putJson('/api/v1/project-document-storage', document_storage_input())->assertStatus(503);
-        expect((hrtime(true) - $started) / 1_000_000_000)->toBeLessThan(0.5);
+        expect($provider->reads)->toBe(1);
         expect(ProjectDocumentStorage::query()->findOrFail(1)->endpoint)->toBeNull();
         expect(array_column($provider->calls, 'operation'))->toBe(['PutObject', 'GetObject', 'DeleteObject']);
     });

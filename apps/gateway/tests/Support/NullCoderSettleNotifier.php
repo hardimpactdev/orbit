@@ -2,8 +2,11 @@
 
 declare(strict_types=1);
 
-namespace App\Domain\Tasks;
+namespace Tests\Support;
 
+use App\Domain\Tasks\CoderSettleNotifier;
+use App\Domain\Tasks\TaskSessionDecision;
+use App\Domain\Tasks\TaskSessionObservation;
 use App\Models\Task;
 
 final readonly class NullCoderSettleNotifier implements CoderSettleNotifier

@@ -207,6 +207,8 @@ Each supported public command has an adoption record with its source identity, s
 
 Check success, empty results, invalid and missing input, cancellation, consent, warnings, partial results, and failures wherever the command supports them. Check human, JSON, streaming, noninteractive, piped, and decorated paths that exist for that command. Expected command failures are successful verification only when a verifier asserts the exact intended result and absence of forbidden side effects.
 
+The [`node:wireguard-key`](/cli/node#orbit-nodewireguard-key) command uses shared Node selection, a validated key prompt, and an indeterminate progress operation for hub convergence. Its [command tests](https://github.com/nckrtl/orbit/blob/main/apps/cli/tests/Feature/Nodes/SetNodeWireGuardKeyCommandTest.php) check prompt cancellation, invalid-key retry, missing or invalid supplied input before Gateway access, and human/JSON success and failure contracts. The [recorded outputs](https://github.com/nckrtl/orbit/tree/main/apps/cli/tests/Expected/nodes/node-wireguard-key) preserve the request ID and safe error codes. Review its interactive behavior with a real terminal recording as well as these text assertions.
+
 ### Recording
 
 Automated text assertions establish content. Terminal evidence establishes interactive selection, repainting, cadence, wrapping, and liveness. Record timestamped raw PTY output, decoded chunks, reconstructed frames, terminal size, terminal settings, candidate and launcher identity, exit status, first-output delay, and idle gaps. Verify real frame transitions rather than the presence of two glyphs in a transcript.

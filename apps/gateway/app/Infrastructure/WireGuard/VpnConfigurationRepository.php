@@ -6,10 +6,12 @@ namespace App\Infrastructure\WireGuard;
 
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Domain\WireGuard\VpnSettings;
 use App\Domain\WireGuard\WireGuardEndpoint;
 use App\Models\Node;
+use Closure;
 use InvalidArgumentException;
 
 final readonly class VpnConfigurationRepository
@@ -93,6 +95,53 @@ final readonly class VpnConfigurationRepository
             serverPrivateKey: $serverPrivateKey,
             serverPublicKey: $serverPublicKey,
         );
+    }
+
+    /**
+     * Serialize collision checking and assignment, including a reprovisioning rollback transaction.
+     *
+     * @param  (Closure(): void)|null  $save  Saves the desired key and any accompanying state before releasing the lock.
+     */
+    public function assignPeerKey(Node $node, string $publicKey, ?Closure $save = null): void
+    {
+        $directory = rtrim($this->orbitHome, '/').'/locks';
+
+        if (! is_dir($directory) && ! mkdir($directory, 0o700, true) && ! is_dir($directory)) {
+            throw $this->invalid('The WireGuard key assignment lock is unavailable.');
+        }
+
+        $lock = fopen($directory.'/wireguard-peer-keys.lock', 'c+');
+
+        if ($lock === false) {
+            throw $this->invalid('The WireGuard key assignment lock is unavailable.');
+        }
+
+        try {
+            if (! flock($lock, LOCK_EX)) {
+                throw $this->invalid('The WireGuard key assignment lock is unavailable.');
+            }
+
+            $hubKeyPath = rtrim($this->orbitHome, '/').'/wireguard/public.key';
+            $hubKey = is_file($hubKeyPath) ? file_get_contents($hubKeyPath) : false;
+
+            if ((is_string($hubKey) && trim($hubKey) === $publicKey)
+                || Node::query()->whereKeyNot($node->id)->where('wireguard_public_key', $publicKey)->exists()) {
+                throw new ResourceOperationException(
+                    'node.wireguard_key_conflict',
+                    'The WireGuard public key is already assigned to another peer or the hub.',
+                    409,
+                );
+            }
+
+            if ($save !== null) {
+                $save();
+            } else {
+                $node->update(['wireguard_public_key' => $publicKey]);
+            }
+        } finally {
+            flock($lock, LOCK_UN);
+            fclose($lock);
+        }
     }
 
     private function subnet(): Ipv4Subnet

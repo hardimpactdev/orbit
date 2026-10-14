@@ -1,0 +1,13 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Nodes\\SetNodeWireGuardKeyRequest",
+    "route": "PATCH /api/v1/nodes/{node}/wireguard-key",
+    "status": 409,
+    "body": {
+        "error": {
+            "code": "node.wireguard_key_gateway",
+            "message": "Gateway WireGuard keys cannot be changed by this command.",
+            "details": {}
+        }
+    }
+}

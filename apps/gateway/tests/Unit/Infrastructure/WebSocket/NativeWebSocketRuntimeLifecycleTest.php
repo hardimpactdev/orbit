@@ -8,7 +8,7 @@ use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WebSocket\WebSocketCredentials;
-use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
+use App\Infrastructure\Nodes\CaddyPackageProgram;
 use App\Infrastructure\Nodes\Roles\NodeRolePrerequisiteCommandFactory;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
@@ -34,8 +34,8 @@ it('installs prerequisites, then clones, installs and starts Reverb with the res
 
     $caddyPackage = $commands[0];
     expect($caddyPackage->arguments)
-        ->toContain(CaddyPackageSourceProgram::RELEASE_URL)
-        ->toContain(CaddyPackageSourceProgram::LEGACY_SOURCE_PATH)
+        ->toContain(CaddyPackageProgram::RELEASE_URL)
+        ->toContain('/etc/apt/sources.list.d/orbit-caddy.sources')
         ->and($caddyPackage->input)->toContain('sha512sum --check');
 
     $prerequisites = $commands[1];

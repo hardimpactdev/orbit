@@ -71,7 +71,7 @@ Update and removal use the same `tool.manager_unavailable` code when the macOS s
 
 On Linux, every apt command in the table passes `-o DPkg::Lock::Timeout=300`. On Ubuntu 26.04, apt 3.2.0 applies that timeout only while it takes the dpkg frontend lock and the dpkg admin lock. Those locks are `/var/lib/dpkg/lock-frontend` and `/var/lib/dpkg/lock`. `apt-get install` and `apt-get remove` take them, so they wait up to 300 seconds. The `apt` manager's update is `apt-get install`, so it waits too. A daily upgrade, such as `apt-daily-upgrade`, can hold one of those locks. Install and remove wait for that upgrade to release the lock instead of failing at once.
 
-Caddy and PHP package installation pass this same option. Prerequisite `apt-get update` passes it and does not use it. Update takes the lists lock, `/var/lib/apt/lists/lock`, and fails at once when that lock is busy.
+Caddy and PHP package installation pass this same option. Caddy uses the shared [package step](/reference/node-provisioning#package-sources) for role prerequisites and publication. Prerequisite `apt-get update` passes it and does not use it. Update takes the lists lock, `/var/lib/apt/lists/lock`, and fails at once when that lock is busy.
 
 | Caller | Command | Lock wait |
 | --- | --- | --- |

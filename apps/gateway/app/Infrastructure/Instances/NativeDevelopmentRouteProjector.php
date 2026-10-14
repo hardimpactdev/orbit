@@ -241,10 +241,11 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
         }
     }
 
-    public function rollbackPublicEdge(Route $route): void
+    /** @param list<int> $skippedNodeIds */
+    public function rollbackPublicEdge(Route $route, array $skippedNodeIds = []): void
     {
         if ($route->publication === RoutePublication::Public) {
-            $this->publicEdge()->rollbackPublicEdge($route);
+            $this->publicEdge()->rollbackPublicEdge($route, $skippedNodeIds);
         }
     }
 
@@ -371,20 +372,24 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
         $this->dns->converge();
     }
 
-    public function rollbackCaddy(Instance $instance, Route $route): void
+    /** @param list<int> $skippedNodeIds */
+    public function rollbackCaddy(Instance $instance, Route $route, array $skippedNodeIds = []): void
     {
         $instance->loadMissing('node');
-        $this->caddy->build($instance->node);
+        if (! in_array($instance->node_id, $skippedNodeIds, true)) {
+            $this->caddy->build($instance->node);
+        }
         $router = $this->router($instance, $route);
 
-        if ($router instanceof Node) {
+        if ($router instanceof Node && ! in_array($router->id, $skippedNodeIds, true)) {
             $this->caddy->build($router);
         }
     }
 
-    public function rollbackCertificates(Instance $instance, Route $route): void
+    /** @param list<int> $skippedNodeIds */
+    public function rollbackCertificates(Instance $instance, Route $route, array $skippedNodeIds = []): void
     {
-        $this->certificates->removeHostnameChange($instance, $route);
+        $this->certificates->removeHostnameChange($instance, $route, $skippedNodeIds);
     }
 
     private function publicEdge(): PublicRouteEdgeProjector

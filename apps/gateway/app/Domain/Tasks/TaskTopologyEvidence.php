@@ -38,7 +38,7 @@ final readonly class TaskTopologyEvidence
     private const int SummaryLimit = 20;
 
     /** @param list<array{start: string, label: string, node: string, command: string}> $records */
-    private function __construct(public array $records) {}
+    private function __construct(public array $records, private string $file = self::File) {}
 
     public static function none(): self
     {
@@ -49,7 +49,7 @@ final readonly class TaskTopologyEvidence
     public static function fromJsonLines(string $lines, CarbonInterface $since, CarbonInterface $now): self
     {
         $records = [];
-        foreach (preg_split('/\R/', $lines) ?: [] as $line) {
+        foreach (explode("\n", $lines) as $line) {
             try {
                 $record = json_decode($line, true, 8, JSON_THROW_ON_ERROR);
             } catch (JsonException) {
@@ -96,7 +96,7 @@ final readonly class TaskTopologyEvidence
             }
         }
 
-        return new self($records);
+        return new self($records, self::LegacyFile);
     }
 
     /**
@@ -125,7 +125,7 @@ final readonly class TaskTopologyEvidence
             array_slice($records, 0, self::SummaryLimit),
         );
         if (count($records) > self::SummaryLimit) {
-            $lines[] = '- and '.(count($records) - self::SummaryLimit).' more in .e2e/evidence.log';
+            $lines[] = '- and '.(count($records) - self::SummaryLimit).' more in '.$this->file;
         }
 
         return "Topology evidence (exit 0, recorded by bin/e2e-topology):\n".implode("\n", $lines);

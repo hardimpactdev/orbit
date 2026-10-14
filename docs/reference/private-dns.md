@@ -87,6 +87,8 @@ Each release holds a `.manifest` of file digests. Before a publication installs 
 
 `orbit-private-dns.socket` binds UDP and TCP port 53 on the VPN DNS address and passes both sockets to `orbit-private-dns.service`. A service restart never closes them. Queries that arrive during a restart wait in the socket for the next listener. On `SIGTERM` the listener finishes the query in hand and exits. The unit gives it 5 seconds.
 
+The listener limits each TCP read or write to two seconds. Its upstream client also limits each socket wait to two seconds. It reads a UDP answer as one datagram without waiting for the upstream socket to close. A missing or truncated UDP answer triggers a TCP attempt. When that attempt fails, the listener can still answer the next catalog query.
+
 | Unit | Content |
 | --- | --- |
 | `/etc/systemd/system/orbit-private-dns.socket` | `ListenDatagram` and `ListenStream` on the VPN DNS address, with `FreeBind=yes`, and no ordering on the WireGuard tunnel, which would form a boot cycle |
@@ -173,6 +175,8 @@ Run this command on the Gateway to update the resolver settings of one active ma
 ```bash
 php artisan orbit:node-dns-repair <node-name>
 ```
+
+DNS repair does not replace a WireGuard key. The separate [`node:wireguard-key`](/cli/node#orbit-nodewireguard-key) command only changes an unmanaged peer's desired public key and reconverges the hub; it refuses managed peers and leaves the peer's resolver policy unchanged. Use DNS repair for resolver faults, not key recovery.
 
 The command refuses a missing or inactive Node, a [Node without roles](/reference/node-provisioning#nodes-without-roles), and the Node that holds `vpn`, before it opens SSH. It also refuses a peer without a complete managed WireGuard and SSH identity.
 

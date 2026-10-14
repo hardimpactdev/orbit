@@ -14,6 +14,8 @@ use App\Infrastructure\ProjectDocuments\ProbeResponseBuffer;
 use App\Infrastructure\ProjectDocuments\VerifyDocumentStorage;
 use App\Models\ProjectDocumentStorage;
 use Aws\S3\S3Client;
+use GuzzleHttp\Exception\ConnectTimeoutException;
+use GuzzleHttp\Exception\ResponseTimeoutException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
@@ -230,13 +232,17 @@ describe('document probe HTTP transport', function (): void {
 
     it('enforces the connection bound during a stalled TLS handshake', function (): void {
         [$server, $client] = probe_transport_fixture('tls-stall');
-        $started = hrtime(true);
+        $command = $client->getCommand('GetObject', [
+            'Bucket' => 'fixture-bucket', 'Key' => 'orbit-document-probes/fixture',
+            '@http' => ['stream' => false, 'sink' => new ProbeResponseBuffer],
+        ]);
+        expect($command['@http']['connect_timeout'])->toBe(2);
+
         try {
-            expect(fn () => $client->getObject([
-                'Bucket' => 'fixture-bucket', 'Key' => 'orbit-document-probes/fixture',
-                '@http' => ['stream' => false, 'sink' => new ProbeResponseBuffer],
-            ]))->toThrow(RuntimeException::class);
-            expect((hrtime(true) - $started) / 1_000_000_000)->toBeGreaterThan(1.5)->toBeLessThan(3.5);
+            expect(fn () => $client->execute($command))->toThrow(function (RuntimeException $exception): void {
+                $previous = $exception->getPrevious();
+                expect($previous)->toBeInstanceOf(ConnectTimeoutException::class);
+            });
         } finally {
             $server->stop();
         }
@@ -244,13 +250,20 @@ describe('document probe HTTP transport', function (): void {
 
     it('enforces the total request deadline when a response body stalls', function (): void {
         [$server, $client] = probe_transport_fixture('body-stall');
-        $started = hrtime(true);
+        $command = $client->getCommand('GetObject', [
+            'Bucket' => 'fixture-bucket', 'Key' => 'orbit-document-probes/fixture',
+            '@http' => ['stream' => false, 'sink' => new ProbeResponseBuffer],
+        ]);
+        expect($command['@http']['timeout'])->toBe(5);
+
         try {
-            expect(fn () => $client->getObject([
-                'Bucket' => 'fixture-bucket', 'Key' => 'orbit-document-probes/fixture',
-                '@http' => ['stream' => false, 'sink' => new ProbeResponseBuffer],
-            ]))->toThrow(RuntimeException::class);
-            expect((hrtime(true) - $started) / 1_000_000_000)->toBeGreaterThan(4.5)->toBeLessThan(7);
+            expect(fn () => $client->execute($command))->toThrow(function (RuntimeException $exception): void {
+                $previous = $exception->getPrevious();
+                expect($previous)->toBeInstanceOf(ResponseTimeoutException::class);
+                expect($previous->getResponse()->getStatusCode())->toBe(200);
+                expect((string) $previous->getResponse()->getBody())->toBe('aaaaaaaa');
+            });
+            expect(array_column(probe_transport_state()['requests'], 'method'))->toBe(['GET']);
         } finally {
             $server->stop();
         }

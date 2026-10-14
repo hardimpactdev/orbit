@@ -12,7 +12,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
-use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
+use App\Infrastructure\Nodes\CaddyPackageProgram;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
@@ -100,10 +100,7 @@ final readonly class NativeProxyCliPublicationManager implements ProxyCliPublica
         $this->run(
             $node,
             $address,
-            new RemoteCommand(
-                arguments: ['sudo', 'bash', '-seu', '--', ...CaddyPackageSourceProgram::arguments()],
-                input: CaddyPackageSourceProgram::render(),
-            ),
+            CaddyPackageProgram::command(),
             'proxycli.caddy_publication_failed',
             "The Caddy package step failed on node [{$node->name}].",
         );

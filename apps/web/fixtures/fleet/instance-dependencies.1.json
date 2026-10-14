@@ -1,0 +1,96 @@
+{
+    "schema": 1,
+    "route": "GET /api/v1/instances/{instance}/dependencies",
+    "status": 200,
+    "body": {
+        "data": {
+            "instance_id": 1,
+            "succeeded": true,
+            "composer": {
+                "ecosystem": "composer",
+                "state": "present",
+                "succeeded": true,
+                "attempted_at": "2026-10-14T12:00:00+00:00",
+                "error_code": null,
+                "snapshot": {
+                    "observed_at": "2026-10-14T12:00:00+00:00",
+                    "source": {
+                        "project_root": "/apps/charlie-shop",
+                        "reference": null,
+                        "file_hashes": {},
+                        "format": null
+                    },
+                    "graph": {
+                        "resolutions": [
+                            {
+                                "id": "laravel/framework",
+                                "ecosystem": "composer",
+                                "name": "laravel/framework",
+                                "version": "v12.32.0",
+                                "regular": true,
+                                "development": false,
+                                "source_reference": null,
+                                "integrity": null
+                            },
+                            {
+                                "id": "symfony/console",
+                                "ecosystem": "composer",
+                                "name": "symfony/console",
+                                "version": "v7.3.4",
+                                "regular": true,
+                                "development": false,
+                                "source_reference": null,
+                                "integrity": null
+                            }
+                        ],
+                        "requirements": []
+                    }
+                }
+            },
+            "javascript": {
+                "ecosystem": "npm",
+                "state": "present",
+                "succeeded": true,
+                "attempted_at": "2026-10-14T12:00:00+00:00",
+                "error_code": null,
+                "snapshot": {
+                    "observed_at": "2026-10-14T12:00:00+00:00",
+                    "source": {
+                        "project_root": "/apps/charlie-shop",
+                        "reference": null,
+                        "file_hashes": {},
+                        "format": null
+                    },
+                    "graph": {
+                        "resolutions": [
+                            {
+                                "id": "@tanstack/react-query",
+                                "ecosystem": "npm",
+                                "name": "@tanstack/react-query",
+                                "version": "5.103.1",
+                                "regular": true,
+                                "development": false,
+                                "source_reference": null,
+                                "integrity": null
+                            },
+                            {
+                                "id": "react",
+                                "ecosystem": "npm",
+                                "name": "react",
+                                "version": "19.3.0",
+                                "regular": true,
+                                "development": false,
+                                "source_reference": null,
+                                "integrity": null
+                            }
+                        ],
+                        "requirements": []
+                    }
+                }
+            }
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

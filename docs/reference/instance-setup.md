@@ -8,7 +8,7 @@ covers:
   - apps/gateway/app/Domain/Instances/{DevelopmentInstanceProvisioner,InstanceSourceProfileGuard,DependencyCopy/InstanceDependencyCopier}.php
   - apps/gateway/app/Http/Controllers/Api/ProjectLifecycleStepsController.php
   - apps/gateway/app/Models/ProjectLifecycleStep.php
-  - apps/gateway/resources/instances/lifecycle.py
+  - apps/gateway/resources/instances/{lifecycle.py,ci-caches.sh}
   - apps/cli/app/Commands/Instances/{SetupInstanceCommand,*SetupStepCommand,*TeardownStepCommand}.php
 ---
 
@@ -203,26 +203,6 @@ Stop the old ext4 cache worker before retiring `/home/nckrtl/orbit/.git/orbit-ti
 
 A setup copy step must be retryable: keep an existing destination, stage a missing directory, then rename it into place only when `cp` succeeds. A copy failure fails that step rather than leaving a partial dependency tree. On ZFS, `--reflink=always` can enforce shared blocks; `--reflink=auto` provides the ordinary-copy fallback. Verify shared blocks on beast and write isolation by changing a copied dependency or cache in a disposable Instance and checking that the selected seed stays unchanged. Remove only that disposable Instance after the check.
 
-### Convert the development defaults
-
-The first deployment tick after the Gateway serves plain-checkout defaults [converts](/reference/deployments#converting-the-old-release-layout) the three release layouts on beast: Instance 386 (`php-data-bridge-demo`, Project 50), Instance 4 (`orbit-website`, Project 33), and Instance 315 (`orbit`, Project 46).
-
-Before the change merges, check each home under `/fast/apps/<project>/default`:
-
-- `git status --porcelain --untracked-files=no` prints nothing. A tracked change refuses the conversion.
-- `git rev-list main --not origin/main` prints nothing. A local commit refuses it too.
-- No setup step runs in an Instance seeded from it, such as a T3 Code worktree. Release removal waits for one.
-- No task group on Projects 33, 46, or 50 is `running` or `reviewing`. Release removal waits for a running baseline, so a long group only delays it.
-
-After the first tick:
-
-1. `orbit instance:show` for 4, 315, and 386: `seed_path` is the checkout, and `seed_commit` is a commit on `main`.
-2. Each home has no `releases` and no `current`. `git status --untracked-files=no` is clean.
-3. The deployment output names any release folder that Orbit kept. Delete such a folder by hand.
-4. `/fast/apps/orbit/default/packages/agent-annotation` is gone. Its `node_modules` would break Project 46's `seed-dependencies` setup step. Then create a disposable Project 46 Instance on beast. Its setup must pass. Remove it afterward.
-5. `https://php-data-bridge-demo.test` and `https://orbit-website.test` answer, and their Caddy root is the checkout's `public`, not `current/public`.
-6. Instance 315 has no Route. `orbit instance:show 315` still lists none, and no Route of Project 46 points at `/fast/apps/orbit/default/current`.
-
 ## Configure Orbit's task policy
 
 Orbit's task check is explicitly `composer check`; new Project defaults do not supply it. Record setup steps for each dependency tree that this repository check needs. The baseline runs only those steps. The live Orbit Project is id 46. Re-read it before every deployment, and stop if the id, check, or lists differ from the handoff.
@@ -277,6 +257,10 @@ The Gateway uses its [GitHub App](/reference/github-app) with `Actions: read` fo
 
 In the checkout, the step runs `bin/tia-cache import-ci` for each archive. It checks the archive's manifest, checksums, project, tested commit, and test configuration. It writes the project's Pest TIA graph to `.orbit-tia/graph.json`, and the Pint and PHPStan caches into `vendor/`, where none exists.
 
+Before extraction, the step rejects a ZIP with more than 1,024 entries or more than 64 MiB of total expanded data, as declared by the ZIP. Python's ZIP reader bounds each extracted file by its declared size and checks its CRC. A rejected archive fails the step before extraction or cache import. The step removes its temporary archives and extracted files when it exits.
+
+PHPStan's result cache is PHP code, which PHPStan executes when it reads the cache. Orbit trusts this code because the artifact comes from a successful default-branch run of the repository's own `ci.yml`, using the Gateway's GitHub App access to that repository. It never imports a pull-request run's cache. The repository's default branch, workflow, and CI artifact publishers must therefore be trusted to run code in the checkout. Checksums detect damaged bytes; they do not establish that trust. The matching commit, lock file, tool configuration, and PHP minor version checks guard compatibility.
+
 An existing graph stays, so a retry or a later baseline keeps the workspace's own results, with one exception: when CI tested a descendant of the graph's main commit, the CI graph replaces it. A workspace from a template then gets the graph of today's `main`, not of the template's day, and its check selects fewer tests. The log names each graph it kept or replaced, and why.
 
 The step decides between a loud failure and a cold run like this:
@@ -285,7 +269,7 @@ The step decides between a loud failure and a cold run like this:
 | --- | --- |
 | No App, no Actions read, or GitHub unreadable | The step fails with `instance.ci_caches_unavailable` |
 | No successful run among the newest 20 has unexpired main caches | The step fails with `instance.ci_caches_missing` |
-| An archive fails its checksums, its graph is invalid, or `bin/tia-cache` is missing | The step fails |
+| An archive exceeds the extraction limits, fails its checksums, has an invalid graph, or `bin/tia-cache` is missing | The step fails |
 | The archive's test configuration differs from the checkout's, or its commit is not in the checkout's history | The step goes on. That project's tests run cold, and the log names the project and the reason |
 | A quality cache's lock file, tool configuration, or PHP minor version differs | The step goes on without that cache, and the log names the reason |
 | A Pest project gets no graph | The log prints `[<project>] has no Pest TIA graph: its tests run cold.` |

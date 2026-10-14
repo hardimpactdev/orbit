@@ -15,15 +15,12 @@ use Throwable;
  *
  * It also remembers the version of the code that ran the tick, so a Gateway release can confirm that its own
  * scheduler ticks ([Post-release tick confirmation](/reference/gateway-recovery#post-release-tick-confirmation)).
- * The start time keeps its own key, which older releases read.
  *
  * The record is an observation, not part of the tick: a cache that cannot be written or read is reported and the
  * tick goes on, and the status reports no last tick.
  */
 final readonly class TaskTickClock
 {
-    private const string Key = 'orbit:tasks:tick:started_at';
-
     private const string StartedKey = 'orbit:tasks:tick:started';
 
     public function record(): void
@@ -32,7 +29,6 @@ final readonly class TaskTickClock
 
         try {
             Cache::forever(self::StartedKey, ['started_at' => $startedAt, 'version' => self::version()]);
-            Cache::forever(self::Key, $startedAt);
         } catch (Throwable $exception) {
             report($exception);
         }
@@ -40,15 +36,7 @@ final readonly class TaskTickClock
 
     public function lastStartedAt(): ?string
     {
-        try {
-            $value = Cache::get(self::Key);
-        } catch (Throwable $exception) {
-            report($exception);
-
-            return null;
-        }
-
-        return is_string($value) ? $value : null;
+        return $this->lastStarted()['started_at'] ?? null;
     }
 
     /**

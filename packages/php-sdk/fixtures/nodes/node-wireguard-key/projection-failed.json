@@ -1,0 +1,15 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Nodes\\SetNodeWireGuardKeyRequest",
+    "route": "PATCH /api/v1/nodes/{node}/wireguard-key",
+    "status": 422,
+    "body": {
+        "error": {
+            "code": "vpn.server_config_install_failed",
+            "message": "Could not converge the gateway WireGuard service.",
+            "details": {
+                "step": "wireguard-server-install"
+            }
+        }
+    }
+}

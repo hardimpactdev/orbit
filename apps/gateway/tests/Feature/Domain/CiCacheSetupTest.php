@@ -132,6 +132,37 @@ describe('CI main cache setup', function (): void {
             ->and(file_exists($this->checkout.'/packages/php-sdk/.orbit-tia/graph.json'))->toBeFalse();
     })->with(['an import failure' => false, 'no bin/tia-cache' => true]);
 
+    it('rejects excessive expanded data or entry counts before extracting or importing', function (string $limit): void {
+        $work = $this->checkout.'/archives';
+        mkdir($work, 0700);
+        $zip = new ZipArchive;
+        $zip->open($work.'/0.zip', ZipArchive::CREATE);
+        $zip->addFromString('manifest.json', '{"project":"apps/cli"}');
+        $zip->addFromString('graph.json', '{}');
+        if ($limit === 'entries') {
+            for ($index = 0; $index < 1023; $index++) {
+                $zip->addFromString('quality/entry-'.$index, '');
+            }
+        } else {
+            $file = fopen($this->checkout.'/expanded', 'w');
+            ftruncate($file, $limit === 'one file' ? 64 * 1024 * 1024 : 32 * 1024 * 1024);
+            fclose($file);
+            $zip->addFile($this->checkout.'/expanded', 'quality/pint');
+            if ($limit === 'total') {
+                $zip->addFile($this->checkout.'/expanded', 'quality/phpstan');
+            }
+        }
+        $zip->close();
+        $script = (string) file_get_contents(resource_path('instances/ci-caches.sh'));
+
+        $process = ci_setup_run($this->checkout, $script.'work='.escapeshellarg($work)."\ncommit=".CI_SETUP_SHA."\nimport_ci_caches\n");
+
+        expect($process->getExitCode())->toBe(1)
+            ->and($process->getErrorOutput())->toContain('CI cache archive exceeds the extraction limits.')
+            ->and(is_dir($work.'/0'))->toBeFalse()
+            ->and(file_exists($this->checkout.'/imports.log'))->toBeFalse();
+    })->with(['one file', 'total', 'entries']);
+
     it('runs as a Gateway-owned Instance setup step and only in setup', function (): void {
         ci_setup_source(['apps/cli']);
         $project = Project::query()->create(['name' => 'CI', 'slug' => 'ci', 'repository_url' => 'https://github.com/acme/orbit.git']);

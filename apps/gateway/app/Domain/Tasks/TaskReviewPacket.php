@@ -80,6 +80,7 @@ final readonly class TaskReviewPacket
         private array $consults = [],
         private int $groupId = 0,
         private TaskTopology $topology = new TaskTopology,
+        private ?TaskTurnMode $mode = null,
     ) {}
 
     public function render(): string
@@ -109,7 +110,7 @@ final readonly class TaskReviewPacket
             $this->section('Handoff', $this->handoff()),
         ], static fn (string $part): bool => $part !== ''));
         $retrieval = $this->retrieval();
-        $closing = TaskTurnInstructions::reviewer($this->opensPullRequest, $this->deliverables, $this->threadId);
+        $closing = TaskTurnInstructions::reviewer($this->opensPullRequest, $this->deliverables, $this->threadId, $this->mode);
 
         return $this->withinLimit(
             implode("\n\n", [...$before, $this->diffSection($before, [$retrieval, $closing]), $retrieval, $closing]),
@@ -151,6 +152,7 @@ final readonly class TaskReviewPacket
         return implode("\n\n", [
             'Review subtask #'.$this->subtaskId.': '.$this->subtaskTitle,
             'The implementer works with a minimal toolset and has no web access. You do: use your web and documentation tools to confirm that framework and library usage matches current documentation for the versions this Project uses.',
+            'Before you analyse failure windows, trace the main path and one ordinary failure path end to end (for example, a failed build and then a resume).',
             $rule,
         ]);
     }

@@ -29,17 +29,18 @@ final readonly class TaskTurnInstructions
      *
      * @param  list<TaskDeliverable>  $deliverables
      */
-    public static function reviewer(bool $final = false, array $deliverables = [], ?int $threadId = null): string
+    public static function reviewer(bool $final = false, array $deliverables = [], ?int $threadId = null, ?TaskTurnMode $mode = null): string
     {
+        $cause = $mode?->causeRequired === true ? ' --cause=CAUSE' : '';
         $approve = $final
-            ? 'This is the last subtask. When it meets its brief, end your turn with '.self::command($threadId, '--outcome=approved --summary="What you checked" --pr-summary="One or two sentences about the whole feature" --pr-change="A new feature or behavior change" --pr-breaking="A breaking change"').'. Repeat --pr-change for each change in the feature, and --pr-breaking for each breaking change, or pass --pr-breaking=none. The change list, summary and breaking list are yours to write: add a missing entry yourself instead of requesting changes.'
-            : 'When the subtask meets its brief, end your turn with '.self::command($threadId, '--outcome=approved --summary="What you checked"').'.';
+            ? 'This is the last subtask. When it meets its brief, end your turn with '.self::command($threadId, '--outcome=approved --summary="What you checked" --pr-summary="One or two sentences about the whole feature" --pr-change="A new feature or behavior change" --pr-breaking="A breaking change"'.$cause).'. Repeat --pr-change for each change in the feature, and --pr-breaking for each breaking change, or pass --pr-breaking=none. The change list, summary and breaking list are yours to write: add a missing entry yourself instead of requesting changes.'
+            : 'When the subtask meets its brief, end your turn with '.self::command($threadId, '--outcome=approved --summary="What you checked"'.$cause).'.';
         $reviews = array_values(array_filter($deliverables, static fn (TaskDeliverable $deliverable): bool => $deliverable->type === TaskDeliverableType::Review));
         if ($reviews !== []) {
             $approve .= ' The approval must confirm each review deliverable ('.self::ids($reviews).') with --deliverable=ID=evidence, where the evidence says what you checked.';
         }
 
-        return self::origin().' This review is read-only. Do not create, edit, reset, or delete workspace files, including disposable fixtures. Request changes from the implementer instead. Do not commit; Orbit commits after you approve. Report a missing guarantee against injected failures, such as a lost response or a crash between two writes, as a finding when this subtask adds or changes that state transition, or when the brief, an ADR, or a deliverable names it; otherwise list it as a follow-up in your summary. '.$approve.' Otherwise end your turn with '.self::command($threadId, '--outcome=changes_requested --summary="The findings the implementer must address"').'. When this review follows an operator direction, every normal review outcome also needs --cause. '.self::blocked($threadId, true);
+        return self::origin().' This review is read-only. Do not create, edit, reset, or delete workspace files, including disposable fixtures. Request changes from the implementer instead. Do not commit; Orbit commits after you approve. Block only for: (a) a defect likely in normal operation (ordinary use, routine deploys, common operator mistakes, normal overlap of scheduled jobs); (b) data loss, a security issue, or a state that no supported command can recover; (c) an unmet brief item or deliverable; (d) a regression of existing behaviour. For each blocking finding, state the normal-operation trigger. A finding that needs a crash, a lost reply or a timeout between two specific steps is a follow-up, unless a deliverable names that guarantee. List follow-ups under \'Follow-ups\' in the approval. Do not prescribe new markers, fences or locks; prefer an operator recovery command. Rule 1 is the blocking rule above. P1 blocks; P2 is a follow-up and never blocks approval. After two changes_requested on one subtask, only (c) and (d) findings may block; everything else becomes a follow-up. '.$approve.' Otherwise end your turn with '.self::command($threadId, '--outcome=changes_requested --summary="The findings the implementer must address"'.$cause).'. '.($cause === '' ? '' : 'This review follows an operator direction. Every review outcome needs --cause. ').self::blocked($threadId, true);
     }
 
     /** The reviewer answers an implementer's question from the contract, before the operator is asked. */
@@ -96,7 +97,7 @@ final readonly class TaskTurnInstructions
             .': a test Gateway, an operator, and the declared nodes with their roles. Use it with bin/e2e-topology, for example `bin/e2e-topology exec '.$issue.' operator --argv=\'["orbit","node:list","--json"]\'`, and follow the using-incus-topologies skill. Never acquire or release it.';
 
         return $reviewer
-            ? $text.' `--record` appends to .e2e/evidence.log, which the read-only rule allows: the file is not part of the workspace tree. Prove each deliverable on the declared nodes ('.$nodes.') with `bin/e2e-topology exec '.$issue.' NODE --argv=JSON --record=LABEL`, where LABEL names the deliverable, and cite the labels in your --deliverable evidence and summary. Orbit refuses the approval until the evidence log holds a recorded command that did work on each declared node and exited 0, started after the last handoff, and it adds those commands to your approval.'
+            ? $text.' `--record` appends to .e2e/evidence.jsonl, which the read-only rule allows: the file is not part of the workspace tree. Prove each deliverable on the declared nodes ('.$nodes.') with `bin/e2e-topology exec '.$issue.' NODE --argv=JSON --record=LABEL`, where LABEL names the deliverable, and cite the labels in your --deliverable evidence and summary. Orbit refuses the approval until the evidence log holds a recorded command that did work on each declared node and exited 0, started after the last handoff, and it adds those commands to your approval.'
             : $text.' The reviewer must prove the deliverables on '.$nodes.', so make them work there.';
     }
 

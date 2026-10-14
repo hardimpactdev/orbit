@@ -186,6 +186,8 @@ Verify runs before the scheduler phase, so a broken release is found and switche
 
 Verify checks `GET /up` and Gateway status at `ORBIT_GATEWAY_VERIFY_ORIGIN` (default `https://gateway.orbit`). Status must be `ok`, and the version must be the full commit or its 12-digit id. A busy pool can queue `/up` behind long requests, so a failed check runs again after 2, 4, 8, 16, and 30 seconds.
 
+Each request has a 15-second overall deadline. HTTPS trusts only `/etc/caddy/orbit-cert-current/root-ca.pem`, with the system CA directory disabled. A missing CA file fails verification. Laravel's HTTP client retries the complete check, including status and version validation. After the last failure, it reports `gateway.release_verify_failed` at the `verify` step with the failed endpoint or the observed status and version.
+
 Smoke does not run before the web switch. Any failure after the switch counts, also an error the release code did not expect (`gateway.release_unexpected_failure`):
 
 - Without migrations, deploy switches back to the previous release and repeats the handoff phases that started. `web/current` returns to its earlier build. The outcome is `switched_back`.
@@ -810,6 +812,8 @@ For each Node, the run takes the Node's role lock, the lock every role converge 
 
 A step that fails while the Node still answers SSH runs once more, because a dropped channel or a timeout is usually transient. When the Node does not answer a new probe, it is `unreachable`. A `self-update` that answered with its JSON verdict is not retried. A step that meets a busy lock (`node_role.node_busy`, `node.update_busy`, `self_update.busy`, `agent.converge_busy`, `agent.converge_lock_lost`, `node.lock_lost`, `tool.operation_locked`) leaves the Node `deferred`.
 
+The `caddy-package` artifact uses the shared [Caddy package step](/reference/node-provisioning#package-sources). Its source rename changes that artifact's digest once. The next footprint run repeats the step without reinstalling a Caddy at or above the floor.
+
 When the baseline shows an owned issue, the footprint step re-applies the artifact that repairs it even though its digest matches: `agent` for an agent issue, `caddy` for Caddy drift.
 
 A Caddyfile that the render refuses, because a site cannot be built, is `skipped`: the live Caddyfile stays, Doctor keeps reporting `role.caddy_build_drift`, and the verify tolerates that issue on this Node. A Caddyfile that `caddy validate` refuses can also be a fault in Orbit's own template or Caddy pin.
@@ -903,7 +907,7 @@ The rollout updates only the Nodes of the [rollout set](#rollout-set-and-order).
 
 The rollout visits one Node at a time, so it takes longer as the fleet grows. A halted rollout blocks every later rollout until an operator resumes it.
 
-The Gateway pushes the rendered footprint over SSH, such as the Caddyfile or the [`tmpfiles` rule](/reference/node-provisioning#converge-the-orbit-footprint) of an `app-dev` Node. A new artifact changes the footprint digest of each Node it applies to, so the next rollout writes it there. `orbit self-update` replaces only the CLI and the agent. Caddy, cAdvisor, the FPM exporter, Prometheus, Grafana, Plausible, and Reverb keep their own update paths.
+The Gateway pushes the rendered footprint over SSH, such as the Caddyfile or the [`tmpfiles` rule](/reference/node-provisioning#converge-the-orbit-footprint) of an `app-dev` Node. Adding or removing an artifact changes the footprint digest of each Node it applies to. The next rollout converges the artifacts in the [current footprint list](/reference/node-provisioning#converge-the-orbit-footprint). `orbit self-update` replaces only the CLI and the agent. Caddy, cAdvisor, the FPM exporter, Prometheus, Grafana, Plausible, and Reverb keep their own update paths.
 
 ### Not built
 

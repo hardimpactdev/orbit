@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tasks\NullTaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskSessionObserver;
 use App\Domain\Tasks\TaskStatus;
@@ -15,6 +14,7 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use Tests\Support\AgentSnapshotReader;
+use Tests\Support\NullTaskWorkspaceDiffReader;
 
 function observer_group(): Task
 {

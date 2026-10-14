@@ -12,7 +12,7 @@ function group(id: number, status: TaskGroup["status"]): TaskGroup {
         project_id: 999,
         execution_mode: "managed",
         capacity_wait_reason: null,
-        sandbox_power: null,
+        vm_power: null,
         preview: false,
         review_and_merge: null,
         project: "example-project",
@@ -121,6 +121,25 @@ it("groups every status, opens details, and keeps unsuccessful outcomes visible"
     app.router.history.back();
     await expect.element(pane("Todo")).toBeVisible();
 });
+
+it.each(["running", "stopped", "destroyed", null, undefined] as const)(
+    "opens a task with VM power %s without changing its review status",
+    async (power) => {
+        const task = { ...group(1, "waiting_for_review"), vm_power: power };
+        await openTasks(async (_, path) => ({
+            status: 200,
+            payload: { data: path === "/api/v1/task-groups" ? [task] : task },
+        }));
+        await pane("In progress").getByRole("link").click();
+        await expect
+            .element(pane("Description"))
+            .toHaveTextContent("Deliver the requested feature.");
+        await expect.element(pane("Task")).toHaveTextContent("In progress");
+        expect(queryClient.getQueryData<TaskGroup>(["task-groups", "1"])?.status).toBe(
+            "waiting_for_review",
+        );
+    },
+);
 
 it("distinguishes direction requests from failures on task and subtask cards", async () => {
     const direction = {
@@ -574,6 +593,10 @@ it("shows Instance overview and an Instance-scoped Tasks board with keyboard tab
         .element(page.getByRole("link", { name: "Open task: Unassigned task" }))
         .not.toBeInTheDocument();
     await expect.element(pane("Application log")).not.toBeInTheDocument();
+    await userEvent.keyboard("{ArrowUp}");
+    await expect
+        .element(page.getByTestId("instance-dependencies"))
+        .toHaveAttribute("aria-selected", "true");
     await userEvent.keyboard("{ArrowUp}");
     await expect
         .element(page.getByRole("tab", { name: "Overview", exact: true }))

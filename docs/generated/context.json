@@ -28,7 +28,10 @@
             "path": "docs/api/overview.mdx",
             "title": "Using the API",
             "kind": "product",
-            "components": [],
+            "components": [
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
             "concepts": [
                 "Activity",
                 "Cluster",
@@ -36,6 +39,8 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Project",
+                "Role",
                 "Route",
                 "Schedule"
             ],
@@ -381,6 +386,7 @@
             ],
             "concepts": [
                 "Access grant",
+                "Activity",
                 "Cluster",
                 "Gateway",
                 "Instance",
@@ -884,6 +890,35 @@
             "governing_adrs": [
                 "0200",
                 "0206"
+            ]
+        },
+        {
+            "path": "docs/decisions/0207-one-image-recipe-shared-package-cache-no-workspace-templates.md",
+            "title": "ADR 0207: One image recipe, shared package cache, no workspace templates",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Placement",
+                "Project",
+                "Role",
+                "Schedule",
+                "Subtask",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0200",
+                "0206",
+                "0207"
             ]
         },
         {
@@ -1486,8 +1521,7 @@
                 "Project",
                 "Role",
                 "Route",
-                "Schedule",
-                "Task"
+                "Schedule"
             ],
             "governing_adrs": []
         },
@@ -1668,6 +1702,7 @@
                 "Node",
                 "Process",
                 "Project",
+                "Role",
                 "Route",
                 "Subtask",
                 "Task",

@@ -2,8 +2,9 @@
 
 declare(strict_types=1);
 
-namespace App\Domain\Tasks;
+namespace Tests\Support;
 
+use App\Domain\Tasks\AgentSpawner;
 use App\Models\Task;
 
 final readonly class NullAgentSpawner implements AgentSpawner

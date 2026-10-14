@@ -6,7 +6,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentInputRequest;
 use App\Domain\Tasks\CoderSettleNotifier;
-use App\Domain\Tasks\NullCoderSettleNotifier;
 use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskSessionActor;
@@ -21,6 +20,7 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use Tests\Support\AgentCommandDispatcher;
+use Tests\Support\NullCoderSettleNotifier;
 
 function router_group(): Task
 {

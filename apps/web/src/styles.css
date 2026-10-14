@@ -483,7 +483,7 @@ body {
 /* The highlighted navigation item is a small chip: white, with the same slight radius as a kanban card. */
 .nav-row[data-selected][data-focused] {
     border-radius: 2px;
-    background: #fff;
+    background: var(--selected-line);
 }
 
 .row[data-selected][data-focused][data-warn] {

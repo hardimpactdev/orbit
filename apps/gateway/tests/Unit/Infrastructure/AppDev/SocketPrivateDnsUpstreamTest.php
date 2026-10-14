@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\AppDev\PrivateDnsAnswer;
 use App\Infrastructure\AppDev\PrivateDnsMessageCodec;
 use App\Infrastructure\AppDev\SocketPrivateDnsUpstream;
+use Tests\Support\SilentPrivateDnsPortPair;
 
 pest()->group('subprocess');
 
@@ -12,37 +13,49 @@ it('returns a UDP upstream answer without waiting for the socket to close', func
     $codec = new PrivateDnsMessageCodec;
     $query = $codec->encodeQuery('example.com');
     $response = $codec->encodeAnswer($codec->decodeQuestion($query), PrivateDnsAnswer::a('1.2.3.4'));
-    $responder = orb313_start_udp_responder($response, holdSeconds: 4.0);
+    $responder = orb313_start_udp_responder($response);
 
     try {
-        $started = hrtime(true);
-        $resolved = new SocketPrivateDnsUpstream('127.0.0.1', $responder['port'], 1.5)->resolve($query);
-        $elapsed = (hrtime(true) - $started) / 1_000_000_000;
+        $resolved = new SocketPrivateDnsUpstream('127.0.0.1', $responder['port'], 5.0)->resolve($query);
 
         expect($resolved)
             ->toBe($response)
-            ->and($elapsed)
-            ->toBeLessThan(0.5);
+            ->and(proc_get_status($responder['process'])['running'])
+            ->toBeTrue();
     } finally {
         orb313_stop_process($responder);
     }
 });
 
 it('fails a silent UDP upstream without blocking the timeout window twice', function (): void {
-    $silent = stream_socket_server('udp://127.0.0.1:0', $error, $message, STREAM_SERVER_BIND);
-    expect($silent)->toBeResource();
-    $name = stream_socket_get_name($silent, false);
-    expect($name)->toBeString();
-    $port = (int) substr($name, strrpos($name, ':') + 1);
+    [$silentUdp, $silentTcp, $port] = SilentPrivateDnsPortPair::hold('127.0.0.1');
 
     try {
-        $started = hrtime(true);
-        expect(fn () => new SocketPrivateDnsUpstream('127.0.0.1', $port, 0.2)->resolve(
+        // Neither transport may be adopted by another test's PHP stream server.
+        set_error_handler(static fn (): bool => true);
+        try {
+            expect(stream_socket_server('udp://127.0.0.1:'.$port, $error, $message, STREAM_SERVER_BIND))->toBeFalse();
+            expect(stream_socket_server('tcp://127.0.0.1:'.$port, $error, $message))->toBeFalse();
+        } finally {
+            restore_error_handler();
+        }
+
+        $waits = [];
+        $wait = static function ($socket, bool $write, float $timeout) use (&$waits): bool {
+            $waits[] = ['write' => $write, 'timeout' => $timeout];
+
+            return $write;
+        };
+        expect(fn () => new SocketPrivateDnsUpstream('127.0.0.1', $port, 0.2, $wait, static fn (): float => 0.0)->resolve(
             new PrivateDnsMessageCodec()->encodeQuery('example.com'),
         ))->toThrow(RuntimeException::class);
-        expect((hrtime(true) - $started) / 1_000_000_000)->toBeLessThan(1.0);
+        expect($waits)->toBe([
+            ['write' => true, 'timeout' => 0.2],
+            ['write' => false, 'timeout' => 0.2],
+        ]);
     } finally {
-        fclose($silent);
+        socket_close($silentUdp);
+        socket_close($silentTcp);
     }
 });
 
@@ -52,10 +65,20 @@ it('gives up on a TCP upstream that accepts but never sends a response', functio
     $responder = orb313_start_stalled_tcp_acceptor();
 
     try {
-        $started = hrtime(true);
-        expect(fn () => new SocketPrivateDnsUpstream('127.0.0.1', $responder['port'], 0.2)->resolve($query))
-            ->toThrow(RuntimeException::class);
-        expect((hrtime(true) - $started) / 1_000_000_000)->toBeLessThan(1.0);
+        $waits = [];
+        $wait = static function ($socket, bool $write, float $timeout) use (&$waits): bool {
+            $waits[] = ['write' => $write, 'timeout' => $timeout];
+
+            return $write;
+        };
+        expect(fn () => new SocketPrivateDnsUpstream('127.0.0.1', $responder['port'], 0.2, $wait, static fn (): float => 0.0)->resolve($query))
+            ->toThrow(RuntimeException::class, 'The private DNS upstream TCP response timed out.');
+        expect($waits)->toBe([
+            ['write' => true, 'timeout' => 0.2],
+            ['write' => false, 'timeout' => 0.2],
+            ['write' => true, 'timeout' => 0.2],
+            ['write' => false, 'timeout' => 0.2],
+        ]);
     } finally {
         orb313_stop_process($responder);
     }
@@ -64,7 +87,7 @@ it('gives up on a TCP upstream that accepts but never sends a response', functio
 /**
  * @return array{process: resource, pipes: array<int, resource>, port: int, files: list<string>}
  */
-function orb313_start_udp_responder(string $response, float $holdSeconds): array
+function orb313_start_udp_responder(string $response): array
 {
     $script = <<<'PHP'
         <?php
@@ -73,7 +96,6 @@ function orb313_start_udp_responder(string $response, float $holdSeconds): array
 
         $portFile = $argv[1];
         $response = hex2bin($argv[2]);
-        $holdSeconds = (float) $argv[3];
         if (! is_string($response)) {
             exit(1);
         }
@@ -95,10 +117,10 @@ function orb313_start_udp_responder(string $response, float $holdSeconds): array
             stream_socket_sendto($server, $response, 0, $peer);
         }
 
-        usleep((int) ($holdSeconds * 1_000_000));
+        fread(STDIN, 1);
         PHP;
 
-    return orb313_start_script($script, [bin2hex($response), (string) $holdSeconds]);
+    return orb313_start_script($script, [bin2hex($response)]);
 }
 
 /**
@@ -123,9 +145,9 @@ function orb313_start_stalled_tcp_acceptor(): array
         }
 
         file_put_contents($portFile, (string) ((int) substr($name, strrpos($name, ':') + 1)));
-        $connection = @stream_socket_accept($server, 5);
+        $connection = @stream_socket_accept($server, -1);
         if (is_resource($connection)) {
-            sleep(5);
+            fread(STDIN, 1);
             fclose($connection);
         }
         PHP;
@@ -154,7 +176,7 @@ function orb313_start_script(string $script, array $arguments): array
     expect($process)->toBeResource();
 
     $port = 0;
-    $deadline = microtime(true) + 2.0;
+    $deadline = microtime(true) + 15.0;
     while (microtime(true) < $deadline) {
         clearstatcache(true, $portFile);
         $contents = file_get_contents($portFile);

@@ -76,7 +76,7 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
                 // without probing the dead address.
                 $nodes->execute($node, $this->gateway(), offline: true, force: true, deleted: true);
             }
-            $vm->update(['state' => TaskVmState::Destroyed, 'destroyed_at' => now()]);
+            $vm->update(['state' => TaskVmState::Destroyed, 'destroyed_at' => now(), 'pi_token' => null]);
         } catch (Throwable $exception) {
             $vm->recordError($exception);
 
@@ -92,18 +92,8 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
     {
         $reason = (string) $group->assistance_reason;
 
-        return in_array($group->status, self::endedStatuses(), true)
+        return in_array($group->status, TaskGroupStatus::endedStatuses(), true)
             && (str_starts_with($reason, RemoveTaskWorkspaceAction::RemovalFailedPrefix) || str_starts_with($reason, RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix));
-    }
-
-    /**
-     * A cancelled or completed group, or one whose pull request merged and now waits for completion.
-     *
-     * @return list<TaskGroupStatus>
-     */
-    public static function endedStatuses(): array
-    {
-        return [TaskGroupStatus::Completed, TaskGroupStatus::Cancelled, ...TaskGroupStatus::awaitingCompletion()];
     }
 
     private function gateway(): Node

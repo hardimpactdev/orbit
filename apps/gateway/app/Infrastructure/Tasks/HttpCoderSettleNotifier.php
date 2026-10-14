@@ -64,17 +64,18 @@ final readonly class HttpCoderSettleNotifier implements CoderSettleNotifier
         $this->post($payload);
 
         if ($kind === AssistanceKind::Direction) {
-            $this->postOpsBot($payload);
+            $this->post($payload, opsBot: true);
         }
     }
 
     /**
      * @param  array<string, mixed>  $payload
      */
-    private function post(array $payload): void
+    private function post(array $payload, bool $opsBot = false): void
     {
-        $url = $this->string(config('orbit.tasks.coder_webhook_url'));
-        $secret = $this->string(config('orbit.tasks.coder_webhook_secret'));
+        $prefix = $opsBot ? 'orbit.tasks.opsbot_webhook_' : 'orbit.tasks.coder_webhook_';
+        $url = $this->string(config($prefix.'url'));
+        $secret = $this->string(config($prefix.'secret'));
 
         if ($url === null || $secret === null) {
             return;
@@ -87,47 +88,19 @@ final readonly class HttpCoderSettleNotifier implements CoderSettleNotifier
         }
 
         $timestamp = (string) now()->timestamp;
-        $signature = hash_hmac('sha256', $timestamp.'.'.$body, $secret);
+        $headers = $opsBot ? [
+            'Authorization' => 'Bearer '.$secret,
+            'X-Automation-Key' => $secret,
+        ] : [
+            'X-Orbit-Timestamp' => $timestamp,
+            'X-Orbit-Signature' => 'sha256='.hash_hmac('sha256', $timestamp.'.'.$body, $secret),
+        ];
 
         try {
             Http::connectTimeout(self::CONNECT_TIMEOUT)
                 ->timeout(self::TIMEOUT)
                 ->withBody($body, 'application/json')
-                ->withHeaders([
-                    'X-Orbit-Timestamp' => $timestamp,
-                    'X-Orbit-Signature' => 'sha256='.$signature,
-                ])
-                ->post($url);
-        } catch (Throwable) {
-        }
-    }
-
-    /**
-     * @param  array<string, mixed>  $payload
-     */
-    private function postOpsBot(array $payload): void
-    {
-        $url = $this->string(config('orbit.tasks.opsbot_webhook_url'));
-        $secret = $this->string(config('orbit.tasks.opsbot_webhook_secret'));
-
-        if ($url === null || $secret === null) {
-            return;
-        }
-
-        try {
-            $body = json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
-        } catch (JsonException) {
-            return;
-        }
-
-        try {
-            Http::connectTimeout(self::CONNECT_TIMEOUT)
-                ->timeout(self::TIMEOUT)
-                ->withToken($secret)
-                ->withHeaders([
-                    'X-Automation-Key' => $secret,
-                ])
-                ->withBody($body, 'application/json')
+                ->withHeaders($headers)
                 ->post($url);
         } catch (Throwable) {
         }

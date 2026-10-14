@@ -10,6 +10,7 @@ use App\E2E\Value\AttemptId;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologyRecord;
+use App\E2E\Value\TopologyTarget;
 use InvalidArgumentException;
 use RuntimeException;
 
@@ -55,6 +56,16 @@ final readonly class IssueState
     public function attempt(): array
     {
         $lease = $this->store->read(self::ATTEMPT) ?? throw new RuntimeException("{$this->issue} has no active attempt.");
+
+        return $this->validatedAttempt($lease);
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $lease
+     * @return array{issue:string,attempt_id:string,operation_id:string,acquired_at:string,recipe:array{workloads:list<string>}}
+     */
+    private function validatedAttempt(array $lease): array
+    {
         if (
             array_keys($lease) !== ['issue', 'attempt_id', 'operation_id', 'acquired_at', 'recipe']
             || $lease['issue'] !== $this->issue
@@ -97,6 +108,20 @@ final readonly class IssueState
     public function recipe(): TopologyRecipe
     {
         return TopologyRecipe::fromArray($this->attempt()['recipe']);
+    }
+
+    /** Old discovery leases use the same resource names and ownership as current leases. */
+    public function releaseTarget(): TopologyTarget
+    {
+        $lease = $this->store->read(self::ATTEMPT);
+        if (($lease['purpose'] ?? null) === 'discovery') {
+            unset($lease['purpose']);
+            $lease = $this->validatedAttempt($lease);
+
+            return TopologyTarget::for($this->issue, new AttemptId($lease['attempt_id']), TopologyRecipe::fromArray($lease['recipe']));
+        }
+
+        return $this->topology()->target ?? TopologyTarget::for($this->issue, $this->attemptId(), $this->recipe());
     }
 
     public function writeAttempt(AttemptId $attempt, OperationId $operation, TopologyRecipe $recipe): void

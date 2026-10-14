@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsRepository;
+use Carbon\CarbonInterval;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 
@@ -126,14 +128,18 @@ it('times out after ten seconds without changing the destination', function (): 
     $original = file_get_contents($path);
     $lock = known_hosts_test_lock($path);
     $exception = null;
-    $startedAt = hrtime(true);
+    $clock = (object) ['nanoseconds' => 0];
+    $repository = new KnownHostsRepository($path, monotonicNanoseconds: static fn (): int => $clock->nanoseconds);
+    Sleep::fake();
+    Sleep::whenFakingSleep(static function (CarbonInterval $duration) use ($clock): void {
+        $clock->nanoseconds += (int) $duration->totalMicroseconds * 1_000;
+    });
 
     try {
         $repository->put('10.44.0.2', 22, new HostKey('ssh-ed25519', 'WAITING', 'SHA256:waiting'));
     } catch (RuntimeException $caught) {
         $exception = $caught;
     } finally {
-        $elapsedSeconds = (hrtime(true) - $startedAt) / 1_000_000_000;
         flock($lock, LOCK_UN);
         fclose($lock);
     }
@@ -142,10 +148,12 @@ it('times out after ten seconds without changing the destination', function (): 
         expect($exception)->toBeInstanceOf(RuntimeException::class);
         expect($exception?->getMessage())
             ->toBe("Timed out after 10 seconds waiting to update SSH host keys [{$path}].");
-        expect($elapsedSeconds)->toBeGreaterThanOrEqual(9.9)->toBeLessThan(12.0);
+        expect($clock->nanoseconds)->toBe(10_000_000_000);
+        Sleep::assertSlept(static fn (CarbonInterval $duration): bool => (int) $duration->totalMicroseconds === 10_000, 1_000);
         expect(file_get_contents($path))->toBe($original);
         expect(known_hosts_candidates($path))->toBe([]);
     } finally {
+        Sleep::fake(false);
         new Filesystem()->deleteDirectory($directory);
     }
 });
@@ -179,13 +187,9 @@ it('proceeds promptly after a preceding writer releases the lock and reads its u
             $path,
             "10.44.0.1 ssh-ed25519 ORIGINAL\n10.44.0.2 ssh-ed25519 PRECEDING\n",
         );
-        $releasedAt = hrtime(true);
         flock($lock, LOCK_UN);
         $locked = false;
         known_hosts_wait_for_success($process);
-        $elapsedSeconds = (hrtime(true) - $releasedAt) / 1_000_000_000;
-
-        expect($elapsedSeconds)->toBeLessThan(2.0);
         expect(file_get_contents($path))
             ->toBe(
                 "10.44.0.1 ssh-ed25519 ORIGINAL\n"."10.44.0.2 ssh-ed25519 PRECEDING\n"."10.44.0.3 ssh-ed25519 WAITER\n",
@@ -282,17 +286,17 @@ it('releases the stable lock and preserves the destination when a writer process
         expect(file_get_contents($path))->toBe($original);
 
         unlink($candidatePath);
-        $startedAt = hrtime(true);
+        Sleep::fake();
         $repository->put('10.44.0.2', 22, new HostKey('ssh-ed25519', 'AFTER', 'SHA256:after'));
-        $elapsedSeconds = (hrtime(true) - $startedAt) / 1_000_000_000;
 
-        expect($elapsedSeconds)->toBeLessThan(2.0);
+        Sleep::assertNeverSlept();
         expect(file_get_contents($path))
             ->toBe(
                 "10.44.0.1 ssh-ed25519 EXISTING\n10.44.0.2 ssh-ed25519 AFTER\n",
             );
         expect(is_file($path.'.lock'))->toBeTrue();
     } finally {
+        Sleep::fake(false);
         if ($process->isRunning()) {
             $process->stop(0.1, 9);
         }

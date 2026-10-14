@@ -11,6 +11,7 @@ use App\Actions\Tasks\ResumeDeliverableCorrectionAction;
 use App\Actions\Tasks\RetryTaskBaselineAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Actions\Tasks\WatchTaskBranchPullRequestAction;
+use App\Actions\TaskVms\FailTaskVmAction;
 use App\Actions\TaskVms\WakeTaskVmAction;
 use App\Domain\GitHub\GitHubReviewEvent;
 use App\Domain\GitHub\GitHubReviewState;
@@ -20,6 +21,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
 use App\Domain\TaskVms\TaskVmFailedException;
 use App\Domain\TaskVms\TaskVmSettings;
+use App\Domain\TaskVms\TaskVmState;
 use App\Models\Activity;
 use App\Models\AgentThread;
 use App\Models\Instance;
@@ -30,6 +32,7 @@ use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskQuestion;
 use App\Models\TaskReviewedCommit;
+use App\Models\TaskVm;
 use Closure;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -147,6 +150,7 @@ final readonly class TaskScheduler
         private DeliverablePathChecker $deliverablePaths,
         private ResumeDeliverableCorrectionAction $correctionResume,
         private TaskWorkspaceRoute $workspaceRoute,
+        private FailTaskVmAction $failedVms,
     ) {}
 
     /**
@@ -198,7 +202,7 @@ final readonly class TaskScheduler
     /**
      * Runs one group's tick work so its failure never stops the other groups. The failure is reported with the
      * group id, and the next tick tries again. A second failure in a row asks the group and its open subtasks for
-     * assistance. Later failures stay quiet while the group asks. A row that breaks the task model cannot heal by
+     * assistance. Every failure is reported, also while the group asks. A row that breaks the task model cannot heal by
      * itself, so that failure asks at once.
      *
      * @param  array<int, true>  $failed
@@ -213,13 +217,9 @@ final readonly class TaskScheduler
                 $key = self::TickFailureKey.$group->id;
                 $failures = StoredInteger::fromOrZero(Cache::get($key)) + 1;
                 Cache::put($key, $failures, now()->addDay());
-                if ($failures < ($exception instanceof TaskHierarchyException ? 1 : 2)) {
-                    report($exception);
-
-                    return;
-                }
-                if (! DB::table('tasks')->where('id', $group->id)->value('assistance_requested')) {
-                    report($exception);
+                report($exception);
+                if ($failures >= ($exception instanceof TaskHierarchyException ? 1 : 2)
+                    && ! DB::table('tasks')->where('id', $group->id)->value('assistance_requested')) {
                     $this->escalateTickFailure($group, $exception);
                 }
             }
@@ -229,7 +229,7 @@ final readonly class TaskScheduler
     /** Raw writes: the model refuses every save of a broken row, and assistance must still reach the operator. */
     private function escalateTickFailure(Task $group, Throwable $exception): void
     {
-        $reason = self::TickFailedReason.$exception->getMessage();
+        $reason = Str::limit(self::TickFailedReason.$exception->getMessage(), 1999, '…');
         TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason, replaceFailure: true);
         foreach (Task::query()->where('parent_id', $group->id)->whereIn('status', [TaskStatus::Running, TaskStatus::Reviewing])->get() as $task) {
             TaskAssistance::apply($task, AssistanceKind::Failure, null, $reason, replaceFailure: true);
@@ -1787,7 +1787,7 @@ final readonly class TaskScheduler
             return TaskTurnInstructions::relay($threadId);
         }
 
-        return TaskTurnInstructions::reviewer($task->opensPullRequest(), $task->deliverableList(), $threadId);
+        return TaskTurnInstructions::reviewer($task->opensPullRequest(), $task->deliverableList(), $threadId, TaskTurnMode::forTask($task, $role));
     }
 
     /**
@@ -1828,10 +1828,7 @@ final readonly class TaskScheduler
             return false;
         }
         $context = $role === TaskThreadRole::Reviewer ? $this->reviewPackets->reviewContext($task) : null;
-        $consult = $role === TaskThreadRole::Reviewer && $task->consult_comment_id !== null;
-        $relay = $role === TaskThreadRole::Reviewer && ! $consult && $task->direction_relay_comment_id !== null;
-        $causeRequired = $role === TaskThreadRole::Reviewer && ! $consult && ! $relay && TaskQuestions::awaitsCause($task);
-        $mode = $consult || $relay || $causeRequired ? new TaskTurnMode(consult: $consult, relay: $relay, causeRequired: $causeRequired) : null;
+        $mode = TaskTurnMode::forTask($task, $role);
         $this->receipts->prepare($instance, $role, $role === TaskThreadRole::Reviewer && $task->opensPullRequest(), $task->deliverableList(), $threadId, $mode, $context);
 
         return true;
@@ -1898,10 +1895,7 @@ final readonly class TaskScheduler
                 if (! $this->prepareTurn($group, $task, $thread->role, $thread->threadId)) {
                     return false;
                 }
-                $mode = $implementer ? null : new TaskTurnMode(
-                    consult: $task->consult_comment_id !== null,
-                    relay: $task->consult_comment_id === null && $task->direction_relay_comment_id !== null,
-                );
+                $mode = TaskTurnMode::forTask($task, $thread->role);
                 $this->actor->remindRubric($group, $thread, TaskRubricReminder::compose($thread->role, $failures, ! $implementer && $task->opensPullRequest(), $task->deliverableList(), $group->project->taskCheckCommand(), $thread->threadId, $mode));
             } catch (AgentDriverException|TaskTurnReceiptException $exception) {
                 $this->recordCommunicationFailure($task, $group, $exception->getMessage());
@@ -2694,6 +2688,12 @@ final readonly class TaskScheduler
      */
     public function claimNext(array &$skipped = []): ?Task
     {
+        // Failed rows from an earlier tick still need assistance, but never another reservation.
+        foreach (TaskVm::query()->where('state', TaskVmState::Failed)
+            ->whereHas('group', static fn ($group) => $group->where('execution_mode', TaskExecutionMode::Managed)
+                ->where('status', TaskGroupStatus::Todo)->where('assistance_requested', false))->get() as $vm) {
+            $this->failedVms->requestAssistance($vm, new TaskVmFailedException($vm)->getMessage());
+        }
         $resumed = $this->resumeWaitingSandbox($skipped);
         if ($resumed instanceof Task) {
             return $resumed;
@@ -2702,6 +2702,7 @@ final readonly class TaskScheduler
             $reserved = DB::transaction(function () use ($skipped): ?Task {
                 $group = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
                     ->where('status', TaskGroupStatus::Todo)
+                    ->whereNotIn('id', TaskVm::query()->where('state', TaskVmState::Failed)->select('group_id')->whereNotNull('group_id'))
                     ->when($skipped !== [], fn ($query) => $query->whereNotIn('id', $skipped))
                     ->orderBy('id')
                     ->lockForUpdate()
@@ -2730,7 +2731,7 @@ final readonly class TaskScheduler
 
                 continue;
             } catch (TaskVmFailedException $exception) {
-                $this->releaseFailedTaskVm($reserved, $exception->getMessage());
+                $this->releaseFailedTaskVm($reserved, $exception->vm);
                 $this->endClaim($reserved, null);
                 $skipped[] = $reserved->id;
 
@@ -2911,8 +2912,7 @@ final readonly class TaskScheduler
                 $group->assistance_reason = $reason;
             }
             $group->save();
-            $threshold = config('orbit.tasks.provisioning_failure_threshold', 3);
-            if ($failures >= max(1, is_numeric($threshold) ? (int) $threshold : 3)) {
+            if ($failures >= Config::integer('orbit.tasks.provisioning_failure_threshold', 3)) {
                 $wasAsking = $group->assistance_requested;
                 $applied = TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason, replaceFailure: true);
                 if (! $wasAsking && $applied) {
@@ -2924,12 +2924,12 @@ final readonly class TaskScheduler
 
     /**
      * Returns a group whose task VM failed to todo and makes it ask for assistance at once: a failed VM never
-     * recovers, so this is no wait and counts no retry. Each later claim finds the same VM and keeps the request, until
-     * a cancel destroys the VM. A request that already has this reason is left as it is.
+     * recovers, so this is no wait and counts no retry. Later claims skip the failed VM's group until a cancel
+     * destroys the VM. The failure action owns assistance and its notification.
      */
-    private function releaseFailedTaskVm(Task $reserved, string $reason): void
+    private function releaseFailedTaskVm(Task $reserved, TaskVm $vm): void
     {
-        DB::transaction(function () use ($reserved, $reason): void {
+        DB::transaction(function () use ($reserved, $vm): void {
             $group = Task::topLevel()->lockForUpdate()->find($reserved->id);
             if (! $group instanceof Task || ! $this->holdsReservation($group, $reserved)) {
                 return;
@@ -2938,15 +2938,7 @@ final readonly class TaskScheduler
             $group->capacity_wait_reason = null;
             $group->status = TaskGroupStatus::Todo;
             $group->save();
-            if ($group->assistance_requested && $group->assistance_reason === $reason) {
-                return;
-            }
-            $wasAsking = $group->assistance_requested;
-            $applied = TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason, replaceFailure: true);
-            Log::warning('A task group asks for assistance: its task VM failed.', ['group_id' => $group->id, 'reason' => $reason]);
-            if (! $wasAsking && $applied) {
-                DB::afterCommit(fn () => $this->coder->assistance($group, $reason));
-            }
+            $this->failedVms->requestAssistance($vm, new TaskVmFailedException($vm)->getMessage());
         });
     }
 

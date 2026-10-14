@@ -4,7 +4,7 @@ description: "How node:add bootstraps or converges a Node, how roles share and l
 covers:
   - apps/gateway/app/Actions/Nodes/{ProvisionNodeAction,EnrollMacOsNodeAction,RemoveNodeAction,AddNodeRoleAction,RemoveNodeRoleAction,AssignRoleAction}.php
   - apps/gateway/app/Domain/Nodes/RoleRegistry.php
-  - apps/gateway/app/Infrastructure/Nodes/{NativeNodeConverger,MacOsNodeConverger,NodeSshJump,NodeBootstrapCommandFactory,NodeBootstrapDnsProgram,NodeBootstrapPackageCatalog,CaddyPackageSourceProgram,RemotePhpPackageManager,NodeLocks,NodeLock}.php
+  - apps/gateway/app/Infrastructure/{Gateway/NativeGatewayCaddyInstaller.php,Nodes/{NativeNodeConverger,MacOsNodeConverger,NodeSshJump,NodeBootstrapCommandFactory,NodeBootstrapDnsProgram,NodeBootstrapPackageCatalog,CaddyPackage*,RemotePhpPackageManager,NodeLocks,NodeLock}.php}
   - apps/gateway/app/Infrastructure/WireGuard/NativeGatewayPeerProjectionManager.php
   - apps/gateway/app/Console/Commands/ProvisionNodeCommand.php
   - apps/gateway/app/Infrastructure/{Firewall/NodeFirewallRuleCatalog,Ssh/NativeSshExecutor,Ssh/SshConnection,Ssh/SshHostKeyScanner,Ssh/HostKeyScanner}.php
@@ -250,13 +250,12 @@ The step reads the path again under the Node's update lock before it installs, b
 | `annotator` | A Node with an annotator Process | The server files in `/opt/orbit/annotator`. Running annotators keep their code until their Process restarts |
 | `route-residue` | A Node that an [offline Route removal](/reference/routes#remove-a-route-from-an-unreachable-node) skipped | Caddy and PHP-FPM without the removed Route, then its certificates and firewall rules. A failure is `skipped` and retried later |
 | `tmpfiles` | Every Linux Node with an active `app-dev` role | `/etc/tmpfiles.d/orbit.conf`. The daily `systemd-tmpfiles-clean` run empties each `/tmp/orbit-*` and `/dev/shm/orbit-*` directory a day after its contents last changed. It removes no other path and restarts nothing |
-| `sandbox-residue` | Every Linux Node with an active `app-dev` role | Removes the host network files of the deleted Incus sandbox controller, listed below. It stops nothing, so Incus keeps running |
 
-The `sandbox-residue` artifact removes `orbit-sandbox-host-network.service`, the Incus drop-in `orbit-sandbox-network.conf`, `/usr/local/libexec/orbit-sandbox-network`, `/etc/orbit/sandbox-network.json`, and `/var/lib/orbit-sandbox-network`. It removes the drop-in and reloads systemd before it disables the service. A Node without these files is unchanged.
-
-Each artifact has a digest that the Gateway computes from its own code and pins, without SSH. The Caddy package digest covers the package program and the `CaddyRelease` floor. The Caddy digest covers every Gateway source file the Caddy build renders from: the build, its site sources, and the classes they use, such as `DevelopmentSite` and the `CaddyRelease` pin. The other digests cover the private-DNS listener release and publication code, the agent pin and the inputs its unit renders from, the collector script, the annotator files, the tmpfiles rule, and the sandbox residue script.
+Each artifact has a digest that the Gateway computes from its own code and pins, without SSH. The Caddy package digest covers the package program and the `CaddyRelease` floor. The Caddy digest covers every Gateway source file the Caddy build renders from: the build, its site sources, and the classes they use, such as `DevelopmentSite` and the `CaddyRelease` pin. The other digests cover the private-DNS listener release and publication code, the agent pin and the inputs its unit renders from, the collector script, the annotator files, and the tmpfiles rule.
 
 A user's sites, Routes, and DNS records never change a digest. Their own operations publish them, and Doctor reports their drift. The `route-residue` digest is the exception: it covers the residues of offline Route removals, which are Orbit's own unfinished work, so the Node drifts until a converge removes them. The Gateway keeps the digests each Node last received, and a converge re-applies only the artifacts whose digest changed. It takes the Node's update lock over SSH first. So even a converge that changes nothing runs a few lock commands on the Node.
+
+Removing a registered artifact changes the aggregate footprint digest. Converge invokes only artifacts that are still registered and apply to the Node. Unless forced, it skips each remaining artifact whose own digest is unchanged. After a successful converge, the Gateway drops the removed name from the stored artifact metadata. Removal itself does not delete or rewrite any Node files; files left by the removed artifact stay untouched.
 
 `--force` re-applies every artifact; each one still leaves a matching live copy alone. A Caddyfile that the render or the validation refuses is `skipped`, not failed; the [fleet rollout](/reference/gateway-recovery#one-node) fails a refused validation on its first Node. A failed artifact fails the command with its own error code and `details.artifact`, and the next converge applies it again. The digest of all artifacts is the Node's footprint digest, which the fleet catch-up compares.
 
@@ -269,7 +268,6 @@ Metrics exporters, cAdvisor, and the FPM exporter are not part of the footprint:
 | `node.footprint_caddy_failed` | 502 | The Caddyfile could not be published |
 | `node.footprint_caddy_package_failed` | 502 | The Caddy package step failed, for example because the download does not match the pin. The message names the cause |
 | `node.footprint_tmpfiles_failed` | 502 | The tmpfiles rule could not be written. The message names the cause |
-| `node.footprint_sandbox_residue_failed` | 502 | The old sandbox host files could not be removed. The message names the cause |
 
 ## Role compatibility
 
@@ -317,6 +315,8 @@ For Caddy, the Gateway pins a release and the SHA-512 digest of its `.deb` for `
 Caddy must be at least 2.9.0. A lower release fails the `caddy-package-source` step and names both releases. Doctor reports it as `role.caddy_version_unsupported`. Converging a role upgrades an archive Caddy in place. A Caddy at or above the floor stays as it is, so a newer pin does not restart it. `/etc/caddy/Caddyfile` is a symlink into Orbit's own versions directory, so the upgrade keeps the live configuration.
 
 The roles `gateway`, `router`, `ingress`, `app-dev`, `app-prod`, `websocket`, and `analytics` install Caddy when they converge. ProxyCli publication does the same on its Node. On the Gateway machine, the bootstrap and `php artisan orbit:gateway-web` install Caddy through local `sudo`. A failure there stops at step `gateway-caddy-install` with `gateway.caddy_install_failed`, and the live Caddy configuration stays unchanged. [Caddy configuration](/reference/caddy-configuration) describes how the Gateway builds each Node's Caddyfile.
+
+`CaddyPackageProgram::command()` supplies the same fixed arguments and shell program to role convergence, the fleet footprint, Gateway installation, and Analytics and ProxyCli publication. The rename from `CaddyPackageSourceProgram` changes the digest of the `caddy-package` footprint once, so the next footprint converge repeats this idempotent step. Its host command stays byte-for-byte the same. A Caddy at or above the floor is not reinstalled or restarted. The Gateway ordering step can fail with `gateway.caddy_start_failed` if its WireGuard ordering drop-in cannot be installed.
 
 ### Caddy reloads
 
@@ -400,7 +400,9 @@ The bootstrap adds the UFW rule `orbit:public-ssh-recovery` and enables UFW. An 
 
 ## WireGuard hub
 
-The Node with the `vpn` role holds the WireGuard hub: its private key, address, listen port, and the list of peers. When a peer changes, the Gateway renders the hub configuration and installs it there.
+The Node with the `vpn` role holds the WireGuard hub: its private key, address, listen port, and the list of peers. When a peer changes, the Gateway renders the hub configuration and installs it there. [`node:wireguard-key`](/cli/node#orbit-nodewireguard-key) sets or replaces an unmanaged Node's public key and runs this projection without configuring the peer machine. It refuses managed Nodes, Gateway Nodes, and keys that collide with another Node or the hub, including concurrent assignments. A successful projection preserves non-target peers.
+
+Repeating the same key still projects the hub when it has no collision; after a projection failure, the stored key remains and the operator retries after repairing the hub. A crash can leave either the old or new hub configuration, without guaranteed rollback or automatic reconciliation. [WireGuard key recovery](/cli/node#orbit-nodewireguard-key) explains how to restore an authorized management path and replay the desired key.
 
 When the `vpn` and `gateway` roles share a machine, or no `gateway` role is active, the Gateway installs the configuration locally with `sudo`. When they are on different Nodes, the Gateway sends the configuration over SSH to the `vpn` Node, with the private key on standard input, and activates `wg-quick@orbit` there. Without SSH, the projection fails with `vpn.server_config_install_failed` and never installs the configuration in `/etc/wireguard` on the Gateway machine. The Gateway always keeps the rendered hub configuration, private key included, at `ORBIT_HOME/generated/wireguard/orbit.conf`.
 

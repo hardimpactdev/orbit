@@ -30,6 +30,7 @@ final readonly class DeleteTaskVmAction
             $vm->update(['state' => TaskVmState::Destroying, 'error_code' => null, 'error_message' => null]);
             $this->runtime->release($vm);
             $this->provider->destroy($vm);
+            $vm->update(['pi_token' => null]);
             $this->workspaces->execute($vm);
         } catch (Throwable $exception) {
             $vm->recordError($exception);

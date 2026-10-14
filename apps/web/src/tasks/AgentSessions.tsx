@@ -68,7 +68,7 @@ export function AgentSessions({
         <Frame
             title="Agents"
             testId="agent-sessions"
-            className="agent-sessions-frame shrink-0 md:min-h-0 md:flex-1"
+            className="agent-sessions-frame min-h-[400px]! shrink-0 md:flex-1"
             topRight={sessions.length}
             bodyClassName={selected ? "agent-sessions-body" : undefined}
         >

@@ -43,6 +43,13 @@ use App\Domain\Tasks\TaskTurnReceipts;
 use App\Domain\Tasks\TaskType;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
+use App\Domain\TaskVms\TaskVmProvider;
+use App\Domain\TaskVms\TaskVmState;
+use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\SshExecutor;
+use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Jobs\TaskVms\ParkTaskVm;
+use App\Jobs\TaskVms\ResumeTaskVm;
 use App\Models\Activity;
 use App\Models\AgentThread;
 use App\Models\Instance;
@@ -52,11 +59,18 @@ use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskReviewedCommit;
+use App\Models\TaskVm;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Tests\Support\AgentCommandDispatcher;
 use Tests\Support\AgentSnapshotReader;
+use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskPullRequestReviewWatcher;
 use Tests\Support\FakeTaskTurnReceipts;
+use Tests\Support\RecordingTaskVmProvider;
+
+use function Pest\Laravel\mock;
 
 beforeEach(function (): void {
     test_bind_snapshot_driver();
@@ -390,6 +404,19 @@ function rm_activity(Task $group): array
 }
 
 describe('final review before every push', function (): void {
+    it('limits both final review briefs to new blocking findings', function (): void {
+        $group = rm_group([['Models', TaskStatus::Completed]]);
+        $rule = 'Block only on rule-1 findings that are new since the subtask approvals. Do not reopen hardening that the subtask reviews already covered.';
+
+        expect(TaskFinalReview::brief($group))->toContain($rule);
+
+        $group->pr_url = RM_PR_URL;
+        $group->pr_branch = 'incoming-feature';
+
+        expect($group->reviewsIncomingPullRequest())->toBeTrue()
+            ->and(TaskFinalReview::brief($group))->toContain($rule);
+    });
+
     it('commits an approved subtask without pushing it and starts the next subtask', function (): void {
         $group = rm_group([['Models', TaskStatus::Reviewing], ['Routes', TaskStatus::Todo]]);
         $first = $group->tasks->firstWhere('title', 'Models');
@@ -485,6 +512,8 @@ describe('final review before every push', function (): void {
             ->and($fixup->status)->toBe(TaskStatus::Running)
             ->and($fixup->title)->toBe(TaskFinalReview::FixupTitle)
             ->and($fixup->brief)->toContain('app/Models/Task.php: the scope misses legacy rows.')
+            ->and($fixup->brief)->toContain('Address each blocking finding of final review subtask #'.$final->id.' with the smallest change', 'List follow-ups in the handoff instead of implementing them.')
+            ->and($fixup->deliverables[1]['description'])->toBe('Each blocking finding of the final review is addressed or explicitly resolved within the task brief. Follow-ups are listed in the handoff.')
             ->and(array_column($fixup->deliverables ?? [], 'id'))->toBe(['project-check', 'final-review-findings'])
             ->and($runtime->implementers)->toBe([$fixup->id])
             ->and($runtime->pushes)->toBe([])
@@ -493,10 +522,10 @@ describe('final review before every push', function (): void {
             ->and(rm_activity($group))->toContain('final review requested changes');
     });
 
-    it('asks for assistance instead of a fourth final-review fixup in one window', function (): void {
+    it('asks for assistance instead of a third final-review fixup in one window', function (): void {
         $group = rm_group([
             ['Models', TaskStatus::Completed],
-            [TaskFinalReview::FixupTitle, TaskStatus::Completed], [TaskFinalReview::FixupTitle, TaskStatus::Completed], [TaskFinalReview::FixupTitle, TaskStatus::Completed],
+            [TaskFinalReview::FixupTitle, TaskStatus::Completed], [TaskFinalReview::FixupTitle, TaskStatus::Completed],
             [TaskFinalReview::Title, TaskStatus::Reviewing, TaskType::FinalReview],
         ]);
         Task::query()->where('parent_id', $group->id)->where('title', TaskFinalReview::FixupTitle)->update(['fixup_problem' => TaskFinalReview::FixupProblem]);
@@ -506,7 +535,7 @@ describe('final review before every push', function (): void {
 
         app(TaskScheduler::class)->tick();
 
-        expect(Task::query()->where('parent_id', $group->id)->where('fixup_problem', TaskFinalReview::FixupProblem)->count())->toBe(3)
+        expect(Task::query()->where('parent_id', $group->id)->where('fixup_problem', TaskFinalReview::FixupProblem)->count())->toBe(2)
             ->and($final->fresh()?->status)->toBe(TaskStatus::Completed)
             ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
             ->and($group->fresh()?->assistance_requested)->toBeTrue()
@@ -1007,5 +1036,51 @@ describe('incoming pull request watch', function (): void {
         $runtime->open = [rm_listed(1)];
 
         expect(app(WatchIncomingPullRequestsAction::class)->execute())->toBe([]);
+    });
+});
+
+describe('park failure recovery', function (): void {
+    it('resumes a waiting group subtask after a failed park and a successful wake', function (): void {
+        Queue::fake();
+        $group = rm_group([['Feature', TaskStatus::Completed], ['Follow-up', TaskStatus::Todo]], TaskGroupStatus::WaitingForReview, prUrl: RM_PR_URL);
+        test_vm_group($group);
+        $vm = TaskVm::forGroup($group);
+        $vm->update(['state' => TaskVmState::Parked]);
+        rm_runtime();
+        mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/keys/private');
+        mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/keys/known_hosts');
+        app()->instance(SshExecutor::class, new AppDevFakeSshExecutor);
+        $provider = new RecordingTaskVmProvider;
+        app()->instance(TaskVmProvider::class, $provider);
+        Http::fake(['http://10.44.0.90:3774/capabilities' => Http::response(['models' => []], 200)]);
+        $todo = $group->tasks->firstWhere('title', 'Follow-up');
+
+        (new ParkTaskVm($vm->id))->failed(new RuntimeException('SSH stop failed'));
+        expect(app(TaskScheduler::class)->claimNext())->toBeNull();
+        Queue::assertPushed(ResumeTaskVm::class, fn (ResumeTaskVm $job): bool => $job->taskVmId === $vm->id);
+        app()->call([new ResumeTaskVm($vm->id), 'handle']);
+        expect(app(TaskScheduler::class)->claimNext()?->id)->toBe($group->id);
+
+        expect($vm->fresh())->state->toBe(TaskVmState::Ready)->error_code->toBeNull();
+        expect($group->fresh())->status->toBe(TaskGroupStatus::Running)->assistance_requested->toBeFalse();
+        expect($todo->fresh()?->status)->toBe(TaskStatus::Running);
+        expect($provider->calls)->toBe(['start']);
+    });
+
+    it('still merges a reviewed green head while its waiting group has a park error', function (): void {
+        $group = rm_settled();
+        $group->update(['status' => TaskGroupStatus::WaitingForReview]);
+        test_vm_group($group);
+        $vm = TaskVm::forGroup($group);
+        $vm->update(['state' => TaskVmState::Parked]);
+        $runtime = rm_runtime();
+        rm_watch(rm_open(RM_HEAD));
+
+        (new ParkTaskVm($vm->id))->failed(new RuntimeException('SSH stop failed'));
+        app(TaskScheduler::class)->tick();
+
+        expect($runtime->merges)->toBe([RM_HEAD]);
+        expect($group->fresh())->assistance_requested->toBeFalse()->merge_status->toBe(TaskMergeStatus::Merged);
+        expect($vm->fresh())->state->toBe(TaskVmState::Parked)->error_code->toBe('task_vm.job_failed');
     });
 });

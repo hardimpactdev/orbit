@@ -11,6 +11,10 @@ use App\Domain\Instances\InstanceRemover;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\AssistanceKind;
+use App\Domain\Tasks\CoderSettleNotifier;
+use App\Domain\Tasks\TaskAssistance;
+use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskExtensionState;
@@ -29,6 +33,7 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\TaskVms\TaskVmWorkspace;
 use App\Jobs\TaskVms\DestroyTaskVm;
 use App\Jobs\TaskVms\ParkTaskVm;
 use App\Jobs\TaskVms\ResumeTaskVm;
@@ -40,8 +45,10 @@ use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Contracts\Queue\Job;
 use Illuminate\Http\Client\Request;
+use Illuminate\Queue\MaxAttemptsExceededException;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
 use Tests\Support\AppDevFakeSshExecutor;
@@ -214,12 +221,19 @@ describe('park', function (): void {
     });
 
     it('keeps a VM parked with the error when it cannot be stopped', function (): void {
-        [, $vm] = tvm_park_waiting();
+        [$group, $vm] = tvm_park_waiting();
         $vm->update(['state' => TaskVmState::Parked]);
+        mock(CoderSettleNotifier::class)->shouldNotReceive('assistance');
+        Log::spy();
 
         (new ParkTaskVm($vm->id))->failed(new TaskVmException('task_vm.host_command_failed', 'incus stop failed', 502));
 
         expect($vm->fresh())->state->toBe(TaskVmState::Parked)->error_code->toBe('task_vm.host_command_failed');
+        expect($group->fresh())->assistance_requested->toBeFalse()->assistance_reason->toBeNull();
+        Log::shouldHaveReceived('warning')->once()->with('A task VM could not park; later work can still resume it.', [
+            'task_vm_id' => $vm->id, 'task_vm' => $vm->name, 'group_id' => $group->id,
+            'error_code' => 'task_vm.host_command_failed', 'error_message' => 'incus stop failed',
+        ]);
     });
 });
 
@@ -237,15 +251,22 @@ describe('resume', function (): void {
         [, $vm] = tvm_park_waiting();
         $vm->update(['state' => TaskVmState::Parked]);
 
-        app()->call([new ResumeTaskVm($vm->id), 'handle']);
+        $job = (new ResumeTaskVm($vm->id))->withFakeQueueInteractions();
+        app()->call([$job, 'handle']);
+        $job->assertReleased(2);
+        expect($vm->fresh()?->state)->toBe(TaskVmState::Parked);
+        // Re-serialization is what the queue does between attempts.
+        $retry = unserialize(serialize($job))->withFakeQueueInteractions();
+        app()->call([$retry, 'handle']);
+        $retry->assertNotReleased();
 
         expect($vm->fresh()?->state)->toBe(TaskVmState::Ready)
             ->and($vm->fresh()?->ready_at?->timestamp)->toBe(now()->timestamp)
-            ->and($this->provider->calls)->toBe(['start'])
+            ->and($this->provider->calls)->toBe(['start', 'start'])
             ->and($this->ssh->commands[0]->arguments)->toBe(['systemctl', 'is-active', '--quiet', 'orbit-agent.service'])
             ->and($this->ssh->connections[0]->host)->toBe('10.44.0.129');
         Http::assertSent(static fn (Request $request): bool => $request->hasHeader('Authorization', 'Bearer '.str_repeat('p', 64)));
-        Sleep::assertSleptTimes(1);
+        Sleep::assertNeverSlept();
     });
 
     it('waits while the Node agent is not active', function (): void {
@@ -255,14 +276,18 @@ describe('resume', function (): void {
         [, $vm] = tvm_park_waiting();
         $vm->update(['state' => TaskVmState::Parked]);
 
-        app()->call([new ResumeTaskVm($vm->id), 'handle']);
+        $job = (new ResumeTaskVm($vm->id))->withFakeQueueInteractions();
+        app()->call([$job, 'handle']);
+        $job->assertReleased(2);
+        Http::assertNothingSent();
+        app()->call([unserialize(serialize($job))->withFakeQueueInteractions(), 'handle']);
 
         expect($vm->fresh()?->state)->toBe(TaskVmState::Ready)
             ->and($this->ssh->commands)->toHaveCount(2);
         Http::assertSentCount(1);
     });
 
-    it('runs again 15 seconds later when the VM does not answer within one run', function (): void {
+    it('releases after a single readiness check without sleeping', function (): void {
         Http::fake(['*' => Http::response([], 503)]);
         [, $vm] = tvm_park_waiting();
         $vm->update(['state' => TaskVmState::Parked]);
@@ -270,23 +295,66 @@ describe('resume', function (): void {
 
         app()->call([$job, 'handle']);
 
-        $job->assertReleased(15);
-        expect($vm->fresh()?->state)->toBe(TaskVmState::Parked);
+        $job->assertReleased(2);
+        expect($vm->fresh()?->state)->toBe(TaskVmState::Parked)
+            ->and($this->ssh->commands)->toHaveCount(1);
+        Http::assertSentCount(1);
+        Sleep::assertNeverSlept();
     });
 
-    it('fails the row and asks for assistance after the last run', function (): void {
+    it('keeps a fixed deadline across retries and maps deadline exhaustion to resume_timeout', function (): void {
         Http::fake(['*' => Http::response([], 503)]);
         [$group, $vm] = tvm_park_waiting();
         $vm->update(['state' => TaskVmState::Parked]);
-        $job = new ResumeTaskVm($vm->id);
-        $job->setJob(Mockery::mock(Job::class)->shouldReceive('attempts')->andReturn(ResumeTaskVm::Runs)->getMock());
-
-        expect(fn () => app()->call([$job, 'handle']))->toThrow(TaskVmException::class, 'did not answer after its start');
-
-        $job->failed(new TaskVmException('task_vm.resume_timeout', 'Task VM did not answer.', 504));
+        $this->freezeSecond();
+        $job = (new ResumeTaskVm($vm->id))->withFakeQueueInteractions();
+        $deadline = now()->addMinutes(9)->timestamp;
+        for ($attempt = 0; $attempt < 4; $attempt++) {
+            $job = unserialize(serialize($job))->withFakeQueueInteractions();
+            app()->call([$job, 'handle']);
+            $job->assertReleased(2);
+            expect($job->retryUntil()->getTimestamp())->toBe($deadline);
+            $this->travel(2)->seconds();
+        }
+        $this->travel(9)->minutes();
+        $job->failed(new MaxAttemptsExceededException('deadline expired'));
         expect($vm->fresh())->state->toBe(TaskVmState::Failed)->error_code->toBe('task_vm.resume_timeout')
             ->and($group->fresh())->assistance_requested->toBeTrue()
             ->assistance_reason->toStartWith('Task VM failed: task_vm.resume_timeout: ');
+    });
+
+    it('uses the original enqueue time for an old resume payload and fails it cleanly at its old attempt limit', function (): void {
+        [$group, $vm] = tvm_park_waiting();
+        $vm->update(['state' => TaskVmState::Parked]);
+        $this->freezeSecond();
+        // Captured by serializing ResumeTaskVm at the group's base commit, before it had a deadline.
+        $payload = str_replace('s:8:"taskVmId";i:1;', 's:8:"taskVmId";i:'.$vm->id.';', file_get_contents(base_path('tests/Fixtures/TaskVms/legacy-resume.txt')));
+        $enqueued = now()->subMinute()->timestamp;
+        $queueJob = Mockery::mock(Job::class);
+        $queueJob->shouldReceive('payload')->andReturn(['createdAt' => $enqueued]);
+        $restored = unserialize($payload);
+        $restored->setJob($queueJob);
+        expect($restored->retryUntil()->getTimestamp())->toBe($enqueued + 540);
+        $this->travel(2)->seconds();
+        $restored = unserialize($payload);
+        $restored->setJob($queueJob);
+        expect($restored->retryUntil()->getTimestamp())->toBe($enqueued + 540);
+
+        $restored->failed(new MaxAttemptsExceededException('old attempt limit'));
+
+        expect($vm->fresh()?->error_code)->toBe('task_vm.resume_timeout')
+            ->and($group->fresh()?->assistance_requested)->toBeTrue();
+    });
+
+    it('preserves a start error before the deadline instead of reporting a readiness timeout', function (): void {
+        [$group, $vm] = tvm_park_waiting();
+        $vm->update(['state' => TaskVmState::Parked]);
+        $job = new ResumeTaskVm($vm->id);
+
+        $job->failed(new TaskVmException('task_vm.start_failed', 'The provider could not start the VM.', 502));
+
+        expect($vm->fresh()?->error_code)->toBe('task_vm.start_failed')
+            ->and($group->fresh()?->assistance_reason)->toContain('task_vm.start_failed');
     });
 
     it('does nothing for a row that is not parked', function (): void {
@@ -300,6 +368,17 @@ describe('resume', function (): void {
 });
 
 describe('wake', function (): void {
+    it('queues one resume when a claim reaches a parked workspace', function (): void {
+        Queue::fake();
+        [$group, $vm] = tvm_park_waiting();
+        $vm->update(['state' => TaskVmState::Parked]);
+
+        expect(fn () => app(TaskVmWorkspace::class)->node($group))->toThrow(TaskCapacityException::class, WakeTaskVmAction::Resuming);
+
+        Queue::assertPushed(ResumeTaskVm::class, fn (ResumeTaskVm $job): bool => $job->taskVmId === $vm->id);
+        Queue::assertPushed(ResumeTaskVm::class, 1);
+    });
+
     it('holds new work of a parked group, queues the start, and lets it go once the VM is ready', function (): void {
         Queue::fake();
         [$group, $vm] = tvm_park_waiting();
@@ -440,4 +519,22 @@ describe('tick', function (): void {
             ->and($group->fresh())->status->toBe(TaskGroupStatus::WaitingForReview)->assistance_reason->toBeNull();
         Queue::assertPushed(ResumeTaskVm::class, fn (ResumeTaskVm $job): bool => $job->taskVmId === $vm->id);
     });
+});
+
+describe('park failure races', function (): void {
+    it('preserves existing assistance and ignores a late park failure after wake', function (AssistanceKind $kind): void {
+        [$group, $vm] = tvm_park_waiting();
+        $vm->update(['state' => TaskVmState::Parked]);
+        TaskAssistance::apply($group, $kind, $kind === AssistanceKind::Direction ? 'Which branch?' : null, 'Original request.');
+        mock(CoderSettleNotifier::class)->shouldNotReceive('assistance');
+        $job = new ParkTaskVm($vm->id);
+
+        $job->failed(new RuntimeException('stop failed'));
+        expect($group->fresh())->assistance_kind->toBe($kind)->assistance_reason->toBe('Original request.')
+            ->assistance_question->toBe($kind === AssistanceKind::Direction ? 'Which branch?' : null);
+        $vm->refresh()->update(['state' => TaskVmState::Ready, 'error_code' => null, 'error_message' => null]);
+        $job->failed(new RuntimeException('late failure'));
+
+        expect($vm->fresh())->state->toBe(TaskVmState::Ready)->error_code->toBeNull();
+    })->with(['failure' => AssistanceKind::Failure, 'direction' => AssistanceKind::Direction]);
 });

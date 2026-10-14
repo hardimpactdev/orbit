@@ -15,6 +15,7 @@ use App\Infrastructure\AppDev\SocketPrivateDnsUpstream;
 use App\Models\Node;
 use Tests\Support\LoopbackRequesters;
 use Tests\Support\RegisteredNodeDnsRequesterResolver;
+use Tests\Support\SilentPrivateDnsPortPair;
 
 it('answers UDP and TCP questions from the actual transport source', function (): void {
     $sources = LoopbackRequesters::detect();
@@ -61,37 +62,39 @@ it('answers UDP and TCP questions from the actual transport source', function ()
 });
 
 it('keeps answering catalog names after a public-name forward whose upstream never replies', function (): void {
-    $silent = stream_socket_server('udp://127.0.0.1:0', $error, $message, STREAM_SERVER_BIND);
-    expect($silent)->toBeResource();
-    $name = stream_socket_get_name($silent, false);
-    expect($name)->toBeString();
-    $port = (int) substr($name, strrpos($name, ':') + 1);
+    [$silentUdp, $silentTcp, $port] = SilentPrivateDnsPortPair::hold('127.0.0.1');
+    $waits = [];
+    $wait = static function ($socket, bool $write, float $timeout) use (&$waits): bool {
+        $waits[] = ['write' => $write, 'timeout' => $timeout];
+
+        return $write;
+    };
     $server = orb258_transport_server(
         catalog: new PrivateDnsAnswerCatalog(
             exact: ['gateway.orbit' => '10.44.0.1'],
             suffixes: [],
         ),
-        upstream: new SocketPrivateDnsUpstream('127.0.0.1', $port, 0.2),
+        upstream: new SocketPrivateDnsUpstream('127.0.0.1', $port, 0.2, $wait, static fn (): float => 0.0),
         ioTimeoutSeconds: 0.2,
     );
 
     try {
         $server->start();
         $public = orb313_open_udp_query($server, '127.0.0.1', 'example.com');
-        $started = hrtime(true);
         $server->serveOnce(1.0);
-        $forwardElapsed = (hrtime(true) - $started) / 1_000_000_000;
         $catalog = orb313_open_udp_query($server, '127.0.0.1', 'gateway.orbit');
         $server->serveOnce(1.0);
 
-        expect($forwardElapsed)
-            ->toBeLessThan(1.0)
-            ->and(orb313_read_udp_address($catalog))
-            ->toBe('10.44.0.1');
+        expect($waits)->toBe([
+            ['write' => true, 'timeout' => 0.2],
+            ['write' => false, 'timeout' => 0.2],
+        ]);
+        expect(orb313_read_udp_address($catalog))->toBe('10.44.0.1');
         socket_close($public);
     } finally {
         $server->stop();
-        fclose($silent);
+        socket_close($silentUdp);
+        socket_close($silentTcp);
     }
 });
 
@@ -118,12 +121,20 @@ it('drains every queued UDP query in one wake', function (): void {
 });
 
 it('does not let a stalled TCP client block a later UDP catalog query', function (): void {
+    $waits = [];
+    $wait = static function ($socket, bool $write, float $timeout) use (&$waits): bool {
+        $waits[] = ['write' => $write, 'timeout' => $timeout];
+
+        return false;
+    };
     $server = orb258_transport_server(
         catalog: new PrivateDnsAnswerCatalog(
             exact: ['gateway.orbit' => '10.44.0.1'],
             suffixes: [],
         ),
         ioTimeoutSeconds: 0.2,
+        waitForSocket: $wait,
+        nowSeconds: static fn (): float => 0.0,
     );
 
     try {
@@ -131,16 +142,13 @@ it('does not let a stalled TCP client block a later UDP catalog query', function
         $stalled = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
         expect($stalled)->toBeInstanceOf(Socket::class);
         socket_connect($stalled, '127.0.0.1', $server->port());
-        $started = hrtime(true);
         $server->serveOnce(1.0);
-        $stalledElapsed = (hrtime(true) - $started) / 1_000_000_000;
         $catalog = orb313_open_udp_query($server, '127.0.0.1', 'gateway.orbit');
         $server->serveOnce(1.0);
 
-        expect($stalledElapsed)
-            ->toBeLessThan(1.0)
-            ->and(orb313_read_udp_address($catalog))
-            ->toBe('10.44.0.1');
+        expect($waits)->toBe([['write' => false, 'timeout' => 0.2]]);
+        expect(socket_read($stalled, 2))->toBe('');
+        expect(orb313_read_udp_address($catalog))->toBe('10.44.0.1');
         socket_close($stalled);
     } finally {
         $server->stop();
@@ -233,6 +241,8 @@ function orb258_transport_server(
     ?PrivateDnsUpstream $upstream = null,
     float $ioTimeoutSeconds = 2.0,
     string $listenAddress = '127.0.0.1',
+    ?Closure $waitForSocket = null,
+    ?Closure $nowSeconds = null,
 ): PrivateDnsTransportServer {
     return new PrivateDnsTransportServer(
         handler: new PrivateDnsRequestHandler(
@@ -243,6 +253,8 @@ function orb258_transport_server(
         ),
         listenAddress: $listenAddress,
         ioTimeoutSeconds: $ioTimeoutSeconds,
+        waitForSocket: $waitForSocket,
+        nowSeconds: $nowSeconds,
     );
 }
 

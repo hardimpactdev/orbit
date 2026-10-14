@@ -17,8 +17,8 @@ use App\Models\TaskVm;
 
 /**
  * Prepares Pi on the enrolled VM of a group, then marks the task VM `ready`. A pool VM has no group yet: it becomes
- * `warm` with nothing of a group on it. The job {@see PrepareTaskVmRuntime} runs it, and a warm claim runs it inline,
- * which keeps every step short ({@see TaskVmRuntime::prepare()}). A row that has left `provisioning` is left alone.
+ * `warm` with nothing of a group on it. The job {@see PrepareTaskVmRuntime} runs it, including for a warm claim,
+ * on the single task-vms worker. A row that has left `provisioning` is left alone.
  */
 final readonly class PrepareTaskVmRuntimeAction
 {
@@ -28,7 +28,7 @@ final readonly class PrepareTaskVmRuntimeAction
         private TaskVmPoolBackoff $backoff,
     ) {}
 
-    public function execute(int $taskVmId, bool $inline = false): void
+    public function execute(int $taskVmId): void
     {
         $vm = TaskVm::query()->find($taskVmId);
         if ($vm?->state !== TaskVmState::Provisioning) {
@@ -50,7 +50,7 @@ final readonly class PrepareTaskVmRuntimeAction
         if ($warm) {
             $this->clock->step('queue');
         }
-        $this->runtime->prepare($vm, $inline);
+        $this->runtime->prepare($vm);
         // Only a row still provisioning becomes ready: a destroy or failure that ran meanwhile wins.
         $ready = TaskVm::query()->whereKey($vm->id)->where('state', TaskVmState::Provisioning)
             ->update(['state' => TaskVmState::Ready, 'ready_at' => now(), 'error_code' => null, 'error_message' => null]);

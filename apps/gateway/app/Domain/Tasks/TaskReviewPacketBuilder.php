@@ -56,6 +56,7 @@ final readonly class TaskReviewPacketBuilder
             consults: $continued ? [] : $this->consults($task),
             groupId: $group->id,
             topology: $task->topology,
+            mode: TaskTurnMode::forTask($task, TaskThreadRole::Reviewer),
         )->render();
     }
 
