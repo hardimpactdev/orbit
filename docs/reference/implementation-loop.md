@@ -90,6 +90,8 @@ GitHub CI runs on every pull request, on every push to `main`, every night on `m
 | Desktop app | `bun install --frozen-lockfile`, then `cargo fmt` and `cargo clippy` on the Tauri shell with the WebKitGTK libraries installed. A pull request that changes neither `apps/desktop` nor `ci.yml` skips these steps |
 | Required checks | Passes only when every other job passes, as described below |
 
+Gateway project, subprocess, and shard jobs supply Bun 1.4.2 alongside Node/npm. The package-cache integration tests run real npm and Bun installs against seeded private caches and a local test registry.
+
 `Required checks` expects Docs (merge ref) and Gateway plan to succeed on pull requests and to be skipped on pushes and manual runs. It expects the Gateway shards to succeed when the plan chose shards, and to be skipped otherwise.
 
 On a pull request, each Composer project job runs the TIA-selected tests and the architecture tests. The architecture tests include the contract tests that read the workflow files, `CliBinaryBuildContractTest`, `ComposerConfigurationTest`, and `DocsMergeRefWorkflowTest`, because TIA does not link a workflow file to the tests that read it. They also include `CommandSurfaceTest`, which checks every CLI command against its section in `docs/cli`, so a pull request that changes only docs runs it too.
