@@ -290,28 +290,9 @@ final readonly class TaskAgentSpawner implements AgentSpawner
             $role === TaskThreadRole::Reviewer && $task instanceof Task && $task->opensPullRequest(),
             $task instanceof Task ? $task->deliverableList() : [],
             $thread->id,
-            $mode ?? $this->reviewerTurnMode($task, $role),
+            $mode ?? TaskTurnMode::forTask($task, $role),
             $context,
         );
-    }
-
-    /** A relay or a review after a direction resolution keeps that mode when the thread is replaced. */
-    private function reviewerTurnMode(?Task $task, TaskThreadRole $role): ?TaskTurnMode
-    {
-        if ($role !== TaskThreadRole::Reviewer || ! $task instanceof Task) {
-            return null;
-        }
-        if ($task->consult_comment_id !== null) {
-            return new TaskTurnMode(consult: true);
-        }
-        if ($task->direction_relay_comment_id !== null) {
-            return new TaskTurnMode(relay: true);
-        }
-        if (TaskQuestions::awaitsCause($task)) {
-            return new TaskTurnMode(causeRequired: true);
-        }
-
-        return null;
     }
 
     /** Installs the turn file and full task context, and removes the reserved row when that install fails so the replacement does not start. */

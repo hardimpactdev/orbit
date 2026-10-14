@@ -43,6 +43,15 @@ it('tells the reviewer that the turn is read-only', function (): void {
         ->not->toContain('You may create');
 });
 
+it('keeps cause-required verdicts in a reminder after an operator resolution', function (): void {
+    $reminder = TaskRubricReminder::compose(TaskThreadRole::Reviewer, [], mode: new TaskTurnMode(causeRequired: true));
+
+    expect($reminder)->toContain(
+        '--outcome=approved --summary="What you checked" --cause=CAUSE',
+        '--outcome=changes_requested --summary="The findings the implementer must address" --cause=CAUSE',
+    )->not->toContain('--outcome=answered');
+});
+
 it('uses consult and relay instructions only for those turns', function (): void {
     $consult = TaskRubricReminder::compose(TaskThreadRole::Reviewer, [
         new TaskRubricItem('turn_receipt', false, 'No turn receipt was found.'),
