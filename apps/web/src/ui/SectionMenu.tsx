@@ -40,6 +40,7 @@ export function SectionMenu<Id extends string>({
     selected,
     onSelect,
     responsive = false,
+    className = "",
 }: {
     label: string;
     ariaLabel: string;
@@ -49,6 +50,7 @@ export function SectionMenu<Id extends string>({
     onSelect: (id: Id) => void;
     /** Narrow screens lay the tabs in one row. A fixed menu stays vertical. */
     responsive?: boolean;
+    className?: string;
 }) {
     const desktop = useDesktop();
     const orientation: SectionOrientation = responsive && !desktop ? "horizontal" : "vertical";
@@ -61,11 +63,7 @@ export function SectionMenu<Id extends string>({
         <Frame
             title="Menu"
             label={label}
-            className={
-                responsive
-                    ? "w-full shrink-0 md:w-[16ch] md:min-h-0 md:self-stretch"
-                    : "w-[16ch] min-h-0 shrink-0 self-stretch"
-            }
+            className={`${responsive ? "w-full shrink-0 md:w-[16ch] md:min-h-0 md:self-stretch" : "w-[16ch] min-h-0 shrink-0 self-stretch"} ${className}`}
         >
             <div
                 role="tablist"

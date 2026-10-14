@@ -27,6 +27,8 @@ use App\Infrastructure\Nodes\NodeLocks;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
+use App\Infrastructure\Ssh\HostKeyScanner;
+use App\Infrastructure\Ssh\SshExecutor;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
@@ -39,6 +41,7 @@ use Illuminate\Support\Sleep;
 use Laravel\Ai\Classification;
 use Tests\Support\FakeAgentationSiteProjection;
 use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
+use Tests\Support\FakeHostKeyScanner;
 use Tests\Support\FakeNodeAgentRuntime;
 use Tests\Support\FakeNodeCaddyBuilds;
 use Tests\Support\FakeProcessEnvironmentProjection;
@@ -47,7 +50,9 @@ use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskTurnReceipts;
 use Tests\Support\FakeVitePortRuntime;
 use Tests\Support\NullTaskReviewDiff;
+use Tests\Support\SshGuardedProcessRunner;
 use Tests\Support\TestToolchain;
+use Tests\Support\UnreachableSshExecutor;
 use Tests\TestCase;
 
 require_once __DIR__.'/Support/InstanceEnvironmentMigration.php';
@@ -70,6 +75,11 @@ require_once __DIR__.'/Helpers/CliReleaseFixtures.php';
 
 uses(TestCase::class, RefreshDatabase::class)
     ->beforeEach(function (): void {
+        app()->instance(SshExecutor::class, new UnreachableSshExecutor);
+        app()->instance(HostKeyScanner::class, new FakeHostKeyScanner);
+        $processes = new SshGuardedProcessRunner(app(NativeProcessRunner::class));
+        app()->instance(SshGuardedProcessRunner::class, $processes);
+        app()->instance(NativeProcessRunner::class, $processes);
         app()->instance(VitePortRuntime::class, new FakeVitePortRuntime);
         app()->instance(NodeAgentRuntime::class, new FakeNodeAgentRuntime);
         app()->instance(AgentationSiteProjection::class, new FakeAgentationSiteProjection);
@@ -91,6 +101,9 @@ uses(TestCase::class, RefreshDatabase::class)
         Sleep::fake(syncWithCarbon: true);
         // A streamed response a test never consumed stays armed; each test starts with none.
         ActivityShutdownFinalizer::forgetArmed();
+    })
+    ->afterEach(function (): void {
+        app(SshGuardedProcessRunner::class)->assertNoStrayProcesses();
     })
     ->in('Feature');
 

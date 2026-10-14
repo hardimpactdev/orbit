@@ -595,6 +595,10 @@ it("shows Instance overview and an Instance-scoped Tasks board with keyboard tab
     await expect.element(pane("Application log")).not.toBeInTheDocument();
     await userEvent.keyboard("{ArrowUp}");
     await expect
+        .element(page.getByTestId("instance-dependencies"))
+        .toHaveAttribute("aria-selected", "true");
+    await userEvent.keyboard("{ArrowUp}");
+    await expect
         .element(page.getByRole("tab", { name: "Overview", exact: true }))
         .toHaveAttribute("aria-selected", "true");
     await expect.element(pane("Application log")).toBeVisible();
