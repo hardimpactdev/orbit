@@ -127,7 +127,7 @@ The snapshot bump, image builds, and smoke topology pass. The run converges the 
 
 ### Open questions
 
-These questions concern implementation details, not alternatives to the eleven decisions:
+These questions concern implementation details, not alternatives to the eleven decisions. Step 5 settles the package-cache parts in [Shared package cache](/reference/compute-drivers#shared-package-cache): read-only consumption, private-registry scope, integrity, inventory removal, and storage limits. CI cache refs and image retention remain separate work:
 
 - **Settled for step 1:** [Machine software recipe](/reference/compute-drivers#machine-software-recipe) defines schema version 1, a canonical JSON SHA-256 identity shared by all profiles, explicit role tool membership, and structural plus online availability/integrity validation. Third-party non-snapshot tools use exact HTTPS release artifacts and recorded digests, not moving installer channels. Orbit-built binaries may instead use a content-addressed Gateway-local pin with source commit and digest; the operator approved this exception for Pi at `e5933d4c8696` on amd64 only and does not select a new agent baseline. A local directory resolves bytes, not identity. Validation rejects missing files, digest mismatches, and profiles requesting unsupported architectures; installers retain pre-install hash verification. Steps 3 and 8 add image/Node identity recording; step 3 fences build publication.
 - How does the trusted nightly snapshot bump enter repository history, and how are concurrent nightly and task group recipe changes serialized so that an older build cannot publish as current?

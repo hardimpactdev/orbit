@@ -13,6 +13,7 @@ return new class extends Migration
         Schema::create('package_cache_snapshots', function (Blueprint $table): void {
             $table->foreignId('project_id')->primary()->constrained()->cascadeOnDelete();
             $table->string('commit')->nullable();
+            $table->boolean('fill_pending')->default(false);
             $table->json('blobs');
             $table->json('artifacts');
             $table->timestamps();

@@ -1,4 +1,5 @@
 """Trusted host cache writer. Input is a Gateway-built inventory, never a Project program."""
+import base64
 import fcntl
 import hashlib
 import json
@@ -17,7 +18,8 @@ MAX_ARCHIVE = 512 * 1024 * 1024
 
 
 def allowed_url(url):
-    return bool(re.fullmatch(r'https://api\.github\.com/repos/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/zipball/[a-f0-9]{40}', url)
+    return bool(re.fullmatch(r'https://registry\.npmjs\.org/(?:@[a-z0-9][a-z0-9_.-]*/)?[a-z0-9][a-z0-9_.-]*/-/[a-z0-9][a-z0-9_.-]*-[0-9]+\.[0-9]+\.[0-9]+(?:[-+][a-zA-Z0-9_.-]+)?\.tgz', url)
+                or re.fullmatch(r'https://api\.github\.com/repos/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/zipball/[a-f0-9]{40}', url)
                 or re.fullmatch(r'https://codeload\.github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/(?:legacy\.zip|zip)/[a-f0-9]{40}', url))
 
 
@@ -69,23 +71,40 @@ def fill(root, artifacts, max_bytes, fetch=download):
         used = sum(path.stat().st_size for path in root.rglob('*') if path.is_file())
         for artifact in artifacts:
             key = artifact['key']
-            if not re.fullmatch(r'composer/[a-z0-9][a-z0-9_.-]*/[a-z0-9][a-z0-9_.-]*/[a-f0-9]{40}\.zip', key):
-                raise ValueError('Invalid cache key')
-            if key != 'composer/' + artifact['package'] + '/' + hashlib.sha1(artifact['url'].encode()).hexdigest() + '.zip':
-                raise ValueError('Cache key does not match the archive')
+            expected = artifact['integrity']
+            if artifact['manager'] == 'composer':
+                if not re.fullmatch(r'composer/[a-z0-9][a-z0-9_.-]*/[a-z0-9][a-z0-9_.-]*/[a-f0-9]{40}\.zip', key):
+                    raise ValueError('Invalid Composer cache key')
+                if key != 'composer/' + artifact['package'] + '/' + hashlib.sha1(artifact['url'].encode()).hexdigest() + '.zip':
+                    raise ValueError('Composer key does not match the archive')
+                if expected is not None and not re.fullmatch(r'sha1-[a-f0-9]{40}', expected):
+                    raise ValueError('Invalid Composer integrity')
+                algorithm, wanted = ('sha1', bytes.fromhex(expected[5:])) if expected else (None, None)
+            elif artifact['manager'] == 'npm':
+                name, version = artifact['package'], artifact['version']
+                if not re.fullmatch(r'(?:@[a-z0-9][a-z0-9_.-]*/)?[a-z0-9][a-z0-9_.-]*', name) or not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(?:[-+][a-zA-Z0-9_.-]+)?', version):
+                    raise ValueError('Invalid npm identity')
+                url = 'https://registry.npmjs.org/' + name + '/-/' + name.split('/')[-1] + '-' + version + '.tgz'
+                if artifact['url'] != url or not isinstance(expected, str) or not re.fullmatch(r'(sha512|sha256|sha1)-[A-Za-z0-9+/]+=*', expected):
+                    raise ValueError('Invalid npm integrity or URL')
+                algorithm, encoded = expected.split('-', 1)
+                wanted = base64.b64decode(encoded, validate=True)
+                if len(wanted) != hashlib.new(algorithm).digest_size:
+                    raise ValueError('Invalid npm integrity length')
+                if key != 'npm/' + hashlib.sha256((url + ' ' + expected).encode()).hexdigest() + '.tgz':
+                    raise ValueError('npm key does not match the archive')
+            else:
+                raise ValueError('Unknown package cache manager')
             if not allowed_url(artifact['url']):
                 raise ValueError('Invalid public archive URL')
-            expected = artifact['integrity']
-            if expected is not None and not re.fullmatch(r'sha1-[a-f0-9]{40}', expected):
-                raise ValueError('Invalid archive integrity')
             target = root / key
             if target.is_file():
                 with target.open('rb') as stream:
                     digest = hashlib.file_digest(stream, 'sha256').hexdigest()
                 if inventory.get(key) == digest:
-                    if expected:
+                    if algorithm:
                         with target.open('rb') as stream:
-                            if expected != 'sha1-' + hashlib.file_digest(stream, 'sha1').hexdigest():
+                            if wanted != hashlib.file_digest(stream, algorithm).digest():
                                 raise ValueError('Package archive integrity mismatch')
                     hashes[key] = 'sha256-' + digest
                     continue
@@ -99,7 +118,7 @@ def fill(root, artifacts, max_bytes, fetch=download):
                     temporary = Path(output.name)
                     size = 0
                     sha256 = hashlib.sha256()
-                    sha1 = hashlib.sha1()
+                    checksum = hashlib.new(algorithm) if algorithm else None
                     with fetch(artifact['url']) as response:
                         while block := response.read(1024 * 1024):
                             size += len(block)
@@ -107,10 +126,11 @@ def fill(root, artifacts, max_bytes, fetch=download):
                                 raise ValueError('Package cache storage limit reached')
                             output.write(block)
                             sha256.update(block)
-                            sha1.update(block)
+                            if checksum:
+                                checksum.update(block)
                     output.flush()
                     os.fsync(output.fileno())
-                if expected and expected != 'sha1-' + sha1.hexdigest():
+                if checksum and wanted != checksum.digest():
                     raise ValueError('Package archive integrity mismatch')
                 digest = sha256.hexdigest()
                 os.chmod(temporary, 0o444)

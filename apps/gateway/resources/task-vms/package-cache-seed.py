@@ -1,10 +1,12 @@
 """Read shared artifacts; copy missing native cache files into this workspace's private state."""
+import base64
 import hashlib
 import json
 import os
 from pathlib import Path
 import shutil
 import sys
+import tarfile
 import tempfile
 import time
 
@@ -14,13 +16,16 @@ def seed(shared, home, artifacts=None):
     if not inventory_file.exists():
         return
     inventory = json.loads(inventory_file.read_text())
-    selected = None if artifacts is None else {artifact['key'] for artifact in artifacts}
+    selected = None if artifacts is None else {artifact['key']: artifact for artifact in artifacts}
     for key, digest in inventory.items():
         if selected is not None and key not in selected:
             continue
+        source = shared / key
+        if key.startswith('npm/') and selected is not None:
+            seed_npm(source, home, selected[key], digest)
+            continue
         if not key.startswith('composer/'):
             continue
-        source = shared / key
         destination = home / '.cache/composer/files' / key.removeprefix('composer/')
         if not source.is_file() or destination.exists():
             continue
@@ -39,6 +44,42 @@ def seed(shared, home, artifacts=None):
                 os.replace(temporary, destination)
             finally:
                 temporary.unlink(missing_ok=True)
+
+
+def seed_npm(source, home, artifact, digest):
+    if not source.is_file():
+        return
+    with source.open('rb') as stream:
+        if hashlib.file_digest(stream, 'sha256').hexdigest() != digest:
+            return
+    algorithm, encoded = artifact['integrity'].split('-', 1)
+    content_hash = base64.b64decode(encoded, validate=True).hex()
+    target = home / '.npm/_cacache/content-v2' / algorithm / content_hash[:2] / content_hash[2:4] / content_hash[4:]
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if not target.exists():
+        with source.open('rb') as stream, tempfile.NamedTemporaryFile(dir=target.parent, delete=False) as output:
+            temporary = Path(output.name)
+            try:
+                shutil.copyfileobj(stream, output)
+                output.flush()
+                os.chmod(temporary, 0o644)
+                os.replace(temporary, target)
+            finally:
+                temporary.unlink(missing_ok=True)
+    bun = home / '.bun/install/cache' / (artifact['package'] + '@' + artifact['version'] + '@@@1')
+    if bun.exists():
+        return
+    bun.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=bun.parent, prefix='.orbit-extract-') as work:
+        extracted = Path(work) / 'package'
+        with tarfile.open(source, 'r:gz') as archive:
+            for member in archive.getmembers():
+                if member.name != 'package' and not member.name.startswith('package/'):
+                    raise ValueError('Registry archive has an unexpected root')
+            archive.extractall(work, filter='data')
+        if not extracted.is_dir() or extracted.is_symlink():
+            raise ValueError('Registry archive has no package directory')
+        os.replace(extracted, bun)
 
 
 if __name__ == '__main__':

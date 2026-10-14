@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Infrastructure\TaskVms;
 
 use App\Actions\TaskVms\ObservePackageCacheAction;
-
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GitReadEnvironment;
@@ -172,7 +171,13 @@ final readonly class TaskVmGit
             }
 
             if (is_string($project->default_branch) && array_key_exists($project->default_branch, $tips)) {
-                app(ObservePackageCacheAction::class)->execute($project, $mirror, $tips[$project->default_branch]);
+                try {
+                    app(ObservePackageCacheAction::class)->execute($project, $mirror, $tips[$project->default_branch]);
+                } catch (ProcessCancelledException $exception) {
+                    throw $exception;
+                } catch (\Throwable) {
+                    Log::warning('Package cache refresh unavailable; source refs remain available.', ['project_id' => $project->id]);
+                }
             }
 
             // Cache refs are a separate optional fetch. A cache outage cannot turn a source fetch red.

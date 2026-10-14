@@ -9,19 +9,23 @@ use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\TaskVms\ComposerPackageCache;
+use App\Infrastructure\TaskVms\NpmPackageCache;
 use App\Jobs\TaskVms\FillTaskVmPackageCache;
 use App\Models\PackageCacheSnapshot;
 use App\Models\Project;
+use Illuminate\Bus\UniqueLock;
+use Illuminate\Contracts\Cache\Repository;
+use Throwable;
 
 /** Called under the mirror's lock, after its default branch was fetched from the trusted upstream. */
 final readonly class ObservePackageCacheAction
 {
-    public function __construct(private ProcessRunner $processes, private ComposerPackageCache $composer) {}
+    public function __construct(private ProcessRunner $processes, private ComposerPackageCache $composer, private NpmPackageCache $npm) {}
 
     public function execute(Project $project, string $mirror, ?string $commit): void
     {
         $snapshot = PackageCacheSnapshot::query()->find($project->id);
-        if ($snapshot instanceof PackageCacheSnapshot && $snapshot->commit === $commit) {
+        if ($snapshot instanceof PackageCacheSnapshot && $snapshot->commit === $commit && ! $snapshot->fill_pending) {
             return;
         }
         $blobs = [];
@@ -40,15 +44,29 @@ final readonly class ObservePackageCacheAction
             foreach ($blobs as $path => $blob) {
                 if (basename($path) === 'composer.lock') {
                     array_push($artifacts, ...$this->composer->read($this->git($mirror, ['cat-file', 'blob', $blob])));
+                } else {
+                    array_push($artifacts, ...$this->npm->read(basename($path), $this->git($mirror, ['cat-file', 'blob', $blob])));
                 }
             }
-            $artifacts = array_values(array_column($artifacts, null, 'key'));
-        }
-        PackageCacheSnapshot::query()->updateOrCreate(['project_id' => $project->id], ['commit' => $commit, 'blobs' => $blobs, 'artifacts' => $artifacts]);
-        if ($changed) {
-            foreach (app(TaskVmSettings::class)->hosts as $host) {
-                FillTaskVmPackageCache::dispatch($host->nodeId)->afterCommit();
+            $unique = [];
+            foreach ($artifacts as $artifact) {
+                $unique[$artifact['package'].' '.$artifact['version'].' '.$artifact['key']] = $artifact;
             }
+            $artifacts = array_values($unique);
+        }
+        $pending = $changed || ($snapshot->fill_pending ?? false);
+        $snapshot = PackageCacheSnapshot::query()->updateOrCreate(['project_id' => $project->id], ['commit' => $commit, 'blobs' => $blobs, 'artifacts' => $artifacts, 'fill_pending' => $pending]);
+        if ($pending) {
+            foreach (app(TaskVmSettings::class)->hosts as $host) {
+                try {
+                    FillTaskVmPackageCache::dispatch($host->nodeId)->afterCommit();
+                } catch (Throwable $exception) {
+                    new UniqueLock(app(Repository::class))->release(new FillTaskVmPackageCache($host->nodeId));
+
+                    throw $exception;
+                }
+            }
+            $snapshot->update(['fill_pending' => false]);
         }
     }
 
