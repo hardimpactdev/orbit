@@ -23,7 +23,7 @@ final readonly class WakeTaskVmAction
     /** Whether the group's work may use its task VM now. The group shows `Task VM: resuming.` while it waits. */
     public function forGroup(Task $group): bool
     {
-        $awake = $this->awake(TaskVm::forGroup($group));
+        $awake = $this->forVm(TaskVm::forGroup($group));
         if (! $awake && $group->capacity_wait_reason !== self::Resuming) {
             $group->update(['capacity_wait_reason' => self::Resuming]);
         } elseif ($awake && $group->capacity_wait_reason === self::Resuming) {
@@ -36,10 +36,11 @@ final readonly class WakeTaskVmAction
     /** Whether work on this Instance may use its Node now: false only while the Node is a parked task VM. */
     public function forInstance(Instance $instance): bool
     {
-        return $this->awake(TaskVm::forNode($instance->node_id));
+        return $this->forVm(TaskVm::forNode($instance->node_id));
     }
 
-    private function awake(?TaskVm $vm): bool
+    /** Whether this VM is awake; a parked VM queues one resume through the shared wake gate. */
+    public function forVm(?TaskVm $vm): bool
     {
         if ($vm?->state !== TaskVmState::Parked) {
             return true;
