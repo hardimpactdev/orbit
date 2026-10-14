@@ -14,9 +14,9 @@ final class SmokeImage extends ImageBuildJob
     }
 
     #[\Override]
-    public int $timeout = 60;
+    public int $timeout = 900;
 
-    // The step runner enforces the deadline from its durable started_at, not queue submission.
+    // Allow the inline boot window plus launch and smoke checks, without counting queue time.
     #[\Override]
     public int $tries = 0;
 }

@@ -580,6 +580,7 @@ describe(EnrollTaskVm::class, function (): void {
     });
 
     it('enrolls the VM as its app-dev Node through the host, linked before any convergence', function (): void {
+        $this->provider->observations = [new VmObservation(true, '10.251.77.20', str_repeat('b', 64))];
         $vm = tvm_life_vm(tvm_life_group());
 
         app()->call([new EnrollTaskVm($vm->id, now()->getTimestamp()), 'handle']);
@@ -591,6 +592,7 @@ describe(EnrollTaskVm::class, function (): void {
         ]])
             ->and($vm->fresh()?->node_id)->toBe($node->id)
             ->and($vm->fresh()?->address)->toBe('10.251.77.20')
+            ->and($vm->fresh()?->image_fingerprint)->toBe(str_repeat('b', 64))
             ->and($node->status)->toBe(LifecycleStatus::Active)
             ->and($node->user)->toBe('orbit')
             ->and($node->cluster_id)->toBe($this->cluster->id)

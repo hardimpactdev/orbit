@@ -14,9 +14,9 @@ final class AwaitImageBuilderBoot extends ImageBuildJob
     }
 
     #[\Override]
-    public int $timeout = 60;
+    public int $timeout = 660;
 
-    // The step runner enforces the deadline from its durable started_at, not queue submission.
+    // Boot polling stays in one worker run, excluding all queue waits.
     #[\Override]
     public int $tries = 0;
 }

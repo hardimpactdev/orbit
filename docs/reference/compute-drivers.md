@@ -687,20 +687,22 @@ No peer reaches a host's Incus API. The task VM project keeps its restrictions a
 
 ### Build the base image
 
-Run `task-vms:build-image {node} [--from-stock] [--resume=<build id>]` on the Gateway to build the base image on one host. It prints each step from the build row as the step finishes. `task-vms:image-builds` lists recent builds with their steps and errors. After a successful build, Orbit [syncs](#sync-the-base-image) the image to every other configured host.
+Run `task-vms:build-image {node} [--from-stock] [--resume[=<build id>]]` on the Gateway to build the base image on one host. It prints each step from the build row as the step finishes. `task-vms:image-builds` lists recent builds with their steps and errors. After a successful build, Orbit [syncs](#sync-the-base-image) the image to every other configured host.
+
+At enrollment, Orbit records the VM's actual `volatile.base_image` fingerprint in `task_vms.image_fingerprint`, not the image that the base alias happens to name at that time.
 
 The Gateway queues one Laravel job chain (`Bus::chain`) on `builds`, with one job for each step. The jobs reach the host over SSH with `sudo -n incus --project <project> …`:
 
 | Step | What it does |
 | --- | --- |
 | `LaunchImageBuilder` | Records the source image on the row and launches `tvm-image-<build id>` from it, with the host's VM size and bridge |
-| `AwaitImageBuilderBoot` | Waits for cloud-init to finish without errors |
+| `AwaitImageBuilderBoot` | Reads cloud-init status first, then polls for up to 600 seconds of this job's run, excluding queue time |
 | `UpgradeImagePackages` | Runs `apt-get update` and `apt-get full-upgrade`, and installs the image's apt packages |
 | One job for each program | Runs `bootstrap`, `caddy-package`, `app-dev-prerequisites`, `vp-manager`, `composer-manager`, the PHP source and each selectable PHP version, `rust-toolchain`, the agent binary, and Pi |
 | `PrepareImageBoot` | Applies the single boot and the lean boot, as described below |
 | `CleanImageBuilder` | Runs `resources/task-vms/base-image-clean.sh`, which removes the VM's identity. The [E2E role image](/reference/incus-topologies#role-images) build uses the same script |
 | `PublishImage` | Stops the builder, publishes it without compression as `orbit-task-base-<time>`, and deletes the builder |
-| `SmokeImage` | Boots a VM from the new image with the task VM user-data and runs `image-check.sh` |
+| `SmokeImage` | Boots a VM from the new image with the task VM user-data, polls cloud-init with the same 600-second run limit, and runs `image-check.sh` |
 | `PromoteImage` | Points `orbit-task-base` at the new image and deletes older images that no VM uses |
 
 The programs use the same rendering code as enrollment. A new tool or package adds one program and one step, not an edit to a shared provisioning script.
@@ -751,7 +753,9 @@ It also stops Docker, containerd, and Caddy, and removes the IDs they write on t
 
 The builder never enrolls, so the image has no WireGuard key, agent secret, Caddy site, firewall rule, or Gateway record. Each VM gets those from its own enrollment.
 
-When a step fails, the row becomes `failed` with that step and its error. The failure callback queues a workspace template refresh against the images still current. A failed build keeps the current base image and retains its builder and smoke VMs for 24 hours after failure, so `task-vms:build-image {node} --resume=<build id>` can continue its failed step without racing immediate cleanup. A new build on that host discards the previous failed build's VMs. The host sweep discards them after the retention window. Explicit cleanup discards them immediately.
+When a step fails, the row becomes `failed` with that step and its error. The failure callback queues a workspace template refresh against the images still current. A failed build keeps the current base image and retains its builder and smoke VMs for 24 hours after failure, so `task-vms:build-image {node} --resume=<build id>` can continue its failed step without racing immediate cleanup.
+
+A bare `--resume` selects the newest resumable failed build on that host, or errors if none exists; it never starts a new build. `--resume` cannot be combined with `--from-stock`. A new build on that host discards the previous failed build's VMs. The host sweep discards them after the retention window. Explicit cleanup discards them immediately.
 
 Resume uses the builder for steps before publication and the published image for smoke and promote. Publish itself resumes with either its builder or its already published image: if builder deletion succeeded but its reply or the completion write was lost, replay uses the retained image without republishing.
 
