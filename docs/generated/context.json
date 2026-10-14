@@ -1672,6 +1672,7 @@
                 "Node",
                 "Process",
                 "Project",
+                "Role",
                 "Route",
                 "Subtask",
                 "Task",

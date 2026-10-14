@@ -604,6 +604,10 @@ final readonly class RecordCommandActivity
             return $this->instanceEnvironmentImportInput($request);
         }
 
+        if ($command === 'node:wireguard-key') {
+            return [];
+        }
+
         if ($command === 'env:update') {
             return [];
         }

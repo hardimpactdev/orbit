@@ -113,6 +113,7 @@ Five commands end in a noun.
 | `metrics:credentials` | The CLI shows or resets Metrics Grafana credentials. |
 | `node:metrics` | The CLI shows one Node metrics snapshot. |
 | `node:settings` | The CLI writes typed [Node settings](/reference/node-settings). |
+| `node:wireguard-key` | Set an unmanaged Node's public key and reconverge the WireGuard hub. |
 | `tasks:agents` | The CLI lists the agent threads of a [task](/reference/tasks). |
 
 ## Gateway route names
@@ -123,7 +124,7 @@ Some routes have no CLI command. `instance:dependencies:show` reads the stored d
 
 `tasks:definition:list`, `tasks:definition:show`, `tasks:definition:create`, `tasks:definition:update`, and `tasks:definition:destroy` read and write [task definitions](/reference/tasks#definition-operations) on the API, the CLI, and MCP.
 
-The docs-first [`node:wireguard-key`](/cli/node#orbit-nodewireguard-key) contract uses a noun-ending command, like `node:settings`, because it sets one specific Node property rather than performing a generic update or managing a child resource. Its endpoint is `PATCH /api/v1/nodes/{node}/wireguard-key`. Add it to the noun-ending registry and table when the CLI registers the command; the tables above enumerate implemented commands.
+[`node:wireguard-key`](/cli/node#orbit-nodewireguard-key) uses a noun-ending command, like `node:settings`, because it sets one specific Node property rather than performing a generic update or managing a child resource. Its endpoint is `PATCH /api/v1/nodes/{node}/wireguard-key`.
 
 ## Why it works this way
 
