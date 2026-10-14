@@ -107,8 +107,8 @@ it('adds only missing verified archives and keeps Composer writes and cache miss
     $process = new Process(['python3', base_path('tests/Fixtures/package-cache/composer.py'), resource_path('task-vms/package-cache.py'), resource_path('task-vms/package-cache-seed.py')]);
     $process->setTimeout(60)->run();
 
+    expect($process->isSuccessful())->toBeTrue($process->getErrorOutput());
     expect($process->getErrorOutput())->toContain('OK');
-    expect($process->isSuccessful())->toBeTrue();
 });
 
 function package_cache_transport(SshExecutor $ssh): TaskVmPackageCache

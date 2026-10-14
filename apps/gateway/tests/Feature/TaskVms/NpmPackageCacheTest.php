@@ -41,8 +41,8 @@ it('seeds real npm and Bun caches and downloads cache misses through a registry'
     $process = new Process(['python3', base_path('tests/Fixtures/package-cache/npm.py'), resource_path('task-vms/package-cache.py'), resource_path('task-vms/package-cache-seed.py')]);
     $process->setTimeout(90)->run();
 
+    expect($process->isSuccessful())->toBeTrue($process->getErrorOutput());
     expect($process->getErrorOutput())->toContain('OK');
-    expect($process->isSuccessful())->toBeTrue();
 });
 
 it('tracks changed JavaScript locks below packages and clears usage on default-branch deletion', function (): void {
