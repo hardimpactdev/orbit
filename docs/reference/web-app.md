@@ -38,6 +38,8 @@ Extension navigation follows the Gateway's enabled set: each page and its route 
 
 The Route create request type distinguishes an app Route with `instance_id` from a custom proxy Route with `node_id` and an upstream or Process; it has no app Route creation form with `project_id` or a targetless scope.
 
+The generated API types model Gateway rollback as a code switch without a `force` input. Database restoration is a separate operator step described in [Gateway recovery](/reference/gateway-recovery#roll-back).
+
 ## Open the app
 
 Open `https://gateway.orbit` from a machine on the Orbit WireGuard network. The browser must trust the Orbit root certificate, which `orbit gateway:trust` installs. The Gateway identifies the browser by its WireGuard address, so there is no login. Pages on other origins cannot call the API, as [Browser access to the Gateway](/reference/browser-access) describes.
