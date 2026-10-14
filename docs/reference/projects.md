@@ -85,6 +85,8 @@ orbit project:create leden laravel-app git@github.com:acme/leden.git --source-ac
 
 The CLI root defaults to `.` for package types and `public` for other types. The API and SDK require `root`. Without `--default-branch`, the Gateway reads the remote default branch once and stores it. A later change on the remote does not update the Project. An explicit branch must exist on the remote. The Gateway reads the remote with the Project's [source access](#source-access).
 
+A Project's development `default` [deploys in its checkout](/reference/deployments#development-defaults). Its [setup steps](/reference/instance-setup#run-setup) can use that checkout as a dependency seed for other development Instances on the same Node.
+
 Creation is idempotent. A retry with the same values returns the existing Project. A retry that omits the default branch does not read the remote again. A retry with any different value, including another URL for the same repository, returns `project.identity_conflict` and changes nothing.
 
 ## Source access

@@ -12,14 +12,12 @@ use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Fleet\Footprint\CaddyFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\CaddyPackageFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\PrivateDnsFootprintArtifact;
-use App\Infrastructure\Fleet\Footprint\SandboxResidueFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\SourceDigest;
 use App\Infrastructure\Fleet\Footprint\TmpfilesFootprintArtifact;
 use App\Infrastructure\Nodes\CaddyPackageProgram;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Node;
 use App\Models\NodeRole;
-use Symfony\Component\Process\Process;
 use Tests\Support\FakeNodeCaddyBuilds;
 use Tests\Support\Fleet\FleetFixtures;
 use Tests\Support\Fleet\FleetTestSsh;
@@ -149,67 +147,5 @@ describe('footprint digests', function (): void {
             expect($exception->errorCode)->toBe('node.footprint_tmpfiles_failed')
                 ->and($exception->getMessage())->toContain('cannot move');
         });
-    });
-
-    it('removes the retired sandbox host files on active Linux app-dev Nodes only', function (): void {
-        $ssh = new ScriptedSshExecutor;
-        $artifact = new SandboxResidueFootprintArtifact(FleetTestSsh::shell($ssh));
-        $dev = FleetFixtures::node('dev', [RoleName::AppDev]);
-
-        expect($artifact->name())->toBe('sandbox-residue')
-            ->and($artifact->applies($dev))->toBeTrue()
-            ->and($artifact->applies(FleetFixtures::node('database', [RoleName::Database])))->toBeFalse()
-            ->and($artifact->applies(FleetFixtures::node('mac', [RoleName::AppDev], 'macos')))->toBeFalse()
-            ->and($artifact->digest($dev))->toBe(hash('sha256', SandboxResidueFootprintArtifact::Script));
-
-        $ssh->on('/sudo bash/', new CommandResult(0, '', '', 1, false));
-        expect($artifact->apply($dev))->toBeFalse()
-            ->and($ssh->commands[0]->arguments)->toBe(['sudo', 'bash', '-seu', '--', '/'])
-            ->and($ssh->commands[0]->input)->toBe(SandboxResidueFootprintArtifact::Script);
-
-        $ssh = new ScriptedSshExecutor;
-        $ssh->on('/sudo bash/', new CommandResult(1, '', "rm: denied\n", 1, false));
-        expect(fn () => new SandboxResidueFootprintArtifact(FleetTestSsh::shell($ssh))->apply($dev))->toThrow(function (ResourceOperationException $exception): void {
-            expect($exception->errorCode)->toBe('node.footprint_sandbox_residue_failed')
-                ->and($exception->getMessage())->toContain('rm: denied');
-        });
-    });
-
-    it('drops the Incus dependency before it disables the boot service, and keeps unrelated files', function (): void {
-        $root = sys_get_temp_dir().'/orbit-sandbox-residue-'.bin2hex(random_bytes(4));
-        $files = [
-            'etc/systemd/system/incus.service.d/orbit-sandbox-network.conf', 'etc/systemd/system/incus.service.d/other.conf',
-            'etc/systemd/system/orbit-sandbox-host-network.service', 'etc/systemd/system/multi-user.target.wants/orbit-sandbox-host-network.service',
-            'usr/local/libexec/orbit-sandbox-network', 'etc/orbit/sandbox-network.json', 'etc/orbit/agent/config.toml',
-            'var/lib/orbit-sandbox-network/lock',
-        ];
-        foreach ($files as $file) {
-            @mkdir(dirname($root.'/'.$file), 0755, true);
-            file_put_contents($root.'/'.$file, 'x');
-        }
-        mkdir($root.'/bin');
-        file_put_contents($root.'/bin/systemctl', "#!/bin/sh\nprintf '%s|%s\\n' \"\$*\" \"\$(ls \"\$ROOT/etc/systemd/system/incus.service.d\" 2>/dev/null | tr '\\n' ' ')\" >> \"\$ROOT/systemctl.log\"\n");
-        chmod($root.'/bin/systemctl', 0755);
-        $run = static function () use ($root): string {
-            $process = new Process(['bash', '-seu', '--', $root.'/'], env: ['PATH' => $root.'/bin:'.getenv('PATH'), 'ROOT' => $root]);
-            $process->setInput(SandboxResidueFootprintArtifact::Script)->mustRun();
-
-            return $process->getOutput();
-        };
-
-        try {
-            expect($run())->toBe("changed\n")
-                ->and(file_get_contents($root.'/systemctl.log'))->toBe("daemon-reload|other.conf \ndisable orbit-sandbox-host-network.service|other.conf \ndaemon-reload|other.conf \n")
-                ->and(file_exists($root.'/etc/systemd/system/incus.service.d/other.conf'))->toBeTrue()
-                ->and(file_exists($root.'/etc/orbit/agent/config.toml'))->toBeTrue();
-            foreach (['etc/systemd/system/incus.service.d/orbit-sandbox-network.conf', 'etc/systemd/system/orbit-sandbox-host-network.service',
-                'etc/systemd/system/multi-user.target.wants/orbit-sandbox-host-network.service', 'usr/local/libexec/orbit-sandbox-network',
-                'etc/orbit/sandbox-network.json', 'var/lib/orbit-sandbox-network'] as $gone) {
-                expect(file_exists($root.'/'.$gone))->toBeFalse();
-            }
-            expect($run())->toBe('');
-        } finally {
-            (new Process(['rm', '-rf', '--', $root]))->run();
-        }
     });
 });

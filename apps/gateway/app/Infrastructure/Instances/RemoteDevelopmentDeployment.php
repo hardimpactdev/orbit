@@ -13,7 +13,6 @@ use App\Domain\Instances\Deployment\DevelopmentDeployment;
 use App\Domain\Instances\Deployment\DevelopmentTarget;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
-use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Projects\DevelopmentDeployStep;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
@@ -37,13 +36,6 @@ final readonly class RemoteDevelopmentDeployment implements DevelopmentDeploymen
         private RepositoryReadAccess $access,
     ) {}
 
-    public function convert(Instance $instance): string
-    {
-        $result = $this->run($instance, DevelopmentCheckoutProgram::convert(), 'convert', [$this->branch($instance)]);
-
-        return $this->commit(trim($result->stdout));
-    }
-
     public function target(Instance $instance): DevelopmentTarget
     {
         $repository = GitRepositoryOrigin::validate($instance->project->repository_url);
@@ -59,12 +51,8 @@ final readonly class RemoteDevelopmentDeployment implements DevelopmentDeploymen
             'development-deployment-target',
             'deployment.prepare_failed',
         );
-        $lines = explode("\n", trim($result->stdout));
-        if (count($lines) > 2 || (count($lines) === 2 && $lines[1] !== 'LEGACY')) {
-            throw $this->invalidOutput();
-        }
 
-        return new DevelopmentTarget($this->commit($lines[0]), count($lines) === 2);
+        return new DevelopmentTarget($this->commit(trim($result->stdout)));
     }
 
     public function checkout(Instance $instance, string $commit, DeploymentRequest $request): void
@@ -92,23 +80,6 @@ final readonly class RemoteDevelopmentDeployment implements DevelopmentDeploymen
             'deployment.step_failed',
             commandTimeout: $step->timeoutSeconds + 30,
         );
-    }
-
-    public function removeReleases(Instance $instance, array $consumers): array
-    {
-        $result = $this->run($instance, DevelopmentCheckoutProgram::removeReleases(), 'release_removal', array_map(
-            static fn (string $checkout): string => StoragePath::parse($checkout)->value,
-            $consumers,
-        ));
-        $kept = [];
-        foreach (array_filter(explode("\n", $result->stdout), static fn (string $line): bool => $line !== '') as $line) {
-            if (preg_match('/\AKEPT\t(.+)\z/', $line, $match) !== 1) {
-                throw $this->invalidOutput();
-            }
-            $kept[] = $match[1];
-        }
-
-        return $kept;
     }
 
     /** @return Closure(ProcessOutput): void */
