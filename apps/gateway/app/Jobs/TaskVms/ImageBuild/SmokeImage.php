@@ -17,5 +17,6 @@ final class SmokeImage extends ImageBuildJob
     public int $timeout = 60;
 
     // The step runner enforces the deadline from its durable started_at, not queue submission.
+    #[\Override]
     public int $tries = 0;
 }
