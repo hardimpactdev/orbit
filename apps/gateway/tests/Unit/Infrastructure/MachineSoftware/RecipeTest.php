@@ -1,0 +1,354 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Domain\Instances\InstancePhpVersionCatalog;
+use App\Domain\Nodes\RoleName;
+use App\Infrastructure\MachineSoftware\ArtifactPin;
+use App\Infrastructure\MachineSoftware\MachineRecipe;
+use App\Infrastructure\MachineSoftware\RecipeLoader;
+use App\Infrastructure\MachineSoftware\RecipeValidator;
+use App\Infrastructure\MachineSoftware\SnapshotAvailability;
+use App\Infrastructure\MachineSoftware\ToolPin;
+use App\Infrastructure\Nodes\CaddyPackageProgram;
+use App\Infrastructure\Nodes\NodeAgentFootprint;
+use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
+use App\Infrastructure\Nodes\RemotePhpPackageManager;
+use App\Infrastructure\TaskVms\TaskVmCloudInit;
+use App\Models\Node;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Http;
+use Tests\TestCase;
+
+uses(TestCase::class);
+
+function machine_recipe_document(): array
+{
+    return json_decode(file_get_contents(resource_path('machine-software/recipe.json')), true, flags: JSON_THROW_ON_ERROR);
+}
+
+function machine_recipe_decode(array $document): MachineRecipe
+{
+    return new RecipeLoader()->decode(json_encode($document, JSON_THROW_ON_ERROR));
+}
+
+function machine_recipe_snapshot_probe(?string $failure = null): SnapshotAvailability
+{
+    return new class($failure) implements SnapshotAvailability
+    {
+        public bool $called = false;
+
+        public function __construct(private readonly ?string $failure) {}
+
+        public function verify(MachineRecipe $recipe): void
+        {
+            $this->called = true;
+            if ($this->failure !== null) {
+                throw new RuntimeException("Snapshot [{$recipe->snapshot}] release [26.04] architecture [amd64]: {$this->failure}");
+            }
+        }
+    };
+}
+
+function artifact_only_recipe(ToolPin $pin): MachineRecipe
+{
+    return new MachineRecipe('sha256:fixture', '20261014T000000Z', ['amd64'], ['fixture' => $pin], ['base' => ['fixture']], '{}');
+}
+
+describe('machine recipe structure and identity', function (): void {
+    it('loads the repository seed and exposes explicit profile membership', function (): void {
+        Http::preventStrayRequests();
+        $recipe = new RecipeLoader()->load();
+        expect($recipe->identity)->toMatch('/^sha256:[a-f0-9]{64}$/')
+            ->and($recipe->tools['caddy']->version)->toBe('2.11.7')
+            ->and($recipe->tools['orbit-agent']->version)->toBe('0.4.2')
+            ->and($recipe->profile('operator'))->toContain('curl')->not->toContain('caddy', 'pi')
+            ->and($recipe->profile('app-prod'))->not->toContain('rust', 'php8.4-pcov', 'pi')
+            ->and($recipe->profile('base'))->toContain('php8.4-pcov', 'php8.5-pcov', 'rust', 'pi')
+            ->and($recipe->supportedArchitectures('base'))->toBe(['amd64']);
+        Http::assertNothingSent();
+    });
+
+    it('seeds the existing enrollment and image-build packages without adding base-only software to roles', function (): void {
+        $recipe = new RecipeLoader()->load();
+        $node = new Node;
+        $packages = new NodeBootstrapPackageCatalog;
+        $common = $packages->forNode($node);
+        $programs = new RemotePhpPackageManager()->appDevPrograms(new InstancePhpVersionCatalog()->versions());
+        $php = array_values(array_filter($programs['source']->arguments, fn (string $argument): bool => str_starts_with($argument, 'php8.')));
+        $javascript = ['vp', 'vp-cli', 'node', 'pnpm', 'bun'];
+        $production = array_values(array_unique([...$common, ...$packages->forRole($node, RoleName::AppProd), ...$javascript]));
+        $development = [...$production, ...$php, 'php8.4-readline', 'php8.5-readline', 'libgd3'];
+        $imagePackages = ['openssh-server', ...TaskVmCloudInit::WorkspaceTools, ...TaskVmCloudInit::ChromiumLibraries];
+        $base = [...$development, ...$imagePackages, 'rust', 'rust-std', 'cargo', 'clippy', 'rustfmt', 'orbit-agent', 'pi'];
+        foreach (['operator' => $common, 'gateway' => [...$common, 'caddy'], 'app-prod' => $production, 'app-dev' => $development, 'base' => $base] as $role => $expected) {
+            sort($expected, SORT_STRING);
+            expect($recipe->profile($role))->toBe($expected);
+        }
+        foreach ($imagePackages as $package) {
+            expect($recipe->tools[$package]->source)->toBe('ubuntu')
+                ->and($recipe->tools[$package]->package)->toBe($package);
+            foreach (array_keys($recipe->profiles) as $role) {
+                if ($role !== 'base') {
+                    expect($recipe->profile($role))->not->toContain($package);
+                }
+            }
+        }
+        expect($recipe->tools['caddy']->version)->toBe(CaddyPackageProgram::RELEASE)
+            ->and($recipe->tools['caddy']->artifacts['amd64']->digest)->toBe(CaddyPackageProgram::AMD64_SHA512)
+            ->and($recipe->tools['caddy']->artifacts['arm64']->digest)->toBe(CaddyPackageProgram::ARM64_SHA512)
+            ->and($recipe->tools['orbit-agent']->version)->toBe(NodeAgentFootprint::Version)
+            ->and($recipe->tools['orbit-agent']->artifacts['amd64']->digest)->toBe(NodeAgentFootprint::checksum('x86_64'))
+            ->and($recipe->tools['orbit-agent']->artifacts['arm64']->digest)->toBe(NodeAgentFootprint::checksum('aarch64'));
+    });
+
+    it('canonicalizes object key order and whitespace but preserves meaningful changes', function (): void {
+        $document = machine_recipe_document();
+        $first = machine_recipe_decode($document);
+        $reordered = array_reverse($document, true);
+        $reordered['tools'] = array_reverse($document['tools'], true);
+        expect(machine_recipe_decode($reordered)->identity)->toBe($first->identity);
+        expect(new RecipeLoader()->decode(json_encode($reordered, JSON_PRETTY_PRINT))->identity)->toBe($first->identity);
+        $document['ubuntu']['snapshot'] = '20261013T000000Z';
+        expect(machine_recipe_decode($document)->identity)->not->toBe($first->identity);
+        $document = machine_recipe_document();
+        $document['tools']['pi']['artifacts']['amd64']['filename'] = 'same-bytes-another-location';
+        expect(machine_recipe_decode($document)->identity)->toBe($first->identity);
+        $document['tools']['pi']['artifacts']['amd64']['sha256'] = str_repeat('1', 64);
+        expect(machine_recipe_decode($document)->identity)->not->toBe($first->identity);
+        $document = machine_recipe_document();
+        $document['common'] = array_reverse($document['common']);
+        expect(machine_recipe_decode($document)->identity)->not->toBe($first->identity);
+    });
+
+    it('rejects invalid documents with a field-specific error', function (Closure $mutate, string $message): void {
+        $document = machine_recipe_document();
+        $mutate($document);
+        expect(fn () => machine_recipe_decode($document))->toThrow(InvalidArgumentException::class, $message);
+    })->with([
+        'schema version' => [function (&$d): void {
+            $d['schema_version'] = 2;
+        }, 'schema_version'],
+        'unknown field' => [function (&$d): void {
+            $d['shell'] = 'run';
+        }, 'expected exactly fields'],
+        'unknown role' => [function (&$d): void {
+            $d['roles']['typo'] = [];
+        }, 'roles'],
+        'unknown tool' => [function (&$d): void {
+            $d['tools']['typo'] = $d['tools']['curl'];
+        }, 'tools.typo: unknown tool'],
+        'unknown reference' => [function (&$d): void {
+            $d['roles']['gateway'][] = 'typo';
+        }, 'unknown or missing tool [typo]'],
+        'missing entry' => [function (&$d): void {
+            unset($d['tools']['curl']);
+        }, 'missing catalog tools'],
+        'channel pin' => [function (&$d): void {
+            $d['tools']['node']['version'] = 'lts';
+        }, 'tools.node.version'],
+        'constraint pin' => [function (&$d): void {
+            $d['tools']['curl']['version'] = '^8.0';
+        }, 'tools.curl.version'],
+        'version substring' => [function (&$d): void {
+            $d['tools']['node']['version'] = '24';
+        }, 'expected the exact version'],
+        'prerelease labeled as final' => [function (&$d): void {
+            $d['tools']['node']['artifacts']['amd64']['url'] = 'https://example.com/node-24.22.0-rc.1-linux-x64.tar.xz';
+        }, 'expected the exact version'],
+        'digest' => [function (&$d): void {
+            $d['tools']['pi']['artifacts']['amd64']['sha256'] = 'invented';
+        }, 'sha256'],
+        'path traversal' => [function (&$d): void {
+            $d['tools']['pi']['artifacts']['amd64']['filename'] = '../live';
+        }, 'filename'],
+        'wrong source' => [function (&$d): void {
+            $d['tools']['curl']['source'] = 'internal';
+        }, 'tools.curl.source'],
+        'wrong type' => [function (&$d): void {
+            $d['common'] = 'curl';
+        }, 'common: expected a list'],
+        'duplicate list' => [function (&$d): void {
+            $d['common'][] = 'curl';
+        }, 'duplicate list entry'],
+        'impossible date' => [function (&$d): void {
+            $d['ubuntu']['snapshot'] = '20260230T000000Z';
+        }, 'ubuntu.snapshot'],
+        'unversioned URL' => [function (&$d): void {
+            $d['tools']['node']['artifacts']['amd64']['url'] = 'https://nodejs.org/latest';
+        }, 'exact version'],
+        'invented Pi arm64' => [function (&$d): void {
+            $d['tools']['pi']['artifacts']['arm64'] = $d['tools']['pi']['artifacts']['amd64'];
+        }, 'amd64 only'],
+    ]);
+
+    it('rejects duplicate and escaped-equivalent object keys before hashing', function (): void {
+        $json = file_get_contents(resource_path('machine-software/recipe.json'));
+        $json = preg_replace('/"schema_version": 1/', '"schema_version": 1, "schema_\\u0076ersion": 1', $json);
+        expect(fn () => new RecipeLoader()->decode($json))->toThrow(InvalidArgumentException::class, 'Duplicate object key [schema_version]');
+    });
+
+    it('rejects malformed JSON and reports the candidate file', function (): void {
+        $file = tempnam(sys_get_temp_dir(), 'recipe-invalid-');
+        try {
+            file_put_contents($file, '{bad');
+            expect(fn () => new RecipeLoader()->load($file))->toThrow(InvalidArgumentException::class, $file);
+        } finally {
+            unlink($file);
+        }
+    });
+
+    it('rejects unknown profiles and Pi on arm64', function (): void {
+        $recipe = new RecipeLoader()->load();
+        expect(fn () => $recipe->profile('typo'))->toThrow(InvalidArgumentException::class, 'Unknown role/profile')
+            ->and(fn () => $recipe->profile('base', 'arm64'))->toThrow(InvalidArgumentException::class, 'requires tool [pi]')
+            ->and($recipe->profile('app-dev', 'arm64'))->toContain('caddy');
+    });
+});
+
+describe('recipe availability and artifact integrity', function (): void {
+    beforeEach(function (): void {
+        Http::preventStrayRequests();
+    });
+
+    it('fails an unavailable snapshot with a fake availability probe before artifact downloads', function (): void {
+        $probe = machine_recipe_snapshot_probe('metadata URL returned 404');
+        expect(fn () => new RecipeValidator($probe)->validate(new RecipeLoader()->load(), '/unused'))
+            ->toThrow(RuntimeException::class, 'Snapshot [20261014T000000Z] release [26.04] architecture [amd64]: metadata URL returned 404');
+        expect($probe->called)->toBeTrue();
+        Http::assertNothingSent();
+    });
+
+    it('verifies external artifact bytes instead of trusting HTTP success', function (): void {
+        $url = 'https://example.test/releases/1.2.3/tool';
+        Http::fake([$url => Http::response('exact bytes')]);
+        $pin = new ToolPin('artifact', '1.2.3', artifacts: ['amd64' => new ArtifactPin($url, 'sha512', hash('sha512', 'exact bytes'))]);
+        new RecipeValidator(machine_recipe_snapshot_probe())->validate(artifact_only_recipe($pin), '/unused');
+        Http::assertSentCount(1);
+    });
+
+    it('rejects an unavailable exact tool version', function (): void {
+        $url = 'https://example.test/releases/1.2.3/tool';
+        Http::fake([$url => Http::response('', 404)]);
+        $pin = new ToolPin('artifact', '1.2.3', artifacts: ['amd64' => new ArtifactPin($url, 'sha256', str_repeat('a', 64))]);
+        expect(fn () => new RecipeValidator(machine_recipe_snapshot_probe())->validate(artifact_only_recipe($pin), '/unused'))
+            ->toThrow(RuntimeException::class, 'version [1.2.3] architecture [amd64] source [artifact]');
+    });
+
+    it('rejects an external digest mismatch', function (): void {
+        $url = 'https://example.test/releases/1.2.3/tool';
+        Http::fake([$url => Http::response('wrong bytes')]);
+        $pin = new ToolPin('artifact', '1.2.3', artifacts: ['amd64' => new ArtifactPin($url, 'sha256', str_repeat('a', 64))]);
+        expect(fn () => new RecipeValidator(machine_recipe_snapshot_probe())->validate(artifact_only_recipe($pin), '/unused'))
+            ->toThrow(RuntimeException::class, 'sha256 mismatch');
+    });
+
+    it('validates local internal bytes and fails clearly on missing files or mismatches', function (): void {
+        $directory = sys_get_temp_dir().'/recipe-local-'.bin2hex(random_bytes(6));
+        mkdir($directory);
+        $pin = new ToolPin('internal', 'e5933d4c8696', artifacts: ['amd64' => new ArtifactPin('pi-server-fixture', 'sha256', hash('sha256', 'fixture'))]);
+        $validator = new RecipeValidator(machine_recipe_snapshot_probe());
+        $recipe = artifact_only_recipe($pin);
+        try {
+            expect(fn () => $validator->validate($recipe, $directory))->toThrow(RuntimeException::class, 'Missing or unreadable artifact file');
+            file_put_contents($directory.'/pi-server-fixture', 'wrong');
+            expect(fn () => $validator->validate($recipe, $directory))->toThrow(RuntimeException::class, 'sha256 mismatch');
+            file_put_contents($directory.'/pi-server-fixture', 'fixture');
+            $validator->validate($recipe, $directory);
+            Http::assertNothingSent();
+        } finally {
+            @unlink($directory.'/pi-server-fixture');
+            rmdir($directory);
+        }
+    });
+});
+
+describe('machine recipe command', function (): void {
+    it('shows structure without implying availability or integrity and without any HTTP', function (): void {
+        Http::preventStrayRequests();
+        $this->artisan('orbit:machine-recipe', ['--role' => 'operator'])
+            ->expectsOutputToContain('Identity: sha256:')
+            ->expectsOutputToContain('structure only; availability and integrity NOT checked')
+            ->expectsOutputToContain('operator (architectures: amd64, arm64)')
+            ->assertSuccessful();
+        Http::assertNothingSent();
+    });
+
+    it('prints all pins and provenance in JSON without claiming integrity', function (): void {
+        Http::preventStrayRequests();
+        expect(Artisan::call('orbit:machine-recipe', ['--json' => true, '--role' => 'base']))->toBe(0);
+        $output = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+        expect($output['validation'])->toBe('structure_only')
+            ->and($output['identity'])->toBe(new RecipeLoader()->load()->identity)
+            ->and($output['recipe'])->toBe(machine_recipe_document())
+            ->and($output['recipe']['tools']['pi']['source_commit'])->toBe('e5933d4c8696')
+            ->and($output['recipe']['tools']['pi']['artifacts']['amd64']['sha256'])->toBe('286620c586b13b60fce4ce71f286d282da185fd95f7971c4109fb52bc8f0a78c')
+            ->and($output['profiles']['base']['architectures'])->toBe(['amd64']);
+        expect(Artisan::call('orbit:machine-recipe', ['--json' => true, '--role' => 'typo']))->toBe(1);
+        expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error'])->toContain('Unknown role/profile');
+        Http::assertNothingSent();
+    });
+
+    it('reports complete online success only after checking every declared artifact and the local Pi bytes', function (): void {
+        $document = machine_recipe_document();
+        $requests = 0;
+        foreach ($document['tools'] as &$tool) {
+            if ($tool['source'] === 'ubuntu') {
+                continue;
+            }
+            foreach ($tool['artifacts'] as &$artifact) {
+                $algorithm = isset($artifact['sha256']) ? 'sha256' : 'sha512';
+                $artifact[$algorithm] = hash($algorithm, 'fixture');
+                if ($tool['source'] === 'internal') {
+                    $artifact['filename'] = 'pi-server-fixture';
+                } else {
+                    $requests++;
+                }
+            }
+            unset($artifact);
+        }
+        unset($tool);
+        $directory = sys_get_temp_dir().'/recipe-command-'.bin2hex(random_bytes(6));
+        mkdir($directory);
+        file_put_contents($directory.'/recipe.json', json_encode($document, JSON_THROW_ON_ERROR));
+        file_put_contents($directory.'/pi-server-fixture', 'fixture');
+        $probe = machine_recipe_snapshot_probe();
+        $this->app->instance(SnapshotAvailability::class, $probe);
+        Http::preventStrayRequests();
+        Http::fake(['*' => Http::response('fixture')]);
+        try {
+            expect(Artisan::call('orbit:machine-recipe', [
+                '--path' => $directory.'/recipe.json', '--validate' => true, '--json' => true,
+                '--role' => 'operator', '--artifact-directory' => $directory,
+            ]))->toBe(0);
+            $output = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+            expect($output['validation'])->toBe('structure_availability_integrity')
+                ->and(array_keys($output['profiles']))->toBe(['operator'])
+                ->and($probe->called)->toBeTrue();
+            Http::assertSentCount($requests);
+            unlink($directory.'/pi-server-fixture');
+            expect(Artisan::call('orbit:machine-recipe', [
+                '--path' => $directory.'/recipe.json', '--validate' => true, '--json' => true,
+                '--role' => 'operator', '--artifact-directory' => $directory,
+            ]))->toBe(1);
+            $error = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+            expect($error['error'])->toContain('Missing or unreadable artifact file')
+                ->and($error)->not->toHaveKey('validation');
+        } finally {
+            @unlink($directory.'/pi-server-fixture');
+            unlink($directory.'/recipe.json');
+            rmdir($directory);
+        }
+    });
+
+    it('refuses unknown roles and unsupported Pi architecture', function (): void {
+        $this->artisan('orbit:machine-recipe', ['--role' => 'typo'])->expectsOutputToContain('Unknown role/profile')->assertFailed();
+        $this->artisan('orbit:machine-recipe', ['--role' => 'base', '--architecture' => 'arm64'])->expectsOutputToContain('requires tool [pi]')->assertFailed();
+    });
+
+    it('validates the whole recipe even when only operator tools are displayed', function (): void {
+        $this->app->instance(SnapshotAvailability::class, machine_recipe_snapshot_probe('unavailable fixture snapshot'));
+        $this->artisan('orbit:machine-recipe', ['--role' => 'operator', '--validate' => true])
+            ->expectsOutputToContain('unavailable fixture snapshot')->assertFailed();
+    });
+});

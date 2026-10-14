@@ -4,6 +4,9 @@ description: "Task VMs for every Project and their UpCloud overflow."
 covers:
   - apps/gateway/app/{Domain/TaskVms,Infrastructure/TaskVms,Jobs/TaskVms,Actions/TaskVms,Domain/Compute}/**
   - apps/gateway/app/{Models/TaskVm.php,Models/TaskVmImageBuild.php,Console/Commands/*ImageBuildsCommand.php,Console/Commands/PrepareTaskVmHostCommand.php,Console/Commands/PrepareTaskVmHubCommand.php,Console/Commands/BuildTaskVmImageCommand.php,Console/Commands/BuildUpCloudTaskVmImageCommand.php,Console/Commands/BuildTaskVmWorkspaceTemplateCommand.php,Console/Commands/SyncTaskVmImageCommand.php,Console/Commands/RetireTaskVmHostCommand.php,Console/Commands/ResolvesTaskVmHostNode.php}
+  - apps/gateway/app/Infrastructure/MachineSoftware/**
+  - apps/gateway/app/Console/Commands/MachineRecipeCommand.php
+  - apps/gateway/resources/machine-software/**
   - apps/gateway/config/task_vms.php
   - apps/gateway/resources/task-vms/**
   - apps/gateway/database/migrations/*{create_task_vm_image_builds_table,fence_task_vm_image_build_attempts,create_task_vms_table,add_model_proxy_origin_to_task_vms,add_warm_pool_to_task_vms,add_upcloud_to_task_vms,add_size_to_task_vms,add_topology_to_task_vms,create_jobs_table,create_failed_jobs_table,create_task_sandboxes_table,add_fleet_enrollment_to_task_sandboxes,add_pi_ready_at_to_task_sandboxes,close_checks_of_destroyed_task_sandboxes,drop_task_sandboxes}.php
@@ -31,7 +34,7 @@ The recipe is UTF-8 JSON, not executable PHP or a list of shell commands. The lo
 | `ubuntu.release` | Ubuntu release used by the current base image, initially `26.04` |
 | `ubuntu.snapshot` | UTC snapshot identifier in `YYYYMMDDTHHMMSSZ` form, used at `https://snapshot.ubuntu.com/ubuntu/<snapshot>/`; a syntactically valid date alone does not prove availability |
 | `architectures` | Non-empty list drawn from `amd64` and `arm64`, using Debian architecture names |
-| `tools` | Object keyed by the loader's known tool identifiers; each value has an exact `version` and a `source` of `ubuntu` or `artifact` |
+| `tools` | Object keyed by the loader's known tool identifiers; each value has an exact `version` and a `source` of `ubuntu`, `artifact`, or `internal` |
 | `common` | Tool identifiers included in every role and the base image |
 | `roles` | Object with exactly `gateway`, `app-dev`, `app-prod`, and `operator`; each value is a list of additional tool identifiers |
 | `base` | List of additional tool identifiers for the task VM base image; this is an image profile, not a Node role |
@@ -41,6 +44,12 @@ An `ubuntu` tool names its Debian `package`. Its `version` is the complete Debia
 An `artifact` tool has an `artifacts` object keyed by every declared architecture. Each entry contains an HTTPS `url` and exactly one digest field, `sha256` or `sha512`, with a full lowercase hexadecimal digest. A URL must identify the pinned release, not a moving installer or a `latest` alias. Architecture-independent archives repeat the same URL and digest for each architecture. Artifact contents, not the spelling of the URL or a successful HTTP response, are the integrity check. The validator downloads and hashes the bytes without executing or installing them.
 
 The loader has a closed catalog of supported tool identifiers and their source kinds. A new tool needs a catalog change and validation tests as well as a recipe entry. Every profile reference must resolve to a catalogued entry in `tools`; an unused entry, a missing tool, or an incompatible source is an error. Tool versions must be exact: `latest`, `stable`, `lts`, version ranges, and unversioned installer URLs are not pins.
+
+An `internal` tool is an Orbit-built binary pinned by `source_commit` (12 to 40 lowercase Git hexadecimal characters), an exact `version`, and architecture-specific entries in `artifacts`. Each entry has a simple `filename` and a full lowercase `sha256`; filenames resolve under the Gateway's sandbox-artifacts directory (or the command's `--artifact-directory` override). Source commit and digest identify the software; the directory and filename are only byte locations and are not part of the identity. The default directory is `$ORBIT_HOME/sandbox-artifacts`, using the Gateway's configured Orbit home.
+
+Internal pins do not require publishing HTTPS releases. Third-party tools still require HTTPS artifact pins. Online validation fails clearly if a local file is missing or its digest differs. It never executes the binary. Existing installers keep their pre-install hash verification.
+
+The initial Pi pin comes from `apps/pi-server` at source commit `e5933d4c8696`, file `pi-server-e5933d4c8696-linux-x64`, SHA-256 `286620c586b13b60fce4ce71f286d282da185fd95f7971c4109fb52bc8f0a78c`. It supports `amd64` only. The base profile therefore supports only `amd64`; `--architecture=arm64 --role=base` fails rather than inventing a Pi artifact. Other profiles support the intersection of their tools' architectures. Validation checks all artifacts actually declared, including Pi, without requiring nonexistent Pi arm64 bytes.
 
 A profile's effective set is the union of `common` and its own list, sorted by tool identifier. Profiles cannot refer to other profiles, so role inheritance cannot hide software or form cycles. A multi-role Node's eventual set is the union of its roles, not the base image set.
 
@@ -55,9 +64,21 @@ The seed preserves the software selected by today's image and enrollment program
 | `app-dev` | `acl`, `attr`, Caddy, Composer, `docker.io`, Git, OpenSSL, `php-curl`, `php-xml`, `unzip`, Vite+ (`vp`), Node, pnpm, npm/npx, and Bun; PHP 8.5 and 8.4 with the current app-dev extension/package profiles |
 | `app-prod` | The current application prerequisites and JavaScript/Composer managers, as for `app-dev`, but without preinstalling every selectable PHP version's app-dev packages |
 | `operator` | No additional role prerequisite tools; this is the recipe profile for a roleless operator Node, not a new Node role |
-| `base` | The full `app-dev` tool set, plus the Rust toolchain with Cargo, clippy and rustfmt, the Node agent binary, and the Pi executable |
+| `base` | The full `app-dev` set, explicit image-build packages described below, Rust with Cargo/clippy/rustfmt, the Node agent, and Pi |
 
 The base list explicitly contains the app-dev tools; it does not inherit a role implicitly. `npm` and `npx`, or Rust's component binaries, may come from one pinned distribution rather than separate downloads, but their supplied versions must be covered by that distribution's pin. The exact PHP package lists come from the current selectable-version profiles, not from a new choice of extensions. Caddy starts at the existing `2.11.7` release and keeps its architecture-specific SHA-512 pins. Snapshot packages retain their complete Debian versions. This contract does not add the base-only development tools to production Nodes.
+
+The base also includes the existing image builder's 26 explicit Ubuntu packages: `openssh-server`; workspace tools `rsync`, `bind9-dnsutils`, `gcc`, and `libc6-dev`; and all 21 libraries in `TaskVmCloudInit::ChromiumLibraries` for Playwright's headless Chromium. These are base-only tools, not common or role inputs. Each uses an exact package version from the same authenticated snapshot on both architectures. The existing package lists in `TaskVmImageBuildSteps` and legacy cloud-init remain unchanged.
+
+### Seed provenance
+
+The seed resolves the existing programs' selectors on 2026-10-14. It uses snapshot `20261014T000000Z`, with Ubuntu candidates selected by Debian version ordering across `resolute`, `resolute-updates`, and `resolute-security`, for both architectures. The input lists come from `NodeBootstrapPackageCatalog`, `NodeEnrollmentPrograms`, `RemotePhpPackageManager`, `TaskVmImageBuildSteps`, `TaskVmCloudInit`, and `install-rust.sh`; this does not wire the recipe into those programs.
+
+PHP's required readline packages and Sury's `libgd3` are explicit artifact inputs, alongside the selectable-version profiles. Other Ubuntu dependencies resolve from the same authenticated snapshot.
+
+Caddy and the Node agent retain the constants and checksums in their current installers. PHP artifacts use the Sury `resolute` package indexes, authenticated with the existing installer's pinned Sury key (`apt.gpg`, SHA-256 `b486fd5488185c4c46467960fa69c53d5085fec492cf76b9eaf3db33561c9d7c`). Vite+ and pnpm tarballs match npm's release `dist.integrity`; Vite+'s JavaScript package and platform CLI are separate pins.
+
+Node resolves the current LTS from `nodejs.org/dist/index.json`, with both distributions checked against that release's `SHASUMS256.txt`; the distribution also pins its bundled npm/npx. Bun's distributions match the release asset digests. Rust uses the stable channel's versioned distribution manifest and its hashes for rustc, Cargo, the standard library, clippy, and rustfmt, rather than retaining `stable` or an unpinned rustup installer. Pi uses the operator-approved source commit and digest above. The JSON holds the resolved versions and hashes; none of these moving discovery endpoints is consulted by validation.
 
 ### Pins outside the Ubuntu snapshot
 
@@ -69,23 +90,27 @@ The Ubuntu snapshot does not freeze third-party repositories or upstream release
 | PHP packages not in the Ubuntu snapshot | Exact Debian package versions and architecture-specific package artifacts with recorded digests; a mutable Sury repository URL or PHP minor version alone is insufficient |
 | Vite+, Node, pnpm, npm/npx and Bun | Exact release distributions or registry tarballs and their digests, including the selected Node runtime and package-manager versions; do not run `curl ... \| bash`, resolve `lts`, or ask a registry for its current candidate during validation |
 | Rust | Exact toolchain release, its minimal-profile components including clippy and rustfmt, and versioned distribution artifacts with digests; `stable` and an unpinned rustup installer are insufficient |
-| Node agent and Pi | Exact release identifiers, architecture-specific executable URLs, and digests; preserve the releases selected by the existing installers |
+| Node agent and Pi | Preserve the agent release and its HTTPS artifact digests. Pi uses the approved internal pin above; local pins do not select a new baseline |
 
 Every separately fetched input needed for a pinned tool must be covered by its artifact pins; a pinned bootstrap script must not download an unpinned payload. A distribution that bundles several binaries can cover them with one artifact digest. When a tool needs several independent artifacts, the catalog and recipe must model those inputs explicitly rather than fetching extra software behind one pin. The seed's provenance must be reproducible from the current programs and upstream metadata; it must not invent a checksum or treat the Ubuntu snapshot as proof of a third-party version.
 
 ### Recipe identity
 
-The recipe identity is `sha256:<digest>`, computed from the validated document's canonical JSON. Canonicalization recursively sorts object keys by byte order, preserves array order, emits no insignificant whitespace, leaves slashes and Unicode unescaped, and adds no final newline. Only JSON integers, strings, arrays, objects, booleans, and null are permitted; schema fields further restrict their types. Duplicate keys are rejected before hashing. The identity is derived, not stored as a self-referential field in the recipe.
+The recipe identity is `sha256:<digest>`, computed from the validated document's canonical JSON after removing internal-artifact filenames. Internal source commits and digests remain in the identity; relocating identical internal bytes does not change it. Canonicalization recursively sorts object keys by byte order, preserves array order, emits no insignificant whitespace, leaves slashes and Unicode unescaped, and adds no final newline. Only JSON integers, strings, arrays, objects, booleans, and null are permitted; schema fields further restrict their types. Duplicate keys are rejected before hashing. The identity is derived, not stored as a self-referential field in the recipe.
 
-Whitespace and object-key order do not change the identity. Changing a snapshot, pin, digest, role assignment, schema version, or list order does. The identity covers all profiles together; there is no independent version counter for each role and no Git commit SHA masquerading as the recipe version. Git history provides provenance, while the content hash names the exact software intent even when the same recipe appears in another commit. Later image and Node consumers record this complete identity; schema version `1` and a short display hash are not substitutes.
+Whitespace and object-key order do not change the identity. Changing a snapshot, version pin, source commit, digest, role assignment, schema version, or list order does. The identity covers all profiles together; there is no independent version counter for each role and no Git commit SHA masquerading as the recipe version. Git history provides provenance, while the content hash names the exact software intent even when the same recipe appears in another commit. Later image and Node consumers record this complete identity; schema version `1` and a short display hash are not substitutes.
 
 ### Show and validate the recipe
 
-The Gateway command `php artisan orbit:machine-recipe` shows the repository recipe's identity, snapshot, exact tool pins, and effective profile tool sets. `--role=gateway`, `--role=app-dev`, `--role=app-prod`, or `--role=operator` selects one role; `--role=base` selects the base image profile. `--path=<file>` selects a candidate recipe for review or a validation fixture. Showing a recipe always performs structural validation and makes no claim about remote availability.
+The Gateway command `php artisan orbit:machine-recipe` shows the repository recipe's identity, snapshot, exact tool pins, and effective profile tool sets. `--role=gateway`, `--role=app-dev`, `--role=app-prod`, or `--role=operator` selects one role; `--role=base` selects the base image profile. `--path=<file>` selects a candidate recipe for review or a validation fixture. `--architecture=amd64` or `--architecture=arm64` requires each displayed profile to support that architecture; without it, the output lists each profile's supported architectures.
 
-Add `--validate` to verify availability and integrity as well as structure. For example, from `apps/gateway`, run `php artisan orbit:machine-recipe --validate` before accepting a recipe change. Validation checks the whole recipe across every declared architecture even when `--role` limits the displayed set. It requires network access but no database, SSH connection, image builder, or root privileges. It does not install packages, change apt sources, create Nodes, build images, or change which image a claim can use.
+Showing a recipe always performs structural validation and makes no claim about remote availability. Add `--json` for the complete recipe (including URLs, digests, internal filenames, and source commits), its identity, validation state, and selected effective profiles. JSON errors contain only an `error` message and exit nonzero; failed validation never emits a success state.
 
-Online validation verifies that the exact snapshot exists for the release and architectures, that its authenticated package indexes contain each exact Ubuntu package version, and that every external artifact is available and matches its recorded digest. Redirects or server fallback to another snapshot or a rolling archive must not turn an unavailable pin into success. Network failures are failures to verify, not evidence that a release is invalid or permission to choose another version. A successful structural-only show is not a successful availability check.
+Add `--validate` to verify availability and integrity as well as structure. For example, from `apps/gateway`, run `php artisan orbit:machine-recipe --validate` before accepting a recipe change. Validation checks the whole recipe across every declared architecture even when `--role` limits the displayed set. It requires network access, `gpgv`, the OS-maintained `/usr/share/keyrings/ubuntu-archive-keyring.gpg`, and readable internal artifact files, but no database, SSH connection, image builder, or root privileges. Use `--artifact-directory=<directory>` to resolve internal filenames from a disposable or staged directory instead of the Gateway's sandbox-artifacts directory. It does not install packages, change apt sources, create Nodes, build images, or change which image a claim can use.
+
+Online validation verifies that the exact snapshot exists for the release and architectures, that its authenticated package indexes contain each exact Ubuntu package version, and that every external or Gateway-local artifact is available and matches its recorded digest. Redirects or server fallback to another snapshot or a rolling archive must not turn an unavailable pin into success.
+
+Transient HTTP 500, 502, 503, and 504 responses receive at most three attempts at the same pinned URL. Network failures are failures to verify, not evidence that a release is invalid or permission to choose another version. A successful structural-only show is not a successful availability check.
 
 | Failure | Required diagnostic |
 | --- | --- |
