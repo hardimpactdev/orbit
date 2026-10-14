@@ -14,6 +14,8 @@ use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Process\Process;
 
+pest()->group('subprocess');
+
 describe('node:wireguard-key', function (): void {
     beforeEach(function (): void {
         MockClient::destroyGlobal();
