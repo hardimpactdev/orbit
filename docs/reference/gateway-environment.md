@@ -56,3 +56,5 @@ Other `ORBIT_` keys belong to one feature, and the page for that feature documen
 - `apps/gateway/.env.example` lists a key that neither Gateway code nor Laravel reads.
 
 The check finds keys read through `env()`, including `env(key: ...)`, and through `getenv()`, `Env::get()`, `$_SERVER`, and `$_ENV`. ADRs do not count as documentation. Keys without the `ORBIT_` prefix belong to Laravel, PHP, or the operating system, and their own docs cover them.
+
+The shared task VM [package cache](/reference/compute-drivers#shared-package-cache) reads its byte budget from `config/package_cache.php` (`package_cache.max_bytes`, 20 GiB by default). Its host list comes only through `TaskVmSettings`, so the move to Node `settings.task_vms` changes that interface alone. No package cache environment host list is added.

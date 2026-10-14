@@ -30,6 +30,7 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceName;
+use App\Domain\TaskVms\TaskVmPackageCacheMount;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Processes\CommandResult;
@@ -48,6 +49,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
+use Tests\Support\FakeTaskVmPackageCacheMount;
 use Tests\Support\TaskVmSettingsBuilder;
 
 function provisioner_app(
@@ -752,6 +754,7 @@ describe('task VMs', function (): void {
                 $operation = array_slice($command->arguments, 5);
 
                 return new CommandResult(0, match (true) {
+                    ($command->arguments[3] ?? null) === 'query' => '{"devices":{}}',
                     array_slice($operation, 0, 3) === ['storage', 'volume', 'list'] => json_encode($this->volumes),
                     array_slice($operation, 0, 2) === ['config', 'get'] => "base-image\n",
                     array_slice($operation, 0, 2) === ['image', 'list'] => json_encode([['fingerprint' => str_repeat('b', 64), 'aliases' => [['name' => 'orbit-task-base']]]]),
@@ -767,6 +770,9 @@ describe('task VMs', function (): void {
         app(TaskWorkspaceProvisioner::class)->complete($group->fresh(['taskable']) ?? $group);
 
         expect($fakes->source->templates)->toBe([$ready ? '/srv/orbit/apps/dlf/workspace' : null]);
+        $cacheMount = app(TaskVmPackageCacheMount::class);
+        expect($cacheMount)->toBeInstanceOf(FakeTaskVmPackageCacheMount::class);
+        expect($cacheMount->prepared)->toBe([['vm' => 'tvm-1', 'project_id' => $project->id]]);
         foreach (['workspace-template', 'workspace-source', 'workspace-prepare', 'workspace', 'workspace-route'] as $step) {
             Log::shouldHaveReceived('info')->with('Task VM step done.', Mockery::on(static fn (array $context): bool => $context['task_vm'] === 'tvm-1' && $context['step'] === $step));
         }

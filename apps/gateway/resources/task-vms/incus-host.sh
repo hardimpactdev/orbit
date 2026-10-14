@@ -121,10 +121,11 @@ YAML
             --project "$project"
     fi
 
-    # Restricted project: no privileged or nested containers, no host paths or devices, and no network other than the
+    # Restricted project: no privileged or nested containers, only the shared cache host path, and no network other than the
     # task bridge. Low-level VM config stays allowed, because medium and large VMs set `raw.qemu.conf` for free page
     # reporting; only the Gateway sets instance config here, never a guest.
-    incus project set "$project" restricted=true "restricted.networks.access=$network" restricted.virtual-machines.lowlevel=allow
+    incus project set "$project" restricted=true "restricted.networks.access=$network" restricted.virtual-machines.lowlevel=allow \
+        restricted.devices.disk=allow restricted.devices.disk.paths=/var/lib/orbit/package-cache
 
     # Stock Ubuntu cloud image, copied once.
     if ! exists incus image show "$image" --project "$project"; then

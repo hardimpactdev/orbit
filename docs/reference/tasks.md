@@ -1825,3 +1825,5 @@ Code decides every fact that code can check. Jev answers only whether the change
 ### Definitions stay Project data
 
 The Gateway stays generic by storing each Project's plan as a task definition instead of as code. An operator or an agent can change that plan through the API. Kinds stay in code, because a kind is executable behavior, and definitions stay data. [ADR 0182](/decisions/0182-start-tasks-from-project-task-definitions#task-definitions) records the alternatives this rejects.
+
+Task VM workspaces seed their private package manager caches from the host's [read-only shared package cache](/reference/compute-drivers#shared-package-cache) before setup. A miss uses the normal registry; workspace templates remain available.

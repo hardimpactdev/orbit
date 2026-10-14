@@ -302,7 +302,7 @@ describe('task VM setup scripts', function (): void {
         array_map(unlink(...), glob($bin.'/*') ?: []);
         rmdir($bin);
 
-        $restrict = array_search('incus project set orbit-tasks restricted=true restricted.networks.access=orbittask0 restricted.virtual-machines.lowlevel=allow', $calls, true);
+        $restrict = array_search('incus project set orbit-tasks restricted=true restricted.networks.access=orbittask0 restricted.virtual-machines.lowlevel=allow restricted.devices.disk=allow restricted.devices.disk.paths=/var/lib/orbit/package-cache', $calls, true);
         expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
             ->and($process->getOutput())->toBe("{\"ok\":true}\n")
             ->and($restrict)->toBeInt()

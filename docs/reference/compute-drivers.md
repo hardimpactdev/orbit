@@ -7,7 +7,7 @@ covers:
   - apps/gateway/app/Infrastructure/MachineSoftware/**
   - apps/gateway/app/Console/Commands/MachineRecipeCommand.php
   - apps/gateway/resources/machine-software/**
-  - apps/gateway/config/task_vms.php
+  - apps/gateway/{app/Models/PackageCache*.php,app/Console/Commands/PackageCacheUsageCommand.php,database/migrations/*create_package_cache_tables.php,config/package_cache.php,config/task_vms.php}
   - apps/gateway/resources/task-vms/**
   - apps/gateway/database/migrations/*{create_task_vm_image_builds_table,fence_task_vm_image_build_attempts,create_task_vms_table,add_model_proxy_origin_to_task_vms,add_warm_pool_to_task_vms,add_upcloud_to_task_vms,add_size_to_task_vms,add_topology_to_task_vms,create_jobs_table,create_failed_jobs_table,create_task_sandboxes_table,add_fleet_enrollment_to_task_sandboxes,add_pi_ready_at_to_task_sandboxes,close_checks_of_destroyed_task_sandboxes,drop_task_sandboxes}.php
 ---
@@ -358,6 +358,20 @@ A pool row that is still `provisioning` an hour after the refill recorded it has
 A warm VM is on the same task bridge as any task VM, behind the same bridge ACL and the same [hub filter](#limit-fleet-traffic-on-the-hub). From enrollment on, it has its Node identity: its SSH host key, its WireGuard key and address, and its Node agent secret. It holds no secret of a group until a claim: no Pi token, no CLIProxyAPI key, no `models.json`, and no workspace. Pi does not run on it.
 
 The Gateway connects to Pi on a task VM only with the row's own token, and a warm VM's row has none, so the Gateway's own `ORBIT_PI_TOKEN` never reaches it either. The claim creates the Pi token, and `PrepareTaskVmRuntime` creates the model key and writes both to the VM. When the group ends, the VM is destroyed as usual. No VM serves a second group.
+
+### Shared package cache
+
+Each configured task VM host has one Gateway-owned package cache at `/var/lib/orbit/package-cache`. The Gateway reads hosts through `TaskVmSettings`; the cache does not select hosts by role or read the environment host list itself. Task VMs receive an Incus directory disk at `/opt/orbit/package-cache` with `readonly=true`. This host-enforced mount prevents a root agent in the guest from publishing bytes to another Project.
+
+When the default branch moves in the Gateway Git mirror, Orbit compares the blob IDs of `composer.lock`, `package-lock.json`, `bun.lock`, and `pnpm-lock.yaml`, at the root and below `apps/` and `packages/`. Unchanged blobs cause no fill. Changed or removed blobs replace the Project's desired inventory and queue a fill on each configured host. Pending fills coalesce by host; a change during a fill queues a successor that reads the latest desired inventory. Fills run on the `builds` queue and add missing content, without running Project setup, Composer plugins, or package install scripts.
+
+Composer consumes native archive cache files. Before workspace setup, Orbit copies the Project's missing shared cache files into the workspace's private Composer cache. Metadata, locks, temporary files, and downloads on a miss stay private. The shared mount is always read-only; private copies use no hard links. Workspace templates remain available. A package added only on a task branch, an unsupported archive, or a fill not yet complete falls back to the manager's normal registry download.
+
+Run `php artisan task-vms:package-cache-usage <package> <version>` on the Gateway to list the Projects that use that package and version, with the verified archive hashes and host IDs. Usage follows the current default-branch locks, including development packages. Removing a dependency removes its Project usage after the next successful fill, while its bytes remain cached. Failed fills retain the last successful host inventory.
+
+Private registries and credentialed URLs are out of scope. Trusted fills accept only public GitHub commit archives for Composer and the public npm registry for JavaScript. Workspaces can use their own private registry credentials with normal downloads. The fill never reads a Project's registry credentials. Lockfile checksums are verified when supplied; npm integrity is required. Composer archives without a checksum use HTTPS from the allowed commit archive service and record a SHA-256 digest on first fill. This is a transport trust limit, not a lockfile-supplied content guarantee. Each reuse checks the recorded digest. Suspect bytes move into a quarantine directory and are downloaded again; they are not seeded into new workspaces.
+
+Fills do not evict artifacts, including packages no current Project uses. The cache defaults to a 20 GiB byte budget per host and 512 MiB per archive. The operator can change the cache budget through `package_cache.max_bytes`. A full cache stops publication of new artifacts and fails the fill; workspaces still download misses privately. Quarantine bytes count toward the budget. Retention and cleanup are operator work while fills are stopped; no automatic deletion can disrupt a running workspace. CI cache refs and previous image retention are separate policies.
 
 ### Start the workspace from a template
 
