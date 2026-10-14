@@ -331,7 +331,7 @@ describe('repository guidance bootstrap', function (): void {
             'Orbit\\Sdk\\Requests\\Fleet\\ResumeFleetRolloutRequest',
             'Orbit\\Sdk\\Requests\\Nodes\\ConvergeNodeRequest',
         ];
-        $expectedOperationCount = count($fleetRequests) + count($developmentDeployRequests) + count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($gitHubRequests) + count($gatewayReleaseRequests) + count($proxycliRequests) + count($vaultRequests) + count($taskRequests) + count($logRequests) + 15;
+        $expectedOperationCount = count($fleetRequests) + count($developmentDeployRequests) + count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($gitHubRequests) + count($gatewayReleaseRequests) + count($proxycliRequests) + count($vaultRequests) + count($taskRequests) + count($logRequests) + 16;
         $expectedRequests = [
             'Orbit\\Sdk\\Requests\\Tools\\ListToolManagersRequest',
             'Orbit\\Sdk\\Requests\\Tools\\ScanToolInventoryRequest',

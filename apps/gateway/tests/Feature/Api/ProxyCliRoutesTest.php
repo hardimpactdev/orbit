@@ -156,6 +156,27 @@ it('enables proxycli when shared Valkey sits on a database Node', function (): v
         ->and($environment['PROXYCLI_CACHE_PORT'])->toBe('6379');
 });
 
+it('reconverges the selected collector after a Database connection update', function (): void {
+    $gateway = proxycli_gateway();
+    $node = proxycli_node();
+    $connection = proxycli_valkey($node);
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
+        ->postJson('/api/v1/proxycli', [
+            'node_id' => $node->id, 'cache_connection' => 'valkey',
+            'cliproxy_url' => 'http://127.0.0.1:8317', 'cliproxy_management_key' => 'management-key',
+        ])->assertCreated();
+    $process = Process::query()->where('name', ProxyCliProcess::NAME)->sole();
+    $tokens = [app(ProxyCliState::class)->readToken(), app(ProxyCliState::class)->controlToken()];
+    $this->patchJson('/api/v1/database-connections/'.$connection->slug, [
+        'host' => '10.44.0.9', 'port' => 6380, 'username' => 'collector', 'password' => 'new-cache-secret',
+    ])->assertOk()->assertDontSee('new-cache-secret');
+    expect($process->refresh()->runtime_config['environment'])->toMatchArray([
+        'PROXYCLI_CACHE_HOST' => '10.44.0.9', 'PROXYCLI_CACHE_PORT' => '6380',
+        'PROXYCLI_CACHE_USERNAME' => 'collector', 'PROXYCLI_CACHE_PASSWORD' => 'new-cache-secret',
+        'PROXYCLI_READ_TOKEN' => $tokens[0], 'PROXYCLI_CONTROL_TOKEN' => $tokens[1],
+    ])->and(Process::query()->where('name', ProxyCliProcess::NAME)->sole()->id)->toBe($process->id);
+});
+
 it('keeps the management key out of activity for every enable outcome', function (bool $placed, int $status): void {
     $gateway = proxycli_gateway();
     $node = proxycli_node();

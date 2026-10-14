@@ -6,6 +6,9 @@ namespace App\Infrastructure\ProxyCli;
 
 use App\Actions\Processes\CreateProcessAction;
 use App\Actions\Processes\DestroyProcessAction;
+use App\Actions\Processes\RestartProcessAction;
+use App\Actions\Processes\UpdateProcessAction;
+use App\Domain\Processes\DesiredProcessState;
 use App\Domain\ProxyCli\ProxyCliProcess;
 use App\Domain\ProxyCli\ProxyCliRuntimeLifecycle;
 use App\Domain\Shared\ResourceOperationException;
@@ -27,6 +30,7 @@ final readonly class NativeProxyCliRuntimeLifecycle implements ProxyCliRuntimeLi
         private SshExecutor $ssh,
         private SshKeyProvider $keys,
         private KnownHostsStore $knownHosts,
+        private UpdateProcessAction $update,
     ) {}
 
     public function converge(
@@ -35,19 +39,24 @@ final readonly class NativeProxyCliRuntimeLifecycle implements ProxyCliRuntimeLi
         array $environment,
         int $port = ProxyCliProcess::PORT,
     ): void {
-        $this->publishSource($node);
+        $sourceChanged = $this->publishSource($node);
         $data = ProxyCliProcess::data($node, $environment, $port);
+        $existing = Process::query()->where('owner_type', Node::class)
+            ->where('owner_id', $node->id)->where('name', ProxyCliProcess::NAME)->first();
 
         try {
-            $this->add->execute($data);
+            $result = $this->add->execute($data);
+            if ($sourceChanged && $existing !== null && $result['process']->desired_state === DesiredProcessState::Running) {
+                app(RestartProcessAction::class)->execute($result['process']);
+            }
         } catch (ResourceOperationException $exception) {
             if ($exception->errorCode !== 'process.name_taken') {
                 throw $exception;
             }
 
-            $this->remove($node);
-            $this->publishSource($node);
-            $this->add->execute($data);
+            $process = Process::query()->where('owner_type', Node::class)
+                ->where('owner_id', $node->id)->where('name', ProxyCliProcess::NAME)->sole();
+            $this->update->execute($process, $data);
         }
     }
 
@@ -70,7 +79,7 @@ final readonly class NativeProxyCliRuntimeLifecycle implements ProxyCliRuntimeLi
         }
     }
 
-    private function publishSource(Node $node): void
+    private function publishSource(Node $node): bool
     {
         $address = $node->wireguard_ip;
 
@@ -91,6 +100,8 @@ final readonly class NativeProxyCliRuntimeLifecycle implements ProxyCliRuntimeLi
                 422,
             );
         }
+
+        return trim($result->stdout) === ProxyCliSourcePublisher::Published;
     }
 
     private function script(): string

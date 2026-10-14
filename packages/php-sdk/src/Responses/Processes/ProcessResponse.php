@@ -17,7 +17,7 @@ final readonly class ProcessResponse
         public int $targetId,
         public string $name,
         public string $runtime,
-        public string $workingDirectory,
+        public ?string $workingDirectory,
         public array $runtimeConfig,
         public string $restartPolicy,
         public bool $keepAlive,
@@ -51,7 +51,7 @@ final readonly class ProcessResponse
             runtime: is_string($data['runtime'] ?? null) ? $data['runtime'] : '',
             workingDirectory: is_string($data['working_directory'] ?? null)
                 ? $data['working_directory']
-                : '',
+                : null,
             runtimeConfig: $redactor->redactArray(self::stringKeyedArray($data['runtime_config'] ?? null)),
             restartPolicy: is_string($data['restart_policy'] ?? null) ? $data['restart_policy'] : '',
             keepAlive: ($data['keep_alive'] ?? false) === true,

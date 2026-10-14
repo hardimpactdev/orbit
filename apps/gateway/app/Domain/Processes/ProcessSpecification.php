@@ -10,7 +10,7 @@ use SensitiveParameter;
 
 final readonly class ProcessSpecification
 {
-    /** @return array{runtime: ProcessRuntime, working_directory: string, runtime_config: array<string, mixed>, restart_policy: string, keep_alive: bool} */
+    /** @return array{runtime: ProcessRuntime, working_directory: ?string, runtime_config: array<string, mixed>, restart_policy: string, keep_alive: bool} */
     public function attributes(#[SensitiveParameter] AddProcessData $data, ProcessTarget $target): array
     {
         if ($data->preset === AnnotatorPreset::NAME) {
@@ -24,7 +24,7 @@ final readonly class ProcessSpecification
         }
         $workingDirectory =
             $data->workingDirectory
-            ?? ($data->runtime === ProcessRuntime::Systemd ? $target->defaultWorkingDirectory : '/app');
+            ?? ($data->runtime === ProcessRuntime::Systemd ? $target->defaultWorkingDirectory : null);
         $runtimeConfig = $data->runtime === ProcessRuntime::Systemd
             ? [
                 'command' => $data->command,
@@ -50,7 +50,7 @@ final readonly class ProcessSpecification
         ];
     }
 
-    /** @param array{runtime: ProcessRuntime, working_directory: string, runtime_config: array<string, mixed>, restart_policy: string, keep_alive: bool} $attributes */
+    /** @param array{runtime: ProcessRuntime, working_directory: ?string, runtime_config: array<string, mixed>, restart_policy: string, keep_alive: bool} $attributes */
     public function matches(
         #[SensitiveParameter]
         Process $process,

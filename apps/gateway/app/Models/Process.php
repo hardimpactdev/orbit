@@ -22,7 +22,8 @@ use Illuminate\Support\Carbon;
  * @property string|null $source_definition_id
  * @property string $name
  * @property ProcessRuntime $runtime
- * @property string $working_directory
+ * @property ?ProcessRuntime $retired_runtime
+ * @property ?string $working_directory
  * @property array<string, mixed> $runtime_config
  * @property string $restart_policy
  * @property bool $keep_alive
@@ -99,6 +100,7 @@ final class Process extends Model
     {
         return [
             'runtime' => ProcessRuntime::class,
+            'retired_runtime' => ProcessRuntime::class,
             'runtime_config' => 'array',
             'keep_alive' => 'boolean',
             'desired_state' => DesiredProcessState::class,

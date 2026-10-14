@@ -11,6 +11,7 @@ use App\Actions\Processes\RestartProcessAction;
 use App\Actions\Processes\ShowProcessLogsAction;
 use App\Actions\Processes\StartProcessAction;
 use App\Actions\Processes\StopProcessAction;
+use App\Actions\Processes\UpdateProcessAction;
 use App\Data\Processes\ProcessData;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Http\Authorization\RequiresNodeAccess;
@@ -19,6 +20,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Processes\ListProcessesRequest;
 use App\Http\Requests\Processes\ProcessLogsRequest;
 use App\Http\Requests\Processes\StoreProcessRequest;
+use App\Http\Requests\Processes\UpdateProcessRequest;
 use App\Models\Process;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -57,6 +59,15 @@ final class ProcessesController extends Controller
             ],
             $result['created'] ? 201 : 200,
         );
+    }
+
+    public function update(
+        UpdateProcessRequest $request,
+        Process $process,
+        UpdateProcessAction $action,
+        ProcessRuntimeManager $runtime,
+    ): JsonResponse {
+        return $this->processResponse($request, $action->execute($process, $request->payload()), $runtime);
     }
 
     public function start(

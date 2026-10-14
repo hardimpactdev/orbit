@@ -188,7 +188,13 @@ final readonly class RemoteProcessRuntimeManager implements ProcessEnvironmentPr
 
     public function remove(#[SensitiveParameter] Process $process): void
     {
-        $this->lease->run($process, function (Process $fresh): void {
+        // An explicit runtime override removes a retired footprint during an in-place runtime switch.
+        // The lease still refreshes the owner and placement before any mutation.
+        $retiredRuntime = $process->isDirty('runtime') ? $process->runtime : null;
+        $this->lease->run($process, function (Process $fresh) use ($retiredRuntime): void {
+            if ($retiredRuntime !== null) {
+                $fresh->runtime = $retiredRuntime;
+            }
             $this->removeUnlocked($fresh, $this->targets->forRemoval($fresh));
         });
     }
@@ -511,6 +517,13 @@ final readonly class RemoteProcessRuntimeManager implements ProcessEnvironmentPr
         bool $forceRunning = false,
     ): void {
         $hadPreviousUnit = $this->convergeSystemd($process, $target);
+        if ($hadPreviousUnit === null) {
+            $status = $this->status($process);
+            $running = $forceRunning || $process->desired_state === DesiredProcessState::Running;
+            if (($running && $status === 'active') || (! $running && $status === 'inactive')) {
+                return;
+            }
+        }
         $activation = $this->activateSystemdDesiredState($process, $target, $forceRunning);
 
         if (! $activation->succeeded()) {
@@ -543,7 +556,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessEnvironmentPr
         }
     }
 
-    private function convergeSystemd(#[SensitiveParameter] Process $process, ProcessTarget $target, bool $installRuntime = true): bool
+    private function convergeSystemd(#[SensitiveParameter] Process $process, ProcessTarget $target, bool $installRuntime = true): ?bool
     {
         if ($installRuntime && $process->isAnnotator()) {
             $this->installAnnotator($process, $target);
@@ -558,8 +571,15 @@ final readonly class RemoteProcessRuntimeManager implements ProcessEnvironmentPr
             $this->fail($process, 'inspect-unit', 'process.systemd_converge_failed', $exists);
         }
 
+        $rendered = $this->systemd->render(
+            $process, $target,
+            $target->certificateScope === null ? null : $this->accounts->resolve($target->node),
+        );
         if ($hadPreviousUnit) {
-            $this->assertSystemdUnitOwnedForConvergence($process, $path);
+            $current = $this->assertSystemdUnitOwnedForConvergence($process, $path);
+            if ($current === $rendered) {
+                return null;
+            }
         }
 
         $this->executeSuccessfully(
@@ -709,7 +729,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessEnvironmentPr
         #[SensitiveParameter]
         Process $process,
         string $path,
-    ): void {
+    ): string {
         $current = $this->executeSuccessfully(
             $process,
             ['sudo', 'cat', '--', $path],
@@ -719,7 +739,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessEnvironmentPr
         $ownershipMarker = preg_quote("X-Orbit-Process-ID={$process->id}", delimiter: '/');
 
         if (preg_match("/^{$ownershipMarker}\\r?$/mD", $current->stdout) === 1) {
-            return;
+            return $current->stdout;
         }
 
         throw new ProcessOperationException(

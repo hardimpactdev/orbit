@@ -22,7 +22,9 @@ abstract class ProcessCommand extends GatewayCommand
             return $payload;
         }
 
-        unset($runtimeConfig['environment']);
+        if (is_array($runtimeConfig['environment'] ?? null)) {
+            $runtimeConfig['environment'] = (object) array_fill_keys(array_keys($runtimeConfig['environment']), '[REDACTED]');
+        }
         $payload['runtime_config'] = $runtimeConfig;
 
         $sanitized = $this->sanitizedProcessValues($payload);

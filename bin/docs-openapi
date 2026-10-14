@@ -1617,7 +1617,7 @@ CTRL_DATA_OVERRIDES = {
     'MetricsController@store': ('MetricsMutationData', False), 'MetricsController@destroy': ('MetricsMutationData', False), 'MetricsController@enableExporter': ('MetricsMutationData', False), 'MetricsController@disableExporter': ('MetricsMutationData', False), 'MetricsController@status': ('MetricsStatusData', False), 'MetricsController@credentials': ('MetricsCredentialsData', False), 'MetricsController@reset': ('MetricsCredentialsData', False),
     'NodeAccessController@store': ('AddedNodeAccessData', False), 'NodeAccessController@destroy': ('RemovedNodeAccessData', False),
     'DatabaseConnectionAttachmentsController@store': ('DatabaseConnectionAttachmentData', False), 'DatabaseConnectionAttachmentsController@destroy': ('DatabaseConnectionAttachmentData', False),
-    'FleetFirewallRulesController@index': ('FirewallRuleData', True), 'ProcessesController@index': ('ProcessData', True), 'ProcessesController@start': ('ProcessData', False), 'ProcessesController@stop': ('ProcessData', False), 'ProcessesController@restart': ('ProcessData', False),
+    'FleetFirewallRulesController@index': ('FirewallRuleData', True), 'ProcessesController@index': ('ProcessData', True), 'ProcessesController@start': ('ProcessData', False), 'ProcessesController@stop': ('ProcessData', False), 'ProcessesController@restart': ('ProcessData', False), 'ProcessesController@update': ('ProcessData', False),
     'DatabaseConnectionsController@users': ('DatabaseUserData', True),
     'ProxyCliController@models': ('ProxyCliModelData', True),
     'TaskGroupsController@comments': ('TaskCommentData', True),
@@ -1732,6 +1732,9 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
     body_schema = None
     query = []
     cmd = commands.get(route['name'])
+    if route['name'] == 'process:update':
+        source = (GW / 'app/Http/Requests/Processes/StoreProcessRequest.php').read_text()
+        rules_text = block(source, source.find('function rules('))
     if rules_text:
         if 'return DatabaseConnectionFieldRules::update();' in rules_text:
             field_rules = database_field_rules()
@@ -1775,6 +1778,22 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             body_schema = {'type': 'object', 'properties': {k: {'type': 'boolean' if k in BOOLEAN_FIELDS else 'string'} for k in keys}}
     if route['name'] in ('conn:profile:settings:update', 'conn:profile:settings:patch'):
         body_schema, body_required = conn_settings_body(route['name']), True
+    if route['name'] in ('process:create', 'process:update') and body_schema:
+        props = body_schema['properties']
+        props['environment'] = {'type': 'object', 'maxProperties': 100,
+            'propertyNames': {'pattern': r'^[A-Za-z_][A-Za-z0-9_]*$(?![\s\S])'},
+            'additionalProperties': {'type': 'string', 'maxLength': 4096, 'pattern': r'^[^\x00\r\n]*$(?![\s\S])'},
+            'description': 'Docker environment as a name-to-string-value map; values are redacted in responses.'}
+        if route['name'] == 'process:update':
+            for field in ('target_type', 'target_id', 'name', 'preset', 'start'):
+                props.pop(field, None)
+            body_schema['required'] = ['runtime', 'command']
+    if route['name'] in ('project:process-definition:create', 'project:process-definition:update') and body_schema:
+        body_schema['properties']['spec']['properties']['environment'] = {
+            'type': 'object', 'maxProperties': 100,
+            'propertyNames': {'pattern': r'^[A-Za-z_][A-Za-z0-9_]*$(?![\s\S])'},
+            'additionalProperties': {'type': 'string', 'maxLength': 4096, 'pattern': r'^[^\x00\r\n]*$(?![\s\S])'},
+        }
     if body_schema and 'oneOf' in body_schema:
         for variant in body_schema['oneOf']:
             variant['additionalProperties'] = False

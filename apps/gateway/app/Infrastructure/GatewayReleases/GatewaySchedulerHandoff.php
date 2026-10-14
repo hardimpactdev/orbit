@@ -87,7 +87,7 @@ final readonly class GatewaySchedulerHandoff
 
             return is_array($command) && in_array('schedule:work', $command, true);
         });
-        $scheduler = $schedulers->first(static fn (Process $process): bool => rtrim($process->working_directory, '/') === $application);
+        $scheduler = $schedulers->first(static fn (Process $process): bool => rtrim($process->working_directory ?? '', '/') === $application);
 
         if ($scheduler instanceof Process) {
             return $scheduler;
@@ -151,7 +151,7 @@ final readonly class GatewaySchedulerHandoff
         $restarted = [];
 
         foreach ($this->systemdProcesses($gateway) as $process) {
-            $directory = rtrim($process->working_directory, '/');
+            $directory = rtrim($process->working_directory ?? '', '/');
 
             // Horizon moves with horizon:terminate, which lets its running jobs finish; a restart would kill them.
             if ($process->is($scheduler) || GatewayHorizon::runs($process) || ($directory !== $current && ! str_starts_with($directory, $current.'/'))) {

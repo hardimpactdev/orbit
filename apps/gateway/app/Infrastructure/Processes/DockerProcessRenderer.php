@@ -63,8 +63,7 @@ final readonly class DockerProcessRenderer
             'orbit.process.spec='.$this->specHash($process, $target),
             '--restart',
             $this->restartPolicy($process, $target),
-            '--workdir',
-            $process->working_directory,
+            ...($process->working_directory === null ? [] : ['--workdir', $process->working_directory]),
         ];
 
         foreach ($this->stringList($runtimeConfig['ports'] ?? []) as $port) {

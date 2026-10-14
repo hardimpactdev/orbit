@@ -15,7 +15,7 @@ use Illuminate\Validation\Validator;
 use JsonException;
 use SensitiveParameter;
 
-final class StoreProcessRequest extends FormRequest
+class StoreProcessRequest extends FormRequest
 {
     /** @return array<string, list<mixed>> */
     public function rules(): array
@@ -55,6 +55,7 @@ final class StoreProcessRequest extends FormRequest
             ],
             'working_directory' => [
                 'sometimes',
+                'nullable',
                 'string',
                 'max:4096',
                 'regex:/\A\/(?!.*(?:^|\/)\.\.(?:\/|$))[^\x00\r\n]*\z/D',
@@ -102,8 +103,12 @@ final class StoreProcessRequest extends FormRequest
         } catch (JsonException) {
             return $data;
         }
-        if (is_array($payload) && array_key_exists('user', $payload)) {
-            $data['user'] = $payload['user'];
+        if (is_array($payload)) {
+            foreach (['user', 'environment'] as $field) {
+                if (array_key_exists($field, $payload)) {
+                    $data[$field] = $payload[$field];
+                }
+            }
         }
 
         return $data;

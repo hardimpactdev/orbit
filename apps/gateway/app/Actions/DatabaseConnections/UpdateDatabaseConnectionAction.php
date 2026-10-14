@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\DatabaseConnections;
 
+use App\Actions\ProxyCli\ReconvergeProxyCliConnectionAction;
 use App\Data\DatabaseConnections\DatabaseConnectionData;
 use App\Data\DatabaseConnections\UpdateDatabaseConnectionData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
@@ -37,6 +38,8 @@ final readonly class UpdateDatabaseConnectionAction
             $result->id,
             DatabaseConnectionData::fromModel($result)->toArray(),
         );
+
+        app(ReconvergeProxyCliConnectionAction::class)->execute($result);
 
         return $result;
     }

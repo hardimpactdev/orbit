@@ -79,6 +79,28 @@ beforeEach(function (): void {
     ]);
 });
 
+it('leaves an unchanged owned systemd unit untouched during convergence', function (string $desired, string $runtimeStatus): void {
+    $process = runtime_manager_systemd_process($this->instance);
+    $process->update(['desired_state' => $desired]);
+    $target = new ProcessTargetResolver()->forInstallation($process);
+    $renderer = new SystemdProcessRenderer;
+    $rendered = $renderer->render($process, $target, new ProcessRuntimeFakeManagedUserAccountResolver()->resolve($target->node));
+    $path = $renderer->unitPath($process);
+    $this->ssh->beforeExecute = function (RemoteCommand $command) use ($path, $rendered, $runtimeStatus): void {
+        if ($command->arguments === ['sudo', 'cat', '--', $path]) {
+            $this->ssh->responses[] = process_runtime_result(stdout: $rendered);
+        }
+        if (in_array('is-active', $command->arguments, true)) {
+            $this->ssh->responses[] = process_runtime_result(stdout: $runtimeStatus);
+        }
+    };
+    $this->manager->converge($process);
+    expect($this->ssh->protectedInputHashes)->toBeEmpty();
+    foreach ($this->ssh->commands as $command) {
+        expect(array_intersect($command->arguments, ['restart', 'daemon-reload', 'mv', 'install', 'disable', 'stop', 'start']))->toBeEmpty();
+    }
+})->with([['running', 'active'], ['stopped', 'inactive']]);
+
 it('installs the Gateway annotator files and deletes only a removed Process store, not a transfer store', function (): void {
     $this->instance->update(['annotator_port' => 4848]);
     $process = runtime_manager_systemd_process($this->instance);
@@ -1705,6 +1727,22 @@ it('removes an instance process after its role and resources enter removing stat
         ->each(fn ($connection) => $connection->user->toBe('nckrtl'))
         ->and($this->ssh->commands)
         ->toHaveCount(6);
+});
+
+it('removes the retired runtime footprint without losing its override when the lease refreshes the Process', function (): void {
+    $process = runtime_manager_systemd_process($this->instance);
+    $process->update(['runtime' => ProcessRuntime::Docker, 'runtime_config' => ['image' => 'redis:8-alpine', 'command' => ['redis-server']]]);
+    $retired = clone $process;
+    $retired->runtime = ProcessRuntime::Systemd;
+    $path = new SystemdProcessRenderer()->unitPath($retired);
+    $this->ssh->beforeExecute = function (RemoteCommand $command) use ($process, $path): void {
+        if ($command->arguments === ['sudo', 'cat', '--', $path]) {
+            $this->ssh->responses[] = process_runtime_result(stdout: "[Unit]\nX-Orbit-Process-ID={$process->id}\n");
+        }
+    };
+    $this->manager->remove($retired);
+    expect(collect($this->ssh->commands)->contains(fn (RemoteCommand $command): bool => $command->arguments === ['sudo', 'rm', '-f', '--', $path]))->toBeTrue()
+        ->and($process->refresh()->runtime)->toBe(ProcessRuntime::Docker);
 });
 
 it('removes a systemd process whose unit has no failed record to reset', function (): void {

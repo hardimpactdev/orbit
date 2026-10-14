@@ -16509,19 +16509,26 @@
                     "description": "Conditionally required."
                   },
                   "working_directory": {
-                    "type": "string",
+                    "type": [
+                      "string",
+                      "null"
+                    ],
                     "pattern": "^\\/(?!.*(?:^|\\/)\\.\\.(?:\\/|$))[^\\x00\\r\\n]*$(?![\\s\\S])",
                     "maxLength": 4096,
                     "description": "Runtime working directory"
                   },
                   "environment": {
-                    "type": "array",
-                    "maxItems": 100,
-                    "items": {
-                      "type": "string",
-                      "maxLength": 4096
+                    "type": "object",
+                    "maxProperties": 100,
+                    "propertyNames": {
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$(?![\\s\\S])"
                     },
-                    "description": "Docker NAME=VALUE; repeat as needed"
+                    "additionalProperties": {
+                      "type": "string",
+                      "maxLength": 4096,
+                      "pattern": "^[^\\x00\\r\\n]*$(?![\\s\\S])"
+                    },
+                    "description": "Docker environment as a name-to-string-value map; values are redacted in responses."
                   },
                   "ports": {
                     "type": "array",
@@ -16762,6 +16769,222 @@
             "lang": "php",
             "label": "PHP SDK",
             "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Processes\\DestroyProcessRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new DestroyProcessRequest(processId: 41))->dto();\n"
+          }
+        ]
+      },
+      "patch": {
+        "operationId": "process-update",
+        "summary": "process:update",
+        "tags": [
+          "Processes"
+        ],
+        "parameters": [
+          {
+            "name": "process",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Process ID."
+          }
+        ],
+        "description": "Replace an installed Process specification or one Project process definition.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "user": {
+                    "type": "string",
+                    "pattern": "^[a-z_][a-z0-9_-]{0,31}$(?![\\s\\S])",
+                    "maxLength": 32,
+                    "description": "Existing non-root account for a Node systemd Process"
+                  },
+                  "runtime": {
+                    "type": "string",
+                    "enum": [
+                      "systemd",
+                      "docker"
+                    ],
+                    "description": "systemd or docker"
+                  },
+                  "command": {
+                    "type": "array",
+                    "maxItems": 64,
+                    "minItems": 1,
+                    "items": {
+                      "type": "string",
+                      "maxLength": 4096
+                    },
+                    "description": "One command argument; repeat for each argv item"
+                  },
+                  "image": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._\\/:@-]*$(?![\\s\\S])",
+                    "maxLength": 255,
+                    "description": "Conditionally required."
+                  },
+                  "working_directory": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^\\/(?!.*(?:^|\\/)\\.\\.(?:\\/|$))[^\\x00\\r\\n]*$(?![\\s\\S])",
+                    "maxLength": 4096,
+                    "description": "Runtime working directory"
+                  },
+                  "environment": {
+                    "type": "object",
+                    "maxProperties": 100,
+                    "propertyNames": {
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$(?![\\s\\S])"
+                    },
+                    "additionalProperties": {
+                      "type": "string",
+                      "maxLength": 4096,
+                      "pattern": "^[^\\x00\\r\\n]*$(?![\\s\\S])"
+                    },
+                    "description": "Docker environment as a name-to-string-value map; values are redacted in responses."
+                  },
+                  "ports": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                      "type": "string",
+                      "pattern": "^(?:(?:\\d{1,3}\\.){3}\\d{1,3}:)?\\d{1,5}:\\d{1,5}(?:\\/(?:tcp|udp))?$(?![\\s\\S])"
+                    }
+                  },
+                  "volumes": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "source": {
+                          "type": "string",
+                          "pattern": "^(?:\\/[A-Za-z0-9._\\/ -]+|[A-Za-z0-9][A-Za-z0-9_.-]*)$(?![\\s\\S])",
+                          "maxLength": 4096
+                        },
+                        "target": {
+                          "type": "string",
+                          "pattern": "^\\/[A-Za-z0-9._\\/ -]*$(?![\\s\\S])",
+                          "maxLength": 4096
+                        },
+                        "read_only": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "source",
+                        "target"
+                      ]
+                    }
+                  },
+                  "restart_policy": {
+                    "type": "string",
+                    "enum": [
+                      "never",
+                      "on-failure",
+                      "always",
+                      "unless-stopped"
+                    ]
+                  },
+                  "keep_alive": {
+                    "type": "boolean",
+                    "description": "Keep running through app-dev idle hibernation"
+                  }
+                },
+                "required": [
+                  "runtime",
+                  "command"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Process"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/processes/41\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"runtime\": \"systemd\", \"command\": [\"/usr/bin/php\", \"artisan\", \"queue:work\"]}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Processes\\UpdateProcessRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new UpdateProcessRequest(\n    processId: 41,\n    runtime: 'systemd',\n    command: ['/usr/bin/php', 'artisan', 'queue:work'],\n))->dto();\n"
           }
         ]
       }
@@ -21235,11 +21458,15 @@
                         "maxLength": 4096
                       },
                       "environment": {
-                        "type": "array",
-                        "maxItems": 100,
-                        "items": {
+                        "type": "object",
+                        "maxProperties": 100,
+                        "propertyNames": {
+                          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$(?![\\s\\S])"
+                        },
+                        "additionalProperties": {
                           "type": "string",
-                          "maxLength": 4096
+                          "maxLength": 4096,
+                          "pattern": "^[^\\x00\\r\\n]*$(?![\\s\\S])"
                         }
                       },
                       "ports": {
@@ -21672,11 +21899,15 @@
                         "maxLength": 4096
                       },
                       "environment": {
-                        "type": "array",
-                        "maxItems": 100,
-                        "items": {
+                        "type": "object",
+                        "maxProperties": 100,
+                        "propertyNames": {
+                          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$(?![\\s\\S])"
+                        },
+                        "additionalProperties": {
                           "type": "string",
-                          "maxLength": 4096
+                          "maxLength": 4096,
+                          "pattern": "^[^\\x00\\r\\n]*$(?![\\s\\S])"
                         }
                       },
                       "ports": {
@@ -33112,7 +33343,10 @@
             "type": "string"
           },
           "working_directory": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "runtime_config": {
             "type": "object",
