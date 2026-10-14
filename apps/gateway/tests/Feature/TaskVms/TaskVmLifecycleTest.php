@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\ArchiveAgentTranscriptsAction;
 use App\Actions\Tasks\CancelTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\TaskVms\AllocateTaskVmAction;
@@ -30,10 +31,14 @@ use App\Domain\Projects\ProjectLifecycleRunner;
 use App\Domain\ProxyCli\ProxyCliState;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\AgentDriverRegistry;
+use App\Domain\Tasks\AgentObservation;
+use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
+use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskExtensionState;
@@ -62,6 +67,7 @@ use App\Jobs\TaskVms\DestroyTaskVm;
 use App\Jobs\TaskVms\EnrollTaskVm;
 use App\Jobs\TaskVms\PrepareTaskVmRuntime;
 use App\Jobs\TaskVms\ProvisionTaskVm;
+use App\Models\AgentThread;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
@@ -80,7 +86,9 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Sleep;
+use Tests\Support\FakeAgentDriver;
 use Tests\Support\FakeNodeAgentRuntime;
 use Tests\Support\FakeToolManagerMaterializer;
 use Tests\Support\RecordingTaskVmProvider;
@@ -903,6 +911,51 @@ describe(DestroyTaskVm::class, function (): void {
 
         expect($runs->getArrayCopy())->toBe([[$instance->id, LifecyclePhase::Teardown, []]])
             ->and($this->provider->calls)->toBe(['destroy'])
+            ->and(Instance::query()->find($instance->id))->toBeNull();
+    });
+
+    it('copies the agent transcripts to the Gateway before it deletes the VM, and skips a thread it cannot read', function (): void {
+        [$vm, $instance, , $group] = tvm_life_stranded_workspace(false);
+        Storage::fake('local');
+        $removal = app(RemoveTaskWorkspaceAction::class);
+        app()->instance(ProjectLifecycleRunner::class, Mockery::mock(app(ProjectLifecycleRunner::class))->shouldReceive('run')->andReturn(true)->getMock());
+        $provider = $this->provider;
+        $readable = new class($provider) extends FakeAgentDriver
+        {
+            /** @var list<list<string>> */
+            public array $providerCalls = [];
+
+            public function __construct(private readonly RecordingTaskVmProvider $provider)
+            {
+                parent::__construct('example');
+                $this->observation = new AgentObservation(AgentThreadState::Done, entries: [['id' => 'm1', 'kind' => 'message', 'label' => 'assistant', 'text' => 'Approved.', 'at' => '2026-10-14T18:00:00Z']]);
+            }
+
+            public function observe(AgentThread $thread): AgentObservation
+            {
+                $this->providerCalls[] = $this->provider->calls;
+
+                return parent::observe($thread);
+            }
+        };
+        app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$readable, new FakeAgentDriver('unreadable')]));
+        $thread = static fn (string $driver, string $external): AgentThread => AgentThread::query()->create([
+            'task_group_id' => $group->id, 'node_id' => $vm->node_id, 'role' => 'reviewer', 'external_id' => $external,
+            'driver' => $driver, 'runtime_key' => 'node:'.$vm->node_id,
+        ]);
+        $kept = $thread('example', 'session-one');
+        $broken = $thread('unreadable', 'session-two');
+        $pending = $thread('example', TaskAgentSpawner::PendingPrefix.'not-started');
+        Queue::fake();
+
+        $removal->remove($instance);
+
+        expect($readable->providerCalls)->toBe([[]])
+            ->and($this->provider->calls)->toBe(['destroy'])
+            ->and(json_decode((string) Storage::disk('local')->get(ArchiveAgentTranscriptsAction::path($kept)), true))
+            ->toMatchArray(['state' => 'done', 'entries' => [['id' => 'm1', 'kind' => 'message', 'label' => 'assistant', 'text' => 'Approved.', 'at' => '2026-10-14T18:00:00Z']]])
+            ->and(Storage::disk('local')->exists(ArchiveAgentTranscriptsAction::path($broken)))->toBeFalse()
+            ->and(Storage::disk('local')->exists(ArchiveAgentTranscriptsAction::path($pending)))->toBeFalse()
             ->and(Instance::query()->find($instance->id))->toBeNull();
     });
 

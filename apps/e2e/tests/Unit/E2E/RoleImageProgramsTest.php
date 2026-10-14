@@ -7,6 +7,7 @@ use App\E2E\Value\RoleImage;
 use Illuminate\Container\Container;
 use Illuminate\Process\Factory as ProcessFactory;
 use Illuminate\Support\Facades\Facade;
+use Symfony\Component\Process\Process;
 
 /** A repository whose Gateway artisan prints the programs it was asked for, and records its environment. */
 function roleImageProgramsRoot(string $artisan): string
@@ -61,6 +62,27 @@ describe('RoleImagePrograms', function () {
         'app-prod' => [RoleImage::AppProd, ['orbit-e2e-base', 'bootstrap', 'app-prod-prerequisites']],
         'roleless operator' => [RoleImage::Operator, ['orbit-e2e-base', 'orbit-e2e-operator-tooling', 'bootstrap']],
     ]);
+
+    it('seals cloud images with DHCP restricted to the topology uplinks', function () {
+        $root = temporaryPath('orbit-seal-network-', 4);
+        mkdir($root.'/etc/systemd/network', 0o700, true);
+        mkdir($root.'/etc/cloud', 0o700, true);
+        mkdir($root.'/bin', 0o700, true);
+        file_put_contents($root.'/etc/machine-id', "uninitialized\n");
+        foreach (['cloud-init', 'sync', 'systemd-detect-virt'] as $command) {
+            file_put_contents($root.'/bin/'.$command, "#!/bin/sh\nexit 0\n");
+            chmod($root.'/bin/'.$command, 0o700);
+        }
+        $source = file_get_contents(dirname(__DIR__, 3).'/resources/image/role-image.sh');
+        file_put_contents($root.'/role-image.sh', str_replace(['/etc/', '/home/', '/root/'], [$root.'/etc/', $root.'/home/', $root.'/root/'], $source));
+        $process = new Process(['bash', $root.'/role-image.sh', 'seal'], env: ['PATH' => $root.'/bin:'.getenv('PATH')]);
+
+        expect($process->run())->toBe(0, $process->getErrorOutput());
+        expect($process->getOutput())->toBe("{\"ok\":true}\n");
+        expect(file_exists($root.'/etc/cloud/cloud-init.disabled'))->toBeTrue();
+        expect(file_get_contents($root.'/etc/systemd/network/00-orbit-e2e.network'))
+            ->toBe("[Match]\nType=ether\nName=en* eth*\n\n[Network]\nDHCP=ipv4\nLinkLocalAddressing=no\n");
+    });
 
     it('renders with a throwaway Orbit home and SSH key and none of the harness environment', function () {
         $root = roleImageProgramsRoot(renderingArtisan());

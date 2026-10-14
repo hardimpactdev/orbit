@@ -100,6 +100,21 @@ function dependency_api_removing(Instance $instance, bool $markedRemoving): void
 }
 
 describe('single-instance dependency API', function (): void {
+    it('returns the same safe diagnostic in scan and show responses', function (): void {
+        [$caller, $instance] = dependency_api_fixture();
+        $receipt = dependency_api_receipt();
+        $receipt['files']['bun.lock'] = ['content' => base64_encode('{}'), 'hash' => hash('sha256', '{}'), 'error' => null];
+        dependency_api_remote(fn (): array => $receipt);
+        $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip]);
+
+        $scan = $this->call('POST', "/api/v1/instances/{$instance->id}/dependencies/scan", server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}');
+        $show = $this->get("/api/v1/instances/{$instance->id}/dependencies", ['Accept' => 'application/json']);
+
+        $scan->assertOk()->assertJsonPath('data.javascript.error_code', 'dependencies.ambiguous_manager')
+            ->assertJsonPath('data.javascript.error_detail', 'conflicting manager files: package-lock.json, bun.lock');
+        $show->assertOk()->assertJsonPath('data', $scan->json('data'));
+    });
+
     it('reads never-scanned inventory without collection or attempts', function (): void {
         [$caller, $instance] = dependency_api_fixture();
         mock(SshExecutor::class)->shouldNotReceive('execute');
@@ -108,8 +123,8 @@ describe('single-instance dependency API', function (): void {
 
         $response->assertOk()->assertExactJson([
             'data' => ['instance_id' => $instance->id, 'succeeded' => null,
-                'composer' => ['ecosystem' => 'composer', 'state' => 'unknown', 'succeeded' => null, 'attempted_at' => null, 'error_code' => null, 'snapshot' => null],
-                'javascript' => ['ecosystem' => 'npm', 'state' => 'unknown', 'succeeded' => null, 'attempted_at' => null, 'error_code' => null, 'snapshot' => null]],
+                'composer' => ['ecosystem' => 'composer', 'state' => 'unknown', 'succeeded' => null, 'attempted_at' => null, 'error_code' => null, 'error_detail' => null, 'snapshot' => null],
+                'javascript' => ['ecosystem' => 'npm', 'state' => 'unknown', 'succeeded' => null, 'attempted_at' => null, 'error_code' => null, 'error_detail' => null, 'snapshot' => null]],
             'meta' => ['request_id' => $response->headers->get('X-Orbit-Request-Id')],
         ]);
         $this->assertDatabaseCount('instance_dependency_scan_attempts', 0);

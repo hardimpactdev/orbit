@@ -135,6 +135,14 @@ final readonly class WorktreeSynchronizer
         $repository = new GitRepository($worktree);
         $this->validateWorktree($repository, $target);
         $this->installGuestScripts($target, $repository->root());
+        $commands = [];
+        foreach ($target->recipe->nodeKeys() as $node) {
+            $commands["runtime.{$node}"] = [
+                'instance' => $target->instance($node),
+                'command' => new GuestCommand(['/usr/local/bin/prepare-node.sh', 'configure-runtime'], 60),
+            ];
+        }
+        $this->assertBatchSuccessful($this->incus->execAll($commands), 'Guest runtime preparation failed.');
 
         return $repository;
     }

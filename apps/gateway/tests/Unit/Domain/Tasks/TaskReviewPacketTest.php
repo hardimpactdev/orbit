@@ -111,7 +111,7 @@ it('renders a review packet with the group brief, subtask brief, deliverables, a
         ]))
         ->and(packet_section($packet, 'Diff'))->toBe("diff --git a/packet.php b/packet.php\n+packet")
         ->and($packet)->toContain('The approval must confirm each review deliverable (error-copy) with --deliverable=ID=evidence')
-        ->and($packet)->toContain('Before you analyse failure windows, trace the main path and one ordinary failure path end to end (for example, a failed build and then a resume).')
+        ->and($packet)->toContain('When the change adds or alters runtime behaviour, trace the main path and one ordinary failure path end to end (for example, a failed build and then a resume) before you analyse failure windows.')
         ->and($packet)->not->toContain('--pr-summary');
 });
 
@@ -374,15 +374,15 @@ it('gives characters spared by omitted packet sections to the diff on a continue
         ->and(mb_strlen($continued))->toBeLessThanOrEqual(TaskReviewPacket::Limit);
 });
 
-it('tells the packet reviewer not to re-run passed checks and that the turn is read-only', function (): void {
+it('tells the packet reviewer not to re-run passed checks and to leave the workspace tree unchanged', function (): void {
     $composer = review_packet();
     $other = review_packet(['taskCheck' => 'vp run check']);
     $none = review_packet(['taskCheck' => null, 'handoffExitCode' => null]);
 
     expect($composer)->toContain('Do not re-run the Project task check or deliverable commands the handoff already passed. The Project task check is `composer check`.')
         ->and($composer)->toContain('The implementer works with a minimal toolset and has no web access.')
-        ->and($composer)->toContain('current documentation for the versions this Project uses.')
-        ->and($composer)->toContain('This review is read-only. Do not create, edit, reset, or delete workspace files')
+        ->and($composer)->toContain('when the diff uses a framework or library API you are not sure of, check it against the documentation for the version this Project uses.')
+        ->and($composer)->toContain('Leave the workspace tree as you found it')
         ->and($composer)->toContain('--outcome=approved')
         ->and($composer)->toContain('--outcome=changes_requested')
         ->and($other)->toContain('The Project task check is `vp run check`.')
@@ -862,7 +862,7 @@ it('names the declared topology and the evidence the approval needs, also in a c
     expect($packet)->toContain("Topology\nThis subtask declares the topology app-dev, app-prod+ingress. Orbit prepared it nested in this task VM as TASK-42")
         ->toContain('Prove each deliverable on the declared nodes (app-dev, app-prod) with `bin/e2e-topology exec TASK-42 NODE --argv=JSON --record=LABEL`')
         ->toContain('Orbit refuses the approval until the evidence log holds a recorded command that did work on each declared node and exited 0')
-        ->toContain('`--record` appends to .e2e/evidence.jsonl, which the read-only rule allows')
+        ->toContain('`--record` appends to .e2e/evidence.jsonl, which is not part of the workspace tree')
         ->not->toContain('topology_requested');
 })->with(['opening' => [false], 'continued' => [true]]);
 

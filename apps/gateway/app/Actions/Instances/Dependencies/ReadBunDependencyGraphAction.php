@@ -22,7 +22,7 @@ final readonly class ReadBunDependencyGraphAction
     {
         try {
             if (str_starts_with($lockContents, '#!/usr/bin/env bun') || str_contains($lockContents, "\0")) {
-                throw new DependencyParseException('dependencies.unsupported_format');
+                throw new DependencyParseException('dependencies.unsupported_format', 'bun.lock contains binary lock data; a text Bun lockfile is required');
             }
 
             return $this->read($this->decode($manifestContents), $this->decode($this->jsonc($lockContents)));
@@ -70,7 +70,7 @@ final readonly class ReadBunDependencyGraphAction
         $version = $lock->lockfileVersion ?? null;
 
         if (! in_array($version, [1, 2], true)) {
-            throw new DependencyParseException('dependencies.unsupported_format');
+            throw new DependencyParseException('dependencies.unsupported_format', 'bun.lock lockfileVersion must be 1 or 2');
         }
 
         return $version;

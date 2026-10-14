@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Instances\Dependencies\ReadInstanceDependencyScanAction;
 use App\Actions\Instances\Dependencies\ScanInstanceDependenciesAction;
+use App\Data\Instances\Dependencies\DependencyInventoryData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\Instances\Dependencies\DependencyInventoryState;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
@@ -97,6 +98,105 @@ function dependency_scan_write_fixture(string $path, string $ecosystem): void
 }
 
 describe('coordinated instance dependency scans', function (): void {
+    it('stores safe fleet error details and returns them on a later show', function (array $changes, string $ecosystem, string $code, string $detail): void {
+        $instance = dependency_scan_instance();
+        $receipt = dependency_scan_receipt('bun');
+        dependency_scan_remote(function () use (&$receipt): array {
+            return $receipt;
+        });
+        $scan = app(ScanInstanceDependenciesAction::class);
+        $before = $scan->execute($instance);
+        foreach ($changes as $name => $content) {
+            $receipt['files'][$name] = [
+                'content' => $content === null ? null : base64_encode($content),
+                'hash' => $content === null ? null : hash('sha256', $content),
+                'error' => null,
+            ];
+        }
+
+        $result = $scan->execute($instance)->{$ecosystem};
+        $shown = app(ReadInstanceDependencyScanAction::class)->execute(
+            $instance->id, $result->ecosystem,
+        );
+
+        expect($result->errorCode)->toBe($code);
+        expect($result->errorDetail)->toBe($detail);
+        expect($shown->errorDetail)->toBe($detail);
+        expect($shown->snapshot)->toEqual($before->{$ecosystem}->snapshot);
+        $data = DependencyInventoryData::fromResult($result->ecosystem, $shown)->toArray();
+        expect($data['error_detail'])->toBe($detail);
+        expect(json_encode($data, JSON_THROW_ON_ERROR))->not->toContain('fleet-secret', 'fixture-secret');
+        $this->assertDatabaseHas('instance_dependency_scan_attempts', ['instance_id' => $instance->id, 'error_code' => $code, 'error_detail' => $detail]);
+    })->with([
+        'Composer missing locked dependency' => [
+            ['composer.json' => '{"require":{"sample/missing":"*"},"description":"fleet-secret"}'],
+            'composer', 'dependencies.invalid_composer_input',
+            'composer.json or composer.lock requirement has no unique locked package or provider',
+        ],
+        'competing npm and Bun locks without a declaration' => [
+            ['package.json' => '{}', 'package-lock.json' => '{}'],
+            'javascript', 'dependencies.ambiguous_manager', 'conflicting manager files: package-lock.json, bun.lock',
+        ],
+        'Yarn lock' => [
+            ['package.json' => '{}', 'bun.lock' => null, 'yarn.lock' => '# yarn lockfile v1'],
+            'javascript', 'dependencies.unsupported_format', 'yarn.lock is not supported by the dependency scan',
+        ],
+        'binary Bun lock' => [
+            ['package.json' => '{}', 'bun.lock' => null, 'bun.lockb' => "#!/usr/bin/env bun\n\0fleet-secret"],
+            'javascript', 'dependencies.unsupported_format', 'bun.lockb is binary; commit a text bun.lock to scan',
+        ],
+        'Bun workspace root differs from manifest' => [
+            [
+                'package.json' => '{"dependencies":{"lucide-react":"^1.47.0"}}',
+                'bun.lock' => '{"lockfileVersion":1,"workspaces":{"":{"dependencies":{"lucide-react":"^1.45.0"}}},"packages":{"lucide-react":["lucide-react@1.45.0","",{},""]}}',
+            ],
+            'javascript', 'dependencies.stale_bun_lockfile', 'bun.lock workspace dependencies do not match package.json',
+        ],
+        'local Composer repository remains unsupported' => [
+            ['composer.json' => '{"repositories":[{"type":"path","url":"../fleet-secret"}]}'],
+            'composer', 'dependencies.unsupported_layout', 'composer.json repositories contains a path repository',
+        ],
+    ]);
+
+    it('scans the declared manager despite stray locks and configuration', function (string $manager, array $strays): void {
+        $instance = dependency_scan_instance();
+        $receipt = dependency_scan_receipt($manager);
+        $manifest = json_decode(base64_decode($receipt['files']['package.json']['content']), true, flags: JSON_THROW_ON_ERROR);
+        $manifest['packageManager'] = $manager.'@1.0.0';
+        foreach (['package.json' => json_encode($manifest, JSON_THROW_ON_ERROR), ...$strays] as $name => $content) {
+            $receipt['files'][$name] = ['content' => base64_encode($content), 'hash' => hash('sha256', $content), 'error' => null];
+        }
+        dependency_scan_remote(fn (): array => $receipt);
+
+        $result = app(ScanInstanceDependenciesAction::class)->execute($instance);
+        $shown = app(ReadInstanceDependencyScanAction::class)->execute($instance->id, $result->javascript->ecosystem);
+
+        expect($result->succeeded())->toBeTrue();
+        expect($shown->errorCode)->toBeNull();
+        expect($shown->errorDetail)->toBeNull();
+        expect($shown->snapshot->graph)->toEqual($result->javascript->snapshot->graph);
+    })->with([
+        ['npm', ['bun.lock' => '{}', 'yarn.lock' => 'stray', 'pnpm-workspace.yaml' => 'stray']],
+        ['pnpm', ['bun.lock' => '{}', 'package-lock.json' => '{}']],
+        ['bun', ['package-lock.json' => '{}', '.pnpmfile.cjs' => 'throw new Error("must-not-execute")']],
+    ]);
+
+    it('scans Composer 2.9 metadata and remote VCS repositories without executing or exposing them', function (): void {
+        $instance = dependency_scan_instance();
+        $receipt = dependency_scan_receipt();
+        foreach (['composer.json' => 'manifest', 'composer.lock' => 'lock'] as $name => $suffix) {
+            $content = file_get_contents(base_path('tests/Fixtures/Dependencies/Composer/composer29-'.$suffix.'.json'));
+            $receipt['files'][$name] = ['content' => base64_encode($content), 'hash' => hash('sha256', $content), 'error' => null];
+        }
+        dependency_scan_remote(fn (): array => $receipt);
+
+        $result = app(ScanInstanceDependenciesAction::class)->execute($instance);
+
+        expect($result->composer->succeeded())->toBeTrue();
+        expect($result->composer->snapshot->graph->resolutions[0]->version)->toBe('dev-main');
+        expect(json_encode($result, JSON_THROW_ON_ERROR))->not->toContain('fixture-user', 'fixture-secret', 'must-not-execute');
+    });
+
     it('publishes both real parser graphs and replaces usage idempotently', function (string $manager): void {
         $instance = dependency_scan_instance();
         $receipt = dependency_scan_receipt($manager);

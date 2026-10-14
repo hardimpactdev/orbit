@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\ArchiveAgentTranscriptsAction;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentThreadEvent;
 use App\Domain\Tasks\TaskAgentSpawner;
@@ -9,6 +10,7 @@ use App\Models\AgentThread;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
+use Illuminate\Support\Facades\Storage;
 use Tests\Support\FakeAgentDriver;
 
 /** @return array{Task, AgentThread} */
@@ -58,6 +60,21 @@ describe('task agent viewer', function (): void {
         $this->flushHeaders();
         $session->update(['node_id' => null]);
         $this->getJson("/api/v1/task-groups/{$group->id}/agents/{$session->id}/stream")->assertStatus(409)->assertJsonPath('error.code', 'tasks.agent_unavailable');
+    });
+
+    it('replays the transcript Orbit archived once the task VM Node is gone', function (): void {
+        [$group, $session] = agent_viewer_fixture();
+        Storage::fake('local');
+        $session->update(['node_id' => null]);
+        Storage::disk('local')->put(ArchiveAgentTranscriptsAction::path($session), json_encode([
+            'state' => 'done', 'entries' => [['id' => 'm1', 'kind' => 'message', 'label' => 'assistant', 'text' => 'Approved TOKEN=hidden', 'at' => '2026-10-14T18:00:00Z']],
+        ], JSON_THROW_ON_ERROR));
+
+        $response = $this->get("/api/v1/task-groups/{$group->id}/agents/{$session->id}/stream");
+
+        $response->assertOk()->assertHeader('Content-Type', 'text/event-stream; charset=UTF-8');
+        expect($response->streamedContent())->toContain('event: agent', '"kind":"snapshot"', '"state":"done"', 'Approved', '[REDACTED]')
+            ->not->toContain('hidden');
     });
 
     it('relays driver events, resumes the cursor, filters other threads, and hides errors', function (): void {

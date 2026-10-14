@@ -39,7 +39,7 @@
                     "task_group_id": 1,
                     "position": 1,
                     "title": "Final review",
-                    "brief": "Review pull request https://github.com/nckrtl/orbit/pull/460 as a whole before Orbit approves it on GitHub and merges it. The diff runs from its merge base with origin/main to the pull request head. Approve only when the complete change is correct, tested, documented, and ready to merge as it is. Block only on rule-1 findings that are new since the subtask approvals. Do not reopen hardening that the subtask reviews already covered. Otherwise request changes and list each finding with its file and what must change. Orbit applies the findings in a new subtask.",
+                    "brief": "Review pull request https://github.com/nckrtl/orbit/pull/460 as a whole before Orbit approves it on GitHub and merges it. The diff runs from its merge base with origin/main to the pull request head. Approve only when the complete change is correct, tested, documented, and ready to merge as it is. Block only on findings that meet the blocking rule and are new since the subtask approvals. Do not reopen hardening that the subtask reviews already covered. Otherwise request changes and list each finding with its file and what must change. Orbit applies the findings in a new subtask.",
                     "deliverables": [
                         {
                             "id": "final-review",

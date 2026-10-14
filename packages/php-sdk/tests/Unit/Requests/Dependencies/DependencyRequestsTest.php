@@ -13,7 +13,7 @@ use Saloon\Http\Faking\MockResponse;
 
 describe('dependency transport', function (): void {
     it('reads unknown inventory and sends a bodyless numeric request', function (): void {
-        $unknown = ['state' => 'unknown', 'succeeded' => null, 'attempted_at' => null, 'error_code' => null, 'snapshot' => null];
+        $unknown = ['state' => 'unknown', 'succeeded' => null, 'attempted_at' => null, 'error_code' => null, 'error_detail' => null, 'snapshot' => null];
         $data = ['instance_id' => 17, 'succeeded' => null,
             'composer' => ['ecosystem' => 'composer', ...$unknown],
             'javascript' => ['ecosystem' => 'npm', ...$unknown]];
@@ -36,7 +36,7 @@ function dependency_envelope(): array
         'project_root' => '/home/orbit/apps/demo', 'reference' => null,
         'file_hashes' => ['package.json' => str_repeat('a', 64), 'yarn.lock' => null], 'format' => null,
     ], 'graph' => ['resolutions' => [], 'requirements' => []]];
-    $result = ['state' => 'present', 'succeeded' => true, 'attempted_at' => '2026-09-15T19:28:20+00:00', 'error_code' => null, 'snapshot' => $snapshot];
+    $result = ['state' => 'present', 'succeeded' => true, 'attempted_at' => '2026-09-15T19:28:20+00:00', 'error_code' => null, 'error_detail' => null, 'snapshot' => $snapshot];
     $data = ['instance_id' => 17, 'succeeded' => true,
         'composer' => ['ecosystem' => 'composer', ...$result],
         'javascript' => ['ecosystem' => 'npm', ...$result]];
@@ -96,6 +96,33 @@ describe('dependency inventory payloads', function (): void {
         expect($dto->composer->snapshot)->toBeNull();
     });
 
+    it('preserves safe scan details on scan and show and accepts older responses without details', function (bool $scan): void {
+        $envelope = dependency_envelope();
+        $envelope['data']['succeeded'] = false;
+        $envelope['data']['javascript']['state'] = 'stale';
+        $envelope['data']['javascript']['succeeded'] = false;
+        $envelope['data']['javascript']['error_code'] = 'dependencies.ambiguous_manager';
+        $envelope['data']['javascript']['error_detail'] = 'conflicting manager files: package-lock.json, bun.lock';
+
+        $dto = dependency_send(MockResponse::make($envelope), scan: $scan);
+
+        expect($dto->javascript->errorDetail)->toBe('conflicting manager files: package-lock.json, bun.lock');
+        expect($dto->toArray()['javascript']['error_detail'])->toBe($envelope['data']['javascript']['error_detail']);
+        unset($envelope['data']['javascript']['error_detail']);
+        expect(dependency_send(MockResponse::make($envelope), scan: $scan)->javascript->errorDetail)->toBeNull();
+    })->with([true, false]);
+
+    it('rejects invalid scan detail types bounds and terminal controls', function (mixed $detail): void {
+        $envelope = dependency_envelope();
+        $envelope['data']['succeeded'] = false;
+        $envelope['data']['javascript']['succeeded'] = false;
+        $envelope['data']['javascript']['state'] = 'stale';
+        $envelope['data']['javascript']['error_code'] = 'dependencies.ambiguous_manager';
+        $envelope['data']['javascript']['error_detail'] = $detail;
+
+        expect(fn () => dependency_send(MockResponse::make($envelope)))->toThrow(GatewayApiException::class);
+    })->with([42, '', str_repeat('x', 256), "unsafe\nline", "\e[31munsafe"]);
+
     it('preserves complete graph data and exact transport configuration', function (): void {
         $envelope = dependency_envelope();
         $mock = new MockClient([ScanInstanceDependenciesRequest::class => MockResponse::make($envelope)]);
@@ -135,7 +162,7 @@ describe('dependency inventory payloads', function (): void {
             $envelope['data']['succeeded'] = false;
         }
         if ($state === 'never-scanned') {
-            $js = ['ecosystem' => 'npm', 'state' => 'unknown', 'succeeded' => null, 'attempted_at' => null, 'error_code' => null, 'snapshot' => null];
+            $js = ['ecosystem' => 'npm', 'state' => 'unknown', 'succeeded' => null, 'attempted_at' => null, 'error_code' => null, 'error_detail' => null, 'snapshot' => null];
             $envelope['data']['succeeded'] = null;
         }
         $dto = dependency_send(MockResponse::make($envelope), scan: $state !== 'never-scanned');

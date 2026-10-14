@@ -16,6 +16,7 @@ final readonly class DependencyScanResult
         public ?DependencySnapshot $snapshot,
         /** Stable error code; never raw process output or source contents. */
         public ?string $errorCode,
+        public ?string $errorDetail = null,
     ) {}
 
     public static function refreshed(DependencySnapshot $snapshot): self
@@ -28,6 +29,7 @@ final readonly class DependencyScanResult
         DateTimeImmutable $attemptedAt,
         string $errorCode,
         ?DependencySnapshot $previous = null,
+        ?string $errorDetail = null,
     ): self {
         if ($errorCode === '') {
             throw new InvalidArgumentException('A failed scan requires an error code.');
@@ -37,7 +39,7 @@ final readonly class DependencyScanResult
             throw new InvalidArgumentException('A retained snapshot must belong to the scanned ecosystem.');
         }
 
-        return new self($ecosystem, $attemptedAt, $previous, $errorCode);
+        return new self($ecosystem, $attemptedAt, $previous, $errorCode, $errorDetail ?? DependencyErrorDetail::for($errorCode));
     }
 
     public function succeeded(): bool

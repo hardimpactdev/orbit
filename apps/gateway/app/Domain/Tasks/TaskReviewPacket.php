@@ -151,8 +151,8 @@ final readonly class TaskReviewPacket
 
         return implode("\n\n", [
             'Review subtask #'.$this->subtaskId.': '.$this->subtaskTitle,
-            'The implementer works with a minimal toolset and has no web access. You do: use your web and documentation tools to confirm that framework and library usage matches current documentation for the versions this Project uses.',
-            'Before you analyse failure windows, trace the main path and one ordinary failure path end to end (for example, a failed build and then a resume).',
+            'The implementer works with a minimal toolset and has no web access. You do: when the diff uses a framework or library API you are not sure of, check it against the documentation for the version this Project uses.',
+            'When the change adds or alters runtime behaviour, trace the main path and one ordinary failure path end to end (for example, a failed build and then a resume) before you analyse failure windows.',
             $rule,
         ]);
     }

@@ -20,6 +20,7 @@ final class DependencyInventoryData extends Data
         public ?string $attemptedAt,
         public ?string $errorCode,
         public ?DependencySnapshotData $snapshot,
+        public ?string $errorDetail = null,
     ) {}
 
     public static function fromResult(DependencyEcosystem $ecosystem, ?DependencyScanResult $result): self
@@ -29,6 +30,7 @@ final class DependencyInventoryData extends Data
             $result?->attemptedAt->setTimezone(new \DateTimeZone('UTC'))->format(DATE_RFC3339),
             $result?->errorCode,
             $result?->snapshot === null ? null : DependencySnapshotData::fromDomain($result->snapshot),
+            $result?->errorDetail,
         );
     }
 }

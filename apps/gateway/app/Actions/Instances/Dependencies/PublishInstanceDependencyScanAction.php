@@ -44,6 +44,7 @@ final readonly class PublishInstanceDependencyScanAction
                     'ecosystem' => $result->ecosystem,
                     'attempted_at' => $result->attemptedAt->setTimezone(new DateTimeZone('UTC')),
                     'error_code' => $result->errorCode,
+                    'error_detail' => $result->errorDetail,
                 ]);
 
                 return $this->read->execute($instance->id, $result->ecosystem, $subProject)

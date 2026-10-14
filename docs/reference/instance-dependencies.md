@@ -31,7 +31,7 @@ npm, pnpm, and Bun all record packages in the `npm` ecosystem. Yarn, binary `bun
 
 For each package, the inventory records every resolved version and how the root reaches it: direct or transitive, regular or development, and peer requirements. It records what the lockfile says. It does not prove that packages are installed or safe.
 
-A scan reads files only. It runs no package manager, project script, or registry request.
+A scan reads files only. It runs no package manager, project script, or registry request. A failed scan includes a short `error_detail` beside its stable error code. The detail names a file or failed check without showing file contents or secrets. `instance:dependencies:show`, scan responses, and CLI scan output retain that detail with the latest attempt. A declared JavaScript manager takes precedence over stray lockfiles; conflicting declarations or undeclared competing managers still fail. See [Dependency contracts](/reference/instance-dependency-contracts#package-manager-selection) for the selection rules.
 
 ### Monorepo sub-projects
 

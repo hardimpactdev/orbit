@@ -31,7 +31,7 @@ The resolution ID keeps installation paths and peer contexts apart, so one versi
 
 ## Reader rules
 
-Every reader parses data in memory. None reads files, runs a package manager or script, or contacts a registry. Errors carry a stable code and no input text. Versions stay opaque, and URLs and credentials never reach the result.
+Every reader parses data in memory. None reads files, runs a package manager or script, or contacts a registry. Errors carry a stable code and a short `error_detail` naming a file or failed check, never input text, URLs, credentials, or raw parser messages. The detail is stored with the attempt and returned by scan and show, including when the previous successful snapshot is retained. Older attempts without a stored detail receive a generic diagnostic for their error code on read. Versions stay opaque, and URLs and credentials never reach the result.
 
 This table sums up each reader.
 
@@ -66,11 +66,11 @@ A `file:` or `link:` dependency returns `dependencies.unsupported_layout`. Suppo
 
 ## Package manager selection
 
-The JavaScript manager comes from `packageManager`, then `devEngines.packageManager`, then lockfiles and configuration files. Configuration files are only presence signals. They are never evaluated.
+The JavaScript manager comes from `packageManager` or `devEngines.packageManager`, then lockfiles and configuration files. A single declared manager takes precedence over stray lockfiles and configuration signals; conflicting declarations fail. A declared manager without its own lockfile fails rather than falling back to a different manager. Without a declaration, conflicting manager families still fail. Configuration files are only presence signals. They are never evaluated.
 
 | Case | Result |
 | --- | --- |
-| Two manager families | `dependencies.ambiguous_manager` |
+| Conflicting declarations, or two manager families without a declaration | `dependencies.ambiguous_manager` |
 | Any Yarn signal | `dependencies.unsupported_format` |
 | `workspaces` or `pnpm-workspace.yaml` | `dependencies.unsupported_layout` |
 | Duplicate keys in `package.json` | `dependencies.invalid_manifest` |
@@ -121,7 +121,7 @@ The Gateway stores package identities separately from Instance observations, res
 | `instance_dependency_observations` | The last successful observation per Instance, dependency source (root or monorepo sub-project), and ecosystem: time, presence, project root, source reference, format, and file hashes. No row means unknown. |
 | `instance_dependency_resolutions` | The resolutions of one observation. |
 | `instance_dependency_edges` | The requirements of one observation. |
-| `instance_dependency_scan_attempts` | Every attempt for the Instance, dependency source, and ecosystem, with its time and error code, null on success. |
+| `instance_dependency_scan_attempts` | Every attempt for the Instance, dependency source, and ecosystem, with its time, error code, and safe error detail; both error fields are null on success. |
 
 `PublishInstanceDependencyScanAction` replaces one dependency source's ecosystem observation, resolutions, edges, and attempt in one transaction. A failure records only that source's ecosystem attempt and keeps its stored observation. It does not replace a sibling sub-project's data or mark the sibling as failed. Each sub-project can resolve a different version of the same shared package identity. A database failure records `dependencies.persistence_failed`. An Instance in removal gets `dependencies.instance_unavailable`. Removing an Instance deletes its rows but keeps shared package rows. Rollback deletes each sub-project's observations and attempts before removing the scope columns. Root observations and attempt history remain unchanged.
 
@@ -129,11 +129,15 @@ The Gateway stores package identities separately from Instance observations, res
 
 A scan or read keeps the root `data` fields `instance_id`, `succeeded`, `composer`, and `javascript` for existing clients. The root ecosystem fields keep the single-directory contract and are not a union of sub-project graphs. For a single-directory inventory, `succeeded` is null until both ecosystems have attempts.
 
-For a monorepo, the API, SDK, and CLI (including `instance:dependencies:show`) also return a separate inventory for each qualifying sub-project, identified by its repository-relative path. The additive `sub_projects` map uses paths such as `apps/gateway` as keys. Each value has `instance_id`, `succeeded`, `composer`, and `javascript`, with its own states, attempts, error codes, snapshots, and graphs using the ecosystem shape below. An empty map is serialized as `[]`. This field is omitted for single-directory scans. Discovery leaves root observations unchanged; root ecosystems without an observation stay unknown. With discovery, overall `succeeded` describes the discovered sources, not old root attempts, and is true when no candidate qualifies.
+For a monorepo, the API, SDK, and CLI (including `instance:dependencies:show`) also return a separate inventory for each qualifying sub-project, identified by its repository-relative path. The additive `sub_projects` map uses paths such as `apps/gateway` as keys. Each value has `instance_id`, `succeeded`, `composer`, and `javascript`, with its own states, attempts, error codes, snapshots, and graphs using the ecosystem shape below. An empty map is serialized as `[]`. This field is omitted for single-directory scans.
+
+Discovery leaves root observations unchanged; root ecosystems without an observation stay unknown. With discovery, overall `succeeded` describes the discovered sources, not old root attempts, and is true when no candidate qualifies.
 
 A failure keeps the last successful snapshot for that sub-project and ecosystem and marks it stale under the existing rules; an unscanned ecosystem stays unknown. Successful siblings still publish their observations. The overall scan is unsuccessful if any scanned sub-project ecosystem fails, but errors remain attached to the source that failed. This is an additive inventory contract, not a Project-level rollup.
 
-Each ecosystem has `ecosystem`, `state`, `succeeded`, `attempted_at`, `error_code`, and `snapshot`. The state is `unknown` before the first success, and stale after a later failure. A snapshot has `observed_at`, a `source` with `project_root`, `reference`, `file_hashes`, and `format`. `project_root` is the absolute directory whose manifests were read; for Laravel root `apps/site/public`, it ends in `/apps/site`. For a monorepo sub-project identified as `apps/gateway`, it ends in `/apps/gateway` within the checkout or selected release. The production `reference` still identifies the selected release. The snapshot also has a `graph`. A null graph means the ecosystem is absent. An empty graph means a project with no packages.
+Each ecosystem has `ecosystem`, `state`, `succeeded`, `attempted_at`, `error_code`, `error_detail`, and `snapshot`. `error_detail` is null on success and is limited to 255 printable ASCII characters. It uses fixed diagnostics and collected file names, not values from those files. The SDK also accepts older responses without this field.
+
+The state is `unknown` before the first success, and stale after a later failure. A snapshot has `observed_at`, a `source` with `project_root`, `reference`, `file_hashes`, and `format`. `project_root` is the absolute directory whose manifests were read; for Laravel root `apps/site/public`, it ends in `/apps/site`. For a monorepo sub-project identified as `apps/gateway`, it ends in `/apps/gateway` within the checkout or selected release. The production `reference` still identifies the selected release. The snapshot also has a `graph`. A null graph means the ecosystem is absent. An empty graph means a project with no packages.
 
 An update returns `instance_id`, `succeeded`, `error_code`, `may_have_mutated`, a `composer` and a `javascript` step, and `inventory`. A step has `ecosystem`, `status` (`succeeded`, `absent`, `failed`, or `not_run`), `may_have_mutated`, and `error_code`. A refused update has both steps `not_run` and no inventory.
 

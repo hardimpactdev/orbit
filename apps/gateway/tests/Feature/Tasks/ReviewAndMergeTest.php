@@ -406,7 +406,7 @@ function rm_activity(Task $group): array
 describe('final review before every push', function (): void {
     it('limits both final review briefs to new blocking findings', function (): void {
         $group = rm_group([['Models', TaskStatus::Completed]]);
-        $rule = 'Block only on rule-1 findings that are new since the subtask approvals. Do not reopen hardening that the subtask reviews already covered.';
+        $rule = 'Block only on findings that meet the blocking rule and are new since the subtask approvals. Do not reopen hardening that the subtask reviews already covered.';
 
         expect(TaskFinalReview::brief($group))->toContain($rule);
 

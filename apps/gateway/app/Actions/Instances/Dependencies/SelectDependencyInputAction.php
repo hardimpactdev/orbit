@@ -30,7 +30,7 @@ final readonly class SelectDependencyInputAction
             : array_values(array_diff(DependencyFilesProgram::FILES, ['composer.json', 'composer.lock']));
         foreach ($names as $name) {
             if (isset($files->errors[$name])) {
-                throw new DependencyCollectionException($files->errors[$name]);
+                throw new DependencyCollectionException($files->errors[$name], $name.' failed dependency file collection');
             }
             if (! array_key_exists($name, $files->contents) || ! array_key_exists($name, $files->hashes)) {
                 throw new DependencyCollectionException('dependencies.invalid_collection');
@@ -38,17 +38,18 @@ final readonly class SelectDependencyInputAction
         }
         $manifestName = $ecosystem === DependencyEcosystem::Composer ? 'composer.json' : 'package.json';
         $manifest = $files->contents[$manifestName];
-        $metadata = $manifest !== null ? $this->decode($manifest) : null;
+        try {
+            $metadata = $manifest !== null ? $this->decode($manifest) : null;
+        } catch (DependencyCollectionException $exception) {
+            throw new DependencyCollectionException($exception->errorCode, $manifestName.' must contain a JSON object with unique keys');
+        }
         if ($metadata !== null && property_exists($metadata, 'workspaces')) {
-            throw new DependencyCollectionException('dependencies.unsupported_layout');
+            throw new DependencyCollectionException('dependencies.unsupported_layout', $manifestName.' declares workspaces');
         }
         if ($ecosystem === DependencyEcosystem::Composer) {
             $manager = 'composer';
             $lockName = 'composer.lock';
         } else {
-            if ($files->contents['pnpm-workspace.yaml'] !== null) {
-                throw new DependencyCollectionException('dependencies.unsupported_layout');
-            }
             $signals = [];
             foreach (self::SIGNALS as $name => $family) {
                 if ($files->contents[$name] !== null) {
@@ -56,12 +57,22 @@ final readonly class SelectDependencyInputAction
                 }
             }
             $declared = $metadata !== null ? $this->declaredManagers($metadata) : [];
-            $signals = array_values(array_unique([...$declared, ...$signals]));
-            if (in_array('yarn', $signals, true)) {
-                throw new DependencyCollectionException('dependencies.unsupported_format');
+            $declared = array_values(array_unique($declared));
+            if (count($declared) > 1) {
+                throw new DependencyCollectionException('dependencies.ambiguous_manager', 'package.json packageManager and devEngines.packageManager select different managers');
             }
+            if ($files->contents['pnpm-workspace.yaml'] !== null && ($declared === [] || $declared === ['pnpm'])) {
+                throw new DependencyCollectionException('dependencies.unsupported_layout', 'pnpm-workspace.yaml declares an unsupported workspace layout');
+            }
+            $signals = $declared !== [] ? $declared : array_values(array_unique($signals));
             if (count($signals) > 1) {
-                throw new DependencyCollectionException('dependencies.ambiguous_manager');
+                $present = array_keys(array_filter(self::SIGNALS, fn (string $family, string $name): bool => $files->contents[$name] !== null, ARRAY_FILTER_USE_BOTH));
+                throw new DependencyCollectionException('dependencies.ambiguous_manager', 'conflicting manager files: '.implode(', ', $present));
+            }
+            if (in_array('yarn', $signals, true)) {
+                throw new DependencyCollectionException('dependencies.unsupported_format', $files->contents['yarn.lock'] !== null
+                    ? 'yarn.lock is not supported by the dependency scan'
+                    : 'package.json or Yarn configuration selects unsupported Yarn');
             }
             $manager = $signals[0] ?? 'pnpm';
             $lockName = match ($manager) {
@@ -70,7 +81,7 @@ final readonly class SelectDependencyInputAction
                 default => 'pnpm-lock.yaml',
             };
             if ($manager === 'bun' && $files->contents['bun.lock'] === null && $files->contents['bun.lockb'] !== null) {
-                throw new DependencyCollectionException('dependencies.unsupported_format');
+                throw new DependencyCollectionException('dependencies.unsupported_format', 'bun.lockb is binary; commit a text bun.lock to scan');
             }
             if ($manifest === null && $signals !== [] && $files->contents[$lockName] === null) {
                 throw new DependencyCollectionException('dependencies.incomplete_source');
@@ -78,7 +89,7 @@ final readonly class SelectDependencyInputAction
         }
         $lock = $files->contents[$lockName];
         if (($manifest === null) !== ($lock === null)) {
-            throw new DependencyCollectionException('dependencies.incomplete_source');
+            throw new DependencyCollectionException('dependencies.incomplete_source', $manifest === null ? $manifestName.' is missing for the selected lockfile' : $lockName.' is missing for the selected manager');
         }
         $absent = $manifest === null;
 
@@ -95,7 +106,7 @@ final readonly class SelectDependencyInputAction
         if (property_exists($manifest, 'packageManager')) {
             if (! is_string($manifest->packageManager)
                 || preg_match('/\A(npm|pnpm|bun|yarn)@(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?\z/D', $manifest->packageManager, $match) !== 1) {
-                throw new DependencyCollectionException('dependencies.unsupported_format');
+                throw new DependencyCollectionException('dependencies.unsupported_format', 'package.json packageManager must name a supported manager with an exact version');
             }
             $managers[] = $match[1];
         }
@@ -123,7 +134,7 @@ final readonly class SelectDependencyInputAction
                 if ($selected !== null) {
                     $managers[] = $selected;
                 } elseif (! in_array($onFail, ['warn', 'ignore'], true)) {
-                    throw new DependencyCollectionException('dependencies.unsupported_format');
+                    throw new DependencyCollectionException('dependencies.unsupported_format', 'package.json devEngines.packageManager has no supported manager');
                 }
             }
         }

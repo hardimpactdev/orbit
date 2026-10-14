@@ -30,6 +30,9 @@ describe('root dependency input selection', function (): void {
         expect($input->source->fileHashes['package.json'])->toBe(hash('sha256', $manifest));
     })->with([
         ['{}', ['package-lock.json' => 'npm'], 'npm', 'package-lock.json'],
+        ['{"packageManager":"npm@11.0.0"}', ['package-lock.json' => 'npm', 'bun.lock' => 'stray', 'yarn.lock' => 'stray'], 'npm', 'package-lock.json'],
+        ['{"packageManager":"bun@1.3.0"}', ['bun.lock' => 'bun', 'package-lock.json' => 'stray', '.pnpmfile.cjs' => 'never execute'], 'bun', 'bun.lock'],
+        ['{"devEngines":{"packageManager":{"name":"pnpm"}}}', ['pnpm-lock.yaml' => 'pnpm', 'package-lock.json' => 'stray'], 'pnpm', 'pnpm-lock.yaml'],
         ['{}', ['package-lock.json' => 'ignored', 'npm-shrinkwrap.json' => 'chosen'], 'npm', 'npm-shrinkwrap.json'],
         ['{}', ['npm-shrinkwrap.json' => 'shrinkwrap'], 'npm', 'npm-shrinkwrap.json'],
         ['{}', ['pnpm-lock.yaml' => 'pnpm'], 'pnpm', 'pnpm-lock.yaml'],
@@ -67,7 +70,7 @@ describe('root dependency input selection', function (): void {
         [['package.json' => '{}'], 'dependencies.incomplete_source'],
         [['package-lock.json' => '{}'], 'dependencies.incomplete_source'],
         [['package.json' => '{}', 'pnpm-lock.yaml' => '', 'package-lock.json' => ''], 'dependencies.ambiguous_manager'],
-        [['package.json' => '{"packageManager":"npm@11.0.0"}', 'pnpm-lock.yaml' => ''], 'dependencies.ambiguous_manager'],
+        [['package.json' => '{"packageManager":"npm@11.0.0"}', 'pnpm-lock.yaml' => ''], 'dependencies.incomplete_source'],
         [['package.json' => '{"packageManager":"npm@11.0.0","devEngines":{"packageManager":{"name":"pnpm"}}}', 'package-lock.json' => ''], 'dependencies.ambiguous_manager'],
         [['package.json' => '{}', 'yarn.lock' => ''], 'dependencies.unsupported_format'],
         [['package.json' => '{"packageManager":"yarn@4.0.0"}', 'package-lock.json' => ''], 'dependencies.unsupported_format'],
@@ -76,6 +79,7 @@ describe('root dependency input selection', function (): void {
         [['package.json' => '{}', 'bun.lockb' => ''], 'dependencies.unsupported_format'],
         [['package.json' => '{"workspaces":[]}', 'package-lock.json' => ''], 'dependencies.unsupported_layout'],
         [['pnpm-workspace.yaml' => ''], 'dependencies.unsupported_layout'],
+        [['package.json' => '{"packageManager":"pnpm@10.0.0"}', 'pnpm-workspace.yaml' => '', 'pnpm-lock.yaml' => ''], 'dependencies.unsupported_layout'],
         [['package.json' => '{"packageManager":"unknown@1.0.0"}'], 'dependencies.unsupported_format'],
         [['package.json' => '{"packageManager":"npm@latest"}'], 'dependencies.unsupported_format'],
         [['package.json' => '{"packageManager":null}'], 'dependencies.unsupported_format'],

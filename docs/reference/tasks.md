@@ -699,7 +699,7 @@ The driver maps a model name to Pi's `provider/model` form. Every model uses the
 
 ### Archive finished threads
 
-Task-agent threads are Pi sessions. Those sessions stay as files on the Node. Orbit keeps the thread row and its metrics after the work ends, and it does not archive the session. The Gateway has no `tasks:archive-threads` command, and the tick does not archive threads.
+Task-agent threads are Pi sessions, and their files live on the task VM. Orbit keeps the thread row and its metrics after the work ends. Before Orbit deletes a ready task VM with its workspace, it saves each started thread's transcript on the Gateway, at `storage/app/private/task-transcripts/{task}/{thread}.json`. The file holds the driver's redacted observation: the state, the transcript entries, and the token metrics. A thread that Orbit cannot read is reported and skipped, so saving never stops workspace removal. A VM that died before removal leaves no saved transcript. The Gateway has no `tasks:archive-threads` command, and the tick does not archive threads.
 
 ## Session routing
 
@@ -1024,24 +1024,26 @@ git diff START; git ls-files --others --exclude-standard -z | while IFS= read -r
 
 When the workspace starting commit is 40 or 64 hexadecimal characters, the retrieval block adds `The task started at <sha>.` and `git diff --stat <sha>..HEAD` after those commands. A continued turn includes them too. The lines name no Project, branch, or policy.
 
-The implementer prompt asks the implementer to finish the brief and pass the Project task check. When a check is configured, it adds that Orbit runs the check again at handoff with access the agent does not have, such as sudo. A failure that comes only from that missing access does not block the handoff.
+The implementer prompt asks the implementer to finish the brief and pass the Project task check. It includes the task brief under `Group brief`, after the feature title and before the subtask brief.
 
-The reviewer prompt says the turn is read-only. It says not to re-run the Project task check or deliverable commands the handoff already passed. When a task check is configured, it names that command, and it cuts a command past 160 characters. It says to run another command only for evidence the handoff result does not give, and to say why in the summary. It says to confirm framework and library usage against the documentation for the Project's versions. A continued turn repeats these rules. The shared prompt adds no Project policy.
+The reviewer prompt says to leave the workspace tree as the reviewer found it. The reviewer may run commands, use sudo, and create disposable files outside the workspace, such as under `/tmp`, to verify behaviour.
+
+The reviewer prompt also says not to re-run the Project task check or deliverable commands the handoff already passed. When a task check is configured, it names that command, and it cuts a command past 160 characters. It says to run another command only for evidence the handoff result does not give, and to say why in the summary. It says to check a framework or library API the reviewer is not sure of against the documentation for the Project's version. A continued turn repeats these rules. The shared prompt adds no Project policy.
 
 `php artisan tasks:render-prompt {role}` renders the implementer prompt, the opening review packet (`reviewer`), or a continued review turn (`reviewer-continue`) from one JSON object on standard input. It prints `{"role", "prompt", "source_commit"}`, where `source_commit` is the Gateway's `APP_VERSION`, or `dev`. It uses the production prompt code and reads no database, workspace, or network, so an offline evaluation can render frozen cases. It rejects unknown input fields. `task.start_commit` is the workspace starting commit, or null when none was recorded. The prompts name it only when it is 40 or 64 hexadecimal characters.
 
 ### Reviewer outcomes
 
-The reviewer first traces the main path and one ordinary failure path end to end, such as a failed build followed by a resume. Rule 1 permits a blocking finding only for:
+When the change adds or alters runtime behaviour, the reviewer first traces the main path and one ordinary failure path end to end, such as a failed build followed by a resume. The blocking rule permits a blocking finding only for:
 
 - (a) A defect likely in normal operation: ordinary use, routine deploys, common operator mistakes, or normal overlap of scheduled jobs.
 - (b) Data loss, a security issue, or a state that no supported command can recover.
 - (c) An unmet brief item or deliverable.
 - (d) A regression of existing behaviour.
 
-Each blocking finding states its normal-operation trigger. P1 blocks. P2 is a follow-up and never blocks approval. A finding that needs a crash, a lost reply, or a timeout between two specific steps is a follow-up unless a deliverable names that guarantee. The reviewer lists follow-ups under `Follow-ups` in the approval. The reviewer prefers an operator recovery command and does not prescribe new markers, fences, or locks.
+Each blocking finding states its normal-operation trigger. Every other finding is a follow-up and never blocks approval. A finding that needs a crash, a lost reply, or a timeout between two specific steps is a follow-up unless a deliverable names that guarantee. The reviewer lists follow-ups under `Follow-ups` in the approval. The reviewer prefers an operator recovery command and does not prescribe new markers, fences, or locks.
 
-After two `changes_requested` outcomes on one subtask, only (c) and (d) findings may block. Every other finding becomes a follow-up. This rule is prompt-only: receipts hold free-text findings, so the engine does not classify them or enforce their severity.
+After two `changes_requested` outcomes on one subtask, only (b), (c), and (d) findings may block. Every other finding becomes a follow-up. This rule is prompt-only: receipts hold free-text findings, so the engine does not classify them or enforce their severity.
 
 When the Gateway sends the review request, it records the workspace HEAD and the working-tree hash. When the reviewer's receipt arrives, it reads them again.
 
@@ -1339,7 +1341,7 @@ The flow needs `source_access: github_app`. It is off by default. Each task stil
 
 A final review is a subtask with `type` `final_review` and the title `Final review`. Orbit appends one when a review-and-merge task has no open subtask and its latest approved commit has no final review. It has no implementer and runs no task check. It starts in `reviewing` with a fresh reviewer.
 
-The final reviewer blocks only on [rule-1 findings](#reviewer-outcomes) that are new since the subtask approvals. It does not reopen hardening that the subtask reviews already covered.
+The final reviewer blocks only on findings that meet the [blocking rule](#reviewer-outcomes) and are new since the subtask approvals. It does not reopen hardening that the subtask reviews already covered.
 
 Its start commit is the merge base of the workspace `HEAD` and `origin/{default branch}`. So the [review packet](#review-packet) holds the whole branch diff, the task brief, and the earlier approvals. Its one deliverable is the `review` deliverable `final-review`, which the reviewer confirms. When the task has no pull request yet, the final review opens it: its approval needs `--pr-summary`, `--pr-change`, and `--pr-breaking`, and Jev checks [brief coverage](#pull-request-and-settle-metrics) then. Ordinary subtask approvals in the task need no pull request fields.
 
@@ -1435,7 +1437,7 @@ The Agents section lists every started thread of the task. `GET /api/v1/task-gro
 
 Stored T3 task-thread rows stay in that list, with their metrics. The `t3_*` columns on `agent_threads` stay. A transcript request for a `t3` thread returns HTTP 409 `tasks.agent_transcript_unavailable` and does not open a stream.
 
-A snapshot replaces the browser transcript. Entries merge by id and kind, so an updated entry replaces the earlier one. On reconnect, the browser sends its last cursor. The stream resumes after the cursor and sends only what the viewer missed. When one event becomes several entries, only the last carries the cursor. The viewer writes no thread state. When the Pi server deletes a conversation, Orbit cannot restore it.
+A snapshot replaces the browser transcript. Entries merge by id and kind, so an updated entry replaces the earlier one. On reconnect, the browser sends its last cursor. The stream resumes after the cursor and sends only what the viewer missed. When one event becomes several entries, only the last carries the cursor. The viewer writes no thread state. When the thread's Node is gone, the stream sends the [saved transcript](#archive-finished-threads) as one snapshot and ends. Without a saved transcript, it returns HTTP 409 `tasks.agent_unavailable`.
 
 ## Coder settle webhook
 
@@ -1710,11 +1712,17 @@ A long-lived reviewer would carry the context of every earlier review into each 
 
 An audit of eight task groups found 11 real bugs likely in normal operation, 23 rare crash-window findings, and 15 small findings. None were wrong. The crash-window findings led to fence code that hid ordinary bugs: group 1479 missed five of them. The fixes also introduced regressions: in group 1517, comment 3291 led to comment 3313.
 
-Blocking every missing guarantee against injected failures was rejected because it spent review and implementation effort on narrow failure windows before the main paths were understood. Reviewers trace ordinary paths first, block on rule 1, and retain other findings as follow-ups. This serves [lean](/mission#principles). Operator recovery commands keep recovery available without new markers, fences, or locks. After two change requests, the reviewer blocks only on unmet work or regressions, so each subtask has a bounded repair loop. Final reviews check new findings across the whole branch instead of repeating hardening already covered by subtask approvals.
+Blocking every missing guarantee against injected failures was rejected because it spent review and implementation effort on narrow failure windows before the main paths were understood. Reviewers trace ordinary paths first, block only under the blocking rule, and retain other findings as follow-ups. This serves [lean](/mission#principles).
+
+Operator recovery commands keep recovery available without new markers, fences, or locks. After two change requests, the reviewer blocks only on data loss, security issues, unrecoverable states, unmet work, or regressions, so each subtask has a bounded repair loop that never ships a known data-loss or security defect. Final reviews check new findings across the whole branch instead of repeating hardening already covered by subtask approvals.
 
 ### The reviewer does not edit
 
-The approval commit must hold only the work that the implementer handed off. So a reviewer that edits the workspace gets a reminder to revert and to request the change. A silent revert would hide the edit.
+The approval commit must hold only the work that the implementer handed off. So a reviewer that edits the workspace gets a reminder to revert and to request the change. A silent revert would hide the edit. The rule covers the workspace tree only. Agents run as the VM's `orbit` user with passwordless sudo, so the reviewer can verify behaviour with commands and disposable files outside the workspace.
+
+### Transcripts outlive the task VM
+
+A task VM is deleted when its task ends, and its Pi sessions go with it. Without a copy, nobody can read what an agent did after the task settles, so prompts cannot be audited or replayed against real turns. Orbit saves the redacted observation on the Gateway just before the delete. It reuses the snapshot the agent viewer already streams, so the copy needs no second format and no second redaction path.
 
 ### Orbit commits and pushes
 
