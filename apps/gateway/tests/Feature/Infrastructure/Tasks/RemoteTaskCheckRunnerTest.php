@@ -670,6 +670,81 @@ function check_runner_deliverables_checkout(string $check = 'echo checks passed'
     return [$checkout, $start];
 }
 
+describe('topology diff evidence', function (): void {
+    it('records only the group changes against main, including the candidate working tree', function (bool $merge, string $own): void {
+        [$checkout, $start] = check_runner_deliverables_checkout();
+        $git = static fn (array $arguments): string => trim((new Process(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', ...$arguments], $checkout))->mustRun()->getOutput());
+        $git(['add', '--all']);
+        $git(['commit', '--quiet', '-m', 'Group documentation']);
+        $git(['branch', 'task']);
+        $git(['checkout', '--quiet', '-b', 'upstream', $start]);
+        File::ensureDirectoryExists($checkout.'/apps/agent/src');
+        file_put_contents($checkout.'/apps/agent/src/main.rs', "// Released on main\n");
+        $git(['add', '--all']);
+        $git(['commit', '--quiet', '-m', 'Released Node change']);
+        $git(['update-ref', 'refs/remotes/origin/main', 'HEAD']);
+        $git(['checkout', '--quiet', 'task']);
+        $ownPath = 'apps/agent/src/own.rs';
+        if ($own === 'committed') {
+            File::ensureDirectoryExists(dirname($checkout.'/'.$ownPath));
+            file_put_contents($checkout.'/'.$ownPath, "// Group Node change\n");
+            $git(['add', '--all']);
+            $git(['commit', '--quiet', '-m', 'Group Node change']);
+        }
+        if ($merge) {
+            $git(['merge', '--quiet', '--no-ff', '--no-edit', 'origin/main']);
+        }
+        if ($own === 'untracked') {
+            file_put_contents($checkout.'/'.$ownPath, "// Group Node change\n");
+        }
+        if ($own === 'resolution') {
+            $ownPath = 'apps/agent/src/main.rs';
+            file_put_contents($checkout.'/'.$ownPath, "// Group merge resolution\n");
+            $git(['add', '--all']);
+            $git(['commit', '--quiet', '--amend', '--no-edit']);
+        }
+        $instance = check_runner_instance($checkout);
+        $runner = check_runner(new LocalShellSshExecutor);
+
+        $reading = check_runner_wait($runner, $instance, $runner->start($instance, null, deliverables: [
+            'start' => $start, 'commands' => [], 'topology' => true,
+        ]));
+
+        $expected = [
+            ['status' => 'M', 'path' => 'README.md'],
+            ['status' => 'A', 'path' => 'app/tests/ExportTest.php'],
+            ['status' => 'D', 'path' => 'app/tests/OldTest.php'],
+        ];
+        if ($own !== 'none') {
+            $expected[] = ['status' => $own === 'resolution' ? 'M' : 'A', 'path' => $ownPath];
+        }
+        expect($reading->exitCode)->toBe(0)
+            ->and($reading->deliverables['topology_diff'] ?? null)->toEqualCanonicalizing($expected);
+        if ($merge && $own === 'none') {
+            expect($reading->deliverables['diff'])->toContain(['status' => 'A', 'path' => 'apps/agent/src/main.rs']);
+        }
+    })->with([
+        'main merge only' => [true, 'none'],
+        'own Node change without merging main' => [false, 'committed'],
+        'main merge with own Node commit' => [true, 'committed'],
+        'main merge with untracked Node file' => [true, 'untracked'],
+        'main merge with own resolution of a main Node path' => [true, 'resolution'],
+    ]);
+
+    it('records an unreadable topology diff when origin main is missing', function (): void {
+        [$checkout, $start] = check_runner_deliverables_checkout();
+        $instance = check_runner_instance($checkout);
+        $runner = check_runner(new LocalShellSshExecutor);
+
+        $reading = check_runner_wait($runner, $instance, $runner->start($instance, null, deliverables: [
+            'start' => $start, 'commands' => [], 'topology' => true,
+        ]));
+
+        expect($reading->deliverables)->toHaveKey('topology_diff', null)
+            ->and($reading->deliverables['diff'])->not->toBeNull();
+    });
+});
+
 describe('deliverable evidence', function (): void {
     it('reuses the task check result for a matching fixup deliverable without running it twice', function (int $exit): void {
         [$checkout, $start] = check_runner_deliverables_checkout('mkdir -p ignored; echo run >> ignored/runs; echo project-output; exit '.$exit);

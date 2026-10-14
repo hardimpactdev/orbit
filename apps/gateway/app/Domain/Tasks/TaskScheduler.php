@@ -1602,8 +1602,8 @@ final readonly class TaskScheduler
     }
 
     /**
-     * ADR 0200: a group whose subtask changes a path that the Project lists in `task_vms.topology_paths` needs a
-     * declared topology on some subtask of the group. Null when the rule does not apply.
+     * ADR 0200: a group whose own changes against origin/main touch a path in `task_vms.topology_paths`
+     * needs a declared topology on some subtask of the group. Null when the rule does not apply.
      */
     private function topologyRequiredItem(Task $group, ?TaskDeliverableEvidence $evidence): ?TaskRubricItem
     {
@@ -1611,12 +1611,12 @@ final readonly class TaskScheduler
         if ($patterns === [] || ! TaskTopology::forGroup($group)->isEmpty()) {
             return null;
         }
-        if (! $evidence instanceof TaskDeliverableEvidence || $evidence->diff === null) {
-            return new TaskRubricItem('topology_required', false, "Orbit could not read the subtask's diff to check the paths that need a declared topology.");
+        if (! $evidence instanceof TaskDeliverableEvidence || $evidence->topologyDiff === null) {
+            return new TaskRubricItem('topology_required', false, "Orbit could not read the group's diff against origin/main to check the paths that need a declared topology.");
         }
         $paths = array_values(array_unique(array_map(
             static fn (array $entry): string => $entry['path'],
-            array_filter($evidence->diff, static fn (array $entry): bool => array_any($patterns, static fn (string $pattern): bool => TaskDeliverableVerifier::matches($pattern, $entry['path']))),
+            array_filter($evidence->topologyDiff, static fn (array $entry): bool => array_any($patterns, static fn (string $pattern): bool => TaskDeliverableVerifier::matches($pattern, $entry['path']))),
         )));
         if ($paths === []) {
             return null;
@@ -1641,19 +1641,24 @@ final readonly class TaskScheduler
     }
 
     /**
-     * @return array{start: string|null, commands: list<array{id: string, command: string, directory: string, fails_on_base?: bool, paths?: list<string>}>, test_base?: string}|null
+     * @return array{start: string|null, commands: list<array{id: string, command: string, directory: string, fails_on_base?: bool, paths?: list<string>}>, test_base?: string, topology?: bool}|null
      */
     private function handoffCheck(Task $task): ?array
     {
-        $deliverables = $this->deliverableCheck($task);
+        $check = $this->deliverableCheck($task);
         $group = $task->parent;
         $start = $task->subtask_start_commit;
         if ($group->project->slug === 'orbit' && is_string($start)
             && preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $start) === 1) {
-            return [...($deliverables ?? ['start' => $start, 'commands' => []]), 'test_base' => $start];
+            $check = [...($check ?? ['start' => $start, 'commands' => []]), 'test_base' => $start];
         }
 
-        return $deliverables;
+        $patterns = app(TaskVmSettings::class)->topologyPaths[(int) $group->project_id] ?? [];
+        if ($patterns !== [] && TaskTopology::forGroup($group)->isEmpty()) {
+            $check = [...($check ?? ['start' => null, 'commands' => []]), 'topology' => true];
+        }
+
+        return $check;
     }
 
     /**

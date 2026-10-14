@@ -1335,7 +1335,9 @@ Orbit adds the counted records, with their time, node, label, and command, to th
 {"46": ["apps/agent/**", "apps/e2e/resources/guest/**", "apps/gateway/app/{Domain,Infrastructure,Actions}/{Nodes,Deployments,Routes,Caddy,WireGuard}/**"]}
 ```
 
-Orbit checks this when the handoff check of a group passes. It refuses the handoff when the subtask's diff changes a matching path and no subtask of the group declares a topology. The reminder starts with `This subtask changes paths that need real machines`. The implementer reverts those changes, or ends its turn blocked so the operator can add a subtask with a topology.
+Orbit checks this when the handoff check of a group passes. It refuses the handoff when the group's own changes touch a matching path and no subtask of the group declares a topology. It compares the candidate tree with the merge base of HEAD and the current `origin/main`, including uncommitted files. Changes inherited from main do not count; the group's own changes, including merge resolutions, still count. An unreadable merge base or diff fails the handoff. See the [handoff rubric](/reference/tasks#rubric-and-reminders).
+
+The reminder starts with `This subtask changes paths that need real machines`. The implementer reverts those changes, or ends its turn blocked so the operator can add a subtask with a topology.
 
 ## VM power
 
