@@ -174,6 +174,28 @@ describe('single instance dependency scan', function (): void {
         }
     })->with(['present', 'absent', 'stale', 'stale-absent', 'unknown']);
 
+    it('renders each monorepo source and preserves partial failures in human and JSON output', function (bool $json): void {
+        $inventory = scan_cli_inventory();
+        $inventory['data']['sub_projects'] = ['apps/good' => scan_cli_inventory()['data'], 'packages/bad' => scan_cli_inventory('unknown')['data']];
+        $inventory['data']['succeeded'] = false;
+        MockClient::global([
+            ResolveInstanceRequest::class => MockResponse::make(['data' => ['domain' => 'fixture.example.test', 'instance_id' => 17, 'project_id' => 3, 'node_id' => 9, 'environment' => 'development'], 'meta' => ['request_id' => scan_cli_id()]]),
+            ScanInstanceDependenciesRequest::class => MockResponse::make($inventory),
+        ]);
+
+        $status = Artisan::call('instance:dependencies:scan', ['--project' => 'fixture.example.test', '--json' => $json, '--no-interaction' => true]);
+
+        expect($status)->toBe(1);
+        if ($json) {
+            $output = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+            expect($output['sub_projects']['apps/good']['succeeded'])->toBeTrue();
+            expect($output['sub_projects']['packages/bad']['javascript']['error_code'])->toBe('dependencies.unreadable_source');
+            expect($output['javascript'])->toBe($inventory['data']['javascript']);
+        } else {
+            expect(Artisan::output())->toContain('apps/good', 'packages/bad', 'dependencies.unreadable_source');
+        }
+    })->with([true, false]);
+
     it('tells the operator how to refresh a stale lockfile', function (string $code, string $hint): void {
         $inventory = scan_cli_inventory('unknown');
         $inventory['data']['javascript']['error_code'] = $code;

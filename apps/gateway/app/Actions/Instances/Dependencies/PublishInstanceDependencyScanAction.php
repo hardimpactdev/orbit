@@ -20,10 +20,10 @@ final readonly class PublishInstanceDependencyScanAction
 {
     public function __construct(private ReadInstanceDependencyScanAction $read) {}
 
-    public function execute(int $instanceId, DependencyScanResult $result): DependencyScanResult
+    public function execute(int $instanceId, DependencyScanResult $result, string $subProject = ''): DependencyScanResult
     {
         try {
-            return DB::transaction(function () use ($instanceId, $result): DependencyScanResult {
+            return DB::transaction(function () use ($instanceId, $result, $subProject): DependencyScanResult {
                 $instance = Instance::query()->lockForUpdate()->find($instanceId);
 
                 if ($instance === null) {
@@ -35,17 +35,18 @@ final readonly class PublishInstanceDependencyScanAction
                 }
 
                 if ($result->succeeded() && $result->snapshot !== null) {
-                    $this->replace($instance, $result->snapshot);
+                    $this->replace($instance, $result->snapshot, $subProject);
                 }
 
                 InstanceDependencyScanAttempt::query()->create([
                     'instance_id' => $instance->id,
+                    'sub_project' => $subProject,
                     'ecosystem' => $result->ecosystem,
                     'attempted_at' => $result->attemptedAt->setTimezone(new DateTimeZone('UTC')),
                     'error_code' => $result->errorCode,
                 ]);
 
-                return $this->read->execute($instance->id, $result->ecosystem)
+                return $this->read->execute($instance->id, $result->ecosystem, $subProject)
                     ?? throw new LogicException('A recorded dependency attempt must have an outcome.');
             });
         } catch (QueryException|InvalidArgumentException $exception) {
@@ -58,14 +59,15 @@ final readonly class PublishInstanceDependencyScanAction
                 $result->ecosystem,
                 $result->attemptedAt,
                 'dependencies.persistence_failed',
-            ));
+            ), $subProject);
         }
     }
 
-    private function replace(Instance $instance, DependencySnapshot $snapshot): void
+    private function replace(Instance $instance, DependencySnapshot $snapshot, string $subProject): void
     {
-        $instance->dependencyObservations()->where('ecosystem', $snapshot->ecosystem)->delete();
+        $instance->dependencyObservations()->where('sub_project', $subProject)->where('ecosystem', $snapshot->ecosystem)->delete();
         $observation = $instance->dependencyObservations()->create([
+            'sub_project' => $subProject,
             'ecosystem' => $snapshot->ecosystem,
             'present' => $snapshot->graph !== null,
             'observed_at' => $snapshot->observedAt->setTimezone(new DateTimeZone('UTC')),

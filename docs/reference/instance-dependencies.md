@@ -48,7 +48,7 @@ Each qualifying sub-project has its own inventory, identified by its repository-
 
 If neither `apps/` nor `packages/` exists, the monorepo scan keeps the existing single-directory behavior. If either directory exists but no candidate qualifies, skipped directories do not become absent or empty inventories. Non-monorepo types do not use this discovery rule. Finding sub-projects does not enable workspace, multi-importer, or local-link support in the readers.
 
-`instance:dependencies:show`, scan output, the CLI, and the API expose these separate inventories and their errors. Existing root fields remain available for clients using the single-directory contract; they are not a merged graph of the sub-projects. See [the collection and response contracts](/reference/instance-dependency-contracts#collection) and [the storage decision](/decisions/0208-scan-monorepo-dependencies-per-sub-project).
+`instance:dependencies:show`, scan output, the CLI, and the API expose these separate inventories and their errors. Existing root fields remain available for clients using the single-directory contract; they are not a merged graph of the sub-projects. See [the collection and response contracts](/reference/instance-dependency-contracts#collection) and [the source-scoping rationale](/reference/instance-dependency-contracts#separate-monorepo-dependency-sources).
 
 ## Scan
 

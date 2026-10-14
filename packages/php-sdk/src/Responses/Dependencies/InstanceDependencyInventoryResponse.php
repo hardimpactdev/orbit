@@ -12,6 +12,8 @@ final readonly class InstanceDependencyInventoryResponse
         public DependencyInventoryResponse $composer,
         public DependencyInventoryResponse $javascript,
         public string $requestId,
+        /** @var array<string, self>|null */
+        public ?array $subProjects = null,
     ) {}
 
     /** @return array<string, mixed> */
@@ -23,6 +25,7 @@ final readonly class InstanceDependencyInventoryResponse
             'composer' => $this->composer->toArray(),
             'javascript' => $this->javascript->toArray(),
             'request_id' => $this->requestId,
+            ...($this->subProjects === null ? [] : ['sub_projects' => array_map(static fn (self $project): array => $project->toArray(), $this->subProjects)]),
         ];
     }
 }

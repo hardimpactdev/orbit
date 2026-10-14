@@ -64,6 +64,38 @@ function dependency_send(MockResponse $response, bool $scan = true): mixed
 }
 
 describe('dependency inventory payloads', function (): void {
+    it('decodes separate sub-projects for scan and read without merging root graphs', function (bool $scan): void {
+        $envelope = dependency_envelope();
+        $good = $envelope['data'];
+        $bad = $good;
+        $bad['succeeded'] = false;
+        $bad['javascript'] = ['ecosystem' => 'npm', 'state' => 'unknown', 'succeeded' => false,
+            'attempted_at' => '2026-09-15T20:28:20+00:00', 'error_code' => 'dependencies.unsupported_format', 'snapshot' => null];
+        $envelope['data']['sub_projects'] = ['apps/good' => $good, 'packages/bad' => $bad];
+        $envelope['data']['succeeded'] = false;
+
+        $dto = dependency_send(MockResponse::make($envelope), $scan);
+
+        expect($dto->succeeded)->toBeFalse();
+        expect($dto->subProjects['apps/good']->succeeded)->toBeTrue();
+        expect($dto->subProjects['packages/bad']->javascript->errorCode)->toBe('dependencies.unsupported_format');
+        expect($dto->toArray()['javascript'])->toBe($good['javascript']);
+        expect(array_keys($dto->toArray()['sub_projects']))->toBe(['apps/good', 'packages/bad']);
+    })->with([true, false]);
+
+    it('decodes empty discovery without inventing root or sub-project graphs', function (): void {
+        $envelope = dependency_envelope();
+        $envelope['data']['sub_projects'] = [];
+        $envelope['data']['composer'] = ['ecosystem' => 'composer', 'state' => 'unknown', 'succeeded' => null, 'attempted_at' => null, 'error_code' => null, 'snapshot' => null];
+        $envelope['data']['javascript'] = [...$envelope['data']['composer'], 'ecosystem' => 'npm'];
+
+        $dto = dependency_send(MockResponse::make($envelope));
+
+        expect($dto->succeeded)->toBeTrue();
+        expect($dto->subProjects)->toBe([]);
+        expect($dto->composer->snapshot)->toBeNull();
+    });
+
     it('preserves complete graph data and exact transport configuration', function (): void {
         $envelope = dependency_envelope();
         $mock = new MockClient([ScanInstanceDependenciesRequest::class => MockResponse::make($envelope)]);
@@ -123,6 +155,18 @@ describe('dependency inventory payloads', function (): void {
                 ->and((string) $exception)->not->toContain('sdk-secret-13');
         }
     })->with([
+        'unsafe sub-project path' => [static function (array &$e): void {
+            $e['data']['sub_projects'] = ['apps/../outside' => $e['data']];
+        }],
+        'nested sub-project inventories' => [static function (array &$e): void {
+            $child = [...$e['data'], 'sub_projects' => []];
+            $e['data']['sub_projects'] = ['apps/child' => $child];
+        }],
+        'sub-project success mismatch' => [static function (array &$e): void {
+            $child = $e['data'];
+            $child['succeeded'] = false;
+            $e['data']['sub_projects'] = ['apps/child' => $child];
+        }],
         'wrong instance' => [static function (array &$e): void {
             $e['data']['instance_id'] = 18;
         }],

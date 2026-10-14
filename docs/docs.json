@@ -663,8 +663,7 @@
               "decisions/0200-run-each-task-group-in-its-own-sandbox-vm",
               "decisions/0205-publish-database-credentials-to-vaultwarden",
               "decisions/0206-build-task-vm-images-as-chains-of-small-jobs",
-              "decisions/0207-one-image-recipe-shared-package-cache-no-workspace-templates",
-              "decisions/0208-scan-monorepo-dependencies-per-sub-project"
+              "decisions/0207-one-image-recipe-shared-package-cache-no-workspace-templates"
             ]
           }
         ]
@@ -699,6 +698,10 @@
     }
   },
   "redirects": [
+    {
+      "source": "/decisions/0208-scan-monorepo-dependencies-per-sub-project",
+      "destination": "/reference/instance-dependency-contracts#separate-monorepo-dependency-sources"
+    },
     {
       "source": "/decisions/0203-review-and-merge-pull-requests-inside-orbit",
       "destination": "/reference/tasks#review-and-merge"

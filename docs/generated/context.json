@@ -922,27 +922,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0208-scan-monorepo-dependencies-per-sub-project.md",
-            "title": "Scan monorepo dependencies per sub-project",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Gateway",
-                "Instance",
-                "Project",
-                "Subtask"
-            ],
-            "governing_adrs": [
-                "0196",
-                "0208"
-            ]
-        },
-        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -994,8 +973,7 @@
                 "0196",
                 "0198",
                 "0200",
-                "0206",
-                "0208"
+                "0206"
             ]
         },
         {
@@ -1887,9 +1865,7 @@
                 "Schedule",
                 "Task"
             ],
-            "governing_adrs": [
-                "0208"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/instance-dependency-contracts.md",
@@ -1906,9 +1882,7 @@
                 "Project",
                 "Route"
             ],
-            "governing_adrs": [
-                "0208"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/instance-logs.md",

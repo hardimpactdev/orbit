@@ -113,7 +113,7 @@ Development updates do not iterate over discovered monorepo candidates: `instanc
 
 ## Stored inventory
 
-The Gateway stores package identities separately from Instance observations, resolutions, requirements, and scan attempts. For a monorepo, observations and attempts belong to one sub-project and ecosystem within the Instance, not to a shared graph for the repository. The root inventory keeps its existing single-directory scope. [ADR 0208](/decisions/0208-scan-monorepo-dependencies-per-sub-project) records this storage and response contract; it does not prescribe a new table or JSON property name.
+The Gateway stores package identities separately from Instance observations, resolutions, requirements, and scan attempts. For a monorepo, observations and attempts belong to one sub-project and ecosystem within the Instance, not to a shared graph for the repository. The root inventory keeps its existing single-directory scope. The `sub_project` column scopes observations and attempts; an empty string identifies the root. The Instance's `dependency_sub_projects` list records the last confirmed discovery, including an empty list when no candidate qualifies.
 
 | Table | Contents |
 | --- | --- |
@@ -129,7 +129,7 @@ The Gateway stores package identities separately from Instance observations, res
 
 A scan or read keeps the root `data` fields `instance_id`, `succeeded`, `composer`, and `javascript` for existing clients. The root ecosystem fields keep the single-directory contract and are not a union of sub-project graphs. For a single-directory inventory, `succeeded` is null until both ecosystems have attempts.
 
-For a monorepo, the API, SDK, and CLI (including `instance:dependencies:show`) also return a separate inventory for each qualifying sub-project, identified by its repository-relative path. Each has its own Composer and JavaScript states, attempts, error codes, snapshots, and graphs using the ecosystem shape below.
+For a monorepo, the API, SDK, and CLI (including `instance:dependencies:show`) also return a separate inventory for each qualifying sub-project, identified by its repository-relative path. The additive `sub_projects` map uses paths such as `apps/gateway` as keys. Each value has `instance_id`, `succeeded`, `composer`, and `javascript`, with its own states, attempts, error codes, snapshots, and graphs using the ecosystem shape below. An empty map is serialized as `[]`. This field is omitted for single-directory scans. Discovery leaves root observations unchanged; root ecosystems without an observation stay unknown. With discovery, overall `succeeded` describes the discovered sources, not old root attempts, and is true when no candidate qualifies.
 
 A failure keeps the last successful snapshot for that sub-project and ecosystem and marks it stale under the existing rules; an unscanned ecosystem stays unknown. Successful siblings still publish their observations. The overall scan is unsuccessful if any scanned sub-project ecosystem fails, but errors remain attached to the source that failed. This is an additive inventory contract, not a Project-level rollup.
 
@@ -171,6 +171,8 @@ Tarball and Git URLs can carry credentials or tokens. A digest keeps two sources
 ### Separate monorepo dependency sources
 
 Apps and packages in one checkout can resolve different versions of the same package. One repository-wide observation would replace or mix those results and hide which source failed. Scoping observations and attempts to the sub-project preserves both the graph and its last successful scan. Restricting discovery to direct children of `apps/` and `packages/` avoids treating every nested manifest as an independently managed project. The root response fields remain available for existing clients, without turning separate sources into one graph. Updates remain root-only because scanning more sources does not authorize package commands in those sources.
+
+Scanning only the root misses independently locked trees. Failing every source when one lockfile is invalid prevents healthy siblings from refreshing. Recursive discovery, merged graphs, and automatic workspace or per-source update support are not substitutes for these source boundaries.
 
 ### Fail instead of an empty graph
 

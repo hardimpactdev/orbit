@@ -16,10 +16,16 @@ function dependency_source_directory(): string
 }
 
 /** @return array<string, mixed> */
-function dependency_program(string $path, string $environment = 'development', ?string $program = null, string $application = ''): array
+function dependency_program(string $path, string $environment = 'development', ?string $program = null, string $application = '', bool $monorepo = false): array
 {
     $arguments = ['/usr/bin/python3', '-I', '-', $environment, $path];
-    $process = new Process($application === '' ? $arguments : [...$arguments, $application], timeout: 10);
+    if ($application !== '') {
+        $arguments[] = $application;
+    }
+    if ($monorepo) {
+        $arguments[] = '--monorepo';
+    }
+    $process = new Process($arguments, timeout: 10);
     $process->setInput($program ?? DependencyFilesProgram::render());
     $process->mustRun();
     expect($process->getErrorOutput())->toBeEmpty();
@@ -53,6 +59,42 @@ describe('bounded dependency file reading', function (): void {
         }
     })->with(['development', 'production']);
 
+    it('discovers only the pinned production release and refuses symlink discovery parents', function (): void {
+        $home = dependency_source_directory();
+        mkdir($home.'/releases/selected/apps/api', 0700, true);
+        mkdir($home.'/releases/old/apps/ignored', 0700, true);
+        file_put_contents($home.'/releases/selected/apps/api/composer.json', '{}');
+        file_put_contents($home.'/releases/old/apps/ignored/composer.json', '{}');
+        symlink('releases/selected', $home.'/current');
+        try {
+            $result = dependency_program($home, 'production', monorepo: true);
+
+            expect(array_keys($result['sub_projects']))->toBe(['apps/api']);
+            expect($result['sub_projects']['apps/api']['root'])->toBe($home.'/releases/selected/apps/api');
+            expect($result['sub_projects']['apps/api']['reference'])->toBe('selected');
+            symlink($home.'/releases/old/apps', $home.'/releases/selected/packages');
+            expect(dependency_program($home, 'production', monorepo: true))->toBe(['error' => 'dependencies.unsafe_source']);
+        } finally {
+            new Filesystem()->deleteDirectory($home);
+        }
+    });
+
+    it('detects a discovered directory replacement even when its manifests are identical', function (): void {
+        $home = dependency_source_directory();
+        mkdir($home.'/apps/api', 0700, true);
+        file_put_contents($home.'/apps/api/composer.json', '{}');
+        $program = str_replace(
+            '        if monorepo and projects != discover(root, fd):',
+            "        os.rename(root + '/apps/api', root + '/old'); os.mkdir(root + '/apps/api'); open(root + '/apps/api/composer.json', 'w').write('{}')\n        if monorepo and projects != discover(root, fd):",
+            DependencyFilesProgram::render(),
+        );
+        try {
+            expect(dependency_program($home, program: $program, monorepo: true))->toBe(['error' => 'dependencies.source_changed']);
+        } finally {
+            new Filesystem()->deleteDirectory($home);
+        }
+    });
+
     it('rejects unsafe application suffixes and symlink application ancestors', function (string $suffix): void {
         $home = dependency_source_directory();
         mkdir($home.'/actual');
@@ -73,7 +115,7 @@ describe('bounded dependency file reading', function (): void {
         $mutation = $change === 'application'
             ? "os.rename(root, root + '.old'); os.mkdir(root)"
             : "os.unlink(os.path.join(path, 'current')); os.symlink('releases/two', os.path.join(path, 'current'))";
-        $program = str_replace('        again = ', '        '.$mutation."\n        again = ", DependencyFilesProgram::render());
+        $program = str_replace('    again = ', '    '.$mutation."\n    again = ", DependencyFilesProgram::render());
 
         try {
             expect(dependency_program($home, 'production', $program, '/apps/site'))->toBe(['error' => 'dependencies.source_changed']);
@@ -197,7 +239,7 @@ describe('bounded dependency file reading', function (): void {
             'removed' => "os.unlink(os.path.join(root, 'composer.json'))",
             'directory' => "os.rename(root, root + '.old'); os.mkdir(root)",
         };
-        $program = str_replace('        again = ', '        '.$mutation."\n        again = ", DependencyFilesProgram::render());
+        $program = str_replace('    again = ', '    '.$mutation."\n    again = ", DependencyFilesProgram::render());
         try {
             expect(dependency_program($root, program: $program))->toBe(['error' => 'dependencies.source_changed']);
         } finally {
@@ -211,7 +253,7 @@ describe('bounded dependency file reading', function (): void {
         mkdir($root.'/releases/one', 0o700, true);
         mkdir($root.'/releases/two');
         symlink('releases/one', $root.'/current');
-        $program = str_replace('        again = ', "        os.unlink(os.path.join(path, 'current')); os.symlink('releases/two', os.path.join(path, 'current'))\n        again = ", DependencyFilesProgram::render());
+        $program = str_replace('    again = ', "    os.unlink(os.path.join(path, 'current')); os.symlink('releases/two', os.path.join(path, 'current'))\n    again = ", DependencyFilesProgram::render());
         try {
             expect(dependency_program($root, 'production', $program))->toBe(['error' => 'dependencies.source_changed']);
         } finally {

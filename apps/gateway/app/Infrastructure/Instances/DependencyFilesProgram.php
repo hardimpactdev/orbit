@@ -102,8 +102,54 @@ def read_file(fd, name):
         entry['error'] = 'dependencies.unreadable_source'
     return entry
 
+def collect_files(fd):
+    files = {name: read_file(fd, name) for name in FILES}
+    again = {name: read_file(fd, name) for name in FILES}
+    if files != again:
+        fail('source_changed')
+    return files
+
+def discover(root, fd):
+    projects = {}
+    enabled = False
+    for parent in ('apps', 'packages'):
+        try:
+            info = os.stat(parent, dir_fd=fd, follow_symlinks=False)
+        except FileNotFoundError:
+            continue
+        enabled = True
+        if not stat.S_ISDIR(info.st_mode):
+            fail('unsafe_source')
+        parent_fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+        try:
+            for name in sorted(os.listdir(parent_fd)):
+                info = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+                if not stat.S_ISDIR(info.st_mode):
+                    continue
+                child_fd = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent_fd)
+                try:
+                    names = set(os.listdir(child_fd))
+                    if 'composer.json' not in names and not ('package.json' in names and names.intersection({'package-lock.json', 'npm-shrinkwrap.json', 'pnpm-lock.yaml', 'bun.lock'})):
+                        continue
+                    relative = parent + '/' + name
+                    try:
+                        files = collect_files(child_fd)
+                    except (Refusal, OSError) as error:
+                        code = str(error) if isinstance(error, Refusal) else 'dependencies.unreadable_source'
+                        files = {key: {'content': None, 'hash': None, 'error': code, 'state': None} for key in FILES}
+                    projects[relative] = {'root': root + '/' + relative, 'files': files, 'source_identity': [os.fstat(child_fd).st_dev, os.fstat(child_fd).st_ino]}
+                finally:
+                    os.close(child_fd)
+        finally:
+            os.close(parent_fd)
+    return projects if enabled else None
+
 try:
-    environment, path, *suffix = sys.argv[1:]
+    args = sys.argv[1:]
+    monorepo = args[-1:] == ['--monorepo']
+    if monorepo:
+        args = args[:-1]
+    environment, path, *suffix = args
     application = suffix[0] if len(suffix) == 1 else ''
     if len(suffix) > 1 or (application and (not application.startswith('/') or any(p in ('', '.', '..') for p in application[1:].split('/')))):
         fail('unsafe_source')
@@ -111,20 +157,28 @@ try:
         fail('unsafe_source')
     root, reference, fd, identity = source(environment, path, application)
     try:
-        files = {name: read_file(fd, name) for name in FILES}
-        if sum(v['state'][3] for v in files.values() if v['hash'] is not None) > 32 * 1024 * 1024:
-            fail('source_too_large')
-        again = {name: read_file(fd, name) for name in FILES}
-        if files != again:
+        projects = discover(root, fd) if monorepo else None
+        files = collect_files(fd) if projects is None else {name: {'content': None, 'hash': None, 'error': None, 'state': None} for name in FILES}
+        if monorepo and projects != discover(root, fd):
             fail('source_changed')
+        sources = [files] + [p['files'] for p in (projects or {}).values()]
+        if sum(v['state'][3] for source_files in sources for v in source_files.values() if v['hash'] is not None) > 32 * 1024 * 1024:
+            fail('source_too_large')
         next_root, next_reference, next_fd, next_identity = source(environment, path, application)
         os.close(next_fd)
         if (root, reference, identity) != (next_root, next_reference, next_identity):
             fail('source_changed')
-        digest = hashlib.sha256(json.dumps([identity, files], sort_keys=True).encode()).hexdigest()
-        for entry in files.values():
-            del entry['state']
-        print(json.dumps({'root': root, 'reference': reference, 'identity': digest, 'files': files}))
+        digest = hashlib.sha256(json.dumps([identity, files, projects], sort_keys=True).encode()).hexdigest()
+        for source_files in sources:
+            for entry in source_files.values():
+                del entry['state']
+        receipt = {'root': root, 'reference': reference, 'identity': digest, 'files': files}
+        if monorepo:
+            receipt['sub_projects'] = projects
+            for project in (projects or {}).values():
+                project['reference'] = reference
+                project['identity'] = digest
+        print(json.dumps(receipt))
     finally:
         os.close(fd)
 except Refusal as error:

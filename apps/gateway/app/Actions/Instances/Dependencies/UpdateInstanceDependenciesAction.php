@@ -128,7 +128,7 @@ final readonly class UpdateInstanceDependenciesAction
 
     private function result(Instance $instance, DependencyUpdateStepResult $composer, DependencyUpdateStepResult $javascript): InstanceDependencyUpdateResult
     {
-        return new InstanceDependencyUpdateResult($instance->id, $composer, $javascript, $this->scan->execute($instance));
+        return new InstanceDependencyUpdateResult($instance->id, $composer, $javascript, $this->scan->execute($instance, discover: false));
     }
 
     private function refused(int $instanceId, string $errorCode): InstanceDependencyUpdateResult
