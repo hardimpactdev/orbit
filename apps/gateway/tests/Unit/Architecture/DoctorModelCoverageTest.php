@@ -37,6 +37,8 @@ use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeFootprint;
 use App\Models\NodeRole;
+use App\Models\PackageCacheEntry;
+use App\Models\PackageCacheSnapshot;
 use App\Models\ProblemCollectorState;
 use App\Models\ProblemFingerprint;
 use App\Models\Process;
@@ -105,6 +107,8 @@ it('partitions every persisted model across doctor dispositions', function (): v
     $excluded = [
         TaskVm::class,
         TaskVmImageBuild::class, // Build history, not a resource that doctor converges.
+        PackageCacheSnapshot::class, // Desired dependency inventory, not a converged fleet resource.
+        PackageCacheEntry::class, // Verified cache inventory, not a converged fleet resource.
         GatewayRelease::class,
         FleetRollout::class,
         FleetRolloutNode::class,

@@ -28,6 +28,7 @@ use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskWait;
 use App\Domain\Tasks\TaskWorkspaceName;
 use App\Domain\Tasks\TaskWorkspaceRoute;
+use App\Domain\TaskVms\TaskVmPackageCacheMount;
 use App\Infrastructure\TaskVms\TaskVmStepClock;
 use App\Infrastructure\TaskVms\TaskVmWorkspace;
 use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplates;
@@ -52,6 +53,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning, T
         private DevelopmentInstanceProvisioner $development,
         private TaskVmWorkspace $taskVms,
         private TaskVmStepClock $clock,
+        private TaskVmPackageCacheMount $packageCache,
     ) {}
 
     public function provision(InstanceProvisionIntent $intent): Instance|InstanceProvisionFailure
@@ -226,6 +228,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning, T
         $parent = $checkout->parent();
         $template = $parent instanceof StoragePath ? $this->taskVms->template($vm, $group, $parent->value) : null;
         $this->clock->step('workspace-template');
+        $this->packageCache->prepare($vm, $group->project);
 
         return $template;
     }

@@ -58,6 +58,14 @@ enum TaskVmError: string
     case WorkspaceTemplateRunning = 'task_vm.workspace_template_running';
     case WorkspaceTemplateDetachFailed = 'task_vm.workspace_template_detach_failed';
 
+    // Shared package cache.
+    case PackageCacheIntegrityConflict = 'task_vm.package_cache_integrity_conflict';
+    case PackageCacheLockInvalid = 'task_vm.package_cache_lock_invalid';
+    case PackageCacheInvalidLimit = 'task_vm.package_cache_invalid_limit';
+    case PackageCacheInvalidResult = 'task_vm.package_cache_invalid_result';
+    case PackageCacheMountInvalid = 'task_vm.package_cache_mount_invalid';
+    case PackageCacheFailed = 'task_vm.package_cache_failed';
+
     // UpCloud.
     case UpCloudNotConfigured = 'task_vm.upcloud_not_configured';
     case UpCloudTokenUnavailable = 'task_vm.upcloud_token_unavailable';

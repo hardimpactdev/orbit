@@ -159,3 +159,5 @@ Doctor does not report a stopped Horizon or an old `last_tick_at` yet. Until it 
 The scheduler used to run its work, and the task VM workers, as foreground commands. A foreground command holds the scheduler's run for that minute, so a slow tick or a VM job could hold a publish for minutes. With dispatch only, the scheduler's run takes milliseconds, and each queue's workers decide when a job starts.
 
 Horizon needs Redis. The fleet already runs Valkey on the `database` role, so the Gateway uses that registered connection instead of a second server on its own host. Orbit's records keep its address, as for every other Database connection.
+
+Trusted [package cache fills](/reference/compute-drivers#shared-package-cache) run on `builds`, coalesced by task VM host. A running fill can have one pending successor, so a default-branch lock change during filling is retained. The host writer locks and publishes only verified missing archives.

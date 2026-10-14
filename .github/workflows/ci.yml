@@ -101,6 +101,12 @@ jobs:
         with:
           node-version: '24'
 
+      - name: Set up Bun for package cache tests
+        if: matrix.directory == 'apps/gateway'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
       - name: Set up Homebrew
         if: matrix.directory == 'apps/gateway' && runner.environment == 'github-hosted'
         uses: Homebrew/actions/setup-homebrew@e99025eb970cfa124b8284a35463d87426917478 # 2026.09.28.1
@@ -505,6 +511,11 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: '24'
+
+      - name: Set up Bun for package cache tests
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
 
       # Sabre's PHP CLI sets this in 99-github-actions.ini, and setup-php sets it on a hosted runner. The shard runner
       # containers keep their PHP CLI default, so the job sets it only for its own processes and Pest's workers.
