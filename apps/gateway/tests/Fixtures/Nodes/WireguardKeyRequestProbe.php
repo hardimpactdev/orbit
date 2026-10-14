@@ -32,6 +32,8 @@ config()->set('broadcasting.default', 'null');
 $configuration = app(VpnConfigurationRepository::class);
 
 if ($mode === 'assign') {
+    // Initialize SQLite before the barrier so connection PRAGMAs do not race a peer's write.
+    $node = Node::query()->findOrFail($nodeId);
     file_put_contents($home.'/ready-'.$nodeId, 'ready');
     $deadline = microtime(true) + 10;
 
@@ -44,7 +46,7 @@ if ($mode === 'assign') {
     }
 
     try {
-        $configuration->assignPeerKey(Node::query()->findOrFail($nodeId), $publicKey);
+        $configuration->assignPeerKey($node, $publicKey);
         echo 'assigned';
         exit(0);
     } catch (ResourceOperationException $exception) {

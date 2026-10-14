@@ -246,7 +246,7 @@ describe('PATCH /api/v1/nodes/{node}/wireguard-key', function (): void {
 
             while (! is_file($this->orbitHome.'/ready-'.$this->node->id) || ! is_file($this->orbitHome.'/ready-'.$this->other->id)) {
                 if (microtime(true) > $deadline) {
-                    throw new RuntimeException('Key assignment probes did not reach the barrier: '.$first->getErrorOutput().$second->getErrorOutput());
+                    throw new RuntimeException('Key assignment probes did not reach the barrier: '.$first->getOutput().$first->getErrorOutput().$second->getOutput().$second->getErrorOutput());
                 }
 
                 usleep(1_000);
@@ -255,7 +255,7 @@ describe('PATCH /api/v1/nodes/{node}/wireguard-key', function (): void {
             file_put_contents($this->orbitHome.'/assign-go', 'go');
             $first->wait();
             $second->wait();
-            expect([$first->getExitCode(), $second->getExitCode()])->toEqualCanonicalizing([0, 1])
+            expect([$first->getExitCode(), $second->getExitCode()])->toEqualCanonicalizing([0, 1], $first->getOutput().$first->getErrorOutput().$second->getOutput().$second->getErrorOutput())
                 ->and([$first->getOutput(), $second->getOutput()])->toEqualCanonicalizing(['assigned', 'node.wireguard_key_conflict']);
             $pdo = new PDO('sqlite:'.$database);
             $query = $pdo->prepare('SELECT count(*) FROM nodes WHERE wireguard_public_key = ?');
@@ -310,6 +310,8 @@ function wireguard_key_probe_database(string $home): string
 {
     $path = sys_get_temp_dir().'/orbit-gateway-test-wireguard-'.basename($home).'.sqlite';
     $target = new PDO('sqlite:'.$path);
+    // Match the Gateway before competing probes connect; switching journal mode can lock SQLite.
+    $target->exec('PRAGMA journal_mode=WAL');
     $source = DB::connection()->getPdo();
     $tables = $source->query("SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")->fetchAll(PDO::FETCH_ASSOC);
 
