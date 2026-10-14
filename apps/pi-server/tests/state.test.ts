@@ -37,6 +37,35 @@ describe("deriveState", () => {
         expect(deriveState(settled(reason, message))).toEqual({ state: "failed", error });
     });
 
+    it.each([
+        ['{"error":{"code":"server_overloaded","message":"Try later"}}', "overloaded"],
+        ['OpenAI API error (503): {"error":{"type":"overloaded_error"}}', "overloaded"],
+        ['429 {"error":{"code":"rate_limit_exceeded","message":"Slow down"}}', "rate_limited"],
+        ["OpenAI API error (502): Bad gateway", "server_error"],
+        ['{"error":{"code":503,"message":"Unavailable"}}', "server_error"],
+        ["Servers overloaded", "overloaded"],
+        ["The server is overloaded or not ready yet.", "overloaded"],
+        ["Too many requests", "rate_limited"],
+        [
+            '429 {"error":{"code":"rate_limit_exceeded","message":"Per-minute quota reached"}}',
+            "rate_limited",
+        ],
+        ['429 {"error":{"code":"insufficient_quota","message":"Quota exceeded"}}', undefined],
+        ['503 {"error":{"code":"invalid_api_key","message":"Denied"}}', undefined],
+        ["401 Servers overloaded", undefined],
+        ["OpenAI API error (429): Billing limit exceeded", undefined],
+        ["Check failed: servers overloaded", undefined],
+        ["Provider finish_reason: content_filter", undefined],
+        ['503 {"error":', "server_error"],
+        ['503 {"error":{"code":"service_unavailable"}}', "server_error"],
+        ['{"error":', undefined],
+        ["Unknown failure", undefined],
+    ])("classifies only transient provider errors: %s", (message, category) => {
+        expect(deriveState(settled("error", message)).providerError).toBe(category);
+        expect(deriveState(settled("stop", message)).providerError).toBeUndefined();
+        expect(deriveState(settled("aborted", message)).providerError).toBeUndefined();
+    });
+
     it("reports a restart during the turn as failed, not as the earlier outcome", () => {
         expect(deriveState({ ...settled("stop"), interruptedByRestart: true })).toEqual({
             state: "failed",

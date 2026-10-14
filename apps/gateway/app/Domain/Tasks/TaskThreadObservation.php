@@ -27,6 +27,7 @@ final readonly class TaskThreadObservation
         public array $recentMessages = [],
         public ?string $turnId = null,
         public ?string $sessionUpdatedAt = null,
+        public ?string $providerError = null,
     ) {}
 
     /** @return array<string, mixed> */
@@ -38,6 +39,7 @@ final readonly class TaskThreadObservation
             'state' => $this->sessState,
             'available' => $this->available,
             'error' => $this->error,
+            'provider_error' => $this->providerError,
             'input_requests' => array_map(static fn (AgentInputRequest $request): array => $request->toArray(), $this->inputRequests),
             'idle' => $this->idle,
             'pending_approval_id' => $this->pendingApprovalId,

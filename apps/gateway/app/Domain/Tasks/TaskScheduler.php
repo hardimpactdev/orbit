@@ -464,7 +464,7 @@ final readonly class TaskScheduler
         $this->reconcilePiRestart($task, $implementer);
         $state = AgentThreadState::tryFrom($implementer->sessState);
         if ($state === AgentThreadState::Failed) {
-            if ($this->resumePiServerRestart($task, $group, $implementer) !== 'handled') {
+            if (! $this->retryProviderFailure($task, $group, $implementer) && $this->resumePiServerRestart($task, $group, $implementer) !== 'handled') {
                 $this->requestAssistance($task, $group, 'The implementer thread failed.', $observation);
             }
 
@@ -675,7 +675,7 @@ final readonly class TaskScheduler
         $this->reconcilePiRestart($task, $reviewer);
         $state = AgentThreadState::tryFrom($reviewer->sessState);
         if ($state === AgentThreadState::Failed) {
-            if ($this->resumePiServerRestart($task, $group, $reviewer) !== 'handled') {
+            if (! $this->retryProviderFailure($task, $group, $reviewer) && $this->resumePiServerRestart($task, $group, $reviewer) !== 'handled') {
                 $this->requestAssistance($task, $group, 'The reviewer thread failed.', $observation);
             }
 
@@ -2155,7 +2155,7 @@ final readonly class TaskScheduler
         $this->reconcilePiRestart($task, $reviewer);
         $state = AgentThreadState::tryFrom($reviewer->sessState);
         if ($state === AgentThreadState::Failed) {
-            if ($this->resumePiServerRestart($task, $group, $reviewer) !== 'handled') {
+            if (! $this->retryProviderFailure($task, $group, $reviewer) && $this->resumePiServerRestart($task, $group, $reviewer) !== 'handled') {
                 $this->requestAssistance($task, $group, 'The reviewer thread failed.', $observation, AssistanceKind::Failure);
             }
 
@@ -2537,11 +2537,20 @@ final readonly class TaskScheduler
     }
 
     /**
-     * Marks a pending Pi resume accepted or superseded from the turn now on the acting thread (ADR 0167).
+     * Clears successful provider retries and reconciles pending Pi restart resumes from the acting thread (ADR 0167).
      * An accepted key is not sent again. A different turn does not reuse it either.
      */
     private function reconcilePiRestart(Task $task, TaskThreadObservation $acting): void
     {
+        $retry = $task->provider_retry;
+        if ($retry !== null && $retry['thread_id'] === $acting->threadId) {
+            if ($acting->sessState === AgentThreadState::Done->value || $acting->sessState === AgentThreadState::Idle->value) {
+                $task->update(['provider_retry' => null]);
+            } elseif (is_string($acting->turnId) && $acting->turnId !== '' && $acting->turnId === $task->pi_restart_key) {
+                // A server restart during a provider retry must not buy a fresh budget.
+                $task->update(['provider_retry' => [...$retry, 'key' => $acting->turnId]]);
+            }
+        }
         if ($task->pi_restart_reservation !== self::PiRestartPending || (int) $task->pi_restart_thread_id !== $acting->threadId) {
             return;
         }
@@ -2557,6 +2566,61 @@ final readonly class TaskScheduler
         if ($turnId !== $task->pi_restart_source_turn_id) {
             $task->update(['pi_restart_reservation' => self::PiRestartSuperseded]);
         }
+    }
+
+    /** Reserves a delayed, idempotent continuation of the same work before asking for assistance. */
+    private function retryProviderFailure(Task $task, Task $group, TaskThreadObservation $acting): bool
+    {
+        if (! in_array($acting->providerError, ['overloaded', 'rate_limited', 'server_error'], true)
+            || ! is_string($acting->turnId) || $acting->turnId === ''
+            || AgentThread::query()->find($acting->threadId)?->driver !== 'pi') {
+            return false;
+        }
+
+        $retry = $task->provider_retry;
+        if ($retry !== null && ($retry['thread_id'] !== $acting->threadId
+            || ! in_array($acting->turnId, [$retry['source_turn_id'], $retry['key']], true))) {
+            $retry = null;
+        }
+        if ($retry === null || $acting->turnId !== $retry['source_turn_id']) {
+            $history = $retry['history'] ?? [];
+            $attempt = count($history) + 1;
+            if ($attempt > 4) {
+                $this->requestAssistance($task, $group, "Provider retries exhausted after 4 retries.\n"
+                    .implode("\n", $history)."\nFinal failure: turn {$acting->turnId}, {$acting->providerError}.");
+
+                return true;
+            }
+            $due = now()->addMinutes(2 ** ($attempt - 1))->toIso8601String();
+            $entry = "Provider retry {$attempt}/4: {$acting->role->value} turn {$acting->turnId}, {$acting->providerError}; due {$due}.";
+            $retry = [
+                'thread_id' => $acting->threadId, 'source_turn_id' => $acting->turnId,
+                'key' => (string) Str::uuid(), 'due_at' => $due, 'history' => [...$history, $entry],
+            ];
+            DB::transaction(function () use ($task, $group, $acting, $retry, $entry): void {
+                $task->update(['provider_retry' => $retry]);
+                TaskComment::query()->create([
+                    'task_group_id' => $group->id, 'task_id' => $task->id, 'agent_thread_id' => $acting->threadId,
+                    'type' => TaskCommentType::ProviderRetry, 'body' => $entry, 'author' => 'orbit', 'posted_at' => now(),
+                ]);
+            });
+        }
+        if (now()->lt(Carbon::parse($retry['due_at']))) {
+            return true;
+        }
+        $this->turnFetcher->beforeTurn($group);
+        try {
+            $this->actor->resumeInterruptedTurn($group, $acting,
+                'Your previous turn failed because of a transient provider error. Continue the same assignment from the existing workspace. Check git status and git diff before continuing, and hand off with the turn command.',
+                $retry['key']);
+        } catch (AgentDriverException $exception) {
+            $this->recordCommunicationFailure($task, $group, $exception->getMessage());
+
+            return true;
+        }
+        $this->clearCommunicationFailures($task);
+
+        return true;
     }
 
     /**

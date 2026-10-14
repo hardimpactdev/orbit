@@ -14,6 +14,7 @@ import {
 import { createSearchDocsTool } from "./search-docs.ts";
 import { createWorkspaceTools } from "./workspace-tools.ts";
 import { deriveState, type DerivedState } from "./state.ts";
+import { withProviderErrors } from "./provider-errors.ts";
 import { isValidSessionId, type SessionConfig, type SessionRecord, SessionStore } from "./store.ts";
 
 const THINKING_LEVELS: readonly string[] = [
@@ -95,6 +96,7 @@ export interface Snapshot {
     session: { id: string; cwd: string; model: string; thinkingLevel: string };
     state: DerivedState["state"];
     error: string | null;
+    providerError?: DerivedState["providerError"];
     /** The key of the latest accepted send. Each send starts one turn, so it identifies that turn. */
     turnId: string | null;
     entries: TranscriptEntry[];
@@ -114,6 +116,7 @@ export interface StateEvent {
     sequence: number;
     state: DerivedState["state"];
     error: string | null;
+    providerError?: DerivedState["providerError"];
     turnId: string | null;
     usage: Usage;
 }
@@ -358,6 +361,8 @@ export class SessionRegistry {
             ],
         });
 
+        session.agent.streamFunction = withProviderErrors(session.agent.streamFunction);
+
         const live: LiveSession = {
             id,
             run: randomBytes(8).toString("hex"),
@@ -491,10 +496,7 @@ export class SessionRegistry {
         return deriveState({
             working: live.working,
             interruptedByRestart: live.interruptedByRestart,
-            lastAssistant:
-                last === undefined || last.role !== "assistant"
-                    ? undefined
-                    : { stopReason: last.stopReason, errorMessage: last.errorMessage },
+            lastAssistant: last === undefined || last.role !== "assistant" ? undefined : last,
         });
     }
 

@@ -16,4 +16,5 @@ enum TaskCommentType: string
     case AssistanceRequested = 'assistance_requested';
     case Resolution = 'resolution';
     case QuestionClosed = 'question_closed';
+    case ProviderRetry = 'provider_retry';
 }
