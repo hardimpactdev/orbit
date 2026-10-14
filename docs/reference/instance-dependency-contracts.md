@@ -84,7 +84,7 @@ No signal at all means pnpm, which still needs `pnpm-lock.yaml`.
 
 ### Monorepo discovery
 
-For Project type `monorepo`, collection inspects only direct child directories of the repository's top-level `apps/` and `packages/`. It does not recurse below those candidates or discover projects elsewhere. The repository is the development checkout or the pinned production release.
+For Project type `monorepo`, collection inspects only direct child directories of the repository's top-level `apps/` and `packages/`. It does not recurse below those candidates or discover projects elsewhere. The repository is the development checkout or the pinned production release. Discovery starts at that root even when `source_is_laravel` is true and the configured web root is nested, such as `apps/gateway/public`. The application-directory suffix selects the fallback source only when neither top-level directory exists.
 
 A candidate qualifies as a web project if it contains `composer.json`, or if it contains `package.json` and at least one of `package-lock.json`, `npm-shrinkwrap.json`, `pnpm-lock.yaml`, or `bun.lock`. These are file-presence tests, not successful parsing tests. `composer.json` without `composer.lock` qualifies and then fails with `dependencies.incomplete_source`. A candidate qualifying through Composer can still have a failing JavaScript ecosystem. A JavaScript-only candidate with no listed lockfile does not qualify, even if it has a Yarn lockfile or `bun.lockb`.
 
@@ -123,7 +123,7 @@ The Gateway stores package identities separately from Instance observations, res
 | `instance_dependency_edges` | The requirements of one observation. |
 | `instance_dependency_scan_attempts` | Every attempt for the Instance, dependency source, and ecosystem, with its time and error code, null on success. |
 
-`PublishInstanceDependencyScanAction` replaces one dependency source's ecosystem observation, resolutions, edges, and attempt in one transaction. A failure records only that source's ecosystem attempt and keeps its stored observation. It does not replace a sibling sub-project's data or mark the sibling as failed. Each sub-project can resolve a different version of the same shared package identity. A database failure records `dependencies.persistence_failed`. An Instance in removal gets `dependencies.instance_unavailable`. Removing an Instance deletes its rows but keeps shared package rows.
+`PublishInstanceDependencyScanAction` replaces one dependency source's ecosystem observation, resolutions, edges, and attempt in one transaction. A failure records only that source's ecosystem attempt and keeps its stored observation. It does not replace a sibling sub-project's data or mark the sibling as failed. Each sub-project can resolve a different version of the same shared package identity. A database failure records `dependencies.persistence_failed`. An Instance in removal gets `dependencies.instance_unavailable`. Removing an Instance deletes its rows but keeps shared package rows. Rollback deletes each sub-project's observations and attempts before removing the scope columns. Root observations and attempt history remain unchanged.
 
 ## Responses
 

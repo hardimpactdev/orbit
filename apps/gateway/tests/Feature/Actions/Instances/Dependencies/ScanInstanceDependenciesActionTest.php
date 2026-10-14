@@ -401,6 +401,52 @@ describe('coordinated instance dependency scans', function (): void {
         }
     });
 
+    it('discovers repository siblings when a monorepo has a nested Laravel application root', function (): void {
+        $instance = dependency_scan_instance();
+        $instance->project->update(['type' => 'monorepo', 'root' => 'apps/gateway/public']);
+        $instance->update(['source_is_laravel' => true]);
+        $path = dependency_scan_local_source($instance);
+        dependency_scan_write_fixture($path.'/apps/gateway', 'composer');
+        dependency_scan_write_fixture($path.'/apps/sibling', 'composer');
+        dependency_scan_write_fixture($path.'/packages/widget', 'npm');
+        try {
+            $result = app(ScanInstanceDependenciesAction::class)->execute($instance);
+
+            expect($result->succeeded())->toBeTrue();
+            expect(array_keys($result->subProjects))->toBe(['apps/gateway', 'apps/sibling', 'packages/widget']);
+            expect($result->subProjects['apps/gateway']->composer->snapshot->source->projectRoot)->toBe($path.'/apps/gateway');
+            expect($result->subProjects['apps/sibling']->composer->snapshot->source->projectRoot)->toBe($path.'/apps/sibling');
+            expect($result->subProjects['packages/widget']->javascript->snapshot->source->projectRoot)->toBe($path.'/packages/widget');
+            expect(array_keys(app(ReadInstanceDependencyScanAction::class)->subProjects($instance->id)))->toBe(['apps/gateway', 'apps/sibling', 'packages/widget']);
+            $this->assertDatabaseCount('instance_dependency_observations', 6);
+            $this->assertDatabaseMissing('instance_dependency_scan_attempts', ['instance_id' => $instance->id, 'sub_project' => '']);
+        } finally {
+            new Filesystem()->deleteDirectory($path);
+        }
+    });
+
+    it('falls back to the nested Laravel application when both top-level discovery directories are missing', function (): void {
+        $instance = dependency_scan_instance();
+        $instance->project->update(['type' => 'monorepo', 'root' => 'server/web/public']);
+        $instance->update(['source_is_laravel' => true]);
+        $path = dependency_scan_local_source($instance);
+        dependency_scan_write_fixture($path, 'npm');
+        dependency_scan_write_fixture($path.'/server/web', 'composer');
+        dependency_scan_write_fixture($path.'/server/web/apps/ignored', 'npm');
+        try {
+            $result = app(ScanInstanceDependenciesAction::class)->execute($instance);
+
+            expect($result->succeeded())->toBeTrue();
+            expect($result->subProjects)->toBeNull();
+            expect($result->composer->snapshot->source->projectRoot)->toBe($path.'/server/web');
+            expect($result->javascript->state())->toBe(DependencyInventoryState::Absent);
+            $this->assertDatabaseCount('instance_dependency_observations', 2);
+            $this->assertDatabaseMissing('instance_dependency_scan_attempts', ['instance_id' => $instance->id, 'sub_project' => 'apps/ignored']);
+        } finally {
+            new Filesystem()->deleteDirectory($path);
+        }
+    });
+
     it('keeps single-directory scanning without discovery for other types or missing monorepo directories', function (string $type): void {
         $instance = dependency_scan_instance();
         $instance->project->update(['type' => $type]);

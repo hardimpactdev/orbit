@@ -155,16 +155,28 @@ try:
         fail('unsafe_source')
     if environment not in ('development', 'production'):
         fail('unsafe_source')
-    root, reference, fd, identity = source(environment, path, application)
+    selected_application = '' if monorepo else application
+    root, reference, fd, identity = source(environment, path, selected_application)
     try:
+        repository = (root, reference, identity)
         projects = discover(root, fd) if monorepo else None
+        if monorepo and projects is None and application:
+            next_root, next_reference, next_fd, next_identity = source(environment, path, application)
+            os.close(fd)
+            root, reference, fd, identity = next_root, next_reference, next_fd, next_identity
+            selected_application = application
         files = collect_files(fd) if projects is None else {name: {'content': None, 'hash': None, 'error': None, 'state': None} for name in FILES}
-        if monorepo and projects != discover(root, fd):
-            fail('source_changed')
+        if monorepo:
+            next_root, next_reference, next_fd, next_identity = source(environment, path, '')
+            try:
+                if repository != (next_root, next_reference, next_identity) or projects != discover(next_root, next_fd):
+                    fail('source_changed')
+            finally:
+                os.close(next_fd)
         sources = [files] + [p['files'] for p in (projects or {}).values()]
         if sum(v['state'][3] for source_files in sources for v in source_files.values() if v['hash'] is not None) > 32 * 1024 * 1024:
             fail('source_too_large')
-        next_root, next_reference, next_fd, next_identity = source(environment, path, application)
+        next_root, next_reference, next_fd, next_identity = source(environment, path, selected_application)
         os.close(next_fd)
         if (root, reference, identity) != (next_root, next_reference, next_identity):
             fail('source_changed')

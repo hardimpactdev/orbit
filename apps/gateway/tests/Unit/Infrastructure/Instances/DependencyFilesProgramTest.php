@@ -59,6 +59,54 @@ describe('bounded dependency file reading', function (): void {
         }
     })->with(['development', 'production']);
 
+    it('anchors monorepo discovery at the checkout or release and uses the Laravel suffix only for fallback', function (string $environment, bool $discover): void {
+        $home = dependency_source_directory();
+        $repository = $environment === 'production' ? $home.'/releases/selected' : $home;
+        $application = $discover ? '/apps/gateway' : '/server/web';
+        mkdir($repository.$application, 0700, true);
+        file_put_contents($repository.$application.'/composer.json', '{}');
+        if ($discover) {
+            mkdir($repository.'/packages/widget', 0700, true);
+            file_put_contents($repository.'/packages/widget/package.json', '{}');
+            file_put_contents($repository.'/packages/widget/package-lock.json', '{}');
+        } else {
+            mkdir($repository.$application.'/apps/ignored', 0700, true);
+            file_put_contents($repository.$application.'/apps/ignored/composer.json', '{}');
+            file_put_contents($repository.'/composer.json', 'not the application');
+        }
+        if ($environment === 'production') {
+            symlink('releases/selected', $home.'/current');
+        }
+        try {
+            $result = dependency_program($home, $environment, application: $application, monorepo: true);
+
+            expect($result['reference'])->toBe($environment === 'production' ? 'selected' : null);
+            expect($result['root'])->toBe($discover ? $repository : $repository.$application);
+            if ($discover) {
+                expect(array_keys($result['sub_projects']))->toBe(['apps/gateway', 'packages/widget']);
+                expect($result['sub_projects']['apps/gateway']['root'])->toBe($repository.'/apps/gateway');
+                expect($result['sub_projects']['packages/widget']['root'])->toBe($repository.'/packages/widget');
+            } else {
+                expect($result['sub_projects'])->toBeNull();
+                expect($result['files']['composer.json']['content'])->toBe(base64_encode('{}'));
+            }
+        } finally {
+            new Filesystem()->deleteDirectory($home);
+        }
+    })->with(['development', 'production'])->with([true, false]);
+
+    it('rejects newly added top-level discovery directories during Laravel fallback collection', function (): void {
+        $home = dependency_source_directory();
+        mkdir($home.'/server/web', 0700, true);
+        file_put_contents($home.'/server/web/composer.json', '{}');
+        $program = str_replace('    again = ', "    os.mkdir(path + '/apps')\n    again = ", DependencyFilesProgram::render());
+        try {
+            expect(dependency_program($home, program: $program, application: '/server/web', monorepo: true))->toBe(['error' => 'dependencies.source_changed']);
+        } finally {
+            new Filesystem()->deleteDirectory($home);
+        }
+    });
+
     it('discovers only the pinned production release and refuses symlink discovery parents', function (): void {
         $home = dependency_source_directory();
         mkdir($home.'/releases/selected/apps/api', 0700, true);
@@ -84,8 +132,8 @@ describe('bounded dependency file reading', function (): void {
         mkdir($home.'/apps/api', 0700, true);
         file_put_contents($home.'/apps/api/composer.json', '{}');
         $program = str_replace(
-            '        if monorepo and projects != discover(root, fd):',
-            "        os.rename(root + '/apps/api', root + '/old'); os.mkdir(root + '/apps/api'); open(root + '/apps/api/composer.json', 'w').write('{}')\n        if monorepo and projects != discover(root, fd):",
+            "        if monorepo:\n            next_root, next_reference, next_fd, next_identity = source(environment, path, '')",
+            "        os.rename(root + '/apps/api', root + '/old'); os.mkdir(root + '/apps/api'); open(root + '/apps/api/composer.json', 'w').write('{}')\n        if monorepo:\n            next_root, next_reference, next_fd, next_identity = source(environment, path, '')",
             DependencyFilesProgram::render(),
         );
         try {

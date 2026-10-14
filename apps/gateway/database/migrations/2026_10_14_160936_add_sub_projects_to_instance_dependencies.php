@@ -28,13 +28,13 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('instances', fn (Blueprint $table) => $table->dropColumn('dependency_sub_projects'));
+        DB::table('instance_dependency_scan_attempts')->where('sub_project', '!=', '')->delete();
         Schema::table('instance_dependency_scan_attempts', function (Blueprint $table): void {
             $table->dropIndex('dependency_attempt_source_latest');
             $table->dropColumn('sub_project');
         });
         // Source-scoped observations cannot be collapsed into a root graph.
         DB::table('instance_dependency_observations')->where('sub_project', '!=', '')->delete();
-        DB::table('instance_dependency_scan_attempts')->where('sub_project', '!=', '')->delete();
         Schema::table('instance_dependency_observations', function (Blueprint $table): void {
             $table->dropUnique('dependency_observation_instance_source_ecosystem');
             $table->dropColumn('sub_project');

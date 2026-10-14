@@ -46,6 +46,7 @@ final readonly class CollectInstanceDependencyFilesAction
         $base = $production ? $path.'/current' : $path;
         $application = substr($instance->dependencyDirectory(), strlen($base));
         $arguments = ['/usr/bin/python3', '-I', '-', $instance->defaultAppEnv(), $path];
+        // In monorepo mode this suffix selects only the no-top-level-directories fallback.
         if ($application !== '') {
             $arguments[] = $application;
         }
@@ -91,7 +92,8 @@ final readonly class CollectInstanceDependencyFilesAction
             throw new DependencyCollectionException($receipt['error']);
         }
         $total = 0;
-        $collected = $this->decode($receipt, $production, $path, $application, $total);
+        $sourceApplication = $monorepo && ($receipt['sub_projects'] ?? null) !== null ? '' : $application;
+        $collected = $this->decode($receipt, $production, $path, $sourceApplication, $total);
         if (! $monorepo || ! array_key_exists('sub_projects', $receipt) || $receipt['sub_projects'] === null) {
             return $collected;
         }
