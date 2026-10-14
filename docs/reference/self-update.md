@@ -120,7 +120,7 @@ When GitHub does not answer for an ancestor, the search stops and names nothing.
 
 CI normally publishes a release within minutes, so the 30 minutes let the fleet wait for the commit's own release and roll out once. A release that takes longer makes the fleet roll out twice: first the fallback, then the commit's own release. The [fleet rollout](/reference/gateway-recovery#desired-state) raises `rollout_cli_fallback` once when it uses a fallback. The alert names why the commit's own release was not used.
 
-The expected footprint digest per Node joins this state when the footprint re-apply ships. A Gateway release record can store the state as it is served.
+The expected footprint digest per Node joins this state when the footprint re-apply ships. A Gateway release record can store the state as it is served. The shared [Caddy package step](/reference/node-provisioning#package-sources) has its own source-based digest; renaming its source schedules one idempotent footprint run on Nodes that use Caddy.
 
 ## What the command does
 

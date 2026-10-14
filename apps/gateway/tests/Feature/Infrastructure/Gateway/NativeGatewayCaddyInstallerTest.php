@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Infrastructure\Gateway\NativeGatewayCaddyInstaller;
-use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
+use App\Infrastructure\Nodes\CaddyPackageProgram;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -20,9 +20,9 @@ describe('Gateway Caddy installer', function (): void {
 
         expect($processes->calls)->toHaveCount(2)
             ->and($processes->calls[0]->arguments)
-            ->toBe(['sudo', 'bash', '-seu', '--', ...CaddyPackageSourceProgram::arguments()])
+            ->toBe(['sudo', 'bash', '-seu', '--', ...CaddyPackageProgram::arguments()])
             ->and($processes->calls[0]->input)
-            ->toBe(CaddyPackageSourceProgram::render())
+            ->toBe(CaddyPackageProgram::render())
             ->and($processes->calls[1]->arguments)
             ->toBe($dropIn->arguments('caddy'))
             ->and($processes->calls[1]->input)

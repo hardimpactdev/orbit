@@ -13,7 +13,7 @@ use App\Domain\Nodes\NodeRoleOperationException;
 use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
-use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
+use App\Infrastructure\Nodes\CaddyPackageProgram;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
@@ -66,16 +66,13 @@ final readonly class NativeAnalyticsPublicationManager implements AnalyticsPubli
 
     /**
      * The analytics role has no package step of its own, so the dashboard host is the point where
-     * this Node needs a Caddy Orbit can render against. `CaddyPackageSourceProgram` owns the pin and floor.
+     * this Node needs a Caddy Orbit can render against. `CaddyPackageProgram` owns the pin and floor.
      */
     private function ensureCaddy(Node $node, string $address): void
     {
         $result = $this->ssh->execute(
             $this->connection($node, $address),
-            new RemoteCommand(
-                arguments: ['sudo', 'bash', '-seu', '--', ...CaddyPackageSourceProgram::arguments()],
-                input: CaddyPackageSourceProgram::render(),
-            ),
+            CaddyPackageProgram::command(),
         );
 
         if (! $result->succeeded()) {

@@ -17,7 +17,7 @@ use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildResult;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
-use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
+use App\Infrastructure\Nodes\CaddyPackageProgram;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\ProxyCli\NativeProxyCliPublicationManager;
 use App\Infrastructure\ProxyCli\ProxyCliCertificatePublisher;
@@ -195,7 +195,7 @@ function proxycli_takeover_manager(array &$events, bool $failBuild = false): Nat
 
             public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
             {
-                if (in_array(CaddyPackageSourceProgram::RELEASE_URL, $command->arguments, true)) {
+                if (in_array(CaddyPackageProgram::RELEASE_URL, $command->arguments, true)) {
                     $this->events[] = ['event' => 'ssh:caddy-source'];
 
                     return new CommandResult(0, '', '', 1, false);

@@ -4,7 +4,7 @@ description: "How node:add bootstraps or converges a Node, how roles share and l
 covers:
   - apps/gateway/app/Actions/Nodes/{ProvisionNodeAction,EnrollMacOsNodeAction,RemoveNodeAction,AddNodeRoleAction,RemoveNodeRoleAction,AssignRoleAction}.php
   - apps/gateway/app/Domain/Nodes/RoleRegistry.php
-  - apps/gateway/app/Infrastructure/Nodes/{NativeNodeConverger,MacOsNodeConverger,NodeSshJump,NodeBootstrapCommandFactory,NodeBootstrapDnsProgram,NodeBootstrapPackageCatalog,CaddyPackageSourceProgram,RemotePhpPackageManager,NodeLocks,NodeLock}.php
+  - apps/gateway/app/Infrastructure/{Gateway/NativeGatewayCaddyInstaller.php,Nodes/{NativeNodeConverger,MacOsNodeConverger,NodeSshJump,NodeBootstrapCommandFactory,NodeBootstrapDnsProgram,NodeBootstrapPackageCatalog,CaddyPackage*,RemotePhpPackageManager,NodeLocks,NodeLock}.php}
   - apps/gateway/app/Infrastructure/WireGuard/NativeGatewayPeerProjectionManager.php
   - apps/gateway/app/Console/Commands/ProvisionNodeCommand.php
   - apps/gateway/app/Infrastructure/{Firewall/NodeFirewallRuleCatalog,Ssh/NativeSshExecutor,Ssh/SshConnection,Ssh/SshHostKeyScanner,Ssh/HostKeyScanner}.php
@@ -315,6 +315,8 @@ For Caddy, the Gateway pins a release and the SHA-512 digest of its `.deb` for `
 Caddy must be at least 2.9.0. A lower release fails the `caddy-package-source` step and names both releases. Doctor reports it as `role.caddy_version_unsupported`. Converging a role upgrades an archive Caddy in place. A Caddy at or above the floor stays as it is, so a newer pin does not restart it. `/etc/caddy/Caddyfile` is a symlink into Orbit's own versions directory, so the upgrade keeps the live configuration.
 
 The roles `gateway`, `router`, `ingress`, `app-dev`, `app-prod`, `websocket`, and `analytics` install Caddy when they converge. ProxyCli publication does the same on its Node. On the Gateway machine, the bootstrap and `php artisan orbit:gateway-web` install Caddy through local `sudo`. A failure there stops at step `gateway-caddy-install` with `gateway.caddy_install_failed`, and the live Caddy configuration stays unchanged. [Caddy configuration](/reference/caddy-configuration) describes how the Gateway builds each Node's Caddyfile.
+
+`CaddyPackageProgram::command()` supplies the same fixed arguments and shell program to role convergence, the fleet footprint, Gateway installation, and Analytics and ProxyCli publication. The rename from `CaddyPackageSourceProgram` changes the digest of the `caddy-package` footprint once, so the next footprint converge repeats this idempotent step. Its host command stays byte-for-byte the same. A Caddy at or above the floor is not reinstalled or restarted. The Gateway ordering step can fail with `gateway.caddy_start_failed` if its WireGuard ordering drop-in cannot be installed.
 
 ### Caddy reloads
 

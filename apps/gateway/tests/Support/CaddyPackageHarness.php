@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
-use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
+use App\Infrastructure\Nodes\CaddyPackageProgram;
 use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
 
 /**
  * Runs the rendered Caddy package program against a sandboxed root with shimmed `sysctl`,
- * root-owned `install`, `stat`, `dpkg`, `curl`, `apt-get`, `python3`, and `caddy`. The `curl` shim serves a
+ * root-owned `install`, `stat`, `dpkg`, `curl`, `apt-get`, and `caddy`. The `curl` shim serves a
  * fake package, `apt-get` "installs" it by changing the release the `caddy` shim reports, and the
  * pinned digests are those of the fake package unless a run asks for a mismatch.
  */
@@ -85,12 +85,12 @@ final class CaddyPackageHarness
         bool $liveFileSafe = true,
         string $architecture = 'amd64',
         bool $digestMatches = true,
-        string $installs = CaddyPackageSourceProgram::RELEASE,
+        string $installs = CaddyPackageProgram::RELEASE,
     ): array {
         $log = $this->root.'/calls.log';
         $this->files->delete($log);
 
-        $arguments = CaddyPackageSourceProgram::arguments();
+        $arguments = CaddyPackageProgram::arguments();
         $arguments[1] = 'https://release.example.test';
         $arguments[2] = $digestMatches ? $this->digest('amd64') : str_repeat('0', 128);
         $arguments[3] = $this->digest('arm64');
@@ -107,7 +107,7 @@ final class CaddyPackageHarness
             'HARNESS_ARCHITECTURE' => $architecture,
             'HARNESS_INSTALLS' => $installs,
         ]);
-        $process->setInput(CaddyPackageSourceProgram::render());
+        $process->setInput(CaddyPackageProgram::render());
         $process->run();
 
         return [$process->getExitCode() ?? 1, $process->getOutput(), $process->getErrorOutput(), $this->calls($log)];
@@ -120,7 +120,7 @@ final class CaddyPackageHarness
 
     private function packagePath(string $architecture): string
     {
-        return $this->root.'/release/caddy_'.CaddyPackageSourceProgram::RELEASE.'_linux_'.$architecture.'.deb';
+        return $this->root.'/release/caddy_'.CaddyPackageProgram::RELEASE.'_linux_'.$architecture.'.deb';
     }
 
     private function digest(string $architecture): string

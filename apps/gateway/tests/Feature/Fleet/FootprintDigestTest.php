@@ -15,7 +15,7 @@ use App\Infrastructure\Fleet\Footprint\PrivateDnsFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\SandboxResidueFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\SourceDigest;
 use App\Infrastructure\Fleet\Footprint\TmpfilesFootprintArtifact;
-use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
+use App\Infrastructure\Nodes\CaddyPackageProgram;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -87,14 +87,14 @@ describe('footprint digests', function (): void {
             ->and($artifact->applies($dev))->toBeTrue()
             ->and($artifact->applies($database))->toBe($caddy->applies($database))
             ->and($artifact->digest($dev))->toBe(SourceDigest::of([
-                'app/Infrastructure/Nodes/CaddyPackageSourceProgram.php',
+                'app/Infrastructure/Nodes/CaddyPackageProgram.php',
                 'app/Domain/Nodes/CaddyRelease.php',
             ]));
 
-        $ssh->on('/'.preg_quote(CaddyPackageSourceProgram::RELEASE_URL, '/').'/', new CommandResult(0, "orbit-caddy-package-result=unchanged\n", '', 1, false));
+        $ssh->on('/'.preg_quote(CaddyPackageProgram::RELEASE_URL, '/').'/', new CommandResult(0, "orbit-caddy-package-result=unchanged\n", '', 1, false));
         expect($artifact->apply($dev))->toBeFalse()
-            ->and($ssh->commands[0]->arguments)->toBe(['sudo', 'bash', '-seu', '--', ...CaddyPackageSourceProgram::arguments()])
-            ->and($ssh->commands[0]->input)->toBe(CaddyPackageSourceProgram::render());
+            ->and($ssh->commands[0]->arguments)->toBe(['sudo', 'bash', '-seu', '--', ...CaddyPackageProgram::arguments()])
+            ->and($ssh->commands[0]->input)->toBe(CaddyPackageProgram::render());
     });
 
     it('reports a changed Caddy package and fails a refused one with its own code', function (): void {
