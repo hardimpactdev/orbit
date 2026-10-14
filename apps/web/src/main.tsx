@@ -11,6 +11,12 @@ import "./styles.css";
 
 declare const __ORBIT_BUILD__: string;
 
+declare global {
+    interface Window {
+        AgentAnnotation?: { mountAnnotation: typeof mountAnnotation };
+    }
+}
+
 // Demo mode answers every request from the fixture fleet, so the page runs with no Gateway.
 if (import.meta.env.VITE_ORBIT_DEMO) {
     (await import("./demo/install")).installDemo();
@@ -37,7 +43,15 @@ const annotation = mountAnnotation({
         autoStart: import.meta.env.VITE_ANNOTATION_AUTO_START !== "0",
     },
 });
-if (import.meta.hot) import.meta.hot.dispose(() => annotation.destroy());
+// Let browser integrations reuse this runtime instead of injecting a second overlay.
+const annotationRuntime = { mountAnnotation };
+window.AgentAnnotation = annotationRuntime;
+if (import.meta.hot) {
+    import.meta.hot.dispose(() => {
+        if (window.AgentAnnotation === annotationRuntime) delete window.AgentAnnotation;
+        annotation.destroy();
+    });
+}
 
 const router = createAppRouter();
 
