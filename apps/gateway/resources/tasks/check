@@ -5,6 +5,7 @@ check start CHECKOUT [SETUP|-] [DELIVERABLES|-] [COMMAND]
                                 start the Project task check detached; print the process and the tree it checks.
                                 SETUP is a JSON file of setup steps to run first: [{"name", "command", "timeout_seconds"}]
                                 DELIVERABLES is a JSON file of the subtask's deliverables to verify after a passing check.
+                                Optional topology: true records the group diff from the merge base of origin/main and HEAD to TREE.
                                 A matching root project-check reuses this check's result, including failure, on the same tree.
                                 (ADR 0133): {"start", "commands": [{"id", "command", "directory", "fails_on_base", "paths"}]}
                                 A command with fails_on_base runs on the start commit with its paths overlaid, then on the working tree (ADR 0163).
@@ -464,7 +465,7 @@ def matches_task_check(checkout, command, task_check):
             and inside(checkout, command.get('directory', '.')) == os.path.realpath(checkout))
 
 
-def verify_deliverables(checkout, tree, deliverables, log, task_check=None):
+def verify_deliverables(checkout, head, tree, deliverables, log, task_check=None):
     """Record diff and command evidence for every checked deliverable."""
     with open(deliverables) as source:
         spec = json.load(source)
@@ -474,6 +475,12 @@ def verify_deliverables(checkout, tree, deliverables, log, task_check=None):
     evidence = {'start': spec.get('start'), 'diff': None, 'commands': {}}
     if spec.get('start'):
         evidence['diff'] = diff(checkout, spec['start'], tree)
+    if spec.get('topology') is True:
+        try:
+            base = git(checkout, 'merge-base', 'refs/remotes/origin/main', head)
+            evidence['topology_diff'] = diff(checkout, base, tree)
+        except subprocess.CalledProcessError:
+            evidence['topology_diff'] = None
     shutil.rmtree(DELIVERABLE_RESULTS, ignore_errors=True)
     os.makedirs(DELIVERABLE_RESULTS, exist_ok=True)
     for command in spec.get('commands', []):
@@ -554,7 +561,7 @@ def perform(checkout, head, tree, setup, deliverables, command, started_at):
             task_check = {'command': command, 'head': check_head, 'tree': check_tree,
                           'exit_code': exit_code, 'output': tail}
         if failed_step is None and deliverables and (exit_code == 0 or task_check is not None):
-            evidence = verify_deliverables(checkout, tree, deliverables, log, task_check)
+            evidence = verify_deliverables(checkout, head, tree, deliverables, log, task_check)
     head_after = git(checkout, 'rev-parse', 'HEAD')
     tree_after = working_tree(checkout)
     result = check_result(

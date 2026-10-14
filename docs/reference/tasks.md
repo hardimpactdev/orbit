@@ -781,7 +781,9 @@ When the acting thread is `idle`, `done`, or `asking_for_input`, the tick checks
 | `pull_request_fields` | The approval that opens the pull request describes it |
 | `brief_coverage` | The change list covers every subtask. See [Pull request](#pull-request-and-settle-metrics) |
 | `topology_evidence` | On approval of a subtask with a topology, each declared node has a successful recorded command since the last handoff. See [Prove work on a topology](/reference/compute-drivers#prove-work-on-a-topology) |
-| `topology_required` | At handoff, the subtask's diff changes no path in the Project's `task_vms.topology_paths`, or a subtask of the group declares a topology |
+| `topology_required` | At handoff, the group's own changes touch no path in the Project's `task_vms.topology_paths`, or a subtask of the group declares a topology |
+
+The topology check compares the candidate tree, including uncommitted files, with the merge base of its HEAD and the current `origin/main`. Changes inherited from `origin/main` do not require a topology. The group's own changes still do, including changes kept or made while merging main. This check uses neither the group's original start commit nor the subtask's start commit. If Orbit cannot read the merge base or diff, the handoff fails. File deliverables still use the subtask's start commit.
 
 When items fail, the Gateway sends one reminder to the acting thread. It names every failed item and ends with the role's turn-command instructions. The implementer's reminder starts with "Orbit could not confirm the brief is complete." The reviewer's starts with "Orbit could not confirm the review is complete." The Gateway installs the turn command again before it sends. Each attempt gets one reminder. When an item still fails at the next stop, the subtask asks for assistance, and the reason names each remaining item. The same pending input does not count as that next stop.
 

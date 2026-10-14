@@ -6174,7 +6174,7 @@ describe('topology paths at handoff', function (): void {
     });
 
     it('refuses a vm handoff that changes a listed path while no subtask declares a topology', function (): void {
-        [$group, $task] = tick_deliverables([], [], tick_evidence(['diff' => [
+        [$group, $task] = tick_deliverables([], [], tick_evidence(['topology_diff' => [
             ['status' => 'M', 'path' => 'apps/agent/src/main.rs'],
             ['status' => 'M', 'path' => 'docs/reference/tasks.md'],
         ]]));
@@ -6186,9 +6186,33 @@ describe('topology paths at handoff', function (): void {
             ->and($reminder)->toContain('This subtask changes paths that need real machines (apps/agent/src/main.rs), but no subtask of the group declares a topology');
     });
 
+    it('passes a merge-main handoff whose Node changes are all inherited from main', function (): void {
+        [$group, $task, $checks] = tick_deliverables([], [], tick_evidence([
+            'diff' => [['status' => 'M', 'path' => 'apps/agent/src/main.rs']],
+            'topology_diff' => [],
+        ]));
+        ($this->topologyPaths)($group);
+
+        app(TaskScheduler::class)->tick();
+        app(TaskScheduler::class)->tick();
+
+        expect($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
+            ->and($checks->deliverables)->toBe([['start' => null, 'commands' => [], 'topology' => true]]);
+    });
+
+    it('refuses a handoff when its topology diff cannot be read', function (): void {
+        [$group, $task] = tick_deliverables([], [], tick_evidence(['topology_diff' => null]));
+        ($this->topologyPaths)($group);
+
+        $reminder = tick_deliverable_reminder();
+
+        expect($task->fresh()?->status)->toBe(TaskStatus::Running)
+            ->and($reminder)->toContain("Orbit could not read the group's diff against origin/main");
+    });
+
     it('passes the handoff when a subtask of the group declares a topology or the change avoids the paths', function (string $case): void {
         $diff = $case === 'other path' ? [['status' => 'M', 'path' => 'docs/reference/tasks.md']] : [['status' => 'M', 'path' => 'apps/gateway/app/Domain/Nodes/RoleName.php']];
-        [$group, $task] = tick_deliverables([], [], tick_evidence(['diff' => $diff]));
+        [$group, $task] = tick_deliverables([], [], tick_evidence(['topology_diff' => $diff]));
         if ($case === 'declared') {
             Task::query()->create(['parent_id' => $group->id, 'position' => 9, 'title' => 'Prove', 'brief' => 'On nodes', 'status' => TaskStatus::Todo, 'topology' => ['app-dev']]);
             mock(TaskTopologyAdmission::class)->shouldReceive('prepare');
