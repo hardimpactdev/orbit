@@ -76,7 +76,7 @@ final readonly class AllocateTaskVmAction
     }
 
     /** Recover a committed warm claim whose enqueue failed, without duplicating a queued or running job. */
-    private function dispatchPreparation(TaskVm $vm): void
+    public function dispatchPreparation(TaskVm $vm): void
     {
         if ($vm->state === TaskVmState::Provisioning && $vm->claimed_at !== null && $vm->warmed_at !== null) {
             PrepareTaskVmRuntime::enqueue($vm->id);

@@ -63,6 +63,7 @@ use Illuminate\Queue\CallQueuedHandler;
 use Illuminate\Queue\Events\JobQueued;
 use Illuminate\Queue\RedisQueue;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -449,6 +450,7 @@ describe('claim', function (): void {
             ->and($existing->warmed_at)->toBeNull()
             ->and($existing->node_id)->toBeNull()
             ->and(TaskVm::query()->count())->toBe(1);
+        expect(fn () => app(TaskVmWorkspace::class)->node($group))->toThrow(TaskCapacityException::class, 'Task VM: provisioning.');
         Queue::assertNothingPushed();
     });
 
@@ -828,7 +830,7 @@ describe('a claimed warm VM', function (): void {
 
         expect(fn () => app(TaskVmWorkspace::class)->node($group))->toThrow(TaskCapacityException::class, 'Task VM: provisioning.');
         // A later tick sees the committed claim but cannot duplicate its queued job.
-        app(AllocateTaskVmAction::class)->execute($group);
+        expect(fn () => app(TaskVmWorkspace::class)->node($group))->toThrow(TaskCapacityException::class, 'Task VM: provisioning.');
         expect($this->transport->commands)->toBe([]);
         Http::assertNothingSent();
         Queue::assertPushed(PrepareTaskVmRuntime::class, 1);
@@ -867,15 +869,38 @@ describe('a claimed warm VM', function (): void {
         $vm->update(['group_id' => $group->id, 'state' => TaskVmState::Provisioning, 'claimed_at' => now()]);
         Queue::shouldReceive('connection')->once()->andThrow(new RuntimeException('queue unavailable'));
 
-        expect(fn () => app(AllocateTaskVmAction::class)->execute($group))->toThrow(RuntimeException::class, 'queue unavailable');
+        expect(fn () => app(TaskVmWorkspace::class)->node($group))->toThrow(RuntimeException::class, 'queue unavailable');
         $lock = Cache::lock(UniqueLock::getKey(new PrepareTaskVmRuntime($vm->id)));
         expect($lock->get())->toBeTrue();
         $lock->release();
         Queue::fake();
-        app(AllocateTaskVmAction::class)->execute($group);
-        app(AllocateTaskVmAction::class)->execute($group);
+        expect(fn () => app(TaskVmWorkspace::class)->node($group))->toThrow(TaskCapacityException::class, 'Task VM: provisioning.');
+        expect(fn () => app(TaskVmWorkspace::class)->node($group))->toThrow(TaskCapacityException::class, 'Task VM: provisioning.');
 
         Queue::assertPushed(PrepareTaskVmRuntime::class, 1);
+        expect($this->transport->commands)->toBe([]);
+    });
+
+    it('recovers a committed warm claim after an unaccepted ambiguous submission lock expires', function (): void {
+        $this->freezeSecond();
+        $vm = tvm_pool_vm();
+        $group = tvm_pool_group();
+        $vm->update(['group_id' => $group->id, 'state' => TaskVmState::Provisioning, 'claimed_at' => now()]);
+        Queue::fake();
+        $dispatcher = Bus::getFacadeRoot();
+        Bus::shouldReceive('dispatch')->once()->andThrow(new RuntimeException('submission reply lost'));
+
+        expect(fn () => app(TaskVmWorkspace::class)->node($group))->toThrow(RuntimeException::class, 'submission reply lost');
+        expect(fn () => app(TaskVmWorkspace::class)->node($group))->toThrow(TaskCapacityException::class, 'Task VM: provisioning.');
+        Queue::assertNothingPushed();
+        // No job was accepted, so only the orphan lease's expiry allows another claim to submit.
+        $this->travel(3601)->seconds();
+        Bus::swap($dispatcher);
+        expect(fn () => app(TaskVmWorkspace::class)->node($group))->toThrow(TaskCapacityException::class, 'Task VM: provisioning.');
+        expect(fn () => app(TaskVmWorkspace::class)->node($group))->toThrow(TaskCapacityException::class, 'Task VM: provisioning.');
+
+        Queue::assertPushed(PrepareTaskVmRuntime::class, 1);
+        Queue::assertPushed(PrepareTaskVmRuntime::class, fn (PrepareTaskVmRuntime $job): bool => $job->taskVmId === $vm->id);
         expect($this->transport->commands)->toBe([]);
     });
 
@@ -929,8 +954,8 @@ describe('a claimed warm VM', function (): void {
 
         $message = $queue->loseReply ? 'accepted but reply lost' : 'post-push listener failed';
         expect(fn () => app(AllocateTaskVmAction::class)->execute($group))->toThrow(RuntimeException::class, $message);
-        app(AllocateTaskVmAction::class)->execute($group);
-        app(AllocateTaskVmAction::class)->execute($group);
+        expect(fn () => app(TaskVmWorkspace::class)->node($group))->toThrow(TaskCapacityException::class, 'Task VM: provisioning.');
+        expect(fn () => app(TaskVmWorkspace::class)->node($group))->toThrow(TaskCapacityException::class, 'Task VM: provisioning.');
         expect($queue->accepted)->toHaveCount(1)
             ->and($vm->fresh()?->state)->toBe(TaskVmState::Provisioning)
             ->and($this->transport->commands)->toBe([]);
@@ -948,8 +973,18 @@ describe('a claimed warm VM', function (): void {
             $workerJob = Mockery::mock(Job::class);
             $workerJob->shouldReceive('isReleased', 'hasFailed', 'isDeletedOrReleased')->andReturnFalse();
             $workerJob->shouldReceive('delete')->once();
+            $claimedWhileRunning = false;
+            Bus::pipeThrough([function (PrepareTaskVmRuntime $job, Closure $next) use ($group, $queue, &$claimedWhileRunning): mixed {
+                // The real worker handler has started, but runtime preparation has not made the row ready yet.
+                expect(fn () => app(TaskVmWorkspace::class)->node($group))->toThrow(TaskCapacityException::class, 'Task VM: provisioning.');
+                expect($queue->accepted)->toHaveCount(1);
+                $claimedWhileRunning = true;
+
+                return $next($job);
+            }]);
             $handler->call($workerJob, $payload['data']);
-            expect($vm->fresh()?->state)->toBe(TaskVmState::Ready);
+            expect($claimedWhileRunning)->toBeTrue()
+                ->and($vm->fresh()?->state)->toBe(TaskVmState::Ready);
         }
         $released = Cache::lock(UniqueLock::getKey($accepted));
         expect($released->get())->toBeTrue();

@@ -161,7 +161,7 @@ The sizes are caps, not reservations. Incus does not pin the vCPUs, and the gues
 
 A subtask whose topology needs a larger VM than its group got waits before it starts, with the reason `Task VM: this subtask's topology needs a larger task VM than the group got, and Orbit does not resize it.` This happens when a subtask is added or changed after the claim. Orbit never runs it without its nodes, and never moves the group to another VM. To go on, cancel that subtask, or cancel the group and create it again with the topology declared. See [Orbit Project](#orbit-project).
 
-Placement never puts more VMs on a host than its `max_vms`, not counting `failed` ones. One placement runs at a time on the Gateway, under a cache lock, so two claims cannot both take the last slot or the same warm VM. The pool refill takes the same lock. Lowering `max_vms` below the number of VMs on a host removes no VM. The host gets no new VM until enough VMs are destroyed.
+Placement never puts more VMs on a host than its `max_vms`, not counting `failed` ones. The Gateway's SQLite placement transactions serialize claims and pool refills, so two claims cannot both take the last slot or the same warm VM, and a refill cannot race a claim for capacity. Lowering `max_vms` below the number of VMs on a host removes no VM. The host gets no new VM until enough VMs are destroyed.
 
 With one host, placement is the same as before: the host takes VMs until it is full. To add a host, see [Add a task VM host](#add-a-task-vm-host).
 
@@ -587,7 +587,7 @@ When `ProvisionTaskVm`, `EnrollTaskVm`, `PrepareTaskVmRuntime`, or `ResumeTaskVm
 
 #### Claims and resumes across a release
 
-The [Gateway release](/reference/gateway-queue#releases) calls `horizon:terminate`, not a systemd restart. Horizon lets an active claim or resume finish on its original release before the new worker starts. A crashed worker's reserved job becomes available again after the queue's `retry_after`; per-VM uniqueness, state checks, and idempotent preparation keep that retry safe. A claimed warm row committed without its preparation job is recovered by the next allocation as described above.
+The [Gateway release](/reference/gateway-queue#releases) calls `horizon:terminate`, not a systemd restart. Horizon lets an active claim or resume finish on its original release before the new worker starts. A crashed worker's reserved job becomes available again after the queue's `retry_after`; per-VM uniqueness, state checks, and idempotent preparation keep that retry safe. A claimed warm row committed without its preparation job is recovered by the next scheduler claim as described above.
 
 Already queued payloads must remain readable for one release, as required by [Jobs across releases](/reference/gateway-queue#jobs-across-releases). This includes old delayed `EnsureWarmClaimReady` payloads and old `ResumeTaskVm` payloads without the new deadline field. A compatibility reader for an old guard payload only dispatches the ordinary preparation job when the row belongs to a claimed warm VM and is still `provisioning`. It creates no new guards and is removed after those payloads have drained. This compatibility is not part of the new claim workflow.
 

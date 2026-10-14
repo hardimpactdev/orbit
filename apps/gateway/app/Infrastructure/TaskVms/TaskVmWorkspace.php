@@ -45,6 +45,10 @@ final readonly class TaskVmWorkspace
             } catch (TaskVmException $exception) {
                 throw new TaskCapacityException(TaskWait::TaskVm, "Task VM: {$exception->errorCode}: {$exception->getMessage()}");
             }
+        } elseif ($vm->state === TaskVmState::Provisioning && $vm->warmed_at !== null && $vm->claimed_at !== null) {
+            // Later claims recover a warm claim committed before its job was accepted.
+            // Cold allocations wait for provisioning and enrollment to enqueue their own preparation.
+            app(AllocateTaskVmAction::class)->dispatchPreparation($vm);
         }
 
         if ($vm->state === TaskVmState::Failed) {
