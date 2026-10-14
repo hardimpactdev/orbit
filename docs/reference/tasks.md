@@ -1329,9 +1329,9 @@ The Pi server's `usage` object holds `input`, `output`, `cacheRead`, `cacheWrite
 
 A Project can opt in to review and merge. Orbit then holds three rules:
 
-1. Orbit pushes only a commit that a final review of the whole branch approved.
+1. Orbit pushes a commit that a final review approved, or a conflict-free main merge of that reviewed work that passed the Project gate.
 2. Orbit reviews each pull request that a listed author opens, and applies the changes it requests itself.
-3. Orbit merges a pull request through the GitHub App. The head must be a commit Orbit fully reviewed, and CI must pass on that head.
+3. Orbit merges a pull request through the GitHub App. The head must have recorded review or mechanical-merge evidence, and CI must pass on that head.
 
 No cloud agent reviews or fixes the work. Orbit hands no pull request to Cursor, Codex, or Copilot.
 
@@ -1347,7 +1347,9 @@ The flow needs `source_access: github_app`. It is off by default. Each task stil
 
 ### Final review
 
-A final review is a subtask with `type` `final_review` and the title `Final review`. Orbit appends one when a review-and-merge task has no open subtask and its latest approved commit has no final review. It has no implementer and runs no task check. It starts in `reviewing` with a fresh reviewer.
+A final review is a subtask with `type` `final_review` and the title `Final review`. Orbit appends one when a review-and-merge task has no open subtask and its latest approved commit has no final review. Before the final review starts, Orbit fetches and merges `origin/{default branch}` into the group branch with Git. A conflict-free merge runs only the Project gate on that merge commit, without setup, deliverable commands, or an agent turn. No merge means no extra gate. A conflict or a failing gate creates the ordinary `Merge origin/{base}` agent fixup. The final review starts only after this preparation succeeds, so the pull request opens up to date.
+
+It has no implementer and starts in `reviewing` with a fresh reviewer.
 
 The final reviewer blocks only on findings that meet the [blocking rule](#reviewer-outcomes) and are new since the subtask approvals. It does not reopen hardening that the subtask reviews already covered.
 
@@ -1369,9 +1371,11 @@ At most two final-review fixups run in one window. The window ends at the latest
 
 ### Every push is reviewed
 
-In a review-and-merge task, an approved subtask is committed and not pushed. Conflict, failed-check, and trusted-feedback fixups are subtasks too, so their approvals wait for a final review. Only a final review's approval pushes.
+In a review-and-merge task, an approved subtask is committed and not pushed. Conflict, failed-check, and trusted-feedback fixups are subtasks too, so their approvals wait for a final review. A final review's approval pushes the feature commits. A later mechanical main merge uses the gate and inherits that review as described below.
 
-Orbit never asks GitHub to update the branch of such a task. GitHub's merge commit would land without Orbit's review. A conflict gets the `Merge origin/{base}` fixup at once. A branch that is only behind its base still merges. When GitHub refuses that merge, for example because a branch rule requires an up-to-date branch, Orbit appends a final-review fixup `Merge origin/{base}` instead.
+Orbit never asks GitHub to update the branch of such a task. If main moves after the pull request opens and GitHub refuses a behind branch, Orbit merges main locally and runs only the Project gate on the merge commit. A passing conflict-free merge inherits the prior head's review and is pushed without an agent or another full review. Its recorded source is `base_merge`. CI must still pass on that exact head.
+
+Only a conflict or a failed gate creates an agent fixup and another final review. Mechanical merges do not consume the fixup cap. Topology checks still count only the group's own changes against the current merge base, including merge resolutions.
 
 Cancel and the cancelled-task sweep push the latest approved commit only when a final review approved it. Approved work that no final review saw is removed with the workspace.
 
@@ -1405,7 +1409,7 @@ The App can review the pull request because the pull request author is a person,
 
 Each tick, after the [settling watch](#settling), Orbit evaluates a review-and-merge task that is `settling` or `waiting_for_review` with an open pull request, no open subtask, and no assistance. It merges when all of these hold on the current head:
 
-1. The head SHA is one Orbit recorded as fully reviewed for this task, and no newer approved work waits for its final review.
+1. The head SHA has recorded final-review evidence or inherits it through a gated mechanical main merge, and no newer approved work waits for its final review.
 2. The `merge_check` runs on that SHA pass by the [green-commit rules](/reference/github-app#find-the-newest-green-commit).
 3. The pull request base is the Project's default branch, which the final review diffed against.
 4. GitHub reports the pull request mergeable, with no conflict.
@@ -1425,7 +1429,7 @@ A head that Orbit did not record means someone else pushed. On an incoming pull 
 
 ### Records and status
 
-`task_reviewed_commits` holds each SHA Orbit fully reviewed for a task, with its source, the final review, when Orbit pushed it, and the GitHub review Orbit submitted. The source is `orbit_push` for Orbit's own reviewed commit and `pull_request_review` for an incoming head Orbit approved as it was. Only a recorded SHA can merge.
+`task_reviewed_commits` holds each SHA Orbit fully reviewed for a task, with its source, the final review, when Orbit pushed it, and the GitHub review Orbit submitted. The source is `orbit_push` for Orbit's own reviewed commit, `pull_request_review` for an incoming head Orbit approved as it was, and `base_merge` for a gated mechanical main merge that inherits the prior head's review. Only a recorded SHA can merge.
 
 Activity records `final review appended`, `final review approved`, `final review requested changes`, `reviewed commit pushed`, `pull request approved`, `pull request changes requested`, `incoming pull request task created`, `pull request merged`, and each change of the merge result as `merge waiting` or `merge refused`. The task stores the latest merge result in `merge_status` and `merge_reason`. [`tasks:show`](/cli/tasks#orbit-tasksshow) and [`tasks:status`](/cli/tasks#orbit-tasksstatus) show them.
 
@@ -1796,7 +1800,9 @@ The author list is Gateway configuration, like reviewer trust. A pull request ca
 
 The merge condition is a fact Orbit recorded: this exact SHA passed Orbit's final review. A GitHub approval cannot carry that fact for Orbit's own pull requests, because GitHub forbids the App to approve them. The merge check uses the green-commit rules, so a check run from another App cannot make a head green. The `sha` parameter makes GitHub refuse a merge when the head moved after the gate read it.
 
-Asking GitHub to update a branch was rejected for these tasks, because GitHub's merge commit would land without Orbit's review. A trusted request for changes blocks the merge until that account approves or dismisses it, even after Orbit's fixup. A person still steers through briefs, direction answers, and requested changes. A merge deploys the Gateway, so a wrong final review ships. The merge check and trusted requested changes are the remaining guards.
+Asking GitHub to update a branch was rejected for these tasks, because its merge commit would land without the Project gate. Orbit merges main locally and records the gate on the exact merge commit.
+
+A clean merge inherits the feature review; conflicts and gate failures need an agent and another review. A trusted request for changes blocks the merge until that account approves or dismisses it, even after Orbit's fixup. A person still steers through briefs, direction answers, and requested changes. A merge deploys the Gateway, so a wrong final review ships. The merge check and trusted requested changes are the remaining guards.
 
 ### Fixups are bounded
 

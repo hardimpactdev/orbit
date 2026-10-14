@@ -13,4 +13,7 @@ enum TaskCheckKind: string
 
     /** The check after an implementer's ready_for_review receipt. */
     case Handoff = 'handoff';
+
+    /** The gate on a mechanical default-branch merge; no implementer or deliverable commands. */
+    case BaseMerge = 'base_merge';
 }
