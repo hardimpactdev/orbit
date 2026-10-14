@@ -19,10 +19,9 @@ it('deploys an app-dev default through the existing API and preserves best-effor
     app(ProjectDevelopmentDeployStepStore::class)->create($fixture->instance->project, new DevelopmentDeployStep('warm', 'false', required: false), null, null);
     $commit = str_repeat('b', 40);
     $remote = Mockery::mock(DevelopmentDeployment::class);
-    $remote->shouldReceive('target')->once()->andReturn(new DevelopmentTarget($commit, false));
+    $remote->shouldReceive('target')->once()->andReturn(new DevelopmentTarget($commit));
     $remote->shouldReceive('checkout')->once();
     $remote->shouldReceive('executeStep')->once()->andThrow(new RuntimeConvergenceException('deployment-step-warm', 'deployment.step_failed', 'Failed warm-up.', result: new CommandResult(42, '', '', 1, false)));
-    $remote->shouldNotReceive('convert', 'removeReleases');
     app()->instance(DevelopmentDeployment::class, $remote);
 
     $response = $this->withServerVariables(['REMOTE_ADDR' => $fixture->caller->wireguard_ip])

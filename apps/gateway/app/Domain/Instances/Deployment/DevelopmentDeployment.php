@@ -11,22 +11,10 @@ use App\Models\Instance;
 /** Deploys a development default in its own checkout. */
 interface DevelopmentDeployment
 {
-    /** Turns an old release layout into a plain checkout once and returns the commit it serves. */
-    public function convert(Instance $instance): string;
-
     /** Fetches the Project's default branch. */
     public function target(Instance $instance): DevelopmentTarget;
 
     public function checkout(Instance $instance, string $commit, DeploymentRequest $request): void;
 
     public function executeStep(Instance $instance, DevelopmentDeployStep $step, DeploymentRequest $request): CommandResult;
-
-    /**
-     * Removes what is left of the old release layout after `convert`, and returns the names of the
-     * release folders it kept because Orbit does not own them.
-     *
-     * @param  list<string>  $consumers  The checkouts seeded from this default.
-     * @return list<string>
-     */
-    public function removeReleases(Instance $instance, array $consumers): array;
 }

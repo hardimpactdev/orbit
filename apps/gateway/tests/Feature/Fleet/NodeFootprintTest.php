@@ -43,6 +43,35 @@ describe('Node footprint', function (): void {
             ->and($footprint->drifted($node))->toBeFalse();
     });
 
+    it('forgets a previously applied sandbox residue artifact without invoking any Node mutation', function (): void {
+        $caddy = new FakeFootprintArtifact('caddy', 'c1');
+        $agent = new FakeFootprintArtifact('agent', 'a1');
+        $retired = new FakeFootprintArtifact('sandbox-residue', 's1');
+        $node = FleetFixtures::node('dev', [RoleName::AppDev]);
+        $old = new NodeFootprint([$caddy, $agent, $retired]);
+        $old->converge($node);
+        $oldDigest = NodeFootprintRecord::query()->sole()->digest;
+        $caddy->applied = $agent->applied = $retired->applied = [];
+        // Any attempt to run the retired cleanup would fail, not silently pass this test.
+        $retired->fails = true;
+        $footprint = new NodeFootprint([$caddy, $agent]);
+
+        expect($footprint->drifted($node))->toBeTrue();
+
+        $result = $footprint->converge($node);
+        $stored = NodeFootprintRecord::query()->sole();
+
+        expect($result->artifacts)->toBe(['agent' => 'unchanged', 'caddy' => 'unchanged'])
+            ->and($result->changed())->toBeFalse()
+            ->and($caddy->applied)->toBe([])
+            ->and($agent->applied)->toBe([])
+            ->and($retired->applied)->toBe([])
+            ->and($stored->artifacts)->toBe(['agent' => 'a1', 'caddy' => 'c1'])
+            ->and($stored->digest)->not->toBe($oldDigest)
+            ->and($stored->digest)->toBe($footprint->expected($node)->digest())
+            ->and($footprint->drifted($node))->toBeFalse();
+    });
+
     it('re-applies only the artifact whose digest changed', function (): void {
         $caddy = new FakeFootprintArtifact('caddy', 'c1');
         $agent = new FakeFootprintArtifact('agent', 'a1');
