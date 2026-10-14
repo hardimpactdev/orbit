@@ -31,7 +31,7 @@ Laravel Horizon runs three queues on the connection. Each has its own supervisor
 | Queue | Processes | Jobs |
 | --- | --- | --- |
 | `tasks` | 3 | The scheduled commands below and the publish of an approved commit. The Git mirror's lock keeps one push per Project at a time |
-| `task-vms` | 1 | Task VM provision, enroll, prepare, park, resume, and destroy, the guard of a warm claim, the host sweep, and the pool refill |
+| `task-vms` | 1 | Task VM provision, enroll, prepare, park, resume, and destroy, the host sweep, and the pool refill |
 | `builds` | 1 | The [base image refreshes](/reference/compute-drivers#build-the-base-image), the [UpCloud template refresh](/reference/compute-drivers#refresh-the-upcloud-template-every-night), and the [workspace template](/reference/compute-drivers#build-a-template) refreshes and builds |
 
 The `task-vms` jobs run one at a time and in order, so no two jobs change the same VM at once.
