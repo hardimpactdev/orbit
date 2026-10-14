@@ -8,7 +8,6 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmSettings;
-use App\Infrastructure\TaskVms\IncusTaskVmBaseImage;
 use App\Infrastructure\TaskVms\IncusTaskVmImageSync;
 use App\Jobs\TaskVms\RefreshTaskVmWorkspaceTemplates;
 use Illuminate\Console\Command;
@@ -29,7 +28,7 @@ final class SyncTaskVmImageCommand extends Command
     #[\Override]
     protected $description = 'Copy the current task VM base image from one Incus host to another and point orbit-task-base at it.';
 
-    public function handle(IncusTaskVmImageSync $sync, IncusTaskVmBaseImage $image): int
+    public function handle(IncusTaskVmImageSync $sync): int
     {
         $started = microtime(true);
         try {
@@ -46,9 +45,9 @@ final class SyncTaskVmImageCommand extends Command
             }
             $fingerprint = $sync->current($sourceHost, $source);
             $owner = 'command-'.bin2hex(random_bytes(8));
-            // A stopped command deletes its smoke VM and frees the host for the next build or sync.
-            $this->trap([SIGINT, SIGTERM], function (int $signal) use ($image, $host, $node, $owner): never {
-                $image->abandon($host, $node, $owner);
+            // A stopped sync deletes its smoke VM and frees the sync lock.
+            $this->trap([SIGINT, SIGTERM], function (int $signal) use ($sync, $host, $node, $owner): never {
+                $sync->abandon($host, $node, $owner);
                 RefreshTaskVmWorkspaceTemplates::dispatch();
                 $this->error("Stopped by signal [{$signal}]. The smoke VM is deleted and the current base image is kept.");
 

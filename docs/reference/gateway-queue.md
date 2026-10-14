@@ -31,14 +31,14 @@ Laravel Horizon runs three queues on the connection. Each has its own supervisor
 | Queue | Processes | Jobs |
 | --- | --- | --- |
 | `tasks` | 3 | The scheduled commands below and the publish of an approved commit. The Git mirror's lock keeps one push per Project at a time |
-| `task-vms` | 1 | Task VM provision, enroll, prepare, park, resume, and destroy, the host sweep, and the pool refill |
-| `builds` | 1 | The [base image refreshes](/reference/compute-drivers#build-the-base-image), the [UpCloud template refresh](/reference/compute-drivers#refresh-the-upcloud-template-every-night), and the [workspace template](/reference/compute-drivers#build-a-template) refreshes and builds |
+| `task-vms` | 1 | Task VM provision, enroll, prepare, park, resume, and destroy, the guard of a warm claim, the host sweep, and the pool refill |
+| `builds` | 1 | The [base image step chains and refreshes](/reference/compute-drivers#build-the-base-image), the [UpCloud template refresh](/reference/compute-drivers#refresh-the-upcloud-template-every-night), and the [workspace template](/reference/compute-drivers#build-a-template) refreshes and builds |
 
 The `task-vms` jobs run one at a time and in order, so no two jobs change the same VM at once.
 
 A `task-vms` job runs at most 1500 seconds, and any other job at most 1700 seconds. A job that a worker lost, for example when its process was killed, runs again after 1800 seconds. An idle worker waits on the queue with a blocking read, so a job starts within about a second when a process is free.
 
-One `builds` process runs one build at a time in the fleet. The host locks also allow one template build and one base image build or sync per host.
+One `builds` process runs one job at a time in the fleet. Base image steps and template builds take turns. The image build row allows one `running` base image build per host. Syncs and template builds keep their own host locks until they have their own chains.
 
 ## Scheduled work
 
@@ -97,7 +97,7 @@ A release moves Horizon in the serving phase, right after the switch, and the ol
 
 `horizon:terminate` sends SIGTERM to the Horizon master. Horizon does not use fast termination: the master waits until each worker has finished its running job, on the release that job started on, and then exits. The Process's restart policy then starts Horizon again, on the new release. A new `task-vms` worker therefore never starts while an old one runs, and task VM jobs stay in order.
 
-The cost is the wait. A release during a long job, such as a base image build of up to 25 minutes, starts the new Horizon only when that job ends. Until then, no new job starts on any queue, and `tasks:tick` waits too. The master waits at most the longest supervisor timeout, 1700 seconds, and then exits. Builds run at night or on demand, so a release seldom waits.
+The cost is the wait. A release during a base image build waits for one short step, not the whole build. The build is a [chain of jobs](/reference/compute-drivers#build-the-base-image), and the next step runs on the new release. Until the running jobs end, no new job starts on any queue, and `tasks:tick` waits too. Other operations, such as syncs and workspace template builds, still run as whole jobs until they have their own chains. The master waits at most the longest supervisor timeout, 1700 seconds, and then exits.
 
 The release does not wait for the new master. A failure of the step fails the handoff with `gateway.release_units_failed`, and the release switches back.
 

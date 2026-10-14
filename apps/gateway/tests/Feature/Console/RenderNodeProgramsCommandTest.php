@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Infrastructure\Nodes\NodeBootstrapCommandFactory;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Infrastructure\TaskVms\TaskVmBakedPrograms;
 use App\Infrastructure\TaskVms\TaskVmImageRecipe;
 use App\Models\Node;
 use Illuminate\Support\Facades\Artisan;
@@ -47,10 +46,10 @@ describe('orbit:node-programs', function (): void {
 
     it('renders the task VM base image programs for app-dev, without the task VM only Rust toolchain', function (): void {
         $recipe = app(TaskVmImageRecipe::class)->programs();
-        unset($recipe[TaskVmBakedPrograms::RustToolchain]);
+        unset($recipe['rust-toolchain']);
         $expected = [];
         foreach ($recipe as $name => $program) {
-            $expected[] = ['name' => $name, 'arguments' => $program->arguments, 'input' => $program->input, 'fingerprint' => TaskVmBakedPrograms::fingerprint($program)];
+            $expected[] = ['name' => $name, 'arguments' => $program->arguments, 'input' => $program->input, 'fingerprint' => $program->fingerprint()];
         }
 
         $programs = render_node_programs(['app-dev']);
@@ -59,7 +58,7 @@ describe('orbit:node-programs', function (): void {
             ->and(array_slice(node_program_names($programs), 0, 5))->toBe(['bootstrap', 'caddy-package', 'app-dev-prerequisites', 'vp-manager', 'composer-manager'])
             ->and(node_program_names($programs)[5])->toBe('app-dev-php-source')
             ->and(array_keys($programs[0]))->toBe(['name', 'arguments', 'input', 'fingerprint'])
-            ->and(array_column($programs, 'fingerprint', 'name'))->toBe(json_decode(TaskVmBakedPrograms::manifest($recipe), true)['programs']);
+            ->and(array_column($programs, 'fingerprint'))->each->toMatch('/\A[a-f0-9]{64}\z/');
     });
 
     it('renders the app-prod programs', function (): void {
@@ -88,7 +87,7 @@ describe('orbit:node-programs', function (): void {
         $programs = render_node_programs([]);
         $roleless = app(NodeBootstrapCommandFactory::class)->makeWithPasswordlessSudo(new Node(['platform' => 'linux', 'user' => 'orbit']), 'orbit', rolelessOperator: true);
 
-        expect($programs)->toBe([['name' => 'bootstrap', 'arguments' => $roleless->arguments, 'input' => $roleless->input, 'fingerprint' => TaskVmBakedPrograms::fingerprint($roleless)]])
+        expect($programs)->toBe([['name' => 'bootstrap', 'arguments' => $roleless->arguments, 'input' => $roleless->input, 'fingerprint' => $roleless->fingerprint()]])
             ->and($programs[0]['arguments'])->toContain('preserve')->not->toContain('managed');
     });
 

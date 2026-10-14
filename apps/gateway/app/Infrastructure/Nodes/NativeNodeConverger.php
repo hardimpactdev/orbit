@@ -20,7 +20,6 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Infrastructure\TaskVms\TaskVmBakedPrograms;
 use App\Infrastructure\WireGuard\RecoverableWireGuardPeerConverger;
 use App\Infrastructure\WireGuard\WireGuardPeerConverger;
 use App\Models\Node;
@@ -155,8 +154,8 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
         $bootstrapCommand = $identity->bootstrapUser === 'root'
             ? $this->bootstrapCommand->make($node, $identity->managedUser, $rolelessOperator)
             : $this->bootstrapCommand->makeWithPasswordlessSudo($node, $identity->managedUser, $rolelessOperator);
-        // A task VM whose base image ran this exact program skips it.
-        if (! app(TaskVmBakedPrograms::class)->holds($node, EnrollmentProgram::Bootstrap, $bootstrapCommand)) {
+        // Task VM enrollment trusts the software in its image.
+        if (! EnrollmentProgram::skipForTaskVm($node, EnrollmentProgram::Bootstrap)) {
             $bootstrap = $this->ssh->execute($bootstrapConnection, $bootstrapCommand);
 
             if (! $bootstrap->succeeded()) {

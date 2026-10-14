@@ -54,10 +54,8 @@ use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\VmObservation;
 use App\Domain\Tools\ToolManagerMaterializer;
 use App\Infrastructure\Metrics\ServiceMetricsRuntime;
-use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Infrastructure\TaskVms\TaskVmBakedPrograms;
 use App\Infrastructure\TaskVms\TaskVmTopologyAdmission;
 use App\Infrastructure\TaskVms\TaskVmWorkspace;
 use App\Jobs\TaskVms\DestroyTaskVm;
@@ -507,7 +505,6 @@ describe(EnrollTaskVm::class, function (): void {
                     'host' => $node->public_ssh_host, 'jump' => $node->ssh_jump_node_id, 'wireguard_ip' => $node->wireguard_ip,
                     'user' => $identity->bootstrapUser, 'fingerprint' => $expectedSshHostFingerprint,
                     'linked' => TaskVm::query()->where('node_id', $node->id)->exists(),
-                    'baked' => app(TaskVmBakedPrograms::class)->holds($node, 'bootstrap', new RemoteCommand(['bootstrap'])),
                 ];
 
                 return new NodeObservation('x86_64');
@@ -582,7 +579,7 @@ describe(EnrollTaskVm::class, function (): void {
         $node = Node::query()->where('name', $vm->name)->sole();
         expect($this->converged)->toBe([[
             'host' => '10.251.77.20', 'jump' => $this->host->id, 'wireguard_ip' => '10.44.0.129',
-            'user' => 'orbit', 'fingerprint' => TVM_LIFE_FINGERPRINT, 'linked' => true, 'baked' => false,
+            'user' => 'orbit', 'fingerprint' => TVM_LIFE_FINGERPRINT, 'linked' => true,
         ]])
             ->and($vm->fresh()?->node_id)->toBe($node->id)
             ->and($vm->fresh()?->address)->toBe('10.251.77.20')
@@ -590,43 +587,21 @@ describe(EnrollTaskVm::class, function (): void {
             ->and($node->user)->toBe('orbit')
             ->and($node->cluster_id)->toBe($this->cluster->id)
             ->and($node->roles()->pluck('role')->all())->toBe([RoleName::AppDev])
-            ->and($this->provider->calls)->toBe(['observe', 'cloud-init', 'fingerprint', 'manifest']);
+            ->and($this->provider->calls)->toBe(['observe', 'cloud-init', 'fingerprint']);
         Queue::assertPushedOn('task-vms', PrepareTaskVmRuntime::class, fn (PrepareTaskVmRuntime $job): bool => $job->taskVmId === $vm->id);
     });
 
-    it('loads the image manifest for the enrollment and drops it afterwards', function (): void {
-        $vm = tvm_life_vm(tvm_life_group());
-        $this->provider->manifest = TaskVmBakedPrograms::manifest(['bootstrap' => new RemoteCommand(['bootstrap'])]);
-
-        app()->call([new EnrollTaskVm($vm->id, now()->getTimestamp()), 'handle']);
-
-        $node = Node::query()->where('name', $vm->name)->sole();
-        expect($this->converged[0]['baked'])->toBeTrue()
-            ->and(app(TaskVmBakedPrograms::class)->holds($node, 'bootstrap', new RemoteCommand(['bootstrap'])))->toBeFalse();
-    });
-
-    it('skips the baked programs for a warm pool VM too, which enrolls before any claim', function (): void {
+    it('links a warm pool VM before convergence too, before any claim', function (): void {
         $vm = TaskVm::query()->create([
             'group_id' => null, 'host_node_id' => $this->host->id, 'provider' => 'incus', 'name' => 'tvm-pending',
             'state' => TaskVmState::Provisioning, 'wireguard_ip' => '10.44.0.129', 'pi_token' => null,
         ]);
         $vm->update(['name' => 'tvm-'.$vm->id]);
-        $this->provider->manifest = TaskVmBakedPrograms::manifest(['bootstrap' => new RemoteCommand(['bootstrap'])]);
 
         app()->call([new EnrollTaskVm($vm->id, now()->getTimestamp()), 'handle']);
 
-        expect($this->converged[0]['baked'])->toBeTrue()
+        expect($this->converged[0]['linked'])->toBeTrue()
             ->and($vm->fresh()?->group_id)->toBeNull();
-    });
-
-    it('enrolls with every program and a warning when the image has no manifest', function (): void {
-        Log::spy();
-        $vm = tvm_life_vm(tvm_life_group());
-
-        app()->call([new EnrollTaskVm($vm->id, now()->getTimestamp()), 'handle']);
-
-        expect($this->converged[0]['baked'])->toBeFalse();
-        Log::shouldHaveReceived('warning')->once()->with('Task VM image has no usable manifest; enrollment runs every program.', ['task_vm' => $vm->name, 'reason' => 'missing']);
     });
 
     it('checks cloud-init before the host reports the guest address', function (): void {

@@ -7,7 +7,6 @@ namespace App\Console\Commands;
 use App\Domain\Nodes\RoleName;
 use App\Infrastructure\Nodes\NodeEnrollmentPrograms;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\TaskVms\TaskVmBakedPrograms;
 use Illuminate\Console\Command;
 use InvalidArgumentException;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -59,7 +58,7 @@ final class RenderNodeProgramsCommand extends Command
                     'arguments' => $program->arguments,
                     'input' => $program->input,
                     // The image manifest fingerprint that enrollment compares, so a builder never computes its own.
-                    'fingerprint' => TaskVmBakedPrograms::fingerprint($program),
+                    'fingerprint' => $program->fingerprint(),
                 ],
                 array_keys($programs),
                 array_values($programs),

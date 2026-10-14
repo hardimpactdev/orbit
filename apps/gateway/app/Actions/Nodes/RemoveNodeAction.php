@@ -27,6 +27,7 @@ use App\Domain\Schedules\ScheduleTargetUseGuard;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Infrastructure\TaskVms\TaskVmImagePeers;
@@ -34,6 +35,7 @@ use App\Models\DatabaseServer;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\TaskVm;
+use App\Models\TaskVmImageBuild;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -320,6 +322,9 @@ final readonly class RemoveNodeAction
             DB::transaction(static function () use ($node): void {
                 // Only destroyed task VM rows can be left here: the guard refused live ones. They are audit rows of this host.
                 TaskVm::query()->where('host_node_id', $node->id)->delete();
+                // Completed image builds are history of this host; never discard a running build here.
+                TaskVmImageBuild::query()->where('host_node_id', $node->id)
+                    ->whereIn('state', [TaskVmImageBuildState::Succeeded, TaskVmImageBuildState::Failed])->delete();
                 $node->delete();
             });
         } catch (Throwable $exception) {

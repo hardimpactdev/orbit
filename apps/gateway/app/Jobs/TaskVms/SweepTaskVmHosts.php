@@ -14,6 +14,7 @@ use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\TaskVmUpCloud;
 use App\Infrastructure\TaskVms\TaskVmHostAudit;
+use App\Infrastructure\TaskVms\TaskVmImageBuildChain;
 use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplates;
 use App\Infrastructure\TaskVms\UpCloudServers;
 use App\Infrastructure\TaskVms\UpCloudTaskVmImageBuilder;
@@ -54,8 +55,10 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
         $this->onTaskVmQueue();
     }
 
-    public function handle(TaskVmSettings $settings, TaskVmCapacity $capacity, TaskVmHostAudit $audit, TaskVmWorkspaceTemplates $templates, UpCloudServers $servers, UpCloudTaskVmImageBuilder $images): void
+    public function handle(TaskVmSettings $settings, TaskVmCapacity $capacity, TaskVmHostAudit $audit, TaskVmWorkspaceTemplates $templates, UpCloudServers $servers, UpCloudTaskVmImageBuilder $images, TaskVmImageBuildChain $builds): void
     {
+        $builds->recoverSubmissions();
+        $builds->recoverTemplateRefresh();
         $failures = [];
         foreach ($settings->enabled ? $capacity->activeHosts() : [] as [$host, $node]) {
             try {

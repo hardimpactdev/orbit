@@ -15,8 +15,8 @@ use Illuminate\Support\Sleep;
 use JsonException;
 
 /**
- * Reads a task VM's guest before it is a Node, the same way for every provider: the cloud-init status, the image
- * manifest, and whether the VM runs. Each provider only runs the fixed {@see TaskVmGuestCommand}; this class
+ * Reads a task VM's guest before it is a Node, the same way for every provider: the cloud-init status and
+ * whether the VM runs. Each provider only runs the fixed {@see TaskVmGuestCommand}; this class
  * validates the output, so every provider fails with the same codes. Invalid output fails with
  * `task_vm.invalid_host_output`, and a guest command that fails with `task_vm.host_command_failed`. The base image
  * and workspace template builds read cloud-init in their builder and smoke VMs with the same rules
@@ -97,17 +97,6 @@ final readonly class TaskVmGuest
         }
     }
 
-    /** The manifest of the programs the VM's base image ran, or null when the image has none. */
-    public function imageManifest(TaskVm $vm): ?string
-    {
-        $result = $this->provider->exec($vm, TaskVmGuestCommand::ImageManifest);
-        if (! $result->succeeded() || $result->truncated) {
-            throw self::failed($vm, 'the image manifest read', $result);
-        }
-
-        return $result->stdout === 'absent' ? null : $result->stdout;
-    }
-
     /** What the provider sees of the VM. A stopped VM gets a second reading, because a guest reboot shows it stopped. */
     public function observeSettled(TaskVm $vm): ?VmObservation
     {
@@ -123,12 +112,5 @@ final readonly class TaskVmGuest
     private static function invalid(string $subject, string $reason): TaskVmException
     {
         return new TaskVmException('task_vm.invalid_host_output', ucfirst($subject)." returned invalid guest output: {$reason}.", 502);
-    }
-
-    private static function failed(TaskVm $vm, string $operation, CommandResult $result): TaskVmException
-    {
-        $detail = mb_substr(implode("\n", array_slice(explode("\n", trim($result->stderr)), -5)), 0, 2000);
-
-        return new TaskVmException('task_vm.host_command_failed', "On task VM [{$vm->name}], {$operation} failed with exit code [{$result->exitCode}]".($result->truncated ? ' and truncated output' : '').'.'.($detail === '' ? '' : "\n{$detail}"), 502);
     }
 }

@@ -20,7 +20,7 @@ use Throwable;
 /**
  * Builds the UpCloud task VM template with the same recipe as the Incus base image ({@see TaskVmImageRecipe}). A
  * builder server boots the stock Ubuntu template with the builder user-data, runs the enrollment programs, the agent
- * binary, the Pi executable, the masks and the manifest over SSH as `orbit`, turns ufw on, and `base-image-clean.sh`
+ * binary, the Pi executable, the masks over SSH as `orbit`, turns ufw on, and `base-image-clean.sh`
  * removes its identity. A server from the template boots with ufw on and only public SSH open, the exact rule that
  * enrollment's base firewall opens and its role closes, so no baked service is public before enrollment. Its stopped disk becomes the template `orbit-task-base-<time>-unverified`. A smoke server boots it with
  * the task VM user-data; only then does the title lose `-unverified`, so task VMs clone it. The two newest verified
@@ -96,7 +96,6 @@ final readonly class UpCloudTaskVmImageBuilder
             }
             $this->stage($progress, 'masks', fn () => $this->checked($builder, $shell->asRoot(['sh', '-c', TaskVmImageRecipe::Masks])));
             $this->stage($progress, 'firewall', fn () => $this->firewall($builder, $shell));
-            $this->stage($progress, 'manifest', fn () => $this->checked($builder, $shell->asRoot(['install', '-D', '-o', 'root', '-g', 'root', '-m', '0644', '/dev/stdin', TaskVmBakedPrograms::ManifestPath], TaskVmBakedPrograms::manifest($programs))));
             $this->stage($progress, 'clean', fn () => $this->clean($builder, $shell));
             $template = $this->stage($progress, 'templatize', fn (): string => $this->templatize($builder, $stamp, $title.TaskVmUpCloud::Unverified));
             $this->stage($progress, 'delete-builder', fn () => $this->servers->delete($builder, UpCloudServers::ImageLabel, $stamp, null));
@@ -210,7 +209,7 @@ final readonly class UpCloudTaskVmImageBuilder
 
     /**
      * Boots a server from the new template with the task VM user-data. Cloud-init must finish, `orbit` must have the
-     * Gateway's key and the pinned uid and gid, the image manifest must be there, and ufw must be on.
+     * Gateway's key and the pinned uid and gid, and ufw must be on.
      */
     private function smoke(string $name, string $stamp, string $template): void
     {

@@ -13,10 +13,8 @@ use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolOperation;
 use App\Domain\Tools\ToolRemovalPlan;
-use App\Infrastructure\Nodes\EnrollmentProgram;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\TaskVms\TaskVmBakedPrograms;
 use App\Models\Node;
 
 final readonly class ComposerToolManager implements SupportsToolAdoption, ToolManager
@@ -127,11 +125,6 @@ final readonly class ComposerToolManager implements SupportsToolAdoption, ToolMa
         $this->guardSupportedNode($node);
 
         $command = $this->materializeCommand($node);
-        // A task VM whose base image ran this exact program skips it.
-        if (app(TaskVmBakedPrograms::class)->holds($node, EnrollmentProgram::ComposerManager, $command)) {
-            return;
-        }
-
         $result = $this->commands->execute($node, $command->arguments, $command->input);
 
         $this->guardSuccessfulResult(

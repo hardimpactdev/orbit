@@ -47,7 +47,6 @@ use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\AppProd\ProductionSshExecutor;
 use App\Infrastructure\Gateway\GatewayPrivateDnsResolver;
 use App\Infrastructure\Nodes\CaddyPackageProgram;
-use App\Infrastructure\Nodes\EnrollmentProgram;
 use App\Infrastructure\Nodes\Roles\AnalyticsRoleBaseline;
 use App\Infrastructure\Nodes\Roles\DatabaseRoleBaseline;
 use App\Infrastructure\Nodes\Roles\DevelopmentRoleBaseline;
@@ -68,14 +67,12 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Infrastructure\TaskVms\TaskVmBakedPrograms;
 use App\Infrastructure\WebSocket\NativeWebSocketRuntimeLifecycle;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRole;
 use App\Models\Process;
-use App\Models\TaskVm;
 use Illuminate\Support\Facades\Log;
 
 it('converges and removes only app development role-owned infrastructure', function (): void {
@@ -98,31 +95,6 @@ it('converges and removes only app development role-owned infrastructure', funct
         'caddy:remove',
         'firewall:remove:app-dev',
         'dns:none',
-    ]);
-});
-
-it('skips the app development programs that a task VM image ran and runs a changed one', function (): void {
-    $events = [];
-    [$node, $assignment] = role_baseline_models(RoleName::AppDev, 'tvm-31');
-    $commands = new NodeRolePrerequisiteCommandFactory;
-    app(TaskVmBakedPrograms::class)->load(new TaskVm(['name' => 'tvm-31']), TaskVmBakedPrograms::manifest([
-        EnrollmentProgram::CaddyPackage => $commands->caddyPackage($node, RoleName::AppDev),
-        EnrollmentProgram::prerequisites(RoleName::AppDev) => new RemoteCommand(['sudo', 'bash', '-seu', '--', 'an older program']),
-    ]));
-    Log::spy();
-
-    app_dev_role_baseline($events)->converge($node, $assignment);
-
-    expect($events)->toBe([
-        "dns:{$node->id}",
-        'ssh:app-dev',
-        'ssh:'.RuntimeHibernation::MarkerDirectory,
-        'caddy:converge',
-        'firewall:converge:app-dev',
-    ]);
-    Log::shouldHaveReceived('info')->with('Task VM program skipped: its image ran it.', ['task_vm' => 'tvm-31', 'program' => 'caddy-package']);
-    Log::shouldHaveReceived('warning')->with('Task VM image did not run this program; enrollment runs it.', [
-        'task_vm' => 'tvm-31', 'program' => 'app-dev-prerequisites', 'reason' => 'the program changed since the image build',
     ]);
 });
 

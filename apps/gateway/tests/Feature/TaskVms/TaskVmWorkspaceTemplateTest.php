@@ -989,13 +989,9 @@ describe('refresh order', function (): void {
         expect(tvm_builds($this->incus))->toBe(1);
     });
 
-    it('queues no refresh at a promote, and one from the nightly base image refresh stopped at its timeout', function (): void {
+    it('queues no refresh at a raw alias move; the build chain queues it after all hosts', function (): void {
         app(IncusTaskVmBaseImage::class)->promote($this->host, $this->hostNode, TVM_NEW_IMAGE);
         expect(DB::table('jobs')->count())->toBe(0);
 
-        // A nightly job stopped at its timeout never reached its own refresh: `failed()` queues it, once.
-        (new RefreshTaskVmBaseImages)->failed(null);
-        (new RefreshTaskVmBaseImages)->failed(null);
-        expect(DB::table('jobs')->pluck('queue')->all())->toBe([GatewayQueue::Builds->value]);
     });
 });

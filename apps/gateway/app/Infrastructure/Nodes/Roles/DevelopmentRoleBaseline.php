@@ -18,7 +18,6 @@ use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Hibernation\HibernationDirectoryEnsure;
 use App\Infrastructure\Nodes\EnrollmentProgram;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\TaskVms\TaskVmBakedPrograms;
 use App\Models\Node;
 use App\Models\NodeRole;
 
@@ -46,14 +45,13 @@ final readonly class DevelopmentRoleBaseline implements RoleBaseline
             $this->storagePaths->validateEffective($settings, $node, $account),
         );
         $this->dns->converge($node);
-        // A task VM whose base image ran these exact programs skips them.
-        $baked = app(TaskVmBakedPrograms::class);
+        // Task VM enrollment trusts the software in its image.
         $caddyPackage = $this->commands->caddyPackage($node, RoleName::AppDev);
-        if ($caddyPackage instanceof RemoteCommand && ! $baked->holds($node, EnrollmentProgram::CaddyPackage, $caddyPackage)) {
+        if ($caddyPackage instanceof RemoteCommand && ! EnrollmentProgram::skipForTaskVm($node, EnrollmentProgram::CaddyPackage)) {
             $this->ssh->execute($node, $caddyPackage, 'caddy-package-source', 'app-dev.prerequisite_failed', failureLabel: CaddyRoleFailure::sshLabel(RoleName::AppDev));
         }
         $prerequisites = $this->commands->make($node, RoleName::AppDev, $account);
-        if (! $baked->holds($node, EnrollmentProgram::prerequisites(RoleName::AppDev), $prerequisites)) {
+        if (! EnrollmentProgram::skipForTaskVm($node, EnrollmentProgram::prerequisites(RoleName::AppDev))) {
             $this->ssh->execute(
                 $node,
                 $prerequisites,

@@ -43,7 +43,7 @@ final readonly class TaskVmCloudInit
      *
      * @var list<string>
      */
-    private const array ChromiumLibraries = [
+    public const array ChromiumLibraries = [
         'libasound2t64', 'libatk-bridge2.0-0t64', 'libatk1.0-0t64', 'libatspi2.0-0t64', 'libcairo2',
         'libcups2t64', 'libdbus-1-3', 'libdrm2', 'libgbm1', 'libglib2.0-0t64', 'libnspr4', 'libnss3',
         'libpango-1.0-0', 'libx11-6', 'libxcb1', 'libxcomposite1', 'libxdamage1', 'libxext6',
@@ -74,16 +74,15 @@ final readonly class TaskVmCloudInit
     }
 
     /** The user-data of the base image builder, which boots from the stock image. */
-    public function renderImageBuilder(string $gatewayPublicKey): string
+    public function renderImageBuilder(string $gatewayPublicKey, bool $upgradePackages = true): string
     {
         // bootcmd runs before cloud-init creates users, so the group exists with its pinned gid. A taken uid or gid
         // makes cloud-init fail, and with it the build.
         return self::document([
             'bootcmd' => [['sh', '-c', 'getent group '.self::User.' >/dev/null || groupadd --gid '.self::Uid.' '.self::User]],
             'users' => [[...$this->user($gatewayPublicKey), 'uid' => self::Uid, 'primary_group' => self::User, 'no_user_group' => true]],
-            'package_update' => true,
-            'package_upgrade' => true,
-            'packages' => ['openssh-server', ...self::ChromiumLibraries, ...self::WorkspaceTools],
+            // Legacy provider builds still upgrade in cloud-init. The Incus chain has a separate apt job.
+            ...($upgradePackages ? ['package_update' => true, 'package_upgrade' => true, 'packages' => ['openssh-server', ...self::ChromiumLibraries, ...self::WorkspaceTools]] : []),
         ]);
     }
 

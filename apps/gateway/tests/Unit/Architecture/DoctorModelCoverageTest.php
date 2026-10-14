@@ -66,6 +66,7 @@ use App\Models\TaskDefinition;
 use App\Models\TaskQuestion;
 use App\Models\TaskReviewedCommit;
 use App\Models\TaskVm;
+use App\Models\TaskVmImageBuild;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 use App\Models\VaultItem;
@@ -103,6 +104,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
     ];
     $excluded = [
         TaskVm::class,
+        TaskVmImageBuild::class, // Build history, not a resource that doctor converges.
         GatewayRelease::class,
         FleetRollout::class,
         FleetRolloutNode::class,

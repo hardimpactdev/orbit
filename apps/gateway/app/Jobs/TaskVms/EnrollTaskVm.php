@@ -12,7 +12,6 @@ use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmSettings;
-use App\Infrastructure\TaskVms\TaskVmBakedPrograms;
 use App\Infrastructure\TaskVms\TaskVmGuest;
 use App\Infrastructure\TaskVms\TaskVmStepClock;
 use App\Models\TaskVm;
@@ -60,7 +59,7 @@ final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
         $this->onTaskVmQueue();
     }
 
-    public function handle(TaskVmProvider $provider, TaskVmGuest $guest, ProvisionNodeAction $nodes, TaskVmSettings $settings, TaskVmStepClock $clock, TaskVmBakedPrograms $baked): void
+    public function handle(TaskVmProvider $provider, TaskVmGuest $guest, ProvisionNodeAction $nodes, TaskVmSettings $settings, TaskVmStepClock $clock): void
     {
         $vm = $this->provisioning();
         if (! $vm instanceof TaskVm) {
@@ -100,8 +99,6 @@ final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
 
         $clock->step('boot');
         $fingerprint = $provider->sshHostFingerprint($vm);
-        // Enrollment skips the programs that the base image ran as they render now.
-        $baked->load($vm, $guest->imageManifest($vm));
         $vm->update(['address' => $address]);
         $nodes->execute(new ProvisionNodeData(
             name: $vm->name,
@@ -118,7 +115,6 @@ final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
         ));
         $clock->step('enrolled');
         $clock->stop();
-        $baked->stop();
         PrepareTaskVmRuntime::dispatch($vm->id);
     }
 
