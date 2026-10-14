@@ -33,6 +33,7 @@ use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Domain\Tasks\TaskRemoteBranch;
 use App\Domain\Tasks\TaskReviewedCommitSource;
 use App\Domain\Tasks\TaskReviewObservation;
+use App\Domain\Tasks\TaskReviewPacketBuilder;
 use App\Domain\Tasks\TaskReviewReadStatus;
 use App\Domain\Tasks\TaskReviewSelection;
 use App\Domain\Tasks\TaskReviewTrust;
@@ -1083,4 +1084,28 @@ describe('park failure recovery', function (): void {
         expect($group->fresh())->assistance_requested->toBeFalse()->merge_status->toBe(TaskMergeStatus::Merged);
         expect($vm->fresh())->state->toBe(TaskVmState::Parked)->error_code->toBe('task_vm.job_failed');
     });
+});
+
+it('scopes a final re-review to the prior final tree and findings until an operator adds work', function (): void {
+    $group = rm_group([
+        ['Final review', TaskStatus::Completed, TaskType::FinalReview],
+        ['Address final review', TaskStatus::Completed],
+        ['Final review', TaskStatus::Reviewing, TaskType::FinalReview],
+    ]);
+    [$previous, $fixup, $current] = $group->tasks->all();
+    $previous->update(['review_workspace_tree' => str_repeat('b', 40)]);
+    $fixup->update(['fixup_problem' => TaskFinalReview::FixupProblem]);
+    $current->update(['subtask_start_commit' => RM_BASE]);
+    TaskComment::query()->create(['task_group_id' => $group->id, 'task_id' => $previous->id,
+        'type' => 'changes_requested', 'body' => 'Fix the ordinary failure path.', 'author' => 'reviewer', 'posted_at' => now()]);
+    $builder = app(TaskReviewPacketBuilder::class);
+
+    $packet = $builder->build($current, false);
+
+    expect($packet)->toContain('git diff --cached '.str_repeat('b', 40), 'This is a delta re-review', 'Fix the ordinary failure path.')
+        ->and($builder->reviewContext($current))->toContain('Fix the ordinary failure path.');
+
+    $fixup->update(['fixup_problem' => null]);
+    $packet = $builder->build($current, false);
+    expect($packet)->toContain('git diff '.RM_BASE)->not->toContain('This is a delta re-review');
 });

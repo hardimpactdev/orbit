@@ -329,3 +329,17 @@ function review_diff_result(CommandResult $result): SshExecutor
         }
     };
 }
+
+it('reviews only changes since an uncommitted reviewed tree', function (): void {
+    $checkout = review_diff_checkout();
+    file_put_contents($checkout.'/earlier.php', "<?php return 1;\n");
+    (new Process(['git', 'add', '.'], $checkout))->mustRun();
+    $tree = trim((new Process(['git', 'write-tree'], $checkout))->mustRun()->getOutput());
+    (new Process(['git', 'reset', '--quiet'], $checkout))->mustRun();
+    file_put_contents($checkout.'/tracked.php', "<?php return 3;\n");
+
+    $diff = review_diff_reader(new LocalShellSshExecutor)->read(review_diff_instance($checkout), $tree);
+
+    expect(array_column($diff['files'], 'path'))->toBe(['tracked.php'])
+        ->and($diff['diff'])->toContain('return 3;')->not->toContain('earlier.php');
+});

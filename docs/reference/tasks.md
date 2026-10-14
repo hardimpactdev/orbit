@@ -959,6 +959,8 @@ The scheduler identifies the process by its id and its start time, so a reused p
 
 `tasks:check:cancel` stops a running check. A subtask without one answers HTTP 409 `tasks.check_not_running`. When Orbit marks the check cancelled but cannot stop its process, the call answers HTTP 502 `tasks.check_unreachable`. Each run is stored with its receipt, kind, status, process, HEAD and trees, times, exit code, changed paths, and the last 16 KiB of output.
 
+For Orbit handoffs, affected tests use the latest passed handoff tree of that subtask, including after requested changes and in a final-review fixup. With no passed handoff, they use its start commit. Failed, changed, cancelled, and lost checks never advance that base. File deliverables and reproduction commands still use the subtask start commit. Documentation and topology checks keep their branch scope. CI ignores the handoff test base and checks the full branch.
+
 ### Baseline check
 
 Before the first implementer of a task starts, the check runs on the fresh workspace, with `kind` `baseline`.
@@ -987,7 +989,7 @@ Orbit reads GitHub at most every five minutes per failed baseline, and never whi
 
 ## Review a subtask
 
-When the handoff check and the deliverables pass, the subtask moves to `reviewing`. Its first review starts a fresh reviewer thread with the task's reviewer driver and model and the current configured effort. The task's `reviewer_agent_thread_id` then points at it. A `changes_requested` re-review continues that thread. When the continued thread cannot take a turn, Orbit starts a fresh one with a full packet. The next subtask starts another fresh reviewer.
+When the handoff check and the deliverables pass, the subtask moves to `reviewing`. Its first review starts a fresh reviewer thread with the task's reviewer driver and model and the current configured effort. The task's `reviewer_agent_thread_id` then points at it. A `changes_requested` re-review continues that thread. When the continued thread cannot take a turn, Orbit starts a fresh one with the task context and the same delta scope. The next subtask starts another fresh reviewer.
 
 A failure while requesting a review is a communication failure. After five, the task asks for assistance with `The review could not be requested (ExceptionClass).` Orbit sends no review when it cannot read the diff.
 
@@ -1008,13 +1010,15 @@ The opening turn is a review packet of at most 16,000 characters, about 4,000 to
 | Handoff result | 2,000 | One line per command the check ran, with the command cut to 160 characters. `$(git rev-parse --git-path orbit)/check.log` holds the rest. The cut note names `$(git rev-parse --git-path orbit)/context.md` |
 | Diff body | The rest, and at most 16,384 bytes | Cut from the end. The diff command prints the rest. The cut note names `$(git rev-parse --git-path orbit)/context.md` |
 
+A re-review receives only the diff since the last reviewed tree and the earlier requested changes. It checks whether those findings are resolved and whether the delta introduces a new defect under rules (a)–(d). It does not review the whole subtask again. A replacement reviewer gets the same scope and findings. After a final-review fixup, the next final review follows this rule too; a new operator subtask starts a whole-branch review again. Findings are capped in the packet and kept in full in `$(git rev-parse --git-path orbit)/context.md`.
+
 Before each review turn, opening or continued, Orbit writes `$(git rev-parse --git-path orbit)/context.md` with the full task brief, subtask brief, deliverables, earlier approval bodies, held resolution, and answered consults. Every cut note names that file. The file replaces the `tasks-show` and `tasks-comment-list` references, and it works on every driver.
 
 Dropped lines leave one line that says how many were omitted. The diff and the stat replace bytes that are not valid UTF-8. The packet does not name a feature contract. A continued turn keeps the review rules, the subtask brief, the new diff stat, the new handoff result, the diff body, the retrieval block, and the closing instructions. It leaves out the task brief, the deliverables, the earlier approvals, the held resolution, and the answered consults. `$(git rev-parse --git-path orbit)/context.md` still holds those parts.
 
 The review packet includes untracked symlinks as link targets, without reading the files or directories they point to. Its diff reader uses a temporary copy of the Git index and leaves the workspace index unchanged. The copy preserves the index timestamp, so Git also finds edits of the same size when file timestamps match cached values.
 
-The retrieval commands print the diff the caps cut, including untracked files, without updating the index. The packet puts the subtask's start commit in place of `START`:
+The retrieval commands print the diff the caps cut, including untracked files, without updating the index. The packet puts the review base in place of `START`: the subtask's start commit for its first review, or its last reviewed tree for a re-review:
 
 ```bash
 git diff --stat START; git ls-files --others --exclude-standard -z | while IFS= read -r -d '' path; do git diff --no-index --stat -- /dev/null "$path" || true; done
@@ -1024,7 +1028,9 @@ git diff --stat START; git ls-files --others --exclude-standard -z | while IFS= 
 git diff START; git ls-files --others --exclude-standard -z | while IFS= read -r -d '' path; do git diff --no-index -- /dev/null "$path" || true; done
 ```
 
-When the workspace starting commit is 40 or 64 hexadecimal characters, the retrieval block adds `The task started at <sha>.` and `git diff --stat <sha>..HEAD` after those commands. A continued turn includes them too. The lines name no Project, branch, or policy.
+For a delta re-review, the retrieval command stages the candidate in a temporary index and diffs it against the reviewed tree. It includes untracked files and leaves the workspace index unchanged.
+
+When the workspace starting commit is 40 or 64 hexadecimal characters, the opening retrieval block adds `The task started at <sha>.` and `git diff --stat <sha>..HEAD` after those commands. The lines name no Project, branch, or policy. Delta re-reviews use only their tree retrieval command.
 
 The implementer prompt asks the implementer to finish the brief and pass the Project task check. It includes the task brief under `Group brief`, after the feature title and before the subtask brief.
 
@@ -1345,7 +1351,7 @@ A final review is a subtask with `type` `final_review` and the title `Final revi
 
 The final reviewer blocks only on findings that meet the [blocking rule](#reviewer-outcomes) and are new since the subtask approvals. It does not reopen hardening that the subtask reviews already covered.
 
-Its start commit is the merge base of the workspace `HEAD` and `origin/{default branch}`. So the [review packet](#review-packet) holds the whole branch diff, the task brief, and the earlier approvals. Its one deliverable is the `review` deliverable `final-review`, which the reviewer confirms. When the task has no pull request yet, the final review opens it: its approval needs `--pr-summary`, `--pr-change`, and `--pr-breaking`, and Jev checks [brief coverage](#pull-request-and-settle-metrics) then. Ordinary subtask approvals in the task need no pull request fields.
+For the first final review, its start commit is the merge base of the workspace `HEAD` and `origin/{default branch}`. So the [review packet](#review-packet) holds the whole branch diff, the task brief, and the earlier approvals. Its one deliverable is the `review` deliverable `final-review`, which the reviewer confirms. When the task has no pull request yet, the final review opens it: its approval needs `--pr-summary`, `--pr-change`, and `--pr-breaking`, and Jev checks [brief coverage](#pull-request-and-settle-metrics) then. Ordinary subtask approvals in the task need no pull request fields.
 
 | Outcome | Orbit |
 | --- | --- |

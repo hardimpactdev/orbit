@@ -779,3 +779,23 @@ describe('subtask test selection', function (): void {
             ->and($process->getErrorOutput())->toContain('task test base');
     })->with([str_repeat('f', 40), '--all']);
 });
+
+describe('handoff tree test selection', function (): void {
+    it('excludes already checked uncommitted changes while CI keeps the full branch', function (bool $ci): void {
+        $fixture = orb277_gate_fixture('apps/cli/composer.lock');
+        $root = $fixture['root'];
+        file_put_contents($root.'/apps/cli/earlier.txt', 'Already checked uncommitted work.');
+        (new Process(['git', 'add', '.'], $root))->mustRun();
+        $tree = trim((new Process(['git', 'write-tree'], $root))->mustRun()->getOutput());
+        (new Process(['git', 'reset', '--quiet'], $root))->mustRun();
+        mkdir($root.'/apps/gateway/app', 0700, true);
+        file_put_contents($root.'/apps/gateway/app/Rework.php', '<?php final class Rework {}');
+
+        $run = orb277_run_gate($fixture, 'apps/cli', testBase: $tree, ci: $ci);
+
+        expect($run['receipt']['passed'])->toBeTrue()
+            ->and($run['receipt']['test_base'])->toBe($ci ? $fixture['main'] : $tree);
+        $fallbacks = array_values(array_filter($run['receipt']['checks'], static fn (array $check): bool => $check['project'] === 'apps/cli' && in_array('--no-tia', $check['command'], true)));
+        expect($fallbacks)->toHaveCount($ci ? 1 : 0);
+    })->with(['handoff' => false, 'CI' => true]);
+});
