@@ -11,6 +11,7 @@ use App\Models\TaskVmImageBuild;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Queue\TimeoutExceededException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -22,6 +23,12 @@ abstract class ImageBuildJob implements ShouldQueue
     public int $timeout = 300;
 
     public bool $failOnTimeout = true;
+
+    // A lost acknowledgement must re-enter handle to dispatch the successor of a completed step.
+    // Execution errors explicitly fail below; queue delivery/continuation errors remain retryable.
+    public int $tries = 0;
+
+    public int $buildAttempt = 1;
 
     public function __construct(public int $buildId) {}
 
@@ -37,7 +44,7 @@ abstract class ImageBuildJob implements ShouldQueue
         // Serialize the submission acknowledgement with recovery's conditional failure write.
         $build = DB::transaction(function (): ?TaskVmImageBuild {
             $claimed = TaskVmImageBuild::query()->whereKey($this->buildId)->where('state', TaskVmImageBuildState::Running)
-                ->whereNull('cleanup_started_at')->where(function (Builder $query): void {
+                ->where('attempt', $this->buildAttempt)->whereNull('cleanup_started_at')->where(function (Builder $query): void {
                     // Redelivery of an older completed step is not acknowledgement of a new resume.
                     $query->whereNull('submission_pending_at')->orWhere(fn (Builder $entry): Builder => $entry
                         ->where('current_step', $this->step())->where('current_program', $this->program()));
@@ -72,8 +79,8 @@ abstract class ImageBuildJob implements ShouldQueue
                 return;
             }
         } catch (Throwable $error) {
-            self::recordFailure($this->buildId, $error);
-            // retryUntil permits polling releases, not retries of a reported boot or step error.
+            $this->failed($error);
+            // Unlimited polling releases do not permit retries of a reported boot or step error.
             $this->fail($error);
             throw $error;
         }
@@ -85,18 +92,50 @@ abstract class ImageBuildJob implements ShouldQueue
         $build->save();
     }
 
-    public static function recordFailure(int $id, Throwable $error): void
+    /** Laravel invokes chain catch callbacks before failed(), including on pre-handle failures. */
+    public function invokeChainCatchCallbacks(Throwable $error): void
     {
-        $build = TaskVmImageBuild::query()->findOrFail($id);
-        $steps = $build->steps;
-        foreach ($steps as &$entry) {
-            if ($entry['step'] === $build->current_step?->value && $entry['program'] === $build->current_program) {
-                $entry['started_at'] ??= now()->toISOString();
-                $entry['error'] = mb_substr($error->getMessage(), 0, 4000);
-                $entry['seconds'] = max(0.0, now()->getTimestampMs() / 1000 - Carbon::parse($entry['started_at'])->getTimestampMs() / 1000);
-            }
+        $this->failed($error);
+        foreach ($this->chainCatchCallbacks ?? [] as $callback) {
+            $callback($error);
         }
-        unset($entry);
-        $build->forceFill(['steps' => $steps, 'state' => TaskVmImageBuildState::Failed])->save();
+    }
+
+    /** Also called by the worker for failures before handle, including exhausted redeliveries. */
+    public function failed(?Throwable $error): void
+    {
+        if ($error !== null) {
+            self::recordFailure($this->buildId, $this->buildAttempt, $this->step(), $this->program(), $error);
+        }
+    }
+
+    public static function recordFailure(int $id, int $attempt, TaskVmImageBuildStep $step, ?string $program, Throwable $error): void
+    {
+        DB::transaction(function () use ($id, $attempt, $step, $program, $error): void {
+            // Acquire SQLite's writer fence before reading steps, and never regress a terminal or newer attempt.
+            $claimed = TaskVmImageBuild::query()->whereKey($id)->where('attempt', $attempt)
+                ->where('state', TaskVmImageBuildState::Running)->whereNull('cleanup_started_at')
+                ->toBase()->update(['attempt' => $attempt]);
+            if ($claimed !== 1) {
+                return;
+            }
+            $build = TaskVmImageBuild::query()->findOrFail($id);
+            $steps = $build->steps;
+            $index = array_find_key($steps, static fn (array $entry): bool => $entry['step'] === $step->value && $entry['program'] === $program);
+            if ($index !== null && $steps[$index]['seconds'] !== null && $steps[$index]['error'] === null) {
+                // A lost acknowledgement normally retries continuation. But failOnTimeout deletes
+                // the delivery, so a timeout at the current completion boundary must allow resume.
+                // A late timeout from an older step must not regress a successor already at work.
+                if (! $error instanceof TimeoutExceededException || $build->current_step !== $step || $build->current_program !== $program) {
+                    return;
+                }
+            }
+            $index ??= count($steps);
+            $started = $steps[$index]['started_at'] ?? now()->toISOString();
+            $steps[$index] = ['step' => $step->value, 'program' => $program, 'started_at' => $started,
+                'seconds' => max(0.0, now()->getTimestampMs() / 1000 - Carbon::parse($started)->getTimestampMs() / 1000),
+                'error' => mb_substr($error->getMessage(), 0, 4000)];
+            $build->forceFill(['steps' => $steps, 'state' => TaskVmImageBuildState::Failed, 'current_step' => $step, 'current_program' => $program])->save();
+        });
     }
 }

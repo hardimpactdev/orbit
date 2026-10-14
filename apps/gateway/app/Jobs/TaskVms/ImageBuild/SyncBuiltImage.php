@@ -12,6 +12,7 @@ use App\Models\Node;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Queue\Failed\FailedJobProviderInterface;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -22,12 +23,18 @@ final class SyncBuiltImage implements ShouldQueue
 
     public int $timeout = 1440;
 
-    public int $tries = 1;
+    // Continue retrying acknowledgement/continuation after a transport failure or worker crash.
+    public int $tries = 0;
 
     public function __construct(public int $buildId, public int $hostNodeId) {}
 
     public function handle(TaskVmSettings $settings, IncusTaskVmImageSync $sync): void
     {
+        $failures = app(FailedJobProviderInterface::class);
+        if ($this->job !== null && $failures->find($this->job->uuid()) !== null) {
+            // The original failure is durable. Redelivery only retries Laravel's chain continuation.
+            return;
+        }
         $name = (string) $this->hostNodeId;
         try {
             $build = TaskVmImageBuild::query()->findOrFail($this->buildId);
@@ -47,6 +54,13 @@ final class SyncBuiltImage implements ShouldQueue
                 'error_code' => TaskVmException::codeOf($error),
                 'error' => $error->getMessage(),
             ]);
+            // Persist before continuation without deleting the delivery. Laravel dispatches the
+            // successor only after handle returns, and retains this delivery if enqueue fails.
+            // Its UUID makes the original failure both the nightly signal and the redelivery fence.
+            if ($this->job !== null) {
+                $failures->log($this->job->getConnectionName(), $this->job->getQueue(), $this->job->getRawBody(),
+                    new TaskVmException('task_vm.image_sync_failed', "[task_vm.image_sync_failed] Base image sync to Node [{$name}] failed: {$error->getMessage()}", previous: $error));
+            }
         }
     }
 }

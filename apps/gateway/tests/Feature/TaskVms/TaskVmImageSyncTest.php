@@ -26,7 +26,7 @@ use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Queue\Events\JobProcessed;
-use Illuminate\Queue\WorkerOptions;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -408,11 +408,7 @@ describe('queued image distribution', function (): void {
         Queue::after(function (JobProcessed $event) use (&$processed): void {
             $processed[] = $event->job->resolveName();
         });
-        $worker = app('queue.worker');
-        $options = new WorkerOptions(sleep: 0, maxTries: 1);
-        for ($turn = 0; $turn < 3; $turn++) {
-            $worker->runNextJob('gateway', 'builds', $options);
-        }
+        Artisan::call('queue:work', ['connection' => 'gateway', '--queue' => 'builds', '--stop-when-empty' => true, '--tries' => 1, '--sleep' => 0, '--memory' => 4096]);
 
         expect($processed)->toBe([SyncBuiltImage::class, SyncBuiltImage::class, RefreshTaskVmWorkspaceTemplates::class])
             ->and($this->fleet->argv('10.44.0.11'))->toBe($commands)
@@ -420,7 +416,8 @@ describe('queued image distribution', function (): void {
             ->and($this->fleet->host('10.44.0.30')->images[SYNC_OLD])->toContain(TaskVmHost::BaseImage)
             ->and($build->refresh()->state)->toBe(TaskVmImageBuildState::Succeeded)
             ->and(DB::table('jobs')->count())->toBe(0)
-            ->and(DB::table('failed_jobs')->count())->toBe(0);
+            ->and(DB::table('failed_jobs')->count())->toBe(1)
+            ->and(DB::table('failed_jobs')->value('exception'))->toContain('task_vm.image_sync_failed');
         Log::shouldHaveReceived('error')->once()->withArgs(fn (string $message, array $context): bool => $message === 'Task VM base image sync failed.'
             && $context['build_id'] === $build->id
             && $context['host_node_id'] === $this->shark->id
@@ -433,20 +430,62 @@ describe('queued image distribution', function (): void {
         'provisioning target' => [LifecycleStatus::Provisioning],
     ]);
 
-    it('keeps a failed sync host and lets the other queued syncs continue', function (): void {
+    it('preserves a queued transfer failure and recovers continuation across rejection or crash', function (string $interruption): void {
         $far = sync_node('far', '10.44.0.30', '192.168.6.50', $this->cluster);
         $this->fleet->host('10.44.0.30')->lan = '192.168.6.50';
         sync_hosts($this->beast, $this->shark, $far);
         $this->fleet->host('10.44.0.30')->images = [SYNC_SHARK => ['orbit-task-base-20261010030500', TaskVmHost::BaseImage]];
         ($this->link)();
         $this->fleet->host('10.44.0.11')->fail = 'transfer';
-        $build = TaskVmImageBuild::query()->create(['host_node_id' => $this->beast->id, 'image_fingerprint' => SYNC_OLD]);
-        app()->call([new SyncBuiltImage($build->id, $this->shark->id), 'handle']);
-        app()->call([new SyncBuiltImage($build->id, $far->id), 'handle']);
+        $build = TaskVmImageBuild::query()->create(['host_node_id' => $this->beast->id, 'image_fingerprint' => SYNC_OLD, 'state' => TaskVmImageBuildState::Succeeded]);
+        app(TaskVmImageBuildSteps::class)->run($build, TaskVmImageBuildStep::Promote, null);
+        $processed = [];
+        Queue::after(function (JobProcessed $event) use (&$processed): void {
+            $processed[] = $event->job->resolveName();
+        });
+        if ($interruption === 'rejected enqueue') {
+            Queue::createPayloadUsing(static function (string $connection, string $queue, array $payload): array {
+                throw new RuntimeException('successor enqueue rejected');
+            });
+            try {
+                Artisan::call('queue:work', ['connection' => 'gateway', '--queue' => 'builds', '--once' => true, '--tries' => 1]);
+            } finally {
+                Queue::createPayloadUsing(null);
+            }
+            expect(DB::table('jobs')->count())->toBe(1)
+                ->and(DB::table('failed_jobs')->value('exception'))->toContain('task_vm.image_sync_failed', 'stage [transfer]');
+        } elseif ($interruption !== 'none') {
+            $delivery = Queue::connection('gateway')->pop('builds');
+            $command = unserialize($delivery->payload()['data']['command']);
+            $command->setJob($delivery);
+            app()->call([$command, 'handle']);
+            expect(DB::table('failed_jobs')->count())->toBe(1);
+            expect(DB::table('failed_jobs')->value('exception'))->toContain('task_vm.image_sync_failed', 'stage [transfer]');
+            if ($interruption === 'crash after enqueue') {
+                $command->dispatchNextJobInChain();
+            }
+            // Worker dies without acknowledging. The serialized delivery still contains its chain.
+            DB::table('jobs')->where('id', $delivery->getJobId())->update(['reserved_at' => now()->subHours(2)->timestamp]);
+        }
+        // Prove redelivery does not repeat the failed transfer even if the host would now answer.
+        if ($interruption !== 'none') {
+            $this->fleet->host('10.44.0.11')->fail = null;
+        }
+        $commands = array_filter($this->fleet->argv('10.44.0.11'), static fn (string $command): bool => ! str_contains($command, ' list '));
+        Artisan::call('queue:work', ['connection' => 'gateway', '--queue' => 'builds', '--stop-when-empty' => true, '--tries' => 1, '--sleep' => 0, '--memory' => 4096]);
+        if ($interruption !== 'none') {
+            // Template refresh may inspect images/volumes; it must not repeat transfer or mutation.
+            expect(array_filter($this->fleet->argv('10.44.0.11'), static fn (string $command): bool => ! str_contains($command, ' list ')))->toBe($commands);
+        }
+        expect($processed)->toContain(SyncBuiltImage::class, RefreshTaskVmWorkspaceTemplates::class)
+            ->and(DB::table('jobs')->count())->toBe(0)
+            ->and(DB::table('failed_jobs')->count())->toBe(1)
+            ->and(DB::table('failed_jobs')->value('exception'))->toContain('task_vm.image_sync_failed', 'stage [transfer]')
+            ->and($build->refresh()->state)->toBe(TaskVmImageBuildState::Succeeded);
         expect($this->fleet->host('10.44.0.11')->images)->toBe([SYNC_SHARK => ['orbit-task-base-20261010030500', TaskVmHost::BaseImage]])
             ->and($this->fleet->host('10.44.0.30')->images[SYNC_OLD])->toContain(TaskVmHost::BaseImage)
             ->and($this->fleet->host('10.44.0.7')->images[SYNC_OLD])->toContain(TaskVmHost::BaseImage);
-    });
+    })->with(['none', 'rejected enqueue', 'crash before enqueue', 'crash after enqueue']);
 });
 
 describe('task-vms:sync-image', function (): void {

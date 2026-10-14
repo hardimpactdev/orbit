@@ -6,7 +6,7 @@ covers:
   - apps/gateway/app/{Models/TaskVm.php,Models/TaskVmImageBuild.php,Console/Commands/*ImageBuildsCommand.php,Console/Commands/PrepareTaskVmHostCommand.php,Console/Commands/PrepareTaskVmHubCommand.php,Console/Commands/BuildTaskVmImageCommand.php,Console/Commands/BuildUpCloudTaskVmImageCommand.php,Console/Commands/BuildTaskVmWorkspaceTemplateCommand.php,Console/Commands/SyncTaskVmImageCommand.php,Console/Commands/RetireTaskVmHostCommand.php,Console/Commands/ResolvesTaskVmHostNode.php}
   - apps/gateway/config/task_vms.php
   - apps/gateway/resources/task-vms/**
-  - apps/gateway/database/migrations/*{create_task_vm_image_builds_table,create_task_vms_table,add_model_proxy_origin_to_task_vms,add_warm_pool_to_task_vms,add_upcloud_to_task_vms,add_size_to_task_vms,add_topology_to_task_vms,create_jobs_table,create_failed_jobs_table,create_task_sandboxes_table,add_fleet_enrollment_to_task_sandboxes,add_pi_ready_at_to_task_sandboxes,close_checks_of_destroyed_task_sandboxes,drop_task_sandboxes}.php
+  - apps/gateway/database/migrations/*{create_task_vm_image_builds_table,fence_task_vm_image_build_attempts,create_task_vms_table,add_model_proxy_origin_to_task_vms,add_warm_pool_to_task_vms,add_upcloud_to_task_vms,add_size_to_task_vms,add_topology_to_task_vms,create_jobs_table,create_failed_jobs_table,create_task_sandboxes_table,add_fleet_enrollment_to_task_sandboxes,add_pi_ready_at_to_task_sandboxes,close_checks_of_destroyed_task_sandboxes,drop_task_sandboxes}.php
 ---
 
 # Compute drivers
@@ -492,7 +492,9 @@ The job fails a missing VM only when two sweeps in a row miss it. The first miss
 
 Cancel or complete the group of a missing VM to destroy its Node, as for [a VM that dies before its group ends](#a-vm-that-dies-before-its-group-ends).
 
-The job changes only the host's configured Incus project, such as `orbit-tasks`. It reads the other projects only to [report strays](#report-strays). It deletes a base image builder `tvm-image-<build id>` when its build row on that host is not `running` or is absent. It leaves a builder with a `running` row alone, whatever its age. It never changes another project, a sync smoke VM, a workspace template, or an instance outside the task VM and base image builder names. Rows in `provisioning`, `failed`, or `destroying` are never missing: their own jobs check the VM.
+The job changes only the host's configured Incus project, such as `orbit-tasks`. It reads the other projects only to [report strays](#report-strays).
+
+It retains a base image builder `tvm-image-<build id>` and its smoke VM while the build row on that host is `running`, whatever its age, or is an unclaimed `failed` build updated within the last 24 hours. Cleanup claims an older failed build before deleting its VMs, so it cannot race a resume. Builders without a row or with a completed or cleanup-claimed row are eligible for deletion. It never changes another project, a sync smoke VM, a workspace template, or an instance outside the task VM and base image builder names. Rows in `provisioning`, `failed`, or `destroying` are never missing: their own jobs check the VM.
 
 [Doctor](/cli/doctor) reports the VM findings in the `node` family of the host, without changes. It has no finding for an orphaned clone, a leftover template builder `tvm-template-<time>`, or an unfinished template: the sweep deletes the clone, and the next template build deletes the other two. Doctor's codes are `node.task_vm_orphaned` for an orphaned VM and `node.task_vm_missing` for a missing one. Doctor reports a missing VM on its first miss. A host whose project does not exist or cannot be listed reports `node.task_vm_inspection_failed`. Doctor checks a host only while it is in `task_vms.incus.hosts` and reachable over SSH. The fleet rollout ignores these codes.
 
@@ -500,12 +502,12 @@ Doctor does not inspect the Node of a `parked` task VM, because the VM is stoppe
 
 ### Report strays
 
-The sweep and Doctor also report what Orbit does not own on a task VM host, and the records that should be gone. Doctor never changes any of it. The sweep deletes base image builders whose build row is not `running` or is absent, as described above. For every other stray, neither tool changes it: the operator decides. The sweep logs one warning per stray on every run, and Doctor reports one finding per stray in the host's `node` family.
+The sweep and Doctor also report what Orbit does not own on a task VM host, and the records that should be gone. Doctor never changes any of it. The sweep deletes base image builders and their smoke VMs only when they are eligible for cleanup, as described above; recent unclaimed failed builds are retained for resume. For every other stray, neither tool changes it: the operator decides. The sweep logs one warning per stray on every run, and Doctor reports one finding per stray in the host's `node` family.
 
 A **stray instance** is an Incus instance in any project of the host that is none of these:
 
 - a task VM `tvm-<number>` in the host's project, which the [sweep](#sweep-task-vm-hosts) checks against its row;
-- a base image builder `tvm-image-<build id>` or its smoke VM in the host's project, linked to a `running` image build row on that host;
+- a retained base image builder `tvm-image-<build id>` or smoke VM in the host's project (see [the sweep rules](#sweep-task-vm-hosts));
 - a sync smoke VM `tvm-image-<time>-sync-smoke`, or a workspace template builder `tvm-template-<time>`, in the host's project, for one hour after the `<time>` in its name;
 - an entry of the host's `operator_owned` list.
 
@@ -696,7 +698,15 @@ The Gateway queues one Laravel job chain (`Bus::chain`) on `builds`, with one jo
 | `SmokeImage` | Boots a VM from the new image with the task VM user-data and runs `image-check.sh` |
 | `PromoteImage` | Points `orbit-task-base` at the new image and deletes older images that no VM uses |
 
-The programs use the same rendering code as enrollment. A new tool or package adds one program and one step, not an edit to a shared provisioning script. Each step is idempotent, so it can retry or run after a release without harm. A waiting step checks once, then releases itself to the queue with a delay. It uses a deadline (`retryUntil()`), not an attempt count. Horizon shows individual jobs, not the whole chain. The build row and `task-vms:image-builds` report the whole build. The chain stops at the first failed step.
+The programs use the same rendering code as enrollment. A new tool or package adds one program and one step, not an edit to a shared provisioning script.
+
+Each step is idempotent, so it can retry or run after a release without harm. A waiting step checks once, then releases itself to the queue with a delay. All image build jobs use `tries = 0` so polling releases and crash redelivery do not exhaust an attempt count. A completed step returns without repeating host work, allowing Laravel to dispatch its successor after a crash before continuation. Each poll checks a durable deadline measured from the step's recorded `started_at`, which survives serialization and worker restarts.
+
+Horizon shows individual jobs, not the whole chain. The build row and `task-vms:image-builds` report the whole build. The chain stops at the first failed step.
+
+Failure writes identify the originating step and build attempt. Callbacks from before a resume cannot fail the current attempt. Completed steps reject late failure callbacks unless the worker times out while that step is still current. Laravel deletes a timed-out delivery even after the host work completed. The row becomes `failed` and can resume that idempotent step instead of remaining stuck in `running`. A timeout from an older step cannot regress a later step, and a successful build stays successful.
+
+The originating job writes its fenced failure before invoking chain catch callbacks, so a rejected template refresh enqueue cannot lose the failure row.
 
 One `task_vm_image_builds` row records each build. It holds the host, source image, builder VM name, new image fingerprint, current step, and state: `running`, `succeeded`, or `failed`. It also holds each step's start, seconds, and error. A partial unique index allows only one `running` build per host.
 
@@ -750,7 +760,11 @@ Start and resume record a pending queue submission before enqueueing. A successf
 
 Every night at 03:00, while task VMs are enabled, the Gateway scheduler queues the job `RefreshTaskVmBaseImages` on the `builds` queue. It builds the base image once, on the first host in `task_vms.incus.hosts`, and syncs it to every other configured host, one after another. While the first host has no base image, the job only reads its image list, so the first build is always `task-vms:build-image`. The job fails with `task_vm.unknown_host` when the first host's Node is not active.
 
-A failed build changes no host. A host whose sync fails keeps its image, and the job fails with `task_vm.image_sync_failed` after the other hosts, so `failed_jobs` records it and the log names each host. The refresh has its own [worker](#jobs), so it delays no other task VM job. So the build runs beside provisioning: while it runs, the first host holds two extra VMs, the builder and then the smoke VM, next to its task VMs.
+A failed build changes no host. A host whose sync fails keeps its image. Its sync job records the original failure through Laravel's failure provider in `failed_jobs` with `task_vm.image_sync_failed` and logs the host before continuing to the other hosts and template refresh.
+
+Recording the failure does not delete the queued delivery. Sync jobs also use `tries = 0`: a rejected successor enqueue or lost acknowledgement leaves the delivery retryable. Redelivery checks the failure record by delivery UUID and retries only continuation, preserving the original error instead of recording an exhausted-attempt error. As with Laravel chains generally, a crash after enqueue but before acknowledgement can dispatch the idempotent successor again.
+
+The refresh has its own [worker](#jobs), so it delays no other task VM job. So the build runs beside provisioning: while it runs, the first host holds two extra VMs, the builder and then the smoke VM, next to its task VMs.
 
 ### Sync the base image
 

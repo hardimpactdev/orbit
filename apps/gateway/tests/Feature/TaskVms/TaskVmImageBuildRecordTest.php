@@ -124,6 +124,8 @@ it('runs the additive migration down and up on SQLite', function (): void {
     $migration->down();
     expect(Schema::hasTable('task_vm_image_builds'))->toBeFalse();
     $migration->up();
+    $attemptMigration = require database_path('migrations/2026_11_04_000002_fence_task_vm_image_build_attempts.php');
+    $attemptMigration->up();
     TaskVmImageBuild::query()->create(['host_node_id' => $this->host->id]);
 
     expect(fn () => DB::table('task_vm_image_builds')->insert(['host_node_id' => $this->host->id]))

@@ -18,6 +18,7 @@ use Illuminate\Support\Carbon;
  *
  * @property int $id
  * @property int $host_node_id
+ * @property int $attempt
  * @property string|null $source_alias
  * @property string|null $source_fingerprint
  * @property bool $from_stock
@@ -39,12 +40,12 @@ final class TaskVmImageBuild extends Model
     #[\Override]
     protected $fillable = [
         'host_node_id', 'source_alias', 'source_fingerprint', 'from_stock', 'image_fingerprint',
-        'current_step', 'current_program', 'state', 'steps', 'submission_pending_at',
+        'current_step', 'current_program', 'state', 'steps', 'submission_pending_at', 'attempt',
     ];
 
     /** @var array<string, string> */
     #[\Override]
-    protected $attributes = ['state' => 'running', 'from_stock' => '0', 'steps' => '[]'];
+    protected $attributes = ['state' => 'running', 'from_stock' => '0', 'steps' => '[]', 'attempt' => '1'];
 
     /** @return array<string, string> */
     #[\Override]
@@ -52,6 +53,7 @@ final class TaskVmImageBuild extends Model
     {
         return [
             'state' => TaskVmImageBuildState::class,
+            'attempt' => 'integer',
             'current_step' => TaskVmImageBuildStep::class,
             'from_stock' => 'boolean',
             'steps' => 'array',

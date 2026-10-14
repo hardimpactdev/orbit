@@ -66,7 +66,7 @@ final readonly class TaskVmImageBuildChain
             // A conditional write, not SELECT FOR UPDATE (which SQLite ignores), arbitrates against cleanup.
             DB::transaction(function () use ($build): void {
                 $claimed = TaskVmImageBuild::query()->whereKey($build->id)->where('state', TaskVmImageBuildState::Failed)
-                    ->whereNull('cleanup_started_at')->update(['submission_pending_at' => now()->toISOString()]);
+                    ->whereNull('cleanup_started_at')->where('attempt', $build->attempt)->update(['submission_pending_at' => now()->toISOString(), 'attempt' => $build->attempt + 1]);
                 if ($claimed !== 1) {
                     throw new TaskVmException('task_vm.image_build_failed', 'Cleanup or another resume has already claimed this build.');
                 }
@@ -137,8 +137,8 @@ final readonly class TaskVmImageBuildChain
     {
         DB::transaction(function () use ($build, $error): void {
             $changed = TaskVmImageBuild::query()->whereKey($build->id)->where('state', TaskVmImageBuildState::Running)
-                ->where('submission_pending_at', $build->submission_pending_at)
-                ->update(['state' => TaskVmImageBuildState::Failed, 'submission_pending_at' => null]);
+                ->where('submission_pending_at', $build->submission_pending_at)->where('attempt', $build->attempt)
+                ->update(['submission_pending_at' => null]);
             if ($changed === 1) {
                 $failed = TaskVmImageBuild::query()->findOrFail($build->id);
                 if ($failed->current_step === null) {
@@ -147,7 +147,7 @@ final readonly class TaskVmImageBuildChain
                         'started_at' => $build->submission_pending_at, 'seconds' => null, 'error' => null,
                     ]]])->save();
                 }
-                ImageBuildJob::recordFailure($build->id, $error);
+                ImageBuildJob::recordFailure($build->id, $build->attempt, $failed->current_step ?? TaskVmImageBuildStep::Launch, $failed->current_program, $error);
             }
         });
     }
@@ -162,9 +162,14 @@ final readonly class TaskVmImageBuildChain
             $programs[] = 'pi-artifact';
         }
 
-        return [new LaunchImageBuilder($id), new AwaitImageBuilderBoot($id), new UpgradeImagePackages($id),
+        $jobs = [new LaunchImageBuilder($id), new AwaitImageBuilderBoot($id), new UpgradeImagePackages($id),
             ...array_map(static fn (string $name): RunImageProgram => new RunImageProgram($id, $name), $programs),
             new PrepareImageBoot($id), new CleanImageBuilder($id), new PublishImage($id), new SmokeImage($id), new PromoteImage($id)];
+        foreach ($jobs as $job) {
+            $job->buildAttempt = $build->attempt;
+        }
+
+        return $jobs;
     }
 
     private function dispatch(TaskVmImageBuild $build, bool $resume = false): void
@@ -178,10 +183,9 @@ final readonly class TaskVmImageBuildChain
         if ($jobs === []) {
             throw new TaskVmException('task_vm.image_build_failed', 'The failed step is not in the current image recipe. Start a new build instead.');
         }
-        $id = $build->id;
-        Bus::chain($jobs)->onConnection('gateway')->onQueue('builds')->catch(static function (Throwable $error) use ($id): void {
+        Bus::chain($jobs)->onConnection('gateway')->onQueue('builds')->catch(static function (Throwable $error): void {
+            // The originating job's catch wrapper records the fenced failure before refresh enqueue.
             // Keep the failed build's VMs for resume; refresh against the images still current.
-            ImageBuildJob::recordFailure($id, $error);
             RefreshTaskVmWorkspaceTemplates::dispatch()->onConnection('gateway')->onQueue('builds');
         })->dispatch();
     }

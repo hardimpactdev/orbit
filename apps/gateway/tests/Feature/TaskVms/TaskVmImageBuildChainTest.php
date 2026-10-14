@@ -17,7 +17,9 @@ use App\Infrastructure\TaskVms\TaskVmImageBuildChain;
 use App\Infrastructure\TaskVms\TaskVmImageBuildSteps;
 use App\Jobs\TaskVms\ImageBuild\AwaitImageBuilderBoot;
 use App\Jobs\TaskVms\ImageBuild\CleanupImageBuild;
+use App\Jobs\TaskVms\ImageBuild\ImageBuildJob;
 use App\Jobs\TaskVms\ImageBuild\LaunchImageBuilder;
+use App\Jobs\TaskVms\ImageBuild\PromoteImage;
 use App\Jobs\TaskVms\ImageBuild\SmokeImage;
 use App\Jobs\TaskVms\ImageBuild\UpgradeImagePackages;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
@@ -28,11 +30,17 @@ use App\Models\TaskVmImageBuild;
 use Illuminate\Console\Scheduling\CallbackEvent;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Queue\Job;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Queue\Events\JobTimedOut;
+use Illuminate\Queue\TimeoutExceededException;
+use Illuminate\Queue\Worker;
 use Illuminate\Queue\WorkerOptions;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Sleep;
 use Tests\Support\TaskVmSettingsBuilder;
 
@@ -71,6 +79,7 @@ beforeEach(function (): void {
     });
     $this->chain = app(TaskVmImageBuildChain::class);
     $this->runBuild = function (TaskVmImageBuild $build, bool $resume = false): void {
+        $build->refresh();
         $jobs = $this->chain->jobs($build);
         if ($resume) {
             while ($jobs[0]->step() !== $build->current_step || $jobs[0]->program() !== $build->current_program) {
@@ -543,6 +552,226 @@ it('runs the serialized chain through the database queue worker, including polli
     expect($build->refresh()->state)->toBe(TaskVmImageBuildState::Succeeded)
         ->and($build->steps)->toHaveCount(18)
         ->and($this->incus->instances)->toBe([]);
+});
+
+it('keeps success when promote is redelivered after saving success but before acknowledgement', function (): void {
+    $build = $this->chain->start($this->host);
+    foreach ($this->chain->jobs($build) as $command) {
+        if ($command instanceof PromoteImage) {
+            break;
+        }
+        do {
+            $command->handle(app(TaskVmImageBuildSteps::class));
+            $build->refresh();
+            $entry = array_find($build->steps, fn (array $entry): bool => $entry['step'] === $command->step()->value && $entry['program'] === $command->program());
+        } while ($entry['seconds'] === null);
+    }
+    $first = Bus::dispatched(LaunchImageBuilder::class)->sole();
+    $command->chainCatchCallbacks = $first->chainCatchCallbacks;
+    Bus::swap($this->dispatcher);
+    Bus::dispatch($command->onConnection('gateway')->onQueue('builds'));
+    $delivery = app('queue')->connection('gateway')->pop('builds');
+    expect($delivery)->not->toBeNull();
+    $reserved = unserialize($delivery->payload()['data']['command']);
+    $reserved->setJob($delivery);
+    // Run the actual promoted payload but omit CallQueuedHandler's final acknowledgement.
+    app()->call([$reserved, 'handle']);
+    $saved = $build->refresh()->getAttributes();
+    expect($build->state)->toBe(TaskVmImageBuildState::Succeeded);
+    // Also protect success from legacy one-attempt payloads that fail before handle on redelivery.
+    $payload = $delivery->payload();
+    $payload['maxTries'] = 1;
+    DB::table('jobs')->where('id', $delivery->getJobId())->update([
+        'reserved_at' => now()->subHours(2)->timestamp, 'payload' => json_encode($payload, JSON_THROW_ON_ERROR),
+    ]);
+    Artisan::call('queue:work', ['connection' => 'gateway', '--queue' => 'builds', '--once' => true, '--tries' => 1, '--sleep' => 0]);
+    expect($build->refresh()->getAttributes())->toBe($saved)
+        ->and(DB::table('failed_jobs')->count())->toBe(1);
+});
+
+it('replays a completed launch after a crash before successor dispatch and finishes the chain', function (): void {
+    Bus::swap($this->dispatcher);
+    $build = $this->chain->start($this->host);
+    $delivery = Queue::connection('gateway')->pop('builds');
+    $command = unserialize($delivery->payload()['data']['command']);
+    $command->setJob($delivery);
+    app()->call([$command, 'handle']);
+    expect($build->refresh()->current_step)->toBe(TaskVmImageBuildStep::Launch)
+        ->and($build->steps[0]['seconds'])->not->toBeNull()
+        ->and(DB::table('jobs')->count())->toBe(1);
+    $calls = count($this->incus->commands);
+    DB::table('jobs')->where('id', $delivery->getJobId())->update(['reserved_at' => now()->subHours(2)->timestamp]);
+    Artisan::call('queue:work', ['connection' => 'gateway', '--queue' => 'builds', '--once' => true, '--tries' => 1]);
+    expect(count($this->incus->commands))->toBe($calls)
+        ->and(DB::table('jobs')->value('payload'))->toContain('AwaitImageBuilderBoot');
+    for ($turn = 0; $turn < 50 && $build->refresh()->state === TaskVmImageBuildState::Running; $turn++) {
+        app('queue.worker')->runNextJob('gateway', 'builds', new WorkerOptions(sleep: 0, maxTries: 1));
+        $this->travel(5)->seconds();
+    }
+    expect($build->refresh()->state)->toBe(TaskVmImageBuildState::Succeeded);
+});
+
+it('makes a completed launch resumable when the real worker times out before successor acceptance', function (): void {
+    // Timeout rolls back the failure-provider connection to level zero. Keep its real rollback
+    // behavior without rolling back RefreshDatabase's unrelated outer fixture transaction.
+    config(['database.connections.timeout-failures' => config('database.connections.'.config('database.default')),
+        'queue.failed.database' => 'timeout-failures']);
+    Schema::connection('timeout-failures')->create('failed_jobs', function (Blueprint $table): void {
+        $table->id();
+        $table->string('uuid')->unique();
+        $table->string('connection');
+        $table->string('queue');
+        $table->longText('payload');
+        $table->longText('exception');
+        $table->timestamp('failed_at');
+    });
+    Bus::swap($this->dispatcher);
+    $build = $this->chain->start($this->host);
+    $timedOut = false;
+    app('events')->listen(JobTimedOut::class, function () use (&$timedOut): void {
+        $timedOut = true;
+    });
+    Queue::createPayloadUsing(function (string $connection, string $queue, array $payload) use ($build): array {
+        if ($payload['displayName'] === AwaitImageBuilderBoot::class) {
+            expect($build->refresh()->steps[0]['seconds'])->not->toBeNull()
+                ->and($build->steps[0]['error'])->toBeNull()
+                ->and($build->state)->toBe(TaskVmImageBuildState::Running);
+            // SIGALRM hits the real worker's registered handler before the successor is accepted.
+            posix_kill(getmypid(), SIGALRM);
+            pcntl_signal_dispatch();
+            throw new RuntimeException('timeout handler did not interrupt successor enqueue');
+        }
+
+        return [];
+    });
+    $killOnTimeout = Worker::$killOnTimeout;
+    $signalHandler = pcntl_signal_get_handler(SIGALRM);
+    $asyncSignals = pcntl_async_signals();
+    // Laravel's supported test switch retains its full timeout failure path, without killing Pest.
+    Worker::$killOnTimeout = false;
+    try {
+        Artisan::call('queue:work', ['connection' => 'gateway', '--queue' => 'builds', '--max-jobs' => 1, '--tries' => 1, '--sleep' => 0, '--memory' => 4096]);
+    } finally {
+        Worker::$killOnTimeout = $killOnTimeout;
+        Queue::createPayloadUsing(null);
+        pcntl_alarm(0);
+        pcntl_signal(SIGALRM, $signalHandler);
+        pcntl_async_signals($asyncSignals);
+    }
+    expect($timedOut)->toBeTrue()
+        ->and($build->refresh()->state)->toBe(TaskVmImageBuildState::Failed)
+        ->and($build->current_step)->toBe(TaskVmImageBuildStep::Launch)
+        ->and($build->steps[0]['error'])->toContain('timed out')
+        ->and(DB::connection('timeout-failures')->table('failed_jobs')->count())->toBe(1)
+        ->and(DB::connection('timeout-failures')->table('failed_jobs')->value('exception'))->toContain(TimeoutExceededException::class);
+    $queued = DB::table('jobs')->get()->pluck('payload')->implode('\n');
+    expect($queued)->not->toContain('AwaitImageBuilderBoot', 'LaunchImageBuilder');
+
+    $this->chain->resume($this->host, $build->id);
+    for ($turn = 0; $turn < 50 && $build->refresh()->state === TaskVmImageBuildState::Running; $turn++) {
+        app('queue.worker')->runNextJob('gateway', 'builds', new WorkerOptions(sleep: 0, maxTries: 1));
+        $this->travel(5)->seconds();
+    }
+    expect($build->refresh()->state)->toBe(TaskVmImageBuildState::Succeeded)
+        ->and($build->attempt)->toBe(2);
+});
+
+it('fences completed-step timeout callbacks from successful builds, successors and resumed attempts', function (string $boundary): void {
+    $build = $this->chain->start($this->host);
+    Bus::dispatched(LaunchImageBuilder::class)->sole()->handle(app(TaskVmImageBuildSteps::class));
+    $delivery = Mockery::mock(Job::class);
+    $delivery->shouldReceive('resolveName')->andReturn(LaunchImageBuilder::class);
+    $error = TimeoutExceededException::forJob($delivery);
+    if ($boundary === 'success') {
+        ($this->runBuild)($build);
+    } elseif ($boundary === 'successor') {
+        (new AwaitImageBuilderBoot($build->id))->handle(app(TaskVmImageBuildSteps::class));
+    } else {
+        ImageBuildJob::recordFailure($build->id, 1, TaskVmImageBuildStep::Launch, null, $error);
+        $this->chain->resume($this->host, $build->id);
+        Bus::dispatched(LaunchImageBuilder::class)->last()->handle(app(TaskVmImageBuildSteps::class));
+    }
+    $saved = $build->refresh()->getAttributes();
+    ImageBuildJob::recordFailure($build->id, 1, TaskVmImageBuildStep::Launch, null, $error);
+    expect($build->refresh()->getAttributes())->toBe($saved);
+})->with(['success', 'successor', 'resume']);
+
+it('writes a pre-handle originating failure before a rejected chain refresh enqueue', function (): void {
+    Bus::swap($this->dispatcher);
+    $build = $this->chain->start($this->host);
+    $row = DB::table('jobs')->first();
+    $payload = json_decode($row->payload, true, flags: JSON_THROW_ON_ERROR);
+    $payload['maxTries'] = 1;
+    DB::table('jobs')->where('id', $row->id)->update(['attempts' => 1, 'payload' => json_encode($payload, JSON_THROW_ON_ERROR)]);
+    Queue::createPayloadUsing(static function (string $connection, string $queue, array $payload): array {
+        if ($payload['displayName'] === RefreshTaskVmWorkspaceTemplates::class) {
+            throw new RuntimeException('refresh enqueue rejected');
+        }
+
+        return [];
+    });
+    try {
+        Artisan::call('queue:work', ['connection' => 'gateway', '--queue' => 'builds', '--once' => true, '--tries' => 1]);
+    } finally {
+        Queue::createPayloadUsing(null);
+    }
+    expect($build->refresh()->state)->toBe(TaskVmImageBuildState::Failed)
+        ->and($build->current_step)->toBe(TaskVmImageBuildStep::Launch)
+        ->and($build->steps[0]['error'])->toContain('attempted too many times')
+        ->and(DB::table('failed_jobs')->count())->toBe(1);
+    $this->travel(3601)->seconds();
+    $this->chain->recoverTemplateRefresh();
+    expect(DB::table('jobs')->value('payload'))->toContain('RefreshTaskVmWorkspaceTemplates');
+});
+
+it('ignores an exhausted old delivery after resume without overwriting the resumed step', function (bool $advance): void {
+    $build = $this->chain->start($this->host);
+    $first = Bus::dispatched(LaunchImageBuilder::class)->sole();
+    $first->handle(app(TaskVmImageBuildSteps::class));
+    $old = new UpgradeImagePackages($build->id);
+    $old->chainCatchCallbacks = $first->chainCatchCallbacks;
+    $this->incus->fail = 'exec';
+    expect(fn () => $old->handle(app(TaskVmImageBuildSteps::class)))->toThrow(TaskVmException::class);
+    expect($build->refresh()->state)->toBe(TaskVmImageBuildState::Failed)
+        ->and($build->current_step)->toBe(TaskVmImageBuildStep::UpgradePackages)
+        ->and($build->steps[1]['error'])->toContain('failed');
+    $this->incus->fail = null;
+    $this->chain->resume($this->host, $build->id);
+    $build->refresh();
+    if ($advance) {
+        $jobs = $this->chain->jobs($build);
+        $jobs[2]->handle(app(TaskVmImageBuildSteps::class));
+        $jobs[3]->handle(app(TaskVmImageBuildSteps::class));
+        $build->refresh();
+        expect($build->current_program)->toBe('bootstrap');
+    }
+    $saved = $build->getAttributes();
+    Bus::swap($this->dispatcher);
+    Bus::dispatch($old->onConnection('gateway')->onQueue('builds'));
+    $row = DB::table('jobs')->first();
+    $payload = json_decode($row->payload, true, flags: JSON_THROW_ON_ERROR);
+    $payload['maxTries'] = 1;
+    DB::table('jobs')->where('id', $row->id)->update(['attempts' => 1, 'payload' => json_encode($payload, JSON_THROW_ON_ERROR)]);
+    Artisan::call('queue:work', ['connection' => 'gateway', '--queue' => 'builds', '--once' => true, '--tries' => 1, '--sleep' => 0]);
+    expect($build->refresh()->getAttributes())->toBe($saved)
+        ->and($build->steps[1]['error'])->toBeNull()
+        ->and(DB::table('failed_jobs')->count())->toBe(1);
+})->with(['resumed at same step' => false, 'advanced to later step' => true]);
+
+it('attributes a pre-handle worker failure to its originating step, not the mutable current step', function (): void {
+    $build = $this->chain->start($this->host);
+    Bus::dispatched(LaunchImageBuilder::class)->sole()->handle(app(TaskVmImageBuildSteps::class));
+    Bus::swap($this->dispatcher);
+    Bus::dispatch((new UpgradeImagePackages($build->id))->onConnection('gateway')->onQueue('builds'));
+    $row = DB::table('jobs')->first();
+    $payload = json_decode($row->payload, true, flags: JSON_THROW_ON_ERROR);
+    $payload['maxTries'] = 1;
+    DB::table('jobs')->where('id', $row->id)->update(['attempts' => 1, 'payload' => json_encode($payload, JSON_THROW_ON_ERROR)]);
+    Artisan::call('queue:work', ['connection' => 'gateway', '--queue' => 'builds', '--once' => true, '--tries' => 1, '--sleep' => 0]);
+    expect($build->refresh()->state)->toBe(TaskVmImageBuildState::Failed)
+        ->and($build->current_step)->toBe(TaskVmImageBuildStep::UpgradePackages)
+        ->and($build->steps[0]['error'])->toBeNull()
+        ->and($build->steps[1]['error'])->toContain('attempted too many times');
 });
 
 it('fails a boot error through the worker and retains its builder after the catch runs', function (): void {
