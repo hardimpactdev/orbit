@@ -33,6 +33,7 @@ use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
 use App\Infrastructure\Logging\GatewayExceptionStatus;
+use App\Jobs\TaskVms\RecoverLegacyWarmClaim;
 use App\Jobs\TaskVms\RefillTaskVmPool;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
 use App\Jobs\TaskVms\RefreshUpCloudTaskVmBaseImage;
@@ -58,6 +59,11 @@ if (
     || ini_get('zend.exception_ignore_args') !== '1')
 ) {
     throw new RuntimeException('PHP must omit arguments from exception traces.');
+}
+
+// Keep old delayed claim payloads readable for one release, without creating any new guard jobs.
+if (! class_exists('App\\Jobs\\TaskVms\\EnsureWarmClaimReady', false)) {
+    class_alias(RecoverLegacyWarmClaim::class, 'App\\Jobs\\TaskVms\\EnsureWarmClaimReady');
 }
 
 return Application::configure(basePath: dirname(__DIR__))

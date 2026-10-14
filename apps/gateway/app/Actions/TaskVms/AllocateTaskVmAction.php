@@ -8,32 +8,27 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskWait;
 use App\Domain\TaskVms\TaskVmCapacity;
-use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmPlacementPolicy;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
-use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\TaskVms\TaskVmBaseImageCache;
-use App\Infrastructure\TaskVms\TaskVmRuntime;
-use App\Jobs\TaskVms\EnsureWarmClaimReady;
 use App\Jobs\TaskVms\PrepareTaskVmRuntime;
 use App\Jobs\TaskVms\ProvisionTaskVm;
 use App\Jobs\TaskVms\RefillTaskVmPool;
 use App\Models\Task;
 use App\Models\TaskVm;
-use Illuminate\Contracts\Cache\LockTimeoutException;
+use Illuminate\Contracts\Database\ConcurrencyErrorDetector;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
  * Gives a group its task VM, of the size that the group's declared topology and its Project need ({@see TaskVmSize}).
  * For a normal VM a warm VM goes first: the claim sets its group, a new Pi token, and `claimed_at`, and runs only the
- * group's steps, in the claim. A warm VM qualifies only while it launched the image that its host's `orbit-task-base`
+ * group's steps, on the task-vms queue. A warm VM qualifies only while it launched the image that its host's `orbit-task-base`
  * names now, read from the host at the claim ({@see TaskVmBaseImageCache}). Without one, and always for a medium or
  * large VM, the claim records a new row where {@see TaskVmPlacementPolicy} puts it ({@see RecordTaskVmAction}), and
- * queues its creation. Placement runs under the lock of {@see TaskVmCapacity}.
+ * queues its creation. The database transaction serializes placement.
  */
 final readonly class AllocateTaskVmAction
 {
@@ -50,6 +45,8 @@ final readonly class AllocateTaskVmAction
     {
         $existing = TaskVm::forGroup($group);
         if ($existing instanceof TaskVm) {
+            $this->dispatchPreparation($existing);
+
             return $existing;
         }
         $size = TaskVmSize::forGroup($group, $this->settings->mediumProjectIds);
@@ -57,14 +54,17 @@ final readonly class AllocateTaskVmAction
         $images = $size->resources()->warmEligible ? $this->warmImages() : [];
 
         try {
-            [$vm, $warm] = $this->capacity->withPlacementLock(fn (): array => $this->place($group, $images, $size));
-        } catch (LockTimeoutException) {
+            [$vm, $warm] = $this->place($group, $images, $size);
+        } catch (Throwable $exception) {
+            if (! app(ConcurrencyErrorDetector::class)->causedByConcurrencyError($exception)) {
+                throw $exception;
+            }
             throw new TaskCapacityException(TaskWait::Capacity, 'Task VM: another placement is running.');
         }
 
+        $this->dispatchPreparation($vm);
         if ($warm) {
             RefillTaskVmPool::dispatch();
-            $this->prepareNow($vm);
 
             return $vm->refresh();
         }
@@ -75,25 +75,11 @@ final readonly class AllocateTaskVmAction
         return $vm;
     }
 
-    /**
-     * Runs the group steps of a warm claim in the claim itself: the model key, the Pi files, and `pi-server`, about
-     * 1.5 seconds. Each step has a short limit, and the whole run ends after {@see TaskVmRuntime::InlineSeconds}, well
-     * inside the 300-second tick lock: every SSH command and CLIProxyAPI request stops at that deadline. A VM without
-     * the pinned Pi, and any step that runs out of time, is left to the queued job. A guard job queued first finishes
-     * the steps when the tick dies during them. So they never wait for the task VM worker, which runs one job at a
-     * time and may be in an enrollment or an image build. The placement lock is released by then, and the claim holds
-     * no transaction. A failure queues `PrepareTaskVmRuntime`, which retries the steps and fails the row when it has
-     * no retries left.
-     */
-    private function prepareNow(TaskVm $vm): void
+    /** Recover a committed claim whose enqueue failed, without duplicating a queued or running job. */
+    private function dispatchPreparation(TaskVm $vm): void
     {
-        // Queued first, so a tick that dies during the steps still leaves a job that finishes them.
-        EnsureWarmClaimReady::dispatch($vm->id)->delay(now()->addSeconds(EnsureWarmClaimReady::DelaySeconds));
-        try {
-            app(CommandDeadline::class)->within(TaskVmRuntime::InlineSeconds, static fn () => app(PrepareTaskVmRuntimeAction::class)->execute($vm->id, inline: true));
-        } catch (Throwable $exception) {
-            Log::warning('The group steps of a warm task VM claim failed; the task VM worker retries them.', ['task_vm' => $vm->name, 'error_code' => TaskVmException::codeOf($exception), 'error' => $exception->getMessage()]);
-            PrepareTaskVmRuntime::dispatch($vm->id);
+        if ($vm->state === TaskVmState::Provisioning && $vm->claimed_at !== null) {
+            PrepareTaskVmRuntime::enqueue($vm->id);
         }
     }
 

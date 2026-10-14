@@ -18,6 +18,7 @@ use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskWait;
 use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
@@ -38,13 +39,12 @@ use App\Infrastructure\Tasks\Pi\PiConnection;
 use App\Infrastructure\TaskVms\IncusTaskVmBaseImage;
 use App\Infrastructure\TaskVms\TaskVmHostAudit;
 use App\Infrastructure\TaskVms\TaskVmImagePeers;
-use App\Infrastructure\TaskVms\TaskVmRuntime;
 use App\Infrastructure\TaskVms\TaskVmWorkspace;
 use App\Jobs\TaskVms\DestroyTaskVm;
 use App\Jobs\TaskVms\EnrollTaskVm;
-use App\Jobs\TaskVms\EnsureWarmClaimReady;
 use App\Jobs\TaskVms\PrepareTaskVmRuntime;
 use App\Jobs\TaskVms\ProvisionTaskVm;
+use App\Jobs\TaskVms\RecoverLegacyWarmClaim;
 use App\Jobs\TaskVms\RefillTaskVmPool;
 use App\Jobs\TaskVms\SweepTaskVmHosts;
 use App\Models\Instance;
@@ -56,9 +56,16 @@ use App\Models\TaskVm;
 use Illuminate\Bus\UniqueLock;
 use Illuminate\Console\Scheduling\CallbackEvent;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Contracts\Queue\Job;
+use Illuminate\Contracts\Redis\Factory as RedisFactory;
 use Illuminate\Http\Client\Request;
+use Illuminate\Queue\CallQueuedHandler;
+use Illuminate\Queue\Events\JobQueued;
+use Illuminate\Queue\RedisQueue;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
@@ -433,9 +440,8 @@ describe('claim', function (): void {
         Queue::assertPushed(RefillTaskVmPool::class);
         Queue::assertNotPushed(ProvisionTaskVm::class);
         Queue::assertNotPushed(EnrollTaskVm::class);
-        // This Gateway pins no Pi, so the steps fail in the claim and go to the task VM worker.
-        Log::shouldHaveReceived('warning')->withArgs(fn (string $message, array $context): bool => str_contains($message, 'the task VM worker retries them')
-            && $context['error_code'] === 'task_vm.invalid_config');
+        // Even invalid runtime configuration is evaluated by the worker, not by this claim.
+        Log::shouldNotHaveReceived('warning');
     });
 
     it('waits through the claim until the claimed warm VM is ready', function (): void {
@@ -494,7 +500,7 @@ describe('claim', function (): void {
         Queue::assertPushed(ProvisionTaskVm::class, fn (ProvisionTaskVm $job): bool => $job->taskVmId === $second->id);
     });
 
-    it('waits while another placement holds the lock, also with a warm VM', function (): void {
+    it('ignores an obsolete placement cache lock when claiming a warm VM', function (): void {
         Queue::fake();
         $vm = tvm_pool_vm();
         $lock = Cache::lock('task-vms:placement', 30);
@@ -502,9 +508,8 @@ describe('claim', function (): void {
 
         try {
             Sleep::fake(syncWithCarbon: true);
-            expect(fn () => app(AllocateTaskVmAction::class)->execute(tvm_pool_group()))
-                ->toThrow(TaskCapacityException::class, 'Task VM: another placement is running.')
-                ->and($vm->fresh()?->group_id)->toBeNull();
+            expect(app(AllocateTaskVmAction::class)->execute(tvm_pool_group())->id)->toBe($vm->id);
+            Queue::assertPushed(PrepareTaskVmRuntime::class, 1);
         } finally {
             $lock->release();
         }
@@ -607,6 +612,119 @@ describe('claim', function (): void {
     });
 });
 
+describe('transaction-serialized placement', function (): void {
+    beforeEach(function (): void {
+        // Independent connections need a file. Copy the real test schema and fixtures, not the open test transaction.
+        $this->placementDatabase = tempnam(sys_get_temp_dir(), 'task-vm-placement');
+        $target = new PDO('sqlite:'.$this->placementDatabase);
+        $target->exec('PRAGMA foreign_keys = OFF');
+        foreach (DB::select("SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'") as $table) {
+            $target->exec($table->sql);
+            foreach (DB::table($table->name)->get() as $row) {
+                $values = (array) $row;
+                $columns = implode(',', array_map(static fn (string $column): string => '"'.$column.'"', array_keys($values)));
+                $statement = $target->prepare('INSERT INTO "'.$table->name.'" ('.$columns.') VALUES ('.implode(',', array_fill(0, count($values), '?')).')');
+                $statement->execute(array_values($values));
+            }
+        }
+        $this->originalDatabase = config('database.default');
+        config(['database.connections.placement' => [...config('database.connections.sqlite'), 'database' => $this->placementDatabase, 'busy_timeout' => 1000], 'database.default' => 'placement']);
+        tvm_pool_hosts([[$this->host, 1, 0]]);
+    });
+
+    afterEach(function (): void {
+        config(['database.default' => $this->originalDatabase]);
+        DB::purge('placement');
+        @unlink($this->placementDatabase);
+        @unlink($this->placementDatabase.'-wal');
+        @unlink($this->placementDatabase.'-shm');
+    });
+
+    it('serializes two concurrent placements so only one takes the last slot without a cache placement lock', function (): void {
+        Queue::fake();
+        $first = tvm_pool_group();
+        $second = tvm_pool_group();
+        $resultFile = tempnam(sys_get_temp_dir(), 'placement-result');
+        // Holding the obsolete lock must no longer affect placement.
+        $obsolete = Cache::lock('task-vms:placement', 30);
+        $obsolete->get();
+        DB::beginTransaction();
+        $pid = pcntl_fork();
+        if ($pid === 0) {
+            DB::purge('placement');
+            try {
+                app(AllocateTaskVmAction::class)->execute($second);
+                file_put_contents($resultFile, 'overfilled');
+            } catch (TaskCapacityException $exception) {
+                file_put_contents($resultFile, $exception->getMessage());
+            } catch (Throwable $exception) {
+                file_put_contents($resultFile, $exception::class.': '.$exception->getMessage());
+            }
+            exit(0);
+        }
+        try {
+            expect($pid)->toBeGreaterThan(0);
+            usleep(100_000);
+            expect(file_get_contents($resultFile))->toBe('');
+            app(AllocateTaskVmAction::class)->execute($first);
+            DB::commit();
+            pcntl_waitpid($pid, $status);
+            expect(file_get_contents($resultFile))->toBe(TaskVmPlacementPolicy::NoCapacity)
+                ->and(TaskVm::query()->count())->toBe(1);
+            Queue::assertPushed(ProvisionTaskVm::class, 1);
+        } finally {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+            pcntl_waitpid($pid, $status);
+            $obsolete->release();
+            @unlink($resultFile);
+        }
+    });
+
+    it('skips a refill while the SQLite writer is busy and retries on the next run', function (): void {
+        Queue::fake();
+        Log::spy();
+        tvm_pool_hosts([[$this->host, 1, 1]]);
+        config(['database.connections.placement.busy_timeout' => 1]);
+        DB::purge('placement');
+        // Initialize WAL before the competing writer starts, as on the deployed database.
+        DB::connection()->getPdo();
+        $writer = new PDO('sqlite:'.$this->placementDatabase);
+        $writer->exec('BEGIN IMMEDIATE');
+        try {
+            expect(tvm_pool_refill())->toBe(['created' => 0, 'destroying' => 0]);
+        } finally {
+            $writer->exec('ROLLBACK');
+        }
+        Queue::assertNothingPushed();
+        Log::shouldHaveReceived('warning')->with('The task VM pool refill waits for another placement; the next run tries again.');
+        expect(tvm_pool_refill())->toBe(['created' => 1, 'destroying' => 0]);
+        Queue::assertPushed(ProvisionTaskVm::class, 1);
+    });
+
+    it('maps an exhausted SQLite writer wait to capacity and lets a later claim succeed', function (): void {
+        Queue::fake();
+        $group = tvm_pool_group();
+        config(['database.connections.placement.busy_timeout' => 1]);
+        DB::purge('placement');
+        $writer = new PDO('sqlite:'.$this->placementDatabase);
+        $writer->exec('BEGIN IMMEDIATE');
+        try {
+            app(AllocateTaskVmAction::class)->execute($group);
+            test()->fail('A busy writer must cause a capacity wait.');
+        } catch (TaskCapacityException $exception) {
+            expect($exception->wait)->toBe(TaskWait::Capacity);
+        } finally {
+            $writer->exec('ROLLBACK');
+        }
+        Queue::assertNothingPushed();
+        expect(TaskVm::query()->count())->toBe(0);
+        app(AllocateTaskVmAction::class)->execute($group);
+        Queue::assertPushed(ProvisionTaskVm::class, 1);
+    });
+});
+
 describe('a claimed warm VM', function (): void {
     beforeEach(function (): void {
         $this->transport = new AppDevFakeSshExecutor;
@@ -665,7 +783,7 @@ describe('a claimed warm VM', function (): void {
         @unlink($this->artifact);
     });
 
-    it('gets its model key and Pi in the claim itself, is ready at once, and logs the time from the claim to ready', function (): void {
+    it('dispatches exactly one preparation job without runtime SSH and becomes ready only on the worker', function (): void {
         Queue::fake();
         Log::spy();
         // Time stands still from the claim, and the VM warmed an hour before it, so each step logs 0 seconds
@@ -675,8 +793,17 @@ describe('a claimed warm VM', function (): void {
         $this->travel(1)->hours();
         $group = tvm_pool_group();
 
-        $node = app(TaskVmWorkspace::class)->node($group);
+        expect(fn () => app(TaskVmWorkspace::class)->node($group))->toThrow(TaskCapacityException::class, 'Task VM: provisioning.');
+        // A later tick sees the committed claim but cannot duplicate its queued job.
+        app(AllocateTaskVmAction::class)->execute($group);
+        expect($this->transport->commands)->toBe([]);
+        Http::assertNothingSent();
+        Queue::assertPushed(PrepareTaskVmRuntime::class, 1);
+        Queue::assertPushed(PrepareTaskVmRuntime::class, fn (PrepareTaskVmRuntime $job): bool => $job->taskVmId === $vm->id && $job->queue === 'task-vms');
+        Queue::assertPushed(RefillTaskVmPool::class);
 
+        app()->call([new PrepareTaskVmRuntime($vm->id), 'handle']);
+        $node = app(TaskVmWorkspace::class)->node($group);
         $vm->refresh();
         expect($node->id)->toBe($vm->node_id)
             ->and($vm->state)->toBe(TaskVmState::Ready)
@@ -692,49 +819,114 @@ describe('a claimed warm VM', function (): void {
             return true;
         });
         expect(array_keys($steps))->toBe(['queue', 'model-key', 'pi-current', 'pi-files', 'pi-server', 'warm-claim-to-ready'])
-            ->and(array_map(static fn (RemoteCommand $command): ?float => $command->timeout, $this->transport->commands))->each->toBeLessThanOrEqual(15.0)
+            ->and(array_map(static fn (RemoteCommand $command): ?float => $command->timeout, $this->transport->commands))->each->toBeLessThanOrEqual(60.0)
             ->and($steps)->each->toBe(0.0)
             ->and($this->transport->connections)->each(fn ($connection) => $connection->host->toBe('10.44.0.129'))
             ->and(app(PiConnection::class)->token($vm->node))->toBe($vm->pi_token);
-        Queue::assertNotPushed(PrepareTaskVmRuntime::class);
-        Queue::assertPushed(RefillTaskVmPool::class);
-        Queue::assertPushed(EnsureWarmClaimReady::class, fn (EnsureWarmClaimReady $job): bool => $job->taskVmId === $vm->id
-            && $job->delay instanceof DateTimeInterface && abs($job->delay->getTimestamp() - now()->getTimestamp() - EnsureWarmClaimReady::DelaySeconds) <= 5);
-    });
-
-    it('runs every claim step under a deadline well inside the tick lock, and the queued job without it', function (): void {
-        Queue::fake();
-        $vm = tvm_pool_vm();
-
-        app(TaskVmWorkspace::class)->node(tvm_pool_group());
-
-        expect($this->ssh->caps)->not->toBeEmpty()
-            ->and($this->ssh->caps)->each->toBeLessThanOrEqual((float) TaskVmRuntime::InlineSeconds)
-            ->and(TaskVmRuntime::InlineSeconds)->toBeLessThan(300);
-
-        $this->ssh->caps = [];
-        $vm->update(['state' => TaskVmState::Provisioning]);
+        // Replaying an in-flight preparation after deploy leaves the ready row alone.
         app()->call([new PrepareTaskVmRuntime($vm->id), 'handle']);
-
-        expect($this->ssh->caps)->each->toBe(60.0);
+        expect($vm->fresh()?->state)->toBe(TaskVmState::Ready);
     });
 
-    it('leaves the steps to the queued job when they run past the claim deadline', function (): void {
-        Queue::fake();
-        Log::spy();
-        // Each read of the clock is 30 seconds later, as on a stalled CLIProxyAPI or VM.
-        $now = 1000.0;
-        app()->instance(CommandDeadline::class, new CommandDeadline(static function () use (&$now): float {
-            return $now += 30.0;
-        }));
+    it('recovers a claim committed before enqueue and releases a unique lock when dispatch fails', function (): void {
         $vm = tvm_pool_vm();
+        $group = tvm_pool_group();
+        $vm->update(['group_id' => $group->id, 'state' => TaskVmState::Provisioning, 'claimed_at' => now()]);
+        Queue::shouldReceive('connection')->once()->andThrow(new RuntimeException('queue unavailable'));
 
-        expect(fn () => app(TaskVmWorkspace::class)->node(tvm_pool_group()))->toThrow(TaskCapacityException::class, 'Task VM: provisioning.')
-            ->and($vm->fresh()?->state)->toBe(TaskVmState::Provisioning);
-        Log::shouldHaveReceived('warning')->withArgs(fn (string $message, array $context): bool => str_contains($message, 'the task VM worker retries them')
-            && $context['error_code'] === 'task_vm.model_key_failed');
-        Queue::assertPushed(PrepareTaskVmRuntime::class, fn (PrepareTaskVmRuntime $job): bool => $job->taskVmId === $vm->id);
+        expect(fn () => app(AllocateTaskVmAction::class)->execute($group))->toThrow(RuntimeException::class, 'queue unavailable');
+        $lock = Cache::lock(UniqueLock::getKey(new PrepareTaskVmRuntime($vm->id)));
+        expect($lock->get())->toBeTrue();
+        $lock->release();
+        Queue::fake();
+        app(AllocateTaskVmAction::class)->execute($group);
+        app(AllocateTaskVmAction::class)->execute($group);
+
+        Queue::assertPushed(PrepareTaskVmRuntime::class, 1);
+        expect($this->transport->commands)->toBe([]);
     });
+
+    it('preserves a replacement lock when a confirmed pre-submit failure cleans up its own owner', function (): void {
+        $vm = tvm_pool_vm();
+        $key = UniqueLock::getKey(new PrepareTaskVmRuntime($vm->id));
+        $replacement = Cache::lock($key, 3600);
+        Queue::shouldReceive('connection')->once()->andReturnUsing(function () use ($key, $replacement): never {
+            // The original lease expires while connection resolution is failing.
+            Cache::lock($key)->forceRelease();
+            expect($replacement->get())->toBeTrue();
+            throw new RuntimeException('connection rejected');
+        });
+
+        expect(fn () => PrepareTaskVmRuntime::enqueue($vm->id))->toThrow(RuntimeException::class, 'connection rejected')
+            ->and(Cache::lock($key)->get())->toBeFalse();
+        expect($replacement->release())->toBeTrue();
+    });
+
+    it('keeps accepted preparation unique after an ambiguous submission exception until the worker finishes', function (string $fault, bool $failWorker): void {
+        $vm = tvm_pool_vm();
+        $group = tvm_pool_group();
+        $queue = new class(Mockery::mock(RedisFactory::class)) extends RedisQueue
+        {
+            /** @var list<string> */
+            public array $accepted = [];
+
+            public bool $loseReply = false;
+
+            public function pushRaw($payload, $queue = null, array $options = [])
+            {
+                $this->accepted[] = $payload;
+                if ($this->loseReply && count($this->accepted) === 1) {
+                    throw new RuntimeException('accepted but reply lost');
+                }
+
+                return 'accepted-id';
+            }
+        };
+        $queue->setContainer(app());
+        $queue->setConnectionName('gateway');
+        $queue->loseReply = $fault === 'lost reply';
+        Queue::shouldReceive('connection')->andReturn($queue);
+        if ($fault === 'post-push event') {
+            Event::listen(JobQueued::class, function (JobQueued $event) use ($queue): void {
+                if ($event->job instanceof PrepareTaskVmRuntime && count($queue->accepted) === 1) {
+                    throw new RuntimeException('post-push listener failed');
+                }
+            });
+        }
+
+        $message = $queue->loseReply ? 'accepted but reply lost' : 'post-push listener failed';
+        expect(fn () => app(AllocateTaskVmAction::class)->execute($group))->toThrow(RuntimeException::class, $message);
+        app(AllocateTaskVmAction::class)->execute($group);
+        app(AllocateTaskVmAction::class)->execute($group);
+        expect($queue->accepted)->toHaveCount(1)
+            ->and($vm->fresh()?->state)->toBe(TaskVmState::Provisioning)
+            ->and($this->transport->commands)->toBe([]);
+        $payload = json_decode($queue->accepted[0], true, flags: JSON_THROW_ON_ERROR);
+        $accepted = unserialize($payload['data']['command']);
+        expect($accepted->uniqueLockOwner)->not->toBe('')
+            ->and(Cache::lock(UniqueLock::getKey($accepted))->get())->toBeFalse();
+
+        // Use Laravel's real serialized-command handler, including its owner-aware unlock.
+        $handler = app(CallQueuedHandler::class);
+        if ($failWorker) {
+            $handler->failed($payload['data'], new RuntimeException('preparation exhausted'), $payload['uuid']);
+            expect($vm->fresh()?->state)->toBe(TaskVmState::Failed);
+        } else {
+            $workerJob = Mockery::mock(Job::class);
+            $workerJob->shouldReceive('isReleased', 'hasFailed', 'isDeletedOrReleased')->andReturnFalse();
+            $workerJob->shouldReceive('delete')->once();
+            $handler->call($workerJob, $payload['data']);
+            expect($vm->fresh()?->state)->toBe(TaskVmState::Ready);
+        }
+        $released = Cache::lock(UniqueLock::getKey($accepted));
+        expect($released->get())->toBeTrue();
+        $released->release();
+    })->with([
+        'lost response, completion' => ['lost reply', false],
+        'lost response, exhausted preparation' => ['lost reply', true],
+        'post-push event, completion' => ['post-push event', false],
+        'post-push event, exhausted preparation' => ['post-push event', true],
+    ]);
 
     it('leaves the Pi upload to the queued job, which makes the VM ready', function (): void {
         Queue::fake();
@@ -744,8 +936,7 @@ describe('a claimed warm VM', function (): void {
 
         expect(fn () => app(TaskVmWorkspace::class)->node(tvm_pool_group()))->toThrow(TaskCapacityException::class, 'Task VM: provisioning.')
             ->and($vm->fresh()?->state)->toBe(TaskVmState::Provisioning)
-            ->and($this->transport->commands)->toHaveCount(1);
-        Log::shouldHaveReceived('warning')->withArgs(fn (string $message, array $context): bool => str_contains($message, 'the task VM worker retries them'));
+            ->and($this->transport->commands)->toBe([]);
         Queue::assertPushed(PrepareTaskVmRuntime::class, fn (PrepareTaskVmRuntime $job): bool => $job->taskVmId === $vm->id);
 
         app()->call([new PrepareTaskVmRuntime($vm->id), 'handle']);
@@ -852,52 +1043,47 @@ describe('schedule', function (): void {
     });
 });
 
-describe(EnsureWarmClaimReady::class, function (): void {
+describe('legacy warm claim payloads', function (): void {
     it('queues the group steps loudly when a warm claim is still provisioning, and leaves other rows alone', function (): void {
         Queue::fake();
         Log::spy();
         $vm = tvm_pool_vm();
         $group = tvm_pool_group();
-        // A tick that died during the inline steps: the claim is recorded and nothing else happened.
+        // Serialized using the previous release's class name and public row id.
         TaskVm::query()->whereKey($vm->id)->update(['group_id' => $group->id, 'state' => TaskVmState::Provisioning, 'claimed_at' => now()->subMinutes(6)]);
         $ready = tvm_pool_vm();
         $ready->update(['group_id' => tvm_pool_group()->id, 'state' => TaskVmState::Ready]);
         $warming = tvm_pool_vm(TaskVmState::Provisioning);
 
         foreach ([$vm, $ready, $warming] as $row) {
-            app()->call([new EnsureWarmClaimReady($row->id), 'handle']);
+            // Captured by serializing the job class at the group's base commit.
+            $payload = str_replace('s:8:"taskVmId";i:1;', 's:8:"taskVmId";i:'.$row->id.';', file_get_contents(base_path('tests/Fixtures/TaskVms/legacy-warm-claim.txt')));
+            $job = unserialize($payload);
+            expect($job)->toBeInstanceOf(RecoverLegacyWarmClaim::class);
+            app()->call([$job, 'handle']);
         }
 
         Queue::assertPushed(PrepareTaskVmRuntime::class, 1);
         Queue::assertPushed(PrepareTaskVmRuntime::class, fn (PrepareTaskVmRuntime $job): bool => $job->taskVmId === $vm->id);
-        Log::shouldHaveReceived('error')->once()->withArgs(fn (string $message, array $context): bool => str_contains($message, 'is not ready after its claim')
-            && $context['task_vm'] === $vm->name && $context['group_id'] === $group->id);
+        expect($vm->fresh()?->state)->toBe(TaskVmState::Provisioning);
     });
 
-    it('logs no error while the group steps of the claim wait in the queue or run', function (): void {
+    it('does not duplicate preparation already queued or running', function (): void {
         Queue::fake();
         Log::spy();
         $vm = tvm_pool_vm();
         TaskVm::query()->whereKey($vm->id)->update(['group_id' => tvm_pool_group()->id, 'state' => TaskVmState::Provisioning, 'claimed_at' => now()->subMinutes(6)]);
-        // The job that the failed inline run queued holds its unique lock until it ends.
+        // The ordinary preparation job holds its unique lock until it ends.
         PrepareTaskVmRuntime::dispatch($vm->id);
 
-        app()->call([new EnsureWarmClaimReady($vm->id), 'handle']);
+        app()->call([new RecoverLegacyWarmClaim($vm->id), 'handle']);
 
         Queue::assertPushed(PrepareTaskVmRuntime::class, 1);
         Log::shouldNotHaveReceived('error');
-        Log::shouldHaveReceived('info')->withArgs(fn (string $message, array $context): bool => $message === 'A warm task VM claim waits for its queued group steps.' && $context['task_vm'] === $vm->name);
-
-        // Once that job has ended and the row is still provisioning, the guard acts.
+        // Once the old preparation has ended, a retry can enqueue another idempotent preparation.
         Cache::lock(UniqueLock::getKey(new PrepareTaskVmRuntime($vm->id)))->forceRelease();
-        app()->call([new EnsureWarmClaimReady($vm->id), 'handle']);
+        app()->call([new RecoverLegacyWarmClaim($vm->id), 'handle']);
 
         Queue::assertPushed(PrepareTaskVmRuntime::class, 2);
-        Log::shouldHaveReceived('error')->once();
-    });
-
-    it('waits longer than the tick lock before it acts', function (): void {
-        expect(EnsureWarmClaimReady::DelaySeconds)->toBeGreaterThan(300)
-            ->and((new EnsureWarmClaimReady(1))->queue)->toBe('task-vms');
     });
 });

@@ -346,16 +346,17 @@ describe('allocation', function (): void {
             ->and(fn () => app(AllocateTaskVmAction::class)->execute(tvm_life_group()))->toThrow(TaskCapacityException::class, TaskVmPlacementPolicy::noCapacityFor(TaskVmSize::Medium));
     });
 
-    it('waits while another placement holds the lock and records nothing', function (): void {
+    it('allocates a new VM without the obsolete placement cache lock', function (): void {
         Queue::fake();
         Sleep::fake(syncWithCarbon: true);
         $lock = Cache::lock('task-vms:placement', 30);
         expect($lock->get())->toBeTrue();
 
         try {
-            expect(fn () => app(AllocateTaskVmAction::class)->execute(tvm_life_group()))
-                ->toThrow(TaskCapacityException::class, 'Task VM: another placement is running.')
-                ->and(TaskVm::query()->count())->toBe(0);
+            $vm = app(AllocateTaskVmAction::class)->execute(tvm_life_group());
+            expect($vm->state)->toBe(TaskVmState::Provisioning)
+                ->and(TaskVm::query()->count())->toBe(1);
+            Queue::assertPushed(ProvisionTaskVm::class, fn (ProvisionTaskVm $job): bool => $job->taskVmId === $vm->id);
         } finally {
             $lock->release();
         }

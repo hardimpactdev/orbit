@@ -206,7 +206,11 @@ The job uses the normal preparation limits. It waits up to 60 seconds for anothe
 
 SQLite commit and Redis dispatch are not atomic. Every subsequent allocation of an existing claimed warm VM that is still `provisioning` attempts to dispatch `PrepareTaskVmRuntime` again. The row's `claimed_at` distinguishes it from a new VM that still needs provisioning and enrollment. Returning the existing row alone is not enough: a crash after commit but before dispatch must leave work that the next claim can recover.
 
-Laravel uses `ShouldBeUnique` to lock preparation for each VM. It suppresses dispatch while a preparation job is queued or running. A failed dispatch releases its acquired unique lock so the next claim can retry. If a process dies after acquiring the lock but before enqueueing, the lock's existing one-hour expiry allows a subsequent claim to dispatch again. The single `task-vms` worker serializes jobs, and preparation is idempotent. A recovered job either makes the row `ready` or exhausts its retries and marks it `failed` with group assistance. Recovery uses the ordinary preparation job, not a delayed guard.
+Laravel uses `ShouldBeUnique` to lock preparation for each VM. It suppresses dispatch while a preparation job is queued or running. Preparation acquires Laravel's native unique lock on the same job object that it submits. A confirmed connection-resolution failure before submission releases only that job's lock owner, so the next claim can retry without deleting a replacement owner's lock.
+
+After submission begins, an exception may mean Redis accepted the job but its response was lost, or a post-push event failed. Recovery retains the lock in these ambiguous cases: the accepted job completes or fails normally and releases its own lock; if no job was accepted, recovery waits for the existing one-hour lock expiry.
+
+If a process dies after acquiring the lock but before enqueueing, the lock's existing one-hour expiry allows a subsequent claim to dispatch again. The single `task-vms` worker serializes jobs, and preparation is idempotent. A recovered job either makes the row `ready` or exhausts its retries and marks it `failed` with group assistance. Recovery uses the ordinary preparation job, not a delayed guard.
 
 A warm claim logs `queue` first, which counts from the claim to the worker's start of the group's steps, and `warm-claim-to-ready` last, with the seconds from the claim to `ready`. A VM that becomes warm logs `warm`, with the seconds from its row to `warm`.
 
@@ -584,7 +588,9 @@ When `ProvisionTaskVm`, `EnrollTaskVm`, `PrepareTaskVmRuntime`, or `ResumeTaskVm
 
 The [Gateway release](/reference/gateway-queue#releases) calls `horizon:terminate`, not a systemd restart. Horizon lets an active claim or resume finish on its original release before the new worker starts. A crashed worker's reserved job becomes available again after the queue's `retry_after`; per-VM uniqueness, state checks, and idempotent preparation keep that retry safe. A claimed warm row committed without its preparation job is recovered by the next allocation as described above.
 
-Already queued payloads must remain readable for one release, as required by [Jobs across releases](/reference/gateway-queue#jobs-across-releases). This includes old delayed `EnsureWarmClaimReady` payloads and old `ResumeTaskVm` payloads without the new deadline field. A compatibility reader for an old guard payload only dispatches the ordinary preparation job when the row belongs to a claimed warm VM and is still `provisioning`. It creates no new guards and is removed after those payloads have drained. An old resume payload receives one fixed deadline, which survives its subsequent releases; expiry follows the same `task_vm.resume_timeout` failure path. This compatibility is not part of the new claim workflow.
+Already queued payloads must remain readable for one release, as required by [Jobs across releases](/reference/gateway-queue#jobs-across-releases). This includes old delayed `EnsureWarmClaimReady` payloads and old `ResumeTaskVm` payloads without the new deadline field. A compatibility reader for an old guard payload only dispatches the ordinary preparation job when the row belongs to a claimed warm VM and is still `provisioning`. It creates no new guards and is removed after those payloads have drained. This compatibility is not part of the new claim workflow.
+
+An old resume payload uses its original enqueue time for a fixed deadline, which survives its subsequent releases. Its old queue envelope can still exhaust its three-attempt limit before that deadline. Both expiry and that old attempt limit follow the same `task_vm.resume_timeout` failure path.
 
 ### Incus provider
 
