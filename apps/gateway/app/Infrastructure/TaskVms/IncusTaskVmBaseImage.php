@@ -13,13 +13,10 @@ use App\Jobs\TaskVms\RefreshTaskVmWorkspaceTemplates;
 use App\Models\Node;
 use App\Models\TaskVmImageBuild;
 use Closure;
-use Illuminate\Cache\Lock;
-use Illuminate\Contracts\Cache\Lock as CacheLock;
-use Illuminate\Support\Facades\Cache;
 
 /**
- * The Incus steps that the base image build and the base image sync share on one host: the host's image lock, the
- * smoke boot, the alias move, and the prune. Builder and smoke VMs are named `tvm-image-<time>…`
+ * The Incus steps that the base image build and the base image sync share on one host: the smoke boot,
+ * the alias move, and the prune. Builder and smoke VMs are named `tvm-image-<time>…`
  * ({@see TaskVmImageRecipe::WorkPrefix}), so a later build or sync of the host deletes what an interrupted one left.
  * The workspace template build launches and deletes its builder VM with it too.
  */
@@ -29,45 +26,12 @@ final readonly class IncusTaskVmBaseImage
 
     private const int BootSeconds = 600;
 
-    /** A lock that a killed process cannot release lasts as long as the refresh job may run. */
-    private const int LockSeconds = 1500;
-
     public function __construct(
         private IncusHost $incus,
         private TaskVmCloudInit $cloudInit,
         private SshKeyProvider $keys,
         private TaskVmBaseImageCache $claimImages,
     ) {}
-
-    /**
-     * Takes the host's image lock, which one build or sync of the host holds at a time. `$owner` names the lock,
-     * so a caller that is killed can {@see abandon()} its own work.
-     *
-     * @throws TaskVmException `task_vm.image_build_running` while another build or sync of the host runs
-     */
-    public function lock(Node $node, ?string $owner): CacheLock
-    {
-        $lock = Cache::lock(self::lockName($node), self::LockSeconds, $owner);
-
-        return $lock->get() ? $lock : throw new TaskVmException('task_vm.image_build_running', "A base image build or sync of Node [{$node->name}] is already running.");
-    }
-
-    /**
-     * Cleans up after a build or sync whose process stopped before its own cleanup ran: deletes its builder and
-     * smoke VMs and releases the lock. Does nothing unless `$owner` still holds the host's lock.
-     */
-    public function abandon(TaskVmHost $host, Node $node, string $owner): void
-    {
-        $lock = Cache::restoreLock(self::lockName($node), $owner);
-        if (! $lock instanceof Lock || ! $lock->isOwnedByCurrentProcess()) {
-            return;
-        }
-        try {
-            $this->sweep($host, $node);
-        } finally {
-            $lock->release();
-        }
-    }
 
     /** Deletes builder and smoke VMs that an interrupted build or sync left. */
     public function sweep(TaskVmHost $host, Node $node): void
@@ -256,10 +220,5 @@ final readonly class IncusTaskVmBaseImage
     public function checked(string $name, string $operation, CommandResult $result): CommandResult
     {
         return $result->succeeded() ? $result : throw IncusHost::failed("the base image VM [{$name}]", $operation, $result);
-    }
-
-    private static function lockName(Node $node): string
-    {
-        return 'task-vms:image-build:'.$node->id;
     }
 }

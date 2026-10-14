@@ -767,11 +767,17 @@ The export is a file, because `incus image export` writes no stream. The receive
 
 A host that has the image already skips `export` and `transfer`. The source removes the export directory after the transfer, also when a stage fails. Incus names an image by the SHA-256 of its content, so `verify` compares content.
 
-The export may take 300 seconds and the transfer 540 seconds. With a smoke boot of up to 600 seconds, a sync ends within the sync's 25-minute host lock.
+The export may take 300 seconds and the transfer 540 seconds. With a smoke boot of up to 600 seconds, a sync ends within the sync's 25-minute host lock. The sync keeps this lock until syncs have their own chains. Before touching the target, a sync refuses a host with a `running` image build row.
+
+Build start and resume briefly acquire the same sync lock while admitting their `running` row. They release it when the row commits, or on rollback or error. Before enqueueing steps, they check the lock again in case the caller's transaction outlasted admission. A sync cannot pass its row check while a build is being admitted, and a build cannot start or resume during a sync.
+
+Queued builds use the durable row, not an expiring build lock. The sync command keeps its own signal cleanup; stopping the build watcher never stops the queued build.
 
 A transfer can fail after the import, for example when the connection drops before the receiver's answer. So when ssh fails, Orbit reads the target's images. When the image is there, it logs the warning `The task VM base image transfer failed, but the target has the image.` with the exit code and the ssh error, and goes on with `verify`. Otherwise the stage fails with the exit code and the end of the ssh error output. When the receiver imports an image with another fingerprint, Orbit deletes it and the stage fails.
 
-A failed sync fails with `task_vm.image_sync_failed`, which names the stage. The host keeps its current base image. Orbit deletes the smoke VM, and the copy when it never became the base image. A sync never changes the source's images or another host. After a build, each host's result is one line with its time and stages, or its error code. One failed host does not stop the others, and the command then exits with a failure. When the command is stopped, the next sync to that host removes the export it left.
+A failed sync fails with `task_vm.image_sync_failed`, which names the stage. The host keeps its current base image. Orbit deletes the smoke VM, and the copy when it never became the base image. A sync never changes the source's images or another host.
+
+After a build, each target has its own queued sync job. A failed host is logged with its error code and does not stop the other hosts or change the successful build row. The build watcher reports the build, not the later sync results. The manual sync command exits with a failure when its target fails. When the sync command is stopped, the next sync to that host removes the export it left.
 
 Running VMs keep the image they launched from. The prune keeps an image that a VM still uses. A claim that resolved the old alias just before the prune can fail its launch when the prune deletes that image first. `ProvisionTaskVm` then retries once after 30 seconds, from the new image. When the alias move succeeds but its reply is lost, the failed sync keeps the copy, because the alias names it.
 
@@ -903,9 +909,9 @@ The reserved range must always be a private network. As soon as task VMs are ena
 | `task_vm.bootstrap_timeout` | 504 | Cloud-init was not `done` 10 minutes after the row was created |
 | `task_vm.job_failed` | 500 | A task VM job failed with an error that has no code of its own |
 | `task_vm.base_image_missing` | 409 | The host's project, or the sync source's, has no `orbit-task-base` image. Run `task-vms:sync-image` or `task-vms:build-image` |
-| `task_vm.image_build_failed` | 502 | A base image build failed. The message names the stage |
+| `task_vm.image_build_failed` | 502 | A base image build failed. The build row records the step and error |
 | `task_vm.image_build_running` | 409 | A base image build or sync of the host is already running |
-| `task_vm.image_sync_failed` | 502 | A base image sync failed. The message names the host, the source, and the stage. The nightly refresh uses this code when any host failed |
+| `task_vm.image_sync_failed` | 502 | A base image sync failed. The message names the host, the source, and the stage. A queued sync logs the failure and lets the other hosts continue |
 | `task_vm.host_configured` | 409 | `task-vms:retire-host` names a host that is still in `task_vms.incus.hosts` |
 | `task_vm.host_in_use` | 409 | `task-vms:retire-host` names a host that still has a task VM that is not `destroyed`, a warm one included |
 | `task_vm.parked` | 409 | The group's task VM is `parked`. Orbit starts it, and the work runs once it is `ready` |

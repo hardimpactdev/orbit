@@ -23,9 +23,13 @@ use App\Jobs\TaskVms\RefreshTaskVmWorkspaceTemplates;
 use App\Jobs\TaskVms\SweepTaskVmHosts;
 use App\Models\Node;
 use App\Models\TaskVmImageBuild;
+use Illuminate\Console\Scheduling\CallbackEvent;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Queue\Job;
 use Illuminate\Queue\WorkerOptions;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Sleep;
 use Tests\Support\TaskVmSettingsBuilder;
@@ -83,6 +87,115 @@ beforeEach(function (): void {
             }
         }
     };
+});
+
+it('refuses start and resume while a sync already owns the target without host work or row changes', function (string $operation): void {
+    $failed = $operation === 'resume' ? TaskVmImageBuild::query()->create([
+        'host_node_id' => $this->host->id, 'state' => TaskVmImageBuildState::Failed,
+        'current_step' => TaskVmImageBuildStep::UpgradePackages,
+    ]) : null;
+    if ($failed !== null) {
+        $this->incus->instances[$failed->builder_vm_name] = IMAGE_OLD;
+    }
+    $lock = Cache::lock('task-vms:image-sync:'.$this->host->id, 1500);
+    expect($lock->get())->toBeTrue();
+    try {
+        expect(fn () => $operation === 'start' ? $this->chain->start($this->host) : $this->chain->resume($this->host, $failed->id))
+            ->toThrow(TaskVmException::class, 'A base image sync or build admission of Node [beast] is already running.');
+        expect($this->incus->commands)->toBe([]);
+        expect(TaskVmImageBuild::query()->where('state', TaskVmImageBuildState::Running)->exists())->toBeFalse();
+        if ($failed !== null) {
+            expect($failed->refresh()->submission_pending_at)->toBeNull();
+        }
+        Bus::assertNothingDispatched();
+    } finally {
+        $lock->release();
+    }
+    $build = $operation === 'start' ? $this->chain->start($this->host) : $this->chain->resume($this->host, $failed->id);
+    expect($build->state)->toBe(TaskVmImageBuildState::Running);
+})->with(['start', 'resume']);
+
+it('holds sync admission until the caller commits or rolls back, never across queued steps', function (bool $rollback): void {
+    $lock = Cache::lock('task-vms:image-sync:'.$this->host->id, 1500);
+    $admit = function () use ($lock, $rollback): void {
+        $this->chain->start($this->host);
+        expect($lock->get())->toBeFalse();
+        Bus::assertNothingDispatched();
+        if ($rollback) {
+            throw new RuntimeException('caller rollback');
+        }
+    };
+    if ($rollback) {
+        expect(fn () => DB::transaction($admit))->toThrow(RuntimeException::class, 'caller rollback');
+        expect(TaskVmImageBuild::query()->count())->toBe(0);
+        Bus::assertNothingDispatched();
+    } else {
+        DB::transaction($admit);
+        expect(TaskVmImageBuild::query()->sole()->state)->toBe(TaskVmImageBuildState::Running);
+    }
+    expect($lock->get())->toBeTrue();
+    $lock->release();
+})->with([false, true]);
+
+it('rechecks sync admission before enqueue if the caller outlives the admission lease', function (string $operation): void {
+    $failed = $operation === 'resume' ? TaskVmImageBuild::query()->create([
+        'host_node_id' => $this->host->id, 'state' => TaskVmImageBuildState::Failed,
+        'current_step' => TaskVmImageBuildStep::UpgradePackages,
+    ]) : null;
+    if ($failed !== null) {
+        $this->incus->instances[$failed->builder_vm_name] = IMAGE_OLD;
+    }
+    $sync = Cache::lock('task-vms:image-sync:'.$this->host->id, 1500, 'later-sync');
+    $this->commandsBeforeCommit = [];
+    try {
+        expect(fn () => DB::transaction(function () use ($operation, $failed, $sync): void {
+            $operation === 'start' ? $this->chain->start($this->host) : $this->chain->resume($this->host, $failed->id);
+            $this->commandsBeforeCommit = $this->incus->commands;
+            // Simulate lease expiry and a sync that passed its check on another connection,
+            // where this transaction's running row is not yet visible.
+            Cache::lock('task-vms:image-sync:'.$this->host->id)->forceRelease();
+            expect($sync->get())->toBeTrue();
+        }))->toThrow(TaskVmException::class, 'sync or build admission');
+        expect($this->incus->commands)->toBe($this->commandsBeforeCommit);
+        $build = TaskVmImageBuild::query()->sole();
+        expect($build->state)->toBe(TaskVmImageBuildState::Failed)->and($build->submission_pending_at)->toBeNull();
+        expect(Cache::lock('task-vms:image-sync:'.$this->host->id, 1500)->get())->toBeFalse();
+        Bus::assertNothingDispatched();
+    } finally {
+        $sync->release();
+    }
+})->with(['start', 'resume']);
+
+it('releases sync admission after a rejected row write', function (): void {
+    $this->chain->start($this->host);
+    expect(fn () => $this->chain->start($this->host))->toThrow(TaskVmException::class, 'already running');
+    $lock = Cache::lock('task-vms:image-sync:'.$this->host->id, 1500);
+    expect($lock->get())->toBeTrue();
+    $lock->release();
+});
+
+it('refuses a Node that is not a task VM host before queuing a build', function (): void {
+    Node::query()->create(['name' => 'shark', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '192.0.2.8', 'wireguard_ip' => '10.44.0.11', 'user' => 'nckrtl']);
+
+    $this->artisan('task-vms:build-image', ['node' => 'shark'])
+        ->expectsOutputToContain('[task_vm.unknown_host]')
+        ->assertFailed();
+    expect($this->incus->commands)->toBe([]);
+    Bus::assertNothingDispatched();
+});
+
+it('queues the nightly chain dispatcher on builds at 03:00 only while task VMs are enabled', function (): void {
+    Artisan::call('schedule:list');
+    $refresh = collect(app(Schedule::class)->events())->first(static fn ($event): bool => $event instanceof CallbackEvent && $event->description === RefreshTaskVmBaseImages::class);
+
+    config(['task_vms.enabled' => false]);
+    expect($refresh)->not->toBeNull()
+        ->and($refresh->expression)->toBe('0 3 * * *')
+        ->and($refresh->filtersPass(app()))->toBeFalse()
+        ->and([new RefreshTaskVmBaseImages()->connection, new RefreshTaskVmBaseImages()->queue])->toBe(['gateway', 'builds']);
+
+    config(['task_vms.enabled' => true]);
+    expect($refresh->filtersPass(app()))->toBeTrue();
 });
 
 it('dispatches the ordered chain on builds with one cleanup catch and persists all timings', function (): void {

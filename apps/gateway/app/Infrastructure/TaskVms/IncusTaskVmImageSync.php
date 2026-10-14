@@ -7,10 +7,16 @@ namespace App\Infrastructure\TaskVms;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
+use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmImageSyncResult;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Models\Node;
+use App\Models\TaskVmImageBuild;
 use Closure;
+use Illuminate\Cache\Lock;
+use Illuminate\Contracts\Cache\Lock as CacheLock;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -26,6 +32,9 @@ final readonly class IncusTaskVmImageSync
 {
     /** Holds the export for one target on the source host, so a later sync to that target removes a leftover. */
     public const string ExportDirectory = TaskVmImagePeers::WorkDirectory.'/export';
+
+    /** Syncs remain whole operations until they have their own chains and rows. */
+    private const int LockSeconds = 1500;
 
     /** An export of about 3 GiB takes a few seconds on a local disk. */
     private const float ExportSeconds = 300.0;
@@ -94,7 +103,7 @@ final readonly class IncusTaskVmImageSync
 
     /**
      * Makes `$fingerprint` from `$source` the base image of `$node`. Returns false when it already is.
-     * `$owner` names the target's image lock, so a caller that is killed can {@see IncusTaskVmBaseImage::abandon()}.
+     * `$owner` names the target's sync lock, so a caller that is killed can {@see abandon()}.
      *
      * @param  (Closure(string, float): void)|null  $progress
      *
@@ -105,7 +114,7 @@ final readonly class IncusTaskVmImageSync
         if ($source->id === $node->id) {
             throw new TaskVmException('task_vm.image_sync_failed', "Node [{$node->name}] is the source of the base image sync.");
         }
-        $lock = $this->image->lock($node, $owner);
+        $lock = $this->lock($node, $owner);
 
         $smoke = TaskVmImageRecipe::WorkPrefix.now()->format('YmdHis').'-sync-smoke';
         $copied = null;
@@ -141,6 +150,76 @@ final readonly class IncusTaskVmImageSync
         } finally {
             $lock->release();
         }
+    }
+
+    /** Cleans up only the interrupted sync that still owns the target's sync lock. */
+    public function abandon(TaskVmHost $host, Node $node, string $owner): void
+    {
+        $lock = Cache::restoreLock(self::lockName($node), $owner);
+        if (! $lock instanceof Lock || ! $lock->isOwnedByCurrentProcess()) {
+            return;
+        }
+        try {
+            $this->image->sweep($host, $node);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
+     * Borrow the sync lock only until the running row is visible to other connections.
+     * Queued steps never own this lock; the durable row excludes subsequent syncs.
+     *
+     * @template T
+     *
+     * @param  Closure(): T  $admit
+     * @return T
+     */
+    public function admitBuild(Node $node, Closure $admit): mixed
+    {
+        $lock = $this->acquire($node, null);
+        try {
+            $result = $admit();
+            DB::afterRollBack(fn () => $lock->release());
+            DB::afterCommit(fn () => $lock->release());
+
+            return $result;
+        } catch (Throwable $error) {
+            $lock->release();
+
+            throw $error;
+        }
+    }
+
+    private function acquire(Node $node, ?string $owner): CacheLock
+    {
+        $lock = Cache::lock(self::lockName($node), self::LockSeconds, $owner);
+        if (! $lock->get()) {
+            throw new TaskVmException('task_vm.image_build_running', "A base image sync or build admission of Node [{$node->name}] is already running.");
+        }
+
+        return $lock;
+    }
+
+    private function lock(Node $node, ?string $owner): CacheLock
+    {
+        $lock = $this->acquire($node, $owner);
+        try {
+            if (TaskVmImageBuild::query()->where('host_node_id', $node->id)->where('state', TaskVmImageBuildState::Running)->exists()) {
+                throw new TaskVmException('task_vm.image_build_running', "A base image build of Node [{$node->name}] is already running.");
+            }
+        } catch (Throwable $error) {
+            $lock->release();
+
+            throw $error;
+        }
+
+        return $lock;
+    }
+
+    private static function lockName(Node $node): string
+    {
+        return 'task-vms:image-sync:'.$node->id;
     }
 
     /**

@@ -28,12 +28,12 @@ use Throwable;
 
 final readonly class TaskVmImageBuildChain
 {
-    public function __construct(private TaskVmSettings $settings, private IncusTaskVmBaseImage $image, private TaskVmImageRecipe $recipe) {}
+    public function __construct(private TaskVmSettings $settings, private IncusTaskVmBaseImage $image, private TaskVmImageRecipe $recipe, private IncusTaskVmImageSync $sync) {}
 
     public function start(Node $node, bool $fromStock = false): TaskVmImageBuild
     {
         $this->recoverSubmissions();
-        $build = TaskVmImageBuild::query()->create(['host_node_id' => $node->id, 'from_stock' => $fromStock, 'submission_pending_at' => now()->toISOString()]);
+        $build = $this->sync->admitBuild($node, fn (): TaskVmImageBuild => TaskVmImageBuild::query()->create(['host_node_id' => $node->id, 'from_stock' => $fromStock, 'submission_pending_at' => now()->toISOString()]));
         $this->submit($build);
 
         return $build;
@@ -42,31 +42,35 @@ final readonly class TaskVmImageBuildChain
     public function resume(Node $node, int $id): TaskVmImageBuild
     {
         $this->recoverSubmissions();
-        $build = TaskVmImageBuild::query()->where('host_node_id', $node->id)->find($id)
-            ?? throw new TaskVmException('task_vm.image_build_failed', "Build [{$id}] does not belong to this host.");
-        if ($build->state !== TaskVmImageBuildState::Failed || $build->cleanup_started_at !== null || $build->current_step === null || ! array_key_exists((string) $build->builder_vm_name, $this->image->instances($this->settings->host($node->id), $node))) {
-            throw new TaskVmException('task_vm.image_build_failed', 'Only an unclaimed failed build whose builder still exists can resume.');
-        }
-        // A conditional write, not SELECT FOR UPDATE (which SQLite ignores), arbitrates against cleanup.
-        DB::transaction(function () use ($build): void {
-            $claimed = TaskVmImageBuild::query()->whereKey($build->id)->where('state', TaskVmImageBuildState::Failed)
-                ->whereNull('cleanup_started_at')->update(['submission_pending_at' => now()->toISOString()]);
-            if ($claimed !== 1) {
-                throw new TaskVmException('task_vm.image_build_failed', 'Cleanup or another resume has already claimed this build.');
+        $build = $this->sync->admitBuild($node, function () use ($node, $id): TaskVmImageBuild {
+            $build = TaskVmImageBuild::query()->where('host_node_id', $node->id)->find($id)
+                ?? throw new TaskVmException('task_vm.image_build_failed', "Build [{$id}] does not belong to this host.");
+            if ($build->state !== TaskVmImageBuildState::Failed || $build->cleanup_started_at !== null || $build->current_step === null || ! array_key_exists((string) $build->builder_vm_name, $this->image->instances($this->settings->host($node->id), $node))) {
+                throw new TaskVmException('task_vm.image_build_failed', 'Only an unclaimed failed build whose builder still exists can resume.');
             }
-            $build->refresh();
-            $steps = $build->steps;
-            foreach ($steps as &$entry) {
-                if ($entry['step'] === $build->current_step?->value && $entry['program'] === $build->current_program) {
-                    $entry['started_at'] = null;
-                    $entry['seconds'] = null;
-                    $entry['error'] = null;
+            // A conditional write, not SELECT FOR UPDATE (which SQLite ignores), arbitrates against cleanup.
+            DB::transaction(function () use ($build): void {
+                $claimed = TaskVmImageBuild::query()->whereKey($build->id)->where('state', TaskVmImageBuildState::Failed)
+                    ->whereNull('cleanup_started_at')->update(['submission_pending_at' => now()->toISOString()]);
+                if ($claimed !== 1) {
+                    throw new TaskVmException('task_vm.image_build_failed', 'Cleanup or another resume has already claimed this build.');
                 }
-            }
-            unset($entry);
-            // The conditional write holds the transaction's SQLite writer fence until this save.
-            // Use the model for the state change so its running-host uniqueness error stays a domain error.
-            $build->forceFill(['steps' => $steps, 'state' => TaskVmImageBuildState::Running])->save();
+                $build->refresh();
+                $steps = $build->steps;
+                foreach ($steps as &$entry) {
+                    if ($entry['step'] === $build->current_step?->value && $entry['program'] === $build->current_program) {
+                        $entry['started_at'] = null;
+                        $entry['seconds'] = null;
+                        $entry['error'] = null;
+                    }
+                }
+                unset($entry);
+                // The conditional write holds the transaction's SQLite writer fence until this save.
+                // Use the model for the state change so its running-host uniqueness error stays a domain error.
+                $build->forceFill(['steps' => $steps, 'state' => TaskVmImageBuildState::Running])->save();
+            });
+
+            return $build;
         });
         $this->submit($build, true);
 
@@ -88,7 +92,9 @@ final readonly class TaskVmImageBuildChain
         // recreate the crash window. The durable marker remains until this callback actually runs.
         DB::afterCommit(function () use ($build, $resume): void {
             try {
-                $this->dispatch($build, $resume);
+                // Recheck after a caller's transaction: its admission lease may have expired
+                // before the row became visible. Never enqueue steps beside an active sync.
+                $this->sync->admitBuild($build->hostNode, fn () => $this->dispatch($build, $resume));
             } catch (Throwable $error) {
                 $this->failSubmission($build, $error);
                 throw $error;

@@ -15,6 +15,7 @@ use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\IncusTaskVmImageSync;
+use App\Infrastructure\TaskVms\TaskVmImageBuildChain;
 use App\Infrastructure\TaskVms\TaskVmImageBuildSteps;
 use App\Infrastructure\TaskVms\TaskVmImagePeers;
 use App\Jobs\TaskVms\ImageBuild\LaunchImageBuilder;
@@ -252,16 +253,81 @@ describe('a sync', function (): void {
 });
 
 describe('a sync that meets other work', function (): void {
-    it('refuses a host whose build or sync is running', function (): void {
+    it('refuses a host whose sync is running', function (): void {
         ($this->link)();
-        $lock = Cache::lock('task-vms:image-build:'.$this->shark->id, 60);
+        $lock = Cache::lock('task-vms:image-sync:'.$this->shark->id, 60);
         $lock->get();
         $commands = count($this->fleet->argv('10.44.0.11'));
 
         expect(fn () => app(IncusTaskVmImageSync::class)->sync($this->settings->host($this->beast->id), $this->beast, $this->settings->host($this->shark->id), $this->shark, SYNC_OLD))
-            ->toThrow(TaskVmException::class, 'A base image build or sync of Node [shark] is already running.');
+            ->toThrow(TaskVmException::class, 'A base image sync or build admission of Node [shark] is already running.');
         expect($this->fleet->argv('10.44.0.11'))->toHaveCount($commands);
         $lock->release();
+    });
+
+    it('refuses a running build row without touching either host and frees its sync lock', function (): void {
+        ($this->link)();
+        $build = TaskVmImageBuild::query()->create(['host_node_id' => $this->shark->id]);
+        $sourceCommands = $this->fleet->argv('10.44.0.7');
+        $targetCommands = $this->fleet->argv('10.44.0.11');
+        $sync = app(IncusTaskVmImageSync::class);
+
+        expect(fn () => $sync->sync($this->settings->host($this->beast->id), $this->beast, $this->settings->host($this->shark->id), $this->shark, SYNC_OLD))
+            ->toThrow(TaskVmException::class, 'A base image build of Node [shark] is already running.');
+        expect($this->fleet->argv('10.44.0.7'))->toBe($sourceCommands);
+        expect($this->fleet->argv('10.44.0.11'))->toBe($targetCommands);
+
+        $build->update(['state' => TaskVmImageBuildState::Failed]);
+        expect($sync->sync($this->settings->host($this->beast->id), $this->beast, $this->settings->host($this->shark->id), $this->shark, SYNC_OLD))->toBeTrue();
+    });
+
+    it('refuses build admission after the sync row check through promotion', function (string $operation, string $stage): void {
+        ($this->link)();
+        Bus::fake();
+        $failed = $operation === 'resume' ? TaskVmImageBuild::query()->create([
+            'host_node_id' => $this->shark->id, 'state' => TaskVmImageBuildState::Failed,
+            'current_step' => TaskVmImageBuildStep::UpgradePackages,
+        ]) : null;
+        if ($failed !== null) {
+            $this->fleet->host('10.44.0.11')->instances[$failed->builder_vm_name] = SYNC_SHARK;
+        }
+        $attempted = false;
+        $chain = app(TaskVmImageBuildChain::class);
+        $progress = function (string $finished) use ($operation, $stage, $failed, $chain, &$attempted): void {
+            if ($finished !== $stage) {
+                return;
+            }
+            $attempted = true;
+            $commands = $this->fleet->commands;
+            expect(fn () => $operation === 'start' ? $chain->start($this->shark) : $chain->resume($this->shark, $failed->id))
+                ->toThrow(TaskVmException::class, 'A base image sync or build admission of Node [shark] is already running.');
+            expect($this->fleet->commands)->toBe($commands);
+            expect(TaskVmImageBuild::query()->where('state', TaskVmImageBuildState::Running)->exists())->toBeFalse();
+            Bus::assertNothingDispatched();
+        };
+
+        expect(app(IncusTaskVmImageSync::class)->sync($this->settings->host($this->beast->id), $this->beast, $this->settings->host($this->shark->id), $this->shark, SYNC_OLD, $progress))->toBeTrue();
+        expect($attempted)->toBeTrue();
+        expect($this->fleet->host('10.44.0.11')->images[SYNC_OLD])->toContain(TaskVmHost::BaseImage);
+    })->with(['start', 'resume'])->with(['inspect', 'transfer', 'smoke', 'promote']);
+
+    it('lets only the interrupted sync owner clean its smoke VM and release the sync lock', function (): void {
+        $smoke = 'tvm-image-20261011030000-sync-smoke';
+        $this->fleet->host('10.44.0.11')->instances = [$smoke => SYNC_SHARK];
+        $lock = Cache::lock('task-vms:image-sync:'.$this->shark->id, 1500, 'sync-owner');
+        $lock->get();
+        $sync = app(IncusTaskVmImageSync::class);
+        $host = $this->settings->host($this->shark->id);
+
+        $sync->abandon($host, $this->shark, 'another-sync');
+        expect($this->fleet->host('10.44.0.11')->instances)->toHaveKey($smoke);
+        expect(Cache::lock('task-vms:image-sync:'.$this->shark->id, 10)->get())->toBeFalse();
+
+        $sync->abandon($host, $this->shark, 'sync-owner');
+        expect($this->fleet->host('10.44.0.11')->instances)->toBe([]);
+        $next = Cache::lock('task-vms:image-sync:'.$this->shark->id, 10);
+        expect($next->get())->toBeTrue();
+        $next->release();
     });
 
     it('keeps the old image while a task VM on the host uses it', function (): void {
