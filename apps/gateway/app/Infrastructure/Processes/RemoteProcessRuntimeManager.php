@@ -178,7 +178,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessEnvironmentPr
                 return;
             }
             if ($fresh->isAnnotator()) {
-                $this->convergeAndActivateSystemd($fresh, $target, forceRunning: true);
+                $this->convergeAndActivateSystemd($fresh, $target, forceRunning: true, explicitRestart: true);
 
                 return;
             }
@@ -515,12 +515,14 @@ final readonly class RemoteProcessRuntimeManager implements ProcessEnvironmentPr
         Process $process,
         ProcessTarget $target,
         bool $forceRunning = false,
+        bool $explicitRestart = false,
     ): void {
         $hadPreviousUnit = $this->convergeSystemd($process, $target);
         if ($hadPreviousUnit === null) {
             $status = $this->status($process);
             $running = $forceRunning || $process->desired_state === DesiredProcessState::Running;
-            if ($process->systemd_activation_hash === $this->systemdActivationHash($process, $target)
+            if (! $explicitRestart && ! $process->systemd_activation_pending
+                && ($process->systemd_activation_hash === null || $process->systemd_activation_hash === $this->systemdActivationHash($process, $target))
                 && (($running && $status === 'active') || (! $running && $status === 'inactive'))) {
                 return;
             }
@@ -554,6 +556,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessEnvironmentPr
         }
 
         $process->systemd_activation_hash = $this->systemdActivationHash($process, $target);
+        $process->systemd_activation_pending = false;
         $process->save();
 
         if ($hadPreviousUnit) {
@@ -627,6 +630,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessEnvironmentPr
 
         // Invalidate completion before any publication that can survive a lost response.
         $process->systemd_activation_hash = null;
+        $process->systemd_activation_pending = true;
         $process->save();
 
         if ($hadPreviousUnit) {
