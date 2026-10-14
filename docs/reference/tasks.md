@@ -890,7 +890,7 @@ When the subtask is `running` and its reviewer has started, Orbit sends the reso
 
 When the subtask is `reviewing`, Orbit does not send an `answered` turn to the implementer. This covers a reviewer who asked during the review, and an operator `assistance_requested` comment posted during the review. Orbit delivers the resolution, clears the assistance flag in that send, and continues the review. The question stays `escalated` until the next review receipt.
 
-The review receipt needs `--cause`. It marks the question `answered`, with `answered_by` `operator`, the resolution body as the answer, and that cause. The delivery counts as that reviewer's next review request. A `blocked` outcome also creates the new direction record a review block always creates.
+The review receipt needs `--cause` on `approved`, `changes_requested`, and `blocked`. The reviewer prompt includes `--cause=CAUSE` in the verdict commands only while a direction resolution awaits its cause. The prompt and `.git/orbit/turn.json` use the same turn mode, including after a reminder or reviewer replacement. An ordinary approval or changes request refuses `--cause`. The receipt marks the question `answered`, with `answered_by` `operator`, the resolution body as the answer, and that cause. The delivery counts as that reviewer's next review request. A `blocked` outcome also creates the new direction record a review block always creates.
 
 When the subtask is `running` and no reviewer has started, Orbit starts the reviewer, as a consult does, and sends the resolution as a relay. The message is that relay, not an opening review packet, because the implementer has not handed off. The relay rules apply: `answered` and `blocked` require `--cause`.
 

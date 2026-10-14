@@ -227,8 +227,9 @@ final readonly class StoreTaskCommentAction
 
         try {
             $this->turnFetcher->beforeTurn($task->parent);
-            $this->receipts->prepare($instance, TaskThreadRole::Reviewer, $task->opensPullRequest(), $task->deliverableList(), $reviewer->id, new TaskTurnMode(causeRequired: true), $this->reviewPackets->reviewContext($task));
-            $this->drivers->get($reviewer->driver)->send($reviewer, $this->fetchNotice->apply(trim($comment->body)."\n\n".TaskTurnInstructions::reviewer(final: $task->opensPullRequest(), deliverables: $task->deliverableList(), threadId: $reviewer->id)));
+            $mode = new TaskTurnMode(causeRequired: true);
+            $this->receipts->prepare($instance, TaskThreadRole::Reviewer, $task->opensPullRequest(), $task->deliverableList(), $reviewer->id, $mode, $this->reviewPackets->reviewContext($task));
+            $this->drivers->get($reviewer->driver)->send($reviewer, $this->fetchNotice->apply(trim($comment->body)."\n\n".TaskTurnInstructions::reviewer(final: $task->opensPullRequest(), deliverables: $task->deliverableList(), threadId: $reviewer->id, mode: $mode)));
         } catch (AgentDriverException|TaskTurnReceiptException $exception) {
             report($exception);
 

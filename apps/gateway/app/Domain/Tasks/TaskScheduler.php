@@ -1787,7 +1787,7 @@ final readonly class TaskScheduler
             return TaskTurnInstructions::relay($threadId);
         }
 
-        return TaskTurnInstructions::reviewer($task->opensPullRequest(), $task->deliverableList(), $threadId);
+        return TaskTurnInstructions::reviewer($task->opensPullRequest(), $task->deliverableList(), $threadId, TaskTurnMode::forTask($task, $role));
     }
 
     /**
@@ -1828,10 +1828,7 @@ final readonly class TaskScheduler
             return false;
         }
         $context = $role === TaskThreadRole::Reviewer ? $this->reviewPackets->reviewContext($task) : null;
-        $consult = $role === TaskThreadRole::Reviewer && $task->consult_comment_id !== null;
-        $relay = $role === TaskThreadRole::Reviewer && ! $consult && $task->direction_relay_comment_id !== null;
-        $causeRequired = $role === TaskThreadRole::Reviewer && ! $consult && ! $relay && TaskQuestions::awaitsCause($task);
-        $mode = $consult || $relay || $causeRequired ? new TaskTurnMode(consult: $consult, relay: $relay, causeRequired: $causeRequired) : null;
+        $mode = TaskTurnMode::forTask($task, $role);
         $this->receipts->prepare($instance, $role, $role === TaskThreadRole::Reviewer && $task->opensPullRequest(), $task->deliverableList(), $threadId, $mode, $context);
 
         return true;
@@ -1898,10 +1895,7 @@ final readonly class TaskScheduler
                 if (! $this->prepareTurn($group, $task, $thread->role, $thread->threadId)) {
                     return false;
                 }
-                $mode = $implementer ? null : new TaskTurnMode(
-                    consult: $task->consult_comment_id !== null,
-                    relay: $task->consult_comment_id === null && $task->direction_relay_comment_id !== null,
-                );
+                $mode = TaskTurnMode::forTask($task, $thread->role);
                 $this->actor->remindRubric($group, $thread, TaskRubricReminder::compose($thread->role, $failures, ! $implementer && $task->opensPullRequest(), $task->deliverableList(), $group->project->taskCheckCommand(), $thread->threadId, $mode));
             } catch (AgentDriverException|TaskTurnReceiptException $exception) {
                 $this->recordCommunicationFailure($task, $group, $exception->getMessage());

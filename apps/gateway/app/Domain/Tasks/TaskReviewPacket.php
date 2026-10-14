@@ -80,6 +80,7 @@ final readonly class TaskReviewPacket
         private array $consults = [],
         private int $groupId = 0,
         private TaskTopology $topology = new TaskTopology,
+        private ?TaskTurnMode $mode = null,
     ) {}
 
     public function render(): string
@@ -109,7 +110,7 @@ final readonly class TaskReviewPacket
             $this->section('Handoff', $this->handoff()),
         ], static fn (string $part): bool => $part !== ''));
         $retrieval = $this->retrieval();
-        $closing = TaskTurnInstructions::reviewer($this->opensPullRequest, $this->deliverables, $this->threadId);
+        $closing = TaskTurnInstructions::reviewer($this->opensPullRequest, $this->deliverables, $this->threadId, $this->mode);
 
         return $this->withinLimit(
             implode("\n\n", [...$before, $this->diffSection($before, [$retrieval, $closing]), $retrieval, $closing]),

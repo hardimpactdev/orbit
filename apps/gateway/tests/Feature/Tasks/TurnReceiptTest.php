@@ -5,11 +5,15 @@ declare(strict_types=1);
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\QuestionCause;
 use App\Domain\Tasks\TaskDeliverable;
+use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPromptGroup;
 use App\Domain\Tasks\TaskPromptRenderer;
 use App\Domain\Tasks\TaskPromptSubtask;
+use App\Domain\Tasks\TaskQuestions;
+use App\Domain\Tasks\TaskReviewPacketBuilder;
 use App\Domain\Tasks\TaskRubricItem;
 use App\Domain\Tasks\TaskRubricReminder;
+use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskTurnInstructions;
 use App\Domain\Tasks\TaskTurnMode;
@@ -26,6 +30,9 @@ use App\Infrastructure\Tasks\TaskWorkspaceExecutor;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
+use App\Models\Task;
+use App\Models\TaskComment;
+use App\Models\TaskQuestion;
 use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
@@ -439,6 +446,60 @@ it('requires a cause on every outcome of the review after a direction resolution
         ->and($receipt?->outcome)->toBe(TaskTurnOutcome::Approved)
         ->and($receipt?->cause)->toBe('brief_unclear');
 });
+
+it('accepts the prompted verdict after an operator resolution and stops requiring cause once answered', function (string $outcome, bool $continued): void {
+    $checkout = turn_receipt_checkout();
+    $instance = turn_receipt_instance($checkout);
+    $group = Task::query()->create([
+        'project_id' => $instance->project_id, 'title' => 'Direction', 'brief' => 'Follow the contract.',
+        'status' => TaskGroupStatus::Running,
+    ]);
+    $group->taskable()->associate($instance);
+    $group->save();
+    test_vm_workspace($group, $instance);
+    $task = Task::query()->create([
+        'parent_id' => $group->id, 'position' => 1, 'title' => 'Review', 'brief' => 'Check the fix.',
+        'status' => TaskStatus::Reviewing, 'review_attempt' => 1,
+    ]);
+    $resolution = TaskComment::query()->create([
+        'task_id' => $task->id, 'task_group_id' => $group->id, 'type' => 'resolution',
+        'body' => 'Follow the ADR.', 'author' => 'operator', 'review_attempt' => 1, 'posted_at' => now(),
+    ]);
+    $question = TaskQuestion::query()->create([
+        'task_id' => $group->id, 'subtask_id' => $task->id, 'attempt' => 1, 'asked_by' => 'reviewer',
+        'question' => 'Which contract?', 'status' => 'escalated', 'asked_at' => now(),
+        'resolution_comment_id' => $resolution->id,
+    ]);
+    $receipts = turn_receipts(new LocalShellSshExecutor);
+    $mode = new TaskTurnMode(causeRequired: TaskQuestions::awaitsCause($task));
+    $receipts->prepare($instance, TaskThreadRole::Reviewer, final: $task->opensPullRequest(), threadId: 123, mode: $mode);
+    $prompt = app(TaskReviewPacketBuilder::class)->build($task, $continued, 123);
+    $metadata = json_decode(File::get($checkout.'/.git/orbit/turn.json'), true);
+    expect($metadata['cause_required'] ?? false)->toBeTrue();
+
+    // Execute the verdict form shown in the packet, replacing only its placeholders.
+    preg_match('/--outcome='.$outcome.' --summary="[^"]+"(?: --pr-[a-z]+="[^"]+")* --cause=CAUSE/', $prompt, $matches);
+    expect($matches)->not->toBeEmpty();
+    $command = str_replace(['--cause=CAUSE'], ['--cause=contract_gap'], $matches[0]);
+    $process = Process::fromShellCommandline(escapeshellarg($checkout.'/.git/orbit/turn').' --thread=123 '.$command);
+    $process->run();
+    expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+        ->and($receipts->read($instance)?->cause)->toBe('contract_gap');
+
+    $answer = TaskComment::query()->create([
+        'task_id' => $task->id, 'task_group_id' => $group->id, 'type' => $outcome,
+        'body' => 'Checked.', 'author' => 'reviewer', 'cause' => 'contract_gap', 'posted_at' => now(),
+    ]);
+    expect(TaskQuestions::answerPending($task, $answer))->toBeTrue()
+        ->and($question->fresh()?->status->value)->toBe('answered');
+    $mode = new TaskTurnMode(causeRequired: TaskQuestions::awaitsCause($task));
+    $receipts->prepare($instance, TaskThreadRole::Reviewer, mode: $mode);
+    $prompt = app(TaskReviewPacketBuilder::class)->build($task, true, 123);
+    expect($prompt)->not->toContain('every normal review outcome also needs --cause', '--summary="What you checked" --cause=CAUSE');
+    $refused = turn_receipt_script($checkout, ['--outcome='.$outcome, '--summary=Checked.', '--cause=scope']);
+    expect($refused->getExitCode())->toBe(2)
+        ->and($refused->getErrorOutput())->toContain('--cause is only for');
+})->with(['approved', 'changes_requested'])->with([false, true]);
 
 it('refuses to write a receipt before Orbit starts a turn', function (): void {
     $checkout = turn_receipt_checkout();
