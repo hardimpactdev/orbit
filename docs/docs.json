@@ -1542,6 +1542,10 @@
     {
       "source": "/solutions/cutover-proxycli",
       "destination": "/reference/proxycli#check-the-collector"
+    },
+    {
+      "source": "/decisions/0208-deploy-the-gateway-with-laravel-migrations",
+      "destination": "/reference/gateway-recovery#laravel-owns-migrations"
     }
   ]
 }

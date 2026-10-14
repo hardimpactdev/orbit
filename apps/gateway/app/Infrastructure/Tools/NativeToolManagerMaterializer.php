@@ -13,6 +13,7 @@ use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerRegistry;
 use App\Domain\Tools\ToolManagerScopeLock;
 use App\Domain\Tools\ToolManagerScopeLockException;
+use App\Infrastructure\Nodes\EnrollmentProgram;
 use App\Models\Node;
 use App\Models\ToolManagerRecord;
 use Closure;
@@ -124,7 +125,7 @@ final readonly class NativeToolManagerMaterializer implements ToolManagerMateria
     {
         try {
             foreach ($managers as $manager) {
-                $this->materialize($node, $manager);
+                $this->materialize($node, $manager, $onFailure !== null);
             }
         } catch (NodeProvisioningException $exception) {
             if ($onFailure !== null) {
@@ -149,7 +150,7 @@ final readonly class NativeToolManagerMaterializer implements ToolManagerMateria
         return $manager;
     }
 
-    private function materialize(Node $node, ToolManager $manager): void
+    private function materialize(Node $node, ToolManager $manager, bool $onEnrollment): void
     {
         $name = $manager->name();
         $record = ToolManagerRecord::query()->firstOrCreate([
@@ -163,7 +164,15 @@ final readonly class NativeToolManagerMaterializer implements ToolManagerMateria
         ])->save();
 
         try {
-            $manager->materialize($node);
+            $program = match ($name) {
+                ToolManagerName::Vp => EnrollmentProgram::VpManager,
+                ToolManagerName::Composer => EnrollmentProgram::ComposerManager,
+                default => null,
+            };
+            // This materializer's failure-handler entry point is role enrollment only.
+            if (! ($onEnrollment && $program !== null && EnrollmentProgram::skipForTaskVm($node, $program))) {
+                $manager->materialize($node);
+            }
             $version = $manager->managerVersion($node);
         } catch (ToolManagerException $exception) {
             $errorCode = $this->materializationErrorCode($exception);

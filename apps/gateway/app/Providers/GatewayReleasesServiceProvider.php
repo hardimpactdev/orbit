@@ -40,7 +40,6 @@ use App\Infrastructure\GatewayReleases\GatewayReleaseAdopter;
 use App\Infrastructure\GatewayReleases\GatewayReleaseAlerts;
 use App\Infrastructure\GatewayReleases\GatewayReleaseBuilder;
 use App\Infrastructure\GatewayReleases\GatewayReleaseExchange;
-use App\Infrastructure\GatewayReleases\GatewayReleaseGuard;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\GatewayReleases\GatewayReleasePromoter;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRecorder;
@@ -221,7 +220,6 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 builder: $app->make(GatewayReleaseBuilder::class),
                 keptReleases: Config::integer('orbit.gateway_releases.keep'),
                 retry: $app->make(GatewayReleaseRetry::class),
-                guard: $app->make(GatewayReleaseGuard::class),
                 fleet: $app->make(FleetConvergeUnits::class),
                 ticks: $app->make(GatewayReleaseTickConfirmation::class),
             ),
@@ -249,7 +247,6 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 runtime: new LocalGatewayReleaseRuntime($app->make(GatewayRuntimeHandoff::class)),
                 verifier: $app->make(GatewayReleaseVerifier::class),
                 recorder: $app->make(GatewayReleaseRecorder::class),
-                guard: $app->make(GatewayReleaseGuard::class),
                 deploy: $app->make(DeployGatewayReleaseAction::class),
             ),
         );

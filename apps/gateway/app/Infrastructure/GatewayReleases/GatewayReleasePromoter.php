@@ -55,8 +55,6 @@ final readonly class GatewayReleasePromoter
         private GatewayReleaseSmoke $smoke,
         private GatewayReleaseRecorder $recorder,
         private GatewayReleaseBuilder $builder,
-        /** Checks the previous release against the applied schema before a switch-back. */
-        private GatewayReleaseGuard $guard,
         private int $keptReleases = self::KeptReleases,
         private GatewayReleaseRetry $retry = new GatewayReleaseRetry,
         private ?FleetConvergeUnits $fleet = null,
@@ -175,17 +173,15 @@ final readonly class GatewayReleasePromoter
         $cleanupPaused = ($scheduled['cleanup_paused'] ?? false) === true;
         $phases[$exception->step] = [...$exception->phase, 'outcome' => 'failed', 'error_code' => $exception->errorCode];
         $switched = $previous !== $id && $this->layout->currentReleaseId() === $id;
-        $unknown = $switched && $previous !== null && ! $migrationsRan ? $this->schemaRefusal($previous) : null;
         $this->recorder->progress($record, $phases);
 
-        if ($migrationsRan || $unknown instanceof GatewayReleaseException) {
-            // Never switch back onto code that has not run on the applied schema.
+        if ($migrationsRan) {
+            // The migrator may have changed the schema; recovery is an operator decision.
             $outcome = 'paused';
             $phases['pause'] = array_filter([
                 'outcome' => 'paused',
                 'snapshot' => $snapshotPath,
                 'current' => $this->layout->currentReleaseId(),
-                'reason' => $unknown?->getMessage(),
             ], static fn (mixed $value): bool => $value !== null);
         } elseif ($switched && $previous !== null) {
             try {
@@ -231,19 +227,6 @@ final readonly class GatewayReleasePromoter
         ), $record);
 
         throw $exception;
-    }
-
-    /** Why the previous release must not serve the applied schema, or null when it may. */
-    private function schemaRefusal(string $previous): ?GatewayReleaseException
-    {
-        try {
-            $this->guard->assertSchema($previous, false);
-        } catch (Throwable $exception) {
-            // Fail closed: a schema that cannot be read may hold migrations the previous code does not know.
-            return GatewayReleaseException::fromThrowable($exception, 'switch_back');
-        }
-
-        return null;
     }
 
     /**

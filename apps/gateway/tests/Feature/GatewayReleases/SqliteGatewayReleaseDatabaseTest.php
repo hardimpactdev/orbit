@@ -21,23 +21,6 @@ afterEach(function (): void {
 });
 
 describe(SqliteGatewayReleaseDatabase::class, function (): void {
-    it('lists the migrations a release ships that the database has not run', function (): void {
-        $recorded = (string) DB::table('migrations')->orderBy('id')->value('migration');
-        $directory = $this->scratch.'/release/apps/gateway/database/migrations';
-        file_put_contents($directory.'/'.$recorded.'.php', '<?php');
-        file_put_contents($directory.'/2099_01_02_000000_add_later.php', '<?php');
-        file_put_contents($directory.'/2099_01_01_000000_add_new.php', '<?php');
-        file_put_contents($directory.'/README.md', 'not a migration');
-
-        $database = new SqliteGatewayReleaseDatabase(new RecordingProcessRunner, $this->scratch.'/home');
-
-        expect($database->pending($this->scratch.'/release'))->toBe(['2099_01_01_000000_add_new', '2099_01_02_000000_add_later'])
-            ->and($database->migrations($this->scratch.'/release'))->toBe([
-                ...array_filter([$recorded.'.php'], static fn (string $file): bool => $file < '2099'),
-                '2099_01_01_000000_add_new.php',
-                '2099_01_02_000000_add_later.php',
-            ]);
-    });
 
     it('writes a private consistent snapshot of the database and keeps the newest five', function (): void {
         $live = $this->scratch.'/live.sqlite';

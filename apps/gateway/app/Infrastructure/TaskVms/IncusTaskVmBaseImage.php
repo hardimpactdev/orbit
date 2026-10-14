@@ -6,18 +6,17 @@ namespace App\Infrastructure\TaskVms;
 
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
+use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Jobs\TaskVms\RefreshTaskVmWorkspaceTemplates;
 use App\Models\Node;
+use App\Models\TaskVmImageBuild;
 use Closure;
-use Illuminate\Cache\Lock;
-use Illuminate\Contracts\Cache\Lock as CacheLock;
-use Illuminate\Support\Facades\Cache;
 
 /**
- * The Incus steps that the base image build and the base image sync share on one host: the host's image lock, the
- * smoke boot, the alias move, and the prune. Builder and smoke VMs are named `tvm-image-<time>…`
+ * The Incus steps that the base image build and the base image sync share on one host: the smoke boot,
+ * the alias move, and the prune. Builder and smoke VMs are named `tvm-image-<time>…`
  * ({@see TaskVmImageRecipe::WorkPrefix}), so a later build or sync of the host deletes what an interrupted one left.
  * The workspace template build launches and deletes its builder VM with it too.
  */
@@ -27,9 +26,6 @@ final readonly class IncusTaskVmBaseImage
 
     private const int BootSeconds = 600;
 
-    /** A lock that a killed process cannot release lasts as long as the refresh job may run. */
-    private const int LockSeconds = 1500;
-
     public function __construct(
         private IncusHost $incus,
         private TaskVmCloudInit $cloudInit,
@@ -37,41 +33,11 @@ final readonly class IncusTaskVmBaseImage
         private TaskVmBaseImageCache $claimImages,
     ) {}
 
-    /**
-     * Takes the host's image lock, which one build or sync of the host holds at a time. `$owner` names the lock,
-     * so a caller that is killed can {@see abandon()} its own work.
-     *
-     * @throws TaskVmException `task_vm.image_build_running` while another build or sync of the host runs
-     */
-    public function lock(Node $node, ?string $owner): CacheLock
-    {
-        $lock = Cache::lock(self::lockName($node), self::LockSeconds, $owner);
-
-        return $lock->get() ? $lock : throw new TaskVmException('task_vm.image_build_running', "A base image build or sync of Node [{$node->name}] is already running.");
-    }
-
-    /**
-     * Cleans up after a build or sync whose process stopped before its own cleanup ran: deletes its builder and
-     * smoke VMs and releases the lock. Does nothing unless `$owner` still holds the host's lock.
-     */
-    public function abandon(TaskVmHost $host, Node $node, string $owner): void
-    {
-        $lock = Cache::restoreLock(self::lockName($node), $owner);
-        if (! $lock instanceof Lock || ! $lock->isOwnedByCurrentProcess()) {
-            return;
-        }
-        try {
-            $this->sweep($host, $node);
-        } finally {
-            $lock->release();
-        }
-    }
-
     /** Deletes builder and smoke VMs that an interrupted build or sync left. */
-    public function sweep(TaskVmHost $host, Node $node): void
+    public function sweep(TaskVmHost $host, Node $node, bool $discardFailed = false): void
     {
         foreach (array_keys($this->instances($host, $node)) as $name) {
-            if (str_starts_with($name, TaskVmImageRecipe::WorkPrefix)) {
+            if (str_starts_with($name, TaskVmImageRecipe::WorkPrefix) && TaskVmHostAudit::claimBuildCleanup($node, $name, $discardFailed)) {
                 $this->delete($host, $node, $name);
             }
         }
@@ -111,6 +77,16 @@ final readonly class IncusTaskVmBaseImage
         $this->launch($host, $node, $name, $image, $this->cloudInit->render($this->keys->publicKey()));
         $this->awaitCloudInit($host, $node, $name);
         $shell = $this->shell($host, $node, $name);
+        $this->checkSmoke($shell);
+        if ($check instanceof Closure) {
+            $check($shell);
+        }
+        $this->delete($host, $node, $name);
+    }
+
+    public function checkSmoke(IncusGuestShell $shell): void
+    {
+        $name = $shell->vm;
         $result = $this->checked($name, 'exec ssh-keygen', $shell->asRoot(['ssh-keygen', '-l', '-f', '/etc/ssh/ssh_host_ed25519_key.pub']));
         if (preg_match(self::FingerprintPattern, $result->stdout) !== 1) {
             throw IncusHost::invalid("the base image smoke VM [{$name}]", 'it has no ed25519 SSH host key');
@@ -123,10 +99,6 @@ final readonly class IncusTaskVmBaseImage
         if (count(array_filter(explode("\n", trim($boots->stdout)), static fn (string $line): bool => trim($line) !== '')) !== 1) {
             throw IncusHost::invalid("the base image smoke VM [{$name}]", 'it rebooted during its first boot');
         }
-        if ($check instanceof Closure) {
-            $check($shell);
-        }
-        $this->delete($host, $node, $name);
     }
 
     /**
@@ -150,17 +122,27 @@ final readonly class IncusTaskVmBaseImage
     }
 
     /**
-     * Deletes every dated base image other than `$keep` that no instance in the project uses.
+     * Deletes dated base images other than `$keep` that neither an instance nor a running build owns.
      *
      * @return list<string> the deleted fingerprints
      */
     public function prune(TaskVmHost $host, Node $node, string $keep): array
     {
         $used = array_values($this->instances($host, $node));
+        $images = $this->incus->images($host, $node);
+        // Read after the remote inventory. Every published image already has a running row, even
+        // if publish's fingerprint write was interrupted or its builder has since been deleted.
+        $running = TaskVmImageBuild::query()->where('host_node_id', $node->id)
+            ->where(fn ($query) => $query->where('state', TaskVmImageBuildState::Running)
+                ->orWhere(fn ($failed) => $failed->where('state', TaskVmImageBuildState::Failed)
+                    ->whereNull('cleanup_started_at')->where('updated_at', '>', now()->subHours(TaskVmHostAudit::FailedBuildHours))))->get();
+        $protected = $running->pluck('image_fingerprint')->all();
+        $pendingAliases = $running->map(static fn (TaskVmImageBuild $build): string => TaskVmHost::BaseImage.'-'.$build->created_at?->format('YmdHis').'-'.$build->id)->all();
         $deleted = [];
-        foreach ($this->incus->images($host, $node) as $fingerprint => $aliases) {
+        foreach ($images as $fingerprint => $aliases) {
             $dated = array_filter($aliases, static fn (string $alias): bool => str_starts_with($alias, TaskVmHost::BaseImage.'-'));
-            if ($fingerprint === $keep || $dated === [] || in_array($fingerprint, $used, true)) {
+            if ($fingerprint === $keep || $dated === [] || in_array($fingerprint, $used, true)
+                || in_array($fingerprint, $protected, true) || array_intersect($aliases, $pendingAliases) !== []) {
                 continue;
             }
             $result = $this->incus->run($host, $node, ['image', 'delete', '--', $fingerprint]);
@@ -241,10 +223,5 @@ final readonly class IncusTaskVmBaseImage
     public function checked(string $name, string $operation, CommandResult $result): CommandResult
     {
         return $result->succeeded() ? $result : throw IncusHost::failed("the base image VM [{$name}]", $operation, $result);
-    }
-
-    private static function lockName(Node $node): string
-    {
-        return 'task-vms:image-build:'.$node->id;
     }
 }

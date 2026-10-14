@@ -6,9 +6,11 @@ namespace App\Infrastructure\TaskVms;
 
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmHost;
+use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\Node;
 use App\Models\TaskVm;
+use App\Models\TaskVmImageBuild;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Carbon;
 
@@ -17,7 +19,7 @@ use Illuminate\Support\Carbon;
  * acts on the result, and Doctor reports it.
  *
  * - An orphaned VM is a `tvm-<number>` instance with no live row of that name on the host. Other names,
- *   such as the base image builder `tvm-image-<time>`, are never Orbit's task VMs and stay untouched.
+ *   Build VMs `tvm-image-<build id>` without a running row on this host are orphaned too.
  * - A missing VM is a `warm`, `ready`, or `parked` row whose instance is gone. Other states have jobs that check the VM.
  *
  * It also finds strays, which the sweep and Doctor only report ({@see self::strays()}, {@see self::strayNodes()}).
@@ -26,14 +28,16 @@ final readonly class TaskVmHostAudit
 {
     private const string TaskVmName = '/\Atvm-[0-9]+\z/D';
 
-    /** A builder or smoke VM of a base image or workspace template build, by the `YmdHis` time in its name. */
-    private const string BuilderName = '/\A(?:'.TaskVmImageRecipe::WorkPrefix.'|'.IncusTaskVmWorkspaceTemplateBuilder::BuilderPrefix.')([0-9]{14})(?:-[a-z0-9-]+)?\z/D';
+    /** Sync smoke and workspace template builders still use the `YmdHis` time in their names. */
+    private const string BuilderName = '/\A(?:'.TaskVmImageRecipe::WorkPrefix.'([0-9]{14})-sync-smoke|'.IncusTaskVmWorkspaceTemplateBuilder::BuilderPrefix.'([0-9]{14})(?:-[a-z0-9-]+)?)\z/D';
 
     /** A workspace template `tvm-template-<project id>-<time>` or a claim clone `tvm-<number>-workspace`. */
     private const string VolumeName = '/\A(?:'.TaskVmWorkspaceTemplate::VolumePrefix.'[0-9]+-[0-9]{14}|tvm-[0-9]+-'.TaskVmWorkspaceTemplates::Device.')\z/D';
 
     /** A build holds its lock for less than 30 minutes; a builder VM older than this is a stray. */
     public const int BuilderMinutes = 60;
+
+    public const int FailedBuildHours = 24;
 
     /** A `ready` or `parked` row without an open group for longer than this is a stray. */
     public const int RecordMinutes = 60;
@@ -53,7 +57,7 @@ final readonly class TaskVmHostAudit
         return [
             'orphaned' => array_values(array_filter(
                 $names,
-                static fn (string $name): bool => preg_match(self::TaskVmName, $name) === 1 && ! in_array($name, $recorded, true),
+                static fn (string $name): bool => (preg_match(self::TaskVmName, $name) === 1 && ! in_array($name, $recorded, true)) || (self::isChainBuilder($name) && ! self::runningBuildOwns($node, $name)),
             )),
             'missing' => array_values($live->filter(
                 static fn (TaskVm $vm): bool => in_array($vm->state, [TaskVmState::Warm, TaskVmState::Ready, TaskVmState::Parked], true) && ! in_array($vm->name, $names, true),
@@ -64,7 +68,7 @@ final readonly class TaskVmHostAudit
     /**
      * What Orbit does not own on the host, in every Incus project and storage pool, and the host's `ready` or `parked`
      * rows without an open group. Orbit owns, in the host's project, the task VMs `tvm-<number>` (the audit checks them
-     * against their rows), the builder and smoke VMs of a build for {@see self::BuilderMinutes} after their time, and,
+     * against their rows), running and retained failed build VMs, sync smoke and template builders for {@see self::BuilderMinutes} after their time, and,
      * in the host's pool, the workspace templates and claim clones. The host's `operator_owned` entries are the
      * operator's. Everything else is a stray. Nothing here deletes or changes anything.
      *
@@ -76,7 +80,7 @@ final readonly class TaskVmHostAudit
         $inventory = $this->incus->inventory($node);
         $instances = [];
         foreach ($inventory['instances'] as ['project' => $project, 'name' => $name]) {
-            if (! $host->operatorOwns($project, $name) && ! ($project === $host->project && $this->ownsInstance($name))) {
+            if (! $host->operatorOwns($project, $name) && ! ($project === $host->project && $this->ownsInstance($node, $name))) {
                 $instances[] = "{$project}/{$name}";
             }
         }
@@ -138,7 +142,7 @@ final readonly class TaskVmHostAudit
     /** Deletes an orphaned VM from the host's project. An absent VM counts as deleted. */
     public function deleteOrphan(TaskVmHost $host, Node $node, string $name): void
     {
-        if (preg_match(self::TaskVmName, $name) !== 1) {
+        if (preg_match(self::TaskVmName, $name) !== 1 && (! self::isChainBuilder($name) || ! self::claimBuildCleanup($node, $name))) {
             return;
         }
         $result = $this->incus->run($host, $node, ['delete', '--force', '--', $name]);
@@ -147,16 +151,57 @@ final readonly class TaskVmHostAudit
         }
     }
 
-    /** A task VM, or a builder or smoke VM whose build started {@see self::BuilderMinutes} ago or later. */
-    private function ownsInstance(string $name): bool
+    /** Recorded image builders have running ownership or failed-build retention, rather than timestamp names. */
+    private static function isChainBuilder(string $name): bool
+    {
+        return preg_match('/\Atvm-image-([0-9]+)(?:-smoke)?\z/D', $name) === 1;
+    }
+
+    public static function runningBuildOwns(Node $node, string $name): bool
+    {
+        if (preg_match('/\Atvm-image-([0-9]+)(?:-smoke)?\z/D', $name, $match) !== 1) {
+            return false;
+        }
+
+        return TaskVmImageBuild::query()->whereKey((int) $match[1])->where('host_node_id', $node->id)
+            ->where(fn ($query) => $query->where('state', TaskVmImageBuildState::Running)
+                ->orWhere(fn ($failed) => $failed->where('state', TaskVmImageBuildState::Failed)
+                    ->whereNull('cleanup_started_at')->where('updated_at', '>', now()->subHours(self::FailedBuildHours))))->exists();
+    }
+
+    /**
+     * Fence resume before deleting a recorded builder or smoke VM. The conditional write either
+     * wins against resume or skips a running build; an absent host-local row needs no fence.
+     * Non-chain names retain the legacy sync/template cleanup rules.
+     */
+    public static function claimBuildCleanup(Node $node, string $name, bool $discardFailed = false): bool
+    {
+        if (preg_match('/\Atvm-image-([0-9]+)(?:-smoke)?\z/D', $name, $match) !== 1) {
+            return true;
+        }
+        $build = TaskVmImageBuild::query()->whereKey((int) $match[1])->where('host_node_id', $node->id);
+        $candidate = (clone $build)->where('state', '!=', TaskVmImageBuildState::Running);
+        if (! $discardFailed) {
+            $candidate->where(fn ($query) => $query->where('state', '!=', TaskVmImageBuildState::Failed)
+                ->orWhereNotNull('cleanup_started_at')->orWhere('updated_at', '<=', now()->subHours(self::FailedBuildHours)));
+        }
+        $claimed = $candidate->update(['cleanup_started_at' => now()]);
+
+        return $claimed === 1 || ! $build->exists();
+    }
+
+    private function ownsInstance(Node $node, string $name): bool
     {
         if (preg_match(self::TaskVmName, $name) === 1) {
             return true;
         }
+        if (self::isChainBuilder($name)) {
+            return self::runningBuildOwns($node, $name);
+        }
         if (preg_match(self::BuilderName, $name, $match) !== 1) {
             return false;
         }
-        $started = Carbon::createFromFormat('YmdHis', $match[1]);
+        $started = Carbon::createFromFormat('YmdHis', $match[1] !== '' ? $match[1] : $match[2]);
 
         return $started instanceof Carbon && $started->greaterThanOrEqualTo(now()->subMinutes(self::BuilderMinutes));
     }

@@ -125,17 +125,17 @@ describe('gateway:release:auto', function (): void {
             ->and($this->pipeline->alerts)->toBe([]);
     });
 
-    it('retries a release that switched back within the retry budget, then alerts once and never ships that commit again', function (): void {
+    it('retries a snapshot failure within the retry budget, then alerts once and never ships that commit again', function (): void {
         $deployed = $this->pipeline->adopt();
         $this->pipeline->automation()->enable();
         $sha = $this->pipeline->green = $this->pipeline->fixture->commit('Broken');
-        $this->pipeline->failVerify = $sha;
+        $this->pipeline->failSnapshot = true;
 
         $first = $this->pipeline->automatic()->execute();
 
         expect($first['result'])->toBe('failed')
             ->and(GatewayRelease::query()->sole())
-            ->outcome->toBe('switched_back')
+            ->outcome->toBe('failed')
             ->retryable->toBeTrue()
             ->and($this->pipeline->fixture->layout->currentReleaseId())->toBe(substr($deployed, 0, 12))
             ->and($this->pipeline->alerts)->toBe([])
@@ -172,7 +172,6 @@ describe('gateway:release:auto', function (): void {
         $this->pipeline->automation()->enable();
         $sha = $this->pipeline->green = $this->pipeline->fixture->commit('Migrates then fails');
         $this->pipeline->failVerify = $sha;
-        $this->pipeline->pending = ['2026_10_14_000000_example'];
 
         $tick = $this->pipeline->automatic()->execute();
 

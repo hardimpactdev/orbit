@@ -93,7 +93,6 @@ final readonly class DeployGatewayReleaseAction
             $this->recorder->progress($record, $phases, $prepared->sha);
             $step = 'guard';
             $this->guard->assertForward($prepared->sha, $force);
-            $this->guard->assertSchema($prepared->id, $force);
             $phases['guard'] = ['outcome' => 'passed', 'force' => $force];
             // Before any migration: a configuration that cannot be cached must stop the release while nothing changed.
             $step = 'configuration';
@@ -101,24 +100,16 @@ final readonly class DeployGatewayReleaseAction
             $phases['configuration'] = ['outcome' => 'cached'];
             $this->recorder->progress($record, $phases);
             $step = 'snapshot';
-            $pending = $this->database->pending($prepared->path);
-
-            if ($pending === []) {
-                $phases['snapshot'] = ['outcome' => 'skipped'];
-                $phases['migrate'] = ['outcome' => 'skipped'];
-                $this->recorder->progress($record, $phases);
-            } else {
-                $taken = $this->database->snapshot($prepared->id);
-                // A retry of a paused commit keeps naming the copy from before its first migration attempt.
-                $snapshot = $this->recorder->pausedSnapshot($prepared->sha) ?? $taken;
-                $phases['snapshot'] = ['outcome' => 'snapshotted', 'path' => $taken, 'clean' => $snapshot, 'pending' => $pending];
-                $this->recorder->progress($record, $phases);
-                $step = 'migrate';
-                $this->database->migrate($prepared->path);
-                $migrationsRan = true;
-                $phases['migrate'] = ['outcome' => 'migrated', 'pending' => $pending];
-                $this->recorder->progress($record, $phases);
-            }
+            $taken = $this->database->snapshot($prepared->id);
+            // A retry of a paused commit keeps naming the copy from before its first migration attempt.
+            $snapshot = $this->recorder->pausedSnapshot($prepared->sha) ?? $taken;
+            $phases['snapshot'] = ['outcome' => 'snapshotted', 'path' => $taken, 'clean' => $snapshot];
+            $this->recorder->progress($record, $phases);
+            $step = 'migrate';
+            $this->database->migrate($prepared->path);
+            $migrationsRan = true;
+            $phases['migrate'] = ['outcome' => 'migrated'];
+            $this->recorder->progress($record, $phases);
         } catch (Throwable $thrown) {
             $exception = GatewayReleaseException::fromThrowable($thrown, $step, $prepared?->sha);
             $this->recordFailure($exception, $step, $phases, $snapshot, $startedAt, $trigger, $record);

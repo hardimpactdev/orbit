@@ -12,6 +12,8 @@ covers:
 
 This page tells authors and reviewers of commands in `apps/cli` how Orbit collects input and presents results. It defines the shared design standard. A command's adoption record states which requirements the command meets and how they were verified. This standard alone does not make a command compliant.
 
+`gateway:release:rollback` uses `--yes` to confirm a code switch that leaves the database in place. Its interactive confirmation defaults to No; see [the command contract](/cli/gateway#orbit-gatewayreleaserollback).
+
 ## Scope and authority
 
 The current command contract supplies the command name, permitted selectors, required inputs, defaults, response schema, error codes, exit statuses, and supported modes. This standard supplies the interaction and presentation rules, including explicit destructive consent. A documented exception names its governing contract and verification. An implementation gap is not an exception.

@@ -48,7 +48,7 @@ final class GatewayReleasesController extends Controller
 
     public function rollback(RollbackGatewayReleaseRequest $request, string $release, StartGatewayReleaseRollbackAction $action): JsonResponse
     {
-        return $this->respond($request, GatewayReleaseData::fromModel($action->execute($release, $request->force()))->toArray(), 202);
+        return $this->respond($request, GatewayReleaseData::fromModel($action->execute($release))->toArray(), 202);
     }
 
     public function smoke(SmokeGatewayReleaseRequest $request, SmokeGatewayReleaseAction $action): JsonResponse

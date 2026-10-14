@@ -8,8 +8,7 @@ use App\Infrastructure\GatewayReleases\GatewayReleaseRequests;
 use App\Models\GatewayRelease;
 
 /**
- * Queues a rollback to a retained release and starts its release unit. The target and the
- * migration guard are checked before anything is queued, and again under the release lock.
+ * Queues a rollback to a retained release and starts its release unit. The target is checked before anything is queued, and again under the release lock.
  */
 final readonly class StartGatewayReleaseRollbackAction
 {
@@ -18,10 +17,10 @@ final readonly class StartGatewayReleaseRollbackAction
         private GatewayReleaseRequests $requests,
     ) {}
 
-    public function execute(string $release, bool $force): GatewayRelease
+    public function execute(string $release): GatewayRelease
     {
-        $sha = $this->rollback->check($release, $force);
+        $sha = $this->rollback->check($release);
 
-        return $this->requests->start('rollback', $release, $sha, $force);
+        return $this->requests->start('rollback', $release, $sha);
     }
 }

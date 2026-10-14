@@ -179,16 +179,17 @@ describe('post-release tick confirmation', function (): void {
         expect(tick_phase($sha))->toMatchArray(['since' => '2026-10-08T06:05:10Z', 'deadline' => '2026-10-08T06:09:50Z']);
     });
 
-    it('keeps the live release pending while another release is tried and switches back', function (): void {
+    it('keeps the live release pending while a code rollback is tried and switches back', function (): void {
         $this->pipeline->adopt();
         $live = $this->pipeline->fixture->commit('Live');
         $this->pipeline->deployer()->execute($live);
         $broken = $this->pipeline->fixture->commit('Broken');
+        $this->pipeline->fixture->builder($this->pipeline)->prepare($broken);
         $this->pipeline->failVerify = $broken;
         // A runner tick lands while the broken release is current, before it switches back.
         $this->pipeline->onVerify = fn () => $this->pipeline->automatic()->execute();
 
-        expect(fn () => $this->pipeline->deployer()->execute($broken))->toThrow(GatewayReleaseException::class);
+        expect(fn () => $this->pipeline->rollback()->execute(substr($broken, 0, 12)))->toThrow(GatewayReleaseException::class);
 
         expect(GatewayRelease::query()->where('sha', $broken)->sole()->outcome)->toBe('switched_back')
             ->and($this->pipeline->fixture->layout->currentReleaseId())->toBe(substr($live, 0, 12))

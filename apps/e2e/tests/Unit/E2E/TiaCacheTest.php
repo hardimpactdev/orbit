@@ -5,7 +5,7 @@ declare(strict_types=1);
 use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
 
-it('shares real Pest results across worktrees and isolates cache maintenance', function (): void {
+it('shares real Pest results across worktrees and isolates cache maintenance', function (bool $handoff): void {
     $repository = dirname(__DIR__, 5);
     // Three vendor trees exceed /tmp's inode budget during parallel gates. Keep this fixture on the worktree filesystem.
     // Do not use an ignored directory: Finder's ancestor ignore rules affect nested worktree fingerprints.
@@ -14,7 +14,8 @@ it('shares real Pest results across worktrees and isolates cache maintenance', f
     $files->makeDirectory($temporary, 0700, true);
     // Cache maintenance keeps TMPDIR, so nested Pest writes here instead of shared /tmp.
     // Cache maintenance runs this suite with its own TIA directory; the fixture's bootstrap and seeding cases need defaults.
-    $environment = ['TMPDIR' => $temporary, 'PYTHONDONTWRITEBYTECODE' => '1', 'ORBIT_TIA_DIRECTORY' => false, 'ORBIT_MAIN_CACHE_STORE' => false];
+    // The outer task's Git base does not exist in the disposable repositories created by this fixture.
+    $environment = ['TMPDIR' => $temporary, 'PYTHONDONTWRITEBYTECODE' => '1', 'ORBIT_TIA_DIRECTORY' => false, 'ORBIT_MAIN_CACHE_STORE' => false, 'ORBIT_TASK_CHECK_BASE' => false];
     // The fixture starts its own Pest runner, outside this suite's worker state.
     foreach (array_keys($_SERVER + $_ENV) as $name) {
         if (is_string($name) && (str_starts_with($name, 'PEST_') || in_array($name, ['PARATEST', 'TEST_TOKEN', 'UNIQUE_TEST_TOKEN'], true))) {
@@ -37,10 +38,15 @@ it('shares real Pest results across worktrees and isolates cache maintenance', f
         $environment,
     );
     $process->setTimeout(360);
+    $originalTaskBase = getenv('ORBIT_TASK_CHECK_BASE');
     try {
+        if ($handoff) {
+            putenv('ORBIT_TASK_CHECK_BASE='.str_repeat('f', 40));
+        }
         $process->run();
         expect($process->isSuccessful())->toBeTrue($process->getOutput().$process->getErrorOutput());
     } finally {
+        putenv($originalTaskBase === false ? 'ORBIT_TASK_CHECK_BASE' : 'ORBIT_TASK_CHECK_BASE='.$originalTaskBase);
         $files->deleteDirectory($temporary);
     }
-});
+})->with(['default runner' => [false], 'task handoff base' => [true]]);

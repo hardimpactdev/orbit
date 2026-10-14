@@ -78,6 +78,7 @@ describe('gateway:release:adopt', function (): void {
             // Phase 1 changes the layout with identical code and checks that it serves; phase 2 is a deploy.
             ->and($this->steps->steps)->toBe([
                 'handoff:'.$this->id, 'serving', 'schedule:'.$this->id,
+                'snapshot:'.$this->id, 'migrate:'.$this->id,
                 'handoff:'.$this->id, 'verify:'.$this->sha, 'schedule:'.$this->id, 'web:publish:'.$this->id, 'smoke:'.$this->id,
             ])
             ->and(GatewayRelease::query()->pluck('trigger')->all())->toBe(['adopt', 'adopt'])
@@ -100,7 +101,10 @@ describe('gateway:release:adopt', function (): void {
             ->and($fleet->started)->toBe(0);
 
         $this->steps->failVerify = false;
-        adoption($this->fixture, $this->steps, fleet: $fleet)->execute($target, $source);
+        $fix = $this->fixture->commit('Forward fix');
+        $this->fixture->git($source, 'fetch', '--quiet', $this->fixture->origin);
+        $this->fixture->git($source, 'checkout', '--quiet', '--detach', $fix);
+        adoption($this->fixture, $this->steps, fleet: $fleet)->execute($fix, $source);
 
         expect($fleet->started)->toBe(1);
     });
@@ -120,7 +124,6 @@ describe('gateway:release:adopt', function (): void {
         $targetId = substr($target, 0, 12);
         $source = $this->fixture->base.'/adopt-source';
         $this->fixture->git($this->fixture->base, 'clone', '--quiet', $this->fixture->origin, $source);
-        $this->steps->pending = ['2026_12_31_000000_add_marks'];
 
         $result = adoption($this->fixture, $this->steps)->execute(substr($target, 0, 10), $source);
         $kept = $this->fixture->layout->basePath().'/orbit.pre-adopt-20261007T120000Z';
@@ -178,7 +181,6 @@ describe('gateway:release:adopt', function (): void {
         $target = $this->fixture->commit('Adds the release records');
         $source = $this->fixture->base.'/adopt-source';
         $this->fixture->git($this->fixture->base, 'clone', '--quiet', $this->fixture->origin, $source);
-        $this->steps->pending = ['2026_10_13_000000_create_gateway_releases_table'];
         Schema::rename('gateway_releases', 'gateway_releases_later');
         $this->steps->onMigrate = static fn () => Schema::rename('gateway_releases_later', 'gateway_releases');
 
@@ -193,7 +195,6 @@ describe('gateway:release:adopt', function (): void {
         $target = $this->fixture->commit('Broken migration');
         $source = $this->fixture->base.'/adopt-source';
         $this->fixture->git($this->fixture->base, 'clone', '--quiet', $this->fixture->origin, $source);
-        $this->steps->pending = ['2026_12_31_000000_add_marks'];
         $this->steps->failMigrate = true;
 
         $exception = release_failure(fn () => adoption($this->fixture, $this->steps)->execute($target, $source));
@@ -259,7 +260,6 @@ describe('gateway:release:adopt', function (): void {
         $target = $this->fixture->commit('Adds the release records');
         $source = $this->fixture->base.'/adopt-source';
         $this->fixture->git($this->fixture->base, 'clone', '--quiet', $this->fixture->origin, $source);
-        $this->steps->pending = ['2026_10_13_000000_create_gateway_releases_table'];
         $this->steps->onMigrate = static fn () => Schema::rename('gateway_releases_later', 'gateway_releases');
 
         $result = adoption($this->fixture, $this->steps)->execute($target, $source);
@@ -291,7 +291,6 @@ describe('gateway:release:adopt', function (): void {
         $target = $this->fixture->commit('Migrates, then fails verify');
         $source = $this->fixture->base.'/adopt-source';
         $this->fixture->git($this->fixture->base, 'clone', '--quiet', $this->fixture->origin, $source);
-        $this->steps->pending = ['2026_12_31_000000_add_marks'];
         $this->steps->failVerify = true;
         $marker = $this->fixture->base.'/home/gateway-release.paused';
 
@@ -345,16 +344,6 @@ describe('gateway:release:adopt', function (): void {
             ->and(is_link($this->current))->toBeFalse();
     });
 
-    it('refuses a database that applied a migration the checkout does not ship, before the swap', function (): void {
-        $this->steps->applied = ['2026_09_09_000000_hotfix'];
-
-        $exception = release_failure(fn () => adoption($this->fixture, $this->steps)->execute());
-
-        expect($exception->errorCode)->toBe('gateway.release_migration_crossed')
-            ->and(is_link($this->current))->toBeFalse()
-            ->and(is_link($this->current.'/apps/gateway/.env'))->toBeFalse();
-    });
-
     it('refuses a commit that is not a hex SHA before it changes anything', function (): void {
         $exception = release_failure(fn () => adoption($this->fixture, $this->steps)->execute('main'));
 
@@ -386,13 +375,13 @@ function adoption(
     $smoke ??= new AdoptionSmoke($steps);
     $builder = $fixture->builder($web);
     $recorder = new GatewayReleaseRecorder($fixture->base.'/home');
-    $guard = new GatewayReleaseGuard($fixture->layout, $database, $fixture);
+    $guard = new GatewayReleaseGuard($fixture->layout, $fixture);
     $lock = new GatewayReleaseLock($fixture->base.'/home/gateway-release.lock');
     $deploy = new DeployGatewayReleaseAction(
         $lock,
         $builder,
         $database,
-        new GatewayReleasePromoter($fixture->layout, new GatewayReleaseSwitcher($fixture->layout, $fixture), $runtime, $verifier, $web, $smoke, $recorder, $builder, guard: $guard, fleet: $fleet),
+        new GatewayReleasePromoter($fixture->layout, new GatewayReleaseSwitcher($fixture->layout, $fixture), $runtime, $verifier, $web, $smoke, $recorder, $builder, fleet: $fleet),
         $recorder,
         $guard,
         new GatewayReleaseRetry,
@@ -409,7 +398,6 @@ function adoption(
             runtime: $runtime,
             verifier: $verifier,
             recorder: $recorder,
-            guard: $guard,
             deploy: $deploy,
             clock: static fn (): string => '20261007T120000Z',
         ),
@@ -420,12 +408,6 @@ final class AdoptionSteps
 {
     /** @var list<string> */
     public array $steps = [];
-
-    /** @var list<string> */
-    public array $pending = [];
-
-    /** @var list<string> */
-    public array $applied = [];
 
     /** @var list<string> */
     public array $installed = [];
@@ -536,16 +518,6 @@ final readonly class AdoptionDatabase implements GatewayReleaseDatabase
 {
     public function __construct(private AdoptionSteps $steps, private GatewayReleaseFixture $fixture) {}
 
-    public function pending(string $releasePath): array
-    {
-        return $this->steps->pending;
-    }
-
-    public function applied(): array
-    {
-        return $this->steps->applied;
-    }
-
     public function snapshot(string $id): string
     {
         $this->steps->steps[] = 'snapshot:'.$id;
@@ -566,19 +538,10 @@ final readonly class AdoptionDatabase implements GatewayReleaseDatabase
             ($this->steps->onMigrate)();
         }
 
-        $this->steps->applied = [...$this->steps->applied, ...$this->steps->pending];
-        $this->steps->pending = [];
     }
 
     public function snapshotBytes(): int
     {
         return 0;
-    }
-
-    public function migrations(string $releasePath): array
-    {
-        $directory = $releasePath.'/apps/gateway/database/migrations';
-
-        return is_dir($directory) ? array_values(array_diff(scandir($directory) ?: [], ['.', '..'])) : [];
     }
 }
