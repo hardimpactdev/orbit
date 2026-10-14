@@ -61,13 +61,16 @@ class ConvergenceTest(unittest.TestCase):
         self.assertNotIn(['systemctl', 'restart', 'dependency.service'], self.commands)
         self.assertIn(['systemctl', 'is-active', '--quiet', 'unchanged.service'], self.commands)
         self.assertFalse(self.policy.exists())
-        source = self.published['/etc/apt/sources.list.d/orbit-recipe.sources'].decode()
+        source = self.published['/etc/apt/sources.list.d/ubuntu.sources'].decode()
         self.assertIn('https://snapshot.ubuntu.com/ubuntu/20261014T000000Z/', source)
         self.assertIn('Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg', source)
         install = next(c for c in self.commands if c[:2] == ['apt-get', 'install'])
         self.assertIn('curl=2.0', install)
         self.assertIn('--no-remove', install)
         self.assertNotIn('upgrade', install)
+        self.assertIn('Dir::Etc::sourceparts=-', install)
+        self.assertNotIn('/etc/apt/apt.conf.d/99orbit-recipe', self.published)
+        self.assertEqual(set(self.published), {'/etc/apt/sources.list.d/ubuntu.sources', str(self.policy)})
 
     def test_restarts_active_instances_of_a_changed_package_service_template(self):
         output = subprocess.CompletedProcess([], 0, '/usr/lib/systemd/system/wg-quick@.service\n', '')

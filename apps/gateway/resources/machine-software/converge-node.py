@@ -371,10 +371,12 @@ def apply(payload):
             source = (f'Types: deb\nURIs: https://snapshot.ubuntu.com/ubuntu/{snapshot}/\n'
                       'Suites: resolute resolute-updates resolute-security\nComponents: main universe restricted multiverse\n'
                       'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\nCheck-Valid-Until: no\n')
-            publish('/etc/apt/sources.list.d/orbit-recipe.sources', source.encode())
-            publish('/etc/apt/apt.conf.d/99orbit-recipe', b'Dir::Etc::sourcelist "sources.list.d/orbit-recipe.sources";\nDir::Etc::sourceparts "-";\n')
+            publish('/etc/apt/sources.list.d/ubuntu.sources', source.encode())
+            # Freeze Ubuntu's normal source; keep other repositories available to existing role operations.
+            # Recipe installs resolve against only the snapshot, never a third-party candidate.
+            apt_options = ['-o', 'Dir::Etc::sourcelist=sources.list.d/ubuntu.sources', '-o', 'Dir::Etc::sourceparts=-']
             stage = 'packages'
-            run(['apt-get', 'update'])
+            run(['apt-get', 'update', *apt_options])
             ubuntu = [name + '=' + pin['version'] for name, pin in tools.items()
                       if pin['source'] == 'ubuntu' and versions[name] != pin['version']]
             environment = dict(os.environ, DEBIAN_FRONTEND='noninteractive', NEEDRESTART_SUSPEND='1')
@@ -383,7 +385,7 @@ def apply(payload):
             try:
                 if ubuntu or debs:
                     run(['apt-get', 'install', '--yes', '--no-install-recommends', '--no-remove', '--allow-downgrades',
-                         '-o', 'Dpkg::Options::=--force-confold', '--', *ubuntu, *debs], env=environment)
+                         '-o', 'Dpkg::Options::=--force-confold', *apt_options, '--', *ubuntu, *debs], env=environment)
             finally:
                 policy.unlink()
             stage = 'tools'
