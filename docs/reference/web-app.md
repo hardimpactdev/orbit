@@ -28,6 +28,8 @@ The generated Instance rename request exposes optional `branch` and `domain` fie
 
 The Project schema includes `task_workspace_routed`, which describes routing for new task workspaces; an existing workspace keeps its recorded mode. The Gateway serves it from its own origin.
 
+The generated Process schema includes the installed PATCH update operation, nullable `working_directory`, and Docker environment maps for create and update. A null directory means the image default, not an empty path. These types describe [Process updates](/reference/processes-and-schedules#update-in-place); they add no web editing controls.
+
 The generated Process schema includes nullable `user`, the explicitly selected account or null for the derived account. Process create accepts `user` only for a Node systemd Process without a preset. [Processes and schedules](/reference/processes-and-schedules#node-account) owns the account validation and working-directory defaults.
 
 Extension navigation follows the Gateway's enabled set: each page and its route depend only on their own extension. Tasks pages need only the `tasks` extension. The Quota page needs only `proxycli`, and it shows provider quota whenever `proxycli` is enabled and its collector is configured, whether or not Tasks is enabled. Tasks and ProxyCLI links and routes are absent while their extension is disabled. The Gateway API remains authoritative, so a stale direct request still receives `extension.disabled` rather than granting access.

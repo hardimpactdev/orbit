@@ -254,6 +254,8 @@ A request that starts in the milliseconds between the idle check and the reset, 
 
 The scheduler is the Gateway Node's systemd Process that runs `schedule:work` in the Gateway application directory. Every Gateway runs one. A missing one fails the handoff with `gateway.release_scheduler_missing`, and one in another directory with `gateway.release_scheduler_mismatch`, because it would keep the old code. The handoff never cuts off a scheduled command in the normal path. It moves the scheduler in these steps:
 
+The handoff compares recorded working-directory paths to find the scheduler and other Gateway systemd Processes. A null Docker working-directory override is not a Gateway application path and is left alone. Ordinary [Process convergence](/reference/processes-and-schedules#persisted-intent-and-retry-recovery) leaves an unchanged completed unit untouched; the release handoff still explicitly moves Gateway services to the new release.
+
 The drain needs the scheduler's PHP to have the `pcntl` extension, so `schedule:work` can handle SIGTERM. Without it, the handoff takes the forced path at once and records `reason: no_pcntl`.
 
 1. It runs `schedule:interrupt`, so repeating events such as `tasks:tick` stop after their current run.
