@@ -253,28 +253,31 @@ Add this step after the install steps of a monorepo whose CI publishes main cach
 orbit instance:setup-step:create ci-caches --project=PROJECT --command='@orbit/ci-caches' --timeout=120 --json
 ```
 
-The Gateway uses its [GitHub App](/reference/github-app) with `Actions: read` for this one repository. It reads the newest 20 successful runs of `ci.yml` on the Project's default branch from a push, a schedule, or a manual dispatch. It takes the newest run that has unexpired `sandbox-tia-<job>-<commit>` artifacts, and downloads them all: one archive per Composer project, each at most 16 MiB and 32 MiB together. The archives travel to the checkout inside the step's command. The checkout receives no GitHub credential.
+CI publishes the caches at `refs/orbit/ci-cache/<sha>`, where `<sha>` is the full code commit tested on `main`, not the commit holding the cache files. The [CI publication policy](/reference/implementation-loop#ci-cache-refs) defines the publisher, manifest, authentication, and retention. This Git ref replaces the artifact download and base64 setup-command payload. `@orbit/ci-caches` remains the setup operation, and `bin/tia-cache import-ci` validates the cache files obtained from the ref; neither needs a GitHub Actions artifact in the workspace.
 
-In the checkout, the step runs `bin/tia-cache import-ci` for each archive. It checks the archive's manifest, checksums, project, tested commit, and test configuration. It writes the project's Pest TIA graph to `.orbit-tia/graph.json`, and the Pint and PHPStan caches into `vendor/`, where none exists.
+The Gateway fetches the code and cache namespace into its [Git mirror](/reference/compute-drivers#git-on-a-task-vm), then transfers the selected code and cache objects to the workspace over SSH. For GitHub, it uses its [GitHub App](/reference/github-app) with `Contents: read` for this repository, using the existing credentialed Git protections. Reading cache refs needs no `Actions: read` permission. The workspace receives no GitHub credential and does not fetch from GitHub itself. Cache objects stay outside the source tree until the setup step imports them after dependency installation.
 
-Before extraction, the step rejects a ZIP with more than 1,024 entries or more than 64 MiB of total expanded data, as declared by the ZIP. Python's ZIP reader bounds each extracted file by its declared size and checks its CRC. A rejected archive fails the step before extraction or cache import. The step removes its temporary archives and extracted files when it exits.
+The Gateway selects a code SHA before looking up its cache ref. For a checkout of `main`, that is the selected checkout commit. For a task branch, it is the recorded baseline commit from `main`, which must be an ancestor of the checkout's `HEAD`. It requests only `refs/orbit/ci-cache/<selected-sha>`: it never substitutes the newest cache ref, a different ancestor's ref, or a ref for a later main commit. The ref suffix, the manifest's tested commit, and every imported graph's main baseline SHA must agree exactly. The cache commit's own object ID is not the tested code SHA.
 
-PHPStan's result cache is PHP code, which PHPStan executes when it reads the cache. Orbit trusts this code because the artifact comes from a successful default-branch run of the repository's own `ci.yml`, using the Gateway's GitHub App access to that repository. It never imports a pull-request run's cache. The repository's default branch, workflow, and CI artifact publishers must therefore be trusted to run code in the checkout. Checksums detect damaged bytes; they do not establish that trust. The matching commit, lock file, tool configuration, and PHP minor version checks guard compatibility.
+The importer checks each project's identity, manifest schema, file checksums, dependency and test configuration, tool configuration, and PHP minor version before writing private caches. It imports the Pest TIA graph into `.orbit-tia/graph.json` and compatible Pint, Rector, and PHPStan caches into their tool cache paths under `vendor/`. An absent optional tool cache leaves that tool cold. Cache files must be regular files at allowed relative paths, with no symlinks or path traversal. The payload is limited to 1,024 files and 64 MiB of expanded data; temporary import files are removed when the step exits.
 
-An existing graph stays, so a retry or a later baseline keeps the workspace's own results, with one exception: when CI tested a descendant of the graph's main commit, the CI graph replaces it. A workspace from a template then gets the graph of today's `main`, not of the template's day, and its check selects fewer tests. The log names each graph it kept or replaced, and why.
+PHPStan's result cache is PHP code, which PHPStan executes when it reads the cache. Orbit trusts it only because the repository's own successful main CI publishes the ref. Pull request and fork runs cannot publish workspace cache refs. The default branch, workflow, and users who can write repository refs must therefore be trusted to run code in the checkout. Checksums detect damaged bytes, not a malicious publisher. Matching SHAs and configuration guard compatibility; Git transport does not make an untrusted cache safe.
 
-The step decides between a loud failure and a cold run like this:
+A retry or later baseline preserves the workspace's own graph and quality caches. An existing graph can be replaced only by a validated graph whose tested main commit descends from its recorded main commit and is an ancestor of the checkout. The importer still checks that the ref and payload match the selected SHA. The log names each cache it keeps, replaces, or skips and the reason.
+
+Cache availability does not gate setup or baseline checks. The code fetch remains required; the cache fetch is optional and must not turn an absent ref into a failed code fetch.
 
 | Situation | Result |
 | --- | --- |
-| No App, no Actions read, or GitHub unreadable | The step fails with `instance.ci_caches_unavailable` |
-| No successful run among the newest 20 has unexpired main caches | The step fails with `instance.ci_caches_missing` |
-| An archive exceeds the extraction limits, fails its checksums, has an invalid graph, or `bin/tia-cache` is missing | The step fails |
-| The archive's test configuration differs from the checkout's, or its commit is not in the checkout's history | The step goes on. That project's tests run cold, and the log names the project and the reason |
-| A quality cache's lock file, tool configuration, or PHP minor version differs | The step goes on without that cache, and the log names the reason |
-| A Pest project gets no graph | The log prints `[<project>] has no Pest TIA graph: its tests run cold.` |
+| Code fetch or source authentication fails | The source operation fails; a cold cache cannot repair missing code |
+| Cache ref is missing, not yet published, pruned, or cannot be read | Setup continues without imported caches and logs the reason |
+| Ref suffix, manifest, graph SHA, or selected baseline disagree; baseline is not an ancestor of `HEAD` | Reject the payload and continue cold; never use another ref |
+| Payload exceeds the limits, has unsafe paths, invalid data, or bad checksums | Reject it before writing caches, log the reason, and continue cold |
+| A project's dependency or test configuration differs | Skip that project's graph and log why its tests run cold |
+| A quality cache's lock file, tool configuration, or PHP minor version differs | Skip that tool cache and log the reason |
+| Required import tooling is missing or writing a validated cache fails | Fail the named setup step; this is a broken setup, not a cache miss |
 
-A cold run only happens in the minutes after a change to a project's test configuration lands on `main`, until CI on `main` publishes new caches. Each baseline runs the step again, so a workspace from a template that stayed cold imports the graph once the caches fit.
+An older ref is usable only for its explicitly selected baseline, never as a fallback for another SHA. A workspace created before CI publishes its baseline ref runs cold and can retry the same ref on a later setup or baseline. [Ref retention](/reference/implementation-loop#cache-ref-retention) does not remove caches already imported into a running workspace. This change does not alter workspace-template or shared package-cache policy.
 
 ## Failure codes
 
