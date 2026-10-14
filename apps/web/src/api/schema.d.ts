@@ -1027,7 +1027,7 @@ export interface paths {
         put?: never;
         /**
          * gateway:release:rollback
-         * @description Queues a rollback to a retained release, named by its 12-digit id, and starts its release unit. Refuses a target that lacks a migration of the current release unless `force` is true. Answers 202 with the queued release record. See /reference/gateway-recovery#roll-back.
+         * @description Queues a rollback to a retained release, named by its 12-digit id, and starts its release unit. Switches code only; restoring a database snapshot is an explicit operator step. Answers 202 with the queued release record. See /reference/gateway-recovery#roll-back.
          */
         post: operations["gateway-release-rollback"];
         delete?: never;
@@ -8553,10 +8553,7 @@ export interface operations {
         };
         requestBody?: {
             content: {
-                "application/json": {
-                    /** @description Switch the code across a migration the target release does not have */
-                    force?: boolean;
-                };
+                "application/json": Record<string, never>;
             };
         };
         responses: {

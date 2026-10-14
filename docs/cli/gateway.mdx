@@ -210,16 +210,15 @@ Interrupting the CLI stops following, not the release. Read the outcome later wi
 Switch the active Gateway back to a retained release, then follow it.
 
 ```bash
-orbit gateway:release:rollback [<release>] [--force] [--yes] [--json]
+orbit gateway:release:rollback [<release>] [--yes] [--json]
 ```
 
 | Argument or option | Meaning |
 | --- | --- |
 | `release` | The 12-digit id of a retained release. In a terminal, an omitted value opens a list of the releases that went live. |
-| `--force` | Switch the code although the current release ships a migration the target does not have. The database schema stays where it is. |
-| `--yes` | Confirm `--force` without a prompt. Required for `--force` with `--json` or without a terminal. |
+| `--yes` | Confirm the code rollback without a prompt. Required with `--json` or without a terminal. |
 
-The Gateway checks the target and the migrations before it queues anything. A rollback across a migration without `--force` fails with `gateway.release_migration_crossed`, and the message names the newest snapshot. With `--force`, the prompt defaults to No. Declining fails with `input.cancelled`, and nothing is queued. Output and exit status follow `gateway:release:deploy`.
+The Gateway checks that the target is a retained release before it queues anything. Rollback switches code and leaves the database in place. Confirm with `--yes` for noninteractive or JSON calls; the interactive prompt defaults to No. Declining fails with `input.cancelled`, and nothing is queued. Database restore is an explicit operator step described in [Gateway recovery](/reference/gateway-recovery#roll-back). Output and exit status follow `gateway:release:deploy`.
 
 ### orbit gateway:release:smoke
 

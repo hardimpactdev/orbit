@@ -48,7 +48,7 @@ use DateTimeImmutable;
 /**
  * The whole Gateway release pipeline on a {@see GatewayReleaseFixture}: real layout, Git, lock, and
  * records; fake runtime handoff, verifier, smoke, GitHub resolver, and alert notifier. A test sets
- * `$failVerify`, `$pending`, or `$green` to steer one release.
+ * `$failVerify`, `$failSnapshot`, or `$green` to steer one release.
  */
 final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDatabase, GatewayReleaseRuntime, GatewayReleaseSmoke, GatewayReleaseUnitStarter, GatewayReleaseVerifier, GatewayReleaseWebBuild, GreenCommitResolver, ReleaseAlertNotifier
 {
@@ -58,9 +58,6 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
 
     /** @var list<string> */
     public array $steps = [];
-
-    /** @var list<string> migration names the next release reports pending */
-    public array $pending = [];
 
     public ?string $failVerify = null;
 
@@ -152,12 +149,12 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
     {
         $recorder = $this->recorder();
 
-        return new RollbackGatewayReleaseAction($this->lock(), $this->fixture->layout, $this->promoter($recorder), $recorder, $this->guard());
+        return new RollbackGatewayReleaseAction($this->lock(), $this->fixture->layout, $this->promoter($recorder), $recorder);
     }
 
     public function guard(): GatewayReleaseGuard
     {
-        return new GatewayReleaseGuard($this->fixture->layout, $this, $this->fixture);
+        return new GatewayReleaseGuard($this->fixture->layout, $this->fixture);
     }
 
     public function automatic(): RunAutomaticGatewayReleaseAction
@@ -289,13 +286,14 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
         return new ReleaseAlertReceipt('0198e15c-bf97-7c23-8f1f-61b8fe67a844', count($this->alerts), ReleaseAlertStep::done('release|fingerprint'), ReleaseAlertStep::skipped('not_configured'));
     }
 
-    public function pending(string $releasePath): array
-    {
-        return $this->pending;
-    }
+    public bool $failSnapshot = false;
 
     public function snapshot(string $id): string
     {
+        if ($this->failSnapshot) {
+            throw new GatewayReleaseException('snapshot', 'gateway.release_disk_low', 'Not enough room for the snapshot.', 500);
+        }
+
         return $this->home.'/backups/pre-'.$id.'.sqlite';
     }
 
@@ -304,32 +302,9 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
         $this->steps[] = 'migrate';
     }
 
-    /** @var list<string> migration names the database reports applied */
-    public array $applied = [];
-
-    /** @var array<string, list<string>> migration files by release id */
-    public array $files = [];
-
-    /** Whether reading the applied migrations fails, as with an unreadable migrations table. */
-    public bool $appliedFails = false;
-
-    public function applied(): array
-    {
-        if ($this->appliedFails) {
-            throw new GatewayReleaseException('snapshot', 'gateway.release_migrations_unreadable', 'The Gateway migrations table cannot be read.', 500);
-        }
-
-        return $this->applied;
-    }
-
     public function snapshotBytes(): int
     {
         return 0;
-    }
-
-    public function migrations(string $releasePath): array
-    {
-        return $this->files[basename($releasePath)] ?? [];
     }
 
     public function handoff(string $id): array
@@ -415,7 +390,6 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
             $this,
             $recorder,
             $builder,
-            guard: $this->guard(),
             ticks: $this->ticks(),
         );
     }

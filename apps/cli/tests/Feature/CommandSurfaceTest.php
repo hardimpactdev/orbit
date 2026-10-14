@@ -683,7 +683,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'gateway:release:auto:status' => [[], ['json' => false]],
         'gateway:release:deploy' => [['commit'], ['json' => false]],
         'gateway:release:list' => [[], ['json' => false]],
-        'gateway:release:rollback' => [['release'], ['force' => false, 'yes' => false, 'json' => false]],
+        'gateway:release:rollback' => [['release'], ['yes' => false, 'json' => false]],
         'gateway:release:show' => [['release'], ['json' => false]],
         'gateway:release:smoke' => [['commit'], ['since' => null, 'json' => false]],
         'gateway:remove' => [['name'], ['force' => false, 'yes' => false, 'json' => false]],
@@ -1243,7 +1243,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'gateway:release:auto:status' => [[], ...$profileMissing],
         'gateway:release:deploy' => [['commit' => 'abcdef1'], ...$profileMissing],
         'gateway:release:list' => [[], ...$profileMissing],
-        'gateway:release:rollback' => [['release' => 'abcdef123456'], ...$profileMissing],
+        'gateway:release:rollback' => [['release' => 'abcdef123456', '--yes' => true], ...$profileMissing],
         'gateway:release:show' => [['release' => '1'], ...$profileMissing],
         'gateway:release:smoke' => [[], ...$profileMissing],
         'gateway:remove' => [

@@ -8,19 +8,13 @@ use App\Domain\GatewayReleases\DeployedGatewayRelease;
 use App\Domain\GatewayReleases\GatewayReleaseCommit;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
-use App\Infrastructure\GatewayReleases\GatewayReleaseGuard;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\GatewayReleases\GatewayReleasePromoter;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRecorder;
 use App\Models\GatewayRelease;
 use Throwable;
 
-/**
- * Switches back to a retained release. It refuses when the database has applied a migration the
- * target does not ship, unless the caller passes force. Force does not migrate backwards; it names the
- * newest snapshot and leaves the schema where it is. A refusal changes nothing; its record ends
- * failed and retryable. An attempt that switches is recorded like a deploy.
- */
+/** Switches code to a retained release. Database restoration is an explicit operator step. */
 final readonly class RollbackGatewayReleaseAction
 {
     public function __construct(
@@ -28,18 +22,17 @@ final readonly class RollbackGatewayReleaseAction
         private GatewayReleaseLayout $layout,
         private GatewayReleasePromoter $promoter,
         private GatewayReleaseRecorder $recorder,
-        private GatewayReleaseGuard $guard,
     ) {}
 
     /** @param GatewayRelease|null $record a queued record to claim, or null to start a new one */
-    public function execute(string $release, bool $force = false, ?GatewayRelease $record = null): DeployedGatewayRelease
+    public function execute(string $release, ?GatewayRelease $record = null): DeployedGatewayRelease
     {
-        return $this->lock->run(function () use ($release, $force, $record): DeployedGatewayRelease {
+        return $this->lock->run(function () use ($release, $record): DeployedGatewayRelease {
             $startedAt = hrtime(true);
-            $record = $this->recorder->begin('rollback', $release, $record, $force);
+            $record = $this->recorder->begin('rollback', $release, $record);
 
             try {
-                [$id, $sha, $snapshot] = $this->target($release, $force);
+                [$id, $sha, $snapshot] = $this->target($release);
             } catch (Throwable $thrown) {
                 $exception = GatewayReleaseException::fromThrowable($thrown, 'rollback');
                 $this->recorder->fail($record, $exception, retryable: true, durationMs: intdiv(hrtime(true) - $startedAt, 1_000_000));
@@ -54,7 +47,7 @@ final readonly class RollbackGatewayReleaseAction
                     trigger: 'rollback',
                     migrationsRan: false,
                     snapshotPath: $snapshot,
-                    phases: ['rollback' => ['outcome' => 'started', 'force' => $force, 'snapshot' => $snapshot]],
+                    phases: ['rollback' => ['outcome' => 'started', 'snapshot' => $snapshot]],
                     startedAt: $startedAt,
                     record: $record,
                 );
@@ -72,9 +65,9 @@ final readonly class RollbackGatewayReleaseAction
      *
      * @throws GatewayReleaseException
      */
-    public function check(string $release, bool $force): string
+    public function check(string $release): string
     {
-        return $this->target($release, $force)[1];
+        return $this->target($release)[1];
     }
 
     /**
@@ -82,7 +75,7 @@ final readonly class RollbackGatewayReleaseAction
      *
      * @return array{string, string, string|null}
      */
-    private function target(string $release, bool $force): array
+    private function target(string $release): array
     {
         $id = GatewayReleaseCommit::assertId($release);
         $sha = $this->layout->preparedCommit($id);
@@ -105,9 +98,6 @@ final readonly class RollbackGatewayReleaseAction
                 message: 'The Gateway is not running from a release. Run gateway:release:adopt first.',
             );
         }
-
-        // The applied schema, not the current release's files: the database may be ahead of both.
-        $this->guard->assertSchema($id, $force);
 
         $snapshot = GatewayRelease::query()
             ->where('migrations_ran', true)

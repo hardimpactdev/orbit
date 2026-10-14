@@ -10,7 +10,7 @@
             "sha": "fedcba9876543210fedcba9876543210fedcba98",
             "requested": "fedcba987654",
             "trigger": "rollback",
-            "force": true,
+            "force": false,
             "outcome": "verified",
             "finished": true,
             "migrations_ran": false,
@@ -21,7 +21,6 @@
             "phases": {
                 "rollback": {
                     "outcome": "started",
-                    "force": true,
                     "snapshot": "/home/orbit/.orbit/backups/pre-0123456789ab.sqlite"
                 },
                 "configuration": {

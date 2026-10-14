@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Gateway\ShowGatewayStatusRequest;
 use Orbit\Sdk\Requests\GatewayReleases\DeployGatewayReleaseRequest;
@@ -49,8 +48,7 @@ describe('Gateway release requests', function (): void {
         'show record' => [new ShowGatewayReleaseRequest('42'), Method::GET, '/api/v1/gateway/releases/42', null],
         'show commit' => [new ShowGatewayReleaseRequest('fedcba9'), Method::GET, '/api/v1/gateway/releases/fedcba9', null],
         'deploy' => [new DeployGatewayReleaseRequest('fedcba9'), Method::POST, '/api/v1/gateway/releases', ['commit' => 'fedcba9']],
-        'rollback' => [new RollbackGatewayReleaseRequest('fedcba987654'), Method::POST, '/api/v1/gateway/releases/fedcba987654/rollback', ['force' => false]],
-        'forced rollback' => [new RollbackGatewayReleaseRequest('fedcba987654', force: true), Method::POST, '/api/v1/gateway/releases/fedcba987654/rollback', ['force' => true]],
+        'rollback' => [new RollbackGatewayReleaseRequest('fedcba987654'), Method::POST, '/api/v1/gateway/releases/fedcba987654/rollback', null],
         'status' => [new ShowGatewayReleaseAutomationRequest, Method::GET, '/api/v1/gateway/release-automation', null],
         'enable' => [new EnableGatewayReleaseAutomationRequest, Method::POST, '/api/v1/gateway/release-automation/enable', null],
         'disable' => [new DisableGatewayReleaseAutomationRequest, Method::POST, '/api/v1/gateway/release-automation/disable', null],
@@ -118,18 +116,6 @@ describe('Gateway release requests', function (): void {
             ->and($paused->currentRelease)->toBe('0123456789ab')
             ->and($paused->tickConfirmation['outcome'] ?? null)->toBe('pending')
             ->and($paused->toArray()['tick_confirmation']['deadline'] ?? null)->toBe('2026-10-07T11:04:10Z');
-    });
-
-    it('raises the Gateway error code of a refused request', function (): void {
-        $failure = null;
-
-        try {
-            gateway_release_send(new RollbackGatewayReleaseRequest('fedcba987654'), 'gateway-release-rollback/migration-crossed');
-        } catch (GatewayApiException $exception) {
-            $failure = $exception;
-        }
-
-        expect($failure?->errorCode())->toBe('gateway.release_migration_crossed');
     });
 
     it('rejects a release record without an id or an outcome', function (): void {

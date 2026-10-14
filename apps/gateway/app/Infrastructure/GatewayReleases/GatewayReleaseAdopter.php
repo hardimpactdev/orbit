@@ -60,7 +60,6 @@ final readonly class GatewayReleaseAdopter
         private GatewayReleaseRuntime $runtime,
         private GatewayReleaseVerifier $verifier,
         private GatewayReleaseRecorder $recorder,
-        private GatewayReleaseGuard $guard,
         private DeployGatewayReleaseAction $deploy,
         ?Closure $clock = null,
     ) {
@@ -132,8 +131,6 @@ final readonly class GatewayReleaseAdopter
             // Without --commit the checkout's commit is the target too, so its release gets its web build.
             $prepared = $this->builder->prepare($head, withWeb: $target === null || str_starts_with($head, $target));
             $phases['prepare'] = ['outcome' => $prepared->reused ? 'reused' : 'prepared', 'duration_ms' => $prepared->durationMs];
-            $step = 'guard';
-            $this->guard->assertSchema($id, false);
             $step = 'configuration';
             $this->builder->refreshConfiguration($id);
             $phases['configuration'] = ['outcome' => 'cached'];
@@ -146,7 +143,7 @@ final readonly class GatewayReleaseAdopter
             $phases[$exception->step] = [...$exception->phase, 'outcome' => 'failed', 'error_code' => $exception->errorCode];
             $phases['environment'] = $this->restoreEnvironment($current);
 
-            if ($head === null || ! isset($id) || $step === 'guard') {
+            if ($head === null || ! isset($id)) {
                 $this->recorder->refused('adopt', $exception, $this->elapsed($startedAt));
             } else {
                 $this->record($this->outcome($id, $head, 'failed', $phases, $startedAt, $exception));

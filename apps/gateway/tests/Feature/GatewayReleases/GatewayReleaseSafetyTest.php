@@ -2,11 +2,17 @@
 
 declare(strict_types=1);
 
+use App\Actions\GatewayReleases\DeployGatewayReleaseAction;
+use App\Actions\GatewayReleases\RunAutomaticGatewayReleaseAction;
 use App\Actions\GatewayReleases\SettleGatewayReleaseAction;
 use App\Domain\GatewayReleases\DeployedGatewayRelease;
+use App\Domain\GatewayReleases\GatewayReleaseDatabase;
 use App\Domain\Releases\ReleaseAlertKind;
 use App\Infrastructure\GatewayReleases\GatewayReleaseAlerts;
+use App\Infrastructure\GatewayReleases\GatewayReleaseGuard;
+use App\Infrastructure\GatewayReleases\SqliteGatewayReleaseDatabase;
 use App\Models\GatewayRelease;
+use Illuminate\Support\Facades\DB;
 use Tests\Support\GatewayReleasePipeline;
 
 pest()->group('subprocess');
@@ -101,12 +107,10 @@ describe('manual releases and automatic releases', function (): void {
         $this->pipeline->automation()->enable();
         $broken = $this->pipeline->green = $this->pipeline->fixture->commit('Migrates then fails');
         $this->pipeline->failVerify = $broken;
-        $this->pipeline->pending = ['2026_10_14_000000_example'];
         $this->pipeline->automatic()->execute();
         expect($this->pipeline->automation()->pause()['reason'] ?? null)->toBe('migration_failure');
 
         $this->pipeline->failVerify = null;
-        $this->pipeline->pending = [];
         $this->pipeline->green = null;
         $fix = $this->pipeline->fixture->commit('Forward fix');
         $this->pipeline->deployer()->execute($fix, force: true);
@@ -280,56 +284,53 @@ describe('releases that died', function (): void {
     });
 });
 
-describe('switch-back after a retry', function (): void {
-    it('pauses instead of switching back when the database has a migration the previous release lacks', function (): void {
-        $first = $this->pipeline->adopt();
-        $sha = $this->pipeline->fixture->commit('Migrated by a killed attempt');
-        // A killed attempt of this commit already migrated, so nothing is pending now.
-        $this->pipeline->applied = ['2026_10_20_000000_example'];
-        $this->pipeline->files = [substr($sha, 0, 12) => ['2026_10_20_000000_example.php']];
+describe('Laravel migration discovery', function (): void {
+    it('deploys and auto-releases with an applied vendor migration absent from the application files', function (): void {
+        $this->pipeline->adopt();
+        $this->pipeline->bindLeaves();
+        $live = $this->pipeline->home.'/vendor.sqlite';
+        touch($live);
+        config(['database.connections.release_vendor' => ['driver' => 'sqlite', 'database' => $live, 'prefix' => '']]);
+        $connection = DB::connection('release_vendor');
+        $connection->statement('CREATE TABLE migrations (migration TEXT, batch INTEGER)');
+        $connection->table('migrations')->insert([
+            'migration' => '2026_07_26_000000_create_horizon_new_dawn_batch_metadata_table',
+            'batch' => 145,
+        ]);
+        $sha = $this->pipeline->fixture->commit('Regular Laravel deploy');
+        $database = new SqliteGatewayReleaseDatabase($this->pipeline->fixture, $this->pipeline->home, php: PHP_BINARY, connection: 'release_vendor', minimumFreeBytes: 0);
+        app()->instance(GatewayReleaseDatabase::class, $database);
+        app()->forgetInstance(GatewayReleaseGuard::class);
+
+        $deployed = app(DeployGatewayReleaseAction::class)->execute($sha);
+
+        expect($deployed->outcome)->toBe('verified')
+            ->and($deployed->migrationsRan)->toBeTrue()
+            ->and(is_file($deployed->snapshotPath))->toBeTrue()
+            ->and(new PDO('sqlite:'.$deployed->snapshotPath)->query('SELECT batch FROM migrations')->fetchColumn())->toBe(145);
+
+        $this->pipeline->automation()->enable();
+        $next = $this->pipeline->green = $this->pipeline->fixture->commit('Regular automatic release');
+
+        expect(app(RunAutomaticGatewayReleaseAction::class)->execute()['result'])->toBe('released')
+            ->and($this->pipeline->fixture->layout->currentReleaseId())->toBe(substr($next, 0, 12))
+            ->and(glob($this->pipeline->home.'/backups/pre-*.sqlite'))->toHaveCount(2);
+
+        DB::purge('release_vendor');
+    });
+
+    it('pauses on verification failure even when no application migration files are present', function (): void {
+        $this->pipeline->adopt();
+        $sha = $this->pipeline->fixture->commit('Migrator ran with no application migrations');
         $this->pipeline->failVerify = $sha;
 
         release_failure(fn () => $this->pipeline->deployer()->execute($sha));
         $record = GatewayRelease::query()->latest('id')->first();
 
         expect($record->outcome)->toBe('paused')
+            ->and($record->migrations_ran)->toBeTrue()
             ->and($this->pipeline->fixture->layout->currentReleaseId())->toBe(substr($sha, 0, 12))
-            ->and($this->pipeline->fixture->layout->currentReleaseId())->not->toBe(substr($first, 0, 12))
             ->and($this->pipeline->automation()->pause()['reason'] ?? null)->toBe('migration_failure');
-    });
-
-    it('pauses on the record instead of switching back when the migrations table cannot be read', function (): void {
-        $first = $this->pipeline->adopt();
-        $sha = $this->pipeline->fixture->commit('Broken, schema unreadable at switch-back');
-        $this->pipeline->failVerify = $sha;
-        $deployer = $this->pipeline->deployer();
-        $this->pipeline->files = [substr($first, 0, 12) => [], substr($sha, 0, 12) => []];
-        // Readable for the guard before the switch; unreadable once verify failed.
-        $this->pipeline->onVerify = function (): void {
-            $this->pipeline->appliedFails = true;
-        };
-
-        release_failure(fn () => $deployer->execute($sha));
-        $record = GatewayRelease::query()->latest('id')->first();
-
-        expect($record->outcome)->toBe('paused')
-            ->and($record->finished())->toBeTrue()
-            ->and($this->pipeline->fixture->layout->currentReleaseId())->toBe(substr($sha, 0, 12))
-            ->and($this->pipeline->automation()->pause()['reason'] ?? null)->toBe('migration_failure')
-            ->and($this->pipeline->alerts[0]->kind ?? null)->toBe(ReleaseAlertKind::ReleasePaused);
-    });
-
-    it('switches back when the previous release knows every applied migration', function (): void {
-        $first = $this->pipeline->adopt();
-        $sha = $this->pipeline->fixture->commit('Broken without migrations');
-        $this->pipeline->applied = ['2026_01_01_000000_base'];
-        $this->pipeline->files = [substr($first, 0, 12) => ['2026_01_01_000000_base.php'], substr($sha, 0, 12) => ['2026_01_01_000000_base.php']];
-        $this->pipeline->failVerify = $sha;
-
-        release_failure(fn () => $this->pipeline->deployer()->execute($sha));
-
-        expect(GatewayRelease::query()->latest('id')->value('outcome'))->toBe('switched_back')
-            ->and($this->pipeline->fixture->layout->currentReleaseId())->toBe(substr($first, 0, 12));
     });
 });
 

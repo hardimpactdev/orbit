@@ -6982,19 +6982,13 @@
             "description": ""
           }
         ],
-        "description": "Queues a rollback to a retained release, named by its 12-digit id, and starts its release unit. Refuses a target that lacks a migration of the current release unless `force` is true. Answers 202 with the queued release record. See /reference/gateway-recovery#roll-back.",
+        "description": "Queues a rollback to a retained release, named by its 12-digit id, and starts its release unit. Switches code only; restoring a database snapshot is an explicit operator step. Answers 202 with the queued release record. See /reference/gateway-recovery#roll-back.",
         "requestBody": {
           "required": false,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "properties": {
-                  "force": {
-                    "type": "boolean",
-                    "description": "Switch the code across a migration the target release does not have"
-                  }
-                },
                 "additionalProperties": false
               }
             }
@@ -7078,7 +7072,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/gateway/releases/1/rollback\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"force\": true}'\n"
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/gateway/releases/1/rollback\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{}'\n"
           },
           {
             "lang": "php",

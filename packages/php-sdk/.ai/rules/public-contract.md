@@ -127,7 +127,7 @@ operations. Keep the public API typed and small.
   Task definition requests use a numeric Project ID, an optional project_id list filter, a definition name for show, update, and destroy, and the caller's exact JSON document for create and full update. List, show, and destroy are bodyless. The Gateway owns definition validation. The agent conversation stream stays outside the SDK.
 - Keep Gateway release transport limited to a record id or a hex SHA of 7 to
   40 characters for show, a hex SHA of 7 to 40 characters for deploy, and a
-  12-digit release id with an explicit force flag for rollback. List and the
+  12-digit release id for a bodyless code rollback. List and the
   automatic release status, enable, disable, and resume requests are bodyless.
   Deploy and rollback return the queued record. The Gateway owns release
   execution, locking, the unit that runs it, and every release policy.

@@ -40,6 +40,6 @@ describe(GatewayReleaseRetry::class, function (): void {
     });
 
     it('makes a failure the commit causes final at once', function (): void {
-        expect(new GatewayReleaseRetry()->retryable('gateway.release_migration_crossed', str_repeat('c', 40)))->toBeFalse();
+        expect(new GatewayReleaseRetry()->retryable('gateway.release_downgrade', str_repeat('c', 40)))->toBeFalse();
     });
 });
