@@ -363,6 +363,10 @@
             { "testid": "record-log", "purpose": "The log on an instance, process, or schedule." },
             { "testid": "record-missing", "purpose": "Shown when the id is not in that section." },
             { "testid": "instance-overview", "purpose": "The Overview tab on an instance." },
+            {
+                "testid": "instance-dependencies",
+                "purpose": "Saved Composer and npm dependencies for an instance."
+            },
             { "testid": "instance-tasks", "purpose": "The Tasks tab on an instance." },
             { "testid": "quota-accounts", "purpose": "Accounts in a quota provider pool." },
             {
