@@ -203,26 +203,6 @@ Stop the old ext4 cache worker before retiring `/home/nckrtl/orbit/.git/orbit-ti
 
 A setup copy step must be retryable: keep an existing destination, stage a missing directory, then rename it into place only when `cp` succeeds. A copy failure fails that step rather than leaving a partial dependency tree. On ZFS, `--reflink=always` can enforce shared blocks; `--reflink=auto` provides the ordinary-copy fallback. Verify shared blocks on beast and write isolation by changing a copied dependency or cache in a disposable Instance and checking that the selected seed stays unchanged. Remove only that disposable Instance after the check.
 
-### Convert the development defaults
-
-The first deployment tick after the Gateway serves plain-checkout defaults [converts](/reference/deployments#converting-the-old-release-layout) the three release layouts on beast: Instance 386 (`php-data-bridge-demo`, Project 50), Instance 4 (`orbit-website`, Project 33), and Instance 315 (`orbit`, Project 46).
-
-Before the change merges, check each home under `/fast/apps/<project>/default`:
-
-- `git status --porcelain --untracked-files=no` prints nothing. A tracked change refuses the conversion.
-- `git rev-list main --not origin/main` prints nothing. A local commit refuses it too.
-- No setup step runs in an Instance seeded from it, such as a T3 Code worktree. Release removal waits for one.
-- No task group on Projects 33, 46, or 50 is `running` or `reviewing`. Release removal waits for a running baseline, so a long group only delays it.
-
-After the first tick:
-
-1. `orbit instance:show` for 4, 315, and 386: `seed_path` is the checkout, and `seed_commit` is a commit on `main`.
-2. Each home has no `releases` and no `current`. `git status --untracked-files=no` is clean.
-3. The deployment output names any release folder that Orbit kept. Delete such a folder by hand.
-4. `/fast/apps/orbit/default/packages/agent-annotation` is gone. Its `node_modules` would break Project 46's `seed-dependencies` setup step. Then create a disposable Project 46 Instance on beast. Its setup must pass. Remove it afterward.
-5. `https://php-data-bridge-demo.test` and `https://orbit-website.test` answer, and their Caddy root is the checkout's `public`, not `current/public`.
-6. Instance 315 has no Route. `orbit instance:show 315` still lists none, and no Route of Project 46 points at `/fast/apps/orbit/default/current`.
-
 ## Configure Orbit's task policy
 
 Orbit's task check is explicitly `composer check`; new Project defaults do not supply it. Record setup steps for each dependency tree that this repository check needs. The baseline runs only those steps. The live Orbit Project is id 46. Re-read it before every deployment, and stop if the id, check, or lists differ from the handoff.

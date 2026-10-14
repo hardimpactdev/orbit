@@ -17,7 +17,7 @@ covers:
 
 ## Desired fleet state
 
-The desired fleet state names what every machine should run for the Gateway's commit.
+The desired fleet state names what every machine should run for the Gateway's commit. The Gateway separately converges the [Orbit footprint](/reference/node-provisioning#converge-the-orbit-footprint); `self-update` does not apply those artifacts or remove files left by deleted artifacts.
 
 | Field | Contents |
 | --- | --- |
