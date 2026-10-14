@@ -18,7 +18,7 @@ use App\Jobs\TaskVms\DestroyTaskVm;
 use App\Jobs\TaskVms\ProvisionTaskVm;
 use App\Models\Node;
 use App\Models\TaskVm;
-use Illuminate\Contracts\Cache\LockTimeoutException;
+use Illuminate\Contracts\Database\ConcurrencyErrorDetector;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -28,7 +28,7 @@ use Throwable;
  *
  * 1. It reads each host's base image and the image of each instance, records the image of each warm VM, and
  *    destroys a warm VM whose image is no longer `orbit-task-base` or whose instance is gone.
- * 2. Under the placement lock, it destroys failed pool VMs and warm VMs over the target, and records new pool
+ * 2. Inside the placement transaction, it destroys failed pool VMs and warm VMs over the target, and records new pool
  *    rows up to the target within the host's free slots. The target is 0 while task VMs are disabled, so the
  *    pool drains. Pool VMs that are still starting are never cut off; a later run destroys any excess.
  * 3. It queues `ProvisionTaskVm` for each new row, and then `DestroyTaskVm` for every pool row that is `destroying`.
@@ -64,8 +64,11 @@ final readonly class RefillTaskVmPoolAction
         }
 
         try {
-            $created = $this->capacity->withPlacementLock(fn (): array => DB::transaction(fn (): array => $this->balance($hosts)));
-        } catch (LockTimeoutException) {
+            $created = DB::transaction(fn (): array => $this->balance($hosts));
+        } catch (Throwable $exception) {
+            if (! app(ConcurrencyErrorDetector::class)->causedByConcurrencyError($exception)) {
+                throw $exception;
+            }
             Log::warning('The task VM pool refill waits for another placement; the next run tries again.');
             $created = [];
         }

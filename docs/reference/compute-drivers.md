@@ -83,8 +83,8 @@ Until the row is `ready`, the claim returns the group to `todo` with a reason, a
 | --- | --- |
 | `Task VM: task VMs are not enabled on this Gateway.` | `task_vms.enabled` is false and the group has no task VM |
 | `Task VM: no capacity.` | Every host is inactive or full. See [Place task VMs](#place-task-vms) |
+| `Task VM: another placement is running.` | SQLite writer contention exhausted the placement transaction's retries. The next tick tries placement again |
 | `Task VM: waiting for a warm VM.` | Every host is full, and at least one of its VMs is a [warm VM](#keep-warm-vms) that is still starting. The claim takes it once it is `warm` |
-| `Task VM: another placement is running.` | Another claim held the placement lock for 15 seconds |
 | `Task VM: provisioning.` | The jobs are still running |
 | `Task VM: task_vm.invalid_config: <message>` | A `task_vms` value is invalid |
 | `Task VM: destroying.` | Cleanup has started |
@@ -133,6 +133,8 @@ Then it removes the Node and marks the row `destroyed`, as above. A removal jour
 
 ### Place task VMs
 
+Placement is serialized by the Gateway's SQLite transaction, not a cache lock. The claim checks for an existing VM, counts occupied slots, and either takes a warm VM or records a new VM in the same transaction. The pool refill counts slots and records new pool rows in a transaction too. SQLite serializes these writes, so concurrent claims and refills cannot both take the last slot or assign the same warm VM. Host image reads happen before the transaction; VM provisioning and runtime preparation are dispatched after it commits.
+
 Each host in `task_vms.incus.hosts` has `max_vms` slots. Every task VM on the host that is not `destroyed` or `failed` takes the slots of its [size](#size-by-declared-topology), also a `warm` or `parked` one: one for a normal VM, two for a medium VM, three for a large VM. The free slots of a host are `max_vms` minus those slots. A `failed` VM holds no slot, so it never blocks placement: its group asks for assistance, and the pool refill destroys a failed pool VM before it counts the free slots. A failed VM of a group can still run on its host until the group is cancelled.
 
 A claim first takes a current [warm VM](#keep-warm-vms). It looks at the active hosts that have one, the host with the most free slots first, and takes that host's oldest warm VM. A warm VM already holds its slot, so a claim can take one on a full host.
@@ -159,7 +161,7 @@ The sizes are caps, not reservations. Incus does not pin the vCPUs, and the gues
 
 A subtask whose topology needs a larger VM than its group got waits before it starts, with the reason `Task VM: this subtask's topology needs a larger task VM than the group got, and Orbit does not resize it.` This happens when a subtask is added or changed after the claim. Orbit never runs it without its nodes, and never moves the group to another VM. To go on, cancel that subtask, or cancel the group and create it again with the topology declared. See [Orbit Project](#orbit-project).
 
-Placement never puts more VMs on a host than its `max_vms`, not counting `failed` ones. One placement runs at a time on the Gateway, under a cache lock, so two claims cannot both take the last slot or the same warm VM. The pool refill takes the same lock. Lowering `max_vms` below the number of VMs on a host removes no VM. The host gets no new VM until enough VMs are destroyed.
+Placement never puts more VMs on a host than its `max_vms`, not counting `failed` ones. The Gateway's SQLite placement transactions serialize claims and pool refills, so two claims cannot both take the last slot or the same warm VM, and a refill cannot race a claim for capacity. Lowering `max_vms` below the number of VMs on a host removes no VM. The host gets no new VM until enough VMs are destroyed.
 
 With one host, placement is the same as before: the host takes VMs until it is full. To add a host, see [Add a task VM host](#add-a-task-vm-host).
 
@@ -175,7 +177,7 @@ Every minute, the Gateway scheduler queues the job `RefillTaskVmPool`, while tas
 
 1. It reads the host's `orbit-task-base` image and the `volatile.base_image` of each instance. It records that image on each warm VM.
 2. A warm VM from another image becomes `destroying`. So does a warm VM whose instance is gone.
-3. Under the placement lock, it sets every `failed` pool row to `destroying`.
+3. In the placement transaction, it sets every `failed` pool row to `destroying`.
 4. It counts the warm VMs and the pool VMs that still start. It sets the oldest warm VMs above `warm_vms` to `destroying`.
 5. A pool VM that still starts is never stopped. A later run destroys it once it is warm.
 6. Below `warm_vms`, it records new pool rows, up to the host's free slots.
@@ -189,7 +191,7 @@ A new pool row runs the normal `ProvisionTaskVm` and `EnrollTaskVm`. Then `Prepa
 
 The claim reads the `orbit-task-base` image of each active host that has a warm VM. It takes a warm VM only when the VM launched that image and its Node is active. The claim reads a host's image over SSH at most every 10 seconds. A build or sync that moves the alias makes the next claim read it again. A host whose image list cannot be read keeps its warm VMs for a minute, and the claims place new VMs instead.
 
-Under the placement lock, the claim then makes these changes on the row in one update, and only when the row is still `warm` without a group:
+In the placement transaction, the claim then makes these changes on the row in one update, and only when the row is still `warm` without a group:
 
 | Field | Value |
 | --- | --- |
@@ -197,28 +199,21 @@ Under the placement lock, the claim then makes these changes on the row in one u
 | `state` | `provisioning` |
 | `claimed_at` | Now |
 
-Then it gives the row a new random Pi token. It queues `RefillTaskVmPool`, and the guard job `EnsureWarmClaimReady`, delayed by 330 seconds. The claim itself then runs the steps of `PrepareTaskVmRuntime`, which are only the group's steps: the CLIProxyAPI key, the Pi files, and the `pi-server` Process. They take about 1.5 seconds. The row becomes `ready`, and the same claim creates the workspace, as for a new VM.
+Then it gives the row a new random Pi token in the same transaction. After the transaction commits, the claim dispatches one `PrepareTaskVmRuntime` and queues `RefillTaskVmPool`. The claim returns while the row is `provisioning`; it does not prepare the runtime inline in `tasks:tick`. New claims queue no `EnsureWarmClaimReady` guard.
 
-The steps run in the claim, not on the `tasks` queue, because a queued job can wait behind other jobs. The claim runs in `tasks:tick` after the placement lock is released, and holds no transaction.
+Horizon runs `PrepareTaskVmRuntime` on the `task-vms` queue, as for a new VM. The job creates the group's CLIProxyAPI key, writes the Pi files, and starts the `pi-server` Process. The steps take about 1.5 seconds when Pi is current, apart from the wait for the worker. If the VM has an older Pi, the same job uploads the pinned Pi. Once the row becomes `ready`, a later claim creates the workspace, as for a new VM.
 
-The claim keeps each step short, and the whole run ends after 60 seconds, well inside the tick lock of 300 seconds. At that deadline every SSH command and CLIProxyAPI request of the run stops, and a step that would start after it fails. So a stalled VM or a stalled CLIProxyAPI cannot hold `tasks:tick` past its lock, and no second tick starts the steps beside it.
+The job uses the normal preparation limits. It waits up to 60 seconds for another model key operation. Each CLIProxyAPI request has 5 seconds. Each SSH step for the Pi check and files has 60 seconds, and a Pi upload has 600 seconds. The `pi-server` commands use the normal Process limits. Its whole run has a timeout of 900 seconds. A failure retries the job twice, 30 seconds apart. The steps are idempotent, so a repeat changes nothing.
 
-| Step | Limit in the claim | Limit in the queued job |
-| --- | --- | --- |
-| Wait for another model key operation | 10 seconds | 60 seconds |
-| Each CLIProxyAPI request | 5 seconds, and the claim deadline | 5 seconds |
-| Each SSH step for the Pi check, `models.json`, and the token | 15 seconds | 60 seconds |
-| Pi upload, when the VM has no current Pi | Not in the claim | 600 seconds |
-| Each SSH command of the `pi-server` Process | The claim deadline | The normal Process limits |
-| The whole run | 60 seconds | The job timeout of 900 seconds |
+SQLite commit and Redis dispatch are not atomic. Every subsequent allocation of an existing claimed warm VM that is still `provisioning` attempts to dispatch `PrepareTaskVmRuntime` again. The row's `warmed_at` distinguishes it from a new VM that still needs provisioning and enrollment; `claimed_at` is set for both new group VMs and claimed warm VMs. Allocation dispatches preparation only when both timestamps are present. A new VM reaches preparation through enrollment, not allocation. Returning the existing row alone is not enough: a crash after commit but before dispatch must leave work that the next claim can recover.
 
-A VM from a current base image has the pinned Pi, so the claim never uploads it. Between a change of the Pi pin and the next image build, a warm VM has an older Pi. Then the claim stops at the Pi check, and the queued job uploads Pi.
+Laravel uses `ShouldBeUnique` to lock preparation for each VM. It suppresses dispatch while a preparation job is queued or running. Preparation acquires Laravel's native unique lock on the same job object that it submits. A confirmed connection-resolution failure before submission releases only that job's lock owner, so the next claim can retry without deleting a replacement owner's lock.
 
-When a step fails, the claim logs a warning and queues `PrepareTaskVmRuntime`, which retries the steps as for a new VM. When a release or a crash stops the tick during the steps, `EnsureWarmClaimReady` runs 330 seconds after the claim. It finds the row still `provisioning`, logs the error `A warm task VM claim is not ready after its claim; the task VM worker runs its group steps.`, and queues `PrepareTaskVmRuntime`. The steps are idempotent, so a repeat changes nothing. A row that is `ready` makes the guard do nothing.
+After submission begins, an exception may mean Redis accepted the job but its response was lost, or a post-push event failed. Recovery retains the lock in these ambiguous cases: the accepted job completes or fails normally and releases its own lock; if no job was accepted, recovery waits for the existing one-hour lock expiry.
 
-The guard also does nothing when a `PrepareTaskVmRuntime` for the row is still queued or running. One example is the job that a failed claim queued behind a busy queue. The guard reads the job's unique lock, which the job holds until it ends. It logs only `A warm task VM claim waits for its queued group steps.` at info level, and that job ends the claim.
+If a process dies after acquiring the lock but before enqueueing, the lock's existing one-hour expiry allows a subsequent claim to dispatch again. The single `task-vms` worker serializes jobs, and preparation is idempotent. A recovered job either makes the row `ready` or exhausts its retries and marks it `failed` with group assistance. Recovery uses the ordinary preparation job, not a delayed guard.
 
-A warm claim logs `queue` first, which counts from the claim to the start of the group's steps, near 0 in the claim, and `warm-claim-to-ready` last, with the seconds from the claim to `ready`. A VM that becomes warm logs `warm`, with the seconds from its row to `warm`.
+A warm claim logs `queue` first, which counts from the claim to the worker's start of the group's steps, and `warm-claim-to-ready` last, with the seconds from the claim to `ready`. A VM that becomes warm logs `warm`, with the seconds from its row to `warm`.
 
 #### Replace warm VMs
 
@@ -475,12 +470,15 @@ The tick sets the row to `parked` and queues `ParkTaskVm`, which stops the VM wi
 Work for the group starts the VM again: a new subtask after a push, a review fix, a reviewer run, a base merge, the workspace removal after a merge, a completion, and a destroy that must first remove the workspace. That work waits while the VM is `parked`. The group shows the reason `Task VM: resuming.`, and Orbit queues `ResumeTaskVm`. The job runs these steps:
 
 1. It starts the VM with `incus start`. A VM that already runs counts as started.
-2. It checks every 2 seconds until the VM answers over WireGuard, `orbit-agent.service` is active, and Pi answers `GET /capabilities` with the group's Pi token.
-3. It sets the row to `ready`.
+2. It checks once whether the VM answers over WireGuard, `orbit-agent.service` is active, and Pi answers `GET /capabilities` with the group's Pi token.
+3. If the VM is not ready, the job calls `release(2)` and returns.
+4. Once all checks pass, it sets the row to `ready`.
+
+Horizon retries a released job when it is due. The worker is free for other task VMs between checks. The resume job does not sleep or poll in a long-running job.
 
 The next tick then continues the work, and the reason clears. Orbit never runs a workspace command, an agent turn, a fetch, or a push on a VM that is not `ready`. Those operations fail with `task_vm.parked` while it is `parked`. A merged group's workspace removal and the sweep of ended groups wait without a failure. A manual `tasks:complete` records the reason `Workspace removal failed: ` with that error, and the sweep removes the workspace once the VM is `ready`. Completion removes the workspace under the group's admission lock, so a tick cannot park the VM during that removal.
 
-When the VM does not answer within 9 minutes, the row becomes `failed` with `task_vm.resume_timeout`. The group asks for assistance with the reason `Task VM failed:`. A `parked` VM that has no workspace left is deleted without a start. Destroy on merge is otherwise unchanged.
+The queued resume has a fixed 9-minute deadline exposed through Laravel's `retryUntil()`. That deadline stays the same across releases and retries. When Laravel stops retrying at the deadline, `failed()` maps expiry to `task_vm.resume_timeout` and marks the still-parked row `failed`. Readiness releases do not exhaust an attempt count before that deadline. The group asks for assistance with the reason `Task VM failed:`. A `parked` VM that has no workspace left is deleted without a start. Destroy on merge is otherwise unchanged.
 
 ### Sweep task VM hosts
 
@@ -554,13 +552,13 @@ The task VM jobs run on the [Gateway queue](/reference/gateway-queue), which Lar
 
 | Queue | Task VM jobs |
 | --- | --- |
-| `task-vms` | Provision, enroll, prepare, park, resume, and destroy a VM, the guard of a warm claim, the host sweep, and the pool refill |
+| `task-vms` | Provision, enroll, prepare, park, resume, and destroy a VM, the host sweep, and the pool refill |
 | `tasks` | The [publish](#publish-from-the-vm) of an approved commit (`PublishTaskVmCommit`), beside the scheduled commands |
 | `builds` | The workspace template jobs, `RefreshTaskVmWorkspaceTemplates` and `BuildTaskVmWorkspaceTemplate`, and the nightly base image refreshes, [`RefreshTaskVmBaseImages`](#build-the-base-image) and [`RefreshUpCloudTaskVmBaseImage`](#refresh-the-upcloud-template-every-night) |
 
 One worker runs the `task-vms` jobs one at a time and in order, so no two jobs change the same VM at once.
 
-A `task-vms` or `tasks` job starts within about a second while its worker is free, also while a build runs. A delayed job, such as the guard of a warm claim, or a released job waits for its time. A `task-vms` job runs at most 1500 seconds, and any other job at most 1700 seconds. A job that a worker lost runs again after 1800 seconds.
+A `task-vms` or `tasks` job starts within about a second while its worker is free, also while a build runs. A delayed or released job waits for its time. A `task-vms` job runs at most 1500 seconds, and any other job at most 1700 seconds. A job that a worker lost runs again after 1800 seconds.
 
 A template build takes about a minute, a base image refresh up to 25 minutes, and a publish seconds. The `builds` queue has one process, so one template build or base image refresh runs in the fleet at a time. The host locks also allow one template build and one base image build or sync per host.
 
@@ -575,10 +573,9 @@ A builder VM has the size of a task VM and does not count against `max_vms`. It 
 | `PrepareTaskVmRuntime` | Twice, 30 seconds apart |
 | `DestroyTaskVm` | Until it succeeds |
 | `ParkTaskVm` | Twice, 30 seconds apart. A failure stays on the row as its error, and the row stays `parked` |
-| `ResumeTaskVm` | Checks for up to 3 minutes in one run, then again 15 seconds later. After the third run, or on an `incus start` error after three tries, the row becomes `failed` |
+| `ResumeTaskVm` | `release(2)` between checks until `retryUntil()` expires after 9 minutes; `failed()` maps expiry to `task_vm.resume_timeout`. Readiness waits do not exhaust retries. Start errors fail after three exceptions |
 | `SweepTaskVmHosts` | Never. It runs again 10 minutes later |
 | `RefillTaskVmPool` | Never. It runs again a minute later. A failed pool VM makes its host wait, as [Failures](#warm-vm-failures) describes |
-| `EnsureWarmClaimReady` | Never. It queues `PrepareTaskVmRuntime`, which has its own retries |
 | `RefreshTaskVmBaseImages` | Never. The next night runs it again |
 | `RefreshTaskVmWorkspaceTemplates` | Never. The next base image build, sync, or night queues it again |
 | `RefreshUpCloudTaskVmBaseImage` | Never. The next night runs it again |
@@ -587,6 +584,14 @@ A builder VM has the size of a task VM and does not count against `max_vms`. It 
 The jobs log each step with its seconds as `Task VM step done.`. The wait for the worker is a step of its own, apart from the work: `queue` before `create` in `ProvisionTaskVm`, and `enroll-queue` before `boot` in `EnrollTaskVm`. The guest boots during `enroll-queue`. A `boot` after a released try counts from the launch.
 
 When `ProvisionTaskVm`, `EnrollTaskVm`, `PrepareTaskVmRuntime`, or `ResumeTaskVm` has no retries left, or runs past its timeout, the row becomes `failed` with the job's error code, or `task_vm.job_failed` when the error has none. A pool row then makes its host [wait](#warm-vm-failures). Otherwise the group asks for assistance, so `tasks:status` lists it. After `ProvisionTaskVm`, `EnrollTaskVm`, or `PrepareTaskVmRuntime` the reason is `Task VM failed: tvm-<id>: <code>: <message> Cancel the group to destroy the VM.`, the same reason that a [claim](#from-claim-to-workspace) sets; after `ResumeTaskVm` it is `Task VM failed: <code>: <message>`. `EnrollTaskVm` never creates the VM again. The jobs run one at a time, so the 10-minute boot limit counts from the moment `ProvisionTaskVm` launched the VM, not from the row.
+
+#### Claims and resumes across a release
+
+The [Gateway release](/reference/gateway-queue#releases) calls `horizon:terminate`, not a systemd restart. Horizon lets an active claim or resume finish on its original release before the new worker starts. A crashed worker's reserved job becomes available again after the queue's `retry_after`; per-VM uniqueness, state checks, and idempotent preparation keep that retry safe. A claimed warm row committed without its preparation job is recovered by the next scheduler claim as described above.
+
+Already queued payloads must remain readable for one release, as required by [Jobs across releases](/reference/gateway-queue#jobs-across-releases). This includes old delayed `EnsureWarmClaimReady` payloads and old `ResumeTaskVm` payloads without the new deadline field. A compatibility reader for an old guard payload only dispatches the ordinary preparation job when the row belongs to a claimed warm VM and is still `provisioning`. It creates no new guards and is removed after those payloads have drained. This compatibility is not part of the new claim workflow.
+
+An old resume payload uses its original enqueue time for a fixed deadline, which survives its subsequent releases. Its old queue envelope can still exhaust its three-attempt limit before that deadline. Both expiry and that old attempt limit follow the same `task_vm.resume_timeout` failure path.
 
 ### Incus provider
 
@@ -903,7 +908,7 @@ The reserved range must always be a private network. As soon as task VMs are ena
 | `task_vm.host_configured` | 409 | `task-vms:retire-host` names a host that is still in `task_vms.incus.hosts` |
 | `task_vm.host_in_use` | 409 | `task-vms:retire-host` names a host that still has a task VM that is not `destroyed`, a warm one included |
 | `task_vm.parked` | 409 | The group's task VM is `parked`. Orbit starts it, and the work runs once it is `ready` |
-| `task_vm.resume_timeout` | 504 | A `parked` VM did not answer within 9 minutes of the first start |
+| `task_vm.resume_timeout` | 504 | A `parked` VM did not become ready before its fixed 9-minute resume deadline |
 | `task_vm.vm_missing` | 502 | The sweep found a `warm`, `ready`, or `parked` task VM gone from its host |
 | `task_vm.pool_start_timeout` | 504 | A pool VM was still `provisioning` an hour after the refill recorded it |
 | `task_vm.workspace_template_failed` | 502 | A workspace template build failed, or the mount of a clone failed. The message names the stage |
@@ -931,10 +936,12 @@ Warm VMs have these limits:
 
 A warm claim takes this long:
 
-- A group waits for the next `tasks:tick`, every 10 seconds, before its claim. The warm claim then takes about 1.5 seconds to `ready`, and creates the workspace.
-- In the worst case, the claim's own steps end after 60 seconds. The queued job does the rest. See [Claim a warm VM](#claim-a-warm-vm).
+- A group waits for the next `tasks:tick`, every 10 seconds, before its claim.
+- The claim dispatches the preparation job and returns. The job waits for the `task-vms` worker.
+- Runtime preparation with current Pi takes about 1.5 seconds, apart from queue time. See [Claim a warm VM](#claim-a-warm-vm).
+- The next claim after the row becomes `ready` creates the workspace.
 - A warm VM with an older Pi is `ready` only after the queued job uploads Pi, behind the other jobs on the queue.
-- After a tick that dies during the steps, the group waits 330 seconds for the guard, and then for the queued job.
+- A subsequent claim retries a missing preparation dispatch. A unique lock orphaned before enqueueing can delay recovery until its one-hour expiry.
 
 The claim and the refill also have these limits:
 
