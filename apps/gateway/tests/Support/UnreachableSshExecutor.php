@@ -18,9 +18,14 @@ final class UnreachableSshExecutor implements SshExecutor
     /** @var list<RemoteCommand> */
     public array $commands = [];
 
+    /** @var list<SshConnection> */
+    public array $connections = [];
+
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
+        $this->connections[] = $connection;
         $this->commands[] = $command;
+        $command->protectedInput?->close();
 
         return new CommandResult(255, '', "ssh: connect to host {$connection->host} port {$connection->port}: Connection timed out\n", 0, false);
     }
