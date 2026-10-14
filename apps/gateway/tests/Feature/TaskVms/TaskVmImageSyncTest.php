@@ -25,8 +25,11 @@ use App\Jobs\TaskVms\RefreshTaskVmWorkspaceTemplates;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\TaskVmImageBuild;
+use Illuminate\Queue\Events\JobProcessed;
+use Illuminate\Queue\WorkerOptions;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
@@ -380,6 +383,55 @@ describe('queued image distribution', function (): void {
             RefreshTaskVmWorkspaceTemplates::class,
         ]);
     });
+
+    it('isolates a target that disappears or becomes inactive after enqueue in the real queued chain', function (?LifecycleStatus $status): void {
+        Log::spy();
+        $far = sync_node('far', '10.44.0.30', '192.168.6.50', $this->cluster);
+        $this->fleet->host('10.44.0.30')->lan = '192.168.6.50';
+        sync_hosts($this->beast, $this->shark, $far);
+        $this->fleet->host('10.44.0.30')->images = [SYNC_SHARK => ['orbit-task-base-20261010030500', TaskVmHost::BaseImage]];
+        ($this->link)();
+        $build = TaskVmImageBuild::query()->create([
+            'host_node_id' => $this->beast->id,
+            'image_fingerprint' => SYNC_OLD,
+            'state' => TaskVmImageBuildState::Succeeded,
+        ]);
+        app(TaskVmImageBuildSteps::class)->run($build, TaskVmImageBuildStep::Promote, null);
+        expect(DB::table('jobs')->count())->toBe(1);
+        $commands = $this->fleet->argv('10.44.0.11');
+        if ($status === null) {
+            $this->shark->delete();
+        } else {
+            $this->shark->update(['status' => $status]);
+        }
+        $processed = [];
+        Queue::after(function (JobProcessed $event) use (&$processed): void {
+            $processed[] = $event->job->resolveName();
+        });
+        $worker = app('queue.worker');
+        $options = new WorkerOptions(sleep: 0, maxTries: 1);
+        for ($turn = 0; $turn < 3; $turn++) {
+            $worker->runNextJob('gateway', 'builds', $options);
+        }
+
+        expect($processed)->toBe([SyncBuiltImage::class, SyncBuiltImage::class, RefreshTaskVmWorkspaceTemplates::class])
+            ->and($this->fleet->argv('10.44.0.11'))->toBe($commands)
+            ->and($this->fleet->host('10.44.0.11')->images)->toBe([SYNC_SHARK => ['orbit-task-base-20261010030500', TaskVmHost::BaseImage]])
+            ->and($this->fleet->host('10.44.0.30')->images[SYNC_OLD])->toContain(TaskVmHost::BaseImage)
+            ->and($build->refresh()->state)->toBe(TaskVmImageBuildState::Succeeded)
+            ->and(DB::table('jobs')->count())->toBe(0)
+            ->and(DB::table('failed_jobs')->count())->toBe(0);
+        Log::shouldHaveReceived('error')->once()->withArgs(fn (string $message, array $context): bool => $message === 'Task VM base image sync failed.'
+            && $context['build_id'] === $build->id
+            && $context['host_node_id'] === $this->shark->id
+            && $context['node'] === ($status === null ? (string) $this->shark->id : 'shark')
+            && $context['error_code'] === 'task_vm.unknown_host');
+    })->with([
+        'deleted target' => [null],
+        'removing target' => [LifecycleStatus::Removing],
+        'failed target' => [LifecycleStatus::Failed],
+        'provisioning target' => [LifecycleStatus::Provisioning],
+    ]);
 
     it('keeps a failed sync host and lets the other queued syncs continue', function (): void {
         $far = sync_node('far', '10.44.0.30', '192.168.6.50', $this->cluster);

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Jobs\TaskVms\ImageBuild;
 
+use App\Domain\Shared\LifecycleStatus;
+use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\TaskVms\IncusTaskVmImageSync;
 use App\Models\Node;
@@ -26,14 +28,25 @@ final class SyncBuiltImage implements ShouldQueue
 
     public function handle(TaskVmSettings $settings, IncusTaskVmImageSync $sync): void
     {
-        $build = TaskVmImageBuild::query()->findOrFail($this->buildId);
-        $source = $build->hostNode;
-        $node = Node::query()->findOrFail($this->hostNodeId);
+        $name = (string) $this->hostNodeId;
         try {
+            $build = TaskVmImageBuild::query()->findOrFail($this->buildId);
+            $source = $build->hostNode()->firstOrFail();
+            $node = Node::query()->find($this->hostNodeId);
+            $name = $node instanceof Node ? $node->name : $name;
+            if (! $node instanceof Node || $node->status !== LifecycleStatus::Active) {
+                throw new TaskVmException('task_vm.unknown_host', "Node [{$name}] is not an active Node.");
+            }
             $sync->sync($settings->host($source->id), $source, $settings->host($node->id), $node, (string) $build->image_fingerprint);
         } catch (Throwable $error) {
             // Preserve the old distribute semantics: other hosts and the template refresh still run.
-            Log::error('Task VM base image sync failed.', ['node' => $node->name, 'error' => $error->getMessage()]);
+            Log::error('Task VM base image sync failed.', [
+                'build_id' => $this->buildId,
+                'host_node_id' => $this->hostNodeId,
+                'node' => $name,
+                'error_code' => TaskVmException::codeOf($error),
+                'error' => $error->getMessage(),
+            ]);
         }
     }
 }
