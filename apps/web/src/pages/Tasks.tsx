@@ -487,7 +487,10 @@ function TaskDetailView({ id, subtaskId }: { id: string; subtaskId?: string }) {
                                       },
                             )}
                         />
-                        <Frame title="Description" className="h-[320px] min-h-0 lg:h-auto">
+                        <Frame
+                            title="Description"
+                            className="h-[320px] max-h-[400px] min-h-0 lg:h-auto"
+                        >
                             <p className="selectable whitespace-pre-wrap break-words">
                                 {detail.brief || "No description provided."}
                             </p>
@@ -496,13 +499,13 @@ function TaskDetailView({ id, subtaskId }: { id: string; subtaskId?: string }) {
                     {subtaskId === undefined && (
                         <section
                             aria-label="Subtasks"
-                            className="shrink-0 lg:flex lg:min-h-0 lg:flex-1 lg:basis-0 lg:flex-col"
+                            className="min-h-[400px] shrink-0 lg:flex lg:flex-1 lg:basis-0 lg:flex-col"
                         >
                             {subtaskLanes.length === 0 ? (
                                 <p className="text-dim">No subtasks yet.</p>
                             ) : (
                                 <div
-                                    className="kanban-board grid grid-cols-1 lg:min-h-0 lg:flex-1 lg:grid-cols-[repeat(var(--kanban-lanes),minmax(0,1fr))] lg:grid-rows-[minmax(0,1fr)]"
+                                    className="kanban-board grid min-h-[400px] grid-cols-1 lg:flex-1 lg:grid-cols-[repeat(var(--kanban-lanes),minmax(0,1fr))] lg:grid-rows-[minmax(0,1fr)]"
                                     style={laneWidths(subtaskLanes.length)}
                                 >
                                     {subtaskLanes.map(({ column, cards: subtasks }) => (
