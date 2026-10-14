@@ -15,6 +15,93 @@ Every task group runs in its own [task VM](#task-vms), which is a normal `app-de
 
 Task VMs are off until you [configure them](#configure-task-vms). Until then no task group can start. [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) records the design.
 
+## Machine software recipe
+
+The repository's machine software recipe is [`apps/gateway/resources/machine-software/recipe.json`](https://github.com/nckrtl/orbit/blob/main/apps/gateway/resources/machine-software/recipe.json). It declares one Ubuntu snapshot, exact tool versions, and the tool sets for `gateway`, `app-dev`, `app-prod`, `operator`, and the task VM base image. Project dependencies, workspace setup, credentials, Node identity, and service configuration are not recipe inputs.
+
+This is the contract for [ADR 0207, step 1](/decisions/0207-one-image-recipe-shared-package-cache-no-workspace-templates#implementation-plan). The recipe loader and validator do not install software. Today's [image build](#build-the-base-image), enrollment, claims, and nightly jobs still use their existing programs; adding or validating a recipe does not change them. Recording recipe identity on images and Nodes, recipe-driven builds, and production convergence belong to later steps.
+
+### Recipe schema
+
+The recipe is UTF-8 JSON, not executable PHP or a list of shell commands. The loader accepts schema version `1` only. It rejects missing fields, unknown fields, duplicate object keys, wrong types, empty required values, duplicate list entries, and unsupported sources, architectures, releases, roles, or tool identifiers. A schema change requires an explicit loader change; it is not a way to pass arbitrary installation instructions to a host.
+
+| Field | Contract |
+| --- | --- |
+| `schema_version` | Integer `1`; this identifies the format, not the machine software version |
+| `ubuntu.release` | Ubuntu release used by the current base image, initially `26.04` |
+| `ubuntu.snapshot` | UTC snapshot identifier in `YYYYMMDDTHHMMSSZ` form, used at `https://snapshot.ubuntu.com/ubuntu/<snapshot>/`; a syntactically valid date alone does not prove availability |
+| `architectures` | Non-empty list drawn from `amd64` and `arm64`, using Debian architecture names |
+| `tools` | Object keyed by the loader's known tool identifiers; each value has an exact `version` and a `source` of `ubuntu` or `artifact` |
+| `common` | Tool identifiers included in every role and the base image |
+| `roles` | Object with exactly `gateway`, `app-dev`, `app-prod`, and `operator`; each value is a list of additional tool identifiers |
+| `base` | List of additional tool identifiers for the task VM base image; this is an image profile, not a Node role |
+
+An `ubuntu` tool names its Debian `package`. Its `version` is the complete Debian version, including epoch and distribution revision when present, not just an upstream release or a constraint. It resolves only from the selected Ubuntu snapshot's signed package indexes for the declared release and architectures. The release's archive, updates, and security pockets are checked; a package available only from today's rolling archive does not satisfy the recipe.
+
+An `artifact` tool has an `artifacts` object keyed by every declared architecture. Each entry contains an HTTPS `url` and exactly one digest field, `sha256` or `sha512`, with a full lowercase hexadecimal digest. A URL must identify the pinned release, not a moving installer or a `latest` alias. Architecture-independent archives repeat the same URL and digest for each architecture. Artifact contents, not the spelling of the URL or a successful HTTP response, are the integrity check. The validator downloads and hashes the bytes without executing or installing them.
+
+The loader has a closed catalog of supported tool identifiers and their source kinds. A new tool needs a catalog change and validation tests as well as a recipe entry. Every profile reference must resolve to a catalogued entry in `tools`; an unused entry, a missing tool, or an incompatible source is an error. Tool versions must be exact: `latest`, `stable`, `lts`, version ranges, and unversioned installer URLs are not pins.
+
+A profile's effective set is the union of `common` and its own list, sorted by tool identifier. Profiles cannot refer to other profiles, so role inheritance cannot hide software or form cycles. A multi-role Node's eventual set is the union of its roles, not the base image set.
+
+### Role and base tool sets
+
+The seed preserves the software selected by today's image and enrollment programs. It does not use this migration to upgrade tools. Some programs currently ask for moving releases: Rust `stable`, Node `lts`, and Bun's or pnpm's default release. The seed records the concrete version and integrity evidence resolved for that baseline, not the moving selector. Package-level pins and artifact digests live in the recipe, not in a second version table in this page.
+
+| Profile | Tools in addition to `common` |
+| --- | --- |
+| `common` | Bootstrap packages: `ca-certificates`, `curl`, `gnupg`, `libnss-resolve`, `openssh-client`, `sudo`, `ufw`, and `wireguard` |
+| `gateway` | Caddy from the Caddy project's release, not Ubuntu's Caddy package |
+| `app-dev` | `acl`, `attr`, Caddy, Composer, `docker.io`, Git, OpenSSL, `php-curl`, `php-xml`, `unzip`, Vite+ (`vp`), Node, pnpm, npm/npx, and Bun; PHP 8.5 and 8.4 with the current app-dev extension/package profiles |
+| `app-prod` | The current application prerequisites and JavaScript/Composer managers, as for `app-dev`, but without preinstalling every selectable PHP version's app-dev packages |
+| `operator` | No additional role prerequisite tools; this is the recipe profile for a roleless operator Node, not a new Node role |
+| `base` | The full `app-dev` tool set, plus the Rust toolchain with Cargo, clippy and rustfmt, the Node agent binary, and the Pi executable |
+
+The base list explicitly contains the app-dev tools; it does not inherit a role implicitly. `npm` and `npx`, or Rust's component binaries, may come from one pinned distribution rather than separate downloads, but their supplied versions must be covered by that distribution's pin. The exact PHP package lists come from the current selectable-version profiles, not from a new choice of extensions. Caddy starts at the existing `2.11.7` release and keeps its architecture-specific SHA-512 pins. Snapshot packages retain their complete Debian versions. This contract does not add the base-only development tools to production Nodes.
+
+### Pins outside the Ubuntu snapshot
+
+The Ubuntu snapshot does not freeze third-party repositories or upstream release channels. The recipe must pin these separately:
+
+| Tool or distribution | Pin and verification |
+| --- | --- |
+| Caddy | Exact upstream release and architecture-specific `.deb` URL; retain the existing SHA-512 digests, checked against the project's release checksums |
+| PHP packages not in the Ubuntu snapshot | Exact Debian package versions and architecture-specific package artifacts with recorded digests; a mutable Sury repository URL or PHP minor version alone is insufficient |
+| Vite+, Node, pnpm, npm/npx and Bun | Exact release distributions or registry tarballs and their digests, including the selected Node runtime and package-manager versions; do not run `curl ... \| bash`, resolve `lts`, or ask a registry for its current candidate during validation |
+| Rust | Exact toolchain release, its minimal-profile components including clippy and rustfmt, and versioned distribution artifacts with digests; `stable` and an unpinned rustup installer are insufficient |
+| Node agent and Pi | Exact release identifiers, architecture-specific executable URLs, and digests; preserve the releases selected by the existing installers |
+
+Every separately fetched input needed for a pinned tool must be covered by its artifact pins; a pinned bootstrap script must not download an unpinned payload. A distribution that bundles several binaries can cover them with one artifact digest. When a tool needs several independent artifacts, the catalog and recipe must model those inputs explicitly rather than fetching extra software behind one pin. The seed's provenance must be reproducible from the current programs and upstream metadata; it must not invent a checksum or treat the Ubuntu snapshot as proof of a third-party version.
+
+### Recipe identity
+
+The recipe identity is `sha256:<digest>`, computed from the validated document's canonical JSON. Canonicalization recursively sorts object keys by byte order, preserves array order, emits no insignificant whitespace, leaves slashes and Unicode unescaped, and adds no final newline. Only JSON integers, strings, arrays, objects, booleans, and null are permitted; schema fields further restrict their types. Duplicate keys are rejected before hashing. The identity is derived, not stored as a self-referential field in the recipe.
+
+Whitespace and object-key order do not change the identity. Changing a snapshot, pin, digest, role assignment, schema version, or list order does. The identity covers all profiles together; there is no independent version counter for each role and no Git commit SHA masquerading as the recipe version. Git history provides provenance, while the content hash names the exact software intent even when the same recipe appears in another commit. Later image and Node consumers record this complete identity; schema version `1` and a short display hash are not substitutes.
+
+### Show and validate the recipe
+
+The Gateway command `php artisan orbit:machine-recipe` shows the repository recipe's identity, snapshot, exact tool pins, and effective profile tool sets. `--role=gateway`, `--role=app-dev`, `--role=app-prod`, or `--role=operator` selects one role; `--role=base` selects the base image profile. `--path=<file>` selects a candidate recipe for review or a validation fixture. Showing a recipe always performs structural validation and makes no claim about remote availability.
+
+Add `--validate` to verify availability and integrity as well as structure. For example, from `apps/gateway`, run `php artisan orbit:machine-recipe --validate` before accepting a recipe change. Validation checks the whole recipe across every declared architecture even when `--role` limits the displayed set. It requires network access but no database, SSH connection, image builder, or root privileges. It does not install packages, change apt sources, create Nodes, build images, or change which image a claim can use.
+
+Online validation verifies that the exact snapshot exists for the release and architectures, that its authenticated package indexes contain each exact Ubuntu package version, and that every external artifact is available and matches its recorded digest. Redirects or server fallback to another snapshot or a rolling archive must not turn an unavailable pin into success. Network failures are failures to verify, not evidence that a release is invalid or permission to choose another version. A successful structural-only show is not a successful availability check.
+
+| Failure | Required diagnostic |
+| --- | --- |
+| Invalid JSON or schema | File and field path, with the expected shape or unsupported schema version |
+| Unknown role or tool | The rejected name and the valid choices; unresolved references identify the profile and tool |
+| Invalid or unavailable snapshot | The snapshot identifier, release, architecture, and failing metadata URL or verification reason |
+| Unavailable package or version | Tool identifier, exact requested version, architecture, snapshot/source, and what could not be resolved |
+| Missing artifact or digest mismatch | Tool identifier, architecture, URL, and the expected and actual digest when bytes were obtained |
+| Network or signature failure | The failing source and reason; report that availability could not be verified rather than silently falling back |
+
+The command exits zero only for a successful requested operation and nonzero for any failure. It never prints a validation-success result for a partially checked recipe. Tests must cover malformed recipes, unknown role and tool names, well-formed but unavailable snapshots and versions, and digest failures with controlled responses; a syntax-only date test or mocked unconditional success does not prove remote validation.
+
+### Why the recipe works this way
+
+This settles ADR 0207's schema, identity, validation, and non-snapshot pinning questions. A closed, versioned JSON document is reviewable without executing code. A content hash names all role sets together without a manually maintained counter. Separate structural and online checks distinguish malformed intent from unavailable inputs. Explicit artifact hashes cover software that Ubuntu's snapshot cannot freeze. One catalog prevents misspelled tools or roles from silently changing an image. Build publication fencing, nightly Git updates, and concurrency between recipe changes remain later orchestration work, not guarantees of this validator.
+
 ## Task VMs
 
 A task VM is an Ubuntu 26.04 VM on an Incus host. It boots from the [base image](#build-the-base-image), which is the same on every host and holds everything that enrollment installs on an `app-dev` Node. The Gateway creates it for one group, enrolls it as an `app-dev` Node, and destroys it when the group ends. After enrollment, the group uses the same code as a shared group, pinned to that Node. Only Incus hosts run task VMs. UpCloud follows in Phase 3 of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm).

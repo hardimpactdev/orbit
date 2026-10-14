@@ -127,7 +127,7 @@ The snapshot bump, image builds, and smoke topology pass. The run converges the 
 
 These questions concern implementation details, not alternatives to the eleven decisions:
 
-- What recipe schema, version identifier, and validation prove snapshot availability, pinned tool versions, and role membership? How are tools not supplied by the Ubuntu snapshot pinned and verified?
+- **Settled for step 1:** [Machine software recipe](/reference/compute-drivers#machine-software-recipe) defines schema version 1, a canonical JSON SHA-256 identity shared by all profiles, explicit role tool membership, and structural plus online availability/integrity validation. Non-snapshot tools use exact release artifacts and recorded digests, not moving installer channels. Steps 3 and 8 add image/Node identity recording; step 3 fences build publication.
 - How does the trusted nightly snapshot bump enter repository history, and how are concurrent nightly and task group recipe changes serialized so that an older build cannot publish as current?
 - How are builds and readiness tracked across multiple task VM hosts, including a host added during a build? What exact waiting status and recovery information does a blocked claim expose?
 - What CI job publishes the cache ref, how is it authenticated, and how are code/cache SHA matching, stale or missing refs, and ref retention handled?
