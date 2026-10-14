@@ -83,6 +83,7 @@ Until the row is `ready`, the claim returns the group to `todo` with a reason, a
 | --- | --- |
 | `Task VM: task VMs are not enabled on this Gateway.` | `task_vms.enabled` is false and the group has no task VM |
 | `Task VM: no capacity.` | Every host is inactive or full. See [Place task VMs](#place-task-vms) |
+| `Task VM: another placement is running.` | SQLite writer contention exhausted the placement transaction's retries. The next tick tries placement again |
 | `Task VM: waiting for a warm VM.` | Every host is full, and at least one of its VMs is a [warm VM](#keep-warm-vms) that is still starting. The claim takes it once it is `warm` |
 | `Task VM: provisioning.` | The jobs are still running |
 | `Task VM: task_vm.invalid_config: <message>` | A `task_vms` value is invalid |
@@ -204,7 +205,7 @@ Horizon runs `PrepareTaskVmRuntime` on the `task-vms` queue, as for a new VM. Th
 
 The job uses the normal preparation limits. It waits up to 60 seconds for another model key operation. Each CLIProxyAPI request has 5 seconds. Each SSH step for the Pi check and files has 60 seconds, and a Pi upload has 600 seconds. The `pi-server` commands use the normal Process limits. Its whole run has a timeout of 900 seconds. A failure retries the job twice, 30 seconds apart. The steps are idempotent, so a repeat changes nothing.
 
-SQLite commit and Redis dispatch are not atomic. Every subsequent allocation of an existing claimed warm VM that is still `provisioning` attempts to dispatch `PrepareTaskVmRuntime` again. The row's `claimed_at` distinguishes it from a new VM that still needs provisioning and enrollment. Returning the existing row alone is not enough: a crash after commit but before dispatch must leave work that the next claim can recover.
+SQLite commit and Redis dispatch are not atomic. Every subsequent allocation of an existing claimed warm VM that is still `provisioning` attempts to dispatch `PrepareTaskVmRuntime` again. The row's `warmed_at` distinguishes it from a new VM that still needs provisioning and enrollment; `claimed_at` is set for both new group VMs and claimed warm VMs. Allocation dispatches preparation only when both timestamps are present. A new VM reaches preparation through enrollment, not allocation. Returning the existing row alone is not enough: a crash after commit but before dispatch must leave work that the next claim can recover.
 
 Laravel uses `ShouldBeUnique` to lock preparation for each VM. It suppresses dispatch while a preparation job is queued or running. Preparation acquires Laravel's native unique lock on the same job object that it submits. A confirmed connection-resolution failure before submission releases only that job's lock owner, so the next claim can retry without deleting a replacement owner's lock.
 

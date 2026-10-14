@@ -419,6 +419,39 @@ describe('warm', function (): void {
 });
 
 describe('claim', function (): void {
+    it('queues only provisioning for an initial cold allocation before enrollment', function (): void {
+        Queue::fake();
+        $group = tvm_pool_group();
+
+        $vm = app(AllocateTaskVmAction::class)->execute($group);
+
+        expect($vm->group_id)->toBe($group->id)
+            ->and($vm->state)->toBe(TaskVmState::Provisioning)
+            ->and($vm->claimed_at)->not->toBeNull()
+            ->and($vm->warmed_at)->toBeNull()
+            ->and($vm->node_id)->toBeNull();
+        Queue::assertPushedOn('task-vms', ProvisionTaskVm::class, fn (ProvisionTaskVm $job): bool => $job->taskVmId === $vm->id);
+        Queue::assertNotPushed(PrepareTaskVmRuntime::class);
+        Queue::assertNotPushed(EnrollTaskVm::class);
+    });
+
+    it('queues no preparation when a repeated cold allocation is still waiting for enrollment', function (): void {
+        Queue::fake();
+        $group = tvm_pool_group();
+        $vm = app(AllocateTaskVmAction::class)->execute($group);
+        Queue::fake();
+
+        $existing = app(AllocateTaskVmAction::class)->execute($group);
+
+        expect($existing->id)->toBe($vm->id)
+            ->and($existing->state)->toBe(TaskVmState::Provisioning)
+            ->and($existing->claimed_at)->not->toBeNull()
+            ->and($existing->warmed_at)->toBeNull()
+            ->and($existing->node_id)->toBeNull()
+            ->and(TaskVm::query()->count())->toBe(1);
+        Queue::assertNothingPushed();
+    });
+
     it('takes a current warm VM, and queues only the group steps when they fail in the claim', function (): void {
         Queue::fake();
         Log::spy();
