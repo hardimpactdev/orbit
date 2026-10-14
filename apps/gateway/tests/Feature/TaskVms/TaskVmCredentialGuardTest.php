@@ -65,6 +65,8 @@ beforeEach(function (): void {
 });
 
 it('is the Gateway SSH executor', function (): void {
+    app()->forgetInstance(SshExecutor::class);
+
     expect(app(SshExecutor::class))->toBeInstanceOf(TaskVmCredentialGuard::class);
 });
 
