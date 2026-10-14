@@ -143,6 +143,28 @@ describe('WorktreeSynchronizer', function () {
             ->and(array_values(array_unique(array_column($second->pushes, 'instance'))))->toBe([$target->instance('operator')]);
     });
 
+    it('prepares runtime on every Node even when the guest scripts are already current', function () {
+        $first = new WorktreeSynchronizerGuestFake;
+        ['root' => $root, 'target' => $target, 'synchronizer' => $synchronizer] = worktreeSynchronizerFixture($first);
+        $synchronizer->installWorkingTreeGuestScripts($target, $root);
+        $guest = new WorktreeSynchronizerGuestFake(array_fill_keys(array_values($target->instances()), (string) $first->pushedMarker));
+
+        new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('c', 32)))->installWorkingTreeGuestScripts($target, $root);
+
+        $runtime = array_values(array_filter($guest->execs, static fn (array $exec): bool => $exec['command'] === ['/usr/local/bin/prepare-node.sh', 'configure-runtime']));
+        expect(array_column($runtime, 'instance'))->toBe(array_values($target->instances()));
+        expect($guest->pushes)->toBe([]);
+    });
+
+    it('refuses to record the source when runtime preparation fails', function () {
+        $guest = new WorktreeSynchronizerGuestFake(failOn: 'configure-runtime');
+        ['root' => $root, 'target' => $target, 'synchronizer' => $synchronizer] = worktreeSynchronizerFixture($guest);
+
+        expect(fn () => $synchronizer->syncWorkingTree($target, $root, str_repeat('e', 64)))
+            ->toThrow(RuntimeException::class, 'Guest runtime preparation failed.');
+        expect(array_filter($guest->execs, static fn (array $exec): bool => in_array(WorktreeSynchronizer::SOURCE_STATE_MARKER, $exec['command'], true)))->toBe([]);
+    });
+
     it('refuses a worktree on a branch that does not name the issue before any guest call', function () {
         $guest = new WorktreeSynchronizerGuestFake;
         ['root' => $root, 'target' => $target, 'synchronizer' => $synchronizer] = worktreeSynchronizerFixture($guest, 'unrelated');

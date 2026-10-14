@@ -71,6 +71,10 @@ Builders start from `images:ubuntu/26.04/cloud` for VMs and `images:ubuntu/26.04
 
 Both image pipelines share one clean script. It clears APT archives and removes the SSH host keys, machine ID, cloud-init state, authorized keys, logs, and per-install service IDs. The seal empties known hosts, gives the VM a systemd-networkd DHCP file, and checks that no WireGuard configuration or Gateway database remains. A guest from the image boots once and creates its own SSH host keys.
 
+The topology DHCP file matches only Ethernet interfaces named `en*` or `eth*`, the guest uplinks. A match on Ethernet type alone also claims Docker's `veth*` interfaces and removes them from their bridge. Docker owns its bridges and veths; the harness never attaches them by hand. Guest-script installation, including `sync --quick`, updates the harness-owned DHCP file on existing Nodes and reloads networkd only when its contents change. If a Node already has detached container veths, recreate the affected containers after sync; reloading networkd does not rebuild Docker endpoints.
+
+On topology Nodes with Docker installed, guest preparation adds `orbit` to the `docker` group. New `exec` sessions can use the socket without sudo. This is a topology convenience, not a production role change: app-dev prerequisites install Docker but do not grant the managed account Docker group membership; managed Docker Process commands use sudo. The Docker group gives root-equivalent access; the harness grants it only inside its disposable fixtures.
+
 | Role image | Programs |
 | --- | --- |
 | `gateway` | The Gateway's own prerequisites, then `orbit:node-programs gateway vpn` without its bootstrap program |
