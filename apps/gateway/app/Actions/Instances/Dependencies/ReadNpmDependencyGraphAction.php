@@ -101,7 +101,7 @@ final readonly class ReadNpmDependencyGraphAction
         }
 
         if (! in_array($lock->lockfileVersion ?? null, [2, 3], true)) {
-            throw new DependencyParseException('dependencies.unsupported_format');
+            throw new DependencyParseException('dependencies.unsupported_format', 'package-lock.json or npm-shrinkwrap.json lockfileVersion must be 2 or 3');
         }
 
         if (! ($lock->packages ?? null) instanceof stdClass) {

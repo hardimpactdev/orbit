@@ -172,7 +172,11 @@ final class DependencyInventoryDecoder
 
     private function inventory(#[SensitiveParameter] mixed $value, string $ecosystem): DependencyInventoryResponse
     {
-        $data = $this->object($value, ['ecosystem', 'state', 'succeeded', 'attempted_at', 'error_code', 'snapshot']);
+        $fields = ['ecosystem', 'state', 'succeeded', 'attempted_at', 'error_code', 'snapshot'];
+        if ($value instanceof stdClass && property_exists($value, 'error_detail')) {
+            $fields[] = 'error_detail';
+        }
+        $data = $this->object($value, $fields);
         if ($data->ecosystem !== $ecosystem || ! in_array($data->succeeded, [true, false, null], true)) {
             $this->invalid();
         }
@@ -195,7 +199,16 @@ final class DependencyInventoryDecoder
             $this->invalid();
         }
 
-        return new DependencyInventoryResponse($ecosystem, $state, $data->succeeded, $attemptedAt, $errorCode, $snapshot);
+        $detail = $data->error_detail ?? null;
+        if ($detail !== null && (! is_string($detail) || strlen($detail) > 255
+            || preg_match('/\A[\x20-\x7e]+\z/D', $detail) !== 1 || $errorCode === null)) {
+            $this->invalid();
+        }
+
+        return new DependencyInventoryResponse(
+            $ecosystem, $state, $data->succeeded, $attemptedAt, $errorCode, $snapshot,
+            $detail === null ? null : (new CredentialRedactor)->redactText($detail),
+        );
     }
 
     private function snapshot(#[SensitiveParameter] mixed $value, string $ecosystem): DependencySnapshotResponse

@@ -13,6 +13,7 @@ final readonly class DependencyInventoryResponse
         public ?string $attemptedAt,
         public ?string $errorCode,
         public ?DependencySnapshotResponse $snapshot,
+        public ?string $errorDetail = null,
     ) {}
 
     /** @return array<string, mixed> */
@@ -24,6 +25,7 @@ final readonly class DependencyInventoryResponse
             'succeeded' => $this->succeeded,
             'attempted_at' => $this->attemptedAt,
             'error_code' => $this->errorCode,
+            'error_detail' => $this->errorDetail,
             'snapshot' => $this->snapshot?->toArray(),
         ];
     }

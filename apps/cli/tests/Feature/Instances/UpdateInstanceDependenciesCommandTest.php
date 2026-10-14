@@ -41,7 +41,7 @@ function update_cli_inventory(bool $succeeded = true): array
         'file_hashes' => ['composer.json' => str_repeat('a', 64), 'composer.lock' => null], 'format' => null,
     ], 'graph' => ['resolutions' => [], 'requirements' => []]];
     $result = ['state' => 'present', 'succeeded' => true, 'attempted_at' => '2026-09-16T17:00:00+00:00',
-        'error_code' => null, 'snapshot' => $snapshot];
+        'error_code' => null, 'error_detail' => null, 'snapshot' => $snapshot];
     $javascript = $result;
     if (! $succeeded) {
         $javascript['state'] = 'stale';

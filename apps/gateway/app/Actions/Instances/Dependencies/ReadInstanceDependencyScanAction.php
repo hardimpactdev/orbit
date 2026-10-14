@@ -33,7 +33,7 @@ final readonly class ReadInstanceDependencyScanAction
             $snapshot = $observation === null ? null : $this->snapshot($observation);
 
             if ($attempt?->error_code !== null) {
-                return DependencyScanResult::failed($ecosystem, $attempt->attempted_at, $attempt->error_code, $snapshot);
+                return DependencyScanResult::failed($ecosystem, $attempt->attempted_at, $attempt->error_code, $snapshot, $attempt->error_detail);
             }
 
             return $snapshot === null ? null : DependencyScanResult::refreshed($snapshot);

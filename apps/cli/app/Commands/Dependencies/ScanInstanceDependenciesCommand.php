@@ -417,6 +417,7 @@ final class ScanInstanceDependenciesCommand extends GatewayCommand
             'Observed' => $snapshot?->observedAt,
             'Attempted' => $inventory->attemptedAt,
             'Error' => $inventory->errorCode,
+            ...($inventory->errorDetail === null ? [] : ['Detail' => $inventory->errorDetail]),
         ], $inventory->errorCode)));
     }
 }

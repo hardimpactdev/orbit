@@ -31,7 +31,7 @@ The resolution ID keeps installation paths and peer contexts apart, so one versi
 
 ## Reader rules
 
-Every reader parses data in memory. None reads files, runs a package manager or script, or contacts a registry. Errors carry a stable code and no input text. Versions stay opaque, and URLs and credentials never reach the result.
+Every reader parses data in memory. None reads files, runs a package manager or script, or contacts a registry. Errors carry a stable code and a short `error_detail` naming a file or failed check, never input text, URLs, credentials, or raw parser messages. The detail is stored with the attempt and returned by scan and show, including when the previous successful snapshot is retained. Older attempts without a stored detail receive a generic diagnostic for their error code on read. Versions stay opaque, and URLs and credentials never reach the result.
 
 This table sums up each reader.
 
@@ -66,11 +66,11 @@ A `file:` or `link:` dependency returns `dependencies.unsupported_layout`. Suppo
 
 ## Package manager selection
 
-The JavaScript manager comes from `packageManager`, then `devEngines.packageManager`, then lockfiles and configuration files. Configuration files are only presence signals. They are never evaluated.
+The JavaScript manager comes from `packageManager` or `devEngines.packageManager`, then lockfiles and configuration files. A single declared manager takes precedence over stray lockfiles and configuration signals; conflicting declarations fail. A declared manager without its own lockfile fails rather than falling back to a different manager. Without a declaration, conflicting manager families still fail. Configuration files are only presence signals. They are never evaluated.
 
 | Case | Result |
 | --- | --- |
-| Two manager families | `dependencies.ambiguous_manager` |
+| Conflicting declarations, or two manager families without a declaration | `dependencies.ambiguous_manager` |
 | Any Yarn signal | `dependencies.unsupported_format` |
 | `workspaces` or `pnpm-workspace.yaml` | `dependencies.unsupported_layout` |
 | Duplicate keys in `package.json` | `dependencies.invalid_manifest` |
@@ -105,7 +105,7 @@ The Gateway stores the inventory in five tables.
 | `instance_dependency_observations` | The last successful observation per Instance and ecosystem: time, presence, project root, source reference, format, and file hashes. No row means unknown. |
 | `instance_dependency_resolutions` | The resolutions of one observation. |
 | `instance_dependency_edges` | The requirements of one observation. |
-| `instance_dependency_scan_attempts` | Every attempt with its time and error code, null on success. |
+| `instance_dependency_scan_attempts` | Every attempt with its time, error code, and safe error detail; both error fields are null on success. |
 
 `PublishInstanceDependencyScanAction` replaces one ecosystem's observation, resolutions, edges, and attempt in one transaction. A failure records only the attempt and keeps the stored observation. A database failure records `dependencies.persistence_failed`. An Instance in removal gets `dependencies.instance_unavailable`. Removing an Instance deletes its rows but keeps shared package rows.
 
@@ -113,7 +113,7 @@ The Gateway stores the inventory in five tables.
 
 A scan or read returns `data` with `instance_id`, `succeeded`, `composer`, and `javascript`. `succeeded` is null until both ecosystems have attempts.
 
-Each ecosystem has `ecosystem`, `state`, `succeeded`, `attempted_at`, `error_code`, and `snapshot`. The state is `unknown` before the first success, and stale after a later failure. A snapshot has `observed_at`, a `source` with `project_root`, `reference`, `file_hashes`, and `format`. `project_root` is the absolute directory whose manifests were read; for Laravel root `apps/site/public`, it ends in `/apps/site`. The production `reference` still identifies the selected release. The snapshot also has a `graph`. A null graph means the ecosystem is absent. An empty graph means a project with no packages.
+Each ecosystem has `ecosystem`, `state`, `succeeded`, `attempted_at`, `error_code`, `error_detail`, and `snapshot`. `error_detail` is null on success and is limited to 255 printable ASCII characters. It uses fixed diagnostics and collected file names, not values from those files. The SDK also accepts older responses without this field. The state is `unknown` before the first success, and stale after a later failure. A snapshot has `observed_at`, a `source` with `project_root`, `reference`, `file_hashes`, and `format`. `project_root` is the absolute directory whose manifests were read; for Laravel root `apps/site/public`, it ends in `/apps/site`. The production `reference` still identifies the selected release. The snapshot also has a `graph`. A null graph means the ecosystem is absent. An empty graph means a project with no packages.
 
 An update returns `instance_id`, `succeeded`, `error_code`, `may_have_mutated`, a `composer` and a `javascript` step, and `inventory`. A step has `ecosystem`, `status` (`succeeded`, `absent`, `failed`, or `not_run`), `may_have_mutated`, and `error_code`. A refused update has both steps `not_run` and no inventory.
 

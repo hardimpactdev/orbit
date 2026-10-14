@@ -8,8 +8,10 @@ use RuntimeException;
 
 final class DependencyParseException extends RuntimeException
 {
-    public function __construct(public readonly string $errorCode = 'dependencies.invalid_composer_input')
-    {
+    public function __construct(
+        public readonly string $errorCode = 'dependencies.invalid_composer_input',
+        public readonly ?string $errorDetail = null,
+    ) {
         parent::__construct($errorCode);
     }
 }
