@@ -159,6 +159,9 @@ describe('TopologyAcquirer', function () {
             ->and($incus->instances['orbit-e2e-tst-9-aaaaaaaa-operator']['devices']['orbit-source'])
             ->toMatchArray(['source' => realpath($worktree), 'path' => '/home/orbit/orbit', 'shift' => 'true'])
             ->and($steps)->toBe([
+                'prepare-node.sh configure-runtime @gateway',
+                'prepare-node.sh configure-runtime @app-dev',
+                'prepare-node.sh configure-runtime @operator',
                 'converge-gateway.sh prerequisites @gateway',
                 'converge-gateway.sh bootstrap @gateway',
                 'prepare-node.sh gateway-authorize @app-dev',
