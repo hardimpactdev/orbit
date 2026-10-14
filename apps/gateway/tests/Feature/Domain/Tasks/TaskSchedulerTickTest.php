@@ -6887,16 +6887,25 @@ it('waits visibly without a fixup when a branch update is refused without a merg
     'outage' => [503, 'Service Unavailable'],
 ]);
 
-it('scopes only nonfinal Orbit handoff tests to the subtask start', function (bool $later, bool $orbit): void {
+it('scopes every Orbit handoff test run to the subtask start', function (int $position, bool $later, bool $orbit): void {
     [$group, $task, $checks] = tick_checking([TaskCheckReading::running()]);
     $group->project->update(['slug' => $orbit ? 'orbit' : 'other']);
-    $task->update(['subtask_start_commit' => str_repeat('a', 40)]);
+    $task->update(['position' => $position, 'subtask_start_commit' => str_repeat('a', 40)]);
+    if ($position > 1) {
+        Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Earlier', 'brief' => 'Done.', 'status' => TaskStatus::Completed]);
+    }
     if ($later) {
-        Task::query()->create(['parent_id' => $group->id, 'position' => 2, 'title' => 'Later', 'brief' => 'Next.', 'status' => TaskStatus::Todo]);
+        Task::query()->create(['parent_id' => $group->id, 'position' => $position + 1, 'title' => 'Later', 'brief' => 'Next.', 'status' => TaskStatus::Todo]);
     }
 
     app(TaskScheduler::class)->tick();
 
     expect($checks->starts)->toBe(1)
-        ->and($checks->deliverables[0]['test_base'] ?? null)->toBe($later && $orbit ? str_repeat('a', 40) : null);
-})->with([[true, true], [false, true], [true, false]]);
+        ->and($checks->deliverables[0]['test_base'] ?? null)->toBe($orbit ? str_repeat('a', 40) : null);
+})->with([
+    'intermediate Orbit subtask' => [1, true, true],
+    'last Orbit subtask' => [2, false, true],
+    'single-subtask Orbit group' => [1, false, true],
+    'intermediate non-Orbit subtask' => [1, true, false],
+    'single-subtask non-Orbit group' => [1, false, false],
+]);
