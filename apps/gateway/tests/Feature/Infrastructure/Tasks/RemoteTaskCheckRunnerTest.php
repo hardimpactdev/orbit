@@ -372,6 +372,29 @@ it('reports the paths a check changed in the working tree, but not ignored files
         ->and($reading->changedPaths)->toBe(['written.txt']);
 });
 
+it('snapshots same-size edits whose timestamp matches the original index without changing that index', function (): void {
+    $checkout = check_runner_checkout('true');
+    $timestamp = 1_700_000_000;
+    (new Process(['git', 'config', 'core.trustctime', 'false'], $checkout))->mustRun();
+    file_put_contents($checkout.'/state', "old\n");
+    touch($checkout.'/state', $timestamp);
+    (new Process(['git', 'add', '--all'], $checkout))->mustRun();
+    (new Process(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '-m', 'base'], $checkout))->mustRun();
+    file_put_contents($checkout.'/state', "new\n");
+    touch($checkout.'/state', $timestamp);
+    // Reproduce Git's racy-clean window without waiting for a clock boundary.
+    touch($checkout.'/.git/index', $timestamp);
+    $index = file_get_contents($checkout.'/.git/index');
+    $runner = check_runner(new LocalShellSshExecutor);
+    $instance = check_runner_instance($checkout);
+
+    $snapshot = $runner->snapshot($instance);
+
+    expect((new Process(['git', 'show', $snapshot->tree.':state'], $checkout))->mustRun()->getOutput())->toBe("new\n");
+    expect(file_get_contents($checkout.'/.git/index'))->toBe($index)
+        ->and(filemtime($checkout.'/.git/index'))->toBe($timestamp);
+});
+
 it('keeps an untracked directory symlink in snapshots and reports one created during the handoff check', function (): void {
     $checkout = check_runner_checkout('true');
     $target = $this->directory.'/target';
