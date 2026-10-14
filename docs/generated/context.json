@@ -1758,6 +1758,7 @@
             "title": "Feature delivery",
             "kind": "reference",
             "components": [
+                "apps/cli",
                 "apps/docs",
                 "apps/gateway",
                 "apps/web",
