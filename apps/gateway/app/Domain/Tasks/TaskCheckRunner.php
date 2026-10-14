@@ -16,6 +16,9 @@ interface TaskCheckRunner
     /**
      * Starts the check. Setup steps run first, in order, as they do for a baseline check. With deliverables,
      * a passing check also records their evidence ([ADR 0133](/decisions/0133-verify-typed-subtask-deliverables-at-handoff)).
+     * The root project-check deliverable reuses this run's result and output when its command matches
+     * the Project check and HEAD and tree are unchanged. Failure records evidence without a rerun;
+     * other command deliverables wait for a passing check. No earlier check result is reused.
      * A command with fails_on_base also runs on the start commit with its paths overlaid (ADR 0163).
      * All check processes inherit TMPDIR=/tmp/orbit-check-<uid>-<random>, separate from
      * agent-<uid> used by agent tools. Neither role uses the other's restrictive tool caches.
