@@ -86,6 +86,8 @@ it('leaves an unchanged owned systemd unit untouched during convergence', functi
     $renderer = new SystemdProcessRenderer;
     $rendered = $renderer->render($process, $target, new ProcessRuntimeFakeManagedUserAccountResolver()->resolve($target->node));
     $path = $renderer->unitPath($process);
+    $process->systemd_activation_hash = hash('sha256', $rendered);
+    $process->save();
     $this->ssh->beforeExecute = function (RemoteCommand $command) use ($path, $rendered, $runtimeStatus): void {
         if ($command->arguments === ['sudo', 'cat', '--', $path]) {
             $this->ssh->responses[] = process_runtime_result(stdout: $rendered);
@@ -100,6 +102,58 @@ it('leaves an unchanged owned systemd unit untouched during convergence', functi
         expect(array_intersect($command->arguments, ['restart', 'daemon-reload', 'mv', 'install', 'disable', 'stop', 'start']))->toBeEmpty();
     }
 })->with([['running', 'active'], ['stopped', 'inactive']]);
+
+it('recovers interrupted native systemd publication and activation before allowing a completed no-op', function (string $interrupt): void {
+    $process = runtime_manager_systemd_process($this->instance);
+    $process->update(['desired_state' => 'running']);
+    $target = new ProcessTargetResolver()->forInstallation($process);
+    $renderer = new SystemdProcessRenderer;
+    $account = new ProcessRuntimeFakeManagedUserAccountResolver()->resolve($target->node);
+    $current = $renderer->render($process, $target, $account);
+    $active = $current;
+    $loaded = $current;
+    $process->systemd_activation_hash = hash('sha256', $current);
+    $process->save();
+    $process->update(['runtime_config' => ['command' => ['/usr/bin/php', 'new-command'], 'environment' => ['LABEL' => 'new-value']]]);
+    $replacement = $renderer->render($process, $target, $account);
+    $path = $renderer->unitPath($process);
+    $interrupted = false;
+    $this->ssh->beforeExecute = function (RemoteCommand $command) use ($path, $replacement, $interrupt, &$current, &$loaded, &$active, &$interrupted): void {
+        if ($command->arguments === ['sudo', 'cat', '--', $path]) {
+            $this->ssh->responses[] = process_runtime_result(stdout: $current);
+        }
+        if (in_array('is-active', $command->arguments, true)) {
+            $this->ssh->responses[] = process_runtime_result(stdout: 'active');
+        }
+        if (in_array('mv', $command->arguments, true)) {
+            $current = $replacement;
+        }
+        if (in_array('daemon-reload', $command->arguments, true)) {
+            $loaded = $current;
+        }
+        if (in_array('restart', $command->arguments, true)) {
+            $active = $loaded;
+        }
+        if (! $interrupted && in_array($interrupt, $command->arguments, true)) {
+            $interrupted = true;
+            throw new RuntimeException('Lost native response after '.$interrupt);
+        }
+    };
+    expect(fn () => $this->manager->converge($process))->toThrow(RuntimeException::class, 'Lost native response');
+    expect($current)->toBe($replacement)
+        ->and($process->refresh()->systemd_activation_hash)->toBeNull();
+    $this->ssh->commands = [];
+    $this->manager->converge($process);
+    expect($active)->toBe($replacement)
+        ->and($process->refresh()->systemd_activation_hash)->toBe(hash('sha256', $replacement));
+    $arguments = array_merge(...array_map(fn (RemoteCommand $command): array => $command->arguments, $this->ssh->commands));
+    expect($arguments)->toContain('daemon-reload', 'restart')->not->toContain('mv', 'install');
+    $this->ssh->commands = [];
+    $this->manager->converge($process);
+    foreach ($this->ssh->commands as $command) {
+        expect(array_intersect($command->arguments, ['restart', 'daemon-reload', 'mv', 'install', 'disable', 'stop', 'start']))->toBeEmpty();
+    }
+})->with(['publication response lost' => ['mv'], 'reload response lost' => ['daemon-reload'], 'restart response lost' => ['restart']]);
 
 it('installs the Gateway annotator files and deletes only a removed Process store, not a transfer store', function (): void {
     $this->instance->update(['annotator_port' => 4848]);

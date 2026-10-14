@@ -59,7 +59,11 @@ When task VMs are enabled (`ORBIT_TASK_VMS_ENABLED`), the URL must equal `ORBIT_
 
 The Gateway stores the management key as a secret setting and passes it to the collector Process. No API response contains it.
 
-Setup can run again. It keeps the read and control tokens, writes the collector script, updates the collector Process in place, and publishes the hostname again. On the same Node, the collector keeps its Process ID rather than being destroyed and created again. The [fleet rollout](/reference/node-provisioning#converge-the-orbit-footprint) and `orbit node:converge` also write a changed script after a Gateway release and restart the collector Process. A script that already matches stays, and the collector keeps running. Setup with another `--node` sets up only the new Node and leaves the old Node's collector in place. To move the collector, run `proxycli:teardown` first.
+Setup can run again. It keeps the read and control tokens, writes the collector script, updates the collector Process in place, and publishes the hostname again. On the same Node, the collector keeps its Process ID rather than being destroyed and created again. The [fleet rollout](/reference/node-provisioning#converge-the-orbit-footprint) and `orbit node:converge` also write a changed script after a Gateway release and restart the collector Process.
+
+A script that already matches stays, and the collector keeps running only when its successful source activation revision also matches. Before publishing a new revision, the Gateway clears the Process's source activation record; it records the revision only after activation succeeds. An interruption after publication leaves activation pending, so retry restarts an existing running collector even when the source file is already current. A completed unchanged retry does not restart the collector.
+
+Setup with another `--node` sets up only the new Node and leaves the old Node's collector in place. To move the collector, run `proxycli:teardown` first.
 
 ## Follow the cache connection
 

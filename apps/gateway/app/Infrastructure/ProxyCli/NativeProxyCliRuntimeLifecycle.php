@@ -39,16 +39,25 @@ final readonly class NativeProxyCliRuntimeLifecycle implements ProxyCliRuntimeLi
         array $environment,
         int $port = ProxyCliProcess::PORT,
     ): void {
-        $sourceChanged = $this->publishSource($node);
-        $data = ProxyCliProcess::data($node, $environment, $port);
+        $script = $this->script();
+        $revision = hash('sha256', $script);
         $existing = Process::query()->where('owner_type', Node::class)
             ->where('owner_id', $node->id)->where('name', ProxyCliProcess::NAME)->first();
+        if ($existing !== null && $existing->proxycli_source_revision !== $revision) {
+            // Invalidate completion before publication or activation can lose its response.
+            $existing->proxycli_source_revision = null;
+            $existing->save();
+        }
+        $sourceChanged = $this->publishSource($node, $script);
+        if ($sourceChanged && $existing !== null) {
+            $existing->proxycli_source_revision = null;
+            $existing->save();
+        }
+        $data = ProxyCliProcess::data($node, $environment, $port);
 
         try {
             $result = $this->add->execute($data);
-            if ($sourceChanged && $existing !== null && $result['process']->desired_state === DesiredProcessState::Running) {
-                app(RestartProcessAction::class)->execute($result['process']);
-            }
+            $process = $result['process'];
         } catch (ResourceOperationException $exception) {
             if ($exception->errorCode !== 'process.name_taken') {
                 throw $exception;
@@ -56,8 +65,16 @@ final readonly class NativeProxyCliRuntimeLifecycle implements ProxyCliRuntimeLi
 
             $process = Process::query()->where('owner_type', Node::class)
                 ->where('owner_id', $node->id)->where('name', ProxyCliProcess::NAME)->sole();
-            $this->update->execute($process, $data);
+            $process = $this->update->execute($process, $data);
         }
+
+        // The source file can be current even when its Python process is still old.
+        if ($existing !== null && $process->proxycli_source_revision !== $revision
+            && $process->desired_state === DesiredProcessState::Running) {
+            app(RestartProcessAction::class)->execute($process);
+        }
+        $process->proxycli_source_revision = $revision;
+        $process->save();
     }
 
     public function remove(Node $node): void
@@ -79,7 +96,7 @@ final readonly class NativeProxyCliRuntimeLifecycle implements ProxyCliRuntimeLi
         }
     }
 
-    private function publishSource(Node $node): bool
+    private function publishSource(Node $node, string $script): bool
     {
         $address = $node->wireguard_ip;
 
@@ -91,7 +108,7 @@ final readonly class NativeProxyCliRuntimeLifecycle implements ProxyCliRuntimeLi
             );
         }
 
-        $result = $this->ssh->execute($this->connection($node, $address), $this->source->command($this->script()));
+        $result = $this->ssh->execute($this->connection($node, $address), $this->source->command($script));
 
         if (! $result->succeeded()) {
             throw new ResourceOperationException(

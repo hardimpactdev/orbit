@@ -520,9 +520,12 @@ final readonly class RemoteProcessRuntimeManager implements ProcessEnvironmentPr
         if ($hadPreviousUnit === null) {
             $status = $this->status($process);
             $running = $forceRunning || $process->desired_state === DesiredProcessState::Running;
-            if (($running && $status === 'active') || (! $running && $status === 'inactive')) {
+            if ($process->systemd_activation_hash === $this->systemdActivationHash($process, $target)
+                && (($running && $status === 'active') || (! $running && $status === 'inactive'))) {
                 return;
             }
+            // Published bytes can outlive a failed or interrupted reload/activation.
+            $this->executeSuccessfully($process, ['sudo', 'systemctl', 'daemon-reload'], 'daemon-reload', 'process.systemd_activation_failed');
         }
         $activation = $this->activateSystemdDesiredState($process, $target, $forceRunning);
 
@@ -531,12 +534,16 @@ final readonly class RemoteProcessRuntimeManager implements ProcessEnvironmentPr
                 $this->rollbackSystemdReplacement($process, $target);
             }
 
-            if (! $hadPreviousUnit) {
+            if ($hadPreviousUnit === false) {
                 $this->removeFailedNewSystemdUnit($process);
             }
 
             $state = $forceRunning || $process->desired_state === DesiredProcessState::Running ? 'start' : 'stop';
-            $restoration = $hadPreviousUnit ? 'the previous unit was restored' : 'the new unit was removed';
+            $restoration = match ($hadPreviousUnit) {
+                true => 'the previous unit was restored',
+                false => 'the new unit was removed',
+                null => 'activation remains pending for retry',
+            };
 
             throw new ProcessOperationException(
                 step: $state,
@@ -545,6 +552,9 @@ final readonly class RemoteProcessRuntimeManager implements ProcessEnvironmentPr
                 result: $activation,
             );
         }
+
+        $process->systemd_activation_hash = $this->systemdActivationHash($process, $target);
+        $process->save();
 
         if ($hadPreviousUnit) {
             $this->executeSuccessfully(
@@ -615,6 +625,10 @@ final readonly class RemoteProcessRuntimeManager implements ProcessEnvironmentPr
             );
         }
 
+        // Invalidate completion before any publication that can survive a lost response.
+        $process->systemd_activation_hash = null;
+        $process->save();
+
         if ($hadPreviousUnit) {
             $this->executeSuccessfully(
                 $process,
@@ -647,6 +661,14 @@ final readonly class RemoteProcessRuntimeManager implements ProcessEnvironmentPr
         }
 
         return $hadPreviousUnit;
+    }
+
+    private function systemdActivationHash(Process $process, ProcessTarget $target): string
+    {
+        return hash('sha256', $this->systemd->render(
+            $process, $target,
+            $target->certificateScope === null ? null : $this->accounts->resolve($target->node),
+        ));
     }
 
     private function activateSystemdDesiredState(

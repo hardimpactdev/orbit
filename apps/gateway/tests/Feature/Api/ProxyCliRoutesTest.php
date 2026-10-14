@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\Broadcasting\RecordBroadcast;
+use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Extensions\ExtensionStore;
@@ -33,6 +35,7 @@ use App\Models\Process;
 use App\Models\Route as OrbitRoute;
 use Illuminate\Routing\Route;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 
 function proxycli_gateway(): Node
@@ -176,6 +179,33 @@ it('reconverges the selected collector after a Database connection update', func
         'PROXYCLI_READ_TOKEN' => $tokens[0], 'PROXYCLI_CONTROL_TOKEN' => $tokens[1],
     ])->and(Process::query()->where('name', ProxyCliProcess::NAME)->sole()->id)->toBe($process->id);
 });
+
+it('refuses incompatible proposed selected connections without changing connection or collector', function (string $change, string $error): void {
+    $gateway = proxycli_gateway();
+    $node = proxycli_node();
+    $connection = proxycli_valkey($node);
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
+        ->postJson('/api/v1/proxycli', [
+            'node_id' => $node->id, 'cache_connection' => 'valkey',
+            'cliproxy_url' => 'http://127.0.0.1:8317', 'cliproxy_management_key' => 'management-key',
+        ])->assertCreated();
+    $process = Process::query()->where('name', ProxyCliProcess::NAME)->sole();
+    Event::fake([RecordBroadcast::class]);
+    $beforeConnection = $connection->refresh()->getRawOriginal();
+    $beforeProcess = $process->getRawOriginal();
+    $beforeEnvironment = app(RecordingProxyCliRuntimeLifecycle::class)->environment;
+    $tokens = [app(ProxyCliState::class)->readToken(), app(ProxyCliState::class)->controlToken()];
+    $body = $change === 'sqlite'
+        ? ['driver' => 'sqlite', 'path' => '/tmp/cache.sqlite', 'database' => null, 'host' => null, 'port' => null]
+        : ['node_id' => proxycli_node('without-database', '10.44.0.9')->id, 'host' => '10.44.0.9', 'password' => 'refused-secret'];
+    $this->patchJson('/api/v1/database-connections/'.$connection->slug, $body)
+        ->assertUnprocessable()->assertJsonPath('error.code', $error);
+    Event::assertNotDispatched(RecordBroadcast::class, fn (RecordBroadcast $event): bool => $event->type === RecordEventType::DatabaseUpdated);
+    expect($connection->refresh()->getRawOriginal())->toBe($beforeConnection)
+        ->and($process->refresh()->getRawOriginal())->toBe($beforeProcess)
+        ->and(app(RecordingProxyCliRuntimeLifecycle::class)->environment)->toBe($beforeEnvironment)
+        ->and([app(ProxyCliState::class)->readToken(), app(ProxyCliState::class)->controlToken()])->toBe($tokens);
+})->with(['driver' => ['sqlite', 'proxycli.cache_invalid'], 'placement' => ['node', 'proxycli.cache_unplaced']]);
 
 it('keeps the management key out of activity for every enable outcome', function (bool $placed, int $status): void {
     $gateway = proxycli_gateway();

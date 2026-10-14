@@ -17,6 +17,19 @@ final readonly class ReconvergeProxyCliConnectionAction
         private ProxyCliRuntimeLifecycle $runtime,
     ) {}
 
+    public function validate(DatabaseConnection $connection): void
+    {
+        if (! $this->state->enabled() || $this->state->cacheConnection() !== $connection->slug) {
+            return;
+        }
+        $nodeId = $this->state->nodeId();
+        if ($nodeId === null) {
+            return;
+        }
+        $this->placement->node($nodeId);
+        $this->placement->validateConnection($connection);
+    }
+
     public function execute(DatabaseConnection $connection): void
     {
         if (! $this->state->enabled() || $this->state->cacheConnection() !== $connection->slug) {

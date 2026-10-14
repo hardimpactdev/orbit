@@ -23,6 +23,8 @@ use Illuminate\Support\Carbon;
  * @property string $name
  * @property ProcessRuntime $runtime
  * @property ?ProcessRuntime $retired_runtime
+ * @property ?string $systemd_activation_hash
+ * @property ?string $proxycli_source_revision
  * @property ?string $working_directory
  * @property array<string, mixed> $runtime_config
  * @property string $restart_policy
@@ -61,6 +63,8 @@ final class Process extends Model
     #[\Override]
     protected $hidden = [
         'runtime_config',
+        'systemd_activation_hash',
+        'proxycli_source_revision',
     ];
 
     public function isVpDev(): bool

@@ -28,6 +28,9 @@ final readonly class UpdateDatabaseConnectionAction
                 unset($attributes['password']);
             }
 
+            $proposed = clone $locked;
+            $proposed->fill($attributes);
+            app(ReconvergeProxyCliConnectionAction::class)->validate($proposed);
             $locked->update($attributes);
 
             return $locked->refresh();
