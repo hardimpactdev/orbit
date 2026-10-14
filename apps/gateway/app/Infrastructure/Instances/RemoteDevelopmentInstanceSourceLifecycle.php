@@ -15,6 +15,7 @@ use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
 use App\Domain\Nodes\Storage\StoragePath;
+use App\Domain\Projects\LifecycleStep;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryIdentity;
@@ -22,10 +23,12 @@ use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\ProcessCancelledException;
 use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\TaskVms\TaskVmGit;
 use App\Models\Instance;
+use App\Models\ProjectLifecycleStep;
 use App\Models\TaskVm;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
@@ -225,6 +228,20 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
             step: 'app-instance-source-resolve',
             errorCode: 'instance.branch_resolution_failed',
         );
+
+        if (! $taskVm && ProjectLifecycleStep::query()
+            ->where('project_id', $instance->project_id)
+            ->where('command', LifecycleStep::ImportCiCaches)->exists()) {
+            try {
+                $project = $instance->project;
+                $tips = $this->git->fetch($project, [$defaultBranch], $this->access->for($context['repository'], $project->source_access), 'instance.ci_caches_unavailable');
+                $this->git->send($project, $instance->checkout_path, $tips, fn (RemoteCommand $command): CommandResult => $this->ssh->execute($instance->node, $command, 'instance-ci-cache-transfer', 'instance.ci_caches_unavailable'), 'instance.ci_caches_unavailable', cachesOnly: true);
+            } catch (ProcessCancelledException $exception) {
+                throw $exception;
+            } catch (\RuntimeException) {
+                Log::notice('Instance CI cache transfer unavailable; setup continues cold.', ['instance_id' => $instance->id]);
+            }
+        }
 
         return $this->resolution($result->stdout, $instance);
     }

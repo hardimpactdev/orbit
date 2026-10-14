@@ -23,6 +23,7 @@ use Closure;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /**
@@ -63,6 +64,10 @@ final readonly class TaskVmGit
     /** Prints the commit IDs of the checkout's refs. */
     private const string ReadRefs = <<<'BASH'
         command git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$1" for-each-ref --format='%(objectname)'
+        baseline=$(command git -C "$1" rev-parse --verify --quiet refs/worktree/orbit/ci-baseline || true)
+        printf 'baseline %s\n' "$baseline"
+        branch=$(command git -C "$1" symbolic-ref --quiet --short HEAD || true)
+        printf 'branch %s\n' "$branch"
         BASH;
 
     /** Indexes the pack on stdin, then sets each `<ref> <commit>` pair, or deletes the ref for `-`. */
@@ -164,6 +169,28 @@ final readonly class TaskVmGit
                 $tips[$branch] = $this->commit($mirror, 'refs/heads/'.$branch, $errorCode);
             }
 
+            // Cache refs are a separate optional fetch. A cache outage cannot turn a source fetch red.
+            try {
+                $result = $this->git($mirror, [
+                    'fetch', '--quiet', '--no-tags', '--no-write-fetch-head', '--prune', '--', $url,
+                    '+refs/orbit/ci-cache/*:refs/orbit/ci-cache/*',
+                ], $access, timeout: $this->timeout($deadline, 60.0, $errorCode));
+                $available = $result->succeeded();
+            } catch (ProcessCancelledException $exception) {
+                throw $exception;
+            } catch (\RuntimeException) {
+                $available = false;
+            }
+            if (! $available) {
+                // Do not send a previously cached ref after an unreadable upstream refresh.
+                $refs = $this->git($mirror, ['for-each-ref', '--format=%(refname)', 'refs/orbit/ci-cache/']);
+                foreach (preg_split('/\R/', trim($refs->stdout)) ?: [] as $ref) {
+                    if (preg_match('/\Arefs\/orbit\/ci-cache\/[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $ref) === 1) {
+                        $this->git($mirror, ['update-ref', '-d', $ref]);
+                    }
+                }
+            }
+
             return $tips;
         });
     }
@@ -179,16 +206,56 @@ final readonly class TaskVmGit
      *
      * @throws RuntimeConvergenceException
      */
-    public function send(Project $project, string $checkout, array $tips, Closure $run, string $errorCode): void
+    public function send(Project $project, string $checkout, array $tips, Closure $run, string $errorCode, bool $cachesOnly = false): void
     {
-        $haves = $this->commitIds($run(new RemoteCommand(['bash', '-c', self::ReadRefs, '--', $checkout]))->stdout);
+        if (! $cachesOnly) {
+            $this->transfer($project, $checkout, $tips, $run, $errorCode, false);
+        }
+        try {
+            $this->transfer($project, $checkout, $tips, $run, $errorCode, true);
+        } catch (ProcessCancelledException $exception) {
+            throw $exception;
+        } catch (\RuntimeException) {
+            Log::notice('CI cache transfer unavailable; source refs remain available.', ['project_id' => $project->id]);
+        }
+    }
+
+    /**
+     * @param  array<string, string|null>  $tips
+     * @param  Closure(RemoteCommand): CommandResult  $run
+     */
+    private function transfer(Project $project, string $checkout, array $tips, Closure $run, string $errorCode, bool $cachesOnly): void
+    {
+        $state = $run(new RemoteCommand(['bash', '-c', self::ReadRefs, '--', $checkout]))->stdout;
+        $haves = $this->commitIds($state);
+        $default = is_string($project->default_branch) ? $project->default_branch : '';
+        $baseline = preg_match('/^baseline ([0-9a-f]{40}(?:[0-9a-f]{24})?)$/m', $state, $match) === 1 ? $match[1] : ($tips[$default] ?? null);
+        if (str_contains($state, "branch {$default}\n")) {
+            $baseline = $tips[$default] ?? $baseline;
+        }
+        $cacheRef = $cachesOnly && is_string($baseline) ? 'refs/orbit/ci-cache/'.$baseline : null;
         $scratch = $this->scratch($errorCode);
         try {
-            $pack = $this->locked($project, $errorCode, fn (): string => $this->pack($this->mirror($project, $errorCode), array_values(array_filter($tips, is_string(...))), $haves, $scratch, $errorCode));
+            $cacheCommit = null;
+            $pack = $this->locked($project, $errorCode, function () use ($project, $tips, $haves, $scratch, $errorCode, $cacheRef, $cachesOnly, &$cacheCommit): string {
+                $mirror = $this->mirror($project, $errorCode);
+                if ($cacheRef !== null) {
+                    $result = $this->git($mirror, ['rev-parse', '--verify', '--quiet', $cacheRef.'^{commit}']);
+                    $cacheCommit = $result->succeeded() ? trim($result->stdout) : null;
+                }
+
+                return $this->pack($mirror, [...($cachesOnly ? [] : array_values(array_filter($tips, is_string(...)))), ...($cacheCommit === null ? [] : [$cacheCommit])], $haves, $scratch, $errorCode);
+            });
             $updates = [];
-            foreach ($tips as $branch => $commit) {
+            foreach ($cachesOnly ? [] : $tips as $branch => $commit) {
                 $updates[] = 'refs/remotes/origin/'.$branch;
                 $updates[] = $commit ?? '-';
+            }
+            if ($cacheRef !== null) {
+                $updates[] = $cacheRef;
+                $updates[] = $cacheCommit ?? '-';
+                $updates[] = 'refs/worktree/orbit/ci-baseline';
+                $updates[] = $baseline;
             }
             $head = is_string($project->default_branch) && GitBranchName::isValid($project->default_branch) && array_key_exists($project->default_branch, $tips) ? $project->default_branch : '';
             $run(new RemoteCommand(['bash', '-c', self::Apply, '--', $checkout, $head, ...$updates], protectedInput: ProtectedInput::openFile($pack), timeout: 1800.0));

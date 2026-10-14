@@ -217,7 +217,11 @@ final class TaskVmTemplateIncus implements SshExecutor
             $user[0] === 'sh' && str_contains($user[2], 'id -u') => $this->answer('id', static fn (): string => '1000:1000'),
             // The Gateway sends the default branch from its mirror, and the checkout prints the commit it sent.
             $user[0] === 'bash' && str_contains($user[2] ?? '', 'index-pack') => $this->answer('exec git receive', function () use ($user): void {
-                $this->received = $user[7] ?? null;
+                for ($index = 6; $index + 1 < count($user); $index += 2) {
+                    if (str_starts_with($user[$index], 'refs/remotes/origin/')) {
+                        $this->received = $user[$index + 1];
+                    }
+                }
             }),
             $user[0] === 'bash' && str_contains($user[2] ?? '', 'checkout --quiet --force -B') => $this->answer('clone', fn (): string => $this->received."\n"),
             default => $this->answer($user[0] === 'bash' && str_contains($user[2], 'mkfs.ext4') ? 'format' : 'exec '.$user[0]),

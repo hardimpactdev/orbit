@@ -20,7 +20,7 @@ This partly supersedes [ADR 0206](/decisions/0206-build-task-vm-images-as-chains
 
 [Compute drivers](/reference/compute-drivers) describes the current base image, workspace templates, warm pool, claims, and topology preparation. [Incus topologies](/reference/incus-topologies) describes role images and their composition. Today a topology group builds its own role images inside its task VM, spending about 7 to 9 minutes on repeated work. Templates and warm VMs save setup time but add capacity reservations, churn, and separate lifecycle code.
 
-[Instance setup](/reference/instance-setup#import-ci-main-caches) delivers CI test caches through `@orbit/ci-caches` as downloaded artifacts sent in base64. Project dependencies and test caches are not machine software. Baking them into workspace templates couples image readiness to each Project's setup and dependency changes.
+Before step 6a, Instance setup delivered CI test caches through `@orbit/ci-caches` as downloaded artifacts sent in base64. Project dependencies and test caches are not machine software. Baking them into workspace templates couples image readiness to each Project's setup and dependency changes.
 
 Task VM host configuration comes from `ORBIT_TASK_VMS_INCUS_HOSTS`. Being an `app-dev` Node does not by itself mean that a Node is an operator-approved task VM host. [Node settings](/reference/node-settings), [Tools](/reference/tools), and [Fleet rollout](/reference/gateway-recovery#fleet-rollout) provide the baseline for explicit host intent, per-Node tool inventory, and rollout. The recipe must connect development images to production maintenance rather than leaving production on a separate version path.
 
@@ -38,7 +38,9 @@ Every workspace is a clone from the Gateway mirror followed by the Project's set
 
 ### 3. CI test caches travel through a Git ref
 
-Test caches come from CI through a Git ref, for example `refs/orbit/ci-cache/<sha>`. The workspace fetches the cache ref with the code from the Gateway mirror. This replaces the artifact download sent as base64 by `@orbit/ci-caches`; test caches remain distinct from the shared package cache.
+Test caches come from CI through `refs/orbit/ci-cache/<sha>`, bound to the full tested code SHA, not the cache commit's object ID. The workspace receives the selected cache ref with the code from the Gateway mirror. This replaces the artifact download sent as base64 by `@orbit/ci-caches`; test caches remain distinct from the shared package cache.
+
+Step 6a settles publication and retention in [CI cache refs](/reference/implementation-loop#ci-cache-refs) and selection and fallback in [Instance setup](/reference/instance-setup#import-ci-main-caches). The `publish-ci-cache` job runs only after main's required checks succeed, using a job-scoped `GITHUB_TOKEN` with `contents: write`. The Gateway reads refs with its App's `Contents: read` token; the workspace gets no credential. The ref suffix, manifest, and graph must match the selected tested baseline SHA. Missing, stale, incompatible, or invalid refs leave the workspace cold, without substituting another SHA. The publisher retains refs for 14 days plus the newest successful main commit's ref; pruning does not remove caches already imported by running workspaces.
 
 ### 4. One read-only shared package cache per task VM host
 
@@ -130,10 +132,9 @@ These questions concern implementation details, not alternatives to the eleven d
 - What recipe schema, version identifier, and validation prove snapshot availability, pinned tool versions, and role membership? How are tools not supplied by the Ubuntu snapshot pinned and verified?
 - How does the trusted nightly snapshot bump enter repository history, and how are concurrent nightly and task group recipe changes serialized so that an older build cannot publish as current?
 - How are builds and readiness tracked across multiple task VM hosts, including a host added during a build? What exact waiting status and recovery information does a blocked claim expose?
-- What CI job publishes the cache ref, how is it authenticated, and how are code/cache SHA matching, stale or missing refs, and ref retention handled?
 - How do Composer and npm/bun consume a read-only shared cache while keeping writable temporary state private to the workspace? What is the cache-miss behavior before a fill completes, especially for dependency changes still on a task branch?
 - How does trusted filling support private registries without exposing credentials or executing untrusted Project setup? How are integrity failures and suspect cached packages quarantined, and how does inventory usage change when a Project removes a package?
-- What storage limits and retention rules apply to package caches, CI cache refs, and previous images without violating additive fills or running-group stability?
+- What storage limits and retention rules apply to package caches and previous images without violating additive fills or running-group stability? CI cache refs use the [step 6a retention policy](/reference/implementation-loop#cache-ref-retention).
 - Which health checks and Doctor results gate each Node, how is Node order chosen within each tier, and how does a multi-role Node fit the agreed tier order? What gates the smoke topology and handles an interrupted run?
 - How is a previous snapshot pin applied during manual recovery, including a tool-version change or partly converged Node that snapshot pinning alone may not repair? What evidence does the final or stopped-run report retain?
 

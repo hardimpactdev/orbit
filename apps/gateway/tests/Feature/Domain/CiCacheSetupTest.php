@@ -2,9 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Domain\Projects\CiCacheArchives;
 use App\Domain\Projects\CiCacheSetup;
-use App\Domain\Projects\CiCacheSource;
 use App\Domain\Projects\GatewaySetupSteps;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\LifecycleStep;
@@ -19,152 +17,89 @@ use Tests\Support\LifecycleSshExecutor;
 
 pest()->group('subprocess');
 
-const CI_SETUP_SHA = 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
-
-/** One CI artifact archive of a Composer project, as `ci.yml` uploads it. */
-function ci_setup_archive(string $project): string
-{
-    $path = tempnam(sys_get_temp_dir(), 'ci-cache-test-');
-    $zip = new ZipArchive;
-    $zip->open($path, ZipArchive::OVERWRITE);
-    $zip->addFromString('manifest.json', json_encode(['schema' => 1, 'project' => $project], JSON_THROW_ON_ERROR));
-    $zip->addFromString('graph.json', '{}');
-    $zip->addFromString('quality/pint', random_bytes(300 * 1024));
-    $zip->close();
-    $bytes = (string) file_get_contents($path);
-    unlink($path);
-
-    return $bytes;
-}
-
-/** Runs a rendered command from a script file, as a setup step runs: the payload exceeds the argument limit. */
 function ci_setup_run(string $checkout, string $command): Process
 {
-    $script = $checkout.'/.ci-caches-step.sh';
-    file_put_contents($script, $command);
-    $process = new Process(['bash', $script], $checkout);
+    $process = new Process(['bash', '-c', $command], $checkout);
     $process->run();
-    unlink($script);
 
     return $process;
 }
 
-/** @param  list<string>  $projects */
-function ci_setup_source(array $projects): void
+function ci_setup_git(string $checkout, array $arguments): string
 {
-    app()->instance(CiCacheSource::class, new class(array_map(ci_setup_archive(...), $projects)) implements CiCacheSource
-    {
-        /** @param  list<string>  $archives */
-        public function __construct(private readonly array $archives) {}
-
-        public function fetch(Project $project): CiCacheArchives
-        {
-            return new CiCacheArchives(CI_SETUP_SHA, 9, $this->archives);
-        }
-    });
-}
-
-/**
- * A checkout with two Pest projects and a `bin/tia-cache` that records each import. It writes the project's graph and
- * exits 0, or exits with the code that `ci-exit-<project>` names.
- */
-function ci_setup_checkout(string $root): void
-{
-    foreach (['apps/cli', 'packages/php-sdk'] as $project) {
-        File::ensureDirectoryExists("{$root}/{$project}/tests");
-        file_put_contents("{$root}/{$project}/tests/Pest.php", '<?php');
-    }
-    File::ensureDirectoryExists($root.'/bin');
-    file_put_contents($root.'/bin/tia-cache', <<<'BASH'
-        #!/usr/bin/env bash
-        set -eu
-        while [ $# -gt 0 ]; do
-            case $1 in
-                --project) project=$2; shift ;;
-                --artifact) artifact=$2; shift ;;
-                --commit) commit=$2; shift ;;
-            esac
-            shift
-        done
-        printf '%s %s %s %s\n' "$project" "$commit" "$(wc -c < "$artifact/quality/pint")" "$(cat "$artifact/graph.json")" >> imports.log
-        code_file="ci-exit-${project//\//-}"
-        if [ -f "$code_file" ]; then exit "$(cat "$code_file")"; fi
-        mkdir -p "$project/.orbit-tia"
-        cp "$artifact/graph.json" "$project/.orbit-tia/graph.json"
-        BASH);
-    chmod($root.'/bin/tia-cache', 0755);
+    return trim((new Process(['git', '-C', $checkout, ...$arguments]))->mustRun()->getOutput());
 }
 
 describe('CI main cache setup', function (): void {
     beforeEach(function (): void {
         $this->checkout = sys_get_temp_dir().'/orbit-ci-cache-test-'.bin2hex(random_bytes(8));
-        mkdir($this->checkout, 0700);
-        ci_setup_checkout($this->checkout);
+        File::ensureDirectoryExists($this->checkout.'/bin');
+        file_put_contents($this->checkout.'/bin/tia-cache', '#!/bin/sh');
+        chmod($this->checkout.'/bin/tia-cache', 0755);
+        file_put_contents($this->checkout.'/bin/ci-cache-ref', <<<'PYTHON'
+            import pathlib, sys
+            pathlib.Path('imports.log').write_text(' '.join(sys.argv[1:]))
+            code = pathlib.Path('import-exit')
+            sys.exit(int(code.read_text()) if code.exists() else 0)
+            PYTHON);
+        ci_setup_git($this->checkout, ['init', '--quiet', '-b', 'main']);
+        ci_setup_git($this->checkout, ['-c', 'user.name=CI', '-c', 'user.email=ci@example.test', 'add', '.']);
+        ci_setup_git($this->checkout, ['-c', 'user.name=CI', '-c', 'user.email=ci@example.test', 'commit', '--quiet', '-m', 'baseline']);
+        $this->baseline = ci_setup_git($this->checkout, ['rev-parse', 'HEAD']);
+        ci_setup_git($this->checkout, ['update-ref', 'refs/remotes/origin/main', $this->baseline]);
+        ci_setup_git($this->checkout, ['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main']);
+        ci_setup_git($this->checkout, ['update-ref', 'refs/worktree/orbit/ci-baseline', $this->baseline]);
     });
     afterEach(function (): void {
         File::deleteDirectory($this->checkout);
     });
 
-    it('imports each archive with bin/tia-cache and names a project left cold', function (): void {
-        ci_setup_source(['apps/cli', 'packages/php-sdk']);
-        file_put_contents($this->checkout.'/ci-exit-packages-php-sdk', '3');
+    it('imports the selected code SHA without an artifact payload or credential', function (bool $task): void {
+        if ($task) {
+            ci_setup_git($this->checkout, ['checkout', '--quiet', '-b', 'task-1574']);
+            ci_setup_git($this->checkout, ['-c', 'user.name=CI', '-c', 'user.email=ci@example.test', 'commit', '--allow-empty', '--quiet', '-m', 'task change']);
+        }
         $command = app(CiCacheSetup::class)->command(new Project, 60);
-
         $process = ci_setup_run($this->checkout, $command);
 
         expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
-            ->and(file($this->checkout.'/imports.log', FILE_IGNORE_NEW_LINES))->toBe([
-                'apps/cli '.CI_SETUP_SHA.' '.(300 * 1024).' {}',
-                'packages/php-sdk '.CI_SETUP_SHA.' '.(300 * 1024).' {}',
-            ])
-            ->and($process->getOutput())->toBe("[packages/php-sdk] has no Pest TIA graph: its tests run cold.\n")
-            ->and(strlen($command))->toBeGreaterThan(2 * 128 * 1024)
-            ->and(substr($command, 0, 4096))->toContain('import_ci_caches()');
+            ->and(file_get_contents($this->checkout.'/imports.log'))->toBe('import --commit '.$this->baseline)
+            ->and(strlen($command))->toBeLessThan(4096)
+            ->and($command)->not->toContain('base64', '.zip', 'GITHUB_TOKEN');
+    })->with(['main' => false, 'recorded task baseline' => true]);
+
+    it('keeps the task baseline private to each linked worktree', function (): void {
+        $linked = $this->checkout.'/linked';
+        ci_setup_git($this->checkout, ['worktree', 'add', '--quiet', '-b', 'task-linked', $linked, $this->baseline]);
+        ci_setup_git($linked, ['update-ref', 'refs/worktree/orbit/ci-baseline', $this->baseline]);
+        ci_setup_git($this->checkout, ['-c', 'user.name=CI', '-c', 'user.email=ci@example.test', 'commit', '--allow-empty', '--quiet', '-m', 'new main']);
+        $next = ci_setup_git($this->checkout, ['rev-parse', 'HEAD']);
+        ci_setup_git($this->checkout, ['update-ref', 'refs/worktree/orbit/ci-baseline', $next]);
+        $process = ci_setup_run($linked, app(CiCacheSetup::class)->command(new Project, 60));
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+            ->and(file_get_contents($linked.'/imports.log'))->toBe('import --commit '.$this->baseline)
+            ->and(ci_setup_git($this->checkout, ['rev-parse', 'refs/worktree/orbit/ci-baseline']))->toBe($next);
     });
 
-    it('fails the step on any other import failure or without bin/tia-cache', function (bool $missing): void {
-        ci_setup_source(['apps/cli', 'packages/php-sdk']);
-        $missing ? unlink($this->checkout.'/bin/tia-cache') : file_put_contents($this->checkout.'/ci-exit-apps-cli', '1');
-
+    it('fails the step on a write failure or missing required tooling', function (bool $missing): void {
+        $missing ? unlink($this->checkout.'/bin/tia-cache') : file_put_contents($this->checkout.'/import-exit', '1');
         $process = ci_setup_run($this->checkout, app(CiCacheSetup::class)->command(new Project, 60));
 
-        expect($process->getExitCode())->toBe(1)
-            ->and(file_exists($this->checkout.'/packages/php-sdk/.orbit-tia/graph.json'))->toBeFalse();
+        expect($process->getExitCode())->toBe(1);
     })->with(['an import failure' => false, 'no bin/tia-cache' => true]);
 
-    it('rejects excessive expanded data or entry counts before extracting or importing', function (string $limit): void {
-        $work = $this->checkout.'/archives';
-        mkdir($work, 0700);
-        $zip = new ZipArchive;
-        $zip->open($work.'/0.zip', ZipArchive::CREATE);
-        $zip->addFromString('manifest.json', '{"project":"apps/cli"}');
-        $zip->addFromString('graph.json', '{}');
-        if ($limit === 'entries') {
-            for ($index = 0; $index < 1023; $index++) {
-                $zip->addFromString('quality/entry-'.$index, '');
-            }
-        } else {
-            $file = fopen($this->checkout.'/expanded', 'w');
-            ftruncate($file, $limit === 'one file' ? 64 * 1024 * 1024 : 32 * 1024 * 1024);
-            fclose($file);
-            $zip->addFile($this->checkout.'/expanded', 'quality/pint');
-            if ($limit === 'total') {
-                $zip->addFile($this->checkout.'/expanded', 'quality/phpstan');
-            }
-        }
-        $zip->close();
-        $script = (string) file_get_contents(resource_path('instances/ci-caches.sh'));
+    it('runs cold without a recorded task baseline rather than choosing the newest main ref', function (): void {
+        ci_setup_git($this->checkout, ['checkout', '--quiet', '-b', 'task-1574']);
+        ci_setup_git($this->checkout, ['update-ref', '-d', 'refs/worktree/orbit/ci-baseline']);
+        $process = ci_setup_run($this->checkout, app(CiCacheSetup::class)->command(new Project, 60));
 
-        $process = ci_setup_run($this->checkout, $script.'work='.escapeshellarg($work)."\ncommit=".CI_SETUP_SHA."\nimport_ci_caches\n");
-
-        expect($process->getExitCode())->toBe(1)
-            ->and($process->getErrorOutput())->toContain('CI cache archive exceeds the extraction limits.')
-            ->and(is_dir($work.'/0'))->toBeFalse()
+        expect($process->getExitCode())->toBe(0)
+            ->and($process->getOutput())->toContain('cold: no recorded code baseline')
             ->and(file_exists($this->checkout.'/imports.log'))->toBeFalse();
-    })->with(['one file', 'total', 'entries']);
+    });
 
     it('runs as a Gateway-owned Instance setup step and only in setup', function (): void {
-        ci_setup_source(['apps/cli']);
         $project = Project::query()->create(['name' => 'CI', 'slug' => 'ci', 'repository_url' => 'https://github.com/acme/orbit.git']);
         $node = Node::query()->create(['name' => 'ci', 'wireguard_ip' => '192.0.2.9', 'public_ssh_host' => '192.0.2.9']);
         $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'ci', 'checkout_path' => $this->checkout, 'status' => 'active']);
@@ -174,27 +109,9 @@ describe('CI main cache setup', function (): void {
         $transport = new LifecycleSshExecutor(local: true);
 
         expect($transport->runner()->run($instance, LifecyclePhase::Setup))->toBeTrue()
-            ->and(file_get_contents($this->checkout.'/apps/cli/.orbit-tia/graph.json'))->toBe('{}')
-            ->and(fn () => $transport->runner()->run($instance, LifecyclePhase::Teardown))->toThrow(ResourceOperationException::class, 'setup-only');
-    });
-
-    it('names its step when the caches are missing', function (): void {
-        app()->instance(CiCacheSource::class, new class implements CiCacheSource
-        {
-            public function fetch(Project $project): CiCacheArchives
-            {
-                throw new ResourceOperationException('instance.ci_caches_missing', 'No caches.', 422);
-            }
-        });
-        $project = Project::query()->create(['name' => 'CI', 'slug' => 'ci', 'repository_url' => 'https://github.com/acme/orbit.git']);
-        $node = Node::query()->create(['name' => 'ci', 'wireguard_ip' => '192.0.2.9', 'public_ssh_host' => '192.0.2.9']);
-        $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'ci', 'checkout_path' => $this->checkout, 'status' => 'active']);
-        (new ProjectLifecycleStepStore)->create($project, LifecyclePhase::Setup, new LifecycleStep('ci-caches', LifecycleStep::ImportCiCaches, 60), null, null);
-
-        expect(fn () => (new LifecycleSshExecutor(local: true))->runner()->run($instance, LifecyclePhase::Setup))
-            ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.ci_caches_missing')
-                ->and($exception->details)->toBe(['step' => 'ci-caches']));
-        expect(GatewaySetupSteps::owns(LifecycleStep::ImportCiCaches))->toBeTrue()
+            ->and(file_get_contents($this->checkout.'/imports.log'))->toBe('import --commit '.$this->baseline)
+            ->and(fn () => $transport->runner()->run($instance, LifecyclePhase::Teardown))->toThrow(ResourceOperationException::class, 'setup-only')
+            ->and(GatewaySetupSteps::owns(LifecycleStep::ImportCiCaches))->toBeTrue()
             ->and(GatewaySetupSteps::owns('bin/tia-cache import-ci'))->toBeFalse();
     });
 });
