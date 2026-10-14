@@ -16,7 +16,6 @@ use App\Domain\Tools\ToolRemovalPlan;
 use App\Infrastructure\Nodes\EnrollmentProgram;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\TaskVms\TaskVmBakedPrograms;
 use App\Models\Node;
 
 final readonly class ComposerToolManager implements SupportsToolAdoption, ToolManager
@@ -128,7 +127,7 @@ final readonly class ComposerToolManager implements SupportsToolAdoption, ToolMa
 
         $command = $this->materializeCommand($node);
         // A task VM whose base image ran this exact program skips it.
-        if (app(TaskVmBakedPrograms::class)->holds($node, EnrollmentProgram::ComposerManager, $command)) {
+        if (EnrollmentProgram::skipForTaskVm($node, EnrollmentProgram::ComposerManager)) {
             return;
         }
 

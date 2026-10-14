@@ -105,6 +105,7 @@ it('keeps the root candidate check away from an inherited caller database', func
         'ORBIT_GATEWAY_SOURCE' => base_path('../../apps/gateway'),
         'ORBIT_REAL_COMPOSER' => $composer,
         'ORBIT_TEST_DATABASE' => false,
+        'ORBIT_TASK_CHECK_BASE' => false,
         'PATH' => $fixture['path'],
     ]);
     $process->setTimeout(120);
@@ -123,6 +124,7 @@ it('records a database safety refusal as a failed gate and retains normal succes
     file_put_contents($fixture['root'].'/apps/gateway/app/GateFixture.php', "<?php\n\nfinal class GateFixture {}\n");
     $refusal = new Process([$fixture['root'].'/bin/review-check'], $fixture['root'], [
         'ORBIT_GATEWAY_GATE_REFUSAL' => '1',
+        'ORBIT_TASK_CHECK_BASE' => false,
         'PATH' => $fixture['path'],
     ]);
     $refusal->setTimeout(30);
@@ -147,6 +149,7 @@ it('records a database safety refusal as a failed gate and retains normal succes
 
     $success = new Process([$fixture['root'].'/bin/review-check'], $fixture['root'], [
         'ORBIT_GATEWAY_GATE_REFUSAL' => '0',
+        'ORBIT_TASK_CHECK_BASE' => false,
         'PATH' => $fixture['path'],
     ]);
     $success->setTimeout(30);
@@ -168,6 +171,7 @@ it('checks a candidate with uncommitted changes as it is and records its working
 
     $process = new Process([$fixture['root'].'/bin/review-check'], $fixture['root'], [
         'ORBIT_GATEWAY_GATE_REFUSAL' => '0',
+        'ORBIT_TASK_CHECK_BASE' => false,
         'PATH' => $fixture['path'],
     ]);
     $process->setTimeout(30);

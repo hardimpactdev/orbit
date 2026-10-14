@@ -38,9 +38,6 @@ final class RecordingTaskVmProvider implements TaskVmProvider
     /** What `cloud-init status` prints, in place of the answer of `$ready`. */
     public ?string $cloudInitOutput = null;
 
-    /** The image manifest the VM holds, or null for an image without one. */
-    public ?string $manifest = null;
-
     public ?string $userData = null;
 
     public ?Throwable $startError = null;
@@ -79,14 +76,9 @@ final class RecordingTaskVmProvider implements TaskVmProvider
         return self::Fingerprint;
     }
 
-    /** Answers `cloud-init status` from `$cloudInitOutput` or `$ready`, recorded as `cloud-init`, and the manifest read from `$manifest`, as `manifest`. */
+    /** Answers `cloud-init status` from `$cloudInitOutput` or `$ready`, recorded as `cloud-init`. */
     public function exec(TaskVm $vm, TaskVmGuestCommand $command): CommandResult
     {
-        if ($command === TaskVmGuestCommand::ImageManifest) {
-            $this->record('manifest', $vm);
-
-            return new CommandResult(0, $this->manifest ?? 'absent', '', 1, false);
-        }
         $this->record('cloud-init', $vm);
         if ($this->cloudInitOutput !== null) {
             return new CommandResult(1, $this->cloudInitOutput, '', 1, false);

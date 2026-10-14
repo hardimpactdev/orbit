@@ -63,8 +63,6 @@ final readonly class TaskVmImageBuildSteps
                 $this->image->checked($name, 'lean boot', $shell->asRoot(['bash', '-ceu', TaskVmScripts::read('lean-boot.sh').TaskVmImageRecipe::Masks]));
                 break;
             case TaskVmImageBuildStep::Clean:
-                // Never inherit a manifest from an older image: enrollment must run all programs until subtask 4.
-                $this->image->checked($name, 'remove manifest', $shell->asRoot(['rm', '-f', '--', TaskVmBakedPrograms::ManifestPath]));
                 $this->builder->clean($shell);
                 break;
             case TaskVmImageBuildStep::Publish:
@@ -84,7 +82,7 @@ final readonly class TaskVmImageBuildSteps
                     return false;
                 }
                 $this->image->checkSmoke($shell);
-                $this->image->checked($smoke, 'image check', $shell->asRoot(TaskVmScripts::bash('image-check.sh', [TaskVmCloudInit::User, TaskVmCloudInit::Owner, '-', '--lean-boot'])));
+                $this->image->checked($smoke, 'image check', $shell->asRoot(TaskVmScripts::bash('image-check.sh', [TaskVmCloudInit::User, TaskVmCloudInit::Owner, '--lean-boot'])));
                 // Keep the VM until promotion so a lost reply does not repeat the smoke boot.
                 break;
             case TaskVmImageBuildStep::Promote:

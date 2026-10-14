@@ -22,7 +22,6 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\IncusTaskVmProvider;
-use App\Infrastructure\TaskVms\TaskVmBakedPrograms;
 use App\Infrastructure\TaskVms\TaskVmGuest;
 use App\Infrastructure\TaskVms\TaskVmImageRecipe;
 use App\Infrastructure\TaskVms\TaskVmProviders;
@@ -224,8 +223,6 @@ class FakeUpCloudSsh implements SshExecutor
 
     public string $cloudInit = '{"status":"done","errors":[]}';
 
-    public ?string $manifest = null;
-
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
         $this->calls[] = [$connection->host, $command->arguments, $command->input];
@@ -235,7 +232,6 @@ class FakeUpCloudSsh implements SshExecutor
             str_contains($line, 'cloud-init status') => new CommandResult($this->cloudInit === '' ? 255 : 0, $this->cloudInit, '', 1, false),
             $command->arguments === ['uname', '-m'] => new CommandResult(0, "x86_64\n", '', 1, false),
             str_contains($line, 'bash -s') => new CommandResult(0, "{\"ok\":true}\n", '', 1, false),
-            str_contains($line, 'printf absent') => new CommandResult(0, $this->manifest ?? 'absent', '', 1, false),
             $command->arguments === ['sudo', '-n', 'ufw', 'status'] => new CommandResult(0, "Status: active\n", '', 1, false),
             default => new CommandResult(0, '', '', 1, false),
         };
@@ -504,19 +500,17 @@ describe('provider', function (): void {
             ->and($this->upcloud->created)->toBe([]);
     });
 
-    it('reads the state and address, cloud-init and the manifest over SSH with the pinned key', function (): void {
+    it('reads the state and address and cloud-init over SSH with the pinned key', function (): void {
         $vm = tvm_up_vm(hostKey: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHostKey');
         $this->upcloud->server($vm->name, [['key' => 'orbit-task-vm', 'value' => (string) $vm->id]]);
         $provider = app(UpCloudTaskVmProvider::class);
         $guest = new TaskVmGuest($provider);
-        $this->ssh->manifest = '{"schema":1}';
 
         $observation = $provider->observe($vm);
 
         expect($observation?->running)->toBeTrue()
             ->and($observation?->address)->toBe('94.237.1.10')
             ->and($guest->bootstrapReady($vm))->toBeTrue()
-            ->and($guest->imageManifest($vm))->toBe('{"schema":1}')
             ->and(array_unique(array_column($this->ssh->calls, 0)))->toBe(['94.237.1.10'])
             ->and(file_get_contents(app(KnownHostsStore::class)->path()))->toContain('94.237.1.10 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHostKey');
 
@@ -654,7 +648,7 @@ describe('image build', function (): void {
 
         $commands = array_map(static fn (array $call): string => implode(' ', $call[1]), $this->ssh->calls);
         $programs = array_keys(app(TaskVmImageRecipe::class)->programs());
-        expect($stages)->toBe(['render', 'sweep', 'launch', 'cloud-init', 'orbit-user', ...$programs, 'agent-binary', 'masks', 'firewall', 'manifest', 'clean', 'templatize', 'delete-builder', 'smoke', 'promote', 'prune'])
+        expect($stages)->toBe(['render', 'sweep', 'launch', 'cloud-init', 'orbit-user', ...$programs, 'agent-binary', 'masks', 'firewall', 'clean', 'templatize', 'delete-builder', 'smoke', 'promote', 'prune'])
             ->and($programs)->toContain('bootstrap', 'app-dev-prerequisites')
             ->and($this->upcloud->storages[$template]['title'])->toStartWith('orbit-task-base-')->not->toEndWith('-unverified')
             ->and($this->upcloud->storages)->not->toHaveKey($old)
@@ -673,7 +667,7 @@ describe('image build', function (): void {
             ])
             ->and(array_search('sudo -n ufw --force enable', $commands, true))->toBeLessThan(array_search('sudo -n bash -s', $commands, true))
             ->and(end($commands))->toBe(implode(' ', TaskVmImageRecipe::imageCheck(['--ufw'])))
-            ->and(end($commands))->toEndWith(' -- orbit 1000:1000 '.TaskVmBakedPrograms::ManifestPath.' --ufw')
+            ->and(end($commands))->toEndWith(' -- orbit 1000:1000 --ufw')
             ->and(Cache::get('task-vms:upcloud-image-build:running:'.substr((string) $this->upcloud->storages[$template]['title'], -14)))->toBeNull()
             ->and(array_filter($commands, static fn (string $command): bool => str_starts_with($command, 'sudo -n bash -ceu '.TaskVmScripts::read('install-agent.sh'))))->toHaveCount(1)
             ->and(json_decode(substr($this->upcloud->created[0]['user_data'], 14), true)['packages'])->toContain('openssh-server');
@@ -686,7 +680,7 @@ describe('image build', function (): void {
             public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
             {
                 if (str_contains(implode(' ', $command->arguments), 'authorized_keys')) {
-                    return new CommandResult(1, '', 'no manifest', 1, false);
+                    return new CommandResult(1, '', 'wrong owner', 1, false);
                 }
 
                 return parent::execute($connection, $command);

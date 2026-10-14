@@ -278,22 +278,6 @@ it('reads the ed25519 host key fingerprint', function (): void {
         ->and(($this->argv)())->toBe([[...INCUS_PREFIX, 'exec', '--', 'tvm-1', 'ssh-keygen', '-l', '-f', '/etc/ssh/ssh_host_ed25519_key.pub']]);
 });
 
-it('reads the image manifest, or null for an image without one', function (string $stdout, ?string $manifest): void {
-    ($this->answer)(incusResult($stdout));
-
-    expect($this->guest->imageManifest($this->vm))->toBe($manifest)
-        ->and(($this->argv)())->toBe([[...INCUS_PREFIX, 'exec', '--', 'tvm-1', 'sh', '-c', 'if [ -e "$1" ]; then cat -- "$1"; else printf absent; fi', 'sh', '/var/lib/orbit-task-vm/image.json']]);
-})->with([
-    'manifest' => ['{"schema":1,"programs":{}}'."\n", '{"schema":1,"programs":{}}'."\n"],
-    'none' => ['absent', null],
-]);
-
-it('fails when it cannot read the image manifest', function (): void {
-    ($this->answer)(incusResult(exitCode: 1, stderr: "Error: VM agent isn't currently running"));
-
-    expect(fn () => $this->guest->imageManifest($this->vm))->toThrow(fn (TaskVmException $e) => expect([$e->errorCode, $e->getMessage()])->toBe(['task_vm.host_command_failed', "On task VM [tvm-1], the image manifest read failed with exit code [1].\nError: VM agent isn't currently running"]));
-});
-
 it('refuses an invalid fingerprint', function (CommandResult $result, string $code): void {
     ($this->answer)($result);
 

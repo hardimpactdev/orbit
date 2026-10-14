@@ -155,7 +155,6 @@ describe('the image check', function (): void {
         $this->work = sys_get_temp_dir().'/orbit-image-script-'.bin2hex(random_bytes(6));
         mkdir($this->work.'/home/.ssh', 0700, true);
         file_put_contents($this->work.'/home/.ssh/authorized_keys', "ssh-ed25519 AAAAgateway orbit@gateway\n");
-        file_put_contents($this->work.'/image.json', "{\"schema\":1,\"programs\":{}}\n");
         $this->stubs = [
             'id' => 'echo 1000',
             'getent' => 'echo "orbit:x:1000:1000::'.$this->work.'/home:/bin/bash"',
@@ -163,24 +162,23 @@ describe('the image check', function (): void {
         ];
     });
 
-    it('passes for the pinned uid and gid, the manifest, and the Gateway key, plus ufw on request', function (): void {
-        [$process] = image_script('image-check.sh', ['orbit', '1000:1000', $this->work.'/image.json', '--ufw'], $this->stubs);
+    it('passes for the pinned uid and gid and the Gateway key, plus ufw on request', function (): void {
+        [$process] = image_script('image-check.sh', ['orbit', '1000:1000', '--ufw'], $this->stubs);
 
         expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
     });
 
-    it('fails for another uid, a missing manifest, a missing key, an inactive ufw, or an unknown check', function (string $change): void {
-        $arguments = ['orbit', '1000:1000', $this->work.'/image.json', '--ufw'];
+    it('fails for another uid, a missing key, an inactive ufw, or an unknown check', function (string $change): void {
+        $arguments = ['orbit', '1000:1000', '--ufw'];
         $stubs = $this->stubs;
         match ($change) {
             'uid' => $stubs['id'] = 'echo 1001',
-            'manifest' => $arguments[2] = $this->work.'/missing.json',
             'key' => unlink($this->work.'/home/.ssh/authorized_keys'),
             'ufw' => $stubs['sudo'] = 'echo "Status: inactive"',
-            'check' => $arguments[3] = '--unknown',
+            'check' => $arguments[2] = '--unknown',
         };
         [$process] = image_script('image-check.sh', $arguments, $stubs);
 
         expect($process->getExitCode())->not->toBe(0);
-    })->with(['uid', 'manifest', 'key', 'ufw', 'check']);
+    })->with(['uid', 'key', 'ufw', 'check']);
 });

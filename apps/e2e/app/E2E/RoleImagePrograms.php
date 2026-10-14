@@ -44,7 +44,7 @@ final readonly class RoleImagePrograms
 
     /**
      * The SHA-256 of a program's exact arguments and input: the Gateway's task VM image manifest fingerprint
-     * (`TaskVmBakedPrograms::fingerprint`). `orbit:node-programs` prints it for each program, and rendering
+     * (`RemoteCommand::fingerprint`). `orbit:node-programs` prints it for each program, and rendering
      * refuses a program whose fingerprint differs, so the two formats cannot drift apart.
      *
      * @param  Program  $program

@@ -36,6 +36,19 @@ final readonly class RemoteCommand
         $this->arguments = $arguments;
     }
 
+    /** Stable program fingerprint for role image builders; protected input is never fingerprinted. */
+    public function fingerprint(): ?string
+    {
+        if ($this->protectedInput !== null) {
+            return null;
+        }
+
+        return hash('sha256', json_encode(
+            ['arguments' => $this->arguments, 'input' => $this->input],
+            JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
+        ));
+    }
+
     public function shellCommand(): string
     {
         return implode(' ', array_map(escapeshellarg(...), $this->arguments));

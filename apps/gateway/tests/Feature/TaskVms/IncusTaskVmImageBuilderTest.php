@@ -19,7 +19,6 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\IncusTaskVmBaseImage;
 use App\Infrastructure\TaskVms\IncusTaskVmImageBuilder;
-use App\Infrastructure\TaskVms\TaskVmBakedPrograms;
 use App\Infrastructure\TaskVms\TaskVmRuntime;
 use App\Infrastructure\TaskVms\TaskVmScripts;
 use App\Infrastructure\Tools\ComposerToolManager;
@@ -29,7 +28,6 @@ use App\Jobs\TaskVms\RefreshTaskVmWorkspaceTemplates;
 use App\Models\Node;
 use Illuminate\Console\Scheduling\CallbackEvent;
 use Illuminate\Console\Scheduling\Schedule;
-use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Queue;
@@ -100,7 +98,7 @@ describe('a build', function (): void {
         $launches = array_values(array_filter($this->incus->commands, static fn (RemoteCommand $command): bool => $command->arguments[5] === 'launch'));
 
         expect($fingerprint)->toBe(IMAGE_NEW)
-            ->and($stages)->toBe(['render', 'sweep', 'launch', 'cloud-init', 'orbit-user', 'bootstrap', 'caddy-package', 'app-dev-prerequisites', 'vp-manager', 'composer-manager', 'app-dev-php-source', 'app-dev-php-8-5', 'app-dev-php-8-4', 'rust-toolchain', 'agent-binary', 'single-boot', 'lean-boot', 'manifest', 'clean', 'publish', 'delete-builder', 'smoke', 'promote', 'prune'])
+            ->and($stages)->toBe(['render', 'sweep', 'launch', 'cloud-init', 'orbit-user', 'bootstrap', 'caddy-package', 'app-dev-prerequisites', 'vp-manager', 'composer-manager', 'app-dev-php-source', 'app-dev-php-8-5', 'app-dev-php-8-4', 'rust-toolchain', 'agent-binary', 'single-boot', 'lean-boot', 'clean', 'publish', 'delete-builder', 'smoke', 'promote', 'prune'])
             ->and(array_map(static fn (IncusGuestCall $call): array => [$call->argv, $call->input], $programsRun))
             ->toBe(array_map(static fn (?RemoteCommand $program): array => [$program?->arguments, $program?->input], $programs))
             ->and(array_slice($launches[0]->arguments, -3))->toBe(['--', 'ubuntu-26.04-vm', 'tvm-image-20261010030000'])
@@ -159,28 +157,18 @@ describe('a build', function (): void {
             ->and($dropIn->input)->toBe("[Unit]\nWants=incus-agent.service\nAfter=incus-agent.service\n");
     });
 
-    it('records every program it ran in the image manifest and keeps work off the boot', function (): void {
+    it('keeps work off the boot and checks the image identity', function (): void {
         $this->travelTo('2026-10-10 03:00:00');
 
         ($this->build)();
 
-        $node = new Node(['name' => 'task-vm-base-image', 'platform' => 'linux', 'user' => 'orbit']);
-        $manifest = collect($this->incus->commands)->first(static fn (RemoteCommand $command): bool => Arr::last($command->arguments) === TaskVmBakedPrograms::ManifestPath);
         $lean = collect($this->incus->guest)->first(static fn (IncusGuestCall $call): bool => $call->argv[0] === 'bash' && $call->argv[1] === '-ceu' && str_contains($call->argv[2], 'systemctl mask'));
         $check = collect($this->incus->guest)->first(static fn (IncusGuestCall $call): bool => $call->script === 'image-check.sh');
-        $programs = json_decode((string) $manifest->input, true);
 
-        expect($programs['schema'])->toBe(1)
-            ->and(array_keys($programs['programs']))->toBe(['bootstrap', 'caddy-package', 'app-dev-prerequisites', 'vp-manager', 'composer-manager', 'app-dev-php-source', 'app-dev-php-8-5', 'app-dev-php-8-4', 'rust-toolchain'])
-            ->and($programs['programs']['rust-toolchain'])->toBe(TaskVmBakedPrograms::fingerprint(new RemoteCommand(TaskVmScripts::bash('install-rust.sh'))))
-            ->and($programs['programs']['bootstrap'])->toBe(TaskVmBakedPrograms::fingerprint(app(NodeBootstrapCommandFactory::class)->makeWithPasswordlessSudo($node, 'orbit')))
-            ->and($programs['programs']['composer-manager'])->toBe(TaskVmBakedPrograms::fingerprint(app(ComposerToolManager::class)->materializeCommand($node)))
-            ->and($programs['programs']['app-dev-php-8-4'])->toBe(TaskVmBakedPrograms::fingerprint(app(RemotePhpPackageManager::class)->appDevPrograms(['8.5', '8.4'])['8.4']))
-            ->and(array_slice($manifest->arguments, 5, 4))->toBe(['exec', '--', 'tvm-image-20261010030000', 'install'])
-            ->and([$lean->user, $lean->argv[2]])->toBe(['root', TaskVmScripts::read('lean-boot.sh').'systemctl mask systemd-firstboot.service apt-daily.timer apt-daily-upgrade.timer motd-news.timer unattended-upgrades.service'])
+        expect([$lean->user, $lean->argv[2]])->toBe(['root', TaskVmScripts::read('lean-boot.sh').'systemctl mask systemd-firstboot.service apt-daily.timer apt-daily-upgrade.timer motd-news.timer unattended-upgrades.service'])
             ->and($lean->argv[2])->toContain('LinkLocalAddressing=no', '--ipv4')->not->toContain('docker')
             ->and([$check->vm, $check->user])->toBe(['tvm-image-20261010030000-smoke', 'root'])
-            ->and(array_slice($check->argv, 3))->toBe(['--', 'orbit', '1000:1000', TaskVmBakedPrograms::ManifestPath, '--lean-boot']);
+            ->and(array_slice($check->argv, 3))->toBe(['--', 'orbit', '1000:1000', '--lean-boot']);
     });
 
     it('stops right after cloud-init when orbit did not get the pinned uid and gid', function (): void {
@@ -199,7 +187,7 @@ describe('a build', function (): void {
     it('fails the smoke test when a VM from the new image lost the lean boot', function (): void {
         $this->incus->fail = 'lean boot';
 
-        expect(fn () => ($this->build)())->toThrow(TaskVmException::class, 'did not keep the lean boot, the image manifest, or the pinned orbit uid and gid');
+        expect(fn () => ($this->build)())->toThrow(TaskVmException::class, 'did not keep the lean boot or the pinned orbit uid and gid');
         expect($this->incus->images)->toBe([IMAGE_STOCK => ['ubuntu-26.04-vm']])
             ->and($this->incus->instances)->toBe([]);
     });

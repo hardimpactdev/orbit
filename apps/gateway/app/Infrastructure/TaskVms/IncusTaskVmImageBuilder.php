@@ -21,7 +21,7 @@ use Throwable;
  * Builds the task VM base image on one host. A builder VM boots the stock image with the builder user-data, runs the
  * programs that enrollment runs on an `app-dev` Node through its {@see IncusGuestShell}, installs the pinned agent
  * binary and the pinned Pi executable, lets a VM from the image boot once and lean (`lean-boot.sh`), records the
- * programs in the image manifest ({@see TaskVmBakedPrograms}), and removes its identity with `base-image-clean.sh`.
+ * software programs, and removes its identity with `base-image-clean.sh`.
  * Incus publishes its disk as `orbit-task-base-<time>`. A smoke VM boots the new image, which also creates
  * its volume on the ZFS pool. Then the alias `orbit-task-base` moves to it in one
  * request, and older base images that no VM uses go. A failed build keeps the current image and leaves no
@@ -93,9 +93,6 @@ final readonly class IncusTaskVmImageBuilder
             }
             $this->stage($node, $progress, 'single-boot', fn () => $this->singleBoot($host, $node, $shell));
             $this->stage($node, $progress, 'lean-boot', fn () => $this->checked($shell, 'lean-boot', $shell->asRoot(['bash', '-ceu', TaskVmScripts::read('lean-boot.sh').TaskVmImageRecipe::Masks])));
-            $this->stage($node, $progress, 'manifest', fn () => $this->checked($shell, 'manifest', $shell->asRoot([
-                'install', '-D', '-o', 'root', '-g', 'root', '-m', '0644', '/dev/stdin', TaskVmBakedPrograms::ManifestPath,
-            ], TaskVmBakedPrograms::manifest($programs))));
             $this->stage($node, $progress, 'clean', fn () => $this->clean($shell));
             $unused = $published = $this->stage($node, $progress, 'publish', fn (): string => $this->publish($host, $node, $builder, $alias));
             $this->stage($node, $progress, 'delete-builder', fn () => $this->image->delete($host, $node, $builder));
@@ -168,12 +165,12 @@ final readonly class IncusTaskVmImageBuilder
 
     /**
      * A VM from the new image kept the lean boot through its first boot, when systemd applies the preset
-     * policy, holds the manifest that enrollment reads, and has the managed user with the pinned uid and gid.
+     * policy and has the managed user with the pinned uid and gid.
      */
     private function checkImage(IncusGuestShell $smoke): void
     {
         if (! $smoke->asRoot(TaskVmImageRecipe::imageCheck(['--lean-boot']))->succeeded()) {
-            throw IncusHost::invalid("the base image smoke VM [{$smoke->vm}]", 'it did not keep the lean boot, the image manifest, or the pinned '.TaskVmCloudInit::User.' uid and gid');
+            throw IncusHost::invalid("the base image smoke VM [{$smoke->vm}]", 'it did not keep the lean boot or the pinned '.TaskVmCloudInit::User.' uid and gid');
         }
     }
 

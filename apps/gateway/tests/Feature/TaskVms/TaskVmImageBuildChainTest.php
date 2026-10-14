@@ -12,7 +12,6 @@ use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\IncusTaskVmBaseImage;
-use App\Infrastructure\TaskVms\TaskVmBakedPrograms;
 use App\Infrastructure\TaskVms\TaskVmImageBuildChain;
 use App\Infrastructure\TaskVms\TaskVmImageBuildSteps;
 use App\Jobs\TaskVms\ImageBuild\AwaitImageBuilderBoot;
@@ -107,7 +106,6 @@ it('dispatches the ordered chain on builds with one cleanup catch and persists a
     foreach ($build->steps as $step) {
         expect($step['started_at'])->not->toBeNull()->and($step['seconds'])->toBeNumeric()->toBeGreaterThanOrEqual(0)->and($step['error'])->toBeNull();
     }
-    expect(collect($this->incus->guest)->filter(fn ($call) => in_array(TaskVmBakedPrograms::ManifestPath, $call->argv, true) && $call->argv[0] === 'install'))->toBeEmpty();
     Bus::assertChained([RefreshTaskVmWorkspaceTemplates::class]);
 });
 
