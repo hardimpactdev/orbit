@@ -53,6 +53,7 @@ use App\Domain\WireGuard\WireGuardAddressAllocator;
 use App\Domain\WireGuard\WireGuardEndpoint;
 use App\Infrastructure\Ssh\SshHostKeyScanException;
 use App\Infrastructure\TaskVms\TaskVmStepClock;
+use App\Infrastructure\WireGuard\VpnConfigurationRepository;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
@@ -86,6 +87,7 @@ final readonly class ProvisionNodeAction
         private ?RouterLanIngressReconciler $lanIngress = null,
         private ?ClusterRouterDnsSelectionReconciler $dnsSelection = null,
         private ?RecordEventBroadcaster $broadcaster = null,
+        private ?VpnConfigurationRepository $vpnConfiguration = null,
     ) {}
 
     public function execute(ProvisionNodeData $data): Node
@@ -1092,38 +1094,47 @@ final readonly class ProvisionNodeAction
             : null;
         $keepTld = $this->generatedDomainsMovedForward($node, $previousTld);
 
-        DB::transaction(function () use (
-            $node,
-            $priorActiveState,
-            $currentTld,
-            $currentClusterId,
-            $previousTld,
-            $previousClusterId,
-            $keepTld,
-        ): void {
-            if (! $keepTld) {
-                $this->routeReconciler()->reconcile(
-                    nodeOverrides: [
-                        $node->id => ['tld' => $previousTld, 'cluster_id' => $previousClusterId],
-                    ],
-                    baselineNodeOverrides: [
-                        $node->id => ['tld' => $currentTld, 'cluster_id' => $currentClusterId],
-                    ],
-                );
-            }
+        $save = function () use ($node, $priorActiveState, $currentTld, $currentClusterId, $previousTld, $previousClusterId, $keepTld): void {
+            DB::transaction(function () use (
+                $node,
+                $priorActiveState,
+                $currentTld,
+                $currentClusterId,
+                $previousTld,
+                $previousClusterId,
+                $keepTld,
+            ): void {
+                if (! $keepTld) {
+                    $this->routeReconciler()->reconcile(
+                        nodeOverrides: [
+                            $node->id => ['tld' => $previousTld, 'cluster_id' => $previousClusterId],
+                        ],
+                        baselineNodeOverrides: [
+                            $node->id => ['tld' => $currentTld, 'cluster_id' => $currentClusterId],
+                        ],
+                    );
+                }
 
-            $state = $priorActiveState;
+                $state = $priorActiveState;
 
-            if ($keepTld) {
-                $state['tld'] = $currentTld;
-            }
+                if ($keepTld) {
+                    $state['tld'] = $currentTld;
+                }
 
-            // The architecture is a fact the bootstrap observed on the machine, not attempt state.
-            if (($state['architecture'] ?? null) === null && is_string($node->architecture) && $node->architecture !== '') {
-                $state['architecture'] = $node->architecture;
-            }
+                // The architecture is a fact the bootstrap observed on the machine, not attempt state.
+                if (($state['architecture'] ?? null) === null && is_string($node->architecture) && $node->architecture !== '') {
+                    $state['architecture'] = $node->architecture;
+                }
 
-            $node->update($state);
-        });
+                $node->update($state);
+            });
+        };
+        $key = $priorActiveState['wireguard_public_key'] ?? null;
+
+        if (is_string($key) && $key !== '') {
+            ($this->vpnConfiguration ?? app(VpnConfigurationRepository::class))->assignPeerKey($node, $key, $save);
+        } else {
+            $save();
+        }
     }
 }

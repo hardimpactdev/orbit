@@ -15,6 +15,7 @@ use App\Infrastructure\AppDev\SocketPrivateDnsUpstream;
 use App\Models\Node;
 use Tests\Support\LoopbackRequesters;
 use Tests\Support\RegisteredNodeDnsRequesterResolver;
+use Tests\Support\SilentPrivateDnsPortPair;
 
 it('answers UDP and TCP questions from the actual transport source', function (): void {
     $sources = LoopbackRequesters::detect();
@@ -61,11 +62,7 @@ it('answers UDP and TCP questions from the actual transport source', function ()
 });
 
 it('keeps answering catalog names after a public-name forward whose upstream never replies', function (): void {
-    $silent = stream_socket_server('udp://127.0.0.1:0', $error, $message, STREAM_SERVER_BIND);
-    expect($silent)->toBeResource();
-    $name = stream_socket_get_name($silent, false);
-    expect($name)->toBeString();
-    $port = (int) substr($name, strrpos($name, ':') + 1);
+    [$silentUdp, $silentTcp, $port] = SilentPrivateDnsPortPair::hold('127.0.0.1');
     $waits = [];
     $wait = static function ($socket, bool $write, float $timeout) use (&$waits): bool {
         $waits[] = ['write' => $write, 'timeout' => $timeout];
@@ -96,7 +93,8 @@ it('keeps answering catalog names after a public-name forward whose upstream nev
         socket_close($public);
     } finally {
         $server->stop();
-        fclose($silent);
+        socket_close($silentUdp);
+        socket_close($silentTcp);
     }
 });
 

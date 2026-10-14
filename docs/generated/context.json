@@ -28,7 +28,10 @@
             "path": "docs/api/overview.mdx",
             "title": "Using the API",
             "kind": "product",
-            "components": [],
+            "components": [
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
             "concepts": [
                 "Activity",
                 "Cluster",
@@ -36,6 +39,8 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Project",
+                "Role",
                 "Route",
                 "Schedule"
             ],
@@ -381,6 +386,7 @@
             ],
             "concepts": [
                 "Access grant",
+                "Activity",
                 "Cluster",
                 "Gateway",
                 "Instance",
@@ -1694,6 +1700,7 @@
                 "Node",
                 "Process",
                 "Project",
+                "Role",
                 "Route",
                 "Subtask",
                 "Task",

@@ -1,0 +1,1 @@
+{"error":{"code":"node.wireguard_key_gateway","message":"Gateway WireGuard keys cannot be changed by this command.","request_id":null}}

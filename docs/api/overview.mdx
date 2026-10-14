@@ -2,6 +2,10 @@
 title: "Using the API"
 sidebarTitle: "Overview"
 description: "How a client reaches the Gateway API over WireGuard, how the Gateway identifies the caller, and how every request and response is shaped."
+covers:
+  - apps/gateway/app/Actions/Nodes/SetNodeWireGuardKeyAction.php
+  - apps/gateway/app/Http/Requests/Nodes/SetNodeWireGuardKeyRequest.php
+  - packages/php-sdk/src/Requests/Nodes/SetNodeWireGuardKeyRequest.php
 ---
 
 The Gateway exposes one versioned HTTP API under `/api/v1`. The `orbit` command line and the [PHP SDK](/api/php-sdk) are clients of this API and add nothing to it: every CLI command on the [CLI pages](/cli/overview) is one of the endpoints in this reference.
@@ -80,6 +84,38 @@ Codes are namespaced by family. The [CLI pages](/cli/overview) and the reference
 The Gateway records an Activity for every authorized request that can change something and for every failed request, with the operation, caller, target, result, and request ID, and never the body. It records a successful `GET` once per operation, caller, and target in any 60 seconds, and always for Schedule operations and credential reads. Read it with `GET /api/v1/activities` or [`orbit activity:list --request-id=<uuid>`](/cli/activity).
 
 The list is newest first. `before_id` returns older rows. `status`, `command`, `caller_node_id`, and `target_node_id` narrow it. The [activity command](/cli/activity) documents each option, and [activity](/cli/activity#filters-on-the-gateway-paging-by-id) explains why.
+
+## Set an unmanaged Node's WireGuard public key
+
+`PATCH /api/v1/nodes/{node}/wireguard-key` serves [`node:wireguard-key`](/cli/node#orbit-nodewireguard-key). The path takes a positive numeric Node ID; name resolution belongs to the CLI. The caller must be an active WireGuard peer with access to the target Node, under the usual identity and access rules.
+
+Send exactly one required member, `wireguard_public_key`, without a wrapper:
+
+```json
+{
+  "wireguard_public_key": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+}
+```
+
+The value must be a string containing canonical base64 for exactly 32 bytes (44 characters with one trailing `=`). The Gateway rejects missing, empty, null, non-string, whitespace-containing, malformed, and noncanonical values, unknown members, and duplicate JSON members with HTTP 422 `validation.failed`. There is no key removal or private-key input. Validation finishes before any write or hub projection.
+
+The Gateway refuses a Node holding the `gateway` role, including a non-active assignment, with HTTP 409 `node.wireguard_key_gateway`. It refuses verified SSH-managed Linux and macOS Nodes (both a nonempty WireGuard address and a pinned SSH host fingerprint) with HTTP 409 `node.wireguard_key_managed`, regardless of Node status. Check the Gateway guard first when both guards match. A target without a WireGuard address fails with HTTP 422 `node.wireguard_ip_required`. These refusals leave the registry and hub unchanged. The operation holds the target's existing Node-name lifecycle lock through the key write and projection; a competing operation on the same Node fails with HTTP 409 `node.provisioning_busy` before mutation.
+
+Before saving or projecting, the Gateway refuses a public key assigned to any other Node, regardless of lifecycle status or the caller's access to that Node, or equal to the configured WireGuard hub public key, with HTTP 409 `node.wireguard_key_conflict`. The refusal leaves the registry and hub unchanged and does not disclose the conflicting Node's identity. WireGuard identifies peers by public key, so target-only authorization and name locking cannot make duplicate keys safe. Collision checking and assignment must be atomic across all concurrent peer-key assignments, including provisioning; two different Nodes cannot both claim the same key. The target's own stored key is not a collision unless another Node or the hub also uses it. A valid identical-key retry must still succeed and project. Recovery is to configure a distinct key pair on the unmanaged target and submit its public key, not to remove or change another peer.
+
+On success the Gateway returns HTTP 200 with the standard Node record in `data`, including `wireguard_public_key`, and `meta.request_id`. It records Activity with command `node:wireguard-key`, caller, target, status, and request ID, without recording the request body. Authorized refusals and projection failures also record Activity under that command. The updated Node uses the normal `node.updated` broadcast contract.
+
+The request stores the key and synchronously reconverges the existing [WireGuard hub](/reference/node-provisioning#wireguard-hub) on the `vpn` Node. It does not change the target's tunnel, keys on disk, address, SSH identity, roles, or lifecycle status. A repeated identical key still projects the hub. A projection failure returns an error rather than a successful Node response; the stored key remains so the caller can repair the hub and retry the same request. `vpn.configuration_invalid`, `vpn.server_lock_failed`, `vpn.server_config_invalid`, `vpn.server_config_install_failed`, and `vpn.server_start_failed` use HTTP 422 with the failed step in `error.details.step`, and never raw remote output. The CLI's [WireGuard key error table](/cli/node#wireguard-key-errors) owns the recovery instructions. Unknown IDs return the standard HTTP 404 response, and identity or access failures use the standard HTTP 403 codes.
+
+Registry save, hub publication, and Activity completion are not one atomic operation. A crash after save but before publication can leave the new stored key and old live hub configuration. A crash after publication but before completion can leave the new live configuration while Activity later ends with `activity.interrupted`. Activity alone cannot distinguish those states; the code describes an interrupted request, not an HTTP refusal or proof of rollback. There is no guaranteed rollback or automatic reconciliation after a crash. Restore an authorized management path to the Gateway, using another active peer with access to the target if necessary, then submit the same desired key again. Replay rechecks collisions and republishes even if the stored value already matches. The operator still owns the unmanaged target's local tunnel configuration.
+
+### WireGuard key acceptance cases
+
+Implementation tests must cover collisions with another Node (including one the caller cannot access), the hub public key, and concurrent assignments of one key to different Nodes. Each refused attempt must leave the registry and live hub unchanged without revealing an inaccessible Node's identity. Identical-key retries must remain valid when no collision exists. A rendered-configuration test must compare the configuration before and after a successful key replacement and prove that every non-target peer's public key, allowed addresses, and other settings are preserved; only the target peer's public key changes.
+
+Injected-failure tests must stop the operation after the registry save but before publication, and after publication but before completion. They must establish the corresponding old or new hub configuration, the new stored key, eventual `activity.interrupted`, and the absence of assumed rollback or automatic reconciliation. For each window, replay the same desired key through a restored authorized management path and prove successful hub convergence with non-target peers preserved. Also retain ordinary projection-failure and same-key retry coverage.
+
+This entry is the docs-first endpoint contract. The generated API sidebar and OpenAPI operation are added from the route, request, SDK, and CLI definitions when the command is implemented; generated files are not hand-edited to advertise a route that does not yet exist.
 
 ## Stream a deployment
 

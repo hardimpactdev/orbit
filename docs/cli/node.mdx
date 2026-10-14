@@ -1,10 +1,10 @@
 ---
 title: "node"
-description: "Add machines to the fleet, rename Nodes, assign and move roles, grant access, set the apps root, read metrics, and remove Nodes."
+description: "Add machines to the fleet, rename Nodes, set unmanaged WireGuard keys, assign and move roles, grant access, set the apps root, read metrics, and remove Nodes."
 covers:
   - apps/cli/app/Commands/Nodes/**
   - apps/cli/app/Support/NodeSettingOptions.php
-  - apps/gateway/app/Actions/Nodes/{RenameNodeAction,RelocateNodeRoleAction,GrantGatewayRoleAccessAction,AddNodeAccessAction,RemoveNodeAccessAction,ShowNodeMetricsAction}.php
+  - apps/gateway/app/Actions/Nodes/{RenameNodeAction,SetNodeWireGuardKeyAction,RelocateNodeRoleAction,GrantGatewayRoleAccessAction,AddNodeAccessAction,RemoveNodeAccessAction,ShowNodeMetricsAction}.php
   - apps/gateway/app/Http/Controllers/Api/{NodesController,NodeRolesController,NodeAccessController,NodeFootprintsController}.php
   - apps/gateway/app/Http/Requests/Nodes/**
   - packages/php-sdk/src/Requests/Nodes/**
@@ -26,6 +26,7 @@ A Node is a machine that the Gateway manages over SSH and reaches over WireGuard
 | [`node:metrics`](#orbit-nodemetrics) | Show one metrics snapshot of a Node. |
 | [`node:rename`](#orbit-noderename) | Change the name of a Node. |
 | [`node:settings`](#orbit-nodesettings) | Set the apps root of a Node. |
+| [`node:wireguard-key`](#orbit-nodewireguard-key) | Set an unmanaged Node's WireGuard public key and reconverge the hub. |
 | [`node:role:add`](#orbit-noderoleadd) | Add a role, or converge an existing role. |
 | [`node:role:list`](#orbit-noderolelist) | List the roles of a Node. |
 | [`node:role:relocate`](#orbit-noderolerelocate) | Move `gateway`, `websocket`, or `metrics` to another Node. |
@@ -173,6 +174,59 @@ orbit node:settings <node> --setting=apps.path:/mnt/apps [--json]
 ```
 
 The command needs at least one `--setting`. It sends `{"apps":{"path":"/mnt/apps"}}` to the settings API, without a `settings` wrapper. An empty value unsets the path: `--setting=apps.path:` sends `{"apps":{"path":null}}`. The [API reference](/api/overview) and [MCP](/reference/mcp) publish the same nullable path inside a closed `apps` object. A change never moves an existing checkout. [Node settings](/reference/node-settings#validation) lists the validation rules and failure codes.
+
+## orbit node:wireguard-key
+
+Set or replace the WireGuard public key of an existing unmanaged Node. Use this when the operator manages the peer's tunnel outside Orbit. The command does not generate a key pair, accept a private key, or configure the target machine.
+
+```bash
+orbit node:wireguard-key <node> <public-key> [--json]
+```
+
+| Argument or option | Meaning |
+| --- | --- |
+| `node` | Existing Node ID or exact name. No current-Node default. |
+| `public-key` | Required canonical base64 encoding of exactly 32 bytes: 44 characters ending in `=`. Whitespace, malformed base64, an empty value, and null are invalid. The key must not belong to another Node or the WireGuard hub. There is no unset mode. |
+| `--json` | Noninteractive output using the standard Node response and request ID. |
+
+```bash
+orbit node:wireguard-key laptop 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE='
+```
+
+A terminal prompts for an omitted Node with the shared Node data list labeled `Node`, then for an omitted key with the text prompt `WireGuard public key`, with no default. An invalid prompted key is requested again. With `--json` or without interactive input, missing arguments fail before mutation. Cancelling a prompt exits 1 and changes nothing. A supplied invalid key also fails before mutation.
+
+The Gateway refuses a managed Node: a Linux or macOS Node with both a nonempty WireGuard address and a pinned SSH host fingerprint, regardless of its lifecycle status. It also refuses any Node holding the `gateway` role, regardless of that role's status. These guards cannot be overridden. The target needs an existing WireGuard address; the command does not allocate one or change the Node's status, roles, endpoint, address, or SSH identity.
+
+WireGuard identifies peers by public key, not by Node ID. Before changing anything, the Gateway rejects a key assigned to any other Node, regardless of that Node's status or the caller's access to it, or equal to the hub's public key, with `node.wireguard_key_conflict` (HTTP 409). The collision check and assignment are atomic across concurrent key assignments; the target's name lock alone is not sufficient. The refusal leaves the stored key and hub unchanged and does not expose the other Node's identity. Supply the public key of a distinct key pair configured on the target, rather than removing or changing another peer. The target's own current key is allowed unless it also collides with another Node or the hub, so valid identical-key retries remain supported.
+
+The Gateway stores the public key and reconverges the WireGuard hub on the `vpn` Node, using the existing [hub projection](/reference/node-provisioning#wireguard-hub). It does not converge the target Node's footprint, contact it over SSH, or alter its host tunnel. Sending the same key still reconverges the hub, so a retry repairs a failed projection. Replacing the key can interrupt the target's connectivity until its locally configured key pair matches; no `--force` option or confirmation is required because this is an explicit setting operation, not Node removal.
+
+The request is synchronous. Human progress uses `Set Node WireGuard key`, `Setting Node WireGuard key`, and `Set Node WireGuard key` for pending, active, and success, without invented remote stages. Success prints `WireGuard public key set for Node #<id> [<name>].` and `Request ID: <uuid>`. JSON emits only the standard Node response, including `wireguard_public_key`; errors use the standard error envelope. Success exits 0; validation, refusal, and projection failures exit 1. A lost connection or an interruption after sending the request does not prove the Gateway rolled back or completed publication. Activity by request ID helps correlate the attempt, but does not establish which key the hub is using.
+
+Every authorized attempt records Activity as `node:wireguard-key`, with the caller, target Node, outcome, and request ID, but never the request body or private key material. A hub failure is not success: the newly stored key remains, the error identifies the failed projection step, and the operator retries the same command after fixing the hub. If the Gateway crashes after saving the key but before hub publication, the registry can contain the new key while the hub still uses the old configuration. If it crashes after publication but before recording completion, the hub can already use the new key while Activity later reports `activity.interrupted`. Activity alone cannot distinguish these windows. Do not assume rollback or automatic reconciliation. Restore an authorized management path to the Gateway, using another active peer with access to the target if the target's tunnel is unavailable, then replay the same desired public key. The replay checks collisions again and republishes the hub even when the stored key already matches. Configure the unmanaged target's local key pair yourself; replay never repairs that tunnel for you.
+
+A successful projection preserves every non-target peer's public key, allowed addresses, and other peer settings. The [API entry](/api/overview#set-an-unmanaged-nodes-wireguard-public-key) defines the request, response, errors, and required collision, rendered-configuration, and injected-failure acceptance cases.
+
+### WireGuard key errors
+
+| Code | Meaning and recovery |
+| --- | --- |
+| `node.reference_required` | The CLI got no Node in noninteractive or JSON mode. Supply an ID or name. |
+| `node.wireguard_key_required` | The CLI got no public key in noninteractive or JSON mode. Supply the public key. |
+| `validation.failed` | The key is not canonical base64 for 32 bytes, or the API body is invalid. Nothing changes. |
+| `node.wireguard_key_managed` | The target has verified SSH management. Nothing changes; use the managed Node's normal provisioning/convergence path instead. |
+| `node.wireguard_key_gateway` | The target holds `gateway`. Nothing changes; Gateway key changes are outside this command. |
+| `node.wireguard_key_conflict` | The key belongs to another Node or the hub, including a concurrent assignment. Nothing changes. Use a distinct key pair on the target; do not alter the other peer. |
+| `node.wireguard_ip_required` | The target has no WireGuard address. Nothing changes; enroll the Node with an address first. |
+| `node.provisioning_busy` | Another lifecycle operation owns this Node's name lock. Nothing changes; retry when it finishes. |
+| `activity.interrupted` | Activity reports a lost Gateway request, not the live hub state. Restore an authorized management path and replay the same desired key; neither rollback nor automatic reconciliation is guaranteed. |
+| `vpn.configuration_invalid` | The hub settings are missing or invalid. The stored key remains; repair the VPN configuration and retry. |
+| `vpn.server_lock_failed` | The hub projection lock could not be acquired. The stored key remains; fix the lock failure and retry. |
+| `vpn.server_config_invalid` | The rendered hub configuration failed validation. The stored key remains; fix the configuration and retry. |
+| `vpn.server_config_install_failed` | The hub configuration could not be installed, including when the remote `vpn` Node cannot be reached over SSH. The stored key remains; restore the hub management path and retry. |
+| `vpn.server_start_failed` | The hub tunnel could not be activated. The stored key remains; fix the hub service and retry. |
+
+The API also uses the shared identity, access, and not-found errors described in [Using the API](/api/overview#read-an-error).
 
 ## orbit node:role:add
 

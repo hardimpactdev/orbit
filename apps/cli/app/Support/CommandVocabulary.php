@@ -64,6 +64,7 @@ final readonly class CommandVocabulary
         'metrics:credentials',
         'node:metrics',
         'node:settings',
+        'node:wireguard-key',
         'tasks:agents',
     ];
 

@@ -14,6 +14,8 @@ covers:
 
 The web app is Orbit's live view of the fleet. It is a static single-page app that reads the Gateway API and follows [realtime events](/reference/events). Its TypeScript API schema is generated from the Gateway OpenAPI document (`docs/openapi.json`) with `bun run types` in `apps/web`. Operation descriptions and request-field comments in that schema follow the OpenAPI document, including argument and option text that [API reference generation](/reference/api-reference) reads from the CLI command classes. Regenerate the schema after an OpenAPI change and commit it with the app. To install, run, and check the app, see [Bun and Rust projects](/reference/bun-and-rust-projects#web-app).
 
+The generated API schema includes `PATCH /api/v1/nodes/{node}/wireguard-key`, with a `wireguard_public_key` input and the standard Node response. These types describe the [unmanaged peer key contract](/cli/node#orbit-nodewireguard-key); they do not add a web key editor. Regenerate them with `bun run types` when the operation changes.
+
 The task group schema includes nullable `vm_power`: `running`, `stopped`, or `destroyed`, separately from task status. The Tasks page keeps its status-based grouping and detail view when power is present, null, or omitted. [VM power](/reference/compute-drivers#vm-power) defines the state mapping.
 
 The generated API schema also includes the Project development deploy step operations and their `required` boolean. These types describe the [API contract](/reference/deployments#development-deploy-steps); they do not add web controls or start deployments.
