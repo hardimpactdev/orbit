@@ -112,7 +112,7 @@ def repository(test, project_files=True):
     test.info = {
         'cache': str(Path(test.temporary.name) / 'main-cache'),
         'runner': cache.runner_identity(b'{"packages":[]}', b'<?php\n'),
-        'fingerprint': {'structural': {'schema': 19}, 'environmental': {'php_minor': '8.5'}},
+        'fingerprint': {'structural': {'schema': 20}, 'environmental': {'php_minor': '8.5'}},
     }
     test.graph = {
         'schema': 1, 'fingerprint': test.info['fingerprint'],
