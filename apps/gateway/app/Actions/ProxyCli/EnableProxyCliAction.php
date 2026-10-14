@@ -15,6 +15,7 @@ use App\Domain\ProxyCli\ProxyCliRuntimeLifecycle;
 use App\Domain\ProxyCli\ProxyCliSnapshotStore;
 use App\Domain\ProxyCli\ProxyCliState;
 use App\Models\DatabaseConnection;
+use Illuminate\Validation\ValidationException;
 use SensitiveParameter;
 
 final readonly class EnableProxyCliAction
@@ -30,6 +31,15 @@ final readonly class EnableProxyCliAction
 
     public function execute(#[SensitiveParameter] EnableProxyCliData $data): ProxyCliStatusData
     {
+        if (config('task_vms.enabled') === true) {
+            $origin = config('task_vms.model_proxy_origin');
+            if (! is_string($origin) || rtrim($data->cliproxyUrl, '/') !== rtrim($origin, '/')) {
+                throw ValidationException::withMessages([
+                    'cliproxy_url' => ['The cliproxy_url must equal task_vms.model_proxy_origin while task VMs are enabled.'],
+                ]);
+            }
+        }
+
         $node = $this->placement->node($data->nodeId);
         $connection = $this->placement->connection($data->cacheConnection);
         $takeover = $this->hostnameRoute->takeoverCandidate($node);
