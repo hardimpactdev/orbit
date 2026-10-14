@@ -509,7 +509,7 @@ A **stray instance** is an Incus instance in any project of the host that is non
 - a sync smoke VM `tvm-image-<time>-sync-smoke`, or a workspace template builder `tvm-template-<time>`, in the host's project, for one hour after the `<time>` in its name;
 - an entry of the host's `operator_owned` list.
 
-A base image builder without a `running` build row is a stray, whatever its age. The sweep deletes it in the host's configured project. The sync smoke VM and the template builder keep the one-hour rule until they have their own chains and rows. Their locks last less than 30 minutes, so an older VM belongs to no running sync or template build. It is a stray until the next sync or template build deletes it.
+A base image builder is a stray unless its build row is `running` or failed within the last 24 hours with cleanup not yet claimed. The sweep deletes it in the host's configured project. The sync smoke VM and the template builder keep the one-hour rule until they have their own chains and rows. Their locks last less than 30 minutes, so an older VM belongs to no running sync or template build. It is a stray until the next sync or template build deletes it.
 
 A **stray volume** is an Incus custom volume in any project and pool of the host that is none of these:
 
@@ -579,7 +579,7 @@ A builder VM has the size of a task VM and does not count against `max_vms`. It 
 | `RefillTaskVmPool` | Never. It runs again a minute later. A failed pool VM makes its host wait, as [Failures](#warm-vm-failures) describes |
 | `EnsureWarmClaimReady` | Never. It queues `PrepareTaskVmRuntime`, which has its own retries |
 | `RefreshTaskVmBaseImages` | Never. The next night runs it again |
-| Base image step jobs | Retry their step. Waiting steps release with a delay until their deadline, not an attempt limit. The first final failure stops the chain and queues cleanup |
+| Base image step jobs | Poll until the step's deadline. Failure stops the chain and queues a template refresh. Failed builders stay available for resume |
 | `RefreshTaskVmWorkspaceTemplates` | Never. The next base image build, sync, or night queues it again |
 | `RefreshUpCloudTaskVmBaseImage` | Never. The next night runs it again |
 | `BuildTaskVmWorkspaceTemplate` | Waits a minute while another template build runs on the host, up to 10 times. A failed build or a Project without a default branch is not retried; see [Template failures](#template-failures) |
@@ -736,11 +736,17 @@ It also stops Docker, containerd, and Caddy, and removes the IDs they write on t
 
 The builder never enrolls, so the image has no WireGuard key, agent secret, Caddy site, firewall rule, or Gateway record. Each VM gets those from its own enrollment.
 
-When a step fails after its retries, the row becomes `failed` with that step and its error. The chain's one failure callback queues a cleanup job. It deletes the builder and smoke VMs, and the new image if it never became the base image. A failed build keeps the current base image. A build whose builder still exists and whose cleanup has not started can resume from its failed step with `task-vms:build-image {node} --resume=<build id>`.
+When a step fails, the row becomes `failed` with that step and its error. The failure callback queues a workspace template refresh against the images still current. A failed build keeps the current base image and retains its builder and smoke VMs for 24 hours after failure, so `task-vms:build-image {node} --resume=<build id>` can continue its failed step without racing immediate cleanup. A new build on that host discards the previous failed build's VMs. The host sweep discards them after the retention window. Explicit cleanup discards them immediately.
+
+Resume uses the builder for steps before publication and the published image for smoke and promote. Publish itself resumes with either its builder or its already published image: if builder deletion succeeded but its reply or the completion write was lost, replay uses the retained image without republishing.
+
+Boot and smoke polling deadlines count 600 seconds from that step's first execution, not time spent waiting in the queue. Package commands wait up to 300 seconds for each apt lock, including on stock builders before the image masks apt timers. Update retries lists-lock contention explicitly because `DPkg::Lock::Timeout` covers only dpkg locks. Other update errors fail immediately. The package job has a 1500-second timeout; its remote calls total at most 1440 seconds, allowing lock waits and package work.
+
+The host sweep also queues a template refresh while any host's latest build is failed. This recovers a crash between the failed write and the catch's enqueue, or a rejected enqueue. Laravel's existing refresh uniqueness absorbs repeats; a lost dispatch's unique lease expires within one hour. Recovery needs no extra marker or lock. Once a newer build exists or that failed build resumes, this recovery stops. Refresh remains idempotent and reads current aliases.
 
 The cleanup job, the host sweep, and the base image sweep claim cleanup with atomic database updates before deleting a recorded build's builder or smoke VM. They share the durable fence against resume: if resume wins, deletion skips the VM; if deletion wins, resume refuses even while the builder still exists. Once cleanup claims the build, start a new build instead.
 
-Start and resume record a pending queue submission before enqueueing. A successful enqueue or a worker claiming the build clears it. An enqueue error fails a still-pending submission; it leaves a build already claimed by a worker alone. If the submitting process crashes before acknowledgement, the host sweep or the next start or resume fails the pending submission after ten minutes, freeing the host for another build. This deadline applies only to an incomplete submission, not to a running build. Prune preserves images named by running build rows, including a newly published image waiting for its smoke VM.
+Start and resume record a pending queue submission before enqueueing. A successful enqueue or a worker claiming the build clears it. An enqueue error fails a still-pending submission; it leaves a build already claimed by a worker alone. If the submitting process crashes before acknowledgement, the host sweep or the next start or resume fails the pending submission after ten minutes, freeing the host for another build. This deadline applies only to an incomplete submission, not to a running build. Prune preserves running and retained failed builds' images, including a published image waiting for its smoke VM.
 
 Every night at 03:00, while task VMs are enabled, the Gateway scheduler queues the job `RefreshTaskVmBaseImages` on the `builds` queue. It builds the base image once, on the first host in `task_vms.incus.hosts`, and syncs it to every other configured host, one after another. While the first host has no base image, the job only reads its image list, so the first build is always `task-vms:build-image`. The job fails with `task_vm.unknown_host` when the first host's Node is not active.
 

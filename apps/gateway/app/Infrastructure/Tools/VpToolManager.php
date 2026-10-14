@@ -13,7 +13,6 @@ use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolOperation;
 use App\Domain\Tools\ToolRemovalPlan;
-use App\Infrastructure\Nodes\EnrollmentProgram;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
@@ -247,11 +246,6 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
         }
 
         $command = $this->materializeCommand($node);
-        // A task VM whose base image ran this exact program skips it.
-        if (EnrollmentProgram::skipForTaskVm($node, EnrollmentProgram::VpManager)) {
-            return;
-        }
-
         $result = $this->commands->execute($node, $command->arguments, $command->input);
 
         $this->guardSuccessfulResult(

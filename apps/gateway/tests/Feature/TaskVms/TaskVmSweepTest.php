@@ -192,11 +192,11 @@ beforeEach(function (): void {
 });
 
 describe('image build ownership', function (): void {
-    it('reports only running build VMs as owned on their recorded host, regardless of age', function (): void {
+    it('protects running builds and retains failed builders until the retention window expires', function (): void {
         $running = TaskVmImageBuild::query()->create(['host_node_id' => $this->beast->id]);
         $failed = TaskVmImageBuild::query()->create(['host_node_id' => $this->beast->id, 'state' => 'failed']);
         $succeeded = TaskVmImageBuild::query()->create(['host_node_id' => $this->beast->id, 'state' => 'succeeded']);
-        $this->travel(2)->hours();
+        $this->travel(25)->hours();
         $this->incus->instances = ['10.44.0.7' => [$running->builder_vm_name, $running->builder_vm_name.'-smoke', $failed->builder_vm_name, $succeeded->builder_vm_name, 'tvm-image-99999'], '10.44.0.8' => [$running->builder_vm_name]];
         $settings = app(TaskVmSettings::class);
         $audit = app(TaskVmHostAudit::class);
@@ -211,6 +211,9 @@ describe('image build ownership', function (): void {
         $running = TaskVmImageBuild::query()->create(['host_node_id' => $this->beast->id]);
         $failed = TaskVmImageBuild::query()->create(['host_node_id' => $this->beast->id, 'state' => 'failed']);
         $this->incus->instances = ['10.44.0.7' => [$running->builder_vm_name, $running->builder_vm_name.'-smoke', $failed->builder_vm_name, 'tvm-image-20261013133000-sync-smoke']];
+        app(IncusTaskVmBaseImage::class)->sweep(app(TaskVmSettings::class)->host($this->beast->id), $this->beast);
+        expect($this->incus->instances['10.44.0.7'])->toBe([$running->builder_vm_name, $running->builder_vm_name.'-smoke', $failed->builder_vm_name]);
+        $this->travel(25)->hours();
         app(IncusTaskVmBaseImage::class)->sweep(app(TaskVmSettings::class)->host($this->beast->id), $this->beast);
         expect($this->incus->instances['10.44.0.7'])->toBe([$running->builder_vm_name, $running->builder_vm_name.'-smoke']);
     });
@@ -514,8 +517,10 @@ describe('strays', function (): void {
 
 it('fences resume when sweep deletion wins while the builder still exists', function (string $path, string $suffix): void {
     Bus::fake();
+    $this->travel(-25)->hours();
     $build = TaskVmImageBuild::query()->create(['host_node_id' => $this->beast->id, 'state' => 'failed', 'current_step' => TaskVmImageBuildStep::Launch]);
     $name = $build->builder_vm_name.$suffix;
+    $this->travel(25)->hours();
     // Smoke first, so the builder is still present when a smoke deletion races resume.
     $this->incus->instances['10.44.0.7'] = array_values(array_unique([$name, $build->builder_vm_name]));
     $host = app(TaskVmSettings::class)->host($this->beast->id);
@@ -543,10 +548,12 @@ it('fences resume when sweep deletion wins while the builder still exists', func
 
 it('skips a stale sweep candidate when resume wins before deletion claims cleanup', function (string $path, string $suffix): void {
     Bus::fake();
+    $this->travel(-25)->hours();
     $build = TaskVmImageBuild::query()->create(['host_node_id' => $this->beast->id, 'state' => 'failed', 'current_step' => TaskVmImageBuildStep::Launch]);
     $name = $build->builder_vm_name.$suffix;
     $this->incus->instances['10.44.0.7'] = array_values(array_unique([$name, $build->builder_vm_name]));
     $host = app(TaskVmSettings::class)->host($this->beast->id);
+    $this->travel(25)->hours();
     $overlapped = false;
     if ($path === 'base-image') {
         // The sweep captures an inventory containing the failed build, then resume wins before its claim.
@@ -578,11 +585,13 @@ it('skips a stale sweep candidate when resume wins before deletion claims cleanu
 
 it('rejects a stale resume when a sweep wins after the builder existence result is captured', function (string $path, string $suffix): void {
     Bus::fake();
+    $this->travel(-25)->hours();
     $build = TaskVmImageBuild::query()->create(['host_node_id' => $this->beast->id, 'state' => 'failed', 'current_step' => TaskVmImageBuildStep::Launch]);
     $name = $build->builder_vm_name.$suffix;
     $this->incus->instances['10.44.0.7'] = array_values(array_unique([$name, $build->builder_vm_name]));
     $host = app(TaskVmSettings::class)->host($this->beast->id);
     $overlapped = false;
+    $this->travel(25)->hours();
     $this->incus->afterExecute = function (RemoteCommand $command) use ($host, $name, $path, &$overlapped): void {
         if (($command->arguments[5] ?? null) !== 'list') {
             return;

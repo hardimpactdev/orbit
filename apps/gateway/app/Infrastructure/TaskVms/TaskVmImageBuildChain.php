@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace App\Infrastructure\TaskVms;
 
 use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmImageBuildStep;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Jobs\TaskVms\ImageBuild\AwaitImageBuilderBoot;
 use App\Jobs\TaskVms\ImageBuild\CleanImageBuilder;
-use App\Jobs\TaskVms\ImageBuild\CleanupImageBuild;
 use App\Jobs\TaskVms\ImageBuild\ImageBuildJob;
 use App\Jobs\TaskVms\ImageBuild\LaunchImageBuilder;
 use App\Jobs\TaskVms\ImageBuild\PrepareImageBoot;
@@ -19,6 +19,7 @@ use App\Jobs\TaskVms\ImageBuild\PublishImage;
 use App\Jobs\TaskVms\ImageBuild\RunImageProgram;
 use App\Jobs\TaskVms\ImageBuild\SmokeImage;
 use App\Jobs\TaskVms\ImageBuild\UpgradeImagePackages;
+use App\Jobs\TaskVms\RefreshTaskVmWorkspaceTemplates;
 use App\Models\Node;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Support\Facades\Bus;
@@ -28,7 +29,7 @@ use Throwable;
 
 final readonly class TaskVmImageBuildChain
 {
-    public function __construct(private TaskVmSettings $settings, private IncusTaskVmBaseImage $image, private TaskVmImageRecipe $recipe, private IncusTaskVmImageSync $sync) {}
+    public function __construct(private TaskVmSettings $settings, private IncusTaskVmBaseImage $image, private TaskVmImageRecipe $recipe, private IncusTaskVmImageSync $sync, private IncusHost $incus) {}
 
     public function start(Node $node, bool $fromStock = false): TaskVmImageBuild
     {
@@ -45,8 +46,22 @@ final readonly class TaskVmImageBuildChain
         $build = $this->sync->admitBuild($node, function () use ($node, $id): TaskVmImageBuild {
             $build = TaskVmImageBuild::query()->where('host_node_id', $node->id)->find($id)
                 ?? throw new TaskVmException('task_vm.image_build_failed', "Build [{$id}] does not belong to this host.");
-            if ($build->state !== TaskVmImageBuildState::Failed || $build->cleanup_started_at !== null || $build->current_step === null || ! array_key_exists((string) $build->builder_vm_name, $this->image->instances($this->settings->host($node->id), $node))) {
-                throw new TaskVmException('task_vm.image_build_failed', 'Only an unclaimed failed build whose builder still exists can resume.');
+            if ($build->state !== TaskVmImageBuildState::Failed || $build->cleanup_started_at !== null || $build->current_step === null) {
+                throw new TaskVmException('task_vm.image_build_failed', 'Only an unclaimed failed build can resume.');
+            }
+            $host = $this->settings->host($node->id);
+            $needsBuilder = true;
+            if (in_array($build->current_step, [TaskVmImageBuildStep::Publish, TaskVmImageBuildStep::Smoke, TaskVmImageBuildStep::Promote], true)) {
+                $alias = TaskVmHost::BaseImage.'-'.$build->created_at?->format('YmdHis').'-'.$build->id;
+                $published = $this->incus->aliasTarget($host, $node, $alias);
+                $needsBuilder = $published === null || ($published !== $build->image_fingerprint
+                    && ! ($build->current_step === TaskVmImageBuildStep::Publish && $build->image_fingerprint === null));
+                if ($needsBuilder && ($build->current_step !== TaskVmImageBuildStep::Publish || $build->image_fingerprint !== null)) {
+                    throw new TaskVmException('task_vm.image_build_failed', 'The failed build\'s published image no longer exists.');
+                }
+            }
+            if ($needsBuilder && ! array_key_exists((string) $build->builder_vm_name, $this->image->instances($host, $node))) {
+                throw new TaskVmException('task_vm.image_build_failed', 'Only an unclaimed failed build whose builder still exists can resume before publish.');
             }
             // A conditional write, not SELECT FOR UPDATE (which SQLite ignores), arbitrates against cleanup.
             DB::transaction(function () use ($build): void {
@@ -83,6 +98,18 @@ final readonly class TaskVmImageBuildChain
         foreach (TaskVmImageBuild::query()->where('state', TaskVmImageBuildState::Running)
             ->where('submission_pending_at', '<=', now()->subMinutes(10)->toISOString())->get() as $build) {
             $this->failSubmission($build, new RuntimeException('Image build queue submission was not acknowledged within ten minutes.'));
+        }
+    }
+
+    /** Reconcile from durable state after a missed catch enqueue, without an outbox or new marker. */
+    public function recoverTemplateRefresh(): void
+    {
+        $latestFailed = TaskVmImageBuild::query()->where('state', TaskVmImageBuildState::Failed)
+            ->whereNotExists(fn ($query) => $query->selectRaw('1')->from('task_vm_image_builds as newer')
+                ->whereColumn('newer.host_node_id', 'task_vm_image_builds.host_node_id')
+                ->whereColumn('newer.id', '>', 'task_vm_image_builds.id'))->exists();
+        if ($latestFailed) {
+            RefreshTaskVmWorkspaceTemplates::dispatch()->onConnection('gateway')->onQueue('builds');
         }
     }
 
@@ -153,9 +180,9 @@ final readonly class TaskVmImageBuildChain
         }
         $id = $build->id;
         Bus::chain($jobs)->onConnection('gateway')->onQueue('builds')->catch(static function (Throwable $error) use ($id): void {
-            // The error is recorded before dispatch: cleanup carries only the durable build id.
+            // Keep the failed build's VMs for resume; refresh against the images still current.
             ImageBuildJob::recordFailure($id, $error);
-            CleanupImageBuild::dispatch($id)->onConnection('gateway')->onQueue('builds');
+            RefreshTaskVmWorkspaceTemplates::dispatch()->onConnection('gateway')->onQueue('builds');
         })->dispatch();
     }
 }

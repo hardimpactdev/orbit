@@ -34,10 +34,10 @@ final readonly class IncusTaskVmBaseImage
     ) {}
 
     /** Deletes builder and smoke VMs that an interrupted build or sync left. */
-    public function sweep(TaskVmHost $host, Node $node): void
+    public function sweep(TaskVmHost $host, Node $node, bool $discardFailed = false): void
     {
         foreach (array_keys($this->instances($host, $node)) as $name) {
-            if (str_starts_with($name, TaskVmImageRecipe::WorkPrefix) && TaskVmHostAudit::claimBuildCleanup($node, $name)) {
+            if (str_starts_with($name, TaskVmImageRecipe::WorkPrefix) && TaskVmHostAudit::claimBuildCleanup($node, $name, $discardFailed)) {
                 $this->delete($host, $node, $name);
             }
         }
@@ -132,7 +132,10 @@ final readonly class IncusTaskVmBaseImage
         $images = $this->incus->images($host, $node);
         // Read after the remote inventory. Every published image already has a running row, even
         // if publish's fingerprint write was interrupted or its builder has since been deleted.
-        $running = TaskVmImageBuild::query()->where('host_node_id', $node->id)->where('state', TaskVmImageBuildState::Running)->get();
+        $running = TaskVmImageBuild::query()->where('host_node_id', $node->id)
+            ->where(fn ($query) => $query->where('state', TaskVmImageBuildState::Running)
+                ->orWhere(fn ($failed) => $failed->where('state', TaskVmImageBuildState::Failed)
+                    ->whereNull('cleanup_started_at')->where('updated_at', '>', now()->subHours(TaskVmHostAudit::FailedBuildHours))))->get();
         $protected = $running->pluck('image_fingerprint')->all();
         $pendingAliases = $running->map(static fn (TaskVmImageBuild $build): string => TaskVmHost::BaseImage.'-'.$build->created_at?->format('YmdHis').'-'.$build->id)->all();
         $deleted = [];

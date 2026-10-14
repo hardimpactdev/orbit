@@ -34,7 +34,7 @@ final readonly class TaskVmImageBuildSteps
                     $current = $build->from_stock ? null : $this->incus->aliasTarget($host, $node, TaskVmHost::BaseImage);
                     $build->forceFill(['source_alias' => $current === null ? TaskVmHost::SourceImage : TaskVmHost::BaseImage, 'source_fingerprint' => $current ?? $this->incus->aliasTarget($host, $node, TaskVmHost::SourceImage)])->save();
                 }
-                $this->image->sweep($host, $node);
+                $this->image->sweep($host, $node, discardFailed: true);
                 if (! array_key_exists($name, $this->image->instances($host, $node))) {
                     $this->image->launch($host, $node, $name, $build->source_fingerprint ?? (string) $build->source_alias, $this->cloudInit->renderImageBuilder($this->keys->publicKey(), upgradePackages: false));
                 }
@@ -44,7 +44,8 @@ final readonly class TaskVmImageBuildSteps
             case TaskVmImageBuildStep::UpgradePackages:
                 $this->image->checked($name, 'owner', $shell->asRoot(TaskVmImageRecipe::ownerCheck()));
                 $packages = implode(' ', ['openssh-server', ...TaskVmCloudInit::ChromiumLibraries, ...TaskVmCloudInit::WorkspaceTools]);
-                $this->image->checked($name, 'upgrade packages', $shell->asRoot(['bash', '-ceu', 'export DEBIAN_FRONTEND=noninteractive; apt-get update; apt-get -y full-upgrade; apt-get -y install '.$packages]));
+                $this->image->checked($name, 'update package lists', $shell->asRoot(TaskVmScripts::bash('apt-update.sh', ['300']), timeout: 360));
+                $this->image->checked($name, 'upgrade packages', $shell->asRoot(['bash', '-ceu', 'export DEBIAN_FRONTEND=noninteractive; apt-get -o DPkg::Lock::Timeout=300 -y full-upgrade; apt-get -o DPkg::Lock::Timeout=300 -y install '.$packages], timeout: 1080));
                 break;
             case TaskVmImageBuildStep::Program:
                 if ($program === 'agent-binary') {
@@ -107,7 +108,7 @@ final readonly class TaskVmImageBuildSteps
     {
         foreach ($build->steps as $entry) {
             if ($entry['step'] === $step->value && Carbon::parse($entry['started_at'])->addSeconds(600)->lessThanOrEqualTo(now())) {
-                throw new TaskVmException('task_vm.bootstrap_timeout', 'Cloud-init was not done 600 seconds after launch.');
+                throw new TaskVmException('task_vm.bootstrap_timeout', 'Cloud-init was not done 600 seconds after this step started.');
             }
         }
 

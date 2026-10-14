@@ -182,3 +182,41 @@ describe('the image check', function (): void {
         expect($process->getExitCode())->not->toBe(0);
     })->with(['uid', 'key', 'ufw', 'check']);
 });
+
+describe('apt lists lock waiting', function (): void {
+    it('waits for a real nonblocking apt lists lock in disposable directories', function (): void {
+        $work = sys_get_temp_dir().'/orbit-image-script-'.bin2hex(random_bytes(6));
+        mkdir($work.'/lists/partial', 0700, true);
+        mkdir($work.'/cache/archives/partial', 0700, true);
+        mkdir($work.'/sources', 0700, true);
+        file_put_contents($work.'/sources.list', '');
+        file_put_contents($work.'/status', '');
+        $holder = new Process(['python3', '-c', 'import fcntl,sys,time; f=open(sys.argv[1], "w"); fcntl.lockf(f, fcntl.LOCK_EX); print("locked", flush=True); time.sleep(2)', $work.'/lists/lock']);
+        $holder->start();
+        try {
+            for ($attempt = 0; $attempt < 100 && ! str_contains($holder->getOutput(), 'locked'); $attempt++) {
+                usleep(10000);
+            }
+            expect($holder->getOutput())->toContain('locked');
+            $process = new Process(['bash', TaskVmScripts::path('apt-update.sh'), '10',
+                '-o', 'Dir::State::lists='.$work.'/lists', '-o', 'Dir::State::status='.$work.'/status',
+                '-o', 'Dir::Cache='.$work.'/cache', '-o', 'Dir::Etc::sourcelist='.$work.'/sources.list',
+                '-o', 'Dir::Etc::sourceparts='.$work.'/sources']);
+            $process->setTimeout(15);
+            $process->run();
+            expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+                ->and($process->getErrorOutput())->toContain('Could not get lock', '/lists/lock');
+        } finally {
+            $holder->stop();
+        }
+    });
+
+    it('fails at the lists-lock deadline and does not retry unrelated failures', function (string $message, string $wait): void {
+        [$process, $work] = image_script('apt-update.sh', [$wait], [
+            'apt-get' => 'echo attempt >> "$WORK/attempts"; echo '.escapeshellarg($message).' >&2; exit 100',
+        ]);
+        expect($process->getExitCode())->toBe(100)
+            ->and($process->getErrorOutput())->toContain($message)
+            ->and(file_get_contents($work.'/attempts'))->toBe("attempt\n");
+    })->with([['E: Could not get lock /var/lib/apt/lists/lock', '0'], ['E: The repository has no Release file', '10']]);
+});

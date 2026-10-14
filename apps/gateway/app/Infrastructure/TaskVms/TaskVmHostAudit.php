@@ -37,6 +37,8 @@ final readonly class TaskVmHostAudit
     /** A build holds its lock for less than 30 minutes; a builder VM older than this is a stray. */
     public const int BuilderMinutes = 60;
 
+    public const int FailedBuildHours = 24;
+
     /** A `ready` or `parked` row without an open group for longer than this is a stray. */
     public const int RecordMinutes = 60;
 
@@ -66,7 +68,7 @@ final readonly class TaskVmHostAudit
     /**
      * What Orbit does not own on the host, in every Incus project and storage pool, and the host's `ready` or `parked`
      * rows without an open group. Orbit owns, in the host's project, the task VMs `tvm-<number>` (the audit checks them
-     * against their rows), the builder and smoke VMs while their build row is running, sync smoke and template builders for {@see self::BuilderMinutes} after their time, and,
+     * against their rows), running and retained failed build VMs, sync smoke and template builders for {@see self::BuilderMinutes} after their time, and,
      * in the host's pool, the workspace templates and claim clones. The host's `operator_owned` entries are the
      * operator's. Everything else is a stray. Nothing here deletes or changes anything.
      *
@@ -149,7 +151,7 @@ final readonly class TaskVmHostAudit
         }
     }
 
-    /** A running build owns its VMs, regardless of age. Only sync and template builders use a time rule. */
+    /** Recorded image builders have running ownership or failed-build retention, rather than timestamp names. */
     private static function isChainBuilder(string $name): bool
     {
         return preg_match('/\Atvm-image-([0-9]+)(?:-smoke)?\z/D', $name) === 1;
@@ -161,7 +163,10 @@ final readonly class TaskVmHostAudit
             return false;
         }
 
-        return TaskVmImageBuild::query()->whereKey((int) $match[1])->where('host_node_id', $node->id)->where('state', TaskVmImageBuildState::Running)->exists();
+        return TaskVmImageBuild::query()->whereKey((int) $match[1])->where('host_node_id', $node->id)
+            ->where(fn ($query) => $query->where('state', TaskVmImageBuildState::Running)
+                ->orWhere(fn ($failed) => $failed->where('state', TaskVmImageBuildState::Failed)
+                    ->whereNull('cleanup_started_at')->where('updated_at', '>', now()->subHours(self::FailedBuildHours))))->exists();
     }
 
     /**
@@ -169,13 +174,18 @@ final readonly class TaskVmHostAudit
      * wins against resume or skips a running build; an absent host-local row needs no fence.
      * Non-chain names retain the legacy sync/template cleanup rules.
      */
-    public static function claimBuildCleanup(Node $node, string $name): bool
+    public static function claimBuildCleanup(Node $node, string $name, bool $discardFailed = false): bool
     {
         if (preg_match('/\Atvm-image-([0-9]+)(?:-smoke)?\z/D', $name, $match) !== 1) {
             return true;
         }
         $build = TaskVmImageBuild::query()->whereKey((int) $match[1])->where('host_node_id', $node->id);
-        $claimed = (clone $build)->where('state', '!=', TaskVmImageBuildState::Running)->update(['cleanup_started_at' => now()]);
+        $candidate = (clone $build)->where('state', '!=', TaskVmImageBuildState::Running);
+        if (! $discardFailed) {
+            $candidate->where(fn ($query) => $query->where('state', '!=', TaskVmImageBuildState::Failed)
+                ->orWhereNotNull('cleanup_started_at')->orWhere('updated_at', '<=', now()->subHours(self::FailedBuildHours)));
+        }
+        $claimed = $candidate->update(['cleanup_started_at' => now()]);
 
         return $claimed === 1 || ! $build->exists();
     }

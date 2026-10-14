@@ -34,7 +34,7 @@ The Gateway owns the image build. This decision changes item 1 of [ADR 0200](/de
 
 ### The build is a chain of jobs
 
-A base image build is one Laravel job chain (`Bus::chain`) on the `builds` queue, with one job for each step. The chain stops at the first step that fails, and its one `catch` callback queues the cleanup. Horizon shows individual jobs, not the whole chain. The build row and `task-vms:image-builds` report the whole build. The chain for an Incus host is:
+A base image build is one Laravel job chain (`Bus::chain`) on the `builds` queue, with one job for each step. The chain stops at the first step that fails, and its one `catch` callback records failure and queues a workspace template refresh against the images still current. Failed resources stay available for resume. Horizon shows individual jobs, not the whole chain. The build row and `task-vms:image-builds` report the whole build. The chain for an Incus host is:
 
 | Step | What it does |
 | --- | --- |
@@ -50,19 +50,23 @@ A base image build is one Laravel job chain (`Bus::chain`) on the `builds` queue
 
 The programs are the ones that enrollment renders today, rendered by the same code. A new tool or package is a new program and one new step in the chain. The build of a host's image never edits one shared script.
 
-Each step is idempotent. A step that runs again finds its work done, so a step can fail, retry, or run after a release without harm. A step that waits, such as `AwaitImageBuilderBoot` or `SmokeImage`, checks once and releases itself back to the queue with a delay instead of holding the worker. Laravel counts each release as an attempt, so a waiting step ends at a deadline (`retryUntil()`) instead of after a number of tries. No job runs longer than its step needs, so a release never waits long for a build.
+Each step is idempotent. A step that runs again finds its work done, so a step can fail, retry, or run after a release without harm. A step that waits, such as `AwaitImageBuilderBoot` or `SmokeImage`, checks once and releases itself back to the queue with a delay instead of holding the worker. Laravel counts each release as an attempt, so polling jobs use `tries=0` and enforce a 600-second deadline from the step's durable `started_at`. They do not use `retryUntil()`, which Laravel fixes in the queued payload and would count time before execution. No job runs longer than its step needs, so a release never waits long for a build.
 
 ### The build row holds the state
 
 The table `task_vm_image_builds` has one row for each build. It holds the host, the source image, the builder VM name, the new image's fingerprint, the current step, the state (`running`, `succeeded`, or `failed`), a pending queue submission, a cleanup claim, and each step's start, seconds, and error. A partial unique index allows one `running` build for each host. That index replaces the host's image lock and its expiry time.
 
-When a step fails after its retries, the row becomes `failed` with the step and the error, and a cleanup job deletes the builder and smoke VMs, and the new image when it never became the base image. `task-vms:build-image` prints the steps from the row as they finish. A command `task-vms:image-builds` lists recent builds with their steps and errors. A failed build can be continued from its failed step with `task-vms:build-image --resume <build id>`, while its builder VM still exists and cleanup has not claimed it. Cleanup atomically claims the failed row before any remote deletion; resume atomically changes an unclaimed failed row to running. The database decides which wins, including on SQLite, without a host cache lock.
+When a step fails, the row becomes `failed` with the step and the error. Its builder, smoke VM, and published image are retained for 24 hours after failure, until the next build launches on that host, or until explicit discard. `task-vms:build-image` prints the steps from the row as they finish. A command `task-vms:image-builds` lists recent builds with their steps and errors. A failed build can be continued from its failed step with `task-vms:build-image --resume <build id>`, while cleanup has not claimed it and its step's resources still exist: the builder before publication, either the builder or an already published image for publish, and the published image for smoke and promote. Cleanup atomically claims the failed row before any remote deletion; resume atomically changes an unclaimed failed row to running. The database decides which wins, including on SQLite, without a host cache lock.
 
 Start and resume persist a pending submission marker with the running state before enqueueing. The dispatcher clears the marker when enqueueing succeeds; a worker also clears it when it claims a running build. An enqueue exception fails a still-pending submission without changing a build already claimed by a worker. The host sweep and the next start or resume fail pending submissions older than ten minutes. This recovers a crash between the durable write and queue acknowledgement without guessing whether an image step ran or replaying an uncertain submission. The submission deadline does not limit a running build's lifetime.
 
-Pruning protects the fingerprints and dated aliases of running image build rows on that host, even between publish and smoke when no VM uses the new image. Alias protection also covers a publish whose fingerprint has not yet been saved.
+Pruning protects the fingerprints and dated aliases of running and retained failed image build rows on that host, even between publish and smoke when no VM uses the new image. Alias protection also covers a publish whose fingerprint has not yet been saved.
 
-The [host sweep](/reference/compute-drivers#report-strays) deletes a `tvm-image-<build id>` VM whose build is not `running`, and its stray report reads the same row. Both the host sweep and the base image sweep atomically claim cleanup on a recorded non-running build before deleting either its builder or smoke VM. They share the cleanup job's durable fence against resume: if resume wins, deletion skips the VM; if deletion wins, resume refuses even while the builder still exists. Neither reads a time from the VM's name, so the 60-minute grace for builders goes away.
+The [host sweep](/reference/compute-drivers#report-strays) deletes a `tvm-image-<build id>` VM whose build is neither running nor within failed-build retention, and its stray report reads the same row. Both the host sweep and the base image sweep atomically claim cleanup on a recorded non-running build before deleting either its builder or smoke VM. They share the cleanup job's durable fence against resume: if resume wins, deletion skips the VM; if deletion wins, resume refuses even while the builder still exists. Neither reads a time from the VM's name. Failed-build retention counts from the row's failure update; running builds have no age limit.
+
+The host sweep queues a template refresh while any host's latest build is failed. The durable failed state recovers a missed catch enqueue or a rejected dispatch without a new marker or lock. The existing refresh uniqueness absorbs repeats; an abandoned enqueue lease expires within one hour. Refresh reads current aliases and skips current templates, so replay is safe. Recovery stops when the build resumes or a newer build exists.
+
+Package update retries lists-lock contention for up to 300 seconds because APT does not apply `DPkg::Lock::Timeout` to that lock. Upgrade and install use that option for their dpkg locks. The package job allows 1500 seconds, with remote calls bounded to 1440 seconds, so lock waits leave time for package work.
 
 ### Each build starts from the current image
 
@@ -112,6 +116,6 @@ Each of these gets its own pull request after the base image chain is built, as 
 - Verify: The proofs on beast check these outcomes.
   - A build on beast runs each step as its own job on the `builds` queue, and the row lists each step with its seconds.
   - A build launched from the current `orbit-task-base` and a `--from-stock` build both pass the smoke check.
-  - A step made to fail leaves the row `failed` with that step, deletes the builder, and keeps the current image. `--resume` then continues from that step.
+  - A step made to fail leaves the row `failed` with that step, retains its resources, and keeps the current image. `--resume` then continues from that step, using an already published image for replay of publish, smoke, and promote, without republishing.
   - A release during a build starts the new Horizon after the running step, and the next step runs on the new release.
   - A task VM from the new image enrolls without running the `app-dev` software programs, and a Project's baseline check passes on it.

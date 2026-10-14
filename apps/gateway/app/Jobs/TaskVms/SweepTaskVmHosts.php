@@ -58,6 +58,7 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
     public function handle(TaskVmSettings $settings, TaskVmCapacity $capacity, TaskVmHostAudit $audit, TaskVmWorkspaceTemplates $templates, UpCloudServers $servers, UpCloudTaskVmImageBuilder $images, TaskVmImageBuildChain $builds): void
     {
         $builds->recoverSubmissions();
+        $builds->recoverTemplateRefresh();
         $failures = [];
         foreach ($settings->enabled ? $capacity->activeHosts() : [] as [$host, $node]) {
             try {

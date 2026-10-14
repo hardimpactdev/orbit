@@ -13,6 +13,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmState;
+use App\Domain\Tools\ToolManagerName;
 use App\Infrastructure\Nodes\NativeNodeConverger;
 use App\Infrastructure\Nodes\NodeBootstrapCommandFactory;
 use App\Infrastructure\Nodes\Roles\DevelopmentRoleBaseline;
@@ -26,6 +27,7 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tools\ComposerToolManager;
+use App\Infrastructure\Tools\NativeToolManagerMaterializer;
 use App\Infrastructure\Tools\VpToolManager;
 use App\Infrastructure\WireGuard\WireGuardPeerConverger;
 use App\Models\Node;
@@ -55,7 +57,12 @@ it('trusts only a linked task VM image and still applies VM-specific infrastruct
         {
             $this->commands[] = $command;
 
-            return new CommandResult(0, $command->arguments === ['uname', '-m'] ? "x86_64\n" : '', '', 1, false);
+            $output = $command->arguments === ['uname', '-m'] ? "x86_64\n" : "1.0.0\n";
+            if (str_contains($command->input ?? '', 'Orbit Vite Plus scope')) {
+                $output = "/opt/orbit/vite-plus/bin/vp\n";
+            }
+
+            return new CommandResult(0, $output, '', 1, false);
         }
     };
     app()->instance(SshExecutor::class, $ssh);
@@ -101,8 +108,7 @@ it('trusts only a linked task VM image and still applies VM-specific infrastruct
 
     app(NativeNodeConverger::class)->converge($node, new NodeProvisioningIdentity('orbit', 'orbit'), 'SHA256:pinned');
     app(DevelopmentRoleBaseline::class)->converge($node, $assignment);
-    app(ComposerToolManager::class)->materialize($node);
-    app(VpToolManager::class)->materialize($node);
+    app(NativeToolManagerMaterializer::class)->convergeWithFailureHandler($node, static function (): void {}, ToolManagerName::Composer, ToolManagerName::Vp);
 
     foreach ($programs as $name => $program) {
         $executed = array_filter($ssh->commands, static fn (RemoteCommand $command): bool => $command->arguments === $program->arguments && $command->input === $program->input);
@@ -113,6 +119,22 @@ it('trusts only a linked task VM image and still applies VM-specific infrastruct
     }
     if (! $taskVm) {
         Log::shouldNotHaveReceived('info', ['Task VM program skipped: its image ran it.', Mockery::any()]);
+    }
+    // Explicit manager install/update operations must not inherit enrollment's image trust.
+    app(ComposerToolManager::class)->materialize($node);
+    app(VpToolManager::class)->materialize($node);
+    foreach (['composer-manager', 'vp-manager'] as $name) {
+        $program = $programs[$name];
+        expect(array_filter($ssh->commands, static fn (RemoteCommand $command): bool => $command->arguments === $program->arguments && $command->input === $program->input))
+            ->toHaveCount($taskVm ? 1 : 2);
+    }
+    foreach ([app(ComposerToolManager::class), app(VpToolManager::class)] as $manager) {
+        $before = count($ssh->commands);
+        $package = $manager instanceof ComposerToolManager ? 'vendor/package' : '@vendor/package';
+        $manager->install($node, $package);
+        $manager->update($node, $package);
+        $operations = implode(' ', array_map(static fn (RemoteCommand $command): string => implode(' ', $command->arguments), array_slice($ssh->commands, $before)));
+        expect($operations)->toContain($manager instanceof ComposerToolManager ? 'require' : 'install', 'update', $package);
     }
     expect($node->fresh()->ssh_host_fingerprint)->toBe('SHA256:pinned');
     // Hibernation directories are per-VM state, not part of the software skip.
