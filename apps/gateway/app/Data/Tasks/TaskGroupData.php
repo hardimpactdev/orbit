@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Tasks;
 
-use App\Domain\Compute\SandboxPower;
+use App\Domain\Compute\VmPower;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskGroupStatus;
@@ -54,7 +54,7 @@ final class TaskGroupData extends Data
         public array $tasks,
         public TaskExecutionMode $executionMode,
         public ?string $capacityWaitReason = null,
-        public ?SandboxPower $sandboxPower = null,
+        public ?VmPower $vmPower = null,
         public bool $preview = false,
         public ?TaskReviewAndMergeData $reviewAndMerge = null,
     ) {}
@@ -78,7 +78,7 @@ final class TaskGroupData extends Data
         return new self(
             executionMode: $group->execution_mode,
             capacityWaitReason: $group->capacity_wait_reason,
-            sandboxPower: self::sandboxPower($group),
+            vmPower: self::vmPower($group),
             preview: $group->preview ?? false,
             reviewAndMerge: $group->execution_mode === TaskExecutionMode::Managed ? TaskReviewAndMergeData::fromModel($group) : null,
 
@@ -118,7 +118,7 @@ final class TaskGroupData extends Data
         );
     }
 
-    private static function sandboxPower(Task $group): ?SandboxPower
+    private static function vmPower(Task $group): ?VmPower
     {
         if ($group->parent_id !== null) {
             return null;
@@ -127,9 +127,9 @@ final class TaskGroupData extends Data
         $vm = TaskVm::query()->where('group_id', $group->id)->orderByDesc('id')->first();
         if ($vm instanceof TaskVm) {
             return match ($vm->state) {
-                TaskVmState::Ready => SandboxPower::Running,
-                TaskVmState::Parked => SandboxPower::Stopped,
-                TaskVmState::Destroyed => SandboxPower::Destroyed,
+                TaskVmState::Ready => VmPower::Running,
+                TaskVmState::Parked => VmPower::Stopped,
+                TaskVmState::Destroyed => VmPower::Destroyed,
                 default => null,
             };
         }

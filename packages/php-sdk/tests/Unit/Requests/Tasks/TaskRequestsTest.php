@@ -541,19 +541,35 @@ function task_fixture_send(string $fixture, GatewayRequest $request): object
     return $dto;
 }
 
-it('bounds observed sandbox power without inferring it from group status', function (mixed $value, ?string $expected): void {
+it('bounds observed VM power without inferring it from group status', function (mixed $value, ?string $expected): void {
     $group = TaskGroupResponse::fromGatewayData([
         'id' => 1, 'project_id' => 1, 'title' => 'Sandbox', 'brief' => 'Power is separate.',
         'status' => 'waiting_for_review', 'questions' => 0, 'escalations' => 0,
-        'sandbox_power' => $value,
+        'vm_power' => $value,
     ], '0198e15c-bf97-7c23-8f1f-61b8fe67a844');
 
-    expect($group->sandboxPower)->toBe($expected)
-        ->and($group->toArray()['sandbox_power'] ?? null)->toBe($expected);
+    expect($group->vmPower)->toBe($expected)
+        ->and($group->toArray()['vm_power'] ?? null)->toBe($expected);
+    if ($expected === null) {
+        expect($group->toArray())->not->toHaveKey('vm_power');
+    }
 })->with([
     ['running', 'running'], ['stopped', 'stopped'], ['destroyed', 'destroyed'],
     [null, null], ['starting', null], [['running'], null], [true, null],
 ]);
+
+it('accepts task groups with missing power and ignores unknown response fields', function (): void {
+    $fixture = json_decode((string) file_get_contents(dirname(__DIR__, 4).'/fixtures/tasks/tasks-show/default.json'), true, flags: JSON_THROW_ON_ERROR);
+    $data = $fixture['body']['data'];
+    unset($data['vm_power']);
+    $data['future_optional_field'] = 'running';
+
+    $group = TaskGroupResponse::fromGatewayData($data, task_request_id());
+
+    expect($group->vmPower)->toBeNull()
+        ->and($group->status)->toBe($data['status'])
+        ->and($group->toArray())->not->toHaveKey('vm_power');
+});
 
 it('transports preview omission and explicit booleans', function (?bool $preview): void {
     foreach ([new CreateTaskGroupRequest(1, 'Work', 'Brief', preview: $preview), new UpdateTaskGroupRequest(1, preview: $preview)] as $request) {

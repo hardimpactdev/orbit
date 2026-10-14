@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use App\Data\Tasks\TaskGroupData;
 use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\Compute\SandboxPower;
+use App\Domain\Compute\VmPower;
 use App\Domain\Gateway\GatewayQueue;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverException;
@@ -312,14 +312,20 @@ describe('Pi', function (): void {
 });
 
 describe('task group data', function (): void {
-    it('reports the task VM state as sandbox power', function (TaskVmState $state, ?SandboxPower $power): void {
+    it('reports the task VM state as VM power', function (TaskVmState $state, ?VmPower $power): void {
         $group = tvm_glue_group($state);
+        $data = TaskGroupData::fromModel($group->fresh());
 
-        expect(TaskGroupData::fromModel($group->fresh())->sandboxPower)->toBe($power);
+        expect($data->vmPower)->toBe($power)
+            ->and($data->toArray()['vm_power'])->toBe($power?->value)
+            ->and($data->toCompactArray()['vm_power'])->toBe($power?->value);
     })->with([
         [TaskVmState::Provisioning, null],
-        [TaskVmState::Ready, SandboxPower::Running],
+        [TaskVmState::Warm, null],
+        [TaskVmState::Ready, VmPower::Running],
+        [TaskVmState::Parked, VmPower::Stopped],
         [TaskVmState::Failed, null],
-        [TaskVmState::Destroyed, SandboxPower::Destroyed],
+        [TaskVmState::Destroying, null],
+        [TaskVmState::Destroyed, VmPower::Destroyed],
     ]);
 });
