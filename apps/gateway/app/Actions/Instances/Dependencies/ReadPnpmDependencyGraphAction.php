@@ -55,7 +55,7 @@ final readonly class ReadPnpmDependencyGraphAction
         }
 
         if (! in_array($lock->lockfileVersion ?? null, ['9.0', 9.0], true)) {
-            throw new DependencyParseException('dependencies.unsupported_format');
+            throw new DependencyParseException('dependencies.unsupported_format', 'pnpm-lock.yaml lockfileVersion must be 9.0');
         }
 
         $importers = $this->map($lock, 'importers', true);

@@ -83,7 +83,7 @@ final readonly class ScanInstanceDependenciesAction
 
             return ! $current instanceof Instance || ! $this->available($current)
                 ? $this->failure($instance->id, $attemptedAt, 'dependencies.instance_unavailable')
-                : $this->failure($instance->id, $attemptedAt, $exception->errorCode);
+                : $this->failure($instance->id, $attemptedAt, $exception->errorCode, errorDetail: $exception->errorDetail);
         }
 
         return new InstanceDependencyScanResult(
@@ -107,7 +107,7 @@ final readonly class ScanInstanceDependenciesAction
 
             return DependencyScanResult::refreshed(new DependencySnapshot($ecosystem, $input->source, $attemptedAt, $graph));
         } catch (DependencyCollectionException|DependencyParseException $exception) {
-            return DependencyScanResult::failed($ecosystem, $attemptedAt, $exception->errorCode);
+            return DependencyScanResult::failed($ecosystem, $attemptedAt, $exception->errorCode, errorDetail: $exception->errorDetail);
         }
     }
 
@@ -144,13 +144,13 @@ final readonly class ScanInstanceDependenciesAction
         ];
     }
 
-    private function failure(int $instanceId, DateTimeImmutable $attemptedAt, string $code, bool $record = true): InstanceDependencyScanResult
+    private function failure(int $instanceId, DateTimeImmutable $attemptedAt, string $code, bool $record = true, ?string $errorDetail = null): InstanceDependencyScanResult
     {
         $results = [];
         foreach ([DependencyEcosystem::Composer, DependencyEcosystem::Npm] as $ecosystem) {
-            $result = DependencyScanResult::failed($ecosystem, $attemptedAt, $code);
+            $result = DependencyScanResult::failed($ecosystem, $attemptedAt, $code, errorDetail: $errorDetail);
             $results[] = $record ? $this->publish->execute($instanceId, $result) : DependencyScanResult::failed(
-                $ecosystem, $attemptedAt, $code, $this->read->execute($instanceId, $ecosystem)?->snapshot,
+                $ecosystem, $attemptedAt, $code, $this->read->execute($instanceId, $ecosystem)?->snapshot, $errorDetail,
             );
         }
 

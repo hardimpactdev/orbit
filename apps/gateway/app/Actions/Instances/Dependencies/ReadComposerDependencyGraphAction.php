@@ -23,22 +23,30 @@ final readonly class ReadComposerDependencyGraphAction
     public function execute(string $manifestContents, string $lockContents): DependencyGraph
     {
         try {
-            return $this->read($this->decode($manifestContents), $this->decode($lockContents));
+            return $this->read($this->decode($manifestContents, 'composer.json'), $this->decode($lockContents, 'composer.lock'));
         } catch (JsonException|UnexpectedValueException|InvalidArgumentException) {
             // Do not attach an exception that can contain raw source or credentials.
-            throw new DependencyParseException;
+            throw new DependencyParseException(errorDetail: 'composer.json or composer.lock contains an invalid Composer version constraint');
         }
     }
 
-    private function decode(string $contents): stdClass
+    private function decode(string $contents, string $file): stdClass
     {
-        $value = json_decode($contents, false, 512, JSON_THROW_ON_ERROR);
-
-        if (! $value instanceof stdClass) {
-            throw new DependencyParseException;
+        try {
+            $value = json_decode($contents, false, 512, JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            throw new DependencyParseException(errorDetail: $file.' is not valid JSON');
         }
 
-        $this->rejectDuplicateKeys($contents);
+        if (! $value instanceof stdClass) {
+            throw new DependencyParseException(errorDetail: $file.' must contain a JSON object');
+        }
+
+        try {
+            $this->rejectDuplicateKeys($contents);
+        } catch (DependencyParseException) {
+            throw new DependencyParseException(errorDetail: $file.' contains duplicate object keys');
+        }
 
         return $value;
     }
@@ -78,18 +86,18 @@ final readonly class ReadComposerDependencyGraphAction
             $records = $lock->{$section} ?? null;
 
             if (! is_array($records) || ! array_is_list($records)) {
-                throw new DependencyParseException;
+                throw new DependencyParseException(errorDetail: 'composer.lock packages and packages-dev must be lists');
             }
 
             foreach ($records as $record) {
                 if (! $record instanceof stdClass) {
-                    throw new DependencyParseException;
+                    throw new DependencyParseException(errorDetail: 'composer.lock package record must be an object');
                 }
 
                 $name = $this->packageName($record->name ?? null);
 
                 if (isset($packages[$name])) {
-                    throw new DependencyParseException;
+                    throw new DependencyParseException(errorDetail: 'composer.lock contains a duplicate package');
                 }
 
                 $this->validateLayout($record);
@@ -126,7 +134,7 @@ final readonly class ReadComposerDependencyGraphAction
 
         foreach ($packages as $name => $package) {
             if (! isset($regular[$name]) && ! isset($development[$name])) {
-                throw new DependencyParseException;
+                throw new DependencyParseException(errorDetail: 'composer.lock contains a package unreachable from composer.json requirements');
             }
 
             $resolutions[] = new DependencyResolution(
@@ -151,7 +159,7 @@ final readonly class ReadComposerDependencyGraphAction
         }
 
         if (! $record->{$field} instanceof stdClass) {
-            throw new DependencyParseException;
+            throw new DependencyParseException(errorDetail: 'Composer '.$field.' must be a constraint map');
         }
 
         $links = [];
@@ -160,7 +168,7 @@ final readonly class ReadComposerDependencyGraphAction
             $canonical = $this->requirementName($name);
 
             if (isset($links[$canonical])) {
-                throw new DependencyParseException;
+                throw new DependencyParseException(errorDetail: 'Composer constraint map contains duplicate canonical package names');
             }
 
             $constraint = $this->safeText($constraint);
@@ -221,7 +229,7 @@ final readonly class ReadComposerDependencyGraphAction
             } elseif (array_key_exists($name, $providers) && count($providers[$name]) === 1) {
                 $target = $providers[$name][0];
             } else {
-                throw new DependencyParseException;
+                throw new DependencyParseException(errorDetail: 'composer.json or composer.lock requirement has no unique locked package or provider');
             }
         }
 
@@ -276,12 +284,12 @@ final readonly class ReadComposerDependencyGraphAction
         $aliases = property_exists($lock, 'aliases') ? $lock->aliases : [];
 
         if (! is_array($aliases)) {
-            throw new DependencyParseException;
+            throw new DependencyParseException(errorDetail: 'composer.lock aliases must be a list');
         }
 
         foreach ($aliases as $alias) {
             if (! $alias instanceof stdClass) {
-                throw new DependencyParseException;
+                throw new DependencyParseException(errorDetail: 'composer.lock alias must be an object');
             }
 
             $name = $this->packageName($alias->package ?? null);
@@ -293,7 +301,7 @@ final readonly class ReadComposerDependencyGraphAction
             if (! isset($packages[$name])
                 || $parser->normalize($version) !== $parser->normalize($this->safeText($packages[$name]->version))
                 || $parser->normalize($aliasVersion) !== $normalized) {
-                throw new DependencyParseException;
+                throw new DependencyParseException(errorDetail: 'composer.lock alias does not match its locked package or normalized version');
             }
         }
     }
@@ -310,7 +318,7 @@ final readonly class ReadComposerDependencyGraphAction
             } elseif ($record->repositories instanceof stdClass) {
                 $repositories = get_object_vars($record->repositories);
             } else {
-                throw new DependencyParseException;
+                throw new DependencyParseException(errorDetail: 'Composer repositories must be a list or object');
             }
 
             foreach ($repositories as $repository) {
@@ -319,7 +327,7 @@ final readonly class ReadComposerDependencyGraphAction
                 }
 
                 if (! $repository instanceof stdClass) {
-                    throw new DependencyParseException;
+                    throw new DependencyParseException(errorDetail: 'Composer repository entry must be an object or false');
                 }
 
                 if (array_values(get_object_vars($repository)) === [false]) {
@@ -327,23 +335,23 @@ final readonly class ReadComposerDependencyGraphAction
                 }
 
                 if (! is_string($repository->type ?? null)) {
-                    throw new DependencyParseException;
+                    throw new DependencyParseException(errorDetail: 'Composer repository entry is missing its type');
                 }
 
                 if ($repository->type === 'path') {
-                    throw new DependencyParseException('dependencies.unsupported_layout');
+                    throw new DependencyParseException('dependencies.unsupported_layout', 'composer.json repositories contains a path repository');
                 }
             }
         }
 
         foreach (['source', 'dist'] as $field) {
             if (property_exists($record, $field) && ! $record->{$field} instanceof stdClass) {
-                throw new DependencyParseException;
+                throw new DependencyParseException(errorDetail: 'composer.lock '.$field.' must be an object');
             }
         }
 
         if (($record->dist->type ?? null) === 'path') {
-            throw new DependencyParseException('dependencies.unsupported_layout');
+            throw new DependencyParseException('dependencies.unsupported_layout', 'composer.lock package dist uses a local path');
         }
     }
 
@@ -356,7 +364,7 @@ final readonly class ReadComposerDependencyGraphAction
 
             if ($reference !== null && $reference !== '') {
                 if (! is_string($reference) || preg_match('/^[^\s:@?\x00-\x1f\x7f]+$/D', $reference) !== 1) {
-                    throw new DependencyParseException;
+                    throw new DependencyParseException(errorDetail: 'composer.lock source or dist reference failed safe revision validation');
                 }
 
                 $references[] = $reference;
@@ -375,7 +383,7 @@ final readonly class ReadComposerDependencyGraphAction
         }
 
         if (! is_string($shasum) || preg_match('/^[a-fA-F0-9]{40}$/D', $shasum) !== 1) {
-            throw new DependencyParseException;
+            throw new DependencyParseException(errorDetail: 'composer.lock dist shasum must be a SHA-1 digest');
         }
 
         return $shasum;
@@ -384,7 +392,7 @@ final readonly class ReadComposerDependencyGraphAction
     private function safeText(mixed $value): string
     {
         if (! is_string($value) || trim($value) === '' || preg_match('/[\x00-\x1f\x7f:?\\\\]|[^ ]@[^ ]+\./', $value) === 1) {
-            throw new DependencyParseException;
+            throw new DependencyParseException(errorDetail: 'Composer version or constraint failed safe text validation');
         }
 
         return $value;
@@ -393,7 +401,7 @@ final readonly class ReadComposerDependencyGraphAction
     private function packageName(mixed $value): string
     {
         if (! is_string($value) || preg_match('{^[a-z0-9](?:[_.-]?[a-z0-9]+)*/[a-z0-9](?:(?:[_.]?|-{0,2})[a-z0-9]+)*$}iD', $value) !== 1) {
-            throw new DependencyParseException;
+            throw new DependencyParseException(errorDetail: 'Composer package name failed vendor/name validation');
         }
 
         return strtolower($value);
@@ -402,7 +410,7 @@ final readonly class ReadComposerDependencyGraphAction
     private function requirementName(mixed $value): string
     {
         if (! is_string($value)) {
-            throw new DependencyParseException;
+            throw new DependencyParseException(errorDetail: 'Composer requirement name must be a string');
         }
 
         $value = strtolower($value);
