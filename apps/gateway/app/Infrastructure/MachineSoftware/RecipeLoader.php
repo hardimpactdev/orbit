@@ -16,7 +16,7 @@ final readonly class RecipeLoader
     public static function catalog(): array
     {
         $catalog = array_fill_keys([
-            'ca-certificates', 'curl', 'gnupg', 'libnss-resolve', 'openssh-client', 'sudo', 'ufw', 'wireguard',
+            'dnsmasq', 'ca-certificates', 'curl', 'gnupg', 'libnss-resolve', 'openssh-client', 'sudo', 'ufw', 'wireguard',
             'acl', 'attr', 'composer', 'docker.io', 'git', 'openssl', 'php-curl', 'php-xml', 'unzip',
             'openssh-server', 'rsync', 'bind9-dnsutils', 'gcc', 'libc6-dev',
             'libasound2t64', 'libatk-bridge2.0-0t64', 'libatk1.0-0t64', 'libatspi2.0-0t64', 'libcairo2',
@@ -123,7 +123,11 @@ final readonly class RecipeLoader
         }
         $this->require(array_diff(array_keys($catalog), array_keys($tools)) === [], 'tools: missing catalog tools: '.implode(', ', array_diff(array_keys($catalog), array_keys($tools))));
         $common = $this->references($root->common, 'common', $tools);
-        $roles = $this->object($root->roles, 'roles', ['gateway', 'app-dev', 'app-prod', 'operator']);
+        $roles = $this->object($root->roles, 'roles');
+        $roleNames = array_keys(get_object_vars($roles));
+        $required = ['gateway', 'app-dev', 'app-prod', 'operator'];
+        $allowed = [...$required, 'vpn', 'router', 'ingress', 'metrics', 'database', 'websocket', 'analytics'];
+        $this->require(array_diff($required, $roleNames) === [] && array_diff($roleNames, $allowed) === [], 'roles: expected the four required profiles and only known Node roles.');
         $profiles = [];
         $used = $common;
         foreach ([...get_object_vars($roles), 'base' => $root->base] as $role => $raw) {

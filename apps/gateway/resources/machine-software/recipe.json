@@ -9,6 +9,11 @@
         "arm64"
     ],
     "tools": {
+        "dnsmasq": {
+            "source": "ubuntu",
+            "version": "2.92-1ubuntu0.5",
+            "package": "dnsmasq"
+        },
         "acl": {
             "source": "ubuntu",
             "package": "acl",
@@ -893,12 +898,12 @@
             "version": "1.2.0",
             "artifacts": {
                 "amd64": {
-                    "url": "https://registry.npmjs.org/@voidzero-dev/vite-plus-linux-x64-gnu/-/vite-plus-linux-x64-gnu-1.2.0.tgz",
-                    "sha512": "3d55bab2b77a196e5138c0d09b1b4d211def45cbb8e30dcc617068d9dd79561bc77ac90529d4d22011ea5e59d8c5c13469d32d6ab4fc24e9995e40f9f3ee3351"
+                    "url": "https://github.com/voidzero-dev/vite-plus/releases/download/v1.2.0/vp-x86_64-unknown-linux-gnu.tar.gz",
+                    "sha256": "489e2493d10499d1e0f19f0c7938b1baa5cd488be1f2e3abd3fbf820131452bf"
                 },
                 "arm64": {
-                    "url": "https://registry.npmjs.org/@voidzero-dev/vite-plus-linux-arm64-gnu/-/vite-plus-linux-arm64-gnu-1.2.0.tgz",
-                    "sha512": "28ab3b2cf0aa2a0bf071383804dc9b6d92db80eabbe734ecb781f16441a645969a2c4e2e8634c5ad0d4446a373e0d6e9925e8068413f233dc263a10593d6ea26"
+                    "url": "https://github.com/voidzero-dev/vite-plus/releases/download/v1.2.0/vp-aarch64-unknown-linux-gnu.tar.gz",
+                    "sha256": "42d25a6676c28d0749da7edc97003a7a34c5e31ea1ea479f3d8239ad16d09d2d"
                 }
             }
         },
@@ -919,6 +924,37 @@
         "wireguard"
     ],
     "roles": {
+        "vpn": [
+            "dnsmasq",
+            "openssl"
+        ],
+        "router": [
+            "caddy",
+            "openssl"
+        ],
+        "ingress": [
+            "caddy"
+        ],
+        "metrics": [
+            "docker.io",
+            "openssl"
+        ],
+        "database": [
+            "docker.io"
+        ],
+        "websocket": [
+            "caddy",
+            "composer",
+            "git",
+            "openssl",
+            "php-curl",
+            "php-xml"
+        ],
+        "analytics": [
+            "caddy",
+            "docker.io",
+            "openssl"
+        ],
         "gateway": [
             "caddy"
         ],

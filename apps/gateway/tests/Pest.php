@@ -124,6 +124,8 @@ pest()->tia()->watch([
     'resources/tasks/turn' => 'tests/Feature/Tasks/TurnReceiptTest.php',
     'resources/tasks/actions.json' => 'tests/Feature/Tasks/TaskDefinitionValidationTest.php',
     'resources/mcp/tools.json' => 'tests/Feature/Mcp',
+    'resources/machine-software/converge-node.py' => 'tests/Feature/Fleet/ConvergeNodeRecipeTest.php',
+    'tests/Fixtures/machine-software/converge_node_test.py' => 'tests/Feature/Fleet/ConvergeNodeRecipeTest.php',
     'resources/machine-software/*.json' => 'tests/Unit/Infrastructure/MachineSoftware',
     'resources/scripts/*.py' => 'tests/Feature/Infrastructure/Metrics/ServiceMetricsProgramTest.php',
     'resources/proxycli/*.py' => 'tests/Unit/Infrastructure/ProxyCli/ProxyCliCollectorValkeyClientTest.php',

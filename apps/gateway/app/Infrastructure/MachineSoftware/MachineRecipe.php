@@ -26,7 +26,7 @@ final readonly class MachineRecipe
     /** @return list<string> */
     public function profile(string $role, ?string $architecture = null): array
     {
-        $tools = $this->profiles[$role] ?? throw new InvalidArgumentException("Unknown role/profile [{$role}]. Expected gateway, app-dev, app-prod, operator, or base.");
+        $tools = $this->profiles[$role] ?? throw new InvalidArgumentException("Unknown role/profile [{$role}]. Expected a declared Node role, operator, or base.");
         if ($architecture !== null) {
             if (! in_array($architecture, $this->architectures, true)) {
                 throw new InvalidArgumentException("Unknown architecture [{$architecture}].");
