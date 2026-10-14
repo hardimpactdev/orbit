@@ -64,6 +64,7 @@ use LogicException;
  * @property int|null $ended_pr_notice_thread_id
  * @property string|null $ended_pr_notice_key
  * @property string|null $ended_pr_notice_state
+ * @property array{thread_id: int, source_turn_id: string, key: string, due_at: string, history: list<string>}|null $provider_retry
  * @property int $pi_restart_resumes
  * @property string|null $pi_restart_key
  * @property int|null $pi_restart_thread_id
@@ -194,6 +195,7 @@ final class Task extends Model
         'consult_comment_id',
         'direction_answer_key',
         'direction_answer_source_turn_id',
+        'provider_retry',
         'pi_restart_resumes',
         'pi_restart_key',
         'pi_restart_thread_id',
@@ -250,7 +252,7 @@ final class Task extends Model
         'review_workspace_tree',
         'assistance_requested', 'assistance_kind', 'assistance_question', 'assistance_reason', 'communication_failures', 'resolution_delivered_comment_id', 'direction_relay_comment_id', 'consult_comment_id', 'direction_answer_key', 'direction_answer_source_turn_id',
         'ended_pr_notice_thread_id', 'ended_pr_notice_key', 'ended_pr_notice_state',
-        'pi_restart_resumes', 'pi_restart_key', 'pi_restart_thread_id', 'pi_restart_source_turn_id', 'pi_restart_reservation', 'pi_restart_session_revision',
+        'provider_retry', 'pi_restart_resumes', 'pi_restart_key', 'pi_restart_thread_id', 'pi_restart_source_turn_id', 'pi_restart_reservation', 'pi_restart_session_revision',
         'project_id',
         'taskable_type',
         'taskable_id',
@@ -538,6 +540,7 @@ final class Task extends Model
             'assistance_requested' => 'boolean',
             'assistance_kind' => AssistanceKind::class,
             'communication_failures' => 'integer',
+            'provider_retry' => 'array',
             'pi_restart_resumes' => 'integer',
             'pi_restart_thread_id' => 'integer',
             'ended_pr_notice_thread_id' => 'integer',

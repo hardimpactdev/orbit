@@ -298,6 +298,23 @@ describe('observe', function (): void {
         expect($observation->state)->toBe(AgentThreadState::Failed)->and($observation->error)->toBe('quota exceeded');
     });
 
+    it('carries only recognized provider classifications on failed turns', function (string $state, ?string $category, ?string $expected): void {
+        Http::fake([PI_BASE.'/sessions/session-1' => Http::response([
+            ...pi_snapshot($state, error: 'Provider failure'), 'providerError' => $category,
+        ])]);
+
+        $observation = pi_driver()->observe(pi_thread(pi_node()));
+
+        expect($observation->providerError)->toBe($expected);
+    })->with([
+        ['failed', 'overloaded', 'overloaded'],
+        ['failed', 'rate_limited', 'rate_limited'],
+        ['failed', 'server_error', 'server_error'],
+        ['failed', 'tool_error', null],
+        ['failed', null, null],
+        ['done', 'overloaded', null],
+    ]);
+
     it('rejects a snapshot for another session', function (): void {
         Http::fake([PI_BASE.'/sessions/session-1' => Http::response(pi_snapshot('done', id: 'other'))]);
 

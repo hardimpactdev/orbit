@@ -181,6 +181,14 @@ The server reports one of the Orbit thread states from its own evidence. The Gat
 | The turn ended with a provider error, an interruption, or the output limit | `failed`, with the error |
 | The server restarted while the turn was active | `failed`, with error `The Pi server restarted during the turn.` |
 
+Provider-error failures may include `providerError` in snapshots and stream state events: `overloaded`, `rate_limited`, or `server_error`. It is absent for other failures. Classification reads only the last assistant message with stop reason `error`, not tool output. Structured provider error codes and HTTP status codes take precedence over a narrow fallback for known capacity messages when the SDK preserves only text.
+
+For `openai-responses` (the API used by `orbit-task-vm`) and `openai-codex-responses`, Orbit observes HTTP responses and SSE error records before the SDK replaces them with human-readable messages. This includes streamed `error` and `response.failed` records received after HTTP 200. Orbit stores only the resulting category (or an explicit non-transient result) on the failed assistant message, so unloading or restarting the server preserves it.
+
+Codex sessions use SSE so HTTP and streamed error codes follow the same classification path; the SDK's WebSocket transport does not expose that evidence. The `openai-responses` adapter already uses SSE; Orbit keeps its transport settings.
+
+The boundary adds no headers, credentials, or raw error bodies to the transcript. Quota exhaustion, account usage limits, authentication errors, and refusals are not transient. The Gateway uses this field for [automatic retries](/reference/tasks#retry-a-transient-provider-error); older servers without it keep the ordinary failure path.
+
 Pi has no approvals, so a Pi thread never asks for input. A new turn changes a `done` or `failed` state to `working`.
 
 ## Restarts

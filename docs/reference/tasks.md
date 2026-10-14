@@ -902,6 +902,16 @@ On a failure, Orbit sends the body to the blocked thread at once: the implemente
 
 A resolution posted while nothing is asked is stored and not sent. Every comment stays as history. An assistance request, a delivered resolution, a held resolution, and a failed delivery each also write an Activity entry with the comment's author as the actor.
 
+### Retry a transient provider error
+
+When Pi reports a transient provider failure, Orbit retries the interrupted work on the same thread, in the same workspace and role. It waits 1, 2, 4, then 8 minutes before each of at most four retries. The scheduler does not sleep; it sends the retry on the first tick after the delay. Implementer, reviewer, final-review, and consult turns use this rule.
+
+Pi classifies only the assistant's provider-error stop reason, never tool output or the agent's prose. Structured provider codes for overload, rate limiting, and HTTP 429 or 5xx take precedence. When Pi only preserves a provider message, it accepts a narrow set of capacity messages. Authentication, exhausted quota, refusals, output limits, tool errors, and check failures are not retried. Older Pi servers without the classification keep the ordinary failure path.
+
+Each reserved retry posts a `provider_retry` comment with its attempt number, provider category, failed turn ID, and due time. The reservation and comment commit together before the send. Retries use a durable send key, so a lost response resends the same key without consuming another attempt. A new unrelated turn or a successful turn starts a fresh retry budget; repeated failures of the retry turn share the original budget. A server-restart resume does not reset that budget.
+
+After the fourth retry fails, Orbit asks for failure assistance as usual, with the failed turn IDs, categories, and retry times in the reason. It does not ask for assistance while waiting for provider capacity. Communication failures while sending a retry still use the existing communication-failure assistance policy. No retry reads a handoff receipt or advances the subtask.
+
 ### Recover a Pi server restart
 
 A turn that failed only because its agent server restarted is not a failed subtask. The tick resumes it on the same thread with one message: `Your previous turn was interrupted by a server restart. Check git status and git diff, finish the subtask, and hand off with the turn command.` It does not ask for assistance and does not read a receipt first.
@@ -910,7 +920,7 @@ A turn that failed only because its agent server restarted is not a failed subta
 | --- | --- |
 | `pi` | `The Pi server restarted during the turn.` |
 
-One subtask gets at most two resumes, shared by its implementer and reviewer. A resolution does not reset that count. The third restart asks for assistance with `The implementer thread failed.` or `The reviewer thread failed.` Any other error, and a restart error without a turn id, asks for assistance at once.
+One subtask gets at most two resumes, shared by its implementer and reviewer. A resolution does not reset that count. The third restart asks for assistance with `The implementer thread failed.` or `The reviewer thread failed.` A restart error without a turn id asks for assistance at once. Other errors follow [provider retry](#retry-a-transient-provider-error) or ask for assistance at once.
 
 The tick reserves each resume before it sends. The reservation stores a new send key, the acting thread, and the interrupted turn id, and it counts the resume. The Pi driver sends that key.
 
@@ -1799,6 +1809,12 @@ Asking GitHub to update a branch was rejected for these tasks, because GitHub's 
 The workspace and a reviewer can repair a conflict or a failed check, so the first problem gets a fixup instead of a person. Each fixup is a normal subtask on the same pull request, never a rebase or a force push, because the open pull request is the review.
 
 The caps stop a loop: two per problem, three per task, and a new window only after a person's subtask completes. A problem's identity ignores the check URL and the base commit, so a moving `main` does not look like a new problem. Infrastructure failures get no fixup, because the branch did not cause them.
+
+### Bound provider retries
+
+A provider capacity failure does not say that the assignment failed. Retrying on the same thread keeps the agent's context and partial workspace work. Four delayed retries cover a short capacity incident without hiding a lasting outage. Tool failures, refusals, and check results stay outside this path because repeating them does not free provider capacity. Classification belongs at the Pi boundary, where a provider-error stop reason is distinct from tool output; the scheduler accepts only the resulting closed set of categories.
+
+The retry reservation and its timeline comment commit before delivery. A stable send key survives a lost response, and the observed turn ID distinguishes another failed retry from the original failure seen twice. A database reservation, rather than a sleeping worker or a cache entry, preserves the delay and attempt count across Gateway restarts. Retry comments remain after a successful turn clears the active budget.
 
 ### Resume a restarted turn
 

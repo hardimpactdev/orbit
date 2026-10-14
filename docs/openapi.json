@@ -28895,7 +28895,8 @@
                 "topology_requested",
                 "assistance_requested",
                 "resolution",
-                "question_closed"
+                "question_closed",
+                "provider_retry"
               ]
             }
           },

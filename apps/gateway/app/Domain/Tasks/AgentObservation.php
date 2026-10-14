@@ -26,6 +26,7 @@ final readonly class AgentObservation
         public ?string $cursor = null,
         public ?string $turnId = null,
         public ?string $sessionUpdatedAt = null,
+        public ?string $providerError = null,
     ) {}
 
     public function lastText(string $role): ?string
@@ -55,6 +56,7 @@ final readonly class AgentObservation
             'lines_added' => $this->linesAdded,
             'lines_deleted' => $this->linesDeleted,
             'error' => $this->error,
+            'provider_error' => $this->providerError,
         ];
     }
 }

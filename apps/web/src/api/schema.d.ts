@@ -20102,7 +20102,7 @@ export interface operations {
     "tasks-comment-list": {
         parameters: {
             query?: {
-                type?: "ready_for_review" | "changes_requested" | "approved" | "blocked" | "answered" | "topology_requested" | "assistance_requested" | "resolution" | "question_closed";
+                type?: "ready_for_review" | "changes_requested" | "approved" | "blocked" | "answered" | "topology_requested" | "assistance_requested" | "resolution" | "question_closed" | "provider_retry";
                 limit?: number;
             };
             header?: never;
