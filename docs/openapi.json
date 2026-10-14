@@ -33966,7 +33966,7 @@
               "null"
             ]
           },
-          "sandbox_power": {
+          "vm_power": {
             "type": [
               "string",
               "null"

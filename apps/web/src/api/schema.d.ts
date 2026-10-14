@@ -4767,7 +4767,7 @@ export interface components {
             execution_mode?: "managed" | "existing_thread";
             capacity_wait_reason?: string | null;
             /** @enum {string|null} */
-            sandbox_power?: "running" | "stopped" | "destroyed" | null;
+            vm_power?: "running" | "stopped" | "destroyed" | null;
             preview?: boolean;
             review_and_merge?: components["schemas"]["TaskReviewAndMerge"] | null;
         };
