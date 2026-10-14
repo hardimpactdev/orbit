@@ -115,7 +115,7 @@ The removal of other Instances moves a checkout within one filesystem only. [Ins
 
 Deletion clears the row's Pi token after the VM is gone. The Node goes before the row becomes `destroyed`, which also clears the token. A row that is not `destroyed` keeps its Node a task VM Node, so Orbit never sends the Gateway's own Pi token to it. When a step fails, the row stays `destroying` with the error, and the job runs again after 1, 5, and then every 15 minutes. A [parked](#park-and-resume) VM is deleted while it is stopped. Only its workspace removal starts it first.
 
-Keep a host in `task_vms.incus.hosts` until it has no task VM that is not `destroyed`, because destroy needs the host's settings. Node removal refuses such a host with `node.has_task_vms`. It also refuses a host that is still configured, with `node.task_vm_host_configured`, because the other hosts still accept its transfer key. [Retire the host](#add-a-task-vm-host) first. Before it changes any other Node, it removes the Node's [transfer key](#let-hosts-copy-the-image) from every configured host, also when `task-vms:retire-host` did not run. When that fails, it fails with `node.task_vm_image_key_cleanup_failed` and changes nothing else. When it removes a host, it also deletes the host's `destroyed` rows.
+Keep a host's `settings.task_vms` until it has no task VM that is not `destroyed`, because destroy needs the host's settings. Node removal refuses such a host with `node.has_task_vms`. It also refuses a host that is still configured, with `node.task_vm_host_configured`, because the other hosts still accept its transfer key. [Retire the host](#add-a-task-vm-host) first. Before it changes any other Node, it removes the Node's [transfer key](#let-hosts-copy-the-image) from every configured host, also when `task-vms:retire-host` did not run. When that fails, it fails with `node.task_vm_image_key_cleanup_failed` and changes nothing else. When it removes a host, it also deletes the host's `destroyed` rows.
 
 #### A VM that dies before its group ends
 
@@ -133,11 +133,15 @@ Then it removes the Node and marks the row `destroyed`, as above. A removal jour
 
 Placement is serialized by the Gateway's SQLite transaction, not a cache lock. The claim checks for an existing VM, counts occupied slots, and either takes a warm VM or records a new VM in the same transaction. The pool refill counts slots and records new pool rows in a transaction too. SQLite serializes these writes, so concurrent claims and refills cannot both take the last slot or assign the same warm VM. Host image reads happen before the transaction; VM provisioning and runtime preparation are dispatched after it commits.
 
-Each host in `task_vms.incus.hosts` has `max_vms` slots. Every task VM on the host that is not `destroyed` or `failed` takes the slots of its [size](#size-by-declared-topology), also a `warm` or `parked` one: one for a normal VM, two for a medium VM, three for a large VM. The free slots of a host are `max_vms` minus those slots. A `failed` VM holds no slot, so it never blocks placement: its group asks for assistance, and the pool refill destroys a failed pool VM before it counts the free slots. A failed VM of a group can still run on its host until the group is cancelled.
+Each active Node with a valid, non-null `settings.task_vms` is a task VM host with `max_vms` slots. An `app-dev` role alone does not qualify a Node: `services` remains `app-dev` for Recall and gets no task VMs.
+
+Every task VM on the host that is not `destroyed` or `failed` takes the slots of its [size](#size-by-declared-topology), also a `warm` or `parked` one: one for a normal VM, two for a medium VM, three for a large VM. The free slots of a host are `max_vms` minus those slots. A `failed` VM holds no slot, so it never blocks placement: its group asks for assistance, and the pool refill destroys a failed pool VM before it counts the free slots. A failed VM of a group can still run on its host until the group is cancelled.
 
 A claim first takes a current [warm VM](#keep-warm-vms). It looks at the active hosts that have one, the host with the most free slots first, and takes that host's oldest warm VM. A warm VM already holds its slot, so a claim can take one on a full host.
 
-Without a warm VM, `AllocateTaskVmAction` places a new VM on the active host with the most free slots. Hosts with the same number of free slots keep their order in `task_vms.incus.hosts`. A host that is not an active Node, or that has fewer free slots than the VM takes, gets no VM. When no host has room for a normal VM, the claim returns the group to `todo` with the reason `Task VM: no capacity.` and tries again on the next tick. For a medium VM the reason is `Task VM: no host has 2 free slots for a medium VM.`, and for a large VM `Task VM: no host has 3 free slots for a large VM.` The group waits until VMs are destroyed or you add slots.
+Without a warm VM, `AllocateTaskVmAction` places a new VM on the active host with the most free slots. Hosts with the same number of free slots use a stable Node order, not the former environment-list order. A host that is not an active Node, or that has fewer free slots than the VM takes, gets no VM.
+
+When no host has room for a normal VM, the claim returns the group to `todo` with the reason `Task VM: no capacity.` and tries again on the next tick. For a medium VM the reason is `Task VM: no host has 2 free slots for a medium VM.`, and for a large VM `Task VM: no host has 3 free slots for a large VM.` The group waits until VMs are destroyed or you add slots.
 
 A full fleet does not make every group wait. When the group's Project is opted in to the [UpCloud overflow](#upcloud-overflow) and the overflow is on, a new normal VM goes to UpCloud instead, within its own budget. A medium or large VM never goes to UpCloud.
 
@@ -494,7 +498,7 @@ The job changes only the host's configured Incus project, such as `orbit-tasks`.
 
 It retains a base image builder `tvm-image-<build id>` and its smoke VM while the build row on that host is `running`, whatever its age, or is an unclaimed `failed` build updated within the last 24 hours. Cleanup claims an older failed build before deleting its VMs, so it cannot race a resume. Builders without a row or with a completed or cleanup-claimed row are eligible for deletion. It never changes another project, a sync smoke VM, a workspace template, or an instance outside the task VM and base image builder names. Rows in `provisioning`, `failed`, or `destroying` are never missing: their own jobs check the VM.
 
-[Doctor](/cli/doctor) reports the VM findings in the `node` family of the host, without changes. It has no finding for an orphaned clone, a leftover template builder `tvm-template-<time>`, or an unfinished template: the sweep deletes the clone, and the next template build deletes the other two. Doctor's codes are `node.task_vm_orphaned` for an orphaned VM and `node.task_vm_missing` for a missing one. Doctor reports a missing VM on its first miss. A host whose project does not exist or cannot be listed reports `node.task_vm_inspection_failed`. Doctor checks a host only while it is in `task_vms.incus.hosts` and reachable over SSH. The fleet rollout ignores these codes.
+[Doctor](/cli/doctor) reports the VM findings in the `node` family of the host, without changes. It has no finding for an orphaned clone, a leftover template builder `tvm-template-<time>`, or an unfinished template: the sweep deletes the clone, and the next template build deletes the other two. Doctor's codes are `node.task_vm_orphaned` for an orphaned VM and `node.task_vm_missing` for a missing one. Doctor reports a missing VM on its first miss. A host whose project does not exist or cannot be listed reports `node.task_vm_inspection_failed`. Doctor checks a host only while it has `settings.task_vms` and is reachable over SSH. The fleet rollout ignores these codes.
 
 Doctor does not inspect the Node of a `parked` task VM, because the VM is stopped on purpose. Its `node` family reports one informational `node.task_vm_parked`, and the other families check nothing. So no problem is filed for a parked VM.
 
@@ -624,7 +628,7 @@ First it checks the ZFS storage pool that the host's `pool` names. It creates a 
 
 Task VMs need nothing that the restrictions forbid, except low-level config: medium and large VMs set `raw.qemu.conf` for free page reporting. Only the Gateway sets instance config in the project.
 
-The command takes these values from the host's entry in `task_vms.incus.hosts`, which `TaskVmSettings` has validated. See [Configure task VMs](#configure-task-vms). The script checks the form of each argument again before it passes it to Incus as root, and changes nothing when one is invalid. The bridge and the ACL live in the Incus project `default`, and the script names that project in every network and ACL command.
+The command takes these values from the host Node's typed `settings.task_vms`. See [Configure task VMs](#configure-task-vms). The script checks the form of each argument again before it passes it to Incus as root, and changes nothing when one is invalid. The bridge and the ACL live in the Incus project `default`, and the script names that project in every network and ACL command.
 
 Orbit reserves bridge names that start with `orbittask`. Every such bridge must carry its egress ACL, because the ufw rule accepts forwarded traffic from all of them. Only `incus-host.sh` creates these bridges, and it attaches the ACL at creation. Never create an `orbittask` bridge in another way.
 
@@ -763,7 +767,7 @@ The cleanup job, the host sweep, and the base image sweep claim cleanup with ato
 
 Start and resume record a pending queue submission before enqueueing. A successful enqueue or a worker claiming the build clears it. An enqueue error fails a still-pending submission; it leaves a build already claimed by a worker alone. If the submitting process crashes before acknowledgement, the host sweep or the next start or resume fails the pending submission after ten minutes, freeing the host for another build. This deadline applies only to an incomplete submission, not to a running build. Prune preserves running and retained failed builds' images, including a published image waiting for its smoke VM.
 
-Every night at 03:00, while task VMs are enabled, the Gateway scheduler queues the job `RefreshTaskVmBaseImages` on the `builds` queue. It builds the base image once, on the first host in `task_vms.incus.hosts`, and syncs it to every other configured host, one after another. While the first host has no base image, the job only reads its image list, so the first build is always `task-vms:build-image`. The job fails with `task_vm.unknown_host` when the first host's Node is not active.
+Every night at 03:00, while task VMs are enabled, the Gateway scheduler queues the job `RefreshTaskVmBaseImages` on the `builds` queue. It builds the base image once, on the first configured host in stable Node order, and syncs it to every other host with `settings.task_vms`, one after another. While the first host has no base image, the job only reads its image list, so the first build is always `task-vms:build-image`. The job fails with `task_vm.unknown_host` when the first host's Node is not active.
 
 A failed build changes no host. A host whose sync fails keeps its image. Its sync job records the original failure through Laravel's failure provider in `failed_jobs` with `task_vm.image_sync_failed` and logs the host before continuing to the other hosts and template refresh.
 
@@ -811,7 +815,7 @@ Running VMs keep the image they launched from. The prune keeps an image that a V
 
 A second host needs Incus, ZFS, and ufw, and its managed user needs passwordless `sudo`. Then:
 
-1. Add an entry for the host to `ORBIT_TASK_VMS_INCUS_HOSTS`. Give it its own `cidr` and a new `zfs_dataset`, such as `data/orbit-tasks`. Never name a dataset that exists. Apply the change with [`gateway:release:configure`](/reference/gateway-recovery#apply-an-env-change).
+1. Set the host Node's [`settings.task_vms`](/reference/node-settings#configure-a-task-vm-host) with `node:settings` or the Node settings API. Use a unique `cidr` and a new `zfs_dataset`, such as `data/orbit-tasks`.
 2. Run `task-vms:prepare-host {node}`. It creates the pool from the new dataset and sets up the host. Then it lets all hosts [copy the image](#let-hosts-copy-the-image) to each other, and probes each pair.
 3. Run `task-vms:sync-image {node}`. It copies the base image of the first host. On the first host of a fleet, run `task-vms:build-image {node}` instead.
 
@@ -820,7 +824,7 @@ The new host takes VMs on the next claim. Its bridge network must not overlap an
 To retire a host:
 
 1. Set its `warm_vms` to `0`. Set its `max_vms` to the number of VMs it still has, or lower. Apply the change. The pool refill destroys its warm VMs. Wait until it has no task VM that is not `destroyed`.
-2. Remove its entry and apply the change with `gateway:release:configure`.
+2. Remove its host setting with a Node settings API patch of `{"task_vms":null}`.
 3. Run `task-vms:retire-host {node id}`. It refuses a host that is still configured with `task_vm.host_configured`, and a host that still has a task VM with `task_vm.host_in_use`.
 
 `task-vms:retire-host` first sets up the remaining hosts again. That removes the old host's key from each of them. Then it removes the old host's own setup: its peer key lines, `/etc/orbit/task-vms/image-transfer`, the receiver, and `/var/lib/orbit-task-vm-image`. When the Node record is gone, it only cleans the remaining hosts. When SSH cannot reach the old host, the command fails after the remaining hosts are clean, and the old host keeps its own setup. Only then can [Node removal](/reference/node-provisioning#remove-a-node) remove the Node, if you want it gone.
@@ -867,7 +871,7 @@ A task VM workspace is a normal Instance on a normal Node, so generic Instance o
 
 ### Configure task VMs
 
-These keys live in the Gateway's `config/task_vms.php`. Set them in the Gateway's environment.
+Global keys live in the Gateway's `config/task_vms.php`. Set them in the Gateway's environment. Per-host configuration lives in the operator-owned [`settings.task_vms`](/reference/node-settings#configure-a-task-vm-host) on each host Node, not in the environment and not in its roles.
 
 | Key | Variable | Meaning |
 | --- | --- | --- |
@@ -878,31 +882,17 @@ These keys live in the Gateway's `config/task_vms.php`. Set them in the Gateway'
 | `task_vms.pi.artifact_path` | `ORBIT_TASK_VMS_PI_ARTIFACT_PATH` | The absolute path of the pinned Pi executable on the Gateway |
 | `task_vms.pi.artifact_sha256` | `ORBIT_TASK_VMS_PI_ARTIFACT_SHA256` | Its lowercase SHA-256 digest. Set both Pi artifact values or neither |
 | `task_vms.pi.models` | `ORBIT_TASK_VMS_PI_MODELS` | A JSON list of the models Pi offers. Default `[]` |
-| `task_vms.incus.hosts` | `ORBIT_TASK_VMS_INCUS_HOSTS` | A JSON list of hosts. Their order breaks ties in [placement](#place-task-vms). Default `[]` |
 | `task_vms.medium_projects` | `ORBIT_TASK_VMS_MEDIUM_PROJECTS` | A JSON list of Project IDs whose groups get a [medium VM](#size-by-declared-topology) when no subtask declares a topology. Default `[]` |
 | `task_vms.topology_paths` | `ORBIT_TASK_VMS_TOPOLOGY_PATHS` | A JSON object from Project ID to a list of path patterns that need a [declared topology](#prove-work-on-a-topology). Default `{}` |
 | `task_vms.park_after_minutes` | `ORBIT_TASK_VMS_PARK_AFTER_MINUTES` | How many minutes a group waits for review before its VM [parks](#park-and-resume), from 1 to 10080. Unset or empty means `30`. `0` and other values are an error |
 
 Each task VM stores `model_proxy_origin` with its model key, and revokes the key at that origin. So changing the origin never strands a key. A task VM that holds a key at another origin cannot prepare Pi again.
 
-Each host is a JSON object with these snake_case keys. Other keys are an error.
+The [Node settings field table](/reference/node-settings#task-vm-fields) defines the closed host object: `cidr`, `max_vms`, `project`, `network`, `pool`, `image_alias`, `zfs_dataset`, `cpus`, `memory`, `disk`, `warm_vms`, and `operator_owned`. The containing Node supplies the host identity, so there is no nested `node_id`. `warm_vms` remains supported while the warm pool exists. `operator_owned` keeps operator instances and custom volumes out of the [stray report](#report-strays).
 
-| Key | Required | Default | Meaning |
-| --- | --- | --- | --- |
-| `node_id` | Yes | | The ID of the host Node. List each host once |
-| `cidr` | Yes | | The task bridge network, such as `10.251.77.0/24`: a private network from `/16` to `/28`, not a host address. The bridge gets the first usable address and VMs get the others |
-| `max_vms` | Yes | | The slots of the host, from 1 to 64. Each task VM on it that is not `destroyed` takes one slot, two for a medium VM, or three for a [large VM](#size-by-declared-topology) |
-| `project` | No | `orbit-tasks` | The Incus project |
-| `network` | No | `orbittask0` | The bridge name: `orbittask` and 1 to 6 lowercase letters or digits |
-| `pool` | No | `orbit-tasks` | The Incus storage pool for the base image and the VM root disks. It must use the `zfs` driver |
-| `zfs_dataset` | No | | The ZFS dataset from which `task-vms:prepare-host` creates `pool` when it is missing, such as `fast/orbit-tasks`. A new dataset below a ZFS pool: not the pool itself, and not a dataset that exists |
-| `cpus` | No | `2` | The vCPUs of each normal VM, from 1 to 64 |
-| `memory` | No | `4GiB` | The memory of each normal VM, in `MiB` or `GiB` |
-| `disk` | No | `20GiB` | The root disk of each normal VM, and the size of each workspace template, in `MiB` or `GiB` |
-| `warm_vms` | No | `0` | How many [warm VMs](#keep-warm-vms) the host keeps for claims, from 0 to `max_vms`. They take slots of `max_vms` |
-| `operator_owned` | No | `[]` | The Incus instances and custom volumes on the host that the operator owns, such as CI runners. Each entry is `<project>/<name>`, or `<project>/*` for a whole project. The [stray report](#report-strays) skips them |
+Placement selects active Nodes with this setting and capacity reads their slot budget. Host preparation and image sync use their pool, network, and image alias; sync targets only explicitly configured hosts. Later package-cache targeting follows the same setting, without making `app-dev` a host marker. Host settings do not turn on that later cache feature.
 
-For example, `ORBIT_TASK_VMS_INCUS_HOSTS='[{"node_id":7,"cidr":"10.251.77.0/24","max_vms":4,"warm_vms":1}]'`.
+Deployment [migrates the existing environment list](/reference/node-settings#migrate-the-environment-host-list) into Node 9 (`beast`) and Node 13 (`shark`), preserving live values and defaults rather than changing host resources. It preserves other Node settings and does not create host intent on `services` or any other Node merely because it is `app-dev`. After that copy, runtime consumers stop reading `ORBIT_TASK_VMS_INCUS_HOSTS`; there is no fallback. Verify the stored settings, then remove the variable from `gateway.env` with [`gateway:release:configure`](/reference/gateway-recovery#apply-an-env-change).
 
 `TaskVmSettings` validates the configuration once, when it is first used. It checks every value that is set, also while task VMs are off, so you can prepare hosts and the hub before you enable task VMs. An unset or empty value stays absent, and malformed JSON is an error. Enabling task VMs also requires `dev_cluster_id`, `model_proxy_origin`, and at least one host.
 
@@ -915,7 +905,7 @@ The reserved range must always be a private network. As soon as task VMs are ena
 | Code | HTTP | Cause |
 | --- | --- | --- |
 | `task_vm.invalid_config` | 500 | A `task_vms` value is invalid, or the proxycli CLIProxyAPI URL is not `model_proxy_origin`. See [Configure task VMs](#configure-task-vms) |
-| `task_vm.unknown_host` | 409 | The Node is not active or not in `task_vms.incus.hosts` |
+| `task_vm.unknown_host` | 409 | The Node is not active or has no valid `settings.task_vms` |
 | `task_vm.invalid_gateway_key` | 500 | The Gateway's SSH public key is not one OpenSSH public key line |
 | `task_vm.workspace_mismatch` | 409 | A group's workspace is not on its ready task VM |
 | `task_vm.foreign_instance` | 409 | An Instance on a task VM Node is not its group's workspace |
@@ -937,7 +927,7 @@ The reserved range must always be a private network. As soon as task VMs are ena
 | `task_vm.image_build_failed` | 502 | A base image build failed. The build row records the step and error |
 | `task_vm.image_build_running` | 409 | A base image build or sync of the host is already running |
 | `task_vm.image_sync_failed` | 502 | A base image sync failed. The message names the host, the source, and the stage. A queued sync logs the failure and lets the other hosts continue |
-| `task_vm.host_configured` | 409 | `task-vms:retire-host` names a host that is still in `task_vms.incus.hosts` |
+| `task_vm.host_configured` | 409 | `task-vms:retire-host` names a host that still has `settings.task_vms` |
 | `task_vm.host_in_use` | 409 | `task-vms:retire-host` names a host that still has a task VM that is not `destroyed`, a warm one included |
 | `task_vm.parked` | 409 | The group's task VM is `parked`. Orbit starts it, and the work runs once it is `ready` |
 | `task_vm.resume_timeout` | 504 | A `parked` VM did not become ready before its fixed 9-minute resume deadline |

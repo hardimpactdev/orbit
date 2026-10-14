@@ -2146,12 +2146,15 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Deployment",
                 "Doctor",
                 "Gateway",
                 "Instance",
                 "Node",
+                "Placement",
                 "Project",
-                "Role"
+                "Role",
+                "Task"
             ],
             "governing_adrs": []
         },
