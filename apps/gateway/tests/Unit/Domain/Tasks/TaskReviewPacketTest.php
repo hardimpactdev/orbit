@@ -111,6 +111,7 @@ it('renders a review packet with the group brief, subtask brief, deliverables, a
         ]))
         ->and(packet_section($packet, 'Diff'))->toBe("diff --git a/packet.php b/packet.php\n+packet")
         ->and($packet)->toContain('The approval must confirm each review deliverable (error-copy) with --deliverable=ID=evidence')
+        ->and($packet)->toContain('Before you analyse failure windows, trace the main path and one ordinary failure path end to end (for example, a failed build and then a resume).')
         ->and($packet)->not->toContain('--pr-summary');
 });
 
