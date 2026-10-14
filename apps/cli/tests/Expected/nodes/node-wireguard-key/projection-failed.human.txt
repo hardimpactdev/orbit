@@ -1,0 +1,10 @@
+Setting Node WireGuard key...
+
+┌  Set Node WireGuard key
+│
+├  ● Setting Node WireGuard key
+│
+└  Operation failed.
+
+Could not converge the gateway WireGuard service.
+step: wireguard-server-install

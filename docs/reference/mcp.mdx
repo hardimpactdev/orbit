@@ -18,6 +18,8 @@ The Project's [development deploy steps](/reference/deployments#development-depl
 
 `node-settings` takes `apps`, the [apps root](/reference/node-settings#set-the-apps-root).
 
+`node-wireguard-key` takes the numeric `node` ID and `wireguard_public_key`, a canonical base64 encoding of exactly 32 bytes. It dispatches `PATCH /api/v1/nodes/{node}/wireguard-key` to set an unmanaged peer's desired public key and reconverge the hub. The API refuses Gateway Nodes, managed peers, missing WireGuard addresses, and collisions with another peer or the configured hub key. Activity input is empty. A projection failure can leave the new key stored; replaying the same key retries convergence rather than skipping it. Follow [WireGuard key recovery](/cli/node#orbit-nodewireguard-key) if the change interrupts the caller's management path.
+
 ## Endpoints
 
 Both endpoints speak MCP over streamable HTTP and offer the same catalogue. Their JSON-RPC envelopes are limited to 15 MiB (15,728,640 bytes), checked after active-peer authorization and before parsing. An oversized envelope receives HTTP 413 without invoking a tool. Dispatched API requests still apply their own limits and Node access checks. This envelope limit admits the full 10 MiB decoded [Project Document upload](/reference/project-documents#content-and-versions), including base64 and JSON-RPC overhead.

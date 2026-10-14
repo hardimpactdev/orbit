@@ -726,5 +726,6 @@ it('installs relay mode for a new reviewer and keeps relay or cause-required mod
     $driver->failNextSend = true;
     $spawner->requestReview($task->fresh() ?? $task);
 
-    expect($receipts->modes)->toBe(['relay', 'relay', 'cause']);
+    expect($receipts->modes)->toBe(['relay', 'relay', 'cause'])
+        ->and($driver->calls[array_key_last($driver->calls)]['prompt'])->toContain('--outcome=changes_requested --summary="The findings the implementer must address" --cause=CAUSE');
 });

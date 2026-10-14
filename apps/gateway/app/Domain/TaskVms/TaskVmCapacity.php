@@ -7,18 +7,13 @@ namespace App\Domain\TaskVms;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
 use App\Models\TaskVm;
-use Closure;
-use Illuminate\Contracts\Cache\LockTimeoutException;
-use Illuminate\Support\Facades\Cache;
 
 /**
- * The slots of the task VM hosts, and the lock that every placement holds. One placement runs at a time, so two
- * claims never take the same warm VM or both take a host's last slot. The pool refill takes the same lock.
+ * The slots of the task VM hosts. Placement transactions serialize writers, so two
+ * claims never take the same warm VM or both take a host's last slot. The pool refill uses the same transaction boundary.
  */
 final readonly class TaskVmCapacity
 {
-    private const string PlacementLock = 'task-vms:placement';
-
     public function __construct(private TaskVmSettings $settings) {}
 
     /**
@@ -63,20 +58,5 @@ final readonly class TaskVmCapacity
         }
 
         return $free;
-    }
-
-    /**
-     * Runs `$placement` under the placement lock, waiting up to 15 seconds for it.
-     *
-     * @template T
-     *
-     * @param  Closure(): T  $placement
-     * @return T
-     *
-     * @throws LockTimeoutException
-     */
-    public function withPlacementLock(Closure $placement): mixed
-    {
-        return Cache::lock(self::PlacementLock, 30)->block(15, $placement);
     }
 }

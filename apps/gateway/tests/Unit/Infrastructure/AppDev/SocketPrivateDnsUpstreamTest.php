@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\AppDev\PrivateDnsAnswer;
 use App\Infrastructure\AppDev\PrivateDnsMessageCodec;
 use App\Infrastructure\AppDev\SocketPrivateDnsUpstream;
+use Tests\Support\SilentPrivateDnsPortPair;
 
 pest()->group('subprocess');
 
@@ -27,13 +28,18 @@ it('returns a UDP upstream answer without waiting for the socket to close', func
 });
 
 it('fails a silent UDP upstream without blocking the timeout window twice', function (): void {
-    $silent = stream_socket_server('udp://127.0.0.1:0', $error, $message, STREAM_SERVER_BIND);
-    expect($silent)->toBeResource();
-    $name = stream_socket_get_name($silent, false);
-    expect($name)->toBeString();
-    $port = (int) substr($name, strrpos($name, ':') + 1);
+    [$silentUdp, $silentTcp, $port] = SilentPrivateDnsPortPair::hold('127.0.0.1');
 
     try {
+        // Neither transport may be adopted by another test's PHP stream server.
+        set_error_handler(static fn (): bool => true);
+        try {
+            expect(stream_socket_server('udp://127.0.0.1:'.$port, $error, $message, STREAM_SERVER_BIND))->toBeFalse();
+            expect(stream_socket_server('tcp://127.0.0.1:'.$port, $error, $message))->toBeFalse();
+        } finally {
+            restore_error_handler();
+        }
+
         $waits = [];
         $wait = static function ($socket, bool $write, float $timeout) use (&$waits): bool {
             $waits[] = ['write' => $write, 'timeout' => $timeout];
@@ -48,7 +54,8 @@ it('fails a silent UDP upstream without blocking the timeout window twice', func
             ['write' => false, 'timeout' => 0.2],
         ]);
     } finally {
-        fclose($silent);
+        socket_close($silentUdp);
+        socket_close($silentTcp);
     }
 });
 

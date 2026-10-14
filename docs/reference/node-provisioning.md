@@ -398,7 +398,9 @@ The bootstrap adds the UFW rule `orbit:public-ssh-recovery` and enables UFW. An 
 
 ## WireGuard hub
 
-The Node with the `vpn` role holds the WireGuard hub: its private key, address, listen port, and the list of peers. When a peer changes, the Gateway renders the hub configuration and installs it there.
+The Node with the `vpn` role holds the WireGuard hub: its private key, address, listen port, and the list of peers. When a peer changes, the Gateway renders the hub configuration and installs it there. [`node:wireguard-key`](/cli/node#orbit-nodewireguard-key) sets or replaces an unmanaged Node's public key and runs this projection without configuring the peer machine. It refuses managed Nodes, Gateway Nodes, and keys that collide with another Node or the hub, including concurrent assignments. A successful projection preserves non-target peers.
+
+Repeating the same key still projects the hub when it has no collision; after a projection failure, the stored key remains and the operator retries after repairing the hub. A crash can leave either the old or new hub configuration, without guaranteed rollback or automatic reconciliation. [WireGuard key recovery](/cli/node#orbit-nodewireguard-key) explains how to restore an authorized management path and replay the desired key.
 
 When the `vpn` and `gateway` roles share a machine, or no `gateway` role is active, the Gateway installs the configuration locally with `sudo`. When they are on different Nodes, the Gateway sends the configuration over SSH to the `vpn` Node, with the private key on standard input, and activates `wg-quick@orbit` there. Without SSH, the projection fails with `vpn.server_config_install_failed` and never installs the configuration in `/etc/wireguard` on the Gateway machine. The Gateway always keeps the rendered hub configuration, private key included, at `ORBIT_HOME/generated/wireguard/orbit.conf`.
 

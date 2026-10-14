@@ -166,6 +166,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'node:role:remove',
         'node:settings',
         'node:show',
+        'node:wireguard-key',
         'process:create',
         'process:destroy',
         'process:list',
@@ -862,6 +863,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'node:remove' => [['node'], ['force' => false, 'offline' => false, 'json' => false]],
         'node:rename' => [['node', 'name'], ['json' => false]],
         'node:settings' => [['node'], ['setting' => [], 'json' => false]],
+        'node:wireguard-key' => [['node', 'public-key'], ['json' => false]],
         'node:role:add' => [['node', 'role'], ['converge' => false, 'postgres-process' => null, 'clickhouse-process' => null, 'json' => false]],
         'node:role:list' => [['node'], ['json' => false]],
         'node:role:relocate' => [['node', 'role'], ['force' => false, 'from' => null, 'json' => false]],
@@ -1054,6 +1056,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         $optionalArguments = match ($name) {
             'dns:resolve' => ['target'],
             'node:add' => ['host'],
+            'node:wireguard-key' => ['node', 'public-key'],
             'profile' => ['url'],
             'tool:install' => ['package'],
             'metrics:enable', 'project:excluded-node:add', 'project:excluded-node:remove' => ['node'],
@@ -1332,6 +1335,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'node:role:relocate' => [['node' => '7', 'role' => 'gateway', '--force' => true], ...$profileMissing],
         'node:role:remove' => [['node' => '7', 'role' => 'app-dev', '--force' => true], ...$profileMissing],
         'node:settings' => [['node' => '1', '--setting' => ['apps.path:/srv/orbit/apps']], ...$profileMissing],
+        'node:wireguard-key' => [['node' => '1', 'public-key' => base64_encode(str_repeat('n', 32))], ...$profileMissing],
         'node:show' => [['node' => '1'], ...$profileMissing],
         'process:create' => [
             ['name' => 'worker', '--instance' => '1', '--command' => ['/usr/bin/php']],

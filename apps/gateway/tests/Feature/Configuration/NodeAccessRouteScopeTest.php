@@ -196,6 +196,7 @@ it('declares node access scope on every active-peer API route', function (): voi
         'node:role:remove' => ServingNode::RoleMutation,
         'node:settings' => ServingNode::Target,
         'node:show' => ServingNode::Target,
+        'node:wireguard-key' => ServingNode::Target,
         'process:create' => ServingNode::ProcessOwning,
         'process:destroy' => ServingNode::ProcessOwning,
         'process:list' => ServingNode::ProcessOwning,

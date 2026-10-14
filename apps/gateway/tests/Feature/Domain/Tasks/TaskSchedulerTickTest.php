@@ -4728,7 +4728,7 @@ it('answers a direction question from the reviewer receipt that follows the oper
         ->and(app(TaskTurnReceipts::class)->modes)->toContain('cause')
         ->and(app(TaskTurnReceipts::class)->modes)->not->toContain('relay');
     $reviewerSend = collect(app(AgentCommandDispatcher::class)->commands)->first(fn (array $command): bool => ($command['type'] ?? null) === 'send');
-    expect($reviewerSend['message']['text'] ?? null)->toContain('Follow ADR 0098.')
+    expect($reviewerSend['message']['text'] ?? null)->toContain('Follow ADR 0098.', '--outcome=changes_requested --summary="The findings the implementer must address" --cause=CAUSE')
         ->and($reviewerSend['message']['text'] ?? null)->not->toContain('This is a relay');
 
     app(TaskScheduler::class)->tick();

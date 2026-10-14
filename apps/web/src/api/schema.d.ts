@@ -2281,6 +2281,26 @@ export interface paths {
         patch: operations["node-settings"];
         trace?: never;
     };
+    "/api/v1/nodes/{node}/wireguard-key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * node:wireguard-key
+         * @description Set an unmanaged Node's WireGuard public key and reconverge the hub.
+         */
+        patch: operations["node-wireguard-key"];
+        trace?: never;
+    };
     "/api/v1/nodes/{serving_node}/access/{consumer_node}": {
         parameters: {
             query?: never;
@@ -13397,6 +13417,74 @@ export interface operations {
                     apps?: {
                         path?: string | null;
                     } | null;
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Node"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "node-wireguard-key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Node ID. */
+                node: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    wireguard_public_key: string;
                 };
             };
         };

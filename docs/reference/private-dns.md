@@ -176,6 +176,8 @@ Run this command on the Gateway to update the resolver settings of one active ma
 php artisan orbit:node-dns-repair <node-name>
 ```
 
+DNS repair does not replace a WireGuard key. The separate [`node:wireguard-key`](/cli/node#orbit-nodewireguard-key) command only changes an unmanaged peer's desired public key and reconverges the hub; it refuses managed peers and leaves the peer's resolver policy unchanged. Use DNS repair for resolver faults, not key recovery.
+
 The command refuses a missing or inactive Node, a [Node without roles](/reference/node-provisioning#nodes-without-roles), and the Node that holds `vpn`, before it opens SSH. It also refuses a peer without a complete managed WireGuard and SSH identity.
 
 Record the [inspect](#inspect-a-peer) commands, `systemctl is-active wg-quick@orbit`, each role's service state, and a fingerprint of `wg show orbit public-key` before and after the repair. The DNS server, routing domains, hooks, and saved DNS state can change. The key fingerprint, role services, tunnel state, application placement, and `ip route` stay the same.

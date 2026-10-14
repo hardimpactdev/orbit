@@ -17,7 +17,7 @@ use Illuminate\Support\Str;
  * Records a new `provisioning` row on its placement: a group's VM, or a pool VM when the group is null. The row is
  * named `tvm-<row id>`, so a retry after a destroyed VM never reuses a name, and it holds the next free WireGuard
  * address of the reserved range from the start. A pool row gets no Pi token; a claim gives it one. Call it under the
- * placement lock, inside a transaction.
+ * placement transaction, which serializes writers.
  */
 final readonly class RecordTaskVmAction
 {

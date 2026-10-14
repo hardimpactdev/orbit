@@ -1,3 +1,4 @@
+import { InstanceDependenciesPage } from "./InstanceDependencies";
 import { extensionsQuery } from "../api/extensions";
 import { taskGroupsQuery, tasksForInstance } from "../api/tasks";
 import { useTaskPoll } from "../realtime/polling";
@@ -180,9 +181,13 @@ function analyticsProperties(analytics: InstanceAnalytics | undefined): Property
 
 function InstancePage({ fleet, instance }: { fleet: Fleet; instance: Instance }) {
     const tasksEnabled = useQuery(extensionsQuery).data?.tasks === true;
-    const [requestedTab, setRequestedTab] = useState<"overview" | "tasks">("overview");
-    const tab = requestedTab === "tasks" && tasksEnabled ? "tasks" : "overview";
-    const sections = tasksEnabled ? (["overview", "tasks"] as const) : (["overview"] as const);
+    const [requestedTab, setRequestedTab] = useState<"overview" | "dependencies" | "tasks">(
+        "overview",
+    );
+    const tab = requestedTab === "tasks" && !tasksEnabled ? "overview" : requestedTab;
+    const sections = tasksEnabled
+        ? (["overview", "dependencies", "tasks"] as const)
+        : (["overview", "dependencies"] as const);
     const groups = useQuery({
         ...taskGroupsQuery,
         enabled: tasksEnabled,
@@ -192,20 +197,32 @@ function InstancePage({ fleet, instance }: { fleet: Fleet; instance: Instance })
 
     useEffect(() => {
         if (!tasksEnabled) {
-            setRequestedTab("overview");
+            setRequestedTab((current) => (current === "tasks" ? "overview" : current));
         }
     }, [tasksEnabled]);
 
     return (
-        <div className={`flex h-full min-h-0 min-w-0 flex-row ${GAPS}`}>
+        <div className={`flex h-full min-h-0 min-w-0 flex-col md:flex-row ${GAPS}`}>
             <SectionMenu
+                responsive
+                className="md:w-[18ch]!"
                 label="Instance navigation"
                 ariaLabel="Instance sections"
                 idPrefix={`instance-${instance.id}`}
                 items={sections.map((section) => ({
                     id: section,
-                    label: section === "overview" ? "Overview" : "Tasks",
-                    testId: section === "overview" ? "instance-overview" : "instance-tasks",
+                    label:
+                        section === "overview"
+                            ? "Overview"
+                            : section === "dependencies"
+                              ? "Dependencies"
+                              : "Tasks",
+                    testId:
+                        section === "overview"
+                            ? "instance-overview"
+                            : section === "dependencies"
+                              ? "instance-dependencies"
+                              : "instance-tasks",
                     count: section === "tasks" ? taskCount : undefined,
                 }))}
                 selected={tab}
@@ -223,6 +240,8 @@ function InstancePage({ fleet, instance }: { fleet: Fleet; instance: Instance })
                     {tab === section &&
                         (section === "overview" ? (
                             <InstanceOverview fleet={fleet} instance={instance} />
+                        ) : section === "dependencies" ? (
+                            <InstanceDependenciesPage instanceId={instance.id} />
                         ) : (
                             <TasksBoard instanceId={instance.id} />
                         ))}
@@ -294,7 +313,8 @@ function InstanceOverview({ fleet, instance }: { fleet: Fleet; instance: Instanc
                         title="Deployments"
                         className="w-full min-h-[160px] max-h-[40vh] md:max-h-none"
                         columns={deploymentColumns}
-                        rows={deployments.data ?? []}
+                        rows={(deployments.data ?? []).slice(0, 25)}
+                        topRight={(deployments.data?.length ?? 0) > 25 ? "Latest 25" : undefined}
                         rowId={(d) => String(d.id)}
                         warn={(d) => !deploymentHealthy(d)}
                         target={(row) => ({ kind: "deployments", row })}
@@ -386,7 +406,13 @@ function DatabasePage({ fleet, database }: { fleet: Fleet; database: Database })
                 columns={tableColumns}
                 rows={tableRows}
                 rowId={(table) => table.name}
-                empty={tables.isPending ? "Loading…" : "No tables."}
+                empty={
+                    tables.isPending
+                        ? "Loading…"
+                        : tables.isError
+                          ? `Could not load tables: ${tables.error.message}`
+                          : "No tables."
+                }
             />
             {users.isError ? (
                 <Frame title="Users">

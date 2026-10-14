@@ -14,6 +14,8 @@ covers:
 
 The web app is Orbit's live view of the fleet. It is a static single-page app that reads the Gateway API and follows [realtime events](/reference/events). Its TypeScript API schema is generated from the Gateway OpenAPI document (`docs/openapi.json`) with `bun run types` in `apps/web`. Operation descriptions and request-field comments in that schema follow the OpenAPI document, including argument and option text that [API reference generation](/reference/api-reference) reads from the CLI command classes. Regenerate the schema after an OpenAPI change and commit it with the app. To install, run, and check the app, see [Bun and Rust projects](/reference/bun-and-rust-projects#web-app).
 
+The generated API schema includes `PATCH /api/v1/nodes/{node}/wireguard-key`, with a `wireguard_public_key` input and the standard Node response. These types describe the [unmanaged peer key contract](/cli/node#orbit-nodewireguard-key); they do not add a web key editor. Regenerate them with `bun run types` when the operation changes.
+
 The task group schema includes nullable `vm_power`: `running`, `stopped`, or `destroyed`, separately from task status. The Tasks page keeps its status-based grouping and detail view when power is present, null, or omitted. [VM power](/reference/compute-drivers#vm-power) defines the state mapping.
 
 The generated API schema also includes the Project development deploy step operations and their `required` boolean. These types describe the [API contract](/reference/deployments#development-deploy-steps); they do not add web controls or start deployments.
@@ -376,3 +378,11 @@ Each notice carries every list column. A refetch per notice would reload the pag
 With a translucent status bar and `viewport-fit=cover`, iOS 26 starts the web view under the status bar and makes it shorter by the top inset. Every CSS height and `innerHeight` then leaves a dead band at the bottom, and the edge blur covers the header. [WebKit bug 301108](https://bugs.webkit.org/show_bug.cgi?id=301108) records the fault. The opaque `black` style starts the web view below the bar and lets it reach the bottom edge.
 
 The opaque status bar alone does not stop the glass edge effect. iOS 26 still blurs about 38 points below the top of the web view unless WebKit can take a flat colour from a fixed, opaque box covering that edge. No CSS property or meta tag turns the effect off. Padding the header down would leave an empty band, so the shell itself is that fixed box.
+
+## Instance dependencies
+
+An Instance has a Dependencies section with separate Composer and npm tables. Each table shows package names, installed versions from the saved scan, and runtime or development scope. The page reads `GET /api/v1/instances/{instance}/dependencies` and refreshes the saved inventory using the normal polling fallback. Opening this section does not start a scan or update packages.
+
+The page shows when each snapshot was observed and distinguishes unscanned, absent, stale, failed, and empty inventories. A failed scan can still show the previous snapshot, labelled with the failure. Dependencies remains available when the Tasks extension is disabled.
+
+The Instance overview shows the latest 25 deployments, in the order returned by the Gateway. The database Tables panel shows a query error when a table read fails, instead of reporting an empty database. MySQL inspection requires the MySQL PDO driver in the Gateway PHP runtime.

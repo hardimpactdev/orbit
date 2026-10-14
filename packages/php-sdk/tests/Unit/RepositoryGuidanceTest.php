@@ -60,6 +60,7 @@ use Orbit\Sdk\Requests\Nodes\ListNodeExcludedProjectsRequest;
 use Orbit\Sdk\Requests\Nodes\RelocateNodeRoleRequest;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeExcludedProjectRequest;
 use Orbit\Sdk\Requests\Nodes\RenameNodeRequest;
+use Orbit\Sdk\Requests\Nodes\SetNodeWireGuardKeyRequest;
 use Orbit\Sdk\Requests\Nodes\ShowNodeMetricsRequest;
 use Orbit\Sdk\Requests\Projects\AddProjectExcludedNodeRequest;
 use Orbit\Sdk\Requests\Projects\ListProjectExcludedNodesRequest;
@@ -461,7 +462,8 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain(UnsetClusterRouterRequest::class)
             ->toContain(ShowNodeMetricsRequest::class)
             ->toContain(RelocateNodeRoleRequest::class)
-            ->toContain(RenameNodeRequest::class);
+            ->toContain(RenameNodeRequest::class)
+            ->toContain(SetNodeWireGuardKeyRequest::class);
 
         expect(array_values(array_filter(
             $requestClasses,
@@ -513,19 +515,19 @@ describe('repository guidance bootstrap', function (): void {
             ->toEqualCanonicalizing($taskRequests);
     });
 
-    it('documents the 214-operation SDK surface including Project Documents', function (): void {
+    it('documents the 215-operation SDK surface including Project Documents', function (): void {
         $publicContract = repository_guidance_contents('.ai/rules/public-contract.md');
         $normalizedPublicContract = repository_guidance_normalized_contents('.ai/rules/public-contract.md');
 
         expect($publicContract)
-            ->toContain('The SDK models exactly 214 concrete public Gateway API operations:')
+            ->toContain('The SDK models exactly 215 concrete public Gateway API operations:')
             ->toContain('- Tasks: enable, disable, status, group list, show, create, update, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, question list and close, agent thread list, and task definition list, show, create, update, and destroy.')
             ->toContain('- Logs: Instance log read, and live log stream create, renew, and destroy for an Instance or a Process.')
             ->toContain('- Analytics: pin the Plausible version, and show, set, and unset the Stats API key. The key is never returned.')
             ->toContain('- proxycli: enable, disable, status, provider list, provider show, account update, and model list.')
             ->toContain('- Vault: status, setup, sync, and teardown.')
             ->toContain(
-                '- Node: list, show, add, rename, settings update, remove, access add, access remove, role list, role add, role relocate, role remove, and metrics.',
+                '- Node: list, show, add, rename, settings update, WireGuard key set, remove, access add, access remove, role list, role add, role relocate, role remove, and metrics.',
             )
             ->toContain(
                 '- Cluster: list, show, create, update, remove, Node attach, Node detach, Router set, and Router clear.',
@@ -596,7 +598,7 @@ describe('repository guidance bootstrap', function (): void {
 
         expect(repository_guidance_normalized_contents('README.md'))
             ->toContain(
-                'The SDK exposes exactly 214 public Gateway operations.',
+                'The SDK exposes exactly 215 public Gateway operations.',
                 'The SDK exposes typed enable, disable, status, provider list, provider show, account update, and model list requests for the optional CLIProxyAPI quota collector.',
                 'The SDK exposes typed status, setup, sync, and teardown requests for publishing database credentials to Vaultwarden.',
                 'The SDK exposes typed list, show, add, update, remove, attach, detach, query, tables, schema, describe, and user create requests for Gateway-owned database connection records.',

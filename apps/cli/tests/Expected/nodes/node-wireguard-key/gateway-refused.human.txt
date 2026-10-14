@@ -1,0 +1,9 @@
+Setting Node WireGuard key...
+
+┌  Set Node WireGuard key
+│
+├  ● Setting Node WireGuard key
+│
+└  Operation failed.
+
+Gateway WireGuard keys cannot be changed by this command.

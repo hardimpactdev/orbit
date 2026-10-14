@@ -129,7 +129,7 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
     ): void {
         $retainTransaction = $transactionMode === 'retain';
         $vpn = $this->configuration->forPeer($node);
-        $node->update(['wireguard_public_key' => $publicKey]);
+        $this->configuration->assignPeerKey($node, $publicKey);
         $this->gatewayPeers->converge($node);
         $dnsMode = match (true) {
             $rolelessOperator => 'operator',
