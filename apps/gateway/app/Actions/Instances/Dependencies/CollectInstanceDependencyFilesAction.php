@@ -7,6 +7,7 @@ namespace App\Actions\Instances\Dependencies;
 use App\Domain\Instances\Dependencies\CollectedDependencyFiles;
 use App\Domain\Instances\Dependencies\DependencyCollectionException;
 use App\Domain\Instances\InstanceSourceLayout;
+use App\Domain\Projects\ProjectType;
 use App\Infrastructure\Instances\DependencyFilesProgram;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -14,6 +15,7 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
+use App\Models\Project;
 use Throwable;
 
 final readonly class CollectInstanceDependencyFilesAction
@@ -26,7 +28,7 @@ final readonly class CollectInstanceDependencyFilesAction
         private KnownHostsStore $knownHosts,
     ) {}
 
-    public function execute(Instance $instance): CollectedDependencyFiles
+    public function execute(Instance $instance, bool $discover = true): CollectedDependencyFiles
     {
         $node = $instance->node;
         $production = $instance->placedOnAppProd();
@@ -44,8 +46,14 @@ final readonly class CollectInstanceDependencyFilesAction
         $base = $production ? $path.'/current' : $path;
         $application = substr($instance->dependencyDirectory(), strlen($base));
         $arguments = ['/usr/bin/python3', '-I', '-', $instance->defaultAppEnv(), $path];
+        // In monorepo mode this suffix selects only the no-top-level-directories fallback.
         if ($application !== '') {
             $arguments[] = $application;
+        }
+        $project = $instance->getRelationValue('project');
+        $monorepo = $discover && $project instanceof Project && $project->type === ProjectType::Monorepo;
+        if ($monorepo) {
+            $arguments[] = '--monorepo';
         }
         if ($production) {
             $arguments = ['sudo', '-n', '-u', $user, '-H', '--', ...$arguments];
@@ -83,6 +91,32 @@ final readonly class CollectInstanceDependencyFilesAction
         if (isset($receipt['error']) && in_array($receipt['error'], self::ERRORS, true)) {
             throw new DependencyCollectionException($receipt['error']);
         }
+        $total = 0;
+        $sourceApplication = $monorepo && ($receipt['sub_projects'] ?? null) !== null ? '' : $application;
+        $collected = $this->decode($receipt, $production, $path, $sourceApplication, $total);
+        if (! $monorepo || ! array_key_exists('sub_projects', $receipt) || $receipt['sub_projects'] === null) {
+            return $collected;
+        }
+        if (! is_array($receipt['sub_projects'])) {
+            throw new DependencyCollectionException('dependencies.invalid_collection');
+        }
+        $projects = [];
+        foreach ($receipt['sub_projects'] as $relative => $source) {
+            if (! is_string($relative) || preg_match('/\A(?:apps|packages)\/[^\/\x00]+\z/D', $relative) !== 1
+                || in_array(substr($relative, strpos($relative, '/') + 1), ['.', '..'], true)
+                || ! is_array($source) || ($source['reference'] ?? null) !== $collected->reference
+                || ($source['identity'] ?? null) !== $collected->identity) {
+                throw new DependencyCollectionException('dependencies.invalid_collection');
+            }
+            $projects[$relative] = $this->decode($source, $production, $path, '/'.$relative, $total);
+        }
+
+        return new CollectedDependencyFiles($collected->projectRoot, $collected->reference, $collected->identity, $collected->contents, $collected->hashes, $collected->errors, $projects);
+    }
+
+    /** @param array<string, mixed> $receipt */
+    private function decode(array $receipt, bool $production, string $path, string $application, int &$total): CollectedDependencyFiles
+    {
         $root = $receipt['root'] ?? null;
         $reference = $receipt['reference'] ?? null;
         $identity = $receipt['identity'] ?? null;
@@ -94,7 +128,6 @@ final readonly class CollectInstanceDependencyFilesAction
             throw new DependencyCollectionException('dependencies.invalid_collection');
         }
         $contents = $hashes = $errors = [];
-        $total = 0;
         foreach ($files as $name => $entry) {
             if (! is_array($entry) || array_keys($entry) !== ['content', 'hash', 'error']) {
                 throw new DependencyCollectionException('dependencies.invalid_collection');

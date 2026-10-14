@@ -34,20 +34,20 @@ final readonly class ScanInstanceDependenciesAction
         private ReadInstanceDependencyScanAction $read,
     ) {}
 
-    public function execute(Instance $instance): InstanceDependencyScanResult
+    public function execute(Instance $instance, bool $discover = true): InstanceDependencyScanResult
     {
         $attemptedAt = now()->toDateTimeImmutable();
 
         try {
-            return $this->operations->run([$instance->id], function () use ($instance, $attemptedAt): InstanceDependencyScanResult {
+            return $this->operations->run([$instance->id], function () use ($instance, $attemptedAt, $discover): InstanceDependencyScanResult {
                 $current = Instance::query()->with('node')->find($instance->id);
                 if ($current === null) {
                     return $this->failure($instance->id, $attemptedAt, 'dependencies.instance_unavailable', false);
                 }
 
                 return $current->placedOnAppDev()
-                    ? $this->sourceOperations->synchronized($current->node_id, fn (): InstanceDependencyScanResult => $this->scan($current, $attemptedAt))
-                    : $this->scan($current, $attemptedAt);
+                    ? $this->sourceOperations->synchronized($current->node_id, fn (): InstanceDependencyScanResult => $this->scan($current, $attemptedAt, $discover))
+                    : $this->scan($current, $attemptedAt, $discover);
             });
         } catch (ResourceOperationException) {
             // A contender must not overwrite a newer attempt from the current owner.
@@ -55,7 +55,7 @@ final readonly class ScanInstanceDependenciesAction
         }
     }
 
-    private function scan(Instance $instance, DateTimeImmutable $attemptedAt): InstanceDependencyScanResult
+    private function scan(Instance $instance, DateTimeImmutable $attemptedAt, bool $discover): InstanceDependencyScanResult
     {
         $identity = $this->identity($instance);
         $current = Instance::query()->with('node')->find($instance->id);
@@ -67,10 +67,16 @@ final readonly class ScanInstanceDependenciesAction
         }
 
         try {
-            $files = $this->collect->execute($current);
-            $composer = $this->parse($files, DependencyEcosystem::Composer, $attemptedAt);
-            $javascript = $this->parse($files, DependencyEcosystem::Npm, $attemptedAt);
-            $confirmed = $this->collect->execute($current);
+            $files = $this->collect->execute($current, $discover);
+            $sources = $files->subProjects ?? ['' => $files];
+            $results = [];
+            foreach ($sources as $relative => $source) {
+                $results[$relative] = [
+                    $this->parse($source, DependencyEcosystem::Composer, $attemptedAt),
+                    $this->parse($source, DependencyEcosystem::Npm, $attemptedAt),
+                ];
+            }
+            $confirmed = $this->collect->execute($current, $discover);
             $current = Instance::query()->with('node')->find($instance->id);
             if (! $current instanceof Instance || ! $this->available($current)) {
                 return $this->failure($instance->id, $attemptedAt, 'dependencies.instance_unavailable');
@@ -86,11 +92,37 @@ final readonly class ScanInstanceDependenciesAction
                 : $this->failure($instance->id, $attemptedAt, $exception->errorCode, errorDetail: $exception->errorDetail);
         }
 
-        return new InstanceDependencyScanResult(
-            $instance->id,
-            $this->publishCurrent($instance->id, $identity, $composer),
-            $this->publishCurrent($instance->id, $identity, $javascript),
-        );
+        return DB::transaction(function () use ($instance, $identity, $files, $results, $discover, $attemptedAt): InstanceDependencyScanResult {
+            $current = Instance::query()->lockForUpdate()->findOrFail($instance->id);
+            if (! $this->available($current) || $identity !== $this->identity($current)) {
+                return $this->failure($instance->id, $attemptedAt, ! $this->available($current) ? 'dependencies.instance_unavailable' : 'dependencies.source_changed');
+            }
+            $projects = [];
+            foreach ($results as $relative => [$composer, $javascript]) {
+                $projects[$relative] = new InstanceDependencyScanResult(
+                    $instance->id,
+                    $this->publishCurrent($instance->id, $identity, $composer, $relative),
+                    $this->publishCurrent($instance->id, $identity, $javascript, $relative),
+                );
+            }
+            if ($files->subProjects === null) {
+                if ($discover) {
+                    $current->setAttribute('dependency_sub_projects', null);
+                    $current->save();
+                }
+
+                return $projects[''];
+            }
+            $current->setAttribute('dependency_sub_projects', json_encode(array_keys($projects), JSON_THROW_ON_ERROR));
+            $current->save();
+
+            return new InstanceDependencyScanResult(
+                $instance->id,
+                $this->read->execute($instance->id, DependencyEcosystem::Composer),
+                $this->read->execute($instance->id, DependencyEcosystem::Npm),
+                $projects,
+            );
+        });
     }
 
     private function parse(CollectedDependencyFiles $files, DependencyEcosystem $ecosystem, DateTimeImmutable $attemptedAt): DependencyScanResult
@@ -112,9 +144,9 @@ final readonly class ScanInstanceDependenciesAction
     }
 
     /** @param array<string, mixed> $identity */
-    private function publishCurrent(int $instanceId, array $identity, DependencyScanResult $result): DependencyScanResult
+    private function publishCurrent(int $instanceId, array $identity, DependencyScanResult $result, string $subProject = ''): DependencyScanResult
     {
-        return DB::transaction(function () use ($instanceId, $identity, $result): DependencyScanResult {
+        return DB::transaction(function () use ($instanceId, $identity, $result, $subProject): DependencyScanResult {
             $current = Instance::query()->with('node')->lockForUpdate()->find($instanceId);
             if (! $current instanceof Instance || ! $this->available($current)) {
                 $result = DependencyScanResult::failed($result->ecosystem, $result->attemptedAt, 'dependencies.instance_unavailable');
@@ -122,7 +154,7 @@ final readonly class ScanInstanceDependenciesAction
                 $result = DependencyScanResult::failed($result->ecosystem, $result->attemptedAt, 'dependencies.source_changed');
             }
 
-            return $this->publish->execute($instanceId, $result);
+            return $this->publish->execute($instanceId, $result, $subProject);
         });
     }
 
@@ -146,6 +178,23 @@ final readonly class ScanInstanceDependenciesAction
 
     private function failure(int $instanceId, DateTimeImmutable $attemptedAt, string $code, bool $record = true, ?string $errorDetail = null): InstanceDependencyScanResult
     {
+        $projects = $this->read->subProjects($instanceId);
+        if ($projects !== null && $projects !== []) {
+            foreach ($projects as $path => $previous) {
+                $results = [];
+                foreach ([DependencyEcosystem::Composer, DependencyEcosystem::Npm] as $ecosystem) {
+                    $result = DependencyScanResult::failed($ecosystem, $attemptedAt, $code);
+                    $results[] = $record ? $this->publish->execute($instanceId, $result, $path) : DependencyScanResult::failed(
+                        $ecosystem, $attemptedAt, $code, $this->read->execute($instanceId, $ecosystem, $path)?->snapshot,
+                    );
+                }
+                $projects[$path] = new InstanceDependencyScanResult($instanceId, $results[0], $results[1]);
+            }
+
+            return new InstanceDependencyScanResult($instanceId,
+                $this->read->execute($instanceId, DependencyEcosystem::Composer),
+                $this->read->execute($instanceId, DependencyEcosystem::Npm), $projects);
+        }
         $results = [];
         foreach ([DependencyEcosystem::Composer, DependencyEcosystem::Npm] as $ecosystem) {
             $result = DependencyScanResult::failed($ecosystem, $attemptedAt, $code, errorDetail: $errorDetail);

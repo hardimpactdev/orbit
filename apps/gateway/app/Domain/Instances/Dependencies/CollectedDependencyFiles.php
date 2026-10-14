@@ -19,5 +19,7 @@ final readonly class CollectedDependencyFiles
         public array $contents,
         public array $hashes,
         public array $errors,
+        /** @var array<string, self>|null */
+        public ?array $subProjects = null,
     ) {}
 }

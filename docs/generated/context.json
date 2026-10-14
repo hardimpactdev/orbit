@@ -1855,7 +1855,8 @@
             "kind": "reference",
             "components": [
                 "apps/cli",
-                "apps/gateway"
+                "apps/gateway",
+                "packages/php-sdk"
             ],
             "concepts": [
                 "Access grant",

@@ -28,6 +28,7 @@ final class InstanceDependencyScanAttempt extends Model
     #[\Override]
     protected $fillable = [
         'instance_id',
+        'sub_project',
         'ecosystem',
         'attempted_at',
         'error_code',

@@ -80,7 +80,23 @@ No signal at all means pnpm, which still needs `pnpm-lock.yaml`.
 
 ## Collection
 
-`CollectInstanceDependencyFilesAction` reads the recorded checkout, or `current` of a production Instance, over SSH. A fixed Python program runs as the Node's user in development and as the production user in production. For a Laravel Instance, it reads manifests, lockfiles, and manager signals only in the [application directory](/reference/projects#application-directory) derived from the effective web root. Root `apps/site/public` selects `apps/site` inside the checkout or selected release, not the repository-root manifests. Non-Laravel Instances keep repository-root collection. Collection never recursively discovers or combines dependency trees.
+`CollectInstanceDependencyFilesAction` reads the recorded checkout, or `current` of a production Instance, over SSH. A fixed Python program runs as the Node's user in development and as the production user in production. Non-monorepo types retain their existing single-directory behavior. When `source_is_laravel` is true or the Project type is web-serving (`laravel-app` or `symfony-app`), collection reads manifests, lockfiles, and manager signals only in the [application directory](/reference/projects#application-directory) derived from the effective web root. Root `apps/site/public` selects `apps/site` inside the checkout or selected release, not the repository-root manifests. Other non-monorepo Instances keep repository-root collection.
+
+### Monorepo discovery
+
+For Project type `monorepo`, collection inspects only direct child directories of the repository's top-level `apps/` and `packages/`. It does not recurse below those candidates or discover projects elsewhere. The repository is the development checkout or the pinned production release. Discovery starts at that root even when `source_is_laravel` is true and the configured web root is nested, such as `apps/gateway/public`. The application-directory suffix selects the fallback source only when neither top-level directory exists.
+
+A candidate qualifies as a web project if it contains `composer.json`, or if it contains `package.json` and at least one of `package-lock.json`, `npm-shrinkwrap.json`, `pnpm-lock.yaml`, or `bun.lock`. These are file-presence tests, not successful parsing tests. `composer.json` without `composer.lock` qualifies and then fails with `dependencies.incomplete_source`. A candidate qualifying through Composer can still have a failing JavaScript ecosystem. A JavaScript-only candidate with no listed lockfile does not qualify, even if it has a Yarn lockfile or `bun.lockb`.
+
+Collection skips candidates that do not qualify and records nothing for them. If neither top-level directory exists, collection uses the existing single-directory behavior. The presence of either directory enables candidate discovery even when no candidate qualifies; skipped directories are not reported as absent ecosystems.
+
+Each qualifying candidate is read as a separate dependency source. Its inventory and attempts are scoped by the Instance, sub-project identity (its repository-relative path, such as `apps/gateway`), and ecosystem. Resolution IDs are local to each source's graph. Collection does not combine manifests or rewrite locks into a workspace graph. The reader and manager-selection rules above apply unchanged within each candidate, including refusals for unsupported layouts and formats.
+
+Discovery and file reads are batched for the Instance, not performed with a new SSH request per candidate. The existing collection and source-confirmation flow is retained; where a collector uses one SSH round trip per Instance, discovery and reads stay in that round trip. The scan remains read-only and runs no package manager, project script, or registry request.
+
+### Limits and source safety
+
+These limits apply to single-directory scans and monorepo collection alike.
 
 | Limit | Value |
 | --- | --- |
@@ -89,31 +105,39 @@ No signal at all means pnpm, which still needs `pnpm-lock.yaml`.
 | All files | 32 MiB |
 | SSH run | 30 seconds, 48 MiB of output |
 
-Symlinks, non-regular files, and paths that are not canonical fail. Production collection validates and pins the selected release before opening its application directory. The program reads twice and compares the repository or release identity, application directory, file metadata, and hashes. A difference returns `dependencies.source_changed`.
+Symlinks, non-regular files, and paths that are not canonical fail. Production collection validates and pins the selected release before opening dependency directories. Monorepo discovery and candidate reads obey the same canonical-path, regular-file, symlink, per-file size, total-size, and SSH limits; discovery does not authorize reads outside the recorded checkout or pinned release. The program reads twice and compares the repository or release identity, dependency directories, file metadata, and hashes. A difference returns `dependencies.source_changed`.
 
 `ScanInstanceDependenciesAction` holds the Instance operation lock, and for development the Node source lock, from collection through publication. It checks the Instance again inside each publication transaction. Its source snapshot retains the effective root and Laravel classification, so directory selection does not fall back to the repository root when the Instance is copied into a snapshot.
 
-Development updates use the same directory for manager-presence inspection, source-safety checks, package commands, and the final scan. Collection receipt validation accepts only the derived directory within the recorded checkout or selected release, not an arbitrary caller-supplied path. Git identity and CLI directory-to-Instance resolution still use the whole repository. Reader rules, package-manager refusals, and collection limits stay unchanged; a nested Laravel app does not enable workspace or multi-importer support.
+Development updates do not iterate over discovered monorepo candidates: `instance:dependencies:update` stays repository-root-only for monorepos. Non-monorepo updates still use their existing dependency directory for manager-presence inspection, source-safety checks, package commands, and the final scan. Collection receipt validation accepts only the selected single dependency directory or discovered qualifying monorepo directories within the recorded checkout or selected release, not an arbitrary caller-supplied path. Git identity and CLI directory-to-Instance resolution still use the whole repository. Reader rules, package-manager refusals, and collection limits stay unchanged; neither a nested Laravel app nor monorepo discovery enables workspace or multi-importer support.
 
 ## Stored inventory
 
-The Gateway stores the inventory in five tables.
+The Gateway stores package identities separately from Instance observations, resolutions, requirements, and scan attempts. For a monorepo, observations and attempts belong to one sub-project and ecosystem within the Instance, not to a shared graph for the repository. The root inventory keeps its existing single-directory scope. The `sub_project` column scopes observations and attempts; an empty string identifies the root. The Instance's `dependency_sub_projects` list records the last confirmed discovery, including an empty list when no candidate qualifies.
 
 | Table | Contents |
 | --- | --- |
 | `dependency_packages` | One row per ecosystem and name, shared by all Instances. |
-| `instance_dependency_observations` | The last successful observation per Instance and ecosystem: time, presence, project root, source reference, format, and file hashes. No row means unknown. |
+| `instance_dependency_observations` | The last successful observation per Instance, dependency source (root or monorepo sub-project), and ecosystem: time, presence, project root, source reference, format, and file hashes. No row means unknown. |
 | `instance_dependency_resolutions` | The resolutions of one observation. |
 | `instance_dependency_edges` | The requirements of one observation. |
-| `instance_dependency_scan_attempts` | Every attempt with its time, error code, and safe error detail; both error fields are null on success. |
+| `instance_dependency_scan_attempts` | Every attempt for the Instance, dependency source, and ecosystem, with its time, error code, and safe error detail; both error fields are null on success. |
 
-`PublishInstanceDependencyScanAction` replaces one ecosystem's observation, resolutions, edges, and attempt in one transaction. A failure records only the attempt and keeps the stored observation. A database failure records `dependencies.persistence_failed`. An Instance in removal gets `dependencies.instance_unavailable`. Removing an Instance deletes its rows but keeps shared package rows.
+`PublishInstanceDependencyScanAction` replaces one dependency source's ecosystem observation, resolutions, edges, and attempt in one transaction. A failure records only that source's ecosystem attempt and keeps its stored observation. It does not replace a sibling sub-project's data or mark the sibling as failed. Each sub-project can resolve a different version of the same shared package identity. A database failure records `dependencies.persistence_failed`. An Instance in removal gets `dependencies.instance_unavailable`. Removing an Instance deletes its rows but keeps shared package rows. Rollback deletes each sub-project's observations and attempts before removing the scope columns. Root observations and attempt history remain unchanged.
 
 ## Responses
 
-A scan or read returns `data` with `instance_id`, `succeeded`, `composer`, and `javascript`. `succeeded` is null until both ecosystems have attempts.
+A scan or read keeps the root `data` fields `instance_id`, `succeeded`, `composer`, and `javascript` for existing clients. The root ecosystem fields keep the single-directory contract and are not a union of sub-project graphs. For a single-directory inventory, `succeeded` is null until both ecosystems have attempts.
 
-Each ecosystem has `ecosystem`, `state`, `succeeded`, `attempted_at`, `error_code`, `error_detail`, and `snapshot`. `error_detail` is null on success and is limited to 255 printable ASCII characters. It uses fixed diagnostics and collected file names, not values from those files. The SDK also accepts older responses without this field. The state is `unknown` before the first success, and stale after a later failure. A snapshot has `observed_at`, a `source` with `project_root`, `reference`, `file_hashes`, and `format`. `project_root` is the absolute directory whose manifests were read; for Laravel root `apps/site/public`, it ends in `/apps/site`. The production `reference` still identifies the selected release. The snapshot also has a `graph`. A null graph means the ecosystem is absent. An empty graph means a project with no packages.
+For a monorepo, the API, SDK, and CLI (including `instance:dependencies:show`) also return a separate inventory for each qualifying sub-project, identified by its repository-relative path. The additive `sub_projects` map uses paths such as `apps/gateway` as keys. Each value has `instance_id`, `succeeded`, `composer`, and `javascript`, with its own states, attempts, error codes, snapshots, and graphs using the ecosystem shape below. An empty map is serialized as `[]`. This field is omitted for single-directory scans.
+
+Discovery leaves root observations unchanged; root ecosystems without an observation stay unknown. With discovery, overall `succeeded` describes the discovered sources, not old root attempts, and is true when no candidate qualifies.
+
+A failure keeps the last successful snapshot for that sub-project and ecosystem and marks it stale under the existing rules; an unscanned ecosystem stays unknown. Successful siblings still publish their observations. The overall scan is unsuccessful if any scanned sub-project ecosystem fails, but errors remain attached to the source that failed. This is an additive inventory contract, not a Project-level rollup.
+
+Each ecosystem has `ecosystem`, `state`, `succeeded`, `attempted_at`, `error_code`, `error_detail`, and `snapshot`. `error_detail` is null on success and is limited to 255 printable ASCII characters. It uses fixed diagnostics and collected file names, not values from those files. The SDK also accepts older responses without this field.
+
+The state is `unknown` before the first success, and stale after a later failure. A snapshot has `observed_at`, a `source` with `project_root`, `reference`, `file_hashes`, and `format`. `project_root` is the absolute directory whose manifests were read; for Laravel root `apps/site/public`, it ends in `/apps/site`. For a monorepo sub-project identified as `apps/gateway`, it ends in `/apps/gateway` within the checkout or selected release. The production `reference` still identifies the selected release. The snapshot also has a `graph`. A null graph means the ecosystem is absent. An empty graph means a project with no packages.
 
 An update returns `instance_id`, `succeeded`, `error_code`, `may_have_mutated`, a `composer` and a `javascript` step, and `inventory`. A step has `ecosystem`, `status` (`succeeded`, `absent`, `failed`, or `not_run`), `may_have_mutated`, and `error_code`. A refused update has both steps `not_run` and no inventory.
 
@@ -147,6 +171,12 @@ A branch reference or alias is not a release version. Readers keep the locked va
 ### Hashed source references
 
 Tarball and Git URLs can carry credentials or tokens. A digest keeps two sources apart without storing the URL.
+
+### Separate monorepo dependency sources
+
+Apps and packages in one checkout can resolve different versions of the same package. One repository-wide observation would replace or mix those results and hide which source failed. Scoping observations and attempts to the sub-project preserves both the graph and its last successful scan. Restricting discovery to direct children of `apps/` and `packages/` avoids treating every nested manifest as an independently managed project. The root response fields remain available for existing clients, without turning separate sources into one graph. Updates remain root-only because scanning more sources does not authorize package commands in those sources.
+
+Scanning only the root misses independently locked trees. Failing every source when one lockfile is invalid prevents healthy siblings from refreshing. Recursive discovery, merged graphs, and automatic workspace or per-source update support are not substitutes for these source boundaries.
 
 ### Fail instead of an empty graph
 
