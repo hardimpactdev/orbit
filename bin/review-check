@@ -82,7 +82,7 @@ def candidate_paths(root, head, committed):
 
 
 def task_test_base(root, head):
-    """A handoff may narrow tests; CI always checks the full branch."""
+    """Every Orbit handoff, including the last, may narrow tests; CI checks the full branch."""
     value = os.environ.get('ORBIT_TASK_CHECK_BASE')
     if not value or os.environ.get('CI') or os.environ.get('GITHUB_ACTIONS'):
         return None

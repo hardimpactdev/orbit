@@ -671,6 +671,121 @@ function check_runner_deliverables_checkout(string $check = 'echo checks passed'
 }
 
 describe('deliverable evidence', function (): void {
+    it('reuses the task check result for a matching fixup deliverable without running it twice', function (int $exit): void {
+        [$checkout, $start] = check_runner_deliverables_checkout('mkdir -p ignored; echo run >> ignored/runs; echo project-output; exit '.$exit);
+        $instance = check_runner_instance($checkout);
+        $runner = check_runner(new LocalShellSshExecutor);
+        $deliverables = ['start' => $start, 'commands' => [
+            ['id' => 'project-check', 'command' => 'composer check', 'directory' => '.'],
+            ['id' => 'other', 'command' => 'touch ignored/other-ran', 'directory' => '.'],
+        ]];
+
+        $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'composer check', deliverables: $deliverables));
+        $evidence = TaskDeliverableEvidence::fromArray($reading->deliverables);
+        $deliverable = TaskDeliverable::fromArray([
+            'id' => 'project-check', 'type' => 'command', 'description' => 'Run the Project task check',
+            'command' => 'composer check', 'directory' => '.',
+        ]);
+
+        expect(file_get_contents($checkout.'/ignored/runs'))->toBe("run\n")
+            ->and($reading->exitCode)->toBe($exit)
+            ->and($reading->treeBefore)->toBe($reading->treeAfter)
+            ->and($evidence->commands['project-check']['exit_code'])->toBe($exit)
+            ->and($evidence->commands['project-check']['output'])->toContain('Reused Project task check on tree '.$reading->treeBefore, 'project-output')
+            ->and(TaskDeliverableVerifier::failures([$deliverable], $evidence) === [])->toBe($exit === 0)
+            ->and(file_exists($checkout.'/ignored/other-ran'))->toBe($exit === 0);
+    })->with(['passing check' => 0, 'failing check' => 7]);
+
+    it('still runs the base reproduction while reusing the passing working-tree check', function (): void {
+        $checkout = check_runner_checkout('true');
+        File::ensureDirectoryExists($checkout.'/tests');
+        file_put_contents($checkout.'/state', "old\n");
+        file_put_contents($checkout.'/tests/check.sh', "mkdir -p ignored; echo run >> ignored/runs; echo checked; grep -q new state\n");
+        (new Process(['git', 'add', '--all'], $checkout))->mustRun();
+        (new Process(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '-m', 'base'], $checkout))->mustRun();
+        $start = trim((new Process(['git', 'rev-parse', 'HEAD'], $checkout))->mustRun()->getOutput());
+        file_put_contents($checkout.'/state', "new\n");
+        $instance = check_runner_instance($checkout);
+        $runner = check_runner(new LocalShellSshExecutor);
+
+        $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'bash tests/check.sh', deliverables: [
+            'start' => $start, 'commands' => [[
+                'id' => 'project-check', 'command' => 'bash tests/check.sh', 'directory' => '.',
+                'fails_on_base' => true, 'paths' => ['tests/check.sh'],
+            ]],
+        ]));
+
+        expect(file_get_contents($checkout.'/ignored/runs'))->toBe("run\n")
+            ->and($reading->deliverables['commands']['project-check']['exit_code'])->toBe(0)
+            ->and($reading->deliverables['commands']['project-check']['base_exit_code'])->toBe(1)
+            ->and($reading->deliverables['commands']['project-check']['base_output'])->toContain('checked');
+    });
+
+    it('runs project-check as a normal deliverable when no task check is configured', function (): void {
+        [$checkout, $start] = check_runner_deliverables_checkout();
+        $instance = check_runner_instance($checkout);
+        $runner = check_runner(new LocalShellSshExecutor);
+
+        $reading = check_runner_wait($runner, $instance, $runner->start($instance, null, deliverables: [
+            'start' => $start, 'commands' => [['id' => 'project-check', 'command' => 'echo snapshot-check', 'directory' => '.']],
+        ]));
+
+        expect($reading->deliverables['commands']['project-check'])->toBe(['exit_code' => 0, 'output' => "snapshot-check\n"]);
+    });
+
+    it('runs a snapshotted project-check separately when the current task check changed', function (): void {
+        [$checkout, $start] = check_runner_deliverables_checkout();
+        $instance = check_runner_instance($checkout);
+        $runner = check_runner(new LocalShellSshExecutor);
+
+        $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'echo current-check', deliverables: [
+            'start' => $start, 'commands' => [['id' => 'project-check', 'command' => 'echo snapshot-check', 'directory' => '.']],
+        ]));
+
+        expect($reading->output)->toContain('current-check', 'snapshot-check')
+            ->and($reading->deliverables['commands']['project-check'])->toBe(['exit_code' => 0, 'output' => "snapshot-check\n"]);
+    });
+
+    it('does not reuse the root check for the same command in another directory', function (): void {
+        [$checkout, $start] = check_runner_deliverables_checkout();
+        $instance = check_runner_instance($checkout);
+        $runner = check_runner(new LocalShellSshExecutor);
+
+        $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'basename "$PWD"', deliverables: [
+            'start' => $start, 'commands' => [['id' => 'project-check', 'command' => 'basename "$PWD"', 'directory' => 'app']],
+        ]));
+
+        expect($reading->deliverables['commands']['project-check'])->toBe(['exit_code' => 0, 'output' => "app\n"]);
+    });
+
+    it('refuses reuse on a changed tree without repeating the project check', function (): void {
+        [$checkout, $start] = check_runner_deliverables_checkout('mkdir -p ignored; echo run >> ignored/runs; echo changed >> README.md');
+        $instance = check_runner_instance($checkout);
+        $runner = check_runner(new LocalShellSshExecutor);
+
+        $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'composer check', deliverables: [
+            'start' => $start, 'commands' => [['id' => 'project-check', 'command' => 'composer check', 'directory' => '.']],
+        ]));
+
+        expect(file_get_contents($checkout.'/ignored/runs'))->toBe("run\n")
+            ->and($reading->treeBefore)->not->toBe($reading->treeAfter)
+            ->and($reading->deliverables['commands']['project-check']['exit_code'])->toBe(1)
+            ->and($reading->deliverables['commands']['project-check']['output'])->toContain('cannot be reused');
+    });
+
+    it('runs the task check anew on the next handoff even on an unchanged tree', function (): void {
+        [$checkout, $start] = check_runner_deliverables_checkout('mkdir -p ignored; echo run >> ignored/runs');
+        $instance = check_runner_instance($checkout);
+        $runner = check_runner(new LocalShellSshExecutor);
+        $deliverables = ['start' => $start, 'commands' => [['id' => 'project-check', 'command' => 'composer check', 'directory' => '.']]];
+        check_runner_wait($runner, $instance, $runner->start($instance, 'composer check', deliverables: $deliverables));
+
+        $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'composer check', deliverables: $deliverables));
+
+        expect(file_get_contents($checkout.'/ignored/runs'))->toBe("run\nrun\n")
+            ->and($reading->deliverables['commands']['project-check']['exit_code'])->toBe(0);
+    });
+
     it('fails on base command when the base tree does not satisfy the overlaid command paths', function (): void {
         $checkout = check_runner_checkout('echo checks passed');
         File::ensureDirectoryExists($checkout.'/app/tests');

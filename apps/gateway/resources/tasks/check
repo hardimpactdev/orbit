@@ -4,7 +4,8 @@
 check start CHECKOUT [SETUP|-] [DELIVERABLES|-] [COMMAND]
                                 start the Project task check detached; print the process and the tree it checks.
                                 SETUP is a JSON file of setup steps to run first: [{"name", "command", "timeout_seconds"}]
-                                DELIVERABLES is a JSON file of the subtask's deliverables to verify after a passing check
+                                DELIVERABLES is a JSON file of the subtask's deliverables to verify after a passing check.
+                                A matching root project-check reuses this check's result, including failure, on the same tree.
                                 (ADR 0133): {"start", "commands": [{"id", "command", "directory", "fails_on_base", "paths"}]}
                                 A command with fails_on_base runs on the start commit with its paths overlaid, then on the working tree (ADR 0163).
                                 The base tree is a temporary archive under .git/orbit/bases/, not a registered worktree. The base run stops after 600 seconds.
@@ -456,19 +457,46 @@ def invalid_command_deliverables(checkout, deliverables):
     return messages
 
 
-def verify_deliverables(checkout, tree, deliverables, log):
+def matches_task_check(checkout, command, task_check):
+    """Only the root project-check deliverable can reuse this handoff's exact command."""
+    return (task_check is not None and command['id'] == 'project-check'
+            and command['command'] == task_check['command']
+            and inside(checkout, command.get('directory', '.')) == os.path.realpath(checkout))
+
+
+def verify_deliverables(checkout, tree, deliverables, log, task_check=None):
     """Record diff and command evidence for every checked deliverable."""
     with open(deliverables) as source:
         spec = json.load(source)
+    if task_check is not None and task_check['exit_code'] != 0:
+        if not any(matches_task_check(checkout, command, task_check) for command in spec.get('commands', [])):
+            return None
     evidence = {'start': spec.get('start'), 'diff': None, 'commands': {}}
     if spec.get('start'):
         evidence['diff'] = diff(checkout, spec['start'], tree)
     shutil.rmtree(DELIVERABLE_RESULTS, ignore_errors=True)
     os.makedirs(DELIVERABLE_RESULTS, exist_ok=True)
     for command in spec.get('commands', []):
+        reuse = matches_task_check(checkout, command, task_check)
+        # A failed Project check records only its matching deliverable; no further commands run.
+        if task_check is not None and task_check['exit_code'] != 0 and not reuse:
+            continue
         directory = inside(checkout, command.get('directory', '.'))
         if directory is None or not os.path.isdir(directory):
             evidence['commands'][command['id']] = {'exit_code': 127, 'output': 'The directory is outside the workspace.'}
+            continue
+        if reuse:
+            same_tree = (git(checkout, 'rev-parse', 'HEAD') == task_check['head']
+                         and working_tree(checkout) == task_check['tree'])
+            message = (f"Reused Project task check on tree {task_check['tree']}." if same_tree
+                       else 'Project task check cannot be reused: HEAD or the working tree changed.')
+            log.write((message + '\n').encode())
+            log.flush()
+            result = {'exit_code': task_check['exit_code'] if same_tree else 1,
+                      'output': message + '\n' + task_check['output']}
+            if same_tree and task_check['exit_code'] == 0 and command.get('fails_on_base') is True:
+                result.update(base_run(checkout, spec.get('start'), command, log))
+            evidence['commands'][command['id']] = result
             continue
         log.write(f"$ {command['command']}   # {command['id']} in {command.get('directory') or '.'}\n".encode())
         log.flush()
@@ -486,8 +514,9 @@ def verify_deliverables(checkout, tree, deliverables, log):
 
 
 def perform(checkout, head, tree, setup, deliverables, command, started_at):
-    """Run setup and the project check, then verify deliverables. Invalid command deliverables fail first."""
+    """Run setup and the Project check once, then verify deliverables, reusing its matching result."""
     evidence = None
+    task_check = None
     failed_step = None
     exit_code = 0
     with open(LOG, 'wb') as log:
@@ -512,10 +541,20 @@ def perform(checkout, head, tree, setup, deliverables, command, started_at):
                     if not isinstance(test_base, str) or not re.fullmatch(r'[0-9a-f]{40}(?:[0-9a-f]{24})?', test_base):
                         raise ValueError('Invalid task test base.')
                     environment['ORBIT_TASK_CHECK_BASE'] = test_base
+            check_head = git(checkout, 'rev-parse', 'HEAD')
+            check_tree = working_tree(checkout)
+            output_start = log.tell()
             exit_code = subprocess.run(['bash', '-lc', command], cwd=checkout, stdin=subprocess.DEVNULL,
                                        stdout=log, stderr=subprocess.STDOUT, env=environment).returncode
-        if failed_step is None and exit_code == 0 and deliverables:
-            evidence = verify_deliverables(checkout, tree, deliverables, log)
+            log.flush()
+            with open(LOG, 'rb') as output:
+                output.seek(0, os.SEEK_END)
+                output.seek(max(output_start, output.tell() - COMMAND_OUTPUT_TAIL))
+                tail = output.read().decode('utf-8', errors='replace')
+            task_check = {'command': command, 'head': check_head, 'tree': check_tree,
+                          'exit_code': exit_code, 'output': tail}
+        if failed_step is None and deliverables and (exit_code == 0 or task_check is not None):
+            evidence = verify_deliverables(checkout, tree, deliverables, log, task_check)
     head_after = git(checkout, 'rev-parse', 'HEAD')
     tree_after = working_tree(checkout)
     result = check_result(
