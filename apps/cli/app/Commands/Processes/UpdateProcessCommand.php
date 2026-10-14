@@ -9,8 +9,15 @@ use App\Commands\Concerns\SelectsProjectDefinitionTarget;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use JsonException;
+use Laravel\Prompts\TextPrompt;
+use Orbit\Sdk\Requests\Processes\ListProcessesRequest;
+use Orbit\Sdk\Requests\Processes\UpdateProcessRequest;
+use Orbit\Sdk\Requests\Projects\ListProcessDefinitionsRequest;
 use Orbit\Sdk\Requests\Projects\UpdateProcessDefinitionRequest;
+use Orbit\Sdk\Responses\Processes\ProcessesResponse;
+use Orbit\Sdk\Responses\Processes\ProcessResponse;
 use Orbit\Sdk\Responses\Projects\ProjectRuntimeDefinitionResponse;
+use Orbit\Sdk\Responses\Projects\ProjectRuntimeDefinitionsResponse;
 
 final class UpdateProcessCommand extends ProcessCommand
 {
@@ -19,7 +26,7 @@ final class UpdateProcessCommand extends ProcessCommand
 
     #[\Override]
     protected $signature = 'process:update
-        {name : Process definition name}
+        {name? : Process ID or Project process definition name}
         {--project= : Numeric Project ID}
         {--for= : Comma-separated definition environments}
         {--runtime=systemd : systemd or docker}
@@ -31,16 +38,58 @@ final class UpdateProcessCommand extends ProcessCommand
         {--volume=* : Docker SOURCE:TARGET[:ro]; repeat as needed}
         {--restart=never : never, on-failure, always, or unless-stopped}
         {--keep-alive : Keep running through app-dev idle hibernation}
+        {--user= : Existing non-root account for a Node systemd Process}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Replace one Project process definition.';
+    protected $description = 'Replace an installed Process specification or one Project process definition.';
 
     public function handle(
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
-        $name = $this->stringArgument('name', 'Process definition name', 'process.name_required');
+        $installed = ! $this->providedProjectOption();
+        if (! $installed && $this->stringOption('user') !== null) {
+            return $this->renderGatewayFailure('process.option_invalid', 'The --user option is only available for an installed Process.');
+        }
+        if ($this->argument('name') === null && $this->consoleMode()->mayPrompt) {
+            $connector = $this->gatewayConnector($repository, $connectors);
+            if ($connector === null) {
+                return self::FAILURE;
+            }
+            $rows = [];
+            $emptyCode = $installed ? 'process.id_invalid' : 'process.name_required';
+            $emptyMessage = $installed ? 'No Processes found.' : 'No Process definitions found.';
+            if ($installed) {
+                $response = $this->sendWithProgress($connector, new ListProcessesRequest,
+                    ProcessesResponse::class, ['List Processes', 'Loading Processes', 'Loaded Processes']);
+                if (! $response instanceof ProcessesResponse) {
+                    return self::FAILURE;
+                }
+                foreach ($response->processes as $process) {
+                    $rows[$process->id] = [(string) $process->id, $process->name, $process->targetType.':'.$process->targetId];
+                }
+            } else {
+                $projectId = $this->projectIdOption();
+                if (! is_int($projectId)) {
+                    return self::FAILURE;
+                }
+                $response = $this->sendWithProgress($connector, new ListProcessDefinitionsRequest($projectId),
+                    ProjectRuntimeDefinitionsResponse::class, ['List Process definitions', 'Loading Process definitions', 'Loaded Process definitions']);
+                if (! $response instanceof ProjectRuntimeDefinitionsResponse) {
+                    return self::FAILURE;
+                }
+                foreach ($response->definitions as $definition) {
+                    $rows[$definition->name] = [$definition->name];
+                }
+            }
+            if ($rows === []) {
+                return $this->renderGatewayFailure($emptyCode, $emptyMessage);
+            }
+            $this->input->setArgument('name', (string) $this->commandPrompts()->selectEntity(
+                $installed ? 'Process' : 'Process definition', $installed ? ['ID', 'Name', 'Owner'] : ['Name'], $rows));
+        }
+        $name = $this->stringArgument('name', $installed ? 'Process ID' : 'Process definition name', $installed ? 'process.id_invalid' : 'process.name_required');
 
         if ($name === null) {
             return self::FAILURE;
@@ -56,6 +105,19 @@ final class UpdateProcessCommand extends ProcessCommand
         }
 
         $command = $this->stringListOption('command');
+        if ($command === [] && $this->consoleMode()->mayPrompt) {
+            do {
+                $argument = $this->commandPrompts()->run(fn () => new TextPrompt(
+                    label: 'Command argument', required: $command === [],
+                    validate: static fn (string $value): ?string => strlen($value) > 4096 || preg_match('/[\\x00\\r\\n]/', $value) === 1 ? 'Invalid command argument.' : null,
+                    hint: $command === [] ? 'One literal argv item; no shell evaluation.' : 'Leave empty to finish.',
+                ));
+                if (! is_string($argument) || $argument === '') {
+                    break;
+                }
+                $command[] = $argument;
+            } while (count($command) < 64);
+        }
 
         if (
             count($command) > 64
@@ -84,6 +146,13 @@ final class UpdateProcessCommand extends ProcessCommand
         }
 
         $image = $this->stringOption('image');
+        if ($runtime === 'docker' && $image === null && $this->consoleMode()->mayPrompt) {
+            $answer = $this->commandPrompts()->run(fn () => new TextPrompt(
+                label: 'Docker image', required: true,
+                validate: static fn (string $value): ?string => strlen($value) > 255 || preg_match('/\\A[A-Za-z0-9][A-Za-z0-9._\\/:@-]*\\z/D', $value) !== 1 ? 'Invalid Docker image.' : null,
+            ));
+            $image = is_string($answer) ? $answer : null;
+        }
         $workingDirectory = $this->stringOption('working-directory');
         $environmentWasProvided = $this->input->hasParameterOption('--environment');
         $environment = $this->environment();
@@ -113,10 +182,43 @@ final class UpdateProcessCommand extends ProcessCommand
         }
 
         if ($projectId === null) {
-            return $this->renderGatewayFailure(
-                'process.target_invalid',
-                'The --project option is required.',
-            );
+            $id = filter_var($name, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+            if (! is_int($id)) {
+                return $this->renderGatewayFailure('process.id_invalid', 'Process ID must be a positive integer.');
+            }
+            if ($this->providedOption('for')) {
+                return $this->renderGatewayFailure('process.option_invalid', 'The --for option requires --project.');
+            }
+            if ($command === [] || ($runtime === 'systemd' && ! str_starts_with($command[0], '/'))) {
+                return $this->renderGatewayFailure('process.command_invalid', 'Process command must be nonempty; systemd needs an absolute executable.');
+            }
+            if ($runtime === 'docker' && ($image === null || preg_match('/\\A[A-Za-z0-9][A-Za-z0-9._\\/:@-]*\\z/D', $image) !== 1)) {
+                return $this->renderGatewayFailure('process.image_invalid', 'A valid Docker image is required.');
+            }
+            if ($workingDirectory !== null && (strlen($workingDirectory) > 4096 || preg_match('/\\A\\/(?!.*(?:^|\\/)\\.\\.(?:\\/|$))[^\\x00\\r\\n]*\\z/D', $workingDirectory) !== 1)) {
+                return $this->renderGatewayFailure('process.working_directory_invalid', 'Process working directory must be a safe absolute path.');
+            }
+            $user = $this->stringOption('user');
+            if (($runtime !== 'docker' && ($environmentWasProvided || $portsWereProvided || $volumesWereProvided || $image !== null)) || ($runtime !== 'systemd' && $user !== null)) {
+                return $this->renderGatewayFailure('process.option_invalid', 'Options do not match the Process runtime.');
+            }
+            if ($user !== null && ($user === 'root' || preg_match('/\\A[a-z_][a-z0-9_-]{0,31}\\z/D', $user) !== 1)) {
+                return $this->renderGatewayFailure('process.user_invalid', 'Process user must be a valid non-root account name.');
+            }
+            $connector = $this->gatewayConnector($repository, $connectors);
+            if ($connector === null) {
+                return self::FAILURE;
+            }
+            $response = $this->sendWithProgress($connector,
+                new UpdateProcessRequest($id, $runtime, $command, $image, $workingDirectory, $environment, $ports, $volumes, $restartPolicy, $this->option('keep-alive') === true, $user),
+                ProcessResponse::class,
+                ['Update Process', 'Updating Process', 'Updated Process']);
+
+            return $response instanceof ProcessResponse
+                ? $this->renderProcess($response, 'Updated Process') : self::FAILURE;
+        }
+        if ($this->providedOption('user')) {
+            return $this->renderGatewayFailure('process.option_invalid', 'Project definitions do not accept --user.');
         }
 
         $environments = $this->definitionEnvironments(errorCode: 'process.option_invalid');

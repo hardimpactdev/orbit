@@ -564,6 +564,8 @@ Route::prefix('v1')->group(function (): void {
             ->where('stream', '[0-9a-f]{32}')->name('process:log-stream:destroy');
         Route::post('processes', [ProcessesController::class, 'store'])
             ->name('process:create');
+        Route::patch('processes/{process}', [ProcessesController::class, 'update'])
+            ->name('process:update');
         Route::post('processes/{process}/start', [ProcessesController::class, 'start'])
             ->name('process:start');
         Route::post('processes/{process}/stop', [ProcessesController::class, 'stop'])

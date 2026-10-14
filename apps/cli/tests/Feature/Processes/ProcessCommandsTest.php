@@ -16,6 +16,7 @@ use Orbit\Sdk\Requests\Processes\ProcessLogsRequest;
 use Orbit\Sdk\Requests\Processes\RestartProcessRequest;
 use Orbit\Sdk\Requests\Processes\StartProcessRequest;
 use Orbit\Sdk\Requests\Processes\StopProcessRequest;
+use Orbit\Sdk\Requests\Processes\UpdateProcessRequest;
 use Orbit\Sdk\Requests\Projects\CreateProcessDefinitionRequest;
 use Orbit\Sdk\Requests\Projects\DestroyProcessDefinitionRequest;
 use Orbit\Sdk\Requests\Projects\ListProcessDefinitionsRequest;
@@ -91,6 +92,20 @@ describe('ProcessUser', function (): void {
         expect($exit)->toBe(1)->and(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('process.user_invalid');
         $mock->assertNothingSent();
     })->with(['root', '--root', 'Worker', '', 'worker!', "worker\n", str_repeat('a', 33)]);
+});
+
+it('updates an installed Docker Process with a literal environment map and no owner selector', function (): void {
+    $mock = MockClient::global([UpdateProcessRequest::class => process_cli_response()]);
+    $this->artisan('process:update', [
+        'name' => '41', '--runtime' => 'docker', '--image' => 'valkey/valkey:8',
+        '--command' => ['valkey-server'], '--environment' => ['LABEL=a=b', 'EMPTY='], '--json' => true,
+    ])->assertExitCode(0);
+    $request = $mock->getLastRequest();
+    expect($request?->resolveEndpoint())->toBe('/api/v1/processes/41')
+        ->and($request?->getMethod()->value)->toBe('PATCH')
+        ->and($request?->body()->all()['working_directory'])->toBeNull()
+        ->and((array) $request?->body()->all()['environment'])->toBe(['LABEL' => 'a=b', 'EMPTY' => ''])
+        ->and($request?->body()->all())->not->toHaveKeys(['target_type', 'target_id', 'name', 'start']);
 });
 
 it('adds one explicit Docker process through the active gateway', function (): void {
@@ -249,7 +264,7 @@ it('preserves explicitly supplied empty process arrays', function (): void {
     expect($mock->getLastRequest())
         ->toBeInstanceOf(CreateProcessRequest::class)
         ->and($mock->getLastRequest()?->body()->all())
-        ->toBe([
+        ->toEqual([
             'target_type' => 'instance',
             'target_id' => 7,
             'name' => 'worker',
@@ -258,7 +273,7 @@ it('preserves explicitly supplied empty process arrays', function (): void {
             'restart_policy' => 'never',
             'start' => false,
             'keep_alive' => false,
-            'environment' => [],
+            'environment' => (object) [],
             'ports' => [],
             'volumes' => [],
         ]);
@@ -291,7 +306,7 @@ it('omits Docker environment values from process JSON output', function (): void
             '--image' => 'redis:8-alpine',
             '--json' => true,
         ])
-        ->doesntExpectOutputToContain('"environment"')
+        ->expectsOutputToContain('"environment":{"APP_MODE":"[REDACTED]","DB_SECRET":"[REDACTED]"}')
         ->doesntExpectOutputToContain(process_cli_secret('secret'))
         ->assertExitCode(0);
 });
@@ -613,7 +628,8 @@ it('redacts credential-shaped values from every process JSON runtime field', fun
         ->not->toContain('environment-response');
     expect($decoded['runtime_config'] ?? null)
         ->toBeArray()
-        ->not->toHaveKey('environment');
+        ->toHaveKey('environment');
+    expect(array_values(array_unique($decoded['runtime_config']['environment'])))->toBe(['[REDACTED]']);
     expect($decoded['runtime_config']['command'] ?? null)->toBe([
         'worker',
         '--operation-token',
@@ -1133,8 +1149,8 @@ it('renders one exact json envelope for Project-target process refusals', functi
     'update missing target' => [
         'process:update',
         ['name' => 'worker'],
-        'process.target_invalid',
-        'The --project option is required.',
+        'process.id_invalid',
+        'Process ID must be a positive integer.',
     ],
     'create app with instance' => [
         'process:create',
@@ -1509,7 +1525,7 @@ function process_cli_sanitized_payload(?array $payload = null): array
 {
     $payload ??= process_cli_secret_payload();
     $runtimeConfig = $payload['runtime_config'];
-    unset($runtimeConfig['environment']);
+    $runtimeConfig['environment'] = (object) array_fill_keys(array_keys($runtimeConfig['environment']), '[REDACTED]');
 
     return [
         ...$payload,

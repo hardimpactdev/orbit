@@ -12,6 +12,7 @@ use Orbit\Sdk\Requests\Processes\ProcessLogsRequest;
 use Orbit\Sdk\Requests\Processes\RestartProcessRequest;
 use Orbit\Sdk\Requests\Processes\StartProcessRequest;
 use Orbit\Sdk\Requests\Processes\StopProcessRequest;
+use Orbit\Sdk\Requests\Processes\UpdateProcessRequest;
 use Orbit\Sdk\Responses\Processes\ProcessesResponse;
 use Orbit\Sdk\Responses\Processes\ProcessLogsResponse;
 use Orbit\Sdk\Responses\Processes\ProcessResponse;
@@ -157,7 +158,7 @@ it('preserves explicitly supplied empty process collections', function (): void 
         volumes: [],
     );
 
-    expect($request->body()->all())->toBe([
+    expect($request->body()->all())->toEqual([
         'target_type' => 'instance',
         'target_id' => 7,
         'name' => 'redis',
@@ -166,10 +167,20 @@ it('preserves explicitly supplied empty process collections', function (): void 
         'restart_policy' => 'never',
         'start' => false,
         'keep_alive' => false,
-        'environment' => [],
+        'environment' => (object) [],
         'ports' => [],
         'volumes' => [],
     ]);
+});
+
+it('sends an in-place update with null working directory and an empty JSON object environment', function (): void {
+    $request = new UpdateProcessRequest(41, 'docker', ['valkey-server'], 'valkey/valkey:8');
+    expect($request->resolveEndpoint())->toBe('/api/v1/processes/41')
+        ->and($request->getMethod()->value)->toBe('PATCH')
+        ->and($request->body()->all()['working_directory'])->toBeNull()
+        ->and(json_encode($request->body()->all()['environment'], JSON_THROW_ON_ERROR))->toBe('{}');
+    $response = ProcessResponse::fromGatewayData(['working_directory' => null], 'request-id');
+    expect($response->workingDirectory)->toBeNull()->and($response->toArray()['working_directory'])->toBeNull();
 });
 
 it('preserves an omitted optional volume read-only flag', function (): void {

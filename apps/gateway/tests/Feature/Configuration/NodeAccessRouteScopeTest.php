@@ -207,6 +207,7 @@ it('declares node access scope on every active-peer API route', function (): voi
         'process:restart' => ServingNode::ProcessOwning,
         'process:start' => ServingNode::ProcessOwning,
         'process:stop' => ServingNode::ProcessOwning,
+        'process:update' => ServingNode::ProcessOwning,
         'project:create' => ServingNode::Gateway,
         'project:destroy' => ServingNode::ProjectOwning,
         'project:dev-deploy-step:create' => ServingNode::ProjectOwning,

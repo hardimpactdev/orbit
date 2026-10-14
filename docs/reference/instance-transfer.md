@@ -61,6 +61,8 @@ Stopping Processes before the final checkout copy prevents their writes from bei
 
 Orbit imports the source `.env` into the [stored environment](/reference/environment-variables). For a Laravel root of `apps/site/public`, that file is `<source-checkout>/apps/site/.env`; transfer closes its permissions and synchronizes the destination's `apps/site/.env`, not an unrelated repository-root file. Transfer copies the entire checkout, keeps the effective web root, and relocates explicit Process working directories. A key that is already stored keeps its stored value. An unreadable source `.env` refuses the transfer. If a failure occurs before cutover, Orbit removes environment keys imported by that transfer along with the other prepared destination state.
 
+A Docker Process with a null working-directory override keeps null on the destination and uses its image default; null is neither a source path to relocate nor a reason to skip runtime cleanup. An existing explicit override such as `/app` stays explicit unless it points inside the source checkout.
+
 At cutover, every Process that has an environment file gets the destination `.env` in the [application directory](/reference/projects#application-directory). This covers custom systemd Processes as well as presets such as `vp-dev` and `annotator`. Activation then rewrites each destination unit, so its `EnvironmentFile=` names the destination file, never the source Node's path.
 
 Process records keep their IDs, definitions, and desired states. Orbit stops their source units, creates them on the destination, and leaves no duplicate. The destination gets its own [Vite port](/reference/assigned-vite-ports) and [SSR port](/reference/assigned-ssr-ports), and Orbit releases the source ports after cleanup.

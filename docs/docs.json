@@ -491,6 +491,7 @@
               "GET /api/v1/processes",
               "POST /api/v1/processes",
               "DELETE /api/v1/processes/{process}",
+              "PATCH /api/v1/processes/{process}",
               "POST /api/v1/processes/{process}/log-streams",
               "DELETE /api/v1/processes/{process}/log-streams/{stream}",
               "PUT /api/v1/processes/{process}/log-streams/{stream}",

@@ -2366,7 +2366,11 @@ export interface paths {
         delete: operations["process-destroy"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * process:update
+         * @description Replace an installed Process specification or one Project process definition.
+         */
+        patch: operations["process-update"];
         trace?: never;
     };
     "/api/v1/processes/{process}/log-streams": {
@@ -4576,7 +4580,7 @@ export interface components {
             target_id?: number;
             name?: string;
             runtime?: string;
-            working_directory?: string;
+            working_directory?: string | null;
             runtime_config?: {
                 [key: string]: unknown;
             };
@@ -13709,9 +13713,11 @@ export interface operations {
                     /** @description Conditionally required. */
                     image?: string | null;
                     /** @description Runtime working directory */
-                    working_directory?: string;
-                    /** @description Docker NAME=VALUE; repeat as needed */
-                    environment?: string[];
+                    working_directory?: string | null;
+                    /** @description Docker environment as a name-to-string-value map; values are redacted in responses. */
+                    environment?: {
+                        [key: string]: string;
+                    };
                     ports?: string[];
                     volumes?: {
                         source: string;
@@ -13825,6 +13831,100 @@ export interface operations {
             };
             /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "process-update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Process ID. */
+                process: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Existing non-root account for a Node systemd Process */
+                    user?: string;
+                    /**
+                     * @description systemd or docker
+                     * @enum {string}
+                     */
+                    runtime: "systemd" | "docker";
+                    /** @description One command argument; repeat for each argv item */
+                    command: string[];
+                    /** @description Conditionally required. */
+                    image?: string | null;
+                    /** @description Runtime working directory */
+                    working_directory?: string | null;
+                    /** @description Docker environment as a name-to-string-value map; values are redacted in responses. */
+                    environment?: {
+                        [key: string]: string;
+                    };
+                    ports?: string[];
+                    volumes?: {
+                        source: string;
+                        target: string;
+                        read_only?: boolean;
+                    }[];
+                    /** @enum {string} */
+                    restart_policy?: "never" | "on-failure" | "always" | "unless-stopped";
+                    /** @description Keep running through app-dev idle hibernation */
+                    keep_alive?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Process"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -16206,7 +16306,9 @@ export interface operations {
                         /** @description Conditionally required. */
                         image?: string | null;
                         working_directory?: string;
-                        environment?: string[];
+                        environment?: {
+                            [key: string]: string;
+                        };
                         ports?: string[];
                         volumes?: {
                             source: string;
@@ -16353,7 +16455,9 @@ export interface operations {
                         /** @description Conditionally required. */
                         image?: string | null;
                         working_directory?: string;
-                        environment?: string[];
+                        environment?: {
+                            [key: string]: string;
+                        };
                         ports?: string[];
                         volumes?: {
                             source: string;

@@ -178,7 +178,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessEnvironmentPr
                 return;
             }
             if ($fresh->isAnnotator()) {
-                $this->convergeAndActivateSystemd($fresh, $target, forceRunning: true);
+                $this->convergeAndActivateSystemd($fresh, $target, forceRunning: true, explicitRestart: true);
 
                 return;
             }
@@ -188,7 +188,13 @@ final readonly class RemoteProcessRuntimeManager implements ProcessEnvironmentPr
 
     public function remove(#[SensitiveParameter] Process $process): void
     {
-        $this->lease->run($process, function (Process $fresh): void {
+        // An explicit runtime override removes a retired footprint during an in-place runtime switch.
+        // The lease still refreshes the owner and placement before any mutation.
+        $retiredRuntime = $process->isDirty('runtime') ? $process->runtime : null;
+        $this->lease->run($process, function (Process $fresh) use ($retiredRuntime): void {
+            if ($retiredRuntime !== null) {
+                $fresh->runtime = $retiredRuntime;
+            }
             $this->removeUnlocked($fresh, $this->targets->forRemoval($fresh));
         });
     }
@@ -509,8 +515,20 @@ final readonly class RemoteProcessRuntimeManager implements ProcessEnvironmentPr
         Process $process,
         ProcessTarget $target,
         bool $forceRunning = false,
+        bool $explicitRestart = false,
     ): void {
         $hadPreviousUnit = $this->convergeSystemd($process, $target);
+        if ($hadPreviousUnit === null) {
+            $status = $this->status($process);
+            $running = $forceRunning || $process->desired_state === DesiredProcessState::Running;
+            if (! $explicitRestart && ! $process->systemd_activation_pending
+                && ($process->systemd_activation_hash === null || $process->systemd_activation_hash === $this->systemdActivationHash($process, $target))
+                && (($running && $status === 'active') || (! $running && $status === 'inactive'))) {
+                return;
+            }
+            // Published bytes can outlive a failed or interrupted reload/activation.
+            $this->executeSuccessfully($process, ['sudo', 'systemctl', 'daemon-reload'], 'daemon-reload', 'process.systemd_activation_failed');
+        }
         $activation = $this->activateSystemdDesiredState($process, $target, $forceRunning);
 
         if (! $activation->succeeded()) {
@@ -518,12 +536,16 @@ final readonly class RemoteProcessRuntimeManager implements ProcessEnvironmentPr
                 $this->rollbackSystemdReplacement($process, $target);
             }
 
-            if (! $hadPreviousUnit) {
+            if ($hadPreviousUnit === false) {
                 $this->removeFailedNewSystemdUnit($process);
             }
 
             $state = $forceRunning || $process->desired_state === DesiredProcessState::Running ? 'start' : 'stop';
-            $restoration = $hadPreviousUnit ? 'the previous unit was restored' : 'the new unit was removed';
+            $restoration = match ($hadPreviousUnit) {
+                true => 'the previous unit was restored',
+                false => 'the new unit was removed',
+                null => 'activation remains pending for retry',
+            };
 
             throw new ProcessOperationException(
                 step: $state,
@@ -532,6 +554,10 @@ final readonly class RemoteProcessRuntimeManager implements ProcessEnvironmentPr
                 result: $activation,
             );
         }
+
+        $process->systemd_activation_hash = $this->systemdActivationHash($process, $target);
+        $process->systemd_activation_pending = false;
+        $process->save();
 
         if ($hadPreviousUnit) {
             $this->executeSuccessfully(
@@ -543,7 +569,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessEnvironmentPr
         }
     }
 
-    private function convergeSystemd(#[SensitiveParameter] Process $process, ProcessTarget $target, bool $installRuntime = true): bool
+    private function convergeSystemd(#[SensitiveParameter] Process $process, ProcessTarget $target, bool $installRuntime = true): ?bool
     {
         if ($installRuntime && $process->isAnnotator()) {
             $this->installAnnotator($process, $target);
@@ -558,8 +584,15 @@ final readonly class RemoteProcessRuntimeManager implements ProcessEnvironmentPr
             $this->fail($process, 'inspect-unit', 'process.systemd_converge_failed', $exists);
         }
 
+        $rendered = $this->systemd->render(
+            $process, $target,
+            $target->certificateScope === null ? null : $this->accounts->resolve($target->node),
+        );
         if ($hadPreviousUnit) {
-            $this->assertSystemdUnitOwnedForConvergence($process, $path);
+            $current = $this->assertSystemdUnitOwnedForConvergence($process, $path);
+            if ($current === $rendered) {
+                return null;
+            }
         }
 
         $this->executeSuccessfully(
@@ -595,6 +628,11 @@ final readonly class RemoteProcessRuntimeManager implements ProcessEnvironmentPr
             );
         }
 
+        // Invalidate completion before any publication that can survive a lost response.
+        $process->systemd_activation_hash = null;
+        $process->systemd_activation_pending = true;
+        $process->save();
+
         if ($hadPreviousUnit) {
             $this->executeSuccessfully(
                 $process,
@@ -627,6 +665,14 @@ final readonly class RemoteProcessRuntimeManager implements ProcessEnvironmentPr
         }
 
         return $hadPreviousUnit;
+    }
+
+    private function systemdActivationHash(Process $process, ProcessTarget $target): string
+    {
+        return hash('sha256', $this->systemd->render(
+            $process, $target,
+            $target->certificateScope === null ? null : $this->accounts->resolve($target->node),
+        ));
     }
 
     private function activateSystemdDesiredState(
@@ -709,7 +755,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessEnvironmentPr
         #[SensitiveParameter]
         Process $process,
         string $path,
-    ): void {
+    ): string {
         $current = $this->executeSuccessfully(
             $process,
             ['sudo', 'cat', '--', $path],
@@ -719,7 +765,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessEnvironmentPr
         $ownershipMarker = preg_quote("X-Orbit-Process-ID={$process->id}", delimiter: '/');
 
         if (preg_match("/^{$ownershipMarker}\\r?$/mD", $current->stdout) === 1) {
-            return;
+            return $current->stdout;
         }
 
         throw new ProcessOperationException(

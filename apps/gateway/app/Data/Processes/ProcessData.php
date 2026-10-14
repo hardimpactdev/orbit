@@ -22,7 +22,7 @@ final class ProcessData extends Data
         public int $targetId,
         public string $name,
         public string $runtime,
-        public string $workingDirectory,
+        public ?string $workingDirectory,
         public array $runtimeConfig,
         public string $restartPolicy,
         public bool $keepAlive,
@@ -80,7 +80,7 @@ final class ProcessData extends Data
             return $runtimeConfig;
         }
 
-        $runtimeConfig['environment'] = array_fill_keys(
+        $runtimeConfig['environment'] = (object) array_fill_keys(
             keys: array_keys($environment),
             value: '[REDACTED]',
         );

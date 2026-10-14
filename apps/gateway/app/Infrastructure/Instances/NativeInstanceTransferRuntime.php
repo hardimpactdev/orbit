@@ -133,8 +133,11 @@ final readonly class NativeInstanceTransferRuntime implements InstanceTransferRu
         }
     }
 
-    private function relocatedPath(string $current, string $sourcePath, string $destinationPath): string
+    private function relocatedPath(?string $current, string $sourcePath, string $destinationPath): ?string
     {
+        if ($current === null) {
+            return null;
+        }
         if ($current === $sourcePath) {
             return $destinationPath;
         }
@@ -146,8 +149,8 @@ final readonly class NativeInstanceTransferRuntime implements InstanceTransferRu
         return $current;
     }
 
-    private function pathOnSource(string $path, string $sourcePath): bool
+    private function pathOnSource(?string $path, string $sourcePath): bool
     {
-        return $path === $sourcePath || str_starts_with($path, $sourcePath.'/');
+        return $path !== null && ($path === $sourcePath || str_starts_with($path, $sourcePath.'/'));
     }
 }

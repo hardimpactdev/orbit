@@ -89,7 +89,7 @@ final readonly class SystemdProcessRenderer
             '[Service]',
             'Type=simple',
             "User={$user}",
-            'WorkingDirectory='.$this->escapeDirectivePath($process->working_directory),
+            'WorkingDirectory='.$this->escapeDirectivePath($process->working_directory ?? throw new InvalidArgumentException('Systemd requires a working directory.')),
             'Environment=PATH=/usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin',
             'Environment=NODE_USE_SYSTEM_CA=1',
             ...$environmentFileLine,

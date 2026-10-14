@@ -5662,19 +5662,26 @@
             "description": "Conditionally required."
           },
           "working_directory": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "pattern": "^\\/(?!.*(?:^|\\/)\\.\\.(?:\\/|$))[^\\x00\\r\\n]*$(?![\\s\\S])",
             "maxLength": 4096,
             "description": "Runtime working directory"
           },
           "environment": {
-            "type": "array",
-            "maxItems": 100,
-            "items": {
-              "type": "string",
-              "maxLength": 4096
+            "type": "object",
+            "maxProperties": 100,
+            "propertyNames": {
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$(?![\\s\\S])"
             },
-            "description": "Docker NAME=VALUE; repeat as needed"
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 4096,
+              "pattern": "^[^\\x00\\r\\n]*$(?![\\s\\S])"
+            },
+            "description": "Docker environment as a name-to-string-value map; values are redacted in responses."
           },
           "ports": {
             "type": "array",
@@ -5920,6 +5927,138 @@
         "additionalProperties": false,
         "required": [
           "process"
+        ]
+      }
+    },
+    {
+      "name": "process-update",
+      "extension": null,
+      "title": "process:update",
+      "description": "Replace an installed Process specification or one Project process definition.",
+      "method": "PATCH",
+      "path": "/api/v1/processes/{process}",
+      "path_inputs": [
+        "process"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "process": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Process ID."
+          },
+          "user": {
+            "type": "string",
+            "pattern": "^[a-z_][a-z0-9_-]{0,31}$(?![\\s\\S])",
+            "maxLength": 32,
+            "description": "Existing non-root account for a Node systemd Process"
+          },
+          "runtime": {
+            "type": "string",
+            "enum": [
+              "systemd",
+              "docker"
+            ],
+            "description": "systemd or docker"
+          },
+          "command": {
+            "type": "array",
+            "maxItems": 64,
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "maxLength": 4096
+            },
+            "description": "One command argument; repeat for each argv item"
+          },
+          "image": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._\\/:@-]*$(?![\\s\\S])",
+            "maxLength": 255,
+            "description": "Conditionally required."
+          },
+          "working_directory": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^\\/(?!.*(?:^|\\/)\\.\\.(?:\\/|$))[^\\x00\\r\\n]*$(?![\\s\\S])",
+            "maxLength": 4096,
+            "description": "Runtime working directory"
+          },
+          "environment": {
+            "type": "object",
+            "maxProperties": 100,
+            "propertyNames": {
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$(?![\\s\\S])"
+            },
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 4096,
+              "pattern": "^[^\\x00\\r\\n]*$(?![\\s\\S])"
+            },
+            "description": "Docker environment as a name-to-string-value map; values are redacted in responses."
+          },
+          "ports": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "string",
+              "pattern": "^(?:(?:\\d{1,3}\\.){3}\\d{1,3}:)?\\d{1,5}:\\d{1,5}(?:\\/(?:tcp|udp))?$(?![\\s\\S])"
+            }
+          },
+          "volumes": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "source": {
+                  "type": "string",
+                  "pattern": "^(?:\\/[A-Za-z0-9._\\/ -]+|[A-Za-z0-9][A-Za-z0-9_.-]*)$(?![\\s\\S])",
+                  "maxLength": 4096
+                },
+                "target": {
+                  "type": "string",
+                  "pattern": "^\\/[A-Za-z0-9._\\/ -]*$(?![\\s\\S])",
+                  "maxLength": 4096
+                },
+                "read_only": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "source",
+                "target"
+              ]
+            }
+          },
+          "restart_policy": {
+            "type": "string",
+            "enum": [
+              "never",
+              "on-failure",
+              "always",
+              "unless-stopped"
+            ]
+          },
+          "keep_alive": {
+            "type": "boolean",
+            "description": "Keep running through app-dev idle hibernation"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "process",
+          "runtime",
+          "command"
         ]
       }
     },
@@ -7160,11 +7299,15 @@
                 "maxLength": 4096
               },
               "environment": {
-                "type": "array",
-                "maxItems": 100,
-                "items": {
+                "type": "object",
+                "maxProperties": 100,
+                "propertyNames": {
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_]*$(?![\\s\\S])"
+                },
+                "additionalProperties": {
                   "type": "string",
-                  "maxLength": 4096
+                  "maxLength": 4096,
+                  "pattern": "^[^\\x00\\r\\n]*$(?![\\s\\S])"
                 }
               },
               "ports": {
@@ -7398,11 +7541,15 @@
                 "maxLength": 4096
               },
               "environment": {
-                "type": "array",
-                "maxItems": 100,
-                "items": {
+                "type": "object",
+                "maxProperties": 100,
+                "propertyNames": {
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_]*$(?![\\s\\S])"
+                },
+                "additionalProperties": {
                   "type": "string",
-                  "maxLength": 4096
+                  "maxLength": 4096,
+                  "pattern": "^[^\\x00\\r\\n]*$(?![\\s\\S])"
                 }
               },
               "ports": {
