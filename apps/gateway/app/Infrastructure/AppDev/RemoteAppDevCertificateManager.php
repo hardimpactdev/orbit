@@ -139,13 +139,16 @@ final readonly class RemoteAppDevCertificateManager
         $this->remove($node, "route-{$route->id}");
     }
 
-    public function removeHostnameChange(Instance $instance, Route $route): void
+    /** @param list<int> $skippedNodeIds */
+    public function removeHostnameChange(Instance $instance, Route $route, array $skippedNodeIds = []): void
     {
         $instance->loadMissing('node');
-        $this->remove($instance->node, "app-instance-{$instance->id}-hostname-change");
+        if (! in_array($instance->node_id, $skippedNodeIds, true)) {
+            $this->remove($instance->node, "app-instance-{$instance->id}-hostname-change");
+        }
         $router = $route->cluster?->routerAssignment?->node;
 
-        if ($router instanceof Node && ! $router->is($instance->node)) {
+        if ($router instanceof Node && ! $router->is($instance->node) && ! in_array($router->id, $skippedNodeIds, true)) {
             $this->remove($router, "route-{$route->id}-router-hostname-change");
         }
     }

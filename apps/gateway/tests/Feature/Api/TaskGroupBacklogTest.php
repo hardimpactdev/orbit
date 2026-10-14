@@ -12,11 +12,13 @@ use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\TaskVms\TaskVmState;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskComment;
+use App\Models\TaskVm;
 
 beforeEach(function (): void {
     $gateway = $this->markAsGateway(Node::query()->create([
@@ -787,6 +789,24 @@ function stored_test_deliverables(array $deliverables): array
     }, $deliverables);
 }
 
+it('returns VM power separately from task status in show and list responses', function (TaskVmState $state, ?string $power): void {
+    $data = backlog_group($this);
+    TaskVm::query()->create([
+        'group_id' => $data['id'], 'host_node_id' => Node::query()->firstOrFail()->id,
+        'provider' => 'incus', 'name' => 'power-test-vm', 'state' => $state, 'wireguard_ip' => '10.44.0.130',
+    ]);
+
+    $this->getJson('/api/v1/task-groups/'.$data['id'])->assertOk()
+        ->assertJsonPath('data.vm_power', $power)->assertJsonPath('data.status', 'backlog');
+    $this->getJson('/api/v1/task-groups')->assertOk()
+        ->assertJsonPath('data.0.vm_power', $power)->assertJsonPath('data.0.status', 'backlog');
+})->with([
+    [TaskVmState::Ready, 'running'],
+    [TaskVmState::Parked, 'stopped'],
+    [TaskVmState::Destroyed, 'destroyed'],
+    [TaskVmState::Provisioning, null],
+]);
+
 it('stores preview intent on groups only and preserves explicit false', function (?bool $preview): void {
     $data = backlog_group($this, ['One'], $preview === null ? [] : ['preview' => $preview]);
     expect($data['preview'])->toBe($preview ?? false);
@@ -802,7 +822,7 @@ it('changes preview intent during review while preserving title restrictions', f
     $url = '/api/v1/task-groups/'.$group->id;
 
     $this->patchJson($url, ['preview' => true])->assertOk()->assertJsonPath('data.preview', true)
-        ->assertJsonPath('data.status', 'waiting_for_review')->assertJsonPath('data.sandbox_power', null);
+        ->assertJsonPath('data.status', 'waiting_for_review')->assertJsonPath('data.vm_power', null);
     $this->json('PATCH', $url, [], [], JSON_FORCE_OBJECT)->assertOk()->assertJsonPath('data.preview', true);
     $this->patchJson($url, ['preview' => false])->assertOk()->assertJsonPath('data.preview', false);
     $this->patchJson($url, ['title' => 'Too late', 'preview' => true])->assertConflict();

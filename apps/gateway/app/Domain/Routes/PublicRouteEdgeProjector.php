@@ -20,7 +20,8 @@ interface PublicRouteEdgeProjector
 
     public function prepareIngressFirewall(Route $route): void;
 
-    public function rollbackPublicEdge(Route $route): void;
+    /** @param list<int> $skippedNodeIds */
+    public function rollbackPublicEdge(Route $route, array $skippedNodeIds = []): void;
 
     public function removePublicEdge(Route $route): void;
 }

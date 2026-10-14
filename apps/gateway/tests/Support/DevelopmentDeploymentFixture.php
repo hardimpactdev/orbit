@@ -128,38 +128,6 @@ final class DevelopmentDeploymentFixture
         return trim(self::command(['git', '-C', $this->source, 'rev-parse', 'HEAD']));
     }
 
-    /**
-     * Builds the release layout that older Gateways made: detached worktrees under `releases/`, their
-     * ownership receipts, and `current`. Each release starts as a copy of the checkout's untracked files.
-     *
-     * @param  array<string, string>  $releases  Release name to commit.
-     */
-    public function releaseLayout(array $releases, string $selected): void
-    {
-        $identity = base64_encode($this->instance->id."\0".$this->home."\0".'https://example.test/dev935.git'."\0");
-        $state = $this->home.'/.git/orbit-development-releases';
-        mkdir($state, 0o700);
-        file_put_contents($this->home.'/.git/orbit-development-releases-owner', $identity."\n");
-        file_put_contents($state.'/identity', $identity."\n");
-        mkdir($this->home.'/releases');
-        foreach ($releases as $name => $commit) {
-            $release = $this->home.'/releases/'.$name;
-            self::command(['git', '-C', $this->home, 'worktree', 'add', '--detach', $release, $commit]);
-            foreach (['apps/gateway/vendor', '.cache', '.env'] as $entry) {
-                new Filesystem()->ensureDirectoryExists(dirname($release.'/'.$entry));
-                self::command(['cp', '-a', $this->home.'/'.$entry, $release.'/'.$entry]);
-            }
-            file_put_contents($state.'/release-'.$name, $identity.':'.$name."\n");
-        }
-        symlink('releases/'.$selected, $this->home.'/current');
-        $this->instance->update([
-            'development_release_layout' => true,
-            'seed_path' => $this->home.'/releases/'.$selected,
-            'seed_commit' => $releases[$selected],
-            'seed_repository' => $this->home,
-        ]);
-    }
-
     /** Holds the lock that a setup or teardown step holds on a checkout, until the handle closes. */
     public static function holdLifecycleLock(string $checkout): mixed
     {

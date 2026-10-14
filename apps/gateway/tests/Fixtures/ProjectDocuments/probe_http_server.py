@@ -4,7 +4,7 @@ import json
 import os
 import socketserver
 import sys
-import time
+import threading
 
 mode = sys.argv[1]
 state_path = sys.argv[2] if len(sys.argv) > 2 else None
@@ -14,7 +14,7 @@ requests = []
 
 class TlsStall(socketserver.BaseRequestHandler):
     def handle(self):
-        time.sleep(20)
+        threading.Event().wait()
 
 
 class ProbeHandler(http.server.BaseHTTPRequestHandler):
@@ -58,7 +58,7 @@ class ProbeHandler(http.server.BaseHTTPRequestHandler):
             if mode in ("body-stall", "body-timeout"):
                 self.wfile.write(body[:8])
                 self.wfile.flush()
-                time.sleep(35 if mode == "body-timeout" else 20)
+                threading.Event().wait()
             else:
                 for offset in range(0, len(body), 8 if mode == "short" else 4096):
                     self.wfile.write(body[offset:offset + (8 if mode == "short" else 4096)])

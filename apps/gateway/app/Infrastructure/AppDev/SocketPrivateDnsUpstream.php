@@ -5,16 +5,23 @@ declare(strict_types=1);
 namespace App\Infrastructure\AppDev;
 
 use App\Domain\AppDev\PrivateDnsUpstream;
+use Closure;
 use RuntimeException;
 
 final readonly class SocketPrivateDnsUpstream implements PrivateDnsUpstream
 {
     private const int MaxUdpDatagramBytes = 65535;
 
+    /**
+     * @param  (Closure(resource, bool, float): bool)|null  $waitForSocket
+     * @param  (Closure(): float)|null  $nowSeconds
+     */
     public function __construct(
         private string $host,
         private int $port,
         private float $timeoutSeconds = 2.0,
+        private ?Closure $waitForSocket = null,
+        private ?Closure $nowSeconds = null,
     ) {}
 
     public function resolve(string $message): string
@@ -89,10 +96,10 @@ final readonly class SocketPrivateDnsUpstream implements PrivateDnsUpstream
     private function readExact($socket, int $bytes): string
     {
         $buffer = '';
-        $deadline = microtime(true) + $this->timeoutSeconds;
+        $deadline = $this->nowSeconds() + $this->timeoutSeconds;
 
         while (strlen($buffer) < $bytes) {
-            $remaining = $deadline - microtime(true);
+            $remaining = $deadline - $this->nowSeconds();
             if ($remaining <= 0 || ! $this->await($socket, write: false, timeoutSeconds: $remaining)) {
                 throw new RuntimeException('The private DNS upstream TCP response timed out.');
             }
@@ -120,10 +127,10 @@ final readonly class SocketPrivateDnsUpstream implements PrivateDnsUpstream
     private function writeAll($socket, string $payload): void
     {
         $written = 0;
-        $deadline = microtime(true) + $this->timeoutSeconds;
+        $deadline = $this->nowSeconds() + $this->timeoutSeconds;
 
         while ($written < strlen($payload)) {
-            $remaining = $deadline - microtime(true);
+            $remaining = $deadline - $this->nowSeconds();
             if ($remaining <= 0 || ! $this->await($socket, write: true, timeoutSeconds: $remaining)) {
                 throw new RuntimeException('The private DNS upstream write timed out.');
             }
@@ -143,6 +150,10 @@ final readonly class SocketPrivateDnsUpstream implements PrivateDnsUpstream
     private function await($socket, bool $write, ?float $timeoutSeconds = null): bool
     {
         $timeout = $timeoutSeconds ?? $this->timeoutSeconds;
+        if ($this->waitForSocket !== null) {
+            return ($this->waitForSocket)($socket, $write, $timeout);
+        }
+
         $read = $write ? [] : [$socket];
         $writeables = $write ? [$socket] : [];
         $except = [];
@@ -150,6 +161,11 @@ final readonly class SocketPrivateDnsUpstream implements PrivateDnsUpstream
         $ready = @stream_select($read, $writeables, $except, $seconds, $microseconds);
 
         return $ready === 1;
+    }
+
+    private function nowSeconds(): float
+    {
+        return $this->nowSeconds !== null ? ($this->nowSeconds)() : microtime(true);
     }
 
     /**

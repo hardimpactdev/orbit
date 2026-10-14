@@ -77,7 +77,7 @@ While setup holds the collector, `process:destroy` refuses to remove the Process
 
 Before it changes anything, setup checks for a Route on `collector.cli-proxy-api.orbit`. It takes over a custom proxy Route on the collector Node to `http://127.0.0.1:8787` with no Process target: one Caddy reload moves the name to the collector site, and setup then removes the Route. Any other Route on that name fails setup with `proxycli.hostname_taken` (409).
 
-Setup publishes the Caddy site before it recreates the collector Process. The site retries the loopback collector for up to 5 seconds, so a request that arrives during the restart waits instead of failing.
+Setup runs the shared [Caddy package step](/reference/node-provisioning#package-sources) before it publishes the Caddy site and recreates the collector Process. An installed Caddy at or above the floor stays in place. The site retries the loopback collector for up to 5 seconds, so a request that arrives during the restart waits instead of failing.
 
 ## Collection
 
@@ -99,6 +99,8 @@ When Grok returns no percentage, the collector calls Grok's billing RPC through 
 ## Collector endpoints
 
 The collector serves these paths on `https://collector.cli-proxy-api.orbit`. The read token and the control token are bearer tokens in Gateway settings.
+
+Account updates trust only the Orbit CA at `ORBIT_HOME/ca/root.pem`. The Gateway checks that CA in place and sends through Laravel's HTTP client with the system CA directory disabled and a 10-second overall deadline. It does not copy the CA to a temporary file.
 
 | Request | Token | Result |
 | --- | --- | --- |

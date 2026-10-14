@@ -16,6 +16,8 @@ The web app is Orbit's live view of the fleet. It is a static single-page app th
 
 The generated API schema includes `PATCH /api/v1/nodes/{node}/wireguard-key`, with a `wireguard_public_key` input and the standard Node response. These types describe the [unmanaged peer key contract](/cli/node#orbit-nodewireguard-key); they do not add a web key editor. Regenerate them with `bun run types` when the operation changes.
 
+The task group schema includes nullable `vm_power`: `running`, `stopped`, or `destroyed`, separately from task status. The Tasks page keeps its status-based grouping and detail view when power is present, null, or omitted. [VM power](/reference/compute-drivers#vm-power) defines the state mapping.
+
 The generated API schema also includes the Project development deploy step operations and their `required` boolean. These types describe the [API contract](/reference/deployments#development-deploy-steps); they do not add web controls or start deployments.
 
 The generated API schema includes show and update operations for Project Documents storage on the Gateway, with their redacted `DocumentStorage` response. Credential fields are update inputs only, never response properties. These types describe the [storage contract](/reference/project-documents#private-s3-boundary); they do not add storage settings controls to the web app.

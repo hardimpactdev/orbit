@@ -287,9 +287,15 @@ final readonly class NativeProjectUpdateProjectionMutator implements ProjectUpda
             $current = Route::query()->find(StoredValue::integer($row['route_id'] ?? null));
             $newer = $current?->replaced_by_route_id === null ? null : Route::query()->find($current->replaced_by_route_id);
 
-            if ($newer instanceof Route) {
+            if (
+                $newer instanceof Route
+                && $newer->project_id === $project->id
+                && $newer->replaces_route_id === $current->id
+                && $newer->domain === ($row['proposed_domain'] ?? null)
+                && $newer->provenance === $current->provenance
+            ) {
                 $this->withdrawReplacement($newer, projectionStarted: true);
-            } elseif ($current instanceof Route && $current->replaced_by_route_id !== null) {
+            } elseif (! $newer instanceof Route && $current instanceof Route && $current->replaced_by_route_id !== null) {
                 $current->update(['replaced_by_route_id' => null]);
             }
 

@@ -99,6 +99,8 @@ A failure stops convergence at the `clickhouse-config` step, before Plausible ru
 
 `orbit analytics:update VERSION` changes the pinned Plausible version and replaces the `plausible` Process. A new role starts at the version in the Gateway's `ORBIT_ANALYTICS_PLAUSIBLE_VERSION`, which defaults to `3.2.1`.
 
+Dashboard publication first runs the shared [Caddy package step](/reference/node-provisioning#package-sources). It leaves an installed Caddy at or above the floor in place.
+
 `orbit node:role:remove NODE analytics` removes the `plausible` Process, the Caddy site, the certificate, the DNS record, and the role's firewall rules. It deletes the stored `SECRET_KEY_BASE` and the role settings. It never touches the two databases or their Processes. Remove those Processes yourself to remove the data. Orbit does not back up or prune Plausible's event data. Removal fails with `analytics.tracking_hosts_exist` while any Instance has a tracking host.
 
 ## Publish a tracking host

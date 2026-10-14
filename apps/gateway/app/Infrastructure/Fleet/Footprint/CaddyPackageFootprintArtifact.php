@@ -7,8 +7,7 @@ namespace App\Infrastructure\Fleet\Footprint;
 use App\Domain\Fleet\NodeFootprintArtifact;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Fleet\NodeShell;
-use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
-use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Nodes\CaddyPackageProgram;
 use App\Models\Node;
 
 /**
@@ -42,17 +41,14 @@ final readonly class CaddyPackageFootprintArtifact implements NodeFootprintArtif
     public static function inputs(): array
     {
         return [
-            'app/Infrastructure/Nodes/CaddyPackageSourceProgram.php',
+            'app/Infrastructure/Nodes/CaddyPackageProgram.php',
             'app/Domain/Nodes/CaddyRelease.php',
         ];
     }
 
     public function apply(Node $node): bool
     {
-        $result = $this->shell->run($node, new RemoteCommand(
-            arguments: ['sudo', 'bash', '-seu', '--', ...CaddyPackageSourceProgram::arguments()],
-            input: CaddyPackageSourceProgram::render(),
-        ));
+        $result = $this->shell->run($node, CaddyPackageProgram::command());
 
         if (! $result->succeeded()) {
             throw new ResourceOperationException(
@@ -62,6 +58,6 @@ final readonly class CaddyPackageFootprintArtifact implements NodeFootprintArtif
             );
         }
 
-        return str_contains($result->stdout, CaddyPackageSourceProgram::Changed);
+        return str_contains($result->stdout, CaddyPackageProgram::Changed);
     }
 }

@@ -24,8 +24,10 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
 use App\Models\Instance;
+use App\Models\InstanceTransfer;
 use App\Models\Route;
 use App\Models\RouteRemovalResidue;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -76,9 +78,7 @@ final readonly class DestroyRouteAction
 
     private function remove(Route $route, bool $allowTracking, bool $offline, bool $offersOffline): Route
     {
-        $result = $route->isUnactivatedReplacement() && ! $allowTracking
-            ? app(ConvergeRouteAction::class)->withdrawReplacement($route)
-            : $this->removeRoute($route, $allowTracking, $offline, $offersOffline);
+        $result = $this->removeRoute($route, $allowTracking, $offline, $offersOffline);
 
         ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
             RecordEventType::RouteDeleted,
@@ -126,6 +126,9 @@ final readonly class DestroyRouteAction
         bool $offersOffline,
     ): Route {
         $locked = $this->lockAndGuard($route, $expectedTargetIds);
+        if ($locked->isUnactivatedReplacement() && ! $allowTracking) {
+            return $this->removeReplacement($locked, $offline, $offersOffline);
+        }
         $targeted = $locked->targets->isNotEmpty();
 
         if ($targeted) {
@@ -199,11 +202,49 @@ final readonly class DestroyRouteAction
         $locked = DB::transaction(function () use ($route, $expectedTargetIds): Route {
             $locked = Route::query()->with('targets')->lockForUpdate()->findOrFail($route->id);
             $this->assertTargetsUnchanged($locked, $expectedTargetIds);
+            $this->assertNoOpenTransfer($locked);
 
             return $locked;
         });
 
         return $locked;
+    }
+
+    private function removeReplacement(Route $route, bool $offline, bool $offersOffline): Route
+    {
+        $nodes = $this->projection->nodes($route);
+        $skipped = $offline ? $this->unavailable($nodes) : [];
+        $step = RouteRemovalStep::Caddy;
+
+        try {
+            return app(ConvergeRouteAction::class)->withdrawReplacement(
+                $route,
+                $skipped,
+                static function (RouteRemovalStep $next) use (&$step): void {
+                    $step = $next;
+                },
+            );
+        } catch (Throwable $exception) {
+            if ($offersOffline && ! $offline && $this->changesNodes($step)) {
+                $exception = $this->unreachableFailure($exception, $nodes, $step);
+            }
+            $this->recordFailure($route, $route->refresh()->failed_step ?? 'withdrawal', $this->errorCode($exception));
+
+            throw $exception;
+        }
+    }
+
+    private function assertNoOpenTransfer(Route $route): void
+    {
+        if (InstanceTransfer::query()->open()->where(static fn (Builder $query): Builder => $query
+            ->where('source_route_id', $route->id)
+            ->orWhere('destination_route_id', $route->id))->exists()) {
+            throw new ResourceOperationException(
+                errorCode: 'instance.transfer_incomplete',
+                message: 'An open Instance transfer owns this Route. Retry the identical transfer request first.',
+                status: 409,
+            );
+        }
     }
 
     /**

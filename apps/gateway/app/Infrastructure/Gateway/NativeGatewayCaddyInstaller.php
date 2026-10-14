@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Gateway;
 
 use App\Domain\Nodes\NodeProvisioningException;
-use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
+use App\Infrastructure\Nodes\CaddyPackageProgram;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Processes\SystemdVpnOrderingDropIn;
@@ -29,13 +29,14 @@ final readonly class NativeGatewayCaddyInstaller
 
     public function install(): void
     {
+        $command = CaddyPackageProgram::command();
         $this->run(
             step: 'gateway-caddy-install',
             errorCode: 'gateway.caddy_install_failed',
             invocation: new ProcessInvocation(
-                arguments: ['sudo', 'bash', '-seu', '--', ...CaddyPackageSourceProgram::arguments()],
+                arguments: $command->arguments,
                 timeout: 900.0,
-                input: CaddyPackageSourceProgram::render(),
+                input: $command->input,
             ),
         );
         $this->run(

@@ -2,6 +2,7 @@
 title: "Vaultwarden"
 description: "How the Gateway publishes database credentials into a Vaultwarden collection as Database items, keeps them current, and deletes them when their source is gone."
 covers:
+  - apps/gateway/app/Infrastructure/Certificates/OrbitCaCurlFactory.php
   - apps/gateway/app/{Actions,Data,Domain,Infrastructure,Http/Requests}/Vault/**
   - apps/gateway/app/Http/Controllers/Api/VaultController.php
   - apps/gateway/app/Console/Commands/VaultSyncCommand.php
@@ -154,7 +155,7 @@ The Gateway pins the Orbit root CA and accepts only `.orbit` hosts. With the sys
 
 The Gateway reads the CA from `root.pem` in its state directory, next to the root key, and checks it before each request. It never copies the CA to a shared temporary directory, where another local account could plant its own CA under the expected name.
 
-That CA file is the only trust anchor. The system trust store, such as `/etc/ssl/certs`, does not apply, so a certificate from a public CA or any other CA fails the TLS check. The client sends through PHP's OpenSSL streams, which load only the CA file they are given. It does not use cURL, because libcurl keeps its own CA directory beside any CA file.
+That CA file is the only trust anchor. The system trust store, such as `/etc/ssl/certs`, does not apply, so a certificate from a public CA or any other CA fails the TLS check. The Laravel HTTP client uses cURL with its default CA directory disabled. Each request has a 15-second overall deadline, including connecting, headers, and the body. A peer that sends headers slowly cannot extend that deadline. PHP's HTTP stream wrapper cannot enforce this deadline while it reads headers.
 
 ### Removed credentials are deleted
 

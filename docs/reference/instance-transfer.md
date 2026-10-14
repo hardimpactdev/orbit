@@ -100,7 +100,7 @@ Rollback abandons the transfer's SQLite seed before it restarts the source. It r
 
 A transfer that fails before cutover is closed once rollback finishes. A new transfer request with any input, or `instance:destroy`, proceeds without a conflict from that closed transfer. Normal eligibility checks still apply.
 
-An unfinished transfer, including a failed transfer whose rollback is incomplete, stays open. A transfer that fails after cutover also stays open. Only the identical request resumes an open transfer and closes it: a different transfer returns `instance.transfer_retry_conflict`, and removal returns `instance.transfer_incomplete`. For a pending transfer, the CLI offers the retry and names the original source Node.
+An unfinished transfer, including a failed transfer whose rollback is incomplete, stays open. A transfer that fails after cutover also stays open. Only the identical request resumes an open transfer and closes it: a different transfer returns `instance.transfer_retry_conflict`, and removal returns `instance.transfer_incomplete`. For a pending transfer, the CLI offers the retry and names the original source Node. `route:destroy` also returns `instance.transfer_incomplete` for either Route while the transfer is open. This includes its destination replacement before cutover.
 
 If a Schedule targets the Instance before reservation or is added before cutover, transfer returns `schedule.target_in_use`. Remove the Schedule or retarget it away from the Instance, then send a new transfer request if rollback has finished, or retry the identical request if the transfer is still open.
 

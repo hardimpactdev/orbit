@@ -22,12 +22,18 @@ final class PrivateDnsTransportServer
     /** @var resource|null */
     private $tcp;
 
+    /**
+     * @param  (Closure(resource, bool, float): bool)|null  $waitForSocket
+     * @param  (Closure(): float)|null  $nowSeconds
+     */
     public function __construct(
         private readonly PrivateDnsRequestHandler $handler,
         private readonly string $listenAddress = '127.0.0.1',
         private int $port = 0,
         private readonly ?Closure $onIdle = null,
         private readonly float $ioTimeoutSeconds = 2.0,
+        private readonly ?Closure $waitForSocket = null,
+        private readonly ?Closure $nowSeconds = null,
     ) {}
 
     public function start(): void
@@ -216,10 +222,10 @@ final class PrivateDnsTransportServer
     private function readExact($connection, int $bytes): string
     {
         $buffer = '';
-        $deadline = microtime(true) + $this->ioTimeoutSeconds;
+        $deadline = $this->nowSeconds() + $this->ioTimeoutSeconds;
 
         while (strlen($buffer) < $bytes) {
-            $remaining = $deadline - microtime(true);
+            $remaining = $deadline - $this->nowSeconds();
             if ($remaining <= 0 || ! $this->await($connection, write: false, timeoutSeconds: $remaining)) {
                 throw new RuntimeException('The private DNS TCP query timed out.');
             }
@@ -247,10 +253,10 @@ final class PrivateDnsTransportServer
     private function writeAll($connection, string $payload): void
     {
         $written = 0;
-        $deadline = microtime(true) + $this->ioTimeoutSeconds;
+        $deadline = $this->nowSeconds() + $this->ioTimeoutSeconds;
 
         while ($written < strlen($payload)) {
-            $remaining = $deadline - microtime(true);
+            $remaining = $deadline - $this->nowSeconds();
             if ($remaining <= 0 || ! $this->await($connection, write: true, timeoutSeconds: $remaining)) {
                 throw new RuntimeException('The private DNS TCP response write timed out.');
             }
@@ -270,6 +276,10 @@ final class PrivateDnsTransportServer
     private function await($socket, bool $write, ?float $timeoutSeconds = null): bool
     {
         $timeout = $timeoutSeconds ?? $this->ioTimeoutSeconds;
+        if ($this->waitForSocket !== null) {
+            return ($this->waitForSocket)($socket, $write, $timeout);
+        }
+
         $read = $write ? [] : [$socket];
         $writeables = $write ? [$socket] : [];
         $except = [];
@@ -277,6 +287,11 @@ final class PrivateDnsTransportServer
         $ready = @stream_select($read, $writeables, $except, $seconds, $microseconds);
 
         return $ready === 1;
+    }
+
+    private function nowSeconds(): float
+    {
+        return $this->nowSeconds !== null ? ($this->nowSeconds)() : microtime(true);
     }
 
     /**

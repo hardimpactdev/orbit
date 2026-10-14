@@ -119,7 +119,7 @@
             ],
             "execution_mode": "managed",
             "capacity_wait_reason": null,
-            "sandbox_power": null,
+            "vm_power": null,
             "preview": false,
             "review_and_merge": null
         },

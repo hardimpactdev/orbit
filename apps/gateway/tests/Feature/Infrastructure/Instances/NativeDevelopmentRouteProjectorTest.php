@@ -1896,3 +1896,25 @@ final class Orb127RouteProcessRunner implements ProcessRunner
             : new CommandResult(0, '', '', 1, false);
     }
 }
+
+describe('offline replacement projections', function (): void {
+    it('leaves the skipped Node unchanged and withdraws the reachable side', function (string $skippedSide): void {
+        [$instance, $old, $workload, $router] = orb127_route_projection_models();
+        $replacement = orb_pending_domain_change($old, $instance, RouteReplacementStep::RouterCaddy);
+        $replacement->update(['status' => RouteStatus::Failed, 'failed_step' => 'withdrawal', 'error_code' => 'route.replacement_withdrawn']);
+        [$projection, $ssh, $processes, $home] = orb127_route_projector();
+        $skipped = $skippedSide === 'workload' ? $workload : $router;
+        $reachable = $skippedSide === 'workload' ? $router : $workload;
+
+        try {
+            $projection->rollbackCaddy($instance, $replacement, [$skipped->id]);
+            $projection->rollbackCertificates($instance, $replacement, [$skipped->id]);
+
+            expect($ssh->hosts)->not->toContain($skipped->wireguard_ip)
+                ->toContain($reachable->wireguard_ip);
+            expect($ssh->commands)->not->toBeEmpty();
+        } finally {
+            (new Filesystem)->deleteDirectory($home);
+        }
+    })->with(['workload', 'router']);
+});

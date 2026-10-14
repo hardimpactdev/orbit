@@ -12,7 +12,18 @@ import_ci_caches() {
     fi
     for archive in "$work"/*.zip; do
         directory=${archive%.zip}
-        python3 -m zipfile -e "$archive" "$directory"
+        python3 - "$archive" "$directory" <<'PYTHON'
+import sys
+import zipfile
+
+with zipfile.ZipFile(sys.argv[1]) as archive:
+    entries = archive.infolist()
+    # ZipFile bounds each extracted member by its declared file_size and checks its CRC.
+    # Inspect all entries before extraction, so a small compressed ZIP cannot fill the disk.
+    if len(entries) > 1024 or sum(entry.file_size for entry in entries) > 64 * 1024 * 1024:
+        sys.exit('CI cache archive exceeds the extraction limits.')
+    archive.extractall(sys.argv[2])
+PYTHON
         project=$(php -r '$m = json_decode((string) file_get_contents($argv[1]), true); echo is_array($m) && is_string($m["project"] ?? null) ? $m["project"] : "";' "$directory/manifest.json")
         status=0
         bin/tia-cache import-ci --project "$project" --artifact "$directory" --commit "$commit" || status=$?
@@ -26,4 +37,3 @@ import_ci_caches() {
         [ -f "$project/.orbit-tia/graph.json" ] || echo "[$project] has no Pest TIA graph: its tests run cold."
     done
 }
-

@@ -11,6 +11,10 @@ use App\Domain\Instances\InstanceRemover;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\AssistanceKind;
+use App\Domain\Tasks\CoderSettleNotifier;
+use App\Domain\Tasks\TaskAssistance;
+use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskExtensionState;
@@ -29,6 +33,7 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\TaskVms\TaskVmWorkspace;
 use App\Jobs\TaskVms\DestroyTaskVm;
 use App\Jobs\TaskVms\ParkTaskVm;
 use App\Jobs\TaskVms\ResumeTaskVm;
@@ -42,6 +47,7 @@ use Illuminate\Contracts\Queue\Job;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
 use Tests\Support\AppDevFakeSshExecutor;
@@ -214,12 +220,19 @@ describe('park', function (): void {
     });
 
     it('keeps a VM parked with the error when it cannot be stopped', function (): void {
-        [, $vm] = tvm_park_waiting();
+        [$group, $vm] = tvm_park_waiting();
         $vm->update(['state' => TaskVmState::Parked]);
+        mock(CoderSettleNotifier::class)->shouldNotReceive('assistance');
+        Log::spy();
 
         (new ParkTaskVm($vm->id))->failed(new TaskVmException('task_vm.host_command_failed', 'incus stop failed', 502));
 
         expect($vm->fresh())->state->toBe(TaskVmState::Parked)->error_code->toBe('task_vm.host_command_failed');
+        expect($group->fresh())->assistance_requested->toBeFalse()->assistance_reason->toBeNull();
+        Log::shouldHaveReceived('warning')->once()->with('A task VM could not park; later work can still resume it.', [
+            'task_vm_id' => $vm->id, 'task_vm' => $vm->name, 'group_id' => $group->id,
+            'error_code' => 'task_vm.host_command_failed', 'error_message' => 'incus stop failed',
+        ]);
     });
 });
 
@@ -300,6 +313,17 @@ describe('resume', function (): void {
 });
 
 describe('wake', function (): void {
+    it('queues one resume when a claim reaches a parked workspace', function (): void {
+        Queue::fake();
+        [$group, $vm] = tvm_park_waiting();
+        $vm->update(['state' => TaskVmState::Parked]);
+
+        expect(fn () => app(TaskVmWorkspace::class)->node($group))->toThrow(TaskCapacityException::class, WakeTaskVmAction::Resuming);
+
+        Queue::assertPushed(ResumeTaskVm::class, fn (ResumeTaskVm $job): bool => $job->taskVmId === $vm->id);
+        Queue::assertPushed(ResumeTaskVm::class, 1);
+    });
+
     it('holds new work of a parked group, queues the start, and lets it go once the VM is ready', function (): void {
         Queue::fake();
         [$group, $vm] = tvm_park_waiting();
@@ -440,4 +464,22 @@ describe('tick', function (): void {
             ->and($group->fresh())->status->toBe(TaskGroupStatus::WaitingForReview)->assistance_reason->toBeNull();
         Queue::assertPushed(ResumeTaskVm::class, fn (ResumeTaskVm $job): bool => $job->taskVmId === $vm->id);
     });
+});
+
+describe('park failure races', function (): void {
+    it('preserves existing assistance and ignores a late park failure after wake', function (AssistanceKind $kind): void {
+        [$group, $vm] = tvm_park_waiting();
+        $vm->update(['state' => TaskVmState::Parked]);
+        TaskAssistance::apply($group, $kind, $kind === AssistanceKind::Direction ? 'Which branch?' : null, 'Original request.');
+        mock(CoderSettleNotifier::class)->shouldNotReceive('assistance');
+        $job = new ParkTaskVm($vm->id);
+
+        $job->failed(new RuntimeException('stop failed'));
+        expect($group->fresh())->assistance_kind->toBe($kind)->assistance_reason->toBe('Original request.')
+            ->assistance_question->toBe($kind === AssistanceKind::Direction ? 'Which branch?' : null);
+        $vm->refresh()->update(['state' => TaskVmState::Ready, 'error_code' => null, 'error_message' => null]);
+        $job->failed(new RuntimeException('late failure'));
+
+        expect($vm->fresh())->state->toBe(TaskVmState::Ready)->error_code->toBeNull();
+    })->with(['failure' => AssistanceKind::Failure, 'direction' => AssistanceKind::Direction]);
 });

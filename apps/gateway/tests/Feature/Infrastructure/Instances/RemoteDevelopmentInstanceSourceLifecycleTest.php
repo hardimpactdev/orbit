@@ -441,6 +441,7 @@ describe('CheckoutProcesses', function (): void {
         $group = Task::topLevel()->create(['project_id' => $this->orbitApp->id, 'title' => 'Orphans', 'brief' => 'Brief.', 'status' => TaskGroupStatus::Running]);
         $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-'.$group->id);
         $sibling = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-'.$group->id.'0');
+        TaskVm::query()->create(['group_id' => $group->id, 'node_id' => $this->node->id, 'host_node_id' => $this->node->id, 'provider' => 'incus', 'name' => 'removal-vm', 'wireguard_ip' => '10.44.0.130', 'state' => TaskVmState::Ready]);
         $checkout = (string) $instance->checkout_path;
         // A copy of bash keeps its own behaviour under any name; a multi-call coreutils `sleep` does not.
         copy((string) new ExecutableFinder()->find('bash'), $checkout.'/orbit-test-shell');
@@ -480,6 +481,12 @@ describe('CheckoutProcesses', function (): void {
     })->with(['finalize', 'remove']);
 
     it('leaves the processes inside a development Instance running', function (string $name): void {
+        if ($name === 'group-name') {
+            $group = Task::topLevel()->create(['project_id' => $this->orbitApp->id, 'title' => 'Separate workspace', 'brief' => 'Brief.', 'status' => TaskGroupStatus::Running]);
+            $name = 'task-'.$group->id;
+            $vmNode = Node::query()->create(['name' => 'separate-task-vm', 'status' => LifecycleStatus::Active, 'public_ssh_host' => '192.0.2.131', 'wireguard_ip' => '10.44.0.131']);
+            TaskVm::query()->create(['group_id' => $group->id, 'host_node_id' => $this->node->id, 'node_id' => $vmNode->id, 'provider' => 'incus', 'name' => 'separate-vm', 'wireguard_ip' => '10.44.0.131', 'state' => TaskVmState::Ready]);
+        }
         $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, $name);
         $checkout = (string) $instance->checkout_path;
         $kept = [
@@ -498,7 +505,7 @@ describe('CheckoutProcesses', function (): void {
                 orb178_run_allow_failure(['kill', '-KILL', (string) $pid]);
             }
         }
-    })->with(['named' => 'feature-processes', 'task name without a group' => 'task-999999']);
+    })->with(['named' => 'feature-processes', 'task name without a group' => 'task-999999', 'task name with a group on another Node' => 'group-name']);
 });
 
 it('removes receipt-owned crash states without failure fields teardown or unrelated cleanup', function (string $state, bool $force): void {

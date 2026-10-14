@@ -2693,7 +2693,8 @@ final class NodeTldRouteProjector implements RouteDomainProjector
 
     public function activatePublicHandler(Route $candidate): void {}
 
-    public function rollbackPublicEdge(Route $route): void {}
+    /** @param list<int> $skippedNodeIds */
+    public function rollbackPublicEdge(Route $route, array $skippedNodeIds = []): void {}
 
     public function publishDns(Route $current, Route $candidate): void
     {
@@ -2715,12 +2716,14 @@ final class NodeTldRouteProjector implements RouteDomainProjector
         $this->events->values[] = 'rollback-dns';
     }
 
-    public function rollbackCaddy(Instance $instance, Route $route): void
+    /** @param list<int> $skippedNodeIds */
+    public function rollbackCaddy(Instance $instance, Route $route, array $skippedNodeIds = []): void
     {
         $this->events->values[] = 'rollback-caddy';
     }
 
-    public function rollbackCertificates(Instance $instance, Route $route): void
+    /** @param list<int> $skippedNodeIds */
+    public function rollbackCertificates(Instance $instance, Route $route, array $skippedNodeIds = []): void
     {
         $this->events->values[] = 'rollback-certificates';
     }

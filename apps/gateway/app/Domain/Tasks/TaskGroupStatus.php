@@ -35,6 +35,16 @@ enum TaskGroupStatus: string
         return [self::Settling, self::WaitingForReview];
     }
 
+    /**
+     * A cancelled or completed group, or one whose pull request may have merged and awaits completion.
+     *
+     * @return list<self>
+     */
+    public static function endedStatuses(): array
+    {
+        return [self::Completed, self::Cancelled, ...self::awaitingCompletion()];
+    }
+
     public function isActive(): bool
     {
         return in_array($this, self::active(), true);
