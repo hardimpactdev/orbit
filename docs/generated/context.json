@@ -494,7 +494,8 @@
                 "Gateway",
                 "Node",
                 "Placement",
-                "Process"
+                "Process",
+                "Task"
             ],
             "governing_adrs": []
         },
@@ -2201,7 +2202,8 @@
                 "Project",
                 "Role",
                 "Route",
-                "Schedule"
+                "Schedule",
+                "Tool"
             ],
             "governing_adrs": []
         },
@@ -2265,6 +2267,7 @@
                 "apps/web"
             ],
             "concepts": [
+                "Activity",
                 "Extension",
                 "Gateway",
                 "Node",
@@ -2272,7 +2275,8 @@
                 "Process",
                 "Role",
                 "Route",
-                "Schedule"
+                "Schedule",
+                "Task"
             ],
             "governing_adrs": []
         },
