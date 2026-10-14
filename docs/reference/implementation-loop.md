@@ -3,7 +3,7 @@ title: "Feature delivery"
 description: "How a change reaches main: review evidence, merge, CI, local checks, worktrees, and the shared main caches."
 covers:
   - apps/docs/app/Documentation/AdrLifecycle.php
-  - bin/{review-check,bug-repro,task-group-check,pr-head-check,deploy-verify,test,tia-cache,ci-tia,worktree-cache,worktree-create,worktree-remove,check-classification-fakes}
+  - bin/{review-check,bug-repro,task-group-check,pr-head-check,deploy-verify,test,tia-cache,ci-cache-ref,ci-tia,worktree-cache,worktree-create,worktree-remove,check-classification-fakes}
   - tools/phpstan/**
   - .github/workflows/ci.yml
   - apps/gateway/tests/Support/TestDatabase{Environment,Guard}.php
@@ -384,9 +384,9 @@ The `publish-ci-cache` job in `ci.yml` publishes workspace test caches after `Re
 
 Only this job receives `permissions: contents: write`. It pushes to the repository with its short-lived `GITHUB_TOKEN`; no personal token or Gateway credential is stored in CI. The workflow's other jobs keep their existing permissions. The Gateway later fetches the ref with its GitHub App's repository-scoped `Contents: read` token, through the same protected Git path as source reads. Neither a task VM nor an agent receives either credential.
 
-The job writes a cache-only Git commit, without a source checkout or source history in its tree, and pushes it to `refs/orbit/ci-cache/<sha>`. The suffix is the full tested code SHA. It is not the cache commit's SHA. The tree groups payloads by repository-relative project path.
+The job runs `bin/ci-cache-ref publish` to write a parentless cache-only Git commit. Its tree contains no source files or source history, and the job and pushes it to `refs/orbit/ci-cache/<sha>`. The suffix is the full tested code SHA. It is not the cache commit's SHA. The tree groups payloads by repository-relative project path.
 
-Each project has a versioned manifest, a Pest graph when it uses Pest, and optional Pint, Rector, and PHPStan caches. The manifest records the tested code SHA, project, CI run and attempt, checksums of all payload files, dependency and test inputs, each tool's configuration, and the PHP minor version. Rector's directory cache needs a checksum for each included file.
+Each project has a schema-2 manifest, a Pest graph, and optional Pint and PHPStan caches. The manifest records the tested code SHA, project, CI run and exporting attempt, checksums of all payload files, dependency and test inputs, each tool's configuration, and the PHP minor version. A partial re-run may keep exports from earlier successful attempts of the same run and SHA. [Rector runs without a cache](#ci-caches-stay-separate); this transport does not change that policy.
 
 Before pushing, the publisher verifies that every manifest and graph names the run's tested SHA and that the required project exports are complete. Consumers repeat the SHA and checksum checks; a ref name alone is not evidence that the payload fits. The source of trust is the successful main workflow and repository write access, not the checksums. PHPStan caches contain executable PHP.
 
@@ -407,7 +407,7 @@ After a project job passes on `main`, CI uploads the artifact `sandbox-tia-<inde
 | File | Content |
 | --- | --- |
 | `graph.json` | The Pest graph. It records the tested commit and a result for every test file it links, whether the job ran the affected tests or the full suite. |
-| `manifest.json` | The project path, tested commit, CI run, graph checksum, checksums of `composer.lock`, `tests/Pest.php`, `phpunit.xml`, and `phpunit.xml.dist`, the PHP minor version, and the checksum of each quality cache |
+| `manifest.json` | Schema version 2, project path, tested commit, CI run and exporting attempt, graph checksum, checksums of `composer.lock`, `tests/Pest.php`, `phpunit.xml`, and `phpunit.xml.dist`, PHP minor version, and the checksum and configuration checksum of each quality cache |
 | `quality/pint`, `quality/phpstan` | The Pint and PHPStan result caches that `composer check` wrote in the same job, when it wrote them |
 
 ### Seed a checkout

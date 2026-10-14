@@ -1400,5 +1400,158 @@ def effective_named_rights(path, user):
     return ''.join(right if limit != '-' else '-' for right, limit in zip(named, mask))
 
 
+class CiCacheRefTest(CacheFixture):
+    def setUp(self):
+        super().setUp()
+        ref_loader = importlib.machinery.SourceFileLoader('ci_cache_ref', str(Path(cache.__file__).with_name('ci-cache-ref')))
+        ref_spec = importlib.util.spec_from_loader(ref_loader.name, ref_loader)
+        self.refs = importlib.util.module_from_spec(ref_spec)
+        ref_loader.exec_module(self.refs)
+        for project in cache.PROJECTS:
+            if project != self.project:
+                shutil.copytree(self.root / self.project, self.root / project)
+        self.commit = self.commit_change('all project inputs')
+        self.remote = Path(self.temporary.name) / 'origin.git'
+        cache.git(self.root, 'init', '--bare', str(self.remote))
+        cache.git(self.root, 'remote', 'set-url', 'origin', str(self.remote))
+        cache.git(self.root, 'push', 'origin', 'main')
+        self.exports = Path(self.temporary.name) / 'exports'
+        self.exports.mkdir()
+        for project in cache.PROJECTS:
+            self.project = project
+            artifact = self.artifact(self.commit, quality={'pint': b'pint bytes', 'phpstan': b'<?php // trusted CI'},
+                                     manifest={'schema': 2, 'run_attempt': '1', 'configurations': {
+                                         tool: cache.digest((self.root / project / configuration).read_bytes())
+                                         for tool, (configuration, _) in cache.QUALITY.items()}})
+            shutil.copytree(artifact, self.exports / project.replace('/', '-'))
+        self.project = 'apps/docs'
+
+    def publish_ref(self):
+        with patch.dict(os.environ, {'GITHUB_RUN_ID': '123', 'GITHUB_RUN_ATTEMPT': '1'}):
+            self.refs.publish(self.root, self.exports, self.commit, 'origin')
+        return self.refs.NAMESPACE + self.commit
+
+    def import_ref(self, commit=None):
+        output = io.StringIO()
+        with redirect_stdout(output), patch.object(self.refs.tia, 'metadata', return_value=self.info):
+            self.refs.import_ref(self.root, commit or self.commit)
+        return output.getvalue()
+
+    def corrupt_ref_file(self, path, data, mode='100644'):
+        ref = self.refs.NAMESPACE + self.commit
+        environment = {'GIT_INDEX_FILE': str(Path(self.temporary.name) / 'corrupt-index')}
+        self.refs.git(self.root, 'read-tree', ref, environment=environment)
+        oid = self.refs.git(self.root, 'hash-object', '-w', '--stdin', data=data).decode().strip()
+        self.refs.git(self.root, 'update-index', '--add', '--cacheinfo', f'{mode},{oid},{path}', environment=environment)
+        tree = self.refs.git(self.root, 'write-tree', environment=environment).decode().strip()
+        commit = self.refs.git(self.root, 'commit-tree', tree, data=b'corrupted fixture\n').decode().strip()
+        cache.git(self.root, 'update-ref', ref, commit)
+
+    def test_matching_ref_imports_graph_and_quality_without_source_checkout_changes(self):
+        ref = self.publish_ref()
+        self.assertNotEqual(cache.git(self.root, 'rev-parse', ref), self.commit)
+        self.assertEqual(len(cache.git(self.root, 'rev-list', '--parents', '-n', '1', ref).split()), 1)
+        self.assertEqual(cache.git(self.root, 'status', '--porcelain'), '')
+        self.assertIn('imported CI baseline', self.import_ref())
+        for project in cache.PROJECTS:
+            self.assertEqual(json.loads((self.root / project / '.orbit-tia/graph.json').read_text())['baselines']['main']['sha'], self.commit)
+            self.assertEqual((self.root / project / 'vendor/phpstan/cache/resultCache.php').read_bytes(), b'<?php // trusted CI')
+        self.assertIn('kept existing', self.import_ref())
+
+    def test_missing_ref_and_ref_for_another_sha_run_cold(self):
+        self.assertIn('cold', self.import_ref())
+        self.publish_ref()
+        other = self.advance('new baseline without a ref')
+        self.assertIn('cold', self.import_ref(other))
+        self.assertFalse((self.root / self.project / '.orbit-tia/graph.json').exists())
+
+    def test_ref_suffix_and_payload_sha_must_agree(self):
+        ref = self.publish_ref()
+        other = self.advance('other selected baseline')
+        cache.git(self.root, 'update-ref', self.refs.NAMESPACE + other, cache.git(self.root, 'rev-parse', ref))
+        self.assertIn('identity differs', self.import_ref(other))
+        self.assertFalse((self.root / self.project / 'vendor/pint.cache').exists())
+
+    def test_bad_checksum_in_any_project_rejects_the_entire_payload_before_writes(self):
+        source = self.exports / 'packages-php-sdk' / 'quality/phpstan'
+        source.write_bytes(b'<?php // corrupt')
+        with self.assertRaisesRegex(ValueError, 'checksum'):
+            self.publish_ref()
+        self.assertEqual(cache.git(self.remote, 'for-each-ref', self.refs.NAMESPACE), '')
+
+    def test_import_rejects_corrupt_executable_cache_before_any_project_is_written(self):
+        self.publish_ref()
+        self.corrupt_ref_file('packages/php-sdk/quality/phpstan', b'<?php // wrong bytes')
+        self.assertIn('checksum differs', self.import_ref())
+        for project in cache.PROJECTS:
+            self.assertFalse((self.root / project / '.orbit-tia/graph.json').exists())
+            self.assertFalse((self.root / project / 'vendor/pint.cache').exists())
+
+    def test_import_rejects_symlinks_unknown_paths_and_limits_before_writes(self):
+        self.publish_ref()
+        original = cache.git(self.root, 'rev-parse', self.refs.NAMESPACE + self.commit)
+        for path, mode in (('apps/docs/manifest.json', '120000'), ('apps/docs/unknown.php', '100644')):
+            self.corrupt_ref_file(path, b'unsafe', mode)
+            self.assertIn('unsafe or unknown', self.import_ref())
+            cache.git(self.root, 'update-ref', self.refs.NAMESPACE + self.commit, original)
+        for name in ('MAX_FILES', 'MAX_BYTES'):
+            with patch.object(self.refs, name, 1):
+                self.assertIn('payload limits', self.import_ref())
+        self.assertFalse((self.root / self.project / '.orbit-tia/graph.json').exists())
+
+    def test_required_cache_writes_are_not_disguised_as_a_cache_miss(self):
+        self.publish_ref()
+        with patch.object(self.refs.tia, 'atomic_write', side_effect=OSError('fixture disk full')):
+            with self.assertRaisesRegex(OSError, 'disk full'):
+                self.import_ref()
+
+    def test_publisher_refuses_incomplete_or_other_run_exports(self):
+        manifest = self.exports / 'apps-docs/manifest.json'
+        data = json.loads(manifest.read_text())
+        data['run_id'] = '456'
+        manifest.write_text(json.dumps(data))
+        with self.assertRaisesRegex(ValueError, 'same workflow run'):
+            self.publish_ref()
+        shutil.rmtree(self.exports / 'apps-docs')
+        with self.assertRaisesRegex(ValueError, 'every Composer project'):
+            self.publish_ref()
+        self.assertEqual(cache.git(self.remote, 'for-each-ref', self.refs.NAMESPACE), '')
+
+    def test_invalid_existing_publication_fails_without_overwriting(self):
+        ref = self.refs.NAMESPACE + self.commit
+        cache.git(self.root, 'push', 'origin', 'HEAD:' + ref)
+        before = cache.git(self.remote, 'rev-parse', ref)
+        with self.assertRaisesRegex(ValueError, 'unsafe|unknown'):
+            self.publish_ref()
+        self.assertEqual(cache.git(self.remote, 'rev-parse', ref), before)
+
+    def test_retry_keeps_existing_valid_publication(self):
+        ref = self.publish_ref()
+        first = cache.git(self.remote, 'rev-parse', ref)
+        for manifest in self.exports.rglob('manifest.json'):
+            data = json.loads(manifest.read_text())
+            data['run_attempt'] = '2'
+            manifest.write_text(json.dumps(data))
+        with patch.dict(os.environ, {'GITHUB_RUN_ID': '123', 'GITHUB_RUN_ATTEMPT': '2'}):
+            self.refs.publish(self.root, self.exports, self.commit, 'origin')
+        self.assertEqual(cache.git(self.remote, 'rev-parse', ref), first)
+
+    def test_prune_keeps_newest_code_ancestor_not_last_job_and_only_cache_namespace(self):
+        ref = self.publish_ref()
+        newest = self.advance('newest main')
+        # Simulate an old publication for a newer tested code commit.
+        tree = cache.git(self.root, 'rev-parse', ref + '^{tree}')
+        newer = self.refs.git(self.root, 'commit-tree', tree, data=b'new cache\n', environment={
+            'GIT_AUTHOR_NAME': 'CI', 'GIT_AUTHOR_EMAIL': 'ci@example.test',
+            'GIT_COMMITTER_NAME': 'CI', 'GIT_COMMITTER_EMAIL': 'ci@example.test',
+            'GIT_AUTHOR_DATE': '2020-01-01T00:00:00Z', 'GIT_COMMITTER_DATE': '2020-01-01T00:00:00Z'}).decode().strip()
+        cache.git(self.root, 'push', 'origin', newer + ':' + self.refs.NAMESPACE + newest)
+        cache.git(self.root, 'push', 'origin', 'main:refs/tags/keep')
+        self.refs.prune(self.root, 'origin', now=time.time() + 30 * 86400)
+        self.assertEqual(cache.git(self.remote, 'for-each-ref', '--format=%(refname)', self.refs.NAMESPACE), self.refs.NAMESPACE + newest)
+        self.assertEqual(cache.git(self.remote, 'rev-parse', 'refs/tags/keep'), newest)
+        self.assertEqual(cache.git(self.remote, 'rev-parse', 'main'), self.commit)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

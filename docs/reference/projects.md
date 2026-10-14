@@ -51,6 +51,8 @@ Registration never infers a nested root from source files. Configure the Project
 
 A Project owns ordered [setup and teardown lists](/reference/instance-setup) for its development Instances. Each named command runs on the Instance's Node from the repository root. A setup step can also name a [Gateway-owned operation](/reference/instance-setup#gateway-owned-setup-steps), such as `@orbit/ci-caches`, which the Gateway renders before the step runs. Production Instances run neither list.
 
+Declaring `@orbit/ci-caches` also lets source setup transfer the selected SHA's cache ref from the Gateway mirror. The operation renders a script, not an artifact payload or a GitHub credential. Put it after dependency installation. [CI main caches](/reference/instance-setup#import-ci-main-caches) describes exact SHA matching and the cold fallback; missing cache refs do not prevent source setup.
+
 When a command is missing or not executable on that Node (exit 127 or 126), Orbit returns `instance.setup_step_unavailable` or `instance.teardown_step_unavailable` with the step name and `outcome: missing`. The message names the step, Node, and exit code and says the command was not found or is not executable. Other command failures still return `instance.setup_step_failed` or `instance.teardown_step_failed`. See [Instance setup and teardown](/reference/instance-setup#failure-codes) for retry and removal behavior.
 
 ## Development deploy steps

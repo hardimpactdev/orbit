@@ -183,6 +183,22 @@ describe('Composer configuration', function (): void {
         }
     });
 
+    it('publishes SHA-bound cache refs only after required main checks with job-scoped write access', function (): void {
+        $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
+        $publisher = $workflow['jobs']['publish-ci-cache'];
+        expect($publisher['needs'])->toBe(['required'])
+            ->and($publisher['if'])->toBe("github.repository == 'nckrtl/orbit' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'")
+            ->and($publisher['permissions'])->toBe(['actions' => 'read', 'contents' => 'write'])
+            ->and($publisher['steps'][0]['with']['fetch-depth'])->toBe(0)
+            ->and($publisher['steps'][1]['with']['pattern'])->toBe('sandbox-tia-*-${{ github.sha }}')
+            ->and($publisher['steps'][2]['run'])->toContain('bin/ci-cache-ref publish --commit "$GITHUB_SHA"');
+        foreach ($workflow['jobs'] as $name => $job) {
+            if ($name !== 'publish-ci-cache') {
+                expect($job['permissions']['contents'] ?? $workflow['permissions']['contents'])->toBe('read');
+            }
+        }
+    });
+
     it('installs E2E dependencies without running other projects checks in the E2E job', function (): void {
         $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
         $project = $workflow['jobs']['project'];

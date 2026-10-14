@@ -207,6 +207,29 @@ it('creates a task VM workspace from the Gateway mirror, with no clone or fetch 
     expect($network)->toBe(['0', '0']);
 });
 
+it('receives optional CI cache refs in an ordinary workspace through the Gateway mirror', function (bool $published): void {
+    orb76_https_origin($this);
+    GitRemoteRedirect::global($this->repository, $this->remoteOrigin);
+    $main = trim(orb76_run(['git', '-C', $this->repository, 'rev-parse', 'refs/heads/main'])->stdout);
+    $ref = 'refs/orbit/ci-cache/'.$main;
+    if ($published) {
+        orb76_run(['git', '-C', $this->repository, 'update-ref', $ref, $main]);
+    }
+    ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => 'setup', 'name' => 'ci-cache', 'command' => '@orbit/ci-caches', 'timeout_seconds' => 60, 'position' => 0]);
+    try {
+        $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'default');
+        $this->source->prepare($instance, false);
+        $resolution = $this->source->resolve($instance->refresh());
+        expect($resolution->startingCommit)->toBe($main)
+            ->and(trim(orb76_run(['git', '-C', $instance->checkout_path, 'rev-parse', 'HEAD'])->stdout))->toBe($main)
+            ->and(trim(orb76_run(['git', '-C', $instance->checkout_path, 'rev-parse', 'refs/worktree/orbit/ci-baseline'])->stdout))->toBe($main);
+        $refs = trim(orb76_run(['git', '-C', $instance->checkout_path, 'for-each-ref', '--format=%(refname)', 'refs/orbit/ci-cache/'])->stdout);
+        expect($refs)->toBe($published ? $ref : '');
+    } finally {
+        GitRemoteRedirect::clear();
+    }
+})->with(['matching ref' => true, 'missing ref' => false]);
+
 it('preserves a pre-existing same-origin checkout through the whole failed create and retry', function (): void {
     orb866_bind_create_sources($this);
     $path = $this->appsRoot.'/acme/unregistered';
