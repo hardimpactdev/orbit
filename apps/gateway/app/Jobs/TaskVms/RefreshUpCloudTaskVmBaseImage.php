@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\Log;
  * The nightly UpCloud refresh: builds a new UpCloud base image, a template in UpCloud, with the shared recipe, as
  * `task-vms:build-upcloud-image` does, and keeps the two newest verified templates. The first build is always that
  * command, so while UpCloud has no verified template the job changes nothing. A failed build keeps the current
- * template. It runs on the `builds` queue, whose one process runs one build at a time, so the build holds up no task VM job.
+ * template. It runs on the separate `builds` queue and holds its own build lock, so it holds up no task VM job.
  */
 final class RefreshUpCloudTaskVmBaseImage implements ShouldBeUnique, ShouldQueue
 {

@@ -75,7 +75,7 @@ describe('the schedule', function (): void {
         expect($tick)->toBeInstanceOf(CallbackEvent::class)
             ->and(collect(gateway_queue_schedule())->filter(static fn (Event $event): bool => str_contains((string) $event->command, 'queue:work')))->toBeEmpty()
             ->and(collect(gateway_queue_schedule())->filter(static fn (Event $event): bool => is_string($event->command) && str_contains($event->command, 'artisan')
-                && ! str_contains($event->command, 'project-documents:')))->toBeEmpty();
+                && ! str_contains($event->command, 'project-documents:') && ! str_contains($event->command, 'problems:')))->toBeEmpty();
 
         $tick->run(app());
         $tick->run(app());
@@ -85,6 +85,23 @@ describe('the schedule', function (): void {
         expect($jobs->sole()->queue)->toBe(GatewayQueue::Tasks->value)
             ->and($job)->toBeInstanceOf(RunScheduledCommand::class)
             ->and([$job->command, $job->uniqueFor, $job->timeout, $job->connection])->toBe(['tasks:tick', 330, 330, GatewayQueue::Connection]);
+    });
+
+    it('runs problem collection and filing itself, with their overlap locks, while the Gateway queue is set', function (): void {
+        config(['orbit.gateway_queue.connection' => 'services-valkey']);
+        $collect = gateway_queue_event('problems:collect');
+        $file = gateway_queue_event('problems:file');
+
+        expect($collect)->not->toBeInstanceOf(CallbackEvent::class)
+            ->and($collect->command)->toEndWith("'artisan' problems:collect")
+            ->and([$collect->expression, $collect->withoutOverlapping, $collect->expiresAt])->toBe(['*/10 * * * *', true, 15])
+            ->and($file)->not->toBeInstanceOf(CallbackEvent::class)
+            ->and($file->command)->toEndWith("'artisan' problems:file")
+            ->and([$file->expression, $file->withoutOverlapping, $file->expiresAt])->toBe(['0 * * * *', true, 30]);
+
+        $collect->run(app());
+
+        expect(DB::table('jobs')->count())->toBe(0);
     });
 
     it('lists tasks:tick under its own name, as the release smoke reads it', function (): void {
@@ -153,11 +170,11 @@ describe(GatewayQueueRedis::class, function (): void {
 });
 
 describe('Horizon', function (): void {
-    it('works tasks with three processes, task-vms and builds with one each, below the connection retry_after', function (): void {
+    it('works tasks with three processes, builds with two and task-vms with one, below the connection retry_after', function (): void {
         expect(config('horizon.use'))->toBe(GatewayQueue::Connection)
             ->and(config('horizon.fast_termination'))->toBeFalse()
             ->and([config('horizon.defaults.tasks.queue'), config('horizon.defaults.tasks.minProcesses'), config('horizon.defaults.tasks.maxProcesses')])->toBe([['tasks'], 3, 3])
-            ->and([config('horizon.defaults.builds.queue'), config('horizon.defaults.builds.minProcesses'), config('horizon.defaults.builds.maxProcesses')])->toBe([['builds'], 1, 1])
+            ->and([config('horizon.defaults.builds.queue'), config('horizon.defaults.builds.minProcesses'), config('horizon.defaults.builds.maxProcesses')])->toBe([['builds'], 2, 2])
             ->and([config('horizon.defaults.task-vms.queue'), config('horizon.defaults.task-vms.minProcesses'), config('horizon.defaults.task-vms.maxProcesses')])->toBe([['task-vms'], 1, 1])
             ->and(config('horizon.defaults.builds.timeout'))->toBeLessThan(config('queue.connections.gateway.retry_after'))
             ->and(array_keys(config('horizon.environments')))->toBe(['*']);

@@ -102,7 +102,7 @@ The command then checks service health, existing managed Tool intent, and the No
 
 After all checks pass, `settings.machine_recipe` stores the complete recipe identity, snapshot, and completion time on the Node record. `php artisan node:converge-recipe --status` lists the recorded identity for every Node without SSH, including Nodes with no success marker. A failed attempt clears the previous success marker before mutation: the Node may be partly changed and must not appear converged. Node settings unrelated to the recipe stay intact. To recover manually, pin the previous snapshot date and tool pins in a reviewed recipe, then converge the Node again. Snapshot pinning alone does not undo changed third-party tool pins.
 
-This is a synchronous per-Node operation. It does not schedule nightly work or advance to another Node. The [fleet rollout reference](/reference/gateway-recovery#recipe-convergence) describes its relationship to rollout.
+This synchronous operation also runs inside [nightly recipe maintenance](/reference/compute-drivers#nightly-recipe-maintenance). Maintenance selects and orders Nodes; this operation applies and verifies one Node. [Gateway fleet rollout](/reference/gateway-recovery#recipe-convergence) updates Orbit itself separately.
 
 ## macOS Nodes
 

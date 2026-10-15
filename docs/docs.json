@@ -660,7 +660,6 @@
               "decisions/0200-run-each-task-group-in-its-own-sandbox-vm",
               "decisions/0205-publish-database-credentials-to-vaultwarden",
               "decisions/0206-build-task-vm-images-as-chains-of-small-jobs",
-              "decisions/0207-one-image-recipe-shared-package-cache-no-workspace-templates",
               "decisions/0211-ship-node-changes-as-remote-programs"
             ]
           }
@@ -696,6 +695,10 @@
     }
   },
   "redirects": [
+    {
+      "source": "/decisions/0207-one-image-recipe-shared-package-cache-no-workspace-templates",
+      "destination": "/reference/compute-drivers#machine-software-recipe"
+    },
     {
       "source": "/decisions/0208-scan-monorepo-dependencies-per-sub-project",
       "destination": "/reference/instance-dependency-contracts#separate-monorepo-dependency-sources"
@@ -1030,7 +1033,7 @@
     },
     {
       "source": "/decisions/0005-rolling-incus-development-topology",
-      "destination": "/reference/incus-topologies#composed-from-role-images"
+      "destination": "/reference/incus-topologies#composed-from-one-recipe-base"
     },
     {
       "source": "/decisions/0006-topology-led-feature-development",
@@ -1050,7 +1053,7 @@
     },
     {
       "source": "/decisions/0019-run-disposable-incus-scenario-lanes",
-      "destination": "/reference/incus-topologies#composed-from-role-images"
+      "destination": "/reference/incus-topologies#composed-from-one-recipe-base"
     },
     {
       "source": "/decisions/0022-track-the-issue-workspace-and-delete-it-before-merge",
@@ -1058,11 +1061,11 @@
     },
     {
       "source": "/decisions/0035-close-out-mutating-proofs-by-refreshing-the-topology-snapshot",
-      "destination": "/reference/incus-topologies#composed-from-role-images"
+      "destination": "/reference/incus-topologies#composed-from-one-recipe-base"
     },
     {
       "source": "/decisions/0037-promote-fresh-three-node-topology-snapshots",
-      "destination": "/reference/incus-topologies#composed-from-role-images"
+      "destination": "/reference/incus-topologies#composed-from-one-recipe-base"
     },
     {
       "source": "/decisions/0040-extend-issue-proof-with-one-app-prod-node",
