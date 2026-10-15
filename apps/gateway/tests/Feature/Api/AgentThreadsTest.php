@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 use App\Actions\Tasks\ArchiveAgentTranscriptsAction;
 use App\Domain\Tasks\AgentDriverRegistry;
+use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentThreadEvent;
+use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\TaskAgentSpawner;
 use App\Models\AgentThread;
 use App\Models\Node;
@@ -27,6 +29,18 @@ function agent_viewer_fixture(): array
     $session = AgentThread::query()->create(['task_group_id' => $group->id, 'node_id' => $node->id, 'role' => 'reviewer', 'model' => 'gpt-5.6-luna', 'effort' => 'high', 'external_id' => 'thread-one', 'driver' => 'pi', 'runtime_key' => 'node:'.$node->id]);
 
     return [$group, $session];
+}
+
+/**
+ * The data of each `agent` event in a streamed response.
+ *
+ * @return list<array<string, mixed>>
+ */
+function agent_stream_events(string $output): array
+{
+    preg_match_all('/^event: agent\ndata: (.+)$/m', $output, $matches);
+
+    return array_map(static fn (string $json): array => json_decode($json, true, flags: JSON_THROW_ON_ERROR), $matches[1]);
 }
 
 describe('task agent viewer', function (): void {
@@ -77,6 +91,78 @@ describe('task agent viewer', function (): void {
         $response->assertOk()->assertHeader('Content-Type', 'text/event-stream; charset=UTF-8');
         expect($response->streamedContent())->toContain('event: agent', '"kind":"snapshot"', '"state":"done"', 'Approved', '[REDACTED]')
             ->not->toContain('hidden');
+    });
+
+    it('reads the same redacted snapshot and cursor that the stream sends first', function (): void {
+        [$group, $session] = agent_viewer_fixture();
+        $driver = new class extends FakeAgentDriver
+        {
+            public function events(AgentThread $thread, ?string $cursor, ?float $timeoutSeconds = null): iterable
+            {
+                $observation = $this->observe($thread);
+                yield new AgentThreadEvent($thread->id, 'snapshot', $observation->toArray(), $observation->cursor);
+            }
+        };
+        $driver->observation = new AgentObservation(
+            state: AgentThreadState::Working,
+            entries: [['id' => 'm1', 'kind' => 'message', 'label' => 'assistant', 'text' => 'Running checks TOKEN=hidden', 'at' => '2026-10-14T18:00:00Z']],
+            tokens: 120,
+            cursor: 'run.8',
+        );
+        app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
+        $session->update(['driver' => 'example']);
+        $stored = $session->refresh()->getAttributes();
+
+        $read = $this->getJson("/api/v1/task-groups/{$group->id}/agents/{$session->id}")->assertOk()
+            ->assertJsonPath('data.thread_id', $session->id)->assertJsonPath('data.kind', 'snapshot')
+            ->assertJsonPath('data.state', 'working')->assertJsonPath('data.cursor', 'run.8')
+            ->assertJsonPath('data.archived', false)->assertJsonPath('data.entries.0.text', 'Running checks TOKEN=[REDACTED]')
+            ->json('data');
+        $streamed = agent_stream_events($this->get("/api/v1/task-groups/{$group->id}/agents/{$session->id}/stream")->streamedContent());
+
+        unset($read['archived']);
+        expect($streamed)->toHaveCount(1)->and($read)->toBe($streamed[0])
+            ->and(json_encode($read, JSON_THROW_ON_ERROR))->not->toContain('hidden')
+            ->and($session->fresh()->getAttributes())->toBe($stored);
+    });
+
+    it('reads the archived transcript once the task VM Node is gone', function (): void {
+        [$group, $session] = agent_viewer_fixture();
+        Storage::fake('local');
+        $session->update(['node_id' => null]);
+        Storage::disk('local')->put(ArchiveAgentTranscriptsAction::path($session), json_encode([
+            'state' => 'done', 'entries' => [['id' => 'm1', 'kind' => 'message', 'label' => 'assistant', 'text' => 'Approved TOKEN=hidden', 'at' => '2026-10-14T18:00:00Z']],
+        ], JSON_THROW_ON_ERROR));
+
+        $read = $this->getJson("/api/v1/task-groups/{$group->id}/agents/{$session->id}")->assertOk()
+            ->assertJsonPath('data.kind', 'snapshot')->assertJsonPath('data.state', 'done')
+            ->assertJsonPath('data.cursor', null)->assertJsonPath('data.archived', true)
+            ->assertJsonPath('data.entries.0.text', 'Approved TOKEN=[REDACTED]')
+            ->json('data');
+        $streamed = agent_stream_events($this->get("/api/v1/task-groups/{$group->id}/agents/{$session->id}/stream")->streamedContent());
+
+        unset($read['archived']);
+        expect($read)->toBe($streamed[0]);
+    });
+
+    it('refuses a read like the stream, and hides a failed read', function (): void {
+        [$group, $session] = agent_viewer_fixture();
+        $other = Task::topLevel()->create(['project_id' => $group->project_id, 'title' => 'Other', 'brief' => 'Other']);
+        $peer = Node::query()->create(['name' => 'other-peer', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '10.44.0.81', 'wireguard_ip' => '10.44.0.81']);
+        $driver = new FakeAgentDriver;
+        app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
+        $session->update(['driver' => 'example']);
+        $read = "/api/v1/task-groups/{$group->id}/agents/{$session->id}";
+
+        $this->withServerVariables(['REMOTE_ADDR' => $peer->wireguard_ip])->getJson($read)->assertForbidden();
+        $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.99'])->getJson($read)->assertForbidden();
+        $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.80']);
+        $this->getJson("/api/v1/task-groups/{$other->id}/agents/{$session->id}")->assertNotFound();
+        $this->getJson($read)->assertStatus(502)->assertJsonPath('error.code', 'tasks.agent_read_failed')->assertDontSee('Unavailable');
+        $session->update(['node_id' => null]);
+        $this->getJson($read)->assertStatus(409)->assertJsonPath('error.code', 'tasks.agent_unavailable');
+        $this->postJson('/api/v1/extensions/tasks/disable')->assertOk();
+        $this->getJson($read)->assertStatus(409)->assertJsonPath('error.code', 'extension.disabled');
     });
 
     it('relays driver events, resumes the cursor, filters other threads, and hides errors', function (): void {

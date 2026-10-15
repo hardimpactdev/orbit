@@ -2,9 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\ArchiveAgentTranscriptsAction;
 use App\Actions\Tasks\WatchTaskBranchPullRequestAction;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverRegistry;
+use App\Domain\Tasks\AgentObservation;
+use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\DeliverablePathRepository;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
@@ -30,6 +33,7 @@ use App\Models\TaskQuestion;
 use App\Models\TaskReviewedCommit;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Orbit\Sdk\Requests\Tasks\CancelSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\CancelTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\CloseTaskQuestionRequest;
@@ -41,6 +45,7 @@ use Orbit\Sdk\Requests\Tasks\DestroySubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskAgentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskCommentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskGroupsRequest;
+use Orbit\Sdk\Requests\Tasks\ShowTaskAgentRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTasksStatusRequest;
 use Orbit\Sdk\Requests\Tasks\UpdateSubtaskRequest;
@@ -375,6 +380,31 @@ describe('task response fixtures', function (): void {
         record_fixture($this->getJson("/api/v1/task-groups/{$group->id}/tasks/{$task->id}/comments")->assertOk(), 'tasks/tasks-comment-list/default', ListTaskCommentsRequest::class, 'GET /api/v1/task-groups/{group}/tasks/{task}/comments');
 
         record_fixture($this->getJson("/api/v1/task-groups/{$group->id}/agents")->assertOk(), 'tasks/tasks-agents/default', ListTaskAgentsRequest::class, 'GET /api/v1/task-groups/{group}/agents');
+
+        $driver = new FakeAgentDriver;
+        $driver->observation = new AgentObservation(
+            state: AgentThreadState::Working,
+            entries: [
+                ['id' => 'e1', 'kind' => 'message', 'label' => 'user', 'text' => 'Add the SDK requests.', 'at' => '2026-09-23T09:50:00.000Z'],
+                ['id' => 'call-1', 'kind' => 'activity', 'label' => 'bash', 'text' => "Tests: 12 passed\n\n$ composer check\nexit code 0", 'at' => '2026-09-23T09:55:00.000Z'],
+            ],
+            tokens: 48_200, inputTokens: 2_100, cachedInputTokens: 40_100, outputTokens: 6_000, modelCalls: 4, peakContextTokens: 9_800,
+            cursor: 'run-1.7',
+        );
+        app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
+        $live = AgentThread::query()->create(['task_group_id' => $group->id, 'task_id' => $task->id, 'node_id' => 1, 'role' => 'implementer', 'model' => 'gpt-5.6-luna', 'effort' => 'low', 'driver' => 'example', 'runtime_key' => 'node:1', 'external_id' => 'thread-live']);
+
+        record_fixture($this->getJson("/api/v1/task-groups/{$group->id}/agents/{$live->id}")->assertOk(), 'tasks/tasks-agent-show/default', ShowTaskAgentRequest::class, 'GET /api/v1/task-groups/{group}/agents/{session}');
+
+        Storage::fake('local');
+        $archived = AgentThread::query()->create(['task_group_id' => $group->id, 'task_id' => null, 'node_id' => null, 'role' => 'reviewer', 'model' => 'gpt-5.6-luna', 'effort' => 'high', 'driver' => 'pi', 'runtime_key' => 'node:2', 'external_id' => 'thread-archived']);
+        Storage::disk('local')->put(ArchiveAgentTranscriptsAction::path($archived), json_encode([
+            'state' => 'done',
+            'entries' => [['id' => 'e9', 'kind' => 'message', 'label' => 'assistant', 'text' => 'Approved.', 'at' => '2026-09-23T09:58:00.000Z']],
+            'tokens' => 9_000,
+        ], JSON_THROW_ON_ERROR));
+
+        record_fixture($this->getJson("/api/v1/task-groups/{$group->id}/agents/{$archived->id}")->assertOk(), 'tasks/tasks-agent-show/archived', ShowTaskAgentRequest::class, 'GET /api/v1/task-groups/{group}/agents/{session}');
     });
 });
 

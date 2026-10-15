@@ -9101,6 +9101,41 @@
       }
     },
     {
+      "name": "tasks-agent-show",
+      "extension": "tasks",
+      "title": "Show a task agent session",
+      "description": "Returns one redacted snapshot of a task agent thread: its state, its transcript entries, and its token metrics. `cursor` is the snapshot's place in the thread's events; pass it as `after_sequence` to `tasks:agent-stream` to follow only later events. Call again to poll. When the thread's Node is gone, returns the transcript Orbit saved, with `archived` true and `cursor` null; that snapshot does not change. Requires Gateway access. See /reference/tasks#read-a-thread.",
+      "method": "GET",
+      "path": "/api/v1/task-groups/{group}/agents/{session}",
+      "path_inputs": [
+        "group",
+        "session"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Task group ID."
+          },
+          "session": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric task agent session ID within this group."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "group",
+          "session"
+        ]
+      }
+    },
+    {
       "name": "tasks-agents",
       "extension": "tasks",
       "title": "List task agent sessions",

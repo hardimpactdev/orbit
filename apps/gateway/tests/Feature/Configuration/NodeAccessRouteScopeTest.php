@@ -274,6 +274,7 @@ it('declares node access scope on every active-peer API route', function (): voi
         'schedule:run' => ServingNode::ScheduleOwning,
         'schedule:show' => ServingNode::ScheduleOwning,
         'tasks:agent-stream' => ServingNode::Gateway,
+        'tasks:agent:show' => ServingNode::Gateway,
         'tasks:agents' => ServingNode::Gateway,
         'tasks:cancel' => ServingNode::Gateway,
         'tasks:check:cancel' => ServingNode::Gateway,

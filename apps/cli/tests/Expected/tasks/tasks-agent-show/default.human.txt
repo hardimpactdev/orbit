@@ -1,0 +1,47 @@
+Loading agent thread...
+
+┌  Show agent thread
+│
+├  ● Loaded agent thread
+│
+└  Loaded agent thread.
+
+
+┌  Agent thread: 3
+│
+├  State            working
+│
+├  Source           live
+│
+├  Cursor           run-1.7
+│
+├  Tokens           48,200
+│
+├  Input            2,100
+│
+├  Cached           40,100
+│
+├  Output           6,000
+│
+├  Calls            4
+│
+├  Peak             9,800
+│
+├  Line diff        —
+│
+├  Input requests   0
+│
+├  Error            —
+│
+└  Provider error   —
+
+2026-09-23T09:50:00.000Z · message · user
+  Add the SDK requests.
+
+2026-09-23T09:55:00.000Z · activity · bash
+  Tests: 12 passed
+
+  $ composer check
+  exit code 0
+
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

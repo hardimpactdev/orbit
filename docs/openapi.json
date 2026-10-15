@@ -27189,6 +27189,115 @@
         ]
       }
     },
+    "/api/v1/task-groups/{group}/agents/{session}": {
+      "get": {
+        "operationId": "tasks-agent-show",
+        "summary": "Show a task agent session",
+        "tags": [
+          "Tasks"
+        ],
+        "parameters": [
+          {
+            "name": "group",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Task group ID."
+          },
+          {
+            "name": "session",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric task agent session ID within this group."
+          }
+        ],
+        "x-orbit-extension": "tasks",
+        "description": "Returns one redacted snapshot of a task agent thread: its state, its transcript entries, and its token metrics. `cursor` is the snapshot's place in the thread's events; pass it as `after_sequence` to `tasks:agent-stream` to follow only later events. Call again to poll. When the thread's Node is gone, returns the transcript Orbit saved, with `archived` true and `cursor` null; that snapshot does not change. Requires Gateway access. See /reference/tasks#read-a-thread.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/TaskAgentSnapshot"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The thread is a stored `t3` thread (`tasks.agent_transcript_unavailable`), or its Node is gone and Orbit saved no transcript (`tasks.agent_unavailable`). A disabled extension returns HTTP 409 (`extension.disabled`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Orbit could not read the thread from its Node (`tasks.agent_read_failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/task-groups/1/agents/2\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\ShowTaskAgentRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ShowTaskAgentRequest(groupId: 1, sessionId: 2))->dto();\n"
+          }
+        ]
+      }
+    },
     "/api/v1/task-groups/{group}/agents/{session}/stream": {
       "get": {
         "operationId": "tasks-agent-stream",
@@ -30559,6 +30668,171 @@
         "type": "array",
         "items": {
           "$ref": "#/components/schemas/DevelopmentDeployStep"
+        }
+      },
+      "TaskAgentSnapshot": {
+        "type": "object",
+        "required": [
+          "thread_id",
+          "kind",
+          "cursor",
+          "archived"
+        ],
+        "properties": {
+          "thread_id": {
+            "type": "integer",
+            "description": "The agent thread ID."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "snapshot"
+            ]
+          },
+          "state": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "idle",
+              "working",
+              "asking_for_input",
+              "done",
+              "failed",
+              null
+            ]
+          },
+          "input_requests": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "details": {}
+              },
+              "required": [
+                "id",
+                "kind",
+                "details"
+              ]
+            }
+          },
+          "entries": {
+            "type": "array",
+            "description": "The normalized transcript, oldest first. Merge entries by `id`.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "description": "`message` or `activity`."
+                },
+                "label": {
+                  "type": "string",
+                  "description": "The role of a message, or the tool of an activity."
+                },
+                "text": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "kind",
+                "label",
+                "text",
+                "at"
+              ]
+            }
+          },
+          "tokens": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "input_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "cached_input_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "output_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "model_calls": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "peak_context_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "lines_added": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "lines_deleted": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider_error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "overloaded",
+              "rate_limited",
+              "server_error",
+              null
+            ]
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The place of this snapshot in the thread's events. Pass it as `after_sequence` to `tasks:agent-stream`. Null for a saved transcript."
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "True when the snapshot is the transcript Orbit saved before the task VM was deleted."
+          }
         }
       },
       "Activity": {

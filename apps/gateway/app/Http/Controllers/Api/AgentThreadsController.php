@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Actions\Tasks\ShowAgentThreadAction;
 use App\Actions\Tasks\ShowAgentThreadsAction;
 use App\Actions\Tasks\StreamAgentThreadAction;
 use App\Data\Tasks\AgentThreadData;
@@ -24,6 +25,14 @@ final class AgentThreadsController extends Controller
     {
         return response()->json([
             'data' => $action->execute($group)->map(static fn (AgentThread $session): array => AgentThreadData::fromModel($session)->toArray())->all(),
+            'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
+        ]);
+    }
+
+    public function show(Request $request, Task $group, AgentThread $session, ShowAgentThreadAction $action): JsonResponse
+    {
+        return response()->json([
+            'data' => $action->execute($group, $session),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
         ]);
     }

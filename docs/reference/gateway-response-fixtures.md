@@ -62,6 +62,8 @@ The `tasks/tasks-show/watched` fixture records a running task whose branch pull 
 
 The `tasks/tasks-question-close` fixtures record a question closed as `superseded` and the `tasks.question_closed` refusal of a second close with another status. The SDK and the CLI replay both.
 
+The `tasks/tasks-agent-show` fixtures record a live agent thread snapshot with a `cursor` and `archived` false, and a saved transcript with `archived` true and a null `cursor`. The SDK and the CLI replay both.
+
 ## Validate a fixture
 
 `bin/api-fixtures --check` validates every fixture body against the response schema for its route and status in `docs/openapi.json`. The `apps/docs` checks run it, so a fixture whose body differs from the API reference fails continuous integration. Regenerate the reference with `composer docs-openapi` when a response shape changes on purpose. The inputs that command reads are on [API reference generation](/reference/api-reference).

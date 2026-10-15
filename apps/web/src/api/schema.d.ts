@@ -3541,6 +3541,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/task-groups/{group}/agents/{session}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show a task agent session
+         * @description Returns one redacted snapshot of a task agent thread: its state, its transcript entries, and its token metrics. `cursor` is the snapshot's place in the thread's events; pass it as `after_sequence` to `tasks:agent-stream` to follow only later events. Call again to poll. When the thread's Node is gone, returns the transcript Orbit saved, with `archived` true and `cursor` null; that snapshot does not change. Requires Gateway access. See /reference/tasks#read-a-thread.
+         */
+        get: operations["tasks-agent-show"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/task-groups/{group}/agents/{session}/stream": {
         parameters: {
             query?: never;
@@ -3971,6 +3991,44 @@ export interface components {
             required: boolean;
         };
         DevelopmentDeploySteps: components["schemas"]["DevelopmentDeployStep"][];
+        TaskAgentSnapshot: {
+            /** @description The agent thread ID. */
+            thread_id: number;
+            /** @enum {string} */
+            kind: "snapshot";
+            /** @enum {string|null} */
+            state?: "idle" | "working" | "asking_for_input" | "done" | "failed" | null;
+            input_requests?: {
+                id: string;
+                kind: string;
+                details: unknown;
+            }[];
+            /** @description The normalized transcript, oldest first. Merge entries by `id`. */
+            entries?: {
+                id: string;
+                /** @description `message` or `activity`. */
+                kind: string;
+                /** @description The role of a message, or the tool of an activity. */
+                label: string;
+                text: string;
+                at: string;
+            }[];
+            tokens?: number | null;
+            input_tokens?: number | null;
+            cached_input_tokens?: number | null;
+            output_tokens?: number | null;
+            model_calls?: number | null;
+            peak_context_tokens?: number | null;
+            lines_added?: number | null;
+            lines_deleted?: number | null;
+            error?: string | null;
+            /** @enum {string|null} */
+            provider_error?: "overloaded" | "rate_limited" | "server_error" | null;
+            /** @description The place of this snapshot in the thread's events. Pass it as `after_sequence` to `tasks:agent-stream`. Null for a saved transcript. */
+            cursor: string | null;
+            /** @description True when the snapshot is the transcript Orbit saved before the task VM was deleted. */
+            archived: boolean;
+        };
         Activity: {
             id?: number;
             request_id?: string;
@@ -19312,6 +19370,70 @@ export interface operations {
             };
             /** @description The tasks extension is disabled (`extension.disabled`). A disabled extension returns HTTP 409 (`extension.disabled`). */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-agent-show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Task group ID. */
+                group: number;
+                /** @description Numeric task agent session ID within this group. */
+                session: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskAgentSnapshot"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The thread is a stored `t3` thread (`tasks.agent_transcript_unavailable`), or its Node is gone and Orbit saved no transcript (`tasks.agent_unavailable`). A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Orbit could not read the thread from its Node (`tasks.agent_read_failed`). */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };

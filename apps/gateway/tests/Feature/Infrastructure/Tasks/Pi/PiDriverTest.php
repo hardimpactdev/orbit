@@ -402,6 +402,23 @@ describe('events', function (): void {
         Http::assertSent(fn (Request $request): bool => $request->url() === PI_BASE.'/sessions/session-1/stream');
     });
 
+    it('streams the same snapshot and cursor that observe reads', function (): void {
+        $snapshot = pi_snapshot('working', array_slice(pi_check_transcript('token '.PI_TOKEN), 0, 3));
+        Http::fake([
+            PI_BASE.'/sessions/session-1' => Http::response($snapshot),
+            PI_BASE.'/sessions/session-1/stream*' => Http::response(json_encode($snapshot)."\n"),
+        ]);
+        $thread = pi_thread(pi_node());
+
+        $observation = pi_driver()->observe($thread);
+        $events = iterator_to_array(pi_driver()->events($thread, null), false);
+
+        expect($events[0]->kind)->toBe('snapshot')
+            ->and($events[0]->data)->toBe($observation->toArray())
+            ->and($events[0]->cursor)->toBe($observation->cursor)->toBe('run-1.7')
+            ->and(json_encode($events[0]->data))->toContain('token [REDACTED]')->not->toContain(PI_TOKEN);
+    });
+
     it('resumes after a cursor without a snapshot and relays only the later events', function (): void {
         $events = pi_events([
             ['kind' => 'resumed', 'run' => 'run-1', 'sequence' => 7, 'session' => ['id' => 'session-1'], 'context' => []],

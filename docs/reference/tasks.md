@@ -69,7 +69,7 @@ A top-level task holds the task workspace, the branch, the reviewed pull request
 
 Clearing the assistance flag can keep the last reason.
 
-An [annotation](/reference/agent-annotation) creates a task with `execution_mode` `existing_thread`. That task sends work to a thread that already exists. The lifecycle operations refuse it with `tasks.external_execution` (HTTP 409): update, cancel, complete, and the subtask create, update, destroy, and cancel operations. List, show, the comment operations, `tasks:check:cancel`, and `tasks:agents` accept it. The scheduler never claims it.
+An [annotation](/reference/agent-annotation) creates a task with `execution_mode` `existing_thread`. That task sends work to a thread that already exists. The lifecycle operations refuse it with `tasks.external_execution` (HTTP 409): update, cancel, complete, and the subtask create, update, destroy, and cancel operations. List, show, the comment operations, `tasks:check:cancel`, `tasks:agents`, and `tasks:agent:show` accept it. The scheduler never claims it.
 
 Typed comments record the workflow. A stored turn receipt is a comment whose type is its outcome: `ready_for_review`, `blocked`, `changes_requested`, or `approved`. An operator posts `assistance_requested` and `resolution` comments. Each comment keeps its full body, author, time, and attempt. An approval that Orbit committed carries `commit_sha`. The approval of the last subtask also carries `pull_request`: the summary, changes, and breaking changes it proposed.
 
@@ -118,6 +118,7 @@ List, show, and `tasks:question:list` accept any authorized peer. Update and the
 | `tasks:question:list` | `GET /api/v1/task-questions` | Any peer |
 | `tasks:question:close` | `POST /api/v1/task-questions/{question}/close` | Gateway |
 | `tasks:agents` | `GET /api/v1/task-groups/{group}/agents` | Gateway |
+| `tasks:agent:show` | `GET /api/v1/task-groups/{group}/agents/{session}` | Gateway |
 
 Each MCP tool name is the operation name with hyphens, such as `tasks-subtask-create`. The paths keep the `task-groups` segment. `{group}` is the top-level task id, and `{task}` is the subtask id.
 
@@ -176,6 +177,8 @@ The task and subtask operations return these errors.
 | `tasks.subtask_interrupt_failed` | 502 | Orbit could not stop the implementer or the check |
 | `tasks.agent_driver_unavailable` | 409 | The configured agent driver is unknown. No task is stored |
 | `tasks.agent_transcript_unavailable` | 409 | A transcript request for a stored `t3` task thread. The row stays, and no stream opens |
+| `tasks.agent_unavailable` | 409 | A transcript request for a thread whose Node is gone, when Orbit saved no transcript |
+| `tasks.agent_read_failed` | 502 | A [thread read](#read-a-thread) that the thread's Pi server did not answer or refused |
 | `tasks.github_app_required` | 422 | Create for a Project with `source_access: gh_cli`. No task is stored |
 | `tasks.external_execution` | 409 | A lifecycle operation on an annotation task |
 | `validation.failed` | 422 | An invalid field, such as a deliverable or a position outside the `todo` subtasks |
@@ -1370,11 +1373,34 @@ Each card shows the Project code and the task id, such as `ORB-13`, its line cou
 
 ## Agent viewer
 
-The Agents section lists every started thread of the task. `GET /api/v1/task-groups/{group}/agents` returns each thread with its driver, external id, state, observation time, errors, and metrics. `GET /api/v1/task-groups/{group}/agents/{session}/stream` streams the thread's normalized conversation to the browser. Both need Gateway access and an enabled extension. Runtime credentials stay in the Gateway.
+The Agents section lists every started thread of the task. `GET /api/v1/task-groups/{group}/agents` returns each thread with its driver, external id, state, observation time, errors, and metrics. `GET /api/v1/task-groups/{group}/agents/{session}` [reads one snapshot](#read-a-thread) of the thread's normalized conversation. `GET /api/v1/task-groups/{group}/agents/{session}/stream` streams that conversation to the browser. All three need Gateway access and an enabled extension. Runtime credentials stay in the Gateway.
 
 Stored T3 task-thread rows stay in that list, with their metrics. The `t3_*` columns on `agent_threads` stay. A transcript request for a `t3` thread returns HTTP 409 `tasks.agent_transcript_unavailable` and does not open a stream.
 
 A snapshot replaces the browser transcript. Entries merge by id and kind, so an updated entry replaces the earlier one. On reconnect, the browser sends its last cursor. The stream resumes after the cursor and sends only what the viewer missed. When one event becomes several entries, only the last carries the cursor. The viewer writes no thread state. When the thread's Node is gone, the stream sends the [saved transcript](#archive-finished-threads) as one snapshot and ends. Without a saved transcript, it returns HTTP 409 `tasks.agent_unavailable`.
+
+### Read a thread
+
+`GET /api/v1/task-groups/{group}/agents/{session}` returns one snapshot of the thread as JSON. It holds the same redacted content as the first event of the stream, plus `archived`. The CLI command [`tasks:agent:show`](/cli/tasks#orbit-tasksagentshow) and the MCP tool `tasks-agent-show` call it. An agent can poll it to follow a thread without a stream.
+
+| Field | Meaning |
+| --- | --- |
+| `thread_id` | The agent thread ID |
+| `kind` | Always `snapshot`, as in the stream |
+| `state` | `idle`, `working`, `asking_for_input`, `done`, or `failed`. Null when unknown |
+| `entries` | The normalized transcript, oldest first. Each entry has `id`, `kind` (`message` or `activity`), `label`, `text`, and `at` |
+| `input_requests` | Open input requests. A Pi thread has none |
+| `tokens`, `input_tokens`, `cached_input_tokens`, `output_tokens`, `model_calls`, `peak_context_tokens` | The [thread token metrics](#thread-token-metrics). Each is null when unknown |
+| `lines_added`, `lines_deleted` | The thread's line diff, or null |
+| `error`, `provider_error` | The error of a `failed` turn and its provider class |
+| `cursor` | The place of this snapshot in the thread's events, or null |
+| `archived` | True when the snapshot is the saved transcript |
+
+The cursor has the form `{run}.{sequence}`. Pass it to the stream as `after_sequence` or `Last-Event-ID`. The stream then sends only the events after the snapshot. A cursor from an earlier run of the Pi server gets a fresh snapshot. The run changes when the Pi server restarts or unloads an idle session. An entry can appear in the snapshot and again in a later event, so merge entries by id and kind, as the stream does.
+
+When the thread's Node is gone, the read returns the [saved transcript](#archive-finished-threads) with `archived` true and `cursor` null. A saved transcript does not change, so a reader can stop polling it.
+
+The read writes no thread state. Activity samples it like any other [read](/cli/activity#what-the-gateway-records). A read that the Pi server does not answer returns HTTP 502 `tasks.agent_read_failed`, and its message holds no server detail. The other errors match the stream: 404 for a thread of another task, 409 `tasks.agent_transcript_unavailable` for a `t3` thread, and 409 `tasks.agent_unavailable` when the Node is gone and Orbit saved no transcript.
 
 ## Coder settle webhook
 
@@ -1660,6 +1686,10 @@ The approval commit must hold only the work that the implementer handed off. So 
 ### Transcripts outlive the task VM
 
 A task VM is deleted when its task ends, and its Pi sessions go with it. Without a copy, nobody can read what an agent did after the task settles, so prompts cannot be audited or replayed against real turns. Orbit saves the redacted observation on the Gateway just before the delete. It reuses the snapshot the agent viewer already streams, so the copy needs no second format and no second redaction path.
+
+### Agents read a snapshot, browsers stream
+
+An MCP tool call returns one answer and holds no request open, so an agent cannot follow the stream. The [thread read](#read-a-thread) gives it the same content as one JSON response. The read and the stream share the checks, the saved-transcript fallback, and the sanitizer, so they never redact differently. The cursor stays the Pi server's, so a reader can move from the read to the stream without a gap. The Gateway keeps no state per reader.
 
 ### Orbit commits and pushes
 

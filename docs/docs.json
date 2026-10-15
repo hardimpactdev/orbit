@@ -538,6 +538,7 @@
               "GET /api/v1/task-groups/{group}",
               "PATCH /api/v1/task-groups/{group}",
               "GET /api/v1/task-groups/{group}/agents",
+              "GET /api/v1/task-groups/{group}/agents/{session}",
               "GET /api/v1/task-groups/{group}/agents/{session}/stream",
               "POST /api/v1/task-groups/{group}/cancel",
               "POST /api/v1/task-groups/{group}/complete",
