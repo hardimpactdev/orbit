@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\Documents\Console\Commands;
 
+use App\Console\Commands\ReadsStringInput;
 use Illuminate\Console\Command;
 use Orbit\Extensions\Documents\Infrastructure\ProbeJournal;
 use RuntimeException;
