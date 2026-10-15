@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Gateway;
 
+use App\Domain\Gateway\GatewayServiceStartHook;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -12,8 +13,12 @@ final readonly class NativeGatewayFpmConverger
 {
     private const string LIVE_POOL = '/etc/php/8.5/fpm/pool.d/orbit-gateway.conf';
 
+    private const string START_HOOK_DIRECTORY = '/etc/orbit';
+
+    /** @param list<GatewayServiceStartHook> $startHooks */
     public function __construct(
         private ProcessRunner $processes,
+        private array $startHooks,
     ) {}
 
     public function converge(string $generatedPool): void
@@ -42,13 +47,17 @@ final readonly class NativeGatewayFpmConverger
             throw $exception;
         }
 
-        $this->installCleanupStartup();
+        foreach ($this->startHooks as $hook) {
+            $this->installStartHook($hook);
+        }
         // A running distro FPM service can activate the Gateway pool with a reload, which skips ExecStartPre.
-        $this->run(
-            step: 'gateway-fpm-cleanup-invalidate',
-            errorCode: 'gateway.fpm_start_failed',
-            arguments: ['sudo', GatewayCleanupStartupRenderer::HOOK_PATH],
-        );
+        foreach ($this->startHooks as $hook) {
+            $this->run(
+                step: 'gateway-fpm-start-hook',
+                errorCode: 'gateway.fpm_start_failed',
+                arguments: ['sudo', self::START_HOOK_DIRECTORY.'/'.$hook->name()],
+            );
+        }
         $this->run(
             step: 'gateway-fpm-enable',
             errorCode: 'gateway.fpm_start_failed',
@@ -120,34 +129,36 @@ final readonly class NativeGatewayFpmConverger
         );
     }
 
-    private function installCleanupStartup(): void
+    /** Installs the hook program in /etc/orbit and the `php8.5-fpm` drop-in that runs it as root in `ExecStartPre`. */
+    private function installStartHook(GatewayServiceStartHook $hook): void
     {
-        $renderer = new GatewayCleanupStartupRenderer;
-        $hook = $renderer->renderHook(config()->string('orbit.gateway_checkout'), config()->string('orbit.home'));
-        $dropIn = $renderer->renderDropIn();
-        $program = <<<'BASH'
-            install -d -o root -g root -m 0755 /etc/orbit /etc/systemd/system/php8.5-fpm.service.d
-            hook=$(mktemp /etc/orbit/.document-cleanup-start.XXXXXX)
-            unit=$(mktemp /etc/systemd/system/php8.5-fpm.service.d/.document-cleanup.XXXXXX)
-            trap 'rm -f -- "$hook" "$unit"' EXIT
-            BASH;
-        $program .= "\nprintf '%s' ".escapeshellarg($hook).' > "$hook"';
-        $program .= "\nprintf '%s' ".escapeshellarg($dropIn).' > "$unit"';
-        $program .= <<<'BASH'
-
-            chown root:root "$hook" "$unit"
-            chmod 0755 "$hook"
-            chmod 0644 "$unit"
-            bash -n "$hook"
-            mv -f -- "$hook" /etc/orbit/project-document-cleanup-start
-            mv -f -- "$unit" /etc/systemd/system/php8.5-fpm.service.d/orbit-document-cleanup.conf
-            systemctl daemon-reload
-            BASH;
+        foreach ([$hook->name(), $hook->dropIn()] as $file) {
+            if (preg_match('/\A[a-z0-9][a-z0-9.-]*\z/', $file) !== 1) {
+                throw new \LogicException("A Gateway service start hook names the invalid file [{$file}].");
+            }
+        }
+        $program = $hook->renderHook(config()->string('orbit.gateway_checkout'), config()->string('orbit.home'));
+        $dropIn = "# Managed by Orbit: {$hook->description()}\n[Service]\nExecStartPre=+".self::START_HOOK_DIRECTORY."/{$hook->name()}\n";
+        $arguments = array_map(escapeshellarg(...), [$hook->name(), $hook->dropIn(), $program, $dropIn]);
         $this->run(
-            step: 'gateway-fpm-cleanup-startup',
+            step: 'gateway-fpm-start-hook-install',
             errorCode: 'gateway.fpm_config_install_failed',
             arguments: ['sudo', 'bash', '-seu'],
-            input: $program,
+            input: 'set -- '.implode(' ', $arguments)."\n".<<<'BASH'
+                install -d -o root -g root -m 0755 /etc/orbit /etc/systemd/system/php8.5-fpm.service.d
+                hook=$(mktemp "/etc/orbit/.$1.XXXXXX")
+                unit=$(mktemp "/etc/systemd/system/php8.5-fpm.service.d/.$2.XXXXXX")
+                trap 'rm -f -- "$hook" "$unit"' EXIT
+                printf '%s' "$3" > "$hook"
+                printf '%s' "$4" > "$unit"
+                chown root:root "$hook" "$unit"
+                chmod 0755 "$hook"
+                chmod 0644 "$unit"
+                bash -n "$hook"
+                mv -f -- "$hook" "/etc/orbit/$1"
+                mv -f -- "$unit" "/etc/systemd/system/php8.5-fpm.service.d/$2"
+                systemctl daemon-reload
+                BASH,
         );
     }
 

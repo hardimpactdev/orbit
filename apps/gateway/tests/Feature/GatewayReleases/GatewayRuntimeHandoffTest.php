@@ -3,7 +3,9 @@
 declare(strict_types=1);
 
 use App\Domain\AgentView\AgentViewConverger;
+use App\Domain\Extensions\Contributions;
 use App\Domain\Fleet\FleetConvergeUnits;
+use App\Domain\Gateway\GatewayServiceStartHook;
 use App\Domain\GatewayReleases\GatewayReleaseCleanup;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseUnitConverger;
@@ -208,7 +210,7 @@ function runtime_handoff(?string $livePool = null, int $drainSeconds = 5, ?Fleet
             recipeImages: $recipeImages,
             builds: $builds,
             fpmRenderer: new GatewayFpmConfigRenderer,
-            fpm: new NativeGatewayFpmConverger($processes),
+            fpm: new NativeGatewayFpmConverger($processes, app(Contributions::class)->of(GatewayServiceStartHook::class)),
             files: new ProtectedFileWriter,
             hibernator: $units,
             agentView: $units,

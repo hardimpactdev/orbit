@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Domain\AgentView\AgentViewConverger;
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Certificates\GatewayCertificatePaths;
+use App\Domain\Extensions\Contributions;
+use App\Domain\Gateway\GatewayServiceStartHook;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\GatewayReleases\GatewayReleaseUnitConverger;
 use App\Domain\Hibernation\RuntimeHibernatorConverger;
@@ -126,7 +128,7 @@ it('refuses FPM reload or restart when cleanup invalidation fails during converg
     try {
         expect(fn () => $converger->converge(gateway_web_node(), 'gateway.orbit', '10.44.0.1'))
             ->toThrow(function (NodeProvisioningException $exception): void {
-                expect($exception->step)->toBe('gateway-fpm-cleanup-invalidate');
+                expect($exception->step)->toBe('gateway-fpm-start-hook');
                 expect($exception->errorCode)->toBe('gateway.fpm_start_failed');
             });
         expect(Collection::make($processes->calls)->contains(static fn (ProcessInvocation $call): bool => $call->arguments === ['sudo', 'systemctl', 'reload-or-restart', 'php8.5-fpm']))->toBeFalse();
@@ -347,8 +349,8 @@ it('publishes complete validated FPM Caddy and certificate configurations throug
 
 it('keeps staged FPM candidates bound to their invocation under contention', function (): void {
     $processes = new GatewayFpmContentionProcessRunner;
-    $primary = new NativeGatewayFpmConverger($processes);
-    $processes->contender = new NativeGatewayFpmConverger($processes);
+    $primary = new NativeGatewayFpmConverger($processes, app(Contributions::class)->of(GatewayServiceStartHook::class));
+    $processes->contender = new NativeGatewayFpmConverger($processes, app(Contributions::class)->of(GatewayServiceStartHook::class));
 
     $primary->converge('/tmp/primary-gateway-pool.conf');
 
@@ -1003,7 +1005,7 @@ function gateway_web_converger(?string $failure = null, string $checkoutPath = '
             checkout: new GatewayCheckoutAccessConverger($processes, $checkoutPath),
             webDirectory: new GatewayWebDirectoryConverger($processes, '/home/orbit/web'),
             certificatePublisher: new NativeGatewayCertificatePublisher($processes, $orbitHome),
-            fpm: new NativeGatewayFpmConverger($processes),
+            fpm: new NativeGatewayFpmConverger($processes, app(Contributions::class)->of(GatewayServiceStartHook::class)),
             builds: new NodeCaddyBuilder(
                 app(NodeCaddyfileRenderer::class),
                 new NodeCaddyBuildLock($orbitHome.'/locks/caddy-build'),

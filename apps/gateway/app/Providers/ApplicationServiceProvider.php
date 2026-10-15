@@ -57,6 +57,7 @@ use App\Domain\Doctor\PublicRouteEdgeInspector;
 use App\Domain\Doctor\RoleStateInspector;
 use App\Domain\Doctor\RouteApplicationUrlInspector;
 use App\Domain\Doctor\ScheduleStateInspector;
+use App\Domain\Extensions\Contributions;
 use App\Domain\Firewall\FirewallInspector;
 use App\Domain\Firewall\FirewallManager;
 use App\Domain\Firewall\RouterLanIngressPublisher;
@@ -66,6 +67,7 @@ use App\Domain\Fleet\FleetConvergeUnits;
 use App\Domain\Fleet\ReleaseHistory;
 use App\Domain\Gateway\GatewayCacheStore;
 use App\Domain\Gateway\GatewaySelfAccessConverger;
+use App\Domain\Gateway\GatewayServiceStartHook;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
 use App\Domain\GatewayReleases\GatewayReleaseUnitConverger;
@@ -875,7 +877,7 @@ final class ApplicationServiceProvider extends ServiceProvider
                     processes: app(ProcessRunner::class),
                     orbitHome: rtrim(string: Config::string('orbit.home'), characters: '/'),
                 ),
-                fpm: new NativeGatewayFpmConverger(app(ProcessRunner::class)),
+                fpm: new NativeGatewayFpmConverger(app(ProcessRunner::class), app(Contributions::class)->of(GatewayServiceStartHook::class)),
                 builds: app(NodeCaddyBuilds::class),
                 caddyInstaller: new NativeGatewayCaddyInstaller(app(ProcessRunner::class)),
                 orbitHome: rtrim(string: Config::string('orbit.home'), characters: '/'),

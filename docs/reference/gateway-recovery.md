@@ -217,8 +217,9 @@ The serving phase:
 
 1. publishes the Gateway Node's Caddyfile when the render changed, with a graceful Caddy reload;
 2. compares the rendered pool with `/etc/php/8.5/fpm/pool.d/orbit-gateway.conf` and reloads PHP-FPM only for a difference, as a reload ends requests in flight;
-3. installs the hibernator, agent-view, and [release units](#release-units) again and restarts agent-view. The units name the stable `/home/orbit/orbit/apps/gateway` path;
-4. moves [Laravel Horizon](/reference/gateway-queue#releases) to the new release, with `php artisan horizon:terminate` while it runs.
+3. installs and runs each contributed [start hook](/reference/extensions#plug-in-points) before that reload;
+4. installs the hibernator, agent-view, and [release units](#release-units) again and restarts agent-view. The units name the stable `/home/orbit/orbit/apps/gateway` path;
+5. moves [Laravel Horizon](/reference/gateway-queue#releases) to the new release, with `php artisan horizon:terminate` while it runs.
 
 The scheduler phase:
 

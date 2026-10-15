@@ -3,7 +3,7 @@ title: "Project Documents"
 description: "Native Project folders, versioned files, editing, private S3 storage, and the shared API, CLI, SDK, MCP, and web contract."
 covers:
   - apps/gateway/extensions/documents/**
-  - apps/gateway/app/Infrastructure/Gateway/{GatewayCleanupStartupRenderer,NativeGatewayFpmConverger}.php
+  - apps/gateway/app/Infrastructure/Gateway/NativeGatewayFpmConverger.php
   - apps/gateway/artisan
   - apps/gateway/tests/Feature/Extensions/Documents/**
   - apps/cli/app/Commands/ProjectDocuments/Concerns/GatesDocumentsExtension.php
@@ -54,7 +54,7 @@ A file is created with its first body. There are no bodyless files or published 
 
 ### Limits
 
-The decoded body limit is 10 MiB (10,485,760 bytes), including text, for every client. Empty content is allowed. The HTTP JSON request limit is 15 MiB (15,728,640 bytes); oversized requests use the same JSON error contract as other API failures, not an HTML proxy response. Document routes use this limit instead of PHP's smaller form-POST limit, including numeric IDs with leading zeroes.
+The decoded body limit is 10 MiB (10,485,760 bytes), including text, for every client. Empty content is allowed. The HTTP JSON request limit is 15 MiB (15,728,640 bytes); oversized requests use the same JSON error contract as other API failures, not an HTML proxy response. Document routes use this limit instead of PHP's smaller form-POST limit, including numeric IDs with leading zeroes. Documents marks these routes through the `ExactRequestBody` [plug-in point](/reference/extensions#plug-in-points).
 
 MCP admits envelopes up to the same 15 MiB limit, checked after active-peer authorization and before JSON-RPC parsing; each dispatched document request still enforces its own limit after Node access authorization. Document and MCP routes skip automatic trimming and empty-string conversion so authorization precedes JSON parsing and exact body bytes stay unchanged.
 
@@ -196,7 +196,7 @@ Keep the generation, permit, and stable execution lock under `/run/orbit/project
 
 Actual Gateway service startup runs the invalidation hook under that same lock before accepting API traffic or starting scheduler and queue consumers. It removes the permit and report association and creates a fresh unpredictable generation atomically. Wire this ordering into the installed service lifecycle for the Gateway PHP-FPM pool and every scheduler/queue entry point, including independently restarted consumers.
 
-The installed PHP-FPM service drop-in runs `project-documents:cleanup:invalidate` as the Gateway account in `ExecStartPre`. Gateway web convergence also runs that hook before activating the pool with a reload, because a reload does not run `ExecStartPre`. Hook failure prevents activation. The hook does not query the database or contact S3.
+Documents contributes this hook through the `GatewayServiceStartHook` [plug-in point](/reference/extensions#plug-in-points). The PHP-FPM service drop-in `orbit-document-cleanup.conf` runs `/etc/orbit/project-document-cleanup-start` in `ExecStartPre`, and that program runs `project-documents:cleanup:invalidate` as the Gateway account. Gateway web convergence also runs that hook before activating the pool with a reload, because a reload does not run `ExecStartPre`. Hook failure prevents activation. The hook does not query the database or contact S3.
 
 Artisan invalidates authorization when `schedule:work`, `queue:work`, or `queue:listen` starts. A standalone `schedule:run` also invalidates authorization. Start the Gateway scheduler with `schedule:work`, then reconcile and resume in that startup generation. Laravel launches a fresh `schedule:run` child every minute; these recurring children preserve the generation and permit, rather than treating every tick as a restart. [Laravel Horizon](/reference/gateway-queue) starts with `horizon`, `horizon:supervisor`, and `horizon:work`, not `queue:work`, so its start keeps the generation and permit. It works only the Gateway queue, which holds no document job.
 
