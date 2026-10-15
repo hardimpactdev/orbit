@@ -119,9 +119,16 @@ Then it gets the files:
 
 Then it keeps the installed build for a rollback:
 
-1. For each package that the change replaces or purges, it looks for a cached `.deb` of the installed version.
-2. Otherwise `dpkg-repack` writes one. A missing `dpkg-repack` is first installed at its recipe version.
-3. Without a rollback file, it refuses with `rollback_unavailable` before any change.
+1. For each package that the change replaces or purges, it looks for a `.deb` of the installed version in Orbit's cache.
+2. Next it looks in apt's archive cache, `/var/cache/apt/archives`.
+3. Otherwise it rebuilds the installed package from its files. `dpkg-repack --generate` writes the build tree, and the installer builds the file with `dpkg-deb`. A missing `dpkg-repack` is first installed at its recipe version.
+4. Without a rollback file, it refuses with `rollback_unavailable` before any change.
+
+Every rollback file must carry the installed package name and version. The installer checks the file, not a tool's exit code: `dpkg-repack` exits 0 even when it writes no file.
+
+The rebuild leaves out each conffile that is not on disk. An operator or Orbit may remove a conffile on purpose, such as the default `www` pool of `php<version>-fpm`, and `dpkg-repack` alone then refuses the package. Sury deletes old builds and the mirror holds only pinned ones, so a download by version is not a reliable source.
+
+The installer keeps a disabled default pool disabled. When `pool.d/www.conf` is absent before the change, an install or a rollback that brings it back is undone at once. An enabled default pool stays as it is.
 
 Then it swaps the build:
 
