@@ -80,7 +80,7 @@ Every `proxycli` name moves at once. No alias, redirect command, or old error co
 | Config `task_vms.model_proxy_origin`, `ORBIT_TASK_VMS_MODEL_PROXY_ORIGIN` | Removed. The origin comes from the role |
 | Column `task_vms.model_proxy_origin` | `task_vms.ai_router_origin` |
 | Columns `processes.proxycli_source_revision`, `processes.proxycli_source_activation_pending` | An extension-owned table `ai_router_process_sources` with the same two values |
-| Pages `/reference/proxycli`, `/cli/proxycli` | `/reference/ai-router`, `/cli/ai-router` |
+| Pages `/reference/proxycli`, `/cli/proxycli` | `/reference/ai-router`, `/cli/ai-router`. The old paths get no redirect |
 
 `ai-router:account:enable` and `:disable` use the toggle pair of the [command vocabulary](/reference/cli-command-vocabulary#verb-pairs). Providers and models use `list` and `show` under their own nouns, so the family keeps only two family actions: `status` and the version `update`. `update VERSION` follows `analytics:update`.
 
@@ -132,11 +132,14 @@ This removes today's hazard. Disabling removes the router Process, the collector
 | Singleton | Yes, one per fleet |
 | Assignable during `node:add` | No. Assignment needs a cache connection |
 | Relocatable | No. A move changes the origin of every held key. Remove and add instead, when no key is held |
-| Conflicts | `gateway`. The Gateway Node serves task VMs only the API on TCP 443, and a Gateway move must not move the model route |
+| Conflicts | `gateway` and `ingress`. See the reasons below this table |
 | Node | An active Linux Node with a WireGuard address, outside `task_vms.wireguard_range` |
+
+The router holds the credentials of every model account. So it stays off the public-facing `ingress` Node, which accepts traffic from the internet. It also stays off the `gateway` Node: that Node serves task VMs only the API on TCP 443, and a Gateway move must not move the model route.
 
 `orbit node:role:add NODE ai-router --cache-connection=SLUG [--process=ID]`:
 
+- `--cache-connection` is always required. The collector and its Valkey cache are part of every AI router, and there is no mode without them.
 - The cache connection follows today's rules: `ai_router.cache_missing`, `ai_router.cache_invalid`, and `ai_router.cache_unplaced`.
 - `--process` adopts an existing router Process on that Node. See [Migration of live state](#migration-of-live-state).
 - While the extension is off, the assignment places nothing.
@@ -164,7 +167,7 @@ The Caddy guard that aborts task VM clients still covers the collector site, bec
 3. The collector's Orbit CA leaf, its Caddy site, and the private DNS record `collector.ai-router.orbit`.
 4. The role's firewall rules.
 
-When a step fails, the Gateway turns the switch off again and returns the step's error. Placed parts stay, and the next `extension:enable ai-router` reuses them. Tasks never sees a switch that is on without a router.
+When a step fails, the switch stays off and the Gateway returns the step's error. ADR 0210 provides that rule for every extension: a failed `enable()` hook leaves the switch off. Placed parts stay, and the next `extension:enable ai-router` reuses them. Tasks never sees a switch that is on without a router.
 
 This amends one rule of ADR 0210 for this extension: ADR 0210 keeps fleet work in a separate setup command, as `proxycli:setup` did. The `ai-router` hook needs no input, because the role holds the Node and the cache connection, and the driver holds the rest. So one switch is the one way to start and stop the AI router.
 
@@ -175,8 +178,10 @@ Both Processes are Orbit-managed. `process:destroy` refuses them with `process.r
 The extension pins the driver version in `ai_router.version`, as the analytics role pins Plausible. There are no automatic upgrades.
 
 - A daily extension schedule asks the driver for the latest upstream release and stores it with the time of the check. Doctor reads that stored value and makes no network call.
-- Doctor's `role` family reports `role.update_available` on the `ai-router` assignment when the latest release is newer than the pin. Its expected value is the latest version, and its observed value is the pin. The kind is `drift`, because the [problem collector](/reference/tasks#outer-loop) ignores informational findings, and a stale pin must reach it. A failed release check is not a finding.
+- Doctor's `role` family reports `role.update_available` on the `ai-router` assignment when the latest release is newer than the pin. Its expected value is the latest version, and its observed value is the pin. The kind is `informational`, so `orbit doctor` stays healthy and exits 0 while a newer release exists. A failed release check is not a finding.
+- The [problem collector](/reference/tasks#outer-loop) skips informational findings, with one explicit exception: it records `role.update_available`. A stale pin therefore still gets a fingerprint, and the filer files it like any Doctor problem.
 - `orbit ai-router:update VERSION` installs that version through the driver, switches the `current` link, restarts the router Process, and stores the pin. It keeps the configuration, the key list, and the account files. `ai_router.version_unknown` refuses a version that upstream does not publish.
+- `ai-router:update` runs while task groups run. A Pi turn whose model call fails during the restart follows the Tasks [transient provider retry](/reference/tasks#retry-a-transient-provider-error): the same thread retries after a backoff of 1, 2, 4, then 8 minutes. The update adds no wait or refusal of its own.
 
 ### Plug-in points
 
@@ -229,9 +234,9 @@ Each step is one pull request. Each keeps Tasks working, and each passes the acc
 
 1. **Core seam and hazard fix.** Add `ModelKeyIssuer`. ProxyCli implements it with today's settings and anchor key. `TaskVmRuntime` uses it and stops importing ProxyCli. `tasks` declares `proxycli` in `dependencies()`. `proxycli:teardown` refuses with HTTP 409 while Tasks is enabled or a task VM holds a key. Needs ADR 0210 merged.
 2. **Plug-in points.** Add the points in the table above. ProxyCli contributes through tags, and core stops naming it, except in the provider list. Move the `processes.proxycli_*` columns into the extension table. Add the cache connection removal guard. No other behavior changes.
-3. **Move and rename.** Move ProxyCli into `extensions/ai-router` and rename every surface, setting, Valkey key, environment variable, hostname, certificate slug, footprint artifact, and page. `proxycli:setup` and `proxycli:teardown` become `ai-router:setup` and `ai-router:teardown` until step 4 removes them. The router Process is untouched. The collector restarts once under its new name and hostname.
+3. **Move and rename.** Move ProxyCli into `extensions/ai-router` and rename every surface, setting, Valkey key, environment variable, hostname, certificate slug, footprint artifact, and page. `proxycli:setup` and `proxycli:teardown` become `ai-router:setup` and `ai-router:teardown` until step 4 removes them. `/reference/proxycli` and `/cli/proxycli` get no redirect. The redirects of retired ADRs 0104, 0109, 0145, and 0150, and of `/solutions/cutover-proxycli`, point at the matching sections of the new pages. The router Process is untouched. The collector restarts once under its new name and hostname.
 4. **Role, driver, and managed router.** Add the `ai-router` role, the driver contract, the `cliproxyapi` driver, adoption, and the `enable()` and `disable()` hooks. Remove `ai-router:setup` and `ai-router:teardown`. The origin comes from the role when one is assigned, otherwise from the transitional router URL. `task-vms:prepare-hub` reads it through `ModelKeyIssuer`. Adopt Process 103 on this fleet.
-5. **Version flag and cleanup.** Add the release check schedule, `role.update_available`, and `ai-router:update`. Remove the transitional router URL, `task_vms.model_proxy_origin`, and `ORBIT_TASK_VMS_MODEL_PROXY_ORIGIN`. Absorb this record into the AI router reference page and retire it.
+5. **Version flag and cleanup.** Add the release check schedule, the informational `role.update_available`, and `ai-router:update`. Change the problem collector so that it records `role.update_available` although it skips other informational findings. Remove the transitional router URL, `task_vms.model_proxy_origin`, and `ORBIT_TASK_VMS_MODEL_PROXY_ORIGIN`. Absorb this record into the AI router reference page and retire it.
 
 ### Acceptance test
 
@@ -245,6 +250,8 @@ Every pull request in [Build order](#build-order) passes these checks on the liv
    - With no open task group: `extension:disable tasks`, `extension:disable ai-router`, `extension:enable ai-router`, `extension:enable tasks`. From step 4 on, the router Process comes back with the same accounts.
    - From step 4 on, `process:destroy` on the router Process refuses with `process.required_by_ai_router`.
    - From step 5 on, `ai-router:update` to the current pin is a no-op, and an update to a newer release passes the canary.
+4. From step 5 on, an `ai-router:update` while the canary's Pi turn is running restarts the router mid-turn. The turn fails with a transient provider error, the [provider retry](/reference/tasks#retry-a-transient-provider-error) posts a `provider_retry` comment and retries on the same thread, and the group then settles normally with only the anchor key left.
+5. From step 5 on, with the pin behind the latest release, `orbit doctor` reports the informational `role.update_available`, stays healthy, and exits 0. The problem collector records a fingerprint for it.
 
 ## Rejected alternatives
 
@@ -256,6 +263,11 @@ Every pull request in [Build order](#build-order) passes these checks on the liv
 - Make the router an extension without a role, placed by a setup command with `--node`: placement would hide in a setting, Doctor cannot check a setting as a role, and the firewall would need a special case. The analytics role is the precedent for a singleton service.
 - A separate setup and teardown command beside the switch: two commands would start the same thing, and today's split is how teardown came to break Tasks.
 - Upgrade automatically to the latest release: a router upgrade can break every running agent at once. The operator chooses the time.
+- Report `role.update_available` as drift: `orbit doctor` would exit 1 for a choice the operator may make on purpose, and every other Doctor check would look unhealthy until the update.
+- Make the collector and its cache optional for a fleet that only wants Tasks: a second mode doubles setup, Doctor checks, and tests. One way is cheaper.
+- Refuse `ai-router:update` while task groups run: Tasks already retries a transient provider error, and a fleet with running groups would then never get an update window.
+- Redirect `/reference/proxycli` and `/cli/proxycli`: a redirect keeps the old name alive, which [No exceptions and no legacy](/mission#principles) forbids.
+- Allow the router on the `ingress` Node: that Node accepts internet traffic, and the router holds every model account's credentials.
 - Check upstream releases inside Doctor: Doctor would depend on GitHub and slow down. A stored check keeps Doctor bounded.
 - Adopt Process 103 by recreating it under the new name: that restarts the router under in-flight Pi turns. Adoption in place defers the restart to the first update.
 
@@ -265,13 +277,15 @@ Every pull request in [Build order](#build-order) passes these checks on the liv
 - Tasks has one model route, and core knows it only as `ModelKeyIssuer`. When Tasks moves into its own extension, it keeps that interface or imports the AI router as a declared dependency.
 - A second backend becomes a new driver, not a change to Tasks.
 - The operator updates the CodexBar URL once, and the quota page loses about one minute of data during step 3.
-- `orbit doctor` exits 1 while a newer router release exists, and the outer loop can file a task for it. An operator who waits on purpose sees that drift until the update.
+- `orbit doctor` stays healthy while a newer router release exists, but the outer loop still files a task for it. The problem collector gains one named exception to its rule of skipping informational findings.
 - Step 4 carries a transitional router URL until the role is assigned. Step 5 removes it.
 - The role's cache connection makes Valkey a requirement of the AI router, also for a fleet that only wants Tasks.
+- A router update can interrupt running Pi turns. Tasks recovers them through its provider retry, which costs at least one minute of backoff for each interrupted turn.
+- Old links to `/reference/proxycli` and `/cli/proxycli` break.
 
 ## Affects
 
 - Components: apps/gateway, apps/cli, apps/web, packages/php-sdk, apps/docs
-- ADRs: builds on [ADR 0210](https://github.com/nckrtl/orbit/pull/1247) and amends its rule that fleet work belongs in a setup command, for this extension. Changes the model proxy origin of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm): the hub filter and Pi read it from the `ai-router` role.
+- ADRs: builds on [ADR 0210](https://github.com/nckrtl/orbit/pull/1247), and relies on its rule that a failed `enable()` hook leaves the switch off. Amends its rule that fleet work belongs in a setup command, for this extension. Changes the model proxy origin of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm): the hub filter and Pi read it from the `ai-router` role.
 - Detail: a new AI router reference page and `ai-router` CLI page that replace [proxycli](/reference/proxycli) and [proxycli commands](/cli/proxycli); [Compute drivers: Configure task VMs](/reference/compute-drivers#configure-task-vms) and its hub filter; [Pi server: Run Pi on a task VM](/reference/pi-server#run-pi-on-a-task-vm); [doctor](/cli/doctor); [extension](/cli/extension); [CLI command vocabulary](/reference/cli-command-vocabulary); [Private DNS](/reference/private-dns); [Node provisioning](/reference/node-provisioning#converge-the-orbit-footprint).
 - Verify: the [Acceptance test](#acceptance-test) after each step; the extension dependency and refusal tests; a `ModelKeyIssuer` contract test; a migration test that keeps the management key, each anchor, and each task VM key and origin; the role conflict and adoption tests; and the architecture test that keeps `App\` free of `Orbit\Extensions\AiRouter\`.
