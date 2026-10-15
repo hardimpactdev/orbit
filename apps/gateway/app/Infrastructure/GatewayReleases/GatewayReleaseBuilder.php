@@ -447,7 +447,7 @@ final readonly class GatewayReleaseBuilder
         $result = $this->processes->run(new ProcessInvocation(
             arguments: $arguments,
             timeout: $timeout,
-            environment: $environment === null ? [] : $environment->variables,
+            environment: $environment->variables ?? [],
         ));
 
         if (! $result->succeeded()) {

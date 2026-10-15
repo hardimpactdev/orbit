@@ -10,6 +10,8 @@ use Illuminate\Console\Command;
 
 final class RepairNodeDnsCommand extends Command
 {
+    use ReadsStringInput;
+
     #[\Override]
     protected $signature = 'orbit:node-dns-repair {name : Existing managed peer name}';
 
@@ -18,7 +20,7 @@ final class RepairNodeDnsCommand extends Command
 
     public function handle(RepairNodeDnsAction $action): int
     {
-        $name = $this->argument('name');
+        $name = $this->stringArgument('name');
 
         if ($name === '') {
             $this->error('Node DNS repair arguments are invalid.');

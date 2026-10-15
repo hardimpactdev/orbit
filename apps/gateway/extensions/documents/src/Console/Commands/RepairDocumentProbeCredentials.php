@@ -11,6 +11,8 @@ use Throwable;
 
 final class RepairDocumentProbeCredentials extends Command
 {
+    use ReadsStringInput;
+
     #[\Override]
     protected $signature = 'project-documents:probes:repair {record} {--access-key-id-file=} {--secret-access-key-file=}';
 
@@ -20,7 +22,7 @@ final class RepairDocumentProbeCredentials extends Command
     public function handle(ProbeJournal $journal): int
     {
         try {
-            $id = $this->argument('record');
+            $id = $this->stringArgument('record');
             $journal->repair($id, $this->credentialFile('access-key-id-file'), $this->credentialFile('secret-access-key-file'));
             $this->components->info('Probe credentials updated. The cleanup record remains retained.');
 

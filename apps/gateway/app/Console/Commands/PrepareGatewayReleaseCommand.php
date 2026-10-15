@@ -16,6 +16,6 @@ final class PrepareGatewayReleaseCommand extends GatewayReleaseCommand
 
     public function handle(PrepareGatewayReleaseAction $action): int
     {
-        return $this->report(fn (): array => $action->execute((string) $this->argument('commit'))->toArray());
+        return $this->report(fn (): array => $action->execute($this->stringArgument('commit'))->toArray());
     }
 }

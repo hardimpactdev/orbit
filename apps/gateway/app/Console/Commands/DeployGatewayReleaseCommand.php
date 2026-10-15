@@ -18,6 +18,6 @@ final class DeployGatewayReleaseCommand extends GatewayReleaseCommand
 
     public function handle(DeployGatewayReleaseAction $action): int
     {
-        return $this->report(fn (): array => $action->execute((string) $this->argument('commit'), (bool) $this->option('force'))->toArray());
+        return $this->report(fn (): array => $action->execute($this->stringArgument('commit'), (bool) $this->option('force'))->toArray());
     }
 }

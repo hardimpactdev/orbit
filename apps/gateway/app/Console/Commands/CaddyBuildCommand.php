@@ -20,6 +20,8 @@ use Symfony\Component\Console\Output\OutputInterface;
  */
 final class CaddyBuildCommand extends Command
 {
+    use ReadsStringInput;
+
     #[\Override]
     protected $signature = 'orbit:caddy-build
         {node : Node name}
@@ -37,7 +39,7 @@ final class CaddyBuildCommand extends Command
             return self::FAILURE;
         }
 
-        $name = (string) $this->argument('node');
+        $name = $this->stringArgument('node');
         $node = Node::query()->where('name', $name)->first();
 
         if (! $node instanceof Node) {

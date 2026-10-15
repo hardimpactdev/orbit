@@ -15,6 +15,7 @@ use Illuminate\Console\Command;
  */
 final class PrepareTaskVmHostCommand extends Command
 {
+    use ReadsStringInput;
     use ResolvesTaskVmHostNode;
 
     #[\Override]
@@ -26,7 +27,7 @@ final class PrepareTaskVmHostCommand extends Command
     public function handle(TaskVmSetupScript $script): int
     {
         try {
-            $node = $this->activeNode((string) $this->argument('node'));
+            $node = $this->activeNode($this->stringArgument('node'));
             $host = resolve(TaskVmSettings::class)->host($node->id);
             $script->run($node, TaskVmSetupScript::HostScript, [
                 $host->project, $host->network, $host->cidr, $host->pool, TaskVmHost::SourceImage,

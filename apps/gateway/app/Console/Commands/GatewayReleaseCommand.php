@@ -18,6 +18,8 @@ use Throwable;
  */
 abstract class GatewayReleaseCommand extends Command
 {
+    use ReadsStringInput;
+
     /** @param Closure(): array<string, mixed> $operation */
     protected function report(Closure $operation): int
     {
