@@ -13,7 +13,7 @@ use Closure;
  * Runs the steps of a deployment as the steps of its operation. A step that succeeded on an earlier attempt is
  * skipped, and its stored value comes back. After each step that ran, `$saved` keeps the deployment's events, so a
  * resumed attempt keeps them too. Once activation succeeded, the new release is live, so a cancel request no longer
- * stops the deployment: its PHP refresh, after-activation steps, and cleanup still run.
+ * stops the deployment: its PHP refresh, Process restarts, after-activation steps, and cleanup still run.
  */
 final readonly class OperationDeploymentSteps implements DeploymentSteps
 {
@@ -21,10 +21,15 @@ final readonly class OperationDeploymentSteps implements DeploymentSteps
     public function __construct(
         private OperationRun $run,
         private Closure $saved,
+        private bool $restartProcesses = true,
     ) {}
 
     public function run(DeploymentStepName $step, DeploymentRequest $request, Closure $work): mixed
     {
+        if ($step->phase === DeploymentProgressPhase::ProcessRestart && ! $this->restartProcesses) {
+            return null;
+        }
+
         $cancellable = ! $this->run->succeeded(DeploymentProgressPhase::Activation->value);
 
         try {

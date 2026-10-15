@@ -41,7 +41,7 @@ use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 
-it('restarts only active opted-in Instance Processes on the new release after PHP refresh', function (bool $php): void {
+it('restarts only active opted-in Instance Processes on the selected release after PHP refresh', function (bool $php, bool $rollback): void {
     $instance = orb219_deployment_instance([
         ['name' => 'finish', 'phase' => 'after_activation', 'command' => 'finish', 'timeout_seconds' => 30],
     ], php: $php);
@@ -70,28 +70,32 @@ it('restarts only active opted-in Instance Processes on the new release after PH
     });
     $runtime->shouldReceive('status')->twice()->andReturn('running');
     app()->instance(ProcessRuntimeManager::class, $runtime);
-    [$deploy] = orb219_actions($trace);
+    [$deploy, $rollbackAction] = orb219_actions($trace);
+    $release = $rollback ? 'retained' : 'fresh';
     $events = [];
 
-    $result = $deploy->execute($instance, new InlineDeploymentSteps, new DeploymentRequest(
+    $request = new DeploymentRequest(
         output: function (DeploymentEvent $event) use (&$events): void {
             $events[] = $event;
         },
-    ));
+    );
+    $result = $rollback ? $rollbackAction->execute($instance, $release, $request) : $deploy->execute($instance, new InlineDeploymentSteps, $request);
 
     expect($result->succeeded)->toBeTrue()
         ->and($trace->entries)->toBe([
-            'lock:1', 'selected:initial', 'prepare:main', 'environment', 'activate:fresh',
-            ...($php ? ['cache:fresh'] : []),
-            'restart:'.$first->id.':fresh', 'restart:'.$second->id.':fresh',
-            'step:finish:finish', 'prune:fresh:initial',
+            'lock:1', 'selected:initial',
+            ...($rollback ? ['retained:retained'] : ['prepare:main', 'environment']),
+            'activate:'.$release,
+            ...($php ? ['cache:'.$release] : []),
+            'restart:'.$first->id.':'.$release, 'restart:'.$second->id.':'.$release,
+            ...($rollback ? [] : ['step:finish:finish', 'prune:fresh:initial']),
         ])
         ->and(array_values(array_map(fn (DeploymentEvent $event): string => $event->value,
             array_filter($events, fn (DeploymentEvent $event): bool => $event->step === 'process_restart'))))
         ->toBe(["Restarted Process {$first->id}.\n", "Restarted Process {$second->id}.\n"]);
-})->with([true, false]);
+})->with(['deploy PHP' => [true, false], 'deploy non-PHP' => [false, false], 'rollback PHP' => [true, true], 'rollback non-PHP' => [false, true]]);
 
-it('fails after activation and reports a Process restart failure without running later steps', function (): void {
+it('fails after activation and reports a Process restart failure without running later steps', function (bool $rollback): void {
     $instance = orb219_deployment_instance([
         ['name' => 'finish', 'phase' => 'after_activation', 'command' => 'finish', 'timeout_seconds' => 30],
     ]);
@@ -104,26 +108,28 @@ it('fails after activation and reports a Process restart failure without running
     $runtime->shouldReceive('restart')->once()->andThrow(new ProcessOperationException('restart', 'process.restart_failed', 'secret runtime output'));
     app()->instance(ProcessRuntimeManager::class, $runtime);
     $trace = new Orb219DeploymentTrace;
-    [$deploy] = orb219_actions($trace);
+    [$deploy, $rollbackAction] = orb219_actions($trace);
+    $release = $rollback ? 'retained' : 'fresh';
     $events = [];
 
-    $result = $deploy->execute($instance, new InlineDeploymentSteps, new DeploymentRequest(
+    $request = new DeploymentRequest(
         output: function (DeploymentEvent $event) use (&$events): void {
             $events[] = $event;
         },
-    ));
+    );
+    $result = $rollback ? $rollbackAction->execute($instance, $release, $request) : $deploy->execute($instance, new InlineDeploymentSteps, $request);
 
     expect($result->succeeded)->toBeFalse()
         ->and($result->failure?->boundary)->toBe(DeploymentFailureBoundary::AfterActivation)
         ->and($result->failure?->errorCode)->toBe('process.restart_failed')
-        ->and($result->selectedRelease?->name)->toBe('fresh')
+        ->and($result->selectedRelease?->name)->toBe($release)
         ->and($trace->entries)->not->toContain('step:finish:finish', 'prune:fresh:initial')
         ->and($process->refresh()->status)->toBe(LifecycleStatus::Failed)
         ->and($events)->toHaveCount(1)
         ->and($events[0]->value)->toBe("Failed to restart Process {$process->id}: process.restart_failed.\n")
         ->and($events[0]->stream)->toBe(DeploymentOutputStream::Stderr)
         ->and($events[0]->important)->toBeTrue();
-});
+})->with([false, true]);
 
 it('does not restart a Process stopped before the deployment acquires its runtime lease', function (): void {
     $instance = orb219_deployment_instance([]);

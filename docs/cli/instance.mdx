@@ -609,7 +609,7 @@ orbit instance:release:list <instance> [--json]
 
 ## orbit instance:rollback
 
-Select one retained release through `current`. A successful deployment keeps the previous selection and one other release, so these are the rollback targets. Rollback does not fetch Git, synchronize environment values, run deploy steps, or change database files.
+Select one retained release through `current`. A successful deployment keeps the previous selection and one other release, so these are the rollback targets. Rollback restarts active Instance Processes after PHP refresh, using the same opt-out as deployment. It reports restart failures and leaves the rollback release selected. Rollback does not fetch Git, synchronize environment values, run deploy steps, or change database files.
 
 ```bash
 orbit instance:rollback <instance> --release=NAME [--json]
@@ -627,7 +627,7 @@ The command streams newline-delimited JSON events while the Gateway works. Human
 
 | Event type | Fields |
 | --- | --- |
-| `phase` | `phase` is `rollback`. |
+| `phase` | `phase` is `rollback` or `process_restart`. |
 | `output` | `stream` is `stdout` or `stderr`. `data_base64` carries at most 16 KiB of decoded bytes. |
 | `result` | `status` is `succeeded` or `failed`, with nullable `failed_step`, `error_code`, and `selected_release`. This is the final line. |
 

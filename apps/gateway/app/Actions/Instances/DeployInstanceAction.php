@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Actions\Instances;
 
-use App\Actions\Processes\RestartProcessAction;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\Deployment\DeploymentCommandResult;
 use App\Domain\Instances\Deployment\DeploymentConfig;
 use App\Domain\Instances\Deployment\DeploymentDeadline;
+use App\Domain\Instances\Deployment\DeploymentErrorCode;
 use App\Domain\Instances\Deployment\DeploymentEvent;
 use App\Domain\Instances\Deployment\DeploymentFailureBoundary;
 use App\Domain\Instances\Deployment\DeploymentOutputStream;
@@ -23,17 +23,9 @@ use App\Domain\Instances\Deployment\ProductionDeployment;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\Environment\InstanceEnvironmentSynchronizer;
 use App\Domain\Instances\ProductionPhpRuntimeManager;
-use App\Domain\Processes\DesiredProcessState;
-use App\Domain\Processes\ProcessAdmissionLock;
-use App\Domain\Processes\ProcessOperationException;
-use App\Domain\Processes\ProcessRuntimeLease;
-use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\CommandDeadline;
-use App\Infrastructure\Processes\ProcessCancelledException;
 use App\Models\Instance;
-use App\Models\Process;
-use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Throwable;
 
 /**
@@ -52,7 +44,7 @@ final readonly class DeployInstanceAction
         private InstantiateProjectRuntimeDefinitionsAction $definitions,
         private CommandDeadline $deadline,
         private ?DeployDefaultInstanceAction $development = null,
-        private ?RestartProcessAction $restartProcess = null,
+        private ?RestartInstanceProcessesAction $processes = null,
     ) {}
 
     /**
@@ -109,7 +101,7 @@ final readonly class DeployInstanceAction
                 null,
                 null,
                 DeploymentFailureBoundary::Operation,
-                $this->errorCode($exception),
+                DeploymentErrorCode::fromException($exception),
             );
         }
 
@@ -123,7 +115,7 @@ final readonly class DeployInstanceAction
                 null,
                 null,
                 DeploymentFailureBoundary::Operation,
-                $this->errorCode($exception),
+                DeploymentErrorCode::fromException($exception),
             );
         }
     }
@@ -201,7 +193,7 @@ final readonly class DeployInstanceAction
 
             $boundary = DeploymentFailureBoundary::AfterActivation;
             $steps->run(new DeploymentStepName(DeploymentProgressPhase::ProcessRestart), $request, function () use ($instance, $request): null {
-                $this->restartProcesses($instance, $request);
+                ($this->processes ?? app(RestartInstanceProcessesAction::class))->execute($instance, $request);
 
                 return null;
             });
@@ -226,41 +218,10 @@ final readonly class DeployInstanceAction
                 $release,
                 $selected,
                 $boundary,
-                $this->errorCode($exception),
+                DeploymentErrorCode::fromException($exception),
                 $commands,
             );
         }
-    }
-
-    private function restartProcesses(Instance $instance, DeploymentRequest $request): void
-    {
-        app(ProcessAdmissionLock::class)->run([$instance->id], function () use ($instance, $request): void {
-            $processes = Process::query()
-                ->whereIn('owner_type', Instance::morphTypes())
-                ->where('owner_id', $instance->id)
-                ->where('status', LifecycleStatus::Active)
-                ->where('desired_state', DesiredProcessState::Running)
-                ->where('restart_on_deploy', true)
-                ->orderBy('id')
-                ->get();
-
-            foreach ($processes as $process) {
-                try {
-                    app(ProcessRuntimeLease::class)->run($process, function (Process $fresh) use ($request): void {
-                        if ($fresh->status !== LifecycleStatus::Active || $fresh->desired_state !== DesiredProcessState::Running || ! $fresh->restart_on_deploy) {
-                            return;
-                        }
-
-                        ($this->restartProcess ?? app(RestartProcessAction::class))->execute($fresh);
-                        $request->emit(new DeploymentEvent('process_restart', DeploymentOutputStream::Stdout, "Restarted Process {$fresh->id}.\n"));
-                    });
-                } catch (Throwable $exception) {
-                    $request->emit(new DeploymentEvent('process_restart', DeploymentOutputStream::Stderr, "Failed to restart Process {$process->id}: {$this->errorCode($exception)}.\n", important: true));
-
-                    throw $exception;
-                }
-            }
-        });
     }
 
     /** Pruning is not the deployment. A release that stays is removed by a later deployment. */
@@ -367,26 +328,5 @@ final readonly class DeployInstanceAction
     private function developmentAction(): DeployDefaultInstanceAction
     {
         return $this->development ?? app(DeployDefaultInstanceAction::class);
-    }
-
-    private function errorCode(Throwable $exception): string
-    {
-        if ($exception instanceof ResourceOperationException && $exception->errorCode === 'command.deadline_exceeded') {
-            return 'deployment.deadline_exceeded';
-        }
-
-        if ($exception instanceof ResourceOperationException || $exception instanceof RuntimeConvergenceException || $exception instanceof ProcessOperationException) {
-            return $exception->errorCode;
-        }
-
-        if ($exception instanceof ProcessCancelledException) {
-            return 'deployment.cancelled';
-        }
-
-        if ($exception instanceof ProcessTimedOutException) {
-            return 'deployment.command_timed_out';
-        }
-
-        return 'deployment.interrupted';
     }
 }

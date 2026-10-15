@@ -70,7 +70,7 @@ orbit process:create <name> (--instance=ID-or-domain | --node=ID-or-name | --pro
 | `--volume=SOURCE:TARGET[:ro]` | none | Docker volume. Repeat as needed. |
 | `--restart=POLICY` | `never` | `never`, `on-failure`, `always`, or `unless-stopped`. |
 | `--keep-alive` | off | Keep the Process running through app-dev idle hibernation. |
-| `--no-restart-on-deploy` | off | Opt an installed Process out of automatic restart after production activation. Not accepted for Project definitions. |
+| `--no-restart-on-deploy` | off | Opt an installed Process out of automatic restart after production deploy or rollback activation. Not accepted for Project definitions. |
 | `--start` | off | Start the Process after it installs. Not accepted for a definition. |
 
 A preset owns the runtime, command, working directory, and environment, and refuses those options. It refuses `--keep-alive` for `annotator` and the two Agentation presets. It also refuses `--user`.
