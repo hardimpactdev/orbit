@@ -242,24 +242,44 @@ def owned(host, path):
     return host.ok(['dpkg', '-S', '--', str(path)])
 
 
+# Library file stems whose `php -m` name differs.
+MODULE_NAMES = {'opcache': 'zend opcache'}
+
+
+def module_name(library):
+    stem = library.stem.lower()
+    return MODULE_NAMES.get(stem, stem)
+
+
 def unowned_extensions(host, version, extensions):
-    """Extensions outside the recipe whose mods-available .ini no package owns, with their .so files that no package
-    owns: [(module, [files])]. Package-owned extras are handled as packages. An .ini without an extension= or
-    zend_extension= line only holds settings, such as Orbit's own orbit-runtime.ini: it is not an extension and stays.
-    The module name comes from the library that the .ini loads, not from the .ini file name."""
+    """Extensions whose mods-available .ini no package owns, with their .so files that no package owns:
+    [(modules, [files])]. Package-owned extras are handled as packages.
+
+    An .ini without an extension= or zend_extension= line only holds settings, such as Orbit's own
+    orbit-runtime.ini: it is not an extension and stays. The module name comes from the library the .ini loads, mapped
+    to its `php -m` name. A library outside the recipe is foreign. A library that the recipe names is foreign too
+    when the file it resolves to is not owned by a package, because only package-owned files are verified."""
     directory = host.path(f'etc/php/{version}/mods-available')
     found = []
     for ini in sorted(directory.glob('*.ini')) if directory.is_dir() else []:
         libraries = [Path(name) for name in EXTENSION_LINE.findall(ini.read_text(errors='replace'))]
-        modules = sorted({library.stem.lower() for library in libraries} - set(extensions))
-        if not modules or owned(host, ini):
+        if not libraries or owned(host, ini):
             continue
-        files = [ini]
+        modules, files = set(), [ini]
         for library in libraries:
-            candidates = [library] if library.is_absolute() else \
-                sorted(host.path('usr/lib/php').glob(f'*/{library.stem}.so'))
-            files += [path for path in candidates if path.is_file() and not owned(host, path)]
-        found.append(('+'.join(modules), files))
+            if library.is_absolute():
+                candidates = [host.path(str(library).lstrip('/'))]
+            else:
+                candidates = sorted(host.path('usr/lib/php').glob(f'*/{library.stem}.so'))
+            present = [path for path in candidates if path.is_file()]
+            unowned = [path for path in present if not owned(host, path)]
+            module = module_name(library)
+            # A missing library loads nothing; the module check after the install reports a missing module.
+            if module not in extensions or unowned:
+                modules.add(module)
+            files += unowned
+        if modules:
+            found.append(('+'.join(sorted(modules)), files))
     return found
 
 
