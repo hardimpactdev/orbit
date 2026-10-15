@@ -19,7 +19,7 @@ use JsonException;
  * whether the VM runs. Each provider only runs the fixed {@see TaskVmGuestCommand}; this class
  * validates the output, so every provider fails with the same codes. Invalid output fails with
  * `task_vm.invalid_host_output`, and a guest command that fails with `task_vm.host_command_failed`. The base image
- * and workspace template builds read cloud-init in their builder and smoke VMs with the same rules
+ * builds read cloud-init in their builder and smoke VMs with the same rules
  * ({@see self::cloudInitDone()}, {@see self::awaitCloudInit()}).
  */
 final readonly class TaskVmGuest

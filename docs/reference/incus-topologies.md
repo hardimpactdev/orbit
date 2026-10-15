@@ -14,6 +14,8 @@ covers:
 
 This page is for the contributor, agent, or reviewer who runs Orbit on disposable Incus machines. The `apps/e2e` harness composes one topology per issue from the Nodes the issue declares. Each Node starts from a prepared role image, and the harness then bootstraps a fresh test Gateway and enrolls the Nodes. `bin/e2e-topology` controls a topology, `bin/e2e-topology-images` builds the role images, and `bin/e2e-topology-host-setup` prepares a machine, such as a task VM, to run topologies nested. The [using-incus-topologies](https://github.com/nckrtl/orbit/blob/main/.agents/skills/using-incus-topologies/SKILL.md) skill covers the working habits.
 
+Task workspaces clone from the Gateway mirror and run Project setup on every creation. The [shared package cache](/reference/compute-drivers#shared-package-cache) and [CI cache refs](/reference/instance-setup#import-ci-main-caches) speed setup without workspace templates. Existing groups keep their VM and checkout.
+
 ## Declared topologies in task VM groups
 
 An Orbit task group on a [task VM](/reference/compute-drivers#task-vms) gets a topology only when its subtasks [declare](/reference/compute-drivers#declare-a-topology) one. Orbit prepares it nested in the group's VM as `TASK-<group>`, with `--nodes` set to the union of the declarations, before the subtask's baseline check or implementer. Agents use it and never acquire or release it. The reviewer records evidence on each declared node, and Orbit refuses the approval without it. See [Prove work on a topology](/reference/compute-drivers#prove-work-on-a-topology).

@@ -7,7 +7,6 @@ use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\VmObservation;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -18,8 +17,7 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\IncusHost;
 use App\Infrastructure\TaskVms\IncusTaskVmProvider;
 use App\Infrastructure\TaskVms\TaskVmGuest;
-use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplates;
-use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplateVolumes;
+use App\Infrastructure\TaskVms\TaskVmWorkspaceVolumes;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
@@ -104,7 +102,10 @@ beforeEach(function (): void {
 
         public function put(string $host, int $port, HostKey $key): void {}
     });
-    $this->provider = new IncusTaskVmProvider($incus, $settings, new TaskVmWorkspaceTemplates($incus, $settings, app(DevelopmentSshExecutor::class), new TaskVmWorkspaceTemplateVolumes($incus)));
+    $this->volumes = new TaskVmWorkspaceVolumes($incus);
+    $this->provider = new IncusTaskVmProvider($incus, $settings, $this->volumes);
+    $this->host = $host;
+    $this->hostSettings = $settings->host($host->id);
     $this->guest = new TaskVmGuest($this->provider);
     $this->answer = function (CommandResult ...$results): void {
         $this->ssh->results = $results;
@@ -370,4 +371,24 @@ describe('park and resume', function (): void {
 
         expect(fn () => $this->provider->start($this->vm))->toThrow(TaskVmException::class, 'Task VM [tvm-1] is gone from its host.');
     });
+});
+
+it('sweeps only old claim clones without live rows and preserves running and parked workspaces', function (): void {
+    $this->vm->update(['state' => TaskVmState::Parked]);
+    $listing = json_encode(array_map(static fn (string $name): array => ['name' => $name, 'type' => 'custom'], [
+        'tvm-1-workspace', 'tvm-999-workspace', 'tvm-template-1-20261011040000', 'operator-data',
+    ]), JSON_THROW_ON_ERROR);
+    ($this->answer)(incusResult($listing), incusResult());
+
+    expect($this->volumes->sweepClones($this->hostSettings, $this->host))->toBe(['tvm-999-workspace']);
+    expect(($this->argv)())->toBe([
+        [...INCUS_PREFIX, 'storage', 'volume', 'list', '--format', 'json', '--', 'tank'],
+        [...INCUS_PREFIX, 'storage', 'volume', 'delete', '--', 'tank', 'tvm-999-workspace'],
+    ]);
+});
+
+it('keeps an old claim volume when Incus refuses deletion and reports the failure', function (): void {
+    ($this->answer)(incusResult(exitCode: 1), incusResult('[{"name":"tvm-1-workspace","type":"custom"}]'));
+
+    expect(fn () => $this->volumes->release($this->hostSettings, $this->host, $this->vm))->toThrow(TaskVmException::class);
 });

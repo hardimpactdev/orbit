@@ -10,7 +10,7 @@ use App\Models\Project;
 /**
  * The Gateway-owned setup operations: a setup step whose command names one of them is not a shell command. The
  * Gateway renders the operation's command right before the step runs, within the step's timeout. Instance setup, the
- * task baseline setup list, and a task VM workspace template build run them the same way. Teardown rejects them.
+ * task baseline setup list run them the same way. Teardown rejects them.
  */
 final readonly class GatewaySetupSteps
 {

@@ -641,7 +641,7 @@ When the implementer cannot start, the subtask and the task become `failed`, and
 
 ## Task workspace
 
-The task workspace is one fresh Instance that every subtask of the task shares. Its name and its branch are `task-{id}`. It lives at `<project>/workspace` on the task's own [task VM](/reference/compute-drivers#claim-with-a-template), which holds only this workspace. Its checkout starts from the Project's [workspace template](/reference/compute-drivers#start-the-workspace-from-a-template) when the VM's host has one.
+The task workspace is one fresh Instance that every subtask of the task shares. Its name and its branch are `task-{id}`. It lives at `<project>/workspace` on the task's own [task VM](/reference/compute-drivers#clone-and-set-up-every-workspace), which holds only this workspace. Its checkout clones from the Gateway mirror and runs the Project's setup steps, using the read-only package cache and CI cache ref bound to the tested SHA.
 
 Before returning the workspace or activating its Route, Orbit inspects its source. An inspection failure leaves the workspace unexposed and the claim fails. Project setup owns dependency copies.
 
@@ -754,7 +754,7 @@ Every task group runs in its own [task VM](/reference/compute-drivers#task-vms).
 
 For a normal VM the claim takes a [warm VM](/reference/compute-drivers#keep-warm-vms) when its host keeps one, or else it creates a VM. Then it waits until the VM is `ready`. Until then, the task returns to `todo` with a [`Task VM:` reason](/reference/compute-drivers#from-claim-to-workspace), and the next tick tries again. Then Orbit creates the workspace on the VM's Node: the Instance `task-{id}`, and its private Route when the workspace is routed.
 
-The checkout starts from the Project's [workspace template](/reference/compute-drivers#start-the-workspace-from-a-template) when the VM's host has one, so the setup steps of the baseline check find the dependencies in place. Without a template, it starts from a fresh clone. The check log shows at most the first 4096 characters of each setup command.
+The checkout [clones from the Gateway mirror](/reference/compute-drivers#clone-and-set-up-every-workspace). The baseline check runs every setup step, using private package caches seeded from the read-only host cache and the selected CI cache ref. The check log shows at most the first 4096 characters of each setup command.
 
 A routed workspace on a task VM starts its baseline check before its Route. The check needs the checkout, its `.env`, and the PHP packages, not the Route. So workspace creation classifies the source, writes `APP_URL` and the other `.env` values, and installs the PHP packages, and leaves the workspace `source_resolved` with its Route `pending`. The claim starts the baseline check and then projects the Route while the check runs: certificates, Caddy, PHP-FPM, the Router, and DNS. Then the workspace becomes `active`.
 
@@ -1856,4 +1856,4 @@ Code decides every fact that code can check. Jev answers only whether the change
 
 The Gateway stays generic by storing each Project's plan as a task definition instead of as code. An operator or an agent can change that plan through the API. Kinds stay in code, because a kind is executable behavior, and definitions stay data. [ADR 0182](/decisions/0182-start-tasks-from-project-task-definitions#task-definitions) records the alternatives this rejects.
 
-Task VM workspaces seed their private package manager caches from the host's [read-only shared package cache](/reference/compute-drivers#shared-package-cache) before setup. A miss uses the normal registry; workspace templates remain available.
+Task VM workspaces seed their private package manager caches from the host's [read-only shared package cache](/reference/compute-drivers#shared-package-cache) before setup. A miss uses the normal registry.

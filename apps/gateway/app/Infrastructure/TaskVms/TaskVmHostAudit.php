@@ -29,10 +29,10 @@ final readonly class TaskVmHostAudit
     private const string TaskVmName = '/\Atvm-[0-9]+\z/D';
 
     /** Sync smoke and workspace template builders still use the `YmdHis` time in their names. */
-    private const string BuilderName = '/\A(?:'.TaskVmImageRecipe::WorkPrefix.'([0-9]{14})-sync-smoke|'.IncusTaskVmWorkspaceTemplateBuilder::BuilderPrefix.'([0-9]{14})(?:-[a-z0-9-]+)?)\z/D';
+    private const string BuilderName = '/\A(?:'.TaskVmImageRecipe::WorkPrefix.'([0-9]{14})-sync-smoke|tvm-template-([0-9]{14})(?:-[a-z0-9-]+)?)\z/D';
 
     /** A workspace template `tvm-template-<project id>-<time>` or a claim clone `tvm-<number>-workspace`. */
-    private const string VolumeName = '/\A(?:'.TaskVmWorkspaceTemplate::VolumePrefix.'[0-9]+-[0-9]{14}|tvm-[0-9]+-'.TaskVmWorkspaceTemplates::Device.')\z/D';
+    private const string VolumeName = '/\A(?:tvm-template-[0-9]+-[0-9]{14}|tvm-[0-9]+-workspace)\z/D';
 
     /** A build holds its lock for less than 30 minutes; a builder VM older than this is a stray. */
     public const int BuilderMinutes = 60;

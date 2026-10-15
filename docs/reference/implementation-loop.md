@@ -416,7 +416,7 @@ The Gateway fetches the `refs/orbit/ci-cache/*` namespace into its mirror alongs
 
 The publisher prunes only `refs/orbit/ci-cache/*` after a successful publication. It retains publications for 14 days from publication time and always keeps the newest successful tested main commit's ref, even if it is older than 14 days. Main commit ancestry, not job completion order, identifies that newest commit. Pruning never touches source branches, tags, or other refs. Each successful scheduled main run also performs this cleanup; if CI stops, cleanup stops rather than expiring the last useful publication.
 
-The Gateway removes upstream-deleted refs only from its mirror's cache namespace. It does not delete an active workspace's local cache objects or private tool caches. Ref deletion removes a future fetch opportunity, not already imported caches; an old baseline whose ref has been pruned starts cold. Git garbage collection can reclaim unreferenced cache objects later. This retention is separate from Actions artifact retention, workspace templates, package caches, and machine images.
+The Gateway removes upstream-deleted refs only from its mirror's cache namespace. It does not delete an active workspace's local cache objects or private tool caches. Ref deletion removes a future fetch opportunity, not already imported caches; an old baseline whose ref has been pruned starts cold. Git garbage collection can reclaim unreferenced cache objects later. This retention is separate from Actions artifact retention, package caches, and machine images.
 
 ### CI artifacts
 
