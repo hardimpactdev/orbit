@@ -5,7 +5,6 @@ covers:
   - apps/gateway/app/{Domain/TaskVms,Infrastructure/TaskVms,Jobs/TaskVms,Actions/TaskVms,Domain/Compute}/**
   - apps/gateway/app/{Models/TaskVm.php,Models/TaskVmImageBuild.php,Console/Commands/*ImageBuildsCommand.php,Console/Commands/PrepareTaskVmHostCommand.php,Console/Commands/PrepareTaskVmHubCommand.php,Console/Commands/BuildTaskVmImageCommand.php,Console/Commands/BuildTaskVmRecipeCommand.php,Console/Commands/BuildUpCloudTaskVmImageCommand.php,Console/Commands/ResolvesTaskVmHostNode.php}
   - apps/gateway/{app/Infrastructure/MachineSoftware/**,app/Console/Commands/MachineRecipeCommand.php,resources/machine-software/**}
-  - .github/workflows/php-build-bump.yml
   - apps/gateway/{app/Models/PackageCache*.php,app/Console/Commands/PackageCacheUsageCommand.php,database/migrations/*create_package_cache_tables.php,config/package_cache.php,config/task_vms.php}
   - apps/gateway/resources/task-vms/**
   - apps/gateway/database/migrations/*{create_task_vm_image_builds_table,add_recipe_to_task_vm_image_builds,add_recipe_identity_to_task_vms,fence_task_vm_image_build_attempts,create_task_vms_table,add_model_proxy_origin_to_task_vms,add_warm_pool_to_task_vms,retire_task_vm_warm_pool,add_upcloud_to_task_vms,add_size_to_task_vms,add_topology_to_task_vms,create_jobs_table,create_failed_jobs_table,create_task_sandboxes_table,add_fleet_enrollment_to_task_sandboxes,add_pi_ready_at_to_task_sandboxes,close_checks_of_destroyed_task_sandboxes,drop_task_sandboxes}.php
@@ -101,7 +100,7 @@ Sury keeps only its newest build in its pool, so keep the recipe on Sury's newes
 
 `bin/php-build bump` makes that change. It downloads Sury's signing key and refuses it unless it matches the pinned SHA-256 digest. It verifies the signed `InRelease` file of the recipe's Ubuntu release with `gpgv`, and checks each package index against it. For every architecture, it then moves each pin of every PHP set, `php-common` and `libgd3` included, to the newest version in the index, with its URL and digest. It stops without writing when Sury is between builds, so that two core pins of one version differ. `--dry-run` prints the changes and writes nothing.
 
-The `PHP build bump` workflow, `.github/workflows/php-build-bump.yml`, runs it every day at 04:23 UTC and on manual dispatch. When the pins change, it opens one pull request on the branch `automation/php-build-<digest>`, titled with the new PHP releases. It opens no second pull request for the same pins. A pull request that `GITHUB_TOKEN` opens starts no CI, so set the repository secret `ORBIT_PHP_BUMP_TOKEN` to a token that may push branches and open pull requests. Without it, close and reopen the pull request to start CI. A maintainer reviews and merges it like any other change. Run `php artisan orbit:machine-recipe --validate` to check a bump by hand. After merge:
+[Nightly recipe maintenance](#nightly-recipe-maintenance) runs it every night, in the same job that opens the snapshot pull request. When the pins change, the Gateway opens one pull request through its GitHub App on the branch `nightly/php-build-<digest>`, named after the new pins and titled with the new PHP releases. It opens no second pull request for the same pins, and never reopens a closed one. The nightly auto-merge takes only date branches, so a maintainer reviews and merges the PHP build pull request. The Gateway needs `python3` and `gpgv` for the bump. Run `php artisan orbit:machine-recipe --validate` to check a bump by hand. After merge:
 
 1. Each task VM host [builds a new base image](#build-the-base-image).
 2. [Nightly recipe maintenance](#nightly-recipe-maintenance) converges each Node, or you run `php artisan node:converge-recipe <node>`. The next [PHP step](/reference/php-runtime#php-build) of an Instance also brings its versions to the recipe.
@@ -560,7 +559,7 @@ After promotion, the final chain step prunes old recipe images on that host. It 
 
 ### Nightly recipe maintenance
 
-At 03:00 Europe/Amsterdam (01:00 UTC in summer, 02:00 UTC in winter), the Gateway opens a PR against main through its existing GitHub App. It reads main and advances only `ubuntu.snapshot` to the current date at UTC midnight. Exact package versions and Sury artifact URLs and hashes stay pinned; there is no separate Sury snapshot field. An unchanged or newer date creates no PR. A date branch makes repeated submissions reuse the same PR.
+At 03:00 Europe/Amsterdam (01:00 UTC in summer, 02:00 UTC in winter), the Gateway opens a PR against main through its existing GitHub App. It reads main and advances only `ubuntu.snapshot` to the current date at UTC midnight. Exact package versions and Sury artifact URLs and hashes stay pinned; there is no separate Sury snapshot field. An unchanged or newer date creates no PR. A date branch makes repeated submissions reuse the same PR. The same job also opens the [PHP build](#bump-the-php-build) pull request when Sury publishes a newer PHP build.
 
 Each minute the Gateway merges its date PRs after Required checks pass on the exact head. It re-reads the PR files and patch at merge time and requires one App-authored commit, its App as PR author, and only the single `ubuntu.snapshot` line change. Any extra change, commit, or different author blocks the merge and raises the existing alert; the merge uses the expected head SHA. This reuses the existing App and PR API without Actions secrets or a second publisher.
 
@@ -570,7 +569,7 @@ On the next available minute, the maintenance job visits one Node. Later ticks v
 
 Only Nodes whose roles are all app-dev start as soon as every configured host promotes, at any hour. Shared services, app-prod, vpn, and Gateway start only from 03:00 inclusive to 06:00 exclusive Europe/Amsterdam, in strict tier order after every app-dev-only Node is done. Outside the window, the sequence stays ready until the next night. A running visit may finish past 06:00. The serving Gateway also goes last.
 
-Only active managed Linux Nodes with roles participate; task VMs, macOS, and roleless operator Nodes are excluded. Each visit uses [Node recipe convergence](/reference/node-provisioning#converge-a-node-to-a-recipe), including inventory, health, and Doctor checks. Nodes already verified on that identity need no repeat installation.
+Only active managed Linux Nodes with roles participate, and a roleless Node that recorded the `ci-runner` profile, such as Sabre, which joins the service tier. Task VMs, macOS, and other roleless Nodes are excluded. Each visit uses [Node recipe convergence](/reference/node-provisioning#converge-a-node-to-a-recipe), including inventory, health, and Doctor checks. Nodes already verified on that identity need no repeat installation.
 
 The first build row for the current recipe carries `fleet_convergence`, shown by `task-vms:image-builds`: generation, progress, stopping point, per-Node changes, and the alert receipt. This adds no ledger table.
 

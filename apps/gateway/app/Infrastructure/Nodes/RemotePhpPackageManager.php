@@ -88,7 +88,7 @@ final readonly class RemotePhpPackageManager
             return;
         }
 
-        $pins = $this->pinsByVersion($versions->values()->all(), self::APP_PROD_FAILURE_CONTRACT);
+        $pins = $this->pinsByVersion(array_values($versions->all()), self::APP_PROD_FAILURE_CONTRACT);
         $this->fetch($node, $pins, $ssh, self::APP_PROD_FAILURE_CONTRACT, RoleName::AppProd);
 
         foreach ($pins as $version => $rows) {
@@ -138,7 +138,7 @@ final readonly class RemotePhpPackageManager
             return;
         }
 
-        $pins = $this->pinsByVersion($versions->values()->all(), $failure);
+        $pins = $this->pinsByVersion(array_values($versions->all()), $failure);
         $this->fetch($node, $pins, $ssh, $failure, $role);
 
         foreach ($pins as $version => $rows) {

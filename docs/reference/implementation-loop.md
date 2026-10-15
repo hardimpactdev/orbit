@@ -116,11 +116,11 @@ The cache matters because Sury deletes a file from its pool when it publishes a 
 A self-hosted runner never installs packages in a job. The action only runs `bin/php-build verify`. It fails with the expected and the found build, and names the step that fixes the host. After a PHP bump, update each runner while it is idle:
 
 - Sabre is a roleless Orbit Node. On the Gateway, run `php artisan node:converge-recipe sabre --profile=ci-runner`. The recipe's [`ci-runner` profile](/reference/compute-drivers#role-and-base-tool-sets) installs the build.
-- Later runs on Sabre need only `php artisan node:converge-recipe sabre`, because the first run records the profile.
+- The first run records the profile. Then nightly recipe maintenance converges Sabre, and a manual run needs only `php artisan node:converge-recipe sabre`.
 - Remove each PHP extension on Sabre that is not in the recipe first. Otherwise the convergence stops at stage `php-modules:8.5`.
 - On Beast and Shark, run `tools/ci-runners/setup.sh container NAME` for each shard container.
 
-The [`PHP build bump` workflow](/reference/compute-drivers#bump-the-php-build) opens a pull request when Sury publishes a newer build. `setup-php` is not used. It cannot pin a patch release, and it loads about 26 extensions that Orbit does not use, such as `amqp`, `apcu`, `mongodb`, and `soap`.
+[Nightly recipe maintenance](/reference/compute-drivers#bump-the-php-build) opens a pull request when Sury publishes a newer build, and converges Sabre in its overnight service tier after merge. `setup-php` is not used. It cannot pin a patch release, and it loads about 26 extensions that Orbit does not use, such as `amqp`, `apcu`, `mongodb`, and `soap`.
 
 `Required checks` expects Docs (merge ref) and Gateway plan to succeed on pull requests and to be skipped on pushes and manual runs. It expects the Gateway shards to succeed when the plan chose shards, and to be skipped otherwise.
 

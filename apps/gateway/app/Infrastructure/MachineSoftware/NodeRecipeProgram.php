@@ -28,8 +28,8 @@ final readonly class NodeRecipeProgram
         if ($node->roles->isNotEmpty() && $requested === null) {
             return null;
         }
-        $recorded = $node->settings['machine_recipe']['profile'] ?? null;
-        $profile = $requested ?? (is_string($recorded) ? $recorded : null);
+        $recorded = self::recordedProfile($node);
+        $profile = $requested ?? $recorded;
         if ($profile === null) {
             return null;
         }
@@ -41,6 +41,15 @@ final readonly class NodeRecipeProgram
         }
 
         return $profile;
+    }
+
+    /** The profile that an earlier convergence recorded in `settings.machine_recipe.profile`. */
+    public static function recordedProfile(Node $node): ?string
+    {
+        $recipe = $node->settings['machine_recipe'] ?? null;
+        $profile = is_array($recipe) ? $recipe['profile'] ?? null : null;
+
+        return is_string($profile) ? $profile : null;
     }
 
     /** @return array<string, ToolPin> */

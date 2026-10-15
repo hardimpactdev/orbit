@@ -57,7 +57,7 @@ The PHP step of `app-dev` and `app-prod` installs the recipe's `.deb` files, not
 
 The step keeps the PHP-FPM safety rules of [PHP runtimes](/reference/php-runtime#development-runtime): installation only enables the shared service, and publication starts it. When packages changed and the service runs, the step reloads it only after `php-fpm<version> -t` passes. PCOV loads in the CLI and never in PHP-FPM, on every role. The step then compares `php<version> -m` with the recipe's extension list and fails on a missing or extra module.
 
-[Recipe convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) covers every role that runs PHP, the Gateway included, and the `ci-runner` profile, because their profiles name the PHP set. It enables PCOV for the CLI only and checks the CLI's loaded extensions before any service restarts. It validates PHP-FPM with `php-fpm<version> -t` before it restarts the shared service. When the restart fails, it restores the PHP-FPM module links it changed, starts the service again, and stops. Production and Gateway Nodes are converged one at a time after this change merges.
+[Recipe convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) covers every role that runs PHP, the Gateway included, and the `ci-runner` profile, because their profiles name the PHP set. It enables PCOV for the CLI only and checks the CLI's loaded extensions before any service restarts. It validates PHP-FPM with `php-fpm<version> -t` before it restarts the shared service. When the restart fails, it restores the PHP-FPM module links it changed, starts the service again, and stops. [Nightly recipe maintenance](/reference/compute-drivers#nightly-recipe-maintenance) converges these Nodes one at a time, production and the Gateway only in its overnight window. A roleless Node that recorded the `ci-runner` profile joins its service tier. An operator can still converge one Node deliberately with `node:converge-recipe`.
 
 ### Tools cannot own role PHP packages
 
@@ -71,7 +71,7 @@ The self-hosted Sabre and shard runners do not install packages in a job. Their 
 
 ### A PHP bump is one pull request
 
-To move to a new Sury build, one pull request changes every pin of that version together: URLs, digests, and versions. The loader refuses a partial change. `bin/php-build bump` writes that change from Sury's signed package index. The daily `PHP build bump` workflow runs it and opens the pull request when the pins change. A maintainer merges it. After merge:
+To move to a new Sury build, one pull request changes every pin of that version together: URLs, digests, and versions. The loader refuses a partial change. `bin/php-build bump` writes that change from Sury's signed package index. [Nightly recipe maintenance](/reference/compute-drivers#nightly-recipe-maintenance) runs it beside its snapshot pull request and opens a PHP build pull request through the Gateway's GitHub App when the pins change. Its branch is not a date branch, so the nightly auto-merge never takes it, and a maintainer reviews and merges it. After merge:
 
 1. Each task VM host builds a new base image from the recipe.
 2. Nightly recipe maintenance, or `php artisan node:converge-recipe`, brings each Node to the new build. The next PHP step of an Instance does the same for its versions.
@@ -83,7 +83,8 @@ To move to a new Sury build, one pull request changes every pin of that version 
 - **A pin for each environment.** CI, Nodes, and images would each keep a copy of the version and the extension list. The copies drift, and drift is the failure this decision removes.
 - **A static PHP build.** [PHP runtimes](/reference/php-runtime#sury-packages-not-a-custom-php-build) explains why Orbit uses Sury packages: a static build is slower, lacks extensions, and makes Orbit own PHP security updates.
 - **Install `package=version` from the Sury apt source.** Sury publishes only its newest build, so an exact version disappears from the index as soon as Sury moves on. The recipe's files are checked by digest, and the same files build images and converge Nodes.
-- **A Gateway command and the GitHub App for the bump.** Nightly recipe maintenance opens its snapshot pull request that way and merges it by itself. A PHP bump changes software on every machine, so a maintainer reviews it. A scheduled workflow with a Python script needs no Gateway, PHP, or database to run.
+- **A separate scheduled GitHub workflow for the bump.** It would duplicate the nightly recipe pull request flow and its GitHub App, and a pull request that `GITHUB_TOKEN` opens starts no CI.
+- **Auto-merge the PHP bump with the snapshot.** A PHP bump changes software on every machine, so a maintainer reviews it. The snapshot pull request keeps its narrow one-line auto-merge.
 - **Roll back the packages when PHP-FPM fails to start.** Sury no longer serves the previous build, so the previous files do not exist. Convergence validates the configuration and the loaded extensions before the restart instead, restores only the configuration it changed, and stops for the operator.
 - **A `ci-runner` Node role.** A role adds services, firewall rules, Doctor checks, and an API surface. Sabre needs only its PHP build, so a recipe profile that a roleless Node selects is enough.
 - **Load PCOV only on development machines.** The loaded extension set is part of PHPStan's cache key. PCOV records nothing until a test calls `\pcov\start()`, so it stays loaded in the CLI everywhere.
@@ -96,8 +97,8 @@ To move to a new Sury build, one pull request changes every pin of that version 
 - A Node that runs an extra PHP extension, or a PHP package that an operator installed by hand, fails the PHP step until the operator removes it.
 - `app-prod`, `websocket`, and the Gateway machine now get `php8.5-pcov`, and `websocket` gets `php8.5-fpm`. PCOV is loaded in their CLI.
 - A dedicated production PHP-FPM master keeps the build it started with until its next restart, which the next deployment of a new release causes.
-- An operator updates the self-hosted runners after each PHP bump. Nightly maintenance skips roleless Nodes, so the operator converges Sabre.
-- A bump pull request that `GITHUB_TOKEN` opens starts no CI. The repository secret `ORBIT_PHP_BUMP_TOKEN` avoids that.
+- An operator converges Sabre once with `--profile=ci-runner`; nightly maintenance converges it after that. An operator reruns the shard container setup after each PHP bump.
+- The Gateway runs `bin/php-build bump`, so it needs `python3` and `gpgv`.
 
 ## Affects
 

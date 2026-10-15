@@ -3,7 +3,9 @@
 declare(strict_types=1);
 
 use App\Actions\Fleet\OpenNightlyRecipePullRequestAction;
+use App\Actions\Fleet\OpenPhpBuildPullRequestAction;
 use App\Domain\Releases\ReleaseAlertNotifier;
+use App\Infrastructure\MachineSoftware\PhpBuildBump;
 use App\Jobs\MaintainMachineRecipe;
 use Illuminate\Http\Client\Request;
 use Illuminate\Http\Client\RequestException;
@@ -125,4 +127,55 @@ it('notifies through release alerts when the nightly job fails without including
 
     expect($alerts->alerts)->toHaveCount(1);
     expect($alerts->alerts[0]->summary)->toContain('snapshot PR failed')->not->toContain('private response');
+});
+
+it('opens one reviewed PR that moves every Sury PHP pin together and reuses it on later nights', function (): void {
+    $this->travelTo(new DateTimeImmutable('2026-10-15 01:00:00 UTC'));
+    $file = nightlyRecipeFile();
+    $content = base64_decode($file['content']);
+    $bumped = str_replace('8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504', '8.5.12-1+0~20261014.1+ubuntu26.04~1.gbp000001', $content);
+    $bumped = preg_replace_callback('/("url": "[^"]*8\.5\.12[^"]*",\s*"sha256": ")[0-9a-f]{64}/', static fn (array $m): string => $m[1].str_repeat('d', 64), $bumped);
+    app()->instance(PhpBuildBump::class, new class($bumped) extends PhpBuildBump
+    {
+        public function __construct(private readonly string $bumped) {}
+
+        public function bump(string $recipe): string
+        {
+            return $this->bumped;
+        }
+    });
+    nightlyRecipeGitHub($file);
+
+    $url = app(OpenPhpBuildPullRequestAction::class)->execute();
+
+    expect($url)->toBe('https://github.com/nckrtl/orbit/pull/99');
+    Http::assertSent(static fn (Request $request): bool => $request->method() === 'PUT'
+        && str_starts_with($request['branch'], OpenPhpBuildPullRequestAction::BranchPrefix)
+        && base64_decode($request['content']) === $bumped);
+    Http::assertSent(static fn (Request $request): bool => $request->method() === 'POST' && str_ends_with($request->url(), '/pulls')
+        && str_starts_with($request['head'], 'nightly/php-build-') && preg_match('/\Anightly\/recipe-/', $request['head']) !== 1
+        && $request['title'] === 'Bump the PHP build to PHP 8.5.12, PHP 8.4.26');
+});
+
+it('opens no PHP build PR when main pins the newest Sury build, and refuses a partial bump', function (): void {
+    $this->travelTo(new DateTimeImmutable('2026-10-15 01:00:00 UTC'));
+    $file = nightlyRecipeFile();
+    $content = base64_decode($file['content']);
+    $partial = preg_replace('/"version": "8\.5\.11-1\+0~20260924\.26\+ubuntu26\.04~1\.gbpbcb504"/', '"version": "8.5.12-1"', $content, 1);
+    foreach ([$content => null, $partial => InvalidArgumentException::class] as $result => $error) {
+        app()->instance(PhpBuildBump::class, new class($result) extends PhpBuildBump
+        {
+            public function __construct(private readonly string $result) {}
+
+            public function bump(string $recipe): string
+            {
+                return $this->result;
+            }
+        });
+        nightlyRecipeGitHub($file);
+        $open = fn () => app(OpenPhpBuildPullRequestAction::class)->execute();
+        $error === null ? expect($open())->toBeNull() : expect($open)->toThrow($error);
+    }
+
+    Http::assertNotSent(static fn (Request $request): bool => in_array($request->method(), ['PUT', 'POST'], true) && str_contains($request->url(), '/repos/'));
 });

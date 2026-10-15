@@ -724,18 +724,6 @@ it('sets up the recipe PHP build in every PHP job and never floats PHP with setu
         ->and($steps['Verify the recipe PHP build']['run'])->toBe('python3 bin/php-build verify');
 });
 
-it('opens one reviewed pull request when Sury publishes a newer PHP build', function (): void {
-    $workflow = Yaml::parseFile(base_path('../../.github/workflows/php-build-bump.yml'));
-    $steps = array_column($workflow['jobs']['bump']['steps'], null, 'name');
-
-    expect($workflow['on'])->toHaveKeys(['schedule', 'workflow_dispatch'])
-        ->and($workflow['permissions'])->toBe(['contents' => 'write', 'pull-requests' => 'write'])
-        ->and($steps['Move the Sury PHP pins to the newest build']['run'])->toBe('python3 bin/php-build bump')
-        ->and($steps['Open a pull request when the pins changed']['run'])
-        ->toContain('git diff --quiet', 'automation/php-build-', 'gh pr list --head "$branch" --state all', 'gh pr create --base main')
-        ->not->toContain('gh pr merge');
-});
-
 it('runs the bin/php-build unit tests', function (): void {
     $process = new Process(['python3', base_path('tests/Fixtures/php-build-tests.py'), base_path('../../bin/php-build')]);
     $process->run();
