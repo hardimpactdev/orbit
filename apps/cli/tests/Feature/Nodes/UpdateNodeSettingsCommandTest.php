@@ -93,6 +93,7 @@ it('transports typed host configuration and clearing without changing apps', fun
     expect($mockClient->getLastRequest()?->body()->all())->toBe(['task_vms' => $host]);
 })->with([
     'configured host' => [['cidr' => '10.251.77.0/24', 'max_vms' => 4, 'image_alias' => 'custom-base', 'warm_vms' => 0]],
+    'host with operator-owned resources' => [['cidr' => '10.251.77.0/24', 'max_vms' => 4, 'operator_owned' => ['orbit-ci/*', 'orbit-tasks/retained']]],
     'cleared host' => [null],
 ]);
 
@@ -123,4 +124,6 @@ it('rejects duplicate, unknown, and malformed settings before making a request',
     'host is a list' => [['task_vms:[]'], 'typed JSON host object'],
     'host unknown field' => [['task_vms:{"cidr":"10.251.77.0/24","max_vms":4,"unknown":true}'], 'typed JSON host object'],
     'string capacity' => [['task_vms:{"cidr":"10.251.77.0/24","max_vms":"4"}'], 'typed JSON host object'],
+    'non-string operator-owned resource' => [['task_vms:{"cidr":"10.251.77.0/24","max_vms":4,"operator_owned":["orbit-ci/*",7]}'], 'typed JSON host object'],
+    'operator-owned object instead of list' => [['task_vms:{"cidr":"10.251.77.0/24","max_vms":4,"operator_owned":{"resource":"orbit-ci/*"}}'], 'typed JSON host object'],
 ]);
