@@ -59,6 +59,8 @@ describe('CLI install on a Node', function (): void {
             ->and($installation->version)->toBe('0.4681.0')
             ->and($installation->configured)->toBeTrue()
             ->and($lines)->toContain('sudo curl --fail --location --silent --show-error --proto =https --proto-redir =https --connect-timeout 20 --max-time 180 --output /usr/local/bin/orbit-0.4681.0.orbit-candidate -- https://github.com/nckrtl/orbit/releases/download/cli-v0.4681.0/orbit-0.4681.0-linux-x86_64')
+            ->and($lines)->toContain('sudo chown root:root -- /usr/local/bin/orbit-0.4681.0.orbit-candidate')
+            ->and($lines)->toContain('sudo chmod 0755 -- /usr/local/bin/orbit-0.4681.0.orbit-candidate')
             ->and($lines)->toContain('sudo mv -fT -- /usr/local/bin/orbit-0.4681.0.orbit-candidate /usr/local/bin/orbit-0.4681.0')
             ->and($lines)->toContain('sudo bash -seu -- /usr/local/bin/orbit orbit-0.4681.0')
             ->and(array_values(array_filter($lines, static fn (string $line): bool => str_contains($line, 'orbit-update-lock') || str_contains($line, '/run/lock/orbit-self-update.lock'))))->toHaveCount(2)
