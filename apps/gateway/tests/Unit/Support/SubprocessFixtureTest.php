@@ -11,6 +11,7 @@ pest()->group('subprocess');
 
 it('waits for a complete readiness line and ignores later output', function (): void {
     $server = Mockery::mock(Process::class);
+    $server->shouldReceive('getTimeout')->once()->andReturn(10.0);
     $server->shouldReceive('checkTimeout')->twice();
     $server->shouldReceive('isRunning')->andReturnTrue();
     $server->shouldReceive('getOutput')->andReturn('12', "12345\nlater output\n", "12345\nlater output\n");
@@ -19,7 +20,7 @@ it('waits for a complete readiness line and ignores later output', function (): 
 });
 
 it('reports stderr when a fixture exits with an incomplete readiness line', function (): void {
-    $server = new Process([PHP_BINARY, '-r', 'fwrite(STDOUT, "12"); fwrite(STDERR, "fixture bind failed"); exit(1);']);
+    $server = new Process([PHP_BINARY, '-r', 'fwrite(STDOUT, "12"); fwrite(STDERR, "fixture bind failed"); exit(1);'], timeout: 10);
     $server->start();
 
     try {
@@ -31,7 +32,7 @@ it('reports stderr when a fixture exits with an incomplete readiness line', func
 
 it('rejects an empty readiness line from a running fixture', function (): void {
     $input = new InputStream;
-    $server = new Process([PHP_BINARY, '-r', 'echo "\n"; fflush(STDOUT); fread(STDIN, 1);'], input: $input);
+    $server = new Process([PHP_BINARY, '-r', 'echo "\n"; fflush(STDOUT); fread(STDIN, 1);'], input: $input, timeout: 10);
     $server->start();
 
     try {
@@ -48,9 +49,39 @@ it('uses the process deadline when a fixture never becomes ready', function (): 
     $server->start();
 
     try {
-        expect(fn () => SubprocessFixture::line($server))->toThrow(ProcessTimedOutException::class);
+        expect(fn () => SubprocessFixture::line($server))->toThrow(RuntimeException::class, 'Fixture server timed out before readiness.');
     } finally {
         $input->close();
         $server->stop();
     }
+});
+
+it('includes stdout and stderr when a fixture times out', function (): void {
+    $server = Mockery::mock(Process::class);
+    $timeout = new ProcessTimedOutException(new Process(['fixture'], timeout: 10), ProcessTimedOutException::TYPE_GENERAL);
+    $server->shouldReceive('getTimeout')->once()->andReturn(10.0);
+    $server->shouldReceive('checkTimeout')->once()->andThrow($timeout);
+    $server->shouldReceive('getOutput')->once()->andReturn('fixture stdout');
+    $server->shouldReceive('getErrorOutput')->once()->andReturn('fixture stderr');
+
+    expect(fn () => SubprocessFixture::waitUntil($server, static fn (): bool => false))
+        ->toThrow(function (RuntimeException $exception) use ($timeout): void {
+            expect($exception::class)->toBe(RuntimeException::class);
+            expect($exception->getMessage())->toContain('fixture stdout', 'fixture stderr');
+            expect($exception->getPrevious())->toBe($timeout);
+        });
+});
+
+it('rejects a process without a timeout before checking readiness', function (): void {
+    $server = new Process([PHP_BINARY, '-r', 'exit(0);'], timeout: null);
+    $checked = false;
+    $condition = static function () use (&$checked): bool {
+        $checked = true;
+
+        return true;
+    };
+
+    expect(fn () => SubprocessFixture::waitUntil($server, $condition))
+        ->toThrow(RuntimeException::class, 'Fixture server must have a timeout');
+    expect($checked)->toBeFalse();
 });

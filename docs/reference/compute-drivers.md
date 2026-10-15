@@ -19,7 +19,7 @@ Task VMs are off until you [configure them](#configure-task-vms). Until then no 
 
 ## Machine software recipe
 
-The repository's machine software recipe is [`apps/gateway/resources/machine-software/recipe.json`](https://github.com/nckrtl/orbit/blob/main/apps/gateway/resources/machine-software/recipe.json). It declares one Ubuntu snapshot, exact tool versions, the [PHP build](#php-build), and the tool sets for `gateway`, `app-dev`, `app-prod`, `operator`, and the task VM base image. Project dependencies, workspace setup, credentials, Node identity, and service configuration are not recipe inputs.
+The repository's machine software recipe is [`apps/gateway/resources/machine-software/recipe.json`](https://github.com/nckrtl/orbit/blob/main/apps/gateway/resources/machine-software/recipe.json). It declares one Ubuntu snapshot, tool version pins, the [PHP build](#php-build), and the tool sets for `gateway`, `app-dev`, `app-prod`, `operator`, and the task VM base image. Project dependencies, workspace setup, credentials, Node identity, and service configuration are not recipe inputs.
 
 The loader and validator define the recipe contract. [Recipe image builds](#build-the-base-image) use that document for a host-local base image. [Node convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) applies its role tools to production Nodes. Claims require the [current recipe](#claims-require-the-current-recipe), and topologies [import its base image](#prepare-the-topology).
 
@@ -33,19 +33,39 @@ The recipe is UTF-8 JSON, not executable PHP or a list of shell commands. The lo
 | `ubuntu.release` | Ubuntu release used by the current base image, initially `26.04` |
 | `ubuntu.snapshot` | UTC snapshot identifier in `YYYYMMDDTHHMMSSZ` form, used at `https://snapshot.ubuntu.com/ubuntu/<snapshot>/`; a syntactically valid date alone does not prove availability |
 | `architectures` | Non-empty list drawn from `amd64` and `arm64`, using Debian architecture names |
-| `tools` | Object keyed by the loader's known tool identifiers; each value has an exact `version` and a `source` of `ubuntu`, `artifact`, or `internal` |
+| `tools` | Object keyed by the loader's known tool identifiers; each value has a concrete `version` (an Ubuntu floor or exact artifact version) and a `source` of `ubuntu`, `artifact`, or `internal` |
 | `common` | Tool identifiers included in every role and the base image |
 | `php` | The [PHP build](#php-build): `ci`, `shared`, and `versions` |
 | `roles` | Object requiring `gateway`, `app-dev`, `app-prod`, and `operator`; optional profiles use known Node role names or `ci-runner`. Each value lists additional tool identifiers and PHP sets |
 | `base` | List of additional tool identifiers and PHP sets for the task VM base image; this is an image profile, not a Node role |
 
-An `ubuntu` tool names its Debian `package`. Its `version` is the complete Debian version, including epoch and distribution revision when present, not just an upstream release or a constraint. It resolves only from the selected Ubuntu snapshot's signed package indexes for the declared release and architectures. The release's archive, updates, and security pockets are checked; a package available only from today's rolling archive does not satisfy the recipe.
+An `ubuntu` tool names its Debian `package`. Its `version` is the complete Debian version, including epoch and distribution revision when present, not just an upstream release or a constraint. It resolves only from the selected Ubuntu snapshot's signed package indexes for the declared release and architectures. The release's archive, updates, and security pockets are checked; a recipe pin available only from today's rolling archive fails online validation.
+
+Ubuntu pins are version floors on installed machines. The same Debian package on the native architecture (or `all`) satisfies the recipe at the pinned version. A newer version also satisfies it when `dpkg --compare-versions` orders it above the pin and local APT policy confirms Ubuntu origin in the same release, updates, or security pocket. Convergence and base and role image verification use this rule. Plans and results label accepted newer packages `newer_than_recipe` and include both versions. Older or missing packages install the snapshot pin.
+
+A newer package from another release, a third-party source, or an unproved origin is refused before package changes; it is never downgraded. An installed version listed in any untrusted index is refused even if a trusted index also lists it or offers a newer candidate. Plans label it `unsupported_newer` with a `refusal` field naming `origin:<tool>`.
+
+APT policy from the normal sources or the cached recipe snapshot must associate the installed version with an index whose release metadata names `o=Ubuntu`, `n=resolute`, and `a=resolute`, `resolute-updates`, or `resolute-security`. The index must also come from an Ubuntu archive, security, ports, or snapshot host, or from a matching source scoped to `/usr/share/keyrings/ubuntu-archive-keyring.gpg`. Release metadata alone cannot establish trust. The dpkg status records package identity, architecture, and version, but not its repository or release. A version suffix alone cannot prove origin.
+
+Rolling pocket indexes drop superseded builds. When the installed version appears only in dpkg status, convergence dates it by the earliest matching `install` or `upgrade` action in `/var/log/dpkg.log*`, including compressed rotations. Without an action, it uses the earliest `status installed` record for that version. Later trigger runs do not change the date. It must find that exact package version in a trusted index at `snapshot.ubuntu.com` at that time. A newer Ubuntu candidate alone is not proof.
+
+Snapshot checks use temporary sources and indexes without changing the system APT configuration or indexes. Each run caches indexes and failures by timestamp, including for the post-install assessment. A run permits at most three lookups by install timestamp, each with a 60-second update timeout. Refusals name the cause after `origin:<tool>`: `dpkg-log-missing`, `snapshot-unavailable`, `snapshot-unproved`, or `snapshot-lookup-limit`. Restore retained install logs for missing history. For other refusals, inspect the package's provenance and snapshot availability before retrying; the recipe does not downgrade an unproved build.
+
+The snapshot service's `/ubuntu/` path includes arm64 indexes for resolute, updates, and security. The separate `/ubuntu-ports/` snapshot path returns HTTP 401 as checked on 15 October 2026, so arm64 uses `/ubuntu/` too. A ports build absent from those authenticated indexes remains unproved and is refused.
+
+There is a known fail-closed window between `apt update` and installation. If Ubuntu supersedes a build during that window, the snapshot at its install time can omit it. Convergence then refuses with `snapshot-unproved`, even for a real Ubuntu build. It does not infer provenance from a newer candidate or guess an earlier update time.
+
+Recipe installs use a temporary snapshot source and leave the normal Ubuntu sources in place, so unattended-upgrades can continue installing security updates. Application repairs the exact snapshot source file written by earlier Orbit convergence. It first saves that file beside the APT configuration as `ubuntu.sources.orbit-snapshot-backup`, then restores archive, updates, backports, and security sources with the Ubuntu archive keyring, or ports on arm64, and logs the repair through `logger` with the `orbit-recipe` tag. Other source content is preserved.
+
+The restored sources use the generic Ubuntu hosts. A regional mirror cannot be recovered because main overwrote the original file without a backup. The post-repair refresh reads only `ubuntu.sources`, so a broken third-party repository cannot block it. Dry runs show `repair_ubuntu_sources` in the plan's `actions` and assess the restored sources with temporary indexes; they leave the system sources and indexes unchanged. Without a repair, dry runs use existing indexes.
+
+Ubuntu installs refuse downgrades. Exact Debian artifacts permit downgrades only after an APT simulation rejects every non-artifact downgrade; installed Ubuntu recipe versions remain explicit install targets. Installation ends with `apt-get check` and `dpkg --audit`; audit output also causes failure. Sury PHP artifacts remain exact: the PHP build installer owns their installation and verification, and the Ubuntu floor rule never applies to them.
 
 An `artifact` tool has an `artifacts` object keyed by every declared architecture. Each entry contains an HTTPS `url` and exactly one digest field, `sha256` or `sha512`, with a full lowercase hexadecimal digest. A URL must identify the pinned release, not a moving installer or a `latest` alias. Architecture-independent archives repeat the same URL and digest for each architecture. Artifact contents, not the spelling of the URL or a successful HTTP response, are the integrity check. The validator downloads and hashes the bytes without executing or installing them.
 
 Debian artifact filenames omit a version epoch; the pin and package metadata retain it. Architecture-independent `.deb` packages declare `all` in their metadata.
 
-The loader has a closed catalog of supported tool identifiers and their source kinds. Each `php<version>-<name>` pin of a declared PHP version is an `artifact` tool; the [PHP build](#php-build) decides which of them exist. A new tool needs a catalog change and validation tests as well as a recipe entry. Every profile reference must resolve to a catalogued entry in `tools`; an unused entry, a missing tool, or an incompatible source is an error. Tool versions must be exact: `latest`, `stable`, `lts`, version ranges, and unversioned installer URLs are not pins.
+The loader has a closed catalog of supported tool identifiers and their source kinds. Each `php<version>-<name>` pin of a declared PHP version is an `artifact` tool; the [PHP build](#php-build) decides which of them exist. A new tool needs a catalog change and validation tests as well as a recipe entry. Every profile reference must resolve to a catalogued entry in `tools`; an unused entry, a missing tool, or an incompatible source is an error. The recipe must record a concrete version, including for an Ubuntu floor: `latest`, `stable`, `lts`, version ranges, and unversioned installer URLs are not pins.
 
 An `internal` tool is an Orbit-built binary pinned by `source_commit` (12 to 40 lowercase Git hexadecimal characters), an exact `version`, and architecture-specific entries in `artifacts`. Each entry has a simple `filename` and a full lowercase `sha256`; filenames resolve under the Gateway's sandbox-artifacts directory (or the command's `--artifact-directory` override). Source commit and digest identify the software; the directory and filename are only byte locations and are not part of the identity. The default directory is `$ORBIT_HOME/sandbox-artifacts`, using the Gateway's configured Orbit home.
 
@@ -205,7 +225,7 @@ Whitespace and object-key order do not change the identity. Changing a snapshot,
 
 ### Show and validate the recipe
 
-The Gateway command `php artisan orbit:machine-recipe` shows the repository recipe's identity, snapshot, exact tool pins, and effective profile tool sets. `--role=gateway`, `--role=app-dev`, `--role=app-prod`, or `--role=operator` selects one role; service profiles also cover `vpn`, `router`, `ingress`, `metrics`, `database`, `websocket`, and `analytics`; `--role=base` selects the base image profile. `--path=<file>` selects a candidate recipe for review or a validation fixture. `--architecture=amd64` or `--architecture=arm64` requires each displayed profile to support that architecture; without it, the output lists each profile's supported architectures.
+The Gateway command `php artisan orbit:machine-recipe` shows the repository recipe's identity, snapshot, tool version pins, and effective profile tool sets. `--role=gateway`, `--role=app-dev`, `--role=app-prod`, or `--role=operator` selects one role; service profiles also cover `vpn`, `router`, `ingress`, `metrics`, `database`, `websocket`, and `analytics`; `--role=base` selects the base image profile. `--path=<file>` selects a candidate recipe for review or a validation fixture. `--architecture=amd64` or `--architecture=arm64` requires each displayed profile to support that architecture; without it, the output lists each profile's supported architectures.
 
 Showing a recipe always performs structural validation and makes no claim about remote availability. Add `--json` for the complete recipe (including URLs, digests, internal filenames, and source commits), its identity, validation state, and selected effective profiles. JSON errors contain only an `error` message and exit nonzero; failed validation never emits a success state.
 
@@ -583,7 +603,7 @@ The task VM jobs run on the [Gateway queue](/reference/gateway-queue), which Lar
 | `SweepTaskVmHosts` | Never. It runs again 10 minutes later |
 | `RefreshTaskVmBaseImages` | Never. The next minute checks again |
 | Base image step jobs | Poll until the step's deadline. Failure stops the chain. Failed builders stay available for resume |
-| `RefreshUpCloudTaskVmBaseImage` | Never. The next night runs it again |
+| `RefreshUpCloudTaskVmBaseImage` | Never. Recipe reconcile requests it again while the current template is missing |
 
 The jobs log each step with its seconds as `Task VM step done.`. The wait for the worker is a step of its own, apart from the work: `queue` before `create` in `ProvisionTaskVm`, and `enroll-queue` before `boot` in `EnrollTaskVm`. The guest boots during `enroll-queue`. A `boot` after a released try counts from the launch.
 
@@ -636,7 +656,7 @@ The dropped egress ranges are `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `
 
 Run `php artisan task-vms:build-recipe` on the Gateway to queue the current recipe on every active host in `settings.task_vms`. It returns build IDs without waiting for remote work. Repeating it for an unchanged recipe reuses the same rows, including failed rows; resume a failure with `task-vms:build-image NODE --resume=ID`, or restart failed builds with `task-vms:build-recipe --retry` after cleanup. A recipe revert reuses a retained verified base. If pruning removed it, the chain rebuilds that identity from stock. `task-vms:image-builds` shows the recipe identity, host, steps, fingerprints, and immutable aliases. `task-vms:build-image NODE` builds the current recipe on that host; every recipe starts from stock.
 
-Release handoff queues builds immediately when the deployed recipe identity changes. The scheduler checks each minute to recover missed submissions and pick up new hosts. There is no fixed nightly Incus rebuild. The [nightly snapshot-date PR](#nightly-recipe-maintenance) supplies the daily recipe change. Unchanged releases do not build images. A host added later builds the current recipe on its next check. UpCloud's separate template flow is unchanged.
+Release handoff queues builds immediately when the deployed recipe identity changes. The scheduler checks each minute to recover missed submissions and pick up new hosts. There is no fixed nightly Incus rebuild. The [nightly snapshot-date PR](#nightly-recipe-maintenance) supplies the daily recipe change. Unchanged releases do not build images. A host added later builds the current recipe on its next check. The same reconcile path refreshes configured UpCloud templates when their recipe identity differs.
 
 Each host uses [ADR 0206's chain model](/decisions/0206-build-task-vm-images-as-chains-of-small-jobs) with `Bus::chain` on `builds` and one `task_vm_image_builds` row for the base image. The row stores the full recipe document, identity, desired generation, and the base image location. Steps launch and boot a stock base builder, install snapshot packages and pinned artifacts, prepare boot, clean, publish, and smoke it. The shared base preserves the source image’s DNS configuration, including link DNS for internal names. Topology Nodes use that same base fingerprint for every role.
 
@@ -674,7 +694,7 @@ A Node failure or an interrupted visit halts the sequence. Release alerts record
 
 A new Incus claim requires a succeeded, promoted base image for the deployed recipe on its selected host. Fresh claims use that image's fingerprint. The VM records `recipe_identity` and `image_fingerprint` at allocation; launch uses the fingerprint, so a later alias move cannot change the selected image. Enrollment checks the observed fingerprint and trusts the image's software, as ADR 0206 requires. There is no full-enrollment fallback for stale images.
 
-A host still building, missing, or failing the current recipe cannot serve a new claim. The group's `capacity_wait_reason` says `Task VM: waiting for recipe <12-character digest> images on <host>.` Another host with a ready current base can serve it. Image unavailability never triggers UpCloud overflow. An existing group keeps its VM and recorded recipe across recipe changes, failures, parking, and resume. UpCloud's separate template flow is unchanged.
+A host still building, missing, or failing the current recipe cannot serve a new claim. The group's `capacity_wait_reason` says `Task VM: waiting for recipe <12-character digest> images on <host>.` Another host with a ready current base can serve it. Image unavailability never triggers UpCloud overflow. An existing group keeps its VM and recorded recipe across recipe changes, failures, parking, and resume. UpCloud claims also require a verified template for the current recipe.
 
 ### Add a task VM host
 
@@ -822,7 +842,7 @@ When beast and shark have no free slot, a group of an opted-in Project may get i
 
 An UpCloud task VM follows the same path as an Incus one. It is a `task_vms` row with the provider `upcloud` and no host Node. The same jobs create, enroll, park, resume, and destroy it.
 
-It gets the same task VM user-data, enrolls as the `app-dev` Node `tvm-<id>` of the dev Cluster with an address from the reserved WireGuard range, and starts from a verified [UpCloud template](#build-the-upcloud-template). UpCloud still uses enrollment programs for its image; it does not use the Incus recipe build chain. So the hub filter, the Caddy guard, the rollout exclusion, and the placement invariant apply unchanged. Each claim [clones and sets up its workspace](#clone-and-set-up-every-workspace), as on Incus, without a shared host package cache on UpCloud.
+It gets the same task VM user-data, enrolls as the `app-dev` Node `tvm-<id>` of the dev Cluster with an address from the reserved WireGuard range, and starts from a verified [UpCloud template](#build-the-upcloud-template). UpCloud uses the same `recipe.json` base-profile installer as Incus. Its template's `orbit.recipe` storage label records the full recipe identity, and each new claim pins a verified template for that identity. So the hub filter, the Caddy guard, the rollout exclusion, and the placement invariant apply unchanged. Each claim [clones and sets up its workspace](#clone-and-set-up-every-workspace), as on Incus, without a shared host package cache on UpCloud.
 
 ### Place a VM at UpCloud
 
@@ -832,7 +852,7 @@ Placement creates a new VM on the Incus host with the most free slots, as in [Pl
 
 The server is named `tvm-<id>` in its title and hostname, and carries the label `orbit-task-vm=<id>`. Orbit records its UUID. A create whose answer was lost is found again by its label, so Orbit never sends a second create. Before each create, Orbit counts the account's servers with the `orbit-task-vm` label and refuses at `max_vms` with `task_vm.upcloud_budget_full`. A server that lost its row counts too.
 
-The server clones the newest verified template onto a disk with the storage tier of its plan, such as `standard` for a Starter plan. The default plan includes 30 GB of that storage, so the default disk costs nothing extra. It has one public IPv4 interface, and no utility or private network, so it reaches no private address of the account. Fleet traffic goes only through WireGuard and the hub filter. Console access is off. The UpCloud firewall stays off: it is stateless, so reply traffic needs source-port rules that open other ports too.
+The server clones the newest verified template for the claim's recorded recipe onto a disk with the storage tier of its plan, such as `standard` for a Starter plan. The default plan includes 30 GB of that storage, so the default disk costs nothing extra. It has one public IPv4 interface, and no utility or private network, so it reaches no private address of the account. Fleet traffic goes only through WireGuard and the hub filter. Console access is off. The UpCloud firewall stays off: it is stateless, so reply traffic needs source-port rules that open other ports too.
 
 The server boots with ufw on, from the template. ufw denies all incoming traffic except public SSH on port 22, so Caddy and the other services in the image are not public before enrollment. The template holds the exact rule `orbit:public-ssh-recovery` that enrollment opens on a new Node. Enrollment finds it in place and changes nothing, then the `app-dev` role adds WireGuard trust and closes public SSH, as on any public `app-dev` Node.
 
@@ -849,21 +869,21 @@ A park stops the server cleanly, and a hard stop follows after 150 seconds. UpCl
 | `sweep` | Deletes the build servers and unverified templates that an interrupted build left |
 | `launch` | Boots a builder server from the stock Ubuntu 26.04 template with the base image builder user-data |
 | `cloud-init`, `orbit-user` | Waits for cloud-init over SSH, and checks the pinned `orbit` uid and gid |
-| One stage for each enrollment program | Installs the app-dev toolchain through the enrollment programs |
-| `agent-binary`, `pi-artifact`, `masks` | Installs the pinned agent binary and Pi executable, and masks the first-boot and apt timers |
+| `packages`, `javascript`, `rust`, `agent`, `pi` | Installs the base profile through the shared recipe installer with exact versions and integrity pins |
+| `recipe-marker`, `verify`, `masks` | Writes the recipe identity and profile marker, verifies the recipe software, and masks the first-boot and apt timers |
 | `firewall` | Turns ufw on: incoming traffic denied, except the public SSH rule `orbit:public-ssh-recovery` on port 22 |
 | `clean` | Runs `base-image-clean.sh` |
 | `templatize`, `delete-builder` | Stops the builder, turns its disk into the template `orbit-task-base-<time>-unverified`, and deletes the builder |
 | `smoke` | Boots a server from the template with the task VM user-data, and checks cloud-init, ufw, and the key, uid, and gid of `orbit` |
-| `promote`, `prune` | Renames the template to `orbit-task-base-<time>`, and deletes all but the two newest verified templates |
+| `promote`, `prune` | Records the `orbit.recipe` storage label, renames the template to `orbit-task-base-<time>`, and deletes all but the two newest verified templates |
 
-A failed build deletes its servers and its unverified template, and the previous template stays in use. Without a verified template, a create fails with `task_vm.base_image_missing`.
+A failed build deletes its servers and its unverified template, and keeps the previous template. Without a verified template for the claim's recipe, a create fails with `task_vm.base_image_missing`.
 
 One build runs at a time. A build marks its time stamp as running for two hours, and no sweep deletes the servers or the template of a marked build.
 
-### Refresh the UpCloud template every night
+### Refresh the UpCloud template on recipe changes
 
-Every night at 02:00, while the token file is set, the Gateway scheduler queues the job `RefreshUpCloudTaskVmBaseImage` on the `builds` queue. It runs the same build as `task-vms:build-upcloud-image`, inside UpCloud, and keeps the two newest verified templates. It also runs with the switch off, so the template stays current. While UpCloud has no verified template, the job changes nothing, so the first build is always the command. A failed build keeps the current template.
+The per-minute recipe reconcile and release handoff queue `RefreshUpCloudTaskVmBaseImage` on the `builds` queue when UpCloud is configured and no verified template matches the deployed recipe. There is no separate nightly schedule. The job checks the identity again before building and keeps the two newest verified templates. It also runs with overflow off without enabling claims. A failed build keeps the previous template, but a stale template cannot serve a new claim. Reconcile reports UpCloud token, API, or refresh-dispatch errors and continues Incus submission recovery and image scheduling.
 
 The build takes about 20 minutes and occupies one `builds` worker. When it runs past its 1700 seconds, the worker stops it, and the sweep deletes its servers two hours after its start.
 

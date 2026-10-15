@@ -13,6 +13,7 @@ use Orbit\Sdk\Requests\Deployments\RollbackInstanceRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Process\Process;
+use Tests\Support\SubprocessFixture;
 
 pest()->group('subprocess');
 
@@ -370,7 +371,7 @@ describe('rollback streams', function (): void {
 
         try {
             $command->start();
-            subprocess_fixture_wait_until($fixture['server'], static fn (): bool => is_file($fixture['request']));
+            SubprocessFixture::waitUntil($fixture['server'], static fn (): bool => is_file($fixture['request']));
             expect($command->isRunning())->toBeTrue();
             $startedAt = microtime(true);
             $command->signal($signal);
@@ -378,7 +379,7 @@ describe('rollback streams', function (): void {
             $elapsed = microtime(true) - $startedAt;
             expect($exitCode)->toBe(128 + $signal)
                 ->and($elapsed)->toBeLessThan(2.0);
-            subprocess_fixture_wait_until($fixture['server'], static fn (): bool => is_file($fixture['disconnected']));
+            SubprocessFixture::waitUntil($fixture['server'], static fn (): bool => is_file($fixture['disconnected']));
 
             expect($fixture['server']->wait())->toBe(0)
                 ->and($command->getErrorOutput())->toBe('')
@@ -418,7 +419,7 @@ describe('rollback streams', function (): void {
             $command->start(static function (string $type, string $data) use (&$output): void {
                 $output .= $data;
             });
-            subprocess_fixture_wait_until($fixture['server'], static fn (): bool => is_file($fixture['request']));
+            SubprocessFixture::waitUntil($fixture['server'], static fn (): bool => is_file($fixture['request']));
 
             if (! $command->isRunning()) {
                 throw new RuntimeException(
@@ -432,7 +433,7 @@ describe('rollback streams', function (): void {
             $command->signal(SIGINT);
             $exitCode = $command->wait();
             $elapsed = microtime(true) - $startedAt;
-            subprocess_fixture_wait_until($fixture['server'], static fn (): bool => is_file($fixture['disconnected']));
+            SubprocessFixture::waitUntil($fixture['server'], static fn (): bool => is_file($fixture['disconnected']));
             $serverExitCode = $fixture['server']->wait();
 
             expect($exitCode)->not->toBe(0)
@@ -477,7 +478,7 @@ describe('rollback streams', function (): void {
             $command->start(static function (string $type, string $data) use (&$output): void {
                 $output .= $data;
             });
-            subprocess_fixture_wait_until($fixture['server'], static fn (): bool => is_file($fixture['stream']));
+            SubprocessFixture::waitUntil($fixture['server'], static fn (): bool => is_file($fixture['stream']));
             usleep(100_000);
 
             if (! $command->isRunning()) {
@@ -492,7 +493,7 @@ describe('rollback streams', function (): void {
             $command->signal(SIGINT);
             $exitCode = $command->wait();
             $elapsed = microtime(true) - $startedAt;
-            subprocess_fixture_wait_until($fixture['server'], static fn (): bool => is_file($fixture['disconnected']));
+            SubprocessFixture::waitUntil($fixture['server'], static fn (): bool => is_file($fixture['disconnected']));
             $serverExitCode = $fixture['server']->wait();
 
             expect($exitCode)->toBe(130)
@@ -842,7 +843,7 @@ function deployment_cli_signal_fixture(string $root, string $mode): array
     ], timeout: 10);
     $server->start();
     $deadline = $server->getStartTime() + $server->getTimeout();
-    $address = subprocess_fixture_address($server);
+    $address = SubprocessFixture::line($server);
 
     $home = "{$directory}/home";
     mkdir($home, 0o700);

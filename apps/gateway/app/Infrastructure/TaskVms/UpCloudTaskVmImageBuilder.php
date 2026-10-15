@@ -5,11 +5,10 @@ declare(strict_types=1);
 namespace App\Infrastructure\TaskVms;
 
 use App\Domain\TaskVms\TaskVmException;
-use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmUpCloud;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
+use App\Infrastructure\MachineSoftware\MachineRecipe;
 use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use Closure;
@@ -18,9 +17,9 @@ use Illuminate\Support\Facades\Cache;
 use Throwable;
 
 /**
- * Builds the UpCloud task VM template with the same recipe as the Incus base image ({@see TaskVmImageRecipe}). A
- * builder server boots the stock Ubuntu template with the builder user-data, runs the enrollment programs, the agent
- * binary, the Pi executable, the masks over SSH as `orbit`, turns ufw on, and `base-image-clean.sh`
+ * Builds the UpCloud template with the same base-profile installer as Incus ({@see RecipeImagePrograms}). A
+ * builder server boots stock Ubuntu without package upgrades, installs and verifies the deployed recipe over SSH,
+ * records its identity in the guest and the template's orbit.recipe label, turns ufw on, and `base-image-clean.sh`
  * removes its identity. A server from the template boots with ufw on and only public SSH open, the exact rule that
  * enrollment's base firewall opens and its role closes, so no baked service is public before enrollment. Its stopped disk becomes the template `orbit-task-base-<time>-unverified`. A smoke server boots it with
  * the task VM user-data; only then does the title lose `-unverified`, so task VMs clone it. The two newest verified
@@ -50,8 +49,9 @@ final readonly class UpCloudTaskVmImageBuilder
         private UpCloudGuest $guest,
         private TaskVmCloudInit $cloudInit,
         private SshKeyProvider $keys,
-        private TaskVmSettings $settings,
         private TaskVmImageRecipe $recipe,
+        private RecipeImagePrograms $programs,
+        private RecipeImageBuilds $builds,
     ) {}
 
     /**
@@ -63,6 +63,7 @@ final readonly class UpCloudTaskVmImageBuilder
      */
     public function build(?Closure $progress = null): string
     {
+        $machineRecipe = $this->builds->currentRecipe();
         $lock = Cache::lock(self::Lock, self::LockSeconds);
         if (! $lock->get()) {
             throw new TaskVmException('task_vm.image_build_running', 'An UpCloud task VM template build is already running.');
@@ -75,32 +76,26 @@ final readonly class UpCloudTaskVmImageBuilder
         $template = null;
 
         try {
-            $programs = $this->stage($progress, 'render', fn (): array => $this->recipe->programs());
             $this->stage($progress, 'sweep', fn () => $this->sweep());
-            [$address, $hostKey] = $this->stage($progress, 'launch', fn (): array => $this->launch($builder, $stamp, $this->upcloud()->sourceTemplate, $this->cloudInit->renderImageBuilder($this->keys->publicKey())));
+            [$address, $hostKey] = $this->stage($progress, 'launch', fn (): array => $this->launch($builder, $stamp, $this->upcloud()->sourceTemplate, $this->cloudInit->renderImageBuilder($this->keys->publicKey(), upgradePackages: false)));
             $shell = new UpCloudGuestShell($this->guest, $address, $hostKey);
             $this->stage($progress, 'cloud-init', fn () => $this->awaitCloudInit($builder, $shell));
             $this->stage($progress, 'orbit-user', fn () => $this->checked($builder, $shell->asUser(TaskVmImageRecipe::ownerCheck())));
-            foreach ($programs as $name => $program) {
-                $this->stage($progress, $name, fn () => $this->checked($builder, $shell->asUser($program->arguments, $program->protectedInput ?? $program->input)));
+            foreach (['packages', 'javascript', 'rust', 'agent', 'pi'] as $phase) {
+                $this->stage($progress, $phase, fn () => $this->programs->apply($shell, $machineRecipe, 'base', $phase));
             }
-            $this->stage($progress, 'agent-binary', fn () => $this->checked($builder, $shell->asRoot($this->recipe->installAgent(
-                $this->checked($builder, $shell->asUser(['uname', '-m']))->stdout,
-                "the UpCloud builder [{$builder}]",
-            ))));
-            if ($this->settings->piArtifactPath !== null && $this->settings->piArtifactSha256 !== null) {
-                $this->stage($progress, 'pi-artifact', fn () => $this->checked($builder, $shell->asUser(
-                    ['bash', '-ceu', TaskVmRuntime::InstallPi, '--', (string) $this->settings->piArtifactSha256],
-                    ProtectedInput::fromFile((string) $this->settings->piArtifactPath, '', TaskVmRuntime::ArtifactMaxBytes),
-                )));
-            }
+            $this->stage($progress, 'recipe-marker', fn () => $this->checked($builder, $shell->asRoot(
+                ['install', '-D', '-m', '0644', '/dev/stdin', '/etc/orbit-machine-recipe.json'],
+                json_encode(['identity' => $machineRecipe->identity, 'profile' => 'base'], JSON_THROW_ON_ERROR),
+            )));
+            $this->stage($progress, 'verify', fn () => $this->programs->verify($shell, $machineRecipe, 'base'));
             $this->stage($progress, 'masks', fn () => $this->checked($builder, $shell->asRoot(['sh', '-c', TaskVmImageRecipe::Masks])));
             $this->stage($progress, 'firewall', fn () => $this->firewall($builder, $shell));
             $this->stage($progress, 'clean', fn () => $this->clean($builder, $shell));
             $template = $this->stage($progress, 'templatize', fn (): string => $this->templatize($builder, $stamp, $title.TaskVmUpCloud::Unverified));
             $this->stage($progress, 'delete-builder', fn () => $this->servers->delete($builder, UpCloudServers::ImageLabel, $stamp, null));
-            $this->stage($progress, 'smoke', fn () => $this->smoke($smoke, $stamp, $template));
-            $this->stage($progress, 'promote', fn () => $this->servers->renameTemplate($template, $title));
+            $this->stage($progress, 'smoke', fn () => $this->smoke($smoke, $stamp, $template, $machineRecipe));
+            $this->stage($progress, 'promote', fn () => $this->servers->renameTemplate($template, $title, $machineRecipe->identity));
             $published = $template;
             $template = null;
             $this->stage($progress, 'prune', fn () => $this->prune());
@@ -211,11 +206,12 @@ final readonly class UpCloudTaskVmImageBuilder
      * Boots a server from the new template with the task VM user-data. Cloud-init must finish, `orbit` must have the
      * Gateway's key and the pinned uid and gid, and ufw must be on.
      */
-    private function smoke(string $name, string $stamp, string $template): void
+    private function smoke(string $name, string $stamp, string $template, MachineRecipe $machineRecipe): void
     {
         [$address, $hostKey] = $this->launch($name, $stamp, $template, $this->cloudInit->render($this->keys->publicKey()));
         $shell = new UpCloudGuestShell($this->guest, $address, $hostKey);
         $this->awaitCloudInit($name, $shell);
+        $this->programs->verify($shell, $machineRecipe, 'base');
         $this->checked($name, $shell->asUser(TaskVmImageRecipe::imageCheck(['--ufw']), timeout: 60));
         $this->servers->delete($name, UpCloudServers::ImageLabel, $stamp, null);
     }
