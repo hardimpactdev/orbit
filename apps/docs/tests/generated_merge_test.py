@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[3]
 loader = importlib.machinery.SourceFileLoader('generated_merge', str(ROOT / 'bin/generated-merge'))
@@ -87,7 +88,11 @@ class GeneratedMergeTest(unittest.TestCase):
         results = []
         for current, other in ((first, second), (second, first)):
             self.fresh(current)
-            run(self.tree, str(ROOT / 'bin/docs-merge-check'), '--base', current, '--head', other)
+            preview = subprocess.run([str(ROOT / 'bin/docs-merge-check'), '--base', current, '--head', other],
+                                     cwd=self.tree, text=True, capture_output=True)
+            self.assertEqual(preview.returncode, 2, preview.stdout + preview.stderr)
+            self.assertIn('merge_conflict:', preview.stderr)
+            self.assertIn('local_driver_clean:', preview.stderr)
             git(self.tree, 'merge', '--quiet', '--no-edit', '--no-ff', other)
             self.assertEqual(git(self.tree, 'diff', '--name-only', '--diff-filter=U'), '')
             self.check()
@@ -144,6 +149,44 @@ class GeneratedMergeTest(unittest.TestCase):
             self.assertTrue(f'/api/v1/merge-fixture-{name}' in spec['paths'], 'fixture endpoint is missing')
             commits.append(self.commit(f'add endpoint {name}'))
         self.merge_both_orders(*commits, conflicts=[TOOL.ARTIFACTS[index] for index in (1, 3, 4, 5)])
+        # Exercise all six process-independent cache lookups with real builds.
+        # A clean cache must invoke the generators exactly once for this pair.
+        shutil.rmtree(self.tree / '.git/orbit/generated-merge', ignore_errors=True)
+        previous = Path.cwd()
+        try:
+            os.chdir(self.tree)
+            with mock.patch.object(TOOL, 'regenerate', wraps=TOOL.regenerate) as build:
+                for path in TOOL.ARTIFACTS:
+                    output = Path(self.scratch.name) / 'artifact'
+                    TOOL.merge(['unused', str(output), 'unused', path, *commits])
+                    self.assertEqual(output.read_bytes(), (self.tree / path).read_bytes())
+                self.assertEqual(build.call_count, 1)
+        finally:
+            os.chdir(previous)
+
+    def test_changed_merged_locks_refuse_old_dependencies(self):
+        for lock in ('apps/docs/composer.lock', 'apps/gateway/composer.lock', 'apps/web/bun.lock'):
+            with self.subTest(lock=lock):
+                self.fresh(self.base)
+                file = self.tree / lock
+                file.write_text(file.read_text() + '\n')
+                changed = self.commit(f'change {lock}')
+                self.fresh(self.base)
+                previous = Path.cwd()
+                try:
+                    os.chdir(self.tree)
+                    with mock.patch.object(TOOL, 'regenerate') as build:
+                        for current, other in ((self.base, changed), (changed, self.base)):
+                            # Also refuse when the checkout lock matches the
+                            # merge: vendor may still predate that lock change.
+                            self.fresh(current)
+                            for _ in range(2):  # failures must not publish a cache
+                                with self.assertRaisesRegex(ValueError, f'dependency_lock_changed: {lock}'):
+                                    TOOL.merge(['unused', str(Path(self.scratch.name) / 'artifact'),
+                                                'unused', TOOL.ARTIFACTS[0], current, other])
+                        build.assert_not_called()
+                finally:
+                    os.chdir(previous)
 
     def test_maintained_conflicts_are_not_unioned(self):
         with self.assertRaises(ValueError):
@@ -168,6 +211,11 @@ class GeneratedMergeTest(unittest.TestCase):
             TOOL.regenerate(self.tree)
             commits.append(self.commit(f'conflicting source {value}'))
         self.fresh(commits[0])
+        preview = subprocess.run([str(ROOT / 'bin/docs-merge-check'), '--base', commits[0], '--head', commits[1]],
+                                 cwd=self.tree, text=True, capture_output=True)
+        self.assertEqual(preview.returncode, 2, preview.stdout + preview.stderr)
+        self.assertIn('merge_conflict:', preview.stderr)
+        self.assertIn('local_driver_failed:', preview.stderr)
         result = subprocess.run(['git', 'merge', '--no-edit', commits[1]], cwd=self.tree,
                                 text=True, capture_output=True)
         self.assertNotEqual(result.returncode, 0)

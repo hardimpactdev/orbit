@@ -175,6 +175,12 @@ The Orbit Project can record `bin/bootstrap` as a setup step, or record its lock
 orbit instance:setup-step:create bootstrap --project=PROJECT_ID --command='bin/bootstrap' --timeout=540
 ```
 
+`bin/bootstrap` installs the Git driver that merges generated files. If the Orbit Project uses separate dependency steps, the operator must add the following setup step after the generated-merge change is deployed. It runs for new task workspaces before any mechanical main merge; Git attributes alone do not install a driver. Re-read the live Project first and preserve its existing steps. See [Merging generated files](/contributor-guide#merging-generated-files).
+
+```bash
+orbit instance:setup-step:create generated-merge --project=PROJECT_ID --command='bin/generated-merge --install' --timeout=30
+```
+
 Task workspaces are not created with `instance:create`, so this create-time run does not happen for them. The task baseline check runs the Project setup steps before the task check instead. See [Project check](/reference/tasks#project-check) and [Implementation loop](/reference/implementation-loop).
 
 ## Beast setup changes after deployment

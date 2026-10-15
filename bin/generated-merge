@@ -5,6 +5,8 @@ Install with --install. Git calls --merge O A B path current-label other-label.
 The inner --sources driver deliberately ignores derived snapshots; it must never
 call the outer driver recursively. No network, hooks, or source-tree writes.
 """
+import fcntl
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -154,7 +156,18 @@ def sources(arguments):
     # Other files are regenerated, never treated as source inputs.
 
 
+LOCKS = ('apps/docs/composer.lock', 'apps/gateway/composer.lock', 'apps/web/bun.lock')
+
+
+def check_dependencies(tree, root):
+    for lock in LOCKS:
+        if (tree / lock).read_bytes() != (root / lock).read_bytes():
+            raise ValueError(f'dependency_lock_changed: {lock}; install the merged locked '
+                             'dependencies and regenerate explicitly; refusing stale dependencies')
+
+
 def dependencies(tree, root):
+    check_dependencies(tree, root)
     # Copy Composer's loader so its baseDir points into the preview, not into
     # the source checkout. Third-party packages themselves can be shared.
     for project in ('apps/docs', 'apps/gateway'):
@@ -194,20 +207,48 @@ def merge(arguments):
     # deliberately strict: do not guess HEAD during a rebase or virtual merge.
     commits = [git(root, 'rev-parse', '--verify', '--end-of-options', f'{label}^{{commit}}')
                for label in (current, other)]
-    with tempfile.TemporaryDirectory(prefix='orbit-generated-merge-') as directory:
-        tree = Path(directory) / 'tree'
-        git(root, 'clone', '--quiet', '--shared', '--no-checkout', str(root), str(tree))
-        git(tree, '-c', 'core.hooksPath=/dev/null', 'checkout', '--quiet', '--detach', commits[0])
-        inner = f'{shlex.quote(str(DRIVER))} --sources %O %A %B %P'
-        result = git(tree, '-c', f'merge.orbit-generated.driver={inner}',
-                     '-c', 'merge.orbit-generated.recursive=binary',
-                     'merge-tree', '--write-tree', *commits)
-        merged_tree = result.splitlines()[0]
-        git(tree, 'read-tree', '--reset', '-u', merged_tree)
-        dependency_root = Path(os.environ.get('ORBIT_GENERATED_MERGE_DEPENDENCIES', str(root)))
-        dependencies(tree, dependency_root)
-        regenerate(tree)
-        shutil.copyfile(tree / path, ours)
+    # Installed packages have no portable attestation tying them to a lockfile.
+    # Even when the checkout lock matches the preview, it may have changed since
+    # setup last installed vendor. Refuse lock changes on either branch rather
+    # than guessing (or doing network installs inside a merge driver).
+    ancestor = git(root, 'merge-base', *commits)
+    for commit in commits:
+        changed = git(root, 'diff', '--name-only', ancestor, commit, '--', *LOCKS)
+        if changed:
+            raise ValueError(f'dependency_lock_changed: {changed}; install the merged locked '
+                             'dependencies and regenerate explicitly; refusing stale dependencies')
+    dependency_root = Path(os.environ.get('ORBIT_GENERATED_MERGE_DEPENDENCIES', str(root)))
+    # Git invokes a separate process for every artifact. Publish only complete
+    # builds, under a lock, so parallel invocations cannot see partial output.
+    fingerprint = hashlib.sha256(DRIVER.read_bytes())
+    for lock in LOCKS:
+        fingerprint.update((dependency_root / lock).read_bytes())
+    key = '-'.join([*commits, fingerprint.hexdigest()])
+    cache = Path(git(root, 'rev-parse', '--absolute-git-dir')) / 'orbit/generated-merge'
+    cache.mkdir(parents=True, exist_ok=True)
+    output = cache / key
+    with (cache / f'{key}.lock').open('w') as guard:
+        fcntl.flock(guard, fcntl.LOCK_EX)
+        if not output.exists():
+            with tempfile.TemporaryDirectory(prefix='build-', dir=cache) as directory:
+                tree = Path(directory) / 'tree'
+                git(root, 'clone', '--quiet', '--shared', '--no-checkout', str(root), str(tree))
+                git(tree, '-c', 'core.hooksPath=/dev/null', 'checkout', '--quiet', '--detach', commits[0])
+                inner = f'{shlex.quote(str(DRIVER))} --sources %O %A %B %P'
+                result = git(tree, '-c', f'merge.orbit-generated.driver={inner}',
+                             '-c', 'merge.orbit-generated.recursive=binary',
+                             'merge-tree', '--write-tree', *commits)
+                merged_tree = result.splitlines()[0]
+                git(tree, 'read-tree', '--reset', '-u', merged_tree)
+                dependencies(tree, dependency_root)
+                regenerate(tree)
+                artifacts = Path(directory) / 'artifacts'
+                for artifact in ARTIFACTS:
+                    destination = artifacts / artifact
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(tree / artifact, destination)
+                artifacts.rename(output)
+        shutil.copyfile(output / path, ours)
 
 
 def main():
