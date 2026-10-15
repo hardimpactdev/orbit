@@ -23,6 +23,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $recipe_generation
  * @property array<string, array{project: string, alias: string, fingerprint: string, type: string}> $images
  * @property Carbon|null $promoted_at
+ * @property array<string, mixed>|null $fleet_convergence
  * @property int $attempt
  * @property string|null $source_alias
  * @property string|null $source_fingerprint
@@ -61,6 +62,7 @@ final class TaskVmImageBuild extends Model
             'state' => TaskVmImageBuildState::class,
             'attempt' => 'integer',
             'recipe_generation' => 'integer',
+            'fleet_convergence' => 'array',
             'images' => 'array',
             'promoted_at' => 'datetime',
             'current_step' => TaskVmImageBuildStep::class,
