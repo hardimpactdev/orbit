@@ -156,9 +156,11 @@ describe('prepare node guest script', function () {
             touch("{$root}/member");
         }
         $commands = [
+            'systemctl' => "if [ \"\$1\" = mask ]; then printf '%s\\n' \"\$*\" >> '{$root}/masks'; exit 0; fi; exit 3",
+            'find' => 'exit 0',
             'networkctl' => "printf '%s\\n' \"networkctl \$*\" >> '{$root}/calls'",
             'getent' => $docker ? 'exit 0' : 'exit 2',
-            'id' => "if [ -f '{$root}/member' ]; then echo 'orbit docker'; else echo orbit; fi",
+            'id' => "if [ \"\$1\" = -u ] || [ \"\$1\" = -g ]; then echo 1000; elif [ -f '{$root}/member' ]; then echo 'orbit docker'; else echo orbit; fi",
             'usermod' => "printf '%s\\n' \"usermod \$*\" >> '{$root}/calls'; touch '{$root}/member'",
             'docker' => 'exit 0',
         ];
@@ -166,8 +168,10 @@ describe('prepare node guest script', function () {
             file_put_contents("{$root}/bin/{$name}", "#!/bin/sh\n{$body}\n");
             chmod("{$root}/bin/{$name}", 0o700);
         }
+        mkdir("{$root}/home/orbit/.ssh", 0o700, true);
+        file_put_contents("{$root}/home/orbit/.ssh/known_hosts", "builder host key\n");
         $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/prepare-node.sh');
-        file_put_contents("{$root}/prepare-node.sh", str_replace('/etc/', "{$root}/etc/", $source));
+        file_put_contents("{$root}/prepare-node.sh", str_replace(['/etc/', '/root/', '/home/'], ["{$root}/etc/", "{$root}/root/", "{$root}/home/"], $source));
 
         for ($attempt = 0; $attempt < 2; $attempt++) {
             $process = new Process(['bash', "{$root}/prepare-node.sh", 'configure-runtime'], env: ['PATH' => "{$root}/bin:".getenv('PATH')]);
@@ -176,6 +180,8 @@ describe('prepare node guest script', function () {
 
         $expected = ($network ? "networkctl reload\n" : '').($docker && ! $member ? "usermod --append --groups docker orbit\n" : '');
         expect(is_file("{$root}/calls") ? file_get_contents("{$root}/calls") : '')->toBe($expected);
+        expect(file_get_contents("{$root}/home/orbit/.ssh/known_hosts"))->toBe('');
+        expect(file("{$root}/masks", FILE_IGNORE_NEW_LINES))->toBe(array_fill(0, 2, 'mask apt-daily.timer apt-daily-upgrade.timer unattended-upgrades.service motd-news.timer'));
         expect(is_file($path))->toBe($network);
         if ($network) {
             expect(file_get_contents($path))->toBe("[Match]\nType=ether\nName=en* eth*\n\n[Network]\nDHCP=ipv4\nLinkLocalAddressing=no\n");

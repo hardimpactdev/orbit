@@ -10,7 +10,6 @@ use App\E2E\Value\GuestCommandResult;
 use App\E2E\Value\IncusInstance;
 use App\E2E\Value\IncusNetwork;
 use App\E2E\Value\MountPath;
-use App\E2E\Value\RoleImage;
 use App\E2E\Value\TopologyTarget;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Process\Pool;
@@ -488,13 +487,7 @@ final class IncusHost implements GuestTransport
                 throw new RuntimeException("Incus instance {$instance} does not exist.");
             }
             $expectedType = $node->image->instanceType();
-            $baseImage = $this->valueAt($resource, 'config', 'volatile.base_image');
-            if (($resource['type'] ?? null) !== $expectedType
-                && ! ($node->image === RoleImage::Operator && ($resource['type'] ?? null) === 'virtual-machine'
-                    && is_string($baseImage) && preg_match('/\A[a-f0-9]{64}\z/D', $baseImage) === 1
-                    && array_any($this->images(), static fn (array $image): bool => $image['fingerprint'] === $baseImage
-                        && $image['type'] === 'virtual-machine' && ($image['properties']['orbit.profile'] ?? null) === 'operator'
-                        && preg_match('/\Asha256:[a-f0-9]{64}\z/D', $image['properties']['orbit.recipe'] ?? '') === 1))) {
+            if (($resource['type'] ?? null) !== $expectedType) {
                 throw new RuntimeException("Incus instance {$instance} type does not match topology.");
             }
             $vm = $this->instanceFromResource($resource);

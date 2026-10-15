@@ -14,7 +14,6 @@ use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
-use App\Models\TaskVm;
 use JsonException;
 
 /**
@@ -35,9 +34,9 @@ final readonly class TaskVmTopologyUnit
     public function start(Node $node, string $run, string $checkout, string $issue, TaskTopology $topology, string $pool): void
     {
         $script = TaskVmScripts::read(self::Script);
-        $imports = TaskVm::forNode($node)?->recipe_identity !== null ? TaskVmRoleImages::Directory.'/manifest.json' : '';
+        $imports = TaskVmRoleImages::Directory.'/manifest.json';
         $this->run($node, new RemoteCommand(
-            ['bash', '-c', $script, 'topology', 'start', $run, $checkout, $issue, implode(',', $topology->toArray()), $pool, $this->vpn->subnet(), ...($imports !== '' ? [$imports] : [])],
+            ['bash', '-c', $script, 'topology', 'start', $run, $checkout, $issue, implode(',', $topology->toArray()), $pool, $this->vpn->subnet(), $imports],
             input: $script,
             maxOutputBytes: 16384,
             timeout: 60,

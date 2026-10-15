@@ -10,7 +10,6 @@ use App\E2E\HostCapacity;
 use App\E2E\IncusHost;
 use App\E2E\IncusNetworkLifecycle;
 use App\E2E\OrphanNetworkSweep;
-use App\E2E\RoleImageBuilder;
 use App\E2E\RoleImagePrograms;
 use App\E2E\RoleImages;
 use App\E2E\State\AtomicJsonStore;
@@ -117,26 +116,6 @@ final class AppServiceProvider extends ServiceProvider
         );
         $this->app->singleton(RoleImagePrograms::class, fn (): RoleImagePrograms => new RoleImagePrograms($repositoryRoot));
         $this->app->singleton(RoleImages::class);
-        $this->app->singleton(RoleImageBuilder::class, function (Application $app) use ($repositoryRoot): RoleImageBuilder {
-            $configuration = $app->make(Repository::class);
-            $vmSource = $configuration->get('e2e.images.vm_source');
-            $containerSource = $configuration->get('e2e.images.container_source');
-            if (! is_string($vmSource) || $vmSource === '' || ! is_string($containerSource) || $containerSource === '') {
-                throw new \RuntimeException('The role image source configuration is invalid.');
-            }
-
-            return new RoleImageBuilder(
-                $app->make(IncusHost::class),
-                $app->make(IncusNetworkLifecycle::class),
-                $app->make(HostCapacity::class),
-                $app->make(StatePaths::class),
-                $app->make(OperationId::class),
-                $app->make(RoleImagePrograms::class),
-                $repositoryRoot,
-                $vmSource,
-                $containerSource,
-            );
-        });
         $this->app->singleton(TopologyAcquirer::class, fn (Application $app): TopologyAcquirer => new TopologyAcquirer(
             host: $app->make(IncusHost::class),
             networks: $app->make(IncusNetworkLifecycle::class),

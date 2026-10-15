@@ -27,7 +27,7 @@ use Throwable;
 /**
  * Acquire, sync, verify, and exec on one issue's topology.
  *
- * Acquisition composes the declared Nodes: each guest starts from its role image on a new network, the
+ * Acquisition composes the declared Nodes: each guest starts from the shared recipe base image on a new network, the
  * worktree is mounted on the checkout Nodes, a fresh test Gateway is bootstrapped, and every other Node is
  * enrolled through it. The attempt lives in `<worktree>/.e2e/` and the topology stays until `release`.
  */
@@ -214,13 +214,7 @@ final readonly class TopologyAcquirer
         }
         try {
             $images = $this->images->resolve($target->recipe->images());
-            $types = [];
-            $vms = 0;
-            foreach ($target->recipe->nodes as $node) {
-                $types[$node->key] = $this->images->instanceType($node->image);
-                $vms += $types[$node->key] === 'virtual-machine' ? 1 : 0;
-            }
-            $slot = $this->capacity->reserveSlot($vms);
+            $slot = $this->capacity->reserveSlot($target->recipe->vmCount());
             $metadata = [
                 'user.orbit.e2e.issue' => $target->issue,
                 'user.orbit.e2e.attempt' => $target->attempt->value,
@@ -236,9 +230,9 @@ final readonly class TopologyAcquirer
                     'node' => $node->key,
                     'address' => $node->address,
                     'slot' => $slot,
-                    'container' => $types[$node->key] === 'container',
-                    'preserve_image_size' => $this->images->usesRecipe($node->image),
-                    ...($types[$node->key] === 'virtual-machine' ? ['config' => ['cloud-init.user-data' => "#cloud-config\nusers: []\n"]] : []),
+                    'container' => false,
+                    'preserve_image_size' => true,
+                    'config' => ['cloud-init.user-data' => "#cloud-config\nusers: []\n"],
                     'memory' => $node->memory,
                     'metadata' => [...$metadata, 'user.orbit.e2e.role-image' => $images[$node->image->value]],
                     ...(isset($mounts[$node->key]) ? ['mount' => $mounts[$node->key]] : []),

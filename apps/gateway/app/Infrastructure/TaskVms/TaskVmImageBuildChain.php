@@ -176,13 +176,8 @@ final readonly class TaskVmImageBuildChain
     public function jobs(TaskVmImageBuild $build): array
     {
         $jobs = [];
-        foreach (['base', ...RecipeImageBuilds::Roles] as $profile) {
-            $phases = $profile === 'base'
-                ? ['reset', 'launch', 'boot', 'packages', 'javascript', 'rust', 'agent', 'pi', 'prepare', 'clean', 'publish', 'smoke']
-                : ['launch', 'boot', 'packages', 'javascript', 'rust', 'agent', 'pi', 'clean', 'publish', 'smoke'];
-            foreach ($phases as $phase) {
-                $jobs[] = new BuildRecipeImageStep($build->id, $profile, $phase);
-            }
+        foreach (['reset', 'launch', 'boot', 'packages', 'javascript', 'rust', 'agent', 'pi', 'prepare', 'clean', 'publish', 'smoke'] as $phase) {
+            $jobs[] = new BuildRecipeImageStep($build->id, 'base', $phase);
         }
         $jobs[] = new PromoteImage($build->id);
         $jobs[] = new PruneRecipeImages($build->id);

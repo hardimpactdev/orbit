@@ -7,6 +7,7 @@ namespace App\E2E;
 use App\E2E\Value\ConvergenceReport;
 use App\E2E\Value\GuestCommand;
 use App\E2E\Value\GuestCommandResult;
+use App\E2E\Value\RoleImage;
 use App\E2E\Value\TopologyTarget;
 use Closure;
 use RuntimeException;
@@ -24,6 +25,7 @@ final readonly class TopologyComposer
     public function __construct(
         private IncusHost $host,
         private TopologyGuestPreparer $guests,
+        private RoleImagePrograms $programs,
     ) {}
 
     /** @param (Closure(string, float): void)|null $progress hears each step and its seconds */
@@ -39,6 +41,12 @@ final readonly class TopologyComposer
             $this->guests->placeGatewayEnvironment($target);
             $this->guests->exposeOrbitCli($target);
             $this->run('bootstrap.gateway', $gateway, 'converge-gateway.sh', ['prerequisites']);
+            foreach ($this->programs->for(RoleImage::Gateway) as $program) {
+                $result = $this->host->exec($gateway, GuestCommand::asOrbitUser($program['arguments'], self::STEP_SECONDS, $program['input']));
+                if (! $result->successful()) {
+                    throw new RuntimeException('Gateway convergence program ['.$program['name'].'] failed.');
+                }
+            }
             $this->run('bootstrap.gateway', $gateway, 'converge-gateway.sh', ['bootstrap', $addresses['gateway']]);
         });
         $steps['bootstrap.gateway'] = true;

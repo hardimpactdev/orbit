@@ -7,7 +7,7 @@ namespace App\E2E;
 use App\E2E\Value\RoleImage;
 use RuntimeException;
 
-/** Imports the host-built image set supplied to a task VM; this path never invokes a builder. */
+/** Imports the host-built base image supplied to a task VM. */
 final readonly class RecipeRoleImages
 {
     public function __construct(private IncusHost $host) {}
@@ -24,34 +24,31 @@ final readonly class RecipeRoleImages
         if (! is_string($identity) || preg_match('/\Asha256:[a-f0-9]{64}\z/D', $identity) !== 1 || ! is_array($data['images'] ?? null)) {
             throw new RuntimeException('The claimed recipe image manifest is missing or invalid.');
         }
-        $imported = [];
-        foreach ($needed as $role) {
-            $image = $data['images'][$role->value] ?? null;
-            $fingerprint = is_array($image) ? $image['fingerprint'] ?? null : null;
-            if (! is_string($fingerprint) || preg_match('/\A[a-f0-9]{64}\z/D', $fingerprint) !== 1 || ($image['type'] ?? null) !== 'virtual-machine') {
-                throw new RuntimeException('The claimed recipe role image is invalid.');
-            }
-            $found = $this->find($fingerprint);
-            if ($found === null) {
-                $archive = dirname($manifest).'/'.$role->value.'.tar';
-                if (! is_file($archive) || is_link($archive)) {
-                    throw new RuntimeException('The claimed recipe role image archive is missing.');
-                }
-                $this->host->importImage($archive);
-                $found = $this->find($fingerprint);
-            }
-            if ($found === null || $found['type'] !== 'virtual-machine'
-                || ($found['properties']['orbit.recipe'] ?? null) !== $identity
-                || ($found['properties']['orbit.profile'] ?? null) !== $role->value) {
-                throw new RuntimeException('The imported role image does not match the claimed recipe, profile, fingerprint, or type.');
-            }
-            $archive = dirname($manifest).'/'.$role->value.'.tar';
-            if (is_file($archive) && ! is_link($archive) && ! unlink($archive)) {
-                throw new RuntimeException('The imported recipe archive could not be removed.');
-            }
-            $this->host->pointAlias($role->alias(), $fingerprint);
-            $imported[$role->value] = $fingerprint;
+        $image = $data['images']['base'] ?? null;
+        $fingerprint = is_array($image) ? $image['fingerprint'] ?? null : null;
+        if (! is_string($fingerprint) || preg_match('/\A[a-f0-9]{64}\z/D', $fingerprint) !== 1 || ($image['type'] ?? null) !== 'virtual-machine') {
+            throw new RuntimeException('The claimed recipe base image is invalid.');
         }
+        $found = $this->find($fingerprint);
+        if ($found === null) {
+            $archive = dirname($manifest).'/base.tar';
+            if (! is_file($archive) || is_link($archive)) {
+                throw new RuntimeException('The claimed recipe base image archive is missing.');
+            }
+            $this->host->importImage($archive);
+            $found = $this->find($fingerprint);
+        }
+        if ($found === null || $found['type'] !== 'virtual-machine'
+            || ($found['properties']['orbit.recipe'] ?? null) !== $identity
+            || ($found['properties']['orbit.profile'] ?? null) !== 'base') {
+            throw new RuntimeException('The imported base image does not match the claimed recipe, profile, fingerprint, or type.');
+        }
+        $archive = dirname($manifest).'/base.tar';
+        if (is_file($archive) && ! is_link($archive) && ! unlink($archive)) {
+            throw new RuntimeException('The imported recipe archive could not be removed.');
+        }
+        $this->host->pointAlias(RoleImage::Gateway->alias(), $fingerprint);
+        $imported = array_fill_keys(array_map(static fn (RoleImage $role): string => $role->value, $needed), $fingerprint);
 
         return $imported;
     }

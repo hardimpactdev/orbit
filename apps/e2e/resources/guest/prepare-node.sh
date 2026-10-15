@@ -5,7 +5,13 @@ mode=${1-}
 case "$mode" in
   configure-runtime)
     [[ $# -eq 1 ]] || exit 64
-    # Only replace the harness-owned DHCP file. The operator container has no such file.
+    [[ "$(id -u orbit):$(id -g orbit)" == 1000:1000 ]] || { echo 'The recipe base must provide orbit uid/gid 1000.' >&2; exit 67; }
+    bash "$0" align-identity
+    systemctl mask apt-daily.timer apt-daily-upgrade.timer unattended-upgrades.service motd-news.timer >/dev/null
+    for hosts in /root/.ssh/known_hosts /home/*/.ssh/known_hosts; do
+      if [[ -f $hosts ]]; then : >"$hosts"; fi
+    done
+    # Only replace the harness-owned DHCP file.
     network=/etc/systemd/network/00-orbit-e2e.network
     if [[ -f "$network" ]]; then
       candidate=$(mktemp)

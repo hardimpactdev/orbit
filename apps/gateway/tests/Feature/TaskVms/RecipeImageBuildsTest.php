@@ -113,7 +113,7 @@ beforeEach(function (): void {
 it('keeps aliases for base and every role within the Incus name limit', function (string $prefix): void {
     $identity = 'sha256:0bd780fc6472'.str_repeat('a', 52);
     $aliases = [];
-    foreach (['base', ...RecipeImageBuilds::Roles] as $profile) {
+    foreach (['base', 'gateway', 'app-dev', 'app-prod', 'operator'] as $profile) {
         $alias = RecipeImageBuilds::alias($prefix, $identity, $profile);
         expect(strlen($alias))->toBeLessThanOrEqual(64);
         expect($alias)->toEndWith('-recipe-0bd780fc6472-'.$profile);
@@ -153,7 +153,7 @@ describe('recipe image triggers', function (): void {
         Bus::assertDispatchedTimes(BuildRecipeImageStep::class, 1);
     });
 
-    it('builds all four role images on each configured host without syncing images', function (): void {
+    it('builds and smoke-tests only one base on each configured host without syncing images', function (): void {
         $first = recipeImageHost();
         $incus = recipeImageTransport($first);
         $second = Node::query()->create(['name' => 'recipe-shark', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64', 'public_ssh_host' => '192.0.2.8', 'wireguard_ip' => '10.44.0.8', 'user' => 'orbit']);
@@ -163,7 +163,8 @@ describe('recipe image triggers', function (): void {
         expect($builds)->toHaveCount(2);
         foreach ($builds as $build) {
             runRecipeImageBuild($build);
-            expect(array_keys($build->images))->toBe(['base', 'gateway', 'app-dev', 'app-prod', 'operator']);
+            expect(array_keys($build->images))->toBe(['base']);
+            expect(app(TaskVmImageBuildChain::class)->jobs($build))->toHaveCount(14);
             expect($build->state)->toBe(TaskVmImageBuildState::Succeeded);
             foreach ($build->images as $profile => $image) {
                 expect($incus->imageProperties[$image['fingerprint']])->toBe(['orbit.recipe' => $build->recipe_identity, 'orbit.profile' => $profile]);
@@ -172,18 +173,18 @@ describe('recipe image triggers', function (): void {
             }
         }
         $launches = array_values(array_filter($incus->commands, static fn ($command): bool => ($command->arguments[5] ?? '') === 'launch'));
-        expect($launches)->toHaveCount(20);
+        expect($launches)->toHaveCount(4);
         $base = $builds[0]->images['base']['fingerprint'];
-        expect(array_filter($launches, static fn ($command): bool => $command->arguments[count($command->arguments) - 2] === $base))->toHaveCount(5);
+        expect(array_filter($launches, static fn ($command): bool => $command->arguments[count($command->arguments) - 2] === $base))->toHaveCount(1);
         Bus::assertDispatchedTimes(BuildRecipeImageStep::class, 2);
     });
 
-    it('keeps previous images on a role failure and resumes from the failed phase', function (): void {
+    it('keeps previous images on a base smoke failure and resumes from the failed phase', function (): void {
         $host = recipeImageHost();
         $incus = recipeImageTransport($host);
         recipeImageCurrent(recipeImageDocument());
         $build = app(RecipeImageBuilds::class)->reconcile()[0];
-        $incus->fail = 'recipe app-prod:packages';
+        $incus->fail = 'recipe base:verify';
         expect(fn () => runRecipeImageBuild($build))->toThrow(TaskVmException::class);
         expect($build->refresh()->state)->toBe(TaskVmImageBuildState::Failed);
         expect($incus->images[IMAGE_OLD])->toContain(TaskVmHost::BaseImage);
@@ -193,7 +194,7 @@ describe('recipe image triggers', function (): void {
         $chain->resume($host, $build->id);
         $remaining = false;
         foreach ($chain->jobs($build->refresh()) as $job) {
-            $remaining = $remaining || $job->program() === 'app-prod:packages';
+            $remaining = $remaining || $job->program() === 'base:smoke';
             if ($remaining) {
                 $job->handle(app(RecipeImageBuildSteps::class));
             }
@@ -230,7 +231,7 @@ describe('recipe image triggers', function (): void {
         runRecipeImageBuild($build, promote: false);
         expect($build->recipe_identity)->toBe($identity);
         $this->artisan('task-vms:image-builds')->expectsOutputToContain($identity)
-            ->expectsOutputToContain($build->images['operator']['alias'])->expectsOutputToContain('operator:smoke')->assertSuccessful();
+            ->expectsOutputToContain($build->images['base']['alias'])->expectsOutputToContain('base:smoke')->assertSuccessful();
         expect(DB::table('task_vm_image_recipe')->value('generation'))->toBe(1);
     });
 });
@@ -247,7 +248,7 @@ it('retries a discarded failure without replacing already published recipe image
     $incus = recipeImageTransport($host);
     recipeImageCurrent(recipeImageDocument());
     $build = app(RecipeImageBuilds::class)->reconcile()[0];
-    $incus->fail = 'recipe app-prod:packages';
+    $incus->fail = 'recipe base:verify';
     expect(fn () => runRecipeImageBuild($build))->toThrow(TaskVmException::class);
     $base = $build->refresh()->image_fingerprint;
     app(IncusTaskVmBaseImage::class)->sweep(app(TaskVmSettings::class)->host($host->id), $host, discardFailed: true);

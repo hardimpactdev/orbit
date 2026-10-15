@@ -22,7 +22,7 @@ it('transfers the claimed recipe from its own host even after a newer recipe bec
     $project = Project::query()->create(['name' => 'Recipe', 'slug' => 'recipe', 'repository_url' => 'https://github.com/acme/recipe.git', 'default_branch' => 'main']);
     $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Nodes', 'brief' => 'Work', 'status' => 'reserved']);
     Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Prod', 'brief' => 'Prod', 'status' => 'todo', 'topology' => ['app-prod']]);
-    $vm = TaskVm::query()->create(['group_id' => $group->id, 'host_node_id' => $host->id, 'provider' => 'incus', 'size' => 'medium', 'name' => 'tvm-1', 'state' => 'provisioning', 'wireguard_ip' => '10.44.0.129', 'recipe_identity' => $build->recipe_identity]);
+    $vm = TaskVm::query()->create(['group_id' => $group->id, 'host_node_id' => $host->id, 'provider' => 'incus', 'size' => 'medium', 'name' => 'tvm-1', 'state' => 'provisioning', 'wireguard_ip' => '10.44.0.129', 'recipe_identity' => $build->recipe_identity, 'image_fingerprint' => $build->image_fingerprint]);
     DB::table('task_vm_image_recipe')->where('id', 1)->update(['identity' => 'sha256:'.str_repeat('b', 64)]);
     $ssh = new AppDevFakeSshExecutor;
     app()->instance(SshExecutor::class, $ssh);
@@ -33,8 +33,8 @@ it('transfers the claimed recipe from its own host even after a newer recipe bec
     expect($ssh->connections[0]->host)->toBe('10.44.0.7');
     $manifest = json_decode($ssh->commands[0]->arguments[7], true, flags: JSON_THROW_ON_ERROR);
     expect($manifest['recipe_identity'])->toBe($build->recipe_identity);
-    expect(array_keys($manifest['images']))->toBe(['gateway', 'app-dev', 'app-prod', 'operator']);
-    expect($manifest['images']['app-prod'])->toBe($build->images['app-prod']);
+    expect(array_keys($manifest['images']))->toBe(['base']);
+    expect($manifest['images']['base'])->toBe($build->images['base']);
     expect($ssh->commands[0]->input)->toBe(TaskVmScripts::read('role-images-transfer.sh'));
 });
 
@@ -49,7 +49,7 @@ if [[ $3 == image && $4 == export ]]; then printf 'image bytes' >"$6.tar"; fi
 SH);
     chmod($work.'/bin/incus', 0755);
     $images = [];
-    foreach (['gateway', 'app-dev', 'app-prod', 'operator'] as $index => $role) {
+    foreach (['base'] as $index => $role) {
         $images[$role] = ['fingerprint' => str_repeat(dechex($index + 1), 64)];
     }
     $manifest = json_encode(['recipe_identity' => 'sha256:'.str_repeat('a', 64), 'images' => $images], JSON_THROW_ON_ERROR);
@@ -57,7 +57,7 @@ SH);
     try {
         $process->mustRun();
         $calls = file($work.'/calls', FILE_IGNORE_NEW_LINES);
-        expect(array_values(array_filter($calls, static fn (string $call): bool => str_contains($call, 'image export'))))->toHaveCount(4);
+        expect(array_values(array_filter($calls, static fn (string $call): bool => str_contains($call, 'image export'))))->toHaveCount(1);
         expect(implode("\n", $calls))->toContain('image export '.str_repeat('1', 64))
             ->not->toContain('launch', 'publish', 'image import');
         expect(end($calls))->toBe('--project orbit-tasks exec tvm-7 -- mv -f /var/lib/orbit/task-vm-role-images/manifest.json.new /var/lib/orbit/task-vm-role-images/manifest.json');

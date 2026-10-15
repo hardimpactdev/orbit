@@ -395,7 +395,7 @@ describe('claim', function (): void {
         $group = tvm_life_group(TaskGroupStatus::Running);
         $group->update(['taskable_type' => (new Instance)->getMorphClass(), 'taskable_id' => Instance::query()->create(['node_id' => $this->host->id, 'project_id' => $this->project->id, 'name' => 'task-'.$group->id, 'checkout_path' => '/home/orbit/apps/orbit/workspace'])->id]);
         $vm = tvm_life_vm($group, TaskVmState::Ready);
-        $vm->update(['node_id' => $this->host->id]);
+        $vm->update(['node_id' => $this->host->id, 'recipe_identity' => TaskVmRecipeImages::ready($this->host->id)->recipe_identity]);
         $subtask = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Dev', 'brief' => 'Dev', 'status' => TaskStatus::Todo, 'topology' => ['app-dev']]);
         $admission = app(TaskTopologyAdmission::class);
 

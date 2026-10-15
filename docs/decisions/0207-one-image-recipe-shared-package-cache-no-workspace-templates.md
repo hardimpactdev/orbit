@@ -52,15 +52,17 @@ When a Project's default branch moves in the Gateway mirror, the Gateway cheaply
 
 `settings.task_vms` marks task VM hosts, not the `app-dev` role. It holds today's per-host configuration from `ORBIT_TASK_VMS_INCUS_HOSTS`, including pool and image alias. The list remains operator-owned. Placement, image sync, the package cache, and capacity follow this setting.
 
-### 6. Role images are built once per recipe change per host
+### 6. One base image is built once per recipe change per host
 
 Step 3 implements the [host-local build and publication contract](/reference/compute-drivers#build-the-base-image). Step 4 implements [current-recipe claims and nested imports](/reference/compute-drivers#prepare-the-topology).
 
-Each task VM host builds the gateway, app-dev, app-prod, and operator role images once per recipe change. Topology groups import those images into their nested Incus instead of building them inside every group's VM. This saves each group about 7 to 9 minutes of building role images.
+Each task VM host builds and smoke-tests only the base image once per recipe change. Topology groups import that single image into nested Incus and launch gateway, app-dev, app-prod, and operator VMs from the same fingerprint. This removes about 7 to 9 minutes of repeated image building per group; transfer and convergence still take time.
+
+Nick approved this simplification for PR #1240 after an audit found all four role tool sets were subsets of base. The chain drops from 53 to 13 jobs per host, and each topology VM receives one archive instead of four. Add separate role images only when a role needs software absent from base. Gateway and VPN programs run during topology convergence so they follow the checkout's product enrollment path. Before deployment, drain or cancel pre-recipe groups and release their topologies; the harness builder and operator-container fallback are removed.
 
 ### 7. One recipe, one rule
 
-A versioned recipe in the repository holds the Ubuntu snapshot date from `snapshot.ubuntu.com`, pinned tool versions, and which tools each role gets. A recipe change rebuilds the base image and all role images, taking about 10 minutes, and converges production Nodes to that same recipe. There are no input-fingerprint partial builds.
+A versioned recipe in the repository holds the Ubuntu snapshot date from `snapshot.ubuntu.com`, pinned tool versions, and which tools each role gets. A recipe change rebuilds the base image and converges production Nodes to that same recipe. There are no input-fingerprint partial builds.
 
 The recipe changes nightly through an automated snapshot-date bump, or at any time through a task group PR, such as a new Caddy version. A merged recipe change starts the image build immediately; production follows nightly. Images are immutable: one image is exactly one recipe version, identical for development and production. Role-specific tool sets do not imply separate version recipes. Experiments happen on hosts, never in images.
 
@@ -81,8 +83,8 @@ A fresh VM from the current image is ready in about 30 to 60 seconds. Orbit remo
 The nightly run follows this order:
 
 1. Bump the recipe's Ubuntu snapshot date. Stop if nothing changed.
-2. Build the base and role images on the task VM hosts. Stop on failure and keep the previous images.
-3. Smoke-test a topology composed from the new role images before touching production.
+2. Build the base image on the task VM hosts. Stop on failure and keep the previous images.
+3. Smoke-test a topology composed from the new base image before touching production.
 4. Converge production one Node at a time: app-dev Nodes, then services, then production Nodes (app-prod, then vpn), and the Gateway last. Use apt from the snapshot and only the tools of the Node's roles. Restart only services whose packages changed. Run a health check and Doctor after each Node.
 5. Stop at the first failure and notify the operator. There is no automatic rollback. Manual rollback is pinning the previous snapshot date.
 6. Report what changed.
@@ -97,11 +99,11 @@ A task group's PR adds a Composer package and updates `composer.lock`. When the 
 
 #### A task group bumps Caddy
 
-A task group changes the pinned Caddy version in the recipe. Its PR merges, making that recipe current and immediately starting base and role image builds on the task VM hosts. New claims wait with a clear status until the current recipe's image is available; running groups keep their VM. All images rebuild, not only the roles that use Caddy. Production converges to the recipe that night, with only each Node's role tools and the ordered checks and service restarts of the nightly run.
+A task group changes the pinned Caddy version in the recipe. Its PR merges, making that recipe current and immediately starting base image builds on the task VM hosts. New claims wait with a clear status until the current recipe's image is available; running groups keep their VM. The base rebuilds as one unit, including when only one role uses the changed tool. Production converges to the recipe that night, with only each Node's role tools and the ordered checks and service restarts of the nightly run.
 
 #### A normal night
 
-At 03:00 Europe/Amsterdam the automated run bumps the snapshot date. The task VM hosts rebuild the base and role images, and a smoke topology composed from the new role images passes. Production convergence then visits app-dev Nodes, services, app-prod Nodes, vpn Nodes, and the Gateway last, one Node at a time. Each uses apt from the new snapshot and its role tools; only services whose packages changed restart. Health checks and Doctor pass after every Node, and the run reports the changes.
+At 03:00 Europe/Amsterdam the automated run bumps the snapshot date. The task VM hosts rebuild the base image, and a smoke topology composed from the new base image passes. Production convergence then visits app-dev Nodes, services, app-prod Nodes, vpn Nodes, and the Gateway last, one Node at a time. Each uses apt from the new snapshot and its role tools; only services whose packages changed restart. Health checks and Doctor pass after every Node, and the run reports the changes.
 
 #### A Node fails during the night
 
@@ -110,7 +112,7 @@ The snapshot bump, image builds, and smoke topology pass. The run converges the 
 ## Rejected alternatives
 
 - **A fixed nightly rebuild with no recipe:** time alone does not identify the intended OS and tool versions or connect development images to production. A versioned recipe makes both nightly snapshot updates and merged tool changes follow one rule.
-- **Input fingerprints with partial builds:** per-input invalidation adds another correctness model and can leave different image roles on different inputs. A recipe change rebuilds base and role images together; the roughly 10-minute build is accepted.
+- **Input fingerprints with partial builds:** per-input invalidation adds another correctness model and can leave different image roles on different inputs. A recipe change rebuilds the base as one unit.
 - **Groups converging and publishing images themselves:** untrusted groups would write a shared machine-software result, and concurrent groups can race to publish it. Trusted Gateway orchestration owns builds and publication instead.
 - **Per-Project templates kept at most two versions:** a retention limit reduces storage but keeps template builds, invalidation, and setup coupling. Clone plus Project setup with package and CI caches replaces templates entirely.
 - **A writable shared cache:** root agents can poison dependency contents for another Project. Only the trusted fill job writes; task VMs receive a read-only mount and the inventory supports incident investigation.
@@ -146,8 +148,8 @@ The owner must review this ADR on its pull request before any implementation gro
 
 1. **Recipe contract and validation.** Define the versioned snapshot/tool/role recipe, its identity, and validation. Settle pinning and concurrency details before consumers depend on the format. Prove invalid and unavailable inputs fail clearly.
 2. **Task VM host settings.** Move the operator-owned per-host configuration into `settings.task_vms`; make placement, image sync, capacity, and cache targeting use it rather than the app-dev role or environment list. Verify host selection and preserve existing operator intent.
-3. **Recipe-driven base and role builds.** Build on groups 1 and 2 and ADR 0206's small-job records. Build immutable base and all four role images once per recipe change per task VM host. Record recipe identity, preserve previous images on failure, and prevent stale publication. Verify merge-triggered builds and host-local failure handling.
-4. **Current-recipe claims and topology imports.** Build on group 3. Gate claims on the current recipe, expose waiting status, preserve running groups, remove full-enrollment fallback, and import role images into nested Incus. Prove that groups do not rebuild role images or claim stale images.
+3. **Recipe-driven base builds.** Build on groups 1 and 2 and ADR 0206's small-job records. Build and smoke-test one immutable base image once per recipe change per task VM host. Record recipe identity, preserve previous images on failure, and prevent stale publication. Verify merge-triggered builds and host-local failure handling.
+4. **Current-recipe claims and topology imports.** Build on group 3. Gate claims on the current recipe, expose waiting status, preserve running groups, remove full-enrollment fallback, and import one base image for every role into nested Incus. Prove that groups do not rebuild role images or claim stale images.
 5. **Trusted shared package cache.** Build on group 2. Implement lockfile-blob checks on default-branch mirror moves, coalesced additive fills for Composer and npm/bun on each host, integrity verification, inventory, and read-only VM mounts. Split manager adapters into separate reviewable groups if needed; each must prove the root-agent write boundary and Project-usage reporting.
 6. **CI cache refs and template-free workspaces.** First deliver CI publication and mirror/workspace fetching of SHA-bound test-cache refs, replacing base64 artifact delivery. Then, with group 5 available, deliver clone-plus-setup workspaces and remove per-Project templates. The template-free implementation is documented in [Clone and set up every workspace](/reference/compute-drivers#clone-and-set-up-every-workspace), including manual legacy cleanup and preservation of existing groups. Keep these as separate reviewable groups so cache transport and template removal each have complete tests.
 7. **Fresh claims and warm-pool removal.** Require both group 4 and the merge of task group 1505's warm-claim rework as a restore point. Remove the pool only after fresh current-image claims are proved; verify latency, capacity accounting, and running-group preservation.
@@ -160,4 +162,4 @@ The owner must review this ADR on its pull request before any implementation gro
 - Components: apps/gateway, apps/e2e, apps/cli, apps/docs
 - ADRs: Partly supersedes [ADR 0206](/decisions/0206-build-task-vm-images-as-chains-of-small-jobs), including its image-sync/workspace-template next steps and fixed nightly trigger; changes the image, workspace, and claim policy of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm).
 - Detail: [Compute drivers](/reference/compute-drivers), [Incus topologies](/reference/incus-topologies), [Instance setup](/reference/instance-setup), [Node settings](/reference/node-settings), [Tools](/reference/tools), and [Fleet rollout](/reference/gateway-recovery#fleet-rollout) receive the implemented behavior and reasons when the decision is absorbed.
-- Verify: `composer docs-lint` checks the ADR. Implementation groups must test recipe changes, read-only cache isolation and inventory, SHA-bound CI refs, fresh current-image claims, imported role images, serial convergence, first-failure stopping, and the four worked examples above.
+- Verify: `composer docs-lint` checks the ADR. Implementation groups must test recipe changes, read-only cache isolation and inventory, SHA-bound CI refs, fresh current-image claims, an imported base image for all roles, serial convergence, first-failure stopping, and the four worked examples above.

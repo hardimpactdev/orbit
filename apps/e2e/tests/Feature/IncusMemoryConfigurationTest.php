@@ -14,13 +14,13 @@ it('sizes newly created guests by their catalog Node, with the uniform override'
     Process::fake(['*' => Process::result()]);
 
     app(IncusHost::class)->initGuests([$node => [
-        'image' => 'orbit-e2e-'.$node,
+        'image' => 'orbit-e2e-base',
         'name' => 'orbit-memory-'.$node,
         'network' => 'oe-memory',
         'node' => $node,
         'address' => $address,
         'slot' => 2,
-        'container' => $node === 'operator',
+        'container' => false,
         'memory' => TopologyRecipe::fromOption('app-dev,app-prod,app-prod-2')->node($node)->memory,
         'metadata' => [],
     ]]);
@@ -28,6 +28,7 @@ it('sizes newly created guests by their catalog Node, with the uniform override'
     Process::assertRan(fn (PendingProcess $process): bool => (
         is_array($process->command)
         && in_array('init', $process->command, true)
+        && in_array('--vm', $process->command, true)
         && in_array('limits.memory='.$memory, $process->command, true)
         && in_array('limits.cpu=1', $process->command, true)
     ));
@@ -36,7 +37,7 @@ it('sizes newly created guests by their catalog Node, with the uniform override'
     'development' => [null, 'app-dev', '2GiB', 11],
     'production' => [null, 'app-prod', '1GiB', 12],
     'second production' => [null, 'app-prod-2', '1GiB', 13],
-    'roleless operator container' => [null, 'operator', '512MiB', 14],
+    'roleless operator VM' => [null, 'operator', '512MiB', 14],
     'uniform Gateway override' => ['3GiB', 'gateway', '3GiB', 10],
     'uniform production override' => ['3GiB', 'app-prod', '3GiB', 12],
 ]);

@@ -17,8 +17,6 @@ use Illuminate\Support\Facades\DB;
 /** Desired identity is persisted before dispatch; a busy host catches up on the next scheduler check. */
 final readonly class RecipeImageBuilds
 {
-    public const array Roles = ['gateway', 'app-dev', 'app-prod', 'operator'];
-
     public function __construct(private RecipeLoader $loader, private TaskVmSettings $settings, private TaskVmImageBuildChain $chain) {}
 
     /** @return list<TaskVmImageBuild> */
@@ -51,9 +49,7 @@ final readonly class RecipeImageBuilds
                 'aarch64', 'arm64' => 'arm64',
                 default => throw new TaskVmException('task_vm.image_build_failed', 'The image host architecture is unsupported.'),
             };
-            foreach (['base', ...self::Roles] as $profile) {
-                $recipe->profile($profile, $architecture);
-            }
+            $recipe->profile('base', $architecture);
             try {
                 $builds[] = $this->chain->start($node, $recipe, $generation);
             } catch (TaskVmException $error) {

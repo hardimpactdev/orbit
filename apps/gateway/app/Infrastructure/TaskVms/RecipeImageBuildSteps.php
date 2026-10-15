@@ -49,7 +49,7 @@ final readonly class RecipeImageBuildSteps
         }
         [$profile, $phase] = explode(':', (string) $program, 2);
         $recipe = new RecipeLoader()->decode((string) $build->recipe_json);
-        if ($recipe->identity !== $build->recipe_identity || ! in_array($profile, ['base', ...RecipeImageBuilds::Roles], true)) {
+        if ($recipe->identity !== $build->recipe_identity || $profile !== 'base') {
             throw new TaskVmException('task_vm.image_build_failed', 'The stored image recipe is invalid.');
         }
         $alias = RecipeImageBuilds::alias($host->imageAlias, $recipe->identity, $profile);
@@ -64,14 +64,12 @@ final readonly class RecipeImageBuildSteps
                     $this->image->delete($host, $node, $name.'-smoke');
                     break;
                 case 'launch':
-                    if ($profile === 'base') {
-                        $this->image->sweep($host, $node, discardFailed: true);
-                        if ($build->source_alias === null) {
-                            $build->forceFill(['source_alias' => TaskVmHost::SourceImage,
-                                'source_fingerprint' => $this->incus->aliasTarget($host, $node, TaskVmHost::SourceImage)])->save();
-                        }
+                    $this->image->sweep($host, $node, discardFailed: true);
+                    if ($build->source_alias === null) {
+                        $build->forceFill(['source_alias' => TaskVmHost::SourceImage,
+                            'source_fingerprint' => $this->incus->aliasTarget($host, $node, TaskVmHost::SourceImage)])->save();
                     }
-                    $source = $profile === 'base' ? ($build->source_fingerprint ?? TaskVmHost::SourceImage) : $build->images['base']['fingerprint'];
+                    $source = $build->source_fingerprint ?? TaskVmHost::SourceImage;
                     if (! array_key_exists($name, $this->image->instances($host, $node))) {
                         $this->image->launch($host, $node, $name, $source, $this->cloudInit->renderImageBuilder($this->keys->publicKey(), upgradePackages: false));
                     }
@@ -101,9 +99,7 @@ final readonly class RecipeImageBuildSteps
                     $images = $build->images;
                     $images[$profile] = ['project' => $host->project, 'alias' => $alias, 'fingerprint' => $fingerprint, 'type' => 'virtual-machine'];
                     $build->images = $images;
-                    if ($profile === 'base') {
-                        $build->image_fingerprint = $fingerprint;
-                    }
+                    $build->image_fingerprint = $fingerprint;
                     $build->save();
                     $this->image->delete($host, $node, $name);
                     break;
@@ -152,11 +148,9 @@ final readonly class RecipeImageBuildSteps
             if ($current !== 1) {
                 throw new TaskVmException('task_vm.image_recipe_superseded', 'A newer recipe is desired. This build cannot become current.');
             }
-            foreach (['base', ...RecipeImageBuilds::Roles] as $profile) {
-                $smoked = array_any($build->steps, static fn (array $entry): bool => $entry['program'] === $profile.':smoke' && $entry['seconds'] !== null && $entry['error'] === null);
-                if (! isset($build->images[$profile]) || ! $smoked) {
-                    throw new TaskVmException('task_vm.image_build_failed', 'Every recipe image must pass smoke before promotion.');
-                }
+            $smoked = array_any($build->steps, static fn (array $entry): bool => $entry['program'] === 'base:smoke' && $entry['seconds'] !== null && $entry['error'] === null);
+            if (! isset($build->images['base']) || ! $smoked) {
+                throw new TaskVmException('task_vm.image_build_failed', 'The recipe base must pass smoke before promotion.');
             }
             $host = $this->settings->host($build->host_node_id);
             $this->image->promote($host, $build->hostNode, (string) $build->image_fingerprint);

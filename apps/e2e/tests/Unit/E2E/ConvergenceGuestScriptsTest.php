@@ -186,11 +186,11 @@ describe('Gateway convergence', function () {
             ]);
     });
 
-    it('keeps every guest and image script valid Bash', function () {
+    it('keeps every guest script valid Bash', function () {
         $resources = dirname(__DIR__, 3).'/resources';
-        $scripts = [...glob($resources.'/guest/*.sh'), ...glob($resources.'/image/*.sh')];
+        $scripts = glob($resources.'/guest/*.sh');
 
-        expect($scripts)->toHaveCount(7);
+        expect($scripts)->toHaveCount(5);
         foreach ($scripts as $script) {
             expect(new Process(['bash', '-n', $script], timeout: 5)->run())->toBe(0, $script);
         }

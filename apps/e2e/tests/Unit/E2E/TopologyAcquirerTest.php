@@ -36,6 +36,11 @@ function acquirerWorktree(): string
     foreach (['apps/gateway/vendor/autoload.php', 'apps/cli/vendor/autoload.php', 'packages/php-sdk/vendor/autoload.php'] as $file) {
         file_put_contents($root.'/'.$file, "<?php\n");
     }
+    file_put_contents($root.'/apps/gateway/artisan', <<<'PHP'
+<?php
+$programs = [['name' => 'bootstrap', 'arguments' => ['true', 'bootstrap'], 'input' => null], ['name' => 'caddy-package', 'arguments' => ['true', 'caddy-package'], 'input' => null], ['name' => 'vpn-prerequisites', 'arguments' => ['true', 'vpn-prerequisites'], 'input' => null]];
+echo json_encode(['programs' => array_map(static fn (array $p): array => $p + ['fingerprint' => hash('sha256', json_encode(['arguments' => $p['arguments'], 'input' => $p['input']], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE))], $programs)]);
+PHP);
     file_put_contents($root.'/apps/gateway/.env', "APP_KEY=base64:fixture\n");
     file_put_contents($root.'/.gitignore', "/.e2e/\n/apps/gateway/.env\nvendor/\n");
     foreach (WorktreeSynchronizer::GUEST_SCRIPTS as $script) {
@@ -69,6 +74,9 @@ function acquirerResponder(FakeIncus $incus, array &$steps, ?Closure $override =
 
             return ["2: eth0    inet {$address}/24 scope global eth0\n", '', 0];
         }
+        if ($argv[0] === 'sh' && str_contains($argv[2] ?? '', 'boot_id')) {
+            return ["boot-ready\n", '', 0];
+        }
         if ($argv[0] === 'cat' || $argv[0] === 'sha256sum') {
             return ['', 'missing', 1];
         }
@@ -97,7 +105,7 @@ function acquirerFixture(?Closure $override = null, array &$steps = [], bool $im
     $fingerprints = [];
     if ($images) {
         foreach (RoleImage::cases() as $image) {
-            $fingerprints[$image->value] = $incus->addImage($image->alias(), $image->instanceType());
+            $fingerprints[$image->value] = $incus->addImage($image->alias(), $image->instanceType(), ['orbit.recipe' => 'sha256:'.str_repeat('a', 64), 'orbit.profile' => 'base']);
         }
     }
     $worktree = acquirerWorktree();
@@ -111,8 +119,8 @@ function acquirerFixture(?Closure $override = null, array &$steps = [], bool $im
         'acquirer' => new TopologyAcquirer(
             host: $host,
             networks: $networks,
-            images: new RoleImages($host, new RoleImagePrograms($worktree)),
-            composer: new TopologyComposer($host, $guests),
+            images: new RoleImages($host, settleIntervalMicroseconds: 0),
+            composer: new TopologyComposer($host, $guests, new RoleImagePrograms($worktree)),
             synchronizer: new WorktreeSynchronizer($host, $worktree, $operation),
             verifier: new TopologyVerifier($host, 1, 0),
             guests: $guests,
@@ -147,6 +155,9 @@ describe('TopologyAcquirer', function () {
             $timings[] = $step;
         });
 
+        $programs = array_values(array_filter($incus->execs, static fn (array $exec): bool => in_array('true', $exec['argv'], true)));
+        expect(array_map(static fn (array $exec): array => array_slice($exec['argv'], 10), $programs))->toBe([['true', 'caddy-package'], ['true', 'vpn-prerequisites']]);
+
         $guests = [];
         foreach ($incus->instances as $name => $guest) {
             $guests[substr($name, strlen('orbit-e2e-tst-9-aaaaaaaa-'))] = [$guest['type'], $guest['config']['volatile.base_image'], isset($guest['devices']['orbit-source'])];
@@ -154,10 +165,10 @@ describe('TopologyAcquirer', function () {
         expect($guests)->toBe([
             'gateway' => ['virtual-machine', $images['gateway'], true],
             'app-dev' => ['virtual-machine', $images['app-dev'], true],
-            'operator' => ['container', $images['operator'], true],
+            'operator' => ['virtual-machine', $images['operator'], true],
         ])
             ->and($incus->instances['orbit-e2e-tst-9-aaaaaaaa-operator']['devices']['orbit-source'])
-            ->toMatchArray(['source' => realpath($worktree), 'path' => '/home/orbit/orbit', 'shift' => 'true'])
+            ->toMatchArray(['source' => realpath($worktree), 'path' => '/home/orbit/orbit'])
             ->and($steps)->toBe([
                 'prepare-node.sh configure-runtime @gateway',
                 'prepare-node.sh configure-runtime @app-dev',
@@ -188,7 +199,7 @@ describe('TopologyAcquirer', function () {
         }));
         foreach (RoleImage::cases() as $role) {
             $incus->images[$images[$role->value]]['type'] = 'virtual-machine';
-            $incus->images[$images[$role->value]]['properties'] = ['orbit.recipe' => 'sha256:'.str_repeat('a', 64), 'orbit.profile' => $role->value];
+            $incus->images[$images[$role->value]]['properties'] = ['orbit.recipe' => 'sha256:'.str_repeat('a', 64), 'orbit.profile' => 'base'];
         }
 
         $record = $acquirer->acquire($request, TopologyRecipe::compose(['app-dev']));
@@ -200,6 +211,15 @@ describe('TopologyAcquirer', function () {
         $acquirer->verify($request);
         $releaser->release($request);
         expect($incus->instances)->toBe([]);
+    });
+
+    it('fails composition and cleans up when a Gateway VPN program fails', function (): void {
+        extract(acquirerFixture(static fn (string $instance, array $argv): ?array => in_array('vpn-prerequisites', $argv, true) ? ['', 'failed', 1] : null));
+
+        expect(fn () => $acquirer->acquire($request, TopologyRecipe::compose(['app-dev'])))
+            ->toThrow(RuntimeException::class, 'Gateway convergence program [vpn-prerequisites] failed.');
+        expect($incus->instances)->toBe([]);
+        expect($incus->callsOf('publish'))->toBe([]);
     });
 
     it('enrolls every declared Node with its catalog role, TLD, and WireGuard address', function () {
@@ -249,7 +269,7 @@ describe('TopologyAcquirer', function () {
         ['acquirer' => $acquirer, 'incus' => $incus, 'worktree' => $worktree, 'request' => $request] = acquirerFixture(images: false);
 
         expect(fn () => $acquirer->acquire($request, TopologyRecipe::compose(['app-dev'])))
-            ->toThrow(RuntimeException::class, 'Step reserve failed: The role image [orbit-e2e-gateway] is missing; run bin/e2e-topology-images build --role=gateway.')
+            ->toThrow(RuntimeException::class, 'Step reserve failed: The recipe base image is missing or invalid; import it with bin/e2e-topology-images ensure --recipe-images=PATH. Pre-recipe groups must drain or be cancelled.')
             ->and($incus->instances)->toBe([])
             ->and($incus->networks)->toBe([])
             ->and(IssueState::forWorktree('TST-9', $worktree)->hasAttempt())->toBeFalse();

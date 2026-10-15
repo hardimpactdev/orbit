@@ -13,12 +13,12 @@ it('always composes the Gateway and the operator around the declared workload No
         ->and($recipe->vmCount())->toBe($vms)
         ->and($recipe->node('gateway')->roles)->toBe(['gateway', 'vpn'])
         ->and($recipe->node('operator')->roles)->toBe([])
-        ->and($recipe->node('operator')->isContainer())->toBeTrue();
+        ->and($recipe->node('operator')->isContainer())->toBeFalse();
 })->with([
-    'gateway only' => [[], ['gateway', 'operator'], 1],
-    'app-dev' => [['app-dev'], ['gateway', 'app-dev', 'operator'], 2],
-    'default' => [['app-dev', 'app-prod'], ['gateway', 'app-dev', 'app-prod', 'operator'], 3],
-    'full, declared out of order' => [['app-prod-2', 'app-prod', 'app-dev'], ['gateway', 'app-dev', 'app-prod', 'app-prod-2', 'operator'], 4],
+    'gateway only' => [[], ['gateway', 'operator'], 2],
+    'app-dev' => [['app-dev'], ['gateway', 'app-dev', 'operator'], 3],
+    'default' => [['app-dev', 'app-prod'], ['gateway', 'app-dev', 'app-prod', 'operator'], 4],
+    'full, declared out of order' => [['app-prod-2', 'app-prod', 'app-dev'], ['gateway', 'app-dev', 'app-prod', 'app-prod-2', 'operator'], 5],
 ]);
 
 it('gives every Node its role image, fixed address, WireGuard address, roles, and checkout', function () {

@@ -16,7 +16,7 @@ final class TaskVmRecipeImages
     {
         $recipe = app(RecipeLoader::class)->load();
         $images = [];
-        foreach (['base', ...RecipeImageBuilds::Roles] as $profile) {
+        foreach (['base'] as $profile) {
             $images[$profile] = ['project' => 'orbit-tasks', 'alias' => RecipeImageBuilds::alias(TaskVmHost::BaseImage, $recipe->identity, $profile),
                 'fingerprint' => $profile === 'base' ? $fingerprint : hash('sha256', $profile), 'type' => 'virtual-machine'];
         }

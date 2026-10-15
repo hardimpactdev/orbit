@@ -52,6 +52,9 @@ final readonly class TaskVmTopologyAdmission implements TaskTopologyAdmission
         if (! $vm instanceof TaskVm || ! $node instanceof Node || ! $instance instanceof Instance) {
             throw new TaskCapacityException(TaskWait::Topology, self::NoWorkspace);
         }
+        if ($vm->recipe_identity === null) {
+            throw new TaskTopologyFailedException('This group predates recipe images. Drain or cancel it before deploying the recipe-only topology harness.');
+        }
         $topology = TaskTopology::forGroup($group);
         if (! $vm->size->holds($topology)) {
             throw new TaskCapacityException(TaskWait::Topology, self::TooSmall);

@@ -9,7 +9,7 @@ use RuntimeException;
 /**
  * The one list of Nodes a topology can hold, read from `resources/topology-nodes.json`: each Node's role image,
  * address position, checkout mount, memory, and, for a declarable workload Node, its base role, TLD, and the Node it
- * requires. The recipe, the role image builders, composition, and verification all derive from it. The Gateway's
+ * requires. Topology selection, composition, and verification derive from it. The Gateway's
  * own topology catalog has a parity test that reads the same file.
  *
  * @phpstan-type Entry array{image:RoleImage,address:int,checkout:bool,memory:string,declarable:bool,base_role:?string,tld:?string,requires:?string}
