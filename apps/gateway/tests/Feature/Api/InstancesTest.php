@@ -188,7 +188,7 @@ beforeEach(function (): void {
             $this->resolution = new DevelopmentSourceResolution('dev', str_repeat('a', 40));
         }
 
-        public function prepare(Instance $instance, bool $allowExisting, ?string $template = null): void
+        public function prepare(Instance $instance, bool $allowExisting): void
         {
             $this->prepareExisting[] = $allowExisting;
             if ($this->seed !== []) {

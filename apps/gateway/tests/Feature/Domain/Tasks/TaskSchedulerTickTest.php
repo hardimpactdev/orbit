@@ -251,14 +251,15 @@ function tick_pi_failure(object $state): void
         if (str_ends_with($request->url(), '/messages')) {
             return Http::response(['duplicate' => false], 202);
         }
-        if (! str_contains($request->url(), '/sessions/implementer-thread')) {
+        if (! str_contains($request->url(), '/sessions/'.($state->sessionId ?? 'implementer-thread'))) {
             return null;
         }
 
         return Http::response([
             'kind' => 'snapshot', 'run' => 'run-1', 'sequence' => 4,
-            'session' => ['id' => 'implementer-thread'],
+            'session' => ['id' => $state->sessionId ?? 'implementer-thread'],
             'state' => isset($state->state) ? $state->state : 'failed', 'error' => $state->error, 'turnId' => $state->turnId, 'entries' => [],
+            'providerError' => $state->providerError ?? null,
         ]);
     });
 }
@@ -834,6 +835,11 @@ function tick_running_agents(bool $fetchFails = false, bool $fastForwardFails = 
         public function mergeBase(Task $group): string
         {
             return str_repeat('c', 40);
+        }
+
+        public function mergeDefault(Task $group): ?string
+        {
+            return str_repeat('a', 40);
         }
 
         public function moveTo(Task $group, string $sha): void {}
@@ -3260,6 +3266,167 @@ it('flags the parent when a subtask already asks and the parent does not', funct
         ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Direction)
         ->and($group->fresh()?->assistance_question)->toBe($question)
         ->and($group->fresh()?->assistance_reason)->toBe($reason);
+});
+
+describe('transient provider retries', function (): void {
+    it('waits a minute then resumes the same turn and clears the budget on success', function (): void {
+        $this->freezeTime();
+        $task = tick_pi_implementer();
+        $state = (object) ['turnId' => 'overloaded-turn', 'error' => 'Servers overloaded', 'providerError' => 'overloaded'];
+        tick_pi_failure($state);
+
+        app(TaskScheduler::class)->tick();
+        $retry = $task->fresh()->provider_retry;
+        expect($retry['due_at'])->toBe(now()->addMinute()->toIso8601String())
+            ->and($retry['history'])->toHaveCount(1)
+            ->and(tick_pi_message_keys())->toBe([])
+            ->and($task->fresh()->assistance_requested)->toBeFalse();
+        $comment = TaskComment::query()->where('task_id', $task->id)->where('type', TaskCommentType::ProviderRetry)->sole();
+        expect($comment->body)->toContain('1/4', 'overloaded-turn', 'overloaded', $retry['due_at']);
+
+        $this->travel(59)->seconds();
+        app(TaskScheduler::class)->tick();
+        expect(tick_pi_message_keys())->toBe([]);
+        $this->travel(1)->seconds();
+        app(TaskScheduler::class)->tick();
+        expect(tick_pi_message_keys())->toBe([$retry['key']]);
+
+        // A lost response or stale observation reuses the committed key, not another attempt.
+        app(TaskScheduler::class)->tick();
+        expect(tick_pi_message_keys())->toBe([$retry['key'], $retry['key']])
+            ->and($task->fresh()->provider_retry['history'])->toHaveCount(1);
+        $state->turnId = $retry['key'];
+        $state->state = 'working';
+        app(TaskScheduler::class)->tick();
+        expect($task->fresh()->provider_retry['history'])->toHaveCount(1);
+        $state->state = 'done';
+        $state->providerError = null;
+        $state->error = null;
+        app(TaskScheduler::class)->tick();
+        expect($task->fresh()->provider_retry)->toBeNull()
+            ->and($task->fresh()->assistance_requested)->toBeFalse()
+            ->and(TaskComment::query()->where('task_id', $task->id)->where('type', TaskCommentType::ProviderRetry)->count())->toBe(1);
+    });
+
+    it('backs off four times and asks for assistance only after the last retry fails', function (): void {
+        $this->freezeTime();
+        $task = tick_pi_implementer();
+        $state = (object) ['turnId' => 'original-turn', 'error' => 'Servers overloaded', 'providerError' => 'overloaded'];
+        tick_pi_failure($state);
+        $keys = [];
+        foreach ([1, 2, 4, 8] as $index => $minutes) {
+            app(TaskScheduler::class)->tick();
+            $retry = $task->fresh()->provider_retry;
+            expect($retry['due_at'])->toBe(now()->addMinutes($minutes)->toIso8601String())
+                ->and($retry['history'])->toHaveCount($index + 1)
+                ->and($task->fresh()->assistance_requested)->toBeFalse()
+                ->and($task->parent->fresh()->assistance_requested)->toBeFalse()
+                ->and(tick_pi_message_keys())->toBe($keys);
+            $this->travel($minutes)->minutes();
+            app(TaskScheduler::class)->tick();
+            $keys[] = $retry['key'];
+            expect(tick_pi_message_keys())->toBe($keys);
+            $state->turnId = $retry['key'];
+        }
+
+        app(TaskScheduler::class)->tick();
+
+        expect($task->fresh()->assistance_requested)->toBeTrue()
+            ->and($task->fresh()->assistance_kind)->toBe(AssistanceKind::Failure)
+            ->and($task->parent->fresh()->assistance_requested)->toBeTrue()
+            ->and($task->fresh()->assistance_reason)->toContain('exhausted after 4 retries', 'original-turn', 'retry 1/4', 'retry 4/4', $state->turnId)
+            ->and(tick_pi_message_keys())->toBe($keys)
+            ->and(TaskComment::query()->where('task_id', $task->id)->where('type', TaskCommentType::ProviderRetry)->count())->toBe(4);
+    });
+
+    it('does not retry unclassified errors or a provider failure without a turn id', function (string $error, ?string $category, string $turn): void {
+        $task = tick_pi_implementer();
+        tick_pi_failure((object) ['turnId' => $turn, 'error' => $error, 'providerError' => $category]);
+
+        app(TaskScheduler::class)->tick();
+
+        expect($task->fresh()->assistance_requested)->toBeTrue()
+            ->and($task->fresh()->provider_retry)->toBeNull()
+            ->and(tick_pi_message_keys())->toBe([]);
+    })->with([
+        'old server has no classification' => ['Servers overloaded', null, 'turn-1'],
+        'check failure' => ['composer check failed', null, 'turn-1'],
+        'tool failure' => ['Command exited with code 1', null, 'turn-1'],
+        'refusal' => ['The model refused the request', null, 'turn-1'],
+        'missing turn' => ['Servers overloaded', 'overloaded', ''],
+    ]);
+
+    it('retries a rate-limited reviewer on its own thread without advancing the review', function (): void {
+        $this->freezeTime();
+        $task = tick_pi_implementer();
+        $group = $task->parent;
+        AgentThread::query()->whereKey($task->implementer_agent_thread_id)->update(['driver' => 'example']);
+        AgentThread::query()->whereKey($group->reviewer_agent_thread_id)->update(['driver' => 'pi', 'task_id' => $task->id]);
+        $group->update(['status' => TaskGroupStatus::Reviewing, 'reviewer_agent_driver' => 'pi']);
+        $task->update([
+            'status' => TaskStatus::Reviewing,
+            'review_notified_attempt' => $task->review_attempt,
+            'review_notified_turn_id' => 'handoff-turn',
+            ...tick_review_baseline(),
+        ]);
+        tick_pi_failure((object) [
+            'sessionId' => 'reviewer-thread', 'turnId' => 'review-turn',
+            'error' => 'Too many requests', 'providerError' => 'rate_limited',
+        ]);
+
+        app(TaskScheduler::class)->tick();
+        expect(tick_pi_message_keys())->toBe([])
+            ->and($task->fresh()->provider_retry)->toBeArray();
+        $this->travel(1)->minutes();
+        app(TaskScheduler::class)->tick();
+
+        expect($task->fresh()->status)->toBe(TaskStatus::Reviewing)
+            ->and($task->fresh()->assistance_requested)->toBeFalse()
+            ->and($task->fresh()->provider_retry['thread_id'])->toBe($group->reviewer_agent_thread_id)
+            ->and(tick_pi_message_keys())->toBe([$task->fresh()->provider_retry['key']]);
+        Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/sessions/reviewer-thread/messages')
+            && str_contains((string) $request['text'], 'Continue the same assignment'));
+    });
+
+    it('preserves the provider budget across a server-restart resume', function (): void {
+        $this->freezeTime();
+        $task = tick_pi_implementer();
+        $state = (object) ['turnId' => 'turn-1', 'error' => 'Overloaded', 'providerError' => 'overloaded'];
+        tick_pi_failure($state);
+        app(TaskScheduler::class)->tick();
+        $this->travel(1)->minutes();
+        app(TaskScheduler::class)->tick();
+        $state->turnId = $task->fresh()->provider_retry['key'];
+        $state->error = TaskScheduler::PiServerRestartError;
+        $state->providerError = null;
+        app(TaskScheduler::class)->tick();
+        $state->turnId = $task->fresh()->pi_restart_key;
+        $state->error = 'Overloaded';
+        $state->providerError = 'overloaded';
+
+        app(TaskScheduler::class)->tick();
+
+        expect($task->fresh()->provider_retry['history'])->toHaveCount(2)
+            ->and($task->fresh()->provider_retry['due_at'])->toBe(now()->addMinutes(2)->toIso8601String())
+            ->and($task->fresh()->assistance_requested)->toBeFalse()
+            ->and(tick_pi_message_keys())->toHaveCount(2);
+    });
+
+    it('gives a new unrelated turn a fresh retry budget', function (): void {
+        $this->freezeTime();
+        $task = tick_pi_implementer();
+        $state = (object) ['turnId' => 'turn-1', 'error' => 'Unavailable', 'providerError' => 'server_error'];
+        tick_pi_failure($state);
+        app(TaskScheduler::class)->tick();
+        $first = $task->fresh()->provider_retry;
+        $state->turnId = 'operator-turn';
+
+        app(TaskScheduler::class)->tick();
+
+        expect($task->fresh()->provider_retry['history'])->toHaveCount(1)
+            ->and($task->fresh()->provider_retry['key'])->not->toBe($first['key'])
+            ->and($task->fresh()->provider_retry['source_turn_id'])->toBe('operator-turn');
+    });
 });
 
 it('resumes a Pi implementer restarted during the turn instead of asking for assistance', function (): void {
@@ -6174,7 +6341,7 @@ describe('topology paths at handoff', function (): void {
     });
 
     it('refuses a vm handoff that changes a listed path while no subtask declares a topology', function (): void {
-        [$group, $task] = tick_deliverables([], [], tick_evidence(['diff' => [
+        [$group, $task] = tick_deliverables([], [], tick_evidence(['topology_diff' => [
             ['status' => 'M', 'path' => 'apps/agent/src/main.rs'],
             ['status' => 'M', 'path' => 'docs/reference/tasks.md'],
         ]]));
@@ -6186,9 +6353,33 @@ describe('topology paths at handoff', function (): void {
             ->and($reminder)->toContain('This subtask changes paths that need real machines (apps/agent/src/main.rs), but no subtask of the group declares a topology');
     });
 
+    it('passes a merge-main handoff whose Node changes are all inherited from main', function (): void {
+        [$group, $task, $checks] = tick_deliverables([], [], tick_evidence([
+            'diff' => [['status' => 'M', 'path' => 'apps/agent/src/main.rs']],
+            'topology_diff' => [],
+        ]));
+        ($this->topologyPaths)($group);
+
+        app(TaskScheduler::class)->tick();
+        app(TaskScheduler::class)->tick();
+
+        expect($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
+            ->and($checks->deliverables)->toBe([['start' => null, 'commands' => [], 'topology' => true]]);
+    });
+
+    it('refuses a handoff when its topology diff cannot be read', function (): void {
+        [$group, $task] = tick_deliverables([], [], tick_evidence(['topology_diff' => null]));
+        ($this->topologyPaths)($group);
+
+        $reminder = tick_deliverable_reminder();
+
+        expect($task->fresh()?->status)->toBe(TaskStatus::Running)
+            ->and($reminder)->toContain("Orbit could not read the group's diff against origin/main");
+    });
+
     it('passes the handoff when a subtask of the group declares a topology or the change avoids the paths', function (string $case): void {
         $diff = $case === 'other path' ? [['status' => 'M', 'path' => 'docs/reference/tasks.md']] : [['status' => 'M', 'path' => 'apps/gateway/app/Domain/Nodes/RoleName.php']];
-        [$group, $task] = tick_deliverables([], [], tick_evidence(['diff' => $diff]));
+        [$group, $task] = tick_deliverables([], [], tick_evidence(['topology_diff' => $diff]));
         if ($case === 'declared') {
             Task::query()->create(['parent_id' => $group->id, 'position' => 9, 'title' => 'Prove', 'brief' => 'On nodes', 'status' => TaskStatus::Todo, 'topology' => ['app-dev']]);
             mock(TaskTopologyAdmission::class)->shouldReceive('prepare');
@@ -6909,3 +7100,27 @@ it('scopes every Orbit handoff test run to the subtask start', function (int $po
     'intermediate non-Orbit subtask' => [1, true, false],
     'single-subtask non-Orbit group' => [1, false, false],
 ]);
+
+it('advances rework tests only to the latest passed handoff tree of the same subtask', function (bool $fixup): void {
+    [$group, $task, $checks] = tick_checking([TaskCheckReading::running()]);
+    $group->project->update(['slug' => 'orbit']);
+    $task->update(['subtask_start_commit' => str_repeat('a', 40), 'completion_attempt' => 2,
+        'fixup_problem' => $fixup ? 'final-review' : null]);
+    foreach ([TaskCheckStatus::Passed, TaskCheckStatus::Failed, TaskCheckStatus::Changed, TaskCheckStatus::Lost, TaskCheckStatus::Cancelled] as $index => $status) {
+        TaskCheck::query()->create([
+            'task_id' => $task->id, 'kind' => TaskCheckKind::Handoff, 'status' => $status,
+            'pid' => 1, 'process_started' => 'earlier', 'head_before' => str_repeat('a', 40),
+            'tree_before' => str_repeat('b', 40), 'tree_after' => str_repeat((string) ($index + 1), 40),
+            'started_at' => now(),
+        ]);
+    }
+    $other = Task::query()->create(['parent_id' => $group->id, 'position' => 2, 'title' => 'Other', 'brief' => 'Done.', 'status' => TaskStatus::Completed]);
+    TaskCheck::query()->create(['task_id' => $other->id, 'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Passed,
+        'pid' => 1, 'process_started' => 'other', 'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('f', 40), 'started_at' => now()]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($checks->starts)->toBe(1)
+        ->and($checks->deliverables[0]['test_base'])->toBe(str_repeat('1', 40))
+        ->and($checks->deliverables[0]['start'])->toBe(str_repeat('a', 40));
+})->with(['requested changes' => false, 'final-review fixup' => true]);

@@ -11,10 +11,9 @@ use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Jobs\TaskVms\ImageBuild\SyncBuiltImage;
-use App\Jobs\TaskVms\RefreshTaskVmWorkspaceTemplates;
 use App\Models\TaskVmImageBuild;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Sleep;
 
 /** Executes one durable step. No rendered programs or infrastructure objects enter the queue payload. */
 final readonly class TaskVmImageBuildSteps
@@ -40,7 +39,7 @@ final readonly class TaskVmImageBuildSteps
                 }
                 break;
             case TaskVmImageBuildStep::AwaitBoot:
-                return $this->booted($build, $shell, $step);
+                return $this->booted($shell);
             case TaskVmImageBuildStep::UpgradePackages:
                 $this->image->checked($name, 'owner', $shell->asRoot(TaskVmImageRecipe::ownerCheck()));
                 $packages = implode(' ', ['openssh-server', ...TaskVmCloudInit::ChromiumLibraries, ...TaskVmCloudInit::WorkspaceTools]);
@@ -79,7 +78,7 @@ final readonly class TaskVmImageBuildSteps
                     $this->image->launch($host, $node, $smoke, (string) $build->image_fingerprint, $this->cloudInit->render($this->keys->publicKey()));
                 }
                 $shell = $this->image->shell($host, $node, $smoke);
-                if (! $this->booted($build, $shell, $step)) {
+                if (! $this->booted($shell)) {
                     return false;
                 }
                 $this->image->checkSmoke($shell);
@@ -97,21 +96,27 @@ final readonly class TaskVmImageBuildSteps
                         $sync[] = new SyncBuiltImage($build->id, $peer->nodeId);
                     }
                 }
-                Bus::chain([...$sync, new RefreshTaskVmWorkspaceTemplates])->onConnection('gateway')->onQueue('builds')->dispatch();
+                if ($sync !== []) {
+                    Bus::chain($sync)->onConnection('gateway')->onQueue('builds')->dispatch();
+                }
                 break;
         }
 
         return true;
     }
 
-    private function booted(TaskVmImageBuild $build, IncusGuestShell $shell, TaskVmImageBuildStep $step): bool
+    private function booted(IncusGuestShell $shell): bool
     {
-        foreach ($build->steps as $entry) {
-            if ($entry['step'] === $step->value && Carbon::parse($entry['started_at'])->addSeconds(600)->lessThanOrEqualTo(now())) {
-                throw new TaskVmException('task_vm.bootstrap_timeout', 'Cloud-init was not done 600 seconds after this step started.');
+        // Keep polling in this worker run: releasing to builds would count other builds' queue time.
+        $deadline = now()->addSeconds(600);
+        do {
+            if (TaskVmGuest::cloudInitDone($shell->vm, $shell->asRoot(['cloud-init', 'status', '--format', 'json'], timeout: 20))) {
+                return true;
             }
-        }
-
-        return TaskVmGuest::cloudInitDone($shell->vm, $shell->asRoot(['cloud-init', 'status', '--format', 'json'], timeout: 20));
+            if (now()->greaterThanOrEqualTo($deadline)) {
+                throw new TaskVmException('task_vm.bootstrap_timeout', 'Cloud-init was not done after 600 seconds of boot polling.');
+            }
+            Sleep::for(5)->seconds();
+        } while (true);
     }
 }

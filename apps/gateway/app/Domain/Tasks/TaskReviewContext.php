@@ -25,6 +25,7 @@ final readonly class TaskReviewContext
         private array $approvals,
         private string $resolution,
         private array $consults = [],
+        private string $findings = '',
     ) {}
 
     public function render(): string
@@ -37,6 +38,7 @@ final readonly class TaskReviewContext
             $this->section('Earlier approvals', $this->approvalsText()),
             $this->section('Held resolution', $this->resolution === '' ? 'None.' : $this->resolution),
             $this->section('Answered consults', $this->consultsText()),
+            $this->section('Earlier review findings', $this->findings === '' ? 'None.' : $this->findings),
         ])."\n";
     }
 

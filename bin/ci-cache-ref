@@ -1,0 +1,248 @@
+#!/usr/bin/env python3
+"""Publish and import SHA-bound, cache-only Git refs. No workspace credentials or artifact transport."""
+import argparse
+from datetime import datetime, timezone
+import hashlib
+import importlib.machinery
+import importlib.util
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+
+loader = importlib.machinery.SourceFileLoader('tia_cache', str(Path(__file__).with_name('tia-cache')))
+spec = importlib.util.spec_from_loader(loader.name, loader)
+tia = importlib.util.module_from_spec(spec)
+loader.exec_module(tia)
+NAMESPACE = 'refs/orbit/ci-cache/'
+MAX_FILES = 1024
+MAX_BYTES = 64 * 1024 * 1024
+
+
+def git(root, *args, data=None, environment=None):
+    result = subprocess.run(['git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false',
+                             '-C', str(root), *args], input=data, capture_output=True,
+                            env={**os.environ, **(environment or {})}, timeout=300)
+    if result.returncode:
+        raise RuntimeError(f'Git {args[0]} failed: {result.stderr.decode(errors="replace")}')
+    return result.stdout
+
+
+def sha(value):
+    if not isinstance(value, str) or not tia.SHA.fullmatch(value):
+        raise ValueError('Invalid tested code SHA.')
+    return value
+
+
+def allowed(path):
+    for project in tia.PROJECTS:
+        prefix = project + '/'
+        if path.startswith(prefix):
+            relative = path[len(prefix):]
+            return relative in ('manifest.json', 'graph.json', 'quality/pint', 'quality/phpstan')
+    return False
+
+
+def payload(root, ref, destination):
+    """Bound and validate every tree entry before reading or writing any payload bytes."""
+    entries = []
+    for entry in git(root, 'ls-tree', '-r', '-l', '-z', ref).split(b'\0'):
+        if not entry:
+            continue
+        metadata, name = entry.split(b'\t', 1)
+        mode, kind, oid, size = metadata.split()
+        path = name.decode('utf-8')
+        if mode != b'100644' or kind != b'blob' or not allowed(path):
+            raise ValueError('CI cache tree contains an unsafe or unknown path.')
+        entries.append((path, oid.decode(), int(size)))
+    if not entries or len(entries) > MAX_FILES or sum(size for _, _, size in entries) > MAX_BYTES:
+        raise ValueError('CI cache tree exceeds the payload limits or is empty.')
+    for path, oid, size in entries:
+        target = destination / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        data = git(root, 'cat-file', 'blob', oid)
+        if len(data) != size:
+            raise ValueError('CI cache blob size differs.')
+        target.write_bytes(data)
+
+
+def validate(root, directory, commit, projects):
+    """Validate the complete publication before any private executable cache is written."""
+    for project in projects:
+        source = directory / project
+        manifest = json.loads(tia.artifact_file(source, 'manifest.json'))
+        if (not isinstance(manifest, dict) or manifest.get('schema') != 2 or manifest.get('project') != project
+                or manifest.get('commit') != commit
+                or not re.fullmatch(r'[1-9][0-9]*', str(manifest.get('run_id', '')))
+                or not re.fullmatch(r'[1-9][0-9]*', str(manifest.get('run_attempt', '')))
+                or not isinstance(manifest.get('inputs'), dict)
+                or not isinstance(manifest.get('configurations'), dict)
+                or not re.fullmatch(r'\d+\.\d+', str(manifest.get('php', '')))):
+            raise ValueError('CI cache manifest identity differs from the selected SHA.')
+        graph = tia.artifact_file(source, 'graph.json')
+        data = json.loads(graph)
+        if not isinstance(data, dict) or not isinstance(data.get('fingerprint'), dict):
+            raise ValueError('CI cache graph is invalid.')
+        graph_commit = tia.validate_graph(root, graph.decode(), {'fingerprint': data['fingerprint']}, commit)
+        if graph_commit != commit or tia.digest(graph) != manifest.get('graph_sha256'):
+            raise ValueError('CI cache graph differs from the selected SHA or checksum.')
+        quality = manifest.get('quality')
+        if not isinstance(quality, dict) or any(tool not in tia.QUALITY for tool in quality):
+            raise ValueError('CI cache quality manifest is invalid.')
+        expected_files = {'manifest.json', 'graph.json'}
+        for tool, checksum in quality.items():
+            if tia.digest(tia.artifact_file(source, 'quality/' + tool)) != checksum:
+                raise ValueError(f'CI cache {tool} checksum differs.')
+            if tool not in manifest['configurations']:
+                raise ValueError(f'CI cache {tool} configuration is missing.')
+            expected_files.add('quality/' + tool)
+        actual_files = {str(path.relative_to(source)) for path in source.rglob('*') if path.is_file()}
+        if actual_files != expected_files:
+            raise ValueError('CI cache payload differs from its manifest.')
+
+
+def validate_code(root, directory, commit):
+    for project in tia.PROJECTS:
+        manifest = json.loads((directory / project / 'manifest.json').read_text())
+        inputs = {name: tia.digest(data) for name in tia.TEST_INPUTS
+                  if (data := tia.blob(root, commit, project + '/' + name)) is not None}
+        if manifest['inputs'] != inputs:
+            raise ValueError('CI cache inputs differ from the tested code commit.')
+        for tool, checksum in manifest['configurations'].items():
+            if tool not in tia.QUALITY:
+                raise ValueError('Unknown CI cache tool configuration.')
+            configuration = tia.blob(root, commit, project + '/' + tia.QUALITY[tool][0])
+            if configuration is None or tia.digest(configuration) != checksum:
+                raise ValueError('CI cache tool configuration differs from the tested commit.')
+
+
+def stage(root, exports, destination, commit):
+    found = set()
+    for manifest in exports.rglob('manifest.json'):
+        project = json.loads(manifest.read_text()).get('project')
+        if project not in tia.PROJECTS or project in found:
+            raise ValueError('Unknown or duplicate project export.')
+        found.add(project)
+        shutil.copytree(manifest.parent, destination / project, symlinks=True)
+    if found != set(tia.PROJECTS):
+        raise ValueError('The successful run did not export every Composer project.')
+    files = list(destination.rglob('*'))
+    if any(path.is_symlink() or (path.is_file() and not allowed(str(path.relative_to(destination)))) for path in files):
+        raise ValueError('Unsafe export path.')
+    regular = [path for path in files if path.is_file()]
+    if len(regular) > MAX_FILES or sum(path.stat().st_size for path in regular) > MAX_BYTES:
+        raise ValueError('CI cache exports exceed the payload limits.')
+    validate(root, destination, commit, tia.PROJECTS)
+    manifests = [json.loads((destination / project / 'manifest.json').read_text()) for project in tia.PROJECTS]
+    if len({manifest['run_id'] for manifest in manifests}) != 1:
+        raise ValueError('CI cache exports do not come from the same workflow run.')
+    for manifest in manifests:
+        if (os.environ.get('GITHUB_RUN_ID') and manifest['run_id'] != os.environ['GITHUB_RUN_ID']
+                or os.environ.get('GITHUB_RUN_ATTEMPT') and int(manifest['run_attempt']) > int(os.environ['GITHUB_RUN_ATTEMPT'])):
+            raise ValueError('CI cache exports do not come from this workflow run or a completed attempt.')
+
+
+def publish(root, exports, commit, remote):
+    sha(commit)
+    ref = NAMESPACE + commit
+    with tempfile.TemporaryDirectory(prefix='orbit-ci-ref-') as temporary:
+        work = Path(temporary)
+        stage(root, exports, work / 'payload', commit)
+        validate_code(root, work / 'payload', commit)
+        index = work / 'index'
+        environment = {'GIT_INDEX_FILE': str(index), 'GIT_WORK_TREE': str(work / 'payload')}
+        git(root, 'read-tree', '--empty', environment=environment)
+        git(root, 'add', '--all', '--', '.', environment=environment)
+        tree = git(root, 'write-tree', environment=environment).decode().strip()
+        existing = git(root, 'ls-remote', '--refs', remote, ref).decode().strip()
+        if existing:
+            git(root, 'fetch', '--no-tags', remote, ref)
+            validate_existing(root, existing.split()[0], work / 'existing', commit)
+            # Re-runs legitimately change run identity and tool caches. A validated publication for this SHA stays.
+            print(f'Keeping immutable publication {ref}')
+        else:
+            cache_commit = git(root, 'commit-tree', tree, data=f'CI caches for {commit}\n'.encode(),
+                               environment={'GIT_AUTHOR_NAME': 'Orbit CI', 'GIT_AUTHOR_EMAIL': 'ci@orbit.invalid',
+                                            'GIT_COMMITTER_NAME': 'Orbit CI', 'GIT_COMMITTER_EMAIL': 'ci@orbit.invalid'}).decode().strip()
+            try:
+                # A lease expecting absence prevents a concurrent publisher from replacing the ref.
+                git(root, 'push', f'--force-with-lease={ref}:', remote, f'{cache_commit}:{ref}')
+            except RuntimeError:
+                git(root, 'fetch', '--no-tags', remote, ref)
+                validate_existing(root, 'FETCH_HEAD', work / 'race', commit)
+                print(f'Keeping concurrent immutable publication {ref}')
+        prune(root, remote)
+
+
+def validate_existing(root, ref, directory, commit):
+    payload(root, ref, directory)
+    validate(root, directory, commit, tia.PROJECTS)
+    validate_code(root, directory, commit)
+
+
+def prune(root, remote, now=None):
+    git(root, 'fetch', '--no-tags', '--prune', remote, f'+{NAMESPACE}*:{NAMESPACE}*')
+    refs = []
+    for line in git(root, 'for-each-ref', '--format=%(refname) %(committerdate:unix)', NAMESPACE).decode().splitlines():
+        ref, timestamp = line.split()
+        tested = sha(ref[len(NAMESPACE):])
+        # Source ancestry, never publication completion time, determines the newest successful main baseline.
+        git(root, 'cat-file', '-e', tested + '^{commit}')
+        refs.append((ref, tested, int(timestamp)))
+    newest = None
+    for ref, tested, _ in refs:
+        if newest is None or tia.is_ancestor(root, newest[1], tested):
+            newest = (ref, tested)
+    cutoff = (now or datetime.now(timezone.utc).timestamp()) - 14 * 86400
+    for ref, _, timestamp in refs:
+        if timestamp < cutoff and ref != newest[0]:
+            git(root, 'push', remote, ':' + ref)
+
+
+def import_ref(root, commit):
+    sha(commit)
+    ref = NAMESPACE + commit
+    if not tia.is_ancestor(root, commit, 'HEAD'):
+        print(f'CI caches cold: selected baseline {commit} is not an ancestor of HEAD.')
+        return
+    with tempfile.TemporaryDirectory(prefix='orbit-ci-import-') as temporary:
+        directory = Path(temporary)
+        try:
+            payload(root, ref, directory)
+            validate(root, directory, commit, tia.PROJECTS)
+            validate_code(root, directory, commit)
+        except (ValueError, RuntimeError, KeyError, TypeError, UnicodeError, OSError) as error:
+            print(f'CI caches cold for {commit}: {error}')
+            return
+        for project in tia.PROJECTS:
+            try:
+                tia.import_ci(root, project, directory / project, commit)
+            except (tia.StaleBaseline, ValueError) as error:
+                print(f'[{project}] CI caches cold: {error}')
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('action', choices=('publish', 'import'))
+    parser.add_argument('--commit', required=True)
+    parser.add_argument('--exports', type=Path)
+    parser.add_argument('--remote', default='origin')
+    args = parser.parse_args()
+    root = Path(git(Path.cwd(), 'rev-parse', '--show-toplevel').decode().strip())
+    if args.action == 'publish':
+        if args.exports is None:
+            parser.error('publish requires --exports')
+        publish(root, args.exports.resolve(), args.commit, args.remote)
+    else:
+        import_ref(root, args.commit)
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (ValueError, RuntimeError, OSError, tia.CommandFailure) as error:
+        sys.exit(str(error))

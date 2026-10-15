@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fauxProvider, type FauxProviderHandle } from "@earendil-works/pi-ai";
+import { fauxProvider, type FauxProviderHandle, type Provider } from "@earendil-works/pi-ai";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { createPiServer } from "../src/http.ts";
 import { SessionRegistry } from "../src/registry.ts";
@@ -14,6 +14,7 @@ export interface Harness {
     root: string;
     workspace: string;
     faux: FauxProviderHandle;
+    modelRuntime: ModelRuntime;
     registry: SessionRegistry;
     url: string;
     request: (
@@ -35,6 +36,8 @@ export async function startHarness(
         root?: string;
         allowApiKeys?: boolean;
         allowedProviders?: string[];
+        nativeProviders?: Provider[];
+        modelsPath?: string;
     } = {},
 ): Promise<Harness> {
     const root = options.root ?? mkdtempSync(join(tmpdir(), "pi-server-test-"));
@@ -55,10 +58,12 @@ export async function startHarness(
     });
     const modelRuntime = await ModelRuntime.create({
         authPath: join(root, "agent", "auth.json"),
-        modelsPath: null,
+        modelsPath: options.modelsPath ?? null,
         refreshOnCreate: false,
     });
     modelRuntime.registerNativeProvider(faux.provider);
+    for (const provider of options.nativeProviders ?? [])
+        modelRuntime.registerNativeProvider(provider);
     await modelRuntime.setRuntimeApiKey("faux", "test-key");
 
     const registry = new SessionRegistry({
@@ -130,6 +135,7 @@ export async function startHarness(
         root,
         workspace,
         faux,
+        modelRuntime,
         registry,
         url,
         request,

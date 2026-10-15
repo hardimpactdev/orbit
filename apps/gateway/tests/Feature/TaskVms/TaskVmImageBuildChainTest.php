@@ -23,7 +23,6 @@ use App\Jobs\TaskVms\ImageBuild\PromoteImage;
 use App\Jobs\TaskVms\ImageBuild\SmokeImage;
 use App\Jobs\TaskVms\ImageBuild\UpgradeImagePackages;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
-use App\Jobs\TaskVms\RefreshTaskVmWorkspaceTemplates;
 use App\Jobs\TaskVms\SweepTaskVmHosts;
 use App\Models\Node;
 use App\Models\TaskVmImageBuild;
@@ -49,7 +48,7 @@ require_once __DIR__.'/../../Support/FakeIncusImageHost.php';
 beforeEach(function (): void {
     $this->dispatcher = Bus::getFacadeRoot();
     Bus::fake();
-    Sleep::fake();
+    Sleep::fake(syncWithCarbon: true);
     $this->travelTo('2026-10-12 03:00:00');
     $this->host = Node::query()->create(['name' => 'beast', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64', 'public_ssh_host' => '192.0.2.7', 'wireguard_ip' => '10.44.0.7', 'user' => 'orbit']);
     $this->settings = TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($this->host->id)]]);
@@ -78,24 +77,33 @@ beforeEach(function (): void {
         public function put(string $host, int $port, HostKey $key): void {}
     });
     $this->chain = app(TaskVmImageBuildChain::class);
+    $this->runningBuild = false;
     $this->runBuild = function (TaskVmImageBuild $build, bool $resume = false): void {
-        $build->refresh();
-        $jobs = $this->chain->jobs($build);
-        if ($resume) {
-            while ($jobs[0]->step() !== $build->current_step || $jobs[0]->program() !== $build->current_program) {
-                array_shift($jobs);
-            }
+        if ($this->runningBuild) {
+            return;
         }
-        foreach ($jobs as $job) {
-            // A queue worker executes the released polling job again, without advancing the chain.
-            for ($poll = 0; $poll < 3; $poll++) {
-                $job->handle(app(TaskVmImageBuildSteps::class));
-                $build->refresh();
-                $entry = array_find($build->steps, fn (array $entry): bool => $entry['step'] === $job->step()->value && $entry['program'] === $job->program());
-                if ($entry['seconds'] !== null) {
-                    break;
+        $this->runningBuild = true;
+        try {
+            $build->refresh();
+            $jobs = $this->chain->jobs($build);
+            if ($resume) {
+                while ($jobs[0]->step() !== $build->current_step || $jobs[0]->program() !== $build->current_program) {
+                    array_shift($jobs);
                 }
             }
+            foreach ($jobs as $job) {
+                // A queue worker executes the released polling job again, without advancing the chain.
+                for ($poll = 0; $poll < 3; $poll++) {
+                    $job->handle(app(TaskVmImageBuildSteps::class));
+                    $build->refresh();
+                    $entry = array_find($build->steps, fn (array $entry): bool => $entry['step'] === $job->step()->value && $entry['program'] === $job->program());
+                    if ($entry['seconds'] !== null) {
+                        break;
+                    }
+                }
+            }
+        } finally {
+            $this->runningBuild = false;
         }
     };
 });
@@ -209,12 +217,12 @@ it('queues the nightly chain dispatcher on builds at 03:00 only while task VMs a
     expect($refresh->filtersPass(app()))->toBeTrue();
 });
 
-it('dispatches the ordered chain on builds with one cleanup catch and persists all timings', function (): void {
+it('dispatches the ordered chain on builds without template work and persists all timings', function (): void {
     $build = $this->chain->start($this->host);
     $first = Bus::dispatched(LaunchImageBuilder::class)->sole();
     $jobs = [$first, ...array_map(unserialize(...), $first->chained)];
     expect($first->chainQueue)->toBe('builds')->and($first->connection)->toBe('gateway')
-        ->and($first->chainCatchCallbacks)->toHaveCount(1)
+        ->and($first->chainCatchCallbacks)->toBeEmpty()
         ->and(array_map(fn ($job) => $job->step()->value, $jobs))->toBe(['launch', 'await-boot', 'upgrade-packages', ...array_fill(0, 10, 'program'), 'prepare-boot', 'clean', 'publish', 'smoke', 'promote'])
         ->and($build->state)->toBe(TaskVmImageBuildState::Running);
     ($this->runBuild)($build);
@@ -234,7 +242,7 @@ it('dispatches the ordered chain on builds with one cleanup catch and persists a
     foreach ($build->steps as $step) {
         expect($step['started_at'])->not->toBeNull()->and($step['seconds'])->toBeNumeric()->toBeGreaterThanOrEqual(0)->and($step['error'])->toBeNull();
     }
-    Bus::assertChained([RefreshTaskVmWorkspaceTemplates::class]);
+    Bus::assertDispatchedTimes(LaunchImageBuilder::class, 1);
 });
 
 it('uses stock when requested or on the first build', function (bool $fromStock, bool $first): void {
@@ -246,7 +254,7 @@ it('uses stock when requested or on the first build', function (bool $fromStock,
     expect($build->source_alias)->toBe(TaskVmHost::SourceImage)->and($build->source_fingerprint)->toBe(IMAGE_STOCK)->and($build->state)->toBe(TaskVmImageBuildState::Succeeded);
 })->with([[true, false], [false, true]]);
 
-it('retains the failed builder after catch and refreshes templates against the current alias', function (): void {
+it('retains the failed builder after failure without queuing template work', function (): void {
     $build = $this->chain->start($this->host);
     $this->incus->fail = 'program';
     try {
@@ -256,7 +264,7 @@ it('retains the failed builder after catch and refreshes templates against the c
         $first->invokeChainCatchCallbacks($error);
     }
     Bus::assertNotDispatched(CleanupImageBuild::class);
-    Bus::assertDispatchedTimes(RefreshTaskVmWorkspaceTemplates::class, 1);
+    expect(Bus::dispatched(LaunchImageBuilder::class)->sole()->chained)->not->toBeEmpty();
     $build->refresh();
     expect($build->state)->toBe(TaskVmImageBuildState::Failed)->and($build->current_program)->toBe('bootstrap')->and($build->steps[3]['error'])->toContain('failed');
     $this->travel(1)->hours();
@@ -269,49 +277,17 @@ it('retains the failed builder after catch and refreshes templates against the c
     expect($build->state)->toBe(TaskVmImageBuildState::Succeeded);
 });
 
-it('queues a workspace template refresh when the image chain fails without promoting', function (): void {
-    $build = $this->chain->start($this->host);
-    $this->incus->fail = 'program';
-    try {
-        ($this->runBuild)($build);
-    } catch (TaskVmException $error) {
-        Bus::dispatched(LaunchImageBuilder::class)->sole()->invokeChainCatchCallbacks($error);
-    }
-    Bus::assertDispatchedTimes(RefreshTaskVmWorkspaceTemplates::class, 1);
-    expect($this->incus->images[IMAGE_OLD])->toContain(TaskVmHost::BaseImage);
-});
-
-it('recovers a missing failure refresh from durable state after a crash or rejected enqueue', function (bool $enqueueRejected): void {
+it('queues no template work when the image chain fails without promoting', function (): void {
     $build = $this->chain->start($this->host);
     $this->incus->fail = 'program';
     expect(fn () => ($this->runBuild)($build))->toThrow(TaskVmException::class);
     $first = Bus::dispatched(LaunchImageBuilder::class)->sole();
-    if ($enqueueRejected) {
-        Bus::shouldReceive('dispatch')->once()->andThrow(new RuntimeException('refresh enqueue rejected'));
-        expect(fn () => $first->invokeChainCatchCallbacks(new RuntimeException('step failed')))
-            ->toThrow(RuntimeException::class, 'refresh enqueue rejected');
-    }
-    // A rejected dispatch can leave Laravel's unique lease; recovery works after its bounded expiry.
-    if ($enqueueRejected) {
-        $this->travel(3601)->seconds();
-    }
-    // Otherwise simulate death after the failed row was saved and before catch could enqueue.
-    Bus::swap($this->dispatcher);
     Bus::fake();
-    $this->chain->recoverTemplateRefresh();
-    Bus::assertDispatchedTimes(RefreshTaskVmWorkspaceTemplates::class, 1);
-    expect($build->refresh()->state)->toBe(TaskVmImageBuildState::Failed);
-    // Recovery is deliberately repeatable; the refresh's Laravel uniqueness absorbs duplicates.
-    $this->chain->recoverTemplateRefresh();
-    Bus::assertDispatchedTimes(RefreshTaskVmWorkspaceTemplates::class, 1);
-    $this->travel(3601)->seconds();
-    $this->chain->recoverTemplateRefresh();
-    Bus::assertDispatchedTimes(RefreshTaskVmWorkspaceTemplates::class, 2);
-    $this->chain->resume($this->host, $build->id);
-    Bus::fake();
-    $this->chain->recoverTemplateRefresh();
-    Bus::assertNotDispatched(RefreshTaskVmWorkspaceTemplates::class);
-})->with(['crash before enqueue' => false, 'broker failure after failed write' => true]);
+    $first->invokeChainCatchCallbacks(new RuntimeException('step failed'));
+
+    Bus::assertNothingDispatched();
+    expect($this->incus->images[IMAGE_OLD])->toContain(TaskVmHost::BaseImage);
+});
 
 it('resumes publish after deletion took effect but its reply was lost without republishing', function (): void {
     $build = $this->chain->start($this->host);
@@ -376,6 +352,20 @@ it('resumes smoke and promote failures using the published image after the build
     'promote' => ['query', TaskVmImageBuildStep::Promote],
 ]);
 
+it('finds resumable published images in the configured host alias namespace', function (bool $latest): void {
+    TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($this->host->id, ['imageAlias' => 'beast-task-base'])]]);
+    $chain = app(TaskVmImageBuildChain::class);
+    $build = TaskVmImageBuild::query()->create([
+        'host_node_id' => $this->host->id, 'state' => TaskVmImageBuildState::Failed,
+        'current_step' => TaskVmImageBuildStep::Smoke, 'image_fingerprint' => IMAGE_NEW,
+    ]);
+    $this->incus->images[IMAGE_NEW] = ['beast-task-base-'.$build->created_at->format('YmdHis').'-'.$build->id];
+
+    $resumed = $latest ? $chain->resumeLatest($this->host) : $chain->resume($this->host, $build->id);
+    expect($resumed->id)->toBe($build->id)
+        ->and($build->refresh()->state)->toBe(TaskVmImageBuildState::Running);
+})->with(['latest' => true, 'explicit' => false]);
+
 it('refuses a post-publish resume when its published image was discarded', function (): void {
     $build = $this->chain->start($this->host);
     $this->incus->fail = 'lean boot';
@@ -399,19 +389,19 @@ it('resumes a failed step while its builder exists, before cleanup, and skips co
     expect($build->state)->toBe(TaskVmImageBuildState::Succeeded)->and($build->steps[3]['error'])->toBeNull()->and(count($this->incus->commands))->toBeGreaterThan($launchCalls);
 });
 
-it('releases boot polling and fails at its 600 second deadline without fixed tries', function (): void {
+it('polls inline and fails only after 600 seconds of actual execution', function (): void {
     $build = $this->chain->start($this->host);
     (new LaunchImageBuilder($build->id))->handle(app(TaskVmImageBuildSteps::class));
     $this->incus->bootRunning = true;
     $poll = new AwaitImageBuilderBoot($build->id);
     $queueJob = Mockery::mock(Job::class);
-    $queueJob->shouldReceive('release')->once()->with(5);
+    $queueJob->shouldNotReceive('release');
     $queueJob->shouldReceive('fail')->once()->with(Mockery::type(TaskVmException::class));
     $poll->setJob($queueJob);
-    $poll->handle(app(TaskVmImageBuildSteps::class));
-    expect($poll->tries)->toBe(0)->and(method_exists($poll, 'retryUntil'))->toBeFalse();
-    $this->travel(601)->seconds();
+    $started = now();
     expect(fn () => $poll->handle(app(TaskVmImageBuildSteps::class)))->toThrow(TaskVmException::class, '600 seconds');
+    expect($started->diffInSeconds(now()))->toBe(600.0);
+    Sleep::assertSleptTimes(120);
 });
 
 it('starts polling deadlines at execution even after more than 600 seconds in the queue', function (TaskVmImageBuildStep $previous, TaskVmImageBuildStep $polling): void {
@@ -429,12 +419,9 @@ it('starts polling deadlines at execution even after more than 600 seconds in th
     $this->incus->bootRunning = true;
     $started = now()->toISOString();
     $worker->runNextJob('gateway', 'builds', $options);
-    expect($build->refresh()->state)->toBe(TaskVmImageBuildState::Running)
-        ->and($build->current_step)->toBe($polling)
-        ->and(array_column($build->steps, 'started_at'))->toContain($started);
-    $this->travel(601)->seconds();
-    $worker->runNextJob('gateway', 'builds', $options);
-    expect($build->refresh()->state)->toBe(TaskVmImageBuildState::Failed)
+    expect(array_column($build->refresh()->steps, 'started_at'))->toContain($started)
+        ->and($build->steps[array_key_last($build->steps)]['seconds'])->toBe(600);
+    expect($build->state)->toBe(TaskVmImageBuildState::Failed)
         ->and($build->current_step)->toBe($polling)
         ->and($build->steps[array_key_last($build->steps)]['error'])->toContain('600 seconds');
 })->with([
@@ -528,7 +515,51 @@ it('continues the command from its failed program instead of launching again', f
 
 it('refuses invalid or unavailable command resumes', function (): void {
     $this->artisan('task-vms:build-image', ['node' => 'beast', '--resume' => '99999'])->expectsOutputToContain('does not belong to this host')->assertFailed();
-    $this->artisan('task-vms:build-image', ['node' => 'beast', '--resume' => 'bad'])->expectsOutputToContain('--resume requires a build id')->assertFailed();
+    $this->artisan('task-vms:build-image', ['node' => 'beast', '--resume' => 'bad'])->expectsOutputToContain('--resume accepts a build id or no value')->assertFailed();
+});
+
+it('bare resume selects the newest resumable failed build without creating a row', function (): void {
+    $older = TaskVmImageBuild::query()->create(['host_node_id' => $this->host->id, 'state' => TaskVmImageBuildState::Failed, 'current_step' => TaskVmImageBuildStep::UpgradePackages]);
+    $newest = TaskVmImageBuild::query()->create(['host_node_id' => $this->host->id, 'state' => TaskVmImageBuildState::Failed, 'current_step' => TaskVmImageBuildStep::UpgradePackages]);
+    $this->incus->instances[$older->builder_vm_name] = IMAGE_OLD;
+    $this->incus->instances[$newest->builder_vm_name] = IMAGE_OLD;
+    // A newer failed row whose builder is gone is not resumable.
+    TaskVmImageBuild::query()->create(['host_node_id' => $this->host->id, 'state' => TaskVmImageBuildState::Failed, 'current_step' => TaskVmImageBuildStep::UpgradePackages]);
+    Sleep::whenFakingSleep(function () use ($newest): void {
+        $newest->update(['state' => TaskVmImageBuildState::Succeeded]);
+    });
+    $this->artisan('task-vms:build-image', ['node' => 'beast', '--resume' => null])
+        ->expectsOutputToContain("Build [{$newest->id}] queued")->assertSuccessful();
+    expect(TaskVmImageBuild::query()->count())->toBe(3)
+        ->and($older->refresh()->state)->toBe(TaskVmImageBuildState::Failed)
+        ->and($this->incus->instances)->toHaveKey($older->builder_vm_name)->toHaveKey($newest->builder_vm_name);
+});
+
+it('bare resume errors without creating a build when no failed build can resume', function (): void {
+    TaskVmImageBuild::query()->create(['host_node_id' => $this->host->id, 'state' => TaskVmImageBuildState::Failed, 'current_step' => TaskVmImageBuildStep::UpgradePackages]);
+    $this->artisan('task-vms:build-image', ['node' => 'beast', '--resume' => null])
+        ->expectsOutputToContain('No resumable failed image build exists on this host')->assertFailed();
+    expect(TaskVmImageBuild::query()->count())->toBe(1);
+    Bus::assertNothingDispatched();
+});
+
+it('rejects bare resume combined with from-stock without creating a build', function (): void {
+    $this->artisan('task-vms:build-image', ['node' => 'beast', '--resume' => null, '--from-stock' => true])
+        ->expectsOutputToContain('cannot be combined with --from-stock')->assertFailed();
+    expect(TaskVmImageBuild::query()->count())->toBe(0);
+});
+
+it('reads cloud-init before considering an old step timestamp', function (): void {
+    $build = $this->chain->start($this->host);
+    (new LaunchImageBuilder($build->id))->handle(app(TaskVmImageBuildSteps::class));
+    $build->refresh();
+    $build->update(['steps' => [...$build->steps, ['step' => 'await-boot', 'program' => null,
+        'started_at' => now()->subHour()->toISOString(), 'seconds' => null, 'error' => null]]]);
+    $this->travel(2400)->seconds();
+    (new AwaitImageBuilderBoot($build->id))->handle(app(TaskVmImageBuildSteps::class));
+    expect($build->refresh()->state)->toBe(TaskVmImageBuildState::Running)
+        ->and($build->steps[1]['seconds'])->not->toBeNull()
+        ->and($build->steps[1]['error'])->toBeNull();
 });
 
 it('does not repeat a completed step when its job is delivered twice', function (): void {
@@ -696,32 +727,19 @@ it('fences completed-step timeout callbacks from successful builds, successors a
     expect($build->refresh()->getAttributes())->toBe($saved);
 })->with(['success', 'successor', 'resume']);
 
-it('writes a pre-handle originating failure before a rejected chain refresh enqueue', function (): void {
+it('records a pre-handle originating failure without queuing follow-up builds', function (): void {
     Bus::swap($this->dispatcher);
     $build = $this->chain->start($this->host);
     $row = DB::table('jobs')->first();
     $payload = json_decode($row->payload, true, flags: JSON_THROW_ON_ERROR);
     $payload['maxTries'] = 1;
     DB::table('jobs')->where('id', $row->id)->update(['attempts' => 1, 'payload' => json_encode($payload, JSON_THROW_ON_ERROR)]);
-    Queue::createPayloadUsing(static function (string $connection, string $queue, array $payload): array {
-        if ($payload['displayName'] === RefreshTaskVmWorkspaceTemplates::class) {
-            throw new RuntimeException('refresh enqueue rejected');
-        }
-
-        return [];
-    });
-    try {
-        Artisan::call('queue:work', ['connection' => 'gateway', '--queue' => 'builds', '--once' => true, '--tries' => 1]);
-    } finally {
-        Queue::createPayloadUsing(null);
-    }
+    Artisan::call('queue:work', ['connection' => 'gateway', '--queue' => 'builds', '--once' => true, '--tries' => 1]);
     expect($build->refresh()->state)->toBe(TaskVmImageBuildState::Failed)
         ->and($build->current_step)->toBe(TaskVmImageBuildStep::Launch)
         ->and($build->steps[0]['error'])->toContain('attempted too many times')
         ->and(DB::table('failed_jobs')->count())->toBe(1);
-    $this->travel(3601)->seconds();
-    $this->chain->recoverTemplateRefresh();
-    expect(DB::table('jobs')->value('payload'))->toContain('RefreshTaskVmWorkspaceTemplates');
+    expect(DB::table('jobs')->count())->toBe(0);
 });
 
 it('ignores an exhausted old delivery after resume without overwriting the resumed step', function (bool $advance): void {
@@ -774,7 +792,7 @@ it('attributes a pre-handle worker failure to its originating step, not the muta
         ->and($build->steps[1]['error'])->toContain('attempted too many times');
 });
 
-it('fails a boot error through the worker and retains its builder after the catch runs', function (): void {
+it('fails a boot error through the worker and retains its builder without template work', function (): void {
     Bus::swap($this->dispatcher);
     $build = $this->chain->start($this->host);
     $this->incus->fail = 'cloud-init';
@@ -784,7 +802,7 @@ it('fails a boot error through the worker and retains its builder after the catc
     $worker->runNextJob('gateway', 'builds', $options);
     expect($build->refresh()->state)->toBe(TaskVmImageBuildState::Failed)
         ->and($build->current_step)->toBe(TaskVmImageBuildStep::AwaitBoot)
-        ->and(DB::table('jobs')->count())->toBe(1);
+        ->and(DB::table('jobs')->count())->toBe(0);
     $worker->runNextJob('gateway', 'builds', $options);
     expect($this->incus->instances)->toHaveKey($build->builder_vm_name)
         ->and(DB::table('jobs')->where('payload', 'like', '%CleanupImageBuild%')->count())->toBe(0)

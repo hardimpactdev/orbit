@@ -28951,7 +28951,8 @@
                 "topology_requested",
                 "assistance_requested",
                 "resolution",
-                "question_closed"
+                "question_closed",
+                "provider_retry"
               ]
             }
           },
@@ -34609,7 +34610,8 @@
             "type": "string",
             "enum": [
               "baseline",
-              "handoff"
+              "handoff",
+              "base_merge"
             ]
           },
           "status": {
@@ -34712,6 +34714,7 @@
             "type": "string",
             "enum": [
               "orbit_push",
+              "base_merge",
               "pull_request_review"
             ]
           },

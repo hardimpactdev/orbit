@@ -35,6 +35,7 @@ final class InstanceDependencyObservation extends Model
     #[\Override]
     protected $fillable = [
         'instance_id',
+        'sub_project',
         'ecosystem',
         'present',
         'observed_at',

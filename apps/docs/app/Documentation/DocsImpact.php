@@ -47,6 +47,7 @@ final readonly class DocsImpact
         'tasks:archive-threads' => 'docs/reference/tasks.md',
         'orbit:node-retarget' => 'docs/reference/node-agent.md',
         'orbit:node-programs' => 'docs/reference/incus-topologies.md',
+        'orbit:machine-recipe' => 'docs/reference/compute-drivers.md',
         // The task VM worker. Keyed by name, so a change of its options keeps the owner.
         'queue:work' => 'docs/reference/compute-drivers.md',
     ];

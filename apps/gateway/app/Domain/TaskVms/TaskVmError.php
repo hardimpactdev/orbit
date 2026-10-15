@@ -49,14 +49,19 @@ enum TaskVmError: string
     case Parked = 'task_vm.parked';
     case AccessRefused = 'task_vm.access_refused';
 
-    // Base images and workspace templates.
+    // Base images.
     case BaseImageMissing = 'task_vm.base_image_missing';
     case ImageBuildFailed = 'task_vm.image_build_failed';
     case ImageBuildRunning = 'task_vm.image_build_running';
     case ImageSyncFailed = 'task_vm.image_sync_failed';
-    case WorkspaceTemplateFailed = 'task_vm.workspace_template_failed';
-    case WorkspaceTemplateRunning = 'task_vm.workspace_template_running';
-    case WorkspaceTemplateDetachFailed = 'task_vm.workspace_template_detach_failed';
+
+    // Shared package cache.
+    case PackageCacheIntegrityConflict = 'task_vm.package_cache_integrity_conflict';
+    case PackageCacheLockInvalid = 'task_vm.package_cache_lock_invalid';
+    case PackageCacheInvalidLimit = 'task_vm.package_cache_invalid_limit';
+    case PackageCacheInvalidResult = 'task_vm.package_cache_invalid_result';
+    case PackageCacheMountInvalid = 'task_vm.package_cache_mount_invalid';
+    case PackageCacheFailed = 'task_vm.package_cache_failed';
 
     // UpCloud.
     case UpCloudNotConfigured = 'task_vm.upcloud_not_configured';

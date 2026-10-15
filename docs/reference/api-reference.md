@@ -15,7 +15,7 @@ Run the generator from the repository root:
 bin/docs-openapi
 ```
 
-`composer docs-openapi` runs the same script. `bin/docs-openapi --check` fails when `docs/openapi.json` or those API groups differ from a fresh run. Continuous integration runs the check.
+`composer docs-openapi` runs the same script. `bin/docs-openapi --check` fails when `docs/openapi.json` or those API groups differ from a fresh run. The check prints a unified diff and the regeneration command when an output is stale. It leaves the files unchanged. Continuous integration and the local candidate gate run the check.
 
 The Gateway rollback operation queues a code switch without a request body. Database restore is an explicit operator step; see [Gateway recovery](/reference/gateway-recovery#roll-back).
 

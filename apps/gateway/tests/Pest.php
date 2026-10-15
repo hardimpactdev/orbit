@@ -18,6 +18,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskTurnReceipts;
+use App\Domain\TaskVms\TaskVmPackageCacheMount;
 use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
@@ -48,6 +49,7 @@ use Tests\Support\FakeProcessEnvironmentProjection;
 use Tests\Support\FakeRouterLanIngressReconciler;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskTurnReceipts;
+use Tests\Support\FakeTaskVmPackageCacheMount;
 use Tests\Support\FakeVitePortRuntime;
 use Tests\Support\NullTaskReviewDiff;
 use Tests\Support\SshGuardedProcessRunner;
@@ -77,6 +79,7 @@ require_once __DIR__.'/Helpers/CliReleaseFixtures.php';
 uses(TestCase::class, RefreshDatabase::class)
     ->beforeEach(function (): void {
         app()->instance(SshExecutor::class, new UnreachableSshExecutor);
+        app()->instance(TaskVmPackageCacheMount::class, new FakeTaskVmPackageCacheMount);
         app()->instance(HostKeyScanner::class, new FakeHostKeyScanner);
         $processes = new SshGuardedProcessRunner(app(NativeProcessRunner::class));
         app()->instance(SshGuardedProcessRunner::class, $processes);
@@ -125,6 +128,9 @@ pest()->tia()->watch([
     'resources/tasks/turn' => 'tests/Feature/Tasks/TurnReceiptTest.php',
     'resources/tasks/actions.json' => 'tests/Feature/Tasks/TaskDefinitionValidationTest.php',
     'resources/mcp/tools.json' => 'tests/Feature/Mcp',
+    'resources/machine-software/converge-node.py' => 'tests/Feature/Fleet/ConvergeNodeRecipeTest.php',
+    'tests/Fixtures/machine-software/converge_node_test.py' => 'tests/Feature/Fleet/ConvergeNodeRecipeTest.php',
+    'resources/machine-software/*.json' => 'tests/Unit/Infrastructure/MachineSoftware',
     'resources/scripts/*.py' => 'tests/Feature/Infrastructure/Metrics/ServiceMetricsProgramTest.php',
     'resources/proxycli/*.py' => 'tests/Unit/Infrastructure/ProxyCli/ProxyCliCollectorValkeyClientTest.php',
     'resources/instances/*.py' => 'tests/Feature/Domain/ProjectLifecycleRunnerTest.php',

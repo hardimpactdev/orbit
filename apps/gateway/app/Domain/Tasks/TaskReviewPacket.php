@@ -81,12 +81,15 @@ final readonly class TaskReviewPacket
         private int $groupId = 0,
         private TaskTopology $topology = new TaskTopology,
         private ?TaskTurnMode $mode = null,
+        private bool $delta = false,
+        private string $findings = '',
     ) {}
 
     public function render(): string
     {
         $before = array_values(array_filter([
             $this->preamble(),
+            $this->delta ? $this->section('Earlier review findings', $this->cutEnd($this->findings === '' ? 'None recorded.' : $this->findings, self::BriefLimit, 'The end is cut. '.TaskReviewContext::Path.' holds the full findings.')) : '',
             $this->resolution === '' ? '' : $this->section('Resolution', $this->cutEnd(
                 $this->resolution,
                 self::ResolutionLimit,
@@ -110,7 +113,7 @@ final readonly class TaskReviewPacket
             $this->section('Handoff', $this->handoff()),
         ], static fn (string $part): bool => $part !== ''));
         $retrieval = $this->retrieval();
-        $closing = TaskTurnInstructions::reviewer($this->opensPullRequest, $this->deliverables, $this->threadId, $this->mode);
+        $closing = TaskTurnInstructions::reviewer($this->opensPullRequest, $this->deliverables, $this->threadId, $this->mode, $this->delta);
 
         return $this->withinLimit(
             implode("\n\n", [...$before, $this->diffSection($before, [$retrieval, $closing]), $retrieval, $closing]),
@@ -520,6 +523,11 @@ final readonly class TaskReviewPacket
 
     private function retrieval(): string
     {
+        if ($this->delta) {
+            $command = 'index=$(mktemp); cp -p "$(git rev-parse --git-path index)" "$index"; (export GIT_INDEX_FILE="$index"; git add -A; git diff --cached '.$this->commit().'); rm -f "$index"';
+
+            return "Retrieval\n".$command;
+        }
         $commands = $this->statCommand()."\n".$this->diffCommand();
         $group = TaskTurnInstructions::groupStart($this->groupStartCommit);
 

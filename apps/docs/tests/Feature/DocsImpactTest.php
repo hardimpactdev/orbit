@@ -679,6 +679,18 @@ it('docs impact maps Gateway class command signatures to their owner page', func
         ->and($report['errors'])->toContain("Unowned Gateway console command [orbit:agent-display] in {$path}.");
 });
 
+it('docs impact owns the read-only machine recipe command', function (): void {
+    $root = docsImpactFixture();
+    file_put_contents($root.'/docs/reference/compute-drivers.md', "---\ntitle: Compute drivers\n---\nCompute drivers\n");
+    $path = 'apps/gateway/app/Console/Commands/MachineRecipeCommand.php';
+    file_put_contents($root.'/'.$path, "<?php class MachineRecipeCommand { protected \$signature = 'orbit:machine-recipe {--validate} {--role=}'; }\n");
+
+    $report = new DocsImpact($root)->report(null, [$path]);
+
+    expect($report['errors'])->toBe([])
+        ->and(collect($report['impacted_pages'])->pluck('page'))->toContain('docs/reference/compute-drivers.md');
+});
+
 it('docs impact recognizes the explicitly internal CLI family', function (): void {
     $root = docsImpactFixture();
     $path = 'apps/cli/app/Commands/InternalDatabaseLocalCommand.php';

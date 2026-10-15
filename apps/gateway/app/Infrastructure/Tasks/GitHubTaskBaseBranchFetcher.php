@@ -165,6 +165,51 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
         return $this->commitFrom($instance, $script, [$default], 'task-merge-base', 'The merge base could not be read.');
     }
 
+    public function mergeDefault(Task $group): ?string
+    {
+        $instance = $this->workspace($group);
+        $default = $group->project->default_branch;
+        if (! is_string($default) || ! GitBranchName::isValid($default)) {
+            throw new TaskPullRequestException('The default branch could not be merged.');
+        }
+        $script = WorkspaceGit::bashPreamble().<<<'BASH'
+            checkout=$1
+            base=$2
+            branch=$3
+            [ "$(git -C "$checkout" symbolic-ref -q HEAD)" = "refs/heads/$branch" ]
+            git -C "$checkout" diff --quiet HEAD --
+            tip=$(git -C "$checkout" rev-parse --verify "refs/remotes/origin/$base^{commit}")
+            export GIT_AUTHOR_NAME=orbit GIT_AUTHOR_EMAIL=tasks@orbit
+            export GIT_COMMITTER_NAME=orbit GIT_COMMITTER_EMAIL=tasks@orbit
+            if ! git -C "$checkout" -c commit.gpgSign=false merge --no-ff --no-edit --quiet "$tip" >&2; then
+                if [ -n "$(git -C "$checkout" ls-files --unmerged)" ]; then
+                    git -C "$checkout" merge --abort
+                    printf 'conflict\n'
+                    exit 0
+                fi
+                exit 1
+            fi
+            git -C "$checkout" rev-parse HEAD
+            BASH;
+        try {
+            $result = $this->workspaces->execute($instance, new RemoteCommand(
+                arguments: ['bash', '-seu', '--', $instance->checkout_path, $default, 'task-'.$group->id],
+                input: $script,
+            ), 'task-base-merge', 'tasks.merge_failed');
+        } catch (RuntimeConvergenceException $exception) {
+            throw new TaskPullRequestException('The default branch could not be merged.', previous: $exception);
+        }
+        $head = trim($result->stdout);
+        if ($head === 'conflict') {
+            return null;
+        }
+        if (preg_match('/\A[0-9a-f]{40}\z/D', $head) !== 1) {
+            throw new TaskPullRequestException('The merged head could not be read.');
+        }
+
+        return $head;
+    }
+
     public function moveTo(Task $group, string $sha): void
     {
         if (preg_match('/\A[0-9a-f]{40}\z/D', $sha) !== 1) {

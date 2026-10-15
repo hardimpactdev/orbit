@@ -1,0 +1,1119 @@
+{
+    "schema_version": 1,
+    "ubuntu": {
+        "release": "26.04",
+        "snapshot": "20261014T000000Z"
+    },
+    "architectures": [
+        "amd64",
+        "arm64"
+    ],
+    "tools": {
+        "dnsmasq": {
+            "source": "ubuntu",
+            "version": "2.92-1ubuntu0.5",
+            "package": "dnsmasq"
+        },
+        "acl": {
+            "source": "ubuntu",
+            "package": "acl",
+            "version": "2.3.2-2"
+        },
+        "attr": {
+            "source": "ubuntu",
+            "package": "attr",
+            "version": "1:2.5.2-4ubuntu0.1"
+        },
+        "bind9-dnsutils": {
+            "source": "ubuntu",
+            "package": "bind9-dnsutils",
+            "version": "1:9.20.24-1ubuntu0.3"
+        },
+        "bun": {
+            "source": "artifact",
+            "version": "1.4.3",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://github.com/oven-sh/bun/releases/download/bun-v1.4.3/bun-linux-x64.zip",
+                    "sha256": "3e730528d89775f03f87f05c06787c4df4099d0a37f3f252e7b829cb23816e18"
+                },
+                "arm64": {
+                    "url": "https://github.com/oven-sh/bun/releases/download/bun-v1.4.3/bun-linux-aarch64.zip",
+                    "sha256": "efa9813da5ed72423bf847f916e8d2c47c0d776add972354026a75e10da9aa21"
+                }
+            }
+        },
+        "ca-certificates": {
+            "source": "ubuntu",
+            "package": "ca-certificates",
+            "version": "20260601~26.04.1"
+        },
+        "caddy": {
+            "source": "artifact",
+            "version": "2.11.7",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://github.com/caddyserver/caddy/releases/download/v2.11.7/caddy_2.11.7_linux_amd64.deb",
+                    "sha512": "47e8351c2317b427af14a103e763ca1118a3d2396a88b4c0669cdec9c4a68a957690194e2423a1633f53135741c33a41bdac2b55515b7d0f7adc8b733add50d9"
+                },
+                "arm64": {
+                    "url": "https://github.com/caddyserver/caddy/releases/download/v2.11.7/caddy_2.11.7_linux_arm64.deb",
+                    "sha512": "ac32f03f0eea04021f2d4e5d89bfd01b84ead115f2eba9d2a0d06447e86d4af932899e56f090993a566d0925dbd1063002929b395541a8c5f5e51d7039f7375a"
+                }
+            }
+        },
+        "cargo": {
+            "source": "artifact",
+            "version": "1.99.0",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://static.rust-lang.org/dist/2026-10-01/cargo-1.99.0-x86_64-unknown-linux-gnu.tar.xz",
+                    "sha256": "d7674918d28093097614cd9728b6ca60db9ea3038f640f0bd1e9a4188c7568ce"
+                },
+                "arm64": {
+                    "url": "https://static.rust-lang.org/dist/2026-10-01/cargo-1.99.0-aarch64-unknown-linux-gnu.tar.xz",
+                    "sha256": "113229fcc16cc1ba004923a4cc275fbf3281dafaaf8b97269f9c00189d497fd4"
+                }
+            }
+        },
+        "clippy": {
+            "source": "artifact",
+            "version": "1.99.0",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://static.rust-lang.org/dist/2026-10-01/clippy-1.99.0-x86_64-unknown-linux-gnu.tar.xz",
+                    "sha256": "982442e32ad8dd3f0bb3a30db74038da5f71fd9bf1a865cc71da8ea5d4ec71ec"
+                },
+                "arm64": {
+                    "url": "https://static.rust-lang.org/dist/2026-10-01/clippy-1.99.0-aarch64-unknown-linux-gnu.tar.xz",
+                    "sha256": "42e49dc02d29949395c0c072585961f6c9b5408110236087828d4e2f94ca96ef"
+                }
+            }
+        },
+        "composer": {
+            "source": "ubuntu",
+            "package": "composer",
+            "version": "2.9.5-1"
+        },
+        "curl": {
+            "source": "ubuntu",
+            "package": "curl",
+            "version": "8.18.0-1ubuntu2.7"
+        },
+        "docker.io": {
+            "source": "ubuntu",
+            "package": "docker.io",
+            "version": "29.1.3-0ubuntu4.1"
+        },
+        "gcc": {
+            "source": "ubuntu",
+            "package": "gcc",
+            "version": "4:15.2.0-5ubuntu1"
+        },
+        "git": {
+            "source": "ubuntu",
+            "package": "git",
+            "version": "1:2.53.0-1ubuntu1"
+        },
+        "gnupg": {
+            "source": "ubuntu",
+            "package": "gnupg",
+            "version": "2.4.8-4ubuntu3.1"
+        },
+        "libasound2t64": {
+            "source": "ubuntu",
+            "package": "libasound2t64",
+            "version": "1.2.15.3-1ubuntu1.1"
+        },
+        "libatk-bridge2.0-0t64": {
+            "source": "ubuntu",
+            "package": "libatk-bridge2.0-0t64",
+            "version": "2.60.4-0ubuntu0.1"
+        },
+        "libatk1.0-0t64": {
+            "source": "ubuntu",
+            "package": "libatk1.0-0t64",
+            "version": "2.60.4-0ubuntu0.1"
+        },
+        "libatspi2.0-0t64": {
+            "source": "ubuntu",
+            "package": "libatspi2.0-0t64",
+            "version": "2.60.4-0ubuntu0.1"
+        },
+        "libc6-dev": {
+            "source": "ubuntu",
+            "package": "libc6-dev",
+            "version": "2.43-2ubuntu2.4"
+        },
+        "libcairo2": {
+            "source": "ubuntu",
+            "package": "libcairo2",
+            "version": "1.18.4-3"
+        },
+        "libcups2t64": {
+            "source": "ubuntu",
+            "package": "libcups2t64",
+            "version": "2.4.16-1ubuntu1.3"
+        },
+        "libdbus-1-3": {
+            "source": "ubuntu",
+            "package": "libdbus-1-3",
+            "version": "1.16.2-2ubuntu4"
+        },
+        "libdrm2": {
+            "source": "ubuntu",
+            "package": "libdrm2",
+            "version": "2.4.131-1"
+        },
+        "libgbm1": {
+            "source": "ubuntu",
+            "package": "libgbm1",
+            "version": "26.0.8-1ubuntu0.3"
+        },
+        "libgd3": {
+            "source": "artifact",
+            "version": "2.3.3-14+0~20260731.21+ubuntu26.04~1.gbp938f32",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/libg/libgd2/libgd3_2.3.3-14+0~20260731.21+ubuntu26.04~1.gbp938f32_amd64.deb",
+                    "sha256": "7661e1f41df7e00f960430f6e0fcde93675dba4cb183359314048f3c3db9e3e5"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/libg/libgd2/libgd3_2.3.3-14+0~20260731.21+ubuntu26.04~1.gbp938f32_arm64.deb",
+                    "sha256": "2df5e6e8360ae9c764c1657973bf7a406172a685e32e6fcdf50062d6df709994"
+                }
+            }
+        },
+        "libglib2.0-0t64": {
+            "source": "ubuntu",
+            "package": "libglib2.0-0t64",
+            "version": "2.88.0-1ubuntu0.1"
+        },
+        "libnspr4": {
+            "source": "ubuntu",
+            "package": "libnspr4",
+            "version": "2:4.38.2-1ubuntu1"
+        },
+        "libnss-resolve": {
+            "source": "ubuntu",
+            "package": "libnss-resolve",
+            "version": "259.5-0ubuntu3.4"
+        },
+        "libnss3": {
+            "source": "ubuntu",
+            "package": "libnss3",
+            "version": "2:3.120-1ubuntu2.1"
+        },
+        "libpango-1.0-0": {
+            "source": "ubuntu",
+            "package": "libpango-1.0-0",
+            "version": "1.57.0-1"
+        },
+        "libx11-6": {
+            "source": "ubuntu",
+            "package": "libx11-6",
+            "version": "2:1.8.13-1ubuntu0.1"
+        },
+        "libxcb1": {
+            "source": "ubuntu",
+            "package": "libxcb1",
+            "version": "1.17.0-2ubuntu1"
+        },
+        "libxcomposite1": {
+            "source": "ubuntu",
+            "package": "libxcomposite1",
+            "version": "1:0.4.6-1build1"
+        },
+        "libxdamage1": {
+            "source": "ubuntu",
+            "package": "libxdamage1",
+            "version": "1:1.1.7-1"
+        },
+        "libxext6": {
+            "source": "ubuntu",
+            "package": "libxext6",
+            "version": "2:1.3.4-1build3"
+        },
+        "libxfixes3": {
+            "source": "ubuntu",
+            "package": "libxfixes3",
+            "version": "1:6.0.0-2build2"
+        },
+        "libxkbcommon0": {
+            "source": "ubuntu",
+            "package": "libxkbcommon0",
+            "version": "1.13.1-1"
+        },
+        "libxrandr2": {
+            "source": "ubuntu",
+            "package": "libxrandr2",
+            "version": "2:1.5.4-1build1"
+        },
+        "node": {
+            "source": "artifact",
+            "version": "24.22.0",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://nodejs.org/dist/v24.22.0/node-v24.22.0-linux-x64.tar.xz",
+                    "sha256": "cc2f601cee82d9a5a233302fe307abc600727035fd7d2c3a3571755989e95008"
+                },
+                "arm64": {
+                    "url": "https://nodejs.org/dist/v24.22.0/node-v24.22.0-linux-arm64.tar.xz",
+                    "sha256": "fef00bb4d36e1c50104a9775a10359beee98f162b4104dd12472c75065c6a143"
+                }
+            }
+        },
+        "openssh-client": {
+            "source": "ubuntu",
+            "package": "openssh-client",
+            "version": "1:10.2p1-2ubuntu3.7"
+        },
+        "openssh-server": {
+            "source": "ubuntu",
+            "package": "openssh-server",
+            "version": "1:10.2p1-2ubuntu3.7"
+        },
+        "openssl": {
+            "source": "ubuntu",
+            "package": "openssl",
+            "version": "3.5.5-1ubuntu3.7"
+        },
+        "orbit-agent": {
+            "source": "artifact",
+            "version": "0.4.2",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://github.com/nckrtl/orbit/releases/download/agent-v0.4.2/orbit-agent-0.4.2-linux-x86_64",
+                    "sha256": "800c83121c6c3c1e1614d11326e1a2386f0651897a5dd7eb35155aac1867ccee"
+                },
+                "arm64": {
+                    "url": "https://github.com/nckrtl/orbit/releases/download/agent-v0.4.2/orbit-agent-0.4.2-linux-aarch64",
+                    "sha256": "edddd97040290d7a4cc8ba83c8cc68121c46c714bb8fbf05bd60f06f94bf2bb1"
+                }
+            }
+        },
+        "php-curl": {
+            "source": "ubuntu",
+            "package": "php-curl",
+            "version": "2:8.5+99ubuntu1"
+        },
+        "php-xml": {
+            "source": "ubuntu",
+            "package": "php-xml",
+            "version": "2:8.5+99ubuntu1"
+        },
+        "php8.4-bcmath": {
+            "source": "artifact",
+            "version": "8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-bcmath_8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d_amd64.deb",
+                    "sha256": "8964dbf78fda097fd6c984abce70e93bf3ec0a9eeb8d082ec8ea9da56b216b92"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-bcmath_8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d_arm64.deb",
+                    "sha256": "32043e0604d2c589d947bc35fbd5c58ca23c28bbc4173e07edae574bf3998c1e"
+                }
+            }
+        },
+        "php8.4-cli": {
+            "source": "artifact",
+            "version": "8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-cli_8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d_amd64.deb",
+                    "sha256": "d6821a8481dc0128962b7fbd9296bfcbc8005cec4c6ff683f4bed5d18b1b92f3"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-cli_8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d_arm64.deb",
+                    "sha256": "bd19f4307f13e1e5bcd06542e884fa3e4a6f3249929a3fcad13227884ea98d2c"
+                }
+            }
+        },
+        "php8.4-common": {
+            "source": "artifact",
+            "version": "8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-common_8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d_amd64.deb",
+                    "sha256": "6976d320840f84c8cc2d1817d9cd8336cef08e434e7e0f69e8b40e7bd1da07d9"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-common_8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d_arm64.deb",
+                    "sha256": "2b3f687d1f6d2601f533ff734143204faefae23bb0f3e79bb6fb3ab6665461de"
+                }
+            }
+        },
+        "php8.4-curl": {
+            "source": "artifact",
+            "version": "8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-curl_8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d_amd64.deb",
+                    "sha256": "6516bf97594bc3b73a944a10047b26dc462cf888ee7be3f67fac2cc7ac526589"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-curl_8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d_arm64.deb",
+                    "sha256": "3f3cc31768be7396050c4cbc8d7a020c339a3534c1f13e5954d5823aa2e0744d"
+                }
+            }
+        },
+        "php8.4-fpm": {
+            "source": "artifact",
+            "version": "8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-fpm_8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d_amd64.deb",
+                    "sha256": "f46ed2abb1b9a456b93c60e4bbfce7296c809cdb55b63065ab0865ce54c9942d"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-fpm_8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d_arm64.deb",
+                    "sha256": "65da4b5ebd902d1f6b4d0c15ebc02118bdf68d9b2e9f050e234606c9efc2681b"
+                }
+            }
+        },
+        "php8.4-gd": {
+            "source": "artifact",
+            "version": "8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-gd_8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d_amd64.deb",
+                    "sha256": "8781621ea8dcefa119f812edf009b20a15877260fb4db680d6363b7c702b3fca"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-gd_8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d_arm64.deb",
+                    "sha256": "179e6d2cbe85930cf45ee3665d8e5b17c38d75c3512db582afcd73de7af8fd8a"
+                }
+            }
+        },
+        "php8.4-imagick": {
+            "source": "artifact",
+            "version": "3.8.1-1+0~20260621.55+ubuntu26.04~1.gbpde1d95",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php-imagick/php8.4-imagick_3.8.1-1+0~20260621.55+ubuntu26.04~1.gbpde1d95_amd64.deb",
+                    "sha256": "4de176070fb1a90d55a4241a15137242cf750473da83cfad2f54e210413b5abf"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php-imagick/php8.4-imagick_3.8.1-1+0~20260621.55+ubuntu26.04~1.gbpde1d95_arm64.deb",
+                    "sha256": "517fd21fbbb902d943e0194c0f902194857f42226ec17112299399a8ca1e62f2"
+                }
+            }
+        },
+        "php8.4-intl": {
+            "source": "artifact",
+            "version": "8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-intl_8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d_amd64.deb",
+                    "sha256": "560bf54339a14f58ab0317c9f5d8dbc370234668bb02f939d95de102ac471c03"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-intl_8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d_arm64.deb",
+                    "sha256": "24313491de9b459ff1a6ee685748a35ee2177fce696281d77d4a0fd5f893580d"
+                }
+            }
+        },
+        "php8.4-mbstring": {
+            "source": "artifact",
+            "version": "8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-mbstring_8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d_amd64.deb",
+                    "sha256": "657a6f0b4303f8e60e7d64bdb465b33a9aaa181b63e7995e3d09662f5d4deeef"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-mbstring_8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d_arm64.deb",
+                    "sha256": "a2c38567936d13df432730d9c7babbf194acce141b1432bd9df8092f6de63b1e"
+                }
+            }
+        },
+        "php8.4-mysql": {
+            "source": "artifact",
+            "version": "8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-mysql_8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d_amd64.deb",
+                    "sha256": "2c14193cc59f5888e16f8c572e0d2d736815db52f194b1b597615afe2e78309b"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-mysql_8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d_arm64.deb",
+                    "sha256": "7a69e145dafc6d0a9ae0922b209511a6d284fc812a13c6ada71d261dff393f3c"
+                }
+            }
+        },
+        "php8.4-opcache": {
+            "source": "artifact",
+            "version": "8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-opcache_8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d_amd64.deb",
+                    "sha256": "424bc79e9c237cb51803d7a265753659d0f48e2077a92f2ae7204f7cd3668fd9"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-opcache_8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d_arm64.deb",
+                    "sha256": "61623b34aa8a25f8aee038498504235b50652bcd35948605ae667ed8d44bf03b"
+                }
+            }
+        },
+        "php8.4-pcov": {
+            "source": "artifact",
+            "version": "1.0.12-2+0~20260622.34+ubuntu26.04~1.gbp5b3479",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php-pcov/php8.4-pcov_1.0.12-2+0~20260622.34+ubuntu26.04~1.gbp5b3479_amd64.deb",
+                    "sha256": "030badf24e5b8b80f8adb3bf19b7f1cd752327c15657d71016b9ef673c624542"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php-pcov/php8.4-pcov_1.0.12-2+0~20260622.34+ubuntu26.04~1.gbp5b3479_arm64.deb",
+                    "sha256": "90c96051038e515b28c0bfcfe0d0cc37a9bf58e8bb921e721ab52b640290c437"
+                }
+            }
+        },
+        "php8.4-pgsql": {
+            "source": "artifact",
+            "version": "8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-pgsql_8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d_amd64.deb",
+                    "sha256": "9300f53f6772a446206f49440a0dc9451d23ee75f1ab3a8ac0767198098427dc"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-pgsql_8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d_arm64.deb",
+                    "sha256": "fe12b254d2f66fd60798330f9cc7eea705d6112325174aab0082651d7978c87e"
+                }
+            }
+        },
+        "php8.4-readline": {
+            "source": "artifact",
+            "version": "8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-readline_8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d_amd64.deb",
+                    "sha256": "685670105c6d45117f1fdee1589ccedbb67441195297f06875e0fddca768d711"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-readline_8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d_arm64.deb",
+                    "sha256": "ecb944d96fa6b3b47fae2669ec49303355c1d3a7e76f80f0db4af87270470198"
+                }
+            }
+        },
+        "php8.4-redis": {
+            "source": "artifact",
+            "version": "6.3.0-2+0~20260711.69+ubuntu26.04~1.gbpd148c3",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php-redis/php8.4-redis_6.3.0-2+0~20260711.69+ubuntu26.04~1.gbpd148c3_amd64.deb",
+                    "sha256": "6d163a09874255935bc864472e88c78a65a0fa4a56de4e77157f8f7071e80795"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php-redis/php8.4-redis_6.3.0-2+0~20260711.69+ubuntu26.04~1.gbpd148c3_arm64.deb",
+                    "sha256": "87e1f48362d9b9dfffe6a4bd16b6df59047e61244830157afdd27909bcca9a44"
+                }
+            }
+        },
+        "php8.4-sqlite3": {
+            "source": "artifact",
+            "version": "8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-sqlite3_8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d_amd64.deb",
+                    "sha256": "c791384a1974607c5b36e26c3dfc1cc77521cc40789c3a6507f772dc434a1597"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-sqlite3_8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d_arm64.deb",
+                    "sha256": "ad8794115999448d7f4f0e2ff42bc546c93e6590bb46c974ad6fd67f62afdb57"
+                }
+            }
+        },
+        "php8.4-xml": {
+            "source": "artifact",
+            "version": "8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-xml_8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d_amd64.deb",
+                    "sha256": "d34e145386b8ec9ab3f16e805c73f883694f634bc39a2f371199cb4ba326b28f"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-xml_8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d_arm64.deb",
+                    "sha256": "af732bd8343053a485457928cb1969b72caff18ad02d36d6a8238788126e0a8e"
+                }
+            }
+        },
+        "php8.4-zip": {
+            "source": "artifact",
+            "version": "8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-zip_8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d_amd64.deb",
+                    "sha256": "bf0f86de2b7b14734628f1ae80923f0a036b50a09df20a8f3e7aa12b63c0a73c"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-zip_8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d_arm64.deb",
+                    "sha256": "bc7254e3b44494438df00e8e16ff3febaa0e68ebe625823b5690ce778541d026"
+                }
+            }
+        },
+        "php8.5-bcmath": {
+            "source": "artifact",
+            "version": "8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.5/php8.5-bcmath_8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504_amd64.deb",
+                    "sha256": "c8225b865508aaec8ee638e9ea11d84301387352e713c6a55e23e9cc4400ff9c"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.5/php8.5-bcmath_8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504_arm64.deb",
+                    "sha256": "fd99371ccb194fa4e94f01dd17292e36cef400367ad73f531081719f303f7a6f"
+                }
+            }
+        },
+        "php8.5-cli": {
+            "source": "artifact",
+            "version": "8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.5/php8.5-cli_8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504_amd64.deb",
+                    "sha256": "f49b5a2d33c4664c28aed18b12c06ba45b50a248e740b7fcc68c18b7e6cc1bf6"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.5/php8.5-cli_8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504_arm64.deb",
+                    "sha256": "58eaae242e2216353d04244d6d2a1f591f4aaa86a834149ae33cd2c5bc0ac6b9"
+                }
+            }
+        },
+        "php8.5-common": {
+            "source": "artifact",
+            "version": "8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.5/php8.5-common_8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504_amd64.deb",
+                    "sha256": "304e7e8d08d6fce4668cf13482565ee4380bd00ed449df38516debf02b9be447"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.5/php8.5-common_8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504_arm64.deb",
+                    "sha256": "5e56b0ff6ea3efbefa8028dcd30813b26ebd49868935d86dd41ce4e8f7bb3ef2"
+                }
+            }
+        },
+        "php8.5-curl": {
+            "source": "artifact",
+            "version": "8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.5/php8.5-curl_8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504_amd64.deb",
+                    "sha256": "b22441d1888e6f466e54e36b95d1626b506a9e3dfdcbc21a3a636ee8579a1ce1"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.5/php8.5-curl_8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504_arm64.deb",
+                    "sha256": "b432880f7ce174c5cf86c9a048ce583377cbee604077db4b278d606f14154510"
+                }
+            }
+        },
+        "php8.5-fpm": {
+            "source": "artifact",
+            "version": "8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.5/php8.5-fpm_8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504_amd64.deb",
+                    "sha256": "63292229654bc630a86305bdf6f23dd50b4a4724a5ac30894037c0ee52ac9d63"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.5/php8.5-fpm_8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504_arm64.deb",
+                    "sha256": "d14de288781add9d53a12ba374697f2777e196ad14e4e419328243ed4115e8d7"
+                }
+            }
+        },
+        "php8.5-gd": {
+            "source": "artifact",
+            "version": "8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.5/php8.5-gd_8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504_amd64.deb",
+                    "sha256": "6c2de3e1f3f11c33a8a10855ce0ee676e055114d8f59bfdd6d5fa226d64b3fa4"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.5/php8.5-gd_8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504_arm64.deb",
+                    "sha256": "5d9d7011bf40bf10551b90e7de508ecb7639724cdeb81b04d474d38872aac122"
+                }
+            }
+        },
+        "php8.5-imagick": {
+            "source": "artifact",
+            "version": "3.8.1-1+0~20260621.55+ubuntu26.04~1.gbpde1d95",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php-imagick/php8.5-imagick_3.8.1-1+0~20260621.55+ubuntu26.04~1.gbpde1d95_amd64.deb",
+                    "sha256": "44600a7c33f6978c649be7f2e88d25c0597925276641187d7812052cfe543967"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php-imagick/php8.5-imagick_3.8.1-1+0~20260621.55+ubuntu26.04~1.gbpde1d95_arm64.deb",
+                    "sha256": "35eea415912cda76f6be655cef0887e5e85b8914ba00a654ecd925603a446f49"
+                }
+            }
+        },
+        "php8.5-intl": {
+            "source": "artifact",
+            "version": "8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.5/php8.5-intl_8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504_amd64.deb",
+                    "sha256": "cfb806494b0b7c69c0c99f8338dfc46d6e774396d9ad1e76957b9a00ae546048"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.5/php8.5-intl_8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504_arm64.deb",
+                    "sha256": "10b3470902173f66d7be04db31abb85a0a4b958f66cc201cb36202200f65b912"
+                }
+            }
+        },
+        "php8.5-mbstring": {
+            "source": "artifact",
+            "version": "8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.5/php8.5-mbstring_8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504_amd64.deb",
+                    "sha256": "4b34b6b39cddeadedf27498c1644678e083298083786e50dc0f7b4b34ee7c82c"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.5/php8.5-mbstring_8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504_arm64.deb",
+                    "sha256": "bb7a26465f639e0d7391bc457cceeb3f8ccc50b31ebc390545db7a88673f1dfc"
+                }
+            }
+        },
+        "php8.5-mysql": {
+            "source": "artifact",
+            "version": "8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.5/php8.5-mysql_8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504_amd64.deb",
+                    "sha256": "37a2e27c626e397156ae78b9ec6ca4712e193f57d10d6207a0e5b8ba271290f9"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.5/php8.5-mysql_8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504_arm64.deb",
+                    "sha256": "b6d2995c43484c692135c280649723b72b2cb49dbf57d446fb1bde841afdbaf8"
+                }
+            }
+        },
+        "php8.5-pcov": {
+            "source": "artifact",
+            "version": "1.0.12-2+0~20260622.34+ubuntu26.04~1.gbp5b3479",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php-pcov/php8.5-pcov_1.0.12-2+0~20260622.34+ubuntu26.04~1.gbp5b3479_amd64.deb",
+                    "sha256": "26ce6e455bf5c9d04e10412cba5b54c1af4a64dfc6cf73f228bca41c1bd93798"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php-pcov/php8.5-pcov_1.0.12-2+0~20260622.34+ubuntu26.04~1.gbp5b3479_arm64.deb",
+                    "sha256": "991823e4f24ae6d287ffdd6a41808922681c659f39257242075653d306b6da5e"
+                }
+            }
+        },
+        "php8.5-pgsql": {
+            "source": "artifact",
+            "version": "8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.5/php8.5-pgsql_8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504_amd64.deb",
+                    "sha256": "03739015fed68233114bfc9b625261ef766d584a74962e650241fc6efe7d6912"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.5/php8.5-pgsql_8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504_arm64.deb",
+                    "sha256": "250e6878ca2d3b53304d00ca17533120d8a07932190ec666ebc119725fc168a5"
+                }
+            }
+        },
+        "php8.5-readline": {
+            "source": "artifact",
+            "version": "8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.5/php8.5-readline_8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504_amd64.deb",
+                    "sha256": "459495eba4a534043f072bda08d5ebea9f6717ccf4bef6a1389e693a3be23172"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.5/php8.5-readline_8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504_arm64.deb",
+                    "sha256": "4760f97f46dd40a24cb9f6b9cbb9abe45da806d4281a456289a8c142e86c38e1"
+                }
+            }
+        },
+        "php8.5-redis": {
+            "source": "artifact",
+            "version": "6.3.0-2+0~20260711.69+ubuntu26.04~1.gbpd148c3",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php-redis/php8.5-redis_6.3.0-2+0~20260711.69+ubuntu26.04~1.gbpd148c3_amd64.deb",
+                    "sha256": "e39054567fb19a82ba599f81ff856230ab51708d366c9e366230d7a2c9857817"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php-redis/php8.5-redis_6.3.0-2+0~20260711.69+ubuntu26.04~1.gbpd148c3_arm64.deb",
+                    "sha256": "7bea529928d7176d9ed20ca54719320d066e86f933e45a5f07005555571b4cee"
+                }
+            }
+        },
+        "php8.5-sqlite3": {
+            "source": "artifact",
+            "version": "8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.5/php8.5-sqlite3_8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504_amd64.deb",
+                    "sha256": "90ad988695e82dd27110fbb4971a7667e164cc0188ac3e368f5b761b7434c8da"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.5/php8.5-sqlite3_8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504_arm64.deb",
+                    "sha256": "732baefa172d932800705173bfbb7e60b57809373ed0e48c1ffb1ff99a8c51da"
+                }
+            }
+        },
+        "php8.5-xml": {
+            "source": "artifact",
+            "version": "8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.5/php8.5-xml_8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504_amd64.deb",
+                    "sha256": "097b6521d1ace438ebfb2e84c915336c06be3a1fa34f84097a6c8db05c79921f"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.5/php8.5-xml_8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504_arm64.deb",
+                    "sha256": "db5da6e44575d5464323a94fbbeb6ef29a68612b22fc636127c726097c49c5de"
+                }
+            }
+        },
+        "php8.5-zip": {
+            "source": "artifact",
+            "version": "8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.5/php8.5-zip_8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504_amd64.deb",
+                    "sha256": "b12844308fa6818a6c15eabb99a32935122af2a0dfd4224bf9c873cc299e733e"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.5/php8.5-zip_8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504_arm64.deb",
+                    "sha256": "694f682ca59788e866454e17aadda1fb5cb5af88dcf0ae569dcbd05f046bf17a"
+                }
+            }
+        },
+        "pi": {
+            "source": "internal",
+            "version": "e5933d4c8696",
+            "source_commit": "e5933d4c8696",
+            "artifacts": {
+                "amd64": {
+                    "filename": "pi-server-e5933d4c8696-linux-x64",
+                    "sha256": "286620c586b13b60fce4ce71f286d282da185fd95f7971c4109fb52bc8f0a78c"
+                }
+            }
+        },
+        "pnpm": {
+            "source": "artifact",
+            "version": "12.11.2",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://registry.npmjs.org/pnpm/-/pnpm-12.11.2.tgz",
+                    "sha512": "25a51652a196785af5f28bda6dfe8dc582ebefa4ac1d180221ce1390231c5fb76637822ea4b6e4633ce74acdcb0a77f725af11bad38177fdeddaee818a955cb9"
+                },
+                "arm64": {
+                    "url": "https://registry.npmjs.org/pnpm/-/pnpm-12.11.2.tgz",
+                    "sha512": "25a51652a196785af5f28bda6dfe8dc582ebefa4ac1d180221ce1390231c5fb76637822ea4b6e4633ce74acdcb0a77f725af11bad38177fdeddaee818a955cb9"
+                }
+            }
+        },
+        "rsync": {
+            "source": "ubuntu",
+            "package": "rsync",
+            "version": "3.4.1+ds1-7ubuntu0.3"
+        },
+        "rust": {
+            "source": "artifact",
+            "version": "1.99.0",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://static.rust-lang.org/dist/2026-10-01/rustc-1.99.0-x86_64-unknown-linux-gnu.tar.xz",
+                    "sha256": "77171ba2a0345fdf2abc4fedda55d6de078dae7a68527c28be8c77dcc9604bd5"
+                },
+                "arm64": {
+                    "url": "https://static.rust-lang.org/dist/2026-10-01/rustc-1.99.0-aarch64-unknown-linux-gnu.tar.xz",
+                    "sha256": "89c0f1a3a44df63c95e5d5f2ba093d0a12c5f5f57f8635f8a7a0ce50cf86600e"
+                }
+            }
+        },
+        "rust-std": {
+            "source": "artifact",
+            "version": "1.99.0",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://static.rust-lang.org/dist/2026-10-01/rust-std-1.99.0-x86_64-unknown-linux-gnu.tar.xz",
+                    "sha256": "3e58dff2d0b72196b5ea4e90536e174d400de88564a52694686b81e091169933"
+                },
+                "arm64": {
+                    "url": "https://static.rust-lang.org/dist/2026-10-01/rust-std-1.99.0-aarch64-unknown-linux-gnu.tar.xz",
+                    "sha256": "1cf7e2ef58ed1cfa6f1adea18e155cbf254c1951f39e5f5e3376879f55fd64a4"
+                }
+            }
+        },
+        "rustfmt": {
+            "source": "artifact",
+            "version": "1.99.0",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://static.rust-lang.org/dist/2026-10-01/rustfmt-1.99.0-x86_64-unknown-linux-gnu.tar.xz",
+                    "sha256": "b22c09ab9e258ec5571da170d88bd1624a4ea602e6d70d95720c5b47494cadce"
+                },
+                "arm64": {
+                    "url": "https://static.rust-lang.org/dist/2026-10-01/rustfmt-1.99.0-aarch64-unknown-linux-gnu.tar.xz",
+                    "sha256": "4b9162fef99fd5246d2f83a2430c144e9bb9095aac6d1de0aaebde45ec01e09a"
+                }
+            }
+        },
+        "sudo": {
+            "source": "ubuntu",
+            "package": "sudo",
+            "version": "1.9.17p2-1ubuntu3.2"
+        },
+        "ufw": {
+            "source": "ubuntu",
+            "package": "ufw",
+            "version": "0.36.2-9build1"
+        },
+        "unzip": {
+            "source": "ubuntu",
+            "package": "unzip",
+            "version": "6.0-29ubuntu1"
+        },
+        "vp": {
+            "source": "artifact",
+            "version": "1.2.0",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://registry.npmjs.org/vite-plus/-/vite-plus-1.2.0.tgz",
+                    "sha512": "bb820dc67aeaf4bc70c80de7af7dd083a565b4988acfe20b4a566e66740979ca3352f8f5feb55cb64c3a22087f5e4774127dabb2dee6d3113db06eeecf3652ec"
+                },
+                "arm64": {
+                    "url": "https://registry.npmjs.org/vite-plus/-/vite-plus-1.2.0.tgz",
+                    "sha512": "bb820dc67aeaf4bc70c80de7af7dd083a565b4988acfe20b4a566e66740979ca3352f8f5feb55cb64c3a22087f5e4774127dabb2dee6d3113db06eeecf3652ec"
+                }
+            }
+        },
+        "vp-cli": {
+            "source": "artifact",
+            "version": "1.2.0",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://github.com/voidzero-dev/vite-plus/releases/download/v1.2.0/vp-x86_64-unknown-linux-gnu.tar.gz",
+                    "sha256": "489e2493d10499d1e0f19f0c7938b1baa5cd488be1f2e3abd3fbf820131452bf"
+                },
+                "arm64": {
+                    "url": "https://github.com/voidzero-dev/vite-plus/releases/download/v1.2.0/vp-aarch64-unknown-linux-gnu.tar.gz",
+                    "sha256": "42d25a6676c28d0749da7edc97003a7a34c5e31ea1ea479f3d8239ad16d09d2d"
+                }
+            }
+        },
+        "wireguard": {
+            "source": "ubuntu",
+            "package": "wireguard",
+            "version": "1.0.20250521-1ubuntu1"
+        }
+    },
+    "common": [
+        "ca-certificates",
+        "curl",
+        "gnupg",
+        "libnss-resolve",
+        "openssh-client",
+        "sudo",
+        "ufw",
+        "wireguard"
+    ],
+    "roles": {
+        "vpn": [
+            "dnsmasq",
+            "openssl"
+        ],
+        "router": [
+            "caddy",
+            "openssl"
+        ],
+        "ingress": [
+            "caddy"
+        ],
+        "metrics": [
+            "docker.io",
+            "openssl"
+        ],
+        "database": [
+            "docker.io"
+        ],
+        "websocket": [
+            "caddy",
+            "composer",
+            "git",
+            "openssl",
+            "php-curl",
+            "php-xml"
+        ],
+        "analytics": [
+            "caddy",
+            "docker.io",
+            "openssl"
+        ],
+        "gateway": [
+            "caddy"
+        ],
+        "app-dev": [
+            "acl",
+            "attr",
+            "caddy",
+            "composer",
+            "docker.io",
+            "git",
+            "openssl",
+            "php-curl",
+            "php-xml",
+            "unzip",
+            "vp",
+            "node",
+            "pnpm",
+            "bun",
+            "vp-cli",
+            "php8.5-cli",
+            "php8.5-fpm",
+            "php8.5-common",
+            "php8.5-bcmath",
+            "php8.5-curl",
+            "php8.5-gd",
+            "php8.5-imagick",
+            "php8.5-intl",
+            "php8.5-mbstring",
+            "php8.5-mysql",
+            "php8.5-pgsql",
+            "php8.5-redis",
+            "php8.5-sqlite3",
+            "php8.5-xml",
+            "php8.5-zip",
+            "php8.5-pcov",
+            "php8.5-readline",
+            "php8.4-cli",
+            "php8.4-fpm",
+            "php8.4-common",
+            "php8.4-bcmath",
+            "php8.4-curl",
+            "php8.4-gd",
+            "php8.4-imagick",
+            "php8.4-intl",
+            "php8.4-mbstring",
+            "php8.4-mysql",
+            "php8.4-pgsql",
+            "php8.4-redis",
+            "php8.4-sqlite3",
+            "php8.4-xml",
+            "php8.4-zip",
+            "php8.4-pcov",
+            "php8.4-readline",
+            "php8.4-opcache",
+            "libgd3"
+        ],
+        "app-prod": [
+            "acl",
+            "attr",
+            "caddy",
+            "composer",
+            "docker.io",
+            "git",
+            "openssl",
+            "php-curl",
+            "php-xml",
+            "unzip",
+            "vp",
+            "node",
+            "pnpm",
+            "bun",
+            "vp-cli"
+        ],
+        "operator": []
+    },
+    "base": [
+        "acl",
+        "attr",
+        "caddy",
+        "composer",
+        "docker.io",
+        "git",
+        "openssl",
+        "php-curl",
+        "php-xml",
+        "unzip",
+        "vp",
+        "node",
+        "pnpm",
+        "bun",
+        "vp-cli",
+        "php8.5-cli",
+        "php8.5-fpm",
+        "php8.5-common",
+        "php8.5-bcmath",
+        "php8.5-curl",
+        "php8.5-gd",
+        "php8.5-imagick",
+        "php8.5-intl",
+        "php8.5-mbstring",
+        "php8.5-mysql",
+        "php8.5-pgsql",
+        "php8.5-redis",
+        "php8.5-sqlite3",
+        "php8.5-xml",
+        "php8.5-zip",
+        "php8.5-pcov",
+        "php8.5-readline",
+        "php8.4-cli",
+        "php8.4-fpm",
+        "php8.4-common",
+        "php8.4-bcmath",
+        "php8.4-curl",
+        "php8.4-gd",
+        "php8.4-imagick",
+        "php8.4-intl",
+        "php8.4-mbstring",
+        "php8.4-mysql",
+        "php8.4-pgsql",
+        "php8.4-redis",
+        "php8.4-sqlite3",
+        "php8.4-xml",
+        "php8.4-zip",
+        "php8.4-pcov",
+        "php8.4-readline",
+        "php8.4-opcache",
+        "libgd3",
+        "rust",
+        "cargo",
+        "rust-std",
+        "clippy",
+        "rustfmt",
+        "orbit-agent",
+        "pi",
+        "openssh-server",
+        "rsync",
+        "bind9-dnsutils",
+        "gcc",
+        "libc6-dev",
+        "libasound2t64",
+        "libatk-bridge2.0-0t64",
+        "libatk1.0-0t64",
+        "libatspi2.0-0t64",
+        "libcairo2",
+        "libcups2t64",
+        "libdbus-1-3",
+        "libdrm2",
+        "libgbm1",
+        "libglib2.0-0t64",
+        "libnspr4",
+        "libnss3",
+        "libpango-1.0-0",
+        "libx11-6",
+        "libxcb1",
+        "libxcomposite1",
+        "libxdamage1",
+        "libxext6",
+        "libxfixes3",
+        "libxkbcommon0",
+        "libxrandr2"
+    ]
+}

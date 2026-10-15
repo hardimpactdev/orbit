@@ -4843,7 +4843,7 @@ export interface components {
         TaskCheck: {
             id?: number;
             /** @enum {string} */
-            kind?: "baseline" | "handoff";
+            kind?: "baseline" | "handoff" | "base_merge";
             /** @enum {string} */
             status?: "running" | "passed" | "failed" | "changed" | "lost" | "cancelled";
             started_at?: string;
@@ -4865,7 +4865,7 @@ export interface components {
         TaskReviewedCommit: {
             sha?: string;
             /** @enum {string} */
-            source?: "orbit_push" | "pull_request_review";
+            source?: "orbit_push" | "base_merge" | "pull_request_review";
             review_task_id?: number | null;
             pushed_at?: string | null;
             github_review_id?: number | null;
@@ -20131,7 +20131,7 @@ export interface operations {
     "tasks-comment-list": {
         parameters: {
             query?: {
-                type?: "ready_for_review" | "changes_requested" | "approved" | "blocked" | "answered" | "topology_requested" | "assistance_requested" | "resolution" | "question_closed";
+                type?: "ready_for_review" | "changes_requested" | "approved" | "blocked" | "answered" | "topology_requested" | "assistance_requested" | "resolution" | "question_closed" | "provider_retry";
                 limit?: number;
             };
             header?: never;

@@ -21,7 +21,6 @@ use App\Infrastructure\TaskVms\TaskVmImagePeers;
 use App\Jobs\TaskVms\ImageBuild\LaunchImageBuilder;
 use App\Jobs\TaskVms\ImageBuild\SyncBuiltImage;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
-use App\Jobs\TaskVms\RefreshTaskVmWorkspaceTemplates;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\TaskVmImageBuild;
@@ -439,14 +438,13 @@ describe('a sync that meets other work', function (): void {
 });
 
 describe('queued image distribution', function (): void {
-    it('queues a sync to every other host and then one template refresh after promotion', function (): void {
+    it('queues only syncs to the other hosts after promotion', function (): void {
         Bus::fake();
         $build = TaskVmImageBuild::query()->create(['host_node_id' => $this->beast->id, 'image_fingerprint' => SYNC_OLD]);
         app(TaskVmImageBuildSteps::class)->run($build, TaskVmImageBuildStep::Promote, null);
         Bus::assertDispatched(SyncBuiltImage::class, fn ($job): bool => $job->buildId === $build->id && $job->hostNodeId === $this->shark->id && $job->chainQueue === 'builds');
         Bus::assertChained([
             SyncBuiltImage::class,
-            RefreshTaskVmWorkspaceTemplates::class,
         ]);
     });
 
@@ -476,7 +474,7 @@ describe('queued image distribution', function (): void {
         });
         Artisan::call('queue:work', ['connection' => 'gateway', '--queue' => 'builds', '--stop-when-empty' => true, '--tries' => 1, '--sleep' => 0, '--memory' => 4096]);
 
-        expect($processed)->toBe([SyncBuiltImage::class, SyncBuiltImage::class, RefreshTaskVmWorkspaceTemplates::class])
+        expect($processed)->toBe([SyncBuiltImage::class, SyncBuiltImage::class])
             ->and($this->fleet->argv('10.44.0.11'))->toBe($commands)
             ->and($this->fleet->host('10.44.0.11')->images)->toBe([SYNC_SHARK => ['orbit-task-base-20261010030500', TaskVmHost::BaseImage]])
             ->and($this->fleet->host('10.44.0.30')->images[SYNC_OLD])->toContain(TaskVmHost::BaseImage)
@@ -540,10 +538,10 @@ describe('queued image distribution', function (): void {
         $commands = array_filter($this->fleet->argv('10.44.0.11'), static fn (string $command): bool => ! str_contains($command, ' list '));
         Artisan::call('queue:work', ['connection' => 'gateway', '--queue' => 'builds', '--stop-when-empty' => true, '--tries' => 1, '--sleep' => 0, '--memory' => 4096]);
         if ($interruption !== 'none') {
-            // Template refresh may inspect images/volumes; it must not repeat transfer or mutation.
+            // A redelivery must not repeat transfer or mutation.
             expect(array_filter($this->fleet->argv('10.44.0.11'), static fn (string $command): bool => ! str_contains($command, ' list ')))->toBe($commands);
         }
-        expect($processed)->toContain(SyncBuiltImage::class, RefreshTaskVmWorkspaceTemplates::class)
+        expect($processed)->toContain(SyncBuiltImage::class)
             ->and(DB::table('jobs')->count())->toBe(0)
             ->and(DB::table('failed_jobs')->count())->toBe(1)
             ->and(DB::table('failed_jobs')->value('exception'))->toContain('task_vm.image_sync_failed', 'stage [transfer]')
@@ -563,14 +561,26 @@ describe('task-vms:sync-image', function (): void {
             ->expectsOutputToContain('transfer')
             ->expectsOutputToContain('Node [shark] has the base image [orbit-task-base] (bbbbbbbbbbbb) of Node [beast] after')
             ->assertSuccessful();
-        Queue::assertPushed(RefreshTaskVmWorkspaceTemplates::class, 1);
-        // A host that already has the image needs no refresh. A new fake and no unique lock, so a refresh would show.
+        Queue::assertNothingPushed();
+        // Repeating the sync queues nothing either.
         Cache::flush();
         Queue::fake();
         $this->artisan('task-vms:sync-image', ['node' => 'shark'])
             ->expectsOutputToContain('Node [shark] already has the base image [orbit-task-base] (bbbbbbbbbbbb) of Node [beast].')
             ->assertSuccessful();
-        Queue::assertNotPushed(RefreshTaskVmWorkspaceTemplates::class);
+        Queue::assertNothingPushed();
+    });
+
+    it('queues no workspace work after a failed image sync', function (): void {
+        ($this->link)();
+        Queue::fake();
+        $this->fleet->host('10.44.0.11')->fail = 'transfer';
+
+        $this->artisan('task-vms:sync-image', ['node' => 'shark'])
+            ->expectsOutputToContain('[task_vm.image_sync_failed]')
+            ->assertFailed();
+
+        Queue::assertNothingPushed();
     });
 
     it('copies from another host with --from, and refuses a source without a base image', function (): void {
@@ -650,7 +660,7 @@ describe('the nightly refresh', function (): void {
         Queue::fake();
         app()->call([new RefreshTaskVmBaseImages, 'handle']);
         Queue::assertPushed(LaunchImageBuilder::class, 1);
-        Queue::assertNotPushed(RefreshTaskVmWorkspaceTemplates::class);
+        Queue::assertCount(1);
         expect(TaskVmImageBuild::query()->sole()->host_node_id)->toBe($this->beast->id)
             ->and($this->fleet->host('10.44.0.11')->images[SYNC_SHARK])->toContain(TaskVmHost::BaseImage);
     });
@@ -661,7 +671,7 @@ describe('the nightly refresh', function (): void {
         app()->call([new RefreshTaskVmBaseImages, 'handle']);
         expect($this->fleet->host('10.44.0.11')->images)->toBe([SYNC_SHARK => ['orbit-task-base-20261010030500', TaskVmHost::BaseImage]])
             ->and(TaskVmImageBuild::query()->sole()->state)->toBe(TaskVmImageBuildState::Running);
-        Queue::assertNotPushed(RefreshTaskVmWorkspaceTemplates::class);
+        Queue::assertCount(1);
     });
 
     it('changes nothing while the first host has no base image', function (): void {

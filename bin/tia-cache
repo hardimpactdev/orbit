@@ -271,7 +271,7 @@ def artifact_file(artifact, name):
 def read_artifact(project, artifact, commit, inputs):
     """Check an extracted main CI artifact against the tested commit and the expected test configuration."""
     manifest = json.loads(artifact_file(artifact, 'manifest.json'))
-    if (not isinstance(manifest, dict) or manifest.get('schema') != 1
+    if (not isinstance(manifest, dict) or manifest.get('schema') not in (1, 2)
             or manifest.get('project') != project or manifest.get('commit') != commit
             or not re.fullmatch(r'[1-9][0-9]*', str(manifest.get('run_id', '')))):
         raise ValueError('The CI baseline identity differs.')
@@ -294,6 +294,10 @@ def import_ci(root, project, artifact, commit):
     inputs = {name: digest((root / project / name).read_bytes())
               for name in TEST_INPUTS if (root / project / name).is_file()}
     manifest, graph = read_artifact(project, artifact, commit, inputs)
+    # Validate every optional cache before writing the graph or any executable PHP cache.
+    for tool, checksum in (manifest.get('quality') or {}).items():
+        if tool in QUALITY and digest(artifact_file(artifact, 'quality/' + tool)) != checksum:
+            raise ValueError(f'The CI {tool} cache checksum differs.')
     info = metadata(root, project)
     if validate_graph(root, graph.decode(), info, commit) != commit:
         raise ValueError('The CI graph does not describe the tested commit.')
@@ -364,6 +368,10 @@ def import_quality(root, project, artifact, manifest, commit):
         differs = [name for name in ('composer.lock', configuration)
                    if not (root / project / name).is_file()
                    or blob(root, commit, f'{project}/{name}') != (root / project / name).read_bytes()]
+        if manifest.get('schema') == 2:
+            config = root / project / configuration
+            if not config.is_file() or manifest.get('configurations', {}).get(tool) != digest(config.read_bytes()):
+                differs.append(configuration)
         if runtime != php:
             differs.append(f'PHP {runtime} (CI ran {php})')
         if differs:

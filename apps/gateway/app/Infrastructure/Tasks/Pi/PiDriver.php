@@ -257,6 +257,7 @@ final readonly class PiDriver implements AgentDriver
             error: $state === AgentThreadState::Failed ? ($error ?? 'Agent turn failed.') : null,
             cursor: $this->cursor($data),
             turnId: is_string($turnId) && $turnId !== '' ? $turnId : null,
+            providerError: $state === AgentThreadState::Failed && in_array($data['providerError'] ?? null, ['overloaded', 'rate_limited', 'server_error'], true) ? $data['providerError'] : null,
         );
     }
 

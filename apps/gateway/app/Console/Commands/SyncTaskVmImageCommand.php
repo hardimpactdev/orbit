@@ -8,13 +8,9 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\TaskVms\IncusTaskVmImageSync;
-use App\Jobs\TaskVms\RefreshTaskVmWorkspaceTemplates;
 use Illuminate\Console\Command;
 
-/**
- * Copies the current base image of the source host to one other host and prints each stage with its time. Unless the
- * host already had the image, it queues the workspace template refresh at the end, also after a failure.
- */
+/** Copies the current base image to another host and prints each stage with its time. */
 final class SyncTaskVmImageCommand extends Command
 {
     use ResolvesTaskVmHostNode;
@@ -47,21 +43,13 @@ final class SyncTaskVmImageCommand extends Command
             // A stopped sync deletes its smoke VM and frees the sync lock.
             $this->trap([SIGINT, SIGTERM], function (int $signal) use ($sync, $host, $node, $owner): never {
                 $sync->abandon($host, $node, $owner);
-                RefreshTaskVmWorkspaceTemplates::dispatch();
                 $this->error("Stopped by signal [{$signal}]. The smoke VM is deleted and the current base image is kept.");
 
                 exit(self::FAILURE);
             });
-            $copied = null;
-            try {
-                $copied = $sync->sync($sourceHost, $source, $host, $node, $fingerprint, function (string $stage, float $seconds): void {
-                    $this->line(sprintf('%-22s %7.1fs', $stage, $seconds));
-                }, $owner);
-            } finally {
-                if ($copied !== false) {
-                    RefreshTaskVmWorkspaceTemplates::dispatch();
-                }
-            }
+            $copied = $sync->sync($sourceHost, $source, $host, $node, $fingerprint, function (string $stage, float $seconds): void {
+                $this->line(sprintf('%-22s %7.1fs', $stage, $seconds));
+            }, $owner);
         } catch (ResourceOperationException $exception) {
             $this->error("[{$exception->errorCode}] {$exception->getMessage()}");
 

@@ -100,6 +100,21 @@ function dependency_api_removing(Instance $instance, bool $markedRemoving): void
 }
 
 describe('single-instance dependency API', function (): void {
+    it('returns the same safe diagnostic in scan and show responses', function (): void {
+        [$caller, $instance] = dependency_api_fixture();
+        $receipt = dependency_api_receipt();
+        $receipt['files']['bun.lock'] = ['content' => base64_encode('{}'), 'hash' => hash('sha256', '{}'), 'error' => null];
+        dependency_api_remote(fn (): array => $receipt);
+        $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip]);
+
+        $scan = $this->call('POST', "/api/v1/instances/{$instance->id}/dependencies/scan", server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}');
+        $show = $this->get("/api/v1/instances/{$instance->id}/dependencies", ['Accept' => 'application/json']);
+
+        $scan->assertOk()->assertJsonPath('data.javascript.error_code', 'dependencies.ambiguous_manager')
+            ->assertJsonPath('data.javascript.error_detail', 'conflicting manager files: package-lock.json, bun.lock');
+        $show->assertOk()->assertJsonPath('data', $scan->json('data'));
+    });
+
     it('reads never-scanned inventory without collection or attempts', function (): void {
         [$caller, $instance] = dependency_api_fixture();
         mock(SshExecutor::class)->shouldNotReceive('execute');
@@ -108,11 +123,35 @@ describe('single-instance dependency API', function (): void {
 
         $response->assertOk()->assertExactJson([
             'data' => ['instance_id' => $instance->id, 'succeeded' => null,
-                'composer' => ['ecosystem' => 'composer', 'state' => 'unknown', 'succeeded' => null, 'attempted_at' => null, 'error_code' => null, 'snapshot' => null],
-                'javascript' => ['ecosystem' => 'npm', 'state' => 'unknown', 'succeeded' => null, 'attempted_at' => null, 'error_code' => null, 'snapshot' => null]],
+                'composer' => ['ecosystem' => 'composer', 'state' => 'unknown', 'succeeded' => null, 'attempted_at' => null, 'error_code' => null, 'error_detail' => null, 'snapshot' => null],
+                'javascript' => ['ecosystem' => 'npm', 'state' => 'unknown', 'succeeded' => null, 'attempted_at' => null, 'error_code' => null, 'error_detail' => null, 'snapshot' => null]],
             'meta' => ['request_id' => $response->headers->get('X-Orbit-Request-Id')],
         ]);
         $this->assertDatabaseCount('instance_dependency_scan_attempts', 0);
+    });
+
+    it('returns source-scoped monorepo scan and show inventories while keeping root fields', function (): void {
+        [$caller, $instance] = dependency_api_fixture();
+        $instance->project->update(['type' => 'monorepo']);
+        dependency_api_seed($instance);
+        $root = dependency_api_receipt();
+        $good = [...$root, 'root' => $root['root'].'/packages/good'];
+        $bad = [...$root, 'root' => $root['root'].'/apps/bad'];
+        $bad['files']['package-lock.json'] = ['content' => base64_encode('{}'), 'hash' => hash('sha256', '{}'), 'error' => null];
+        $receipt = [...$root, 'sub_projects' => ['apps/bad' => $bad, 'packages/good' => $good]];
+        dependency_api_remote(fn (): array => $receipt);
+        $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip]);
+
+        $scan = $this->call('POST', "/api/v1/instances/{$instance->id}/dependencies/scan", server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}');
+        $read = $this->get("/api/v1/instances/{$instance->id}/dependencies", ['Accept' => 'application/json']);
+
+        $scan->assertOk()->assertJsonPath('data.succeeded', false)
+            ->assertJsonPath('data.javascript.state', 'present')
+            ->assertJsonPath('data.javascript.snapshot.source.project_root', '/home/orbit/project')
+            ->assertJsonPath('data.sub_projects.apps/bad.javascript.error_code', 'dependencies.unsupported_format')
+            ->assertJsonPath('data.sub_projects.packages/good.succeeded', true)
+            ->assertJsonPath('data.sub_projects.packages/good.javascript.snapshot.source.project_root', '/home/orbit/project/packages/good');
+        $read->assertOk()->assertJsonPath('data', $scan->json('data'));
     });
 
     it('scans and reads complete graphs with safe provenance and independent scopes', function (): void {

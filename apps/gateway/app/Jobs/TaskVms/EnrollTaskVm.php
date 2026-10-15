@@ -132,8 +132,13 @@ final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
         // Cloud-init is done only after the network is online, so the host knows the address by then. The
         // check waits in the guest, so it runs before the host reports an address, which it does later.
         if ($guest->bootstrapReady($vm)) {
-            $address = $observation->address ?? $provider->observe($vm)?->address;
+            $settled = $observation->address !== null ? $observation : ($provider->observe($vm) ?? $observation);
+            $address = $settled->address;
             if ($address !== null) {
+                if ($settled->imageFingerprint !== null) {
+                    $vm->update(['image_fingerprint' => $settled->imageFingerprint]);
+                }
+
                 return $address;
             }
         }

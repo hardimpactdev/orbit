@@ -131,7 +131,7 @@ seal() {
         # A guest from the image boots once, without cloud-init: Incus would reboot a new VM after the agent
         # writes the cloud-init seed, in the middle of composition. Networking comes from this file instead.
         touch /etc/cloud/cloud-init.disabled
-        printf '%s\n' '[Match]' 'Type=ether' '' '[Network]' 'DHCP=ipv4' 'LinkLocalAddressing=no' \
+        printf '%s\n' '[Match]' 'Type=ether' 'Name=en* eth*' '' '[Network]' 'DHCP=ipv4' 'LinkLocalAddressing=no' \
             >/etc/systemd/network/00-orbit-e2e.network
     fi
     sync -f /

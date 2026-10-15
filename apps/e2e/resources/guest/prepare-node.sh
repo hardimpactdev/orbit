@@ -3,6 +3,28 @@ set -euo pipefail
 umask 077
 mode=${1-}
 case "$mode" in
+  configure-runtime)
+    [[ $# -eq 1 ]] || exit 64
+    # Only replace the harness-owned DHCP file. The operator container has no such file.
+    network=/etc/systemd/network/00-orbit-e2e.network
+    if [[ -f "$network" ]]; then
+      candidate=$(mktemp)
+      trap 'rm -f "$candidate"' EXIT
+      printf '%s\n' '[Match]' 'Type=ether' 'Name=en* eth*' '' '[Network]' 'DHCP=ipv4' 'LinkLocalAddressing=no' >"$candidate"
+      if ! cmp -s "$candidate" "$network"; then
+        install -m 0644 "$candidate" "$network"
+        # Reload matching rules without disturbing the uplink or restarting Docker.
+        networkctl reload
+      fi
+      rm -f "$candidate"
+      trap - EXIT
+    fi
+    if command -v docker >/dev/null 2>&1 && getent group docker >/dev/null; then
+      if [[ " $(id -nG orbit) " != *' docker '* ]]; then
+        usermod --append --groups docker orbit
+      fi
+    fi
+    ;;
   compact-storage)
     [[ $# -eq 2 ]] || exit 64
     case "$2" in

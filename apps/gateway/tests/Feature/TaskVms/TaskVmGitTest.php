@@ -13,10 +13,17 @@ use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\TaskVms\TaskVmGit;
+use App\Jobs\TaskVms\FillTaskVmPackageCache;
+use App\Models\PackageCacheSnapshot;
 use App\Models\Project;
+use Illuminate\Bus\UniqueLock;
+use Illuminate\Contracts\Bus\Dispatcher;
+use Illuminate\Contracts\Cache\Repository;
+use Illuminate\Support\Facades\Queue;
 use Symfony\Component\Process\Process;
 use Tests\Support\GitRemoteRedirect;
 use Tests\Support\StreamingLocalShellSshExecutor;
+use Tests\Support\TaskVmSettingsBuilder;
 use Tests\Support\TestOrbitHome;
 
 const TVM_GIT_REPOSITORY = 'https://github.com/acme/shop.git';
@@ -286,4 +293,56 @@ describe('garbage collection', function (): void {
 
         expect(implode(' ', $runs[0]))->toContain('-c gc.auto=0')->toContain('-c gc.auto=6700 gc --auto --quiet');
     });
+});
+
+it('queues a package fill only when an upstream default-branch lock moves in the mirror', function (): void {
+    TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host(31)]]);
+    Queue::fake([FillTaskVmPackageCache::class]);
+    file_put_contents($this->root.'/upstream/composer.lock', '{"packages":[]}');
+    tvm_git($this->root.'/upstream', ['add', 'composer.lock']);
+    tvm_git($this->root.'/upstream', ['commit', '--quiet', '-m', 'default lock']);
+    tvm_git($this->root.'/upstream', ['push', '--quiet', $this->root.'/origin.git', 'main']);
+    $tips = $this->git->fetch($this->project, ['main'], $this->access, 'tasks.fetch_failed');
+    $main = $tips['main'];
+    tvm_git($this->root.'/upstream', ['checkout', '--quiet', '-b', 'task-7']);
+    file_put_contents($this->root.'/upstream/composer.lock', '{"packages":[],"packages-dev":[]}');
+    tvm_git($this->root.'/upstream', ['add', 'composer.lock']);
+    tvm_git($this->root.'/upstream', ['commit', '--quiet', '-m', 'task lock']);
+    tvm_git($this->root.'/upstream', ['push', '--quiet', $this->root.'/origin.git', 'task-7']);
+
+    $this->git->fetch($this->project, ['task-7'], $this->access, 'tasks.fetch_failed');
+
+    Queue::assertPushed(FillTaskVmPackageCache::class, 1);
+    expect(PackageCacheSnapshot::query()->findOrFail($this->project->id)->commit)->toBe($main);
+
+    new UniqueLock(app(Repository::class))->release(new FillTaskVmPackageCache(31));
+    tvm_git($this->root.'/upstream', ['push', '--quiet', $this->root.'/origin.git', 'task-7:main']);
+    $this->git->fetch($this->project, ['main'], $this->access, 'tasks.fetch_failed');
+
+    Queue::assertPushed(FillTaskVmPackageCache::class, 2);
+    expect(PackageCacheSnapshot::query()->findOrFail($this->project->id)->commit)->not->toBe($main);
+});
+
+it('keeps source fetch usable during a package queue outage and retries dispatch on the next fetch', function (): void {
+    TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host(31)]]);
+    file_put_contents($this->root.'/upstream/composer.lock', '{"packages":[]}');
+    tvm_git($this->root.'/upstream', ['add', 'composer.lock']);
+    tvm_git($this->root.'/upstream', ['commit', '--quiet', '-m', 'lock']);
+    tvm_git($this->root.'/upstream', ['push', '--quiet', $this->root.'/origin.git', 'main']);
+    $dispatcher = app(Dispatcher::class);
+    $unavailable = Mockery::mock(Dispatcher::class);
+    $unavailable->shouldReceive('dispatch')->once()->andThrow(new RuntimeException('queue unavailable'));
+    app()->instance(Dispatcher::class, $unavailable);
+
+    $tips = $this->git->fetch($this->project, ['main'], $this->access, 'tasks.fetch_failed');
+
+    expect($tips['main'])->toBe(tvm_git($this->root.'/upstream', ['rev-parse', 'HEAD']));
+    expect(PackageCacheSnapshot::query()->findOrFail($this->project->id)->fill_pending)->toBeTrue();
+    app()->instance(Dispatcher::class, $dispatcher);
+    Queue::fake([FillTaskVmPackageCache::class]);
+
+    $this->git->fetch($this->project, ['main'], $this->access, 'tasks.fetch_failed');
+
+    Queue::assertPushed(FillTaskVmPackageCache::class, 1);
+    expect(PackageCacheSnapshot::query()->findOrFail($this->project->id)->fill_pending)->toBeFalse();
 });

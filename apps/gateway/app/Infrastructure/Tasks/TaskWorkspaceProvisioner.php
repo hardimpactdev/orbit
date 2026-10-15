@@ -15,7 +15,6 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
-use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
@@ -28,9 +27,10 @@ use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskWait;
 use App\Domain\Tasks\TaskWorkspaceName;
 use App\Domain\Tasks\TaskWorkspaceRoute;
+use App\Domain\TaskVms\TaskVmPackageCacheMount;
+use App\Domain\TaskVms\TaskVmWorkspaceGuard;
 use App\Infrastructure\TaskVms\TaskVmStepClock;
 use App\Infrastructure\TaskVms\TaskVmWorkspace;
-use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplates;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
@@ -52,6 +52,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning, T
         private DevelopmentInstanceProvisioner $development,
         private TaskVmWorkspace $taskVms,
         private TaskVmStepClock $clock,
+        private TaskVmPackageCacheMount $packageCache,
     ) {}
 
     public function provision(InstanceProvisionIntent $intent): Instance|InstanceProvisionFailure
@@ -93,7 +94,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning, T
     }
 
     /**
-     * `$vm` is the group's task VM. A new workspace there starts from the Project's workspace template, and each part
+     * `$vm` is the group's task VM. A new workspace there clones from the Gateway mirror, and each part
      * of the creation logs its seconds as a task VM step. A routed workspace there stops before its Route: it gets its
      * source profile, `.env`, and PHP packages, which the baseline check needs, and stays `source_resolved`. The
      * scheduler starts the check and then finishes the Route through {@see self::complete()}.
@@ -126,20 +127,16 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning, T
 
             $instance = $existing;
             $visitable = $instance->task_workspace_routed ?? $visitable;
-            // A claim that stopped before source preparation finished attaches the template again.
-            $reserved = StoragePath::tryParse((string) $instance->checkout_path);
-            $template = $instance->status === InstanceState::Reserved && $reserved instanceof StoragePath ? $this->template($vm, $group, $reserved) : null;
         } else {
             $account = $this->accounts->resolve($node);
             $roots = $this->storageRoots->resolveApps(
                 $this->nodeSettings->fromStored($node->settings),
                 $account,
             );
-            // A task VM holds one workspace at a fixed path, where its template was built.
-            $checkout = $roots->append($group->project->slug, TaskVmWorkspaceTemplates::CheckoutDirectory);
+            // Keep the fixed path so imported CI caches retain their absolute paths.
+            $checkout = $roots->append($group->project->slug, TaskVmWorkspaceGuard::WorkspaceCheckout);
             $this->checkoutOverlap->assertAvailable($node->id, $checkout, 'instance.path_taken');
             $this->destinationGuard->assertUnoccupied($node, $checkout);
-            $template = $this->template($vm, $group, $checkout);
 
             $instance = Instance::query()->create([
                 'project_id' => $group->project_id,
@@ -155,10 +152,13 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning, T
             ]);
         }
 
+        $this->packageCache->prepare($vm, $group->project);
+        $this->clock->step('workspace-package-cache');
+
         return $this->sourceLock->synchronized(
             $instance->node_id,
-            function () use ($instance, $visitable, $existing, $template): Instance {
-                $resolved = $this->prepareSource($instance, $existing instanceof Instance, $template);
+            function () use ($instance, $visitable, $existing): Instance {
+                $resolved = $this->prepareSource($instance, $existing instanceof Instance);
                 $this->source->inspectPrepared($resolved);
                 $this->clock->step('workspace-source');
 
@@ -220,17 +220,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning, T
         }
     }
 
-    /** Attaches the workspace template for the checkout `$checkout` on the group's task VM, and logs the step. */
-    private function template(TaskVm $vm, Task $group, StoragePath $checkout): ?string
-    {
-        $parent = $checkout->parent();
-        $template = $parent instanceof StoragePath ? $this->taskVms->template($vm, $group, $parent->value) : null;
-        $this->clock->step('workspace-template');
-
-        return $template;
-    }
-
-    private function prepareSource(Instance $instance, bool $allowExisting, ?string $template = null): Instance
+    private function prepareSource(Instance $instance, bool $allowExisting): Instance
     {
         while (true) {
             $instance->refresh()->loadMissing(['project', 'node']);
@@ -238,7 +228,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning, T
             if ($instance->status === InstanceState::Reserved) {
                 // Reclaim may follow a completed prepare whose state transition never persisted.
                 // The source lifecycle still verifies identity before accepting an existing checkout.
-                $this->source->prepare($instance, $allowExisting, $template);
+                $this->source->prepare($instance, $allowExisting);
                 $this->transition($instance, InstanceState::Reserved, [
                     'status' => InstanceState::CheckoutPrepared,
                 ]);

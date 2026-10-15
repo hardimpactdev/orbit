@@ -26,7 +26,6 @@ use App\Infrastructure\TaskVms\TaskVmGuest;
 use App\Infrastructure\TaskVms\TaskVmImageRecipe;
 use App\Infrastructure\TaskVms\TaskVmProviders;
 use App\Infrastructure\TaskVms\TaskVmScripts;
-use App\Infrastructure\TaskVms\TaskVmWorkspace;
 use App\Infrastructure\TaskVms\UpCloudServers;
 use App\Infrastructure\TaskVms\UpCloudTaskVmImageBuilder;
 use App\Infrastructure\TaskVms\UpCloudTaskVmProvider;
@@ -404,14 +403,6 @@ describe('placement', function (): void {
         expect(fn () => app(AllocateTaskVmAction::class)->execute(tvm_up_group()))->toThrow(TaskCapacityException::class, TaskVmPlacementPolicy::NoCapacity);
     });
 
-    it('gives an UpCloud VM no workspace template', function (): void {
-        $vm = tvm_up_vm();
-
-        expect(app(TaskVmWorkspace::class)->template($vm, $vm->group, '/home/orbit/apps'))->toBeNull();
-    });
-});
-
-describe('provider', function (): void {
     it('is the provider of an upcloud row, and Incus stays the provider of an incus row', function (): void {
         $providers = new ReflectionClass(TaskVmProviders::class);
         $for = $providers->getMethod('for');

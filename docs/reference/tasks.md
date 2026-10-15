@@ -641,7 +641,7 @@ When the implementer cannot start, the subtask and the task become `failed`, and
 
 ## Task workspace
 
-The task workspace is one fresh Instance that every subtask of the task shares. Its name and its branch are `task-{id}`. It lives at `<project>/workspace` on the task's own [task VM](/reference/compute-drivers#claim-with-a-template), which holds only this workspace. Its checkout starts from the Project's [workspace template](/reference/compute-drivers#start-the-workspace-from-a-template) when the VM's host has one.
+The task workspace is one fresh Instance that every subtask of the task shares. Its name and its branch are `task-{id}`. It lives at `<project>/workspace` on the task's own [task VM](/reference/compute-drivers#clone-and-set-up-every-workspace), which holds only this workspace. Its checkout clones from the Gateway mirror and runs the Project's setup steps, using the read-only package cache and CI cache ref bound to the tested SHA.
 
 Before returning the workspace or activating its Route, Orbit inspects its source. An inspection failure leaves the workspace unexposed and the claim fails. Project setup owns dependency copies.
 
@@ -754,7 +754,7 @@ Every task group runs in its own [task VM](/reference/compute-drivers#task-vms).
 
 For a normal VM the claim takes a [warm VM](/reference/compute-drivers#keep-warm-vms) when its host keeps one, or else it creates a VM. Then it waits until the VM is `ready`. Until then, the task returns to `todo` with a [`Task VM:` reason](/reference/compute-drivers#from-claim-to-workspace), and the next tick tries again. Then Orbit creates the workspace on the VM's Node: the Instance `task-{id}`, and its private Route when the workspace is routed.
 
-The checkout starts from the Project's [workspace template](/reference/compute-drivers#start-the-workspace-from-a-template) when the VM's host has one, so the setup steps of the baseline check find the dependencies in place. Without a template, it starts from a fresh clone. The check log shows at most the first 4096 characters of each setup command.
+The checkout [clones from the Gateway mirror](/reference/compute-drivers#clone-and-set-up-every-workspace). The baseline check runs every setup step, using private package caches seeded from the read-only host cache and the selected CI cache ref. The check log shows at most the first 4096 characters of each setup command.
 
 A routed workspace on a task VM starts its baseline check before its Route. The check needs the checkout, its `.env`, and the PHP packages, not the Route. So workspace creation classifies the source, writes `APP_URL` and the other `.env` values, and installs the PHP packages, and leaves the workspace `source_resolved` with its Route `pending`. The claim starts the baseline check and then projects the Route while the check runs: certificates, Caddy, PHP-FPM, the Router, and DNS. Then the workspace becomes `active`.
 
@@ -781,7 +781,9 @@ When the acting thread is `idle`, `done`, or `asking_for_input`, the tick checks
 | `pull_request_fields` | The approval that opens the pull request describes it |
 | `brief_coverage` | The change list covers every subtask. See [Pull request](#pull-request-and-settle-metrics) |
 | `topology_evidence` | On approval of a subtask with a topology, each declared node has a successful recorded command since the last handoff. See [Prove work on a topology](/reference/compute-drivers#prove-work-on-a-topology) |
-| `topology_required` | At handoff, the subtask's diff changes no path in the Project's `task_vms.topology_paths`, or a subtask of the group declares a topology |
+| `topology_required` | At handoff, the group's own changes touch no path in the Project's `task_vms.topology_paths`, or a subtask of the group declares a topology |
+
+The topology check compares the candidate tree, including uncommitted files, with the merge base of its HEAD and the current `origin/main`. Changes inherited from `origin/main` do not require a topology. The group's own changes still do, including changes kept or made while merging main. This check uses neither the group's original start commit nor the subtask's start commit. If Orbit cannot read the merge base or diff, the handoff fails. File deliverables still use the subtask's start commit.
 
 When items fail, the Gateway sends one reminder to the acting thread. It names every failed item and ends with the role's turn-command instructions. The implementer's reminder starts with "Orbit could not confirm the brief is complete." The reviewer's starts with "Orbit could not confirm the review is complete." The Gateway installs the turn command again before it sends. Each attempt gets one reminder. When an item still fails at the next stop, the subtask asks for assistance, and the reason names each remaining item. The same pending input does not count as that next stop.
 
@@ -900,6 +902,16 @@ On a failure, Orbit sends the body to the blocked thread at once: the implemente
 
 A resolution posted while nothing is asked is stored and not sent. Every comment stays as history. An assistance request, a delivered resolution, a held resolution, and a failed delivery each also write an Activity entry with the comment's author as the actor.
 
+### Retry a transient provider error
+
+When Pi reports a transient provider failure, Orbit retries the interrupted work on the same thread, in the same workspace and role. It waits 1, 2, 4, then 8 minutes before each of at most four retries. The scheduler does not sleep; it sends the retry on the first tick after the delay. Implementer, reviewer, final-review, and consult turns use this rule.
+
+Pi classifies only the assistant's provider-error stop reason, never tool output or the agent's prose. Structured provider codes for overload, rate limiting, and HTTP 429 or 5xx take precedence. When Pi only preserves a provider message, it accepts a narrow set of capacity messages. Authentication, exhausted quota, refusals, output limits, tool errors, and check failures are not retried. Older Pi servers without the classification keep the ordinary failure path.
+
+Each reserved retry posts a `provider_retry` comment with its attempt number, provider category, failed turn ID, and due time. The reservation and comment commit together before the send. Retries use a durable send key, so a lost response resends the same key without consuming another attempt. A new unrelated turn or a successful turn starts a fresh retry budget; repeated failures of the retry turn share the original budget. A server-restart resume does not reset that budget.
+
+After the fourth retry fails, Orbit asks for failure assistance as usual, with the failed turn IDs, categories, and retry times in the reason. It does not ask for assistance while waiting for provider capacity. Communication failures while sending a retry still use the existing communication-failure assistance policy. No retry reads a handoff receipt or advances the subtask.
+
 ### Recover a Pi server restart
 
 A turn that failed only because its agent server restarted is not a failed subtask. The tick resumes it on the same thread with one message: `Your previous turn was interrupted by a server restart. Check git status and git diff, finish the subtask, and hand off with the turn command.` It does not ask for assistance and does not read a receipt first.
@@ -908,7 +920,7 @@ A turn that failed only because its agent server restarted is not a failed subta
 | --- | --- |
 | `pi` | `The Pi server restarted during the turn.` |
 
-One subtask gets at most two resumes, shared by its implementer and reviewer. A resolution does not reset that count. The third restart asks for assistance with `The implementer thread failed.` or `The reviewer thread failed.` Any other error, and a restart error without a turn id, asks for assistance at once.
+One subtask gets at most two resumes, shared by its implementer and reviewer. A resolution does not reset that count. The third restart asks for assistance with `The implementer thread failed.` or `The reviewer thread failed.` A restart error without a turn id asks for assistance at once. Other errors follow [provider retry](#retry-a-transient-provider-error) or ask for assistance at once.
 
 The tick reserves each resume before it sends. The reservation stores a new send key, the acting thread, and the interrupted turn id, and it counts the resume. The Pi driver sends that key.
 
@@ -921,6 +933,8 @@ A Pi thread whose turn id is the key has accepted the reservation. A thread that
 Each Project stores one task check command in `task_check`. Orbit runs it on the fresh workspace before the first implementer starts, and after each `ready_for_review` receipt whose other items pass. Change it with `orbit project:update <project> --task-check=COMMAND`, or clear it with `--clear-task-check`. A new Project stores no task check until one is configured, for every type. Existing stored checks remain unchanged.
 
 The Gateway installs `$(git rev-parse --git-path orbit)/check` and starts it over SSH as a detached process group. The check records HEAD and a hash of the whole working tree, uncommitted and untracked files included, without touching the Git index. It runs the command in a login shell at the workspace's repository root, even when the Laravel [application directory](/reference/projects#application-directory) is nested, writes the output to `$(git rev-parse --git-path orbit)/check.log`, and writes `$(git rev-parse --git-path orbit)/check.json` when the command ends. The subtask stays `running` while the check runs. There is no time limit.
+
+Working-tree snapshots use a temporary copy of the Git index that preserves its timestamp. Git can then detect an edit even when the file's size and timestamps match its cached values, without changing the workspace index. An unchanged checkout keeps the same tree hash across snapshots, so those edits do not cause a false tree-change failure when Orbit reuses a check result.
 
 A `project-check` command deliverable with the exact current task check command at the repository root reuses that run's exit code and output on the same HEAD and tree. The evidence names the reused tree. Failure records a failed deliverable without running it again; other command deliverables still wait for a passing task check. Reuse never carries a result from an earlier handoff, and commands in other directories or with different text run separately.
 
@@ -957,6 +971,8 @@ The scheduler identifies the process by its id and its start time, so a reused p
 
 `tasks:check:cancel` stops a running check. A subtask without one answers HTTP 409 `tasks.check_not_running`. When Orbit marks the check cancelled but cannot stop its process, the call answers HTTP 502 `tasks.check_unreachable`. Each run is stored with its receipt, kind, status, process, HEAD and trees, times, exit code, changed paths, and the last 16 KiB of output.
 
+For Orbit handoffs, affected tests use the latest passed handoff tree of that subtask, including after requested changes and in a final-review fixup. With no passed handoff, they use its start commit. Failed, changed, cancelled, and lost checks never advance that base. File deliverables and reproduction commands still use the subtask start commit. Documentation and topology checks keep their branch scope. CI ignores the handoff test base and checks the full branch.
+
 ### Baseline check
 
 Before the first implementer of a task starts, the check runs on the fresh workspace, with `kind` `baseline`.
@@ -985,7 +1001,7 @@ Orbit reads GitHub at most every five minutes per failed baseline, and never whi
 
 ## Review a subtask
 
-When the handoff check and the deliverables pass, the subtask moves to `reviewing`. Its first review starts a fresh reviewer thread with the task's reviewer driver and model and the current configured effort. The task's `reviewer_agent_thread_id` then points at it. A `changes_requested` re-review continues that thread. When the continued thread cannot take a turn, Orbit starts a fresh one with a full packet. The next subtask starts another fresh reviewer.
+When the handoff check and the deliverables pass, the subtask moves to `reviewing`. Its first review starts a fresh reviewer thread with the task's reviewer driver and model and the current configured effort. The task's `reviewer_agent_thread_id` then points at it. A `changes_requested` re-review continues that thread. When the continued thread cannot take a turn, Orbit starts a fresh one with the task context and the same delta scope. The next subtask starts another fresh reviewer.
 
 A failure while requesting a review is a communication failure. After five, the task asks for assistance with `The review could not be requested (ExceptionClass).` Orbit sends no review when it cannot read the diff.
 
@@ -1006,13 +1022,15 @@ The opening turn is a review packet of at most 16,000 characters, about 4,000 to
 | Handoff result | 2,000 | One line per command the check ran, with the command cut to 160 characters. `$(git rev-parse --git-path orbit)/check.log` holds the rest. The cut note names `$(git rev-parse --git-path orbit)/context.md` |
 | Diff body | The rest, and at most 16,384 bytes | Cut from the end. The diff command prints the rest. The cut note names `$(git rev-parse --git-path orbit)/context.md` |
 
+A re-review receives only the diff since the last reviewed tree and the earlier requested changes. It checks whether those findings are resolved and whether the delta introduces a new defect under rules (a)–(d). It does not review the whole subtask again. A replacement reviewer gets the same scope and findings. After a final-review fixup, the next final review follows this rule too; a new operator subtask starts a whole-branch review again. Findings are capped in the packet and kept in full in `$(git rev-parse --git-path orbit)/context.md`.
+
 Before each review turn, opening or continued, Orbit writes `$(git rev-parse --git-path orbit)/context.md` with the full task brief, subtask brief, deliverables, earlier approval bodies, held resolution, and answered consults. Every cut note names that file. The file replaces the `tasks-show` and `tasks-comment-list` references, and it works on every driver.
 
 Dropped lines leave one line that says how many were omitted. The diff and the stat replace bytes that are not valid UTF-8. The packet does not name a feature contract. A continued turn keeps the review rules, the subtask brief, the new diff stat, the new handoff result, the diff body, the retrieval block, and the closing instructions. It leaves out the task brief, the deliverables, the earlier approvals, the held resolution, and the answered consults. `$(git rev-parse --git-path orbit)/context.md` still holds those parts.
 
 The review packet includes untracked symlinks as link targets, without reading the files or directories they point to. Its diff reader uses a temporary copy of the Git index and leaves the workspace index unchanged. The copy preserves the index timestamp, so Git also finds edits of the same size when file timestamps match cached values.
 
-The retrieval commands print the diff the caps cut, including untracked files, without updating the index. The packet puts the subtask's start commit in place of `START`:
+The retrieval commands print the diff the caps cut, including untracked files, without updating the index. The packet puts the review base in place of `START`: the subtask's start commit for its first review, or its last reviewed tree for a re-review:
 
 ```bash
 git diff --stat START; git ls-files --others --exclude-standard -z | while IFS= read -r -d '' path; do git diff --no-index --stat -- /dev/null "$path" || true; done
@@ -1022,7 +1040,9 @@ git diff --stat START; git ls-files --others --exclude-standard -z | while IFS= 
 git diff START; git ls-files --others --exclude-standard -z | while IFS= read -r -d '' path; do git diff --no-index -- /dev/null "$path" || true; done
 ```
 
-When the workspace starting commit is 40 or 64 hexadecimal characters, the retrieval block adds `The task started at <sha>.` and `git diff --stat <sha>..HEAD` after those commands. A continued turn includes them too. The lines name no Project, branch, or policy.
+For a delta re-review, the retrieval command stages the candidate in a temporary index and diffs it against the reviewed tree. It includes untracked files and leaves the workspace index unchanged.
+
+When the workspace starting commit is 40 or 64 hexadecimal characters, the opening retrieval block adds `The task started at <sha>.` and `git diff --stat <sha>..HEAD` after those commands. The lines name no Project, branch, or policy. Delta re-reviews use only their tree retrieval command.
 
 The implementer prompt asks the implementer to finish the brief and pass the Project task check. It includes the task brief under `Group brief`, after the feature title and before the subtask brief.
 
@@ -1321,9 +1341,9 @@ The Pi server's `usage` object holds `input`, `output`, `cacheRead`, `cacheWrite
 
 A Project can opt in to review and merge. Orbit then holds three rules:
 
-1. Orbit pushes only a commit that a final review of the whole branch approved.
+1. Orbit pushes a commit that a final review approved, or a conflict-free main merge of that reviewed work that passed the Project gate.
 2. Orbit reviews each pull request that a listed author opens, and applies the changes it requests itself.
-3. Orbit merges a pull request through the GitHub App. The head must be a commit Orbit fully reviewed, and CI must pass on that head.
+3. Orbit merges a pull request through the GitHub App. The head must have recorded review or mechanical-merge evidence, and CI must pass on that head.
 
 No cloud agent reviews or fixes the work. Orbit hands no pull request to Cursor, Codex, or Copilot.
 
@@ -1339,11 +1359,13 @@ The flow needs `source_access: github_app`. It is off by default. Each task stil
 
 ### Final review
 
-A final review is a subtask with `type` `final_review` and the title `Final review`. Orbit appends one when a review-and-merge task has no open subtask and its latest approved commit has no final review. It has no implementer and runs no task check. It starts in `reviewing` with a fresh reviewer.
+A final review is a subtask with `type` `final_review` and the title `Final review`. Orbit appends one when a review-and-merge task has no open subtask and its latest approved commit has no final review. Before the final review starts, Orbit fetches and merges `origin/{default branch}` into the group branch with Git. A conflict-free merge runs only the Project gate on that merge commit, without setup, deliverable commands, or an agent turn. No merge means no extra gate. A conflict or a failing gate creates the ordinary `Merge origin/{base}` agent fixup. The final review starts only after this preparation succeeds, so the pull request opens up to date.
+
+It has no implementer and starts in `reviewing` with a fresh reviewer.
 
 The final reviewer blocks only on findings that meet the [blocking rule](#reviewer-outcomes) and are new since the subtask approvals. It does not reopen hardening that the subtask reviews already covered.
 
-Its start commit is the merge base of the workspace `HEAD` and `origin/{default branch}`. So the [review packet](#review-packet) holds the whole branch diff, the task brief, and the earlier approvals. Its one deliverable is the `review` deliverable `final-review`, which the reviewer confirms. When the task has no pull request yet, the final review opens it: its approval needs `--pr-summary`, `--pr-change`, and `--pr-breaking`, and Jev checks [brief coverage](#pull-request-and-settle-metrics) then. Ordinary subtask approvals in the task need no pull request fields.
+For the first final review, its start commit is the merge base of the workspace `HEAD` and `origin/{default branch}`. So the [review packet](#review-packet) holds the whole branch diff, the task brief, and the earlier approvals. Its one deliverable is the `review` deliverable `final-review`, which the reviewer confirms. When the task has no pull request yet, the final review opens it: its approval needs `--pr-summary`, `--pr-change`, and `--pr-breaking`, and Jev checks [brief coverage](#pull-request-and-settle-metrics) then. Ordinary subtask approvals in the task need no pull request fields.
 
 | Outcome | Orbit |
 | --- | --- |
@@ -1361,9 +1383,11 @@ At most two final-review fixups run in one window. The window ends at the latest
 
 ### Every push is reviewed
 
-In a review-and-merge task, an approved subtask is committed and not pushed. Conflict, failed-check, and trusted-feedback fixups are subtasks too, so their approvals wait for a final review. Only a final review's approval pushes.
+In a review-and-merge task, an approved subtask is committed and not pushed. Conflict, failed-check, and trusted-feedback fixups are subtasks too, so their approvals wait for a final review. A final review's approval pushes the feature commits. A later mechanical main merge uses the gate and inherits that review as described below.
 
-Orbit never asks GitHub to update the branch of such a task. GitHub's merge commit would land without Orbit's review. A conflict gets the `Merge origin/{base}` fixup at once. A branch that is only behind its base still merges. When GitHub refuses that merge, for example because a branch rule requires an up-to-date branch, Orbit appends a final-review fixup `Merge origin/{base}` instead.
+Orbit never asks GitHub to update the branch of such a task. If main moves after the pull request opens and GitHub refuses a behind branch, Orbit merges main locally and runs only the Project gate on the merge commit. A passing conflict-free merge inherits the prior head's review and is pushed without an agent or another full review. Its recorded source is `base_merge`. CI must still pass on that exact head.
+
+Only a conflict or a failed gate creates an agent fixup and another final review. Mechanical merges do not consume the fixup cap. Topology checks still count only the group's own changes against the current merge base, including merge resolutions.
 
 Cancel and the cancelled-task sweep push the latest approved commit only when a final review approved it. Approved work that no final review saw is removed with the workspace.
 
@@ -1397,7 +1421,7 @@ The App can review the pull request because the pull request author is a person,
 
 Each tick, after the [settling watch](#settling), Orbit evaluates a review-and-merge task that is `settling` or `waiting_for_review` with an open pull request, no open subtask, and no assistance. It merges when all of these hold on the current head:
 
-1. The head SHA is one Orbit recorded as fully reviewed for this task, and no newer approved work waits for its final review.
+1. The head SHA has recorded final-review evidence or inherits it through a gated mechanical main merge, and no newer approved work waits for its final review.
 2. The `merge_check` runs on that SHA pass by the [green-commit rules](/reference/github-app#find-the-newest-green-commit).
 3. The pull request base is the Project's default branch, which the final review diffed against.
 4. GitHub reports the pull request mergeable, with no conflict.
@@ -1417,7 +1441,7 @@ A head that Orbit did not record means someone else pushed. On an incoming pull 
 
 ### Records and status
 
-`task_reviewed_commits` holds each SHA Orbit fully reviewed for a task, with its source, the final review, when Orbit pushed it, and the GitHub review Orbit submitted. The source is `orbit_push` for Orbit's own reviewed commit and `pull_request_review` for an incoming head Orbit approved as it was. Only a recorded SHA can merge.
+`task_reviewed_commits` holds each SHA Orbit fully reviewed for a task, with its source, the final review, when Orbit pushed it, and the GitHub review Orbit submitted. The source is `orbit_push` for Orbit's own reviewed commit, `pull_request_review` for an incoming head Orbit approved as it was, and `base_merge` for a gated mechanical main merge that inherits the prior head's review. Only a recorded SHA can merge.
 
 Activity records `final review appended`, `final review approved`, `final review requested changes`, `reviewed commit pushed`, `pull request approved`, `pull request changes requested`, `incoming pull request task created`, `pull request merged`, and each change of the merge result as `merge waiting` or `merge refused`. The task stores the latest merge result in `merge_status` and `merge_reason`. [`tasks:show`](/cli/tasks#orbit-tasksshow) and [`tasks:status`](/cli/tasks#orbit-tasksstatus) show them.
 
@@ -1788,13 +1812,21 @@ The author list is Gateway configuration, like reviewer trust. A pull request ca
 
 The merge condition is a fact Orbit recorded: this exact SHA passed Orbit's final review. A GitHub approval cannot carry that fact for Orbit's own pull requests, because GitHub forbids the App to approve them. The merge check uses the green-commit rules, so a check run from another App cannot make a head green. The `sha` parameter makes GitHub refuse a merge when the head moved after the gate read it.
 
-Asking GitHub to update a branch was rejected for these tasks, because GitHub's merge commit would land without Orbit's review. A trusted request for changes blocks the merge until that account approves or dismisses it, even after Orbit's fixup. A person still steers through briefs, direction answers, and requested changes. A merge deploys the Gateway, so a wrong final review ships. The merge check and trusted requested changes are the remaining guards.
+Asking GitHub to update a branch was rejected for these tasks, because its merge commit would land without the Project gate. Orbit merges main locally and records the gate on the exact merge commit.
+
+A clean merge inherits the feature review; conflicts and gate failures need an agent and another review. A trusted request for changes blocks the merge until that account approves or dismisses it, even after Orbit's fixup. A person still steers through briefs, direction answers, and requested changes. A merge deploys the Gateway, so a wrong final review ships. The merge check and trusted requested changes are the remaining guards.
 
 ### Fixups are bounded
 
 The workspace and a reviewer can repair a conflict or a failed check, so the first problem gets a fixup instead of a person. Each fixup is a normal subtask on the same pull request, never a rebase or a force push, because the open pull request is the review.
 
 The caps stop a loop: two per problem, three per task, and a new window only after a person's subtask completes. A problem's identity ignores the check URL and the base commit, so a moving `main` does not look like a new problem. Infrastructure failures get no fixup, because the branch did not cause them.
+
+### Bound provider retries
+
+A provider capacity failure does not say that the assignment failed. Retrying on the same thread keeps the agent's context and partial workspace work. Four delayed retries cover a short capacity incident without hiding a lasting outage. Tool failures, refusals, and check results stay outside this path because repeating them does not free provider capacity. Classification belongs at the Pi boundary, where a provider-error stop reason is distinct from tool output; the scheduler accepts only the resulting closed set of categories.
+
+The retry reservation and its timeline comment commit before delivery. A stable send key survives a lost response, and the observed turn ID distinguishes another failed retry from the original failure seen twice. A database reservation, rather than a sleeping worker or a cache entry, preserves the delay and attempt count across Gateway restarts. Retry comments remain after a successful turn clears the active budget.
 
 ### Resume a restarted turn
 
@@ -1823,3 +1855,5 @@ Code decides every fact that code can check. Jev answers only whether the change
 ### Definitions stay Project data
 
 The Gateway stays generic by storing each Project's plan as a task definition instead of as code. An operator or an agent can change that plan through the API. Kinds stay in code, because a kind is executable behavior, and definitions stay data. [ADR 0182](/decisions/0182-start-tasks-from-project-task-definitions#task-definitions) records the alternatives this rejects.
+
+Task VM workspaces seed their private package manager caches from the host's [read-only shared package cache](/reference/compute-drivers#shared-package-cache) before setup. A miss uses the normal registry.

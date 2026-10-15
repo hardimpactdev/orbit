@@ -18,7 +18,6 @@ use App\Jobs\TaskVms\ImageBuild\PublishImage;
 use App\Jobs\TaskVms\ImageBuild\RunImageProgram;
 use App\Jobs\TaskVms\ImageBuild\SmokeImage;
 use App\Jobs\TaskVms\ImageBuild\UpgradeImagePackages;
-use App\Jobs\TaskVms\RefreshTaskVmWorkspaceTemplates;
 use App\Models\Node;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Support\Facades\Bus;
@@ -39,6 +38,19 @@ final readonly class TaskVmImageBuildChain
         return $build;
     }
 
+    public function resumeLatest(Node $node): TaskVmImageBuild
+    {
+        $this->recoverSubmissions();
+        foreach (TaskVmImageBuild::query()->where('host_node_id', $node->id)->where('state', TaskVmImageBuildState::Failed)
+            ->whereNull('cleanup_started_at')->whereNotNull('current_step')->orderByDesc('id')->get() as $build) {
+            if ($this->resumabilityError($node, $build) === null) {
+                return $this->resume($node, $build->id);
+            }
+        }
+
+        throw new TaskVmException('task_vm.image_build_failed', 'No resumable failed image build exists on this host.');
+    }
+
     public function resume(Node $node, int $id): TaskVmImageBuild
     {
         $this->recoverSubmissions();
@@ -48,19 +60,9 @@ final readonly class TaskVmImageBuildChain
             if ($build->state !== TaskVmImageBuildState::Failed || $build->cleanup_started_at !== null || $build->current_step === null) {
                 throw new TaskVmException('task_vm.image_build_failed', 'Only an unclaimed failed build can resume.');
             }
-            $host = $this->settings->host($node->id);
-            $needsBuilder = true;
-            if (in_array($build->current_step, [TaskVmImageBuildStep::Publish, TaskVmImageBuildStep::Smoke, TaskVmImageBuildStep::Promote], true)) {
-                $alias = $host->imageAlias.'-'.$build->created_at?->format('YmdHis').'-'.$build->id;
-                $published = $this->incus->aliasTarget($host, $node, $alias);
-                $needsBuilder = $published === null || ($published !== $build->image_fingerprint
-                    && ! ($build->current_step === TaskVmImageBuildStep::Publish && $build->image_fingerprint === null));
-                if ($needsBuilder && ($build->current_step !== TaskVmImageBuildStep::Publish || $build->image_fingerprint !== null)) {
-                    throw new TaskVmException('task_vm.image_build_failed', 'The failed build\'s published image no longer exists.');
-                }
-            }
-            if ($needsBuilder && ! array_key_exists((string) $build->builder_vm_name, $this->image->instances($host, $node))) {
-                throw new TaskVmException('task_vm.image_build_failed', 'Only an unclaimed failed build whose builder still exists can resume before publish.');
+            $error = $this->resumabilityError($node, $build);
+            if ($error !== null) {
+                throw new TaskVmException('task_vm.image_build_failed', $error);
             }
             // A conditional write, not SELECT FOR UPDATE (which SQLite ignores), arbitrates against cleanup.
             DB::transaction(function () use ($build): void {
@@ -91,24 +93,32 @@ final readonly class TaskVmImageBuildChain
         return $build;
     }
 
+    private function resumabilityError(Node $node, TaskVmImageBuild $build): ?string
+    {
+        $host = $this->settings->host($node->id);
+        $needsBuilder = true;
+        if (in_array($build->current_step, [TaskVmImageBuildStep::Publish, TaskVmImageBuildStep::Smoke, TaskVmImageBuildStep::Promote], true)) {
+            $alias = $host->imageAlias.'-'.$build->created_at?->format('YmdHis').'-'.$build->id;
+            $published = $this->incus->aliasTarget($host, $node, $alias);
+            $needsBuilder = $published === null || ($published !== $build->image_fingerprint
+                && ! ($build->current_step === TaskVmImageBuildStep::Publish && $build->image_fingerprint === null));
+            if ($needsBuilder && ($build->current_step !== TaskVmImageBuildStep::Publish || $build->image_fingerprint !== null)) {
+                return 'The failed build\'s published image no longer exists.';
+            }
+        }
+        if ($needsBuilder && ! array_key_exists((string) $build->builder_vm_name, $this->image->instances($host, $node))) {
+            return 'Only an unclaimed failed build whose builder still exists can resume before publish.';
+        }
+
+        return null;
+    }
+
     /** Fail an unacknowledged submission after a crash; never expire a build a worker has claimed. */
     public function recoverSubmissions(): void
     {
         foreach (TaskVmImageBuild::query()->where('state', TaskVmImageBuildState::Running)
             ->where('submission_pending_at', '<=', now()->subMinutes(10)->toISOString())->get() as $build) {
             $this->failSubmission($build, new RuntimeException('Image build queue submission was not acknowledged within ten minutes.'));
-        }
-    }
-
-    /** Reconcile from durable state after a missed catch enqueue, without an outbox or new marker. */
-    public function recoverTemplateRefresh(): void
-    {
-        $latestFailed = TaskVmImageBuild::query()->where('state', TaskVmImageBuildState::Failed)
-            ->whereNotExists(fn ($query) => $query->selectRaw('1')->from('task_vm_image_builds as newer')
-                ->whereColumn('newer.host_node_id', 'task_vm_image_builds.host_node_id')
-                ->whereColumn('newer.id', '>', 'task_vm_image_builds.id'))->exists();
-        if ($latestFailed) {
-            RefreshTaskVmWorkspaceTemplates::dispatch()->onConnection('gateway')->onQueue('builds');
         }
     }
 
@@ -182,10 +192,6 @@ final readonly class TaskVmImageBuildChain
         if ($jobs === []) {
             throw new TaskVmException('task_vm.image_build_failed', 'The failed step is not in the current image recipe. Start a new build instead.');
         }
-        Bus::chain($jobs)->onConnection('gateway')->onQueue('builds')->catch(static function (Throwable $error): void {
-            // The originating job's catch wrapper records the fenced failure before refresh enqueue.
-            // Keep the failed build's VMs for resume; refresh against the images still current.
-            RefreshTaskVmWorkspaceTemplates::dispatch()->onConnection('gateway')->onQueue('builds');
-        })->dispatch();
+        Bus::chain($jobs)->onConnection('gateway')->onQueue('builds')->dispatch();
     }
 }

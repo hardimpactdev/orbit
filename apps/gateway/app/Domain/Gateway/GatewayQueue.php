@@ -19,6 +19,6 @@ enum GatewayQueue: string
     /** Task VM provision to destroy, the pool refill, and the host sweep, one at a time and in order. */
     case TaskVms = 'task-vms';
 
-    /** Long jobs: base image, UpCloud template, and workspace template builds. */
+    /** Base image jobs, UpCloud image builds, and trusted package cache fills. */
     case Builds = 'builds';
 }

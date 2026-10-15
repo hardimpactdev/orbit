@@ -15,6 +15,7 @@ use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
 use App\Domain\Nodes\Storage\StoragePath;
+use App\Domain\Projects\LifecycleStep;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryIdentity;
@@ -22,10 +23,12 @@ use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\ProcessCancelledException;
 use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\TaskVms\TaskVmGit;
 use App\Models\Instance;
+use App\Models\ProjectLifecycleStep;
 use App\Models\TaskVm;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
@@ -40,7 +43,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
         private TaskVmGit $git,
     ) {}
 
-    public function prepare(Instance $instance, bool $allowExisting, ?string $template = null): void
+    public function prepare(Instance $instance, bool $allowExisting): void
     {
         app(SelectInstanceSeedAction::class)->execute($instance);
         if ($instance->seed_commit !== null) {
@@ -57,54 +60,20 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                     allow_existing=$6
                     seed_repository=$7
                     seed_commit=$8
-                    template=$9
-                    network=${10}
+                    network=$9
                     checkout_parent=$(dirname "$checkout")
 
                     guard_parent_chain "$checkout_parent" "$allowed_root"
                     create_directory "$allowed_root"
                     create_directory "$checkout_parent"
 
-                    # A task VM's template is built at the checkout path itself. Until a preparation records itself in
-                    # it, that checkout is the template, taken in place.
-                    in_place=0
-                    if [ -n "$template" ] && [ "$template" = "$checkout" ] && [ -d "$checkout" ] && [ ! -L "$checkout" ] \
-                        && ! [ -e "$(git -c core.fsmonitor=false -C "$checkout" rev-parse --absolute-git-dir 2>/dev/null)/orbit-source-prepare" ]; then
-                        in_place=1
-                    fi
-                    if [ "$in_place" = 0 ] && { [ -e "$checkout" ] || [ -L "$checkout" ]; }; then
+                    if [ -e "$checkout" ] || [ -L "$checkout" ]; then
                         test "$allow_existing" = 1
                         inspect_prepared_repository
                         exit 0
                     fi
-
-                    # A template on the checkout's filesystem becomes the checkout in one rename, with its dependencies,
-                    # or in place when it is already there. A template elsewhere that fails a check is left alone, and
-                    # the checkout is cloned as without one. A template in place that fails a check fails preparation.
-                    usable_template() {
-                        [ -n "$template" ] && [ -d "$template" ] && [ ! -L "$template" ] \
-                            && [ "$(dirname "$template")" = "$checkout_parent" ] \
-                            && [ "$(stat -c '%U:%G' "$template")" = "$managed_user:$managed_group" ] \
-                            && [ "$(git -C "$template" rev-parse --show-toplevel 2>/dev/null)" = "$template" ] \
-                            && [ "$(git -C "$template" config --get remote.origin.url 2>/dev/null)" = "$repository" ]
-                    }
-                    if usable_template; then
-                        if [ "$in_place" = 0 ]; then
-                            mv -T -- "$template" "$checkout"
-                        fi
-                        chmod 0755 -- "$checkout"
-                    elif [ "$in_place" = 1 ]; then
-                        printf 'The workspace template at the checkout path failed its source checks.\n' >&2
-                        exit 1
-                    else
-                        if [ -n "$template" ] && { [ -e "$template" ] || [ -L "$template" ]; }; then
-                            printf '%s\n' template-refused
-                        fi
-                        mkdir -m 0755 -- "$checkout"
-                    fi
-                    if [ -d "$checkout/.git" ]; then
-                        :
-                    elif [ -n "$seed_repository" ]; then
+                    mkdir -m 0755 -- "$checkout"
+                    if [ -n "$seed_repository" ]; then
                         test ! -L "$seed_repository"
                         test "$(git -C "$seed_repository" config --get remote.origin.url)" = "$repository"
                         git -c core.hooksPath=/dev/null -C "$seed_repository" worktree add --no-checkout --detach -- "$checkout" "$seed_commit"
@@ -121,19 +90,17 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                     fi
                     inspect_prepared_repository
                     BASH);
-        $result = $this->ssh->execute(
+        $this->ssh->execute(
             $instance->node,
             new RemoteCommand(
-                arguments: [...$this->arguments($instance, $context), $allowExisting ? '1' : '0', $instance->seed_repository ?? '', $instance->seed_commit ?? '', $template ?? '', $taskVm ? '0' : '1'],
+                arguments: [...$this->arguments($instance, $context), $allowExisting ? '1' : '0', $instance->seed_repository ?? '', $instance->seed_commit ?? '', $taskVm ? '0' : '1'],
                 input: $script->input,
                 protectedInput: $script->protectedInput,
             ),
             step: 'app-instance-source-prepare',
             errorCode: 'instance.clone_failed',
         );
-        if (in_array('template-refused', explode("\n", $result->stdout), true)) {
-            Log::warning('The workspace template failed its source checks; the checkout is a fresh clone.', ['instance_id' => $instance->id, 'template' => $template]);
-        }
+
     }
 
     public function inspectPrepared(Instance $instance): void
@@ -225,6 +192,20 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
             step: 'app-instance-source-resolve',
             errorCode: 'instance.branch_resolution_failed',
         );
+
+        if (! $taskVm && ProjectLifecycleStep::query()
+            ->where('project_id', $instance->project_id)
+            ->where('command', LifecycleStep::ImportCiCaches)->exists()) {
+            try {
+                $project = $instance->project;
+                $tips = $this->git->fetch($project, [$defaultBranch], $this->access->for($context['repository'], $project->source_access), 'instance.ci_caches_unavailable');
+                $this->git->send($project, $instance->checkout_path, $tips, fn (RemoteCommand $command): CommandResult => $this->ssh->execute($instance->node, $command, 'instance-ci-cache-transfer', 'instance.ci_caches_unavailable'), 'instance.ci_caches_unavailable', cachesOnly: true);
+            } catch (ProcessCancelledException $exception) {
+                throw $exception;
+            } catch (\RuntimeException) {
+                Log::notice('Instance CI cache transfer unavailable; setup continues cold.', ['instance_id' => $instance->id]);
+            }
+        }
 
         return $this->resolution($result->stdout, $instance);
     }

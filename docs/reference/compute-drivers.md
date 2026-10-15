@@ -4,7 +4,8 @@ description: "Task VMs for every Project and their UpCloud overflow."
 covers:
   - apps/gateway/app/{Domain/TaskVms,Infrastructure/TaskVms,Jobs/TaskVms,Actions/TaskVms,Domain/Compute}/**
   - apps/gateway/app/{Models/TaskVm.php,Models/TaskVmImageBuild.php,Console/Commands/*ImageBuildsCommand.php,Console/Commands/PrepareTaskVmHostCommand.php,Console/Commands/PrepareTaskVmHubCommand.php,Console/Commands/BuildTaskVmImageCommand.php,Console/Commands/BuildUpCloudTaskVmImageCommand.php,Console/Commands/BuildTaskVmWorkspaceTemplateCommand.php,Console/Commands/SyncTaskVmImageCommand.php,Console/Commands/RetireTaskVmHostCommand.php,Console/Commands/ResolvesTaskVmHostNode.php}
-  - apps/gateway/config/task_vms.php
+  - apps/gateway/{app/Infrastructure/MachineSoftware/**,app/Console/Commands/MachineRecipeCommand.php,resources/machine-software/**}
+  - apps/gateway/{app/Models/PackageCache*.php,app/Console/Commands/PackageCacheUsageCommand.php,database/migrations/*create_package_cache_tables.php,config/package_cache.php,config/task_vms.php}
   - apps/gateway/resources/task-vms/**
   - apps/gateway/database/migrations/*{create_task_vm_image_builds_table,fence_task_vm_image_build_attempts,create_task_vms_table,add_model_proxy_origin_to_task_vms,add_warm_pool_to_task_vms,add_upcloud_to_task_vms,add_size_to_task_vms,add_topology_to_task_vms,create_jobs_table,create_failed_jobs_table,create_task_sandboxes_table,add_fleet_enrollment_to_task_sandboxes,add_pi_ready_at_to_task_sandboxes,close_checks_of_destroyed_task_sandboxes,drop_task_sandboxes}.php
 ---
@@ -14,6 +15,117 @@ covers:
 Every task group runs in its own [task VM](#task-vms), which is a normal `app-dev` Node of the dev Cluster. This holds for every Project, `orbit` included. See [Orbit Project](#orbit-project).
 
 Task VMs are off until you [configure them](#configure-task-vms). Until then no task group can start. [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) records the design.
+
+## Machine software recipe
+
+The repository's machine software recipe is [`apps/gateway/resources/machine-software/recipe.json`](https://github.com/nckrtl/orbit/blob/main/apps/gateway/resources/machine-software/recipe.json). It declares one Ubuntu snapshot, exact tool versions, and the tool sets for `gateway`, `app-dev`, `app-prod`, `operator`, and the task VM base image. Project dependencies, workspace setup, credentials, Node identity, and service configuration are not recipe inputs.
+
+This is the contract for [ADR 0207, step 1](/decisions/0207-one-image-recipe-shared-package-cache-no-workspace-templates#implementation-plan). The recipe loader and validator do not install software. Today's [image build](#build-the-base-image), enrollment, claims, and nightly jobs still use their existing programs; adding or validating a recipe does not change them. Recording recipe identity on images and Nodes, recipe-driven builds, and production convergence belong to later steps.
+
+### Recipe schema
+
+The recipe is UTF-8 JSON, not executable PHP or a list of shell commands. The loader accepts schema version `1` only. It rejects missing fields, unknown fields, duplicate object keys, wrong types, empty required values, duplicate list entries, and unsupported sources, architectures, releases, roles, or tool identifiers. A schema change requires an explicit loader change; it is not a way to pass arbitrary installation instructions to a host.
+
+| Field | Contract |
+| --- | --- |
+| `schema_version` | Integer `1`; this identifies the format, not the machine software version |
+| `ubuntu.release` | Ubuntu release used by the current base image, initially `26.04` |
+| `ubuntu.snapshot` | UTC snapshot identifier in `YYYYMMDDTHHMMSSZ` form, used at `https://snapshot.ubuntu.com/ubuntu/<snapshot>/`; a syntactically valid date alone does not prove availability |
+| `architectures` | Non-empty list drawn from `amd64` and `arm64`, using Debian architecture names |
+| `tools` | Object keyed by the loader's known tool identifiers; each value has an exact `version` and a `source` of `ubuntu`, `artifact`, or `internal` |
+| `common` | Tool identifiers included in every role and the base image |
+| `roles` | Object requiring `gateway`, `app-dev`, `app-prod`, and `operator`; optional profiles use known Node role names. Each value lists additional tool identifiers |
+| `base` | List of additional tool identifiers for the task VM base image; this is an image profile, not a Node role |
+
+An `ubuntu` tool names its Debian `package`. Its `version` is the complete Debian version, including epoch and distribution revision when present, not just an upstream release or a constraint. It resolves only from the selected Ubuntu snapshot's signed package indexes for the declared release and architectures. The release's archive, updates, and security pockets are checked; a package available only from today's rolling archive does not satisfy the recipe.
+
+An `artifact` tool has an `artifacts` object keyed by every declared architecture. Each entry contains an HTTPS `url` and exactly one digest field, `sha256` or `sha512`, with a full lowercase hexadecimal digest. A URL must identify the pinned release, not a moving installer or a `latest` alias. Architecture-independent archives repeat the same URL and digest for each architecture. Artifact contents, not the spelling of the URL or a successful HTTP response, are the integrity check. The validator downloads and hashes the bytes without executing or installing them.
+
+The loader has a closed catalog of supported tool identifiers and their source kinds. A new tool needs a catalog change and validation tests as well as a recipe entry. Every profile reference must resolve to a catalogued entry in `tools`; an unused entry, a missing tool, or an incompatible source is an error. Tool versions must be exact: `latest`, `stable`, `lts`, version ranges, and unversioned installer URLs are not pins.
+
+An `internal` tool is an Orbit-built binary pinned by `source_commit` (12 to 40 lowercase Git hexadecimal characters), an exact `version`, and architecture-specific entries in `artifacts`. Each entry has a simple `filename` and a full lowercase `sha256`; filenames resolve under the Gateway's sandbox-artifacts directory (or the command's `--artifact-directory` override). Source commit and digest identify the software; the directory and filename are only byte locations and are not part of the identity. The default directory is `$ORBIT_HOME/sandbox-artifacts`, using the Gateway's configured Orbit home.
+
+Internal pins do not require publishing HTTPS releases. Third-party tools still require HTTPS artifact pins. Online validation fails clearly if a local file is missing or its digest differs. It never executes the binary. Existing installers keep their pre-install hash verification.
+
+The initial Pi pin comes from `apps/pi-server` at source commit `e5933d4c8696`, file `pi-server-e5933d4c8696-linux-x64`, SHA-256 `286620c586b13b60fce4ce71f286d282da185fd95f7971c4109fb52bc8f0a78c`. It supports `amd64` only. The base profile therefore supports only `amd64`; `--architecture=arm64 --role=base` fails rather than inventing a Pi artifact. Other profiles support the intersection of their tools' architectures. Validation checks all artifacts actually declared, including Pi, without requiring nonexistent Pi arm64 bytes.
+
+A profile's effective set is the union of `common` and its own list, sorted by tool identifier. Profiles cannot refer to other profiles, so role inheritance cannot hide software or form cycles. A multi-role Node's set is the union of its roles, not the base image set.
+
+### Role and base tool sets
+
+The seed preserves the software selected by today's image and enrollment programs. It does not use this migration to upgrade tools. Some programs currently ask for moving releases: Rust `stable`, Node `lts`, and Bun's or pnpm's default release. The seed records the concrete version and integrity evidence resolved for that baseline, not the moving selector. Package-level pins and artifact digests live in the recipe, not in a second version table in this page.
+
+| Profile | Tools in addition to `common` |
+| --- | --- |
+| `common` | Bootstrap packages: `ca-certificates`, `curl`, `gnupg`, `libnss-resolve`, `openssh-client`, `sudo`, `ufw`, and `wireguard` |
+| `gateway` | Caddy from the Caddy project's release, not Ubuntu's Caddy package |
+| `app-dev` | `acl`, `attr`, Caddy, Composer, `docker.io`, Git, OpenSSL, `php-curl`, `php-xml`, `unzip`, Vite+ (`vp`), Node, pnpm, npm/npx, and Bun; PHP 8.5 and 8.4 with the current app-dev extension/package profiles |
+| `app-prod` | The current application prerequisites and JavaScript/Composer managers, as for `app-dev`, but without preinstalling every selectable PHP version's app-dev packages |
+| `operator` | No additional role prerequisite tools; this is the recipe profile for a roleless operator Node, not a new Node role |
+| `base` | The full `app-dev` set, explicit image-build packages described below, Rust with Cargo/clippy/rustfmt, the Node agent, and Pi |
+
+The base list explicitly contains the app-dev tools; it does not inherit a role implicitly. `npm` and `npx`, or Rust's component binaries, may come from one pinned distribution rather than separate downloads, but their supplied versions must be covered by that distribution's pin. The exact PHP package lists come from the current selectable-version profiles, not from a new choice of extensions. Caddy starts at the existing `2.11.7` release and keeps its architecture-specific SHA-512 pins. Snapshot packages retain their complete Debian versions. This contract does not add the base-only development tools to production Nodes.
+
+The base also includes the existing image builder's 26 explicit Ubuntu packages: `openssh-server`; workspace tools `rsync`, `bind9-dnsutils`, `gcc`, and `libc6-dev`; and all 21 libraries in `TaskVmCloudInit::ChromiumLibraries` for Playwright's headless Chromium. These are base-only tools, not common or role inputs. Each uses an exact package version from the same authenticated snapshot on both architectures. The existing package lists in `TaskVmImageBuildSteps` and legacy cloud-init remain unchanged.
+
+### Seed provenance
+
+The seed resolves the existing programs' selectors on 2026-10-14. It uses snapshot `20261014T000000Z`, with Ubuntu candidates selected by Debian version ordering across `resolute`, `resolute-updates`, and `resolute-security`, for both architectures. The input lists come from `NodeBootstrapPackageCatalog`, `NodeEnrollmentPrograms`, `RemotePhpPackageManager`, `TaskVmImageBuildSteps`, `TaskVmCloudInit`, and `install-rust.sh`; this does not wire the recipe into those programs.
+
+PHP's required readline packages and Sury's `libgd3` are explicit artifact inputs, alongside the selectable-version profiles. Other Ubuntu dependencies resolve from the same authenticated snapshot.
+
+Caddy and the Node agent retain the constants and checksums in their current installers. PHP artifacts use the Sury `resolute` package indexes, authenticated with the existing installer's pinned Sury key (`apt.gpg`, SHA-256 `b486fd5488185c4c46467960fa69c53d5085fec492cf76b9eaf3db33561c9d7c`). Vite+'s JavaScript package and pnpm tarballs match npm's release `dist.integrity`. The standalone Vite+ CLI uses the versioned GitHub release tarball and its release-asset SHA-256 digest; the similarly named npm platform package is a Node addon, not the standalone executable. These are separate pins.
+
+Node resolves the current LTS from `nodejs.org/dist/index.json`, with both distributions checked against that release's `SHASUMS256.txt`; the distribution also pins its bundled npm/npx. Bun's distributions match the release asset digests. Rust uses the stable channel's versioned distribution manifest and its hashes for rustc, Cargo, the standard library, clippy, and rustfmt, rather than retaining `stable` or an unpinned rustup installer. Pi uses the operator-approved source commit and digest above. The JSON holds the resolved versions and hashes; none of these moving discovery endpoints is consulted by validation.
+
+Service-role profiles add the existing Node prerequisite sets to the four required image/operator profiles. The VPN profile pins `dnsmasq` to `2.92-1ubuntu0.5`, the highest Debian version in the selected snapshot pockets for both architectures. Consumers reject a Node role missing from a recipe instead of broadening its tool set.
+
+### Pins outside the Ubuntu snapshot
+
+The Ubuntu snapshot does not freeze third-party repositories or upstream release channels. The recipe must pin these separately:
+
+| Tool or distribution | Pin and verification |
+| --- | --- |
+| Caddy | Exact upstream release and architecture-specific `.deb` URL; retain the existing SHA-512 digests, checked against the project's release checksums |
+| PHP packages not in the Ubuntu snapshot | Exact Debian package versions and architecture-specific package artifacts with recorded digests; a mutable Sury repository URL or PHP minor version alone is insufficient |
+| Vite+, Node, pnpm, npm/npx and Bun | Exact release distributions or registry tarballs and their digests, including the selected Node runtime and package-manager versions; do not run `curl ... \| bash`, resolve `lts`, or ask a registry for its current candidate during validation |
+| Rust | Exact toolchain release, its minimal-profile components including clippy and rustfmt, and versioned distribution artifacts with digests; `stable` and an unpinned rustup installer are insufficient |
+| Node agent and Pi | Preserve the agent release and its HTTPS artifact digests. Pi uses the approved internal pin above; local pins do not select a new baseline |
+
+Every separately fetched input needed for a pinned tool must be covered by its artifact pins; a pinned bootstrap script must not download an unpinned payload. A distribution that bundles several binaries can cover them with one artifact digest. When a tool needs several independent artifacts, the catalog and recipe must model those inputs explicitly rather than fetching extra software behind one pin. The seed's provenance must be reproducible from the current programs and upstream metadata; it must not invent a checksum or treat the Ubuntu snapshot as proof of a third-party version.
+
+### Recipe identity
+
+The recipe identity is `sha256:<digest>`, computed from the validated document's canonical JSON after removing internal-artifact filenames. Internal source commits and digests remain in the identity; relocating identical internal bytes does not change it. Canonicalization recursively sorts object keys by byte order, preserves array order, emits no insignificant whitespace, leaves slashes and Unicode unescaped, and adds no final newline. Only JSON integers, strings, arrays, objects, booleans, and null are permitted; schema fields further restrict their types. Duplicate keys are rejected before hashing. The identity is derived, not stored as a self-referential field in the recipe.
+
+Whitespace and object-key order do not change the identity. Changing a snapshot, version pin, source commit, digest, role assignment, schema version, or list order does. The identity covers all profiles together; there is no independent version counter for each role and no Git commit SHA masquerading as the recipe version. Git history provides provenance, while the content hash names the exact software intent even when the same recipe appears in another commit. [Node recipe convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) records this complete identity after verification; image identity recording remains separate work. Schema version `1` and a short display hash are not substitutes.
+
+### Show and validate the recipe
+
+The Gateway command `php artisan orbit:machine-recipe` shows the repository recipe's identity, snapshot, exact tool pins, and effective profile tool sets. `--role=gateway`, `--role=app-dev`, `--role=app-prod`, or `--role=operator` selects one role; service profiles also cover `vpn`, `router`, `ingress`, `metrics`, `database`, `websocket`, and `analytics`; `--role=base` selects the base image profile. `--path=<file>` selects a candidate recipe for review or a validation fixture. `--architecture=amd64` or `--architecture=arm64` requires each displayed profile to support that architecture; without it, the output lists each profile's supported architectures.
+
+Showing a recipe always performs structural validation and makes no claim about remote availability. Add `--json` for the complete recipe (including URLs, digests, internal filenames, and source commits), its identity, validation state, and selected effective profiles. JSON errors contain only an `error` message and exit nonzero; failed validation never emits a success state.
+
+Add `--validate` to verify availability and integrity as well as structure. For example, from `apps/gateway`, run `php artisan orbit:machine-recipe --validate` before accepting a recipe change. Validation checks the whole recipe across every declared architecture even when `--role` limits the displayed set. It requires network access, `gpgv`, the OS-maintained `/usr/share/keyrings/ubuntu-archive-keyring.gpg`, and readable internal artifact files, but no database, SSH connection, image builder, or root privileges. Use `--artifact-directory=<directory>` to resolve internal filenames from a disposable or staged directory instead of the Gateway's sandbox-artifacts directory. It does not install packages, change apt sources, create Nodes, build images, or change which image a claim can use.
+
+Online validation verifies that the exact snapshot exists for the release and architectures, that its authenticated package indexes contain each exact Ubuntu package version, and that every external or Gateway-local artifact is available and matches its recorded digest. Redirects or server fallback to another snapshot or a rolling archive must not turn an unavailable pin into success.
+
+Transient HTTP 500, 502, 503, and 504 responses receive at most three attempts at the same pinned URL. Network failures are failures to verify, not evidence that a release is invalid or permission to choose another version. A successful structural-only show is not a successful availability check.
+
+| Failure | Required diagnostic |
+| --- | --- |
+| Invalid JSON or schema | File and field path, with the expected shape or unsupported schema version |
+| Unknown role or tool | The rejected name and the valid choices; unresolved references identify the profile and tool |
+| Invalid or unavailable snapshot | The snapshot identifier, release, architecture, and failing metadata URL or verification reason |
+| Unavailable package or version | Tool identifier, exact requested version, architecture, snapshot/source, and what could not be resolved |
+| Missing artifact or digest mismatch | Tool identifier, architecture, URL, and the expected and actual digest when bytes were obtained |
+| Network or signature failure | The failing source and reason; report that availability could not be verified rather than silently falling back |
+
+The command exits zero only for a successful requested operation and nonzero for any failure. It never prints a validation-success result for a partially checked recipe. Tests must cover malformed recipes, unknown role and tool names, well-formed but unavailable snapshots and versions, and digest failures with controlled responses; a syntax-only date test or mocked unconditional success does not prove remote validation.
+
+### Why the recipe works this way
+
+This settles ADR 0207's schema, identity, validation, and non-snapshot pinning questions. A closed, versioned JSON document is reviewable without executing code. A content hash names all role sets together without a manually maintained counter. Separate structural and online checks distinguish malformed intent from unavailable inputs. Explicit artifact hashes cover software that Ubuntu's snapshot cannot freeze. One catalog prevents misspelled tools or roles from silently changing an image. Build publication fencing, nightly Git updates, and concurrency between recipe changes remain later orchestration work, not guarantees of this validator.
 
 ## Task VMs
 
@@ -31,7 +143,7 @@ A claim moves a group through these steps. Steps 2 to 5 are queued [jobs](#jobs)
 6. On the next claim, Orbit creates the [task workspace](/reference/tasks#task-vm-workspace) on the VM's Node. It is a normal Instance `task-<group id>`. A routed workspace gets the private Route `task-<id>.<project>.<dev-tld>`.
 7. The claim starts the baseline check. Then the same claim projects the Route.
 
-A workspace starts from the Project's [workspace template](#start-the-workspace-from-a-template) when the host has one.
+Every workspace [clones from the Gateway mirror and runs Project setup](#clone-and-set-up-every-workspace).
 
 #### Start the baseline check before the Route
 
@@ -59,7 +171,7 @@ The job goes on when cloud-init reports `done` with no errors and the host repor
 
 Provisioning links the new Node to the row when it creates the Node record, before any convergence. So the Node is a task VM Node from the start: the fleet rollout skips it, and it gets no Orbit CLI. It never hosts a [Metrics exporter](/reference/metrics#exporter-selection), because the [hub filter](#limit-fleet-traffic-on-the-hub) keeps the Metrics Node out. So its enrollment skips the fleet Metrics reconcile, which converges exporters on every Node and took about 80 seconds on the live fleet.
 
-Each step of the jobs logs one line `Task VM step done.` in the Gateway log, with the VM name, the step, and its seconds. The steps are `create`, which counts from the claim, `boot`, `node-converge`, `apt-tool-manager`, `roles`, `router-lan-ingress`, `dns-selection`, `activate`, `agent`, `enrolled`, `model-key`, `pi-current` or `pi-upload`, `pi-files`, and `pi-server`. The last line, `claim-to-ready`, has the seconds from the claim to `ready`. A warm VM logs other first and last lines, as [Keep warm VMs](#keep-warm-vms) describes. The workspace creation then logs `workspace-template`, `workspace-source`, `workspace-prepare` for a routed workspace, and `workspace`, which has the seconds of the whole creation. The baseline check starts after `workspace`. The Route then logs `workspace-route`, with the seconds of its projection, which runs while the check runs.
+Each step of the jobs logs one line `Task VM step done.` in the Gateway log, with the VM name, the step, and its seconds. The steps are `create`, which counts from the claim, `boot`, `node-converge`, `apt-tool-manager`, `roles`, `router-lan-ingress`, `dns-selection`, `activate`, `agent`, `enrolled`, `model-key`, `pi-current` or `pi-upload`, `pi-files`, and `pi-server`. The last line, `claim-to-ready`, has the seconds from the claim to `ready`. A warm VM logs other first and last lines, as [Keep warm VMs](#keep-warm-vms) describes. The workspace creation then logs `workspace-package-cache`, `workspace-source`, `workspace-prepare` for a routed workspace, and `workspace`, which has the seconds of the whole creation. The baseline check starts after `workspace`. The Route then logs `workspace-route`, with the seconds of its projection, which runs while the check runs.
 
 #### Skip what the image holds
 
@@ -93,7 +205,7 @@ The Node `tvm-<id>` has user `orbit`, role `app-dev`, the dev Cluster, and the r
 
 ### Destroy a task VM
 
-When the group ends, Orbit removes its workspace with the VM. The checkout can live on the VM's [workspace volume](#start-the-workspace-from-a-template), which goes with the VM, so Orbit deletes no checkout in the guest. A cancelled group first pushes its stored approval. Pushes, fetches, checks, and agent turns need the VM `ready`, so they finish before the VM is deleted. Workspace removal on a task VM runs these steps:
+When the group ends, Orbit removes its workspace with the VM. The checkout can live on the VM's [workspace volume](#remove-old-workspace-templates-manually), which goes with the VM, so Orbit deletes no checkout in the guest. A cancelled group first pushes its stored approval. Pushes, fetches, checks, and agent turns need the VM `ready`, so they finish before the VM is deleted. Workspace removal on a task VM runs these steps:
 
 1. While the VM is `ready`, it runs the Project's teardown steps in the guest. A removal that an earlier attempt started has run them already.
 2. It sets the row to `destroying`, revokes the group's model key, and deletes the VM and its workspace clone.
@@ -105,7 +217,7 @@ A step that fails keeps the Instance and records the error on the row. The group
 Each `tasks:tick` also queues `DestroyTaskVm` for every task VM that is not `destroyed` when its group is `completed` or `cancelled`, no [claim](/reference/tasks#claim-and-provision) of the group is in flight, and no Instance is left on its Node. A claim is over once it starts the group, so a group that ends soon after its claim loses its VM on the next tick. Its unique lock has no expiry, so the tick never queues a second copy while one waits or runs. `DestroyTaskVm` then runs these steps:
 
 1. It sets the row to `destroying` and revokes the group's model key.
-2. It deletes the VM. Then it deletes the VM's [workspace clone](#start-the-workspace-from-a-template), because Incus keeps that volume. A VM or a clone that is already gone counts as deleted.
+2. It deletes the VM. Then it deletes the VM's [workspace clone](#remove-old-workspace-templates-manually), because Incus keeps that volume. A VM or a clone that is already gone counts as deleted.
 3. It removes the Node offline and with force. This sheds its `app-dev` role and removes its Process rows, WireGuard peer, and private DNS records.
 4. It sets the row to `destroyed`.
 
@@ -251,156 +363,53 @@ A warm VM is on the same task bridge as any task VM, behind the same bridge ACL 
 
 The Gateway connects to Pi on a task VM only with the row's own token, and a warm VM's row has none, so the Gateway's own `ORBIT_PI_TOKEN` never reaches it either. The claim creates the Pi token, and `PrepareTaskVmRuntime` creates the model key and writes both to the VM. When the group ends, the VM is destroyed as usual. No VM serves a second group.
 
-### Start the workspace from a template
+### Shared package cache
 
-A new task VM has empty caches, so a Project's setup steps download everything again. For mealou on beast they took about 36 seconds: `composer install`, `vp install`, a Playwright download of Chromium, and `vp build`. A workspace template holds their result, so the same steps find little to do.
+Each configured task VM host has one Gateway-owned package cache at `/var/lib/orbit/package-cache`. The Gateway reads hosts through `TaskVmSettings`; the cache does not select hosts by role or read the environment host list itself. Task VMs receive an Incus directory disk at `/opt/orbit/package-cache` with `readonly=true`. The restricted Incus project permits only this directory as a host disk source; host preparation and the first cache attach set that narrow exception. This host-enforced mount prevents a root agent in the guest from publishing bytes to another Project.
 
-Each host keeps one template for each Project whose groups run on task VMs, `orbit` included. There is no setting: a Project without a template works as before. A template is an Incus block volume `tvm-template-<project id>-<time>` in the host's project and pool. Its ext4 filesystem holds the Project's apps directory on a task VM, such as `/home/orbit/apps/mealou`:
+When the default branch moves in the Gateway Git mirror, Orbit compares the blob IDs of `composer.lock`, `package-lock.json`, `bun.lock`, and `pnpm-lock.yaml`, at the root and below `apps/` and `packages/`. Unchanged blobs cause no fill. Changed or removed blobs replace the Project's desired inventory and queue a fill on each configured host. Pending fills coalesce by host; a change during a fill queues a successor that reads the latest desired inventory. Fills run on the `builds` queue and add missing content, without running Project setup, Composer plugins, or package install scripts. A queue outage leaves source fetching usable; the next mirror fetch retries a pending fill dispatch.
 
-| Path in the volume | What it holds |
-| --- | --- |
-| `workspace` | A checkout of the default branch, after the Project's setup steps and one run of its task check: `vendor`, `node_modules`, the build output, and the caches that the check fills |
-| `.orbit-cache/ms-playwright` | The Playwright browsers |
-| `.orbit-cache/composer` | The Composer cache |
-| `.pnpm-store` | The pnpm store. pnpm puts it at the root of the filesystem by itself, because the default store is on another filesystem |
+Composer consumes native archive cache files. npm consumes its integrity-addressed content cache; Bun consumes extracted cache directories, including registry archives whose root directory uses the package name, as DefinitelyTyped archives do. The JavaScript adapter reads npm lock versions 2 and 3, Bun text locks, and pnpm package inventories. pnpm locks contribute to the shared JavaScript inventory, but pnpm's own store is not seeded. Bundled, Git, local, and private packages remain normal downloads.
 
-#### Claim with a template
+Before workspace setup, Orbit copies the Project's missing shared cache files into the workspace's private manager caches. Metadata, locks, temporary files, and downloads on a miss stay private. The shared mount is always read-only; private copies use no hard links. A package added only on a task branch, an unsupported archive, or a fill not yet complete falls back to the manager's normal registry download.
 
-When Orbit creates the workspace on a task VM, it runs these steps before source preparation:
+Run `php artisan task-vms:package-cache-usage <package> <version>` on the Gateway to list the Projects that use that package and version, with the verified archive hashes and host IDs. Usage covers cacheable public artifacts in current default-branch locks, including development packages. Removing a dependency immediately removes its current Project usage from the query; the next successful fill replaces its host inventory, while its bytes remain cached. Failed fills retain the last successful host inventory.
 
-1. It lists the storage volumes of the host's project, and reads the base image that the VM booted (`volatile.base_image`). It takes the newest ready template of the Project from the current `repository_url` and that base image.
-2. It clones the template as `tvm-<id>-workspace` with `incus storage volume copy`. On ZFS that is a clone of a snapshot: it took under 0.1 seconds on beast and shares every block with the template.
-3. It attaches the clone to the running VM as the disk `workspace`.
-4. Over the Node's SSH connection, it mounts the disk at the Project's apps directory and adds it to `/etc/fstab`. It points `~/.cache/ms-playwright` and `~/.cache/composer` at the volume.
+The command returns one JSON object with `projects` (current Project IDs and names) and `cached` (verified Project, host, manager, and SHA-256 rows). An unknown package or version returns empty lists. Retry a failed fill through the Gateway's normal failed-job retry command; fills are safe to repeat.
 
-5. Source preparation checks the owner and the origin of `workspace`, and takes it in place. Preparation writes its receipt as for a clone.
+Private registries and credentialed URLs are out of scope. Trusted fills accept only public GitHub commit archives for Composer and the public npm registry for JavaScript. Workspaces can use their own private registry credentials with normal downloads. The fill never reads a Project's registry credentials.
 
-A task VM workspace's checkout is always `<apps directory>/workspace`, the path where the template was built. A template in place that fails the source checks fails the preparation, because a fresh clone cannot go to its path.
+Lockfile checksums are verified when supplied; npm integrity is required. Composer archives without a checksum use HTTPS from the allowed commit archive service and record a SHA-256 digest on first fill. This is a transport trust limit, not a lockfile-supplied content guarantee. Each reuse checks the recorded digest. Suspect bytes move into a quarantine directory and are downloaded again; they are not seeded into new workspaces.
 
-A claim takes only a template with `user.orbit.layout=workspace`. A template from before the fixed checkout path has none. No claim takes it, and the claim queues a new build.
+Fills do not evict artifacts, including packages no current Project uses. The cache defaults to a 20 GiB byte budget per host and 512 MiB per archive. The operator can change the cache budget through `package_cache.max_bytes`. A full cache stops publication of new artifacts and fails the fill; workspaces still download misses privately. Quarantine bytes count toward the budget. Retention and cleanup are operator work while fills are stopped; no automatic deletion can disrupt a running workspace. CI cache refs and previous image retention are separate policies.
 
-A claim also takes only a template whose files belong to `1000:1000` (`user.orbit.owner`), the `uid:gid` of `orbit` on the base image. For another owner, the claim queues a new build.
+### Clone and set up every workspace
 
-The mount never goes over a directory with content. Before it mounts, it checks that `orbit` has the `uid:gid` that the template recorded. After it mounts, it checks that the volume root and `workspace` belong to that `uid:gid`.
+Every new task workspace starts with an empty checkout on the VM's root disk at `<apps directory>/<project slug>/workspace`. The Gateway sends the selected branches and CI cache ref bound to the tested SHA from its [Git mirror](#git-on-a-task-vm). The workspace checks out its task branch, then the baseline check runs all [Project setup steps](/reference/instance-setup), every time. Orbit has no per-Project workspace templates, template builds, or refresh after an image build or sync.
 
-After the Project's repository or the base image changes, no template matches until the next build. The fstab line follows a successful mount and owner check only, so a failed mount never comes back at a later boot over a fresh clone.
+Before source preparation, the Gateway attaches the [read-only package cache](#shared-package-cache) and seeds private manager caches. The `@orbit/ci-caches` setup step imports the selected [CI cache ref](/reference/instance-setup#import-ci-main-caches). Missing packages download into private caches; a missing or invalid CI ref leaves checks cold. Neither miss queues a workspace image build. The fixed checkout path preserves cache paths across claims without sharing a writable checkout.
 
-When step 3 or 4 fails, the claim undoes the attach before the fresh clone: it removes the cache links into the volume, unmounts it, removes its fstab line, detaches the disk, and deletes the clone. So the fresh clone lands on the VM's own disk, never on a volume with another user's files. When the undo fails too, the claim fails with `task_vm.workspace_template_detach_failed`, and the group asks for assistance.
+An interrupted claim resumes only its own checkout after the existing source identity checks. A VM claimed before template removal keeps its attached workspace volume, cache links, and fstab entry. Park and resume keep that disk; destroying its VM removes the old clone volume afterward. New claims never attach an old template.
 
-Then the Gateway sends the group's branches from its [mirror](#git-on-a-task-vm), and the workspace checks out the group's branch. The baseline check runs the setup steps on the workspace. Each step finds the dependencies in place and only installs what the branch changed.
+A fresh Orbit checkout on beast took **28.3 seconds** in an isolated directory in development Instance 445: clone and cache-ref transfer 4.4 seconds, private package-cache seeding 9.7 seconds, the five Composer installs and bootstrap 12.8 seconds, web Bun install 0.3 seconds, and CI cache import 1.2 seconds. The run installed from empty dependency trees with 521 verified package artifacts and imported graphs, Pint, and PHPStan caches for all five projects. It used tested commit `84b9a5464d77ebb17c1f8d37653aef6bc66f1f6e` and CI run `38656364257`.
 
-A task VM holds one workspace, so its checkout path is fixed. Caches that record absolute paths, such as Rector's, still match at the claim, so the baseline check finds them warm.
+No cache refs were published on origin at measurement time, so the matching ref was published only to a disposable local mirror from that successful run's exports. This measures setup on the development host, without VM boot, enrollment, a task VM's CPU limit, or SSH transfer. A fresh live claim still needs a latency and read-only mount check.
 
-Every step is idempotent, so a claim that runs again finds the clone, the disk, and the mount in place. A warm VM gets its clone at the claim, so warm VMs stay the same for every Project. The base image creates `orbit` with uid and gid 1000, so the files of a template belong to `orbit` on every VM from that image. A template is still only taken on the image it was built on and with the owner `1000:1000`, and the mount checks the owner again on the VM.
+#### Remove old workspace templates manually
 
-On beast, mealou's setup steps took about 13 seconds on a new VM with a template, against about 36 seconds without one. `vp install` always runs `npm audit`, which reaches the network.
+Cleanup is a separate operator action after the new Gateway is deployed and old template jobs have drained. Do not run these commands during development. On each approved host, first inspect the configured Incus project and pool with `sudo incus --project PROJECT list`, `sudo incus --project PROJECT storage volume list POOL --format json`, and `sudo incus --project PROJECT image list`. Confirm ownership and inspect each resource's `used_by` before deletion.
 
-#### Without a template
-
-The workspace starts from a fresh clone, as before, in these cases:
-
-- The host has no ready template for the Project, or none whose owner is `1000:1000`. Orbit logs the warning `Task VM workspace has no template; it starts from a fresh clone.` and queues a build of the template. See [Template failures](#template-failures) for the wait after a failed build.
-- A build of the template runs. An unfinished template is never taken, and the claim queues no second build.
-- The Project has no valid default branch or repository URL. Orbit logs `Task VM workspace template cannot be built; workspaces of the Project start from a fresh clone.` with the reason, and queues no build.
-- The Project's templates were built on another base image than the VM's, and the VM runs the host's current `orbit-task-base`. Orbit logs `Task VM workspace template was built on another base image; it starts from a fresh clone, and a new build is queued.` and queues a build.
-- The VM runs an older base image than the templates. Orbit logs `Task VM runs an older base image than the workspace templates; it starts from a fresh clone.` A build would not help, because it boots the current image.
-- A step fails, for example the copy, the mount, or an owner check. Orbit undoes the attach and logs the warning `Task VM workspace template could not be attached; the workspace starts from a fresh clone.` with the error.
-- The volume holds no template checkout. Orbit logs `Task VM workspace volume holds no template checkout; it starts from a fresh clone.`
-- The template checkout fails a check of source preparation, for example of its origin. Preparation then clones and logs `The workspace template failed its source checks; the checkout is a fresh clone.`
-
-The group never waits because of a template, and fails only when Orbit cannot undo a failed attach. When the volume mounted and passed its checks but holds no template checkout, the fresh clone goes to the volume. Otherwise it goes to the root disk.
-
-#### Build a template
-
-Run `task-vms:build-workspace-template {node} {project}` to build the template of a Project on one host. It prints each stage with its time.
-
-Templates are built on demand. A claim that finds no template for its VM's base image queues `BuildTaskVmWorkspaceTemplate`, and the refresh below builds ahead only for active Projects. Most Projects get few groups, so a build for every Project after each promote would mostly make templates that the next promote replaces unused.
-
-Templates belong to the base image they were built on, so they follow it. Whatever builds or syncs a base image queues `RefreshTaskVmWorkspaceTemplates` once when it ends, after every host it changed, also when it fails: `task-vms:build-image`, the nightly base image refresh at 03:00, and `task-vms:sync-image` unless the host already had the image. The promote itself queues nothing, so no refresh sees one host moved and another not. A refresh that is already queued absorbs another one. A refresh queued while one runs queues one more, which sees the new alias.
-
-The refresh runs on every configured host whose Node is active. It reads the host's current `orbit-task-base` and deletes each ready template that no claim can take:
-
-- the templates of Projects without a valid default branch or repository URL;
-- the templates from an earlier repository URL, or built on another base image;
-- all but the newest template of each Project.
-
-So after a promote, each host keeps at most one template for each Project, and none from the old image.
-
-Then the refresh queues one build on each host for each Project that had a group created in the last 7 days, unless the host already has a current template of it. A current template is ready, comes from the Project's repository, was built on the host's current base image, and belongs to uid and gid 1000. So a second refresh builds only what the first one did not, and the build job skips a current template too.
-
-Other Projects get their template at their next claim. A Project without a valid default branch or repository URL gets no build. The refresh logs the warning `Task VM workspace template cannot be built; workspaces of the Project start from a fresh clone.` for it each time.
-
-Orbit does not watch the default branch for pushes. A template that is behind the branch is still correct: the fetch and the setup steps bring the workspace up to date. A template is rebuilt when the base image changes, which the nightly build does each night it succeeds. So the template of an active Project is at most a day old while the nightly build succeeds. The template of another Project is as old as its last build.
-
-A change to a Project's setup steps or lockfile does not rebuild its templates. The refresh and the build job skip a current template, so the change reaches a template only at the next base image change. When nightly builds fail, that can be days later. Until then each workspace stays correct, because the setup steps in its baseline check run the change, but it saves less time. To rebuild the template of one Project on one host at once, run `php artisan task-vms:build-workspace-template NODE PROJECT` on the Gateway. The command calls the builder directly, so it builds even when the template is current.
-
-Template jobs run on the `builds` queue, so a build never delays a task VM job. See [Jobs](#jobs).
-
-The build runs these stages on the host over SSH, with `sudo -n incus --project <project> …`:
-
-| Stage | What it does |
-| --- | --- |
-| `sweep` | Deletes builder VMs and unfinished templates that an interrupted build left |
-| `launch`, `cloud-init` | Launches a builder VM `tvm-template-<time>` from `orbit-task-base` with the task VM user-data, and waits for cloud-init |
-| `identity` | Reads the base image that the builder booted, and the `uid:gid` of `orbit` |
-| `volume` | Creates the block volume with the host's `disk` size, and attaches it |
-| `mount` | Formats the volume as ext4, gives its root to `orbit`, and mounts it with the same script as a claim |
-| `clone` | Creates `workspace` with `git init` as `orbit`, and checks out the default branch, which the Gateway sends from its [mirror](#git-on-a-task-vm) |
-| `php` | Installs the `app-dev` PHP packages of the version that `composer.json` selects, with the Instance's program. With the base image, it only checks them |
-| `setup:<step>` | Runs each Project setup step as `orbit` in a login Bash in the checkout, with `VP_HOME` set and stdin closed, as the baseline check does. See below |
-| `warm-check` | Runs the Project's task check once in the checkout, as the baseline check would, so the template brings its caches. See below |
-| `verify` | Requires a clean tree. The setup steps may only add ignored files |
-| `detach` | Stops every process of `orbit` in the builder, which a setup step or the task check may leave running on the volume, then unmounts the volume and detaches it |
-| `publish` | Sets `user.orbit.project`, `user.orbit.commit`, `user.orbit.repository`, `user.orbit.image`, `user.orbit.owner`, `user.orbit.layout=workspace`, and `user.orbit.ready=true` on the volume |
-| `delete-builder` | Deletes the builder VM |
-| `prune` | Deletes the older templates of the Project on the host |
-
-A monorepo whose task workspaces have no Route, such as `orbit`, skips the `php` stage, as its Instance does: the checkout is not one PHP application.
-
-The `warm-check` stage runs the Project's `task_check` like a setup step, within what the build's budget has left less 60 seconds; a Project without one skips it. Its result does not decide the build:
-
-| Outcome | Log | Template |
-| --- | --- | --- |
-| Passes | Info `Task VM workspace template warmed its caches with the task check.` | Published with warm caches |
-| Fails | Warning `Task VM workspace template task check failed; the template keeps the caches it filled.`, with the output tail | Published |
-| Runs out of budget | Warning `Task VM workspace template task check stopped at the build budget …` | Published with the caches filled so far |
-| No budget left | Warning `Task VM workspace template has no warm caches: …` | Published without warm caches |
-
-Each entry carries the command, the exit code, and the duration. When the check changes tracked files or adds unignored ones, the stage restores the checkout and logs the warning `Task VM workspace template task check changed the checkout; the warm-check stage restored it.` with the paths. Ignored files, such as the caches, stay.
-
-The step travels on stdin to a script file, so a long command fits. A [Gateway-owned step](/reference/instance-setup#gateway-owned-setup-steps), such as `@orbit/tia-baseline` or `@orbit/ci-caches`, becomes the same command as in the check. A builder has no Instance, so no SSR port is set. Each step gets its own timeout, but at most what the build's budget has left.
-
-A build runs within a budget of 1500 seconds. The queued job's timeout of 1700 seconds and the host's lock of 1740 seconds outlast it, and both stay below the queue's `retry_after` of 1800 seconds, so no second worker takes a running build. One template build runs on a host at a time, under that lock.
-
-A second one fails with `task_vm.workspace_template_running`, and the queued job waits a minute and tries again. The template worker takes one job at a time, so one build runs in the whole fleet at a time.
-
-#### Template failures
-
-A build that fails before `publish` deletes its builder VM and its volume, and the Project keeps its current template. After `publish` the new template is ready. A failed `delete-builder` or `prune` then only logs the warning `Task VM workspace template is ready, but a cleanup stage failed; the next build retries it.`
-
- It fails with `task_vm.workspace_template_failed`, which names the stage. The job logs the error `Task VM workspace template build failed; workspaces of the Project start from a fresh clone.`, and claims queue no new build of that Project on that host for 6 hours. A later claim or the next refresh for an active Project tries again. A build stopped with SIGINT or SIGTERM, or past its job timeout, deletes its builder and frees the host. A build killed with SIGKILL holds the host for at most 25 minutes, and the next build sweeps what it left.
-
-#### Disk use and pruning
-
-A template takes the size of its files on the pool, compressed. The mealou template takes 1.1 GiB, and the orbit template, with the dependencies of all five Composer projects and the web app, 1.3 GiB. The warm-up task check adds about 4 to 5 minutes to the orbit build.
-
-Each host holds at most one template for each Project, plus one clone for each task VM that has a workspace. After a promote, only Projects with a recent group or a new claim get a template again. A clone takes only the blocks that its group changes. The volume is sparse, so its size limit, the host's `disk`, reserves nothing.
-
-A new template replaces the older ones of its Project at once. Incus keeps the data of a deleted template until its last clone is gone, so a running group never loses its workspace. The refresh after each promote deletes the templates that no claim can take, as [Build a template](#build-a-template) lists. Destroy deletes a VM's clone after the VM, and the sweep deletes a clone whose VM has no row. A template holds no secret. No GitHub token reaches the builder: it gets the default branch from the Gateway's [mirror](#git-on-a-task-vm).
-
-#### Park, resume, and security
-
-A parked VM keeps its disk attached. On the next boot, `/etc/fstab` mounts it before `multi-user.target`, so the agent and Pi start after it. In the test on beast, the volume was mounted by the time the VM answered again, 8 seconds after the start.
-
-A template is built by code in a builder VM that no agent and no group ever ran on. Each group gets its own clone, which it can change freely, and the clone goes with its VM. So no state of one group reaches the template or another group. The Project's setup steps run in the builder, as they run in every task VM of the Project.
+Delete only unused `tvm-template-<project id>-<time>` custom volumes with `sudo incus --project PROJECT storage volume delete POOL VOLUME`. Remove abandoned `tvm-template-<time>` builder VMs only after confirming no old job is running. If an older installation left template images, inspect their aliases and delete only confirmed unused workspace-template fingerprints with `sudo incus --project PROJECT image delete FINGERPRINT`. Keep base and role images, operator-owned resources, and all `tvm-<id>-workspace` volumes belonging to live or parked groups. Incus retains snapshot blocks required by existing clones. The normal VM destroy and orphan sweep remove old claim clones after their owning VM is gone.
 
 ### Git on a task VM
 
-No GitHub token reaches a task VM or a template builder. The agent in a task VM runs as `orbit` with passwordless sudo, so it could read a token from any process in the VM. So the Gateway runs every Git command that talks to GitHub itself, in its own mirror of the Project. It moves Git objects to and from the VM over the Node's SSH connection, as a pack on standard input or standard output.
+No GitHub token reaches a task VM. The agent in a task VM runs as `orbit` with passwordless sudo, so it could read a token from any process in the VM. So the Gateway runs every Git command that talks to GitHub itself, in its own mirror of the Project. It moves Git objects to and from the VM over the Node's SSH connection, as a pack on standard input or standard output.
 
 #### The mirror
 
-Each Project with task VM work has one bare repository on the Gateway: `storage/app/task-vm-git/<project id>.git`, in the [shared Gateway storage](/reference/gateway-recovery#release-layout). The Gateway fetches into it from the Project repository URL with the Project's [repository access](/reference/github-app#how-orbit-reads-a-repository). The token is in the environment of one `git` process on the Gateway, as for any other read. The fetch asks only for the branches that the operation names, with `--no-tags`, into `refs/heads/<branch>`.
+Each Project whose task workspaces or CI-cache setup use the mirror has one bare repository on the Gateway: `storage/app/task-vm-git/<project id>.git`, in the [shared Gateway storage](/reference/gateway-recovery#release-layout). The Gateway fetches into it from the Project repository URL with the Project's [repository access](/reference/github-app#how-orbit-reads-a-repository). The token is in the environment of one `git` process on the Gateway, as for any other read. The required source fetch asks only for the branches that the operation names, with `--no-tags`, into `refs/heads/<branch>`.
+
+A separate optional fetch refreshes `refs/orbit/ci-cache/*` with its own timeout and prunes only that cache namespace. A cache-fetch failure clears the mirror's old cache refs and leaves the required source fetch intact.
 
 The mirror always uses HTTPS, because the token travels in an HTTPS header. A `git@github.com:` or `ssh://git@github.com/` URL becomes `https://github.com/<owner>/<name>.git`. Any other SSH URL fails with `Task VM Git reaches a repository over HTTPS only`.
 
@@ -413,13 +422,15 @@ A lock lets one operation at a time change the mirror of a Project. The lock cov
 3. It packs the objects of the branches that are not in the history of those commits.
 4. It sends the pack on the standard input of one SSH command. The VM indexes the pack and sets `refs/remotes/origin/<branch>` to the mirror's commit. A missing `task-<id>` loses its ref.
 5. When the default branch was sent, the VM points `refs/remotes/origin/HEAD` at it, as a clone does. Pest's test selection reads the default branch there.
+6. In a separate optional transfer, it sends only the cache ref for the selected code SHA. Failure of this transfer does not undo source delivery.
+
+A main checkout uses its selected main commit. A task branch keeps its recorded main baseline in the worktree-private `refs/worktree/orbit/ci-baseline`. [CI cache import](/reference/instance-setup#import-ci-main-caches) validates the ref and payload before using any cache files.
 
 | Operation | Branches |
 | --- | --- |
 | Workspace creation | The default branch and `task-<id>` |
 | [Fetch before a turn](/reference/tasks#fetch-before-a-turn) | The default branch, `task-<id>`, and a pull request base that is not the default branch |
 | Base branch fetch | The pull request base |
-| [Template build](#build-a-template) | The default branch |
 
 A workspace without a template starts from `git init`, with the Project repository URL as `origin`, and gets its branches this way. The log messages about a fresh clone mean this new repository. The VM's refs only shrink the pack. A VM that names commits it does not have gets a pack it cannot complete, and its own Git operation fails.
 
@@ -559,7 +570,7 @@ The task VM jobs run on the [Gateway queue](/reference/gateway-queue), which Lar
 | --- | --- |
 | `task-vms` | Provision, enroll, prepare, park, resume, and destroy a VM, the host sweep, and the pool refill |
 | `tasks` | The [publish](#publish-from-the-vm) of an approved commit (`PublishTaskVmCommit`), beside the scheduled commands |
-| `builds` | The workspace template jobs, `RefreshTaskVmWorkspaceTemplates` and `BuildTaskVmWorkspaceTemplate`, the [base image step chains](#build-the-base-image) and their cleanup, and the nightly refreshes, `RefreshTaskVmBaseImages` and [`RefreshUpCloudTaskVmBaseImage`](#refresh-the-upcloud-template-every-night) |
+| `builds` | The [base image step chains](#build-the-base-image) and their cleanup, and the nightly refreshes, `RefreshTaskVmBaseImages` and [`RefreshUpCloudTaskVmBaseImage`](#refresh-the-upcloud-template-every-night) |
 
 One worker runs the `task-vms` jobs one at a time and in order, so no two jobs change the same VM at once.
 
@@ -583,9 +594,7 @@ A builder VM has the size of a task VM and does not count against `max_vms`. It 
 | `RefillTaskVmPool` | Never. It runs again a minute later. A failed pool VM makes its host wait, as [Failures](#warm-vm-failures) describes |
 | `RefreshTaskVmBaseImages` | Never. The next night runs it again |
 | Base image step jobs | Poll until the step's deadline. Failure stops the chain and queues a template refresh. Failed builders stay available for resume |
-| `RefreshTaskVmWorkspaceTemplates` | Never. The next base image build, sync, or night queues it again |
 | `RefreshUpCloudTaskVmBaseImage` | Never. The next night runs it again |
-| `BuildTaskVmWorkspaceTemplate` | Waits a minute while another template build runs on the host, up to 10 times. A failed build or a Project without a default branch is not retried; see [Template failures](#template-failures) |
 
 The jobs log each step with its seconds as `Task VM step done.`. The wait for the worker is a step of its own, apart from the work: `queue` before `create` in `ProvisionTaskVm`, and `enroll-queue` before `boot` in `EnrollTaskVm`. The guest boots during `enroll-queue`. A `boot` after a released try counts from the launch.
 
@@ -691,20 +700,22 @@ No peer reaches a host's Incus API. The task VM project keeps its restrictions a
 
 ### Build the base image
 
-Run `task-vms:build-image {node} [--from-stock] [--resume=<build id>]` on the Gateway to build the base image on one host. It prints each step from the build row as the step finishes. `task-vms:image-builds` lists recent builds with their steps and errors. After a successful build, Orbit [syncs](#sync-the-base-image) the image to every other configured host.
+Run `task-vms:build-image {node} [--from-stock] [--resume[=<build id>]]` on the Gateway to build the base image on one host. It prints each step from the build row as the step finishes. `task-vms:image-builds` lists recent builds with their steps and errors. After a successful build, Orbit [syncs](#sync-the-base-image) the image to every other configured host.
+
+At enrollment, Orbit records the VM's actual `volatile.base_image` fingerprint in `task_vms.image_fingerprint`, not the image that the base alias happens to name at that time.
 
 The Gateway queues one Laravel job chain (`Bus::chain`) on `builds`, with one job for each step. The jobs reach the host over SSH with `sudo -n incus --project <project> …`:
 
 | Step | What it does |
 | --- | --- |
 | `LaunchImageBuilder` | Records the source image on the row and launches `tvm-image-<build id>` from it, with the host's VM size and bridge |
-| `AwaitImageBuilderBoot` | Waits for cloud-init to finish without errors |
+| `AwaitImageBuilderBoot` | Reads cloud-init status first, then polls for up to 600 seconds of this job's run, excluding queue time |
 | `UpgradeImagePackages` | Runs `apt-get update` and `apt-get full-upgrade`, and installs the image's apt packages |
 | One job for each program | Runs `bootstrap`, `caddy-package`, `app-dev-prerequisites`, `vp-manager`, `composer-manager`, the PHP source and each selectable PHP version, `rust-toolchain`, the agent binary, and Pi |
 | `PrepareImageBoot` | Applies the single boot and the lean boot, as described below |
 | `CleanImageBuilder` | Runs `resources/task-vms/base-image-clean.sh`, which removes the VM's identity. The [E2E role image](/reference/incus-topologies#role-images) build uses the same script |
 | `PublishImage` | Stops the builder, publishes it without compression as `orbit-task-base-<time>`, and deletes the builder |
-| `SmokeImage` | Boots a VM from the new image with the task VM user-data and runs `image-check.sh` |
+| `SmokeImage` | Boots a VM from the new image with the task VM user-data, polls cloud-init with the same 600-second run limit, and runs `image-check.sh` |
 | `PromoteImage` | Points `orbit-task-base` at the new image and deletes older images that no VM uses |
 
 The programs use the same rendering code as enrollment. A new tool or package adds one program and one step, not an edit to a shared provisioning script.
@@ -721,7 +732,7 @@ One `task_vm_image_builds` row records each build. It holds the host, source ima
 
 By default, the builder starts from the host's current `orbit-task-base` and changes only what changed. The host's first build, a build with `--from-stock`, and the build each Sunday night start from `ubuntu-26.04-vm`. The weekly stock build limits drift and removes leftovers of removed packages or programs within a week. The source is always a cleaned, published base image. It never ran an agent or Project script.
 
-[ADR 0206](/decisions/0206-build-task-vm-images-as-chains-of-small-jobs) keeps three next steps open: sync chains for each host, workspace template chains, and UpCloud using the same list of steps through SSH. Each gets its own row and its own pull request. Until then, those operations keep their current jobs.
+[ADR 0206](/decisions/0206-build-task-vm-images-as-chains-of-small-jobs) keeps sync chains and UpCloud step reuse open. [ADR 0207](/decisions/0207-one-image-recipe-shared-package-cache-no-workspace-templates) supersedes its workspace-template next step: workspaces clone and run setup, so no template chain or refresh remains. The base image chains and build records remain.
 
 The smoke VM must finish cloud-init without errors. It must have an ed25519 SSH host key and the Gateway's key for `orbit`. Its journal must list one boot only. After a build, `resources/task-vms/image-check.sh --lean-boot` also requires that it kept the lean boot through its first boot and has `orbit` with uid and gid 1000. The [UpCloud smoke](#build-the-upcloud-template) runs the same script with `--ufw`. A [sync](#sync-the-base-image) does not check those two, so it can still copy an image built before them.
 
@@ -743,7 +754,7 @@ The agent binary and the Pi executable are the Gateway's pins at build time. The
 
 The builder's user-data creates `orbit` without the `incus-admin` group, and adds these requirements to the task VM user-data: `orbit` with uid and gid 1000, `openssh-server`, Chromium's system libraries, and the workspace tools. `UpgradeImagePackages` upgrades and installs the apt packages. The workspace tools are `rsync` and `dig` from `bind9-dnsutils`, which Orbit's own test suites call, and `gcc` with `libc6-dev`, which Rust crates such as `ring` build with. The `rust-toolchain` program installs the stable Rust toolchain for `orbit` and links each of its tools, such as `cargo` and `rustup`, into `/usr/local/bin`. So shells that are not login shells, such as an agent's commands, find them too.
 
-A `bootcmd` creates the group `orbit` with gid 1000 before cloud-init creates the user, and the user gets uid 1000 with that group. The ids are pinned because workspace templates hold files that `orbit` owns: before, a stock image or package that added a user first moved `orbit` to uid 1001. A uid or gid that is taken makes cloud-init fail, and with it the build.
+A `bootcmd` creates the group `orbit` with gid 1000 before cloud-init creates the user, and the user gets uid 1000 with that group. The stable ids preserve ownership on existing workspace disks across boots. Before, a stock image or package that added a user first moved `orbit` to uid 1001. A uid or gid that is taken makes cloud-init fail, and with it the build.
 
 Enrollment on other Nodes runs the same software programs over SSH, rendered by the same code, so the image holds what they install. Task VM enrollment trusts the image and runs only the VM-specific parts. The clean script fails while part of the identity remains. The smoke boot also creates the image volume on the pool, so the first task VM is a clone too. New task VMs launch from the new image, and running VMs keep theirs. An image that a task VM still uses stays until a later build finds it unused.
 
@@ -755,7 +766,9 @@ It also stops Docker, containerd, and Caddy, and removes the IDs they write on t
 
 The builder never enrolls, so the image has no WireGuard key, agent secret, Caddy site, firewall rule, or Gateway record. Each VM gets those from its own enrollment.
 
-When a step fails, the row becomes `failed` with that step and its error. The failure callback queues a workspace template refresh against the images still current. A failed build keeps the current base image and retains its builder and smoke VMs for 24 hours after failure, so `task-vms:build-image {node} --resume=<build id>` can continue its failed step without racing immediate cleanup. A new build on that host discards the previous failed build's VMs. The host sweep discards them after the retention window. Explicit cleanup discards them immediately.
+When a step fails, the row becomes `failed` with that step and its error. No workspace setup or template refresh follows a failure. A failed build keeps the current base image and retains its builder and smoke VMs for 24 hours after failure, so `task-vms:build-image {node} --resume=<build id>` can continue its failed step without racing immediate cleanup.
+
+A bare `--resume` selects the newest resumable failed build on that host, or errors if none exists; it never starts a new build. `--resume` cannot be combined with `--from-stock`. A new build on that host discards the previous failed build's VMs. The host sweep discards them after the retention window. Explicit cleanup discards them immediately.
 
 Resume uses the builder for steps before publication and the published image for smoke and promote. Publish itself resumes with either its builder or its already published image: if builder deletion succeeded but its reply or the completion write was lost, replay uses the retained image without republishing.
 
@@ -829,7 +842,7 @@ To retire a host:
 
 `task-vms:retire-host` first sets up the remaining hosts again. That removes the old host's key from each of them. Then it removes the old host's own setup: its peer key lines, `/etc/orbit/task-vms/image-transfer`, the receiver, and `/var/lib/orbit-task-vm-image`. When the Node record is gone, it only cleans the remaining hosts. When SSH cannot reach the old host, the command fails after the remaining hosts are clean, and the old host keeps its own setup. Only then can [Node removal](/reference/node-provisioning#remove-a-node) remove the Node, if you want it gone.
 
-The old host's Incus project, images, [workspace templates](#start-the-workspace-from-a-template) `tvm-template-<project id>-<time>`, bridge, ACL, and pool stay. Remove them by hand. Delete the template volumes before the project, because Incus refuses to delete a project that still holds volumes.
+The old host's Incus project, images, [legacy workspace volumes](#remove-old-workspace-templates-manually) `tvm-template-<project id>-<time>`, bridge, ACL, and pool stay. Remove them by hand. Delete the template volumes before the project, because Incus refuses to delete a project that still holds volumes.
 
 ### Limit fleet traffic on the hub
 
@@ -890,7 +903,7 @@ Each task VM stores `model_proxy_origin` with its model key, and revokes the key
 
 The [Node settings field table](/reference/node-settings#task-vm-fields) defines the closed host object: `cidr`, `max_vms`, `project`, `network`, `pool`, `image_alias`, `zfs_dataset`, `cpus`, `memory`, `disk`, `warm_vms`, and `operator_owned`. The containing Node supplies the host identity, so there is no nested `node_id`. `warm_vms` remains supported while the warm pool exists. `operator_owned` keeps operator instances and custom volumes out of the [stray report](#report-strays).
 
-Placement selects active Nodes with this setting and capacity reads their slot budget. Host preparation and image sync use their pool, network, and image alias; sync targets only explicitly configured hosts. Later package-cache targeting follows the same setting, without making `app-dev` a host marker. Host settings do not turn on that later cache feature.
+Placement selects active Nodes with this setting and capacity reads their slot budget. Host preparation and image sync use their pool, network, and image alias; sync targets only explicitly configured hosts. Package-cache targeting follows the same setting, without making `app-dev` a host marker.
 
 Deployment [migrates the existing environment list](/reference/node-settings#migrate-the-environment-host-list) into Node 9 (`beast`) and Node 13 (`shark`), preserving live values and defaults rather than changing host resources. It preserves other Node settings and does not create host intent on `services` or any other Node merely because it is `app-dev`. After that copy, runtime consumers stop reading `ORBIT_TASK_VMS_INCUS_HOSTS`; there is no fallback. Verify the stored settings, then remove the variable from `gateway.env` with [`gateway:release:configure`](/reference/gateway-recovery#apply-an-env-change).
 
@@ -933,9 +946,6 @@ The reserved range must always be a private network. As soon as task VMs are ena
 | `task_vm.resume_timeout` | 504 | A `parked` VM did not become ready before its fixed 9-minute resume deadline |
 | `task_vm.vm_missing` | 502 | The sweep found a `warm`, `ready`, or `parked` task VM gone from its host |
 | `task_vm.pool_start_timeout` | 504 | A pool VM was still `provisioning` an hour after the refill recorded it |
-| `task_vm.workspace_template_failed` | 502 | A workspace template build failed, or the mount of a clone failed. The message names the stage |
-| `task_vm.workspace_template_running` | 409 | A workspace template build of the host is already running |
-| `task_vm.workspace_template_detach_failed` | 502 | A claim could not attach a workspace template, and could not unmount and detach the volume after it. The claim stops, so no fresh clone lands on the volume |
 | `task_vm.git_credential_refused` | 409 | A command that carries a GitHub credential was about to reach a task VM or an `incus` command. See [Git on a task VM](#git-on-a-task-vm) |
 
 ### Limits
@@ -971,22 +981,7 @@ The claim and the refill also have these limits:
 - A claim also reads an alias that someone moved by hand. The refill then replaces the warm VMs within a minute.
 - The backoff count lives in the Gateway cache. A cleared cache forgets it, and the next refill tries again.
 
-Workspace templates have these limits:
-
-- A template is as fresh as its last build. That is at most a day for an active Project. A claim fetches the rest, and the setup steps install what changed.
-- The builder installs the PHP packages of the version that `composer.json` selects. A setup step that needs more than the image and those packages fails the build, and the Project's workspaces start from a fresh clone.
-- One template build runs in the fleet at a time.
-- After a promote, the first claim of a Project without a recent group starts from a fresh clone.
-- That claim's template follows after the builds already queued. After a nightly promote, that can take 20 to 60 minutes.
-- A builder VM is not counted in a host's `max_vms`.
-
-An ignored file that no setup step rewrites keeps its state from the template's commit, up to a day old. Examples are a SQLite database from a migration, a config cache, or a `.env` that a step copies only while it is missing. Such a file can make a check pass in the workspace that fails from scratch. Orbit does not remove ignored files, because `vendor` and `node_modules` are ignored files too. A step that creates such a file should rewrite it. No current `vm` Project has one.
-
-Before the baseline check starts:
-
-- The workspace takes the template, the source, and the preparation: about 4 to 5 seconds.
-- The Route runs in the claim, so the next claim of the same tick waits for it.
-- A VM from an image built before the PHP packages still installs them before the check, in about 30 seconds.
+New workspaces always run Project setup. A package or CI cache miss can make setup slower; it never creates a template. Old claim volumes remain attached until their VM is destroyed. [Manual cleanup](#remove-old-workspace-templates-manually) removes unused legacy templates without touching running groups.
 
 Parking has these limits:
 
@@ -999,7 +994,7 @@ Git on a task VM has these limits:
 - The Gateway keeps a mirror of each Project with task VM work, about the size of its repository.
 - A task VM checkout has only the branches that [Send branches to the VM](#send-branches-to-the-vm) lists, and no tags.
 - The mirror of a Project serves one fetch, pack, or push at a time. A waiting operation fails after 300 seconds.
-- A workspace without a template gets the whole history of its branches from the Gateway once. The Gateway packs it, and the pack goes through the Gateway's storage on its way to the VM.
+- A fresh workspace gets the whole history of its branches from the Gateway once. The Gateway packs it, and the pack goes through the Gateway's storage on its way to the VM.
 - The operations that [refuse a credential](#what-the-gateway-trusts) on a task VM need the workspace's group to end first, or a Project without task VM workspaces.
 
 The hub filter has these limits:
@@ -1051,7 +1046,7 @@ When beast and shark have no free slot, a group of an opted-in Project may get i
 
 An UpCloud task VM follows the same path as an Incus one. It is a `task_vms` row with the provider `upcloud` and no host Node. The same jobs create, enroll, park, resume, and destroy it.
 
-It gets the same task VM user-data, enrolls as the `app-dev` Node `tvm-<id>` of the dev Cluster with an address from the reserved WireGuard range, and starts from a template built with the same recipe as the [base image](#build-the-base-image). So the hub filter, the Caddy guard, the rollout exclusion, and the placement invariant apply unchanged. Each claim starts the workspace from a fresh clone: [workspace templates](#start-the-workspace-from-a-template) are volumes on an Incus host.
+It gets the same task VM user-data, enrolls as the `app-dev` Node `tvm-<id>` of the dev Cluster with an address from the reserved WireGuard range, and starts from a template built with the same recipe as the [base image](#build-the-base-image). So the hub filter, the Caddy guard, the rollout exclusion, and the placement invariant apply unchanged. Each claim [clones and sets up its workspace](#clone-and-set-up-every-workspace), as on Incus, without a shared host package cache on UpCloud.
 
 ### Place a VM at UpCloud
 
@@ -1147,16 +1142,16 @@ A task workspace is a normal Instance on its task VM. Orbit runs the Project's t
 
 ## Orbit Project
 
-A group of the `orbit` Project runs on a task VM, like the group of any other Project. Its workspace is the Instance `task-<group id>` without a Route, and its template holds a checkout of `main` with the dependencies of all five Composer projects and the web app. Its task check is root `composer check`, which runs `bin/review-check` on the VM as `orbit`. [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm#orbit-project) records the design.
+A group of the `orbit` Project runs on a task VM, like the group of any other Project. Its workspace is the Instance `task-<group id>` without a Route, and every claim clones from the Gateway mirror and installs the dependencies of all five Composer projects and the web app. Its task check is root `composer check`, which runs `bin/review-check` on the VM as `orbit`. [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm#orbit-project) records the design.
 
 Configure the Project like this:
 
 - List it in `task_vms.medium_projects`, so its groups get a [medium VM](#size-by-declared-topology) with 4 vCPU. Its check runs the test suites in parallel.
 - Add the setup step [`@orbit/ci-caches`](/reference/instance-setup#import-ci-main-caches) after the install steps.
 
-A task VM has no main cache store, so without the `@orbit/ci-caches` step every check runs all tests. With it, the template and a workspace from a fresh clone get the test-impact graphs and quality caches of CI. Then the check runs only the affected tests, as on beast.
+A task VM has no main cache store, so without the `@orbit/ci-caches` step every check runs all tests. With it, a fresh workspace gets the test-impact graphs and quality caches of CI. Then the check runs only the affected tests, as on beast.
 
-The setup and teardown steps run on the VM as `orbit`. The `seed-dependencies` step does nothing there, because a task VM workspace has no `ORBIT_SEED_PATH`: the template brings the dependency trees instead.
+The setup and teardown steps run on the VM as `orbit`. The `seed-dependencies` step does nothing there, because a task VM workspace has no `ORBIT_SEED_PATH`: the install steps build fresh dependency trees using private caches seeded from the read-only host cache.
 
 ### Declare a topology
 
@@ -1208,7 +1203,9 @@ Orbit adds the counted records, with their time, node, label, and command, to th
 {"46": ["apps/agent/**", "apps/e2e/resources/guest/**", "apps/gateway/app/{Domain,Infrastructure,Actions}/{Nodes,Deployments,Routes,Caddy,WireGuard}/**"]}
 ```
 
-Orbit checks this when the handoff check of a group passes. It refuses the handoff when the subtask's diff changes a matching path and no subtask of the group declares a topology. The reminder starts with `This subtask changes paths that need real machines`. The implementer reverts those changes, or ends its turn blocked so the operator can add a subtask with a topology.
+Orbit checks this when the handoff check of a group passes. It refuses the handoff when the group's own changes touch a matching path and no subtask of the group declares a topology. It compares the candidate tree with the merge base of HEAD and the current `origin/main`, including uncommitted files. Changes inherited from main do not count; the group's own changes, including merge resolutions, still count. An unreadable merge base or diff fails the handoff. See the [handoff rubric](/reference/tasks#rubric-and-reminders).
+
+The reminder starts with `This subtask changes paths that need real machines`. The implementer reverts those changes, or ends its turn blocked so the operator can add a subtask with a topology.
 
 ## VM power
 

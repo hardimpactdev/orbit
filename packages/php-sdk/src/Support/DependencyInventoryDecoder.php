@@ -52,7 +52,7 @@ final class DependencyInventoryDecoder
     ): InstanceDependencyInventoryResponse {
         self::guardBody($body, $headerRequestId);
         $decoder = new self(GatewayRequestId::fromTransport($headerRequestId));
-        $data = $decoder->object($decoder->envelope($body)->data, ['instance_id', 'succeeded', 'composer', 'javascript']);
+        $data = $decoder->envelope($body)->data;
 
         return $decoder->inventoryResponse($data, $instanceId, $scan);
     }
@@ -130,9 +130,10 @@ final class DependencyInventoryDecoder
         return $envelope;
     }
 
-    private function inventoryResponse(#[SensitiveParameter] mixed $value, int $instanceId, bool $scan): InstanceDependencyInventoryResponse
+    private function inventoryResponse(#[SensitiveParameter] mixed $value, int $instanceId, bool $scan, bool $allowSubProjects = true): InstanceDependencyInventoryResponse
     {
-        $data = $this->object($value, ['instance_id', 'succeeded', 'composer', 'javascript']);
+        $hasProjects = $allowSubProjects && $value instanceof stdClass && property_exists($value, 'sub_projects');
+        $data = $this->object($value, ['instance_id', 'succeeded', 'composer', 'javascript', ...($hasProjects ? ['sub_projects'] : [])]);
         if (! is_int($data->instance_id) || $data->instance_id < 1 || $data->instance_id !== $instanceId) {
             $this->invalid();
         }
@@ -140,11 +141,27 @@ final class DependencyInventoryDecoder
         $javascript = $this->inventory($data->javascript, 'npm');
         $succeeded = $composer->succeeded === null || $javascript->succeeded === null
             ? null : $composer->succeeded && $javascript->succeeded;
+        $projects = null;
+        if ($hasProjects) {
+            if (! $data->sub_projects instanceof stdClass && $data->sub_projects !== []) {
+                $this->invalid();
+            }
+            $projects = [];
+            $succeeded = true;
+            foreach ((array) $data->sub_projects as $path => $project) {
+                $path = $this->text($path);
+                if (preg_match('/\A(?:apps|packages)\/[^\/]+\z/D', $path) !== 1 || in_array(substr($path, strpos($path, '/') + 1), ['.', '..'], true)) {
+                    $this->invalid();
+                }
+                $projects[$path] = $this->inventoryResponse($project, $instanceId, $scan, false);
+                $succeeded = $succeeded && $projects[$path]->succeeded === true;
+            }
+        }
         if ($data->succeeded !== $succeeded || ($scan && $succeeded === null)) {
             $this->invalid();
         }
 
-        return new InstanceDependencyInventoryResponse($instanceId, $succeeded, $composer, $javascript, $this->requestId ?? $this->invalid());
+        return new InstanceDependencyInventoryResponse($instanceId, $succeeded, $composer, $javascript, $this->requestId ?? $this->invalid(), $projects);
     }
 
     private function step(#[SensitiveParameter] mixed $value, string $ecosystem): DependencyUpdateStepResponse
@@ -172,7 +189,11 @@ final class DependencyInventoryDecoder
 
     private function inventory(#[SensitiveParameter] mixed $value, string $ecosystem): DependencyInventoryResponse
     {
-        $data = $this->object($value, ['ecosystem', 'state', 'succeeded', 'attempted_at', 'error_code', 'snapshot']);
+        $fields = ['ecosystem', 'state', 'succeeded', 'attempted_at', 'error_code', 'snapshot'];
+        if ($value instanceof stdClass && property_exists($value, 'error_detail')) {
+            $fields[] = 'error_detail';
+        }
+        $data = $this->object($value, $fields);
         if ($data->ecosystem !== $ecosystem || ! in_array($data->succeeded, [true, false, null], true)) {
             $this->invalid();
         }
@@ -195,7 +216,16 @@ final class DependencyInventoryDecoder
             $this->invalid();
         }
 
-        return new DependencyInventoryResponse($ecosystem, $state, $data->succeeded, $attemptedAt, $errorCode, $snapshot);
+        $detail = $data->error_detail ?? null;
+        if ($detail !== null && (! is_string($detail) || strlen($detail) > 255
+            || preg_match('/\A[\x20-\x7e]+\z/D', $detail) !== 1 || $errorCode === null)) {
+            $this->invalid();
+        }
+
+        return new DependencyInventoryResponse(
+            $ecosystem, $state, $data->succeeded, $attemptedAt, $errorCode, $snapshot,
+            $detail === null ? null : (new CredentialRedactor)->redactText($detail),
+        );
     }
 
     private function snapshot(#[SensitiveParameter] mixed $value, string $ecosystem): DependencySnapshotResponse

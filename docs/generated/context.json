@@ -848,7 +848,8 @@
             ],
             "governing_adrs": [
                 "0200",
-                "0206"
+                "0206",
+                "0207"
             ]
         },
         {
@@ -890,7 +891,8 @@
             ],
             "governing_adrs": [
                 "0200",
-                "0206"
+                "0206",
+                "0207"
             ]
         },
         {
@@ -1398,6 +1400,7 @@
             "governing_adrs": [
                 "0200",
                 "0206",
+                "0207",
                 "1500"
             ]
         },
@@ -1759,6 +1762,7 @@
             "title": "Feature delivery",
             "kind": "reference",
             "components": [
+                "apps/cli",
                 "apps/docs",
                 "apps/gateway",
                 "apps/web",
@@ -1856,7 +1860,8 @@
             "kind": "reference",
             "components": [
                 "apps/cli",
-                "apps/gateway"
+                "apps/gateway",
+                "packages/php-sdk"
             ],
             "concepts": [
                 "Access grant",
@@ -1969,7 +1974,6 @@
                 "Process",
                 "Project",
                 "Route",
-                "Schedule",
                 "Task",
                 "Task check",
                 "Task workspace",
@@ -2390,6 +2394,7 @@
                 "Node",
                 "Node agent",
                 "Process",
+                "Role",
                 "Tool"
             ],
             "governing_adrs": []

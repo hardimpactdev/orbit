@@ -51,6 +51,15 @@ interface TaskBaseBranchFetcher
     public function mergeBase(Task $group): string;
 
     /**
+     * Merges the fetched default branch directly, returning HEAD or null for a conflict.
+     * Refuses a dirty tracked tree or another branch. A conflict is aborted without losing work.
+     * Runs without credentials or repository hooks. An unchanged branch returns its existing HEAD.
+     *
+     * @throws TaskPullRequestException
+     */
+    public function mergeDefault(Task $group): ?string;
+
+    /**
      * Moves the workspace branch to an already-fetched commit, such as an incoming pull request head.
      * Refuses a workspace with tracked changes. The caller ensures no unpushed approved work is lost (ADR 0203).
      *

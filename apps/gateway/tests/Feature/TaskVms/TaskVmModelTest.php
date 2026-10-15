@@ -65,14 +65,13 @@ it('counts against a cap every live VM of the provider, and a failed one only at
         ->and(TaskVm::query()->countedAgainstCap(TaskVmProviderKind::UpCloud)->orderBy('id')->pluck('name')->all())->toBe(['tvm-cap-10', 'tvm-cap-11', 'tvm-cap-12']);
 });
 
-it('knows what each provider can do', function (TaskVmProviderKind $provider, bool $hostNode, array $sizes, bool $templates, bool $failedCount): void {
+it('knows what each provider can do', function (TaskVmProviderKind $provider, bool $hostNode, array $sizes, bool $failedCount): void {
     expect($provider->needsHostNode())->toBe($hostNode)
         ->and(array_values(array_filter(TaskVmSize::cases(), $provider->supports(...))))->toBe($sizes)
-        ->and($provider->hasWorkspaceTemplates())->toBe($templates)
         ->and($provider->countsFailedVms())->toBe($failedCount);
 })->with([
-    'incus' => [TaskVmProviderKind::Incus, true, TaskVmSize::cases(), true, false],
-    'upcloud' => [TaskVmProviderKind::UpCloud, false, [TaskVmSize::Normal], false, true],
+    'incus' => [TaskVmProviderKind::Incus, true, TaskVmSize::cases(), false],
+    'upcloud' => [TaskVmProviderKind::UpCloud, false, [TaskVmSize::Normal], true],
 ]);
 
 it('defines what each size takes in one place', function (): void {

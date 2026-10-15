@@ -700,6 +700,10 @@
   },
   "redirects": [
     {
+      "source": "/decisions/0208-scan-monorepo-dependencies-per-sub-project",
+      "destination": "/reference/instance-dependency-contracts#separate-monorepo-dependency-sources"
+    },
+    {
       "source": "/decisions/0203-review-and-merge-pull-requests-inside-orbit",
       "destination": "/reference/tasks#review-and-merge"
     },

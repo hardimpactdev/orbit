@@ -12,22 +12,14 @@ final readonly class TaskDeliverableEvidence
     /**
      * @param  list<array{status: string, path: string}>|null  $diff
      * @param  array<string, array{exit_code: int, output: string, base_started?: bool, base_exit_code?: int, base_output?: string, base_timed_out?: bool, base_timeout_seconds?: int}>  $commands
+     * @param  list<array{status: string, path: string}>|null  $topologyDiff
      */
-    public function __construct(public ?array $diff, public array $commands = []) {}
+    public function __construct(public ?array $diff, public array $commands = [], public ?array $topologyDiff = null) {}
 
     public static function fromArray(mixed $data): ?self
     {
         if (! is_array($data)) {
             return null;
-        }
-        $diff = null;
-        if (is_array($data['diff'] ?? null)) {
-            $diff = [];
-            foreach ($data['diff'] as $entry) {
-                if (is_array($entry) && is_string($entry['status'] ?? null) && is_string($entry['path'] ?? null)) {
-                    $diff[] = ['status' => $entry['status'], 'path' => $entry['path']];
-                }
-            }
         }
         $commands = [];
         foreach (is_array($data['commands'] ?? null) ? $data['commands'] : [] as $id => $run) {
@@ -55,7 +47,23 @@ final readonly class TaskDeliverableEvidence
             }
         }
 
-        return new self($diff, $commands);
+        return new self(self::diff($data['diff'] ?? null), $commands, self::diff($data['topology_diff'] ?? null));
+    }
+
+    /** @return list<array{status: string, path: string}>|null */
+    private static function diff(mixed $data): ?array
+    {
+        if (! is_array($data)) {
+            return null;
+        }
+        $diff = [];
+        foreach ($data as $entry) {
+            if (is_array($entry) && is_string($entry['status'] ?? null) && is_string($entry['path'] ?? null)) {
+                $diff[] = ['status' => $entry['status'], 'path' => $entry['path']];
+            }
+        }
+
+        return $diff;
     }
 
     /**

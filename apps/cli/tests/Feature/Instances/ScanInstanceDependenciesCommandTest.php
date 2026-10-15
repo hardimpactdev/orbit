@@ -42,7 +42,7 @@ function scan_cli_inventory(string $state = 'present', int $instanceId = 17): ar
     $snapshot = ['observed_at' => '2026-09-15T19:28:20+00:00', 'source' => [
         'project_root' => '/home/orbit/fixture', 'reference' => null, 'file_hashes' => [], 'format' => null,
     ], 'graph' => ['resolutions' => [], 'requirements' => []]];
-    $result = ['state' => 'present', 'succeeded' => true, 'attempted_at' => '2026-09-15T19:28:20+00:00', 'error_code' => null, 'snapshot' => $snapshot];
+    $result = ['state' => 'present', 'succeeded' => true, 'attempted_at' => '2026-09-15T19:28:20+00:00', 'error_code' => null, 'error_detail' => null, 'snapshot' => $snapshot];
     $js = ['ecosystem' => 'npm', ...$result];
     $js['snapshot']['graph'] = ['resolutions' => [
         ['id' => 'widget', 'ecosystem' => 'npm', 'name' => 'widget', 'version' => '1.0.0', 'regular' => true, 'development' => true, 'source_reference' => null, 'integrity' => null],
@@ -135,6 +135,26 @@ function scan_cli_mock(string $state = 'present', bool $domain = true): MockClie
 }
 
 describe('single instance dependency scan', function (): void {
+    it('shows the safe file diagnostic in human and JSON scan output', function (bool $json): void {
+        $envelope = scan_cli_inventory('stale');
+        $envelope['data']['javascript']['error_code'] = 'dependencies.ambiguous_manager';
+        $envelope['data']['javascript']['error_detail'] = 'conflicting manager files: package-lock.json, bun.lock';
+        MockClient::global([
+            ResolveInstanceRequest::class => MockResponse::make(['data' => ['domain' => 'fixture.example.test', 'instance_id' => 17, 'project_id' => 3, 'node_id' => 9, 'environment' => 'development'], 'meta' => ['request_id' => scan_cli_id()]]),
+            ScanInstanceDependenciesRequest::class => MockResponse::make($envelope),
+        ]);
+
+        $status = Artisan::call('instance:dependencies:scan', ['--project' => 'fixture.example.test', '--json' => $json, '--no-interaction' => true]);
+
+        $output = Artisan::output();
+        expect($status)->toBe(1);
+        expect($output)->toContain('conflicting manager files: package-lock.json, bun.lock');
+        if ($json) {
+            expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['javascript']['error_detail'])
+                ->toBe('conflicting manager files: package-lock.json, bun.lock');
+        }
+    })->with([true, false]);
+
     it('preserves the complete typed result in one plain JSON document', function (string $state): void {
         $mock = scan_cli_mock($state);
         $code = Artisan::call('instance:dependencies:scan', ['--project' => 'fixture.example.test', '--json' => true, '--no-interaction' => true]);
@@ -173,6 +193,28 @@ describe('single instance dependency scan', function (): void {
             expect($text)->toContain('stale', '2026-09-15T19:28:20+00:00', '2026-09-15T20:28:20+00:00');
         }
     })->with(['present', 'absent', 'stale', 'stale-absent', 'unknown']);
+
+    it('renders each monorepo source and preserves partial failures in human and JSON output', function (bool $json): void {
+        $inventory = scan_cli_inventory();
+        $inventory['data']['sub_projects'] = ['apps/good' => scan_cli_inventory()['data'], 'packages/bad' => scan_cli_inventory('unknown')['data']];
+        $inventory['data']['succeeded'] = false;
+        MockClient::global([
+            ResolveInstanceRequest::class => MockResponse::make(['data' => ['domain' => 'fixture.example.test', 'instance_id' => 17, 'project_id' => 3, 'node_id' => 9, 'environment' => 'development'], 'meta' => ['request_id' => scan_cli_id()]]),
+            ScanInstanceDependenciesRequest::class => MockResponse::make($inventory),
+        ]);
+
+        $status = Artisan::call('instance:dependencies:scan', ['--project' => 'fixture.example.test', '--json' => $json, '--no-interaction' => true]);
+
+        expect($status)->toBe(1);
+        if ($json) {
+            $output = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+            expect($output['sub_projects']['apps/good']['succeeded'])->toBeTrue();
+            expect($output['sub_projects']['packages/bad']['javascript']['error_code'])->toBe('dependencies.unreadable_source');
+            expect($output['javascript'])->toBe($inventory['data']['javascript']);
+        } else {
+            expect(Artisan::output())->toContain('apps/good', 'packages/bad', 'dependencies.unreadable_source');
+        }
+    })->with([true, false]);
 
     it('tells the operator how to refresh a stale lockfile', function (string $code, string $hint): void {
         $inventory = scan_cli_inventory('unknown');

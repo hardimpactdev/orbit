@@ -14,13 +14,14 @@ import time
 PHP_PROJECTS = ('apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/php-sdk')
 PHP_COMMANDS = (('composer', 'validate', '--strict'), ('composer', 'check'), ('composer', 'test:affected'))
 WEB_INSTALL = ('bun', 'install', '--frozen-lockfile')
-WEB_TYPES = ('bash', '-lc', 'generated=$(mktemp) && trap \'rm -f "$generated"\' EXIT && ./node_modules/.bin/openapi-typescript ../../docs/openapi.json -o "$generated" && cmp -- "$generated" src/api/schema.d.ts')
-WEB_CHECK_COMMANDS = (('bun', 'run', 'check'), ('bun', 'run', 'build'), WEB_TYPES)
+WEB_BUILD_OUTPUTS = ('bash', '-c', 'test -s dist/index.html && test -s dist/version.json')
+WEB_TYPES = ('bash', '-c', 'generated=$(mktemp) && trap \'rm -f "$generated"\' EXIT && ./node_modules/.bin/openapi-typescript ../../docs/openapi.json -o "$generated" && { diff -u --label src/api/schema.d.ts --label generated/schema.d.ts src/api/schema.d.ts "$generated" || { echo "src/api/schema.d.ts is stale. Run: cd apps/web && bun run types" >&2; exit 1; }; }')
+WEB_CHECK_COMMANDS = (('bun', 'run', 'check'), ('bun', 'run', 'build'), WEB_BUILD_OUTPUTS, WEB_TYPES)
 PI_SERVER_COMMANDS = (('bun', 'install', '--frozen-lockfile'), ('bun', 'run', 'check'),
                       ('bun', 'run', 'test'), ('bun', 'run', 'build'))
 AFFECTED = ('composer', 'test:affected')
 ARCHITECTURE_TESTS = {
-    'apps/cli': ('tests/Feature/CommandSurfaceTest.php',),
+    'apps/cli': ('tests/Feature/CommandSurfaceTest.php', 'tests/Feature/CliBinaryBuildContractTest.php'),
     'apps/gateway': (
         'tests/Unit/Architecture',
         'tests/Feature/Infrastructure/Instances/ConfiguredOriginReadTest.php',
@@ -28,6 +29,9 @@ ARCHITECTURE_TESTS = {
     ),
     'apps/e2e': (
         'tests/Unit/E2E/Value/TopologyNodeCatalogTest.php',
+        'tests/Feature/Configuration/ComposerConfigurationTest.php',
+        'tests/Feature/Configuration/SubprocessTestGroupTest.php',
+        'tests/Feature/Configuration/DocsMergeRefWorkflowTest.php',
     ),
     'packages/php-sdk': (
         'tests/Unit/SuccessRequestIdBoundaryTest.php',
@@ -38,8 +42,19 @@ ARCHITECTURE_TESTS = {
 }
 # Paths outside a project that its architecture tests read, so a change there runs them too.
 ARCHITECTURE_TRIGGERS = {
-    'apps/cli': ('docs/cli/',),
+    'apps/cli': ('docs/cli/', 'bin/orbit-build-cli-binary', 'bin/orbit-version', '.github/workflows/', 'bin/review-check'),
+    # Configuration and test-group contracts scan all five projects and repository tooling.
+    'apps/e2e': ('',),
 }
+# Include generated outputs as well as source inputs, so hand edits cannot bypass freshness checks.
+API_ARTIFACT_TRIGGERS = (
+    'apps/gateway/', 'apps/cli/', 'packages/php-sdk/', 'bin/docs-openapi', 'bin/mcp-tools',
+    'docs/openapi.json', 'docs/docs.json', 'bin/review-check',
+)
+API_ARTIFACT_COMMANDS = (('bin/docs-openapi', '--check'), ('bin/mcp-tools', '--check'))
+API_FIXTURE_TRIGGERS = ('docs/openapi.json', 'packages/php-sdk/fixtures/', 'apps/web/fixtures/',
+                        'bin/api-fixtures', 'bin/review-check')
+RUST_FORMAT = ('cargo', 'fmt', '--all', '--', '--check')
 BASES = ('origin/main', 'main')
 # Reports older than this are removed by the next run of the user that wrote them.
 REPORT_RETENTION_SECONDS = 24 * 60 * 60
@@ -87,8 +102,14 @@ def task_test_base(root, head):
     if not value or os.environ.get('CI') or os.environ.get('GITHUB_ACTIONS'):
         return None
     if not re.fullmatch(r'[0-9a-f]{40}(?:[0-9a-f]{24})?', value):
-        raise RuntimeError('The task test base must be a full commit SHA.')
-    if subprocess.run(['git', '-C', str(root), 'merge-base', '--is-ancestor', value, head],
+        raise RuntimeError('The task test base must be a full commit or tree SHA.')
+    try:
+        kind = git(root, 'cat-file', '-t', value)
+    except subprocess.CalledProcessError as error:
+        raise RuntimeError('The task test base does not exist.') from error
+    if kind == 'tree':
+        return value
+    if kind != 'commit' or subprocess.run(['git', '-C', str(root), 'merge-base', '--is-ancestor', value, head],
                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode:
         raise RuntimeError('The task test base is not an ancestor of the candidate.')
     return value
@@ -97,8 +118,7 @@ def task_test_base(root, head):
 def paths_since(root, base, head, committed):
     if committed:
         return git(root, 'diff', '--name-only', base, head).splitlines()
-    return sorted(set(git(root, 'diff', '--name-only', base).splitlines()) |
-                  set(git(root, 'ls-files', '--others', '--exclude-standard').splitlines()))
+    return git(root, 'diff', '--name-only', base, working_tree(root)).splitlines()
 
 
 def scope_tia_graph(destination, base):
@@ -118,6 +138,14 @@ def handoff_cache(root):
 def selected_projects(paths, root):
     """Return project profiles selected by changed paths and the OpenAPI schema dependency."""
     selected = [(project, PHP_COMMANDS) for project in PHP_PROJECTS]
+    if any(path.startswith(API_ARTIFACT_TRIGGERS) for path in paths):
+        selected.append(('repository', API_ARTIFACT_COMMANDS))
+    if any(path.startswith(API_FIXTURE_TRIGGERS) for path in paths):
+        selected.append(('repository', (('bin/api-fixtures', '--check'),)))
+    for project in ('apps/agent', 'apps/desktop/src-tauri'):
+        prefix = 'apps/desktop/' if 'desktop' in project else project + '/'
+        if any(path.startswith(prefix) or path == '.github/workflows/ci.yml' for path in paths):
+            selected.append((project, (RUST_FORMAT,)))
     if any(path.startswith('apps/web/') for path in paths):
         selected.extend((('apps/web', (WEB_INSTALL,)), ('apps/web', WEB_CHECK_COMMANDS)))
     elif 'docs/openapi.json' in paths:
@@ -126,6 +154,9 @@ def selected_projects(paths, root):
         selected.append(('apps/pi-server', PI_SERVER_COMMANDS))
     for project, _commands in list(selected):
         if project not in PHP_PROJECTS:
+            continue
+        if 'bin/check-classification-fakes' in paths:
+            selected.append((project, (('php', '../../bin/check-classification-fakes', 'tests'),)))
             continue
         test_sources = [path[len(project) + 1:] for path in changed_php_test_sources(paths)
                         if path.startswith(project + '/') and (root / path).is_file()]
@@ -140,6 +171,8 @@ def command_log_name(command):
         return 'classification-fakes'
     if command == WEB_TYPES:
         return 'generated-types'
+    if command == WEB_BUILD_OUTPUTS:
+        return 'build-outputs'
     return '-'.join(command).replace('/', '-').replace(':', '-')
 
 
@@ -298,7 +331,7 @@ def main():
                  'exit_code': result.returncode, 'seconds': round(time.monotonic() - started, 3), 'log': str(log)}
         report['checks'].append(check)
         print(f'[repository] bin/docs-impact --gate --base {base}: '
-              f'{"passed" if result.returncode == 0 else "FAILED"} ({log})', flush=True)
+              f'{"passed" if result.returncode == 0 else "FAILED"} ({report["checks"][-1]["seconds"]:.3f}s; {log})', flush=True)
         if result.returncode:
             print(log.read_text(), flush=True)
     else:
@@ -306,7 +339,7 @@ def main():
         log.write_text('Unable to determine the group start commit: no main branch merge base is available.\n')
         report['checks'].append({'project': 'repository', 'command': ['bin/docs-impact', '--gate'],
                                  'exit_code': 1, 'seconds': 0, 'log': str(log)})
-        print(f'[repository] bin/docs-impact --gate: FAILED ({log})', flush=True)
+        print(f'[repository] bin/docs-impact --gate: FAILED (0.000s; {log})', flush=True)
         print(log.read_text(), flush=True)
     for check_name in ('project-vocabulary', 'env-docs', 'tooling-baseline', 'docs-nav'):
         log = directory / f'{check_name}.log'
@@ -318,14 +351,17 @@ def main():
                                  'exit_code': result.returncode,
                                  'seconds': round(time.monotonic() - started, 3), 'log': str(log)})
         print(f'[repository] bin/{check_name}: '
-              f'{"passed" if result.returncode == 0 else "FAILED"} ({log})', flush=True)
+              f'{"passed" if result.returncode == 0 else "FAILED"} ({report["checks"][-1]["seconds"]:.3f}s; {log})', flush=True)
         if result.returncode:
             print(log.read_text(), flush=True)
     # Seed absent quality and test caches first, so a fresh clone does not run every check cold.
     # A cache miss or a missing seeding script only makes the checks slower.
     for seed in (['bin/worktree-cache', '--worktree', str(root)], ['bin/tia-cache', 'seed', '--repository', str(root)]):
         if (root / seed[0]).is_file():
-            subprocess.run([str(root / seed[0]), *seed[1:]], check=False)
+            started = time.monotonic()
+            seeded = subprocess.run([str(root / seed[0]), *seed[1:]], check=False)
+            print(f'[cache] {" ".join(seed)}: {"passed" if seeded.returncode == 0 else "cache miss"} '
+                  f'({time.monotonic() - started:.3f}s)', flush=True)
     for project, project_commands in selected_projects(paths, root):
         commands = list(project_commands)
         triggers = (project + '/', *ARCHITECTURE_TRIGGERS.get(project, ()))
@@ -346,7 +382,7 @@ def main():
                 command_environment['ORBIT_TIA_DIRECTORY'] = str(run_tia_directory)
             with log.open('w') as output:
                 try:
-                    result = subprocess.run(command, cwd=root / project, stdout=output, stderr=subprocess.STDOUT,
+                    result = subprocess.run(command, cwd=root if project == 'repository' else root / project, stdout=output, stderr=subprocess.STDOUT,
                                             env=command_environment)
                 except FileNotFoundError as error:
                     missing = error.filename or command[0]
@@ -364,7 +400,7 @@ def main():
                 check['warning'] = warning['message']
                 report['warnings'].append(warning)
             report['checks'].append(check)
-            print(f'[{project}] {" ".join(command)}: {"passed" if result.returncode == 0 else "FAILED"} ({log})', flush=True)
+            print(f'[{project}] {" ".join(command)}: {"passed" if result.returncode == 0 else "FAILED"} ({check["seconds"]:.3f}s; {log})', flush=True)
             if warning is not None:
                 print(f'[{project}] WARNING: {warning["message"]} ({log})', flush=True)
             if result.returncode:

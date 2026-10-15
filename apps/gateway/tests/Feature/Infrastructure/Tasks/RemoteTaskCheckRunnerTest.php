@@ -372,6 +372,29 @@ it('reports the paths a check changed in the working tree, but not ignored files
         ->and($reading->changedPaths)->toBe(['written.txt']);
 });
 
+it('snapshots same-size edits whose timestamp matches the original index without changing that index', function (): void {
+    $checkout = check_runner_checkout('true');
+    $timestamp = 1_700_000_000;
+    (new Process(['git', 'config', 'core.trustctime', 'false'], $checkout))->mustRun();
+    file_put_contents($checkout.'/state', "old\n");
+    touch($checkout.'/state', $timestamp);
+    (new Process(['git', 'add', '--all'], $checkout))->mustRun();
+    (new Process(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '-m', 'base'], $checkout))->mustRun();
+    file_put_contents($checkout.'/state', "new\n");
+    touch($checkout.'/state', $timestamp);
+    // Reproduce Git's racy-clean window without waiting for a clock boundary.
+    touch($checkout.'/.git/index', $timestamp);
+    $index = file_get_contents($checkout.'/.git/index');
+    $runner = check_runner(new LocalShellSshExecutor);
+    $instance = check_runner_instance($checkout);
+
+    $snapshot = $runner->snapshot($instance);
+
+    expect((new Process(['git', 'show', $snapshot->tree.':state'], $checkout))->mustRun()->getOutput())->toBe("new\n");
+    expect(file_get_contents($checkout.'/.git/index'))->toBe($index)
+        ->and(filemtime($checkout.'/.git/index'))->toBe($timestamp);
+});
+
 it('keeps an untracked directory symlink in snapshots and reports one created during the handoff check', function (): void {
     $checkout = check_runner_checkout('true');
     $target = $this->directory.'/target';
@@ -669,6 +692,81 @@ function check_runner_deliverables_checkout(string $check = 'echo checks passed'
 
     return [$checkout, $start];
 }
+
+describe('topology diff evidence', function (): void {
+    it('records only the group changes against main, including the candidate working tree', function (bool $merge, string $own): void {
+        [$checkout, $start] = check_runner_deliverables_checkout();
+        $git = static fn (array $arguments): string => trim((new Process(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', ...$arguments], $checkout))->mustRun()->getOutput());
+        $git(['add', '--all']);
+        $git(['commit', '--quiet', '-m', 'Group documentation']);
+        $git(['branch', 'task']);
+        $git(['checkout', '--quiet', '-b', 'upstream', $start]);
+        File::ensureDirectoryExists($checkout.'/apps/agent/src');
+        file_put_contents($checkout.'/apps/agent/src/main.rs', "// Released on main\n");
+        $git(['add', '--all']);
+        $git(['commit', '--quiet', '-m', 'Released Node change']);
+        $git(['update-ref', 'refs/remotes/origin/main', 'HEAD']);
+        $git(['checkout', '--quiet', 'task']);
+        $ownPath = 'apps/agent/src/own.rs';
+        if ($own === 'committed') {
+            File::ensureDirectoryExists(dirname($checkout.'/'.$ownPath));
+            file_put_contents($checkout.'/'.$ownPath, "// Group Node change\n");
+            $git(['add', '--all']);
+            $git(['commit', '--quiet', '-m', 'Group Node change']);
+        }
+        if ($merge) {
+            $git(['merge', '--quiet', '--no-ff', '--no-edit', 'origin/main']);
+        }
+        if ($own === 'untracked') {
+            file_put_contents($checkout.'/'.$ownPath, "// Group Node change\n");
+        }
+        if ($own === 'resolution') {
+            $ownPath = 'apps/agent/src/main.rs';
+            file_put_contents($checkout.'/'.$ownPath, "// Group merge resolution\n");
+            $git(['add', '--all']);
+            $git(['commit', '--quiet', '--amend', '--no-edit']);
+        }
+        $instance = check_runner_instance($checkout);
+        $runner = check_runner(new LocalShellSshExecutor);
+
+        $reading = check_runner_wait($runner, $instance, $runner->start($instance, null, deliverables: [
+            'start' => $start, 'commands' => [], 'topology' => true,
+        ]));
+
+        $expected = [
+            ['status' => 'M', 'path' => 'README.md'],
+            ['status' => 'A', 'path' => 'app/tests/ExportTest.php'],
+            ['status' => 'D', 'path' => 'app/tests/OldTest.php'],
+        ];
+        if ($own !== 'none') {
+            $expected[] = ['status' => $own === 'resolution' ? 'M' : 'A', 'path' => $ownPath];
+        }
+        expect($reading->exitCode)->toBe(0)
+            ->and($reading->deliverables['topology_diff'] ?? null)->toEqualCanonicalizing($expected);
+        if ($merge && $own === 'none') {
+            expect($reading->deliverables['diff'])->toContain(['status' => 'A', 'path' => 'apps/agent/src/main.rs']);
+        }
+    })->with([
+        'main merge only' => [true, 'none'],
+        'own Node change without merging main' => [false, 'committed'],
+        'main merge with own Node commit' => [true, 'committed'],
+        'main merge with untracked Node file' => [true, 'untracked'],
+        'main merge with own resolution of a main Node path' => [true, 'resolution'],
+    ]);
+
+    it('records an unreadable topology diff when origin main is missing', function (): void {
+        [$checkout, $start] = check_runner_deliverables_checkout();
+        $instance = check_runner_instance($checkout);
+        $runner = check_runner(new LocalShellSshExecutor);
+
+        $reading = check_runner_wait($runner, $instance, $runner->start($instance, null, deliverables: [
+            'start' => $start, 'commands' => [], 'topology' => true,
+        ]));
+
+        expect($reading->deliverables)->toHaveKey('topology_diff', null)
+            ->and($reading->deliverables['diff'])->not->toBeNull();
+    });
+});
 
 describe('deliverable evidence', function (): void {
     it('reuses the task check result for a matching fixup deliverable without running it twice', function (int $exit): void {
@@ -1121,11 +1219,11 @@ it('restores the builtin TIA baseline after dependency setup before a task check
     expect(file_get_contents($target.'/graph.json'))->toContain(str_repeat('a', 40));
 });
 
-it('passes the handoff test base only to a scoped project check', function (bool $scoped): void {
+it('passes the handoff test base only to a scoped project check', function (bool $scoped, bool $tree): void {
     $checkout = check_runner_checkout('true');
     $instance = check_runner_instance($checkout);
     $runner = check_runner(new LocalShellSshExecutor);
-    $base = trim((new Process(['git', 'rev-parse', 'HEAD'], $checkout))->mustRun()->getOutput());
+    $base = trim((new Process(['git', 'rev-parse', $tree ? 'HEAD^{tree}' : 'HEAD'], $checkout))->mustRun()->getOutput());
     $command = $scoped ? 'test "$ORBIT_TASK_CHECK_BASE" = '.escapeshellarg($base) : 'test -z "${ORBIT_TASK_CHECK_BASE+set}"';
     $deliverables = $scoped ? ['start' => $base, 'commands' => [], 'test_base' => $base] : null;
 
@@ -1133,7 +1231,7 @@ it('passes the handoff test base only to a scoped project check', function (bool
     $reading = check_runner_wait($runner, $instance, $process);
 
     expect($reading->exitCode)->toBe(0);
-})->with([true, false]);
+})->with(['scoped commit' => [true, false], 'scoped tree' => [true, true], 'unscoped' => [false, false]]);
 
 describe('ssr port', function (): void {
     it('starts the check of two workspaces on one Node with their own allocated ssr ports and never the held 13719', function (): void {

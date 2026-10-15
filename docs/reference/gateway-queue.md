@@ -32,7 +32,7 @@ Laravel Horizon runs three queues on the connection. Each has its own supervisor
 | --- | --- | --- |
 | `tasks` | 3 | The scheduled commands below and the publish of an approved commit. The Git mirror's lock keeps one push per Project at a time |
 | `task-vms` | 1 | Task VM provision, enroll, prepare, park, resume, and destroy, the guard of a warm claim, the host sweep, and the pool refill |
-| `builds` | 1 | The [base image step chains and refreshes](/reference/compute-drivers#build-the-base-image), the [UpCloud template refresh](/reference/compute-drivers#refresh-the-upcloud-template-every-night), and the [workspace template](/reference/compute-drivers#build-a-template) refreshes and builds |
+| `builds` | 1 | The [base image step chains and refreshes](/reference/compute-drivers#build-the-base-image), the [UpCloud template refresh](/reference/compute-drivers#refresh-the-upcloud-template-every-night), and trusted [package cache fills](/reference/compute-drivers#shared-package-cache) |
 
 The `task-vms` jobs run one at a time and in order, so no two jobs change the same VM at once.
 
@@ -97,7 +97,7 @@ A release moves Horizon in the serving phase, right after the switch, and the ol
 
 `horizon:terminate` sends SIGTERM to the Horizon master. Horizon does not use fast termination: the master waits until each worker has finished its running job, on the release that job started on, and then exits. The Process's restart policy then starts Horizon again, on the new release. A new `task-vms` worker therefore never starts while an old one runs, and task VM jobs stay in order.
 
-The cost is the wait. A release during a base image build waits for one short step, not the whole build. The build is a [chain of jobs](/reference/compute-drivers#build-the-base-image), and the next step runs on the new release. Until the running jobs end, no new job starts on any queue, and `tasks:tick` waits too. Other operations, such as syncs and workspace template builds, still run as whole jobs until they have their own chains. The master waits at most the longest supervisor timeout, 1700 seconds, and then exits.
+The cost is the wait. A release during a base image build waits for one short step, not the whole build. The build is a [chain of jobs](/reference/compute-drivers#build-the-base-image), and the next step runs on the new release. Until the running jobs end, no new job starts on any queue, and `tasks:tick` waits too. Syncs still run as whole jobs until they have their own chains. Workspace template builds and refreshes are removed. The master waits at most the longest supervisor timeout, 1700 seconds, and then exits.
 
 The release does not wait for the new master. A failure of the step fails the handoff with `gateway.release_units_failed`, and the release switches back.
 
@@ -159,3 +159,5 @@ Doctor does not report a stopped Horizon or an old `last_tick_at` yet. Until it 
 The scheduler used to run its work, and the task VM workers, as foreground commands. A foreground command holds the scheduler's run for that minute, so a slow tick or a VM job could hold a publish for minutes. With dispatch only, the scheduler's run takes milliseconds, and each queue's workers decide when a job starts.
 
 Horizon needs Redis. The fleet already runs Valkey on the `database` role, so the Gateway uses that registered connection instead of a second server on its own host. Orbit's records keep its address, as for every other Database connection.
+
+Trusted [package cache fills](/reference/compute-drivers#shared-package-cache) run on `builds`, coalesced by task VM host. A running fill can have one pending successor, so a default-branch lock change during filling is retained. The host writer locks and publishes only verified missing archives.

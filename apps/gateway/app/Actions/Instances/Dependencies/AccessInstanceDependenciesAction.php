@@ -39,6 +39,7 @@ final readonly class AccessInstanceDependenciesAction
                         $instance->id,
                         $result === null ? $this->read->execute($instance->id, DependencyEcosystem::Composer) : $result->composer,
                         $result === null ? $this->read->execute($instance->id, DependencyEcosystem::Npm) : $result->javascript,
+                        $result === null ? $this->read->subProjects($instance->id) : $result->subProjects,
                     );
                 });
             });

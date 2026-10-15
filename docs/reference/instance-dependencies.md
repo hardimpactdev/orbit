@@ -10,15 +10,15 @@ covers:
 
 # Instance dependencies
 
-The Gateway keeps an inventory of the resolved dependencies of each Instance. It reads the manifests and lockfiles in the Instance's dependency directory, so the inventory works while dependencies are [pruned](/reference/app-dev-runtime-hibernation#dependency-prune). On a development Instance, Orbit can also update dependencies within their declared version constraints. [Dependency contracts](/reference/instance-dependency-contracts) holds the reader rules, stored tables, and response shapes.
+The Gateway keeps an inventory of the resolved dependencies of each Instance. It reads manifests and lockfiles, so the inventory works while dependencies are [pruned](/reference/app-dev-runtime-hibernation#dependency-prune). For a `monorepo` Project, the scan records a separate inventory for each qualifying sub-project under `apps/` and `packages/`. On a development Instance, Orbit can also update dependencies within their declared version constraints. [Dependency contracts](/reference/instance-dependency-contracts) holds the reader rules, stored tables, and response shapes.
 
 ## What the inventory holds
 
 The inventory belongs to one Instance. Two Instances of a Project can resolve different versions.
 
-For a Laravel Instance, the dependency directory is its [application directory](/reference/projects#application-directory), not its web root. With root `apps/site/public`, a development scan reads `<checkout>/apps/site`, and a production scan reads `<home>/releases/<selected-release>/apps/site`. Root `public` keeps the checkout or release root. Non-Laravel Instances still read the repository root.
+Non-monorepo Instances keep their existing dependency directory selection. An Instance whose source is classified as Laravel, or whose Project type is `laravel-app` or `symfony-app`, reads its [application directory](/reference/projects#application-directory), not its web root. With root `apps/site/public`, a development scan reads `<checkout>/apps/site`, and a production scan reads `<home>/releases/<selected-release>/apps/site`. Root `public` keeps the checkout or release root. Other non-monorepo Instances read the repository root. Each non-monorepo scan still reads one directory.
 
-A scan reads only that directory; it does not combine manifests from the repository root or sibling apps. The response's `source.project_root` names the directory actually read. When the CLI selects by directory, it identifies the Instance, not an arbitrary dependency tree within it. Orbit reads only these files:
+A non-monorepo scan reads only that directory; it does not combine manifests from the repository root or sibling apps. Each inventory's `source.project_root` names the directory actually read. When the CLI selects by directory, it identifies the Instance, not an arbitrary dependency tree within it. Orbit reads only these files:
 
 | Ecosystem | Files | Supported format |
 | --- | --- | --- |
@@ -31,7 +31,24 @@ npm, pnpm, and Bun all record packages in the `npm` ecosystem. Yarn, binary `bun
 
 For each package, the inventory records every resolved version and how the root reaches it: direct or transitive, regular or development, and peer requirements. It records what the lockfile says. It does not prove that packages are installed or safe.
 
-A scan reads files only. It runs no package manager, project script, or registry request.
+A scan reads files only. It runs no package manager, project script, or registry request. A failed scan includes a short `error_detail` beside its stable error code. The detail names a file or failed check without showing file contents or secrets. `instance:dependencies:show`, scan responses, and CLI scan output retain that detail with the latest attempt. A declared JavaScript manager takes precedence over stray lockfiles; conflicting declarations or undeclared competing managers still fail. See [Dependency contracts](/reference/instance-dependency-contracts#package-manager-selection) for the selection rules.
+
+### Monorepo sub-projects
+
+For an Instance whose Project type is `monorepo`, Orbit looks only in the repository's top-level `apps/` and `packages/` directories. Each direct child directory, such as `apps/gateway` or `packages/php-sdk`, is a candidate. Orbit does not search deeper directories or other top-level directories.
+
+A candidate is a web project when it contains either:
+
+- `composer.json`, whether or not `composer.lock` is present.
+- `package.json` together with at least one supported lockfile name: `package-lock.json`, `npm-shrinkwrap.json`, `pnpm-lock.yaml`, or `bun.lock`.
+
+Orbit skips other candidates and records no inventory or scan attempt for them. A directory with only `package.json`, or with only a Yarn lockfile or binary `bun.lockb`, does not qualify through the JavaScript test. Qualification is not validation: a qualifying project with a missing Composer lockfile, an unsupported lockfile version, or another reader error still gets its own failed attempt. A Composer project also has its JavaScript ecosystem checked under the existing rules.
+
+Each qualifying sub-project has its own inventory, identified by its repository-relative path, such as `apps/gateway`. Two sub-projects can resolve different versions of the same package without replacing each other's observations. Errors and last successful observations also belong to that sub-project and ecosystem. A failure in one sub-project does not stop or fail scans of the others.
+
+If neither `apps/` nor `packages/` exists, the monorepo scan keeps the existing single-directory behavior. If either directory exists but no candidate qualifies, skipped directories do not become absent or empty inventories. Non-monorepo types do not use this discovery rule. Finding sub-projects does not enable workspace, multi-importer, or local-link support in the readers.
+
+`instance:dependencies:show`, scan output, the CLI, and the API expose these separate inventories and their errors. Existing root fields remain available for clients using the single-directory contract; they are not a merged graph of the sub-projects. See [the collection and response contracts](/reference/instance-dependency-contracts#collection) and [the source-scoping rationale](/reference/instance-dependency-contracts#separate-monorepo-dependency-sources).
 
 ## Scan
 
@@ -51,11 +68,11 @@ orbit instance:dependencies:scan --all
 
 No match or more than one match fails before any work, with `dependencies.target_not_found` or `dependencies.target_ambiguous`. `--all` with `--project` returns `dependencies.target_conflict`. An `--all` scan continues after a failed Instance, and Ctrl-C marks the rest as skipped.
 
-Human output shows each ecosystem's state, counts, and times. An unknown count shows as an em dash, and verified absence shows zero. `--json` returns the typed inventory, or for `--all`, a document with `succeeded`, `summary`, `instances`, and `request_id`. The exit status is zero only when every scanned ecosystem succeeds.
+Human output shows each ecosystem's state, counts, and times, separately for each monorepo sub-project. An unknown count shows as an em dash, and verified absence shows zero. `--json` returns the typed inventory, or for `--all`, a document with `succeeded`, `summary`, `instances`, and `request_id`. The exit status is zero only when every scanned ecosystem succeeds, including those in each qualifying monorepo sub-project. A sub-project failure makes the overall scan unsuccessful without marking successful siblings as failed.
 
 ## Refresh rules
 
-Each ecosystem keeps its last successful observation and its latest attempt, separately.
+Each ecosystem keeps its last successful observation and its latest attempt, separately. For monorepos, this rule applies separately within each qualifying sub-project.
 
 | Condition | Result |
 | --- | --- |
@@ -80,7 +97,9 @@ orbit instance:dependencies:update
 orbit instance:dependencies:update --project=commander.test
 ```
 
-The Gateway runs these steps as the Node's user in the same dependency directory used by scans. For a Laravel root of `apps/site/public`, that is `<checkout>/apps/site`; presence checks, Composer, Vite+, and the final scan all use that directory. These commands do not update repository-root or sibling manifests. Unlike dependency updates, repository-owned setup, deploy, and task-check commands keep their [repository-root scope](/reference/projects#application-directory):
+The update command does not iterate over monorepo sub-projects. For a monorepo it remains repository-root-only; it does not update manifests under `apps/` or `packages/`. Per-sub-project updates are out of scope.
+
+For non-monorepo types, the Gateway runs these steps as the Node's user in the same dependency directory used by scans. For a Laravel root of `apps/site/public`, that is `<checkout>/apps/site`; presence checks, Composer, Vite+, and the final scan all use that directory. These Laravel updates do not update repository-root or sibling manifests. Unlike dependency updates, repository-owned setup, deploy, and task-check commands keep their [repository-root scope](/reference/projects#application-directory):
 
 1. It inspects both ecosystems. A refusal stops the whole update before any package command. See the refusals below.
 2. It runs `composer update --no-interaction --no-ansi --no-progress --no-audit` for a Composer project. Regular and development packages move within their constraints.

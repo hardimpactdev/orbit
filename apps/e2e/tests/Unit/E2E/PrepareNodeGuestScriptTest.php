@@ -144,6 +144,51 @@ describe('prepare node guest script', function () {
         }
     });
 
+    it('limits DHCP to uplinks and grants Docker access only where installed, idempotently', function (bool $network, bool $docker, bool $member) {
+        $root = temporaryPath('orbit-runtime-', 4);
+        mkdir("{$root}/bin", 0o700, true);
+        mkdir("{$root}/etc/systemd/network", 0o700, true);
+        $path = "{$root}/etc/systemd/network/00-orbit-e2e.network";
+        if ($network) {
+            file_put_contents($path, "[Match]\nType=ether\n\n[Network]\nDHCP=ipv4\nLinkLocalAddressing=no\n");
+        }
+        if ($member) {
+            touch("{$root}/member");
+        }
+        $commands = [
+            'networkctl' => "printf '%s\\n' \"networkctl \$*\" >> '{$root}/calls'",
+            'getent' => $docker ? 'exit 0' : 'exit 2',
+            'id' => "if [ -f '{$root}/member' ]; then echo 'orbit docker'; else echo orbit; fi",
+            'usermod' => "printf '%s\\n' \"usermod \$*\" >> '{$root}/calls'; touch '{$root}/member'",
+            'docker' => 'exit 0',
+        ];
+        foreach ($commands as $name => $body) {
+            file_put_contents("{$root}/bin/{$name}", "#!/bin/sh\n{$body}\n");
+            chmod("{$root}/bin/{$name}", 0o700);
+        }
+        $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/prepare-node.sh');
+        file_put_contents("{$root}/prepare-node.sh", str_replace('/etc/', "{$root}/etc/", $source));
+
+        for ($attempt = 0; $attempt < 2; $attempt++) {
+            $process = new Process(['bash', "{$root}/prepare-node.sh", 'configure-runtime'], env: ['PATH' => "{$root}/bin:".getenv('PATH')]);
+            expect($process->run())->toBe(0, $process->getErrorOutput());
+        }
+
+        $expected = ($network ? "networkctl reload\n" : '').($docker && ! $member ? "usermod --append --groups docker orbit\n" : '');
+        expect(is_file("{$root}/calls") ? file_get_contents("{$root}/calls") : '')->toBe($expected);
+        expect(is_file($path))->toBe($network);
+        if ($network) {
+            expect(file_get_contents($path))->toBe("[Match]\nType=ether\nName=en* eth*\n\n[Network]\nDHCP=ipv4\nLinkLocalAddressing=no\n");
+            expect(fileperms($path) & 0o777)->toBe(0o644);
+        }
+    })->with([
+        'old Docker VM' => [true, true, false],
+        'already authorized Docker VM' => [true, true, true],
+        'VM without Docker' => [true, false, false],
+        'roleless container' => [false, false, false],
+        'Docker without harness networking' => [false, true, false],
+    ]);
+
     it('does not expose an ssh-pins mode', function () {
         $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/prepare-node.sh');
         expect($source)->not->toContain('ssh-pins');

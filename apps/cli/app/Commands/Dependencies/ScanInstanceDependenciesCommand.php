@@ -84,6 +84,10 @@ final class ScanInstanceDependenciesCommand extends GatewayCommand
             $this->renderIdentity($result->instanceId, $target->projectId, $target->nodeId, $target->environment, $succeeded, $result->requestId);
             $this->renderEcosystem('Composer', $result->composer);
             $this->renderEcosystem('JavaScript', $result->javascript);
+            foreach ($result->subProjects ?? [] as $path => $project) {
+                $this->renderEcosystem($path.' · Composer', $project->composer);
+                $this->renderEcosystem($path.' · JavaScript', $project->javascript);
+            }
         }
 
         return $succeeded ? self::SUCCESS : self::FAILURE;
@@ -293,6 +297,7 @@ final class ScanInstanceDependenciesCommand extends GatewayCommand
             'succeeded' => $result->succeeded,
             'composer' => $result->composer->toArray(),
             'javascript' => $result->javascript->toArray(),
+            ...($result->subProjects === null ? [] : ['sub_projects' => array_map(static fn (InstanceDependencyInventoryResponse $project): array => $project->toArray(), $result->subProjects)]),
             'request_id' => $result->requestId,
         ];
     }
@@ -342,6 +347,10 @@ final class ScanInstanceDependenciesCommand extends GatewayCommand
         );
         $this->renderEcosystem('Composer', $result->composer);
         $this->renderEcosystem('JavaScript', $result->javascript);
+        foreach ($result->subProjects ?? [] as $path => $project) {
+            $this->renderEcosystem($path.' · Composer', $project->composer);
+            $this->renderEcosystem($path.' · JavaScript', $project->javascript);
+        }
     }
 
     private function renderErrorAttempt(InstanceResponse $instance, string $error, ?string $requestId): void
@@ -417,6 +426,7 @@ final class ScanInstanceDependenciesCommand extends GatewayCommand
             'Observed' => $snapshot?->observedAt,
             'Attempted' => $inventory->attemptedAt,
             'Error' => $inventory->errorCode,
+            ...($inventory->errorDetail === null ? [] : ['Detail' => $inventory->errorDetail]),
         ], $inventory->errorCode)));
     }
 }

@@ -120,7 +120,7 @@ it('refuses a GitHub credential on a task VM host, where incus exec would hand i
     $host = Node::query()->create(['name' => 'shark', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '10.44.0.8', 'wireguard_ip' => '10.44.0.8', 'user' => 'nckrtl']);
     $taskHost = new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 4, 2, '4GiB', '40GiB');
 
-    expect(fn () => $incus->run($taskHost, $host, ['exec', '--', 'tvm-template-1', 'bash', '-se'], tvm_guard_credential()))
+    expect(fn () => $incus->run($taskHost, $host, ['exec', '--', 'tvm-image-1', 'bash', '-se'], tvm_guard_credential()))
         ->toThrow(TaskVmException::class, 'A command that carries a GitHub credential cannot run on a task VM.');
     expect($transport->runs)->toBe([]);
 });
@@ -176,7 +176,6 @@ it('leaves GitReadScript the only builder of a remote command with a GitHub cred
         'app/Infrastructure/Instances/RemoteProductionDeployment.php',
         'app/Infrastructure/Instances/RemoteProductionInstanceSourceLifecycle.php',
         'app/Infrastructure/Projects/RemoteProjectUpdateSourceMutator.php',
-        'app/Infrastructure/TaskVms/IncusTaskVmWorkspaceTemplateBuilder.php',
         'app/Infrastructure/TaskVms/TaskVmGit.php',
         'app/Infrastructure/Tasks/GitHubTaskBaseBranchFetcher.php',
         'app/Infrastructure/Tasks/GitHubTaskPullRequestPublisher.php',

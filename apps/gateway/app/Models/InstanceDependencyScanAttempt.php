@@ -16,6 +16,7 @@ use InvalidArgumentException;
  * @property DependencyEcosystem $ecosystem
  * @property CarbonImmutable $attempted_at
  * @property string|null $error_code
+ * @property string|null $error_detail
  * @property-read Instance $instance
  */
 final class InstanceDependencyScanAttempt extends Model
@@ -27,14 +28,20 @@ final class InstanceDependencyScanAttempt extends Model
     #[\Override]
     protected $fillable = [
         'instance_id',
+        'sub_project',
         'ecosystem',
         'attempted_at',
         'error_code',
+        'error_detail',
     ];
 
     protected static function booted(): void
     {
         self::saving(static function (self $record): void {
+            if ($record->error_detail !== null && ($record->error_code === null || strlen($record->error_detail) > 255
+                || preg_match('/\A[\x20-\x7e]+\z/D', $record->error_detail) !== 1)) {
+                throw new InvalidArgumentException('Dependency error details must be short single-line diagnostics.');
+            }
             if ($record->error_code !== null && (strlen($record->error_code) > 128
                 || preg_match('/^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*$/D', $record->error_code) !== 1)) {
                 throw new InvalidArgumentException('Dependency attempts require a stable error code, not process output.');

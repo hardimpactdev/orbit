@@ -30,12 +30,9 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceName;
+use App\Domain\TaskVms\TaskVmPackageCacheMount;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Tasks\TaskWorkspaceProvisioner;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
@@ -48,6 +45,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
+use Tests\Support\FakeTaskVmPackageCacheMount;
 use Tests\Support\TaskVmSettingsBuilder;
 
 function provisioner_app(
@@ -141,13 +139,9 @@ function bind_task_workspace_fakes(): object
 
         public ?Closure $onPrepare = null;
 
-        /** @var list<?string> */
-        public array $templates = [];
-
-        public function prepare(Instance $instance, bool $allowExisting, ?string $template = null): void
+        public function prepare(Instance $instance, bool $allowExisting): void
         {
             $this->calls[] = 'prepare';
-            $this->templates[] = $template;
             if ($this->onPrepare !== null) {
                 ($this->onPrepare)($instance, $allowExisting);
             }
@@ -310,7 +304,7 @@ it('creates a visitable Task workspace at the repository root for each package t
     'node-package' => ProjectType::NodePackage,
 ]);
 
-it('reuses an already assigned Task workspace', function (): void {
+it('keeps an already claimed workspace without source or cache preparation', function (): void {
     $project = provisioner_app('reuse');
     $node = provisioner_node('reuse-dev', '10.44.0.103');
     $group = provisioner_group($project, vmNode: $node);
@@ -319,14 +313,18 @@ it('reuses an already assigned Task workspace', function (): void {
         'node_id' => $node->id,
         'name' => TaskWorkspaceName::for($group),
         'checkout_path' => '/srv/orbit/apps/reuse/workspace',
-        'status' => InstanceState::SourceResolved,
+        'status' => InstanceState::Active,
     ]);
     $group->taskable()->associate($instance);
     $group->save();
-    bind_task_workspace_fakes();
+    $fakes = bind_task_workspace_fakes();
 
     expect(app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group->fresh(['taskable']) ?? $group, true))?->id)
         ->toBe($instance->id);
+    expect($fakes->source->calls)->toBe([]);
+    $cacheMount = app(TaskVmPackageCacheMount::class);
+    expect($cacheMount)->toBeInstanceOf(FakeTaskVmPackageCacheMount::class);
+    expect($cacheMount->prepared)->toBe([]);
 });
 
 it('returns a failure when a visitable App lacks a web root', function (): void {
@@ -662,7 +660,7 @@ describe('task VMs', function (): void {
 
         expect($instance?->node_id)->toBe($vmNode->id)
             ->and($instance?->name)->toBe(TaskWorkspaceName::for($group))
-            // A task VM holds one workspace, at the fixed path where its template was built.
+            // A task VM holds one workspace at a fixed path.
             ->and($instance?->checkout_path)->toBe('/srv/orbit/apps/dlf/workspace')
             ->and($instance?->status)->toBe(InstanceState::SourceResolved)
             ->and($fakes->development->prepares)->toBe(1)
@@ -730,7 +728,7 @@ describe('task VMs', function (): void {
             ->and($provisioner->pending($group->fresh(['taskable']) ?? $group))->toBeTrue();
     });
 
-    it('starts the workspace of a vm group from its template and logs each part as a task VM step', function (bool $ready): void {
+    it('creates a fresh workspace without template operations and logs each part as a task VM step', function (): void {
         Log::spy();
         Queue::fake();
         $project = provisioner_app('dlf');
@@ -740,25 +738,6 @@ describe('task VMs', function (): void {
         TaskVm::query()->create(['group_id' => $group->id, 'host_node_id' => $host->id, 'node_id' => $vmNode->id, 'provider' => 'incus',
             'name' => 'tvm-1', 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.129', 'pi_token' => str_repeat('p', 64)]);
         TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($host->id, ['maxVms' => 4])]]);
-        $volumes = $ready ? [['name' => 'tvm-template-'.$project->id.'-20261011040000', 'type' => 'custom', 'config' => [
-            'user.orbit.ready' => 'true', 'user.orbit.repository' => $project->repository_url, 'user.orbit.image' => 'base-image', 'user.orbit.owner' => '1000:1000', 'user.orbit.layout' => 'workspace',
-        ]]] : [];
-        app()->instance(SshExecutor::class, new class($volumes) implements SshExecutor
-        {
-            public function __construct(private readonly array $volumes) {}
-
-            public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-            {
-                $operation = array_slice($command->arguments, 5);
-
-                return new CommandResult(0, match (true) {
-                    array_slice($operation, 0, 3) === ['storage', 'volume', 'list'] => json_encode($this->volumes),
-                    array_slice($operation, 0, 2) === ['config', 'get'] => "base-image\n",
-                    array_slice($operation, 0, 2) === ['image', 'list'] => json_encode([['fingerprint' => str_repeat('b', 64), 'aliases' => [['name' => 'orbit-task-base']]]]),
-                    default => 'template',
-                }, '', 1, false);
-            }
-        });
         $fakes = bind_task_workspace_fakes();
 
         $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group->fresh() ?? $group, true));
@@ -766,9 +745,13 @@ describe('task VMs', function (): void {
         $group->taskable()->associate($instance)->save();
         app(TaskWorkspaceProvisioner::class)->complete($group->fresh(['taskable']) ?? $group);
 
-        expect($fakes->source->templates)->toBe([$ready ? '/srv/orbit/apps/dlf/workspace' : null]);
-        foreach (['workspace-template', 'workspace-source', 'workspace-prepare', 'workspace', 'workspace-route'] as $step) {
+        expect($fakes->source->calls)->toContain('prepare', 'resolve');
+        Queue::assertNothingPushed();
+        $cacheMount = app(TaskVmPackageCacheMount::class);
+        expect($cacheMount)->toBeInstanceOf(FakeTaskVmPackageCacheMount::class);
+        expect($cacheMount->prepared)->toBe([['vm' => 'tvm-1', 'project_id' => $project->id]]);
+        foreach (['workspace-package-cache', 'workspace-source', 'workspace-prepare', 'workspace', 'workspace-route'] as $step) {
             Log::shouldHaveReceived('info')->with('Task VM step done.', Mockery::on(static fn (array $context): bool => $context['task_vm'] === 'tvm-1' && $context['step'] === $step));
         }
-    })->with(['a template' => true, 'no template' => false]);
+    });
 });

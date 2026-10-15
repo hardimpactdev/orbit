@@ -1653,6 +1653,9 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
         ->and($opening)->toContain('git diff --no-index -- /dev/null "$path" || true')
         ->and(mb_strlen($opening))->toBeLessThanOrEqual(TaskReviewPacket::Limit);
 
+    TaskComment::query()->create(['task_group_id' => $group->id, 'task_id' => $first->id,
+        'type' => TaskCommentType::ChangesRequested, 'body' => 'Repair the ordinary retry path.',
+        'author' => 'reviewer', 'posted_at' => now()]);
     $first->update(['status' => TaskStatus::Running, 'review_attempt' => $first->fresh()->review_attempt + 1]);
     Task::topLevel()->whereKey($group->id)->update(['status' => TaskGroupStatus::Running]);
     app(TaskScheduler::class)->settleImplementer($first->fresh(), new TaskThreadObservation(
@@ -1680,7 +1683,8 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
     expect($driver->calls[1])->toMatchArray(['operation' => 'send', 'thread' => 'conversation-1'])
         ->and($continued)->toContain('Do not re-run the Project task check or deliverable commands the handoff already passed.')
         ->and($continued)->toContain('+fresh reviewer')
-        ->and($continued)->toContain('git diff '.$start)
+        ->and($continued)->toContain('git diff --cached '.str_repeat('b', 40))
+        ->and($continued)->toContain('This is a delta re-review', 'Repair the ordinary retry path.')
         ->and($continued)->not->toContain('Group brief')
         ->and($continued)->not->toContain('Earlier approved subtasks')
         ->and($continued)->not->toContain('Deliverables')
@@ -1697,7 +1701,7 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
     expect($replacement?->id)->not->toBe($thread->id)
         ->and($group->fresh()?->reviewer_agent_thread_id)->toBe($replacement?->id)
         ->and($driver->calls[3]['operation'])->toBe('create')
-        ->and($replaced)->toContain('Group brief')
+        ->and($replaced)->toContain('Group brief', 'This is a delta re-review', 'Repair the ordinary retry path.', 'git diff --cached '.str_repeat('b', 40))
         ->and($replaced)->toContain('Do not re-run the Project task check or deliverable commands the handoff already passed.')
         ->and(AgentThread::query()->whereKey($thread->id)->exists())->toBeTrue();
 

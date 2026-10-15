@@ -16,7 +16,11 @@ covers:
 
 A Tool is one package that Orbit manages on one Node through one Tool Manager. The Node, the manager, and the package name identify it. Orbit records the Tools it installs or explicitly adopts. Discovery reports other installed packages without creating Tool records. [`tool`](/cli/tool) lists the commands.
 
+The [machine software recipe](/reference/compute-drivers#machine-software-recipe) defines the versioned Ubuntu snapshot, machine tool pins, and role tool sets. Its read-only loader and validator do not run Tool operations or change today's enrollment and image programs. Project packages and their lockfiles remain separate from machine software.
+
 Recording a development [Instance branch rename](/cli/instance#orbit-instancerename) does not install, update, adopt, or remove packages. The Gateway keeps branch inspection separate from Tool manager operations; rename does not rerun Project setup.
+
+[Importing workspace CI caches](/reference/instance-setup#import-ci-main-caches) restores private test and analysis data, not Tools or packages. It does not call a Tool Manager, fill a package download cache, or install a missing dependency. The Project's setup steps must install dependencies before importing these caches.
 
 The [annotator Process preset](/reference/agentation#annotator-process) installs Gateway-owned server files and their verified injection asset, not a package through a Tool Manager. It creates no Tool intent and does not adopt or remove the Node's existing Node.js runtime. Its private file publication and environment projection stay separate from Tool operations.
 
@@ -393,3 +397,7 @@ Discovery shows installed packages and creates no Tool rows. Adoption is the sep
 Owning every installed package was rejected because a scan is not a request to own the machine. Silent adoption during install was rejected because installing and taking ownership are different intentions. Storing discoveries as Tools was rejected because a Tool row is selected intent, not an observation. One identity for a formula and a cask was rejected because the names can collide and the operations differ. Separate locks were rejected because both change the same Homebrew prefix. Adopting tunnel and bootstrap packages was rejected because removal would then uninstall SSH, WireGuard, DNS, Docker, the firewall, sudo, Caddy, or a manager.
 
 A readable version that is not SemVer can still be adopted when no constraint is set. A formula revision such as `25.8.1_1` and a cask version such as `3.003` are null in the scan. Doctor shows `unknown`, the Tools page shows `unreadable`, and `tool:scan` shows an em dash. A constraint cannot be checked, so adopt returns `tool.installed_version_unparseable` and install returns `tool.candidate_version_unparseable`. The package stays where it was.
+
+## Recipe convergence
+
+[Recipe convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) installs exact versions of machine prerequisites. It reuses Tools inspection to check every existing managed Tool after package changes, and rejects conflicting apt constraints before mutation. It does not adopt prerequisite packages or create, remove, or rewrite Tool rows. Role filtering comes from the recipe and the existing role prerequisite catalog. Protected manager and bootstrap packages stay outside public Tool intent. The successful recipe identity is recorded in the Node settings.

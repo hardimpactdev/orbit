@@ -2,6 +2,9 @@
 import copy
 from contextlib import contextmanager, redirect_stdout
 import io
+import hashlib
+import runpy
+import zipfile
 import fcntl
 import importlib.machinery
 import importlib.util
@@ -1264,7 +1267,7 @@ printf '%s|%s\\n' "$PWD" "$*" >> "$GATE_TEST_DOCS"
 if [ "$GATE_TEST_MODE" = docs ]; then exit 5; fi
 """)
         docs_impact.chmod(0o755)
-        for name in ('project-vocabulary', 'env-docs', 'tooling-baseline', 'docs-nav'):
+        for name in ('project-vocabulary', 'env-docs', 'tooling-baseline', 'docs-nav', 'docs-openapi', 'mcp-tools', 'api-fixtures'):
             check = self.root / 'bin' / name
             check.write_text('#!/bin/sh\nexit 0\n')
             check.chmod(0o755)
@@ -1318,11 +1321,14 @@ fi
         self.assertEqual('builder', report['role'])
         self.assertEqual(cache.git(self.root, 'rev-parse', 'HEAD'), report['candidate'])
         architecture_tests = {
-            'apps/cli': ['tests/Feature/CommandSurfaceTest.php'],
+            'apps/cli': ['tests/Feature/CommandSurfaceTest.php', 'tests/Feature/CliBinaryBuildContractTest.php'],
             'apps/gateway': ['tests/Unit/Architecture',
                              'tests/Feature/Infrastructure/Instances/ConfiguredOriginReadTest.php',
                              'tests/Feature/Infrastructure/Caddy/CaddyPublicationLockTest.php'],
-            'apps/e2e': ['tests/Unit/E2E/Value/TopologyNodeCatalogTest.php'],
+            'apps/e2e': ['tests/Unit/E2E/Value/TopologyNodeCatalogTest.php',
+                         'tests/Feature/Configuration/ComposerConfigurationTest.php',
+                         'tests/Feature/Configuration/SubprocessTestGroupTest.php',
+                         'tests/Feature/Configuration/DocsMergeRefWorkflowTest.php'],
             'packages/php-sdk': ['tests/Unit/SuccessRequestIdBoundaryTest.php',
                                  'tests/Unit/RepositoryGuidanceTest.php',
                                  'tests/Unit/Requests/Workspaces/WorkspaceRequestsTest.php',
@@ -1339,7 +1345,12 @@ fi
                 ['composer', 'validate', '--strict'], ['composer', 'check'], ['composer', 'test:affected']])
             expected.extend((project, ['vendor/bin/pest', path])
                             for path in architecture_tests.get(project, []))
+        expected.extend(('repository', [f'bin/{name}', '--check']) for name in ('docs-openapi', 'mcp-tools'))
+        expected.append(('repository', ['bin/api-fixtures', '--check']))
         self.assertEqual(expected, [(item['project'], item['command']) for item in report['checks']])
+        for check in report['checks']:
+            self.assertIn(f'[{check["project"]}] {" ".join(check["command"])}: passed ({check["seconds"]:.3f}s;',
+                          result.stdout)
         self.assertEqual([f'{self.root.resolve()}|--gate --base {self.commit}'],
                          (self.common / 'docs').read_text().splitlines())
         self.assertEqual(15, len((self.common / 'calls').read_text().splitlines()))
@@ -1367,6 +1378,132 @@ fi
         self.assertNotEqual(cache.git(self.root, 'rev-parse', 'HEAD^{tree}'), report['tree'])
         self.assertEqual(15, len((self.common / 'calls').read_text().splitlines()))
         self.assertEqual(status, cache.git(self.root, 'status', '--porcelain'))
+
+    def test_generated_checks_follow_inputs_and_outputs_without_running_for_unrelated_paths(self):
+        runner = self.gate_fixture()
+        gate_loader = importlib.machinery.SourceFileLoader('review_check', str(runner))
+        gate_spec = importlib.util.spec_from_loader(gate_loader.name, gate_loader)
+        gate = importlib.util.module_from_spec(gate_spec)
+        gate_loader.exec_module(gate)
+        for path in ('apps/gateway/routes/api.php', 'apps/cli/app/Commands/Example.php',
+                     'packages/php-sdk/src/Requests/Example.php', 'bin/docs-openapi', 'bin/mcp-tools',
+                     'docs/openapi.json', 'docs/docs.json', 'apps/gateway/resources/mcp/tools.json',
+                     'apps/gateway/resources/tasks/actions.json'):
+            with self.subTest(path=path):
+                commands = [command for project, commands in gate.selected_projects([path], self.root)
+                            if project == 'repository' for command in commands]
+                self.assertIn(('bin/docs-openapi', '--check'), commands)
+                self.assertIn(('bin/mcp-tools', '--check'), commands)
+        for path in ('packages/php-sdk/fixtures/example.json', 'apps/web/fixtures/example.json',
+                     'docs/openapi.json', 'bin/api-fixtures', 'bin/review-check'):
+            with self.subTest(fixture=path):
+                commands = [command for project, commands in gate.selected_projects([path], self.root)
+                            if project == 'repository' for command in commands]
+                self.assertIn(('bin/api-fixtures', '--check'), commands)
+        for path in ('docs/reference/example.md', 'apps/web/src/App.tsx', 'apps/pi-server/src/index.ts'):
+            with self.subTest(path=path):
+                self.assertNotIn('repository', dict(gate.selected_projects([path], self.root)))
+        profiles = dict(gate.selected_projects(['bin/check-classification-fakes'], self.root))
+        for project in cache.PROJECTS:
+            self.assertEqual((('php', '../../bin/check-classification-fakes', 'tests'),), profiles[project])
+        for paths, projects in ((['apps/agent/src/main.rs'], ['apps/agent']),
+                                (['apps/desktop/src/main.ts'], ['apps/desktop/src-tauri']),
+                                (['.github/workflows/ci.yml'], ['apps/agent', 'apps/desktop/src-tauri'])):
+            profiles = dict(gate.selected_projects(paths, self.root))
+            for project in projects:
+                self.assertEqual((('cargo', 'fmt', '--all', '--', '--check'),), profiles[project])
+
+    def test_gate_records_missing_artifact_tools_and_failed_rust_formatting(self):
+        runner = self.gate_fixture()
+        (self.root / 'bin/docs-openapi').unlink()
+        rust = self.root / 'apps/agent/src/main.rs'
+        rust.parent.mkdir(parents=True)
+        rust.write_text('fn main() {}')
+        cargo = Path(self.gate_env['PATH'].split(os.pathsep)[0]) / 'cargo'
+        cargo.write_text('#!/bin/sh\necho "Rust formatting differs"\nexit 7\n')
+        cargo.chmod(0o755)
+        result = subprocess.run([str(runner)], env=self.gate_env, capture_output=True, text=True)
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertIn('bin/docs-openapi: required tool not found', result.stdout)
+        self.assertIn('Rust formatting differs', result.stdout)
+        report = json.loads(next((self.common / 'orbit-checks').glob('*/*/result.json')).read_text())
+        check = next(item for item in report['checks'] if item['project'] == 'apps/agent')
+        self.assertEqual(['cargo', 'fmt', '--all', '--', '--check'], check['command'])
+        self.assertEqual(7, check['exit_code'])
+        self.assertFalse(report['passed'])
+
+    def test_gate_rejects_real_stale_mcp_outputs_and_names_the_regeneration_command(self):
+        runner = self.gate_fixture()
+        shutil.copyfile(Path(cache.__file__).with_name('mcp-tools'), self.root / 'bin/mcp-tools')
+        (self.root / 'docs').mkdir()
+        (self.root / 'docs/openapi.json').write_text('{"paths": {}}')
+        cache.git(self.root, 'update-ref', 'refs/remotes/origin/main', self.commit_change('generator fixture'))
+        manifest = self.root / 'apps/gateway/resources/mcp/tools.json'
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text('{"stale": true}')
+        status = cache.git(self.root, 'status', '--porcelain')
+        result = subprocess.run([str(runner)], env=self.gate_env, capture_output=True, text=True)
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertIn('apps/gateway/resources/mcp/tools.json', result.stdout)
+        self.assertIn('Run bin/mcp-tools.', result.stdout)
+        self.assertIn('--- apps/gateway/resources/mcp/tools.json', result.stdout)
+        self.assertIn('+++ generated/apps/gateway/resources/mcp/tools.json', result.stdout)
+        report = json.loads(next((self.common / 'orbit-checks').glob('*/*/result.json')).read_text())
+        check = next(item for item in report['checks'] if item['command'] == ['bin/mcp-tools', '--check'])
+        self.assertEqual(1, check['exit_code'])
+        self.assertFalse(report['passed'])
+        self.assertEqual('{"stale": true}', manifest.read_text())
+        self.assertEqual(status, cache.git(self.root, 'status', '--porcelain'))
+
+    def test_openapi_check_reports_the_generated_diff_without_writing_outputs(self):
+        fixture = Path(self.temporary.name) / 'openapi fixture'
+        (fixture / 'bin').mkdir(parents=True)
+        (fixture / 'apps').mkdir()
+        (fixture / 'docs').mkdir()
+        repository = Path(cache.__file__).resolve().parent.parent
+        for project in ('gateway', 'cli'):
+            (fixture / 'apps' / project).symlink_to(repository / 'apps' / project, target_is_directory=True)
+        (fixture / 'packages').symlink_to(repository / 'packages', target_is_directory=True)
+        script = fixture / 'bin/docs-openapi'
+        shutil.copyfile(repository / 'bin/docs-openapi', script)
+        shutil.copyfile(repository / 'docs/docs.json', fixture / 'docs/docs.json')
+        document = fixture / 'docs/openapi.json'
+        document.write_text('{"stale": true}\n')
+        navigation = (fixture / 'docs/docs.json').read_bytes()
+        result = subprocess.run([sys.executable, str(script), '--check'], capture_output=True, text=True)
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertIn('Run bin/docs-openapi', result.stderr)
+        self.assertIn('--- docs/openapi.json', result.stdout)
+        self.assertIn('+++ generated/docs/openapi.json', result.stdout)
+        self.assertIn('-{"stale": true}', result.stdout)
+        self.assertEqual('{"stale": true}\n', document.read_text())
+        self.assertEqual(navigation, (fixture / 'docs/docs.json').read_bytes())
+
+    def test_cross_project_contract_failures_block_even_when_tia_selects_nothing(self):
+        runner = self.gate_fixture()
+        failures = {'apps/e2e': 'tests/Feature/Configuration/SubprocessTestGroupTest.php'}
+        for project, contract in failures.items():
+            pest = self.root / project / 'vendor/bin/pest'
+            pest.write_text(f'#!/bin/sh\n[ "$1" != "{contract}" ] || exit 19\n')
+        base = self.commit_change('contract fixtures')
+        cache.git(self.root, 'update-ref', 'refs/remotes/origin/main', base)
+        source = self.root / 'apps/gateway/app/Example.php'
+        source.parent.mkdir()
+        source.write_text('<?php // candidate')
+        candidate = self.commit_change('gateway candidate')
+        # This fixture exercises a local handoff; CI deliberately ignores the task test base.
+        result = subprocess.run([str(runner)], env={**self.gate_env, 'ORBIT_TASK_CHECK_BASE': candidate,
+                                                  'CI': '', 'GITHUB_ACTIONS': ''},
+                                capture_output=True, text=True)
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        report = json.loads(next((self.common / 'orbit-checks').glob('*/*/result.json')).read_text())
+        self.assertEqual(['apps/gateway/app/Example.php'], report['changed_paths'])
+        self.assertEqual(candidate, report['test_base'])
+        for project, contract in failures.items():
+            check = next(item for item in report['checks'] if item['project'] == project
+                         and item['command'] == ['vendor/bin/pest', contract])
+            self.assertEqual(19, check['exit_code'])
+        self.assertFalse(report['passed'])
 
     @unittest.skipUnless(shutil.which('setfacl') and shutil.which('getfacl'), 'needs setfacl and getfacl')
     def test_review_directory_keeps_named_acl_entries_effective(self):
@@ -1398,6 +1535,210 @@ def effective_named_rights(path, user):
     """A named user entry's rights after the ACL mask, such as r-x."""
     named, mask = acl_entry(path, f'user:{user}:'), acl_entry(path, 'mask::')
     return ''.join(right if limit != '-' else '-' for right, limit in zip(named, mask))
+
+
+class CiCacheRefTest(CacheFixture):
+    def setUp(self):
+        super().setUp()
+        ref_loader = importlib.machinery.SourceFileLoader('ci_cache_ref', str(Path(cache.__file__).with_name('ci-cache-ref')))
+        ref_spec = importlib.util.spec_from_loader(ref_loader.name, ref_loader)
+        self.refs = importlib.util.module_from_spec(ref_spec)
+        ref_loader.exec_module(self.refs)
+        for project in cache.PROJECTS:
+            if project != self.project:
+                shutil.copytree(self.root / self.project, self.root / project)
+        self.commit = self.commit_change('all project inputs')
+        self.remote = Path(self.temporary.name) / 'origin.git'
+        cache.git(self.root, 'init', '--bare', str(self.remote))
+        cache.git(self.root, 'remote', 'set-url', 'origin', str(self.remote))
+        cache.git(self.root, 'push', 'origin', 'main')
+        self.exports = Path(self.temporary.name) / 'exports'
+        self.exports.mkdir()
+        for project in cache.PROJECTS:
+            self.project = project
+            artifact = self.artifact(self.commit, quality={'pint': b'pint bytes', 'phpstan': b'<?php // trusted CI'},
+                                     manifest={'schema': 2, 'run_attempt': '1', 'configurations': {
+                                         tool: cache.digest((self.root / project / configuration).read_bytes())
+                                         for tool, (configuration, _) in cache.QUALITY.items()}})
+            shutil.copytree(artifact, self.exports / project.replace('/', '-'))
+        self.project = 'apps/docs'
+
+    def publish_ref(self):
+        with patch.dict(os.environ, {'GITHUB_RUN_ID': '123', 'GITHUB_RUN_ATTEMPT': '1'}):
+            self.refs.publish(self.root, self.exports, self.commit, 'origin')
+        return self.refs.NAMESPACE + self.commit
+
+    def import_ref(self, commit=None):
+        output = io.StringIO()
+        with redirect_stdout(output), patch.object(self.refs.tia, 'metadata', return_value=self.info):
+            self.refs.import_ref(self.root, commit or self.commit)
+        return output.getvalue()
+
+    def corrupt_ref_file(self, path, data, mode='100644'):
+        ref = self.refs.NAMESPACE + self.commit
+        environment = {'GIT_INDEX_FILE': str(Path(self.temporary.name) / 'corrupt-index')}
+        self.refs.git(self.root, 'read-tree', ref, environment=environment)
+        oid = self.refs.git(self.root, 'hash-object', '-w', '--stdin', data=data).decode().strip()
+        self.refs.git(self.root, 'update-index', '--add', '--cacheinfo', f'{mode},{oid},{path}', environment=environment)
+        tree = self.refs.git(self.root, 'write-tree', environment=environment).decode().strip()
+        commit = self.refs.git(self.root, 'commit-tree', tree, data=b'corrupted fixture\n').decode().strip()
+        cache.git(self.root, 'update-ref', ref, commit)
+
+    def test_matching_ref_imports_graph_and_quality_without_source_checkout_changes(self):
+        ref = self.publish_ref()
+        self.assertNotEqual(cache.git(self.root, 'rev-parse', ref), self.commit)
+        self.assertEqual(len(cache.git(self.root, 'rev-list', '--parents', '-n', '1', ref).split()), 1)
+        self.assertEqual(cache.git(self.root, 'status', '--porcelain'), '')
+        self.assertIn('imported CI baseline', self.import_ref())
+        for project in cache.PROJECTS:
+            self.assertEqual(json.loads((self.root / project / '.orbit-tia/graph.json').read_text())['baselines']['main']['sha'], self.commit)
+            self.assertEqual((self.root / project / 'vendor/phpstan/cache/resultCache.php').read_bytes(), b'<?php // trusted CI')
+        self.assertIn('kept existing', self.import_ref())
+
+    def test_fresh_clone_setup_uses_ci_ref_and_private_package_cache_with_cold_fallback(self):
+        ref = self.publish_ref()
+        # CI may initialize bare repositories with a different default branch.
+        cache.git(self.remote, 'symbolic-ref', 'HEAD', 'refs/heads/master')
+        resources = Path(cache.__file__).resolve().parent.parent / 'apps/gateway/resources/task-vms'
+        packages = runpy.run_path(str(resources / 'package-cache.py'))
+        seed = runpy.run_path(str(resources / 'package-cache-seed.py'))['seed']
+        archive = Path(self.temporary.name) / 'demo.zip'
+        with zipfile.ZipFile(archive, 'w') as output:
+            output.writestr('demo/composer.json', json.dumps({'name': 'acme/demo', 'version': '1.0.0'}))
+            output.writestr('demo/proof.txt', 'installed')
+        data = archive.read_bytes()
+        url = 'https://api.github.com/repos/acme/demo/zipball/' + 'a' * 40
+        artifact = dict(manager='composer', package='acme/demo', version='1.0.0', url=url,
+                        integrity='sha1-' + hashlib.sha1(data).hexdigest(),
+                        key='composer/acme/demo/' + hashlib.sha1(url.encode()).hexdigest() + '.zip')
+        shared = Path(self.temporary.name) / 'shared'
+        packages['fill'](shared, [artifact], 100000, lambda source: io.BytesIO(data))
+        for path in shared.rglob('*'):
+            path.chmod(0o555 if path.is_dir() else 0o444)
+        shared.chmod(0o555)
+        for present in (True, False):
+            with self.subTest(caches_present=present):
+                workspace = Path(self.temporary.name) / ('warm' if present else 'cold')
+                cache.git(self.root, 'clone', '--depth', '1', '--branch', 'main', self.remote.as_uri(), str(workspace))
+                self.assertEqual(cache.git(workspace, 'rev-parse', '--is-shallow-repository'), 'true')
+                self.assertEqual(cache.git(workspace, 'rev-parse', 'HEAD'), self.commit)
+                home = workspace / '.private-home'
+                seed(shared, home, [artifact] if present else [])
+                if present:
+                    cache.git(workspace, 'fetch', 'origin', ref + ':' + ref)
+                with patch.object(self.refs.tia, 'metadata', return_value={**self.info, 'cache': str(workspace / '.cache')}):
+                    output = io.StringIO()
+                    with redirect_stdout(output):
+                        self.refs.import_ref(workspace, self.commit)
+                self.assertIn('imported CI baseline' if present else 'cold', output.getvalue())
+                setup = workspace / 'install'
+                setup.mkdir()
+                (setup / 'composer.json').write_text(json.dumps({'require': {'acme/demo': '1.0.0'}}))
+                dist = dict(type='zip', url=url if present else 'file://' + str(archive), shasum=hashlib.sha1(data).hexdigest())
+                (setup / 'composer.lock').write_text(json.dumps({'content-hash': 'fixture', 'packages': [
+                    dict(name='acme/demo', version='1.0.0', type='library', dist=dist)], 'packages-dev': []}))
+                environment = {**os.environ, 'COMPOSER_CACHE_DIR': str(home / '.cache/composer'),
+                               'COMPOSER_HOME': str(home / '.composer'), 'COMPOSER_ALLOW_SUPERUSER': '1'}
+                result = subprocess.run(['composer', 'install', '--no-interaction', '--no-plugins', '--no-scripts',
+                                         '--no-progress'], cwd=setup, env=environment, capture_output=True)
+                self.assertEqual(result.returncode, 0, result.stderr.decode())
+                self.assertEqual((setup / 'vendor/acme/demo/proof.txt').read_text(), 'installed')
+                self.assertEqual((workspace / self.project / '.orbit-tia/graph.json').exists(), present)
+                self.assertEqual((shared / artifact['key']).read_bytes(), data)
+
+    def test_missing_ref_and_ref_for_another_sha_run_cold(self):
+        self.assertIn('cold', self.import_ref())
+        self.publish_ref()
+        other = self.advance('new baseline without a ref')
+        self.assertIn('cold', self.import_ref(other))
+        self.assertFalse((self.root / self.project / '.orbit-tia/graph.json').exists())
+
+    def test_ref_suffix_and_payload_sha_must_agree(self):
+        ref = self.publish_ref()
+        other = self.advance('other selected baseline')
+        cache.git(self.root, 'update-ref', self.refs.NAMESPACE + other, cache.git(self.root, 'rev-parse', ref))
+        self.assertIn('identity differs', self.import_ref(other))
+        self.assertFalse((self.root / self.project / 'vendor/pint.cache').exists())
+
+    def test_bad_checksum_in_any_project_rejects_the_entire_payload_before_writes(self):
+        source = self.exports / 'packages-php-sdk' / 'quality/phpstan'
+        source.write_bytes(b'<?php // corrupt')
+        with self.assertRaisesRegex(ValueError, 'checksum'):
+            self.publish_ref()
+        self.assertEqual(cache.git(self.remote, 'for-each-ref', self.refs.NAMESPACE), '')
+
+    def test_import_rejects_corrupt_executable_cache_before_any_project_is_written(self):
+        self.publish_ref()
+        self.corrupt_ref_file('packages/php-sdk/quality/phpstan', b'<?php // wrong bytes')
+        self.assertIn('checksum differs', self.import_ref())
+        for project in cache.PROJECTS:
+            self.assertFalse((self.root / project / '.orbit-tia/graph.json').exists())
+            self.assertFalse((self.root / project / 'vendor/pint.cache').exists())
+
+    def test_import_rejects_symlinks_unknown_paths_and_limits_before_writes(self):
+        self.publish_ref()
+        original = cache.git(self.root, 'rev-parse', self.refs.NAMESPACE + self.commit)
+        for path, mode in (('apps/docs/manifest.json', '120000'), ('apps/docs/unknown.php', '100644')):
+            self.corrupt_ref_file(path, b'unsafe', mode)
+            self.assertIn('unsafe or unknown', self.import_ref())
+            cache.git(self.root, 'update-ref', self.refs.NAMESPACE + self.commit, original)
+        for name in ('MAX_FILES', 'MAX_BYTES'):
+            with patch.object(self.refs, name, 1):
+                self.assertIn('payload limits', self.import_ref())
+        self.assertFalse((self.root / self.project / '.orbit-tia/graph.json').exists())
+
+    def test_required_cache_writes_are_not_disguised_as_a_cache_miss(self):
+        self.publish_ref()
+        with patch.object(self.refs.tia, 'atomic_write', side_effect=OSError('fixture disk full')):
+            with self.assertRaisesRegex(OSError, 'disk full'):
+                self.import_ref()
+
+    def test_publisher_refuses_incomplete_or_other_run_exports(self):
+        manifest = self.exports / 'apps-docs/manifest.json'
+        data = json.loads(manifest.read_text())
+        data['run_id'] = '456'
+        manifest.write_text(json.dumps(data))
+        with self.assertRaisesRegex(ValueError, 'same workflow run'):
+            self.publish_ref()
+        shutil.rmtree(self.exports / 'apps-docs')
+        with self.assertRaisesRegex(ValueError, 'every Composer project'):
+            self.publish_ref()
+        self.assertEqual(cache.git(self.remote, 'for-each-ref', self.refs.NAMESPACE), '')
+
+    def test_invalid_existing_publication_fails_without_overwriting(self):
+        ref = self.refs.NAMESPACE + self.commit
+        cache.git(self.root, 'push', 'origin', 'HEAD:' + ref)
+        before = cache.git(self.remote, 'rev-parse', ref)
+        with self.assertRaisesRegex(ValueError, 'unsafe|unknown'):
+            self.publish_ref()
+        self.assertEqual(cache.git(self.remote, 'rev-parse', ref), before)
+
+    def test_retry_keeps_existing_valid_publication(self):
+        ref = self.publish_ref()
+        first = cache.git(self.remote, 'rev-parse', ref)
+        for manifest in self.exports.rglob('manifest.json'):
+            data = json.loads(manifest.read_text())
+            data['run_attempt'] = '2'
+            manifest.write_text(json.dumps(data))
+        with patch.dict(os.environ, {'GITHUB_RUN_ID': '123', 'GITHUB_RUN_ATTEMPT': '2'}):
+            self.refs.publish(self.root, self.exports, self.commit, 'origin')
+        self.assertEqual(cache.git(self.remote, 'rev-parse', ref), first)
+
+    def test_prune_keeps_newest_code_ancestor_not_last_job_and_only_cache_namespace(self):
+        ref = self.publish_ref()
+        newest = self.advance('newest main')
+        # Simulate an old publication for a newer tested code commit.
+        tree = cache.git(self.root, 'rev-parse', ref + '^{tree}')
+        newer = self.refs.git(self.root, 'commit-tree', tree, data=b'new cache\n', environment={
+            'GIT_AUTHOR_NAME': 'CI', 'GIT_AUTHOR_EMAIL': 'ci@example.test',
+            'GIT_COMMITTER_NAME': 'CI', 'GIT_COMMITTER_EMAIL': 'ci@example.test',
+            'GIT_AUTHOR_DATE': '2020-01-01T00:00:00Z', 'GIT_COMMITTER_DATE': '2020-01-01T00:00:00Z'}).decode().strip()
+        cache.git(self.root, 'push', 'origin', newer + ':' + self.refs.NAMESPACE + newest)
+        cache.git(self.root, 'push', 'origin', 'main:refs/tags/keep')
+        self.refs.prune(self.root, 'origin', now=time.time() + 30 * 86400)
+        self.assertEqual(cache.git(self.remote, 'for-each-ref', '--format=%(refname)', self.refs.NAMESPACE), self.refs.NAMESPACE + newest)
+        self.assertEqual(cache.git(self.remote, 'rev-parse', 'refs/tags/keep'), newest)
+        self.assertEqual(cache.git(self.remote, 'rev-parse', 'main'), self.commit)
 
 
 if __name__ == '__main__':

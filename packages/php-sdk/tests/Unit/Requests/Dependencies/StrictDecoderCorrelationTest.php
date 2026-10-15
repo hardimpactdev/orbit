@@ -102,7 +102,7 @@ function strict_decoder_fixture(string $factory): array
         'directory' => new ResolveDirectoryInstanceRequest('/home/orbit/fixture'),
     };
     $failed = ['state' => 'unknown', 'succeeded' => false, 'attempted_at' => '2026-09-16T17:00:00+00:00',
-        'error_code' => 'dependencies.unreadable_source', 'snapshot' => null];
+        'error_code' => 'dependencies.unreadable_source', 'error_detail' => null, 'snapshot' => null];
     $notRun = ['status' => 'not_run', 'may_have_mutated' => false, 'error_code' => null];
     $ownership = ['instance_id' => 17, 'project_id' => 3, 'node_id' => 9, 'environment' => 'development'];
     $data = match ($factory) {

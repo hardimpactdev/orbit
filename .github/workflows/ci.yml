@@ -101,6 +101,12 @@ jobs:
         with:
           node-version: '24'
 
+      - name: Set up Bun for package cache tests
+        if: matrix.directory == 'apps/gateway'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
       - name: Set up Homebrew
         if: matrix.directory == 'apps/gateway' && runner.environment == 'github-hosted'
         uses: Homebrew/actions/setup-homebrew@e99025eb970cfa124b8284a35463d87426917478 # 2026.09.28.1
@@ -345,8 +351,7 @@ jobs:
           key: ${{ steps.orbit-tia-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       # A full run records this commit in the graph, and the step that requires it records it after an affected run.
-      # Sandbox images and the shared main cache store import this artifact. The Pint and
-      # PHPStan caches that composer check just wrote travel with it.
+      # Stage the same-run exports for the cache-ref publisher and the background main cache store.
       - name: Export main caches
         if: success() && matrix.part != 'subprocess' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         env:
@@ -368,10 +373,13 @@ jobs:
                   quality[tool] = hashlib.sha256(Path(source).read_bytes()).hexdigest()
           files = ['composer.lock', 'tests/Pest.php', 'phpunit.xml', 'phpunit.xml.dist']
           manifest = {
-              'schema': 1,
+              'schema': 2,
               'project': os.environ['PROJECT'],
               'commit': os.environ['GITHUB_SHA'],
               'run_id': os.environ['GITHUB_RUN_ID'],
+              'run_attempt': os.environ['GITHUB_RUN_ATTEMPT'],
+              'configurations': {tool: hashlib.sha256(Path(config).read_bytes()).hexdigest()
+                                 for tool, config in (('pint', 'pint.json'), ('phpstan', 'phpstan.neon')) if tool in quality},
               'graph_sha256': hashlib.sha256(graph.read_bytes()).hexdigest(),
               'inputs': {name: hashlib.sha256(Path(name).read_bytes()).hexdigest() for name in files if Path(name).is_file()},
               'php': subprocess.run(['php', '-r', 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;'],
@@ -503,6 +511,11 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: '24'
+
+      - name: Set up Bun for package cache tests
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
 
       # Sabre's PHP CLI sets this in 99-github-actions.ini, and setup-php sets it on a hosted runner. The shard runner
       # containers keep their PHP CLI default, so the job sets it only for its own processes and Pest's workers.
@@ -874,6 +887,26 @@ jobs:
         if: steps.changes.outputs.desktop == 'true'
         working-directory: apps/desktop/src-tauri
         run: cargo clippy --locked --all-targets -- -D warnings
+
+  publish-ci-cache:
+    name: Publish CI cache ref
+    needs: [required]
+    # Required checks accepts skipped PR-only jobs; override the implicit success() for that needs chain.
+    if: ${{ !cancelled() && needs.required.result == 'success' && github.repository == 'nckrtl/orbit' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+    runs-on: ubuntu-26.04
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: sandbox-tia-*-${{ github.sha }}
+          path: ${{ runner.temp }}/ci-cache-exports
+      - name: Publish immutable tested-SHA ref and prune old cache refs
+        run: python3 bin/ci-cache-ref publish --commit "$GITHUB_SHA" --exports "$RUNNER_TEMP/ci-cache-exports"
 
   required:
     name: Required checks

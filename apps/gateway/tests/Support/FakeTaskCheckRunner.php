@@ -64,16 +64,17 @@ final class FakeTaskCheckRunner implements TaskCheckRunner
         $this->deliverables[] = $deliverables;
         $this->commands[] = $command;
 
-        return new TaskCheckProcess(4000 + $this->starts, 'Wed Sep 23 12:00:0'.$this->starts.' 2026', str_repeat('a', 40), str_repeat('b', 40));
+        return new TaskCheckProcess(4000 + $this->starts, 'Wed Sep 23 12:00:0'.$this->starts.' 2026', $this->head, $this->tree);
     }
 
     public function read(Instance $instance, TaskCheckProcess $process): TaskCheckReading
     {
+        $passed = TaskCheckReading::finished(0, $process->head, $process->tree, [], "checks passed\n");
         if ($this->readings === null) {
-            return self::passed();
+            return $passed;
         }
 
-        return array_shift($this->readings) ?? self::passed();
+        return array_shift($this->readings) ?? $passed;
     }
 
     public function cancel(Instance $instance, TaskCheckProcess $process): void

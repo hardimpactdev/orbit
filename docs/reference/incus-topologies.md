@@ -14,6 +14,8 @@ covers:
 
 This page is for the contributor, agent, or reviewer who runs Orbit on disposable Incus machines. The `apps/e2e` harness composes one topology per issue from the Nodes the issue declares. Each Node starts from a prepared role image, and the harness then bootstraps a fresh test Gateway and enrolls the Nodes. `bin/e2e-topology` controls a topology, `bin/e2e-topology-images` builds the role images, and `bin/e2e-topology-host-setup` prepares a machine, such as a task VM, to run topologies nested. The [using-incus-topologies](https://github.com/nckrtl/orbit/blob/main/.agents/skills/using-incus-topologies/SKILL.md) skill covers the working habits.
 
+Task workspaces clone from the Gateway mirror and run Project setup on every creation. The [shared package cache](/reference/compute-drivers#shared-package-cache) and [CI cache refs](/reference/instance-setup#import-ci-main-caches) speed setup without workspace templates. Existing groups keep their VM and checkout.
+
 ## Declared topologies in task VM groups
 
 An Orbit task group on a [task VM](/reference/compute-drivers#task-vms) gets a topology only when its subtasks [declare](/reference/compute-drivers#declare-a-topology) one. Orbit prepares it nested in the group's VM as `TASK-<group>`, with `--nodes` set to the union of the declarations, before the subtask's baseline check or implementer. Agents use it and never acquire or release it. The reviewer records evidence on each declared node, and Orbit refuses the approval without it. See [Prove work on a topology](/reference/compute-drivers#prove-work-on-a-topology).
@@ -70,6 +72,10 @@ Render and enrollment share the same Gateway code. The throwaway `ORBIT_HOME` ho
 Builders start from `images:ubuntu/26.04/cloud` for VMs and `images:ubuntu/26.04` for the container. `ORBIT_E2E_IMAGE_VM_SOURCE` and `ORBIT_E2E_IMAGE_CONTAINER_SOURCE` change them. A stock VM reboots once after the Incus agent writes its cloud-init seed, so the build waits until cloud-init is done and the boot ID holds. The stock cloud images lack ufw, which Ubuntu Server ships and Orbit uses for every Node firewall, so Prepare installs it.
 
 Both image pipelines share one clean script. It clears APT archives and removes the SSH host keys, machine ID, cloud-init state, authorized keys, logs, and per-install service IDs. The seal empties known hosts, gives the VM a systemd-networkd DHCP file, and checks that no WireGuard configuration or Gateway database remains. A guest from the image boots once and creates its own SSH host keys.
+
+The topology DHCP file matches only Ethernet interfaces named `en*` or `eth*`, the guest uplinks. A match on Ethernet type alone also claims Docker's `veth*` interfaces and removes them from their bridge. Docker owns its bridges and veths; the harness never attaches them by hand. Guest-script installation, including `sync --quick`, updates the harness-owned DHCP file on existing Nodes and reloads networkd only when its contents change. If a Node already has detached container veths, recreate the affected containers after sync; reloading networkd does not rebuild Docker endpoints.
+
+On topology Nodes with Docker installed, guest preparation adds `orbit` to the `docker` group. New `exec` sessions can use the socket without sudo. This is a topology convenience, not a production role change: app-dev prerequisites install Docker but do not grant the managed account Docker group membership; managed Docker Process commands use sudo. The Docker group gives root-equivalent access; the harness grants it only inside its disposable fixtures.
 
 | Role image | Programs |
 | --- | --- |

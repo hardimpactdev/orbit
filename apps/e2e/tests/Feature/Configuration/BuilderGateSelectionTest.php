@@ -93,6 +93,13 @@ SH);
     file_put_contents($root.'/bin/env-docs', "#!/usr/bin/env sh\nexit 0\n");
     file_put_contents($root.'/bin/tooling-baseline', "#!/usr/bin/env sh\nexit 0\n");
     file_put_contents($root.'/bin/docs-nav', "#!/usr/bin/env sh\nexit 0\n");
+    foreach (['docs-openapi', 'mcp-tools', 'api-fixtures'] as $generator) {
+        file_put_contents($root.'/bin/'.$generator, "#!/usr/bin/env sh\nexit 0\n");
+        chmod($root.'/bin/'.$generator, 0o700);
+    }
+    mkdir($root.'/apps/web/dist', 0o700, true);
+    file_put_contents($root.'/apps/web/dist/index.html', '<html></html>');
+    file_put_contents($root.'/apps/web/dist/version.json', '{}');
     copy(base_path('tests/Fixtures/BuilderGate/composer'), $root.'/tooling/composer');
     file_put_contents($root.'/bin/tia-cache', "#!/usr/bin/env sh\n\nexit 0\n");
     foreach (['bun', 'vp'] as $tool) {
@@ -335,14 +342,61 @@ describe('Builder gate', function (): void {
             ->and($receipt['changed_paths'])->toBe(['apps/web/src/App.tsx'])
             ->and(collect($receipt['checks'])->pluck('project')->unique()->values()->all())
             ->toBe([...orb277_selected_projects(), 'apps/web'])
-            ->and($web->pluck('command')->all())->toHaveCount(4)
+            ->and($web->pluck('command')->all())->toHaveCount(5)
             ->and($web[0]['command'])->toBe(['bun', 'install', '--frozen-lockfile'])
             ->and($web[1]['command'])->toBe(['bun', 'run', 'check'])
             ->and($web[2]['command'])->toBe(['bun', 'run', 'build'])
-            ->and($web->pluck('exit_code')->all())->toBe([0, 0, 0, 0]);
-        expect($web[3]['command'][0])->toBe('bash')
-            ->and($web[3]['command'][2])->toContain('./node_modules/.bin/openapi-typescript');
+            ->and($web->pluck('exit_code')->all())->toBe([0, 0, 0, 0, 0]);
+        expect($web[3]['command'][2])->toContain('test -s dist/index.html', 'test -s dist/version.json');
+        expect($web[4]['command'][0])->toBe('bash')
+            ->and($web[4]['command'][2])->toContain('./node_modules/.bin/openapi-typescript');
     });
+
+    it('rejects stale web types with the regeneration command', function (): void {
+        $fixture = orb277_gate_fixture('docs/openapi.json');
+        file_put_contents($fixture['root'].'/apps/web/node_modules/.bin/openapi-typescript', <<<'SH'
+#!/usr/bin/env sh
+while [ "$#" -gt 0 ]; do
+    if [ "$1" = "-o" ]; then
+        echo 'export type Changed = number;' > "$2"
+        exit 0
+    fi
+    shift
+done
+exit 2
+SH);
+
+        $run = orb277_run_gate($fixture, '', expectedExit: 1);
+        $check = collect($run['receipt']['checks'])->first(
+            static fn (array $check): bool => $check['project'] === 'apps/web'
+                && str_contains(implode(' ', $check['command']), 'openapi-typescript'),
+        );
+
+        expect($run['receipt']['passed'])->toBeFalse();
+        expect(file_get_contents($check['log']))->toContain(
+            'Run: cd apps/web && bun run types',
+            '--- src/api/schema.d.ts',
+            '+++ generated/schema.d.ts',
+            '-export type Example = string;',
+            '+export type Changed = number;',
+        );
+        expect(file_get_contents($fixture['root'].'/apps/web/src/api/schema.d.ts'))
+            ->toBe("export type Example = string;\n");
+    });
+
+    it('rejects a web build that leaves out a CI artifact', function (string $artifact): void {
+        $fixture = orb277_gate_fixture('apps/web/src/App.tsx');
+        unlink($fixture['root'].'/apps/web/dist/'.$artifact);
+
+        $run = orb277_run_gate($fixture, '', expectedExit: 1);
+        $check = collect($run['receipt']['checks'])->first(
+            static fn (array $check): bool => $check['project'] === 'apps/web'
+                && str_contains(implode(' ', $check['command']), 'test -s dist/index.html'),
+        );
+
+        expect($run['receipt']['passed'])->toBeFalse();
+        expect($check['exit_code'])->toBe(1);
+    })->with(['index.html', 'version.json']);
 
     it('selects only the generated web types check for OpenAPI changes', function (): void {
         $fixture = orb277_gate_fixture('docs/openapi.json');
@@ -358,17 +412,17 @@ describe('Builder gate', function (): void {
             ->and($web->pluck('exit_code')->all())->toBe([0, 0]);
     });
 
-    it('runs every PHP project for documentation-only and tools changes', function (string $path): void {
+    it('runs every PHP project for documentation-only and tools changes', function (string $path, int $expectedChecks): void {
         $fixture = orb277_gate_fixture($path);
         $receipt = orb277_run_gate($fixture, '')['receipt'];
 
         expect($receipt['passed'])->toBeTrue()
             ->and($receipt['changed_paths'])->toBe([$path])
             ->and(collect($receipt['checks'])->pluck('project')->unique()->values()->all())->toBe(orb277_selected_projects())
-            ->and(collect($receipt['checks'])->count())->toBe(20);
+            ->and(collect($receipt['checks'])->count())->toBe($expectedChecks);
     })->with([
-        'documentation-only change' => ['docs/reference/example.md'],
-        'tools change' => ['tools/phpstan/NoInlineVarOverrideRule.php'],
+        'documentation-only change' => ['docs/reference/example.md', 24],
+        'tools change' => ['tools/phpstan/NoInlineVarOverrideRule.php', 24],
     ]);
 
     it('selects the Pi server CI profile for Pi server changes', function (): void {
@@ -643,7 +697,7 @@ PHP);
             ->and($architectureChecks->pluck('exit_code')->unique()->all())
             ->toBe([0]);
     })->with([
-        ['apps/cli', ['tests/Feature/CommandSurfaceTest.php']],
+        ['apps/cli', ['tests/Feature/CommandSurfaceTest.php', 'tests/Feature/CliBinaryBuildContractTest.php']],
         ['apps/gateway', [
             'tests/Unit/Architecture',
             'tests/Feature/Infrastructure/Instances/ConfiguredOriginReadTest.php',
@@ -651,6 +705,9 @@ PHP);
         ]],
         ['apps/e2e', [
             'tests/Unit/E2E/Value/TopologyNodeCatalogTest.php',
+            'tests/Feature/Configuration/ComposerConfigurationTest.php',
+            'tests/Feature/Configuration/SubprocessTestGroupTest.php',
+            'tests/Feature/Configuration/DocsMergeRefWorkflowTest.php',
         ]],
         ['packages/php-sdk', [
             'tests/Unit/SuccessRequestIdBoundaryTest.php',
@@ -778,4 +835,24 @@ describe('subtask test selection', function (): void {
         expect($process->getExitCode())->toBe(1)
             ->and($process->getErrorOutput())->toContain('task test base');
     })->with([str_repeat('f', 40), '--all']);
+});
+
+describe('handoff tree test selection', function (): void {
+    it('excludes already checked uncommitted changes while CI keeps the full branch', function (bool $ci): void {
+        $fixture = orb277_gate_fixture('apps/cli/composer.lock');
+        $root = $fixture['root'];
+        file_put_contents($root.'/apps/cli/earlier.txt', 'Already checked uncommitted work.');
+        (new Process(['git', 'add', '.'], $root))->mustRun();
+        $tree = trim((new Process(['git', 'write-tree'], $root))->mustRun()->getOutput());
+        (new Process(['git', 'reset', '--quiet'], $root))->mustRun();
+        mkdir($root.'/apps/gateway/app', 0700, true);
+        file_put_contents($root.'/apps/gateway/app/Rework.php', '<?php final class Rework {}');
+
+        $run = orb277_run_gate($fixture, 'apps/cli', testBase: $tree, ci: $ci);
+
+        expect($run['receipt']['passed'])->toBeTrue()
+            ->and($run['receipt']['test_base'])->toBe($ci ? $fixture['main'] : $tree);
+        $fallbacks = array_values(array_filter($run['receipt']['checks'], static fn (array $check): bool => $check['project'] === 'apps/cli' && in_array('--no-tia', $check['command'], true)));
+        expect($fallbacks)->toHaveCount($ci ? 1 : 0);
+    })->with(['handoff' => false, 'CI' => true]);
 });

@@ -65,7 +65,6 @@ use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
@@ -207,6 +206,29 @@ it('creates a task VM workspace from the Gateway mirror, with no clone or fetch 
     expect($network)->toBe(['0', '0']);
 });
 
+it('receives optional CI cache refs in an ordinary workspace through the Gateway mirror', function (bool $published): void {
+    orb76_https_origin($this);
+    GitRemoteRedirect::global($this->repository, $this->remoteOrigin);
+    $main = trim(orb76_run(['git', '-C', $this->repository, 'rev-parse', 'refs/heads/main'])->stdout);
+    $ref = 'refs/orbit/ci-cache/'.$main;
+    if ($published) {
+        orb76_run(['git', '-C', $this->repository, 'update-ref', $ref, $main]);
+    }
+    ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => 'setup', 'name' => 'ci-cache', 'command' => '@orbit/ci-caches', 'timeout_seconds' => 60, 'position' => 0]);
+    try {
+        $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'default');
+        $this->source->prepare($instance, false);
+        $resolution = $this->source->resolve($instance->refresh());
+        expect($resolution->startingCommit)->toBe($main)
+            ->and(trim(orb76_run(['git', '-C', $instance->checkout_path, 'rev-parse', 'HEAD'])->stdout))->toBe($main)
+            ->and(trim(orb76_run(['git', '-C', $instance->checkout_path, 'rev-parse', 'refs/worktree/orbit/ci-baseline'])->stdout))->toBe($main);
+        $refs = trim(orb76_run(['git', '-C', $instance->checkout_path, 'for-each-ref', '--format=%(refname)', 'refs/orbit/ci-cache/'])->stdout);
+        expect($refs)->toBe($published ? $ref : '');
+    } finally {
+        GitRemoteRedirect::clear();
+    }
+})->with(['matching ref' => true, 'missing ref' => false]);
+
 it('preserves a pre-existing same-origin checkout through the whole failed create and retry', function (): void {
     orb866_bind_create_sources($this);
     $path = $this->appsRoot.'/acme/unregistered';
@@ -277,46 +299,21 @@ it('starts a linked workspace from the deployed commit of the default instead of
         ->and(trim(orb76_run(['git', '-C', $workspace->checkout_path, 'rev-parse', '--path-format=absolute', '--git-common-dir'])->stdout))->toBe($seed->checkout_path.'/.git');
 });
 
-it('starts a task VM workspace from the template checkout next to it, with its ignored files', function (): void {
-    $template = $this->appsRoot.'/acme/.orbit-workspace-template';
-    $this->files->makeDirectory(dirname($template), 0o755, true);
-    // The transport maps the Project origin to this local repository, as it does for a clone.
-    orb76_run(['git', 'clone', '--quiet', $this->repository, $template]);
-    file_put_contents($template.'/.git/info/exclude', "vendor/\n");
-    $this->files->makeDirectory($template.'/vendor');
-    file_put_contents($template.'/vendor/autoload.php', "<?php\n");
-    $workspace = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-7', 'task-7');
-    $workspace->update(['source_prepare_id' => (string) Str::uuid()]);
-
-    $this->source->prepare($workspace, false, $template);
-    $resolved = $this->source->resolve($workspace);
-    $this->source->inspectPrepared($workspace);
-
-    expect(is_dir($template))->toBeFalse()
-        ->and(file_get_contents($workspace->checkout_path.'/vendor/autoload.php'))->toBe("<?php\n")
-        ->and($resolved->branch)->toBe('task-7')
-        ->and(trim(orb76_run(['git', '-C', $workspace->checkout_path, 'status', '--porcelain'])->stdout))->toBe('');
-});
-
-it('takes a task VM template built at the checkout path in place, and the prepared checkout on a retry', function (): void {
+it('clones a task VM workspace from the mirror and preserves its prepared checkout on retry', function (): void {
     orb76_https_origin($this);
     $workspace = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-7', 'task-7');
     orb76_task_vm($this->node);
     $checkout = dirname($workspace->checkout_path).'/workspace';
     $workspace->update(['checkout_path' => $checkout, 'source_prepare_id' => (string) Str::uuid()]);
-    $this->files->makeDirectory(dirname($checkout), 0o755, true);
-    orb76_run(['git', 'clone', '--quiet', $this->repository, $checkout]);
-    file_put_contents($checkout.'/.git/info/exclude', "vendor/\n");
-    $this->files->makeDirectory($checkout.'/vendor');
-    file_put_contents($checkout.'/vendor/cache.php', "<?php\n");
-    $inode = fileinode($checkout.'/vendor/cache.php');
-
-    // On a task VM Node, resolution sends the branches from the Gateway's mirror.
     GitRemoteRedirect::global($this->repository, $this->remoteOrigin);
     try {
-        $this->source->prepare($workspace, false, $checkout);
-        $this->source->prepare($workspace->refresh(), true, $checkout);
+        $this->source->prepare($workspace, false);
         $resolved = $this->source->resolve($workspace);
+        file_put_contents($checkout.'/.git/info/exclude', "vendor/\n");
+        $this->files->makeDirectory($checkout.'/vendor');
+        file_put_contents($checkout.'/vendor/cache.php', "<?php\n");
+        $inode = fileinode($checkout.'/vendor/cache.php');
+        $this->source->prepare($workspace->refresh(), true);
         $this->source->inspectPrepared($workspace);
     } finally {
         GitRemoteRedirect::clear();
@@ -328,16 +325,15 @@ it('takes a task VM template built at the checkout path in place, and the prepar
         ->and(trim(orb76_run(['git', '-C', $checkout, 'status', '--porcelain'])->stdout))->toBe('');
 });
 
-it('fails instead of cloning over a template in place that fails its source checks', function (): void {
+it('refuses an unprepared checkout left by an old template claim', function (): void {
     $workspace = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-8', 'task-8');
     orb76_task_vm($this->node);
     $checkout = dirname($workspace->checkout_path).'/workspace';
     $workspace->update(['checkout_path' => $checkout, 'source_prepare_id' => (string) Str::uuid()]);
     $this->files->makeDirectory(dirname($checkout), 0o755, true);
     orb76_run(['git', 'clone', '--quiet', $this->repository, $checkout]);
-    orb76_run(['git', '-C', $checkout, 'remote', 'set-url', 'origin', $this->sandbox.'/other.git']);
 
-    expect(fn () => $this->source->prepare($workspace, false, $checkout))->toThrow(RuntimeConvergenceException::class);
+    expect(fn () => $this->source->prepare($workspace, true))->toThrow(RuntimeConvergenceException::class);
     expect(is_file($checkout.'/.git/orbit-source-prepare'))->toBeFalse();
 });
 
@@ -346,30 +342,6 @@ it('refuses the fixed workspace checkout on a Node that is not a task VM', funct
     $workspace->update(['checkout_path' => dirname($workspace->checkout_path).'/workspace', 'source_prepare_id' => (string) Str::uuid()]);
 
     expect(fn () => $this->source->prepare($workspace, false))->toThrow(RuntimeConvergenceException::class, 'unsafe checkout path');
-});
-
-it('clones when the template is gone, and clones instead of taking a template of another repository', function (): void {
-    Log::spy();
-    $template = $this->appsRoot.'/acme/.orbit-workspace-template';
-    $gone = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-8', 'task-8');
-    $gone->update(['source_prepare_id' => (string) Str::uuid()]);
-    $this->source->prepare($gone, false, $template);
-    expect(is_dir($gone->checkout_path.'/.git'))->toBeTrue();
-
-    orb76_run(['git', 'clone', '--quiet', $this->repository, $template]);
-    orb76_run(['git', '-C', $template, 'remote', 'set-url', 'origin', $this->sandbox.'/other.git']);
-    $foreign = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-9', 'task-9');
-    $foreign->update(['source_prepare_id' => (string) Str::uuid()]);
-
-    $this->source->prepare($foreign, false, $template);
-    $resolved = $this->source->resolve($foreign);
-    $this->source->inspectPrepared($foreign);
-
-    expect(is_dir($template))->toBeTrue()
-        ->and(trim(orb76_run(['git', '-C', $template, 'config', '--get', 'remote.origin.url'])->stdout))->toBe($this->sandbox.'/other.git')
-        ->and(is_dir($foreign->checkout_path.'/.git'))->toBeTrue()
-        ->and($resolved->branch)->toBe('task-9');
-    Log::shouldHaveReceived('warning')->once()->with('The workspace template failed its source checks; the checkout is a fresh clone.', Mockery::any());
 });
 
 it('does not transfer an attempt receipt to a replacement directory even with force', function (bool $failureRecord): void {
