@@ -577,6 +577,8 @@ export function createDemoGateway() {
                         tasks: tasksEnabled,
                         proxycli: proxycliExtensionEnabled,
                         documents: documentsEnabled,
+                        vault: false,
+                        conn: false,
                     }),
             ],
             [

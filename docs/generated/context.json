@@ -114,6 +114,7 @@
                 "Access grant",
                 "Activity",
                 "Doctor",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -638,6 +639,7 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Extension",
                 "Gateway"
             ],
             "governing_adrs": []
@@ -944,6 +946,7 @@
                 "Activity",
                 "Extension",
                 "Gateway",
+                "Node",
                 "Project",
                 "Project Documents",
                 "Route",
@@ -1312,6 +1315,7 @@
             "concepts": [
                 "Deliverable",
                 "Deployment",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -1553,6 +1557,7 @@
             ],
             "concepts": [
                 "Activity",
+                "Extension",
                 "Gateway",
                 "Node",
                 "Project",
@@ -1769,6 +1774,7 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Activity",
                 "Extension",
                 "Gateway",
                 "Process",
@@ -2692,6 +2698,7 @@
             ],
             "concepts": [
                 "Activity",
+                "Extension",
                 "Gateway",
                 "Node",
                 "Route",

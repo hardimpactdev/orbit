@@ -26,6 +26,8 @@ it("uses the Gateway-filtered section list for digit shortcuts", async () => {
             tasks: false,
             proxycli: false,
             documents: true,
+            vault: false,
+            conn: false,
         });
     await expect.poll(() => screenText()).toContain("1-5 jump");
 
@@ -41,6 +43,8 @@ it("skips disabled extension sections when moving through the nav with arrows", 
             tasks: false,
             proxycli: false,
             documents: true,
+            vault: false,
+            conn: false,
         });
     await userEvent.keyboard("{ArrowDown}");
     await expect.poll(app.url).toBe("/activity");

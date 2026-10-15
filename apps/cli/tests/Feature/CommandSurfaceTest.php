@@ -219,10 +219,6 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'tool:scan',
         'tool:show',
         'tool:update',
-        'vault:setup',
-        'vault:status',
-        'vault:sync',
-        'vault:teardown',
     ]);
 });
 
@@ -412,7 +408,7 @@ it('hides optional command families when Gateway extension state is unknown', fu
         ->keys()
         ->all());
 
-    expect($visibleCommands)->not->toContain('tasks:create', 'proxycli:status', 'project:document:list', 'project:document-storage:show')
+    expect($visibleCommands)->not->toContain('tasks:create', 'proxycli:status', 'project:document:list', 'project:document-storage:show', 'vault:status')
         ->and($visibleCommands)->toContain('tasks:status');
 });
 
@@ -1366,10 +1362,6 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'tool:scan' => [['--node' => '1'], ...$profileMissing],
         'tool:show' => [['tool' => '1'], ...$profileMissing],
         'tool:update' => [['tool' => '1'], ...$profileMissing],
-        'vault:setup' => [[], ...$profileMissing],
-        'vault:status' => [[], ...$profileMissing],
-        'vault:sync' => [[], ...$profileMissing],
-        'vault:teardown' => [['--yes' => true], ...$profileMissing],
     ];
     $visibleCommandNames = ExtensionCommandVisibility::duringListing(static fn (): array => collect(app(Kernel::class)->all())
         ->reject(static fn (Command $command): bool => $command->isHidden())

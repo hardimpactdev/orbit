@@ -113,12 +113,24 @@ uses(TestCase::class, RefreshDatabase::class)
     })
     ->in('Feature');
 
-// The documents extension's tests run with its switch on (docs/reference/extensions.md#the-runtime-switch).
+// Each moved extension's tests run with its switch on (docs/reference/extensions.md#the-runtime-switch).
 uses()
     ->beforeEach(function (): void {
         app(ExtensionStore::class)->set('documents', true);
     })
     ->in('Feature/Extensions/Documents');
+
+uses()
+    ->beforeEach(function (): void {
+        app(ExtensionStore::class)->set('vault', true);
+    })
+    ->in('Feature/Extensions/Vault');
+
+uses()
+    ->beforeEach(function (): void {
+        app(ExtensionStore::class)->set('conn', true);
+    })
+    ->in('Feature/Extensions/Conn');
 
 pest()
     ->tia()

@@ -8,10 +8,6 @@ use App\Models\AgentThread;
 use App\Models\AgentThreadSendLease;
 use App\Models\Annotation;
 use App\Models\Cluster;
-use App\Models\ConnEnvironment;
-use App\Models\ConnPairing;
-use App\Models\ConnProfile;
-use App\Models\ConnProfileBinding;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\DatabaseServer;
@@ -67,12 +63,16 @@ use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
-use App\Models\VaultItem;
+use Orbit\Extensions\Conn\Models\ConnEnvironment;
+use Orbit\Extensions\Conn\Models\ConnPairing;
+use Orbit\Extensions\Conn\Models\ConnProfile;
+use Orbit\Extensions\Conn\Models\ConnProfileBinding;
 use Orbit\Extensions\Documents\Models\ProjectDocumentCleanup;
 use Orbit\Extensions\Documents\Models\ProjectDocumentEntry;
 use Orbit\Extensions\Documents\Models\ProjectDocumentStorage;
 use Orbit\Extensions\Documents\Models\ProjectDocumentUpload;
 use Orbit\Extensions\Documents\Models\ProjectDocumentVersion;
+use Orbit\Extensions\Vault\Models\VaultItem;
 
 it('partitions every persisted model across doctor dispositions', function (): void {
     $familyModels = [

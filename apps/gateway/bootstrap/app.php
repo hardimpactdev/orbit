@@ -74,7 +74,6 @@ return Application::configure(basePath: dirname(__DIR__))
         GatewaySchedule::command($schedule, 'orbit:deploy-development-defaults', uniqueFor: 1800, overlapMinutes: 90)->everyMinute();
         GatewaySchedule::command($schedule, 'orbit:desired-fleet-state', uniqueFor: 600, overlapMinutes: 10)->everyFiveMinutes();
         GatewaySchedule::command($schedule, 'orbit:activity-finalize-interrupted', uniqueFor: 600, overlapMinutes: 10)->everyFiveMinutes();
-        GatewaySchedule::command($schedule, 'orbit:vault-sync', uniqueFor: 900, overlapMinutes: 15)->everyMinute();
         // Operations run only on the queue, so their sweep has nothing to do without it.
         GatewaySchedule::command($schedule, 'orbit:operations-sweep', uniqueFor: 300)->everyMinute()
             ->when(static fn (): bool => GatewayQueueRedis::configured());
