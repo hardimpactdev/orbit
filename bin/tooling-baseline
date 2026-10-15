@@ -22,19 +22,21 @@ declare(strict_types=1);
  * To change the tooling on purpose, change the projects and this baseline in the same commit.
  */
 
+/** Every tool runs in parallel processes. bin/check-processes reads ORBIT_CHECK_PROCESSES, or the core count. */
 const TOOLING_BASELINE_SCRIPTS = [
     'analyse' => 'vendor/bin/phpstan analyse --no-progress --memory-limit=1G',
-    'format' => 'vendor/bin/pint',
-    'format:check' => 'vendor/bin/pint --test',
+    'format' => 'vendor/bin/pint --parallel --max-processes=$(../../bin/check-processes)',
+    'format:check' => '../../bin/quality-scope pint vendor/bin/pint --test --parallel --max-processes=$(../../bin/check-processes)',
     'guidance:check' => '../../bin/guidance-check',
     'lint' => '@format:check',
-    'rector' => 'vendor/bin/rector process --dry-run --no-progress-bar --clear-cache',
-    'test' => '../../bin/pest-plain vendor/bin/pest --parallel --tia --compact --colors=never',
-    'test:affected' => '../../bin/pest-plain vendor/bin/pest --parallel --processes=2 --tia --compact --colors=never',
+    'rector' => '../../bin/quality-scope rector vendor/bin/rector process --dry-run --no-progress-bar --clear-cache',
+    'test' => '../../bin/pest-plain vendor/bin/pest --parallel --processes=$(../../bin/check-processes) --tia --compact --colors=never',
+    'test:affected' => '../../bin/pest-plain vendor/bin/pest --parallel --processes=$(../../bin/check-processes) --tia --compact --colors=never',
 ];
 
-/** The steps of composer check. The guidance check runs first. */
-const TOOLING_BASELINE_CHECK = ['@guidance:check', '@rector', '@format:check', '@analyse'];
+/** The steps of composer check. The guidance check runs first. PHPStan runs before Rector, because the candidate gate
+ * reads the files that depend on a changed file from PHPStan's result cache. */
+const TOOLING_BASELINE_CHECK = ['@guidance:check', '@analyse', '@rector', '@format:check'];
 
 const TOOLING_BASELINE_PHPSTAN_LEVEL = 9;
 
@@ -72,10 +74,6 @@ const TOOLING_BASELINE_PROJECTS = [
         'pint' => ['app', 'bootstrap', 'config', 'database', 'extensions', 'routes', 'tests'],
         'scripts' => [
             'guidance:update' => [TOOLING_BASELINE_BOOST_UPDATE, 'The Gateway generates its guidance with Boost.'],
-            'test:affected' => [
-                '../../bin/pest-plain vendor/bin/pest --parallel --processes=4 --tia --compact --colors=never',
-                'The Gateway has the largest suite.',
-            ],
         ],
         'check' => [
             '@annotator:check' => 'The Gateway serves the built annotator bundle.',
@@ -204,6 +202,11 @@ function tooling_baseline_project(string $root, string $project, array $declared
         $steps = array_merge(TOOLING_BASELINE_CHECK, array_keys($declared['check']));
         if (($check[0] ?? null) !== '@guidance:check') {
             $findings[] = "{$project}/composer.json check must run @guidance:check first.";
+        }
+        $analyse = array_search('@analyse', $check, true);
+        $rector = array_search('@rector', $check, true);
+        if (is_int($analyse) && is_int($rector) && $analyse > $rector) {
+            $findings[] = "{$project}/composer.json check must run @analyse before @rector.";
         }
         foreach (array_diff($steps, $check) as $step) {
             $findings[] = "{$project}/composer.json check is missing {$step}.";

@@ -181,15 +181,23 @@ describe('prepare node guest script', function () {
         mkdir("{$root}/home/orbit/.ssh", 0o700, true);
         file_put_contents("{$root}/home/orbit/.ssh/known_hosts", "builder host key\n");
         $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/prepare-node.sh');
-        file_put_contents("{$root}/prepare-node.sh", str_replace(
+        $script = str_replace(
             ['/etc/', '/root/', '/home/', '/usr/local/bin/', '/opt/orbit/'],
             ["{$root}/etc/", "{$root}/root/", "{$root}/home/", "{$root}/usr/local/bin/", "{$root}/opt/orbit/"],
             $source,
-        ));
+        );
+        foreach (['/etc/', '/root/', '/home/', '/usr/local/bin/', '/opt/orbit/'] as $prefix) {
+            expect(str_replace("{$root}/", '', $script))->not->toContain($prefix);
+        }
+        file_put_contents("{$root}/prepare-node.sh", $script);
 
         for ($attempt = 0; $attempt < 2; $attempt++) {
             $process = new Process(['bash', "{$root}/prepare-node.sh", 'configure-runtime'], env: ['PATH' => "{$root}/bin:".getenv('PATH')]);
             expect($process->run())->toBe(0, $process->getErrorOutput());
+            if ($recipeLauncher) {
+                expect(is_link("{$root}/usr/local/bin/bun"))->toBeTrue();
+                expect(readlink("{$root}/usr/local/bin/bun"))->toBe("{$root}/opt/orbit/bun/bin/bun");
+            }
         }
 
         $expected = ($network ? "networkctl reload\n" : '').($docker && ! $member ? "usermod --append --groups docker orbit\n" : '');
@@ -212,7 +220,7 @@ describe('prepare node guest script', function () {
         'VM without Docker' => [true, false, false],
         'roleless container' => [false, false, false],
         'Docker without harness networking' => [false, true, false],
-        'recipe Bun launcher' => [true, true, false, true],
+        'recipe base VM' => [true, true, false, true],
     ]);
 
     it('adapts only the known root-owned recipe Bun launcher, idempotently', function (string $contents, string $owner, bool $converted): void {

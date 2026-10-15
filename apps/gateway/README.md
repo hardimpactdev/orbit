@@ -118,5 +118,5 @@ Use `ORBIT_HOME` to override the application data directory. The default is
 ```bash
 composer test       # Pest 5 suite with TIA in parallel
 composer format     # Laravel Pint formatter
-composer check      # guidance, Rector, Pint, and Larastan checks
+composer check      # guidance, Larastan, Rector, and Pint checks
 ```

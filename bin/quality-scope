@@ -1,0 +1,563 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/**
+ * Run Pint or Rector on every file, or in the candidate gate on the files a change affects.
+ *
+ * Each project's Composer scripts run, from the project directory:
+ *
+ *     ../../bin/quality-scope pint vendor/bin/pint --test --parallel ...
+ *     ../../bin/quality-scope rector vendor/bin/rector process --dry-run ...
+ *
+ * The command runs unchanged unless bin/review-check sets ORBIT_CHECK_SCOPE=changed and ORBIT_CHECK_BASE to the
+ * merge base with main. Then the changed files are the files that differ from that base: committed, staged,
+ * unstaged, or untracked.
+ *
+ * - Pint checks the changed PHP files that pint.json formats. With none, it does not run.
+ * - Rector checks the changed files in its paths, the files that PHPStan's result cache records as depending on a
+ *   changed file, and the files in its paths that PHPStan does not analyse.
+ *
+ * The tool checks every file, and the log says why, when CI or GITHUB_ACTIONS is set, when the base or the changes
+ * cannot be read, when the tool's configuration, composer.json, or composer.lock changes, or, for Rector, when the
+ * change deletes a PHP file, or when the PHPStan result cache is missing, unreadable, written by a PHPStan or in a
+ * cache format this script does not know, or does not describe the files as they are now. The candidate gate runs
+ * PHPStan before Rector, so the result cache describes the current files.
+ */
+
+const QUALITY_SCOPE_CONFIGURATION = [
+    'pint' => ['pint.json', 'composer.json', 'composer.lock'],
+    'rector' => ['rector.php', 'composer.json', 'composer.lock'],
+];
+
+/**
+ * The result cache versions whose dependency graph this script reads. Each one stores the graph as a table of paths
+ * and entries of [file, hash, stat, dependents, trait dependents]. A newer PHPStan may change that, so its cache
+ * makes Rector check every file until its version is added here.
+ */
+const QUALITY_SCOPE_CACHE_VERSIONS = ['v18-missingFileDependencies', 'v22-valueDependencies'];
+
+/** PHPStan writes this line first in its framed result cache. */
+const QUALITY_SCOPE_RESULT_CACHE_PREFIX = '<?php return; ?>';
+
+const QUALITY_SCOPE_RESULT_CACHE = 'vendor/phpstan/cache/resultCache.php';
+
+/** PHPStan records the hash of a file with a parse error with this prefix, and a missing file with an empty hash. */
+const QUALITY_SCOPE_REANALYSE_PREFIX = 'reanalyse:';
+
+final class QualityScopeFull extends RuntimeException {}
+
+function quality_scope_say(string $tool, string $message): void
+{
+    fwrite(STDERR, ucfirst($tool).': '.$message."\n");
+}
+
+/**
+ * @param  list<string>  $command
+ */
+function quality_scope_run(array $command): int
+{
+    $process = proc_open($command, [STDIN, STDOUT, STDERR], $pipes);
+    if (! is_resource($process)) {
+        fwrite(STDERR, "Could not start {$command[0]}.\n");
+
+        return 1;
+    }
+
+    return proc_close($process);
+}
+
+/**
+ * Run git in the project and return its NUL-separated output.
+ *
+ * @param  list<string>  $arguments
+ * @return list<string>
+ */
+function quality_scope_git(string $project, array $arguments): array
+{
+    $process = proc_open(['git', '-C', $project, ...$arguments], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+    if (! is_resource($process)) {
+        throw new QualityScopeFull('git did not start');
+    }
+    $output = (string) stream_get_contents($pipes[1]);
+    $error = trim((string) stream_get_contents($pipes[2]));
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+    if (proc_close($process) !== 0) {
+        throw new QualityScopeFull('git '.$arguments[0].' failed'.($error === '' ? '' : ': '.$error));
+    }
+
+    return array_values(array_filter(explode("\0", $output), static fn (string $path): bool => $path !== ''));
+}
+
+/**
+ * The absolute paths in the repository that differ from the base, deleted files included.
+ *
+ * A project can depend on files outside it, such as the PHP SDK that the CLI links through a path repository,
+ * so the dependents come from every change in the repository.
+ *
+ * @return list<string>
+ */
+function quality_scope_changed(string $project, string $base): array
+{
+    $root = quality_scope_git($project, ['rev-parse', '--show-toplevel']);
+    $root = realpath(trim($root[0] ?? ''));
+    if ($root === false) {
+        throw new QualityScopeFull('the repository root cannot be read');
+    }
+    $changed = quality_scope_git($root, ['diff', '--name-only', '--no-renames', '-z', $base]);
+    $untracked = quality_scope_git($root, ['ls-files', '--others', '--exclude-standard', '-z']);
+    $paths = array_values(array_unique(array_map(
+        static fn (string $path): string => quality_scope_normalize($root.'/'.$path),
+        [...$changed, ...$untracked],
+    )));
+    sort($paths);
+
+    return $paths;
+}
+
+/**
+ * The changed paths inside the project, relative to it.
+ *
+ * @param  list<string>  $changed
+ * @return list<string>
+ */
+function quality_scope_in_project(string $project, array $changed): array
+{
+    $paths = [];
+    foreach ($changed as $path) {
+        if (str_starts_with($path, $project.'/')) {
+            $paths[] = substr($path, strlen($project) + 1);
+        }
+    }
+
+    return $paths;
+}
+
+/** Collapse . and .. segments without touching the file system, as PHPStan does. */
+function quality_scope_normalize(string $path): string
+{
+    $parts = [];
+    foreach (explode('/', $path) as $part) {
+        if ($part === '' || $part === '.') {
+            continue;
+        }
+        if ($part === '..') {
+            array_pop($parts);
+
+            continue;
+        }
+        $parts[] = $part;
+    }
+
+    return '/'.implode('/', $parts);
+}
+
+function quality_scope_is_php(string $path): bool
+{
+    return str_ends_with($path, '.php') && ! str_ends_with($path, '.blade.php');
+}
+
+/**
+ * Every PHP file under the given project-relative paths, as absolute paths.
+ *
+ * @param  list<string>  $paths
+ * @return list<string>
+ */
+function quality_scope_php_files(string $project, array $paths): array
+{
+    $files = [];
+    foreach ($paths as $path) {
+        $absolute = quality_scope_normalize($project.'/'.$path);
+        if (is_file($absolute)) {
+            $files[] = $absolute;
+
+            continue;
+        }
+        if (! is_dir($absolute)) {
+            continue;
+        }
+        $entries = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($absolute, FilesystemIterator::SKIP_DOTS));
+        foreach ($entries as $entry) {
+            if ($entry instanceof SplFileInfo && $entry->isFile() && quality_scope_is_php($entry->getPathname())) {
+                $files[] = quality_scope_normalize($entry->getPathname());
+            }
+        }
+    }
+    $files = array_values(array_unique($files));
+    sort($files);
+
+    return $files;
+}
+
+/**
+ * The paths that rector.php lists in withPaths(), relative to the project. bin/tooling-baseline reads them the same way.
+ *
+ * @return list<string>
+ */
+function quality_scope_rector_paths(string $project): array
+{
+    $source = @file_get_contents($project.'/rector.php');
+    if ($source === false || preg_match('/->withPaths\(\s*\[(.*?)\]\s*\)/s', $source, $block) !== 1) {
+        throw new QualityScopeFull('rector.php lists no paths that can be read');
+    }
+    preg_match_all('/__DIR__\s*\.\s*[\'"]\/([^\'"]+)[\'"]/', $block[1], $paths);
+    if ($paths[1] === []) {
+        throw new QualityScopeFull('rector.php lists no paths that can be read');
+    }
+
+    return $paths[1];
+}
+
+/**
+ * The paths that phpstan.neon analyses, relative to the project.
+ *
+ * @return list<string>
+ */
+function quality_scope_phpstan_paths(string $project): array
+{
+    $source = @file_get_contents($project.'/phpstan.neon');
+    if ($source === false || preg_match('/^\s{4}paths:\s*\n((?:\s{8}-\s*.+\n)+)/m', $source, $block) !== 1) {
+        throw new QualityScopeFull('phpstan.neon lists no paths that can be read');
+    }
+    preg_match_all('/^\s{8}-\s*(\S+)/m', $block[1], $entries);
+
+    return $entries[1];
+}
+
+/**
+ * Read the dependency graph of PHPStan's framed result cache.
+ *
+ * Returns, for each file PHPStan records, its absolute path, recorded hash, and the files that depend on it.
+ *
+ * @return array<string, array{hash: string, dependents: list<string>}>
+ */
+function quality_scope_dependency_graph(string $project): array
+{
+    $path = $project.'/'.QUALITY_SCOPE_RESULT_CACHE;
+    if (! is_file($path)) {
+        throw new QualityScopeFull('the PHPStan result cache is missing');
+    }
+    $anchor = realpath($project.'/vendor/phpstan/phpstan');
+    if ($anchor === false) {
+        throw new QualityScopeFull('PHPStan is not installed');
+    }
+    $handle = @fopen($path, 'rb');
+    if ($handle === false) {
+        throw new QualityScopeFull('the PHPStan result cache cannot be opened');
+    }
+    try {
+        if (rtrim((string) fgets($handle), "\n") !== QUALITY_SCOPE_RESULT_CACHE_PREFIX) {
+            throw new QualityScopeFull('the PHPStan result cache has an unknown format');
+        }
+        while (($header = fgets($handle)) !== false) {
+            $header = rtrim($header, "\n");
+            if ($header === '') {
+                continue;
+            }
+            $parts = explode(' ', $header, 2);
+            if (count($parts) !== 2 || preg_match('/^\d+$/', $parts[1]) !== 1) {
+                throw new QualityScopeFull('the PHPStan result cache has a malformed frame');
+            }
+            [$name, $size] = [$parts[0], (int) $parts[1]];
+            if ($name === 'meta') {
+                $meta = $size > 0 ? @unserialize((string) fread($handle, $size), ['allowed_classes' => false]) : false;
+                quality_scope_require_known_cache($project, $meta);
+                $knownCache = true;
+
+                continue;
+            }
+            if ($name === 'dependencyGraph') {
+                if (! isset($knownCache)) {
+                    throw new QualityScopeFull('the PHPStan result cache records no metadata');
+                }
+                $graph = $size > 0 ? @unserialize((string) fread($handle, $size), ['allowed_classes' => false]) : false;
+
+                return quality_scope_decode_graph($graph, $anchor);
+            }
+            if (str_ends_with($name, '*')) {
+                for ($entry = 0; $entry < $size; $entry++) {
+                    $length = fgets($handle);
+                    if ($length === false || fseek($handle, (int) $length, SEEK_CUR) !== 0) {
+                        throw new QualityScopeFull('the PHPStan result cache is truncated');
+                    }
+                }
+
+                continue;
+            }
+            if (fseek($handle, $size, SEEK_CUR) !== 0) {
+                throw new QualityScopeFull('the PHPStan result cache is truncated');
+            }
+        }
+    } finally {
+        fclose($handle);
+    }
+
+    throw new QualityScopeFull('the PHPStan result cache records no dependencies');
+}
+
+/** Fail unless the installed PHPStan wrote the result cache in a format this script knows. */
+function quality_scope_require_known_cache(string $project, mixed $meta): void
+{
+    if (! is_array($meta)) {
+        throw new QualityScopeFull('the PHPStan result cache metadata cannot be read');
+    }
+    $format = $meta['cacheVersion'] ?? null;
+    if (! is_string($format) || ! in_array($format, QUALITY_SCOPE_CACHE_VERSIONS, true)) {
+        throw new QualityScopeFull('the PHPStan result cache format '.var_export($format, true).' is not one this script reads');
+    }
+    $installed = null;
+    $packages = json_decode((string) @file_get_contents($project.'/vendor/composer/installed.json'), true);
+    foreach ((is_array($packages) ? ($packages['packages'] ?? $packages) : []) as $package) {
+        if (is_array($package) && ($package['name'] ?? null) === 'phpstan/phpstan') {
+            $installed = $package['version'] ?? null;
+        }
+    }
+    $writer = $meta['phpstanVersion'] ?? null;
+    if (! is_string($writer) || ! is_string($installed) || ltrim($installed, 'v') !== $writer) {
+        throw new QualityScopeFull('the PHPStan result cache was written by PHPStan '.var_export($writer, true)
+            .', not the installed '.var_export($installed, true));
+    }
+}
+
+/**
+ * @return array<string, array{hash: string, dependents: list<string>}>
+ */
+function quality_scope_decode_graph(mixed $graph, string $anchor): array
+{
+    if (! is_array($graph) || ! is_array($graph['paths'] ?? null) || ! is_array($graph['entries'] ?? null)) {
+        throw new QualityScopeFull('the PHPStan dependency graph is malformed');
+    }
+    $paths = [];
+    foreach ($graph['paths'] as $path) {
+        if (! is_string($path)) {
+            throw new QualityScopeFull('the PHPStan dependency graph is malformed');
+        }
+        // A path repository links a package through vendor/, and git names the linked file by its real path.
+        $path = quality_scope_normalize(str_starts_with($path, '/') ? $path : $anchor.'/'.$path);
+        $paths[] = realpath($path) ?: $path;
+    }
+    $files = [];
+    foreach ($graph['entries'] as $entry) {
+        if (! is_array($entry) || ! is_int($entry[0] ?? null) || ! is_string($entry[1] ?? null)
+            || ! is_array($entry[3] ?? null) || ! isset($paths[$entry[0]])) {
+            throw new QualityScopeFull('the PHPStan dependency graph is malformed');
+        }
+        $dependents = [];
+        foreach ([...$entry[3], ...(is_array($entry[4] ?? null) ? $entry[4] : [])] as $id) {
+            if (! is_int($id) || ! isset($paths[$id])) {
+                throw new QualityScopeFull('the PHPStan dependency graph is malformed');
+            }
+            $dependents[] = $paths[$id];
+        }
+        $files[$paths[$entry[0]]] = ['hash' => $entry[1], 'dependents' => $dependents];
+    }
+
+    return $files;
+}
+
+/**
+ * Fail when the dependency graph does not describe the files as they are now.
+ *
+ * @param  array<string, array{hash: string, dependents: list<string>}>  $graph
+ * @param  list<string>  $analysed
+ */
+function quality_scope_require_current(array $graph, array $analysed, string $project): void
+{
+    foreach ($graph as $file => $record) {
+        if ($record['hash'] === '') {
+            if (file_exists($file)) {
+                throw new QualityScopeFull('the PHPStan result cache is older than '.quality_scope_relative($project, $file));
+            }
+
+            continue;
+        }
+        if (str_starts_with($record['hash'], QUALITY_SCOPE_REANALYSE_PREFIX)) {
+            throw new QualityScopeFull('PHPStan could not parse '.quality_scope_relative($project, $file));
+        }
+        $hash = is_file($file) ? hash_file('sha256', $file) : false;
+        if ($hash !== $record['hash']) {
+            throw new QualityScopeFull('the PHPStan result cache is older than '.quality_scope_relative($project, $file));
+        }
+    }
+    foreach ($analysed as $file) {
+        if (! isset($graph[$file])) {
+            throw new QualityScopeFull('the PHPStan result cache does not record '.quality_scope_relative($project, $file));
+        }
+    }
+}
+
+function quality_scope_relative(string $project, string $file): string
+{
+    return str_starts_with($file, $project.'/') ? substr($file, strlen($project) + 1) : $file;
+}
+
+/**
+ * The project-relative PHP files that Pint formats among the changed paths.
+ *
+ * @param  list<string>  $changed
+ * @return list<string>
+ */
+function quality_scope_pint_files(string $project, array $changed): array
+{
+    $configuration = json_decode((string) @file_get_contents($project.'/pint.json'), true);
+    if (! is_array($configuration)) {
+        throw new QualityScopeFull('pint.json cannot be read');
+    }
+    $excluded = is_array($configuration['exclude'] ?? null) ? $configuration['exclude'] : [];
+    $patterns = is_array($configuration['notPath'] ?? null) ? $configuration['notPath'] : [];
+    $files = [];
+    foreach ($changed as $path) {
+        if (! quality_scope_is_php($path) || ! is_file($project.'/'.$path)) {
+            continue;
+        }
+        foreach (explode('/', $path) as $segment) {
+            if (str_starts_with($segment, '.')) {
+                continue 2;
+            }
+        }
+        foreach ([...$excluded, 'vendor', 'node_modules', 'storage', 'bootstrap/cache'] as $directory) {
+            if (is_string($directory) && str_starts_with($path, rtrim($directory, '/').'/')) {
+                continue 2;
+            }
+        }
+        foreach ($patterns as $pattern) {
+            if (! is_string($pattern)) {
+                throw new QualityScopeFull('pint.json has a notPath entry that is not a pattern');
+            }
+            $match = @preg_match($pattern, $path);
+            if ($match === false) {
+                throw new QualityScopeFull('pint.json has a notPath pattern that cannot be used');
+            }
+            if ($match === 1) {
+                continue 2;
+            }
+        }
+        $files[] = $path;
+    }
+
+    return $files;
+}
+
+/**
+ * The project-relative files that Rector checks for the changed paths, and a summary for the log.
+ *
+ * @param  list<string>  $changed  absolute paths
+ * @return array{files: list<string>, summary: string}
+ */
+function quality_scope_rector_files(string $project, array $changed): array
+{
+    $rectorPaths = quality_scope_rector_paths($project);
+    $phpstanPaths = quality_scope_phpstan_paths($project);
+    $graph = quality_scope_dependency_graph($project);
+    // A deleted file leaves no record of the files that used it once PHPStan has run again.
+    $roots = array_map(static fn (string $path): string => quality_scope_normalize($project.'/'.$path), [...$rectorPaths, ...$phpstanPaths]);
+    foreach ($changed as $file) {
+        if (! quality_scope_is_php($file) || file_exists($file)) {
+            continue;
+        }
+        $analysed = isset($graph[$file]);
+        foreach ($roots as $root) {
+            $analysed = $analysed || $file === $root || str_starts_with($file, $root.'/');
+        }
+        if ($analysed) {
+            throw new QualityScopeFull('the change deletes '.quality_scope_relative($project, $file));
+        }
+    }
+    $targets = quality_scope_php_files($project, $rectorPaths);
+    quality_scope_require_current($graph, quality_scope_php_files($project, $phpstanPaths), $project);
+    $targetSet = array_fill_keys($targets, true);
+    $direct = [];
+    $dependents = [];
+    foreach ($changed as $file) {
+        if (! quality_scope_is_php($file)) {
+            continue;
+        }
+        if (isset($targetSet[$file]) && is_file($file)) {
+            $direct[$file] = true;
+        }
+        foreach ($graph[$file]['dependents'] ?? [] as $dependent) {
+            if (isset($targetSet[$dependent]) && is_file($dependent)) {
+                $dependents[$dependent] = true;
+            }
+        }
+    }
+    $unanalysed = array_fill_keys(array_values(array_filter($targets, static fn (string $file): bool => ! isset($graph[$file]))), true);
+    $dependents = array_diff_key($dependents, $direct);
+    $unanalysed = array_diff_key($unanalysed, $direct, $dependents);
+    $files = array_map(static fn (string $file): string => quality_scope_relative($project, $file), array_keys($direct + $dependents + $unanalysed));
+    sort($files);
+
+    return [
+        'files' => $files,
+        'summary' => sprintf('%d changed, %d dependent, %d not analysed by PHPStan', count($direct), count($dependents), count($unanalysed)),
+    ];
+}
+
+/**
+ * @param  list<string>  $argv
+ */
+function quality_scope_main(array $argv): int
+{
+    $tool = $argv[1] ?? '';
+    $command = array_slice($argv, 2);
+    if (! array_key_exists($tool, QUALITY_SCOPE_CONFIGURATION) || $command === []) {
+        fwrite(STDERR, "usage: bin/quality-scope pint|rector COMMAND [ARGUMENT...]\n");
+
+        return 2;
+    }
+    if (getenv('ORBIT_CHECK_SCOPE') !== 'changed') {
+        return quality_scope_run($command);
+    }
+    $project = realpath('.');
+    if ($project === false) {
+        fwrite(STDERR, "The project directory cannot be read.\n");
+
+        return 2;
+    }
+
+    try {
+        if ((string) getenv('CI') !== '' || (string) getenv('GITHUB_ACTIONS') !== '') {
+            throw new QualityScopeFull('CI checks every file');
+        }
+        $base = (string) getenv('ORBIT_CHECK_BASE');
+        if (preg_match('/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/', $base) !== 1) {
+            throw new QualityScopeFull('the gate has no merge base with main');
+        }
+        $changed = quality_scope_changed($project, $base);
+        $inProject = quality_scope_in_project($project, $changed);
+        foreach (QUALITY_SCOPE_CONFIGURATION[$tool] as $configuration) {
+            if (in_array($configuration, $inProject, true)) {
+                throw new QualityScopeFull("the change touches {$configuration}");
+            }
+        }
+        if ($tool === 'pint') {
+            $files = quality_scope_pint_files($project, $inProject);
+            if ($files === []) {
+                quality_scope_say($tool, 'no changed PHP files to check');
+
+                return 0;
+            }
+            quality_scope_say($tool, sprintf('checking %d changed PHP file%s', count($files), count($files) === 1 ? '' : 's'));
+        } else {
+            ['files' => $files, 'summary' => $summary] = quality_scope_rector_files($project, $changed);
+            if ($files === []) {
+                quality_scope_say($tool, 'no changed PHP files or dependents to check');
+
+                return 0;
+            }
+            quality_scope_say($tool, sprintf('checking %d file%s: %s', count($files), count($files) === 1 ? '' : 's', $summary));
+        }
+    } catch (QualityScopeFull $reason) {
+        quality_scope_say($tool, 'checking every file: '.$reason->getMessage());
+
+        return quality_scope_run($command);
+    }
+
+    return quality_scope_run([...$command, ...$files]);
+}
+
+if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === realpath(__FILE__)) {
+    exit(quality_scope_main($argv));
+}
