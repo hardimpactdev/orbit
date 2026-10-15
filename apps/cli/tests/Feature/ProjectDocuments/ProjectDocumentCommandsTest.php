@@ -11,6 +11,7 @@ use App\Commands\ProjectDocuments\WriteProjectDocumentCommand;
 use App\Console\Kernel;
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
+use App\Services\Extensions\GatewayExtensionState;
 use App\Support\Console\CommandPrompts;
 use App\Support\Console\ConsoleMode;
 use App\Support\Console\PromptAborted;
@@ -39,6 +40,9 @@ beforeEach(function (): void {
     $this->documentHome = sys_get_temp_dir().'/orbit-document-cli-'.Str::uuid();
     config(['orbit.home' => $this->documentHome]);
     app(GatewayConfigRepository::class)->add(new GatewayProfile('test', 'https://gateway.test', '/tmp/root.pem'));
+    MockClient::global(gateway_fixture_mock());
+    app(GatewayExtensionState::class)->discover();
+    MockClient::destroyGlobal();
 });
 afterEach(function (): void {
     MockClient::destroyGlobal();

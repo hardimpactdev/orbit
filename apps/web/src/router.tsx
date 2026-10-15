@@ -13,7 +13,7 @@ import { NodeRecordPage } from "./pages/NodeRecord";
 import { DeploymentPage, RecordPage } from "./pages/RecordPage";
 import { SectionList } from "./pages/SectionList";
 import { Shell } from "./ui/Shell";
-import { ProjectDocumentsPage, readDocumentsSearch } from "./pages/ProjectDocuments";
+import { ProjectDocumentsPage, readDocumentsSearch } from "./extensions/documents/ProjectDocuments";
 
 // The URL carries the page stack: the section, the open record, and the
 // node and project filters. Back is the browser's own.

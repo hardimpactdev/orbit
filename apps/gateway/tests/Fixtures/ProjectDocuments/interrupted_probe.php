@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-use App\Infrastructure\ProjectDocuments\VerifyDocumentStorage;
-use App\Models\ProjectDocumentStorage;
 use Aws\CommandInterface;
 use Aws\Result;
 use GuzzleHttp\Promise\Create;
 use GuzzleHttp\Promise\PromiseInterface;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\DB;
+use Orbit\Extensions\Documents\Infrastructure\VerifyDocumentStorage;
+use Orbit\Extensions\Documents\Models\ProjectDocumentStorage;
 
 $home = $argv[1];
 if (! is_dir($home)) {

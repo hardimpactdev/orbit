@@ -741,7 +741,7 @@ export interface paths {
         };
         /**
          * List extensions
-         * @description Returns the Gateway-wide extension switch state as an object keyed by extension slug. The initial slugs are `tasks` and `proxycli`.
+         * @description Returns the Gateway-wide extension switch state as an object keyed by extension slug. The slugs come from the registered extension providers: `tasks`, `proxycli`, and `documents`.
          */
         get: operations["extension-list"];
         put?: never;
@@ -763,7 +763,7 @@ export interface paths {
         put?: never;
         /**
          * Disable an extension
-         * @description Disables one Gateway-wide extension without removing its setup data. Use `tasks` or `proxycli`; an unknown slug returns `validation.failed` (422). Returns the extension name and `enabled: false`.
+         * @description Disables one Gateway-wide extension without removing its setup data, then runs its disable hook. Use `tasks`, `proxycli`, or `documents`; an unknown slug returns `validation.failed` (422), and an enabled extension that depends on it returns `extension.required` (409). Returns the extension name and `enabled: false`.
          */
         post: operations["extension-disable"];
         delete?: never;
@@ -783,7 +783,7 @@ export interface paths {
         put?: never;
         /**
          * Enable an extension
-         * @description Enable a Gateway extension for every client. Use `tasks` or `proxycli`; an unknown slug returns `validation.failed` (422). Returns the extension name and `enabled: true`.
+         * @description Enable a Gateway extension for every client, then run its enable hook. Use `tasks`, `proxycli`, or `documents`; an unknown slug returns `validation.failed` (422), and a disabled dependency returns `extension.dependency_disabled` (409). Returns the extension name and `enabled: true`.
          */
         post: operations["extension-enable"];
         delete?: never;
@@ -7777,6 +7777,7 @@ export interface operations {
                         data: {
                             tasks: boolean;
                             proxycli: boolean;
+                            documents: boolean;
                         };
                         meta: components["schemas"]["Meta"];
                     };
@@ -7798,8 +7799,8 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Extension slug: `tasks` or `proxycli`. */
-                extension: "tasks" | "proxycli";
+                /** @description Extension slug: `tasks`, `proxycli`, or `documents`. */
+                extension: "tasks" | "proxycli" | "documents";
             };
             cookie?: never;
         };
@@ -7831,7 +7832,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            /** @description An enabled extension depends on this one (`extension.required`); `error.details.required_by` names it. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -7856,8 +7857,8 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Extension slug: `tasks` or `proxycli`. */
-                extension: "tasks" | "proxycli";
+                /** @description Extension slug: `tasks`, `proxycli`, or `documents`. */
+                extension: "tasks" | "proxycli" | "documents";
             };
             cookie?: never;
         };
@@ -7889,7 +7890,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            /** @description A dependency of the extension is disabled (`extension.dependency_disabled`); `error.details.dependency` names it. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14282,6 +14283,15 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            /** @description A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     "project-document-storage-update": {
@@ -14327,7 +14337,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14977,6 +14987,15 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            /** @description A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             /** @description Invalid fields, content encoding, names, hierarchy, query or cursor (`validation.failed`), folder content operation (`project_documents.not_file`), or content outside inline editing limits (`project_documents.not_editable`). */
             422: {
                 headers: {
@@ -15152,6 +15171,15 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            /** @description A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             /** @description Invalid fields, content encoding, names, hierarchy, query or cursor (`validation.failed`), folder content operation (`project_documents.not_file`), or content outside inline editing limits (`project_documents.not_editable`). */
             422: {
                 headers: {
@@ -15200,6 +15228,15 @@ export interface operations {
             };
             /** @description Project-scoped entry or file-scoped version not found (`project_documents.not_found`); a missing Project returns `http.404`. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -15950,6 +15987,15 @@ export interface operations {
             };
             /** @description Project-scoped entry or file-scoped version not found (`project_documents.not_found`); a missing Project returns `http.404`. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

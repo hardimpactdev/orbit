@@ -6,6 +6,7 @@ covers:
   - "apps/gateway/database/migrations/*move_extension_switches_to_gateway_extension_keys.php"
   - "apps/gateway/app/Domain/Extensions/**"
   - "apps/gateway/app/Http/Controllers/Api/ExtensionsController.php"
+  - "apps/gateway/app/Actions/Extensions/**"
   - "apps/gateway/app/Http/Mcp/{ExtensionAwareCallTool,ExtensionAwareExecuteTools,ToolManifest}.php"
   - "apps/cli/app/Commands/Extension/**"
   - "apps/cli/app/Services/Extensions/**"
@@ -13,7 +14,7 @@ covers:
   - "apps/web/src/api/extensions.ts"
 ---
 
-An extension is an optional Gateway feature. Each extension has one switch, and the Gateway stores it. The switch decides for every client whether the extension's CLI commands, MCP tools, API operations, and web pages are available. A disabled extension is invisible in every client, and the Gateway refuses its operations.
+An extension is an optional Gateway feature. Each extension has one switch, and the Gateway stores it. The switch decides for every client whether the extension's CLI commands, MCP tools, API operations, and web pages are available. A disabled extension is invisible in every client, and the Gateway refuses its operations. [Extensions](/reference/extensions) describes how an extension is built.
 
 ## Commands
 
@@ -31,7 +32,9 @@ Each command accepts `--json`. Enable and disable need Gateway access.
 | --- | --- |
 | `tasks` | The [`tasks`](/cli/tasks) family, its MCP tools and API operations, and the Tasks pages. See [Tasks](/reference/tasks). |
 | `proxycli` | The [`proxycli`](/cli/proxycli) family, its MCP tools and API operations, and the Quota pages. See [proxycli](/reference/proxycli). |
+| `documents` | The [`project:document`](/cli/project#project-documents) and `project:document-storage` commands, their MCP tools and API operations, and the Project Documents page. See [Project Documents](/reference/project-documents). |
 
+The Gateway lists the extensions that its registered extension providers declare. A new install starts with every extension off. An install that already used Project Documents keeps `documents` on after it updates.
 ## What a disabled extension does
 
 | Client | Behavior |
@@ -41,7 +44,7 @@ Each command accepts `--json`. Enable and disable need Gateway access.
 | CLI | `list`, `help`, and completion hide the family. A direct call reaches the Gateway, which refuses it with `extension.disabled`. |
 | Web app | Navigation hides the extension's pages. The app reads the switches every 30 seconds. |
 
-`tasks:status` is a core view. It stays available while `tasks` is disabled. Disabling an extension keeps its data, such as tasks or the proxycli collector.
+`tasks:status` is a core view. It stays available while `tasks` is disabled. Disabling an extension keeps its data, such as tasks, documents, or the proxycli collector. Background work that finishes recorded work keeps running, such as the cleanup of deleted document bytes.
 
 A nested empty object in a tool argument stays an object through a direct `tools/call` and through `execute_tools`. [MCP](/reference/mcp) describes that shape.
 
@@ -77,9 +80,9 @@ orbit extension:enable <extension> [--json]
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `extension` | yes | `tasks` or `proxycli`. |
+| `extension` | yes | `tasks`, `proxycli`, or `documents`. |
 
-JSON returns `name` and `enabled`. Enabling an enabled extension succeeds and changes nothing. Enabling only flips the switch. An extension that needs fleet resources has its own setup command, such as [`proxycli:setup`](/cli/proxycli#orbit-proxyclisetup).
+JSON returns `name` and `enabled`. Enabling an enabled extension succeeds and changes nothing. An extension can depend on another one; enabling it while a dependency is off fails with `extension.dependency_disabled`. Enabling flips the switch and runs the extension's enable hook, which only does quick, repeatable setup. An extension that needs fleet resources has its own setup command, such as [`proxycli:setup`](/cli/proxycli#orbit-proxyclisetup).
 
 ## orbit extension:disable
 
@@ -91,9 +94,9 @@ orbit extension:disable <extension> [--json]
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `extension` | yes | `tasks` or `proxycli`. |
+| `extension` | yes | `tasks`, `proxycli`, or `documents`. |
 
-JSON returns `name` and `enabled`. Disabling a disabled extension succeeds and changes nothing. Disabling `proxycli` does not stop its collector. Run [`proxycli:teardown`](/cli/proxycli#orbit-proxycliteardown) for that.
+JSON returns `name` and `enabled`. Disabling a disabled extension succeeds and changes nothing. Disabling an extension that an enabled extension depends on fails with `extension.required`. Disabling `proxycli` does not stop its collector. Run [`proxycli:teardown`](/cli/proxycli#orbit-proxycliteardown) for that.
 
 ## Errors
 
@@ -101,6 +104,8 @@ JSON returns `name` and `enabled`. Disabling a disabled extension succeeds and c
 | --- | --- |
 | `extension.unknown` | The CLI does not know the slug. It sends no request. The API and MCP refuse an unknown slug with `validation.failed` (422). |
 | `extension.disabled` | The extension is disabled at the Gateway (HTTP 409). |
+| `extension.dependency_disabled` | A dependency of the extension is off (HTTP 409). `error.details.dependency` names it. |
+| `extension.required` | An enabled extension depends on the one being disabled (HTTP 409). `error.details.required_by` names it. |
 | `extension.state_unknown` | The CLI could not read the switches, so it ran no extension command. |
 
 ## Why it works this way

@@ -13,5 +13,6 @@ return RectorConfig::configure()
     ->withoutParallel()
     ->withPaths([
         __DIR__.'/app',
+        __DIR__.'/extensions',
     ])
     ->withPhpSets();

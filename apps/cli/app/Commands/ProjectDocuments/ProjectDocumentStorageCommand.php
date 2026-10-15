@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace App\Commands\ProjectDocuments;
 
 use App\Commands\GatewayCommand;
+use App\Commands\ProjectDocuments\Concerns\GatesDocumentsExtension;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleWriter;
 use App\Support\Console\PromptAborted;
+use App\Support\GatedExtensionCommand;
 use InvalidArgumentException;
 use Laravel\Prompts\PasswordPrompt;
 use Laravel\Prompts\TextPrompt;
@@ -16,8 +18,10 @@ use Orbit\Sdk\Requests\ProjectDocuments\ShowProjectDocumentStorageRequest;
 use Orbit\Sdk\Requests\ProjectDocuments\UpdateProjectDocumentStorageRequest;
 use Orbit\Sdk\Responses\ProjectDocuments\ProjectDocumentStorageResponse;
 
-abstract class ProjectDocumentStorageCommand extends GatewayCommand
+abstract class ProjectDocumentStorageCommand extends GatewayCommand implements GatedExtensionCommand
 {
+    use GatesDocumentsExtension;
+
     protected bool $updateStorage;
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
