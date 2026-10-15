@@ -239,13 +239,14 @@ final readonly class NodeRecipeProgram
         if ($program === false) {
             throw new RuntimeException('The recipe converge program is missing.');
         }
+        $program = file_get_contents(resource_path('remote/lib/artifacts.py'))."\n".$program;
         $data = json_decode($recipe->json, true, flags: JSON_THROW_ON_ERROR);
         if (! is_array($data) || ! is_array($data['tools'] ?? null)) {
             throw new RuntimeException('The recipe document is invalid.');
         }
         $payload = json_encode([
             'snapshot' => $recipe->snapshot,
-            'deb_mirror' => $recipe->phpPolicy->mirror,
+            'git_packages' => $recipe->gitPackages, 'artifact_mirror' => $recipe->artifactMirror,
             'architecture' => in_array($node->architecture, ['x86_64', 'amd64'], true) ? 'amd64' : 'arm64',
             'tools' => array_intersect_key($data['tools'], $tools),
         ], JSON_THROW_ON_ERROR);

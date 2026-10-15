@@ -24,14 +24,17 @@ final readonly class RecipeValidator
                 $file = null;
                 try {
                     if ($temporary) {
-                        $mirror = in_array($name, ['git', 'git-man'], true) ? $recipe->phpPolicy->mirror : '';
-                        try {
-                            $file = $this->downloads->file($mirror === '' ? $artifact->location : $mirror.'/'.$name.'_'.$artifact->digest.'.deb', redirects: true);
-                        } catch (RuntimeException $exception) {
-                            if ($mirror === '') {
-                                throw $exception;
+                        $lastFailure = null;
+                        foreach ($artifact->candidateUrls($name, $recipe->artifactMirror) as $url) {
+                            try {
+                                $file = $this->downloads->file($url, redirects: true);
+                                break;
+                            } catch (RuntimeException $exception) {
+                                $lastFailure = $exception;
                             }
-                            $file = $this->downloads->file($artifact->location, redirects: true);
+                        }
+                        if ($file === null) {
+                            throw $lastFailure ?? new RuntimeException('No artifact URL is available.');
                         }
                     } else {
                         $file = rtrim($artifactDirectory, '/').'/'.$artifact->location;

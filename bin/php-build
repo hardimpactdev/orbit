@@ -3,7 +3,7 @@
 
   bin/php-build verify [--recipe PATH] [--version X.Y]
   sudo bin/php-build install [--ci] [--purge-extras] [--coverage pcov|none] [--no-composer] [--recipe PATH] [--version X.Y]
-  bin/php-build mirror --directory DIR # download pinned PHP and Git files for the php-build-mirror release
+  bin/php-build mirror --directory DIR # download external pinned Debian files for the php-build-mirror release
   bin/php-build key [--all]            # digest of the pins, for a download cache key
   bin/php-build describe               # the upstream PHP releases the recipe pins
   bin/php-build bump [--dry-run]       # move every Sury PHP pin to Sury's newest build
@@ -19,6 +19,7 @@ import lzma
 import os
 from pathlib import Path
 import re
+import runpy
 import shutil
 import subprocess
 import sys
@@ -28,6 +29,7 @@ import urllib.request
 ROOT = Path(__file__).resolve().parent.parent
 RECIPE = ROOT / 'apps/gateway/resources/machine-software/recipe.json'
 REMOTE = ROOT / 'apps/gateway/resources/remote'
+artifact_candidates = runpy.run_path(str(REMOTE / 'lib/artifacts.py'))['artifact_candidates']
 # php.install-build keeps every pinned and repacked file here; they are the rollback.
 CACHE = Path('/var/cache/orbit/php-packages')
 SURY = 'https://packages.sury.org/php/'
@@ -42,6 +44,10 @@ FIX = ('Fix the host: on a GitHub-hosted runner the PHP action installs the buil
 
 
 class BuildError(Exception):
+    pass
+
+
+class DownloadUnavailable(BuildError):
     pass
 
 
@@ -145,8 +151,8 @@ def verify(recipe, version):
           f'{len(expected["extensions"])} extensions.')
 
 
-def download(url, destination, sha256):
-    if destination.is_file() and hashlib.sha256(destination.read_bytes()).hexdigest() == sha256:
+def download(url, destination, digest, *, algorithm='sha256'):
+    if destination.is_file() and hashlib.new(algorithm, destination.read_bytes()).hexdigest() == digest:
         return
     if not url.startswith('https://'):
         raise BuildError(f'Refusing a non-HTTPS URL: {url}')
@@ -157,11 +163,11 @@ def download(url, destination, sha256):
                 raise BuildError(f'{url} redirected away from HTTPS.')
             partial.write_bytes(response.read())
     except OSError as error:
-        raise BuildError(f'{url} cannot be downloaded ({error}). Sury may have published a newer build; '
+        raise DownloadUnavailable(f'{url} cannot be downloaded ({error}). Sury may have published a newer build; '
                          'run `bin/php-build bump`.') from error
-    if hashlib.sha256(partial.read_bytes()).hexdigest() != sha256:
+    if hashlib.new(algorithm, partial.read_bytes()).hexdigest() != digest:
         partial.unlink()
-        raise BuildError(f'{url} does not match its recipe SHA-256 digest.')
+        raise BuildError(f'{url} does not match its recipe {algorithm} digest.')
     partial.rename(destination)
 
 
@@ -177,7 +183,7 @@ def installer_input(recipe, versions, *, mode='apply', pcov=True, extras='refuse
                                  'url': artifact['url'], 'sha256': artifact['sha256']})
         sets[version] = {'packages': packages, 'extensions': build(recipe, version)['extensions']}
     rollback = recipe['php']['rollback']
-    return {'mode': mode, 'versions': sets, 'mirror': recipe['php']['mirror'], 'pcov': pcov, 'opentelemetry': False, 'extras': extras,
+    return {'mode': mode, 'versions': sets, 'mirror': recipe['artifact_mirror'], 'pcov': pcov, 'opentelemetry': False, 'extras': extras,
             'fpm': fpm, 'repack': {'package': rollback, 'version': recipe['tools'][rollback]['version']},
             'release': {'id': 'ubuntu', 'codenames': [CODENAMES[recipe['ubuntu']['release']]]}, 'git_read': {}}
 
@@ -236,21 +242,29 @@ def install(recipe, version, ci, coverage, composer, purge):
     verify(recipe, version)
 
 
-def mirror(recipe, directory):
-    """Download every pinned PHP and Git file into `directory`, named as the mirror serves
-    them, `<package>_<sha256>.deb`. CI publishes the directory as the php-build-mirror release."""
+def mirror(recipe, directory, published=()):
+    """Retain every external Debian artifact; already published content-addressed assets need no download."""
     directory.mkdir(parents=True, exist_ok=True)
-    names = set(recipe['php']['shared']).union(*(set(v['packages']) for v in recipe['php']['versions'].values()))
-    names.update(name for name in ('git', 'git-man') if name in recipe['tools'])
-    for name in sorted(names):
-        for artifact in recipe['tools'][name]['artifacts'].values():
-            filename = f'{name}_{artifact["sha256"]}.deb'
-            try:
-                download(recipe['php']['mirror'] + '/' + filename, directory / filename, artifact['sha256'])
+    seen = set(published)
+    for name, pin in sorted(recipe['tools'].items()):
+        if pin['source'] != 'artifact':
+            continue
+        for artifact in pin['artifacts'].values():
+            if not artifact['url'].endswith('.deb'):
                 continue
-            except BuildError:
-                pass
-            download(artifact['url'], directory / filename, artifact['sha256'])
+            algorithm = 'sha256' if 'sha256' in artifact else 'sha512'
+            filename = name + '_' + artifact[algorithm] + '.deb'
+            if filename in seen:
+                continue
+            urls = artifact_candidates(name, artifact, recipe['artifact_mirror'])
+            for index, url in enumerate(urls):
+                try:
+                    download(url, directory / filename, artifact[algorithm], algorithm=algorithm)
+                    break
+                except DownloadUnavailable:
+                    if index == len(urls) - 1:
+                        raise
+            seen.add(filename)
     print(f'{len(list(directory.glob("*.deb")))} files in {directory}')
 
 
@@ -409,6 +423,7 @@ def main(argv=None):
     commands.choices['install'].add_argument('--purge-extras', action='store_true',
                                              help='Purge PHP packages and apt sources outside the recipe. CI machines only.')
     commands.choices['mirror'].add_argument('--directory', required=True)
+    commands.choices['mirror'].add_argument('--published', help='File listing release asset names, one per line')
     commands.choices['install'].add_argument('--no-composer', action='store_true')
     commands.choices['key'].add_argument('--all', action='store_true')
     commands.choices['bump'].add_argument('--dry-run', action='store_true')
@@ -420,7 +435,7 @@ def main(argv=None):
         elif arguments.command == 'install':
             install(recipe, arguments.version, arguments.ci, arguments.coverage, not arguments.no_composer, arguments.purge_extras)
         elif arguments.command == 'mirror':
-            mirror(recipe, Path(arguments.directory))
+            mirror(recipe, Path(arguments.directory), Path(arguments.published).read_text().splitlines() if arguments.published else ())
         elif arguments.command == 'key':
             versions = sorted(recipe['php']['versions']) if arguments.all else [arguments.version or recipe['php']['ci']]
             print(pins_digest(recipe, architecture(), versions))

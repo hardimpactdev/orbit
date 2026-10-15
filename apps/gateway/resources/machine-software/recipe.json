@@ -1038,7 +1038,6 @@
         "purge_extras": [
             "ci-runner"
         ],
-        "mirror": "https://github.com/nckrtl/orbit/releases/download/php-build-mirror",
         "versions": {
             "8.5": {
                 "packages": [
@@ -1345,5 +1344,13 @@
         "libxrandr2",
         "php:8.5",
         "php:8.4"
-    ]
+    ],
+    "artifact_mirror": "https://github.com/nckrtl/orbit/releases/download/php-build-mirror",
+    "git": {
+        "packages": [
+            "git",
+            "git-man"
+        ],
+        "usn_since": "2026-08-11"
+    }
 }

@@ -51,7 +51,15 @@ final readonly class RecipeLoader
     {
         $data = json_decode($json, false, 64, JSON_THROW_ON_ERROR);
         $this->rejectDuplicateKeys($json);
-        $root = $this->object($data, '$', ['schema_version', 'ubuntu', 'architectures', 'tools', 'common', 'php', 'roles', 'base']);
+        $root = $this->object($data, '$', ['schema_version', 'ubuntu', 'architectures', 'tools', 'common', 'php', 'roles', 'base', 'artifact_mirror', 'git']);
+        $mirror = $this->text($root->artifact_mirror, 'artifact_mirror');
+        $url = parse_url($mirror);
+        $this->require(is_array($url) && ($url['scheme'] ?? '') === 'https' && isset($url['host']) && ! isset($url['user']) && ! isset($url['query']) && ! isset($url['fragment']) && ! str_ends_with($mirror, '/'), 'artifact_mirror: expected an HTTPS base URL without a final slash.');
+        $git = $this->object($root->git, 'git', ['packages', 'usn_since']);
+        $gitPackages = $this->strings($git->packages, 'git.packages');
+        $this->require($gitPackages !== [] && in_array('git', $gitPackages, true) && in_array('git-man', $gitPackages, true), 'git.packages: expected git and its companion git-man.');
+        $noticeDate = DateTimeImmutable::createFromFormat('!Y-m-d', $this->text($git->usn_since, 'git.usn_since'));
+        $this->require($noticeDate !== false && $noticeDate->format('Y-m-d') === $git->usn_since, 'git.usn_since: expected a real date YYYY-MM-DD.');
         $this->require($root->schema_version === 1, 'schema_version: expected integer 1.');
         $ubuntu = $this->object($root->ubuntu, 'ubuntu', ['release', 'snapshot']);
         $this->require($ubuntu->release === '26.04', 'ubuntu.release: expected supported release 26.04.');
@@ -124,7 +132,7 @@ final readonly class RecipeLoader
         $php = $this->phpBuilds($phpSets, $tools, $ubuntu->release);
         $this->require(($tools[$phpSets['rollback']] ?? null)?->source === 'ubuntu', 'php.rollback: expected an Ubuntu tool that repacks installed packages, such as dpkg-repack.');
         $common = $this->references($root->common, 'common', $tools, $php, $phpSets['rollback']);
-        $this->gitBuild($tools, $common, $ubuntu->release);
+        $this->gitBuild($tools, $common, $ubuntu->release, $gitPackages);
         $roles = $this->object($root->roles, 'roles');
         $roleNames = array_keys(get_object_vars($roles));
         $required = ['gateway', 'app-dev', 'app-prod', 'operator'];
@@ -169,21 +177,18 @@ final readonly class RecipeLoader
         $canonical = json_encode($this->canonical($identityData), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
 
         return new MachineRecipe('sha256:'.hash('sha256', $canonical), $snapshot, $architectures, $tools, $profiles, $canonical, $json, $php, $phpSets['ci'],
-            new PhpPolicy($phpSets['rollback'], $phpSets['pcov'], $phpSets['purge_extras'], $phpSets['mirror'], $phpSets['opentelemetry']));
+            new PhpPolicy($phpSets['rollback'], $phpSets['pcov'], $phpSets['purge_extras'], $phpSets['opentelemetry']), $mirror, $gitPackages);
     }
 
     /**
      * Structure of the `php` object, before the pins exist. See ADR 0216.
      *
      * @param  array<string, string>  $catalog
-     * @return array{ci: string, shared: list<string>, rollback: string, pcov: list<string>, opentelemetry: list<string>, purge_extras: list<string>, mirror: string, versions: array<string, array{packages: list<string>, extensions: list<string>}>}
+     * @return array{ci: string, shared: list<string>, rollback: string, pcov: list<string>, opentelemetry: list<string>, purge_extras: list<string>, versions: array<string, array{packages: list<string>, extensions: list<string>}>}
      */
     private function phpSets(mixed $value, array $catalog): array
     {
-        $raw = $this->object($value, 'php', ['ci', 'shared', 'rollback', 'pcov', 'opentelemetry', 'purge_extras', 'mirror', 'versions']);
-        $mirror = $this->text($raw->mirror, 'php.mirror');
-        $url = parse_url($mirror);
-        $this->require(is_array($url) && ($url['scheme'] ?? '') === 'https' && isset($url['host']) && ! isset($url['user']) && ! isset($url['query']) && ! str_ends_with($mirror, '/'), 'php.mirror: expected an HTTPS base URL without a final slash.');
+        $raw = $this->object($value, 'php', ['ci', 'shared', 'rollback', 'pcov', 'opentelemetry', 'purge_extras', 'versions']);
         $rollback = $this->text($raw->rollback, 'php.rollback');
         $this->require(($catalog[$rollback] ?? null) === 'ubuntu', 'php.rollback: expected an Ubuntu tool that repacks installed packages, such as dpkg-repack.');
         $pcov = $this->strings($raw->pcov, 'php.pcov');
@@ -221,14 +226,14 @@ final readonly class RecipeLoader
         $ci = $this->text($raw->ci, 'php.ci');
         $this->require(isset($versions[$ci]), "php.ci: [{$ci}] is not a declared PHP version.");
 
-        return ['ci' => $ci, 'shared' => $shared, 'rollback' => $rollback, 'pcov' => $pcov, 'opentelemetry' => $opentelemetry, 'purge_extras' => $purge, 'mirror' => $mirror, 'versions' => $versions];
+        return ['ci' => $ci, 'shared' => $shared, 'rollback' => $rollback, 'pcov' => $pcov, 'opentelemetry' => $opentelemetry, 'purge_extras' => $purge, 'versions' => $versions];
     }
 
     /**
      * One exact build per version: the PHP core pins share the `php<version>-common` version, and every pin is built
      * for the recipe's Ubuntu release.
      *
-     * @param  array{ci: string, shared: list<string>, rollback: string, pcov: list<string>, opentelemetry: list<string>, purge_extras: list<string>, mirror: string, versions: array<string, array{packages: list<string>, extensions: list<string>}>}  $sets
+     * @param  array{ci: string, shared: list<string>, rollback: string, pcov: list<string>, opentelemetry: list<string>, purge_extras: list<string>, versions: array<string, array{packages: list<string>, extensions: list<string>}>}  $sets
      * @param  array<string, ToolPin>  $tools
      * @return array<string, PhpBuild>
      */
@@ -258,15 +263,19 @@ final readonly class RecipeLoader
 
     /**
      * @param  array<string, ToolPin>  $tools
+     * @param  list<string>  $packages
      * @param  list<string>  $common
      */
-    private function gitBuild(array $tools, array $common, string $release): void
+    private function gitBuild(array $tools, array $common, string $release, array $packages): void
     {
+        foreach ($packages as $name) {
+            $this->require(isset($tools[$name]) && $tools[$name]->source === 'artifact', "git.packages: missing artifact tool [{$name}].");
+        }
         $version = $tools['git']->version;
-        $this->require($version === $tools['git-man']->version, 'git: git and git-man must pin the same build.');
         $this->require(str_contains($version, '~ubuntu'.$release.'.'), "git: expected a git-core build for Ubuntu {$release}.");
         $filenameVersion = preg_replace('/^[0-9]+:/', '', $version) ?? $version;
-        foreach (['git', 'git-man'] as $name) {
+        foreach ($packages as $name) {
+            $this->require($tools[$name]->version === $version, 'git: all Git packages must pin the same build.');
             $this->require(in_array($name, $common, true), "common: missing {$name}.");
             foreach ($tools[$name]->artifacts as $architecture => $artifact) {
                 $debArchitecture = $name === 'git-man' ? 'all' : $architecture;
