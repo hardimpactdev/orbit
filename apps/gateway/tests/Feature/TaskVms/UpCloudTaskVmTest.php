@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\TaskVms\AllocateTaskVmAction;
+use App\Domain\Releases\ReleaseAlertNotifier;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskStatus;
@@ -53,6 +54,8 @@ use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
+use Tests\Support\Fleet\FleetFixtures;
+use Tests\Support\Fleet\RecordingReleaseAlertNotifier;
 use Tests\Support\TaskVmRecipeImages;
 use Tests\Support\TaskVmSettingsBuilder;
 
@@ -83,6 +86,8 @@ final class FakeUpCloud
     public bool $templateListWithoutLabels = false;
 
     public ?Closure $beforeTemplateList = null;
+
+    public ?Closure $beforeServerDelete = null;
 
     private int $addresses = 10;
 
@@ -179,6 +184,7 @@ final class FakeUpCloud
                 return Http::response(['server' => $server], 202);
             }
             if ($method === 'DELETE') {
+                ($this->beforeServerDelete ?? static function (): void {})();
                 if ($server['state'] !== 'stopped') {
                     return Http::response(['error' => ['error_code' => 'SERVER_STATE_ILLEGAL']], 400);
                 }
@@ -832,6 +838,36 @@ describe('image build', function (): void {
         expect($this->upcloud->storages)->not->toHaveKey($old)->toHaveCount(2);
     });
 
+    it('does not pin source templates once the server exists', function (TaskVmState $state): void {
+        $old = $this->upcloud->template('orbit-task-base-20261001000000');
+        $this->upcloud->template('orbit-task-base-20261002000000');
+        tvm_up_vm($state)->update(['image_fingerprint' => $old, 'provider_id' => (string) Str::uuid()]);
+
+        app(UpCloudTaskVmImageBuilder::class)->build();
+
+        expect($this->upcloud->storages)->not->toHaveKey($old)->toHaveCount(2);
+    })->with([TaskVmState::Provisioning, TaskVmState::Ready, TaskVmState::Parked]);
+
+    it('records failure before cleanup and preserves the build error when cleanup fails', function (): void {
+        $this->ssh->cloudInit = '{"status":"error","errors":["build failure"]}';
+        $this->freezeTime();
+        $cleanupAttempts = 0;
+        $observed = null;
+        $this->upcloud->beforeServerDelete = function () use (&$cleanupAttempts, &$observed): void {
+            $cleanupAttempts++;
+            $observed = DB::table('upcloud_task_vm_image_builds')->first();
+            throw new RuntimeException('cleanup failure');
+        };
+
+        expect(fn () => app(UpCloudTaskVmImageBuilder::class)->build())->toThrow(TaskVmException::class, 'stage [cloud-init]');
+
+        expect($cleanupAttempts)->toBe(1);
+        expect($observed->state)->toBe('failed');
+        expect($observed->finished_at)->not->toBeNull();
+        $this->assertDatabaseHas('upcloud_task_vm_image_builds', ['state' => 'failed']);
+        expect(Cache::lock('task-vms:upcloud-image-build', 10)->get())->toBeTrue();
+    });
+
     it('does not publish when recipe installation or verification fails', function (string $phase, bool $truncated): void {
         $this->ssh = new class($phase, $truncated) extends FakeUpCloudSsh
         {
@@ -950,11 +986,105 @@ describe('recipe-driven UpCloud base image refresh', function (): void {
         expect($this->upcloud->created)->toHaveCount($created);
 
         $this->ssh->cloudInit = '{"status":"done","errors":[]}';
-        $this->artisan('task-vms:build-recipe', ['--retry' => true])->assertSuccessful();
+        $this->artisan('task-vms:build-recipe', ['--retry' => true])->expectsOutputToContain('UpCloud refresh requested')->assertSuccessful();
         Queue::assertPushed(RefreshUpCloudTaskVmBaseImage::class, 2);
         app()->call([Queue::pushed(RefreshUpCloudTaskVmBaseImage::class)->last(), 'handle']);
         $this->assertDatabaseCount('upcloud_task_vm_image_builds', 2);
         $this->assertDatabaseHas('upcloud_task_vm_image_builds', ['recipe_identity' => $builds->currentRecipe()->identity, 'state' => 'succeeded']);
+    });
+
+    it('alerts once for a fenced current recipe and includes the retry command', function (string $state, int $age, bool $verified, bool $current, bool $configured, bool $alert): void {
+        Queue::fake();
+        $this->freezeTime();
+        $recipe = app(RecipeImageBuilds::class)->currentRecipe();
+        $directory = FleetFixtures::inPlace();
+        FleetFixtures::adopt(FleetFixtures::Commit);
+        mkdir(config('orbit.gateway_checkout').'/resources/machine-software', 0700, true);
+        file_put_contents(config('orbit.gateway_checkout').'/resources/machine-software/recipe.json', $recipe->json);
+        $alerts = new RecordingReleaseAlertNotifier;
+        app()->instance(ReleaseAlertNotifier::class, $alerts);
+        $identity = $current ? $recipe->identity : 'sha256:'.str_repeat('a', 64);
+        $id = DB::table('upcloud_task_vm_image_builds')->insertGetId(['recipe_identity' => $identity, 'state' => $state, 'started_at' => now()->subSeconds($age)]);
+        if ($verified) {
+            $this->upcloud->template('orbit-task-base-20261011000000', $recipe->identity);
+        }
+        if (! $configured) {
+            tvm_up_settings(null);
+        }
+
+        try {
+            app(RecipeImageBuilds::class)->reconcile();
+            app(RecipeImageBuilds::class)->reconcile();
+
+            expect($alerts->alerts)->toHaveCount($alert ? 1 : 0);
+            if ($alert) {
+                expect($alerts->alerts[0]->summary)->toContain('UpCloud', $identity, "[{$id}]", 'php artisan task-vms:build-recipe --retry');
+                expect($alerts->alerts[0]->subject->target)->toBe('machine-recipe-upcloud');
+                Queue::assertNotPushed(RefreshUpCloudTaskVmBaseImage::class);
+            }
+            expect($this->upcloud->created)->toBe([]);
+        } finally {
+            File::deleteDirectory($directory);
+        }
+    })->with([
+        'failed' => ['failed', 1, false, true, true, true],
+        'stale at two hours' => ['running', 7200, false, true, true, true],
+        'still running' => ['running', 7199, false, true, true, false],
+        'verified template' => ['failed', 1, true, true, true, false],
+        'obsolete identity' => ['failed', 1, false, false, true, false],
+        'UpCloud unconfigured' => ['failed', 1, false, true, false, false],
+        'succeeded' => ['succeeded', 1, false, true, true, false],
+    ]);
+
+    it('uses the latest attempt when reporting the current UpCloud build', function (): void {
+        Queue::fake();
+        $identity = app(RecipeImageBuilds::class)->currentRecipe()->identity;
+        DB::table('upcloud_task_vm_image_builds')->insert(['recipe_identity' => $identity, 'state' => 'failed', 'started_at' => now()->subHours(3)]);
+        $id = DB::table('upcloud_task_vm_image_builds')->insertGetId(['recipe_identity' => $identity, 'state' => 'running', 'started_at' => now()]);
+
+        $this->artisan('task-vms:build-recipe')->expectsOutputToContain("UpCloud build [{$id}] | {$identity} | running")->assertSuccessful();
+        Queue::assertNotPushed(RefreshUpCloudTaskVmBaseImage::class);
+    });
+
+    it('shows UpCloud attempts even with no Incus build rows', function (string $command): void {
+        TaskVmImageBuild::query()->delete();
+        $identity = app(RecipeImageBuilds::class)->currentRecipe()->identity;
+        $template = (string) Str::uuid();
+        $id = DB::table('upcloud_task_vm_image_builds')->insertGetId(['recipe_identity' => $identity, 'state' => 'succeeded', 'started_at' => now()->subMinutes(20), 'finished_at' => now(), 'template_uuid' => $template]);
+
+        $this->artisan($command)->expectsOutputToContain("UpCloud build [{$id}] | {$identity} | succeeded")
+            ->expectsOutputToContain($template)->doesntExpectOutputToContain('No task VM image builds.')->assertSuccessful();
+        expect($this->upcloud->requests)->toBe([]);
+    })->with(['task-vms:image-builds', 'task-vms:list-image-builds']);
+
+    it('reports the fence in build-recipe output without claiming admission', function (string $state, int $age, string $display): void {
+        Queue::fake();
+        $identity = app(RecipeImageBuilds::class)->currentRecipe()->identity;
+        $id = DB::table('upcloud_task_vm_image_builds')->insertGetId(['recipe_identity' => $identity, 'state' => $state, 'started_at' => now()->subSeconds($age)]);
+
+        $this->artisan('task-vms:build-recipe')->expectsOutputToContain("UpCloud build [{$id}] | {$identity} | {$display}")
+            ->expectsOutputToContain('php artisan task-vms:build-recipe --retry')->doesntExpectOutputToContain('refresh requested')->assertFailed();
+        Queue::assertNotPushed(RefreshUpCloudTaskVmBaseImage::class);
+    })->with(['failed' => ['failed', 1, 'failed'], 'stale' => ['running', 7200, 'stale-running']]);
+
+    it('reports a requested UpCloud refresh when there are no Incus hosts', function (): void {
+        Queue::fake();
+        TaskVmSettingsBuilder::bind(['hosts' => [], 'upcloud' => app(TaskVmSettings::class)->upcloud]);
+
+        $this->artisan('task-vms:build-recipe')->expectsOutputToContain('UpCloud refresh requested')
+            ->doesntExpectOutputToContain('No image builds admitted.')->assertSuccessful();
+        Queue::assertPushed(RefreshUpCloudTaskVmBaseImage::class);
+    });
+
+    it('shows a verified template instead of reporting an old failed attempt as fenced', function (): void {
+        Queue::fake();
+        $identity = app(RecipeImageBuilds::class)->currentRecipe()->identity;
+        DB::table('upcloud_task_vm_image_builds')->insert(['recipe_identity' => $identity, 'state' => 'failed', 'started_at' => now()]);
+        $template = $this->upcloud->template('orbit-task-base-20261011000000', $identity);
+
+        $this->artisan('task-vms:build-recipe')->expectsOutputToContain("UpCloud verified template: {$template}")
+            ->doesntExpectOutputToContain('fenced')->assertSuccessful();
+        Queue::assertNotPushed(RefreshUpCloudTaskVmBaseImage::class);
     });
 
     it('rechecks attempt admission after taking the builder lock', function (): void {

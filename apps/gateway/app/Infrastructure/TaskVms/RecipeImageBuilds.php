@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\TaskVms;
 
+use App\Domain\Fleet\RecipeMaintenanceAlerts;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmImageBuildStep;
@@ -13,13 +14,15 @@ use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Jobs\TaskVms\RefreshUpCloudTaskVmBaseImage;
 use App\Models\Node;
 use App\Models\TaskVmImageBuild;
+use App\Models\UpCloudTaskVmImageBuild;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
 /** Desired identity is persisted before dispatch; a busy host catches up on the next scheduler check. */
 final readonly class RecipeImageBuilds
 {
-    public function __construct(private RecipeLoader $loader, private TaskVmSettings $settings, private TaskVmImageBuildChain $chain) {}
+    public function __construct(private RecipeLoader $loader, private TaskVmSettings $settings, private TaskVmImageBuildChain $chain, private RecipeMaintenanceAlerts $alerts, private UpCloudServers $servers) {}
 
     /** @return list<TaskVmImageBuild> */
     public function reconcile(?int $hostId = null, bool $retry = false): array
@@ -27,10 +30,20 @@ final readonly class RecipeImageBuilds
         $recipe = $this->currentRecipe();
         $generation = $this->desire($recipe);
         try {
-            $attempt = UpCloudTaskVmImageBuilder::lastAttempt($recipe->identity);
-            if ($this->settings->upcloud !== null && ($attempt === 0 || $retry)
-                && app(UpCloudServers::class)->currentTemplate($recipe->identity) === null) {
-                RefreshUpCloudTaskVmBaseImage::dispatch($recipe->identity, $attempt);
+            $upcloud = $this->upcloudStatus($recipe);
+            if ($upcloud !== null && $upcloud['template'] === null) {
+                $attempt = $upcloud['attempt'];
+                if ($attempt === null || $retry) {
+                    RefreshUpCloudTaskVmBaseImage::dispatch($recipe->identity, $attempt->id ?? 0);
+                } elseif ($attempt->fenced()) {
+                    $key = 'task-vms:upcloud-image-build:fenced:'.$attempt->id;
+                    if (Cache::add($key, true, 3600)) {
+                        $receipt = $this->alerts->halted($attempt->fenceMessage(), $attempt->id, 'machine-recipe-upcloud');
+                        if (($receipt['outcome'] ?? null) === 'skipped') {
+                            Cache::forget($key);
+                        }
+                    }
+                }
             }
         } catch (Throwable $error) {
             // Optional UpCloud refresh must not block Incus recovery or recipe builds.
@@ -73,6 +86,21 @@ final readonly class RecipeImageBuilds
         }
 
         return $builds;
+    }
+
+    /** @return array{identity: string, template: string|null, attempt: UpCloudTaskVmImageBuild|null}|null */
+    public function upcloudStatus(?MachineRecipe $recipe = null): ?array
+    {
+        if ($this->settings->upcloud === null) {
+            return null;
+        }
+        $recipe ??= $this->currentRecipe();
+
+        return [
+            'identity' => $recipe->identity,
+            'template' => $this->servers->currentTemplate($recipe->identity),
+            'attempt' => UpCloudTaskVmImageBuild::query()->where('recipe_identity', $recipe->identity)->latest('id')->first(),
+        ];
     }
 
     public function currentRecipe(): MachineRecipe
