@@ -14,10 +14,37 @@ use RuntimeException;
 /** Fixed recipe operations over the same pinned SSH transport as fleet convergence. */
 final readonly class NodeRecipeProgram
 {
+    /** The recipe profile of a roleless Node that runs CI, such as Sabre. It replaces `operator`. */
+    public const string CiRunnerProfile = 'ci-runner';
+
     public function __construct(private NodeShell $shell) {}
 
+    /**
+     * The Node record names the profile of a roleless Node: `settings.machine_recipe.profile`, or the one requested now.
+     */
+    public function profile(Node $node, ?string $requested = null): ?string
+    {
+        $node->load('roles');
+        if ($node->roles->isNotEmpty() && $requested === null) {
+            return null;
+        }
+        $recorded = $node->settings['machine_recipe']['profile'] ?? null;
+        $profile = $requested ?? (is_string($recorded) ? $recorded : null);
+        if ($profile === null) {
+            return null;
+        }
+        if ($profile !== self::CiRunnerProfile) {
+            throw new ResourceOperationException('node.recipe_profile_invalid', 'The only recipe profile a Node can select is ci-runner.', 422);
+        }
+        if ($node->roles->isNotEmpty() || $node->platform !== 'linux') {
+            throw new ResourceOperationException('node.recipe_profile_invalid', 'Only a Node without roles can use the ci-runner profile; its roles select its profiles.', 422);
+        }
+
+        return $profile;
+    }
+
     /** @return array<string, ToolPin> */
-    public function tools(Node $node, MachineRecipe $recipe): array
+    public function tools(Node $node, MachineRecipe $recipe, ?string $profile = null): array
     {
         $architecture = match ($node->architecture) {
             'x86_64', 'amd64' => 'amd64',
@@ -25,7 +52,7 @@ final readonly class NodeRecipeProgram
             default => throw new ResourceOperationException('node.recipe_architecture', 'The Node architecture is not supported by the recipe.', 422),
         };
         $node->load('roles');
-        $names = $node->roles->isEmpty() ? $recipe->profile('operator', $architecture) : [];
+        $names = $node->roles->isEmpty() ? $recipe->profile($profile ?? 'operator', $architecture) : [];
         foreach ($node->roles as $role) {
             if ($role->status !== LifecycleStatus::Active) {
                 throw new ResourceOperationException('node.recipe_role_inactive', 'Every assigned role must be active before recipe convergence.', 409);
@@ -99,6 +126,7 @@ final readonly class NodeRecipeProgram
             'snapshot' => $recipe->snapshot,
             'architecture' => in_array($node->architecture, ['x86_64', 'amd64'], true) ? 'amd64' : 'arm64',
             'tools' => array_intersect_key($data['tools'], $tools),
+            'php' => (object) $recipe->phpExtensions(array_keys($tools)),
         ], JSON_THROW_ON_ERROR);
         $result = $this->shell->run($node, new RemoteCommand(
             $mode === 'inspect' ? ['python3', '-', $mode, $payload] : ['sudo', 'timeout', '--signal=TERM', '--kill-after=10', '840', 'python3', '-', $mode, $payload],

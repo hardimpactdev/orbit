@@ -83,16 +83,12 @@ jobs:
         working-directory: .
         run: git reset --hard "$GITHUB_SHA"
 
-      # Sabre already has PHP 8.5 with PCOV and Composer. On a self-hosted runner, setup-php makes
-      # /usr/local/bin world-writable, which Orbit's service-metrics program refuses on every Node.
+      # The recipe's exact PHP build (ADR 0215). A hosted runner installs it; Sabre only verifies it, because a job never
+      # installs software on a self-hosted runner.
       - name: Set up PHP
-        if: runner.environment == 'github-hosted'
-        uses: shivammathur/setup-php@v2
+        uses: ./.github/actions/php
         with:
-          php-version: '8.5'
           coverage: pcov
-          tools: composer:v2
-          ini-values: zend.exception_ignore_args=0
 
       # Sabre's own node shim lives in a home directory the runner user cannot read. GitHub-hosted runners ship Node.
       - name: Set up Node
@@ -432,12 +428,9 @@ jobs:
 
       # Without a coverage driver, Pest selects the full suite for a PHP change.
       - name: Set up PHP
-        uses: shivammathur/setup-php@v2
+        uses: ./.github/actions/php
         with:
-          php-version: '8.5'
           coverage: pcov
-          tools: composer:v2
-          ini-values: zend.exception_ignore_args=0
 
       - name: Install dependencies
         run: |
@@ -497,14 +490,11 @@ jobs:
           persist-credentials: false
           ref: ${{ needs.gateway-plan.outputs.commit }}
 
+      # A shard container only verifies the recipe build; tools/ci-runners/setup.sh installs it.
       - name: Set up PHP
-        if: runner.environment == 'github-hosted'
-        uses: shivammathur/setup-php@v2
+        uses: ./.github/actions/php
         with:
-          php-version: '8.5'
           coverage: pcov
-          tools: composer:v2
-          ini-values: zend.exception_ignore_args=0
 
       - name: Set up Node
         if: runner.environment == 'self-hosted'
@@ -517,7 +507,7 @@ jobs:
         with:
           bun-version: 1.4.2
 
-      # Sabre's PHP CLI sets this in 99-github-actions.ini, and setup-php sets it on a hosted runner. The shard runner
+      # Sabre's PHP CLI sets this in 99-github-actions.ini, and the PHP action sets it on a hosted runner. The shard runner
       # containers keep their PHP CLI default, so the job sets it only for its own processes and Pest's workers.
       - name: Keep exception arguments in traces
         if: runner.environment == 'self-hosted'
@@ -578,12 +568,10 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: shivammathur/setup-php@v2
-        if: runner.environment == 'github-hosted'
+      - name: Set up PHP
+        uses: ./.github/actions/php
         with:
-          php-version: '8.5'
           coverage: none
-          tools: composer:v2
       - uses: actions/setup-node@v7
         if: runner.environment == 'self-hosted'
         with:
@@ -662,11 +650,9 @@ jobs:
         run: git show --no-patch --format=fuller HEAD
 
       - name: Set up PHP
-        uses: shivammathur/setup-php@v2
+        uses: ./.github/actions/php
         with:
-          php-version: '8.5'
           coverage: none
-          tools: composer:v2
 
       - name: Prepare application environment
         run: cp .env.example .env
@@ -685,15 +671,11 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7
 
-      # Sabre already has PHP 8.5 with PCOV and Composer. On a self-hosted runner, setup-php makes
-      # /usr/local/bin world-writable, which Orbit's service-metrics program refuses on every Node.
+      # The recipe's exact PHP build (ADR 0215), with PCOV loaded and disabled.
       - name: Set up PHP
-        if: runner.environment == 'github-hosted'
-        uses: shivammathur/setup-php@v2
+        uses: ./.github/actions/php
         with:
-          php-version: '8.5'
           coverage: none
-          tools: composer:v2
 
       - name: Reject App-domain names
         run: php bin/project-vocabulary

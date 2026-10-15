@@ -3,11 +3,13 @@ title: "Feature delivery"
 description: "How a change reaches main: review evidence, merge, CI, local checks, worktrees, and the shared main caches."
 covers:
   - apps/docs/app/Documentation/AdrLifecycle.php
-  - bin/{review-check,bug-repro,task-group-check,pr-head-check,deploy-verify,test,tia-cache,ci-cache-ref,ci-tia,worktree-cache,worktree-create,worktree-remove,check-classification-fakes,check-processes,quality-scope}
+  - bin/{review-check,bug-repro,task-group-check,pr-head-check,deploy-verify,test,tia-cache,ci-cache-ref,ci-tia,worktree-cache,worktree-create,worktree-remove,check-classification-fakes,check-processes,quality-scope,php-build}
   - tools/{check-processes,rector-cache}.php
   - "{apps/*,packages/php-sdk}/rector.php"
   - tools/phpstan/**
+  - tools/ci-runners/setup.sh
   - .github/workflows/ci.yml
+  - .github/actions/php/action.yml
   - apps/gateway/tests/Support/TestDatabase{Environment,Guard}.php
 ---
 
@@ -94,6 +96,31 @@ GitHub CI runs on every pull request, on every push to `main`, every night on `m
 | Required checks | Passes only when every other job passes, as described below |
 
 Gateway project, subprocess, and shard jobs supply Bun 1.4.2 alongside Node/npm. The package-cache integration tests run real npm and Bun installs against seeded private caches and a local test registry.
+
+### One PHP build in CI
+
+Every job that runs PHP uses the recipe's [PHP build](/reference/compute-drivers#php-build) of version `php.ci`, through the local action `.github/actions/php`. That action runs [`bin/php-build`](https://github.com/nckrtl/orbit/blob/main/bin/php-build), which reads the recipe. So CI and the workspaces that import its [cache refs](#ci-cache-refs) run the same PHP version and the same loaded extensions.
+
+On a GitHub-hosted runner the action runs these steps:
+
+1. It restores the downloaded `.deb` files from `actions/cache`, keyed on `bin/php-build key`, the digest of the PHP pins of the runner's architecture.
+2. `bin/php-build install --ci` downloads each missing file. It refuses a file with a wrong SHA-256 digest, package name, version, or architecture.
+3. It deletes the runner's other PHP packages and PHP apt sources, and installs the set.
+4. It enables PCOV for the CLI only, and sets `zend.exception_ignore_args=0` for the CLI.
+5. It installs Composer 2.10.3 from a pinned `composer.phar` at `/usr/local/bin/composer`.
+6. A job with input `coverage: none` keeps PCOV loaded and sets `pcov.enabled=0`. The job collects no coverage and still loads the recipe's extensions.
+7. `bin/php-build verify` fails unless `PHP_VERSION`, each package version, and `php -m` match the recipe.
+
+The cache matters because Sury deletes a file from its pool when it publishes a newer build. While a cache entry exists, CI keeps working until the recipe moves to the new build.
+
+A self-hosted runner never installs packages in a job. The action only runs `bin/php-build verify`. It fails with the expected and the found build, and names the step that fixes the host. After a PHP bump, update each runner while it is idle:
+
+- Sabre is a roleless Orbit Node. On the Gateway, run `php artisan node:converge-recipe sabre --profile=ci-runner`. The recipe's [`ci-runner` profile](/reference/compute-drivers#role-and-base-tool-sets) installs the build.
+- Later runs on Sabre need only `php artisan node:converge-recipe sabre`, because the first run records the profile.
+- Remove each PHP extension on Sabre that is not in the recipe first. Otherwise the convergence stops at stage `php-modules:8.5`.
+- On Beast and Shark, run `tools/ci-runners/setup.sh container NAME` for each shard container.
+
+The [`PHP build bump` workflow](/reference/compute-drivers#bump-the-php-build) opens a pull request when Sury publishes a newer build. `setup-php` is not used. It cannot pin a patch release, and it loads about 26 extensions that Orbit does not use, such as `amqp`, `apcu`, `mongodb`, and `soap`.
 
 `Required checks` expects Docs (merge ref) and Gateway plan to succeed on pull requests and to be skipped on pushes and manual runs. It expects the Gateway shards to succeed when the plan chose shards, and to be skipped otherwise.
 
@@ -194,13 +221,13 @@ When the repository variable `ORBIT_SABRE_RUNNER` is `true`, the Gateway job run
 
 Pushes, manual dispatches, and pull requests from branches in this repository use it. A pull request from a fork always uses a GitHub-hosted runner, so code from outside the repository never runs on Sabre. Set the variable to anything else to move the job back to GitHub-hosted runners.
 
-On Sabre the job skips the PHP setup, Homebrew, and system package steps, because Sabre already has PHP 8.5 with PCOV, Caddy, `acl`, `attr`, and `wireguard-tools`. Its PHP CLI sets `zend.exception_ignore_args=0` in `99-github-actions.ini`.
+On Sabre the job skips the Homebrew and system package steps, because Sabre already has Caddy, `acl`, `attr`, and `wireguard-tools`. Its PHP step only [verifies](#one-php-build-in-ci) that Sabre runs the recipe's PHP build. Its PHP CLI sets `zend.exception_ignore_args=0` in `99-github-actions.ini`.
 
-The PHP setup step must not run on Sabre: on a self-hosted runner it makes `/usr/local/bin` world-writable, and the program that configures service metrics refuses a Node with such a directory. Every Instance removal reconciles metrics on all Nodes, so each removal would then fail. Its `/usr/bin/composer` is Composer 2.10, installed over the Ubuntu package with a `dpkg-divert`, because Composer 2.9 rejects the GitHub Actions token that the PHP setup step exports. Pest runs 6 processes there instead of 4.
+A job never installs software on Sabre: the former PHP setup action made `/usr/local/bin` world-writable on a self-hosted runner, and the program that configures service metrics refuses a Node with such a directory. Its `/usr/bin/composer` is Composer 2.10, installed over the Ubuntu package with a `dpkg-divert`, because Composer 2.9 rejects the GitHub Actions token that the former PHP setup action exported. Pest runs 6 processes there instead of 4.
 
 The job installs Node 24 with the Node setup step on Sabre, and tests run the `node` on PATH. The annotator server test replaces the preset's `/usr/local/bin/node` with it, because a host's own `node` shim can point into a home that the runner user cannot read. On Sabre the runner user has traverse-only access to the managed user's home (`setfacl -m u:github-runner:x`).
 
-Sabre has no Orbit role and serves no Instance. Three runner services, `sabre-1` to `sabre-3`, run as the `github-runner` user, so several pull request runs and a `main` run do not wait for each other. That user has passwordless `sudo`, because the PHP setup step installs packages. Each runner service mounts its own work directory at `/home/runner/work`, the path that GitHub-hosted runners use. PHPStan and Rector key their caches on absolute paths, so the caches saved by either kind of runner stay valid on the other.
+Sabre is an Orbit Node with no role and serves no Instance. Orbit manages its PHP through the `ci-runner` recipe profile. Three runner services, `sabre-1` to `sabre-3`, run as the `github-runner` user, so several pull request runs and a `main` run do not wait for each other. That user has passwordless `sudo`. Each runner service mounts its own work directory at `/home/runner/work`, the path that GitHub-hosted runners use. PHPStan and Rector key their caches on absolute paths, so the caches saved by either kind of runner stay valid on the other.
 
 The `github-runner-egress` systemd unit loads an nftables rule that rejects traffic from `github-runner` to private addresses: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, and `100.64.0.0/10`. Orbit trusts WireGuard source addresses, so this rule keeps a job from reaching the Gateway or another Node as Sabre. DNS still works through the local resolver. A command that a job runs with `sudo` runs as root, and the rule does not cover it. So the runner accepts only code from this repository.
 
@@ -215,7 +242,7 @@ Beast and Shark are app-dev Nodes with live Instances and task workspaces. So ea
 - `register NAME [TOKEN]` registers the runner and starts its service.
 - `verify NAME` probes, as the runner user, the host addresses and ports that a job must not reach.
 
-`container` upgrades no installed package. Run it only while the runner is idle, because a repaired `raw.apparmor` line applies at the next restart.
+`container` upgrades no installed package, except the PHP build, which it brings to the recipe. Run it only while the runner is idle, because a repaired `raw.apparmor` line applies at the next restart.
 
 The registration token comes from `ORBIT_RUNNER_TOKEN` or the argument, and the script never stores or prints it. `config.sh` takes the token as an argument, so the token shows in the host's process list for a few seconds.
 
@@ -225,7 +252,7 @@ Ubuntu 26.04's systemd hangs at boot in an unprivileged container without nestin
 
 The ACL rejects every egress to private, CGNAT, loopback, link-local, multicast, and reserved IPv4 ranges, and all IPv6. Its default for egress and ingress is reject. So a job reaches the public internet, but not the host's LAN, WireGuard, the Gateway, docker and task bridges, the other container, or the bridge gateway. A container's `127.0.0.1` is its own loopback, so the host's loopback services, such as the Caddy admin API, are out of reach.
 
-Inside each container, the `runner` user runs the runner service, with no `sudo` and no group beyond its own. So a shard leaves out the `privileged` group. The container has PHP 8.5 with PCOV and the Gateway's extensions from the `orbit-php` apt source, Composer 2, Caddy from its own apt source with its service disabled, `acl`, `attr`, `wireguard-tools`, `dig`, Git, and Python 3. Composer is at `/usr/local/bin/composer`, with a link at `/usr/bin/composer`, because the Composer update program and its tests run that path, as on a Node.
+Inside each container, the `runner` user runs the runner service, with no `sudo` and no group beyond its own. So a shard leaves out the `privileged` group. The container has the recipe's [PHP build](#one-php-build-in-ci), installed by `bin/php-build install`, Composer 2, Caddy from its own apt source with its service disabled, `acl`, `attr`, `wireguard-tools`, `dig`, Git, and Python 3. `container NAME` copies `bin/php-build` and the recipe into the container and runs that install, so a later run updates the build in place. Composer is at `/usr/local/bin/composer`, with a link at `/usr/bin/composer`, because the Composer update program and its tests run that path, as on a Node.
 
 The job installs Node 24 with the Node setup step, and each shard runs at most 4 Pest processes. The container's PHP CLI keeps `zend.exception_ignore_args` on, so the job turns it off only for its own processes: it writes an ini file into the runner's temporary directory and adds it to `PHP_INI_SCAN_DIR`.
 

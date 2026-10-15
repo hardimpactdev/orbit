@@ -132,10 +132,64 @@ it('selects each service role prerequisite without development-only software', f
 
     $pins = app(NodeRecipeProgram::class)->tools($node, $recipe);
 
-    $expected = array_unique([...$recipe->profile('operator'), ...new NodeBootstrapPackageCatalog()->forRole($node, $role)]);
+    $php = $role === RoleName::WebSocket ? $recipe->php('8.5')->packages : [];
+    $expected = array_unique([...$recipe->profile('operator'), ...new NodeBootstrapPackageCatalog()->forRole($node, $role), ...$php]);
     sort($expected);
     expect(array_keys($pins))->toBe($expected)->not->toContain('rust', 'node', 'pi');
 })->with([RoleName::Vpn, RoleName::Router, RoleName::Ingress, RoleName::Metrics, RoleName::Database, RoleName::WebSocket, RoleName::Analytics]);
+
+it('gives every role that runs PHP the whole recipe PHP 8.5 set', function (RoleName $role): void {
+    $node = FleetFixtures::node('recipe-php-'.$role->value, [$role]);
+    $recipe = new RecipeLoader()->load();
+
+    $pins = array_keys(app(NodeRecipeProgram::class)->tools($node, $recipe));
+
+    expect($pins)->toContain(...$recipe->php('8.5')->packages)
+        ->not->toContain('php8.4-cli')
+        ->and($recipe->phpExtensions($pins))->toBe(['8.5' => $recipe->php('8.5')->extensions]);
+})->with([RoleName::AppProd, RoleName::WebSocket, RoleName::Gateway]);
+
+it('sends the extension list of each whole PHP set to the remote program', function (): void {
+    $node = FleetFixtures::node('recipe-php-payload', [RoleName::Gateway]);
+    $ssh = recipeSsh();
+    app()->instance(FleetNodeVerification::class, new RecipeVerification);
+    $recipe = new RecipeLoader()->load();
+
+    app(ConvergeNodeRecipeAction::class)->execute($node, $recipe);
+
+    $apply = collect($ssh->commands)->first(fn (RemoteCommand $command): bool => in_array('apply', $command->arguments, true));
+    $payload = json_decode((string) $apply->arguments[array_key_last($apply->arguments)], true, flags: JSON_THROW_ON_ERROR);
+    expect($payload['php'])->toBe(['8.5' => $recipe->php('8.5')->extensions])
+        ->and(array_keys($payload['tools']))->toContain('php8.5-fpm', 'php8.5-pcov');
+});
+
+it('converges a roleless CI runner with the ci-runner profile and records the profile', function (): void {
+    $this->freezeTime();
+    $node = FleetFixtures::node('recipe-sabre');
+    recipeSsh();
+    app()->instance(FleetNodeVerification::class, new RecipeVerification);
+    $recipe = new RecipeLoader()->load();
+
+    $result = app(ConvergeNodeRecipeAction::class)->execute($node, $recipe, profile: 'ci-runner');
+    $later = app(ConvergeNodeRecipeAction::class)->execute($node->refresh(), $recipe, dryRun: true);
+
+    expect(array_keys($result['plan']->tools))->toContain(...$recipe->php('8.5')->packages)
+        ->and($node->settings['machine_recipe'])->toBe(['version' => $recipe->identity, 'snapshot' => $recipe->snapshot, 'converged_at' => now()->toIso8601String(), 'profile' => 'ci-runner'])
+        ->and(array_keys($later['plan']->tools))->toBe(array_keys($result['plan']->tools))
+        ->and(array_keys(app(NodeRecipeProgram::class)->tools(FleetFixtures::node('recipe-operator'), $recipe)))->not->toContain('php8.5-cli');
+});
+
+it('refuses the ci-runner profile on a Node with roles and any other profile name before SSH', function (array $roles, string $profile): void {
+    $node = FleetFixtures::node('recipe-profile-'.count($roles).$profile, $roles);
+    $ssh = recipeSsh();
+
+    expect(fn () => app(ConvergeNodeRecipeAction::class)->execute($node, new RecipeLoader()->load(), profile: $profile))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('node.recipe_profile_invalid'));
+    expect($ssh->commands)->toBe([]);
+})->with([
+    'a Node with a role' => [[RoleName::AppDev], 'ci-runner'],
+    'an unknown profile' => [[], 'base'],
+]);
 
 it('records the complete identity only after inventory health and Doctor pass and preserves other settings', function (): void {
     $this->freezeTime();

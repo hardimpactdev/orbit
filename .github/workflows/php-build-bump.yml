@@ -1,0 +1,58 @@
+name: PHP build bump
+
+# Sury publishes a PHP patch build and deletes the previous one from its pool. This workflow moves every Sury PHP pin
+# of the machine software recipe to Sury's newest build and opens one pull request for it. See ADR 0215 and
+# docs/reference/compute-drivers.md#bump-the-php-build.
+on:
+  schedule:
+    - cron: '23 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: php-build-bump
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    name: Bump the PHP build
+    if: github.repository == 'nckrtl/orbit'
+    runs-on: ubuntu-26.04
+    steps:
+      # A pull request that GITHUB_TOKEN opens starts no workflow. ORBIT_PHP_BUMP_TOKEN, when set, lets CI run on it.
+      - name: Check out main
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          token: ${{ secrets.ORBIT_PHP_BUMP_TOKEN || github.token }}
+
+      - name: Move the Sury PHP pins to the newest build
+        run: python3 bin/php-build bump
+
+      - name: Open a pull request when the pins changed
+        env:
+          GH_TOKEN: ${{ secrets.ORBIT_PHP_BUMP_TOKEN || github.token }}
+        run: |
+          if git diff --quiet; then
+            echo 'The recipe already pins the newest Sury PHP build.'
+            exit 0
+          fi
+          builds=$(python3 bin/php-build describe)
+          branch="automation/php-build-$(python3 bin/php-build key --all | cut -c1-12)"
+          if [ "$(gh pr list --head "$branch" --state all --json number --jq length)" != 0 ]; then
+            echo "A pull request for $branch already exists."
+            exit 0
+          fi
+          git switch -c "$branch"
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit --all --message "Bump the PHP build to $builds"
+          git push origin "$branch"
+          gh pr create --base main --head "$branch" --title "Bump the PHP build to $builds" --body "$(cat <<'BODY'
+          Moves every Sury PHP pin of the machine software recipe to Sury's newest build: each package of a PHP version together, with its URL and SHA-256 digest from Sury's signed package index.
+
+          After merge, the task VM hosts rebuild their base image, nightly recipe maintenance converges the Nodes, and hosted CI installs the new build. Update the self-hosted runners as docs/reference/implementation-loop.md#one-php-build-in-ci describes.
+          BODY
+          )"

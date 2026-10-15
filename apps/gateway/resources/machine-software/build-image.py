@@ -55,6 +55,10 @@ def image_packages(payload):
                      *options, '--', *debs], env=environment)
     finally:
         POLICY.unlink()
+    # PCOV loads in the CLI and never in PHP-FPM (ADR 0215).
+    for version in sorted(payload.get('php') or {}):
+        run(['phpenmod', '-v', version, '-s', 'cli', 'pcov'])
+        run(['phpdismod', '-v', version, '-s', 'fpm', 'pcov'])
     # dnsmasq and Caddy are configured at enrollment, not while baking the disk.
     for service in ('ssh', 'docker', 'containerd'):
         if run(['systemctl', 'show', '-p', 'LoadState', '--value', service], required=False).stdout.strip() == 'loaded':
@@ -184,6 +188,9 @@ def image_verify(payload):
         raise RecipeFailure()
     for name, binary in [('rust', 'rustc'), ('cargo', 'cargo')]:
         if name in payload['tools'] and binary_version('/opt/orbit/rust/bin/' + binary) != payload['tools'][name]['version']:
+            raise RecipeFailure()
+    for version, expected in sorted((payload.get('php') or {}).items()):
+        if cli_modules(version) != expected:
             raise RecipeFailure()
     for path in ('/var/lib/orbit/package-cache', '/opt/orbit/package-cache', '/home/orbit/orbit', '/home/orbit/.orbit/gateway.sqlite'):
         if Path(path).exists():

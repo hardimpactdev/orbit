@@ -7,6 +7,11 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\UbuntuRelease;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\AppProd\ProductionSshExecutor;
+use App\Infrastructure\MachineSoftware\ArtifactPin;
+use App\Infrastructure\MachineSoftware\MachineRecipe;
+use App\Infrastructure\MachineSoftware\PhpBuild;
+use App\Infrastructure\MachineSoftware\RecipeLoader;
+use App\Infrastructure\MachineSoftware\ToolPin;
 use App\Infrastructure\Nodes\PhpFpmRuntimeIniRenderer;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\Processes\CommandResult;
@@ -21,134 +26,6 @@ use Illuminate\Support\Facades\Log;
 use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\HostBinary;
-
-it('converges the pinned Sury Resolute source before package installation', function (): void {
-    $transport = new AppDevFakeSshExecutor;
-
-    new RemotePhpPackageManager()->installForAppDev(
-        php_package_node(RoleName::AppDev),
-        collect(['8.4']),
-        php_package_app_dev_ssh($transport),
-    );
-
-    expect($transport->commands)->toHaveCount(2);
-
-    $sourceCommand = $transport->commands[0];
-    $installCommand = $transport->commands[1];
-    $sourceScript = $sourceCommand->input ?? '';
-    $installScript = $installCommand->input ?? '';
-    $firstSourceMutation = mb_strpos(haystack: $sourceScript, needle: 'sudo install');
-    $releaseGuard = mb_strpos(
-        haystack: $sourceScript,
-        needle: "selected_codename=''",
-    );
-
-    expect(array_slice(array: $sourceCommand->arguments, offset: 0, length: 15))
-        ->toBe([
-            'bash',
-            '-seu',
-            '--',
-            'ubuntu',
-            UbuntuRelease::unsupportedText(),
-            '1',
-            'resolute',
-            'https://packages.sury.org/php/',
-            'https://packages.sury.org/php/apt.gpg',
-            '/usr/share/keyrings/orbit-sury-php.gpg',
-            '/etc/apt/sources.list.d/orbit-php.sources',
-            'b486fd5488185c4c46467960fa69c53d5085fec492cf76b9eaf3db33561c9d7c',
-            '15058500A0235D97F5D10063B188E2B695BD4743',
-            '45BEA3E529112086C622F8A4B214EAC28059B8AC',
-            '15058500A0235D97F5D10063B188E2B695BD4743',
-        ])
-        ->and($sourceScript)
-        ->toContain(
-            '[ ! -r /etc/os-release ]',
-            'while IFS= read -r os_release_line',
-            '[ "$os_id" = "$expected_id" ]',
-            "selected_codename=''",
-            'ppa\\.launchpadcontent\\.net/ondrej/php',
-            'packages\\.sury\\.org/php',
-            '[ ! -e "$managed_path" ] && [ ! -L "$managed_path" ]',
-            'umask 077',
-            'mktemp -d',
-            'gnupg_home="$work_directory/gnupg"',
-            'install -d -m 0700 -- "$gnupg_home"',
-            'curl --fail --silent --show-error --location --proto \'=https\' --tlsv1.2',
-            'sha256sum',
-            'GNUPGHOME="$gnupg_home" gpg --batch --with-colons --show-keys',
-            'Types: deb',
-            'Signed-By:',
-            'trap restore_source EXIT',
-            'install -m 0644 -o root -g root',
-            'mv --',
-            '-o Dir::Etc::SourceList="$source_path"',
-            '-o Dir::Etc::SourceParts=-',
-            '-o APT::Get::List-Cleanup=0',
-            'apt-cache policy',
-            'apt-cache madison',
-            'expected_origin="${expected_uri%/} $selected_codename/main"',
-        )
-        ->not->toContain('apt-key', 'add-apt-repository', 'ppa:ondrej/php')->and(
-            $releaseGuard,
-        )->toBeInt()->toBeLessThan($firstSourceMutation)->and(
-            $firstSourceMutation,
-        )->toBeInt()->and(array_values(array_filter(
-            $sourceCommand->arguments,
-            static fn (string $argument): bool => str_starts_with($argument, 'php'),
-        )))->toBe(array_values(array_filter(
-            $installCommand->arguments,
-            static fn (string $argument): bool => str_starts_with($argument, 'php'),
-        )))->and(array_slice(
-            array: $installCommand->arguments,
-            offset: 0,
-            length: 10,
-        ))->toBe([
-            'bash',
-            '-seu',
-            '--',
-            '8.4',
-            'app-dev',
-            base64_encode(new PhpFpmRuntimeIniRenderer()->render('app-dev')),
-            'ubuntu',
-            UbuntuRelease::unsupportedText(),
-            '1',
-            'resolute',
-        ])->and($installScript)->toContain('dpkg-query', 'apt-get -o DPkg::Lock::Timeout=300 install')
-        ->not->toContain('. /etc/os-release', '[ -x "/usr/sbin/php-fpm$version" ]', 'apt-key', 'add-apt-repository');
-});
-
-it('selects only the validated release suite for each role policy', function (
-    RoleName $role,
-    string $requirement,
-    array $suites,
-): void {
-    $transport = new AppDevFakeSshExecutor;
-
-    new RemotePhpPackageManager()->installForAppDev(
-        php_package_node($role),
-        collect(['8.5']),
-        php_package_app_dev_ssh($transport),
-    );
-
-    $source = $transport->commands[0]->input ?? '';
-    expect($source)
-        ->toContain(
-            "selected_codename=''",
-            '"$selected_codename"',
-            'expected_origin="${expected_uri%/} $selected_codename/main"',
-        )
-        ->and($transport->commands[0]->arguments)
-        ->toContain(...$suites)
-        ->and($requirement)
-        ->toBeString();
-})->with([
-    'app-dev Resolute' => [
-        RoleName::AppDev,
-        UbuntuRelease::unsupportedText(),
-        ['resolute'],
-    ],
-]);
 
 it('rejects an unsupported app-prod operating system before package inspection or installation', function (): void {
     $transport = new AppDevFakeSshExecutor;
@@ -185,59 +62,6 @@ it('rejects an unsupported app-prod operating system before package inspection o
         new Filesystem()->deleteDirectory($root);
     }
 });
-
-it('executes direct app-prod PHP source convergence on Resolute', function (): void {
-    $transport = new AppDevFakeSshExecutor;
-    new RemotePhpPackageManager()->installForAppProd(
-        php_package_node(RoleName::AppProd),
-        collect(['8.5']),
-        php_package_app_prod_ssh($transport),
-    );
-
-    $root = sys_get_temp_dir().'/orbit-php-prod-resolute-'.bin2hex(random_bytes(6));
-    try {
-        mkdir($root.'/bin', 0777, true);
-        mkdir($root.'/etc/apt/sources.list.d', 0777, true);
-        mkdir($root.'/usr/share/keyrings', 0777, true);
-        file_put_contents($root.'/etc/os-release', "ID=ubuntu\nVERSION_CODENAME=resolute\n");
-        $script = str_replace(
-            ['/etc/os-release', '/etc/apt', '/usr/share/keyrings'],
-            [$root.'/etc/os-release', $root.'/etc/apt', $root.'/usr/share/keyrings'],
-            $transport->commands[0]->input ?? '',
-        );
-        $arguments = array_map(
-            static fn (string $argument): string => str_replace(
-                ['/etc/os-release', '/etc/apt', '/usr/share/keyrings'],
-                [$root.'/etc/os-release', $root.'/etc/apt', $root.'/usr/share/keyrings'],
-                $argument,
-            ),
-            array_slice($transport->commands[0]->arguments, 3),
-        );
-        php_package_write_source_binaries($root, 'resolute', null);
-        $process = new Process(['bash', '-seu', '--', ...$arguments], $root, ['PATH' => $root.'/bin:'.getenv('PATH')]);
-        $process->setInput($script);
-        $process->run();
-        expect($process->getExitCode())
-            ->toBe(0)
-            ->and(file_get_contents($root.'/etc/apt/sources.list.d/orbit-php.sources'))
-            ->toContain('Suites: resolute');
-    } finally {
-        new Filesystem()->deleteDirectory($root);
-    }
-});
-
-it('rejects invalid release metadata before mutation markers', function (string $metadata): void {
-    $source = <<<'BASH'
-        selected_codename=''
-        for allowed_codename in "${allowed_codenames[@]}"; do
-            if [ "${VERSION_CODENAME:-}" = "$allowed_codename" ]; then selected_codename=$allowed_codename; fi
-        done
-        if [ -z "$selected_codename" ]; then exit 1; fi
-        sudo install -m 0644 candidate source
-        BASH;
-
-    expect($source)->toContain('selected_codename', 'sudo install')->and($metadata)->toBeString();
-})->with(['missing' => '', 'malformed' => 'unsupported extra', 'debian' => 'bookworm', 'unknown' => 'unsupported']);
 
 it('does not treat package arguments as allowed release codenames', function (): void {
     $transport = new AppDevFakeSshExecutor;
@@ -445,40 +269,7 @@ it('rejects invalid quoted release metadata in both remote scripts', function (s
     'mismatched quote in VERSION_CODENAME' => ['ubuntu', '"resolute\''],
 ]);
 
-it('uses exact Laravel package profiles without duplicates', function (string $role, string $version): void {
-    $transport = new AppDevFakeSshExecutor;
-    $nodeRole = $role === 'app-dev' ? RoleName::AppDev : RoleName::AppProd;
-    $node = php_package_node($nodeRole);
-    $manager = new RemotePhpPackageManager;
-
-    $install = $role === 'app-dev'
-        ? fn () => $manager->installForAppDev($node, collect([$version]), php_package_app_dev_ssh($transport))
-        : fn () => $manager->installForAppProd($node, collect([$version]), php_package_app_prod_ssh($transport));
-    $install();
-
-    $sourcePackages = array_values(array_filter(
-        $transport->commands[0]->arguments,
-        static fn (string $argument): bool => str_starts_with($argument, 'php'),
-    ));
-    $installPackages = array_values(array_filter(
-        $transport->commands[1]->arguments,
-        static fn (string $argument): bool => str_starts_with($argument, 'php'),
-    ));
-
-    expect($sourcePackages)
-        ->toBe(php_package_profile($version, $role))
-        ->toBe($installPackages)
-        ->toHaveCount(count(array_unique($sourcePackages)));
-})->with([
-    'app-dev PHP 8.4' => ['app-dev', '8.4'],
-    'app-dev PHP 8.5' => ['app-dev', '8.5'],
-    'app-dev future PHP' => ['app-dev', '8.6'],
-    'app-prod PHP 8.4' => ['app-prod', '8.4'],
-    'app-prod PHP 8.5' => ['app-prod', '8.5'],
-    'app-prod future PHP' => ['app-prod', '8.6'],
-]);
-
-it('enables PCOV only for app-dev CLI and verifies both SAPIs', function (): void {
+it('loads PCOV in the CLI and never in PHP-FPM and verifies both SAPIs', function (): void {
     $transport = new AppDevFakeSshExecutor;
 
     new RemotePhpPackageManager()->installForAppDev(
@@ -614,7 +405,7 @@ function php_runtime_run(string $block, string $root): Process
     $process = new Process(['bash', '-seu', '--', '8.5', 'app-dev', $encoded], $root, [
         'PATH' => $root.'/bin:'.getenv('PATH'),
     ]);
-    $process->setInput("version=\$1\nprofile=\$2\nruntime_ini=\$3\n".$block);
+    $process->setInput("version=\$1\nprofile=\$2\nruntime_ini=\$3\npackages_changed=0\n".$block);
     $process->run();
 
     return $process;
@@ -814,7 +605,8 @@ it('verifies the managed absolute PHP binaries', function (): void {
             $root.'/bin/php-fpm8.5',
             "#!/usr/bin/env bash\necho shadowed >> ".escapeshellarg($root.'/calls')."\nexit 1\n",
         );
-        $cliModules = "#!/usr/bin/env bash\nprintf '%s\\n' bcmath curl gd imagick intl mbstring mysqli pdo_mysql pdo_pgsql redis pdo_sqlite simplexml xml zip pcov\n";
+        $modules = ['bcmath', 'curl', 'gd', 'imagick', 'intl', 'mbstring', 'mysqli', 'pcov', 'pdo_mysql', 'pdo_pgsql', 'pdo_sqlite', 'redis', 'simplexml', 'xml', 'zip'];
+        $cliModules = "#!/usr/bin/env bash\nprintf '%s\\n' '[PHP Modules]' ".implode(' ', $modules)."\n";
         $fpmModules = str_replace(' pcov', '', $cliModules);
         file_put_contents($root.'/usr/bin/php8.5', $cliModules);
         file_put_contents($root.'/usr/sbin/php-fpm8.5', $fpmModules);
@@ -833,14 +625,14 @@ it('verifies the managed absolute PHP binaries', function (): void {
             ['systemctl', $root.'/usr/bin', $root.'/usr/sbin'],
             $verification,
         );
-        $process = new Process(['bash', '-seu', '--', '8.5', 'app-dev'], $root, [
+        $process = new Process(['bash', '-seu', '--', '8.5', base64_encode(implode("\n", $modules))], $root, [
             'PATH' => $root.'/bin:'.getenv('PATH'),
         ]);
-        $process->setInput("version=\$1\n".$verification);
+        $process->setInput("version=\$1\nexpected_modules=\$2\n".$verification);
         $process->run();
 
         expect($process->getExitCode())
-            ->toBe(0)
+            ->toBe(0, $process->getErrorOutput())
             ->and(is_file($root.'/calls') ? file_get_contents($root.'/calls') : '')
             ->toBe('');
     } finally {
@@ -860,101 +652,6 @@ it('verifies the managed absolute PHP binaries', function (): void {
             "\n                    cli_modules=\$(php\"\$version\" -m",
             "\n                    fpm_modules=\$(php-fpm\"\$version\" -m",
         );
-});
-
-it('does not request or enable PCOV for a pure app-prod node', function (): void {
-    $transport = new AppDevFakeSshExecutor;
-
-    new RemotePhpPackageManager()->installForAppProd(
-        php_package_node(RoleName::AppProd),
-        collect(['8.5']),
-        php_package_app_prod_ssh($transport),
-    );
-
-    expect(php_package_scripts($transport))
-        ->toContain('if printf \'%s\\n\' "$cli_modules" | grep -qxF pcov')
-        ->not->toContain(
-            'phpenmod -v "$version" -s cli pcov',
-            'phpdismod -v "$version" -s fpm pcov',
-            'xdebug',
-            'opentelemetry',
-        )->and(implode(' ', $transport->commands[1]->arguments))
-        ->not->toContain('pcov');
-});
-
-it('installs production packages for a dedicated master without mutating the shared service', function (): void {
-    $transport = new AppDevFakeSshExecutor;
-
-    new RemotePhpPackageManager()->installPackagesOnlyForAppProd(
-        php_package_node(RoleName::AppProd),
-        collect(['8.5']),
-        php_package_app_prod_ssh($transport),
-    );
-
-    expect($transport->commands)->toHaveCount(2);
-
-    $install = $transport->commands[1];
-
-    expect($install->arguments[4])
-        ->toBe('0')
-        ->and($install->input)
-        ->toContain(
-            'apt-get -o DPkg::Lock::Timeout=300 install',
-            'policy_path=/usr/sbin/policy-rc.d',
-            "printf '#!/bin/sh\\nexit 101\\n'",
-            'DEB_SYSTEMD_INVOKE=0',
-            'sudo cp -a -- "$policy_backup" "$policy_path"',
-            '/usr/sbin/php-fpm"$version" -v',
-            'fpm_modules=$(/usr/sbin/php-fpm"$version" -m',
-        )
-        ->not->toContain(
-            'orbit-runtime',
-            'phpenmod',
-            'phpdismod',
-            'systemctl',
-            'php$version-fpm.service',
-        );
-});
-
-it('accepts existing CLI PCOV for dedicated convergence on a dual-role node without managing either SAPI', function (): void {
-    $transport = new AppDevFakeSshExecutor;
-    $node = php_package_node(RoleName::AppProd);
-    $node->roles()->create(['role' => RoleName::AppDev]);
-
-    new RemotePhpPackageManager()->installPackagesOnlyForAppProd(
-        $node->load('roles'),
-        collect(['8.5']),
-        php_package_app_prod_ssh($transport),
-    );
-
-    $install = $transport->commands[1];
-
-    expect($install->arguments[4])
-        ->toBe('1')
-        ->and($install->input)
-        ->toContain(
-            'allow_cli_pcov=$2',
-            'if [ "$allow_cli_pcov" = 1 ]; then',
-            "printf '%s\\n' \"\$cli_modules\" | grep -qxF pcov",
-        )
-        ->not->toContain('phpenmod', 'phpdismod', 'systemctl');
-});
-
-it('keeps PCOV when app-prod convergence targets a dual-role node', function (): void {
-    $transport = new AppDevFakeSshExecutor;
-    $node = php_package_node(RoleName::AppProd);
-    $node->roles()->create(['role' => RoleName::AppDev]);
-
-    new RemotePhpPackageManager()->installForAppProd(
-        $node->load('roles'),
-        collect(['8.5']),
-        php_package_app_prod_ssh($transport),
-    );
-
-    expect(array_slice(array: $transport->commands[1]->arguments, offset: 10))
-        ->toContain('php8.5-pcov')
-        ->and($transport->commands[1]->input)
-        ->toContain('phpenmod -v "$version" -s cli pcov', 'phpdismod -v "$version" -s fpm pcov');
 });
 
 it('maps source failures to the stable role-specific contract', function (string $role): void {
@@ -990,31 +687,6 @@ it('maps source failures to the stable role-specific contract', function (string
     expect($transport->commands)->toHaveCount(1);
 })->with(['app-dev', 'app-prod']);
 
-it('retains valid source state and partial packages when installation fails', function (): void {
-    $transport = new AppDevFakeSshExecutor([
-        new CommandResult(0, '', '', 1, false),
-        new CommandResult(1, '', 'package install failed', 1, false),
-    ]);
-
-    expect(fn () => new RemotePhpPackageManager()->installForAppDev(
-        php_package_node(RoleName::AppDev),
-        collect(['8.5']),
-        php_package_app_dev_ssh($transport),
-    ))->toThrow(function (RuntimeConvergenceException $exception): void {
-        expect($exception->step)
-            ->toBe('php-fpm-install')
-            ->and($exception->errorCode)
-            ->toBe('app-dev.php_install_failed');
-    });
-
-    expect($transport->commands)
-        ->toHaveCount(2)
-        ->and($transport->commands[0]->input)
-        ->toContain('trap restore_source EXIT')
-        ->and($transport->commands[1]->input)
-        ->not->toContain('apt-get remove', 'rm -f /usr/share/keyrings/orbit-sury-php.gpg');
-});
-
 it('performs no remote work for an empty version collection', function (): void {
     $transport = new AppDevFakeSshExecutor;
 
@@ -1048,214 +720,226 @@ it('renders syntactically valid fixed shell programs', function (): void {
     }
 });
 
-it('executes the source program with the selected Ubuntu suite', function (
-    string $id,
-    string $codename,
-    bool $valid,
-    ?string $origin = null,
-    ?string $foreignOrigin = null,
-    string $originMetadata = '',
-    string $architecture = 'amd64',
-): void {
+it('fetches and installs the recipe build of each selected version', function (): void {
     $transport = new AppDevFakeSshExecutor;
+    $recipe = new RecipeLoader()->load();
+
+    new RemotePhpPackageManager()->installForAppDev(
+        php_package_node(RoleName::AppDev),
+        collect(['8.4']),
+        php_package_app_dev_ssh($transport),
+    );
+
+    expect($transport->commands)->toHaveCount(2);
+    [$fetch, $install] = $transport->commands;
+    $rows = php_package_rows($recipe, '8.4');
+
+    expect(array_slice($fetch->arguments, 0, 10))
+        ->toBe([
+            'bash',
+            '-seu',
+            '--',
+            RemotePhpPackageManager::CACHE_DIRECTORY,
+            RemotePhpPackageManager::RETIRED_SOURCE_PATH,
+            RemotePhpPackageManager::RETIRED_KEYRING_PATH,
+            'ubuntu',
+            UbuntuRelease::unsupportedText(),
+            '1',
+            'resolute',
+        ])
+        ->and(array_slice($fetch->arguments, 10))->toBe($rows)
+        ->and($fetch->input)->toContain(
+            "selected_codename=''",
+            'ppa\\.launchpadcontent\\.net/ondrej/php',
+            'sudo rm -f -- "$retired_path"',
+            "curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --tlsv1.2",
+            'sha256sum --check --status',
+            'dpkg-deb --field "$candidate" Package Version Architecture',
+            'sudo install -o root -g root -m 0644 -- "$candidate" "$cached"',
+        )
+        ->not->toContain('apt-key', 'add-apt-repository', 'apt-cache', 'apt-get')
+        ->and(array_slice($install->arguments, 0, 13))->toBe([
+            'bash',
+            '-seu',
+            '--',
+            '8.4',
+            'app-dev',
+            base64_encode(new PhpFpmRuntimeIniRenderer()->render('app-dev')),
+            base64_encode(implode("\n", $recipe->php('8.4')->extensions)),
+            RemotePhpPackageManager::CACHE_DIRECTORY,
+            'ubuntu',
+            UbuntuRelease::unsupportedText(),
+            '1',
+            'resolute',
+            $rows[0],
+        ])
+        ->and(array_slice($install->arguments, 12))->toBe($rows)
+        ->and($install->input)->toContain('--allow-downgrades', 'DEB_SYSTEMD_INVOKE=0', 'sudo rm -f -- "${install_files[@]}"')
+        ->not->toContain('apt-key', 'add-apt-repository', 'apt-cache');
+});
+
+it('selects only the validated release suite for each role policy', function (): void {
+    $transport = new AppDevFakeSshExecutor;
+
     new RemotePhpPackageManager()->installForAppDev(
         php_package_node(RoleName::AppDev),
         collect(['8.5']),
         php_package_app_dev_ssh($transport),
     );
 
-    $root = sys_get_temp_dir().'/orbit-php-source-'.bin2hex(random_bytes(6));
-    try {
-        mkdir($root.'/bin', 0777, true);
-        mkdir($root.'/etc/apt/sources.list.d', 0777, true);
-        mkdir($root.'/usr/share/keyrings', 0777, true);
-        file_put_contents($root.'/etc/os-release', "ID={$id}\nVERSION_CODENAME={$codename}\n");
-        $script = str_replace(
-            ['/etc/os-release', '/etc/apt', '/usr/share/keyrings'],
-            [$root.'/etc/os-release', $root.'/etc/apt', $root.'/usr/share/keyrings'],
-            $transport->commands[0]->input ?? '',
-        );
-        $arguments = array_map(
-            static fn (string $argument): string => str_replace(
-                ['/etc/os-release', '/etc/apt', '/usr/share/keyrings'],
-                [$root.'/etc/os-release', $root.'/etc/apt', $root.'/usr/share/keyrings'],
-                $argument,
-            ),
-            array_slice($transport->commands[0]->arguments, 3),
-        );
-        php_package_write_source_binaries($root, $origin ?? $codename, $foreignOrigin, $originMetadata, $architecture);
-        $process = new Process(['bash', '-seu', '--', ...$arguments], $root, ['PATH' => $root.'/bin:'.getenv('PATH')]);
-        $process->setInput($script);
-        $process->run();
-        if (! $valid) {
-            expect($process->getExitCode())->not->toBe(0);
+    expect($transport->commands[0]->input)->toContain("selected_codename=''")
+        ->and($transport->commands[0]->arguments)->toContain('resolute');
+});
 
-            return;
+it('uses the recipe PHP set of the version on both roles', function (string $role, string $version): void {
+    $transport = new AppDevFakeSshExecutor;
+    $node = php_package_node($role === 'app-dev' ? RoleName::AppDev : RoleName::AppProd);
+    $manager = new RemotePhpPackageManager;
+    $role === 'app-dev'
+        ? $manager->installForAppDev($node, collect([$version]), php_package_app_dev_ssh($transport))
+        : $manager->installForAppProd($node, collect([$version]), php_package_app_prod_ssh($transport));
+    $names = static fn (RemoteCommand $command): array => array_values(array_unique(array_map(
+        static fn (string $row): string => explode('|', $row)[0],
+        array_filter($command->arguments, static fn (string $argument): bool => substr_count($argument, '|') === 4),
+    )));
+    $build = new RecipeLoader()->load()->php($version);
+
+    expect($names($transport->commands[0]))->toBe($build->packages)
+        ->and($names($transport->commands[1]))->toBe($build->packages)
+        ->and($build->packages)->toContain("php{$version}-pcov", "php{$version}-cli", 'php-common', 'libgd3');
+})->with([
+    'app-dev PHP 8.4' => ['app-dev', '8.4'],
+    'app-dev PHP 8.5' => ['app-dev', '8.5'],
+    'app-prod PHP 8.4' => ['app-prod', '8.4'],
+    'app-prod PHP 8.5' => ['app-prod', '8.5'],
+]);
+
+it('refuses a PHP version that the recipe does not build before any remote work', function (string $role): void {
+    $transport = new AppDevFakeSshExecutor;
+    $node = php_package_node($role === 'app-dev' ? RoleName::AppDev : RoleName::AppProd);
+    $manager = new RemotePhpPackageManager;
+    $install = $role === 'app-dev'
+        ? fn () => $manager->installForAppDev($node, collect(['8.6']), php_package_app_dev_ssh($transport))
+        : fn () => $manager->installForAppProd($node, collect(['8.6']), php_package_app_prod_ssh($transport));
+
+    expect($install)->toThrow(function (RuntimeConvergenceException $exception) use ($role): void {
+        expect($exception->errorCode)->toBe("{$role}.php_package_source_unavailable")
+            ->and($exception->getMessage())->toContain('no PHP 8.6 build');
+    });
+    expect($transport->commands)->toBe([]);
+})->with(['app-dev', 'app-prod']);
+
+it('downloads only the packages that are not at their recipe version and checks each one', function (
+    string $case,
+    int $exitCode,
+    string $error,
+): void {
+    $transport = new AppDevFakeSshExecutor;
+    $recipe = php_package_recipe();
+    new RemotePhpPackageManager($recipe)->installForAppDev(php_package_node(RoleName::AppDev), collect(['8.5']), php_package_app_dev_ssh($transport));
+    $root = (string) realpath(sys_get_temp_dir()).'/orbit-php-fetch-'.bin2hex(random_bytes(6));
+    try {
+        php_package_fixture($root, $case);
+        if ($case === 'current') {
+            foreach (['php-common', 'php8.5-cli'] as $name) {
+                file_put_contents("{$root}/installed/{$name}", "1.0-{$name}");
+            }
         }
-        if ($process->getExitCode() !== 0) {
-            throw new RuntimeException($process->getErrorOutput()."\n".$process->getOutput());
+        if ($case === 'conflicting source') {
+            file_put_contents($root.'/etc/apt/sources.list.d/ondrej.list', "deb https://ppa.launchpadcontent.net/ondrej/php/ubuntu resolute main\n");
         }
-        expect($process->getExitCode())
-            ->toBe(0)
-            ->and(file_get_contents($root.'/etc/apt/sources.list.d/orbit-php.sources'))
-            ->toContain("Suites: {$codename}");
+        $process = php_package_run($transport->commands[0], $root, $case === 'arm64 Node' ? 'arm64' : 'amd64');
+        $calls = is_file($root.'/calls') ? (string) file_get_contents($root.'/calls') : '';
+        $cached = array_map('basename', glob($root.'/cache/*') ?: []);
+
+        expect($process->getExitCode())->toBe($exitCode, $process->getErrorOutput())
+            ->and($process->getErrorOutput())->toContain($error);
+        match ($case) {
+            'nothing installed' => expect($cached)->toBe(php_package_cached_names($recipe))
+                ->and(file_exists($root.'/etc/apt/sources.list.d/orbit-php.sources'))->toBeFalse()
+                ->and(file_exists($root.'/usr/share/keyrings/orbit-sury-php.gpg'))->toBeFalse()
+                ->and($process->getOutput())->toBe(''),
+            'current' => expect($process->getOutput())->toBe("orbit-php-packages: current\n")
+                ->and($calls)->not->toContain('curl'),
+            default => expect($cached)->toBe([]),
+        };
     } finally {
         new Filesystem()->deleteDirectory($root);
     }
 })->with([
-    'resolute' => ['ubuntu', 'resolute', true],
-    'missing' => ['ubuntu', '', false],
-    'malformed' => ['ubuntu', 'unsupported extra', false],
-    'debian' => ['debian', 'bookworm', false],
-    'unsupported' => ['ubuntu', 'unsupported', false],
-    'mismatched origin' => ['ubuntu', 'resolute', false, 'legacy'],
-    'foreign origin for candidate' => ['ubuntu', 'resolute', false, null, 'archive.ubuntu.com/ubuntu'],
-    'extra origin metadata' => ['ubuntu', 'resolute', false, null, null, ' extra'],
-    'wrong candidate architecture' => ['ubuntu', 'resolute', false, null, null, '', 'arm64'],
+    'nothing installed' => ['nothing installed', 0, ''],
+    'every package at its version' => ['current', 0, ''],
+    'a tampered download' => ['tampered', 1, 'does not match its recipe SHA-256 digest'],
+    'a package with another version inside' => ['wrong fields', 1, 'does not carry its recipe name, version, and architecture'],
+    'an unpublished build' => ['unavailable', 1, 'cannot be downloaded. Sury may have published a newer build'],
+    'another PHP apt source' => ['conflicting source', 1, 'A conflicting PHP package source is configured.'],
+    'a Node architecture without pins' => ['arm64 Node', 1, 'package for architecture arm64.'],
 ]);
 
-it('refreshes only the Sury source, so an unrelated source that fails cannot fail the PHP step', function (): void {
-    $transport = new AppDevFakeSshExecutor;
-    new RemotePhpPackageManager()->installForAppDev(
-        php_package_node(RoleName::AppDev),
-        collect(['8.5']),
-        php_package_app_dev_ssh($transport),
-    );
-
-    $root = sys_get_temp_dir().'/orbit-php-source-'.bin2hex(random_bytes(6));
-    try {
-        mkdir($root.'/bin', 0777, true);
-        mkdir($root.'/etc/apt/sources.list.d', 0777, true);
-        mkdir($root.'/usr/share/keyrings', 0777, true);
-        file_put_contents($root.'/etc/os-release', "ID=ubuntu\nVERSION_CODENAME=resolute\n");
-        file_put_contents($root.'/etc/apt/sources.list.d/orbit-caddy.sources', "Types: deb\nURIs: https://dl.cloudsmith.io/public/caddy/stable/deb/debian\n");
-        $replace = static fn (string $value): string => str_replace(
-            ['/etc/os-release', '/etc/apt', '/usr/share/keyrings'],
-            [$root.'/etc/os-release', $root.'/etc/apt', $root.'/usr/share/keyrings'],
-            $value,
-        );
-        php_package_write_source_binaries($root, 'resolute', null);
-
-        $run = static function (string $script) use ($root, $transport, $replace): Process {
-            $process = new Process(
-                ['bash', '-seu', '--', ...array_map($replace, array_slice($transport->commands[0]->arguments, 3))],
-                $root,
-                ['PATH' => $root.'/bin:'.getenv('PATH')],
-            );
-            $process->setInput($script);
-            $process->run();
-
-            return $process;
-        };
-
-        $full = $run(preg_replace(
-            '/apt-get -o DPkg::Lock::Timeout=300 \\\\\n(?:\s+-o \S+ \\\\\n)+\s+update/',
-            'apt-get -o DPkg::Lock::Timeout=300 update',
-            $replace($transport->commands[0]->input ?? ''),
-        ) ?? '');
-
-        // The full refresh fails first and restores the files it published, so the scoped run starts clean.
-        $scoped = $run($replace($transport->commands[0]->input ?? ''));
-
-        expect($scoped->getExitCode())->toBe(0, $scoped->getErrorOutput())
-            ->and($full->getExitCode())->toBe(100, $full->getErrorOutput())
-            ->and($full->getErrorOutput())->toContain('402  Payment Required');
-    } finally {
-        new Filesystem()->deleteDirectory($root);
-    }
-});
-
-it('skips the key download, the refresh, and the candidate checks when the source and every package are in place', function (
-    string $change,
-    bool $current,
+it('installs the downloaded build with downgrades allowed and checks the loaded extensions', function (
+    string $modules,
+    int $exitCode,
+    string $error,
 ): void {
     $transport = new AppDevFakeSshExecutor;
-    new RemotePhpPackageManager()->installForAppDev(
-        php_package_node(RoleName::AppDev),
-        collect(['8.5']),
-        php_package_app_dev_ssh($transport),
-    );
-
-    $root = sys_get_temp_dir().'/orbit-php-source-'.bin2hex(random_bytes(6));
+    $recipe = php_package_recipe();
+    $manager = new RemotePhpPackageManager($recipe);
+    $manager->installPackagesOnlyForAppProd(php_package_node(RoleName::AppProd), collect(['8.5']), php_package_app_prod_ssh($transport));
+    $root = (string) realpath(sys_get_temp_dir()).'/orbit-php-install-'.bin2hex(random_bytes(6));
     try {
-        mkdir($root.'/bin', 0777, true);
-        mkdir($root.'/etc/apt/sources.list.d', 0777, true);
-        mkdir($root.'/usr/share/keyrings', 0777, true);
-        file_put_contents($root.'/etc/os-release', "ID=ubuntu\nVERSION_CODENAME=resolute\n");
-        $replace = static fn (string $value): string => str_replace(
-            ['/etc/os-release', '/etc/apt', '/usr/share/keyrings'],
-            [$root.'/etc/os-release', $root.'/etc/apt', $root.'/usr/share/keyrings'],
-            $value,
-        );
-        $keyring = $root.'/usr/share/keyrings/orbit-sury-php.gpg';
-        $source = $root.'/etc/apt/sources.list.d/orbit-php.sources';
-        file_put_contents($keyring, 'pinned key');
-        file_put_contents($source, "Types: deb\nURIs: https://packages.sury.org/php/\nSuites: resolute\nComponents: main\nSigned-By: {$keyring}\n");
-        php_package_write_source_binaries($root, 'resolute', null);
-        $calls = $root.'/calls';
-        $fake = static function (string $name, string $body) use ($root): void {
-            file_put_contents($root.'/bin/'.$name, HostBinary::expand("#!/usr/bin/env bash\n{$body}\n"));
-            chmod($root.'/bin/'.$name, 0755);
-        };
-        // The managed files are root:root 0644, as the slow path writes them.
-        $fake('stat', 'case "$2" in %U:%G) printf "root:root\n";; %a) printf "644\n";; esac');
-        $fake('dpkg-query', $change === 'package missing' ? 'case "${@: -1}" in php8.5-zip) exit 1;; esac; printf "install ok installed"' : 'printf "install ok installed"');
-        // Only the installed keyring differs; the key the slow path downloads matches the pins.
-        $fake('sha256sum', $change === 'keyring changed' ? 'case "$(cat)" in *orbit-sury-php.gpg) exit 1;; esac' : 'exit 0');
-        $fake('gpg', $change === 'fingerprint changed'
-            ? 'case "${@: -1}" in *orbit-sury-php.gpg) printf "fpr:::::::::%s:\n" 45BEA3E529112086C622F8A4B214EAC28059B8AC; exit 0;; esac; printf "fpr:::::::::%s:\nfpr:::::::::%s:\n" 15058500A0235D97F5D10063B188E2B695BD4743 45BEA3E529112086C622F8A4B214EAC28059B8AC'
-            : 'printf "fpr:::::::::%s:\nfpr:::::::::%s:\n" 15058500A0235D97F5D10063B188E2B695BD4743 45BEA3E529112086C622F8A4B214EAC28059B8AC');
-        $fake('curl', 'printf "curl\n" >> '.escapeshellarg($calls).'; out=""; while [ "$#" -gt 0 ]; do [ "$1" = --output ] && { out="$2"; shift 2; continue; }; shift; done; : > "$out"');
-        $fake('apt-get', 'printf "apt-get %s\n" "${@: -1}" >> '.escapeshellarg($calls));
-        if ($change === 'source changed') {
-            file_put_contents($source, "Types: deb\nURIs: https://packages.sury.org/php/\nSuites: noble\nComponents: main\nSigned-By: {$keyring}\n");
-        }
+        php_package_fixture($root, 'nothing installed');
+        file_put_contents($root.'/installed/php8.5-cli', '0.9-older');
+        expect(php_package_run($transport->commands[0], $root)->getExitCode())->toBe(0);
+        file_put_contents($root.'/calls', '');
+        file_put_contents($root.'/usr/bin/php8.5', "#!/usr/bin/env bash\nif [ \"\$1\" = -m ]; then printf '%s' ".escapeshellarg($modules)."; fi\n");
+        file_put_contents($root.'/usr/sbin/php-fpm8.5', "#!/usr/bin/env bash\nif [ \"\$1\" = -m ]; then printf '%s\\n' bcmath curl gd imagick intl mbstring mysqli pdo_mysql pdo_pgsql redis pdo_sqlite simplexml xml zip; fi\n");
+        chmod($root.'/usr/bin/php8.5', 0755);
+        chmod($root.'/usr/sbin/php-fpm8.5', 0755);
 
-        $process = new Process(
-            ['bash', '-seu', '--', ...array_map($replace, array_slice($transport->commands[0]->arguments, 3))],
-            $root,
-            ['PATH' => $root.'/bin:'.getenv('PATH')],
-        );
-        $process->setInput($replace($transport->commands[0]->input ?? ''));
-        $process->run();
-        $ran = is_file($calls) ? (string) file_get_contents($calls) : '';
+        $process = php_package_run($transport->commands[1], $root);
+        $calls = (string) file_get_contents($root.'/calls');
 
-        expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
-        if ($current) {
-            expect($process->getOutput())->toBe("orbit-php-source: current\n")
-                ->and($ran)->toBe('');
-        } else {
-            expect($process->getOutput())->not->toContain('orbit-php-source: current')
-                ->and($ran)->toContain('curl', 'apt-get update');
-        }
+        expect($process->getExitCode())->toBe($exitCode, $process->getErrorOutput())
+            ->and($process->getErrorOutput())->toContain($error)
+            ->and($calls)->toContain('apt-get', '--allow-downgrades', $root.'/cache/php8.5-cli_', $root.'/cache/php-common_')
+            ->toContain('phpenmod -v 8.5 -s cli pcov', 'phpdismod -v 8.5 -s fpm pcov')
+            ->and(glob($root.'/cache/*'))->toBe([])
+            ->and($transport->commands[1]->input)->not->toContain('orbit-runtime', 'systemctl', 'php$version-fpm.service')
+            ->and(file_get_contents($root.'/installed/php8.5-cli'))->toBe('1.0-php8.5-cli')
+            ->and(file_exists($root.'/usr/sbin/policy-rc.d'))->toBeFalse();
     } finally {
         new Filesystem()->deleteDirectory($root);
     }
 })->with([
-    'everything in place' => ['none', true],
-    'a package is missing' => ['package missing', false],
-    'the keyring is not the pinned key' => ['keyring changed', false],
-    'the keyring lacks a pinned fingerprint' => ['fingerprint changed', false],
-    'the source file differs' => ['source changed', false],
+    'the recipe extensions' => ["[PHP Modules]\nCore\npcov\n\n[Zend Modules]\n", 0, ''],
+    'an extra extension' => ["[PHP Modules]\nCore\napcu\npcov\n", 1, 'PHP 8.5 CLI modules differ from the recipe. Missing: []. Extra: [apcu].'],
+    'a missing extension' => ["[PHP Modules]\nCore\n", 1, 'Missing: [pcov]. Extra: [].'],
 ]);
 
-it('still refuses a conflicting PHP source when everything else is in place', function (): void {
-    $transport = new AppDevFakeSshExecutor;
-    new RemotePhpPackageManager()->installForAppDev(
+it('retains downloaded packages when installation fails', function (): void {
+    $transport = new AppDevFakeSshExecutor([
+        new CommandResult(0, '', '', 1, false),
+        new CommandResult(1, '', 'package install failed', 1, false),
+    ]);
+
+    expect(fn () => new RemotePhpPackageManager()->installForAppDev(
         php_package_node(RoleName::AppDev),
         collect(['8.5']),
         php_package_app_dev_ssh($transport),
-    );
-    $script = $transport->commands[0]->input ?? '';
+    ))->toThrow(function (RuntimeConvergenceException $exception): void {
+        expect($exception->step)
+            ->toBe('php-fpm-install')
+            ->and($exception->errorCode)
+            ->toBe('app-dev.php_install_failed');
+    });
 
-    expect(mb_strpos($script, 'A conflicting PHP package source is configured.'))->toBeLessThan(mb_strpos($script, 'source_current "$@"'))
-        ->and(mb_strpos($script, 'unsafe ownership or mode'))->toBeLessThan(mb_strpos($script, 'source_current "$@"'))
-        ->and(mb_strpos($script, 'source_current "$@"'))->toBeLessThan(mb_strpos($script, 'curl --fail'));
+    expect($transport->commands)->toHaveCount(2)
+        ->and($transport->commands[1]->input)->not->toContain('apt-get remove', 'apt-get purge');
 });
 
-it('logs a skipped source refresh and still verifies each version', function (): void {
+it('logs a skipped download and still verifies each version', function (): void {
     Log::spy();
-    $transport = new AppDevFakeSshExecutor([new CommandResult(0, "orbit-php-source: current\n", '', 1, false)]);
+    $transport = new AppDevFakeSshExecutor([new CommandResult(0, "orbit-php-packages: current\n", '', 1, false)]);
 
     new RemotePhpPackageManager()->installForAppDev(
         php_package_node(RoleName::AppDev),
@@ -1265,323 +949,99 @@ it('logs a skipped source refresh and still verifies each version', function ():
 
     expect($transport->commands)->toHaveCount(2)
         ->and($transport->commands[1]->arguments[3])->toBe('8.5');
-    Log::shouldHaveReceived('info')->once()->with('PHP packages are in place; skipped the package source refresh.', Mockery::on(static fn (array $context): bool => $context['packages'] === 16));
+    Log::shouldHaveReceived('info')->once()->with('PHP packages match the recipe; skipped the package download.', Mockery::on(static fn (array $context): bool => $context['versions'] === ['8.5']));
 });
 
-it('accepts an installed-only policy candidate when Sury publishes another version', function (): void {
-    $transport = new AppDevFakeSshExecutor;
-    new RemotePhpPackageManager()->installForAppDev(
-        php_package_node(RoleName::AppDev),
-        collect(['8.5']),
-        php_package_app_dev_ssh($transport),
-    );
-    $root = sys_get_temp_dir().'/orbit-php-installed-candidate-'.bin2hex(random_bytes(6));
-    try {
-        mkdir($root.'/bin', 0777, true);
-        mkdir($root.'/etc/apt/sources.list.d', 0777, true);
-        mkdir($root.'/usr/share/keyrings', 0777, true);
-        file_put_contents($root.'/etc/os-release', "ID=ubuntu\nVERSION_CODENAME=resolute\n");
-        $script = str_replace(
-            ['/etc/os-release', '/etc/apt', '/usr/share/keyrings'],
-            [$root.'/etc/os-release', $root.'/etc/apt', $root.'/usr/share/keyrings'],
-            $transport->commands[0]->input ?? '',
-        );
-        $arguments = array_map(
-            static fn (string $argument): string => str_replace(
-                ['/etc/os-release', '/etc/apt', '/usr/share/keyrings'],
-                [$root.'/etc/os-release', $root.'/etc/apt', $root.'/usr/share/keyrings'],
-                $argument,
-            ),
-            array_slice($transport->commands[0]->arguments, 3),
-        );
-        php_package_write_source_binaries($root, 'resolute', null);
-        file_put_contents(
-            $root.'/bin/dpkg-query',
-            "#!/usr/bin/env bash\nprintf '%s\\n' 'install ok installed 6.3.0-2+ubuntu26.04.1+deb.sury.org+1'\n",
-        );
-        chmod($root.'/bin/dpkg-query', 0755);
-        file_put_contents($root.'/bin/apt-cache', <<<'BASH'
-            #!/usr/bin/env bash
-            package="${@: -1}"
-            case "$1" in
-             policy) printf 'Candidate: 6.3.0-2+ubuntu26.04.1+deb.sury.org+1\n';;
-             madison) printf '%s | 6.3.0-2+0~20260711.1+ubuntu26.04~1.gbp123 | https://packages.sury.org/php resolute/main amd64 Packages\n' "$package";;
-            esac
-            BASH);
-        chmod($root.'/bin/apt-cache', 0755);
-        $process = new Process(['bash', '-seu', '--', ...$arguments], $root, ['PATH' => $root.'/bin:'.getenv('PATH')]);
-        $process->setInput($script);
-        $process->run();
-        expect($process->getExitCode())->toBe(0);
-    } finally {
-        new Filesystem()->deleteDirectory($root);
+function php_package_recipe(): MachineRecipe
+{
+    $tools = [];
+    foreach (['php-common', 'php8.5-cli'] as $name) {
+        $file = "{$name}_1.0_amd64.deb";
+        $tools[$name] = new ToolPin('artifact', "1.0-{$name}", artifacts: [
+            'amd64' => new ArtifactPin("https://packages.sury.org/php/pool/main/{$file}", 'sha256', hash('sha256', "deb:{$file}")),
+        ]);
     }
-});
 
-it('rejects unsafe installed-only candidate fallback metadata', function (string $madison): void {
-    $transport = new AppDevFakeSshExecutor;
-    new RemotePhpPackageManager()->installForAppDev(
-        php_package_node(RoleName::AppDev),
-        collect(['8.5']),
-        php_package_app_dev_ssh($transport),
-    );
-    $root = sys_get_temp_dir().'/orbit-php-installed-negative-'.bin2hex(random_bytes(6));
-    try {
-        mkdir($root.'/bin', 0777, true);
-        mkdir($root.'/etc/apt/sources.list.d', 0777, true);
-        mkdir($root.'/usr/share/keyrings', 0777, true);
-        file_put_contents($root.'/etc/os-release', "ID=ubuntu\nVERSION_CODENAME=resolute\n");
-        $script = str_replace(
-            ['/etc/os-release', '/etc/apt', '/usr/share/keyrings'],
-            [$root.'/etc/os-release', $root.'/etc/apt', $root.'/usr/share/keyrings'],
-            $transport->commands[0]->input ?? '',
-        );
-        $arguments = array_map(
-            static fn (string $argument): string => str_replace(
-                ['/etc/os-release', '/etc/apt', '/usr/share/keyrings'],
-                [$root.'/etc/os-release', $root.'/etc/apt', $root.'/usr/share/keyrings'],
-                $argument,
-            ),
-            array_slice($transport->commands[0]->arguments, 3),
-        );
-        php_package_write_source_binaries($root, 'resolute', null);
-        file_put_contents(
-            $root.'/bin/dpkg-query',
-            "#!/usr/bin/env bash\nprintf '%s\\n' 'install ok installed 6.3.0-2+ubuntu26.04.1+deb.sury.org+1'\n",
-        );
-        chmod($root.'/bin/dpkg-query', 0755);
-        file_put_contents(
-            $root.'/bin/apt-cache',
-            "#!/usr/bin/env bash\npackage=\"\${@: -1}\"\ncase \"\$1\" in policy) printf 'Candidate: 6.3.0-2+ubuntu26.04.1+deb.sury.org+1\\n';; madison) printf '%s\\n' "
-            .escapeshellarg(str_replace('php8.5-cli', '{package}', $madison))
-            .' | sed "s/{package}/$package/g";; esac'
-            ."\n",
-        );
-        chmod($root.'/bin/apt-cache', 0755);
-        $process = new Process(['bash', '-seu', '--', ...$arguments], $root, ['PATH' => $root.'/bin:'.getenv('PATH')]);
-        $process->setInput($script);
-        $process->run();
-        expect($process->getExitCode())->not->toBe(0);
-    } finally {
-        new Filesystem()->deleteDirectory($root);
+    return new MachineRecipe('sha256:fixture', '20261014T000000Z', ['amd64'], $tools, [], '{}', '{}', [
+        '8.5' => new PhpBuild('8.5', '8.5.11', ['php-common', 'php8.5-cli'], ['core', 'pcov']),
+    ], '8.5');
+}
+
+/** @return list<string> */
+function php_package_cached_names(MachineRecipe $recipe): array
+{
+    $names = [];
+    foreach ($recipe->php('8.5')->packages as $name) {
+        $names[] = $name.'_'.$recipe->tools[$name]->artifacts['amd64']->digest.'.deb';
     }
-})->with([
-    'foreign candidate' => 'php8.5-cli | 6.3.0-2+ubuntu26.04.1+deb.sury.org+1 | https://mirror.example resolute/main amd64 Packages',
-    'extra pipe' => 'php8.5-cli | 6.3.0-2+0~20260711 | https://packages.sury.org/php resolute/main amd64 Packages | extra',
-    'no Sury row' => 'php8.5-cli | 6.3.0-2+0~20260711 | https://mirror.example resolute/main amd64 Packages',
-    'wrong architecture' => 'php8.5-cli | 6.3.0-2+0~20260711 | https://packages.sury.org/php resolute/main arm64 Packages',
-    'malformed architecture' => 'php8.5-cli | 6.3.0-2+0~20260711 | https://packages.sury.org/php resolute/main amd64:evil Packages',
-    'unexpected package' => 'unexpected-package | 6.3.0-2+0~20260711 | https://packages.sury.org/php resolute/main amd64 Packages',
-]);
+    sort($names);
 
-it('rejects lookalike origin hostnames', function (): void {
-    $transport = new AppDevFakeSshExecutor;
-    new RemotePhpPackageManager()->installForAppDev(
-        php_package_node(RoleName::AppDev),
-        collect(['8.5']),
-        php_package_app_dev_ssh($transport),
-    );
-    $root = sys_get_temp_dir().'/orbit-php-origin-lookalike-'.bin2hex(random_bytes(6));
-    try {
-        mkdir($root.'/bin', 0777, true);
-        mkdir($root.'/etc/apt/sources.list.d', 0777, true);
-        mkdir($root.'/usr/share/keyrings', 0777, true);
-        file_put_contents($root.'/etc/os-release', "ID=ubuntu\nVERSION_CODENAME=resolute\n");
-        $script = str_replace(
-            ['/etc/os-release', '/etc/apt', '/usr/share/keyrings'],
-            [$root.'/etc/os-release', $root.'/etc/apt', $root.'/usr/share/keyrings'],
-            $transport->commands[0]->input ?? '',
-        );
-        $arguments = array_map(
-            static fn (string $argument): string => str_replace(
-                ['/etc/os-release', '/etc/apt', '/usr/share/keyrings'],
-                [$root.'/etc/os-release', $root.'/etc/apt', $root.'/usr/share/keyrings'],
-                $argument,
-            ),
-            array_slice($transport->commands[0]->arguments, 3),
-        );
-        php_package_write_source_binaries($root, 'resolute', null);
-        $cache = file_get_contents($root.'/bin/apt-cache');
-        file_put_contents($root.'/bin/apt-cache', str_replace(
-            'packages.sury.org/php resolute/main',
-            'packagesXsuryXorg/php resolute/main',
-            $cache,
-        ));
-        $process = new Process(['bash', '-seu', '--', ...$arguments], $root, ['PATH' => $root.'/bin:'.getenv('PATH')]);
-        $process->setInput($script);
-        $process->run();
-        expect($process->getExitCode())->not->toBe(0);
-    } finally {
-        new Filesystem()->deleteDirectory($root);
+    return $names;
+}
+
+/** @return list<string> */
+function php_package_rows(MachineRecipe $recipe, string $version): array
+{
+    $rows = [];
+    foreach ($recipe->php($version)->packages as $name) {
+        foreach ($recipe->tools[$name]->artifacts as $architecture => $artifact) {
+            $rows[] = implode('|', [$name, $recipe->tools[$name]->version, $architecture, $artifact->location, $artifact->digest]);
+        }
     }
-});
 
-it('removes root-owned candidates and restores managed state when publication fails', function (): void {
-    $transport = new AppDevFakeSshExecutor;
-    new RemotePhpPackageManager()->installForAppDev(
-        php_package_node(RoleName::AppDev),
-        collect(['8.5']),
-        php_package_app_dev_ssh($transport),
-    );
+    return $rows;
+}
 
-    $root = sys_get_temp_dir().'/orbit-php-rollback-'.bin2hex(random_bytes(6));
-    try {
-        mkdir($root.'/bin', 0777, true);
-        mkdir($root.'/etc/apt/sources.list.d', 0777, true);
-        mkdir($root.'/usr/share/keyrings', 0777, true);
-        file_put_contents($root.'/etc/os-release', "ID=ubuntu\nVERSION_CODENAME=resolute\n");
-        file_put_contents($root.'/usr/share/keyrings/orbit-sury-php.gpg', 'old-key');
-        file_put_contents($root.'/etc/apt/sources.list.d/orbit-php.sources', 'old-source');
-        $script = str_replace(
-            ['/etc/os-release', '/etc/apt', '/usr/share/keyrings'],
-            [$root.'/etc/os-release', $root.'/etc/apt', $root.'/usr/share/keyrings'],
-            $transport->commands[0]->input ?? '',
-        );
-        $arguments = array_map(
-            static fn (string $argument): string => str_replace(
-                ['/etc/os-release', '/etc/apt', '/usr/share/keyrings'],
-                [$root.'/etc/os-release', $root.'/etc/apt', $root.'/usr/share/keyrings'],
-                $argument,
-            ),
-            array_slice($transport->commands[0]->arguments, 3),
-        );
-        php_package_write_source_binaries($root, 'resolute', null);
-        file_put_contents($root.'/bin/install', HostBinary::expand(<<<'BASH'
-            #!/usr/bin/env bash
-            case "${@: -1}" in
-                *.orbit.*) : > "${@: -1}"; exit 42 ;;
-            esac
-            exec {{host:install}} "$@"
-            BASH));
-        chmod($root.'/bin/install', 0755);
-        $process = new Process(['bash', '-seu', '--', ...$arguments], $root, ['PATH' => $root.'/bin:'.getenv('PATH')]);
-        $process->setInput($script);
-        $process->run();
-
-        expect($process->getExitCode())
-            ->not
-            ->toBe(0)
-            ->and(file_get_contents($root.'/usr/share/keyrings/orbit-sury-php.gpg'))
-            ->toBe('old-key')
-            ->and(file_get_contents($root.'/etc/apt/sources.list.d/orbit-php.sources'))
-            ->toBe('old-source')
-            ->and(glob($root.'/usr/share/keyrings/*.orbit.*'))
-            ->toBe([])
-            ->and(glob($root.'/etc/apt/sources.list.d/*.orbit.*'))
-            ->toBe([]);
-    } finally {
-        new Filesystem()->deleteDirectory($root);
+function php_package_fixture(string $root, string $case): void
+{
+    foreach (['bin', 'cache', 'installed', 'etc/apt/sources.list.d', 'usr/share/keyrings', 'usr/bin', 'usr/sbin'] as $directory) {
+        mkdir("{$root}/{$directory}", 0777, true);
     }
-});
-
-it('restores key state when source publication mv fails', function (): void {
-    $transport = new AppDevFakeSshExecutor;
-    new RemotePhpPackageManager()->installForAppDev(
-        php_package_node(RoleName::AppDev),
-        collect(['8.5']),
-        php_package_app_dev_ssh($transport),
-    );
-    $root = sys_get_temp_dir().'/orbit-php-source-mv-'.bin2hex(random_bytes(6));
-    try {
-        mkdir($root.'/bin', 0777, true);
-        mkdir($root.'/etc/apt/sources.list.d', 0777, true);
-        mkdir($root.'/usr/share/keyrings', 0777, true);
-        file_put_contents($root.'/etc/os-release', "ID=ubuntu\nVERSION_CODENAME=resolute\n");
-        file_put_contents($root.'/usr/share/keyrings/orbit-sury-php.gpg', 'old-key');
-        file_put_contents($root.'/etc/apt/sources.list.d/orbit-php.sources', 'old-source');
-        $script = str_replace(
-            ['/etc/os-release', '/etc/apt', '/usr/share/keyrings'],
-            [$root.'/etc/os-release', $root.'/etc/apt', $root.'/usr/share/keyrings'],
-            $transport->commands[0]->input ?? '',
-        );
-        $arguments = array_map(
-            static fn (string $argument): string => str_replace(
-                ['/etc/os-release', '/etc/apt', '/usr/share/keyrings'],
-                [$root.'/etc/os-release', $root.'/etc/apt', $root.'/usr/share/keyrings'],
-                $argument,
-            ),
-            array_slice($transport->commands[0]->arguments, 3),
-        );
-        php_package_write_source_binaries($root, 'resolute', null);
-        file_put_contents($root.'/bin/mv', HostBinary::expand(<<<'BASH'
-            #!/usr/bin/env bash
-            case "$2" in *orbit-php.sources) exit 42;; esac
-            exec {{host:mv}} "$@"
-            BASH));
-        chmod($root.'/bin/mv', 0755);
-        $process = new Process(['bash', '-seu', '--', ...$arguments], $root, ['PATH' => $root.'/bin:'.getenv('PATH')]);
-        $process->setInput($script);
-        $process->run();
-        expect($process->getExitCode())
-            ->not
-            ->toBe(0)
-            ->and(file_get_contents($root.'/usr/share/keyrings/orbit-sury-php.gpg'))
-            ->toBe('old-key')
-            ->and(file_get_contents($root.'/etc/apt/sources.list.d/orbit-php.sources'))
-            ->toBe('old-source')
-            ->and(glob($root.'/usr/share/keyrings/*.orbit.*'))
-            ->toBe([])
-            ->and(glob($root.'/etc/apt/sources.list.d/*.orbit.*'))
-            ->toBe([]);
-    } finally {
-        new Filesystem()->deleteDirectory($root);
-    }
-});
-
-function php_package_write_source_binaries(
-    string $root,
-    string $origin,
-    ?string $foreignOrigin,
-    string $originMetadata = '',
-    string $architecture = 'amd64',
-): void {
+    file_put_contents($root.'/etc/os-release', "ID=ubuntu\nVERSION_CODENAME=resolute\n");
+    file_put_contents($root.'/etc/apt/sources.list.d/orbit-php.sources', "URIs: https://packages.sury.org/php/\n");
+    file_put_contents($root.'/usr/share/keyrings/orbit-sury-php.gpg', 'retired key');
+    $calls = escapeshellarg($root.'/calls');
+    $installed = escapeshellarg($root.'/installed');
     $write = static function (string $name, string $body) use ($root): void {
         file_put_contents($root.'/bin/'.$name, HostBinary::expand("#!/usr/bin/env bash\n{$body}\n"));
         chmod($root.'/bin/'.$name, 0755);
     };
-
     $write('sudo', 'exec "$@"');
-    $write(
-        'install',
-        'args=(); skip=0; for arg in "$@"; do if [ "$skip" = 1 ]; then skip=0; continue; fi; case "$arg" in -o|-g) skip=1;; *) args+=("$arg");; esac; done; exec {{host:install}} "${args[@]}"',
-    );
-    $write(
-        'curl',
-        'out=""; while [ "$#" -gt 0 ]; do [ "$1" = --output ] && { out="$2"; shift 2; continue; }; shift; done; : > "$out"',
-    );
-    $write('sha256sum', 'exit 0');
-    $write(
-        'gpg',
-        'printf "%s\\nfpr:::::::::%s:\\nfpr:::::::::%s:\\n" x 15058500A0235D97F5D10063B188E2B695BD4743 45BEA3E529112086C622F8A4B214EAC28059B8AC',
-    );
-    $write('mktemp', 'exec {{host:mktemp}} "$@"');
-    // Like a Node with an unrelated source that refuses every request: an update fails unless it
-    // refreshes only the Sury source and keeps the other sources' lists.
-    $write(
-        'apt-get',
-        'if [ "${@: -1}" = update ]; then scoped=0; for arg in "$@"; do case "$arg" in Dir::Etc::SourceList=*/etc/apt/sources.list.d/orbit-php.sources|Dir::Etc::SourceParts=-|APT::Get::List-Cleanup=0) scoped=$((scoped + 1));; esac; done; if [ "$scoped" != 3 ]; then printf "E: Failed to fetch https://dl.cloudsmith.io/public/caddy/stable/deb/debian/dists/any-version/InRelease  402  Payment Required\\n" >&2; exit 100; fi; fi',
-    );
-    $write('dpkg', 'if [ "$1" = --print-architecture ]; then printf "amd64\\n"; fi');
-    // Nothing is installed, so the source script never takes its fast path unless a test says so.
-    $write('dpkg-query', 'exit 1');
-    $write(
-        'apt-cache',
-        'package="${@: -1}"; case "$1" in policy) printf "Candidate: 8.5.0\\n";; madison) printf "%s | 8.5.0 | https://packages.sury.org/php '
-        .$origin
-        .'/main '
-        .$architecture
-        .' Packages'
-        .$originMetadata
-        .'\\n" "$package"'
-        .(
-            $foreignOrigin === null
-                ? ''
-                : '; printf "%s | 8.5.0 | https://'.$foreignOrigin.'/main '.$architecture.' Packages\\n" "$package"'
-        )
-        .';; esac',
-    );
-    $write('awk', 'exec {{host:awk}} "$@"');
-    $write('grep', 'exec {{host:grep}} "$@"');
+    $write('install', 'args=(); skip=0; for arg in "$@"; do if [ "$skip" = 1 ]; then skip=0; continue; fi; case "$arg" in -o|-g) skip=1;; *) args+=("$arg");; esac; done; exec {{host:install}} "${args[@]}"');
+    $write('dpkg', 'printf "%s\n" "${ORBIT_TEST_ARCHITECTURE:-amd64}"');
+    $write('dpkg-query', 'name="${@: -1}"; [ -f '.$installed.'/"$name" ] || exit 1; printf "install ok installed %s" "$(cat '.$installed.'/"$name")"');
+    $content = match ($case) {
+        'tampered' => 'printf tampered > "$out"',
+        'unavailable' => 'exit 22',
+        default => 'printf "deb:%s" "${url##*/}" > "$out"',
+    };
+    $write('curl', 'printf "curl\n" >> '.$calls.'; out=""; url="${@: -1}"; while [ "$#" -gt 0 ]; do [ "$1" = --output ] && { out="$2"; shift 2; continue; }; shift; done; '.$content);
+    $version = $case === 'wrong fields' ? '9.9' : '1.0-$name';
+    $write('dpkg-deb', 'file=$(cat "$2"); file=${file#deb:}; name=${file%%_1.0_*}; printf "Package: %s\nVersion: %s\nArchitecture: amd64\n" "$name" "'.$version.'"');
+    $write('apt-get', 'printf "apt-get %s\n" "$*" >> '.$calls.'; for arg in "$@"; do case "$arg" in *.deb) file=$(cat "$arg"); file=${file#deb:}; name=${file%%_1.0_*}; printf "1.0-%s" "$name" > '.$installed.'/"$name";; esac; done');
+    $write('phpenmod', 'printf "phpenmod %s\n" "$*" >> '.$calls);
+    $write('phpdismod', 'printf "phpdismod %s\n" "$*" >> '.$calls);
+}
+
+function php_package_run(RemoteCommand $command, string $root, string $architecture = 'amd64'): Process
+{
+    $paths = [
+        RemotePhpPackageManager::CACHE_DIRECTORY => $root.'/cache',
+        '/etc/os-release' => $root.'/etc/os-release',
+        '/etc/apt' => $root.'/etc/apt',
+        '/usr/share/keyrings' => $root.'/usr/share/keyrings',
+        '/usr/bin/php' => $root.'/usr/bin/php',
+        '/usr/sbin/' => $root.'/usr/sbin/',
+    ];
+    $replace = static fn (string $value): string => strtr($value, $paths);
+    $process = new Process(['bash', '-seu', '--', ...array_map($replace, array_slice($command->arguments, 3))], $root, [
+        'PATH' => $root.'/bin:'.getenv('PATH'),
+        'ORBIT_TEST_ARCHITECTURE' => $architecture,
+    ]);
+    $process->setInput($replace($command->input ?? ''));
+    $process->run();
+
+    return $process;
 }
 
 function php_package_node(RoleName $role): Node
@@ -1645,38 +1105,6 @@ function php_package_known_hosts(): KnownHostsStore
 
         public function put(string $host, int $port, HostKey $key): void {}
     };
-}
-
-/** @return list<string> */
-function php_package_profile(string $version, string $profile): array
-{
-    $suffixes = [
-        'cli',
-        'fpm',
-        'common',
-        'bcmath',
-        'curl',
-        'gd',
-        'imagick',
-        'intl',
-        'mbstring',
-        'mysql',
-        'pgsql',
-        'redis',
-        'sqlite3',
-        'xml',
-        'zip',
-    ];
-
-    if ($version === '8.4') {
-        $suffixes[] = 'opcache';
-    }
-
-    if ($profile === 'app-dev') {
-        $suffixes[] = 'pcov';
-    }
-
-    return array_map(static fn (string $suffix): string => "php{$version}-{$suffix}", $suffixes);
 }
 
 function php_package_scripts(AppDevFakeSshExecutor $transport): string

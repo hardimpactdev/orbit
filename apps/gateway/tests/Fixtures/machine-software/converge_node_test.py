@@ -72,6 +72,90 @@ class ConvergenceTest(unittest.TestCase):
         self.assertNotIn('/etc/apt/apt.conf.d/99orbit-recipe', self.published)
         self.assertEqual(set(self.published), {'/etc/apt/sources.list.d/ubuntu.sources', str(self.policy)})
 
+    def php_payload(self):
+        self.payload['tools']['php8.5-pcov'] = {'source': 'artifact', 'version': '1.0'}
+        self.payload['php'] = {'8.5': ['core', 'pcov', 'zend opcache']}
+
+    def php_command(self, modules='[PHP Modules]\nCore\npcov\n\n[Zend Modules]\nZend OPcache\n', fpm_test=0):
+        def command(argv, **kwargs):
+            result = self.command(argv, **kwargs)
+            if argv == ['/usr/bin/php8.5', '-m']:
+                return subprocess.CompletedProcess(argv, 0, modules, '')
+            if argv == ['/usr/sbin/php-fpm8.5', '-t'] and fpm_test:
+                raise recipe.RecipeFailure()
+            return result
+        return command
+
+    def apply_php(self, command):
+        self.restored = []
+        with patch.object(recipe, 'fpm_links', return_value={'20-pcov.ini': '/etc/php/8.5/mods-available/pcov.ini'}), \
+             patch.object(recipe, 'restore_fpm_links', side_effect=lambda version, links: self.restored.append((version, links))), \
+             patch.object(recipe, 'POLICY', self.policy), \
+             patch.object(recipe, 'packages', side_effect=[self.before, self.after]), \
+             patch.object(recipe, 'inspect', side_effect=[{'curl': '1.0', 'php8.5-pcov': '1.0'}, {'curl': '2.0', 'php8.5-pcov': '1.0'}]), \
+             patch.object(recipe, 'active_services', return_value={'curl.service', 'php8.5-fpm.service'}), \
+             patch.object(recipe, 'publish', side_effect=self.publish), \
+             patch.object(recipe, 'run', side_effect=command), \
+             patch.object(recipe.pwd, 'getpwnam', return_value=None):
+            return recipe.apply(self.payload)
+
+    def test_php_sets_load_pcov_only_in_the_cli_validate_fpm_and_check_cli_modules(self):
+        self.php_payload()
+        result = self.apply_php(self.php_command())
+        self.assertTrue(result['healthy'])
+        enable = self.commands.index(['phpenmod', '-v', '8.5', '-s', 'cli', 'pcov'])
+        disable = self.commands.index(['phpdismod', '-v', '8.5', '-s', 'fpm', 'pcov'])
+        validate = self.commands.index(['/usr/sbin/php-fpm8.5', '-t'])
+        restart = self.commands.index(['systemctl', 'restart', 'php8.5-fpm.service'])
+        self.assertLess(enable, disable)
+        self.assertLess(disable, self.commands.index(['/usr/bin/php8.5', '-m']))
+        self.assertLess(self.commands.index(['/usr/bin/php8.5', '-m']), validate)
+        self.assertEqual(validate + 1, restart)
+        self.assertEqual(self.commands[restart + 1], ['systemctl', 'is-active', '--quiet', 'php8.5-fpm.service'])
+        self.assertEqual(self.restored, [])
+
+    def test_a_failed_php_fpm_start_restores_the_changed_links_and_starts_it_again(self):
+        self.php_payload()
+        base = self.php_command()
+
+        def command(argv, **kwargs):
+            result = base(argv, **kwargs)
+            if argv == ['systemctl', 'restart', 'php8.5-fpm.service'] and argv not in self.commands[:-1]:
+                return subprocess.CompletedProcess(argv, 1, '', '')
+            return result
+        with self.assertRaisesRegex(recipe.RecipeFailure, '^restart:php8.5-fpm.service$'):
+            self.apply_php(command)
+        self.assertEqual(self.restored, [('8.5', {'20-pcov.ini': '/etc/php/8.5/mods-available/pcov.ini'})])
+        self.assertEqual(self.commands.count(['systemctl', 'restart', 'php8.5-fpm.service']), 2)
+        self.assertNotIn(['systemctl', 'restart', 'curl.service'], self.commands[self.commands.index(['systemctl', 'restart', 'php8.5-fpm.service']):])
+
+    def test_an_invalid_php_fpm_configuration_stops_before_its_restart(self):
+        self.php_payload()
+        with self.assertRaisesRegex(recipe.RecipeFailure, '^restart:php8.5-fpm.service$'):
+            self.apply_php(self.php_command(fpm_test=1))
+        self.assertNotIn(['systemctl', 'restart', 'php8.5-fpm.service'], self.commands)
+
+    def test_restore_fpm_links_puts_back_exactly_the_recorded_links(self):
+        root = Path(self.directory.name)
+        conf = root / 'etc/php/8.5/fpm/conf.d'
+        conf.mkdir(parents=True)
+        (conf / '20-pcov.ini').symlink_to('/mods/pcov.ini')
+        (conf / '20-gd.ini').symlink_to('/mods/gd.ini')
+        real = recipe.Path
+        with patch.object(recipe, 'Path', side_effect=lambda value, *rest: real(str(root) + value, *rest) if value == '/etc/php' else real(value, *rest)):
+            links = recipe.fpm_links('8.5')
+            (conf / '20-pcov.ini').unlink()
+            (conf / '30-extra.ini').symlink_to('/mods/extra.ini')
+            recipe.restore_fpm_links('8.5', links)
+            self.assertEqual(recipe.fpm_links('8.5'), {'20-pcov.ini': '/mods/pcov.ini', '20-gd.ini': '/mods/gd.ini'})
+
+    def test_an_extra_or_missing_cli_module_fails_the_php_modules_stage(self):
+        for modules in ('[PHP Modules]\nCore\npcov\napcu\n\n[Zend Modules]\nZend OPcache\n', '[PHP Modules]\nCore\n'):
+            self.commands.clear()
+            self.php_payload()
+            with self.subTest(modules=modules), self.assertRaisesRegex(recipe.RecipeFailure, '^php-modules:8.5$'):
+                self.apply_php(self.php_command(modules=modules))
+
     def test_restarts_active_instances_of_a_changed_package_service_template(self):
         output = subprocess.CompletedProcess([], 0, '/usr/lib/systemd/system/wg-quick@.service\n', '')
         with patch.object(recipe, 'run', return_value=output):
@@ -81,7 +165,7 @@ class ConvergenceTest(unittest.TestCase):
     def test_health_failure_never_retries_or_rolls_back(self):
         def command(argv, **kwargs):
             result = self.command(argv, **kwargs)
-            if argv[:2] == ['systemctl', 'is-active']:
+            if argv == ['systemctl', 'is-active', '--quiet', 'curl.service']:
                 raise recipe.RecipeFailure()
             return result
         with self.assertRaisesRegex(recipe.RecipeFailure, '^health:curl.service$'):

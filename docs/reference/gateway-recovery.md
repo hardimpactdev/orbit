@@ -975,3 +975,5 @@ An unreachable Node changed nothing, so it does not halt the fleet; the catch-up
 [Node recipe convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) applies and verifies machine software on one Node. It shares the Node role and self-update locks with release rollout.
 
 Release rollout updates Orbit itself, with a timer to catch up missed Nodes. [Nightly recipe maintenance](/reference/compute-drivers#nightly-recipe-maintenance) waits for every configured host to promote the deployed recipe, then calls Node recipe convergence in fleet order. That page owns the schedule, night window, alerts, and recovery policy.
+
+Converging the Gateway Node also brings its PHP to the recipe's [PHP build](/reference/compute-drivers#php-build). When that changes a PHP package, convergence validates PHP-FPM and restarts `php8.5-fpm`, which serves the API. A failed restart restores the module links it changed and starts the service again. Converge the Gateway last and while no long request runs.

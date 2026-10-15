@@ -55,6 +55,28 @@ class ImageRecipeTest(unittest.TestCase):
         self.assertTrue(any(c[:2] == ['apt-get', 'full-upgrade'] for c in self.commands))
         self.assertFalse(self.policy.exists())
 
+    def test_php_sets_load_pcov_only_in_the_cli(self):
+        self.payload['php'] = {'8.5': ['core', 'pcov'], '8.4': ['core', 'pcov']}
+        self.packages()
+        for version in ('8.4', '8.5'):
+            self.assertIn(['phpenmod', '-v', version, '-s', 'cli', 'pcov'], self.commands)
+            self.assertIn(['phpdismod', '-v', version, '-s', 'fpm', 'pcov'], self.commands)
+
+    def test_smoke_rejects_a_php_cli_that_loads_other_extensions_than_the_recipe(self):
+        self.payload.update({'identity': 'sha256:current', 'tools': {}, 'php': {'8.5': ['core', 'pcov']}})
+        marker = json.dumps({'identity': self.payload['identity'], 'profile': 'base'})
+        for modules, fails in (('[PHP Modules]\nCore\npcov\n', False), ('[PHP Modules]\nCore\npcov\napcu\n', True)):
+            output = subprocess.CompletedProcess([], 0, modules, '')
+            with self.subTest(modules=modules), patch.object(recipe.Path, 'read_text', return_value=marker), \
+                 patch.object(recipe.Path, 'exists', return_value=False), \
+                 patch.object(recipe, 'inspect', return_value={}), \
+                 patch.object(recipe, 'run', return_value=output):
+                if fails:
+                    with self.assertRaises(recipe.RecipeFailure):
+                        recipe.image_verify(self.payload)
+                else:
+                    recipe.image_verify(self.payload)
+
     def test_role_packages_do_not_upgrade_the_published_base(self):
         self.payload['profile'] = 'gateway'
         self.packages()

@@ -27,12 +27,7 @@ final readonly class RecipeLoader
         foreach (['caddy', 'vp', 'vp-cli', 'node', 'pnpm', 'bun', 'rust', 'cargo', 'rust-std', 'clippy', 'rustfmt', 'orbit-agent', 'libgd3', 'php-common'] as $name) {
             $catalog[$name] = 'artifact';
         }
-        foreach (['8.5', '8.4'] as $version) {
-            foreach (['cli', 'fpm', 'common', 'bcmath', 'curl', 'gd', 'imagick', 'igbinary', 'intl', 'mbstring', 'mysql', 'pgsql', 'redis', 'sqlite3', 'xml', 'zip', 'pcov', 'readline'] as $suffix) {
-                $catalog["php{$version}-{$suffix}"] = 'artifact';
-            }
-        }
-        $catalog['php8.4-opcache'] = 'artifact';
+        // The `php<version>-*` pins are artifacts too. The recipe's `php` object lists them, so they have no copy here.
         $catalog['pi'] = 'internal';
 
         return $catalog;
@@ -56,7 +51,7 @@ final readonly class RecipeLoader
     {
         $data = json_decode($json, false, 64, JSON_THROW_ON_ERROR);
         $this->rejectDuplicateKeys($json);
-        $root = $this->object($data, '$', ['schema_version', 'ubuntu', 'architectures', 'tools', 'common', 'roles', 'base']);
+        $root = $this->object($data, '$', ['schema_version', 'ubuntu', 'architectures', 'tools', 'common', 'php', 'roles', 'base']);
         $this->require($root->schema_version === 1, 'schema_version: expected integer 1.');
         $ubuntu = $this->object($root->ubuntu, 'ubuntu', ['release', 'snapshot']);
         $this->require($ubuntu->release === '26.04', 'ubuntu.release: expected supported release 26.04.');
@@ -68,6 +63,10 @@ final readonly class RecipeLoader
         $rawTools = $this->object($root->tools, 'tools');
         $tools = [];
         $catalog = self::catalog();
+        $phpSets = $this->phpSets($root->php, $catalog);
+        foreach ($phpSets['versions'] as $set) {
+            $catalog = [...$catalog, ...array_fill_keys($set['packages'], 'artifact')];
+        }
         foreach (get_object_vars($rawTools) as $name => $raw) {
             $this->require(isset($catalog[$name]), "tools.{$name}: unknown tool.");
             $pin = $this->object($raw, "tools.{$name}");
@@ -122,21 +121,31 @@ final readonly class RecipeLoader
             $tools[$name] = new ToolPin($source, $version, artifacts: $artifacts);
         }
         $this->require(array_diff(array_keys($catalog), array_keys($tools)) === [], 'tools: missing catalog tools: '.implode(', ', array_diff(array_keys($catalog), array_keys($tools))));
-        $common = $this->references($root->common, 'common', $tools);
+        $php = $this->phpBuilds($phpSets, $tools, $ubuntu->release);
+        $common = $this->references($root->common, 'common', $tools, $php);
         $roles = $this->object($root->roles, 'roles');
         $roleNames = array_keys(get_object_vars($roles));
         $required = ['gateway', 'app-dev', 'app-prod', 'operator'];
-        $allowed = [...$required, 'vpn', 'router', 'ingress', 'metrics', 'database', 'websocket', 'analytics'];
+        $allowed = [...$required, 'vpn', 'router', 'ingress', 'metrics', 'database', 'websocket', 'analytics', NodeRecipeProgram::CiRunnerProfile];
         $this->require(array_diff($required, $roleNames) === [] && array_diff($roleNames, $allowed) === [], 'roles: expected the four required profiles and only known Node roles.');
         $profiles = [];
         $used = $common;
+        $usedPhp = [];
         foreach ([...get_object_vars($roles), 'base' => $root->base] as $role => $raw) {
-            $extra = $this->references($raw, "profiles.{$role}", $tools);
+            $extra = $this->references($raw, "profiles.{$role}", $tools, $php);
             $this->require(array_intersect($common, $extra) === [], "profiles.{$role}: repeats a common tool.");
+            foreach ($this->strings($raw, "profiles.{$role}") as $entry) {
+                if (str_starts_with($entry, 'php:')) {
+                    $usedPhp[] = substr($entry, 4);
+                }
+            }
             $used = [...$used, ...$extra];
-            $effective = [...$common, ...$extra];
+            $effective = array_values(array_unique([...$common, ...$extra]));
             sort($effective, SORT_STRING);
             $profiles[$role] = $effective;
+        }
+        foreach (array_keys($php) as $version) {
+            $this->require(in_array((string) $version, $usedPhp, true), "php.versions.{$version}: no profile names php:{$version}.");
         }
         $this->require(array_diff(array_keys($tools), $used) === [], 'tools: unused tool entries.');
         // Locations of internal bytes are deliberately not software identity.
@@ -150,7 +159,82 @@ final readonly class RecipeLoader
         }
         $canonical = json_encode($this->canonical($identityData), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
 
-        return new MachineRecipe('sha256:'.hash('sha256', $canonical), $snapshot, $architectures, $tools, $profiles, $canonical, $json);
+        return new MachineRecipe('sha256:'.hash('sha256', $canonical), $snapshot, $architectures, $tools, $profiles, $canonical, $json, $php, $phpSets['ci']);
+    }
+
+    /**
+     * Structure of the `php` object, before the pins exist. See ADR 0215.
+     *
+     * @param  array<string, string>  $catalog
+     * @return array{ci: string, shared: list<string>, versions: array<string, array{packages: list<string>, extensions: list<string>}>}
+     */
+    private function phpSets(mixed $value, array $catalog): array
+    {
+        $raw = $this->object($value, 'php', ['ci', 'shared', 'versions']);
+        $shared = $this->strings($raw->shared, 'php.shared');
+        $this->require($shared !== [], 'php.shared: expected the shared PHP pins.');
+        foreach ($shared as $name) {
+            $this->require(($catalog[$name] ?? null) === 'artifact' && preg_match('/^php\d+\.\d+-/', $name) !== 1, "php.shared: [{$name}] is not a shared artifact pin.");
+        }
+        $versions = [];
+        foreach (get_object_vars($this->object($raw->versions, 'php.versions')) as $version => $rawSet) {
+            $field = "php.versions.{$version}";
+            $this->require(preg_match('/^[0-9]+\.[0-9]+$/D', (string) $version) === 1, "{$field}: expected a PHP version such as 8.5.");
+            $set = $this->object($rawSet, $field, ['packages', 'extensions']);
+            $packages = $this->strings($set->packages, "{$field}.packages");
+            foreach ($packages as $name) {
+                $this->require(preg_match('/^php'.preg_quote((string) $version, '/').'-[a-z0-9]+$/D', $name) === 1, "{$field}.packages: [{$name}] is not a php{$version}- package.");
+            }
+            foreach (['cli', 'common', 'fpm'] as $required) {
+                $this->require(in_array("php{$version}-{$required}", $packages, true), "{$field}.packages: missing php{$version}-{$required}.");
+            }
+            $extensions = $this->strings($set->extensions, "{$field}.extensions");
+            $sorted = $extensions;
+            sort($sorted, SORT_STRING);
+            $this->require($sorted === $extensions, "{$field}.extensions: expected a sorted list.");
+            foreach ($extensions as $extension) {
+                $this->require(preg_match('/^[a-z0-9_]+(?: [a-z0-9_]+)?$/D', $extension) === 1, "{$field}.extensions: [{$extension}] is not a lower-case module name.");
+            }
+            $this->require(in_array('core', $extensions, true) && in_array('pcov', $extensions, true), "{$field}.extensions: expected core and pcov.");
+            $versions[(string) $version] = ['packages' => $packages, 'extensions' => $extensions];
+        }
+        $this->require($versions !== [], 'php.versions: expected at least one PHP version.');
+        $ci = $this->text($raw->ci, 'php.ci');
+        $this->require(isset($versions[$ci]), "php.ci: [{$ci}] is not a declared PHP version.");
+
+        return ['ci' => $ci, 'shared' => $shared, 'versions' => $versions];
+    }
+
+    /**
+     * One exact build per version: the PHP core pins share the `php<version>-common` version, and every pin is built
+     * for the recipe's Ubuntu release.
+     *
+     * @param  array{ci: string, shared: list<string>, versions: array<string, array{packages: list<string>, extensions: list<string>}>}  $sets
+     * @param  array<string, ToolPin>  $tools
+     * @return array<string, PhpBuild>
+     */
+    private function phpBuilds(array $sets, array $tools, string $release): array
+    {
+        $builds = [];
+        foreach ($sets['versions'] as $version => $set) {
+            $field = "php.versions.{$version}";
+            $core = $tools["php{$version}-common"]->version;
+            $upstream = explode('-', preg_replace('/^[0-9]+:/', '', $core) ?? $core, 2)[0];
+            $this->require(preg_match('/^'.preg_quote($version, '/').'\.[0-9]+$/D', $upstream) === 1, "{$field}: php{$version}-common [{$core}] is not a PHP {$version} build.");
+            foreach ($set['packages'] as $name) {
+                $pinned = $tools[$name]->version;
+                $this->require(! str_starts_with($pinned, $version.'.') || $pinned === $core, "{$field}: [{$name}] is version [{$pinned}], but the PHP {$version} core pins are [{$core}]. Change every pin of one PHP version together.");
+            }
+            $packages = [...$set['packages'], ...$sets['shared']];
+            sort($packages, SORT_STRING);
+            foreach ($packages as $name) {
+                $pinned = $tools[$name]->version;
+                $this->require(str_contains($pinned, '+ubuntu'.$release), "{$field}: [{$name}] version [{$pinned}] is not built for Ubuntu {$release}.");
+            }
+            $builds[$version] = new PhpBuild($version, $upstream, $packages, $set['extensions']);
+        }
+
+        return $builds;
     }
 
     private function require(bool $condition, string $message): void
@@ -199,17 +283,36 @@ final readonly class RecipeLoader
         return $result;
     }
 
-    /** @param array<string, ToolPin> $tools
+    /**
+     * A `php:<version>` entry expands to that version's PHP set. A PHP pin is never named on its own.
+     *
+     * @param  array<string, ToolPin>  $tools
+     * @param  array<string, PhpBuild>  $php
      * @return list<string>
      */
-    private function references(mixed $value, string $field, array $tools): array
+    private function references(mixed $value, string $field, array $tools, array $php): array
     {
-        $names = $this->strings($value, $field);
-        foreach ($names as $name) {
+        $phpPins = [];
+        foreach ($php as $build) {
+            $phpPins = [...$phpPins, ...$build->packages];
+        }
+        $names = [];
+        foreach ($this->strings($value, $field) as $name) {
+            if (str_starts_with($name, 'php:')) {
+                $build = $php[substr($name, 4)] ?? null;
+                $this->require($build instanceof PhpBuild, "{$field}: unknown PHP set [{$name}].");
+                if ($build instanceof PhpBuild) {
+                    $names = [...$names, ...$build->packages];
+                }
+
+                continue;
+            }
             $this->require(isset($tools[$name]), "{$field}: unknown or missing tool [{$name}].");
+            $this->require(! in_array($name, $phpPins, true) && preg_match('/^php\d+\.\d+-/', $name) !== 1, "{$field}: names the PHP pin [{$name}]; name its set, php:<version>, instead.");
+            $names[] = $name;
         }
 
-        return $names;
+        return array_values(array_unique($names));
     }
 
     private function canonical(mixed $value): mixed

@@ -179,6 +179,28 @@ def extract(archive, destination):
     return destination
 
 
+def cli_modules(version):
+    """The modules the PHP CLI loads, as the recipe lists them: lower case, sorted, without section headers."""
+    output = run(['/usr/bin/php' + version, '-m']).stdout
+    return sorted({line.strip().lower() for line in output.splitlines() if line.strip() and not line.startswith('[')})
+
+
+def fpm_links(version):
+    """The PHP-FPM module links of one version, name to target."""
+    directory = Path('/etc/php') / version / 'fpm/conf.d'
+    return {path.name: os.readlink(path) for path in directory.glob('*.ini') if path.is_symlink()} if directory.is_dir() else {}
+
+
+def restore_fpm_links(version, links):
+    directory = Path('/etc/php') / version / 'fpm/conf.d'
+    for path in directory.glob('*.ini'):
+        if path.is_symlink() and links.get(path.name) != os.readlink(path):
+            path.unlink()
+    for name, target in links.items():
+        if not (directory / name).is_symlink():
+            os.symlink(target, directory / name)
+
+
 def active_services():
     output = run(['systemctl', 'list-units', '--type=service', '--state=active', '--no-legend', '--plain']).stdout
     return {line.split()[0] for line in output.splitlines() if line.strip()}
@@ -409,11 +431,37 @@ def apply(payload):
                 raise RecipeFailure()
             after = packages()
             changed = sorted(name for name in before.keys() | after.keys() if before.get(name) != after.get(name))
+            php = payload.get('php') or {}
+            stage = 'php'
+            links = {version: fpm_links(version) for version in sorted(php)}
+            # PCOV loads in the CLI and never in PHP-FPM (ADR 0215). A fresh package enables it for every SAPI.
+            for version in sorted(php):
+                if 'php' + version + '-pcov' in tools:
+                    run(['phpenmod', '-v', version, '-s', 'cli', 'pcov'])
+                    run(['phpdismod', '-v', version, '-s', 'fpm', 'pcov'])
+            # Check the build before any service restarts into it.
+            for version, expected in sorted(php.items()):
+                stage = 'php-modules:' + version
+                if cli_modules(version) != expected:
+                    raise RecipeFailure()
             stage = 'restart'
             restarted = services_for(changed, active)
             for service in restarted:
                 stage = 'restart:' + service
-                run(['systemctl', 'restart', service])
+                fpm = re.fullmatch(r'php([0-9]+\.[0-9]+)-fpm\.service', service)
+                if not fpm:
+                    run(['systemctl', 'restart', service])
+                    continue
+                # A pool that fails validation would stop every site of this version; never restart into it.
+                run(['/usr/sbin/php-fpm' + fpm.group(1), '-t'])
+                started = run(['systemctl', 'restart', service], required=False).returncode == 0
+                if not started or run(['systemctl', 'is-active', '--quiet', service], required=False).returncode:
+                    # Roll back the configuration this run changed and start the service on it again. Packages stay:
+                    # Sury no longer serves the previous build.
+                    if fpm.group(1) in links:
+                        restore_fpm_links(fpm.group(1), links[fpm.group(1)])
+                    run(['systemctl', 'restart', service], required=False)
+                    raise RecipeFailure(stage)
             stage = 'health'
             # Check all services active before this operation, including unchanged services; restart none here.
             for service in sorted(active):

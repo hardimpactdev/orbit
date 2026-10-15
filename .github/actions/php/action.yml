@@ -1,0 +1,41 @@
+name: Set up the recipe PHP build
+description: >-
+  Installs the machine software recipe's PHP build on a GitHub-hosted runner and verifies it on every runner.
+  A self-hosted runner is never changed; the job fails when its PHP differs from the recipe. See ADR 0215.
+inputs:
+  coverage:
+    description: pcov loads PCOV and enables coverage; none keeps PCOV loaded with pcov.enabled=0
+    default: pcov
+runs:
+  using: composite
+  steps:
+    - name: Compute the PHP package cache key
+      id: key
+      if: runner.environment == 'github-hosted'
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      run: printf 'key=%s\n' "$(python3 bin/php-build key)" >> "$GITHUB_OUTPUT"
+
+    # Sury deletes a file from its pool when it publishes a newer build. The cache keeps the pinned files until the
+    # recipe moves to the new build.
+    - name: Restore the PHP packages
+      if: runner.environment == 'github-hosted'
+      uses: actions/cache@v6
+      with:
+        path: ~/.cache/orbit-php-build
+        key: orbit-php-build-${{ steps.key.outputs.key }}
+
+    - name: Install the recipe PHP build
+      if: runner.environment == 'github-hosted'
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      env:
+        COVERAGE: ${{ inputs.coverage }}
+      run: |
+        sudo python3 bin/php-build install --ci --coverage "$COVERAGE" --cache "$HOME/.cache/orbit-php-build"
+        sudo chown -R "$(id -u):$(id -g)" "$HOME/.cache/orbit-php-build"
+
+    - name: Verify the recipe PHP build
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      run: python3 bin/php-build verify

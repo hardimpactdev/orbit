@@ -45,7 +45,7 @@ final readonly class RecipeImagePrograms
         }
     }
 
-    /** @return array{identity: string, snapshot: string, architecture: string, profile: string, tools: array<string, mixed>} */
+    /** @return array{identity: string, snapshot: string, architecture: string, profile: string, tools: array<string, mixed>, php: object} */
     private function payload(IncusGuestShell $shell, MachineRecipe $recipe, string $profile): array
     {
         $arch = $shell->asRoot(['dpkg', '--print-architecture']);
@@ -68,7 +68,7 @@ final readonly class RecipeImagePrograms
         }
 
         return ['identity' => $recipe->identity, 'snapshot' => $recipe->snapshot, 'architecture' => $architecture,
-            'profile' => $profile, 'tools' => $tools];
+            'profile' => $profile, 'tools' => $tools, 'php' => (object) $recipe->phpExtensions(array_keys($tools))];
     }
 
     private function script(): string

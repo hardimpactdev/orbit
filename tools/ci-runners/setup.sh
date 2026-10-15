@@ -13,10 +13,12 @@
 # the host's process list. The script hands the token to the container on stdin, but config.sh takes it as an
 # argument, so it shows in the host's process list for the seconds that config.sh runs.
 #
-# `container` installs missing packages without upgrading installed ones, and sets raw.apparmor on an existing
-# container; a changed raw.apparmor applies at the next restart. Run it only while the runner is idle.
+# `container` installs missing packages without upgrading installed ones, except the recipe's PHP build, which
+# bin/php-build installs and moves to the recipe. It sets raw.apparmor on an existing container; a changed raw.apparmor
+# applies at the next restart. Run it only while the runner is idle, from a checkout of main.
 set -euo pipefail
 
+REPOSITORY=$(cd "$(dirname "$0")/../.." && pwd)
 PROJECT=orbit-ci
 NETWORK=orbitci0
 ACL=orbit-ci-egress
@@ -108,8 +110,10 @@ container() {
   [ "$(incus list "$name" --project "$PROJECT" -c s -f csv)" = RUNNING ] || incus start "$name" --project "$PROJECT"
   for _ in $(seq 90); do in_ct "$name" getent hosts archive.ubuntu.com >/dev/null 2>&1 && break; sleep 1; done
 
-  incus file push /usr/share/keyrings/orbit-sury-php.gpg "$name/usr/share/keyrings/orbit-sury-php.gpg" --project "$PROJECT"
-  incus file push /etc/apt/sources.list.d/orbit-php.sources "$name/etc/apt/sources.list.d/orbit-php.sources" --project "$PROJECT"
+  # The recipe's exact PHP build (ADR 0215), the same one that CI publishes caches for. A rerun moves it to the recipe.
+  in_ct "$name" install -d -m 0700 /root/orbit-php-build
+  incus file push "$REPOSITORY/bin/php-build" "$name/root/orbit-php-build/php-build" --project "$PROJECT"
+  incus file push "$REPOSITORY/apps/gateway/resources/machine-software/recipe.json" "$name/root/orbit-php-build/recipe.json" --project "$PROJECT"
 
   in_ct "$name" env RUNNER_VERSION="$RUNNER_VERSION" RUNNER_SHA256="$RUNNER_SHA256" \
     COMPOSER_VERSION="$COMPOSER_VERSION" COMPOSER_SHA256="$COMPOSER_SHA256" bash -euo pipefail <<'SH'
@@ -125,10 +129,10 @@ echo "deb [signed-by=$caddy_key] https://dl.cloudsmith.io/public/caddy/stable/de
   > /etc/apt/sources.list.d/caddy-stable.list
 apt-get update -qq
 apt-get install -y -qq --no-install-recommends --no-upgrade \
-  php8.5-cli php8.5-bcmath php8.5-curl php8.5-gd php8.5-igbinary php8.5-intl php8.5-mbstring php8.5-mysql \
-  php8.5-pcov php8.5-pgsql php8.5-readline php8.5-redis php8.5-sqlite3 php8.5-xml php8.5-zip \
   git curl ca-certificates jq unzip zip rsync sqlite3 python3 openssh-client socat netcat-openbsd bind9-dnsutils \
-  acl attr wireguard-tools openssl nodejs caddy tar gzip xz-utils libkrb5-3 zlib1g >/dev/null
+  acl attr wireguard-tools openssl nodejs caddy tar gzip xz-utils libkrb5-3 zlib1g gpgv >/dev/null
+python3 /root/orbit-php-build/php-build install --recipe /root/orbit-php-build/recipe.json --no-composer \
+  --cache /var/cache/orbit/php-build >/dev/null
 # The runner's own native dependencies (ICU, OpenSSL, Kerberos, zlib) come with the list above; its
 # installdependencies.sh only knows libicu names up to 76.
 systemctl disable --now caddy >/dev/null 2>&1 || true
