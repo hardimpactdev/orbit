@@ -117,6 +117,7 @@
               "reference/github-app",
               "reference/database-role",
               "reference/node-agent",
+              "reference/remote-programs",
               "reference/metrics",
               "reference/service-metrics",
               "reference/analytics",
@@ -661,6 +662,7 @@
               "decisions/0205-publish-database-credentials-to-vaultwarden",
               "decisions/0206-build-task-vm-images-as-chains-of-small-jobs",
               "decisions/0210-give-each-extension-its-own-code-boundary",
+              "decisions/0211-ship-node-changes-as-remote-programs",
               "decisions/0212-turn-proxycli-into-the-ai-router-extension",
               "decisions/0213-run-ci-runners-through-a-ci-runner-role",
               "decisions/0214-pin-the-ai-router-version-and-flag-upgrades"

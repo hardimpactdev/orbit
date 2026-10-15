@@ -544,11 +544,14 @@ final readonly class RecordCommandActivity
             return $updates;
         }
 
+        $properties = $updates['properties'] ?? null;
+
         return [
             ...$updates,
             'exit_code' => $result->exitCode,
             'properties' => [
-                ...($activity->properties?->toArray() ?? []),
+                // Keep what this request already recorded, such as the removal progress.
+                ...(is_array($properties) ? $properties : ($activity->properties?->toArray() ?? [])),
                 'stdout' => $this->redact($request, $result->stdout),
                 'stderr' => $this->redact($request, $result->stderr),
                 'output_truncated' => $result->truncated,

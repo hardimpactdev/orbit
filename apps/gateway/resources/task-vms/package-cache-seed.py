@@ -85,7 +85,7 @@ def seed_npm(source, home, artifact, digest):
 
 if __name__ == '__main__':
     shared = Path(sys.argv[1])
-    for attempt in range(100):
+    for _attempt in range(100):
         if (shared / '.orbit-owned').is_file():
             break
         time.sleep(0.1)

@@ -611,6 +611,25 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: sudo -n find . -xdev -user root -prune -exec rm -rf --one-file-system -- {} +
 
+  # The programs that the Gateway runs on Nodes: shellcheck, ruff, and their direct tests (docs/reference/remote-programs.md).
+  remote-programs:
+    name: Remote programs
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install shellcheck, PHP, and ruff
+        run: |
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install --no-install-recommends --yes shellcheck php-cli
+          python3 -m venv "$RUNNER_TEMP/ruff"
+          "$RUNNER_TEMP/ruff/bin/pip" install --quiet ruff==0.17.0
+          echo "$RUNNER_TEMP/ruff/bin" >> "$GITHUB_PATH"
+      - name: Lint and test the remote programs
+        run: bin/remote-programs-check
+
   docs-merge-ref:
     name: Docs (merge ref)
     if: github.event_name == 'pull_request'
@@ -911,7 +930,7 @@ jobs:
   required:
     name: Required checks
     if: always()
-    needs: [project, gateway-plan, gateway-shards, privileged, docs-merge-ref, api-reference, web, pi-server, agent, desktop]
+    needs: [project, gateway-plan, gateway-shards, privileged, remote-programs, docs-merge-ref, api-reference, web, pi-server, agent, desktop]
     runs-on: ubuntu-26.04
     steps:
       - name: Require every project to pass
@@ -923,13 +942,14 @@ jobs:
           GATEWAY_SHARDED: ${{ needs.gateway-plan.outputs.sharded }}
           GATEWAY_SHARDS_RESULT: ${{ needs.gateway-shards.result }}
           PRIVILEGED_RESULT: ${{ needs.privileged.result }}
+          REMOTE_PROGRAMS_RESULT: ${{ needs.remote-programs.result }}
           API_REFERENCE_RESULT: ${{ needs.api-reference.result }}
           WEB_RESULT: ${{ needs.web.result }}
           PI_SERVER_RESULT: ${{ needs.pi-server.result }}
           AGENT_RESULT: ${{ needs.agent.result }}
           DESKTOP_RESULT: ${{ needs.desktop.result }}
         run: |
-          test "$PROJECT_RESULT" = success && test "$PRIVILEGED_RESULT" = success && test "$API_REFERENCE_RESULT" = success && test "$WEB_RESULT" = success && test "$PI_SERVER_RESULT" = success && test "$AGENT_RESULT" = success && test "$DESKTOP_RESULT" = success && {
+          test "$PROJECT_RESULT" = success && test "$PRIVILEGED_RESULT" = success && test "$REMOTE_PROGRAMS_RESULT" = success && test "$API_REFERENCE_RESULT" = success && test "$WEB_RESULT" = success && test "$PI_SERVER_RESULT" = success && test "$AGENT_RESULT" = success && test "$DESKTOP_RESULT" = success && {
             if [ "$EVENT" = pull_request ]; then
               test "$DOCS_MERGE_REF_RESULT" = success && test "$GATEWAY_PLAN_RESULT" = success && {
                 # The shards run exactly when the plan chose them.

@@ -141,18 +141,19 @@ function tvm_guard_sources(): array
 }
 
 /**
- * The guard sees a credential only on input that GitReadScript marked. Code that builds the credential itself, or a
- * new path that sends remote commands with GitHub access in reach, would pass it unseen. Such a change fails here and
- * must use GitReadScript, or Gateway-side Git for task VMs, and then join the list on purpose.
+ * The guard sees a credential only on input that GitReadScript or the SSH program runner marked. Code that builds the
+ * credential itself, or a new path that sends remote commands with GitHub access in reach, would pass it unseen. Such
+ * a change fails here and must use one of them, or Gateway-side Git for task VMs, and then join the list on purpose.
  */
-it('leaves GitReadScript the only builder of a remote command with a GitHub credential', function (): void {
+it('leaves GitReadScript and the program runner the only builders of a remote command with a GitHub credential', function (): void {
     $sources = tvm_guard_sources();
     $only = static function (string $pattern) use ($sources): array {
         return array_keys(array_filter($sources, static fn (string $source): bool => preg_match($pattern, $source) === 1));
     };
 
     expect($only('/->bashPreamble\(/'))->toBe(['app/Infrastructure/GitHub/GitReadScript.php'])
-        ->and($only('/ProtectedInput::gitCredential\(/'))->toBe(['app/Infrastructure/GitHub/GitReadScript.php'])
+        // A remote program receives the Git read environment in its JSON input, on protected input.
+        ->and($only('/ProtectedInput::gitCredential\(/'))->toBe(['app/Infrastructure/GitHub/GitReadScript.php', 'app/Infrastructure/RemotePrograms/SshProgramRunner.php'])
         ->and($only('/extraheader/i'))->toBe(['app/Domain/GitHub/GitReadEnvironment.php'])
         // The publisher removes the token from Git's error output; the others only unset or filter the variables.
         ->and($only('/x-access-token/'))->toBe(['app/Domain/GitHub/GitReadEnvironment.php', 'app/Infrastructure/Tasks/GitHubTaskPullRequestPublisher.php'])
@@ -161,6 +162,7 @@ it('leaves GitReadScript the only builder of a remote command with a GitHub cred
         ->and($only('/->variables\b/'))->toBe([
             'app/Domain/GitHub/GitReadEnvironment.php',
             'app/Infrastructure/GatewayReleases/GatewayReleaseBuilder.php',
+            'app/Infrastructure/RemotePrograms/SshProgramRunner.php',
             'app/Infrastructure/SourceControl/NativeRepositoryDefaultBranchResolver.php',
             'app/Infrastructure/TaskVms/TaskVmGit.php',
             'app/Infrastructure/Tasks/NativeDeliverablePathRepository.php',
@@ -171,11 +173,11 @@ it('leaves GitReadScript the only builder of a remote command with a GitHub cred
     expect(array_values(array_intersect($remote, $access)))->toBe([
         'app/Infrastructure/Instances/RemoteDevelopmentDeployment.php',
         'app/Infrastructure/Instances/RemoteDevelopmentInstanceSourceLifecycle.php',
-        'app/Infrastructure/Instances/RemoteDevelopmentInstanceSourceRemoval.php',
         'app/Infrastructure/Instances/RemoteInstanceCloneCandidateInspector.php',
         'app/Infrastructure/Instances/RemoteProductionDeployment.php',
         'app/Infrastructure/Instances/RemoteProductionInstanceSourceLifecycle.php',
         'app/Infrastructure/Projects/RemoteProjectUpdateSourceMutator.php',
+        'app/Infrastructure/RemotePrograms/SshProgramRunner.php',
         'app/Infrastructure/TaskVms/TaskVmGit.php',
         'app/Infrastructure/Tasks/GitHubTaskBaseBranchFetcher.php',
         'app/Infrastructure/Tasks/GitHubTaskPullRequestPublisher.php',
