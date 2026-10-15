@@ -1644,6 +1644,7 @@
                 "Instance",
                 "Node",
                 "Process",
+                "Project",
                 "Role",
                 "Route"
             ],

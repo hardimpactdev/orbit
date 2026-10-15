@@ -2,15 +2,19 @@
 
 declare(strict_types=1);
 
+use App\Actions\DatabaseConnections\AttachDatabaseConnectionAction;
 use App\Actions\Instances\CloneInstanceAction;
 use App\Actions\Instances\CloneInstanceEnvironmentAction;
 use App\Actions\Instances\DestroyInstanceAction;
 use App\Actions\Instances\InstantiateProjectRuntimeDefinitionsAction;
+use App\Actions\Instances\SynchronizeInstanceEnvironmentAction;
 use App\Data\Instances\CloneInstanceData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\DatabaseConnections\DatabaseConnectionEnvProjection;
+use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Instances\CloneCandidateSource;
 use App\Domain\Instances\DevelopmentSourceProfile;
 use App\Domain\Instances\DevelopmentSourceResolution;
@@ -59,6 +63,8 @@ use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Cluster;
+use App\Models\DatabaseConnection;
+use App\Models\DatabaseConnectionTarget;
 use App\Models\Instance;
 use App\Models\InstanceEnvironmentValue;
 use App\Models\Node;
@@ -139,6 +145,20 @@ beforeEach(function (): void {
         new InstanceEnvironmentRenderer,
         $this->writer,
     );
+    $this->attachDatabase = new AttachDatabaseConnectionAction(
+        $this->lock,
+        $contexts,
+        $store,
+        app(DatabaseConnectionEnvProjection::class),
+    );
+    $this->synchronizeEnvironment = new SynchronizeInstanceEnvironmentAction(
+        $this->lock,
+        $contexts,
+        $store,
+        new Orb198EnvironmentPreflight,
+        new InstanceEnvironmentRenderer,
+        $this->writer,
+    );
     $this->metrics = Mockery::spy(MetricsFleetReconciler::class);
     $this->action = new CloneInstanceAction(
         $this->inspector,
@@ -152,6 +172,8 @@ beforeEach(function (): void {
         $this->projection,
         $this->cloneProjection,
         $this->projectionOwner,
+        $this->attachDatabase,
+        $this->synchronizeEnvironment,
         $this->metrics,
     );
     $this->data = new CloneInstanceData(
@@ -231,18 +253,78 @@ it('prepares an independent production target and activates its explicit private
         ])
         ->and($this->sqlite->calls)->toHaveCount(1)
         ->and($this->writer->contents)
-        ->toBe("APP_DEBUG=\"false\"\nAPP_ENV=\"production\"\nAPP_KEY=\"base64:literal-candidate-key\"\nAPP_URL=\"https://shop.com.prod.orbit/production\"\n")
+        ->toBe("APP_DEBUG=\"false\"\nAPP_ENV=\"production\"\nAPP_KEY=\"base64:literal-candidate-key\"\nAPP_URL=\"https://shop.com.prod.orbit/production\"\nDB_CONNECTION=\"sqlite\"\nDB_DATABASE=\"{$target->production_home}/database.sqlite\"\n")
         ->and($this->writer->observedRouteStatus)->toBe(RouteStatus::Pending)
         ->and($this->writer->observedTargetStatus)->toBe(InstanceState::SourceResolved);
 
     $sourceValues = $this->candidate->environmentValues()->orderBy('env_key')->get();
     $targetValues = $target->environmentValues()->orderBy('env_key')->get();
-    expect($targetValues->pluck('env_value', 'env_key')->except(['APP_DEBUG', 'APP_ENV'])->all())
+    expect($targetValues->pluck('env_value', 'env_key')->except(['APP_DEBUG', 'APP_ENV', 'DB_CONNECTION', 'DB_DATABASE'])->all())
         ->toBe($sourceValues->pluck('env_value', 'env_key')->except(['APP_DEBUG', 'APP_ENV'])->all())
         ->and($targetValues->firstWhere('env_key', 'APP_ENV')?->env_value)->toBe('production')
         ->and($targetValues->firstWhere('env_key', 'APP_DEBUG')?->env_value)->toBe('false')
         ->and($targetValues->pluck('id')->intersect($sourceValues->pluck('id'))->all())->toBeEmpty()
         ->and($this->lock->owners)->toContain([$this->candidate->id], [$this->candidate->id, $target->id]);
+});
+
+it('attaches an owned production SQLite connection and drops candidate database values', function (): void {
+    foreach (['DB_CONNECTION' => 'mysql', 'DB_HOST' => 'dev-db', 'DB_DATABASE' => 'dev', 'DB_PASSWORD' => 'secret', 'DB_CUSTOM' => 'dev-only', 'QUEUE_CONNECTION' => 'database'] as $key => $value) {
+        $this->candidate->environmentValues()->create(['env_key' => $key, 'env_value' => $value]);
+    }
+
+    $target = $this->action->execute($this->candidate, $this->data)['instance'];
+    $connection = DatabaseConnection::query()->sole();
+    $attachment = DatabaseConnectionTarget::query()->sole();
+
+    expect($connection->slug)->toBe('clone-domain-preview')
+        ->and($connection->driver)->toBe(DatabaseDriver::Sqlite)
+        ->and($connection->node_id)->toBe($this->targetNode->id)
+        ->and($connection->owner_instance_id)->toBe($target->id)
+        ->and($connection->path)->toBe("{$target->production_home}/database.sqlite")
+        ->and($attachment->instance_id)->toBe($target->id)
+        ->and($attachment->database_connection_id)->toBe($connection->id)
+        ->and($attachment->prefix)->toBe('DB')
+        ->and($target->environmentValues()->where('env_key', 'like', 'DB_%')->pluck('env_value', 'env_key')->all())
+        ->toBe(['DB_CONNECTION' => 'sqlite', 'DB_DATABASE' => "{$target->production_home}/database.sqlite"])
+        ->and($this->writer->contents)->toContain("DB_DATABASE=\"{$target->production_home}/database.sqlite\"", 'QUEUE_CONNECTION="database"')
+        ->not->toContain('dev-db', 'secret', 'DB_CUSTOM')
+        ->and($this->candidate->environmentValues()->where('env_key', 'DB_HOST')->sole()->env_value)->toBe('dev-db');
+});
+
+it('reuses the SQLite connection and attachment after a sync failure before the checkpoint', function (): void {
+    $this->writer->failDatabaseSync = true;
+    expect(fn () => $this->action->execute($this->candidate, $this->data))->toThrow(RuntimeException::class, 'Injected database sync failure.');
+    $target = Instance::query()->where('name', 'preview')->sole();
+    $connectionId = DatabaseConnection::query()->sole()->id;
+    $attachmentId = DatabaseConnectionTarget::query()->sole()->id;
+    expect($target->provisioning_step)->toBe('clone-sqlite-prepared');
+
+    $this->writer->failDatabaseSync = false;
+    $resumed = $this->action->execute($this->candidate, $this->data);
+    $terminal = $this->action->execute($this->candidate, $this->data);
+
+    expect($resumed['instance']->id)->toBe($target->id)
+        ->and($terminal['instance']->id)->toBe($target->id)
+        ->and(DatabaseConnection::query()->sole()->id)->toBe($connectionId)
+        ->and(DatabaseConnectionTarget::query()->sole()->id)->toBe($attachmentId)
+        ->and($this->sqlite->calls)->toHaveCount(1)
+        ->and($this->writer->contents)->toContain("DB_DATABASE=\"{$target->production_home}/database.sqlite\"");
+});
+
+it('omits candidate DB keys and creates no connection without a SQLite snapshot', function (): void {
+    $this->candidate->environmentValues()->create(['env_key' => 'DB_HOST', 'env_value' => 'dev-db']);
+    $target = $this->action->execute($this->candidate, new CloneInstanceData(
+        nodeId: $this->targetNode->id,
+        name: 'preview',
+        previewName: 'shop.com',
+        branch: null,
+        sqliteSourcePath: null,
+    ))['instance'];
+
+    expect(DatabaseConnection::query()->count())->toBe(0)
+        ->and(DatabaseConnectionTarget::query()->count())->toBe(0)
+        ->and($target->environmentValues()->where('env_key', 'DB_HOST')->exists())->toBeFalse()
+        ->and($this->writer->contents)->not->toContain('DB_');
 });
 
 it('captures production runtime definitions during clone and installs them only after a release is selected', function (): void {
@@ -345,6 +427,8 @@ it('captures production runtime definitions during clone and installs them only 
         $this->projection,
         $this->cloneProjection,
         $this->projectionOwner,
+        $this->attachDatabase,
+        $this->synchronizeEnvironment,
         $this->metrics,
     );
 
@@ -439,7 +523,7 @@ it('prepares a Cluster-scoped preview with the production Node TLD', function ()
         ->and($route->targets->sole()->instance_id)->toBe($target->id)
         ->and($this->sqlite->calls)->toHaveCount(1)
         ->and($this->writer->contents)
-        ->toBe("APP_DEBUG=\"false\"\nAPP_ENV=\"production\"\nAPP_KEY=\"base64:literal-candidate-key\"\nAPP_URL=\"https://shop.com.prod.orbit/production\"\n");
+        ->toBe("APP_DEBUG=\"false\"\nAPP_ENV=\"production\"\nAPP_KEY=\"base64:literal-candidate-key\"\nAPP_URL=\"https://shop.com.prod.orbit/production\"\nDB_CONNECTION=\"sqlite\"\nDB_DATABASE=\"{$target->production_home}/database.sqlite\"\n");
 });
 
 it('refuses a Cluster-scoped destination without an active Router before reservation', function (): void {
@@ -834,12 +918,18 @@ final class Orb198DomainCloneEnvironmentWriter implements InstanceEnvironmentWri
 {
     public ?string $contents = null;
 
+    public bool $failDatabaseSync = false;
+
     public ?RouteStatus $observedRouteStatus = null;
 
     public ?InstanceState $observedTargetStatus = null;
 
     public function write(InstanceEnvironmentContext $context, string $contents): InstanceEnvironmentWriteResult
     {
+        if ($this->failDatabaseSync && str_contains($contents, 'DB_DATABASE=')) {
+            throw new RuntimeException('Injected database sync failure.');
+        }
+
         $this->contents = $contents;
         $this->observedRouteStatus = Route::query()->findOrFail($context->routeId)->status;
         $this->observedTargetStatus = Instance::query()->findOrFail($context->instanceId)->status;

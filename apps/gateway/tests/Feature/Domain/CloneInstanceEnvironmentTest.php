@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\DatabaseConnections\AttachDatabaseConnectionAction;
 use App\Actions\Instances\CloneInstanceAction;
 use App\Actions\Instances\CloneInstanceEnvironmentAction;
 use App\Actions\Instances\DeployInstanceAction;
@@ -177,6 +178,8 @@ it('clones and deploys an Instance without a route', function (): void {
         $projection,
         $cloneProjection,
         $projectionOwner,
+        app(AttachDatabaseConnectionAction::class),
+        app(SynchronizeInstanceEnvironmentAction::class),
         $metrics,
     );
 

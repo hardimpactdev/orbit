@@ -254,6 +254,10 @@ final readonly class InstanceEnvironmentStore
             }
 
             foreach ($this->storedValues($source->instanceId) as $key => $value) {
+                if (str_starts_with($key, 'DB_')) {
+                    continue;
+                }
+
                 InstanceEnvironmentValue::query()->create([
                     'instance_id' => $target->instanceId,
                     'env_key' => $key,
@@ -326,6 +330,12 @@ final readonly class InstanceEnvironmentStore
 
     private function assertCurrent(InstanceEnvironmentContext $expected, bool $requireActiveNode): void
     {
+        if ($expected->cloning) {
+            $this->assertCloneCurrent($expected, $requireActiveNode);
+
+            return;
+        }
+
         $instance = Instance::query()->lockForUpdate()->find($expected->instanceId);
 
         if (! $instance instanceof Instance) {
