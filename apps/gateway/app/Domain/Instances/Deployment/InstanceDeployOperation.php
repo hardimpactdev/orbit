@@ -47,6 +47,12 @@ final readonly class InstanceDeployOperation implements OperationKind
             return $this->outcome($deployment, $result);
         }
 
+        $restartProcesses = ! $operation->steps()->exists()
+            || $operation->steps()->where('name', DeploymentProgressPhase::ProcessRestart->value)->exists();
+        if (! $restartProcesses) {
+            $plan = array_values(array_filter($plan, static fn (DeploymentStepName $step): bool => $step->phase !== DeploymentProgressPhase::ProcessRestart));
+        }
+
         $run->plan(array_map(
             static fn (DeploymentStepName $step): OperationStepPlan => new OperationStepPlan($step->name(), $step->resumable()),
             $plan,
@@ -64,7 +70,7 @@ final readonly class InstanceDeployOperation implements OperationKind
         );
         $steps = new OperationDeploymentSteps($run, static function () use ($deployment, $collector): void {
             $deployment->update(['events' => $collector->events()]);
-        });
+        }, restartProcesses: $restartProcesses);
 
         $result = $this->deploy->execute($instance, $steps, $request);
         $this->recorder->finish($deployment, $result, $collector->events());

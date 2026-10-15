@@ -462,7 +462,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                         fi
                     done < <(sudo -u "$user" -H find -P "$releases" -mindepth 1 -maxdepth 1 -type d -printf '%f\0' | sort -z)
                     test -n "${found[$selected]:-}"
-                    # A deployment does not restart Processes, so a running process can still work in an older release.
+                    # A Process can opt out of restart or leave children that still use an older release.
                     # Keep every release that is the working directory, root, or executable of a process of the user.
                     # When a live process cannot be read, nothing is removed.
                     declare -A busy=()

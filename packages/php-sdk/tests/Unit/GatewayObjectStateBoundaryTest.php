@@ -226,6 +226,7 @@ describe('gateway object-state boundary', function (): void {
             'restart_policy' => 'unless-stopped',
             'start' => true,
             'keep_alive' => false,
+            'restart_on_deploy' => true,
             'environment' => $environment,
             'image' => 'orbit-sidecar:latest',
         ];

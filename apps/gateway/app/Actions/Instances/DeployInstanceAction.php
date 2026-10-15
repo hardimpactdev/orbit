@@ -8,6 +8,7 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\Deployment\DeploymentCommandResult;
 use App\Domain\Instances\Deployment\DeploymentConfig;
 use App\Domain\Instances\Deployment\DeploymentDeadline;
+use App\Domain\Instances\Deployment\DeploymentErrorCode;
 use App\Domain\Instances\Deployment\DeploymentEvent;
 use App\Domain\Instances\Deployment\DeploymentFailureBoundary;
 use App\Domain\Instances\Deployment\DeploymentOutputStream;
@@ -24,9 +25,7 @@ use App\Domain\Instances\Environment\InstanceEnvironmentSynchronizer;
 use App\Domain\Instances\ProductionPhpRuntimeManager;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\CommandDeadline;
-use App\Infrastructure\Processes\ProcessCancelledException;
 use App\Models\Instance;
-use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Throwable;
 
 /**
@@ -45,6 +44,7 @@ final readonly class DeployInstanceAction
         private InstantiateProjectRuntimeDefinitionsAction $definitions,
         private CommandDeadline $deadline,
         private ?DeployDefaultInstanceAction $development = null,
+        private ?RestartInstanceProcessesAction $processes = null,
     ) {}
 
     /**
@@ -76,6 +76,7 @@ final readonly class DeployInstanceAction
 
         return [
             ...$plan,
+            new DeploymentStepName(DeploymentProgressPhase::ProcessRestart),
             ...$this->stepNames($config, DeploymentPhase::AfterActivation),
             new DeploymentStepName(DeploymentProgressPhase::Cleanup),
         ];
@@ -100,7 +101,7 @@ final readonly class DeployInstanceAction
                 null,
                 null,
                 DeploymentFailureBoundary::Operation,
-                $this->errorCode($exception),
+                DeploymentErrorCode::fromException($exception),
             );
         }
 
@@ -114,7 +115,7 @@ final readonly class DeployInstanceAction
                 null,
                 null,
                 DeploymentFailureBoundary::Operation,
-                $this->errorCode($exception),
+                DeploymentErrorCode::fromException($exception),
             );
         }
     }
@@ -191,6 +192,11 @@ final readonly class DeployInstanceAction
             }
 
             $boundary = DeploymentFailureBoundary::AfterActivation;
+            $steps->run(new DeploymentStepName(DeploymentProgressPhase::ProcessRestart), $request, function () use ($instance, $request): null {
+                ($this->processes ?? app(RestartInstanceProcessesAction::class))->execute($instance, $request);
+
+                return null;
+            });
             $this->executeSteps($instance, $release, $config, DeploymentPhase::AfterActivation, $request, $steps, $commands);
             $steps->run(new DeploymentStepName(DeploymentProgressPhase::Cleanup), $request, function () use ($instance, $selected, $previous, $request): null {
                 if ($selected instanceof DeploymentRelease) {
@@ -212,7 +218,7 @@ final readonly class DeployInstanceAction
                 $release,
                 $selected,
                 $boundary,
-                $this->errorCode($exception),
+                DeploymentErrorCode::fromException($exception),
                 $commands,
             );
         }
@@ -229,7 +235,7 @@ final readonly class DeployInstanceAction
             }
 
             foreach ($outcome['in_use'] as $name) {
-                $request->emit(new DeploymentEvent('cleanup', DeploymentOutputStream::Stderr, "Kept old release {$name}: a running process still uses it. Restart that Process to free it.\n", important: true));
+                $request->emit(new DeploymentEvent('cleanup', DeploymentOutputStream::Stderr, "Kept old release {$name}: a running process still uses it. Stop or restart its remaining processes to free it.\n", important: true));
             }
         } catch (Throwable) {
             $request->emit(new DeploymentEvent('cleanup', DeploymentOutputStream::Stderr, "Release cleanup failed; a later deployment will retry cleanup.\n", important: true));
@@ -322,26 +328,5 @@ final readonly class DeployInstanceAction
     private function developmentAction(): DeployDefaultInstanceAction
     {
         return $this->development ?? app(DeployDefaultInstanceAction::class);
-    }
-
-    private function errorCode(Throwable $exception): string
-    {
-        if ($exception instanceof ResourceOperationException && $exception->errorCode === 'command.deadline_exceeded') {
-            return 'deployment.deadline_exceeded';
-        }
-
-        if ($exception instanceof ResourceOperationException || $exception instanceof RuntimeConvergenceException) {
-            return $exception->errorCode;
-        }
-
-        if ($exception instanceof ProcessCancelledException) {
-            return 'deployment.cancelled';
-        }
-
-        if ($exception instanceof ProcessTimedOutException) {
-            return 'deployment.command_timed_out';
-        }
-
-        return 'deployment.interrupted';
     }
 }

@@ -36,6 +36,7 @@ final class ProcessData extends Data
         /** Resident memory in bytes, null when unavailable — never zero for "not running". */
         public ?int $memoryBytes = null,
         public ?string $user = null,
+        public bool $restartOnDeploy = true,
     ) {}
 
     public static function fromModel(
@@ -57,6 +58,7 @@ final class ProcessData extends Data
             runtimeConfig: self::redactedRuntimeConfig($process),
             restartPolicy: $process->restart_policy,
             keepAlive: $process->keep_alive,
+            restartOnDeploy: $process->restart_on_deploy,
             desiredState: $process->desired_state->value,
             status: $process->status->value,
             runtimeStatus: $runtimeStatus,
