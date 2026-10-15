@@ -11,6 +11,10 @@ if [ "origin/$branch" = "$default" ]; then
     commit=$(git rev-parse --verify HEAD)
 else
     commit=$(git rev-parse --verify --quiet refs/worktree/orbit/ci-baseline || true)
+    # Another branch at a main commit, such as a fresh agent branch, uses that commit's own caches.
+    if [ -z "$commit" ] && [ -n "$default" ] && git merge-base --is-ancestor HEAD "$default" 2>/dev/null; then
+        commit=$(git rev-parse --verify HEAD)
+    fi
 fi
 if [ -z "$commit" ]; then
     echo 'CI caches cold: no recorded code baseline.'
