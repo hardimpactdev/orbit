@@ -681,6 +681,7 @@ describe('delivery-line proof commands', function (): void {
             '-subj', '/CN=127.0.0.1',
         ]))->mustRun();
 
+        // Allow 60 seconds for the Python TLS server to print its readiness line.
         $server = new Process([
             'python3', '-c',
             <<<'PY'
@@ -706,10 +707,10 @@ print(httpd.server_port, flush=True)
 httpd.handle_request()
 PY
             , $cert, $key,
-        ]);
+        ], timeout: 60);
         $server->start();
         $port = SubprocessFixture::line($server);
-        expect($port)->not->toBeNull();
+        expect($port)->toBeNumeric();
 
         $url = 'https://127.0.0.1:'.$port.'/up';
         $process = new Process([

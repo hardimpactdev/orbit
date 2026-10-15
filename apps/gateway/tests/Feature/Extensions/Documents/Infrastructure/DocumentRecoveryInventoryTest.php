@@ -51,7 +51,8 @@ function recovery_fixture(array $objects = []): RecoverDocumentCleanupAction
 {
     recovery_bucket($objects);
     $home = config()->string('orbit.home');
-    $server = new Process(['python3', base_path('tests/Fixtures/ProjectDocuments/inventory_http_server.py'), $home.'/bucket.json', $home.'/requests.json']);
+    // Allow 60 seconds for the inventory provider to print its readiness line.
+    $server = new Process(['python3', base_path('tests/Fixtures/ProjectDocuments/inventory_http_server.py'), $home.'/bucket.json', $home.'/requests.json'], timeout: 60);
     test()->inventoryServer = $server;
     $server->start();
     $port = SubprocessFixture::line($server);
