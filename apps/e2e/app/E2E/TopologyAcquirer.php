@@ -181,6 +181,7 @@ final readonly class TopologyAcquirer
                 $instances = array_values($target->instances());
                 $this->host->startAll($instances);
                 $this->host->waitForAgents($instances);
+                $this->images->settle($target);
                 $this->host->waitForGlobalIpv4($instances);
                 $this->guests->assertSourceMounted($target);
             });
@@ -213,7 +214,13 @@ final readonly class TopologyAcquirer
         }
         try {
             $images = $this->images->resolve($target->recipe->images());
-            $slot = $this->capacity->reserveSlot($target->recipe->vmCount());
+            $types = [];
+            $vms = 0;
+            foreach ($target->recipe->nodes as $node) {
+                $types[$node->key] = $this->images->instanceType($node->image);
+                $vms += $types[$node->key] === 'virtual-machine' ? 1 : 0;
+            }
+            $slot = $this->capacity->reserveSlot($vms);
             $metadata = [
                 'user.orbit.e2e.issue' => $target->issue,
                 'user.orbit.e2e.attempt' => $target->attempt->value,
@@ -229,7 +236,9 @@ final readonly class TopologyAcquirer
                     'node' => $node->key,
                     'address' => $node->address,
                     'slot' => $slot,
-                    'container' => $node->isContainer(),
+                    'container' => $types[$node->key] === 'container',
+                    'preserve_image_size' => $this->images->usesRecipe($node->image),
+                    ...($types[$node->key] === 'virtual-machine' ? ['config' => ['cloud-init.user-data' => "#cloud-config\nusers: []\n"]] : []),
                     'memory' => $node->memory,
                     'metadata' => [...$metadata, 'user.orbit.e2e.role-image' => $images[$node->image->value]],
                     ...(isset($mounts[$node->key]) ? ['mount' => $mounts[$node->key]] : []),

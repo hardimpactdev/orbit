@@ -55,9 +55,11 @@ The operator is separate from the host's network namespace. A host such as beast
 
 ## Role images
 
-The Gateway also builds a [host-local recipe image set](/reference/compute-drivers#build-the-base-image) once per recipe on each task VM host. Its build row exposes each immutable alias, fingerprint, Incus project, and VM type. These images include the base plus the role's recipe tools. Importing them into a task VM's nested Incus and adapting composition, including the operator image type, is ADR 0207 step 4. Until that lands, the harness below continues to build and use its own role images.
+Task groups import the [host-local recipe image set](/reference/compute-drivers#build-the-base-image) built once per recipe on their task VM host. The preparation job on `task-vms` exports each role fingerprint, transfers it directly from the host into the task VM, and records a manifest. No image bytes pass through the Gateway. The nested harness imports the needed roles from this manifest and verifies their recipe, profile, fingerprint, and VM type before composition. Missing or invalid imports fail; they never trigger a local build. This removes about 7 to 9 minutes of repeated builds per topology group, before transfer and composition costs.
 
-A role image is an identity-free Incus image with the packages and tools of one Node kind installed. There are four: `orbit-e2e-gateway`, `orbit-e2e-app-dev`, and `orbit-e2e-app-prod` are VM images, and `orbit-e2e-operator` is a container image. They live in the harness's Incus project. `bin/e2e-topology-images build` builds them the way Orbit builds the [task VM base image](/reference/compute-drivers#task-vms): it runs the role's programs in a builder, records them, and removes the identity.
+All imported roles, including the operator, are VMs. Imported guests keep the source image's minimum root disk size; the standalone 16 GiB override does not shrink a larger recipe disk. Composition counts the operator against the VM budget and uses its image type. Running topologies with the earlier operator container still work. A group keeps the recipe selected at its claim even if the host later publishes another recipe. Groups claimed before recipe recording retain the legacy harness path below; new claims always use imports.
+
+For standalone use and older groups, a role image is an identity-free Incus image with the packages and tools of one Node kind installed. There are four: `orbit-e2e-gateway`, `orbit-e2e-app-dev`, and `orbit-e2e-app-prod` are VM images, and `orbit-e2e-operator` is a container image. They live in the harness's Incus project. `bin/e2e-topology-images build` builds them the way Orbit builds the [task VM base image](/reference/compute-drivers#task-vms): it runs the role's programs in a builder, records them, and removes the identity.
 
 | Step | What happens |
 | --- | --- |
@@ -96,6 +98,7 @@ An image holds no Gateway database, CA, SSH key, WireGuard key, authorized key, 
 | --- | --- |
 | `bin/e2e-topology-images build [--role=ROLE ...]` | Builds the named role images, or all four |
 | `bin/e2e-topology-images ensure [--nodes=LIST]` | Builds only the missing role images that a topology of `LIST` needs. It leaves stale images, which compose correctly. Rendering writes the Gateway `.env` from `.env.example` when the checkout has none, as `bin/bootstrap` does. |
+| `bin/e2e-topology-images ensure --nodes=LIST --recipe-images=PATH` | Imports the needed roles from the claimed recipe manifest, verifies their image properties, and builds none |
 | `bin/e2e-topology-images status` | Prints each image's alias, fingerprint, build time, and state |
 
 ## Composition
@@ -106,7 +109,7 @@ An image holds no Gateway database, CA, SSH key, WireGuard key, authorized key, 
 | --- | --- |
 | `reserve` | Under the host lock `topology-create`, counts the declared VMs against the budget, picks a network slot, and creates the network |
 | `create` | Creates each guest from its role image, with a fixed MAC and Incus address, and mounts the worktree on the checkout Nodes |
-| `start` | Starts every guest and waits for its agent and its address |
+| `start` | Starts every guest and waits for its agent and its address. Imported recipe VMs also wait for cloud-init and a stable boot ID before composition. |
 | `bootstrap.gateway` | Prepares the worktree's Gateway `.env` and runs `orbit:bootstrap` at the Gateway's address |
 | `enroll.<node>` | Enrolls each workload Node in catalog order with `orbit:node-provision`, through the guest script `converge-node.sh` |
 | `enroll.operator` | Registers the roleless operator, grants it Gateway access, and points its CLI at the topology Gateway and CA |

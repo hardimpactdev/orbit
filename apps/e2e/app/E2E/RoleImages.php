@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace App\E2E;
 
+use App\E2E\Value\GuestCommand;
+use App\E2E\Value\GuestCommandResult;
 use App\E2E\Value\RoleImage;
+use App\E2E\Value\TopologyTarget;
 use RuntimeException;
 use Throwable;
 
@@ -31,7 +34,7 @@ final readonly class RoleImages
         $fingerprints = [];
         foreach ($images as $image) {
             try {
-                $fingerprints[$image->value] = $this->host->imageFingerprint($image->alias(), $image->instanceType());
+                $fingerprints[$image->value] = $this->host->imageFingerprint($image->alias(), $this->instanceType($image));
             } catch (RuntimeException $exception) {
                 throw new RuntimeException(
                     "The role image [{$image->alias()}] is missing; run bin/e2e-topology-images build --role={$image->value}.",
@@ -41,6 +44,57 @@ final readonly class RoleImages
         }
 
         return $fingerprints;
+    }
+
+    /** Recipe roles are VMs; the legacy standalone harness keeps its operator container. */
+    public function instanceType(RoleImage $role): string
+    {
+        return $this->usesRecipe($role) ? 'virtual-machine' : $role->instanceType();
+    }
+
+    public function usesRecipe(RoleImage $role): bool
+    {
+        return array_any($this->host->images(), static fn (array $image): bool => in_array($role->alias(), $image['aliases'], true)
+            && $image['type'] === 'virtual-machine'
+            && preg_match('/\Asha256:[a-f0-9]{64}\z/D', $image['properties']['orbit.recipe'] ?? '') === 1
+            && ($image['properties']['orbit.profile'] ?? null) === $role->value);
+
+    }
+
+    /** Recipe images retain cloud-init; wait through its seed reboot before configuring a topology. */
+    public function settle(TopologyTarget $target): void
+    {
+        $inventory = $this->host->images();
+        $guests = [];
+        foreach ($target->recipe->nodes as $node) {
+            if (array_any($inventory, static fn (array $image): bool => in_array($node->image->alias(), $image['aliases'], true) && isset($image['properties']['orbit.recipe']))) {
+                $guests[] = $target->instance($node->key);
+            }
+        }
+        if ($guests === []) {
+            return;
+        }
+        $probe = 'case "$(cloud-init status 2>/dev/null)" in *done*|*disabled*) ;; *) exit 1 ;; esac; cat /proc/sys/kernel/random/boot_id';
+        $previous = null;
+        $deadline = microtime(true) + 900;
+        do {
+            $commands = [];
+            foreach ($guests as $guest) {
+                $commands[$guest] = ['instance' => $guest, 'command' => new GuestCommand(['sh', '-c', $probe], 15)];
+            }
+            try {
+                $boots = array_map(static fn (GuestCommandResult $result): ?string => $result->successful() && trim($result->stdout) !== '' ? trim($result->stdout) : null, $this->host->execAll($commands));
+            } catch (RuntimeException) {
+                $boots = [];
+            }
+            if ($boots !== [] && ! in_array(null, $boots, true) && $boots === $previous) {
+                return;
+            }
+            $previous = $boots;
+            usleep(1_000_000);
+        } while (microtime(true) < $deadline);
+
+        throw new RuntimeException('The imported recipe guests did not finish their first boot.');
     }
 
     /**

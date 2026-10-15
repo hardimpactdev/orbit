@@ -47,6 +47,7 @@ use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
+use Tests\Support\TaskVmRecipeImages;
 use Tests\Support\TaskVmSettingsBuilder;
 
 use function Pest\Laravel\mock;
@@ -240,6 +241,7 @@ class FakeUpCloudSsh implements SshExecutor
 /** @param  array<string, mixed>  $upcloud */
 function tvm_up_settings(?array $upcloud = [], int $maxVms = 1, ?int $hostId = null): void
 {
+    TaskVmRecipeImages::ready($hostId ?? test()->host->id);
     TaskVmSettingsBuilder::bind([
         'hosts' => [TaskVmSettingsBuilder::host($hostId ?? test()->host->id, ['maxVms' => $maxVms])],
         'upcloud' => $upcloud === null ? null : new TaskVmUpCloud(...[

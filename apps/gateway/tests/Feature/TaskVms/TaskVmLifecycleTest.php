@@ -92,6 +92,7 @@ use Tests\Support\FakeAgentDriver;
 use Tests\Support\FakeNodeAgentRuntime;
 use Tests\Support\FakeToolManagerMaterializer;
 use Tests\Support\RecordingTaskVmProvider;
+use Tests\Support\TaskVmRecipeImages;
 use Tests\Support\TaskVmSettingsBuilder;
 
 use function Pest\Laravel\mock;
@@ -170,6 +171,7 @@ function tvm_life_node(string $name, string $address, string $user = 'orbit', ?R
 
 function tvm_life_settings(bool $enabled = true, int $maxVms = 2, ?int $clusterId = null): void
 {
+    TaskVmRecipeImages::ready(test()->host->id);
     TaskVmSettingsBuilder::bind([
         'enabled' => $enabled, 'devClusterId' => $clusterId, 'modelProxyOrigin' => TVM_LIFE_ORIGIN,
         'hosts' => [TaskVmSettingsBuilder::host(test()->host->id, ['maxVms' => $maxVms])],
@@ -179,6 +181,9 @@ function tvm_life_settings(bool $enabled = true, int $maxVms = 2, ?int $clusterI
 /** @param list<array{0: int, 1: int}> $hosts node id and max_vms, in config order */
 function tvm_life_hosts(array $hosts): void
 {
+    foreach ($hosts as [$hostId]) {
+        TaskVmRecipeImages::ready($hostId);
+    }
     $cidrs = ['10.251.77.0/24', '10.251.78.0/24', '10.251.79.0/24'];
     TaskVmSettingsBuilder::bind([
         'devClusterId' => null, 'modelProxyOrigin' => TVM_LIFE_ORIGIN,
@@ -1030,6 +1035,18 @@ describe(DestroyEndedTaskVmsAction::class, function (): void {
 
         expect(app(DestroyEndedTaskVmsAction::class)->execute())->toBe(1);
         Queue::assertPushed(DestroyTaskVm::class, fn (DestroyTaskVm $job): bool => $job->taskVmId === $vm->id);
+    });
+
+    it('shows a recipe image wait on a new group while a host build fails', function (): void {
+        Queue::fake();
+        $group = tvm_life_group(TaskGroupStatus::Todo);
+        $build = TaskVmRecipeImages::ready($this->host->id);
+        $build->update(['state' => 'failed']);
+        app(TaskExtensionState::class)->enable();
+
+        expect(app(TaskScheduler::class)->claimNext())->toBeNull();
+        expect($group->refresh()->capacity_wait_reason)->toBe('Task VM: waiting for recipe '.substr($build->recipe_identity, 7, 12).' images on beast.');
+        expect(TaskVm::query()->count())->toBe(0);
     });
 
     it('makes a todo group whose task VM failed ask for assistance at once, naming the VM, and gives it no other VM', function (): void {

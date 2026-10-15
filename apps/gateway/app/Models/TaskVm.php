@@ -55,6 +55,7 @@ use Throwable;
  * @property string|null $image_fingerprint
  * @property string|null $error_code
  * @property string|null $error_message
+ * @property string|null $recipe_identity
  * @property Carbon|null $ready_at when the VM last became `ready`: its first preparation, or its last resume
  * @property Carbon|null $destroyed_at
  * @property Carbon|null $created_at
@@ -76,7 +77,7 @@ final class TaskVm extends Model
     protected $fillable = [
         'group_id', 'host_node_id', 'node_id', 'provider', 'size', 'topology', 'topology_state', 'topology_run', 'topology_started_at', 'topology_error',
         'publish_commit', 'publish_branch', 'publish_state', 'publish_error', 'publish_queued_at', 'publish_started_at', 'provider_id', 'ssh_host_key', 'name', 'state', 'address', 'wireguard_ip',
-        'pi_token', 'model_key', 'model_proxy_origin', 'claimed_at', 'warmed_at', 'image_fingerprint',
+        'pi_token', 'model_key', 'model_proxy_origin', 'claimed_at', 'warmed_at', 'image_fingerprint', 'recipe_identity',
         'error_code', 'error_message', 'ready_at', 'destroyed_at',
     ];
 

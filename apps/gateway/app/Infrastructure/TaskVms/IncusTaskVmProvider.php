@@ -35,6 +35,9 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
     {
         $observation = $this->observe($vm);
         if ($observation instanceof VmObservation) {
+            if ($vm->recipe_identity !== null && $observation->imageFingerprint !== $vm->image_fingerprint) {
+                throw new TaskVmException('task_vm.image_mismatch', 'The task VM did not launch its claimed recipe image.');
+            }
             // A stopped VM is one whose launch created it but did not start it.
             $this->startObserved($vm, $observation);
 
@@ -42,7 +45,7 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
         }
 
         $host = $this->settings->host((int) $vm->host_node_id);
-        $result = $this->incus->launch($host, $vm->incusHostNode(), $vm->name, $host->imageAlias, $userData, $vm->size);
+        $result = $this->incus->launch($host, $vm->incusHostNode(), $vm->name, $vm->image_fingerprint ?? $host->imageAlias, $userData, $vm->size);
 
         // Only a launch whose answer was lost and whose VM runs counts: a VM that did not start keeps the launch error.
         if (! $result->succeeded() && $this->observe($vm)?->running !== true) {

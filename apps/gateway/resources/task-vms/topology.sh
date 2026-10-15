@@ -21,7 +21,7 @@ valid_run() { [[ $1 =~ ^[a-z0-9]{8,40}$ ]]; }
 
 case ${1-} in
     start)
-        [[ $# -eq 7 ]] && valid_run "$2" || exit 64
+        [[ $# -eq 7 || $# -eq 8 ]] && valid_run "$2" || exit 64
         [[ $3 == /* && -d $3 ]] || { echo "topology: the checkout $3 does not exist." >&2; exit 66; }
         [[ $4 =~ ^TASK-[1-9][0-9]{0,8}$ && $5 =~ ^[a-z0-9+,-]*$ && $6 =~ ^[1-9][0-9]*GiB$ && $7 =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$ ]] || exit 64
         install -d -m 0700 "$(dirname "$self")" "$state"
@@ -40,7 +40,7 @@ case ${1-} in
         exec sudo -n systemd-run --quiet --collect --unit="$unit_prefix$2" \
             --uid="$(id -un)" --gid="$(id -gn)" --working-directory="$3" \
             --setenv=HOME="$HOME" --property=RuntimeMaxSec="$max_seconds" \
-            -- "$self" run "$2" "$3" "$4" "$5" "$6" "$7"
+            -- "$self" run "$2" "$3" "$4" "$5" "$6" "$7" "${8-}"
         ;;
     status)
         [[ $# -eq 2 ]] && valid_run "$2" || exit 64
@@ -60,7 +60,7 @@ case ${1-} in
         fi
         ;;
     run)
-        [[ $# -eq 7 ]] && valid_run "$2" || exit 64
+        [[ $# -eq 7 || $# -eq 8 ]] && valid_run "$2" || exit 64
         run=$2 checkout=$3 issue=$4 nodes=$5 pool_size=$6 vpn_subnet=$7
         log="$state/$run.log"
         exec >>"$log" 2>&1
@@ -93,9 +93,10 @@ case ${1-} in
         sudo -n bin/e2e-topology-host-setup --pool-size="$pool_size" --wireguard-subnet="$vpn_subnet"
 
         step=images
-        # The harness knows which role images the Nodes need. It builds only missing ones: a stale image is fine,
-        # because enrollment reruns every program on top of it.
-        bin/e2e-topology-images ensure --nodes="$nodes"
+        # New claims require their pinned recipe manifest. Older running groups retain the legacy harness path.
+        imports=()
+        if [[ -n ${8-} ]]; then imports=(--recipe-images="$8"); fi
+        bin/e2e-topology-images ensure --nodes="$nodes" "${imports[@]}"
 
         step=acquire
         # A nested guest can miss its readiness window. Acquire removes what it created, and --replace releases a

@@ -7,6 +7,10 @@ namespace App\Actions\TaskVms;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskWait;
 use App\Domain\TaskVms\TaskVmCapacity;
+use App\Domain\TaskVms\TaskVmImageBuildState;
+use App\Domain\TaskVms\TaskVmProviderKind;
+use App\Infrastructure\TaskVms\RecipeImageBuilds;
+use App\Models\TaskVmImageBuild;
 use App\Domain\TaskVms\TaskVmPlacementPolicy;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
@@ -25,6 +29,7 @@ final readonly class AllocateTaskVmAction
         private TaskVmCapacity $capacity,
         private TaskVmPlacementPolicy $policy,
         private RecordTaskVmAction $record,
+        private RecipeImageBuilds $images,
     ) {}
 
     /** @throws TaskCapacityException when no host has a free slot */
@@ -55,13 +60,46 @@ final readonly class AllocateTaskVmAction
     private function place(Task $group, TaskVmSize $size): TaskVm
     {
         return DB::transaction(function () use ($group, $size): TaskVm {
+            // Serialize admission with desired-recipe changes and image promotion.
+            DB::table('task_vm_image_recipe')->where('id', 1)->update(['generation' => DB::raw('generation')]);
             $existing = TaskVm::forGroup($group);
             if ($existing instanceof TaskVm) {
                 return $existing;
             }
-            $free = $this->capacity->freeSlots($this->capacity->activeHosts());
+            $recipe = $this->images->currentRecipe();
+            $hosts = $this->capacity->activeHosts();
+            $free = $this->capacity->freeSlots($hosts);
+            $images = [];
+            $waiting = [];
+            foreach ($hosts as [$host, $node]) {
+                $build = TaskVmImageBuild::query()->where('host_node_id', $host->nodeId)
+                    ->where('recipe_identity', $recipe->identity)->where('state', TaskVmImageBuildState::Succeeded)
+                    ->whereNotNull('promoted_at')->first();
+                $base = $build?->images['base'] ?? null;
+                if ($base !== null && $base['project'] === $host->project && $base['type'] === 'virtual-machine') {
+                    $images[$host->nodeId] = $base['fingerprint'];
+                } else {
+                    unset($free[$host->nodeId]);
+                    $waiting[] = $node->name;
+                }
+            }
+            try {
+                $target = $this->policy->choose($size, $group, $free);
+                if ($waiting !== [] && $target->provider === TaskVmProviderKind::UpCloud) {
+                    throw new TaskCapacityException(TaskWait::Capacity, TaskVmPlacementPolicy::NoCapacity);
+                }
+            } catch (TaskCapacityException $exception) {
+                if ($waiting !== []) {
+                    throw new TaskCapacityException(TaskWait::Capacity, 'Task VM: waiting for recipe '.substr($recipe->identity, 7, 12).' images on '.implode(', ', $waiting).'.');
+                }
+                throw $exception;
+            }
+            $vm = $this->record->execute($group, $target, $size);
+            if ($target->hostNodeId !== null) {
+                $vm->update(['recipe_identity' => $recipe->identity, 'image_fingerprint' => $images[$target->hostNodeId]]);
+            }
 
-            return $this->record->execute($group, $this->policy->choose($size, $group, $free), $size);
+            return $vm;
         });
     }
 }

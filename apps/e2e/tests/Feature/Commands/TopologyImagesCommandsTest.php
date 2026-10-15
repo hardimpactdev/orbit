@@ -150,6 +150,36 @@ describe('topology image commands', function () {
             ->and($incus->instances)->toBe([]);
     });
 
+    it('ensures a recipe topology by importing its host archives and builds no role image', function (): void {
+        $incus = new FakeIncus()->install();
+        $directory = temporaryPath('orbit-command-import-', 5);
+        mkdir($directory, 0700, true);
+        $identity = 'sha256:'.str_repeat('a', 64);
+        $images = [];
+        foreach (RoleImage::cases() as $role) {
+            $fingerprint = hash('sha256', $role->value);
+            $images[$role->value] = ['fingerprint' => $fingerprint, 'type' => 'virtual-machine'];
+            file_put_contents($directory.'/'.$role->value.'.tar', json_encode(['fingerprint' => $fingerprint,
+                'properties' => ['orbit.recipe' => $identity, 'orbit.profile' => $role->value]], JSON_THROW_ON_ERROR));
+        }
+        file_put_contents($directory.'/manifest.json', json_encode(['recipe_identity' => $identity, 'images' => $images], JSON_THROW_ON_ERROR));
+
+        $output = imagesCommandJson('topology-images:ensure', ['--nodes' => 'app-prod', '--recipe-images' => $directory.'/manifest.json']);
+
+        expect($output['built'])->toBe([]);
+        expect(array_keys($output['imported']))->toBe(['gateway', 'app-prod', 'operator']);
+        expect($incus->callsOf('image', 'import'))->toHaveCount(3);
+        expect($incus->callsOf('init'))->toBe([]);
+        expect($incus->callsOf('publish'))->toBe([]);
+    });
+
+    it('fails a missing recipe import without falling back to a build', function (): void {
+        $incus = new FakeIncus()->install();
+
+        expect(Artisan::call('topology-images:ensure', ['--recipe-images' => '/no-such-recipe/manifest.json', '--json' => true]))->toBe(1);
+        expect($incus->callsOf('init'))->toBe([]);
+    });
+
     it('refuses an undeclarable Node before it touches Incus', function () {
         $incus = new FakeIncus()->install();
 

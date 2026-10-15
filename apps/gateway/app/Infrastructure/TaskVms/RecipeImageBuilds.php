@@ -24,8 +24,7 @@ final readonly class RecipeImageBuilds
     /** @return list<TaskVmImageBuild> */
     public function reconcile(?int $hostId = null, bool $retry = false): array
     {
-        $path = rtrim(config()->string('orbit.gateway_checkout'), '/').'/resources/machine-software/recipe.json';
-        $recipe = $this->loader->load(is_link(dirname(config()->string('orbit.gateway_checkout'), 2)) ? $path : null);
+        $recipe = $this->currentRecipe();
         $generation = $this->desire($recipe);
         $builds = [];
         $this->chain->recoverSubmissions();
@@ -66,6 +65,13 @@ final readonly class RecipeImageBuilds
         }
 
         return $builds;
+    }
+
+    public function currentRecipe(): MachineRecipe
+    {
+        $path = rtrim(config()->string('orbit.gateway_checkout'), '/').'/resources/machine-software/recipe.json';
+
+        return $this->loader->load(is_link(dirname(config()->string('orbit.gateway_checkout'), 2)) ? $path : null);
     }
 
     private function desire(MachineRecipe $recipe): int

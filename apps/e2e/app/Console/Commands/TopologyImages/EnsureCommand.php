@@ -6,6 +6,7 @@ namespace App\Console\Commands\TopologyImages;
 
 use App\Console\Commands\E2ECommand;
 use App\E2E\Interrupted;
+use App\E2E\RecipeRoleImages;
 use App\E2E\RoleImageBuilder;
 use App\E2E\RoleImages;
 use App\E2E\Value\RoleImage;
@@ -21,12 +22,13 @@ final class EnsureCommand extends E2ECommand
     #[\Override]
     protected $signature = 'topology-images:ensure'
         .' {--nodes= : The workload Nodes of the topology, as acquire takes them; default app-dev,app-prod}'
+        .' {--recipe-images= : The claimed recipe image manifest; import instead of building}'
         .' {--json}';
 
     #[\Override]
     protected $description = 'Build the missing role images a topology of these Nodes needs';
 
-    public function handle(RoleImages $images, RoleImageBuilder $builder): int
+    public function handle(RoleImages $images, RoleImageBuilder $builder, RecipeRoleImages $recipes): int
     {
         try {
             // A signal unwinds the work like a failure, so the build removes what it created.
@@ -35,6 +37,13 @@ final class EnsureCommand extends E2ECommand
             });
             $nodes = $this->option('nodes');
             $needed = TopologyRecipe::fromOption(is_string($nodes) ? $nodes : null)->images();
+            $manifest = $this->option('recipe-images');
+            if (is_string($manifest)) {
+                $imported = $recipes->import($manifest, $needed);
+                $this->outputJson(['state' => 'ensured', 'built' => [], 'imported' => $imported], 'imported '.implode(', ', array_keys($imported)));
+
+                return self::SUCCESS;
+            }
             $missing = [];
             foreach ($images->status() as $row) {
                 $image = RoleImage::from($row['role']);

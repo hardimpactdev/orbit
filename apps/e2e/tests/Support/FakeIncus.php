@@ -265,6 +265,11 @@ final class FakeIncus
     private function image(array $arguments, Closure $name): ProcessResult
     {
         switch ($arguments[1] ?? null) {
+            case 'import':
+                $archive = json_decode((string) file_get_contents($arguments[2]), true, flags: JSON_THROW_ON_ERROR);
+                $this->addImage('imported-'.$archive['fingerprint'], 'virtual-machine', $archive['properties'], $archive['fingerprint']);
+
+                return Process::result();
             case 'list':
                 $images = [];
                 foreach ($this->images as $fingerprint => $image) {

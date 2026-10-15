@@ -10,15 +10,17 @@ covers:
 
 ## Problem
 
-An Orbit task group has no [Incus topology](/reference/incus-topologies) by default. The reviewer requests one when discovery needs it. An acquired topology has the declared workload VMs plus a Gateway VM and a small operator system container. The operator container is separate from the VM counts and memory measurements below. ZFS makes the VM disk copies cheap. The prepared image contents, new writes inside each guest, and each VM's memory allocation still use resources.
+An Orbit task group has no [Incus topology](/reference/incus-topologies) by default. The reviewer requests one when discovery needs it. An acquired topology has the declared workload VMs plus a Gateway and an operator. Task groups import recipe images and run the operator as a VM; the harness counts it against capacity. Older topologies and standalone builds keep the operator container. The measurements below used that container and exclude its memory. ZFS makes the VM disk copies cheap. The prepared image contents, new writes inside each guest, and each VM's memory allocation still use resources.
 
 ## Cause
 
-Incus creates each guest from its role image with a native ZFS clone. The test pool already uses LZ4 compression and sparse 16 GiB root volumes, with no space reservation. Copying another VM does not copy every disk block. The guest root filesystem is ext4, which does not support file reflinks. A [dependency copy](/domains/applications#dependency-copy) inside the guest writes the copied data again.
+Incus creates each guest from its role image with a native ZFS clone. The measured test pool used LZ4 compression and sparse 16 GiB root volumes, with no space reservation. Imported recipe images keep their source disk size instead of forcing that smaller limit. Copying another VM does not copy every disk block. The guest root filesystem is ext4, which does not support file reflinks. A [dependency copy](/domains/applications#dependency-copy) inside the guest writes the copied data again.
 
 The original prepared Gateway and app-prod guests held Docker images despite running no Docker containers. Each Node had the same 2 GiB memory budget, although their workloads differ.
 
 ## Improvements, in priority order
+
+The host builds all role images once per recipe. A topology group imports them and builds none, avoiding about 7 to 9 minutes of repeated work. Check transfer time, archive space, nested boot, and the operator VM's memory on a real task VM before treating this as a measured net saving.
 
 The role image build cleans caches before it publishes an image, and the harness uses fixed memory limits when it creates Nodes. The filesystem change remains a candidate for follow-up work.
 

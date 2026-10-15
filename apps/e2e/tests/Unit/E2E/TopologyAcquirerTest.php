@@ -178,6 +178,30 @@ describe('TopologyAcquirer', function () {
             ->and(array_column($incus->firewall, 'operation'))->toBe(['ensure']);
     });
 
+    it('composes imported recipe roles including a VM operator without building images', function (): void {
+        extract(acquirerFixture(static function (string $instance, array $argv): ?array {
+            if ($argv[0] === 'sh' && str_contains($argv[2] ?? '', 'boot_id')) {
+                return ["boot-ready\n", '', 0];
+            }
+
+            return null;
+        }));
+        foreach (RoleImage::cases() as $role) {
+            $incus->images[$images[$role->value]]['type'] = 'virtual-machine';
+            $incus->images[$images[$role->value]]['properties'] = ['orbit.recipe' => 'sha256:'.str_repeat('a', 64), 'orbit.profile' => $role->value];
+        }
+
+        $record = $acquirer->acquire($request, TopologyRecipe::compose(['app-dev']));
+        expect(array_column($incus->instances, 'type'))->toBe(['virtual-machine', 'virtual-machine', 'virtual-machine']);
+        expect($incus->callsOf('publish'))->toBe([]);
+        foreach ($incus->callsOf('init') as $call) {
+            expect(array_any($call, static fn (string $argument): bool => str_starts_with($argument, 'root,size=')))->toBeFalse();
+        }
+        $acquirer->verify($request);
+        $releaser->release($request);
+        expect($incus->instances)->toBe([]);
+    });
+
     it('enrolls every declared Node with its catalog role, TLD, and WireGuard address', function () {
         $steps = [];
         ['acquirer' => $acquirer, 'incus' => $incus, 'request' => $request] = acquirerFixture(steps: $steps);

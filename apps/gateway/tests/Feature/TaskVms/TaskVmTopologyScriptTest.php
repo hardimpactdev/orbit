@@ -85,6 +85,13 @@ describe('the topology run', function () use ($runArguments): void {
             ->and($result)->toMatchArray(['state' => 'ready', 'step' => 'acquire', 'boot_id' => topology_boot_id()]);
     });
 
+    it('requires the claimed recipe manifest instead of building role images', function () use ($runArguments): void {
+        [$process, $work] = topology_script([...$runArguments, '/var/lib/orbit/task-vm-role-images/manifest.json']);
+
+        expect($process->getExitCode())->toBe(0);
+        expect(file("{$work}/harness.log", FILE_IGNORE_NEW_LINES)[1])->toBe('images ensure --nodes=app-prod+ingress --recipe-images=/var/lib/orbit/task-vm-role-images/manifest.json');
+    });
+
     it('retries a failed acquire once and records it only in the log', function () use ($runArguments): void {
         [$process, $work] = topology_script($runArguments, ['ACQUIRE_FAILURES' => '1']);
         $result = topology_result($work, 'abcdef0123456789');

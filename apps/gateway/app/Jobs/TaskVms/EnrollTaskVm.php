@@ -51,7 +51,7 @@ final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
     private const int BootstrapMinutes = 10;
 
     /** Failures that a retry cannot fix. */
-    private const array Permanent = [TaskVmError::BootstrapFailed, TaskVmError::BootstrapTimeout, TaskVmError::VmNotRunning];
+    private const array Permanent = [TaskVmError::BootstrapFailed, TaskVmError::BootstrapTimeout, TaskVmError::VmNotRunning, TaskVmError::ImageMismatch];
 
     /** @param  int  $launchedAt  when `ProvisionTaskVm` launched the VM: the boot limit counts from then, not from the row, because jobs run one at a time */
     public function __construct(public int $taskVmId, public int $launchedAt)
@@ -135,6 +135,9 @@ final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
             $settled = $observation->address !== null ? $observation : ($provider->observe($vm) ?? $observation);
             $address = $settled->address;
             if ($address !== null) {
+                if ($vm->recipe_identity !== null && $settled->imageFingerprint !== $vm->image_fingerprint) {
+                    throw new TaskVmException('task_vm.image_mismatch', 'The task VM did not launch its claimed recipe image.');
+                }
                 if ($settled->imageFingerprint !== null) {
                     $vm->update(['image_fingerprint' => $settled->imageFingerprint]);
                 }

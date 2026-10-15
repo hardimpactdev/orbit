@@ -54,7 +54,7 @@ When a Project's default branch moves in the Gateway mirror, the Gateway cheaply
 
 ### 6. Role images are built once per recipe change per host
 
-Step 3 implements the [host-local build and publication contract](/reference/compute-drivers#build-the-base-image). Step 4 supplies nested imports.
+Step 3 implements the [host-local build and publication contract](/reference/compute-drivers#build-the-base-image). Step 4 implements [current-recipe claims and nested imports](/reference/compute-drivers#prepare-the-topology).
 
 Each task VM host builds the gateway, app-dev, app-prod, and operator role images once per recipe change. Topology groups import those images into their nested Incus instead of building them inside every group's VM. This saves each group about 7 to 9 minutes of building role images.
 
@@ -133,7 +133,7 @@ These questions concern implementation details, not alternatives to the eleven d
 
 - **Settled for step 1:** [Machine software recipe](/reference/compute-drivers#machine-software-recipe) defines schema version 1, a canonical JSON SHA-256 identity shared by all profiles, explicit role tool membership, and structural plus online availability/integrity validation. Third-party non-snapshot tools use exact HTTPS release artifacts and recorded digests, not moving installer channels. Orbit-built binaries may instead use a content-addressed Gateway-local pin with source commit and digest; the operator approved this exception for Pi at `e5933d4c8696` on amd64 only and does not select a new agent baseline. A local directory resolves bytes, not identity. Validation rejects missing files, digest mismatches, and profiles requesting unsupported architectures; installers retain pre-install hash verification. Steps 3 and 8 add image/Node identity recording; step 3 fences build publication.
 - How does the trusted nightly snapshot bump enter repository history, and how are concurrent nightly and task group recipe changes serialized so that an older build cannot publish as current?
-- How are builds and readiness tracked across multiple task VM hosts, including a host added during a build? What exact waiting status and recovery information does a blocked claim expose?
+- How are builds and readiness tracked across multiple task VM hosts, including a host added during a build? Claims expose `Task VM: waiting for recipe <12-character digest> images on <host>.` Failed builds stay blocked until a successful retry; running groups keep their recorded recipe.
 - How do Composer and npm/bun consume a read-only shared cache while keeping writable temporary state private to the workspace? What is the cache-miss behavior before a fill completes, especially for dependency changes still on a task branch?
 - How does trusted filling support private registries without exposing credentials or executing untrusted Project setup? How are integrity failures and suspect cached packages quarantined, and how does inventory usage change when a Project removes a package?
 - What storage limits and retention rules apply to package caches and previous images without violating additive fills or running-group stability? CI cache refs use the [step 6a retention policy](/reference/implementation-loop#cache-ref-retention).
