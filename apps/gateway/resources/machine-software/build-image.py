@@ -29,7 +29,7 @@ def image_install_packages(payload, options):
     try:
         installed = packages()
         tools = {name: pin for name, pin in payload['tools'].items() if pin['source'] == 'ubuntu' or name in git_packages(payload)}
-        check_git_dependencies(payload, installed)
+        check_git_siblings(payload)
         assessment = assess(tools, {name: installed.get(pin.get('package', name)) for name, pin in tools.items()}, options, git_names=git_packages(payload))
         supported(assessment)
         configure_git(payload, apply=True)

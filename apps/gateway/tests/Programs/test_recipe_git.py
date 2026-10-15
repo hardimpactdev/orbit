@@ -42,6 +42,7 @@ class RecipeGitTest(unittest.TestCase):
         self.payload = {'tools': self.tools, 'architecture': 'amd64', 'snapshot': seed['ubuntu']['snapshot'],
                         'profile': 'base', 'git_packages': seed['git']['packages'], 'artifact_mirror': seed['artifact_mirror']}
         self.installed = dict.fromkeys(self.tools, PIN)
+        self.dpkg_metadata = {name: {'source:Package': 'git'} for name in self.tools}
         self.commands = []
         self.origin = INDEX
         for module in (recipe, image):
@@ -57,6 +58,14 @@ class RecipeGitTest(unittest.TestCase):
         output = ''
         if argv == ['dpkg', '--print-architecture']:
             output = 'amd64\n'
+        elif argv[:2] == ['dpkg-query', '-W']:
+            for name, metadata in self.dpkg_metadata.items():
+                fields = {'Package': name, 'Depends': '', 'Pre-Depends': '',
+                          'db:Status-Status': 'installed' if name in self.installed else 'config-files', **metadata}
+                line = argv[2].removeprefix('-f=')
+                for field, value in fields.items():
+                    line = line.replace('${' + field + '}', value)
+                output += line
         elif argv[:2] == ['apt-cache', 'policy']:
             if len(argv) == 2:
                 output = f' 500 {INDEX}\n     release o=Ubuntu,a=resolute-security,n=resolute\n'
@@ -262,20 +271,50 @@ class RecipeGitTest(unittest.TestCase):
                     self.install(module)
             self.assertFalse((self.apt / 'preferences.d/orbit-git').exists())
 
-    def test_exact_git_sibling_dependencies_are_refused_before_package_or_source_changes(self):
-        for sibling in ('gitk', 'git-gui', 'git-email', 'git-svn', 'git-doc'):
-            self.installed = {**dict.fromkeys(self.tools, UBUNTU), sibling: UBUNTU}
-            base_command = self.command
-            def command(argv, sibling=sibling, base_command=base_command, **kwargs):
-                if argv[:2] == ['dpkg-query', '-W']:
-                    return subprocess.CompletedProcess(argv, 0, sibling + '\tgit (= ' + UBUNTU + ')\t\n', '')
-                return base_command(argv, **kwargs)
-            for module in (recipe, image):
-                with self.subTest(sibling=sibling, module=module.__name__), patch.object(self, 'command', side_effect=command):
-                    with self.assertRaisesRegex(module.RecipeFailure, 'git-dependency:' + sibling):
-                        self.install(module)
+    def test_unmanaged_git_siblings_with_real_range_dependencies_are_refused_before_git_changes(self):
+        for sibling in ('gitk', 'git-gui', 'git-email', 'git-svn', 'git-cvs', 'gitweb'):
+            for version, upstream in ((UBUNTU, '1:2.53.0'), (PIN, '1:2.55.0')):
+                self.installed = {**dict.fromkeys(self.tools, version), sibling: version}
+                self.dpkg_metadata = {**{name: {'source:Package': 'git'} for name in self.tools},
+                                      sibling: {'source:Package': 'git',
+                                                'Depends': 'git (>> ' + upstream + '), git (<< ' + upstream + '-.)'}}
+                with self.subTest(sibling=sibling, version=version, action='plan'), \
+                     patch.object(recipe, 'packages', side_effect=lambda: dict(self.installed)), \
+                     patch.object(recipe, 'run', side_effect=self.command):
+                    with self.assertRaisesRegex(recipe.RecipeFailure, 'git-dependency:' + sibling):
+                        recipe.plan(self.payload)
+                for module in (recipe, image):
+                    self.commands = []
+                    with self.subTest(sibling=sibling, version=version, module=module.__name__):
+                        with self.assertRaisesRegex(module.RecipeFailure, 'git-dependency:' + sibling):
+                            self.install(module)
+                        self.download.assert_not_called()
+                        self.assertFalse(any(argv[:2] in (['apt-get', 'install'], ['apt-get', 'full-upgrade']) for argv in self.commands))
+                        self.assertEqual(self.installed[sibling], version)
+                        self.assertEqual(self.source.read_text(), SOURCE)
+                        self.assertFalse((self.apt / (self.source.name + '.orbit-git-backup')).exists())
+                        self.assertFalse((self.apt / 'preferences.d/orbit-git').exists())
+
+    def test_owned_git_binaries_other_sources_and_removed_siblings_do_not_block_convergence(self):
+        self.installed['git-lfs'] = '3.7.1-1'
+        self.dpkg_metadata.update({'git-lfs': {'source:Package': 'git-lfs', 'Depends': 'git'},
+                                   'gitk': {'source:Package': 'git',
+                                            'Depends': 'git (>> 1:2.53.0), git (<< 1:2.53.0-.)'}})
+
+        for module in (recipe, image):
+            with self.subTest(module=module.__name__):
+                self.install(module)
+                self.assertEqual(self.installed, {**dict.fromkeys(self.tools, PIN), 'git-lfs': '3.7.1-1'})
+
+    def test_installed_git_sibling_outside_native_inventory_is_still_refused(self):
+        self.dpkg_metadata['git-email'] = {'source:Package': 'git', 'db:Status-Status': 'installed',
+                                           'Depends': 'git (>> 1:2.55.0), git (<< 1:2.55.0-.)'}
+
+        for module in (recipe, image):
+            with self.subTest(module=module.__name__):
+                with self.assertRaisesRegex(module.RecipeFailure, 'git-dependency:git-email'):
+                    self.install(module)
                 self.assertEqual(self.source.read_text(), SOURCE)
-                self.assertFalse((self.apt / 'preferences.d/orbit-git').exists())
 
     def test_image_uses_refreshed_snapshot_policy_when_normal_indexes_only_have_dpkg_status(self):
         self.installed = dict.fromkeys(self.tools, UBUNTU)

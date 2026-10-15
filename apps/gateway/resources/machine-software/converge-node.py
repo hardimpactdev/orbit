@@ -406,19 +406,15 @@ def git_packages(payload):
     return {name: payload['tools'][name] for name in payload.get('git_packages', []) if name in payload['tools']}
 
 
-def check_git_dependencies(payload, installed):
+def check_git_siblings(payload):
     tools = git_packages(payload)
     if not tools:
         return
-    output = run(['dpkg-query', '-W', '-f=${Package}\t${Depends}\t${Pre-Depends}\n']).stdout
-    names = '|'.join(re.escape(name) for name in tools)
+    output = run(['dpkg-query', '-W', '-f=${Package}\t${source:Package}\t${db:Status-Status}\n']).stdout
     for line in output.splitlines():
-        name, separator, dependencies = line.partition('\t')
-        if name not in installed or name in tools or not separator:
-            continue
-        for package, version in re.findall(r'(?:^|[,|\t])\s*(' + names + r')(?::[a-z0-9-]+)?\s*\(=\s*([^)]*)\)', dependencies):
-            if version.strip() != tools[package]['version']:
-                raise RecipeFailure('git-dependency:' + name)
+        name, source, status = line.split('\t', 2)
+        if status == 'installed' and source == 'git' and name not in tools:
+            raise RecipeFailure('git-dependency:' + name)
 
 
 def repair_ubuntu_sources(architecture):
@@ -536,7 +532,7 @@ def pin_git(payload):
 
 
 def plan(payload):
-    check_git_dependencies(payload, packages())
+    check_git_siblings(payload)
     actions = configure_git(payload)
     if ubuntu_sources_repair() is None:
         report = assess(payload['tools'], git_names=git_packages(payload))
@@ -919,7 +915,7 @@ def apply_recipe(payload, snapshots):
         account = pwd.getpwnam(os.environ.get('SUDO_USER', 'orbit'))
         before = packages()
         versions = inspect(tools)
-        check_git_dependencies(payload, before)
+        check_git_siblings(payload)
         assessment = assess(tools, versions, snapshots=snapshots, git_names=git_packages(payload))
         supported(assessment)
         active = active_services()
