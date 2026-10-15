@@ -972,6 +972,6 @@ An unreachable Node changed nothing, so it does not halt the fleet; the catch-up
 
 ## Recipe convergence
 
-`php artisan node:converge-recipe <node> [--recipe=sha256:<digest>] [--dry-run]` is the synchronous [recipe maintenance operation](/reference/node-provisioning#converge-a-node-to-a-recipe) for one Node. It shares the fleet rollout’s Node role lock, self-update lock, SSH transport, and Doctor machinery. A package, inventory, service health, or Doctor failure returns a failure immediately and leaves the Node partly changed; it neither rolls back nor visits another Node. Only a fully checked Node receives the recipe success marker.
+[Node recipe convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) applies and verifies machine software on one Node. It shares the Node role and self-update locks with release rollout.
 
-The release rollout and its catch-up timer do not invoke recipe convergence. Nightly recipe changes, image builds, smoke tests, Node ordering, and operator notifications remain ADR 0207 step 9. Before advancing a future recipe rollout, require this operation to succeed for the current Node. Manual recovery pins the previous recipe snapshot and any previous third-party tool pins.
+Release rollout updates Orbit itself, with a timer to catch up missed Nodes. [Nightly recipe maintenance](/reference/compute-drivers#nightly-recipe-maintenance) waits for every configured host to promote the deployed recipe, then calls Node recipe convergence in fleet order. That page owns the schedule, night window, alerts, and recovery policy.

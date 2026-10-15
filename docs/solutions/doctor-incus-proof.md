@@ -46,7 +46,7 @@ bin/e2e-topology exec ISSUE gateway --argv='["orbit","instance:list","--json"]' 
 
 ### Baseline
 
-A leased topology is composed from role images and enrolled by its own Gateway from the mounted worktree, and `acquire` verified its readiness. Record one Doctor request for all registered Nodes as the healthy baseline.
+A leased topology is composed from [one recipe base image](/reference/incus-topologies#one-recipe-base-image) and enrolled by its own Gateway from the mounted worktree, and `acquire` verified its readiness. Record one Doctor request for all registered Nodes as the healthy baseline.
 
 ```bash
 bin/e2e-topology exec ISSUE gateway --argv='["orbit","doctor","--json"]' --record="doctor baseline"
