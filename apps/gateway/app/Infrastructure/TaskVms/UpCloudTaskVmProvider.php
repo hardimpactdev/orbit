@@ -42,7 +42,7 @@ final readonly class UpCloudTaskVmProvider implements TaskVmProvider
             if ($servers >= $upcloud->maxVms) {
                 throw new TaskVmException('task_vm.upcloud_budget_full', "UpCloud already runs {$servers} task VM servers, the limit of {$upcloud->maxVms}.", 409);
             }
-            $template = $this->servers->currentTemplate()
+            $template = $this->servers->currentTemplate($vm->recipe_identity ?? app(RecipeImageBuilds::class)->currentRecipe()->identity)
                 ?? throw new TaskVmException('task_vm.base_image_missing', 'UpCloud has no verified task VM template [orbit-task-base-<time>]. Build it with task-vms:build-upcloud-image.');
             $hostKey = $this->guest->generateHostKey($vm->name);
             // The key is stored before the request, so a server whose answer is lost still has its pinned key.

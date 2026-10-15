@@ -147,15 +147,16 @@ describe('prepare node guest script', function () {
     it('limits DHCP to uplinks and grants Docker access only where installed, idempotently', function (bool $network, bool $docker, bool $member, bool $recipeLauncher = false) {
         $root = temporaryPath('orbit-runtime-', 4);
         mkdir("{$root}/bin", 0o700, true);
-        mkdir("{$root}/etc/systemd/network", 0o700, true);
         mkdir("{$root}/usr/local/bin", 0o700, true);
         mkdir("{$root}/opt/orbit/bun/bin", 0o700, true);
+        $bun = "{$root}/usr/local/bin/bun";
         if ($recipeLauncher) {
+            file_put_contents($bun, "#!/bin/sh\nexec {$root}/opt/orbit/bun/bin/bun \"\$@\"\n");
+            chmod($bun, 0o755);
             file_put_contents("{$root}/opt/orbit/bun/bin/bun", "#!/bin/sh\nexit 0\n");
             chmod("{$root}/opt/orbit/bun/bin/bun", 0o755);
-            file_put_contents("{$root}/usr/local/bin/bun", "#!/bin/sh\nexec {$root}/opt/orbit/bun/bin/bun \"$@\"\n");
-            chmod("{$root}/usr/local/bin/bun", 0o755);
         }
+        mkdir("{$root}/etc/systemd/network", 0o700, true);
         $path = "{$root}/etc/systemd/network/00-orbit-e2e.network";
         if ($network) {
             file_put_contents($path, "[Match]\nType=ether\n\n[Network]\nDHCP=ipv4\nLinkLocalAddressing=no\n");
@@ -204,6 +205,11 @@ describe('prepare node guest script', function () {
         expect(file_get_contents("{$root}/home/orbit/.ssh/known_hosts"))->toBe('');
         expect(file("{$root}/masks", FILE_IGNORE_NEW_LINES))->toBe(array_fill(0, 2, 'mask apt-daily.timer apt-daily-upgrade.timer unattended-upgrades.service motd-news.timer'));
         expect(is_file($path))->toBe($network);
+        if ($recipeLauncher) {
+            expect(is_link($bun))->toBeTrue()
+                ->and(readlink($bun))->toBe("{$root}/opt/orbit/bun/bin/bun")
+                ->and(is_executable($bun))->toBeTrue();
+        }
         if ($network) {
             expect(file_get_contents($path))->toBe("[Match]\nType=ether\nName=en* eth*\n\n[Network]\nDHCP=ipv4\nLinkLocalAddressing=no\n");
             expect(fileperms($path) & 0o777)->toBe(0o644);

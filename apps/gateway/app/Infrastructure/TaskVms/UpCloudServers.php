@@ -247,10 +247,16 @@ final readonly class UpCloudServers
         return $templates;
     }
 
-    /** The newest template that passed its smoke boot, or null without one. */
-    public function currentTemplate(): ?string
+    /** The newest smoke-verified template for the requested recipe, or null without one. */
+    public function currentTemplate(string $identity): ?string
     {
         $verified = array_filter($this->templates(), static fn (string $title): bool => preg_match('/\A'.preg_quote(TaskVmUpCloud::TemplatePrefix, '/').'[0-9]{14}\z/D', $title) === 1);
+        foreach (array_keys($verified) as $uuid) {
+            $labels = data_get($this->api->request('GET', "storage/{$uuid}"), 'storage.labels', []);
+            if (! is_array($labels) || ! array_any($labels, static fn (mixed $label): bool => is_array($label) && ($label['key'] ?? null) === 'orbit.recipe' && ($label['value'] ?? null) === $identity)) {
+                unset($verified[$uuid]);
+            }
+        }
         if ($verified === []) {
             return null;
         }
@@ -277,9 +283,12 @@ final readonly class UpCloudServers
         return $uuid;
     }
 
-    public function renameTemplate(string $uuid, string $title): void
+    public function renameTemplate(string $uuid, string $title, string $recipeIdentity): void
     {
-        $this->api->request('PUT', "storage/{$uuid}", ['storage' => ['title' => $title]]);
+        $this->api->request('PUT', "storage/{$uuid}", ['storage' => [
+            'title' => $title,
+            'labels' => [['key' => 'orbit.recipe', 'value' => $recipeIdentity]],
+        ]]);
     }
 
     /** Deletes a template; an absent one counts as deleted. */

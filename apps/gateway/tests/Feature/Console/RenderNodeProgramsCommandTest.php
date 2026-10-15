@@ -2,9 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Domain\Nodes\RoleName;
 use App\Infrastructure\Nodes\NodeBootstrapCommandFactory;
+use App\Infrastructure\Nodes\NodeEnrollmentPrograms;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Infrastructure\TaskVms\TaskVmImageRecipe;
 use App\Models\Node;
 use Illuminate\Support\Facades\Artisan;
 
@@ -44,9 +45,8 @@ describe('orbit:node-programs', function (): void {
         });
     });
 
-    it('renders the task VM base image programs for app-dev, without the task VM only Rust toolchain', function (): void {
-        $recipe = app(TaskVmImageRecipe::class)->programs();
-        unset($recipe['rust-toolchain']);
+    it('renders the enrollment programs for app-dev', function (): void {
+        $recipe = app(NodeEnrollmentPrograms::class)->render([RoleName::AppDev]);
         $expected = [];
         foreach ($recipe as $name => $program) {
             $expected[] = ['name' => $name, 'arguments' => $program->arguments, 'input' => $program->input, 'fingerprint' => $program->fingerprint()];
