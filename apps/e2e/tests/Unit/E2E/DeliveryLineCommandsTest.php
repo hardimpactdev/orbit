@@ -681,6 +681,7 @@ describe('delivery-line proof commands', function (): void {
             '-subj', '/CN=127.0.0.1',
         ]))->mustRun();
 
+        // Cover Python/TLS startup and the verification command's 15-second deadline.
         $server = new Process([
             'python3', '-c',
             <<<'PY'
@@ -706,10 +707,10 @@ print(httpd.server_port, flush=True)
 httpd.handle_request()
 PY
             , $cert, $key,
-        ]);
+        ], timeout: 60);
         $server->start();
         $port = SubprocessFixture::line($server);
-        expect($port)->not->toBeNull();
+        expect($port)->toBeNumeric();
 
         $url = 'https://127.0.0.1:'.$port.'/up';
         $process = new Process([

@@ -2,38 +2,58 @@
 
 declare(strict_types=1);
 
+namespace Tests\Support;
+
+use Closure;
+use RuntimeException;
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
 
-function subprocess_fixture_address(Process $server): string
+final class SubprocessFixture
 {
-    subprocess_fixture_wait_until($server, static fn (): bool => str_contains($server->getOutput(), "\n"));
-    $address = trim(explode("\n", $server->getOutput(), 2)[0]);
+    public static function line(Process $server): string
+    {
+        self::waitUntil($server, static fn (): bool => str_contains($server->getOutput(), "\n"));
+        $line = trim(explode("\n", $server->getOutput(), 2)[0]);
 
-    if (! $server->isRunning()) {
-        throw new RuntimeException('Fixture server exited before accepting a connection: '.$server->getErrorOutput());
-    }
-
-    if ($address === '') {
-        throw new RuntimeException('Fixture server printed an empty address: '.$server->getErrorOutput());
-    }
-
-    return $address;
-}
-
-function subprocess_fixture_wait_until(Process $server, Closure $condition): void
-{
-    while (true) {
-        $server->checkTimeout();
-        $running = $server->isRunning();
-
-        if ($condition()) {
-            return;
+        if (! $server->isRunning()) {
+            throw new RuntimeException('Fixture server exited before accepting a connection: '.$server->getErrorOutput());
         }
 
-        if (! $running) {
-            throw new RuntimeException('Fixture server exited before the expected output: '.$server->getErrorOutput());
+        if ($line === '') {
+            throw new RuntimeException('Fixture server printed an empty readiness line: '.$server->getErrorOutput());
         }
 
-        usleep(10_000);
+        return $line;
+    }
+
+    /** @param Closure(): bool $condition */
+    public static function waitUntil(Process $server, Closure $condition): void
+    {
+        if ($server->getTimeout() === null) {
+            throw new RuntimeException('Fixture server must have a timeout before waiting for readiness.');
+        }
+
+        while (true) {
+            try {
+                $server->checkTimeout();
+            } catch (ProcessTimedOutException $exception) {
+                throw new RuntimeException(
+                    "Fixture server timed out before readiness.\nStdout:\n".$server->getOutput()."\nStderr:\n".$server->getErrorOutput(),
+                    previous: $exception,
+                );
+            }
+            $running = $server->isRunning();
+
+            if ($condition()) {
+                return;
+            }
+
+            if (! $running) {
+                throw new RuntimeException('Fixture server exited before readiness: '.$server->getErrorOutput());
+            }
+
+            usleep(10_000);
+        }
     }
 }

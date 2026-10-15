@@ -61,7 +61,8 @@ function deletion_provider(array $objects = []): void
 {
     deletion_bucket($objects);
     $home = config()->string('orbit.home');
-    $server = new Process(['python3', base_path('tests/Fixtures/ProjectDocuments/inventory_http_server.py'), $home.'/bucket.json', $home.'/requests.json']);
+    // Allow startup and all provider requests in this test to share a 60-second budget.
+    $server = new Process(['python3', base_path('tests/Fixtures/ProjectDocuments/inventory_http_server.py'), $home.'/bucket.json', $home.'/requests.json'], timeout: 60);
     test()->deletionServer = $server;
     $server->start();
     $port = SubprocessFixture::line($server);
@@ -98,8 +99,9 @@ function deletion_project(): Project
 
 function deletion_child(string $mode): Process
 {
+    // Include application boot, the 10-second release wait, and the provider request.
     return new Process([PHP_BINARY, base_path('tests/Fixtures/ProjectDocuments/interrupted_document_cleanup.php'), config()->string('orbit.home'), $mode],
-        env: ['APP_KEY' => config()->string('app.key'), 'APP_ENV' => 'testing', 'DB_URL' => '', 'CACHE_STORE' => 'array']);
+        env: ['APP_KEY' => config()->string('app.key'), 'APP_ENV' => 'testing', 'DB_URL' => '', 'CACHE_STORE' => 'array'], timeout: 60);
 }
 
 function deletion_work(): array
@@ -310,11 +312,12 @@ function deletion_scheduler(string $command = 'schedule:work', ?string $staleTok
 {
     $home = config()->string('orbit.home');
 
+    // Allow 20 seconds for startup and each of the consumer's five scheduler ticks.
     return new Process([PHP_BINARY, base_path('tests/Fixtures/ProjectDocuments/document_scheduler.php'), $command, '--no-interaction'], base_path(), [
         'ORBIT_HOME' => $home, 'ORBIT_DOCUMENT_CLEANUP_RUNTIME' => $home.'/runtime', 'APP_ENV' => 'testing',
         'DB_DATABASE' => $home.'/database.sqlite', 'DB_URL' => '', 'APP_KEY' => config()->string('app.key'),
         'ORBIT_DOCUMENT_SCHEDULER_SESSION' => $staleToken ?? false,
-    ]);
+    ], timeout: 120);
 }
 
 function deletion_scheduler_clock(string $clock): void
@@ -423,7 +426,8 @@ it('holds the execution lock through real HTTP completion and pause defeats the 
     ProjectDocumentCleanup::query()->create(['storage_key' => 'removed', 'next_attempt_at' => now()]);
     deletion_resume();
     $worker = deletion_child('hold');
-    $pause = new Process([PHP_BINARY, base_path('tests/Fixtures/ProjectDocuments/cleanup_gate_execution.php'), $this->deletionHome.'/runtime', 'pause']);
+    // Include startup and waiting for the worker's execution lock to be released.
+    $pause = new Process([PHP_BINARY, base_path('tests/Fixtures/ProjectDocuments/cleanup_gate_execution.php'), $this->deletionHome.'/runtime', 'pause'], timeout: 60);
     try {
         $worker->start();
         SubprocessFixture::waitUntil($worker, function (): bool {

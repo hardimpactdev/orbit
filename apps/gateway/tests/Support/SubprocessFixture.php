@@ -6,6 +6,7 @@ namespace Tests\Support;
 
 use Closure;
 use RuntimeException;
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
 
 final class SubprocessFixture
@@ -29,8 +30,19 @@ final class SubprocessFixture
     /** @param Closure(): bool $condition */
     public static function waitUntil(Process $server, Closure $condition): void
     {
+        if ($server->getTimeout() === null) {
+            throw new RuntimeException('Fixture server must have a timeout before waiting for readiness.');
+        }
+
         while (true) {
-            $server->checkTimeout();
+            try {
+                $server->checkTimeout();
+            } catch (ProcessTimedOutException $exception) {
+                throw new RuntimeException(
+                    "Fixture server timed out before readiness.\nStdout:\n".$server->getOutput()."\nStderr:\n".$server->getErrorOutput(),
+                    previous: $exception,
+                );
+            }
             $running = $server->isRunning();
 
             if ($condition()) {
