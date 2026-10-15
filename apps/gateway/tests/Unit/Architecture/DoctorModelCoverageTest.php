@@ -64,7 +64,6 @@ use App\Models\Setting;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
-use App\Models\TaskDefinition;
 use App\Models\TaskQuestion;
 use App\Models\TaskReviewedCommit;
 use App\Models\TaskVm;
@@ -137,7 +136,6 @@ it('partitions every persisted model across doctor dispositions', function (): v
         DatabaseUser::class,
         DatabaseServer::class,
         Task::class,
-        TaskDefinition::class,
         AgentThread::class,
         AgentThreadSendLease::class,
         Task::class,

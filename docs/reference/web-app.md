@@ -130,30 +130,6 @@ A card for a task that asks for direction says `Needs your direction`, and the t
 
 The app waits 100 milliseconds after a task event and refetches each named query once. A refetch that an event starts replaces a request that is still running. An active task's duration counts forward on the page. Token and line counts change with the next event, and the agent thread stream shows live tokens.
 
-## Task definitions
-
-The Tasks page at `/tasks` lists task definitions with `tasks:definition:list`. Each Project page at `/projects/{project}` lists the definitions for that Project. The definition view is `/projects/{project}/task-definitions/{name}`. The lists and the view are shown only while the tasks extension is enabled. While it is off, they are absent, as the other Tasks routes are. A stale direct request still receives `extension.disabled`. The lists are read-only. Creating or changing a definition is an API call, as [Task definitions](/reference/tasks#task-definitions) describes. Opening a definition does not start a task.
-
-The lists and the view load when the page opens. They have no realtime event and do not poll. A change another client makes with `tasks:definition:update` appears the next time the page opens.
-
-### Drawing
-
-The definition view draws that task definition on a canvas from the live `tasks:definition:show` response.
-
-The main path runs down the middle. A detour or a failure path sits in a side column, and each of those paths ends in its own `complete` or `fail` node. The drawing opens at full size, so the card text stays readable. On a narrow screen, pan to reach a side path.
-
-Each subtask shows its kind, its models, and its routes with their outcome labels. A default route to an end stays hidden. [Routes](/reference/tasks#routes) defines the defaults.
-
-Each phase is one card. Opening the card shows a frame around that phase's subtasks. The canvas label says to open a phase, and after a phase is open it says to collapse a phase.
-
-The drawing also shows the stages the engine always runs around the definition. Before the first subtask it shows the workspace start. Inside each `agent` subtask it shows the implementer, the handoff check, and the reviewer. After the last subtask it shows the pull request, the merge, and the cleanup. A person merges unless the definition has a `merge` subtask.
-
-A schedule is shown in words, such as "Weekly on Monday at 03:00 UTC".
-
-The view reports a finding when every option of a `decide` subtask leads to the same subtask. The Gateway refuses a definition that contains a subtask no path reaches, so the view does not report that finding for a stored definition.
-
-The view reports a model that no driver can run when the [ProxyCli model list](/reference/proxycli#models) is available. Task agents run on Pi only. A model is known when ProxyCli offers it through a provider Pi runs. Claude models and models listed under the `claude` or `anthropic` provider are unavailable for task agents. Annotations still use the operator's T3 threads, as [Agent annotation](/reference/agent-annotation) describes. When that list is missing, empty, or refused, the view says that the model list is unavailable and reports no driver findings.
-
 ## Live Activity
 
 The Activity page is `/activity` in the main navigation, after Tasks. It is one log, newest first. Opening a row goes to `/activity/{id}`, which always loads the row with `activity:show`.
@@ -190,7 +166,6 @@ These views have no event. A view with an interval polls while the tab is visibl
 | Process logs, Instance logs, queue, and analytics | 10 seconds |
 | Node metrics from Grafana | 10 seconds |
 | Quota (`proxycli`) status and provider pools | 60 seconds |
-| Task definition lists and the definition view | Loaded when opened |
 
 The firewall list reads every Node's rules with one request, `GET /api/v1/firewall-rules`. It returns only the Nodes that the browser's Node can reach.
 

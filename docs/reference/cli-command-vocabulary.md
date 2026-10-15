@@ -124,7 +124,6 @@ The Gateway lives in `apps/gateway`, and it records each route name as the Activ
 
 Some routes have no CLI command. `instance:dependencies:show` reads the stored dependency inventory for the API and SDK. The CLI has `instance:dependencies:scan` and `instance:dependencies:update`, as [Instance dependencies](/reference/instance-dependencies) describes. `tasks:agent-stream` is a server-sent event stream for the web task board. The `conn:` routes serve Conn devices and T3 servers, as [Conn layer](/reference/conn) describes, and have no CLI commands.
 
-`tasks:definition:list`, `tasks:definition:show`, `tasks:definition:create`, `tasks:definition:update`, and `tasks:definition:destroy` read and write [task definitions](/reference/tasks#definition-operations) on the API, the CLI, and MCP.
 
 [`node:wireguard-key`](/cli/node#orbit-nodewireguard-key) uses a noun-ending command, like `node:settings`, because it sets one specific Node property rather than performing a generic update or managing a child resource. Its endpoint is `PATCH /api/v1/nodes/{node}/wireguard-key`.
 

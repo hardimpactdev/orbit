@@ -91,7 +91,7 @@ describe('MCP tool input schemas', function (): void {
             mcp782_check_schema($schema, $name, $failures);
         }
 
-        foreach (['tasks-create', 'tasks-update', 'tasks-definition-create', 'tasks-definition-update'] as $name) {
+        foreach (['tasks-create', 'tasks-update'] as $name) {
             if (! array_key_exists($name, $schemas)) {
                 $failures[] = "{$name} is not served";
             }

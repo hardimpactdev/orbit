@@ -16,7 +16,6 @@ use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Schedules\ScheduleErrorCode;
 use App\Domain\Schedules\ScheduleOperationException;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\TaskDefinitionInvalid;
 use App\Domain\Tools\ToolOperationException;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
@@ -49,8 +48,7 @@ final class GatewayExceptionStatus
             $exception instanceof ToolOperationException => $exception->status,
             $exception instanceof ScheduleOperationException => self::scheduleStatus($exception),
             $exception instanceof RoleAssignmentException,
-            $exception instanceof NodeRoleValidationException,
-            $exception instanceof TaskDefinitionInvalid => Response::HTTP_UNPROCESSABLE_ENTITY,
+            $exception instanceof NodeRoleValidationException => Response::HTTP_UNPROCESSABLE_ENTITY,
             $exception instanceof NodeRoleOperationException,
             $exception instanceof NodeProvisioningException,
             $exception instanceof NodeRemovalException,
@@ -85,7 +83,6 @@ final class GatewayExceptionStatus
             || $exception instanceof RoleAssignmentException
             || $exception instanceof RuntimeConvergenceException
             || $exception instanceof ScheduleOperationException
-            || $exception instanceof TaskDefinitionInvalid
             || $exception instanceof ToolOperationException
             || $exception instanceof ValidationException
             || $exception instanceof AuthenticationException

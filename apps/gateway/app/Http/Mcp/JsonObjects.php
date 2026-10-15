@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Domain\Tasks;
+namespace App\Http\Mcp;
 
 use JsonException;
 use stdClass;
@@ -11,7 +11,7 @@ use stdClass;
  * PHP arrays cannot tell an empty object from an empty list.
  * Objects stay arrays with string keys, and an empty object stays stdClass, so encoding keeps {}.
  */
-final class TaskDefinitionJson
+final class JsonObjects
 {
     public static function decode(string $json): mixed
     {

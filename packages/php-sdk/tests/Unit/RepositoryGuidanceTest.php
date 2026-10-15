@@ -87,20 +87,15 @@ use Orbit\Sdk\Requests\Tasks\CloseTaskQuestionRequest;
 use Orbit\Sdk\Requests\Tasks\CompleteTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\CreateSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\CreateTaskCommentRequest;
-use Orbit\Sdk\Requests\Tasks\CreateTaskDefinitionRequest;
 use Orbit\Sdk\Requests\Tasks\CreateTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\DestroySubtaskRequest;
-use Orbit\Sdk\Requests\Tasks\DestroyTaskDefinitionRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskAgentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskCommentsRequest;
-use Orbit\Sdk\Requests\Tasks\ListTaskDefinitionsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskGroupsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskQuestionsRequest;
-use Orbit\Sdk\Requests\Tasks\ShowTaskDefinitionRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTasksStatusRequest;
 use Orbit\Sdk\Requests\Tasks\UpdateSubtaskRequest;
-use Orbit\Sdk\Requests\Tasks\UpdateTaskDefinitionRequest;
 use Orbit\Sdk\Requests\Tasks\UpdateTaskGroupRequest;
 use Orbit\Sdk\Requests\Vault\SetupVaultRequest;
 use Orbit\Sdk\Requests\Vault\ShowVaultStatusRequest;
@@ -286,11 +281,6 @@ describe('repository guidance bootstrap', function (): void {
             ListTaskQuestionsRequest::class,
             CloseTaskQuestionRequest::class,
             ListTaskAgentsRequest::class,
-            ListTaskDefinitionsRequest::class,
-            ShowTaskDefinitionRequest::class,
-            CreateTaskDefinitionRequest::class,
-            UpdateTaskDefinitionRequest::class,
-            DestroyTaskDefinitionRequest::class,
         ];
         $lifecycleRequests = [
             RenameInstanceRequest::class,
@@ -515,13 +505,13 @@ describe('repository guidance bootstrap', function (): void {
             ->toEqualCanonicalizing($taskRequests);
     });
 
-    it('documents the 215-operation SDK surface including Project Documents', function (): void {
+    it('documents the 210-operation SDK surface including Project Documents', function (): void {
         $publicContract = repository_guidance_contents('.ai/rules/public-contract.md');
         $normalizedPublicContract = repository_guidance_normalized_contents('.ai/rules/public-contract.md');
 
         expect($publicContract)
-            ->toContain('The SDK models exactly 215 concrete public Gateway API operations:')
-            ->toContain('- Tasks: enable, disable, status, group list, show, create, update, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, question list and close, agent thread list, and task definition list, show, create, update, and destroy.')
+            ->toContain('The SDK models exactly 210 concrete public Gateway API operations:')
+            ->toContain('- Tasks: enable, disable, status, group list, show, create, update, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, question list and close, and agent thread list.')
             ->toContain('- Logs: Instance log read, and live log stream create, renew, and destroy for an Instance or a Process.')
             ->toContain('- Analytics: pin the Plausible version, and show, set, and unset the Stats API key. The key is never returned.')
             ->toContain('- proxycli: enable, disable, status, provider list, provider show, account update, and model list.')
@@ -586,9 +576,6 @@ describe('repository guidance bootstrap', function (): void {
             )
             ->toContain(
                 'Keep proxycli transport limited to Node ID, Redis connection slug, CLIProxyAPI URL, and management key on enable; a provider slug on show; and an account identity plus disabled flag on update. Status, disable, provider list, and model list are bodyless.',
-            )
-            ->toContain(
-                "Task definition requests use a numeric Project ID, an optional project_id list filter, a definition name for show, update, and destroy, and the caller's exact JSON document for create and full update.",
             );
 
         expect(repository_guidance_normalized_contents('.ai/rules/redaction-security.md'))
@@ -598,7 +585,7 @@ describe('repository guidance bootstrap', function (): void {
 
         expect(repository_guidance_normalized_contents('README.md'))
             ->toContain(
-                'The SDK exposes exactly 215 public Gateway operations.',
+                'The SDK exposes exactly 210 public Gateway operations.',
                 'The SDK exposes typed enable, disable, status, provider list, provider show, account update, and model list requests for the optional CLIProxyAPI quota collector.',
                 'The SDK exposes typed status, setup, sync, and teardown requests for publishing database credentials to Vaultwarden.',
                 'The SDK exposes typed list, show, add, update, remove, attach, detach, query, tables, schema, describe, and user create requests for Gateway-owned database connection records.',

@@ -1387,8 +1387,7 @@ fi
         gate_loader.exec_module(gate)
         for path in ('apps/gateway/routes/api.php', 'apps/cli/app/Commands/Example.php',
                      'packages/php-sdk/src/Requests/Example.php', 'bin/docs-openapi', 'bin/mcp-tools',
-                     'docs/openapi.json', 'docs/docs.json', 'apps/gateway/resources/mcp/tools.json',
-                     'apps/gateway/resources/tasks/actions.json'):
+                     'docs/openapi.json', 'docs/docs.json', 'apps/gateway/resources/mcp/tools.json'):
             with self.subTest(path=path):
                 commands = [command for project, commands in gate.selected_projects([path], self.root)
                             if project == 'repository' for command in commands]

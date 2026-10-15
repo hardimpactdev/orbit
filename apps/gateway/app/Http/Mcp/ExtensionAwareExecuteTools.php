@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Http\Mcp;
 
 use App\Domain\Extensions\ExtensionStore;
-use App\Domain\Tasks\TaskDefinitionJson;
 use Illuminate\Validation\ValidationException;
 use JsonException;
 use Laravel\Mcp\Request;
@@ -166,7 +165,7 @@ final class ExtensionAwareExecuteTools extends ExecuteTools
      */
     private function preservedCalls(string $raw): array
     {
-        $decoded = TaskDefinitionJson::decode($raw);
+        $decoded = JsonObjects::decode($raw);
         $params = is_array($decoded) ? ($decoded['params'] ?? null) : null;
         $arguments = is_array($params) ? ($params['arguments'] ?? null) : null;
         $calls = is_array($arguments) ? ($arguments['calls'] ?? null) : null;
