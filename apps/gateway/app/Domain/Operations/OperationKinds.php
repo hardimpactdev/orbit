@@ -23,6 +23,7 @@ final readonly class OperationKinds
     public function for(string $kind): OperationKind
     {
         $class = self::Kinds[$kind] ?? throw new LogicException("Unknown operation kind [{$kind}].");
+
         return $this->container->make($class);
     }
 

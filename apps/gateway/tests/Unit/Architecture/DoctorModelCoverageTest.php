@@ -37,6 +37,8 @@ use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeFootprint;
 use App\Models\NodeRole;
+use App\Models\Operation;
+use App\Models\OperationStep;
 use App\Models\PackageCacheEntry;
 use App\Models\PackageCacheSnapshot;
 use App\Models\ProblemCollectorState;
@@ -121,6 +123,8 @@ it('partitions every persisted model across doctor dispositions', function (): v
         NodeAccess::class,
         Activity::class,
         InstanceDeployment::class,
+        Operation::class, // Execution record of a long operation, not a converged fleet resource.
+        OperationStep::class,
         InstanceDeployStep::class,
         ProjectLifecycleStep::class,
         ProjectDevelopmentDeployStep::class,
