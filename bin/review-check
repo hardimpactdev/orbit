@@ -56,8 +56,9 @@ API_FIXTURE_TRIGGERS = ('docs/openapi.json', 'packages/php-sdk/fixtures/', 'apps
                         'bin/api-fixtures', 'bin/review-check')
 RUST_FORMAT = ('cargo', 'fmt', '--all', '--', '--check')
 # The lint and direct tests of the programs that the Gateway runs on Nodes (docs/reference/remote-programs.md).
+# A change to the gate alone does not run it: copies of the gate in test fixtures have no programs to check.
 REMOTE_PROGRAM_TRIGGERS = ('apps/gateway/resources/', 'apps/gateway/tests/Programs/', 'apps/gateway/ruff.toml',
-                           'bin/remote-programs-check', 'bin/review-check')
+                           'bin/remote-programs-check')
 BASES = ('origin/main', 'main')
 # Reports older than this are removed by the next run of the user that wrote them.
 REPORT_RETENTION_SECONDS = 24 * 60 * 60
