@@ -95,7 +95,7 @@ The Gateway derives the file location and the user from the Instance's placement
 
 For Laravel, the [application directory](/reference/projects#application-directory) is the effective web root without its trailing `/public`. With root `apps/site/public`, development reads and writes `<checkout>/apps/site/.env`, and `.env.testing` lives beside it. A development default uses the same paths in its checkout, which it serves directly without a `current` link.
 
-On `app-prod`, every release links `.env` in its application directory to the production home's file. With root `apps/site/public`, `<home>/releases/<name>/apps/site/.env` links to `<home>/.env`; no release-root `.env` link is needed. See [Production release layout](/reference/deployments).
+On `app-prod`, every release links `.env` in its application directory to the production home's file. With root `apps/site/public`, `<home>/releases/<name>/apps/site/.env` links to `<home>/.env`; no release-root `.env` link is needed. Application data uses separate [shared directories](/reference/deployments#shared-paths); changing those paths does not change the environment file. See [Production release layout](/reference/deployments).
 
 ## Import
 

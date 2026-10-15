@@ -2597,6 +2597,7 @@
             ],
             "concepts": [
                 "Activity",
+                "Deployment",
                 "Gateway",
                 "Instance",
                 "Node",

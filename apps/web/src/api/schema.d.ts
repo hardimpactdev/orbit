@@ -1261,8 +1261,8 @@ export interface paths {
         options?: never;
         head?: never;
         /**
-         * Update the deployment branch
-         * @description Update a production Instance deployment branch.
+         * Update production deployment settings
+         * @description Update a production Instance deployment branch or shared paths. shared_paths replaces the list; null restores the Project-type default and an empty list disables sharing. Applies to the next deployment.
          */
         patch: operations["instance-update"];
         trace?: never;
@@ -4275,6 +4275,7 @@ export interface components {
             annotator_port?: number | null;
             annotator_url?: string | null;
             routes?: components["schemas"]["Route"][];
+            shared_paths?: string[];
         };
         ProjectIdentity: {
             id?: number;
@@ -9324,7 +9325,9 @@ export interface operations {
             content: {
                 "application/json": {
                     /** @description Deployment branch */
-                    branch: string;
+                    branch?: string;
+                    /** @description JSON list of shared directories; [] disables sharing and null restores the default */
+                    shared_paths?: string[] | null;
                 };
             };
         };
