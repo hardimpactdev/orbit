@@ -1,0 +1,38 @@
+#!/usr/bin/env python3
+"""Print how many processes a check may start: ORBIT_CHECK_PROCESSES, or the core count up to DEFAULT_LIMIT.
+
+Pest and Pint read this value in the Composer scripts, and bin/review-check and bin/test split it between the
+projects they run at once. tools/check-processes.php reads the same setting, with the same default, for PHPStan and
+Rector. An explicit value is used as it is, also above the default limit.
+"""
+import os
+import re
+import sys
+
+SETTING = 'ORBIT_CHECK_PROCESSES'
+# Each PHPStan worker may use up to 1 GB, and a task VM can have 2 GB. Raise the setting on a larger machine.
+DEFAULT_LIMIT = 4
+
+
+def cores():
+    try:
+        return max(1, len(os.sched_getaffinity(0)))
+    except AttributeError:
+        return max(1, os.cpu_count() or 1)
+
+
+def processes(environment=os.environ):
+    value = environment.get(SETTING, '')
+    if value != '':
+        if not re.fullmatch(r'[1-9][0-9]*', value):
+            raise ValueError(f'{SETTING} must be a positive integer, not {value!r}.')
+        return int(value)
+    return min(cores(), DEFAULT_LIMIT)
+
+
+if __name__ == '__main__':
+    try:
+        print(processes())
+    except ValueError as error:
+        print(error, file=sys.stderr)
+        sys.exit(2)

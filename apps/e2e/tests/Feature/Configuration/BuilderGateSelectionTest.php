@@ -87,6 +87,7 @@ SH);
     chmod($root.'/bin/pest-plain', 0o700);
 
     copy(base_path('../../bin/review-check'), $root.'/bin/review-check');
+    copy(base_path('../../bin/check-processes'), $root.'/bin/check-processes');
     copy(base_path('../../bin/check-classification-fakes'), $root.'/bin/check-classification-fakes');
     file_put_contents($root.'/bin/docs-impact', "#!/usr/bin/env sh\nexit 0\n");
     file_put_contents($root.'/bin/project-vocabulary', "#!/usr/bin/env sh\nexit 0\n");
@@ -127,6 +128,7 @@ exit 2
 SH);
     chmod($root.'/apps/web/node_modules/.bin/openapi-typescript', 0o700);
     chmod($root.'/bin/review-check', 0o700);
+    chmod($root.'/bin/check-processes', 0o700);
     chmod($root.'/bin/check-classification-fakes', 0o700);
     chmod($root.'/bin/docs-impact', 0o700);
     chmod($root.'/bin/project-vocabulary', 0o700);
@@ -212,6 +214,9 @@ function orb277_run_gate(
         'ORBIT_TASK_CHECK_BASE' => $testBase ?? false,
         'CI' => $ci ? 'true' : false,
         'GITHUB_ACTIONS' => false,
+        // One process: the projects run one after another, and the full-suite fallback runs one Pest process.
+        'ORBIT_CHECK_PROCESSES' => '1',
+        'ORBIT_CHECK_SCOPE' => false,
     ]);
     $process->setTimeout(60);
     $process->run();
@@ -233,7 +238,7 @@ function orb277_run_gate(
 function orb277_full_suite_command(): array
 {
     return [
-        '../../bin/pest-plain', 'vendor/bin/pest', '--parallel', '--processes=4', '--no-tia', '--fail-on-empty-test-suite',
+        '../../bin/pest-plain', 'vendor/bin/pest', '--parallel', '--processes=1', '--no-tia', '--fail-on-empty-test-suite',
         '--compact', '--colors=never',
     ];
 }
