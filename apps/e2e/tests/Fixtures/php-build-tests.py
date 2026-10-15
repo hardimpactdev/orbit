@@ -36,8 +36,10 @@ def recipe():
             'php8.5-cli': pin('php8.5-cli', CORE),
             'php8.5-common': pin('php8.5-common', CORE),
             'php8.5-pcov': pin('php8.5-pcov', '1.0.12-2+0~20260622.34+ubuntu26.04~1.gbp5b3479'),
+            'dpkg-repack': {'source': 'ubuntu', 'package': 'dpkg-repack', 'version': '1.54build1'},
         },
-        'php': {'ci': '8.5', 'shared': ['libgd3', 'php-common'], 'versions': {
+        'php': {'ci': '8.5', 'shared': ['libgd3', 'php-common'], 'rollback': 'dpkg-repack', 'pcov': ['app-dev'],
+                'purge_extras': ['ci-runner'], 'mirror': 'https://mirror.example/php', 'versions': {
             '8.5': {'packages': ['php8.5-cli', 'php8.5-common', 'php8.5-pcov'], 'extensions': ['core', 'pcov', 'zend opcache']},
         }},
     }
@@ -110,18 +112,43 @@ class BuildTest(unittest.TestCase):
     def test_install_refuses_without_root(self):
         with patch.object(build.os, 'geteuid', return_value=1000):
             with self.assertRaisesRegex(build.BuildError, 'needs root'):
-                build.install(recipe(), None, Path('/nonexistent'), False, 'pcov', True)
+                build.install(recipe(), None, False, 'pcov', True, False)
 
-    def test_purge_selects_only_other_php_packages_that_ship_php_files(self):
-        files = {
-            'php8.3-cli': ['/usr/bin/php8.3'],
-            'php-apcu': ['/usr/lib/php/20250925/apcu.so', '/etc/php/8.5/mods-available/apcu.ini'],
-            'php-curl': ['/usr/share/doc/php-curl/copyright'],
-            'php-symfony-console': ['/usr/share/php/Symfony/Component/Console/Application.php'],
-            'php8.5-cli': ['/usr/bin/php8.5'],
-        }
-        selected = build.purgeable({**files, 'jq': '1.7'}, {'php8.5-cli'}, lambda name: files.get(name, []))
-        self.assertEqual(selected, ['php-apcu', 'php8.3-cli'])
+    def test_install_runs_the_one_installer_and_purges_only_when_asked(self):
+        calls = []
+
+        def installer(payload):
+            calls.append(payload)
+            return 'applied', {'changed': ['php8.5-cli'], 'purged': []}, ''
+        for purge, extras in ((False, 'refuse'), (True, 'purge')):
+            with patch.object(build.os, 'geteuid', return_value=0), \
+                 patch.object(build, 'run_installer', side_effect=installer), \
+                 patch.object(build, 'verify'), patch.object(build, 'run'), \
+                 patch.object(build.Path, 'write_text'), patch.object(build.Path, 'unlink'), \
+                 redirect_stdout(io.StringIO()):
+                build.install(recipe(), None, False, 'pcov', False, purge)
+            self.assertEqual(calls[-1]['extras'], extras)
+        self.assertEqual(calls[-1]['fpm'], 'shared')
+        self.assertTrue(calls[-1]['pcov'])
+        self.assertEqual(calls[-1]['repack'], {'package': 'dpkg-repack', 'version': '1.54build1'})
+
+    def test_install_names_the_refusal_and_the_purge_option(self):
+        with patch.object(build.os, 'geteuid', return_value=0), \
+             patch.object(build, 'run_installer', return_value=('extra_packages', {'packages': ['php8.5-apcu']}, '')):
+            with self.assertRaisesRegex(build.BuildError, 'extra_packages .*php8.5-apcu.*--purge-extras'):
+                build.install(recipe(), None, False, 'pcov', False, False)
+
+    def test_the_installer_input_matches_the_gateway_contract(self):
+        payload = build.installer_input(recipe(), ['8.5'])
+        self.assertEqual(sorted(payload), ['extras', 'fpm', 'git_read', 'mirror', 'mode', 'pcov', 'release', 'repack', 'versions'])
+        names = [pin['name'] for pin in payload['versions']['8.5']['packages']]
+        self.assertEqual(names, ['libgd3', 'php-common', 'php8.5-cli', 'php8.5-common', 'php8.5-pcov'])
+        self.assertEqual(payload['release'], {'id': 'ubuntu', 'codenames': ['resolute']})
+
+    def test_the_assembled_installer_is_the_program_the_gateway_sends(self):
+        source = build.assemble('php.install-build')
+        self.assertTrue(source.startswith('# Library: the runtime of every Python remote program.'))
+        self.assertIn('# Program: php.install-build', source)
 
     def test_pins_digest_changes_with_any_pin_and_not_with_extensions(self):
         first = build.pins_digest(recipe(), 'amd64', ['8.5'])
@@ -182,9 +209,11 @@ class BumpTest(unittest.TestCase):
             original = json.dumps(recipe(), indent=4) + '\n'
             path.write_text(original)
             index = '\n'.join([stanza(name, pin['version'], 'all' if name == 'php-common' else 'amd64')
-                               for name, pin in recipe()['tools'].items()])
+                               for name, pin in recipe()['tools'].items() if pin['source'] == 'artifact'])
             same = copy.deepcopy(recipe())
             for name, tool in same['tools'].items():
+                if tool['source'] != 'artifact':
+                    continue
                 filename = f'pool/main/p/php8.5/{name}_{tool["version"]}_{"all" if name == "php-common" else "amd64"}.deb'
                 tool['artifacts']['amd64'] = {'url': build.SURY + filename, 'sha256': hashlib.sha256(filename.encode()).hexdigest()}
             path.write_text(json.dumps(same, indent=4) + '\n')

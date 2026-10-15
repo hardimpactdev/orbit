@@ -96,11 +96,15 @@ describe('machine recipe structure and identity', function (): void {
         $packages = new NodeBootstrapPackageCatalog;
         $common = $packages->forNode($node);
         $programs = new RemotePhpPackageManager()->appDevPrograms(new InstancePhpVersionCatalog()->versions());
-        $php = array_values(array_unique(array_map(
-            static fn (string $row): string => explode('|', $row)[0],
-            array_filter($programs['source']->arguments, fn (string $argument): bool => substr_count($argument, '|') === 4),
-        )));
-        $php85 = $recipe->php('8.5')->packages;
+        [, $json] = explode("\0", $programs['install']->input ?? '', 2);
+        $input = json_decode($json, true, flags: JSON_THROW_ON_ERROR);
+        $php = [];
+        foreach ($input['versions'] as $set) {
+            $php = [...$php, ...array_column($set['packages'], 'name')];
+        }
+        // Every machine with a PHP set also gets the tool that repacks its build for a rollback.
+        $php = [...array_values(array_unique($php)), 'dpkg-repack'];
+        $php85 = [...$recipe->php('8.5')->packages, 'dpkg-repack'];
         $javascript = ['vp', 'vp-cli', 'node', 'pnpm', 'bun'];
         $production = array_values(array_unique([...$common, ...$packages->forRole($node, RoleName::AppProd), ...$javascript]));
         $development = [...$production, ...$php];
@@ -114,7 +118,7 @@ describe('machine recipe structure and identity', function (): void {
             'base' => $base,
             'ci-runner' => [...$common, 'acl', 'attr', 'git', 'unzip', ...$php85],
         ];
-        expect($php)->toBe(array_values(array_unique([...$php85, ...$recipe->php('8.4')->packages])));
+        expect($php)->toBe([...array_values(array_unique([...$recipe->php('8.5')->packages, ...$recipe->php('8.4')->packages])), 'dpkg-repack']);
         foreach ($profiles as $role => $expected) {
             $expected = array_values(array_unique($expected));
             sort($expected, SORT_STRING);
@@ -135,6 +139,15 @@ describe('machine recipe structure and identity', function (): void {
             ->and($recipe->tools['orbit-agent']->version)->toBe(NodeAgentFootprint::Version)
             ->and($recipe->tools['orbit-agent']->artifacts['amd64']->digest)->toBe(NodeAgentFootprint::checksum('x86_64'))
             ->and($recipe->tools['orbit-agent']->artifacts['arm64']->digest)->toBe(NodeAgentFootprint::checksum('aarch64'));
+    });
+
+    it('names the rollback tool, the PCOV profiles, the only purging profile, and the mirror', function (): void {
+        $policy = new RecipeLoader()->load()->phpPolicy;
+
+        expect($policy->rollbackTool)->toBe('dpkg-repack')
+            ->and($policy->pcovProfiles)->toBe(['app-dev', 'base', 'ci-runner'])
+            ->and($policy->purgeProfiles)->toBe(['ci-runner'])
+            ->and($policy->mirror)->toBe('https://github.com/nckrtl/orbit/releases/download/php-build-mirror');
     });
 
     it('names one exact PHP build per version for every environment', function (): void {
@@ -204,6 +217,18 @@ describe('machine recipe structure and identity', function (): void {
         'an undeclared CI version' => [function (&$d): void {
             $d['php']['ci'] = '8.3';
         }, 'php.ci: [8.3] is not a declared PHP version'],
+        'purging on a site profile' => [function (&$d): void {
+            $d['php']['purge_extras'][] = 'app-prod';
+        }, 'only the ci-runner profile may purge PHP packages'],
+        'PCOV for an unknown profile' => [function (&$d): void {
+            $d['php']['pcov'][] = 'typo';
+        }, 'php.pcov: expected recipe profiles'],
+        'a mirror without HTTPS' => [function (&$d): void {
+            $d['php']['mirror'] = 'http://example.com/php';
+        }, 'php.mirror: expected an HTTPS base URL'],
+        'a rollback tool that is not an Ubuntu package' => [function (&$d): void {
+            $d['php']['rollback'] = 'caddy';
+        }, 'php.rollback'],
     ]);
 
     it('canonicalizes object key order and whitespace but preserves meaningful changes', function (): void {

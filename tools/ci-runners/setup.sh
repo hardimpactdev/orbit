@@ -111,9 +111,14 @@ container() {
   for _ in $(seq 90); do in_ct "$name" getent hosts archive.ubuntu.com >/dev/null 2>&1 && break; sleep 1; done
 
   # The recipe's exact PHP build (ADR 0215), the same one that CI publishes caches for. A rerun moves it to the recipe.
-  in_ct "$name" install -d -m 0700 /root/orbit-php-build
-  incus file push "$REPOSITORY/bin/php-build" "$name/root/orbit-php-build/php-build" --project "$PROJECT"
-  incus file push "$REPOSITORY/apps/gateway/resources/machine-software/recipe.json" "$name/root/orbit-php-build/recipe.json" --project "$PROJECT"
+  # bin/php-build runs php.install-build, the installer that Nodes run too, so the container gets both with the
+  # repository layout that bin/php-build reads.
+  local file
+  for file in bin/php-build apps/gateway/resources/machine-software/recipe.json apps/gateway/resources/remote/bootstrap.py \
+    apps/gateway/resources/remote/lib/program.py apps/gateway/resources/remote/php/install-build.py; do
+    in_ct "$name" install -d -m 0700 "/root/orbit-php-build/$(dirname "$file")"
+    incus file push "$REPOSITORY/$file" "$name/root/orbit-php-build/$file" --project "$PROJECT"
+  done
 
   in_ct "$name" env RUNNER_VERSION="$RUNNER_VERSION" RUNNER_SHA256="$RUNNER_SHA256" \
     COMPOSER_VERSION="$COMPOSER_VERSION" COMPOSER_SHA256="$COMPOSER_SHA256" bash -euo pipefail <<'SH'
@@ -131,8 +136,8 @@ apt-get update -qq
 apt-get install -y -qq --no-install-recommends --no-upgrade \
   git curl ca-certificates jq unzip zip rsync sqlite3 python3 openssh-client socat netcat-openbsd bind9-dnsutils \
   acl attr wireguard-tools openssl nodejs caddy tar gzip xz-utils libkrb5-3 zlib1g gpgv >/dev/null
-python3 /root/orbit-php-build/php-build install --recipe /root/orbit-php-build/recipe.json --no-composer \
-  --cache /var/cache/orbit/php-build >/dev/null
+# A shard container runs only CI jobs, so it purges PHP packages and sources outside the recipe.
+python3 /root/orbit-php-build/bin/php-build install --purge-extras --no-composer >/dev/null
 # The runner's own native dependencies (ICU, OpenSSL, Kerberos, zlib) come with the list above; its
 # installdependencies.sh only knows libicu names up to 76.
 systemctl disable --now caddy >/dev/null 2>&1 || true

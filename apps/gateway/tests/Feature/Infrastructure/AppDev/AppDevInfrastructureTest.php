@@ -345,7 +345,7 @@ it('retires previous app-dev pools before activating their lower PHP version', f
     $manager->converge($node);
 
     $publishCalls = collect($ssh->commands)
-        ->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf'))
+        ->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf') && ($command->arguments[4] ?? null) !== 'php.install-build')
         ->values();
 
     expect($ssh->commands[0]->input)
@@ -392,7 +392,7 @@ it('restores the previous app-dev pools when lower PHP activation fails', functi
         });
 
     $publishCalls = collect($ssh->commands)
-        ->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf'))
+        ->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf') && ($command->arguments[4] ?? null) !== 'php.install-build')
         ->values();
 
     expect($publishCalls->map(static fn (RemoteCommand $command): string => $command->arguments[4])->all())
@@ -438,7 +438,7 @@ it('removes a newly activated app-dev pool when later PHP activation fails', fun
         });
 
     $publishCalls = collect($ssh->commands)
-        ->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf'))
+        ->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf') && ($command->arguments[4] ?? null) !== 'php.install-build')
         ->values();
 
     expect($publishCalls->map(static fn (RemoteCommand $command): string => $command->arguments[4])->all())
@@ -457,7 +457,7 @@ it('installs selected PHP versions and validates a complete staged FPM configura
     app_dev_supported_route($php85, 'php85.app-dev.orbit');
     $ssh = new AppDevFakeSshExecutor([
         new CommandResult(0, "8.5\n", '', 1, false),
-        new CommandResult(0, "8.4\n", '', 1, false),
+        new CommandResult(0, '', '', 1, false),
         new CommandResult(0, '', '', 1, false),
     ]);
     $manager = new RemoteAppDevPhpFpmManager(
@@ -471,15 +471,15 @@ it('installs selected PHP versions and validates a complete staged FPM configura
     $manager->converge($node);
 
     $publishCalls = collect($ssh->commands)
-        ->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf'))
+        ->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf') && ($command->arguments[4] ?? null) !== 'php.install-build')
         ->values();
 
     expect($ssh->commands)
         ->toHaveCount(6)
-        ->and($ssh->commands[2]->input)
-        ->toContain('--allow-downgrades')
-        ->and(array_map(static fn (string $argument): string => explode('|', $argument)[0], $ssh->commands[2]->arguments))
-        ->toContain('php8.4-fpm', 'php8.4-pcov', 'php8.4-opcache')
+        ->and($ssh->commands[1]->arguments[4])
+        ->toBe('php.install-build')
+        ->and($ssh->commands[1]->input)
+        ->toContain('"name":"php8.4-fpm"', '"name":"php8.4-pcov"', '"name":"php8.4-opcache"', '"extras":"keep"')
         ->and($publishCalls)
         ->toHaveCount(2)
         ->and($publishCalls->first()?->arguments)
@@ -565,7 +565,7 @@ it('renders and publishes AppDev FPM pools with the nondefault managed account',
     $manager->converge($node);
 
     $publishCall = collect($ssh->commands)
-        ->first(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf'));
+        ->first(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf') && ($command->arguments[4] ?? null) !== 'php.install-build');
 
     expect($rendered)
         ->toContain(
@@ -688,7 +688,7 @@ it('publishes the other pools, then fails, when a desired pool names a missing w
         });
 
     $publishCall = collect($ssh->commands)
-        ->first(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf'));
+        ->first(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf') && ($command->arguments[4] ?? null) !== 'php.install-build');
     $kept = $renderer->render($sites->reject(static fn (DevelopmentSite $site): bool => $site === $missingSite)->values(), $account);
 
     expect($ssh->commands[0]->arguments)
@@ -732,7 +732,7 @@ it('rolls back to the previous pools without the pool whose working directory is
         });
 
     $publishCalls = collect($ssh->commands)
-        ->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf'))
+        ->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf') && ($command->arguments[4] ?? null) !== 'php.install-build')
         ->values();
 
     expect($publishCalls->map(static fn (RemoteCommand $command): string => $command->arguments[4])->all())

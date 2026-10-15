@@ -57,7 +57,7 @@ final readonly class ConvergeNodeRecipeAction
                 $settings = $node->settings ?? [];
                 unset($settings['machine_recipe']);
                 $node->update(['settings' => $settings]);
-                $changes = $this->program->apply($node, $recipe, $this->program->tools($node, $recipe, $profile));
+                $changes = $this->program->apply($node, $recipe, $this->program->tools($node, $recipe, $profile), $profile);
                 $this->verifyTools($node);
                 $report = $this->verifier->verify($node, [], NodeAgentFootprint::Version);
                 if (! $report['passed']) {
@@ -97,6 +97,8 @@ final readonly class ConvergeNodeRecipeAction
     {
         $pins = $this->program->tools($node, $recipe, $profile);
         $this->checkConstraints($node, $pins);
+        // Another PHP source or a PHP package outside the recipe refuses the plan, also in a dry run.
+        $this->program->phpPreflight($node, $recipe, $pins, $profile);
         $installed = $this->program->inspect($node, $recipe, $pins);
         $tools = [];
         foreach ($pins as $name => $pin) {

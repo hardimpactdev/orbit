@@ -98,17 +98,13 @@ Before installation, Orbit checks the name, complete version (including any epoc
 
 Every role that runs PHP, `app-dev`, `app-prod`, `websocket`, and `gateway`, names a [PHP set](/reference/compute-drivers#php-build). So convergence brings PHP on each such Node, the Gateway included, to the recipe build, and replaces a PHP build from the Ubuntu archive.
 
-Package hooks are prevented from restarting services during installation. Only active services belonging to changed packages restart; PHP package changes also restart active FPM units for that PHP version. For a PHP set in the selected tools, convergence handles PHP-FPM in this order:
+Package hooks are prevented from restarting services during installation. Only active services belonging to changed packages restart.
 
-1. It records the module links in `/etc/php/<version>/fpm/conf.d`.
-2. It enables PCOV for the CLI and disables it for PHP-FPM.
-3. It checks that `php<version> -m` prints exactly the recipe's extension list. A difference stops at stage `php-modules:<version>`, before any service restarts.
-4. Before it restarts an active `php<version>-fpm`, it validates the configuration with `php-fpm<version> -t`. A failure stops at stage `restart:php<version>-fpm.service`, and the running service keeps serving.
-5. When the restart fails or the service is not active after it, convergence restores the recorded module links and starts the service once more. It then stops at stage `restart:php<version>-fpm.service`.
+The PHP set is the exception: [`php.install-build`](/reference/compute-drivers#install-the-php-build), the one PHP build installer, installs it. Before any change, convergence runs the installer's plan. Another PHP apt source, or a PHP package of a handled version outside the recipe, refuses the convergence with `node.recipe_php_refused` and names it. A dry run refuses the same way. The `ci-runner` profile purges such packages instead; no other profile does.
 
-Convergence cannot put back the previous PHP packages: Sury deletes a build from its pool when it publishes the next one.
+After the other tools, convergence runs the installer with PHP-FPM option `all`. It restarts the shared `php<version>-fpm` service and each active dedicated production master, each after `php-fpm -t`. It checks each pool socket with a FastCGI request. A dedicated production master restarts briefly during this step, so each site of the Node does too.
 
-Convergence restarts only the shared `php<version>-fpm` service. A dedicated production PHP-FPM master keeps its build until its next restart, which the next deployment of a new release causes. So converging an `app-prod` Node does not interrupt its production sites. On the Gateway, the restart reloads the workers that serve the API; run it while no long request runs.
+When a check fails, the installer reinstalls the previous build and restarts the masters again. Convergence then stops with `node.recipe_php_failed`, names the master, and records no convergence. PCOV loads in the CLI only on the `app-dev` role and the `ci-runner` profile. On the Gateway, the restart of `php8.5-fpm` reloads the workers that serve the API, so converge the Gateway last.
 
 Vite+ keeps its existing global store. The pinned CLI receives its initialization marker before it runs, so it cannot launch an unpinned installer. A Vite+ package change requires its existing dependencies to match the new distribution’s exact versions. A missing or changed dependency stops at the tools stage instead of fetching inputs absent from the recipe.
 
@@ -337,12 +333,10 @@ A role installs its packages from the Ubuntu archive, except PHP and Caddy.
 
 | Package | Source | Files Orbit owns |
 | --- | --- | --- |
-| PHP | The Sury `.deb` files that the [recipe's PHP build](/reference/compute-drivers#php-build) pins | `/var/cache/orbit/php-packages` while a download waits for installation |
+| PHP | The Sury `.deb` files that the [recipe's PHP build](/reference/compute-drivers#php-build) pins, from Orbit's mirror or Sury | `/var/cache/orbit/php-packages`, every pinned and repacked file, kept for a rollback |
 | Caddy | The `.deb` of a pinned [Caddy release](https://github.com/caddyserver/caddy/releases) on GitHub | None |
 
-For PHP, the Gateway passes each pin's URL, version, and SHA-256 digest to the Node. The Node downloads only over HTTPS and refuses a file whose digest, package name, version, or architecture differs. It installs the files with `--allow-downgrades`, so a Node at any other build moves to the recipe build. Orbit adds no PHP apt source. The step deletes the Sury source that earlier Orbit releases wrote, `/etc/apt/sources.list.d/orbit-php.sources` and `/usr/share/keyrings/orbit-sury-php.gpg`, and refuses any other PHP apt source, such as `ppa:ondrej/php`. [PHP runtimes: PHP build](/reference/php-runtime#php-build) lists the steps.
-
-When every package is at its recipe version, the step downloads nothing and logs `PHP packages match the recipe; skipped the package download.` It still refuses a conflicting PHP source first.
+For PHP, the Gateway sends each pin's URL, version, and SHA-256 digest to the Node with [`php.install-build`](/reference/compute-drivers#install-the-php-build). The Node downloads only over HTTPS, from Orbit's mirror first, and refuses a file whose digest, package name, version, or architecture differs. Orbit adds no PHP apt source. The installer deletes the Sury source that earlier Orbit releases wrote and refuses any other PHP apt source, such as `ppa:ondrej/php`. When every package is at its recipe version, it downloads nothing.
 
 For Caddy, the Gateway pins a release and the SHA-512 digest of its `.deb` for `amd64` and `arm64`. It downloads the package only when Caddy is missing or below the floor, refuses a download whose digest does not match, and installs it with apt. A Node on another architecture fails the step. The step adds no apt source. It deletes `/etc/apt/sources.list.d/orbit-caddy.sources` and `/usr/share/keyrings/orbit-caddy.gpg`, which earlier Orbit releases wrote for the Caddy apt source on Cloudsmith.
 

@@ -715,9 +715,10 @@ it('sets up the recipe PHP build in every PHP job and never floats PHP with setu
         }
     }
 
-    expect($phpJobs)->toBe(['project', 'gateway-plan', 'gateway-shards', 'privileged', 'docs-merge-ref', 'api-reference', 'audit'])
+    expect($phpJobs)->toBe(['project', 'gateway-plan', 'gateway-shards', 'privileged', 'remote-programs', 'docs-merge-ref', 'api-reference', 'audit'])
         ->and($steps['Install the recipe PHP build']['if'])->toBe("runner.environment == 'github-hosted'")
-        ->and($steps['Install the recipe PHP build']['run'])->toContain('sudo python3 bin/php-build install --ci --coverage "$COVERAGE"')
+        ->and($steps['Install the recipe PHP build']['run'])->toContain('sudo python3 bin/php-build install --ci --purge-extras --coverage "$COVERAGE"')
+        ->and($steps['Restore the PHP packages']['with']['path'])->toBe('/var/cache/orbit/php-packages')
         ->and($steps['Restore the PHP packages']['if'])->toBe("runner.environment == 'github-hosted'")
         ->and($steps['Restore the PHP packages']['with']['key'])->toBe('orbit-php-build-${{ steps.key.outputs.key }}')
         ->and($steps['Verify the recipe PHP build'])->not->toHaveKey('if')

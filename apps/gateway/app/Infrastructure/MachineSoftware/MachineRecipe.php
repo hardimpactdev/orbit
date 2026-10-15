@@ -24,6 +24,7 @@ final readonly class MachineRecipe
         public string $json = '{}',
         public array $php = [],
         public string $ciPhp = '',
+        public PhpPolicy $phpPolicy = new PhpPolicy,
     ) {}
 
     public function php(string $version): PhpBuild

@@ -105,6 +105,11 @@
             "package": "docker.io",
             "version": "29.1.3-0ubuntu4.1"
         },
+        "dpkg-repack": {
+            "source": "ubuntu",
+            "package": "dpkg-repack",
+            "version": "1.54build1"
+        },
         "gcc": {
             "source": "ubuntu",
             "package": "gcc",
@@ -971,6 +976,16 @@
             "libgd3",
             "php-common"
         ],
+        "rollback": "dpkg-repack",
+        "pcov": [
+            "app-dev",
+            "base",
+            "ci-runner"
+        ],
+        "purge_extras": [
+            "ci-runner"
+        ],
+        "mirror": "https://github.com/nckrtl/orbit/releases/download/php-build-mirror",
         "versions": {
             "8.5": {
                 "packages": [

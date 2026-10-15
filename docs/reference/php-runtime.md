@@ -44,21 +44,21 @@ The Instance records the selected version in its [source profile](/domains/appli
 
 ## PHP build
 
-The PHP step of the `app-dev` and `app-prod` roles installs the recipe's [PHP set](/reference/compute-drivers#php-build) of each selected version. The set is the version's `php<version>-*` packages, `php-common`, and `libgd3`, each at its exact recipe version. The step reads the set from the recipe; it keeps no list of its own.
+The PHP step of the `app-dev` and `app-prod` roles installs the recipe's [PHP set](/reference/compute-drivers#php-build) of each selected version with `php.install-build`, the one [PHP build installer](/reference/compute-drivers#install-the-php-build). Recipe convergence, the task VM image build, and CI run the same program. The step reads the set from the recipe; it keeps no list of its own.
 
-1. The step refuses a PHP apt source, such as `ppa:ondrej/php`.
-2. It deletes the Sury apt source of earlier Orbit releases: `/etc/apt/sources.list.d/orbit-php.sources` and `/usr/share/keyrings/orbit-sury-php.gpg`. So `apt upgrade` cannot move PHP off the recipe.
-3. It downloads the recipe's `.deb` of each package that is not at its recipe version into `/var/cache/orbit/php-packages`. It checks the digest and the package fields of each file against the pin.
-4. It installs the files of each version with `--allow-downgrades` and then deletes them. Package hooks cannot start or restart a service.
-5. It enables PCOV for the CLI and disables it for PHP-FPM, on every role.
-6. It checks that `php<version> -m` prints exactly the recipe's extension list. A missing or extra module fails the step and names the module.
-7. It checks that PHP-FPM loads the required database, image, and string extensions, and not PCOV.
+The PHP step of an Instance uses these options:
 
-When every package is at its recipe version, the step downloads nothing and logs `PHP packages match the recipe; skipped the package download.`
+- It keeps PHP packages outside the recipe and installs with `--no-remove`, so a deploy never removes an extension that a site uses. Recipe convergence refuses such packages instead.
+- It loads PCOV in the CLI only on an `app-dev` Node.
+- It restarts only the shared `php<version>-fpm` service. It restarts a running service whose pools pass `php-fpm<version> -t`.
+- A service whose pools fail validation keeps running. The pool publication that follows removes a stale pool and reloads the service.
+- A stopped service stays stopped until pool publication starts it.
 
-When the step changed a package and the shared service runs, it reloads the service only after `php-fpm<version> -t` passes, as for a changed runtime module. A stopped service stays stopped until pool publication starts it. A dedicated production master keeps its build until its next restart. The next deployment of a new release restarts it.
+The step restarts no dedicated production master. It logs the masters that still run the previous build. Their next restart, such as the next deployment, loads the new build.
 
-A PHP extension that an operator installed by hand fails step 5 until the operator removes it. The [Tools](/reference/tools#protected-packages) apt manager cannot install, update, adopt, or remove the role's PHP packages.
+When every package is at its recipe version, the installer downloads nothing, and the step logs `PHP packages match the recipe; skipped the package download.` A refusal or a failed install fails the step with `app-dev.php_install_failed` or `app-prod.php_install_failed`. Another PHP apt source, a missing file, or an unsupported system fails it with `app-dev.php_package_source_unavailable` or `app-prod.php_package_source_unavailable`. The error carries the installer's log.
+
+The [Tools](/reference/tools#protected-packages) apt manager cannot install, update, adopt, or remove the role's PHP packages.
 
 Orbit does not recover missing source profiles on older Instances. [Projects: One public name without compatibility](/reference/projects#one-public-name-without-compatibility) explains the no-legacy-support rule.
 
@@ -181,9 +181,17 @@ Another production user must show a different service, socket, master, and cache
 
 These reasons explain the design. Check them before you propose a change.
 
+### PCOV only where checks run
+
+PCOV is part of PHPStan's cache key, so the machines that share CI caches must load it: `app-dev` Nodes, task VMs, and CI. Production Nodes and the Gateway run no checks, so their CLI does not pay its overhead.
+
 ### Sury packages, not a custom PHP build
 
 A static-php build is 10 to 15 percent slower on Orbit's Nodes, lacks `pdo_sqlite` and `pdo_pgsql`, and its glibc variant crashes on some CPUs. A custom build would also make Orbit own PHP security updates. So Orbit uses the pinned Sury packages.
+
+### One installer with a rollback
+
+Each caller once had its own install code, and their safety checks differed. One program gives every machine the same extras check, rollback, and health checks. The installer keeps the previous build as files, so a PHP-FPM that fails to start after a change gets its previous build back at once instead of waiting for an operator.
 
 ### The recipe's files, not the Sury apt source
 

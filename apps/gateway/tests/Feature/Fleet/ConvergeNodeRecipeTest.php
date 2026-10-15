@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Fleet\ConvergeNodeRecipeAction;
 use App\Domain\Fleet\FleetNodeVerification;
 use App\Domain\Nodes\RoleName;
+use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolInspectionData;
 use App\Domain\Tools\ToolInspector;
@@ -22,6 +23,7 @@ use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 use Illuminate\Support\Facades\Artisan;
 use Symfony\Component\Process\Process;
+use Tests\Support\FakePhpBuildRunner;
 use Tests\Support\Fleet\FleetFixtures;
 use Tests\Support\Fleet\FleetTestSsh;
 use Tests\Support\Fleet\ScriptedSshExecutor;
@@ -60,6 +62,7 @@ function recipeSsh(?CommandResult $application = null): ScriptedSshExecutor
     });
     $ssh->on('/^sudo timeout .* python3 - apply /', $application ?? ScriptedSshExecutor::ok('{"changed_packages":["curl"],"restarted_services":[],"changed_tools":["curl"],"healthy":true}'));
     app()->instance(NodeShell::class, FleetTestSsh::shell($ssh));
+    app()->instance(RemoteProgramRunner::class, new FakePhpBuildRunner);
     app()->instance(NodeUpdateLock::class, new NodeUpdateLock(FleetTestSsh::shell($ssh)));
 
     return $ssh;
@@ -132,7 +135,7 @@ it('selects each service role prerequisite without development-only software', f
 
     $pins = app(NodeRecipeProgram::class)->tools($node, $recipe);
 
-    $php = $role === RoleName::WebSocket ? $recipe->php('8.5')->packages : [];
+    $php = $role === RoleName::WebSocket ? [...$recipe->php('8.5')->packages, 'dpkg-repack'] : [];
     $expected = array_unique([...$recipe->profile('operator'), ...new NodeBootstrapPackageCatalog()->forRole($node, $role), ...$php]);
     sort($expected);
     expect(array_keys($pins))->toBe($expected)->not->toContain('rust', 'node', 'pi');
@@ -149,18 +152,62 @@ it('gives every role that runs PHP the whole recipe PHP 8.5 set', function (Role
         ->and($recipe->phpExtensions($pins))->toBe(['8.5' => $recipe->php('8.5')->extensions]);
 })->with([RoleName::AppProd, RoleName::WebSocket, RoleName::Gateway]);
 
-it('sends the extension list of each whole PHP set to the remote program', function (): void {
+it('installs the PHP build with the one installer after the other tools, strictly and without PCOV on the Gateway', function (): void {
     $node = FleetFixtures::node('recipe-php-payload', [RoleName::Gateway]);
     $ssh = recipeSsh();
+    $php = app(RemoteProgramRunner::class);
     app()->instance(FleetNodeVerification::class, new RecipeVerification);
     $recipe = new RecipeLoader()->load();
 
-    app(ConvergeNodeRecipeAction::class)->execute($node, $recipe);
+    $result = app(ConvergeNodeRecipeAction::class)->execute($node, $recipe);
 
     $apply = collect($ssh->commands)->first(fn (RemoteCommand $command): bool => in_array('apply', $command->arguments, true));
     $payload = json_decode((string) $apply->arguments[array_key_last($apply->arguments)], true, flags: JSON_THROW_ON_ERROR);
-    expect($payload['php'])->toBe(['8.5' => $recipe->php('8.5')->extensions])
-        ->and(array_keys($payload['tools']))->toContain('php8.5-fpm', 'php8.5-pcov');
+    expect(array_keys($payload['tools']))->not->toContain('php8.5-fpm', 'php8.5-pcov', 'php-common')->toContain('caddy', 'dpkg-repack')
+        ->and(array_column($php->inputs, 'mode'))->toBe(['plan', 'plan', 'apply'])
+        ->and($php->inputs[2])->toMatchArray(['pcov' => false, 'extras' => 'refuse', 'fpm' => 'all'])
+        ->and(array_keys($php->inputs[2]['versions']))->toBe(['8.5'])
+        ->and($result['changes']['php'])->toMatchArray(['changed' => [], 'stale_masters' => []]);
+});
+
+it('refuses extra PHP packages or another PHP source before any change, also in a dry run', function (bool $dryRun): void {
+    $node = FleetFixtures::node('recipe-php-extras', [RoleName::AppProd]);
+    $ssh = recipeSsh();
+    app()->instance(RemoteProgramRunner::class, new FakePhpBuildRunner(['plan' => ['extra_packages', ['packages' => ['php8.5-opentelemetry']]]]));
+
+    expect(fn () => app(ConvergeNodeRecipeAction::class)->execute($node, new RecipeLoader()->load(), dryRun: $dryRun))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('node.recipe_php_refused')
+            ->and($exception->getMessage())->toContain('php8.5-opentelemetry', 'Nothing was changed'));
+    expect(collect($ssh->commands)->contains(fn (RemoteCommand $command): bool => in_array('apply', $command->arguments, true)))->toBeFalse();
+})->with(['apply' => [false], 'dry run' => [true]]);
+
+it('stops with the installer outcome when the PHP build rolls back and records no convergence', function (): void {
+    $node = FleetFixtures::node('recipe-php-rollback', [RoleName::AppProd]);
+    recipeSsh();
+    app()->instance(RemoteProgramRunner::class, new FakePhpBuildRunner(['apply' => ['rolled_back', ['unit' => 'orbit-shop-php8.5-fpm.service', 'reason' => 'the service did not start']]]));
+    $verification = new RecipeVerification;
+    app()->instance(FleetNodeVerification::class, $verification);
+
+    expect(fn () => app(ConvergeNodeRecipeAction::class)->execute($node, new RecipeLoader()->load()))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('node.recipe_php_failed')
+            ->and($exception->getMessage())->toContain('orbit-shop-php8.5-fpm.service', 'restored the previous PHP build'));
+    expect($verification->calls)->toBe(0)
+        ->and($node->refresh()->settings)->toBe([]);
+});
+
+it('loads PCOV and purges extra PHP packages only for the ci-runner profile', function (): void {
+    $sabre = FleetFixtures::node('recipe-php-sabre');
+    recipeSsh();
+    $php = app(RemoteProgramRunner::class);
+    app()->instance(FleetNodeVerification::class, new RecipeVerification);
+
+    app(ConvergeNodeRecipeAction::class)->execute($sabre, new RecipeLoader()->load(), profile: 'ci-runner');
+    $dev = FleetFixtures::node('recipe-php-dev', [RoleName::AppDev]);
+    app(ConvergeNodeRecipeAction::class)->execute($dev, new RecipeLoader()->load());
+
+    $applies = array_values(array_filter($php->inputs, static fn (array $input): bool => $input['mode'] === 'apply'));
+    expect($applies[0])->toMatchArray(['pcov' => true, 'extras' => 'purge'])
+        ->and($applies[1])->toMatchArray(['pcov' => true, 'extras' => 'refuse']);
 });
 
 it('converges a roleless CI runner with the ci-runner profile and records the profile', function (): void {

@@ -11,6 +11,9 @@ use App\Infrastructure\Ssh\SshExecutor;
 
 final class AppDevFakeSshExecutor implements SshExecutor
 {
+    /** What the PHP build installer prints when a test queues an empty success for it. */
+    public const string InstallerApplied = '{"outcome":"applied","data":{"changed":[],"purged":[],"restarted":[],"deferred":[],"stale_masters":[]}}'."\n";
+
     /** @var list<RemoteCommand> */
     public array $commands = [];
 
@@ -26,7 +29,13 @@ final class AppDevFakeSshExecutor implements SshExecutor
     {
         $this->connections[] = $connection;
         $this->commands[] = $command;
+        $result = array_shift($this->results) ?? new CommandResult(0, '', '', 1, false);
 
-        return array_shift($this->results) ?? new CommandResult(0, '', '', 1, false);
+        // A queued empty success stands for a successful run of the PHP build installer (ADR 0215).
+        if (($command->arguments[4] ?? null) === 'php.install-build' && $result->exitCode === 0 && $result->stdout === '') {
+            return new CommandResult(0, self::InstallerApplied, $result->stderr, $result->durationMs, false);
+        }
+
+        return $result;
     }
 }

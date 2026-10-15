@@ -4,7 +4,8 @@ description: "Task VMs for every Project and their UpCloud overflow."
 covers:
   - apps/gateway/app/{Domain/TaskVms,Infrastructure/TaskVms,Jobs/TaskVms,Actions/TaskVms,Domain/Compute}/**
   - apps/gateway/app/{Models/TaskVm.php,Models/TaskVmImageBuild.php,Console/Commands/*ImageBuildsCommand.php,Console/Commands/PrepareTaskVmHostCommand.php,Console/Commands/PrepareTaskVmHubCommand.php,Console/Commands/BuildTaskVmImageCommand.php,Console/Commands/BuildTaskVmRecipeCommand.php,Console/Commands/BuildUpCloudTaskVmImageCommand.php,Console/Commands/ResolvesTaskVmHostNode.php}
-  - apps/gateway/{app/Infrastructure/MachineSoftware/**,app/Console/Commands/MachineRecipeCommand.php,resources/machine-software/**}
+  - apps/gateway/{app/Infrastructure/MachineSoftware/**,app/Console/Commands/MachineRecipeCommand.php,resources/machine-software/**,resources/remote/php/**}
+  - .github/workflows/php-build-mirror.yml
   - apps/gateway/{app/Models/PackageCache*.php,app/Console/Commands/PackageCacheUsageCommand.php,database/migrations/*create_package_cache_tables.php,config/package_cache.php,config/task_vms.php}
   - apps/gateway/resources/task-vms/**
   - apps/gateway/database/migrations/*{create_task_vm_image_builds_table,add_recipe_to_task_vm_image_builds,add_recipe_identity_to_task_vms,fence_task_vm_image_build_attempts,create_task_vms_table,add_model_proxy_origin_to_task_vms,add_warm_pool_to_task_vms,retire_task_vm_warm_pool,add_upcloud_to_task_vms,add_size_to_task_vms,add_topology_to_task_vms,create_jobs_table,create_failed_jobs_table,create_task_sandboxes_table,add_fleet_enrollment_to_task_sandboxes,add_pi_ready_at_to_task_sandboxes,close_checks_of_destroyed_task_sandboxes,drop_task_sandboxes}.php
@@ -83,16 +84,79 @@ The recipe is the single source of truth for Orbit's PHP build. Every machine th
 | `php.versions.<version>.extensions` | The modules that `php<version> -m` prints for the CLI, in lower case, sorted, without section headers. `Zend OPcache` is `zend opcache`. The list includes `core` and `pcov` |
 | `php.shared` | Pins that every version needs: `php-common` and `libgd3` |
 | `php.ci` | The version that CI installs |
+| `php.rollback` | The Ubuntu tool that repacks an installed build for a rollback, `dpkg-repack`. Every profile with a PHP set gets it |
+| `php.pcov` | The profiles whose PHP CLI loads PCOV: `app-dev`, `base`, and `ci-runner` |
+| `php.purge_extras` | The profiles that purge PHP packages outside the recipe. Only `ci-runner` may be listed |
+| `php.mirror` | The HTTPS base URL of Orbit's copy of the pinned files, tried before each pin's own URL |
 
-A profile names a PHP set as `php:<version>`. The set is the shared pins and the version's packages. A profile cannot name a PHP pin directly, so no profile gets part of a set. A version that no profile names is an error.
+A profile names a PHP set as `php:<version>`. The set is the shared pins, the version's packages, and the rollback tool. A profile cannot name a PHP pin directly, so no profile gets part of a set. A version that no profile names is an error.
 
 Extensions with their own release, such as `igbinary`, `imagick`, `pcov`, and `redis`, keep their own versions. The loader also rejects a recipe in which:
 
 - the PHP core pins of a version have different versions. A core pin has a version that starts with `<version>.`, and it must equal `php<version>-common`;
 - a Sury pin is built for another Ubuntu release: its version must contain `+ubuntu<ubuntu.release>`;
-- `php.ci` names an undeclared version.
+- `php.ci` names an undeclared version;
+- `php.purge_extras` names another profile than `ci-runner`, or `php.mirror` is not an HTTPS URL.
 
-PCOV loads in the CLI and never in PHP-FPM. It records nothing until a test calls `\pcov\start()`, so it stays loaded on production machines too: the loaded extension set is part of PHPStan's cache key.
+PCOV loads in the CLI of the `php.pcov` profiles only, and never in PHP-FPM. Those are the machines that run checks and share CI caches, so their loaded extension set matches CI's. Production Nodes and the Gateway keep PCOV installed but not loaded.
+
+#### Install the PHP build
+
+`php.install-build`, a [remote program](/reference/remote-programs), is the one installer of the PHP build. Recipe convergence and the PHP step of an Instance send it to the Node. The image build runs it in the guest, and `bin/php-build install` runs it on a CI machine.
+
+Before it changes anything, the installer checks the machine:
+
+1. It refuses another PHP apt source, such as `ppa:ondrej/php`, and names it.
+2. It refuses each installed PHP package of a handled version that the recipe set does not hold, and names it.
+3. A plan run, such as a dry run, stops here and lists the packages it would change.
+
+Then it gets the files:
+
+1. It deletes the Sury apt source of earlier Orbit releases, so `apt upgrade` cannot move PHP.
+2. It downloads each pinned file that is not installed at its version. It tries `php.mirror` first, then the pin's URL.
+3. It refuses a file whose SHA-256 digest, package name, version, or architecture differs from the pin.
+4. It keeps every file in `/var/cache/orbit/php-packages` and never deletes one.
+
+Then it keeps the installed build for a rollback:
+
+1. For each package that the change replaces or purges, it looks for a cached `.deb` of the installed version.
+2. Otherwise `dpkg-repack` writes one. A missing `dpkg-repack` is first installed at its recipe version.
+3. Without a rollback file, it refuses with `rollback_unavailable` before any change.
+
+Then it swaps the build:
+
+1. It installs the files with `--no-remove` and `--allow-downgrades`. A newer or an older build becomes the recipe build, and no other package is removed.
+2. Package hooks cannot start or restart a service during the install.
+3. It loads PCOV in the CLI on the `php.pcov` profiles only, and never in PHP-FPM.
+4. It checks that `php<version> -m` prints the recipe's extensions.
+
+After a change, it restarts PHP-FPM:
+
+1. It validates each master with `php-fpm<version> -t`. A dedicated production master uses its own `--fpm-config`.
+2. It restarts the master and checks that the service is active.
+3. It checks that `php-fpm<version> -m` loads the required extensions and not PCOV.
+4. It sends a FastCGI request to each pool socket in the master's configuration and waits for the answer.
+
+When a check after the swap fails, the installer rolls back. It reinstalls the previous build with `--allow-downgrades`, restores the module links, and restarts the masters again. It ends with `rolled_back`, or with `rollback_failed` when that fails too.
+
+Each caller sets two options:
+
+| Caller | Extra packages | PHP-FPM |
+| --- | --- | --- |
+| Recipe convergence | `refuse`, or `purge` on a `php.purge_extras` profile | `all`: the shared service and each active dedicated master; a failure rolls back |
+| PHP step of an Instance | `keep`, so a deploy never removes a site's extension | `shared`: the shared service, left running when its pools fail `php-fpm -t` |
+| Image build | `refuse` | `none` |
+| `bin/php-build install` | `refuse`, or `purge` with `--purge-extras` | `shared` |
+
+The outcomes are `planned`, `current`, `applied`, `platform_unsupported`, `conflicting_source`, `extra_packages`, `download_failed`, `rollback_unavailable`, `install_failed`, `modules_mismatch`, `fpm_invalid`, `rolled_back`, and `rollback_failed`. After a refusal or a failure, the previous build stays installed.
+
+#### The PHP build mirror
+
+The `PHP build mirror` workflow, `.github/workflows/php-build-mirror.yml`, keeps Orbit's copy of the pinned files. It runs on each push to `main` that changes the recipe or `bin/php-build`, and on manual dispatch.
+
+`bin/php-build mirror` downloads every pinned PHP file of every version and architecture, and checks its digest. The workflow uploads each missing file to the `php-build-mirror` release, named `<package>_<sha256>.deb`. That release is a prerelease and never the latest release.
+
+Sury deletes a build from its pool when it publishes the next one. The mirror keeps rollbacks, new Nodes, and CI on the exact build after that.
 
 #### Bump the PHP build
 
@@ -102,6 +166,7 @@ Sury keeps only its newest build in its pool, so keep the recipe on Sury's newes
 
 [Nightly recipe maintenance](#nightly-recipe-maintenance) runs it every night, in the same job that opens the snapshot pull request. When the pins change, the Gateway opens one pull request through its GitHub App on the branch `nightly/php-build-<digest>`, named after the new pins and titled with the new PHP releases. It opens no second pull request for the same pins, and never reopens a closed one. The nightly auto-merge takes only date branches, so a maintainer reviews and merges the PHP build pull request. The Gateway needs `python3` and `gpgv` for the bump. Run `php artisan orbit:machine-recipe --validate` to check a bump by hand. After merge:
 
+1. The [mirror](#the-php-build-mirror) workflow publishes the new files.
 1. Each task VM host [builds a new base image](#build-the-base-image).
 2. [Nightly recipe maintenance](#nightly-recipe-maintenance) converges each Node, or you run `php artisan node:converge-recipe <node>`. The next [PHP step](/reference/php-runtime#php-build) of an Instance also brings its versions to the recipe.
 3. Hosted CI installs the new build in its next run. The self-hosted runners fail until an operator [updates them](/reference/implementation-loop#one-php-build-in-ci).

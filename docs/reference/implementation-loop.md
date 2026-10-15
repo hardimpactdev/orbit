@@ -103,22 +103,27 @@ Every job that runs PHP uses the recipe's [PHP build](/reference/compute-drivers
 
 On a GitHub-hosted runner the action runs these steps:
 
-1. It restores the downloaded `.deb` files from `actions/cache`, keyed on `bin/php-build key`, the digest of the PHP pins of the runner's architecture.
-2. `bin/php-build install --ci` downloads each missing file. It refuses a file with a wrong SHA-256 digest, package name, version, or architecture.
-3. It deletes the runner's other PHP packages and PHP apt sources, and installs the set.
-4. It enables PCOV for the CLI only, and sets `zend.exception_ignore_args=0` for the CLI.
-5. It installs Composer 2.10.3 from a pinned `composer.phar` at `/usr/local/bin/composer`.
-6. A job with input `coverage: none` keeps PCOV loaded and sets `pcov.enabled=0`. The job collects no coverage and still loads the recipe's extensions.
-7. `bin/php-build verify` fails unless `PHP_VERSION`, each package version, and `php -m` match the recipe.
-
-The cache matters because Sury deletes a file from its pool when it publishes a newer build. While a cache entry exists, CI keeps working until the recipe moves to the new build.
+1. It restores `/var/cache/orbit/php-packages` from `actions/cache`, keyed on `bin/php-build key`, the digest of the PHP pins of the runner's architecture.
+2. `sudo bin/php-build install --ci --purge-extras` runs [`php.install-build`](/reference/compute-drivers#install-the-php-build), the installer that Nodes and images run too.
+3. A hosted runner image ships other PHP packages and the `ondrej/php` source. `--purge-extras` removes them, and only CI machines use it.
+4. `--ci` sets `zend.exception_ignore_args=0` for the CLI. The action installs Composer 2.10.3 from a pinned `composer.phar` at `/usr/local/bin/composer`.
+5. A job with input `coverage: none` keeps PCOV loaded and sets `pcov.enabled=0`. The job collects no coverage and still loads the recipe's extensions.
+6. `bin/php-build verify` fails unless `PHP_VERSION`, each package version, and `php -m` match the recipe.
 
 A self-hosted runner never installs packages in a job. The action only runs `bin/php-build verify`. It fails with the expected and the found build, and names the step that fixes the host. After a PHP bump, update each runner while it is idle:
 
-- Sabre is a roleless Orbit Node. On the Gateway, run `php artisan node:converge-recipe sabre --profile=ci-runner`. The recipe's [`ci-runner` profile](/reference/compute-drivers#role-and-base-tool-sets) installs the build.
+- Sabre is a roleless Orbit Node. On the Gateway, run `php artisan node:converge-recipe sabre --profile=ci-runner`. The recipe's [`ci-runner` profile](/reference/compute-drivers#role-and-base-tool-sets) installs the build and purges PHP packages outside the recipe. No other profile purges.
 - The first run records the profile. Then nightly recipe maintenance converges Sabre, and a manual run needs only `php artisan node:converge-recipe sabre`.
-- Remove each PHP extension on Sabre that is not in the recipe first. Otherwise the convergence stops at stage `php-modules:8.5`.
 - On Beast and Shark, run `tools/ci-runners/setup.sh container NAME` for each shard container.
+
+#### Merge a PHP build change
+
+A pull request that changes the PHP build runs its CI on the self-hosted runners too, and they only verify. So the runners must hold the new build before that CI runs. With the maintainer's approval, an operator runs from the pull request branch:
+
+1. On Sabre: `sudo bin/php-build install --ci --purge-extras`.
+2. On Beast and Shark: `tools/ci-runners/setup.sh container NAME` for each shard container.
+
+Then the pull request's CI runs, and `main` stays green after the merge. After the merge, converge Sabre with the `ci-runner` profile so that Orbit manages it.
 
 [Nightly recipe maintenance](/reference/compute-drivers#bump-the-php-build) opens a pull request when Sury publishes a newer build, and converges Sabre in its overnight service tier after merge. `setup-php` is not used. It cannot pin a patch release, and it loads about 26 extensions that Orbit does not use, such as `amqp`, `apcu`, `mongodb`, and `soap`.
 

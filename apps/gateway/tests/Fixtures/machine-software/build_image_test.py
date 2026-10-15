@@ -55,27 +55,35 @@ class ImageRecipeTest(unittest.TestCase):
         self.assertTrue(any(c[:2] == ['apt-get', 'full-upgrade'] for c in self.commands))
         self.assertFalse(self.policy.exists())
 
-    def test_php_sets_load_pcov_only_in_the_cli(self):
-        self.payload['php'] = {'8.5': ['core', 'pcov'], '8.4': ['core', 'pcov']}
-        self.packages()
-        for version in ('8.4', '8.5'):
-            self.assertIn(['phpenmod', '-v', version, '-s', 'cli', 'pcov'], self.commands)
-            self.assertIn(['phpdismod', '-v', version, '-s', 'fpm', 'pcov'], self.commands)
+    def php_payload(self):
+        pin = {'name': 'php8.5-cli', 'version': '8.5.11-1', 'architecture': 'amd64', 'url': 'https://example/x.deb', 'sha256': 'a' * 64}
+        self.payload['tools']['php8.5-cli'] = {'source': 'artifact', 'version': '8.5.11-1',
+                                               'artifacts': {'amd64': {'url': 'https://example/x.deb', 'sha256': 'a' * 64}}}
+        self.payload['php'] = {'program': 'program', 'bootstrap': 'bootstrap',
+                               'input': {'versions': {'8.5': {'packages': [pin], 'extensions': []}}}}
 
-    def test_smoke_rejects_a_php_cli_that_loads_other_extensions_than_the_recipe(self):
-        self.payload.update({'identity': 'sha256:current', 'tools': {}, 'php': {'8.5': ['core', 'pcov']}})
-        marker = json.dumps({'identity': self.payload['identity'], 'profile': 'base'})
-        for modules, fails in (('[PHP Modules]\nCore\npcov\n', False), ('[PHP Modules]\nCore\npcov\napcu\n', True)):
-            output = subprocess.CompletedProcess([], 0, modules, '')
-            with self.subTest(modules=modules), patch.object(recipe.Path, 'read_text', return_value=marker), \
-                 patch.object(recipe.Path, 'exists', return_value=False), \
-                 patch.object(recipe, 'inspect', return_value={}), \
-                 patch.object(recipe, 'run', return_value=output):
-                if fails:
-                    with self.assertRaises(recipe.RecipeFailure):
-                        recipe.image_verify(self.payload)
-                else:
-                    recipe.image_verify(self.payload)
+    def installer(self, outcome):
+        calls = []
+
+        def fake(argv, **kwargs):
+            calls.append((argv, kwargs['input']))
+            return subprocess.CompletedProcess(argv, 0, json.dumps({'outcome': outcome, 'data': {}}) + '\n', '')
+        return calls, patch.object(recipe.subprocess, 'run', side_effect=fake)
+
+    def test_the_php_build_comes_from_the_one_installer_not_the_package_phase(self):
+        self.php_payload()
+        calls, installer = self.installer('applied')
+        with installer:
+            self.packages()
+        self.assertFalse(any('x.deb' in ' '.join(c) for c in self.commands))
+        self.assertEqual(calls[0][0], ['python3', '-I', '-c', 'bootstrap', 'php.install-build'])
+        self.assertTrue(calls[0][1].startswith('program\0'))
+
+    def test_a_failed_php_install_fails_the_package_phase(self):
+        self.php_payload()
+        _, installer = self.installer('extra_packages')
+        with installer, self.assertRaises(recipe.RecipeFailure):
+            self.packages()
 
     def test_role_packages_do_not_upgrade_the_published_base(self):
         self.payload['profile'] = 'gateway'

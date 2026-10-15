@@ -17,7 +17,7 @@ final readonly class RecipeLoader
     {
         $catalog = array_fill_keys([
             'dnsmasq', 'ca-certificates', 'curl', 'gnupg', 'libnss-resolve', 'openssh-client', 'sudo', 'ufw', 'wireguard',
-            'acl', 'attr', 'composer', 'docker.io', 'git', 'openssl', 'php-curl', 'php-xml', 'unzip',
+            'acl', 'attr', 'composer', 'docker.io', 'git', 'openssl', 'php-curl', 'php-xml', 'unzip', 'dpkg-repack',
             'openssh-server', 'rsync', 'bind9-dnsutils', 'gcc', 'libc6-dev',
             'libasound2t64', 'libatk-bridge2.0-0t64', 'libatk1.0-0t64', 'libatspi2.0-0t64', 'libcairo2',
             'libcups2t64', 'libdbus-1-3', 'libdrm2', 'libgbm1', 'libglib2.0-0t64', 'libnspr4', 'libnss3',
@@ -122,17 +122,21 @@ final readonly class RecipeLoader
         }
         $this->require(array_diff(array_keys($catalog), array_keys($tools)) === [], 'tools: missing catalog tools: '.implode(', ', array_diff(array_keys($catalog), array_keys($tools))));
         $php = $this->phpBuilds($phpSets, $tools, $ubuntu->release);
-        $common = $this->references($root->common, 'common', $tools, $php);
+        $this->require(($tools[$phpSets['rollback']] ?? null)?->source === 'ubuntu', 'php.rollback: expected an Ubuntu tool that repacks installed packages, such as dpkg-repack.');
+        $common = $this->references($root->common, 'common', $tools, $php, $phpSets['rollback']);
         $roles = $this->object($root->roles, 'roles');
         $roleNames = array_keys(get_object_vars($roles));
         $required = ['gateway', 'app-dev', 'app-prod', 'operator'];
         $allowed = [...$required, 'vpn', 'router', 'ingress', 'metrics', 'database', 'websocket', 'analytics', NodeRecipeProgram::CiRunnerProfile];
         $this->require(array_diff($required, $roleNames) === [] && array_diff($roleNames, $allowed) === [], 'roles: expected the four required profiles and only known Node roles.');
+        $this->require(array_diff($phpSets['pcov'], [...$roleNames, 'base']) === [], 'php.pcov: expected recipe profiles.');
+        // Purging PHP packages outside the recipe is for machines that run only CI jobs, never for a site's Node.
+        $this->require(array_diff($phpSets['purge_extras'], [NodeRecipeProgram::CiRunnerProfile]) === [], 'php.purge_extras: only the ci-runner profile may purge PHP packages.');
         $profiles = [];
         $used = $common;
         $usedPhp = [];
         foreach ([...get_object_vars($roles), 'base' => $root->base] as $role => $raw) {
-            $extra = $this->references($raw, "profiles.{$role}", $tools, $php);
+            $extra = $this->references($raw, "profiles.{$role}", $tools, $php, $phpSets['rollback']);
             $this->require(array_intersect($common, $extra) === [], "profiles.{$role}: repeats a common tool.");
             foreach ($this->strings($raw, "profiles.{$role}") as $entry) {
                 if (str_starts_with($entry, 'php:')) {
@@ -159,18 +163,26 @@ final readonly class RecipeLoader
         }
         $canonical = json_encode($this->canonical($identityData), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
 
-        return new MachineRecipe('sha256:'.hash('sha256', $canonical), $snapshot, $architectures, $tools, $profiles, $canonical, $json, $php, $phpSets['ci']);
+        return new MachineRecipe('sha256:'.hash('sha256', $canonical), $snapshot, $architectures, $tools, $profiles, $canonical, $json, $php, $phpSets['ci'],
+            new PhpPolicy($phpSets['rollback'], $phpSets['pcov'], $phpSets['purge_extras'], $phpSets['mirror']));
     }
 
     /**
      * Structure of the `php` object, before the pins exist. See ADR 0215.
      *
      * @param  array<string, string>  $catalog
-     * @return array{ci: string, shared: list<string>, versions: array<string, array{packages: list<string>, extensions: list<string>}>}
+     * @return array{ci: string, shared: list<string>, rollback: string, pcov: list<string>, purge_extras: list<string>, mirror: string, versions: array<string, array{packages: list<string>, extensions: list<string>}>}
      */
     private function phpSets(mixed $value, array $catalog): array
     {
-        $raw = $this->object($value, 'php', ['ci', 'shared', 'versions']);
+        $raw = $this->object($value, 'php', ['ci', 'shared', 'rollback', 'pcov', 'purge_extras', 'mirror', 'versions']);
+        $mirror = $this->text($raw->mirror, 'php.mirror');
+        $url = parse_url($mirror);
+        $this->require(is_array($url) && ($url['scheme'] ?? '') === 'https' && isset($url['host']) && ! isset($url['user']) && ! isset($url['query']) && ! str_ends_with($mirror, '/'), 'php.mirror: expected an HTTPS base URL without a final slash.');
+        $rollback = $this->text($raw->rollback, 'php.rollback');
+        $this->require(($catalog[$rollback] ?? null) === 'ubuntu', 'php.rollback: expected an Ubuntu tool that repacks installed packages, such as dpkg-repack.');
+        $pcov = $this->strings($raw->pcov, 'php.pcov');
+        $purge = $this->strings($raw->purge_extras, 'php.purge_extras');
         $shared = $this->strings($raw->shared, 'php.shared');
         $this->require($shared !== [], 'php.shared: expected the shared PHP pins.');
         foreach ($shared as $name) {
@@ -202,14 +214,14 @@ final readonly class RecipeLoader
         $ci = $this->text($raw->ci, 'php.ci');
         $this->require(isset($versions[$ci]), "php.ci: [{$ci}] is not a declared PHP version.");
 
-        return ['ci' => $ci, 'shared' => $shared, 'versions' => $versions];
+        return ['ci' => $ci, 'shared' => $shared, 'rollback' => $rollback, 'pcov' => $pcov, 'purge_extras' => $purge, 'mirror' => $mirror, 'versions' => $versions];
     }
 
     /**
      * One exact build per version: the PHP core pins share the `php<version>-common` version, and every pin is built
      * for the recipe's Ubuntu release.
      *
-     * @param  array{ci: string, shared: list<string>, versions: array<string, array{packages: list<string>, extensions: list<string>}>}  $sets
+     * @param  array{ci: string, shared: list<string>, rollback: string, pcov: list<string>, purge_extras: list<string>, mirror: string, versions: array<string, array{packages: list<string>, extensions: list<string>}>}  $sets
      * @param  array<string, ToolPin>  $tools
      * @return array<string, PhpBuild>
      */
@@ -290,7 +302,7 @@ final readonly class RecipeLoader
      * @param  array<string, PhpBuild>  $php
      * @return list<string>
      */
-    private function references(mixed $value, string $field, array $tools, array $php): array
+    private function references(mixed $value, string $field, array $tools, array $php, string $rollback): array
     {
         $phpPins = [];
         foreach ($php as $build) {
@@ -302,7 +314,8 @@ final readonly class RecipeLoader
                 $build = $php[substr($name, 4)] ?? null;
                 $this->require($build instanceof PhpBuild, "{$field}: unknown PHP set [{$name}].");
                 if ($build instanceof PhpBuild) {
-                    $names = [...$names, ...$build->packages];
+                    // Every machine with a PHP set can repack its installed build for a rollback.
+                    $names = [...$names, ...$build->packages, $rollback];
                 }
 
                 continue;
