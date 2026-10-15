@@ -10,6 +10,7 @@ use App\Actions\Gateway\GatewayBootstrapIdentityValidator;
 use App\Actions\Gateway\GatewayOperatingSystemGuard;
 use App\Actions\Hibernation\SweepIdleAppDevRuntimesAction;
 use App\Actions\Instances\DestroyInstanceAction;
+use App\Actions\Instances\RunAutomaticDeploysAction;
 use App\Actions\Instances\SynchronizeInstanceEnvironmentAction;
 use App\Actions\Nodes\AssignRoleAction;
 use App\Console\GatewayBoostInstallCommand;
@@ -72,6 +73,7 @@ use App\Domain\GitHub\BranchHeadReader;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubCliToken;
+use App\Domain\GitHub\GreenCommitInspector;
 use App\Domain\GitHub\GreenCommitResolver;
 use App\Domain\Hibernation\DevelopmentHibernationPolicy;
 use App\Domain\Hibernation\HibernationMarkerStore;
@@ -176,6 +178,7 @@ use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
 use App\Domain\Schedules\ScheduleRuntimeManager;
+use App\Domain\SourceControl\RemoteBranchHeads;
 use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
 use App\Domain\Tools\ToolInspector;
 use App\Domain\Tools\ToolManagerMaterializer;
@@ -265,8 +268,10 @@ use App\Infrastructure\Gateway\NativeGatewayCertificatePublisher;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
 use App\Infrastructure\Gateway\NativeGatewaySelfAccessConverger;
 use App\Infrastructure\Gateway\NativeGatewayWebConverger;
+use App\Infrastructure\GitHub\CachedGitHubApi;
 use App\Infrastructure\GitHub\GitHubBranchHeadReader;
 use App\Infrastructure\GitHub\GitHubGreenCommitResolver;
+use App\Infrastructure\GitHub\GitHubTokenCache;
 use App\Infrastructure\GitHub\HttpGitHubApi;
 use App\Infrastructure\GitHub\HttpGitHubTiaBaseline;
 use App\Infrastructure\GitHub\ProcessGitHubCliToken;
@@ -369,6 +374,7 @@ use App\Infrastructure\Routes\NativePublicRouteEdgeProjector;
 use App\Infrastructure\Routes\NativeRouteRemovalProjector;
 use App\Infrastructure\Schedules\RemoteScheduleRuntimeManager;
 use App\Infrastructure\Schedules\SshScheduleRuntimeAccountResolver;
+use App\Infrastructure\SourceControl\GitRemoteBranchHeads;
 use App\Infrastructure\SourceControl\NativeRepositoryDefaultBranchResolver;
 use App\Infrastructure\Ssh\GatewaySshKeys;
 use App\Infrastructure\Ssh\HostKeyScanner;
@@ -533,6 +539,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         GitHubCliToken::class => ProcessGitHubCliToken::class,
         GreenCommitResolver::class => GitHubGreenCommitResolver::class,
         BranchHeadReader::class => GitHubBranchHeadReader::class,
+        GreenCommitInspector::class => GitHubGreenCommitResolver::class,
         RepositoryDefaultBranchResolver::class => NativeRepositoryDefaultBranchResolver::class,
         SshExecutor::class => TaskVmCredentialGuard::class,
         DatabaseInspectionExecutor::class => RegisteredDatabaseInspectionExecutor::class,
@@ -620,6 +627,20 @@ final class ApplicationServiceProvider extends ServiceProvider
             ),
         );
         $this->app->singleton(NodeRoleConvergeLock::class);
+        // The automatic deployment tick reads branch heads every minute, so its reads keep their GitHub credentials.
+        $this->app->bind(
+            RemoteBranchHeads::class,
+            static fn ($app): RemoteBranchHeads => GitRemoteBranchHeads::withCachedCredentials(
+                $app->make(ProcessRunner::class),
+                $app->make(GitHubAppStore::class),
+                $app->make(CachedGitHubApi::class),
+                $app->make(GitHubCliToken::class),
+                $app->make(GitHubTokenCache::class),
+            ),
+        );
+        $this->app->when(RunAutomaticDeploysAction::class)->needs(GreenCommitInspector::class)->give(
+            static fn ($app): GreenCommitInspector => new GitHubGreenCommitResolver($app->make(GitHubAppStore::class), $app->make(CachedGitHubApi::class)),
+        );
         $this->app->singleton(
             CacheAgentStateView::class,
             static fn ($app): CacheAgentStateView => new CacheAgentStateView(

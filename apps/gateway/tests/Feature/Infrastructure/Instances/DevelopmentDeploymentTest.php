@@ -40,10 +40,10 @@ describe('development defaults in place', function (): void {
         plain_steps($instance, [new DevelopmentDeployStep('install', 'printf "%s" "$PWD" > step-ran-in')]);
         $commit = $this->fixture->push('second');
 
-        $result = app(DeployDefaultInstanceAction::class)->execute($instance, onlyChanged: true, triggeredBy: 'schedule');
+        $result = app(DeployDefaultInstanceAction::class)->execute($instance);
 
-        expect($result?->succeeded)->toBeTrue()
-            ->and($result?->commit)->toBe($commit)
+        expect($result->succeeded)->toBeTrue()
+            ->and($result->commit)->toBe($commit)
             ->and(plain_git($home, 'rev-parse', 'HEAD'))->toBe($commit)
             ->and(plain_git($home, 'symbolic-ref', '--short', 'HEAD'))->toBe('main')
             ->and(file_get_contents($home.'/public/index.php'))->toContain('second')
@@ -57,7 +57,6 @@ describe('development defaults in place', function (): void {
             ->and(plain_git($this->fixture->sandbox.'/apps/dev935/t3code-ab12', 'rev-parse', 'HEAD'))->toBe($this->fixture->initialCommit)
             ->and($instance->fresh()->seed_path)->toBe($home)
             ->and($instance->fresh()->seed_commit)->toBe($commit);
-        expect(app(DeployDefaultInstanceAction::class)->execute($instance, onlyChanged: true, triggeredBy: 'schedule'))->toBeNull();
 
         $consumer = Instance::query()->create([
             'project_id' => $instance->project_id, 'node_id' => $instance->node_id, 'name' => 'feature',
@@ -69,24 +68,44 @@ describe('development defaults in place', function (): void {
             ->and($consumer->fresh()->seed_repository)->toBe($home);
     });
 
-    it('leaves the checkout at the new commit after a failed step and retries the steps on the next tick', function (): void {
+    it('leaves the checkout at the new commit after a failed step and reruns the steps on the next deployment', function (): void {
         $instance = $this->fixture->instance;
         $home = $this->fixture->home;
         plain_steps($instance, [new DevelopmentDeployStep('install', 'test -f allow-install; touch installed')]);
         $commit = $this->fixture->push('second');
 
-        $failed = app(DeployDefaultInstanceAction::class)->execute($instance, onlyChanged: true, triggeredBy: 'schedule');
+        $failed = app(DeployDefaultInstanceAction::class)->execute($instance);
 
-        expect($failed?->failure?->errorCode)->toBe('deployment.step_failed')
+        expect($failed->failure?->errorCode)->toBe('deployment.step_failed')
             ->and(plain_git($home, 'rev-parse', 'HEAD'))->toBe($commit)
             ->and($instance->fresh()->seed_commit)->toBeNull();
 
         touch($home.'/allow-install');
-        $retried = app(DeployDefaultInstanceAction::class)->execute($instance, onlyChanged: true, triggeredBy: 'schedule');
+        $retried = app(DeployDefaultInstanceAction::class)->execute($instance);
 
-        expect($retried?->succeeded)->toBeTrue()
+        expect($retried->succeeded)->toBeTrue()
             ->and(file_exists($home.'/installed'))->toBeTrue()
             ->and($instance->fresh()->seed_commit)->toBe($commit);
+    });
+
+    it('checks out a pinned commit that the fetched branch contains, and refuses one it does not', function (): void {
+        $instance = $this->fixture->instance;
+        $home = $this->fixture->home;
+        $second = $this->fixture->push('second');
+        $this->fixture->push('third');
+
+        $pinned = app(DeployDefaultInstanceAction::class)->execute($instance, commit: $second);
+
+        expect($pinned->succeeded)->toBeTrue()
+            ->and($pinned->commit)->toBe($second)
+            ->and(plain_git($home, 'rev-parse', 'HEAD'))->toBe($second)
+            ->and($instance->fresh()->seed_commit)->toBe($second);
+
+        $refused = app(DeployDefaultInstanceAction::class)->execute($instance, commit: str_repeat('f', 40));
+
+        expect($refused->failure?->errorCode)->toBe('deployment.commit_not_on_branch')
+            ->and($refused->commit)->toBe(str_repeat('f', 40))
+            ->and(plain_git($home, 'rev-parse', 'HEAD'))->toBe($second);
     });
 
     it('refuses a checkout with uncommitted changes to tracked files and changes nothing', function (): void {

@@ -27,12 +27,12 @@ use Tests\Support\AppDevFakeSshExecutor;
 
 /*
  * Production Instances that existed before Routes with a web root reached production have no such
- * Route. The fixture holds what the code before that change rendered for them: the workload Caddy
+ * Route. The fixture records their current production release layout: the workload Caddy
  * file, every PHP-FPM file, the release `.env` link, and each command, with its arguments, standard
  * input, and protected input, that deploys, activates, converges, monitors, removes, or refreshes the
- * runtime on the Node. The current code must render the same bytes.
+ * runtime on the Node. Shared paths update only the deployment command baseline.
  */
-it('renders existing production Instances byte for byte as before production web roots', function (): void {
+it('renders existing production Instances against the release layout baseline', function (): void {
     $node = Node::query()->create([
         'name' => 'prod-equivalence',
         'status' => LifecycleStatus::Active,
@@ -158,6 +158,12 @@ function prod_equivalence_render(Node $node, array $instances): array
 function prod_equivalence_command(RemoteCommand $command): array
 {
     $protected = $command->protectedInput?->stream();
+
+    // The PHP build installer carries the recipe's pins and its own source, which a PHP bump changes. Web roots do not
+    // reach it, so the fixture records only that the step ran.
+    if (($command->arguments[4] ?? null) === 'php.install-build') {
+        return ['arguments' => ['php.install-build'], 'input' => null, 'protected_input' => null];
+    }
 
     return [
         'arguments' => $command->arguments,

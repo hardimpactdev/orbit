@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Fleet\ConvergeNodeRecipeAction;
 use App\Domain\Fleet\FleetNodeVerification;
 use App\Domain\Nodes\RoleName;
+use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolInspectionData;
 use App\Domain\Tools\ToolInspector;
@@ -22,6 +23,7 @@ use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 use Illuminate\Support\Facades\Artisan;
 use Symfony\Component\Process\Process;
+use Tests\Support\FakePhpBuildRunner;
 use Tests\Support\Fleet\FleetFixtures;
 use Tests\Support\Fleet\FleetTestSsh;
 use Tests\Support\Fleet\ScriptedSshExecutor;
@@ -46,20 +48,21 @@ final class RecipeVerification implements FleetNodeVerification
     }
 }
 
-function recipeSsh(?CommandResult $application = null): ScriptedSshExecutor
+function recipeSsh(?CommandResult $application = null, ?Closure $inspection = null): ScriptedSshExecutor
 {
     $ssh = new ScriptedSshExecutor;
-    $ssh->on('/^python3 - inspect /', static function (RemoteCommand $command): CommandResult {
+    $ssh->on('/^python3 - inspect /', $inspection ?? static function (RemoteCommand $command): CommandResult {
         $payload = json_decode($command->arguments[3], true, flags: JSON_THROW_ON_ERROR);
         $versions = [];
         foreach ($payload['tools'] as $name => $pin) {
-            $versions[$name] = $name === 'curl' ? '1.0.0' : $pin['version'];
+            $versions[$name] = ['source' => $pin['source'], 'version' => $pin['version'], 'installed' => $name === 'curl' ? '1.0.0' : $pin['version'], 'changed' => $name === 'curl', 'status' => $name === 'curl' ? 'older_than_recipe' : 'current'];
         }
 
         return ScriptedSshExecutor::ok(json_encode($versions, JSON_THROW_ON_ERROR));
     });
     $ssh->on('/^sudo timeout .* python3 - apply /', $application ?? ScriptedSshExecutor::ok('{"changed_packages":["curl"],"restarted_services":[],"changed_tools":["curl"],"healthy":true}'));
     app()->instance(NodeShell::class, FleetTestSsh::shell($ssh));
+    app()->instance(RemoteProgramRunner::class, new FakePhpBuildRunner);
     app()->instance(NodeUpdateLock::class, new NodeUpdateLock(FleetTestSsh::shell($ssh)));
 
     return $ssh;
@@ -78,7 +81,7 @@ it('plans only the production role pins and makes no remote or registry writes i
         ->and($result['plan']->snapshot)->toBe('20261014T000000Z')
         ->and($result['plan']->tools)->toHaveKeys(['curl', 'caddy', 'node', 'pnpm', 'vp-cli'])
         ->not->toHaveKeys(['rust', 'pi', 'php8.4-pcov'])
-        ->and($result['plan']->tools['curl'])->toBe(['source' => 'ubuntu', 'version' => $recipe->tools['curl']->version, 'installed' => '1.0.0', 'changed' => true])
+        ->and($result['plan']->tools['curl'])->toBe(['source' => 'ubuntu', 'version' => $recipe->tools['curl']->version, 'installed' => '1.0.0', 'changed' => true, 'status' => 'older_than_recipe'])
         ->and($result['plan']->tools['caddy']['changed'])->toBeFalse()
         ->and($ssh->commands)->toHaveCount(1)
         ->and($ssh->commands[0]->arguments[0])->toBe('python3')
@@ -132,10 +135,111 @@ it('selects each service role prerequisite without development-only software', f
 
     $pins = app(NodeRecipeProgram::class)->tools($node, $recipe);
 
-    $expected = array_unique([...$recipe->profile('operator'), ...new NodeBootstrapPackageCatalog()->forRole($node, $role)]);
+    $php = $role === RoleName::WebSocket ? [...$recipe->php('8.5')->packages, 'dpkg-repack'] : [];
+    $expected = array_unique([...$recipe->profile('operator'), ...new NodeBootstrapPackageCatalog()->forRole($node, $role), ...$php]);
     sort($expected);
     expect(array_keys($pins))->toBe($expected)->not->toContain('rust', 'node', 'pi');
 })->with([RoleName::Vpn, RoleName::Router, RoleName::Ingress, RoleName::Metrics, RoleName::Database, RoleName::WebSocket, RoleName::Analytics]);
+
+it('gives every role that runs PHP the whole recipe PHP 8.5 set', function (RoleName $role): void {
+    $node = FleetFixtures::node('recipe-php-'.$role->value, [$role]);
+    $recipe = new RecipeLoader()->load();
+
+    $pins = array_keys(app(NodeRecipeProgram::class)->tools($node, $recipe));
+
+    expect($pins)->toContain(...$recipe->php('8.5')->packages)
+        ->not->toContain('php8.4-cli')
+        ->and($recipe->phpExtensions($pins))->toBe(['8.5' => $recipe->php('8.5')->extensions]);
+})->with([RoleName::AppProd, RoleName::WebSocket, RoleName::Gateway]);
+
+it('installs the PHP build with the one installer after the other tools, strictly and without PCOV on the Gateway', function (): void {
+    $node = FleetFixtures::node('recipe-php-payload', [RoleName::Gateway]);
+    $ssh = recipeSsh();
+    $php = app(RemoteProgramRunner::class);
+    app()->instance(FleetNodeVerification::class, new RecipeVerification);
+    $recipe = new RecipeLoader()->load();
+
+    $result = app(ConvergeNodeRecipeAction::class)->execute($node, $recipe);
+
+    $apply = collect($ssh->commands)->first(fn (RemoteCommand $command): bool => in_array('apply', $command->arguments, true));
+    $payload = json_decode((string) $apply->arguments[array_key_last($apply->arguments)], true, flags: JSON_THROW_ON_ERROR);
+    expect(array_keys($payload['tools']))->not->toContain('php8.5-fpm', 'php8.5-pcov', 'php-common')->toContain('caddy', 'dpkg-repack')
+        ->and(array_column($php->inputs, 'mode'))->toBe(['plan', 'plan', 'apply'])
+        ->and($php->inputs[2])->toMatchArray(['pcov' => false, 'extras' => 'refuse', 'fpm' => 'all'])
+        ->and(array_keys($php->inputs[2]['versions']))->toBe(['8.5'])
+        ->and($result['changes']['php'])->toMatchArray(['changed' => [], 'stale_masters' => []]);
+});
+
+it('refuses extra PHP packages or another PHP source before any change, also in a dry run', function (bool $dryRun): void {
+    $node = FleetFixtures::node('recipe-php-extras', [RoleName::AppProd]);
+    $ssh = recipeSsh();
+    app()->instance(RemoteProgramRunner::class, new FakePhpBuildRunner(['plan' => ['extra_packages', ['packages' => ['php8.5-opentelemetry']]]]));
+
+    expect(fn () => app(ConvergeNodeRecipeAction::class)->execute($node, new RecipeLoader()->load(), dryRun: $dryRun))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('node.recipe_php_refused')
+            ->and($exception->getMessage())->toContain('php8.5-opentelemetry', 'Nothing was changed'));
+    expect(collect($ssh->commands)->contains(fn (RemoteCommand $command): bool => in_array('apply', $command->arguments, true)))->toBeFalse();
+})->with(['apply' => [false], 'dry run' => [true]]);
+
+it('stops with the installer outcome when the PHP build rolls back and records no convergence', function (string $outcome, array $data, string $message): void {
+    $node = FleetFixtures::node('recipe-php-rollback-'.$outcome, [RoleName::AppProd]);
+    recipeSsh();
+    app()->instance(RemoteProgramRunner::class, new FakePhpBuildRunner(['apply' => [$outcome, $data]]));
+    $verification = new RecipeVerification;
+    app()->instance(FleetNodeVerification::class, $verification);
+
+    expect(fn () => app(ConvergeNodeRecipeAction::class)->execute($node, new RecipeLoader()->load()))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('node.recipe_php_failed')
+            ->and($exception->getMessage())->toContain('orbit-shop-php8.5-fpm.service', $message));
+    expect($verification->calls)->toBe(0)
+        ->and($node->refresh()->settings)->toBe([]);
+})->with([
+    'a checked restore' => ['rolled_back', ['unit' => 'orbit-shop-php8.5-fpm.service', 'reason' => 'the service did not start', 'restored' => true], 'restored the previous PHP build and checked it'],
+    'a failed restore' => ['rollback_failed', ['unit' => 'orbit-shop-php8.5-fpm.service', 'reason' => 'the service did not start; the rollback failed too'], 'The rollback of the previous PHP build failed too'],
+]);
+
+it('loads PCOV and purges extra PHP packages only for the ci-runner profile', function (): void {
+    $sabre = FleetFixtures::node('recipe-php-sabre');
+    recipeSsh();
+    $php = app(RemoteProgramRunner::class);
+    app()->instance(FleetNodeVerification::class, new RecipeVerification);
+
+    app(ConvergeNodeRecipeAction::class)->execute($sabre, new RecipeLoader()->load(), profile: 'ci-runner');
+    $dev = FleetFixtures::node('recipe-php-dev', [RoleName::AppDev]);
+    app(ConvergeNodeRecipeAction::class)->execute($dev, new RecipeLoader()->load());
+
+    $applies = array_values(array_filter($php->inputs, static fn (array $input): bool => $input['mode'] === 'apply'));
+    expect($applies[0])->toMatchArray(['pcov' => true, 'extras' => 'purge'])
+        ->and($applies[1])->toMatchArray(['pcov' => true, 'extras' => 'refuse']);
+});
+
+it('converges a roleless CI runner with the ci-runner profile and records the profile', function (): void {
+    $this->freezeTime();
+    $node = FleetFixtures::node('recipe-sabre');
+    recipeSsh();
+    app()->instance(FleetNodeVerification::class, new RecipeVerification);
+    $recipe = new RecipeLoader()->load();
+
+    $result = app(ConvergeNodeRecipeAction::class)->execute($node, $recipe, profile: 'ci-runner');
+    $later = app(ConvergeNodeRecipeAction::class)->execute($node->refresh(), $recipe, dryRun: true);
+
+    expect(array_keys($result['plan']->tools))->toContain(...$recipe->php('8.5')->packages)
+        ->and($node->settings['machine_recipe'])->toBe(['version' => $recipe->identity, 'snapshot' => $recipe->snapshot, 'converged_at' => now()->toIso8601String(), 'profile' => 'ci-runner'])
+        ->and(array_keys($later['plan']->tools))->toBe(array_keys($result['plan']->tools))
+        ->and(array_keys(app(NodeRecipeProgram::class)->tools(FleetFixtures::node('recipe-operator'), $recipe)))->not->toContain('php8.5-cli');
+});
+
+it('refuses the ci-runner profile on a Node with roles and any other profile name before SSH', function (array $roles, string $profile): void {
+    $node = FleetFixtures::node('recipe-profile-'.count($roles).$profile, $roles);
+    $ssh = recipeSsh();
+
+    expect(fn () => app(ConvergeNodeRecipeAction::class)->execute($node, new RecipeLoader()->load(), profile: $profile))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('node.recipe_profile_invalid'));
+    expect($ssh->commands)->toBe([]);
+})->with([
+    'a Node with a role' => [[RoleName::AppDev], 'ci-runner'],
+    'an unknown profile' => [[], 'base'],
+]);
 
 it('records the complete identity only after inventory health and Doctor pass and preserves other settings', function (): void {
     $this->freezeTime();
@@ -262,3 +366,73 @@ it('runs the remote program regression tests without host mutations or network a
 
     expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
 });
+
+it('keeps newer Ubuntu versions visible in the plan result and recorded status', function (): void {
+    $node = FleetFixtures::node('recipe-newer');
+    $recipe = new RecipeLoader()->load();
+    $newer = ['curl' => ['installed' => '8.18.0-1ubuntu2.8', 'version' => $recipe->tools['curl']->version]];
+    recipeSsh(ScriptedSshExecutor::ok(json_encode(['changed_packages' => [], 'healthy' => true, 'newer_than_recipe' => $newer], JSON_THROW_ON_ERROR)), static function (RemoteCommand $command): CommandResult {
+        $payload = json_decode($command->arguments[3], true, flags: JSON_THROW_ON_ERROR);
+        $tools = [];
+        foreach ($payload['tools'] as $name => $pin) {
+            $tools[$name] = ['source' => $pin['source'], 'version' => $pin['version'], 'installed' => $name === 'curl' ? '8.18.0-1ubuntu2.8' : $pin['version'], 'changed' => false, 'status' => $name === 'curl' ? 'newer_than_recipe' : 'current'];
+        }
+
+        return ScriptedSshExecutor::ok(json_encode($tools, JSON_THROW_ON_ERROR));
+    });
+    app()->instance(FleetNodeVerification::class, new RecipeVerification);
+
+    $result = app(ConvergeNodeRecipeAction::class)->execute($node, $recipe);
+
+    expect($result['plan']->tools['curl'])->toMatchArray(['changed' => false, 'status' => 'newer_than_recipe', 'installed' => '8.18.0-1ubuntu2.8'])
+        ->and($result['changes']['newer_than_recipe'])->toBe($newer)
+        ->and($node->refresh()->settings['machine_recipe']['newer_than_recipe'])->toBe($newer);
+});
+
+it('retains redacted package command output in the failed convergence result', function (): void {
+    $node = FleetFixtures::node('recipe-package-output');
+    recipeSsh(ScriptedSshExecutor::fail(stdout: json_encode(['failure' => [
+        'stage' => 'recipe-stage:packages', 'packages' => ['curl=8.18.0-1ubuntu2.7'],
+        'command' => ['apt-get', 'install', 'curl=8.18.0-1ubuntu2.7'], 'exit_code' => 100,
+        'stdout' => 'curl: dependency conflict',
+        'stderr' => 'Failed to fetch https://user:secret@example.test/pkg API_TOKEN=private-token',
+    ]], JSON_THROW_ON_ERROR)));
+
+    $exit = Artisan::call('node:converge-recipe', ['node' => $node->name]);
+    $result = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exit)->toBe(1)
+        ->and($result['message'])->toContain('recipe-stage:packages', 'curl=8.18.0-1ubuntu2.7', 'apt-get', 'dependency conflict', '[REDACTED]')
+        ->and($result['automatic_rollback'])->toBeFalse();
+    expect($result['message'])->not->toContain('user:secret');
+    expect($result['message'])->not->toContain('private-token');
+    expect($node->refresh()->settings)->toBe([]);
+});
+
+it('shows a source repair and an unsupported newer Ubuntu build as planned actions without applying them', function (?string $reason): void {
+    $node = FleetFixtures::node('recipe-refused');
+    $node->update(['settings' => ['machine_recipe' => ['version' => 'previous']]]);
+    $ssh = recipeSsh(inspection: static function (RemoteCommand $command) use ($reason): CommandResult {
+        expect($command->timeout)->toBe(900.0);
+        $payload = json_decode($command->arguments[3], true, flags: JSON_THROW_ON_ERROR);
+        $tools = [];
+        foreach ($payload['tools'] as $name => $pin) {
+            $tools[$name] = ['source' => $pin['source'], 'version' => $pin['version'], 'installed' => $name === 'curl' ? '99.0-foreign' : $pin['version'], 'changed' => false, 'status' => $name === 'curl' ? 'unsupported_newer' : 'current'];
+        }
+        if ($reason !== null) {
+            $tools['curl']['refusal'] = 'origin:curl:'.$reason;
+        }
+
+        return ScriptedSshExecutor::ok(json_encode([...$tools, '_actions' => ['repair_ubuntu_sources']], JSON_THROW_ON_ERROR));
+    });
+
+    $exit = Artisan::call('node:converge-recipe', ['node' => $node->name, '--dry-run' => true]);
+    $result = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exit)->toBe(0)
+        ->and($result['applied'])->toBeFalse()
+        ->and($result['plan']['actions'])->toBe(['repair_ubuntu_sources'])
+        ->and($result['plan']['tools']['curl'])->toMatchArray(['status' => 'unsupported_newer', 'changed' => false, 'refusal' => 'origin:curl'.($reason === null ? '' : ':'.$reason)])
+        ->and($node->refresh()->settings['machine_recipe']['version'])->toBe('previous');
+    expect(array_filter($ssh->lines(), static fn (string $line): bool => str_contains($line, ' apply ')))->toBe([]);
+})->with([null, 'dpkg-log-missing', 'snapshot-unavailable', 'snapshot-unproved', 'snapshot-lookup-limit']);

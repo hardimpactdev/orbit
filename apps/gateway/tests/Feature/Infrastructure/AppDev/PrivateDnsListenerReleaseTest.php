@@ -6,6 +6,7 @@ use App\Infrastructure\AppDev\PrivateDnsListenerRelease;
 use App\Infrastructure\AppDev\PrivateDnsMessageCodec;
 use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
+use Tests\Support\SubprocessFixture;
 
 pest()->group('subprocess');
 
@@ -48,12 +49,13 @@ it('runs from the release without the Gateway autoloader and serves a published 
     $selfTest = new Process([PHP_BINARY, $directory.'/serve.php', '--self-test']);
     $selfTest->run();
     $port = orb_release_free_port();
-    $listener = new Process([PHP_BINARY, $directory.'/serve.php', '--listen=127.0.0.1', '--port='.$port, '--catalog='.$catalog, '--upstream=127.0.0.1:9']);
+    // Allow 60 seconds for the helper to observe the initial catalog becoming ready.
+    $listener = new Process([PHP_BINARY, $directory.'/serve.php', '--listen=127.0.0.1', '--port='.$port, '--catalog='.$catalog, '--upstream=127.0.0.1:9'], timeout: 60);
 
     try {
         expect($selfTest->getExitCode())->toBe(0, $selfTest->getErrorOutput());
         $listener->start();
-        expect(orb_release_wait_until(static fn (): bool => orb_release_query($port, 'release.orbit') === '10.44.0.9', 5.0))->toBeTrue();
+        SubprocessFixture::waitUntil($listener, static fn (): bool => orb_release_query($port, 'release.orbit') === '10.44.0.9');
 
         expect(orb_release_query($port, 'release.orbit'))->toBe('10.44.0.9')
             ->and(trim((string) file_get_contents($catalog.'.loaded')))->toBe(hash_file('sha256', $catalog));

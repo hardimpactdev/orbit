@@ -48,7 +48,7 @@ Release commands prepare and operate a production Instance.
 | Command | Result |
 | --- | --- |
 | [`instance:clone`](#orbit-instanceclone) | Clone a candidate into a prepared production Instance. |
-| [`instance:update`](#orbit-instanceupdate) | Change the deployment branch of a production Instance. |
+| [`instance:update`](#orbit-instanceupdate) | Change the deployment branch, shared paths, or automatic deployment of a production Instance. |
 | [`instance:deploy-step:create`](#orbit-instancedeploy-stepcreate) | Record one named deploy step. |
 | [`instance:deploy-step:list`](#orbit-instancedeploy-steplist) | List deploy steps in phase and placement order. |
 | [`instance:deploy-step:update`](#orbit-instancedeploy-stepupdate) | Change one named deploy step. |
@@ -271,7 +271,7 @@ orbit instance:list [--json]
 
 Show one Instance. When the `annotator` Process has an assigned port, human output includes `Annotator port` and `Annotator URL`. The URL uses the Instance's Route, for example `https://commander.test/__orbit/annotator`; without a Route, the display is an em dash. JSON keeps the `annotator_port` and `annotator_url` fields even when they are null. See [Annotator Process](/reference/agentation#annotator-process). Human output shows the [assigned SSR port](/reference/assigned-ssr-ports) as `SSR port` beside `Vite port`, and JSON has `ssr_port`. Both are empty when no SSR port is assigned.
 
-Production output includes the recorded user, home, selected branch, and deploy steps in phase and placement order.
+Production output includes the recorded user, home, selected branch, and deploy steps in phase and placement order. It also shows `Auto deploy`: `off`, or the merge check that gates it, with the state of the last [automatic deployment](/reference/deployments#automatic-deployments) tick and any pause. A development default shows it too. JSON has the same under `auto_deploy`.
 
 Human output lists the Instance's Routes with their domain, web root, and status. JSON has them under `routes`; `route` stays the Instance's own Route. See [Serve several web roots](/reference/routes#serve-several-web-roots).
 
@@ -471,12 +471,16 @@ Cloning ends with an active Instance and no release. Update its environment, rec
 
 ## orbit instance:update
 
-Change the deployment branch of a production Instance. The Gateway stores the branch and does not change deploy steps or start a deployment.
+Change the deployment branch, shared paths, or automatic deployment of a production Instance. The Gateway stores these settings. It does not change deploy steps or start a deployment. Supply at least one option.
 
-The human result shows the accepted deployment branch and the currently selected source branch. JSON returns the existing Instance response; its `selected_branch` describes the source, not the newly stored deployment setting.
+The human result shows the supplied deployment branch, the effective shared paths when changed, automatic deployment when changed, and the currently selected source branch. JSON includes effective `shared_paths` when the Gateway returns them, and `auto_deploy`; its `selected_branch` describes the source, not the newly stored deployment setting.
 
 ```bash
-orbit instance:update <instance> --branch=BRANCH [--json]
+orbit instance:update <instance> [--branch=BRANCH] [--shared-paths=JSON] [--auto-deploy=true|false] [--json]
+orbit instance:update 71 --shared-paths='["storage","var/uploads"]'
+orbit instance:update 71 --shared-paths='[]'
+orbit instance:update 71 --shared-paths=null
+orbit instance:update 71 --auto-deploy=true
 ```
 
 | Argument | Required | Meaning |
@@ -486,8 +490,12 @@ orbit instance:update <instance> --branch=BRANCH [--json]
 | Option | Meaning |
 | --- | --- |
 | `--branch=BRANCH` | Deployment branch. A later Project default change does not replace it. |
+| `--shared-paths=JSON` | Replace the shared directory list. Use `[]` to disable sharing, or `null` to restore the Project-type default. Omit it to leave the setting unchanged. |
+| `--auto-deploy=true\|false` | Deploy each new commit of the branch that passed the Project's `merge_check` automatically. `true` also resumes automatic deployment after a manual deployment or a rollback paused it. See [Automatic deployments](/reference/deployments#automatic-deployments). |
 
-The Gateway refuses a development Instance with a bounded conflict before it stores a branch.
+The Gateway refuses a development Instance with a bounded conflict before it stores any setting. [Shared paths](/reference/deployments#shared-paths) describes defaults, seeding, public storage, and path rules.
+
+The Gateway refuses `--auto-deploy=true` with `instance.auto_deploy_gate_unreadable` when the Project has a `merge_check` that the Gateway GitHub App cannot read: the Project reads through the GitHub CLI or is not on `github.com`. Without a `merge_check`, the Gateway accepts it, and the result warns that every commit deploys without a check.
 
 ## orbit instance:deploy-step:create
 
@@ -573,6 +581,8 @@ orbit instance:deploy <instance> [--json]
 
 The command starts an `instance.deploy` [operation](/reference/operations) and follows it until it ends. It subscribes to the operation's channel over Reverb and reads the operation again at each event. Without an active `websocket` role, or when the socket fails, it reads the operation every `poll_after_seconds` instead.
 
+Production deploys include a `Restart Processes` step after PHP refresh and before after-activation commands. See [Deploy](/reference/deployments#deploy) for eligible Processes, the opt-out, and restart failures.
+
 Human output shows a progress tree of the operation's steps, which the Gateway plans when a worker starts the operation. Glyphs and color show pending, running, succeeded, failed, and cancelled steps. New output of the running step prints above the tree, labeled and escaped. The output is the step's tail, so a fast step can show only its last 8 KiB; [`instance:deployment:show`](#orbit-instancedeploymentshow) prints the full log afterwards.
 
 On failure the tree marks the failed step and shows its error code under it. The final lines add the failed step, the error code, the selected release when available, the operation ID, and the request ID. `--json` prints nothing while it follows, then the final operation document with every step.
@@ -591,7 +601,7 @@ orbit instance:deploy 15
 orbit instance:deploy 15 --json > deploy.json
 ```
 
-A failure during release fetch, environment synchronization, or a `before_activation` step leaves the prior `current` selected. A failure during the PHP cache refresh or an `after_activation` step leaves the fresh release selected. Deployment, rollback, deploy-step changes, environment changes, and removal share one operation owner per Instance, so a competing request waits or returns a busy refusal. A second deploy while the first one is queued or running returns `operation.target_busy`.
+A failure during release fetch, environment synchronization, or a `before_activation` step leaves the prior `current` selected. A failure during PHP cache refresh, Process restart, or an `after_activation` step leaves the fresh release selected. Deployment, rollback, deploy-step changes, environment changes, and removal share one operation owner per Instance, so a competing request waits or returns a busy refusal. A second deploy while the first one is queued or running returns `operation.target_busy`.
 
 <Note>
 Only `default` can be deployed on an app-dev Node. Other development Instances still return `deployment_config.unavailable`. Releases, rollback, and per-Instance deploy-step operations remain production-only; `instance:release:list` shows none for a development default.
@@ -607,7 +617,7 @@ orbit instance:release:list <instance> [--json]
 
 ## orbit instance:rollback
 
-Select one retained release through `current`. A successful deployment keeps the previous selection and one other release, so these are the rollback targets. Rollback does not fetch Git, synchronize environment values, run deploy steps, or change database files.
+Select one retained release through `current`. A successful deployment keeps the previous selection and one other release, so these are the rollback targets. Rollback restarts active Instance Processes after PHP refresh, using the same opt-out as deployment. It reports restart failures and leaves the rollback release selected. Rollback does not fetch Git, synchronize environment values, run deploy steps, or change database files.
 
 ```bash
 orbit instance:rollback <instance> --release=NAME [--json]
@@ -621,11 +631,11 @@ orbit instance:rollback <instance> --release=NAME [--json]
 | --- | --- |
 | `--release=NAME` | Retained release name from `instance:release:list`. |
 
-The command streams newline-delimited JSON events while the Gateway works. Human output shows a progress tree, and output from commands prints above it, labeled and escaped. `--json` writes the events as NDJSON, one event per line. Pressing Ctrl-C closes the connection at once, and the CLI submits no second request.
+The command streams newline-delimited JSON events while the Gateway works. Human output shows a progress tree, and output from commands prints above it, labeled and escaped. `--json` writes the events as NDJSON, one event per line. Pressing Ctrl-C closes the connection at once, and the CLI submits no second request. Once the Gateway switches the release, it finishes PHP refresh and Process restarts even if the client disconnects.
 
 | Event type | Fields |
 | --- | --- |
-| `phase` | `phase` is `rollback`. |
+| `phase` | `phase` is `rollback` or `process_restart`. |
 | `output` | `stream` is `stdout` or `stderr`. `data_base64` carries at most 16 KiB of decoded bytes. |
 | `result` | `status` is `succeeded` or `failed`, with nullable `failed_step`, `error_code`, and `selected_release`. This is the final line. |
 

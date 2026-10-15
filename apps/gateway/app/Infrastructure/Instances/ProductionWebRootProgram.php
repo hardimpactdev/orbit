@@ -8,7 +8,7 @@ namespace App\Infrastructure\Instances;
  * Release work for the web roots that a production Instance's Routes with a web root serve: each
  * application directory's `.env` link to its stable file in `<home>/env/`, and Caddy access to each
  * web root. A caller sets `user`, `home`, and `served_web_roots`, which is empty for an Instance
- * without such a Route, so its releases are unchanged.
+ * without such a Route.
  */
 final class ProductionWebRootProgram
 {
@@ -27,7 +27,7 @@ final class ProductionWebRootProgram
 
     public static function functions(): string
     {
-        return <<<'BASH'
+        return self::linkChecks()."\n".<<<'BASH'
             served_web_root_entries() {
                 if [ -n "${served_web_roots:-}" ]; then
                     printf '%s' "$served_web_roots" | base64 --decode
@@ -67,7 +67,7 @@ final class ProductionWebRootProgram
                 done < <(served_web_root_entries)
             }
             # Checks without a change that each web root and its application directory exist in the release,
-            # and that the web root holds no link.
+            # and that its links stay within the supported public storage target.
             check_served_web_roots() {
                 local release=$1 web_root directory selected_root application unexpected_symlink
                 while IFS=$'\t' read -r web_root directory; do
@@ -75,8 +75,7 @@ final class ProductionWebRootProgram
                     selected_root=$(sudo -u "$user" -H realpath -m -- "$release/$web_root")
                     test "$selected_root" = "$release/$web_root" || exit 1
                     sudo -u "$user" -H test -d "$selected_root" || exit 1
-                    unexpected_symlink=$(sudo find -P "$selected_root" -type l -print -quit)
-                    test -z "$unexpected_symlink" || exit 1
+                    check_web_root_links "$release" "$selected_root" || exit 1
                     application=$release
                     if [ -n "$directory" ]; then application="$release/$directory"; fi
                     test "$(sudo -u "$user" -H realpath -e -- "$application")" = "$application" || exit 1
@@ -90,8 +89,7 @@ final class ProductionWebRootProgram
                     selected_root=$(sudo -u "$user" -H realpath -m -- "$release/$web_root")
                     case "$selected_root" in "$release"/*) ;; *) exit 1 ;; esac
                     sudo -u "$user" -H test -d "$selected_root" || exit 1
-                    unexpected_symlink=$(sudo find -P "$selected_root" -type l -print -quit)
-                    test -z "$unexpected_symlink" || exit 1
+                    check_web_root_links "$release" "$selected_root" || exit 1
                     ancestor=$(dirname -- "$selected_root")
                     while [ "$ancestor" != "$release" ]; do
                         case "$ancestor" in "$release"/*) ;; *) exit 1 ;; esac
@@ -103,7 +101,53 @@ final class ProductionWebRootProgram
                     sudo setfacl -m u:caddy:--x "$release"
                     sudo setfacl -P -R -m u:caddy:r-X "$selected_root"
                     sudo find -P "$selected_root" -type d -exec setfacl -m d:u:caddy:r-x -- {} +
+                    grant_public_storage "$release" "$selected_root"
                 done < <(served_web_root_entries)
+            }
+            BASH;
+    }
+
+    public static function linkChecks(): string
+    {
+        return <<<'BASH'
+            # Only the Laravel public storage link may leave a web root. Its target and every
+            # ancestor must resolve to the exact application path, locally or in the Instance home.
+            public_storage_target() {
+                local release=$1 web_root=$2 application relative target expected
+                test "${web_root##*/}" = public || return 1
+                application=$(dirname -- "$web_root")
+                relative=${application#"$release"}
+                expected="$home$relative/storage/app/public"
+                target=$(sudo -u "$user" -H realpath -e -- "$web_root/storage") || return 1
+                case "$target" in "$application/storage/app/public"|"$expected") ;; *) return 1 ;; esac
+                sudo -u "$user" -H test -d "$target" || return 1
+                test "$(sudo -u "$user" -H realpath -e -- "$target")" = "$target" || return 1
+                printf '%s' "$target"
+            }
+            check_web_root_links() {
+                local release=$1 web_root=$2 links link target nested
+                links=$(set -o pipefail; sudo find -P "$web_root" -type l -print0 | base64 --wrap=0) || return 1
+                while IFS= read -r -d '' link; do
+                    test "$link" = "$web_root/storage" || return 1
+                    target=$(public_storage_target "$release" "$web_root") || return 1
+                    nested=$(sudo find -P "$target" -type l -print -quit) || return 1
+                    test -z "$nested" || return 1
+                done < <(printf '%s' "$links" | base64 --decode)
+            }
+            grant_public_storage() {
+                local release=$1 web_root=$2 target ancestor
+                if ! sudo -u "$user" -H test -L "$web_root/storage"; then return 0; fi
+                check_web_root_links "$release" "$web_root" || return 1
+                target=$(public_storage_target "$release" "$web_root") || return 1
+                ancestor=$(dirname -- "$target")
+                while [ "$ancestor" != "$home" ]; do
+                    case "$ancestor" in "$home"/*) ;; *) return 1 ;; esac
+                    sudo setfacl -m u:caddy:--x "$ancestor" || return 1
+                    ancestor=$(dirname -- "$ancestor")
+                done
+                sudo setfacl -m u:caddy:--x "$home" || return 1
+                sudo setfacl -P -R -m u:caddy:r-X "$target" || return 1
+                sudo find -P "$target" -type d -exec setfacl -m d:u:caddy:r-x -- {} +
             }
             BASH;
     }

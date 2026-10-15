@@ -4802,8 +4802,8 @@
     {
       "name": "instance-update",
       "extension": null,
-      "title": "Update the deployment branch",
-      "description": "Update a production Instance deployment branch.",
+      "title": "Update production deployment settings",
+      "description": "Update a production Instance deployment branch or shared paths. shared_paths replaces the list; null restores the Project-type default and an empty list disables sharing. Applies to the next deployment.",
       "method": "PATCH",
       "path": "/api/v1/instances/{instance}",
       "path_inputs": [
@@ -4823,12 +4823,27 @@
           "branch": {
             "type": "string",
             "description": "Deployment branch"
+          },
+          "shared_paths": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "maxItems": 32,
+            "items": {
+              "type": "string",
+              "maxLength": 255
+            },
+            "description": "JSON list of shared directories; [] disables sharing and null restores the default"
+          },
+          "auto_deploy": {
+            "type": "boolean",
+            "description": "Deploy each new green commit of the branch automatically (true or false)"
           }
         },
         "additionalProperties": false,
         "required": [
-          "instance",
-          "branch"
+          "instance"
         ]
       }
     },
@@ -6042,6 +6057,9 @@
           "keep_alive": {
             "type": "boolean",
             "description": "Keep running through app-dev idle hibernation"
+          },
+          "restart_on_deploy": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false,
@@ -6367,6 +6385,9 @@
           "keep_alive": {
             "type": "boolean",
             "description": "Keep running through app-dev idle hibernation"
+          },
+          "restart_on_deploy": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false,

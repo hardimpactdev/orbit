@@ -16,6 +16,7 @@ use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Process\Process;
+use Tests\Support\SubprocessFixture;
 
 pest()->group('subprocess');
 
@@ -371,7 +372,7 @@ it('colors the request row orange for an unhealthy result, not green (F7, M7)', 
     $command = new Process(
         [PHP_BINARY, dirname(__DIR__, 3).'/orbit', 'doctor', '--ansi', '--no-interaction'],
         env: ['ORBIT_HOME' => $fixture['home']],
-        timeout: 10,
+        timeout: $fixture['deadline'] - microtime(true),
     );
     $command->setPty(true);
 
@@ -594,14 +595,13 @@ function doctor_cli_request_id(): string
  * (a real PTY, and the decoration it produces, only exists across a genuine process boundary —
  * CommandTester and Artisan::call() never run against a real terminal, so they cannot force it).
  *
- * @return array{home: string, server: Process}
+ * @return array{home: string, server: Process, deadline: float}
  */
 function doctor_cli_pty_fixture(string $root, bool $healthy): array
 {
     $directory = "{$root}/pty-doctor";
     mkdir($directory, 0o700, recursive: true);
     [$certificate, $privateKey] = doctor_cli_pty_certificate($directory);
-    $ready = "{$directory}/ready";
     $body = json_encode([
         'data' => $healthy
             ? doctor_cli_report(healthy: true)
@@ -645,8 +645,9 @@ function doctor_cli_pty_fixture(string $root, bool $healthy): array
                 exit(2);
             }
 
-            file_put_contents($argv[3], $address);
-            $connection = stream_socket_accept($server, 5);
+            fwrite(STDOUT, $address."\n");
+            fflush(STDOUT);
+            $connection = stream_socket_accept($server, -1);
 
             if ($connection === false) {
                 exit(3);
@@ -664,7 +665,7 @@ function doctor_cli_pty_fixture(string $root, bool $healthy): array
                 $request .= $chunk;
             }
 
-            $body = $argv[4];
+            $body = $argv[3];
             $response = "HTTP/1.1 200 OK\r\n"
                 ."Content-Type: application/json\r\n"
                 ."Content-Length: ".strlen($body)."\r\n"
@@ -678,16 +679,11 @@ function doctor_cli_pty_fixture(string $root, bool $healthy): array
             PHP,
         $certificate,
         $privateKey,
-        $ready,
         $body,
-    ], timeout: 8);
+    ], timeout: 10);
     $server->start();
-    doctor_cli_pty_wait_until(static fn (): bool => is_file($ready));
-    $address = file_get_contents($ready);
-
-    if (! is_string($address) || $address === '') {
-        throw new RuntimeException('Could not resolve the doctor PTY fixture address.');
-    }
+    $deadline = $server->getStartTime() + $server->getTimeout();
+    $address = SubprocessFixture::line($server);
 
     $home = "{$directory}/home";
     mkdir($home, 0o700);
@@ -697,7 +693,7 @@ function doctor_cli_pty_fixture(string $root, bool $healthy): array
         caPath: $certificate,
     ));
 
-    return compact('home', 'server');
+    return compact('home', 'server', 'deadline');
 }
 
 /** @return array{string, string} */
@@ -744,17 +740,4 @@ function doctor_cli_pty_certificate(string $directory): array
     chmod($privateKeyPath, 0o600);
 
     return [$certificatePath, $privateKeyPath];
-}
-
-function doctor_cli_pty_wait_until(Closure $condition, float $timeoutSeconds = 5): void
-{
-    $deadline = microtime(true) + $timeoutSeconds;
-
-    while (! $condition()) {
-        if (microtime(true) >= $deadline) {
-            throw new RuntimeException('Timed out waiting for the doctor PTY fixture.');
-        }
-
-        usleep(10_000);
-    }
 }

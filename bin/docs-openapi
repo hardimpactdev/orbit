@@ -666,7 +666,7 @@ SUMMARIES = {
     'project:schedule-definition:list': 'List Schedule definitions', 'project:schedule-definition:create': 'Create a Schedule definition',
     'project:schedule-definition:show': 'Show a Schedule definition', 'project:schedule-definition:update': 'Replace a Schedule definition',
     'project:schedule-definition:destroy': 'Remove a Schedule definition',
-    'instance:list': 'List Instances', 'instance:show': 'Show an Instance', 'instance:create': 'Create an Instance', 'instance:register': 'Register an Instance', 'instance:update': 'Update the deployment branch', 'instance:destroy': 'Remove an Instance',
+    'instance:list': 'List Instances', 'instance:show': 'Show an Instance', 'instance:create': 'Create an Instance', 'instance:register': 'Register an Instance', 'instance:update': 'Update production deployment settings', 'instance:destroy': 'Remove an Instance',
     'instance:clone': 'Clone an Instance', 'instance:deployment-layout:prepare': 'Prepare the deployment layout', 'instance:deploy-step:list': 'List deploy steps', 'instance:deploy-step:create': 'Create a deploy step', 'instance:deploy-step:update': 'Update a deploy step', 'instance:deploy-step:destroy': 'Remove a deploy step',
     'instance:deployment-config:show': 'Show the deployment configuration', 'instance:deployment-config:update': 'Replace the deployment configuration', 'instance:deploy': 'Deploy an Instance', 'operation:list': 'List operations', 'operation:show': 'Show an operation', 'operation:cancel': 'Cancel an operation', 'instance:release:list': 'List retained releases', 'instance:rollback': 'Roll back an Instance',
     'instance:database:add': 'Attach a Database connection', 'instance:database:remove': 'Detach a Database connection',
@@ -700,6 +700,7 @@ SUMMARIES = {
     'tasks:complete': 'Complete a Task group', 'tasks:cancel': 'Cancel a Task group',
 }
 DESCRIPTIONS = {
+    'instance:update': 'Update a production Instance deployment branch or shared paths. shared_paths replaces the list; null restores the Project-type default and an empty list disables sharing. Applies to the next deployment.',
     'gateway:trust': 'Returns the PEM-encoded Orbit root certificate and its SHA-256 fingerprint so a client can pin it before it trusts the Gateway. This endpoint needs no WireGuard identity.',
     'gateway:status': 'Returns the Gateway name, version, and status, and the release the Gateway runs from. This endpoint needs no WireGuard identity. For an active WireGuard peer it also returns `auto_release`, whether automatic releases are enabled or paused, and `desired_fleet_state`, the object `gateway:desired-fleet-state` returns, as last cached; it is null until the state is resolved and for any other caller. This endpoint never waits for Git or GitHub.',
     'gateway:desired-fleet-state': 'Returns what every machine in the fleet should run for the Gateway\'s commit (ADR 0202): the full commit SHA, the CLI release CI published for that commit with the SHA-256 of each platform binary from its `SHA256SUMS`, and the pinned `orbit-agent` with the SHA-256 of each Linux binary. Any active WireGuard peer may read it, with or without Node access. `cli.status` is `available`; `pending` with `reason` `release_missing` and the version and tag while CI has not published the release yet; or `unavailable` with a `reason`. None of these is an error. `orbit self-update` reads this endpoint.',
@@ -1156,8 +1157,10 @@ def rules_to_schema(rules_text, route_name=None):
                         for drop in ('items', 'maxItems', 'minItems'):
                             child.pop(drop, None)
                     node = child
-    if route_name == 'instance:rename':
+    if route_name in ('instance:rename', 'instance:update'):
         root['minProperties'] = 1
+    if route_name == 'instance:update':
+        root['properties']['shared_paths']['type'] = ['array', 'null']
     return clean_schema(root), body_required
 
 
@@ -1343,6 +1346,10 @@ def php_sample(sdkreq, stream, tag):
         if has_default:
             if sdkreq['class'] == 'RenameInstanceRequest' and name == 'branch':
                 args.append("branch: 't3code/login-redirect'")
+            if sdkreq['class'] == 'UpdateInstanceRequest' and name == 'sharedPaths':
+                args.append("sharedPaths: ['storage']")
+            if sdkreq['class'] == 'UpdateInstanceRequest' and name == 'sharedPathsProvided':
+                args.append('sharedPathsProvided: true')
             continue
         if 'Target' in t:
             first = t.split('|')[0]
@@ -1596,7 +1603,7 @@ CTRL_DATA_OVERRIDES = {
 }
 SDK_RESPONSE_FALLBACK = {'NodesController@destroy': 'RemovedNodeResponse', 'InstanceEnvironmentImportsController@store': 'EnvironmentOperationResponse', 'InstanceEnvironmentSynchronizationsController@store': 'EnvironmentOperationResponse', 'InstanceEnvironmentValuesController@update': 'EnvironmentOperationResponse'}
 NDJSON_SCHEMA = {'oneOf': [
-    {'title': 'Phase event', 'type': 'object', 'required': ['type', 'sequence', 'request_id', 'phase'], 'properties': {'type': {'type': 'string', 'enum': ['phase']}, 'sequence': {'type': 'integer'}, 'request_id': {'type': 'string', 'format': 'uuid'}, 'phase': {'type': 'string', 'enum': ['source_preparation', 'environment_sync', 'before_activation', 'activation', 'php_refresh', 'after_activation', 'rollback']}, 'step_name': {'type': ['string', 'null']}}},
+    {'title': 'Phase event', 'type': 'object', 'required': ['type', 'sequence', 'request_id', 'phase'], 'properties': {'type': {'type': 'string', 'enum': ['phase']}, 'sequence': {'type': 'integer'}, 'request_id': {'type': 'string', 'format': 'uuid'}, 'phase': {'type': 'string', 'enum': ['source_preparation', 'environment_sync', 'before_activation', 'activation', 'php_refresh', 'process_restart', 'after_activation', 'rollback']}, 'step_name': {'type': ['string', 'null']}}},
     {'title': 'Output event', 'type': 'object', 'required': ['type', 'sequence', 'request_id', 'stream', 'data_base64'], 'properties': {'type': {'type': 'string', 'enum': ['output']}, 'sequence': {'type': 'integer'}, 'request_id': {'type': 'string', 'format': 'uuid'}, 'stream': {'type': 'string', 'enum': ['stdout', 'stderr']}, 'data_base64': {'type': 'string', 'description': 'At most 16 KiB of decoded bytes, base64-encoded.'}}},
     {'title': 'Result event', 'type': 'object', 'required': ['type', 'sequence', 'request_id', 'status'], 'properties': {'type': {'type': 'string', 'enum': ['result']}, 'sequence': {'type': 'integer'}, 'request_id': {'type': 'string', 'format': 'uuid'}, 'status': {'type': 'string', 'enum': ['succeeded', 'failed']}, 'failed_step': {'type': ['string', 'null']}, 'error_code': {'type': ['string', 'null']}, 'selected_release': {'type': ['string', 'null']}}},
 ]}

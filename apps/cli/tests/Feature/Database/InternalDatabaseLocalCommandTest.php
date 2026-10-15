@@ -44,6 +44,59 @@ it('queries a local sqlite file through PDO and keeps SQL off argv', function ()
     unlink($path);
 });
 
+it('reads a private database without widening the owning user permissions', function (): void {
+    $directory = sys_get_temp_dir().'/orbit-private-db-'.bin2hex(random_bytes(8));
+    mkdir($directory, 0700);
+    $path = $directory.'/database.sqlite';
+
+    try {
+        $pdo = new PDO('sqlite:'.$path);
+        $pdo->exec('CREATE TABLE users (id INTEGER PRIMARY KEY)');
+        chmod($path, 0600);
+        [$exit, $output] = internal_database_query_display(internal_database_lane_payload(
+            internal_database_lane_token(), $path, 'SELECT name FROM sqlite_master',
+        ));
+        expect($exit)->toBe(0)
+            ->and(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['rows'])->toBe([['name' => 'users']])
+            ->and(fileperms($directory) & 0777)->toBe(0700)
+            ->and(fileperms($path) & 0777)->toBe(0600);
+    } finally {
+        unlink($path);
+        rmdir($directory);
+    }
+});
+
+it('returns a distinct safe error for an inaccessible SQLite file', function (int $mode, bool $write): void {
+    $path = internal_database_sqlite_path();
+
+    try {
+        chmod($path, $mode);
+        [$exit, $output] = internal_database_query_display(internal_database_lane_payload(
+            internal_database_lane_token(), $path, 'SELECT 1', $write,
+        ));
+        expect($exit)->toBe(1)
+            ->and(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('database.sqlite_unreadable')
+            ->and($output)->not->toContain($path);
+    } finally {
+        chmod($path, 0600);
+        unlink($path);
+    }
+})->with([
+    'unreadable file' => [0000, false],
+    'unwritable file' => [0400, true],
+]);
+
+it('refuses a missing SQLite file even for write requests without creating a database', function (): void {
+    $path = sys_get_temp_dir().'/orbit-missing-db-'.bin2hex(random_bytes(8)).'.sqlite';
+    [$exit, $output] = internal_database_query_display(internal_database_lane_payload(
+        internal_database_lane_token(), $path, 'SELECT 1', true,
+    ));
+
+    expect($exit)->toBe(1)
+        ->and(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('database.sqlite_unreadable')
+        ->and(file_exists($path))->toBeFalse();
+});
+
 it('opens sqlite read-only unless the write flag is set', function (): void {
     $path = internal_database_sqlite_path();
     $token = internal_database_lane_token();

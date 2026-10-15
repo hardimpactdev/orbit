@@ -145,7 +145,7 @@ function tvm_guard_sources(): array
  * credential itself, or a new path that sends remote commands with GitHub access in reach, would pass it unseen. Such
  * a change fails here and must use one of them, or Gateway-side Git for task VMs, and then join the list on purpose.
  */
-it('leaves GitReadScript and the program runner the only builders of a remote command with a GitHub credential', function (): void {
+it('keeps source Git credentials and Composer setup on reviewed remote paths', function (): void {
     $sources = tvm_guard_sources();
     $only = static function (string $pattern) use ($sources): array {
         return array_keys(array_filter($sources, static fn (string $source): bool => preg_match($pattern, $source) === 1));
@@ -163,6 +163,7 @@ it('leaves GitReadScript and the program runner the only builders of a remote co
             'app/Domain/GitHub/GitReadEnvironment.php',
             'app/Infrastructure/GatewayReleases/GatewayReleaseBuilder.php',
             'app/Infrastructure/RemotePrograms/SshProgramRunner.php',
+            'app/Infrastructure/SourceControl/GitRemoteBranchHeads.php',
             'app/Infrastructure/SourceControl/NativeRepositoryDefaultBranchResolver.php',
             'app/Infrastructure/TaskVms/TaskVmGit.php',
             'app/Infrastructure/Tasks/NativeDeliverablePathRepository.php',
@@ -182,5 +183,7 @@ it('leaves GitReadScript and the program runner the only builders of a remote co
         'app/Infrastructure/Tasks/GitHubTaskBaseBranchFetcher.php',
         'app/Infrastructure/Tasks/GitHubTaskPullRequestPublisher.php',
         'app/Infrastructure/Tasks/NativeDeliverablePathRepository.php',
+        // Composer setup has its own read-only, short-lived token; source Git still runs on the Gateway.
+        'app/Infrastructure/Tasks/RemoteTaskCheckRunner.php',
     ]);
 });

@@ -15,6 +15,7 @@ final class OperationStepLabels
             'environment_sync' => ['Sync environment', 'Syncing environment', 'Synced environment'],
             'activation' => ['Activate release', 'Activating release', 'Activated release'],
             'php_refresh' => ['Refresh PHP cache', 'Refreshing PHP cache', 'Refreshed PHP cache'],
+            'process_restart' => ['Restart Processes', 'Restarting Processes', 'Restarted Processes'],
             'cleanup' => ['Clean up releases', 'Cleaning up releases', 'Cleaned up releases'],
             default => null,
         };

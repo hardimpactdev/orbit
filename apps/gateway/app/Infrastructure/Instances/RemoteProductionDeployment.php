@@ -13,10 +13,12 @@ use App\Domain\Instances\Deployment\DeploymentReleaseState;
 use App\Domain\Instances\Deployment\DeploymentRequest;
 use App\Domain\Instances\Deployment\DeploymentStep;
 use App\Domain\Instances\Deployment\ProductionDeployment;
+use App\Domain\Instances\Deployment\SharedPaths;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\ProductionRepositoryBinding;
 use App\Domain\Routes\RouteWebRoot;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\SourceControl\GitCommitSha;
 use App\Infrastructure\AppProd\ProductionSshExecutor;
 use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Processes\CommandResult;
@@ -29,6 +31,9 @@ use Closure;
 
 final readonly class RemoteProductionDeployment implements ProductionDeployment
 {
+    /** Exit status of release preparation when the branch does not contain the requested commit. */
+    private const int CommitNotOnBranch = 5;
+
     /** @var Closure(): string */
     private Closure $releaseName;
 
@@ -42,14 +47,17 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
         $this->releaseName = $releaseName ?? static fn (): string => gmdate('YmdHis').'-'.bin2hex(random_bytes(8));
     }
 
-    public function prepare(Instance $instance, string $branch): DeploymentRelease
+    public function prepare(Instance $instance, string $branch, ?string $commit = null): DeploymentRelease
     {
+        if ($commit !== null) {
+            GitCommitSha::validate($commit);
+        }
         [$repository, $user, $home, $root] = $this->identity($instance);
         $name = ($this->releaseName)();
         $this->assertReleaseName($name);
         $served = $this->servedWebRoots($instance);
 
-        $script = GitReadScript::for($this->access->for($repository, $instance->loadMissing('project')->project->source_access), ProductionApplicationPaths::render(self::withServedWebRoots(<<<'BASH'
+        $script = GitReadScript::for($this->access->for($repository, $instance->loadMissing('project')->project->source_access), ProductionApplicationPaths::render(self::withServedWebRoots(str_replace('__CHECKOUT__', self::checkout($commit), <<<'BASH'
                     repository=$1
                     user=$2
                     home=$3
@@ -92,54 +100,81 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                     source_ref="refs/remotes/origin/$branch"
                     git_read sudo $git_read_sudo -u "$user" -H git -C "$release" fetch --prune -- origin >/dev/null 2>&1
                     sudo -u "$user" -H git -C "$release" show-ref --verify --quiet "$source_ref"
-                    sudo -u "$user" -H git -C "$release" checkout --detach "$source_ref" >/dev/null 2>&1
+                    __CHECKOUT__
                     test "$(sudo -u "$user" -H realpath -e -- "$release__APPLICATION_SUFFIX__")" = "$release__APPLICATION_SUFFIX__"
                     sudo -u "$user" -H ln -s __ENVIRONMENT_TARGET__ "$release_environment"
                     test "$(sudo -u "$user" -H realpath -e -- "$release_environment")" = "$environment"
+                    __SHARED_PATHS__
                     __SERVED_LINKS__
                     selected_root=$(sudo -u "$user" -H realpath -m -- "$release/$relative_root")
                     case "$selected_root" in "$release"|"$release"/*) ;; *) exit 1 ;; esac
                     sudo -u "$user" -H test -d "$selected_root"
-                    unexpected_symlink=$(sudo find -P "$selected_root" -type l -print -quit)
-                    test -z "$unexpected_symlink"
+                    check_web_root_links "$release" "$selected_root"
                     unexpected_user=$(sudo find -P "$release" -xdev ! -user "$user" -print -quit)
                     test -z "$unexpected_user"
                     unexpected_group=$(sudo find -P "$release" -xdev ! -group "$user" -print -quit)
                     test -z "$unexpected_group"
                     commit=$(sudo -u "$user" -H git -C "$release" rev-parse --verify HEAD)
                     printf '%s\t%s\n' "$name" "$commit"
-                    BASH, $served, ['__SERVED_LINKS__' => 'link_served_environments "$release"']), $root));
-        $result = $this->executeBound(
-            $instance,
-            new RemoteCommand(
-                arguments: [
-                    'bash',
-                    '-seu',
-                    '--',
-                    $repository,
-                    $user,
-                    $home,
-                    (string) $instance->id,
-                    $branch,
-                    $name,
-                    $root,
-                    ...$served,
-                ],
-                input: $script->input,
-                protectedInput: $script->protectedInput,
-                maxOutputBytes: 4096,
-            ),
-            'deployment-prepare',
-            'deployment.prepare_failed',
+                    BASH), $served, ['__SERVED_LINKS__' => 'link_served_environments "$release"']), $root, SharedPaths::forInstance($instance)));
+        $command = new RemoteCommand(
+            arguments: [
+                'bash',
+                '-seu',
+                '--',
+                $repository,
+                $user,
+                $home,
+                (string) $instance->id,
+                $branch,
+                $name,
+                $root,
+                ...$served,
+            ],
+            input: $script->input,
+            protectedInput: $script->protectedInput,
+            maxOutputBytes: 4096,
         );
 
-        [$reportedName, $commit] = $this->parseReleaseResult($result);
+        try {
+            $result = $this->execute($instance, $command, 'deployment-prepare', 'deployment.prepare_failed');
+        } catch (RuntimeConvergenceException $exception) {
+            if ($commit !== null && $exception->result?->exitCode === self::CommitNotOnBranch) {
+                throw new ResourceOperationException(
+                    'deployment.commit_not_on_branch',
+                    "The branch [{$branch}] does not contain the commit [{$commit}].",
+                    409,
+                    $exception,
+                );
+            }
 
-        if ($reportedName !== $name) {
+            throw $this->bindingFailure($instance, $exception) ?? $exception;
+        }
+
+        [$reportedName, $reportedCommit] = $this->parseReleaseResult($result);
+
+        if ($reportedName !== $name || ($commit !== null && $reportedCommit !== $commit)) {
             throw $this->invalidReceipt();
         }
 
-        return new DeploymentRelease($name, "{$home}/releases/{$name}", $commit);
+        return new DeploymentRelease($name, "{$home}/releases/{$name}", $reportedCommit);
+    }
+
+    /**
+     * The checkout of a new release: the branch's newest commit, or a given commit that the branch contains. The
+     * commit is validated hexadecimal before it enters the program.
+     */
+    private static function checkout(?string $commit): string
+    {
+        if ($commit === null) {
+            return 'sudo -u "$user" -H git -C "$release" checkout --detach "$source_ref" >/dev/null 2>&1';
+        }
+
+        return implode("\n", [
+            'pinned_commit='.GitCommitSha::validate($commit),
+            'sudo -u "$user" -H git -C "$release" merge-base --is-ancestor "$pinned_commit" "$source_ref" >/dev/null 2>&1 || exit '.self::CommitNotOnBranch,
+            'sudo -u "$user" -H git -C "$release" checkout --detach "$pinned_commit" >/dev/null 2>&1',
+        ]);
     }
 
     public function executeStep(
@@ -308,8 +343,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                     selected_root=$(sudo -u "$user" -H realpath -m -- "$release/$relative_root")
                     case "$selected_root" in "$release"|"$release"/*) ;; *) exit 1 ;; esac
                     sudo -u "$user" -H test -d "$selected_root"
-                    unexpected_symlink=$(sudo find -P "$selected_root" -type l -print -quit)
-                    test -z "$unexpected_symlink"
+                    check_web_root_links "$release" "$selected_root"
                     unexpected_user=$(sudo find -P "$release" -xdev ! -user "$user" -print -quit)
                     test -z "$unexpected_user"
                     unexpected_group=$(sudo find -P "$release" -xdev ! -group "$user" -print -quit)
@@ -325,6 +359,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                     sudo setfacl -m u:caddy:--x "$release"
                     sudo setfacl -P -R -m u:caddy:r-X "$selected_root"
                     sudo find -P "$selected_root" -type d -exec setfacl -m d:u:caddy:r-x -- {} +
+                    grant_public_storage "$release" "$selected_root"
                     __SERVED_ACTIVATION__
                     temporary="$home/.current.$$.tmp"
                     trap 'sudo -u "$user" -H rm -f -- "$temporary"' EXIT
@@ -462,7 +497,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                         fi
                     done < <(sudo -u "$user" -H find -P "$releases" -mindepth 1 -maxdepth 1 -type d -printf '%f\0' | sort -z)
                     test -n "${found[$selected]:-}"
-                    # A deployment does not restart Processes, so a running process can still work in an older release.
+                    # A Process can opt out of restart or leave children that still use an older release.
                     # Keep every release that is the working directory, root, or executable of a process of the user.
                     # When a live process cannot be read, nothing is removed.
                     declare -A busy=()
@@ -549,7 +584,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
      */
     private function inventoryScript(): string
     {
-        return <<<'BASH'
+        return ProductionWebRootProgram::linkChecks()."\n".<<<'BASH'
             # find must restore its working directory after sudo changes users.
             cd /
             repository=$1
@@ -602,8 +637,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                 selected_root=$(sudo -u "$user" -H realpath -m -- "$release/$relative_root") || return 1
                 case "$selected_root" in "$release"|"$release"/*) ;; *) return 1 ;; esac
                 sudo -u "$user" -H test -d "$selected_root" || return 1
-                unexpected_symlink=$(sudo find -P "$selected_root" -type l -print -quit) || return 1
-                test -z "$unexpected_symlink" || return 1
+                check_web_root_links "$release" "$selected_root" || return 1
                 unexpected_user=$(sudo find -P "$release" -xdev ! -user "$user" -print -quit) || return 1
                 test -z "$unexpected_user" || return 1
                 unexpected_group=$(sudo find -P "$release" -xdev ! -group "$user" -print -quit) || return 1
@@ -629,8 +663,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
     }
 
     /**
-     * Adds the web-root work to a release program only for an Instance with such a Route, so the program
-     * of any other Instance stays byte for byte as it was.
+     * Adds link checks to each release program, and Route web-root work when the Instance serves such Routes.
      *
      * @param  list<string>  $served
      * @param  array<string, string>  $calls  Placeholder line to the command that replaces it.
@@ -643,7 +676,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
             $replacements["{$placeholder}\n"] = $served === [] ? '' : "{$command}\n";
         }
 
-        return ($served === [] ? '' : ProductionWebRootProgram::functions()."\n").strtr($program, $replacements);
+        return ($served === [] ? ProductionWebRootProgram::linkChecks() : ProductionWebRootProgram::functions())."\n".strtr($program, $replacements);
     }
 
     /** @return array{string, string, string, string} */
@@ -729,8 +762,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
             selected_root=$(sudo -u "$user" -H realpath -m -- "$release/$relative_root")
             case "$selected_root" in "$release"|"$release"/*) ;; *) exit 1 ;; esac
             sudo -u "$user" -H test -d "$selected_root"
-            unexpected_symlink=$(sudo find -P "$selected_root" -type l -print -quit)
-            test -z "$unexpected_symlink"
+            check_web_root_links "$release" "$selected_root"
             unexpected_user=$(sudo find -P "$release" -xdev ! -user "$user" -print -quit)
             test -z "$unexpected_user"
             unexpected_group=$(sudo find -P "$release" -xdev ! -group "$user" -print -quit)
@@ -739,7 +771,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
             printf '%s\t%s\n' "$name" "$commit"
             BASH;
 
-        return str_replace('__SELECTION__', $selection, $script);
+        return ProductionWebRootProgram::linkChecks()."\n".str_replace('__SELECTION__', $selection, $script);
     }
 
     private function execute(

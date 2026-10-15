@@ -9,6 +9,7 @@ use App\Data\Projects\ProjectIdentityData;
 use App\Data\Routes\RouteData;
 use App\Domain\AppDev\AnnotatorEndpoint;
 use App\Domain\Instances\Deployment\InstanceDeployStepStore;
+use App\Domain\Instances\Deployment\SharedPaths;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\InstanceTransfer;
@@ -53,6 +54,9 @@ final class InstanceData extends Data
         public ?string $annotatorUrl = null,
         /** @var list<RouteData> */
         public array $routes = [],
+        /** @var list<string> */
+        public array $sharedPaths = [],
+        public ?InstanceAutoDeployData $autoDeploy = null,
     ) {}
 
     public static function fromModel(Instance $instance): self
@@ -68,6 +72,7 @@ final class InstanceData extends Data
             ->first();
 
         return new self(
+            sharedPaths: SharedPaths::forInstance($instance),
             id: $instance->id,
             projectId: $instance->project_id,
             nodeId: $instance->node_id,
@@ -102,6 +107,7 @@ final class InstanceData extends Data
                 ? InstanceRemovalData::fromModel($removal)
                 : null,
             transfer: self::transfer($instance),
+            autoDeploy: InstanceAutoDeployData::fromModel($instance),
             deploySteps: array_map(
                 DeploymentStepData::fromDomain(...),
                 app(InstanceDeployStepStore::class)->ordered($instance),

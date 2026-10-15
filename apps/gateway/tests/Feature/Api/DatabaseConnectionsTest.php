@@ -4,10 +4,16 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Ssh\SshConnection;
+use App\Infrastructure\Ssh\SshExecutor;
 use App\Models\Activity;
 use App\Models\DatabaseConnection;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Project;
 use Illuminate\Support\Facades\DB;
 
 const DATABASE_CONNECTION_SECRET = 'db-registry-secret-9f3a';
@@ -25,6 +31,60 @@ beforeEach(function (): void {
     ]);
     $this->node = $this->markAsGateway($node);
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
+});
+
+it('selects a production home only on the registered Node and at a path boundary', function (string $path, bool $sameNode, bool $sudo): void {
+    $worker = Node::query()->create([
+        'name' => 'production-sqlite', 'status' => 'active', 'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.82', 'wireguard_ip' => '10.44.0.82', 'user' => 'orbit',
+    ]);
+    $worker->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
+    $project = Project::query()->create([
+        'name' => 'SQLite production', 'slug' => 'sqlite-production',
+        'repository_url' => 'https://example.test/sqlite.git', 'default_branch' => 'main',
+    ]);
+    Instance::query()->create([
+        'project_id' => $project->id, 'node_id' => $worker->id, 'name' => 'production',
+        'checkout_path' => '/home/orbit-app-82/current', 'production_user' => 'orbit-app-82',
+        'production_home' => '/home/orbit-app-82',
+    ]);
+    $this->postJson('/api/v1/database-connections', [
+        'slug' => 'production-file', 'driver' => 'sqlite',
+        'node_id' => $sameNode ? $worker->id : $this->node->id, 'path' => $path,
+    ])->assertCreated();
+    $ssh = Mockery::mock(SshExecutor::class);
+    $ssh->shouldReceive('execute')->once()->withArgs(function (SshConnection $connection, RemoteCommand $command) use ($sudo): bool {
+        expect($connection->user)->toBe('orbit')
+            ->and($command->arguments)->toBe($sudo
+                ? ['sudo', '-n', '-u', 'orbit-app-82', '-H', 'orbit', 'internal:database-local']
+                : ['orbit', 'internal:database-local']);
+
+        return true;
+    })->andReturn(new CommandResult(0, '{"columns":["name"],"rows":[{"name":"users"}],"row_count":1,"truncated":false}', '', 1, false));
+    app()->instance(SshExecutor::class, $ssh);
+
+    $this->getJson('/api/v1/database-connections/production-file/tables')
+        ->assertOk()->assertJsonPath('data.tables', ['users']);
+})->with([
+    'production home' => ['/home/orbit-app-82/shared/database.sqlite', true, true],
+    'same path on another Node' => ['/home/orbit-app-82/shared/database.sqlite', false, false],
+    'similar home name' => ['/home/orbit-app-82-other/database.sqlite', true, false],
+    'path traversal' => ['/home/orbit-app-82/../other/database.sqlite', true, false],
+]);
+
+it('returns a distinct safe API error when SQLite inspection cannot read the file', function (): void {
+    $this->postJson('/api/v1/database-connections', [
+        'slug' => 'unreadable', 'driver' => 'sqlite', 'node_id' => $this->node->id,
+        'path' => '/private/database.sqlite',
+    ])->assertCreated();
+    $ssh = Mockery::mock(SshExecutor::class);
+    $ssh->shouldReceive('execute')->andReturn(new CommandResult(1,
+        '{"error":{"code":"database.sqlite_unreadable","message":"remote-private-secret"}}', '', 1, false));
+    app()->instance(SshExecutor::class, $ssh);
+
+    $response = $this->getJson('/api/v1/database-connections/unreadable/tables')
+        ->assertUnprocessable()->assertJsonPath('error.code', 'database.sqlite_unreadable');
+    expect($response->getContent())->not->toContain('remote-private-secret');
 });
 
 it('round-trips mysql connection CRUD, encrypts the password, and redacts it from activity', function (): void {

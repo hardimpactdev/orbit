@@ -636,7 +636,11 @@ Do not migrate the restored database forward while attempting to run the older c
 
 ## Release alerts
 
-A release command raises an alert when a release fails, when it pauses automatic releases, or when a fleet rollout halts. The alert leaves an Activity entry and a problem for the [outer loop](/reference/tasks#outer-loop), and it posts a signed webhook when one is configured. Each part is recorded on its own. A failed part never stops the others, and the alert never fails the release command that raised it. A release command raises the alert outside a database transaction, so a rollback cannot discard the records after the webhook went out.
+A release command raises an alert when a release fails, when it pauses automatic releases, or when a fleet rollout halts.
+
+The [automatic deployment tick](/reference/deployments#automatic-deployments) also raises one when an automatic deployment of a production Instance fails, stalls, or pauses. Its target is `instance:<id>`.
+
+The alert leaves an Activity entry and a problem for the [outer loop](/reference/tasks#outer-loop), and it posts a signed webhook when one is configured. Each part is recorded on its own. A failed part never stops the others, and the alert never fails the release command that raised it. A release command raises the alert outside a database transaction, so a rollback cannot discard the records after the webhook went out.
 
 | Kind | When |
 | --- | --- |
@@ -650,6 +654,9 @@ A release command raises an alert when a release fails, when it pauses automatic
 | `rollout_stalled` | `orbit self-update` on one Node stayed `incomplete` for 6 visits in a row, or a rollout waited more than 2 hours for a CLI release with no [fallback](/reference/self-update#fallback-to-an-ancestor-release). The rollout does not halt |
 | `rollout_caddy_skipped` | A fleet rollout kept a Node's live Caddyfile because the new one was refused. Once per rollout; the rollout does not halt |
 | `rollout_cli_fallback` | A fleet rollout used an ancestor's CLI release. The summary names why the commit's own release was not used. Once per rollout; the rollout does not halt |
+| `instance_deploy_failed` | An [automatic deployment](/reference/deployments#automatic-deployments) of a production Instance failed. Once per commit |
+| `instance_deploy_stalled` | A commit that the automatic deployment tick would deploy to a production Instance, or a head whose check has not finished, waited 30 minutes. Once per commit |
+| `instance_deploy_paused` | A manual deployment or a rollback paused automatic deployment of a production Instance |
 
 Every alert names its subject, a summary, and an optional evidence link. The summary passes through the Gateway log redactor and is cut at 1,000 characters. A field outside these limits is a bug in the calling command, which refuses it before it records anything.
 
@@ -975,3 +982,5 @@ An unreachable Node changed nothing, so it does not halt the fleet; the catch-up
 [Node recipe convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) applies and verifies machine software on one Node. It shares the Node role and self-update locks with release rollout.
 
 Release rollout updates Orbit itself, with a timer to catch up missed Nodes. [Nightly recipe maintenance](/reference/compute-drivers#nightly-recipe-maintenance) waits for every configured host to promote the deployed recipe, then calls Node recipe convergence in fleet order. That page owns the schedule, night window, alerts, and recovery policy.
+
+Converging the Gateway Node also brings its PHP to the recipe's [PHP build](/reference/compute-drivers#php-build). When that changes a PHP package, [`php.install-build`](/reference/compute-drivers#install-the-php-build) validates PHP-FPM and restarts `php8.5-fpm`, which serves the API, then checks each pool socket, `orbit-gateway` included. A failed check reinstalls the previous PHP build and restarts the service again. Converge the Gateway last and while no long request runs.

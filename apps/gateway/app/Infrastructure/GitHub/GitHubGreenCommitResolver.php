@@ -12,6 +12,8 @@ use App\Domain\GitHub\GitHubCheckRun;
 use App\Domain\GitHub\GitHubCommit;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GreenCommit;
+use App\Domain\GitHub\GreenCommitInspection;
+use App\Domain\GitHub\GreenCommitInspector;
 use App\Domain\GitHub\GreenCommitResolver;
 use App\Domain\GitHub\RequiredCheckState;
 use App\Domain\SourceControl\GitBranchName;
@@ -26,7 +28,7 @@ use InvalidArgumentException;
  * `contents: read` token and check runs with a separate `checks: read` token, minted only when a
  * candidate needs one.
  */
-final readonly class GitHubGreenCommitResolver implements GreenCommitResolver
+final readonly class GitHubGreenCommitResolver implements GreenCommitInspector, GreenCommitResolver
 {
     /** Bounds the check-run reads of one resolution. Older candidates wait for a newer green commit. */
     private const int CANDIDATES = 20;
@@ -40,6 +42,16 @@ final readonly class GitHubGreenCommitResolver implements GreenCommitResolver
         string $deployedSha,
         array $failedShas = [],
     ): ?GreenCommit {
+        return $this->inspect($repository, $branch, $checkName, $deployedSha, $failedShas)->green;
+    }
+
+    public function inspect(
+        GitHubRepository $repository,
+        string $branch,
+        string $checkName,
+        string $deployedSha,
+        array $failedShas = [],
+    ): GreenCommitInspection {
         GitBranchName::validate($branch);
         if (trim($checkName) !== $checkName || $checkName === '' || strlen($checkName) > 255) {
             throw new InvalidArgumentException('The required check name is invalid.');
@@ -56,42 +68,45 @@ final readonly class GitHubGreenCommitResolver implements GreenCommitResolver
 
         $checksToken = null;
         $candidate = array_first($commits);
+        $head = $candidate?->sha;
+        $headState = null;
         for ($examined = 0; $candidate instanceof GitHubCommit && $examined < self::CANDIDATES; $examined++) {
             if ($candidate->sha === $deployed) {
-                return null;
+                return new GreenCommitInspection(null, $head, $headState);
             }
             if (! isset($failed[$candidate->sha])) {
                 $checksToken ??= $this->github->repositoryChecksToken($credentials, $installation, $repository);
-                $run = $this->passingRun($this->github->checkRuns($checksToken, $repository, $candidate->sha, $checkName), $candidate->sha, $checkName);
-                if ($run instanceof GitHubCheckRun) {
+                $runs = $this->github->checkRuns($checksToken, $repository, $candidate->sha, $checkName);
+                $state = RequiredCheckState::of($runs, $candidate->sha, $checkName);
+                if ($candidate->sha === $head) {
+                    $headState = $state;
+                }
+                if ($state === RequiredCheckState::Passed) {
                     // On a first-parent chain, once a commit does not descend from the deployed one, no older commit does.
                     if (! $this->github->compareCommits($contentsToken, $repository, $deployed, $candidate->sha)->headDescendsFromBase()) {
-                        return null;
+                        return new GreenCommitInspection(null, $head, $headState);
                     }
 
-                    return new GreenCommit($candidate->sha, $run);
+                    return new GreenCommitInspection(new GreenCommit($candidate->sha, $this->passingRun($runs, $checkName)), $head, $headState);
                 }
             }
             $parent = $candidate->firstParent();
             $candidate = $parent !== null ? ($commits[$parent] ?? null) : null;
         }
 
-        return null;
+        return new GreenCommitInspection(null, $head, $headState);
     }
 
     /**
-     * Every latest run of the required name must come from GitHub Actions and have passed on this exact
-     * commit, and at least one must exist. The review-and-merge gate applies the same rule.
+     * The run that proved a commit green. Every latest run of the required name came from GitHub Actions and passed on
+     * this exact commit, by {@see RequiredCheckState::of()}, which the review-and-merge gate applies too.
      *
      * @param  list<GitHubCheckRun>  $runs
      */
-    private function passingRun(array $runs, string $sha, string $checkName): ?GitHubCheckRun
+    private function passingRun(array $runs, string $checkName): GitHubCheckRun
     {
-        if (RequiredCheckState::of($runs, $sha, $checkName) !== RequiredCheckState::Passed) {
-            return null;
-        }
-
-        return array_first(array_filter($runs, static fn (GitHubCheckRun $run): bool => $run->name === $checkName));
+        return array_first(array_filter($runs, static fn (GitHubCheckRun $run): bool => $run->name === $checkName))
+            ?? throw new GitHubApiException('A passing check has no run.');
     }
 
     /**

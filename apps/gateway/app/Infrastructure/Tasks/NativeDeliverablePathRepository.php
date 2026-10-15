@@ -6,10 +6,11 @@ namespace App\Infrastructure\Tasks;
 
 use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\SourceControl\GitBranchName;
+use App\Domain\SourceControl\RemoteBranchHeads;
 use App\Domain\Tasks\DeliverablePathRepository;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\SourceControl\GitRemoteBranchHeads;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
 use App\Models\Project;
@@ -25,17 +26,15 @@ final readonly class NativeDeliverablePathRepository implements DeliverablePathR
 {
     private const int MaxTreeBytes = 16_777_216;
 
-    public function __construct(private ProcessRunner $processes, private RepositoryReadAccess $access, private Filesystem $filesystem, private TaskWorkspaceExecutor $workspaces) {}
+    public function __construct(private ProcessRunner $processes, private RepositoryReadAccess $access, private Filesystem $filesystem, private TaskWorkspaceExecutor $workspaces, private ?RemoteBranchHeads $heads = null) {}
 
     public function defaultBranchCommit(Project $project): string
     {
-        $ref = 'refs/heads/'.GitBranchName::validate((string) $project->default_branch);
-        $output = $this->run(['git', '-C', '/', 'ls-remote', '--exit-code', '--heads', '--', $project->repository_url, $ref], $project);
-        if (preg_match('/\A([0-9a-f]{40}(?:[0-9a-f]{24})?)\t'.preg_quote($ref, '/').'\n?\z/i', $output, $matches) !== 1) {
+        try {
+            return ($this->heads ?? new GitRemoteBranchHeads($this->processes, $this->access))->head($project, (string) $project->default_branch);
+        } catch (ResourceOperationException) {
             throw $this->failure();
         }
-
-        return $matches[1];
     }
 
     public function files(Project $project, string $commit, ?Instance $workspace = null): array

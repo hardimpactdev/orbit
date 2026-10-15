@@ -22,30 +22,34 @@ output = bytearray()
 keys = [base64.b64decode(key) for key in configuration['keys']]
 key_prompts = configuration.get('key_prompts', {})
 keys_sent = 0
-# Include time for startup, prompt transitions, and the deliberate per-key delay.
-timeout = max(30, len(keys) * 0.15 + 20)
 ready = False
-last_key = 0
-started = time.monotonic()
+awaiting_output = False
+idle_timeout = configuration.get('idle_timeout', 10)
+last_output = time.monotonic()
 while process.poll() is None:
-    if time.monotonic() - started > timeout:
-        process.kill()
-        process.wait()
-        raise RuntimeError('Command fixture timed out: ' + output.decode(errors='replace'))
     if select.select([master], [], [], 0.02)[0]:
         try:
-            output.extend(os.read(master, 65536))
+            chunk = os.read(master, 65536)
+            if chunk:
+                output.extend(chunk)
+                last_output = time.monotonic()
+                awaiting_output = False
         except OSError as error:
             if error.errno != errno.EIO:
                 raise
+    if time.monotonic() - last_output > idle_timeout:
+        process.kill()
+        process.wait()
+        raise RuntimeError('Command fixture timed out: ' + output.decode(errors='replace'))
     ready = ready or configuration['prompt'].encode() in output
     # Multi-prompt commands must finish the transition before the next key is sent.
     key_prompt = key_prompts.get(str(keys_sent))
     prompt_ready = key_prompt is None or key_prompt.encode() in output
-    if ready and keys and prompt_ready and time.monotonic() - last_key > 0.15:
+    pending_input = struct.unpack('i', fcntl.ioctl(slave, termios.FIONREAD, struct.pack('i', 0)))[0]
+    if ready and keys and prompt_ready and not awaiting_output and pending_input == 0:
         os.write(master, keys.pop(0))
         keys_sent += 1
-        last_key = time.monotonic()
+        awaiting_output = True
 while select.select([master], [], [], 0.02)[0]:
     try:
         chunk = os.read(master, 65536)

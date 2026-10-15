@@ -14,33 +14,39 @@ def command_output(result):
 
 
 def image_packages(payload):
-    snapshot = payload['snapshot']
-    source = (f'Types: deb\nURIs: https://snapshot.ubuntu.com/ubuntu/{snapshot}/\n'
-              'Suites: resolute resolute-updates resolute-security\nComponents: main universe restricted multiverse\n'
-              'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\nCheck-Valid-Until: no\n')
-    publish('/etc/apt/sources.list.d/ubuntu.sources', source.encode())
-    options = ['-o', 'Dir::Etc::sourcelist=sources.list.d/ubuntu.sources', '-o', 'Dir::Etc::sourceparts=-',
-               '-o', 'DPkg::Lock::Timeout=300']
+    with tempfile.TemporaryDirectory(prefix='orbit-image-source-') as directory:
+        options = snapshot_options(payload, Path(directory))
+        image_install_packages(payload, options)
+
+
+def image_install_packages(payload, options):
+    options = [*options, '-o', 'DPkg::Lock::Timeout=300']
     run(['apt-get', 'update', *options])
     environment = dict(os.environ, DEBIAN_FRONTEND='noninteractive', NEEDRESTART_SUSPEND='1')
-    installed = packages()
-    ubuntu = [name + '=' + pin['version'] for name, pin in payload['tools'].items()
-              if pin['source'] == 'ubuntu' and installed.get(name) != pin['version']]
     if POLICY.exists() or POLICY.is_symlink():
         raise RecipeFailure()
     publish(POLICY, b'#!/bin/sh\nexit 101\n', 0o755)
     try:
         if payload['profile'] == 'base':
             run(['apt-get', 'full-upgrade', '--yes', *options], env=environment)
+        # full-upgrade may have installed a newer same-release version; inspect after it.
+        installed = packages()
+        tools = {name: pin for name, pin in payload['tools'].items() if pin['source'] == 'ubuntu'}
+        assessment = assess(tools, {name: installed.get(pin['package']) for name, pin in tools.items()}, options)
+        supported(assessment)
+        ubuntu = [pin['package'] + '=' + pin['version'] for name, pin in tools.items() if assessment[name]['changed']]
         # Install the recipe's curl and CA packages before fetching third-party artifacts on a stock image.
         if ubuntu:
-            run(['apt-get', 'install', '--yes', '--no-install-recommends', '--allow-downgrades',
+            run(['apt-get', 'install', '--yes', '--no-install-recommends', '--no-remove',
                  *options, '--', *ubuntu], env=environment)
         with tempfile.TemporaryDirectory(prefix='orbit-image-packages-') as directory:
             work = Path(directory)
             debs = []
+            php = php_packages(payload)
             for name, pin in payload['tools'].items():
                 if pin['source'] != 'artifact' or not pin['artifacts'][payload['architecture']]['url'].endswith('.deb'):
+                    continue
+                if name in php:
                     continue
                 if installed.get(name) == pin['version']:
                     continue
@@ -51,10 +57,13 @@ def image_packages(payload):
                     raise RecipeFailure()
                 debs.append(str(deb))
             if debs:
-                run(['apt-get', 'install', '--yes', '--no-install-recommends', '--allow-downgrades',
-                     *options, '--', *debs], env=environment)
+                install_exact_debs(debs, payload['tools'], packages(), options, environment)
+        run(['apt-get', 'check'], env=environment)
+        audit_packages(environment)
     finally:
         POLICY.unlink()
+    if payload.get('php') and php_install(payload) not in ('applied', 'current'):
+        raise RecipeFailure()
     # dnsmasq and Caddy are configured at enrollment, not while baking the disk.
     for service in ('ssh', 'docker', 'containerd'):
         if run(['systemctl', 'show', '-p', 'LoadState', '--value', service], required=False).stdout.strip() == 'loaded':
@@ -156,15 +165,41 @@ def image_agent(payload):
         publish('/usr/local/bin/orbit-agent', artifact.read_bytes(), 0o755)
 
 
+def php_packages(payload):
+    """The packages of the PHP build. php.install-build installs them, not the image package phase."""
+    php = payload.get('php') or {}
+    versions = php.get('input', {}).get('versions', {})
+    return {pin['name'] for build in versions.values() for pin in build['packages']}
+
+
+def php_install(payload):
+    """Run php.install-build, the one installer of the recipe's PHP build, and return its outcome."""
+    php = payload['php']
+    result = subprocess.run(['python3', '-I', '-c', php['bootstrap'], 'php.install-build'], capture_output=True, text=True,
+                            input=php['program'] + '\0' + json.dumps({**php['input'], 'git_read': {}}), timeout=900)
+    command_output(result)
+    try:
+        return json.loads(result.stdout.strip().splitlines()[-1])['outcome']
+    except (IndexError, KeyError, ValueError):
+        raise RecipeFailure()
+
+
 def image_verify(payload):
     marker = json.loads(Path('/etc/orbit-machine-recipe.json').read_text())
     if marker != {'identity': payload['identity'], 'profile': payload['profile']}:
         raise RecipeFailure()
     selected = {name: pin for name, pin in payload['tools'].items()
-                if name not in ('rust', 'cargo', 'rust-std', 'clippy', 'rustfmt', 'orbit-agent', 'pi')}
+                if name not in ('rust', 'cargo', 'rust-std', 'clippy', 'rustfmt', 'orbit-agent', 'pi') and name not in php_packages(payload)}
     os.environ['SUDO_USER'] = 'orbit'
     observed = inspect(selected)
-    if any(observed[name] != pin['version'] for name, pin in selected.items()):
+    # Snapshot-only versions may no longer appear in the normal rolling indexes. Reuse the cached
+    # authenticated snapshot metadata too, without refreshing any index during verification.
+    if any(pin['source'] == 'ubuntu' for pin in selected.values()):
+        with tempfile.TemporaryDirectory(prefix='orbit-image-verify-') as directory:
+            assessment = assess(selected, observed, snapshot_options(payload, Path(directory)))
+    else:
+        assessment = assess(selected, observed)
+    if any(tool['status'] not in ('current', 'newer_than_recipe') for tool in assessment.values()):
         raise RecipeFailure()
     if 'pnpm' in selected:
         result = run(['sudo', '-u', 'orbit', '-H', 'env', '-C', '/home/orbit',
@@ -178,6 +213,9 @@ def image_verify(payload):
             with open(path, 'rb') as stream:
                 if hashlib.file_digest(stream, algorithm).hexdigest() != artifact[algorithm]:
                     raise RecipeFailure()
+    # The installer finds nothing to change and checks the CLI's loaded extensions against the recipe.
+    if payload.get('php') and php_install(payload) != 'current':
+        raise RecipeFailure()
     rust_pins = {name: payload['tools'][name]['artifacts'][payload['architecture']]
                  for name in ('rust', 'cargo', 'rust-std', 'clippy', 'rustfmt') if name in payload['tools']}
     if rust_pins and json_file(Path('/opt/orbit/rust/.recipe-artifacts.json')) != rust_pins:

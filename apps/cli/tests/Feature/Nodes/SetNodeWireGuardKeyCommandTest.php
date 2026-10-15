@@ -83,7 +83,7 @@ describe('node:wireguard-key', function (): void {
         ];
         file_put_contents($directory.'/case.json', json_encode($configuration, JSON_THROW_ON_ERROR));
         $fixtures = base_path('tests/Fixtures/Console/');
-        $process = new Process(['python3', $fixtures.'command-consent-pty.py', PHP_BINARY, $fixtures.'command-consent.php', $directory.'/case.json'], env: ['PAO_DISABLE' => '1']);
+        $process = new Process(['python3', $fixtures.'command-consent-pty.py', PHP_BINARY, $fixtures.'command-consent.php', $directory.'/case.json'], env: ['PAO_DISABLE' => '1'], timeout: 15);
         $process->mustRun();
         $result = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
         $raw = base64_decode($result['raw'], strict: true);

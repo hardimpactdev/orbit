@@ -31,7 +31,7 @@ class ImageRecipeTest(unittest.TestCase):
 
     def run_command(self, argv, **kwargs):
         self.commands.append(argv)
-        return subprocess.CompletedProcess(argv, 0, '', '')
+        return subprocess.CompletedProcess(argv, 1 if argv[:2] == ['dpkg', '--compare-versions'] else 0, '', '')
 
     def publish(self, path, content, *args):
         self.files[str(path)] = content
@@ -48,12 +48,42 @@ class ImageRecipeTest(unittest.TestCase):
     def test_installs_exact_pins_only_from_snapshot_and_upgrades_base_from_stock(self):
         self.packages()
         self.assertIn(b'https://snapshot.ubuntu.com/ubuntu/20261014T000000Z/',
-                      self.files['/etc/apt/sources.list.d/ubuntu.sources'])
+                      next(content for path, content in self.files.items() if path.endswith('/ubuntu.sources')))
         install = next(c for c in self.commands if c[:2] == ['apt-get', 'install'])
         self.assertIn('curl=2.0', install)
         self.assertIn('Dir::Etc::sourceparts=-', install)
         self.assertTrue(any(c[:2] == ['apt-get', 'full-upgrade'] for c in self.commands))
         self.assertFalse(self.policy.exists())
+
+    def php_payload(self):
+        pin = {'name': 'php8.5-cli', 'version': '8.5.11-1', 'architecture': 'amd64', 'url': 'https://example/x.deb', 'sha256': 'a' * 64}
+        self.payload['tools']['php8.5-cli'] = {'source': 'artifact', 'version': '8.5.11-1',
+                                               'artifacts': {'amd64': {'url': 'https://example/x.deb', 'sha256': 'a' * 64}}}
+        self.payload['php'] = {'program': 'program', 'bootstrap': 'bootstrap',
+                               'input': {'versions': {'8.5': {'packages': [pin], 'extensions': []}}}}
+
+    def installer(self, outcome):
+        calls = []
+
+        def fake(argv, **kwargs):
+            calls.append((argv, kwargs['input']))
+            return subprocess.CompletedProcess(argv, 0, json.dumps({'outcome': outcome, 'data': {}}) + '\n', '')
+        return calls, patch.object(recipe.subprocess, 'run', side_effect=fake)
+
+    def test_the_php_build_comes_from_the_one_installer_not_the_package_phase(self):
+        self.php_payload()
+        calls, installer = self.installer('applied')
+        with installer:
+            self.packages()
+        self.assertFalse(any('x.deb' in ' '.join(c) for c in self.commands))
+        self.assertEqual(calls[0][0], ['python3', '-I', '-c', 'bootstrap', 'php.install-build'])
+        self.assertTrue(calls[0][1].startswith('program\0'))
+
+    def test_a_failed_php_install_fails_the_package_phase(self):
+        self.php_payload()
+        _, installer = self.installer('extra_packages')
+        with installer, self.assertRaises(recipe.RecipeFailure):
+            self.packages()
 
     def test_role_packages_do_not_upgrade_the_published_base(self):
         self.payload['profile'] = 'gateway'
@@ -135,7 +165,7 @@ class ImageRecipeTest(unittest.TestCase):
         download.assert_not_called()
 
     def test_smoke_rejects_broken_pnpm_even_when_its_package_metadata_matches(self):
-        self.payload.update({'identity': 'sha256:current', 'tools': {'pnpm': {'version': '12.11.2'}}})
+        self.payload.update({'identity': 'sha256:current', 'tools': {'pnpm': {'source': 'artifact', 'version': '12.11.2'}}})
         marker = json.dumps({'identity': self.payload['identity'], 'profile': 'base'})
         with patch.object(recipe.Path, 'read_text', return_value=marker), \
              patch.object(recipe, 'inspect', return_value={'pnpm': '12.11.2'}), \

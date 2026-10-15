@@ -36,7 +36,7 @@ class ConvergenceTest(unittest.TestCase):
             output = {'curl': '/usr/lib/systemd/system/curl.service\n',
                       'dependency': '/lib/systemd/system/dependency.service\n',
                       'unchanged': '/lib/systemd/system/unchanged.service\n'}.get(argv[2], '')
-        return subprocess.CompletedProcess(argv, 0, output, '')
+        return subprocess.CompletedProcess(argv, 1 if argv[:2] == ['dpkg', '--compare-versions'] else 0, output, '')
 
     def publish(self, path, content, *args):
         self.published[str(path)] = content
@@ -61,16 +61,19 @@ class ConvergenceTest(unittest.TestCase):
         self.assertNotIn(['systemctl', 'restart', 'dependency.service'], self.commands)
         self.assertIn(['systemctl', 'is-active', '--quiet', 'unchanged.service'], self.commands)
         self.assertFalse(self.policy.exists())
-        source = self.published['/etc/apt/sources.list.d/ubuntu.sources'].decode()
+        source_path = next(path for path in self.published if path.endswith('/ubuntu.sources'))
+        self.assertNotIn('/etc/apt/sources.list.d/ubuntu.sources', self.published)
+        source = self.published[source_path].decode()
         self.assertIn('https://snapshot.ubuntu.com/ubuntu/20261014T000000Z/', source)
         self.assertIn('Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg', source)
         install = next(c for c in self.commands if c[:2] == ['apt-get', 'install'])
         self.assertIn('curl=2.0', install)
         self.assertIn('--no-remove', install)
+        self.assertNotIn('--allow-downgrades', install)
         self.assertNotIn('upgrade', install)
         self.assertIn('Dir::Etc::sourceparts=-', install)
         self.assertNotIn('/etc/apt/apt.conf.d/99orbit-recipe', self.published)
-        self.assertEqual(set(self.published), {'/etc/apt/sources.list.d/ubuntu.sources', str(self.policy)})
+        self.assertEqual(set(self.published), {source_path, str(self.policy)})
 
     def test_restarts_active_instances_of_a_changed_package_service_template(self):
         output = subprocess.CompletedProcess([], 0, '/usr/lib/systemd/system/wg-quick@.service\n', '')
@@ -96,10 +99,13 @@ class ConvergenceTest(unittest.TestCase):
             if argv[:2] == ['apt-get', 'install']:
                 self.assertEqual(kwargs['env']['NEEDRESTART_SUSPEND'], '1')
                 self.assertEqual(self.policy.read_text(), '#!/bin/sh\nexit 101\n')
-                raise recipe.RecipeFailure()
+                raise recipe.RecipeFailure(result=subprocess.CompletedProcess(argv, 100, 'curl install failed', 'dependency conflict'))
             return result
-        with self.assertRaisesRegex(recipe.RecipeFailure, '^packages$'):
+        with self.assertRaisesRegex(recipe.RecipeFailure, '^packages$') as failed:
             self.apply(command)
+        self.assertIn('curl install failed', failed.exception.result.stdout)
+        self.assertIn('dependency conflict', failed.exception.result.stderr)
+        self.assertEqual(failed.exception.packages, ['curl=2.0'])
         self.assertFalse(self.policy.exists())
         self.assertFalse(any(c[:2] == ['systemctl', 'restart'] for c in self.commands))
         self.assertEqual(sum(c[:2] == ['apt-get', 'install'] for c in self.commands), 1)
@@ -109,8 +115,20 @@ class ConvergenceTest(unittest.TestCase):
         with self.assertRaisesRegex(recipe.RecipeFailure, '^preflight$'):
             self.apply()
         self.assertEqual(self.policy.read_text(), 'existing policy')
-        self.assertFalse(self.commands)
+        self.assertTrue(all(c[:2] == ['dpkg', '--compare-versions'] for c in self.commands))
         self.assertFalse(self.published)
+
+    def test_dependency_check_failure_stops_before_restarts_and_cleans_the_restart_policy(self):
+        def command(argv, **kwargs):
+            result = self.command(argv, **kwargs)
+            if argv[:2] == ['apt-get', 'check']:
+                raise recipe.RecipeFailure(result=subprocess.CompletedProcess(argv, 100, '', 'broken dependencies'))
+            return result
+        with self.assertRaisesRegex(recipe.RecipeFailure, '^packages$') as failed:
+            self.apply(command)
+        self.assertEqual(failed.exception.result.stderr, 'broken dependencies')
+        self.assertFalse(self.policy.exists())
+        self.assertFalse(any(c[:2] == ['systemctl', 'restart'] for c in self.commands))
 
     def test_no_package_changes_produce_no_restarts_or_install(self):
         self.before = self.after
