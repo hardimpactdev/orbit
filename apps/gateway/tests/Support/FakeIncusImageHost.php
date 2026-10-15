@@ -75,6 +75,11 @@ final class FakeIncusImageHost implements SshExecutor
 
     public bool $recipeImages = false;
 
+    public ?CommandResult $recipeFailure = null;
+
+    /** @var array<string, string> */
+    private array $recipeLogs = [];
+
     /** @var array<string, array<string, string>> */
     public array $imageProperties = [];
 
@@ -155,7 +160,17 @@ final class FakeIncusImageHost implements SshExecutor
         // `timeout <seconds> <command>`, as the cloud-init status read runs.
         $command = $call->argv[0] === 'timeout' ? array_slice($call->argv, 2) : $call->argv;
 
+        if ($command[0] === 'bash' && str_contains($command[2] ?? '', 'cat >> "$1"')) {
+            $path = $command[4];
+            $this->recipeLogs[$path] = ($this->recipeLogs[$path] ?? '').(string) $call->input;
+
+            return new CommandResult(0, '', '', 1, false);
+        }
+
         return match ($command[0]) {
+            'tail' => isset($this->recipeLogs[$command[4]])
+                ? new CommandResult(0, implode("\n", array_slice(explode("\n", rtrim($this->recipeLogs[$command[4]])), -40)), '', 1, false)
+                : new CommandResult(1, '', 'Log unavailable', 1, false),
             // The guest agent is not up on the first poll, cloud-init runs on the second.
             'cloud-init' => match (true) {
                 $this->bootRunning => new CommandResult(0, '{"status":"running","errors":[]}', '', 1, false),
@@ -207,7 +222,8 @@ final class FakeIncusImageHost implements SshExecutor
     private function answer(string $operation, ?Closure $effect = null): CommandResult
     {
         if ($this->fail === $operation) {
-            return new CommandResult(1, '', "Error: {$operation} failed\n", 1, false);
+            return str_starts_with($operation, 'recipe ') && $this->recipeFailure !== null
+                ? $this->recipeFailure : new CommandResult(1, '', "Error: {$operation} failed\n", 1, false);
         }
         $output = $effect instanceof Closure ? $effect() : null;
 

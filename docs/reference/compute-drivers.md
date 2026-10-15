@@ -41,6 +41,8 @@ An `ubuntu` tool names its Debian `package`. Its `version` is the complete Debia
 
 An `artifact` tool has an `artifacts` object keyed by every declared architecture. Each entry contains an HTTPS `url` and exactly one digest field, `sha256` or `sha512`, with a full lowercase hexadecimal digest. A URL must identify the pinned release, not a moving installer or a `latest` alias. Architecture-independent archives repeat the same URL and digest for each architecture. Artifact contents, not the spelling of the URL or a successful HTTP response, are the integrity check. The validator downloads and hashes the bytes without executing or installing them.
 
+The Sury PHP pins include `php-common` and each PHP version’s `igbinary` extension. They keep PHP 8.4 and 8.5 installable together without resolving those dependencies from a rolling third-party repository. Debian artifact filenames omit a version epoch; the pin and package metadata retain it. Architecture-independent `.deb` packages declare `all` in their metadata.
+
 The loader has a closed catalog of supported tool identifiers and their source kinds. A new tool needs a catalog change and validation tests as well as a recipe entry. Every profile reference must resolve to a catalogued entry in `tools`; an unused entry, a missing tool, or an incompatible source is an error. Tool versions must be exact: `latest`, `stable`, `lts`, version ranges, and unversioned installer URLs are not pins.
 
 An `internal` tool is an Orbit-built binary pinned by `source_commit` (12 to 40 lowercase Git hexadecimal characters), an exact `version`, and architecture-specific entries in `artifacts`. Each entry has a simple `filename` and a full lowercase `sha256`; filenames resolve under the Gateway's sandbox-artifacts directory (or the command's `--artifact-directory` override). Source commit and digest identify the software; the directory and filename are only byte locations and are not part of the identity. The default directory is `$ORBIT_HOME/sandbox-artifacts`, using the Gateway's configured Orbit home.
@@ -713,6 +715,8 @@ Images live in each host's configured Incus project. All five are VM images. The
 This step does not change nested topology composition; the existing harness still builds its own images, including its operator container.
 
 Only a fully built and smoke-tested set can promote the host's base alias. Role aliases stay immutable; consumers select them through the succeeded build row. A database write fence serializes promotion with desired-recipe changes, so an older build cannot move the base alias after a newer recipe is desired. A failed build leaves the previous images in place. The previous recipe does not satisfy the future current-recipe claim gate.
+
+Failed recipe phases record the last 40 lines of command output in the build step error, with secrets redacted and a size limit. The error names the phase log under `/var/log/orbit/recipe-images/<profile>-<phase>.log` in the retained builder. Logs are root-only. Installer logs include subprocess stdout, stderr, exit status, and Python exceptions. If the builder cannot be reached, the error reports that the log is unavailable.
 
 A running older build stops at its next step before that host admits the newest desired recipe. Failed resources retain ADR 0206's cleanup and resume rules. A restart gives the builder a name for that attempt, so delayed cleanup of an older attempt cannot delete the new builder or smoke VM.
 

@@ -6,6 +6,7 @@ namespace App\Jobs\TaskVms\ImageBuild;
 
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmImageBuildStep;
+use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Infrastructure\TaskVms\TaskVmImageBuildSteps;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -134,7 +135,7 @@ abstract class ImageBuildJob implements ShouldQueue
             $started = $steps[$index]['started_at'] ?? now()->toISOString();
             $steps[$index] = ['step' => $step->value, 'program' => $program, 'started_at' => $started,
                 'seconds' => max(0.0, now()->getTimestampMs() / 1000 - Carbon::parse($started)->getTimestampMs() / 1000),
-                'error' => mb_substr($error->getMessage(), 0, 4000)];
+                'error' => mb_substr(new CommandActivityInputSanitizer()->redactText($error->getMessage()), 0, 4000)];
             $build->forceFill(['steps' => $steps, 'state' => TaskVmImageBuildState::Failed, 'current_step' => $step, 'current_program' => $program])->save();
         });
     }

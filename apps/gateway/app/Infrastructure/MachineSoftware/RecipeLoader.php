@@ -24,11 +24,11 @@ final readonly class RecipeLoader
             'libpango-1.0-0', 'libx11-6', 'libxcb1', 'libxcomposite1', 'libxdamage1', 'libxext6',
             'libxfixes3', 'libxkbcommon0', 'libxrandr2',
         ], 'ubuntu');
-        foreach (['caddy', 'vp', 'vp-cli', 'node', 'pnpm', 'bun', 'rust', 'cargo', 'rust-std', 'clippy', 'rustfmt', 'orbit-agent', 'libgd3'] as $name) {
+        foreach (['caddy', 'vp', 'vp-cli', 'node', 'pnpm', 'bun', 'rust', 'cargo', 'rust-std', 'clippy', 'rustfmt', 'orbit-agent', 'libgd3', 'php-common'] as $name) {
             $catalog[$name] = 'artifact';
         }
         foreach (['8.5', '8.4'] as $version) {
-            foreach (['cli', 'fpm', 'common', 'bcmath', 'curl', 'gd', 'imagick', 'intl', 'mbstring', 'mysql', 'pgsql', 'redis', 'sqlite3', 'xml', 'zip', 'pcov', 'readline'] as $suffix) {
+            foreach (['cli', 'fpm', 'common', 'bcmath', 'curl', 'gd', 'imagick', 'igbinary', 'intl', 'mbstring', 'mysql', 'pgsql', 'redis', 'sqlite3', 'xml', 'zip', 'pcov', 'readline'] as $suffix) {
                 $catalog["php{$version}-{$suffix}"] = 'artifact';
             }
         }
@@ -115,7 +115,7 @@ final readonly class RecipeLoader
                 } else {
                     $url = parse_url($location);
                     $this->require(is_array($url) && ($url['scheme'] ?? '') === 'https' && isset($url['host']) && ! isset($url['user']) && ! isset($url['pass']) && ! isset($url['fragment']), "{$field}.url: expected an HTTPS release URL.");
-                    $this->require(preg_match('~(?:latest|stable|/lts(?:/|$)|/install(?:[./]|$))~i', $location) !== 1 && preg_match('~(?:^|[/_-])v?'.preg_quote($version, '~').'(?=$|[/_]|-(?:linux|x86_64|aarch64)(?:[-./]|$)|\\.tar\\.|\\.tgz$|\\.zip$|\\.deb$)~D', rawurldecode($location)) === 1, "{$field}.url: expected the exact version in an immutable release URL, not an installer/channel.");
+                    $this->require(preg_match('~(?:latest|stable|/lts(?:/|$)|/install(?:[./]|$))~i', $location) !== 1 && preg_match('~(?:^|[/_-])v?'.preg_quote(str_ends_with($location, '.deb') ? (preg_replace('/^[0-9]+:/', '', $version) ?? $version) : $version, '~').'(?=$|[/_]|-(?:linux|x86_64|aarch64)(?:[-./]|$)|\\.tar\\.|\\.tgz$|\\.zip$|\\.deb$)~D', rawurldecode($location)) === 1, "{$field}.url: expected the exact version in an immutable release URL, not an installer/channel.");
                 }
                 $artifacts[$architecture] = new ArtifactPin($location, $algorithm, $digest);
             }

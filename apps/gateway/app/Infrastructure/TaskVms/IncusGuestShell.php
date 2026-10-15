@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\TaskVms;
 
 use App\Domain\TaskVms\TaskVmHost;
+use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Models\Node;
@@ -21,18 +22,46 @@ final readonly class IncusGuestShell implements TaskVmGuestShell
         private TaskVmHost $host,
         private Node $node,
         public string $vm,
+        private ?string $recipeLog = null,
     ) {}
+
+    public function forRecipePhase(string $profile, string $phase): self
+    {
+        return new self($this->incus, $this->host, $this->node, $this->vm, self::recipeLog($profile, $phase));
+    }
+
+    public static function recipeLog(string $profile, string $phase): string
+    {
+        return '/var/log/orbit/recipe-images/'.$profile.'-'.$phase.'.log';
+    }
+
+    public function recordRecipeFailure(string $message): void
+    {
+        $this->record(new CommandResult(1, '', $message, 0, false));
+    }
+
+    private function record(CommandResult $result): CommandResult
+    {
+        if ($this->recipeLog !== null) {
+            $text = new CommandActivityInputSanitizer()->redactText($result->stdout."\n".$result->stderr);
+            $this->incus->run($this->host, $this->node, ['exec', '--', $this->vm, 'bash', '-ceu',
+                'umask 077; install -d -m 0700 /var/log/orbit/recipe-images; cat >> "$1"; chmod 0600 "$1"', '--', $this->recipeLog],
+                "Exit code [{$result->exitCode}]\n".$text."\n", 30);
+        }
+
+        return $result;
+    }
 
     public function asUser(array $command, string|ProtectedInput|null $input = null, float $timeout = 900.0, ?string $cwd = null): CommandResult
     {
-        return $this->incus->run($this->host, $this->node, [
+        return $this->record($this->incus->run($this->host, $this->node, [
             'exec', '--cwd', $cwd ?? TaskVmCloudInit::Home, '--env', 'HOME='.TaskVmCloudInit::Home, '--env', 'USER='.TaskVmCloudInit::User,
             '--', $this->vm, 'runuser', '-u', TaskVmCloudInit::User, '--', ...$command,
-        ], $input, $timeout);
+        ], $input, $timeout));
     }
 
     public function asRoot(array $command, string|ProtectedInput|null $input = null, float $timeout = 900.0): CommandResult
     {
-        return $this->incus->run($this->host, $this->node, ['exec', '--', $this->vm, ...$command], $input, $timeout);
+        return $this->record($this->incus->run($this->host, $this->node, ['exec', '--', $this->vm, ...$command], $input, $timeout));
     }
 }
