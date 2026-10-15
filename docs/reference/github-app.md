@@ -187,7 +187,7 @@ One answer costs these reads:
 
 Each answer also mints one `contents: read` token, and one `checks: read` token when a candidate needs it. No new App permission is needed. When the deployed commit is the branch head, the answer needs only the installation, one token, and the commit list.
 
-The [automatic deployment tick](/reference/deployments#automatic-deployments) asks the same question for a production Instance, with the Project's `merge_check` as the required check. It asks only when the branch head changed or while the head's check is unfinished. When there is no answer, it reads the head's own check runs once more to tell a pending check from a failed one.
+The [automatic deployment tick](/reference/deployments#automatic-deployments) asks the same question for a production Instance, with the Project's `merge_check` as the required check. It asks only when the branch head changed, while the head's check is unfinished, or 5 minutes after it failed. The same walk reports the state of the head's own check, so the tick tells a pending check from a failed one without another read.
 
 The Gateway reads the branch through its full ref, so a tag with the same name is never read instead. When none of the 20 newest candidates qualifies, there is no answer until a newer commit turns green. Every failure fails closed: an App that is not registered or not installed, a refused token, an unknown commit, a check run list that changes or ends before its `total_count`, or a malformed record means no answer for that attempt.
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\InstanceDeployment;
+use Illuminate\Support\Facades\DB;
 
 beforeEach(function (): void {
     [$this->caller, $this->owner, $this->project, $this->instance] = deployment_api_fixture();
@@ -93,4 +94,21 @@ describe('setting automatic deployment of an Instance', function (): void {
             ->assertJsonPath('data.auto_deploy.gate', null)
             ->assertJsonPath('data.auto_deploy.warning', null);
     })->with(['default' => ['default', true], 'task workspace' => ['task-1', false]]);
+
+    it('lists Instances without loading Node roles once per Instance', function (): void {
+        $roleQueries = function (): int {
+            DB::flushQueryLog();
+            DB::enableQueryLog();
+            $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])->getJson('/api/v1/instances')->assertOk();
+
+            return collect(DB::getQueryLog())->filter(static fn (array $query): bool => str_contains($query['query'], '"node_roles"'))->count();
+        };
+        dev935_instance('list-one', 'one');
+        $few = $roleQueries();
+        foreach (['two', 'three', 'four'] as $name) {
+            dev935_instance("list-{$name}", $name);
+        }
+
+        expect($roleQueries())->toBeLessThanOrEqual($few);
+    });
 });

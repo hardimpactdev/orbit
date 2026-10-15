@@ -89,11 +89,11 @@ The exception is a directory that the old commit has and the new commit removes,
 When every required step passes, Orbit records the commit as the default's `seed_commit`. When a required step fails, the later steps do not run and the deployment fails.
 
 - The checkout stays at the new commit with the files the steps left. Orbit does not roll it back.
-- The seed keeps the last commit that deployed. So the automatic deployment tick deploys the commit again after 10 minutes and reruns the steps.
+- The seed keeps the last commit that deployed. So the automatic deployment tick deploys the commit again after a backoff and reruns the steps, at most three times.
 
 A failed best-effort step (`required: false`) gets a warning that names it and its exit status, and the deployment continues. The output and stored events keep that warning, even when the deployment succeeds or the output reached its storage limit.
 
-A step and Orbit's checkout take the lock that [setup and teardown steps](/reference/instance-setup) hold on the checkout: a `flock` on the checkout directory. While a setup or teardown step runs there, the deployment fails with `instance.lifecycle_busy` and the tick retries after 10 minutes. A step's processes do not inherit the lock, so a process that a step leaves running cannot hold up the next step. Steps must not change tracked files: the next deployment would refuse the checkout as dirty.
+A step and Orbit's checkout take the lock that [setup and teardown steps](/reference/instance-setup) hold on the checkout: a `flock` on the checkout directory. While a setup or teardown step runs there, the deployment fails with `instance.lifecycle_busy` and the tick retries after a backoff. A step's processes do not inherit the lock, so a process that a step leaves running cannot hold up the next step. Steps must not change tracked files: the next deployment would refuse the checkout as dirty.
 
 Explicit environment synchronization writes the checkout's `.env` files, so the application sees new values at once. A Route's web root serves files from the checkout, and a deployment does not change the Route.
 
@@ -252,7 +252,7 @@ The Gateway runs `orbit:auto-deploy` every minute, a job on the [Gateway queue](
 For each Instance, the tick reads the branch head on the Gateway with `git ls-remote` and the Project's [read credential](/reference/instance-setup#credentialed-git). It keeps the GitHub App installation and its read tokens for up to 50 minutes, so a quiet minute costs one `ls-remote` and no GitHub API call. A failed read drops them.
 
 - When the Instance already runs the commit the tick would deploy, the tick starts nothing and writes no history row.
-- Otherwise it starts an [`instance.deploy` operation](#the-deploy-operation) pinned to that commit, with `triggered_by` `schedule`.
+- Otherwise it starts an [`instance.deploy` operation](#the-deploy-operation) pinned to that commit, with `triggered_by` `orbit:auto-deploy`. No Node name contains a colon, so the marker cannot be a caller.
 - The deployment proves that the branch contains the commit and checks out exactly that commit. It fails with `deployment.commit_not_on_branch` otherwise.
 - Pushes that arrive meanwhile wait for the next tick. That tick reads the newest head, so intermediate commits coalesce.
 - While another operation holds the Instance, the tick skips it and reports `busy`. Its own operation that has not ended yet is `deploying`.
@@ -261,7 +261,7 @@ Operations need the [Gateway queue](/reference/gateway-queue#without-a-queue). W
 
 ### Automatic development defaults
 
-A default deploys its default branch's head. Its deployed commit is its `seed_commit`. After a failed automatic deployment, the tick deploys the same commit again after 10 minutes (`backing_off`). A new commit deploys at once.
+A default deploys its default branch's head. Its deployed commit is its `seed_commit`. A failed commit retries as the [failure rules](#failures-of-automatic-deployments) describe; for a default every failure is retryable. A new commit deploys at once.
 
 ### Production Instances
 
@@ -273,7 +273,7 @@ orbit instance:update <instance> --auto-deploy=true
 
 The tick starts from the commit of the Instance's newest succeeded deployment or rollback. Until a first deployment succeeds, it reports `not_deployed`; deploy the Instance by hand once. It reads the head of the deployment branch: the `--branch` that `instance:update` set, or the Instance's branch.
 
-When the Project has a `merge_check`, the tick deploys the newest commit that passed it. It finds that commit the way [automatic Gateway releases](/reference/github-app#find-the-newest-green-commit) do. The commit is on the branch's first-parent history, and a GitHub Actions check run of that name passed on exactly that commit. It strictly descends from the deployed commit and has not failed an automatic deployment. It never deploys a red or pending commit. When the head is red, it can deploy an older green commit behind it. A commit deploys within about 2 minutes after its check passes.
+When the Project has a `merge_check`, the tick deploys the newest commit that passed it. It finds that commit the way [automatic Gateway releases](/reference/github-app#find-the-newest-green-commit) do. The commit is on the branch's first-parent history, and a GitHub Actions check run of that name passed on exactly that commit. It strictly descends from the deployed commit and is not blocked. It never deploys a red or pending commit. When the head is red, it can deploy an older green commit behind it. A commit deploys within about 2 minutes after its check passes.
 
 | Result | Meaning |
 | --- | --- |
@@ -281,24 +281,36 @@ When the Project has a `merge_check`, the tick deploys the newest commit that pa
 | `started` | The tick started a deployment of the commit it names. |
 | `deploying` | The tick's deployment has not ended yet. |
 | `gate_pending` | The head's check has not finished, and no older commit is green. The tick reads the check again each minute. |
-| `gate_failed` | The head's check failed, and no older commit is green. |
-| `no_green_commit` | The head passed, but no commit may deploy: it failed a deployment, or it does not descend from the deployed commit, for example after a force push. |
-| `commit_failed` | Without a `merge_check`: the head failed its automatic deployment. |
+| `gate_failed` | The head's check failed, and no older commit is green. The tick reads it again after 5 minutes, so a re-run that passes deploys. |
+| `no_green_commit` | No commit may deploy: the head is blocked, or it does not descend from the deployed commit, for example after a force push. |
+| `commit_failed` | The head is blocked, and no gate applies: a development default, or a Project without a `merge_check`. |
 | `busy` | Another operation holds the Instance. |
-| `backing_off` | The commit failed for a transient cause less than 10 minutes ago. |
-| `paused` | A rollback paused automatic deployment. |
+| `backing_off` | The commit failed, and its retry is not due yet. |
+| `paused` | A manual deployment or a rollback paused automatic deployment. |
 | `not_deployed` | No deployment of the Instance has succeeded yet. |
 | `failed` | The tick could not read the head or the check, or could not start the deployment. `error_code` names why. |
 
-The tick reads the check runs only when the head changed, or while the head's check has not finished. A settled answer stays until the head, the deployed commit, or the list of failed commits changes.
+The green-commit walk reads the head's own check run too, so one walk answers both questions. The tick walks again only when the head changed, while the head's check has not finished, or 5 minutes after it failed. A `no_green_commit` answer stays until the head, the deployed commit, or the blocked commits change.
 
 Without a `merge_check`, the tick deploys every new head. `instance:update` accepts that and warns about it. A `merge_check` is read through the [GitHub App](/reference/github-app). A Project that reads through the GitHub CLI, or is not on `github.com`, cannot gate: `instance:update --auto-deploy=true` refuses it with `instance.auto_deploy_gate_unreadable` while it has a `merge_check`.
 
-**Failures.** A failure before any of the Project's own steps ran, at `operation`, `preparation`, or `environment`, is transient: the tick deploys the commit again after 10 minutes. A cancelled deployment, a commit not on the branch, a home that records another repository, and a failure in a deploy step or later are not. The commit then does not deploy automatically again. A new commit deploys at once, and a manual deployment clears every earlier failure.
+#### Failures of automatic deployments
 
-**Rollback.** A rollback after `auto_deploy` was last set pauses the Instance, and the tick never overrides it. It stays paused until you set `--auto-deploy=true` again; a new commit does not resume it. Resuming continues from the commit the rollback selected. A manual deployment does not pause: it deploys the branch head, and the tick continues from that commit.
+A failure before any of the Project's own steps ran, at `operation`, `preparation`, or `environment`, is transient. The tick deploys the commit again after 10 minutes, then after 20 minutes. After three failed attempts, the commit is blocked.
 
-**Visibility.** Each automatic deployment has its operation and its [history row](#history) with `triggered_by` `schedule`. `instance:show` shows the last result, its commit, the head, and a pause. When a result other than `up_to_date`, `deploying`, or `gate_pending` starts, the tick writes one Activity entry, `auto_deploy.<result>`, with the command `orbit:auto-deploy`. A [release alert](/reference/gateway-recovery#release-alerts) with the target `instance:<id>` reports a failed automatic deployment once per commit, a commit that waited 30 minutes to deploy once per commit, and a pause.
+A cancelled deployment, a commit not on the branch, a home that records another repository, and a failure in a deploy step or later are lasting. The commit is blocked at once.
+
+A blocked commit does not deploy automatically again. A new commit deploys at once. Failures before the newest manual deployment do not count.
+
+#### Pause
+
+A manual deployment or a rollback after `auto_deploy` was last set pauses the Instance, whether it succeeded or not. A rollback that still waits for the Instance lock counts. The Instance stays paused until you set `--auto-deploy=true` again; a new commit does not resume it.
+
+Resuming continues from the commit that is live then. The commit a rollback moved away from stays blocked, so resuming never deploys it again; a newer commit deploys.
+
+An automatic deployment checks for a pause again under the Instance lock, which a rollback takes too. A rollback that came after the tick queued the deployment wins: the operation ends with `deployment.paused`, deploys nothing, and writes no history row.
+
+**Visibility.** Each automatic deployment has its operation and its [history row](#history) with `triggered_by` `orbit:auto-deploy`. `instance:show` shows the last result, its commit, the head, and a pause. When a result other than `up_to_date`, `deploying`, or `gate_pending` starts, the tick writes one Activity entry, `auto_deploy.<result>`, with the command `orbit:auto-deploy`. A [release alert](/reference/gateway-recovery#release-alerts) with the target `instance:<id>` reports a failed automatic deployment once per commit, a commit or a pending head that waited 30 minutes once per commit, and a pause.
 
 **One worker.** Development defaults, production Instances, and manual deployments share the one `operations` worker, as [One worker for every operation](/reference/operations#one-worker-for-every-operation) describes. A tick's deployment waits in the queue while another deployment runs. Instances behind one Route deploy one after another, not together.
 
@@ -306,7 +318,7 @@ Without a `merge_check`, the tick deploys every new head. `instance:update` acce
 
 The Gateway records one row for each deployment and each rollback. It writes the row when the run starts, which for a deployment is when a worker first starts its operation, and completes it when the run ends. It keeps the last 50 rows for each Instance.
 
-Each row holds `release`, `branch`, `commit`, `started_at`, `finished_at`, `duration_seconds`, `status` (`running`, `succeeded`, or `failed`), `failed_step`, `error_code`, `selected_release`, `triggered_by` (the calling Node's name, or `schedule` for an automatic development deployment), and `events`. `events` holds the phase and output events of the run, with at most 128 KiB of output. A deployment saves them after each step, so a resumed deployment keeps the events up to the last step that ended. The `cleanup` phase marks release cleanup. A development deployment records `commit` and leaves `release` and `selected_release` null.
+Each row holds `release`, `branch`, `commit`, `started_at`, `finished_at`, `duration_seconds`, `status` (`running`, `succeeded`, or `failed`), `failed_step`, `error_code`, `selected_release`, `triggered_by` (the calling Node's name, or `orbit:auto-deploy` for an [automatic deployment](#automatic-deployments)), and `events`. `events` holds the phase and output events of the run, with at most 128 KiB of output. A deployment saves them after each step, so a resumed deployment keeps the events up to the last step that ended. The `cleanup` phase marks release cleanup. A development deployment records `commit` and leaves `release` and `selected_release` null.
 
 | Request | Result |
 | --- | --- |

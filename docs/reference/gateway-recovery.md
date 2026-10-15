@@ -655,8 +655,8 @@ The alert leaves an Activity entry and a problem for the [outer loop](/reference
 | `rollout_caddy_skipped` | A fleet rollout kept a Node's live Caddyfile because the new one was refused. Once per rollout; the rollout does not halt |
 | `rollout_cli_fallback` | A fleet rollout used an ancestor's CLI release. The summary names why the commit's own release was not used. Once per rollout; the rollout does not halt |
 | `instance_deploy_failed` | An [automatic deployment](/reference/deployments#automatic-deployments) of a production Instance failed. Once per commit |
-| `instance_deploy_stalled` | A commit that the automatic deployment tick would deploy to a production Instance has not deployed for 30 minutes. Once per commit |
-| `instance_deploy_paused` | A rollback paused automatic deployment of a production Instance |
+| `instance_deploy_stalled` | A commit that the automatic deployment tick would deploy to a production Instance, or a head whose check has not finished, waited 30 minutes. Once per commit |
+| `instance_deploy_paused` | A manual deployment or a rollback paused automatic deployment of a production Instance |
 
 Every alert names its subject, a summary, and an optional evidence link. The summary passes through the Gateway log redactor and is cut at 1,000 characters. A field outside these limits is a bug in the calling command, which refuses it before it records anything.
 

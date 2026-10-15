@@ -33,11 +33,13 @@ final class InstanceAutoDeployData extends Data
 
     public static function fromModel(Instance $instance): self
     {
-        $state = AutomaticDeployState::of($instance)->toArray();
-        $developmentDefault = $instance->placedOnAppDev() && $instance->name === 'default';
-        $enabled = $developmentDefault || ($instance->placedOnAppProd() && $instance->auto_deploy);
+        $automatic = AutomaticDeployState::of($instance);
+        $state = $automatic->toArray();
+        $placement = $instance->placementEnvironment();
+        $developmentDefault = $placement === 'development' && $instance->name === 'default';
+        $enabled = $developmentDefault || ($placement === 'production' && $instance->auto_deploy);
         $gate = $developmentDefault ? null : $instance->project->mergeCheckName();
-        $pause = AutomaticDeployState::of($instance)->pause();
+        $pause = $automatic->pause();
         $active = $pause !== null && $pause['deployment_id'] > $instance->auto_deploy_resumed_after;
 
         return new self(

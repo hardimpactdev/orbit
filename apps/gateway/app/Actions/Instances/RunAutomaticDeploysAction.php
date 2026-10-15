@@ -8,11 +8,10 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GreenCommit;
-use App\Domain\GitHub\GreenCommitResolver;
-use App\Domain\GitHub\RequiredCheckReader;
+use App\Domain\GitHub\GreenCommitInspector;
 use App\Domain\GitHub\RequiredCheckState;
 use App\Domain\Instances\Deployment\AutomaticDeployAlerts;
-use App\Domain\Instances\Deployment\AutomaticDeployFailure;
+use App\Domain\Instances\Deployment\AutomaticDeployHistory;
 use App\Domain\Instances\Deployment\AutomaticDeployOutcome;
 use App\Domain\Instances\Deployment\AutomaticDeployResult;
 use App\Domain\Instances\Deployment\AutomaticDeployState;
@@ -34,7 +33,6 @@ use App\Models\Instance;
 use App\Models\InstanceDeployment;
 use App\Models\Operation;
 use Closure;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -50,11 +48,12 @@ use Throwable;
  * on the Instance is a skip, not a failure.
  *
  * A production Instance deploys only a commit that passed the Project's `merge_check`, found by the
- * {@see GreenCommitResolver}: the newest first-parent commit of the branch that is green, descends from the deployed
- * commit, and has not failed an automatic deployment. The gate is read only when the head changed, or while the
- * head's check has not finished. A rollback after `auto_deploy` was last set pauses the Instance; nothing undoes it.
- * A transient failure waits {@see self::RetryMinutes} minutes; any other failure waits for a new commit or a manual
- * deployment.
+ * {@see GreenCommitInspector}: the newest first-parent commit of the branch that is green, descends from the deployed
+ * commit, and is not blocked. The same walk reports the head's own check. The tick reads it again only when the head
+ * changed, while the check has not finished, or {@see self::GateFailedRecheckMinutes} minutes after it failed, so a
+ * re-run that passes deploys. A manual deployment or a rollback after `auto_deploy` was last set pauses the Instance,
+ * and the commit a rollback moved away from stays blocked. {@see AutomaticDeployHistory} decides which failed commits
+ * wait for a retry and which are blocked.
  *
  * The tick keeps what it saw in `instances.auto_deploy_state` and writes an Activity entry when a notable result
  * starts. For a production Instance it raises a release alert once for each failed commit, for a pause, and for a
@@ -62,24 +61,20 @@ use Throwable;
  */
 final readonly class RunAutomaticDeploysAction
 {
-    /** The `triggered_by` of an automatic deployment and its history row. */
-    public const string Trigger = 'schedule';
-
     /** The `command` of the tick's Activity entries. */
     public const string Command = 'orbit:auto-deploy';
 
-    /** A commit whose automatic deployment failed for a transient cause is tried again after this long. */
-    public const int RetryMinutes = 10;
-
     /** A commit that waits this long to deploy raises the stalled alert once. */
     public const int StallAlertMinutes = 30;
+
+    /** A head whose check failed is read again after this long, in case the check ran again. */
+    public const int GateFailedRecheckMinutes = 5;
 
     public function __construct(
         private RemoteBranchHeads $heads,
         private StartInstanceDeployAction $deploys,
         private DeployDefaultInstanceAction $defaults,
-        private GreenCommitResolver $resolver,
-        private RequiredCheckReader $checks,
+        private GreenCommitInspector $gate,
         private AutomaticDeployAlerts $alerts,
         private ?GitHubTokenCache $tokens = null,
     ) {}
@@ -138,7 +133,11 @@ final readonly class RunAutomaticDeploysAction
         }
 
         if ($head !== $instance->seed_commit) {
-            return $this->deploy($instance, $head);
+            $history = new AutomaticDeployHistory($instance);
+
+            return in_array($head, $history->blocked(production: false), true)
+                ? new AutomaticDeployOutcome($instance->id, AutomaticDeployResult::CommitFailed, $head)
+                : $this->deploy($instance, $head, $history, production: false);
         }
 
         if ($instance->development_projection_pending && ! $this->holder($instance) instanceof Operation) {
@@ -155,21 +154,27 @@ final readonly class RunAutomaticDeploysAction
     private function production(Instance $instance, AutomaticDeployState $state): AutomaticDeployOutcome
     {
         $this->alertFailure($instance, $state);
-        $rollback = InstanceDeployment::query()
-            ->where('instance_id', $instance->id)
-            ->where('kind', InstanceDeployment::Rollback)
-            ->where('status', '!=', 'running')
-            ->where('id', '>', $instance->auto_deploy_resumed_after)
-            ->latest('id')
-            ->first();
+        $history = new AutomaticDeployHistory($instance);
+        $pause = $history->pausedBy();
 
-        if ($rollback instanceof InstanceDeployment) {
-            if ($state->pauseFor('rollback', $rollback->id, $rollback->commit) && is_string($rollback->commit)) {
-                $this->alerts->paused($instance, $rollback);
+        if ($pause instanceof InstanceDeployment) {
+            $rollback = $pause->kind === InstanceDeployment::Rollback;
+
+            if ($state->pauseFor($rollback ? 'rollback' : 'manual_deploy', $pause->id, $pause->commit)) {
+                $rolledAway = $rollback ? $history->rolledAwayFrom($pause) : null;
+                if ($rolledAway !== null) {
+                    $state->block($rolledAway);
+                }
+                $this->alerts->paused($instance, $pause);
             }
             $state->forgetGate();
 
-            return new AutomaticDeployOutcome($instance->id, AutomaticDeployResult::Paused, $rollback->commit, message: "Rollback {$rollback->id} paused automatic deployment. Set auto_deploy again to resume.");
+            return new AutomaticDeployOutcome(
+                $instance->id,
+                AutomaticDeployResult::Paused,
+                $pause->commit,
+                message: ($rollback ? "Rollback {$pause->id}" : "Manual deployment {$pause->id}").' paused automatic deployment. Set auto_deploy again to resume.',
+            );
         }
 
         $state->clearPause();
@@ -200,16 +205,16 @@ final readonly class RunAutomaticDeploysAction
             return new AutomaticDeployOutcome($instance->id, AutomaticDeployResult::UpToDate, $head);
         }
 
-        $failed = $this->failedCommits($instance);
+        $blocked = array_values(array_unique([...$history->blocked(production: true), ...$state->blocked()]));
         $checkName = $instance->project->mergeCheckName();
 
         if ($checkName === null) {
-            return in_array($head, $failed, true)
+            return in_array($head, $blocked, true)
                 ? new AutomaticDeployOutcome($instance->id, AutomaticDeployResult::CommitFailed, $head)
-                : $this->deploy($instance, $head);
+                : $this->deploy($instance, $head, $history, production: true);
         }
 
-        $settled = $state->settledGate($head, $deployed, $failed);
+        $settled = $state->settledGate($head, $deployed, $blocked);
 
         if ($settled instanceof AutomaticDeployResult) {
             return new AutomaticDeployOutcome($instance->id, $settled, $head);
@@ -228,49 +233,56 @@ final readonly class RunAutomaticDeploysAction
         }
 
         try {
-            $green = $this->resolver->resolve($repository, $branch, $checkName, $deployed, array_values(array_filter($failed, static fn (string $sha): bool => strlen($sha) === 40)));
-
-            if (! $green instanceof GreenCommit) {
-                $result = match ($this->checks->state($repository, $head, $checkName)) {
-                    RequiredCheckState::Failed => AutomaticDeployResult::GateFailed,
-                    RequiredCheckState::Passed => AutomaticDeployResult::NoGreenCommit,
-                    default => AutomaticDeployResult::GatePending,
-                };
-
-                if ($result !== AutomaticDeployResult::GatePending) {
-                    $state->settleGate($head, $deployed, $failed, $result);
-                }
-
-                return new AutomaticDeployOutcome($instance->id, $result, $head);
-            }
+            $inspection = $this->gate->inspect($repository, $branch, $checkName, $deployed, array_values(array_filter($blocked, static fn (string $sha): bool => strlen($sha) === 40)));
         } catch (GitHubApiException|InvalidArgumentException $exception) {
             $this->tokens?->forget($repository);
 
             return new AutomaticDeployOutcome($instance->id, AutomaticDeployResult::Failed, $head, errorCode: 'instance.auto_deploy_gate_unavailable', message: $exception->getMessage());
         }
 
-        return $this->deploy($instance, $green->sha);
+        if ($inspection->green instanceof GreenCommit) {
+            return $this->deploy($instance, $inspection->green->sha, $history, production: true);
+        }
+
+        // The walk read the head that `ls-remote` saw; a head that moved in between is read again on the next tick.
+        if ($inspection->head !== $head) {
+            return new AutomaticDeployOutcome($instance->id, AutomaticDeployResult::GatePending, $head);
+        }
+
+        $result = match ($inspection->headState) {
+            RequiredCheckState::Failed => AutomaticDeployResult::GateFailed,
+            RequiredCheckState::Passed, null => AutomaticDeployResult::NoGreenCommit,
+            default => AutomaticDeployResult::GatePending,
+        };
+
+        if ($result === AutomaticDeployResult::NoGreenCommit) {
+            $state->settleGate($head, $deployed, $blocked, $result);
+        } elseif ($result === AutomaticDeployResult::GateFailed) {
+            $state->settleGate($head, $deployed, $blocked, $result, self::GateFailedRecheckMinutes);
+        }
+
+        return new AutomaticDeployOutcome($instance->id, $result, $head);
     }
 
     /** Starts the operation that deploys exactly `$commit`, unless an operation holds the Instance or the commit waits. */
-    private function deploy(Instance $instance, string $commit): AutomaticDeployOutcome
+    private function deploy(Instance $instance, string $commit, AutomaticDeployHistory $history, bool $production): AutomaticDeployOutcome
     {
         $holder = $this->holder($instance);
 
         if ($holder instanceof Operation) {
             $own = $holder->kind === OperationKinds::InstanceDeploy
-                && $holder->triggered_by === self::Trigger
+                && $holder->triggered_by === AutomaticDeployHistory::Trigger
                 && InstanceDeployOperation::commit($holder) === $commit;
 
             return new AutomaticDeployOutcome($instance->id, $own ? AutomaticDeployResult::Deploying : AutomaticDeployResult::Busy, $commit, $holder->id);
         }
 
-        if ($this->backingOff($instance, $commit)) {
+        if ($history->backingOff($commit, $production)) {
             return new AutomaticDeployOutcome($instance->id, AutomaticDeployResult::BackingOff, $commit);
         }
 
         try {
-            $operation = $this->deploys->execute($instance, self::Trigger, null, $commit);
+            $operation = $this->deploys->execute($instance, AutomaticDeployHistory::Trigger, null, $commit);
         } catch (ResourceOperationException $exception) {
             if ($exception->errorCode === 'operation.target_busy') {
                 $holderId = $exception->details['operation_id'] ?? null;
@@ -290,8 +302,9 @@ final readonly class RunAutomaticDeploysAction
         $last = InstanceDeployment::query()
             ->where('instance_id', $instance->id)
             ->where('kind', 'deploy')
-            ->where('triggered_by', self::Trigger)
+            ->where('triggered_by', AutomaticDeployHistory::Trigger)
             ->where('status', '!=', 'running')
+            ->where(static fn ($query) => $query->whereNull('error_code')->orWhere('error_code', '!=', AutomaticDeployHistory::Paused))
             ->where('id', '>', $instance->auto_deploy_resumed_after)
             ->latest('id')
             ->first();
@@ -303,13 +316,14 @@ final readonly class RunAutomaticDeploysAction
     }
 
     /**
-     * A commit the tick would deploy, but that has not deployed for {@see self::StallAlertMinutes} minutes, raises the
-     * stalled alert once. Any other result ends the stall.
+     * A commit the tick would deploy, or a head whose check has not finished, that has waited
+     * {@see self::StallAlertMinutes} minutes raises the stalled alert once. Any other result ends the stall.
      */
     private function watchStall(Instance $instance, AutomaticDeployState $state, AutomaticDeployOutcome $outcome): void
     {
         $sha = match ($outcome->result) {
-            AutomaticDeployResult::Started, AutomaticDeployResult::Deploying, AutomaticDeployResult::Busy, AutomaticDeployResult::BackingOff, AutomaticDeployResult::Failed => $outcome->commit,
+            AutomaticDeployResult::Started, AutomaticDeployResult::Deploying, AutomaticDeployResult::Busy, AutomaticDeployResult::BackingOff,
+            AutomaticDeployResult::GatePending, AutomaticDeployResult::Failed => $outcome->commit,
             default => null,
         };
 
@@ -328,53 +342,6 @@ final readonly class RunAutomaticDeploysAction
     private function holder(Instance $instance): ?Operation
     {
         return Operation::query()->where('lock_key', OperationStore::lockKey('instance', $instance->id))->first();
-    }
-
-    /** Whether the commit's last automatic deployment failed less than {@see self::RetryMinutes} minutes ago. */
-    private function backingOff(Instance $instance, string $commit): bool
-    {
-        $last = InstanceDeployment::query()
-            ->where('instance_id', $instance->id)
-            ->where('triggered_by', self::Trigger)
-            ->where('commit', $commit)
-            ->latest('id')
-            ->first();
-
-        return $last instanceof InstanceDeployment
-            && $last->status === 'failed'
-            && ($last->finished_at ?? $last->started_at)->gt(Carbon::now()->subMinutes(self::RetryMinutes));
-    }
-
-    /**
-     * Commits whose automatic deployment failed for a lasting cause after the last manual deployment. They do not
-     * deploy automatically again: a new commit, or a manual deployment, moves on.
-     *
-     * @return list<string>
-     */
-    private function failedCommits(Instance $instance): array
-    {
-        $manual = InstanceDeployment::query()
-            ->where('instance_id', $instance->id)
-            ->where('kind', 'deploy')
-            ->where('triggered_by', '!=', self::Trigger)
-            ->max('id');
-
-        $commits = [];
-
-        foreach (InstanceDeployment::query()
-            ->where('instance_id', $instance->id)
-            ->where('kind', 'deploy')
-            ->where('triggered_by', self::Trigger)
-            ->where('status', 'failed')
-            ->whereNotNull('commit')
-            ->where('id', '>', is_int($manual) ? $manual : 0)
-            ->get() as $deployment) {
-            if (is_string($deployment->commit) && ! AutomaticDeployFailure::isTransient($deployment)) {
-                $commits[$deployment->commit] = true;
-            }
-        }
-
-        return array_keys($commits);
     }
 
     private function activity(Instance $instance, AutomaticDeployOutcome $outcome): void

@@ -15,6 +15,9 @@ use Illuminate\Support\Facades\DB;
  */
 final class AutomaticDeployState
 {
+    /** The newest commits that rollbacks moved away from, which stay blocked. */
+    private const int BlockedLimit = 20;
+
     /** @var array<string, mixed> */
     private array $original;
 
@@ -52,8 +55,8 @@ final class AutomaticDeployState
     }
 
     /**
-     * The gate answer the tick keeps for this head, deployed commit, and list of failed commits, so it reads no check
-     * run again until one of them changes.
+     * The gate answer the tick keeps for this head, deployed commit, and list of commits that may not deploy, so it
+     * reads no check run again until one of them changes or the answer expires.
      *
      * @param  list<string>  $failed
      */
@@ -61,17 +64,37 @@ final class AutomaticDeployState
     {
         $gate = $this->state['gate'] ?? null;
 
-        if (! is_array($gate) || $gate !== [...self::gateKey($head, $deployed, $failed), 'result' => $gate['result'] ?? null] || ! is_string($gate['result'] ?? null)) {
+        if (! is_array($gate) || ! is_string($gate['result'] ?? null)) {
+            return null;
+        }
+
+        foreach (self::gateKey($head, $deployed, $failed) as $key => $value) {
+            if (($gate[$key] ?? null) !== $value) {
+                return null;
+            }
+        }
+
+        $until = $gate['until'] ?? null;
+
+        if (is_string($until) && Carbon::parse($until)->lte(Carbon::now())) {
             return null;
         }
 
         return AutomaticDeployResult::tryFrom($gate['result']);
     }
 
-    /** @param list<string> $failed */
-    public function settleGate(string $head, string $deployed, array $failed, AutomaticDeployResult $result): void
+    /**
+     * Keeps the gate answer. With `$minutes`, it expires then, so a check that runs again on the same head is read.
+     *
+     * @param  list<string>  $failed
+     */
+    public function settleGate(string $head, string $deployed, array $failed, AutomaticDeployResult $result, ?int $minutes = null): void
     {
-        $this->state['gate'] = [...self::gateKey($head, $deployed, $failed), 'result' => $result->value];
+        $this->state['gate'] = [
+            ...self::gateKey($head, $deployed, $failed),
+            'result' => $result->value,
+            'until' => $minutes === null ? null : Carbon::now()->addMinutes($minutes)->toIso8601String(),
+        ];
     }
 
     /**
@@ -152,6 +175,20 @@ final class AutomaticDeployState
     public function clearPause(): void
     {
         $this->state['pause'] = null;
+    }
+
+    /** Keeps a commit from deploying automatically, such as the commit a rollback moved away from. */
+    public function block(string $commit): void
+    {
+        $this->state['blocked'] = array_slice(array_values(array_unique([...$this->blocked(), $commit])), -self::BlockedLimit);
+    }
+
+    /** @return list<string> */
+    public function blocked(): array
+    {
+        $blocked = $this->state['blocked'] ?? null;
+
+        return is_array($blocked) ? array_values(array_filter($blocked, is_string(...))) : [];
     }
 
     /** Whether an alert of this kind already went out for this key, such as a commit. Records it when not. */

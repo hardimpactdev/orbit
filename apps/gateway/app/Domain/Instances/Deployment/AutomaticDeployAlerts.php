@@ -27,12 +27,14 @@ final readonly class AutomaticDeployAlerts
     public function failed(Instance $instance, InstanceDeployment $deployment): array
     {
         return $this->raise(ReleaseAlertKind::InstanceDeployFailed, $instance, (string) $deployment->commit, $deployment, sprintf(
-            'The automatic deployment %d of Instance %d failed at %s: %s. The commit does not deploy automatically again until a new commit or a manual deployment%s.',
+            'The automatic deployment %d of Instance %d failed at %s: %s. %s',
             $deployment->id,
             $instance->id,
             $deployment->failed_step ?? 'unknown',
             $deployment->error_code ?? 'unknown',
-            AutomaticDeployFailure::isTransient($deployment) ? ', except for a retry after 10 minutes' : '',
+            AutomaticDeployFailure::isTransient($deployment)
+                ? sprintf('The commit is tried again after a backoff, %d times at most, until a new commit or a manual deployment.', AutomaticDeployHistory::MaxAttempts)
+                : 'The commit does not deploy automatically again until a new commit or a manual deployment.',
         ));
     }
 
@@ -49,12 +51,22 @@ final readonly class AutomaticDeployAlerts
         ));
     }
 
-    /** @return array<string, mixed> */
-    public function paused(Instance $instance, InstanceDeployment $rollback): array
+    /**
+     * The alert of a manual deployment or rollback that paused automatic deployment. A pause without a commit, such as
+     * a manual deployment that failed before it fetched one, has no alert subject; its Activity entry records it.
+     *
+     * @return array<string, mixed>
+     */
+    public function paused(Instance $instance, InstanceDeployment $pause): array
     {
-        return $this->raise(ReleaseAlertKind::InstanceDeployPaused, $instance, (string) $rollback->commit, $rollback, sprintf(
-            'Rollback %d of Instance %d paused automatic deployment. Run `orbit instance:update %d --auto-deploy=true` to resume.',
-            $rollback->id,
+        if (! is_string($pause->commit)) {
+            return ['kind' => ReleaseAlertKind::InstanceDeployPaused->value, 'outcome' => 'skipped', 'reason' => 'commit_missing'];
+        }
+
+        return $this->raise(ReleaseAlertKind::InstanceDeployPaused, $instance, $pause->commit, $pause, sprintf(
+            '%s %d of Instance %d paused automatic deployment. Run `orbit instance:update %d --auto-deploy=true` to resume.',
+            $pause->kind === InstanceDeployment::Rollback ? 'Rollback' : 'Manual deployment',
+            $pause->id,
             $instance->id,
             $instance->id,
         ));

@@ -73,8 +73,8 @@ use App\Domain\GitHub\BranchHeadReader;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubCliToken;
+use App\Domain\GitHub\GreenCommitInspector;
 use App\Domain\GitHub\GreenCommitResolver;
-use App\Domain\GitHub\RequiredCheckReader;
 use App\Domain\Hibernation\DevelopmentHibernationPolicy;
 use App\Domain\Hibernation\HibernationMarkerStore;
 use App\Domain\Hibernation\HibernationWakeFailureStore;
@@ -270,7 +270,6 @@ use App\Infrastructure\Gateway\NativeGatewayWebConverger;
 use App\Infrastructure\GitHub\CachedGitHubApi;
 use App\Infrastructure\GitHub\GitHubBranchHeadReader;
 use App\Infrastructure\GitHub\GitHubGreenCommitResolver;
-use App\Infrastructure\GitHub\GitHubRequiredCheckReader;
 use App\Infrastructure\GitHub\GitHubTokenCache;
 use App\Infrastructure\GitHub\HttpGitHubApi;
 use App\Infrastructure\GitHub\HttpGitHubTiaBaseline;
@@ -537,7 +536,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         GitHubCliToken::class => ProcessGitHubCliToken::class,
         GreenCommitResolver::class => GitHubGreenCommitResolver::class,
         BranchHeadReader::class => GitHubBranchHeadReader::class,
-        RequiredCheckReader::class => GitHubRequiredCheckReader::class,
+        GreenCommitInspector::class => GitHubGreenCommitResolver::class,
         RepositoryDefaultBranchResolver::class => NativeRepositoryDefaultBranchResolver::class,
         SshExecutor::class => TaskVmCredentialGuard::class,
         DatabaseInspectionExecutor::class => RegisteredDatabaseInspectionExecutor::class,
@@ -636,11 +635,8 @@ final class ApplicationServiceProvider extends ServiceProvider
                 $app->make(GitHubTokenCache::class),
             ),
         );
-        $this->app->when(RunAutomaticDeploysAction::class)->needs(GreenCommitResolver::class)->give(
-            static fn ($app): GreenCommitResolver => new GitHubGreenCommitResolver($app->make(GitHubAppStore::class), $app->make(CachedGitHubApi::class)),
-        );
-        $this->app->when(RunAutomaticDeploysAction::class)->needs(RequiredCheckReader::class)->give(
-            static fn ($app): RequiredCheckReader => new GitHubRequiredCheckReader($app->make(GitHubAppStore::class), $app->make(CachedGitHubApi::class)),
+        $this->app->when(RunAutomaticDeploysAction::class)->needs(GreenCommitInspector::class)->give(
+            static fn ($app): GreenCommitInspector => new GitHubGreenCommitResolver($app->make(GitHubAppStore::class), $app->make(CachedGitHubApi::class)),
         );
         $this->app->singleton(
             CacheAgentStateView::class,

@@ -1760,7 +1760,6 @@
                 "Project",
                 "Role",
                 "Route",
-                "Schedule",
                 "Tool"
             ],
             "governing_adrs": []

@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Instances\StartInstanceDeployAction;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Instances\Deployment\AutomaticDeployHistory;
 use App\Domain\Instances\Deployment\DevelopmentDeployment;
 use App\Domain\Instances\DevelopmentRouteProjector;
 use App\Domain\Projects\DevelopmentDeployStep;
@@ -52,7 +53,7 @@ describe('development defaults on the automatic deployment tick', function (): v
 
         expect($operation->kind)->toBe('instance.deploy')
             ->and($operation->input)->toBe(['commit' => str_repeat('b', 40)])
-            ->and($operation->triggered_by)->toBe('schedule')
+            ->and($operation->triggered_by)->toBe(AutomaticDeployHistory::Trigger)
             ->and(InstanceDeployment::query()->count())->toBe(0);
 
         // The branch moves on before the job runs; the deployment keeps the commit the tick saw.
@@ -62,7 +63,7 @@ describe('development defaults on the automatic deployment tick', function (): v
 
         expect($row->commit)->toBe(str_repeat('b', 40))
             ->and($row->status)->toBe('succeeded')
-            ->and($row->triggered_by)->toBe('schedule')
+            ->and($row->triggered_by)->toBe(AutomaticDeployHistory::Trigger)
             ->and($this->remote->trace)->toBe(['target:main@'.str_repeat('b', 40), 'checkout:'.str_repeat('b', 40)])
             ->and($this->instance->fresh()->seed_commit)->toBe(str_repeat('b', 40));
 
@@ -120,6 +121,24 @@ describe('development defaults on the automatic deployment tick', function (): v
             ->and($this->instance->fresh()->seed_commit)->toBe(str_repeat('b', 40));
     });
 
+    it('stops deploying a commit after three failures, waiting longer each time, until a new commit', function (): void {
+        dev935_steps($this->instance, [new DevelopmentDeployStep('build', 'false')]);
+        $this->remote->failedStep = 'build';
+
+        foreach ([0, 11, 21] as $minutes) {
+            $this->travel($minutes)->minutes();
+            $this->artisan('orbit:auto-deploy')->assertSuccessful();
+            run_operation_jobs();
+        }
+        $this->travel(2)->hours();
+        $this->artisan('orbit:auto-deploy')->expectsOutputToContain('commit_failed')->assertSuccessful();
+
+        expect(InstanceDeployment::query()->count())->toBe(3);
+
+        $this->heads->set($this->instance->project, 'main', str_repeat('c', 40));
+        $this->artisan('orbit:auto-deploy')->expectsOutputToContain('started')->assertSuccessful();
+    });
+
     it('deploys every app-dev default and leaves other Instances alone', function (): void {
         $otherDefault = dev935_instance('second-default', 'default');
         $this->heads->set($otherDefault->project, 'main', str_repeat('c', 40));
@@ -130,7 +149,7 @@ describe('development defaults on the automatic deployment tick', function (): v
         run_operation_jobs();
 
         expect(InstanceDeployment::query()->orderBy('instance_id')->pluck('instance_id')->all())->toBe([$this->instance->id, $otherDefault->id])
-            ->and(InstanceDeployment::query()->pluck('triggered_by')->unique()->all())->toBe(['schedule'])
+            ->and(InstanceDeployment::query()->pluck('triggered_by')->unique()->all())->toBe([AutomaticDeployHistory::Trigger])
             ->and($this->heads->reads)->toBe(['dev935:main', 'second-default:main']);
     });
 

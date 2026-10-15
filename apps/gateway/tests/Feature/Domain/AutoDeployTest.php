@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Instances\StartInstanceDeployAction;
 use App\Actions\Instances\UpdateInstanceAction;
+use App\Domain\Instances\Deployment\AutomaticDeployHistory;
 use App\Domain\Instances\Deployment\AutomaticDeployState;
 use App\Domain\Releases\ReleaseAlertKind;
 use App\Domain\Releases\ReleaseAlertNotifier;
@@ -103,7 +104,7 @@ describe('automatic deployment of a production Instance', function (): void {
         $operation = Operation::query()->sole();
 
         expect($operation->input)->toBe(['commit' => $this->c])
-            ->and($operation->triggered_by)->toBe('schedule');
+            ->and($operation->triggered_by)->toBe(AutomaticDeployHistory::Trigger);
 
         run_operation_jobs();
         $row = InstanceDeployment::query()->latest('id')->first();
@@ -154,6 +155,55 @@ describe('automatic deployment of a production Instance', function (): void {
         expect(Operation::query()->sole()->input)->toBe(['commit' => $this->c]);
     });
 
+    it('reads a red head again after five minutes, so a check that passes on a re-run deploys', function (): void {
+        auto_deploy_github($this, [$this->a => 'success', $this->b => 'failure']);
+        auto_deploy_tick($this);
+        $reads = auto_deploy_check_reads();
+
+        $this->travel(4)->minutes();
+        auto_deploy_github($this, [$this->a => 'success', $this->b => 'success']);
+        auto_deploy_tick($this);
+        expect(auto_deploy_check_reads())->toBe($reads)
+            ->and(Operation::query()->count())->toBe(0);
+
+        $this->travel(2)->minutes();
+        auto_deploy_tick($this);
+
+        expect(Operation::query()->sole()->input)->toBe(['commit' => $this->b]);
+    });
+
+    it('reads the check of a pending head once per tick, in the same walk', function (): void {
+        auto_deploy_github($this, [$this->a => 'success', $this->b => 'queued']);
+
+        auto_deploy_tick($this);
+
+        expect(auto_deploy_check_reads())->toBe(1);
+    });
+
+    it('stops retrying a commit after three transient failures, waiting longer each time', function (): void {
+        auto_deploy_github($this, [$this->a => 'success', $this->b => 'success']);
+        $this->fixture->deployment->failPreparation = true;
+
+        auto_deploy_tick($this);
+        run_operation_jobs();
+        $this->travel(11)->minutes();
+        auto_deploy_tick($this);
+        run_operation_jobs();
+
+        $this->travel(11)->minutes();
+        auto_deploy_tick($this);
+        expect($this->instance->fresh()->auto_deploy_state['result'] ?? null)->toBe('backing_off');
+
+        $this->travel(10)->minutes();
+        auto_deploy_tick($this);
+        run_operation_jobs();
+        $this->travel(2)->hours();
+        auto_deploy_tick($this);
+
+        expect(Operation::query()->count())->toBe(3)
+            ->and($this->instance->fresh()->auto_deploy_state['result'] ?? null)->toBe('no_green_commit');
+    });
+
     it('deploys the newest green commit behind a red head', function (): void {
         auto_deploy_github($this, [$this->a => 'success', $this->b => 'success', $this->c => 'failure']);
 
@@ -183,7 +233,7 @@ describe('automatic deployment of a production Instance', function (): void {
 
     it('does not retry a commit that failed in its own steps until a new commit or a manual deployment', function (): void {
         auto_deploy_github($this, [$this->a => 'success', $this->b => 'success']);
-        auto_deploy_row($this->instance, ['commit' => $this->b, 'triggered_by' => 'schedule', 'status' => 'failed', 'failed_step' => 'before_activation', 'error_code' => 'deployment.step_failed']);
+        auto_deploy_row($this->instance, ['commit' => $this->b, 'triggered_by' => AutomaticDeployHistory::Trigger, 'status' => 'failed', 'failed_step' => 'before_activation', 'error_code' => 'deployment.step_failed']);
         $this->travel(30)->minutes();
 
         auto_deploy_tick($this);
@@ -192,14 +242,20 @@ describe('automatic deployment of a production Instance', function (): void {
         expect(Operation::query()->count())->toBe(0)
             ->and($this->instance->fresh()->auto_deploy_state['result'] ?? null)->toBe('no_green_commit');
 
+        // A manual deployment pauses; resuming forgets the failures before it.
         auto_deploy_row($this->instance, ['commit' => $this->a, 'triggered_by' => 'laptop', 'status' => 'failed', 'failed_step' => 'environment', 'error_code' => 'env.sync_failed']);
+        auto_deploy_tick($this);
+        expect(Operation::query()->count())->toBe(0)
+            ->and($this->instance->fresh()->auto_deploy_state['result'] ?? null)->toBe('paused');
+
+        app(UpdateInstanceAction::class)->execute($this->instance, null, autoDeploy: true);
         auto_deploy_tick($this);
 
         expect(Operation::query()->sole()->input)->toBe(['commit' => $this->b]);
     });
 
     it('moves on to a new commit after a failed one', function (): void {
-        auto_deploy_row($this->instance, ['commit' => $this->b, 'triggered_by' => 'schedule', 'status' => 'failed', 'failed_step' => 'after_activation', 'error_code' => 'deployment.step_failed']);
+        auto_deploy_row($this->instance, ['commit' => $this->b, 'triggered_by' => AutomaticDeployHistory::Trigger, 'status' => 'failed', 'failed_step' => 'after_activation', 'error_code' => 'deployment.step_failed']);
         auto_deploy_github($this, [$this->a => 'success', $this->b => 'success', $this->c => 'success']);
 
         auto_deploy_tick($this);
@@ -210,7 +266,7 @@ describe('automatic deployment of a production Instance', function (): void {
     it('keeps a failed head of an ungated Project from deploying again', function (): void {
         $this->instance->project->update(['merge_check' => null]);
         $this->heads->set($this->instance->project, 'main', $this->b);
-        auto_deploy_row($this->instance, ['commit' => $this->b, 'triggered_by' => 'schedule', 'status' => 'failed', 'failed_step' => 'before_activation', 'error_code' => 'deployment.step_failed']);
+        auto_deploy_row($this->instance, ['commit' => $this->b, 'triggered_by' => AutomaticDeployHistory::Trigger, 'status' => 'failed', 'failed_step' => 'before_activation', 'error_code' => 'deployment.step_failed']);
         $this->travel(30)->minutes();
 
         auto_deploy_tick($this);
@@ -234,12 +290,12 @@ describe('automatic deployment of a production Instance', function (): void {
         auto_deploy_tick($this);
         run_operation_jobs();
 
-        expect(InstanceDeployment::query()->where('triggered_by', 'schedule')->orderBy('id')->pluck('status')->all())->toBe(['failed', 'succeeded']);
+        expect(InstanceDeployment::query()->where('triggered_by', AutomaticDeployHistory::Trigger)->orderBy('id')->pluck('status')->all())->toBe(['failed', 'succeeded']);
     });
 
     it('pauses after a rollback, never overrides it, and resumes when auto_deploy is set again', function (): void {
         auto_deploy_github($this, [$this->a => 'success', $this->b => 'success', $this->c => 'success']);
-        auto_deploy_row($this->instance, ['commit' => $this->c, 'triggered_by' => 'schedule']);
+        auto_deploy_row($this->instance, ['commit' => $this->c, 'triggered_by' => AutomaticDeployHistory::Trigger]);
         $rollback = auto_deploy_row($this->instance, ['commit' => $this->a, 'kind' => 'rollback', 'release' => 'initial']);
 
         auto_deploy_tick($this);
@@ -263,13 +319,65 @@ describe('automatic deployment of a production Instance', function (): void {
         $show()->assertJsonPath('data.auto_deploy.pause', null);
         auto_deploy_tick($this);
 
-        expect(Operation::query()->sole()->input)->toBe(['commit' => $this->c]);
+        // The commit the rollback moved away from stays blocked; the green commit before it may deploy.
+        expect(Operation::query()->sole()->input)->toBe(['commit' => $this->b])
+            ->and($this->instance->fresh()->auto_deploy_state['blocked'] ?? null)->toBe([$this->c]);
     });
 
-    it('continues from a manual deployment of the branch head', function (): void {
-        auto_deploy_row($this->instance, ['commit' => $this->b, 'triggered_by' => 'laptop']);
+    it('never redeploys the rolled-away head after resuming, and deploys the next commit', function (): void {
+        auto_deploy_github($this, [$this->a => 'success', $this->c => 'success']);
+        auto_deploy_row($this->instance, ['commit' => $this->c, 'triggered_by' => AutomaticDeployHistory::Trigger]);
+        auto_deploy_row($this->instance, ['commit' => $this->a, 'kind' => 'rollback']);
+        auto_deploy_tick($this);
+        app(UpdateInstanceAction::class)->execute($this->instance, null, autoDeploy: true);
+
+        auto_deploy_tick($this);
+        expect(Operation::query()->count())->toBe(0)
+            ->and($this->instance->fresh()->auto_deploy_state['result'] ?? null)->toBe('no_green_commit');
+
+        auto_deploy_github($this, [$this->a => 'success', $this->c => 'success', $this->d => 'success']);
+        auto_deploy_tick($this);
+
+        expect(Operation::query()->sole()->input)->toBe(['commit' => $this->d]);
+    });
+
+    it('pauses for a rollback that still waits for the Instance lock', function (): void {
+        auto_deploy_github($this, [$this->a => 'success', $this->b => 'success']);
+        auto_deploy_row($this->instance, ['commit' => null, 'kind' => 'rollback', 'status' => 'running', 'finished_at' => null]);
+
+        auto_deploy_tick($this);
+
+        expect(Operation::query()->count())->toBe(0)
+            ->and($this->instance->fresh()->auto_deploy_state['result'] ?? null)->toBe('paused');
+    });
+
+    it('stops a queued automatic deployment when a rollback came after the tick started it', function (): void {
+        auto_deploy_github($this, [$this->a => 'success', $this->b => 'success']);
+        auto_deploy_tick($this);
+        $operation = Operation::query()->sole();
+        auto_deploy_row($this->instance, ['commit' => $this->a, 'kind' => 'rollback', 'release' => 'initial']);
+
+        run_operation_jobs();
+
+        expect($operation->refresh()->error_code)->toBe(AutomaticDeployHistory::Paused)
+            ->and($this->fixture->deployment->preparedCommits)->toBe([])
+            ->and(InstanceDeployment::query()->where('triggered_by', AutomaticDeployHistory::Trigger)->count())->toBe(0);
+
+        auto_deploy_tick($this);
+        expect($this->instance->fresh()->auto_deploy_state['result'] ?? null)->toBe('paused')
+            ->and(Operation::query()->count())->toBe(1);
+    });
+
+    it('pauses after a manual deployment and continues from its commit after resuming', function (): void {
+        $manual = auto_deploy_row($this->instance, ['commit' => $this->b, 'triggered_by' => 'laptop']);
         auto_deploy_github($this, [$this->a => 'success', $this->b => 'success', $this->c => 'success']);
 
+        auto_deploy_tick($this);
+
+        expect(Operation::query()->count())->toBe(0)
+            ->and($this->instance->fresh()->auto_deploy_state['pause'] ?? null)->toMatchArray(['reason' => 'manual_deploy', 'deployment_id' => $manual->id]);
+
+        app(UpdateInstanceAction::class)->execute($this->instance, null, autoDeploy: true);
         auto_deploy_tick($this);
 
         expect(Operation::query()->sole()->input)->toBe(['commit' => $this->c]);
@@ -335,7 +443,7 @@ describe('release alerts of automatic deployments', function (): void {
 
     it('alerts once for each commit whose automatic deployment failed', function (): void {
         auto_deploy_github($this, [$this->a => 'success', $this->b => 'success', $this->c => 'success']);
-        $failed = auto_deploy_row($this->instance, ['commit' => $this->b, 'triggered_by' => 'schedule', 'status' => 'failed', 'failed_step' => 'before_activation', 'error_code' => 'deployment.step_failed']);
+        $failed = auto_deploy_row($this->instance, ['commit' => $this->b, 'triggered_by' => AutomaticDeployHistory::Trigger, 'status' => 'failed', 'failed_step' => 'before_activation', 'error_code' => 'deployment.step_failed']);
 
         auto_deploy_tick($this);
         auto_deploy_tick($this);
@@ -347,7 +455,7 @@ describe('release alerts of automatic deployments', function (): void {
             ])
             ->and($this->notifier->alerts[0]->summary)->toContain('before_activation', 'deployment.step_failed');
 
-        auto_deploy_row($this->instance, ['commit' => $this->c, 'triggered_by' => 'schedule', 'status' => 'failed', 'failed_step' => 'after_activation', 'error_code' => 'deployment.step_failed']);
+        auto_deploy_row($this->instance, ['commit' => $this->c, 'triggered_by' => AutomaticDeployHistory::Trigger, 'status' => 'failed', 'failed_step' => 'after_activation', 'error_code' => 'deployment.step_failed']);
         auto_deploy_tick($this);
 
         expect($this->notifier->alerts)->toHaveCount(2)
@@ -356,7 +464,7 @@ describe('release alerts of automatic deployments', function (): void {
 
     it('does not alert a failure from before auto_deploy was set', function (): void {
         $this->instance->update(['auto_deploy' => false]);
-        auto_deploy_row($this->instance, ['commit' => $this->b, 'triggered_by' => 'schedule', 'status' => 'failed', 'failed_step' => 'before_activation', 'error_code' => 'deployment.step_failed']);
+        auto_deploy_row($this->instance, ['commit' => $this->b, 'triggered_by' => AutomaticDeployHistory::Trigger, 'status' => 'failed', 'failed_step' => 'before_activation', 'error_code' => 'deployment.step_failed']);
         app(UpdateInstanceAction::class)->execute($this->instance, null, autoDeploy: true);
         auto_deploy_github($this, [$this->a => 'success', $this->b => 'success']);
 
@@ -397,6 +505,31 @@ describe('release alerts of automatic deployments', function (): void {
             ->and($this->notifier->alerts[0]->summary)->toContain('busy');
     });
 
+    it('alerts once when the head check stays pending for thirty minutes', function (): void {
+        auto_deploy_github($this, [$this->a => 'success', $this->b => 'queued']);
+
+        auto_deploy_tick($this);
+        $this->travel(31)->minutes();
+        auto_deploy_tick($this);
+        auto_deploy_tick($this);
+
+        expect($this->notifier->alerts)->toHaveCount(1)
+            ->and($this->notifier->alerts[0]->kind)->toBe(ReleaseAlertKind::InstanceDeployStalled)
+            ->and($this->notifier->alerts[0]->summary)->toContain('gate_pending');
+    });
+
+    it('alerts once when a manual deployment pauses automatic deployment', function (): void {
+        auto_deploy_github($this, [$this->a => 'success', $this->b => 'success']);
+        auto_deploy_row($this->instance, ['commit' => $this->b, 'triggered_by' => 'laptop']);
+
+        auto_deploy_tick($this);
+        auto_deploy_tick($this);
+
+        expect($this->notifier->alerts)->toHaveCount(1)
+            ->and($this->notifier->alerts[0]->kind)->toBe(ReleaseAlertKind::InstanceDeployPaused)
+            ->and($this->notifier->alerts[0]->summary)->toStartWith('Manual deployment');
+    });
+
     it('ends a stall once the commit deploys', function (): void {
         auto_deploy_github($this, [$this->a => 'success', $this->b => 'success']);
         auto_deploy_tick($this);
@@ -411,7 +544,7 @@ describe('release alerts of automatic deployments', function (): void {
     it('skips the alert of a Project outside GitHub', function (): void {
         $this->instance->project->update(['repository_url' => 'https://example.test/shop.git', 'merge_check' => null]);
         $this->heads->set($this->instance->project, 'main', $this->a);
-        auto_deploy_row($this->instance, ['commit' => $this->b, 'triggered_by' => 'schedule', 'status' => 'failed', 'failed_step' => 'before_activation', 'error_code' => 'deployment.step_failed']);
+        auto_deploy_row($this->instance, ['commit' => $this->b, 'triggered_by' => AutomaticDeployHistory::Trigger, 'status' => 'failed', 'failed_step' => 'before_activation', 'error_code' => 'deployment.step_failed']);
 
         $this->artisan('orbit:auto-deploy')->assertSuccessful();
 
@@ -421,7 +554,7 @@ describe('release alerts of automatic deployments', function (): void {
 
 it('records an automatic deployment alert in Activity through the release alert notifier', function (): void {
     auto_deploy_github($this, [$this->a => 'success', $this->b => 'success']);
-    auto_deploy_row($this->instance, ['commit' => $this->b, 'triggered_by' => 'schedule', 'status' => 'failed', 'failed_step' => 'before_activation', 'error_code' => 'deployment.step_failed']);
+    auto_deploy_row($this->instance, ['commit' => $this->b, 'triggered_by' => AutomaticDeployHistory::Trigger, 'status' => 'failed', 'failed_step' => 'before_activation', 'error_code' => 'deployment.step_failed']);
 
     auto_deploy_tick($this);
     $activity = Activity::query()->where('command', 'release:alert')->sole();

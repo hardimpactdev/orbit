@@ -491,7 +491,7 @@ orbit instance:update 71 --auto-deploy=true
 | --- | --- |
 | `--branch=BRANCH` | Deployment branch. A later Project default change does not replace it. |
 | `--shared-paths=JSON` | Replace the shared directory list. Use `[]` to disable sharing, or `null` to restore the Project-type default. Omit it to leave the setting unchanged. |
-| `--auto-deploy=true\|false` | Deploy each new commit of the branch that passed the Project's `merge_check` automatically. `true` also resumes automatic deployment after a rollback paused it. See [Automatic deployments](/reference/deployments#automatic-deployments). |
+| `--auto-deploy=true\|false` | Deploy each new commit of the branch that passed the Project's `merge_check` automatically. `true` also resumes automatic deployment after a manual deployment or a rollback paused it. See [Automatic deployments](/reference/deployments#automatic-deployments). |
 
 The Gateway refuses a development Instance with a bounded conflict before it stores any setting. [Shared paths](/reference/deployments#shared-paths) describes defaults, seeding, public storage, and path rules.
 
