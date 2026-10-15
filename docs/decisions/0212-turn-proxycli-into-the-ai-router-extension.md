@@ -146,7 +146,7 @@ The router holds the credentials of every model account. So it stays off the pub
 - `--cache-connection` is always required. The collector and its Valkey cache are part of every AI router, and there is no mode without them.
 - The cache connection follows today's rules: `ai_router.cache_missing`, `ai_router.cache_invalid`, and `ai_router.cache_unplaced`.
 - `--process` adopts an existing router Process on that Node. See [Migration of live state](#migration-of-live-state). It exists only to adopt Process 103. Step 4 adds it, and step 5 removes it.
-- While the extension is off, the assignment places nothing.
+- While the extension is off, the assignment places nothing. It records the Node and the cache connection, and `--process` marks the adopted Process. Adoption reads only the role, the Process, and the stored settings, never the switch.
 
 `node:role:remove NODE ai-router` refuses with `ai_router.role_required` while the extension is enabled. Removal deletes the stored management key, anchors, read and control tokens, and the version pin. It leaves the router's files on the Node, as `analytics` leaves its databases.
 
@@ -171,7 +171,14 @@ The Caddy guard that aborts task VM clients still covers the collector site, bec
 3. The collector's Orbit CA leaf, its Caddy site, and the private DNS record `collector.ai-router.orbit`.
 4. The role's firewall rules.
 
-When a step fails, the switch stays off and the Gateway returns the step's error. ADR 0210 provides that rule for every extension, as [amendment A2](#required-amendments-to-adr-0210): a failed `enable()` hook leaves the switch off. Placed parts stay, and the next `extension:enable ai-router` reuses them. Tasks never sees a switch that is on without a router.
+ADR 0210 runs `enable()` first and turns the switch on only after the hook succeeds ([amendment A2](#required-amendments-to-adr-0210)). When a step fails, the switch stays off and the Gateway returns the step's error. Placed parts stay, and the next `extension:enable ai-router` reuses them. Tasks never sees a switch that is on without a router.
+
+So the hook runs while the switch is still off, and nothing it calls reads the switch:
+
+- It calls the extension's actions and the driver directly, never an API operation behind `RequireEnabledExtension`, which would refuse with `extension.disabled`.
+- The Caddy site source, private DNS records, reserved hostname, footprint artifact, firewall rules, and Process removal guard decide from the placement record: the role assignment and the router and collector Processes it placed. They never read the switch. So the Caddy build and DNS publication inside the hook already include the collector.
+- The router Process and an adopted Process 103 are Orbit-managed from the moment they are placed or adopted, so `process:destroy` refuses them also while the switch is off.
+- Only the role baseline reads the switch, to place nothing on assignment while the extension is off. The hook does not go through the role baseline.
 
 ADR 0210 keeps fleet work in a separate setup command, as `proxycli:setup` did. [Amendment A3](#required-amendments-to-adr-0210) lets an `enable()` or `disable()` hook do fleet work over SSH. The `ai-router` hook needs no input, because the role holds the Node and the cache connection, and the driver holds the rest. So one switch is the one way to start and stop the AI router.
 
@@ -270,7 +277,7 @@ ADR 0210 is in review in [#1247](https://github.com/nckrtl/orbit/pull/1247). The
 | ID | Amendment | Why the AI router needs it |
 | --- | --- | --- |
 | A1 | An extension can refuse to be disabled. A pre-disable guard runs before the switch changes, after the `extension.required` check, and may refuse with a `ResourceOperationException`. | `ai_router.keys_outstanding` must refuse before the switch turns off. Today `DisableExtensionAction` turns the switch off and then calls `disable()`. |
-| A2 | A failed `enable()` hook leaves the switch off. The Gateway returns the hook's error. | The maintainer decided this rule for every extension. Tasks must never see the router switch on without a router. |
+| A2 | The Gateway runs `enable()` first and turns the switch on only after the hook succeeds. A failed hook leaves the switch off and returns its error. | The maintainer decided this rule for every extension. Tasks must never see the router switch on without a router. |
 | A3 | An `enable()` or `disable()` hook may do fleet work over SSH, within the request's command deadline. It replaces the rule that fleet work belongs in a separate setup command. | The router has one switch and no setup command. |
 
 The new plug-in points in [Plug-in points](#plug-in-points) need no amendment, because ADR 0210 lets each extension add its points. The links to ADR 0210 in this record point at #1247 until it merges. This record merges after #1247, and its links then move to the `/decisions` path.
