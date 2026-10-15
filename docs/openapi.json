@@ -12449,6 +12449,7 @@
                             "before_activation",
                             "activation",
                             "php_refresh",
+                            "process_restart",
                             "after_activation",
                             "rollback"
                           ]
@@ -17076,6 +17077,9 @@
                   "keep_alive": {
                     "type": "boolean",
                     "description": "Keep running through app-dev idle hibernation"
+                  },
+                  "restart_on_deploy": {
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -17395,6 +17399,9 @@
                   "keep_alive": {
                     "type": "boolean",
                     "description": "Keep running through app-dev idle hibernation"
+                  },
+                  "restart_on_deploy": {
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -33208,6 +33215,9 @@
               "string",
               "null"
             ]
+          },
+          "restart_on_deploy": {
+            "type": "boolean"
           }
         }
       },

@@ -124,7 +124,7 @@ orbit tool:remove <tool> [--yes] [--json]
 
 Without `--yes`, the command reads the Tool first. An unknown ID fails there with `http.404`. In a terminal, the command then asks `Remove Tool [package] (manager on Node #ID) by uninstalling it and deleting its record?`. The default answer is No. Declining, Ctrl-C, or end of input exits with `input.cancelled` and changes nothing. Without a terminal, the command fails with `input.confirmation_required`.
 
-A failed removal keeps the Tool as `failed`. Run the same command again to retry. [Remove a Tool](/reference/tools#remove-a-tool) lists each outcome.
+For a [role-owned PHP package](/reference/tools#role-owned-php-packages), such as `php8.5-xml`, the command deletes only the record and leaves the package installed. A failed removal keeps the Tool as `failed`. Run the same command again to retry. [Remove a Tool](/reference/tools#remove-a-tool) lists each outcome.
 
 ## Related
 

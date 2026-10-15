@@ -3,7 +3,7 @@ title: "Instance releases"
 description: "How production Instances build releases and select current code, and how development defaults deploy in their checkout."
 covers:
   - apps/gateway/app/Domain/{Instances/Deployment/**,Instances/ProductionWebRootManager.php,Projects/*DeployStep*.php}
-  - apps/gateway/app/Actions/Instances/{DeployInstanceAction,DeployDefaultInstanceAction,StartInstanceDeployAction,RunAutomaticDeploysAction,RollbackInstanceAction,InstanceDeploymentConfigResolver,UpdateInstanceAction,ListInstanceReleasesAction,ListInstanceDeploymentsAction,*InstanceDeployStep*Action}.php
+  - apps/gateway/app/Actions/Instances/{DeployInstanceAction,DeployDefaultInstanceAction,StartInstanceDeployAction,RunAutomaticDeploysAction,RollbackInstanceAction,RestartInstanceProcessesAction,InstanceDeploymentConfigResolver,UpdateInstanceAction,ListInstanceReleasesAction,ListInstanceDeploymentsAction,*InstanceDeployStep*Action}.php
   - apps/gateway/app/Infrastructure/Instances/{RemoteProductionDeployment,RemoteDevelopmentDeployment,DevelopmentCheckoutProgram,ProductionApplicationPaths,ProductionWebRootProgram,RemoteProductionWebRootManager}.php
   - apps/gateway/app/Console/Commands/AutoDeployCommand.php
   - apps/gateway/app/Http/Streaming/**
@@ -140,8 +140,11 @@ The operation's steps follow the phases below. Each name is a phase, or a phase 
 | `before_activation.<step>` | no | `before_activation` |
 | `activation` | yes | `activation` |
 | `php_refresh` | yes | `cache_refresh` |
+| `process_restart` | yes | `after_activation` |
 | `after_activation.<step>` | no | `after_activation` |
 | `cleanup` | yes | none: a failed cleanup is a warning |
+
+An in-flight deploy whose stored plan predates `process_restart` finishes that original plan after a Gateway upgrade. It does not restart Processes automatically. New deploy operations include the restart phase. Other changes to a stored plan still fail with `operation.plan_changed`.
 
 A development default has `source_preparation` and one `before_activation.<step>` for each [development deploy step](#development-deploy-steps). `php_refresh` appears only for an Instance that serves PHP.
 
@@ -155,13 +158,15 @@ After it validates the request and the access grant, the rollback answers `appli
 
 | Event type | Fields |
 | --- | --- |
-| `phase` | `phase` is `rollback`. |
+| `phase` | `phase` is `rollback` or `process_restart`. |
 | `output` | `stream` is `stdout` or `stderr`. `data_base64` holds at most 16 KiB of output. |
 | `result` | `status` is `succeeded` or `failed`, with `failed_step`, `error_code`, and `selected_release`, each nullable. This is always the last line. |
 
-`failed_step` names the boundary that failed: `activation`, `cache_refresh`, `rollback_selection`, or `operation`. An error after the stream opens ends the stream with a failed `result` and no second HTTP error.
+`failed_step` names the boundary that failed: `activation`, `cache_refresh`, `after_activation`, `rollback_selection`, or `operation`. An error after the stream opens ends the stream with a failed `result` and no second HTTP error.
 
-The Gateway flushes output while a command runs. Before each phase event, it writes one whitespace byte every 10 milliseconds for 250 milliseconds. That lets it notice a closed connection through Caddy and PHP-FPM. It notices a disconnect only when it writes, so a silent command can run until it writes, exits, or times out. Then the Gateway starts no further step and sends no result. It never replays events or rolls back by itself.
+The Gateway flushes output while a command runs. Before each phase event, it writes one whitespace byte every 10 milliseconds for 250 milliseconds. That lets it notice a closed connection through Caddy and PHP-FPM. It notices a disconnect only when it writes, so a silent command can run until it writes, exits, or times out.
+
+Before activation, a disconnect stops the rollback and sends no result. Once the release is selected, the Gateway finishes PHP refresh and Process restarts even after a disconnect. Read the deployment history for the final outcome. The Gateway never replays events or rolls back by itself.
 
 ## Deploy
 
@@ -172,12 +177,17 @@ A deployment reads the branch and the steps once, when it starts. Then it runs t
 3. **Before activation.** The Gateway runs each `before_activation` step in order, from the new release, as the production user, with a non-interactive shell.
 4. **Activation.** The Gateway replaces `current` atomically with a link to the new release.
 5. **PHP refresh.** The Gateway reconciles and confirms the dedicated FPM runtime, then resets that service's OPcache and waits for completion.
-6. **After activation.** The Gateway runs each `after_activation` step in order.
-7. **Cleanup.** The Gateway removes old releases, as [Retained releases](#retained-releases) describes. A failed cleanup is a warning in the output, not a failed deployment.
+6. **Process restart.** The Gateway restarts active Instance Processes that are desired `running` and have `restart_on_deploy: true` (the default). Stopped Processes stay stopped.
+7. **After activation.** The Gateway runs each `after_activation` step in order.
+8. **Cleanup.** The Gateway removes old releases, as [Retained releases](#retained-releases) describes. A failed cleanup is a warning in the output, not a failed deployment.
 
-Orbit skips this phase for an Instance that does not serve PHP. A changed resolved release restarts the dedicated service so its workers enter the new application directory.
+Each Process restart uses the normal Process restart action and reports success or failure in deployment events. A failure stops the deployment before after-activation steps and cleanup. The new release stays selected.
 
-Orbit runs no migration, Laravel cache clear, dependency install, asset build, or application health check of its own. With no steps, a deployment runs no application command. The `current` switch is atomic, but the dedicated FPM restart is not zero-downtime: requests can fail briefly while its socket and workers are unavailable, and in-flight requests can be interrupted. Other Instances keep their own PHP services. A confirmed no-op reconciliation does not restart FPM.
+Orbit skips PHP refresh for an Instance that does not serve PHP. A changed resolved release restarts the dedicated service so its workers enter the new application directory.
+
+To opt out, set `restart_on_deploy: false` in the complete Process create or update specification, or pass `--no-restart-on-deploy` to [`process:create` or `process:update`](/cli/process). This setting applies to production deployments and rollbacks. For Horizon managed as an Instance Process, keep the default and remove a hand-made `php artisan horizon:terminate` after-activation step with `instance:deploy-step:destroy`. Orbit now restarts that Process before after-activation steps. The normal runtime stop behavior applies.
+
+Orbit runs no migration, Laravel cache clear, dependency install, asset build, or application health check of its own. With no deploy steps, Orbit runs only its runtime operations. The `current` switch is atomic, but the dedicated FPM restart is not zero-downtime: requests can fail briefly while its socket and workers are unavailable, and in-flight requests can be interrupted. Other Instances keep their own PHP services. A confirmed no-op reconciliation does not restart FPM.
 
 Each step has its own timeout. A timeout stops the step's process group and every later step. The whole deployment has a deadline of the step timeouts plus 900 seconds, at most 1,600 seconds, the [deadline of an operation](/reference/operations#how-an-operation-runs). A rollback never exceeds its request's 570-second command deadline. When a deadline stops the run, the error code is `deployment.deadline_exceeded`.
 
@@ -189,7 +199,7 @@ The failed boundary decides which release stays selected.
 | --- | --- |
 | Source preparation, environment sync, or a `before_activation` step | The earlier release, or none before the first deployment. |
 | Activation | The release that `current` selects when the Gateway reads it back from the Node. When that read fails, the release selected before the deployment. |
-| PHP refresh or an `after_activation` step | The new release. |
+| PHP refresh, a Process restart, or an `after_activation` step | The new release. |
 
 Orbit never undoes the effects of a step, of the environment sync, or of data changes. You decide how to recover.
 
@@ -205,7 +215,9 @@ Rollback and the release list report the same two repository codes.
 
 ## Roll back
 
-A rollback selects one retained release through `current`. The Gateway checks that the release is inside `releases/` and that the web root stays inside it. It then switches `current`, reconciles the dedicated FPM runtime, and resets its cache, as a deployment does. A changed resolved release restarts that service with the same brief serving interruption. A rollback fetches nothing, writes no environment, runs no step, and changes no database file.
+A rollback selects one retained release through `current`. The Gateway checks that the release is inside `releases/` and that the web root stays inside it. It then switches `current`, reconciles the dedicated FPM runtime, and resets its cache, as a deployment does. A changed resolved release restarts that service with the same brief serving interruption.
+
+After PHP refresh, a rollback restarts the same active, opted-in Instance Processes as a deployment. The `process_restart` phase and output events record the results. A restart failure fails the rollback at `after_activation` and leaves the rollback release selected. A rollback fetches nothing, writes no environment, runs no deploy command, and changes no database file.
 
 ## Automatic deployments
 
@@ -289,7 +301,7 @@ A deploy operation also holds the Instance from its start request to its end, so
 
 A successful production deployment keeps at most 3 releases in the home: the new selection, the selection before it, and the newest other release. `initial` counts as the oldest, and later releases sort by the creation time in their names. It removes the rest, and the output names each one. So [`instance:rollback`](/cli/instance#orbit-instancerollback) can return to the previous selection and one other release. A rollback removes nothing. A failed deployment removes nothing either; the next successful one does.
 
-A deployment does not [restart Processes](/cli/process#orbit-processrestart), so a running Process, such as a queue worker, can still work in an older release. Cleanup keeps every release that is the working directory, root, or executable of a running process of the production user, also beyond the limit. The output names each such release; restart its Process to free it. When cleanup cannot read where a live process works, it removes nothing and reports a failed cleanup.
+Releases that only stopped Processes used can be removed once they fall outside the retention limit. If a Process opts out, uses a fixed old-release path, or leaves child processes running, it can still use an older release. Cleanup keeps every release that is the working directory, root, or executable of a running process of the production user, also beyond the limit. The output names each such release; stop or restart its remaining processes to free it. When cleanup cannot read where a live process works, it removes nothing and reports a failed cleanup.
 
 Cleanup removes only folders that pass the release checks of the listing. It first renames a release to `releases/.pruned-<name>`, so the release leaves the list at once, and then deletes that folder. The release's own files go with it, such as old logs in its `storage/`. A folder that a stopped cleanup left is deleted by the next one. A partial folder that fails the release checks stays.
 

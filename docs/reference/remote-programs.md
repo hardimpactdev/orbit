@@ -102,7 +102,7 @@ A finding is fixed, or suppressed on its line with a comment that gives the reas
 
 ## Programs
 
-These programs run on Nodes now. Each one replaced an inline script.
+These programs run on Nodes now. Each one replaced an inline script. The PHP step of an Instance sends `php.install-build` through its own SSH executor and reads the result with the runner's result contract, `SshProgramRunner::pythonResult`.
 
 | Program | Purpose |
 | --- | --- |
@@ -114,6 +114,7 @@ These programs run on Nodes now. Each one replaced an inline script.
 | `instances.read-removal-receipt` | Reports how complete a receipt-backed removal is. |
 | `instances.clean-removal-receipt` | Finishes a receipt-backed removal. |
 | `instances.finalize-source-removal` | Moves a recorded source into quarantine and deletes it. |
+| `php.install-build` | Installs and checks the recipe's [PHP build](/reference/compute-drivers#install-the-php-build), with a rollback. |
 
 ## Why it works this way
 

@@ -881,3 +881,18 @@ function tool_operation_exception(Closure $callback): ToolOperationException
 
     throw new RuntimeException('Expected a ToolOperationException.');
 }
+
+it('refuses to install a role-owned PHP package before the lock or any manager call', function (): void {
+    [$action, $manager, $lock] = tool_install_action();
+    $manager->roleOwned = ['php8.5-xml'];
+    $node = tool_action_node();
+
+    $exception = tool_operation_exception(fn () => $action->execute(tool_install_data($node, package: 'php8.5-xml')));
+
+    expect($exception->errorCode)->toBe('tool.package_role_owned')
+        ->and($exception->status)->toBe(409)
+        ->and($exception->outcome)->toBe(ToolOutcome::ManagerFailed)
+        ->and($manager->calls)->toBe(['validatePackage'])
+        ->and($lock->runs)->toBe(0)
+        ->and(Tool::query()->count())->toBe(0);
+});

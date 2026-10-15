@@ -6045,6 +6045,9 @@
           "keep_alive": {
             "type": "boolean",
             "description": "Keep running through app-dev idle hibernation"
+          },
+          "restart_on_deploy": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false,
@@ -6370,6 +6373,9 @@
           "keep_alive": {
             "type": "boolean",
             "description": "Keep running through app-dev idle hibernation"
+          },
+          "restart_on_deploy": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false,

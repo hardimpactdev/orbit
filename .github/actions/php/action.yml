@@ -1,0 +1,44 @@
+name: Set up the recipe PHP build
+description: >-
+  Installs the machine software recipe's PHP build on a GitHub-hosted runner with bin/php-build, which runs
+  php.install-build, the installer that Nodes and images run too. It verifies the build on every runner. A self-hosted
+  runner is never changed; the job fails when its PHP differs from the recipe. See ADR 0216.
+inputs:
+  coverage:
+    description: pcov loads PCOV and enables coverage; none keeps PCOV loaded with pcov.enabled=0
+    default: pcov
+runs:
+  using: composite
+  steps:
+    - name: Compute the PHP package cache key
+      id: key
+      if: runner.environment == 'github-hosted'
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      run: |
+        printf 'key=%s\n' "$(python3 bin/php-build key)" >> "$GITHUB_OUTPUT"
+        sudo install -d -o "$(id -u)" -g "$(id -g)" /var/cache/orbit/php-packages
+
+    # The runner keeps the pinned files between runs. The installer tries Orbit's mirror release before Sury.
+    - name: Restore the PHP packages
+      if: runner.environment == 'github-hosted'
+      uses: actions/cache@v6
+      with:
+        path: /var/cache/orbit/php-packages
+        key: orbit-php-build-${{ steps.key.outputs.key }}
+
+    # A hosted runner image ships other PHP packages and the ondrej/php source; --purge-extras removes them here only.
+    - name: Install the recipe PHP build
+      if: runner.environment == 'github-hosted'
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      env:
+        COVERAGE: ${{ inputs.coverage }}
+      run: |
+        sudo python3 bin/php-build install --ci --purge-extras --coverage "$COVERAGE"
+        sudo chown -R "$(id -u):$(id -g)" /var/cache/orbit/php-packages
+
+    - name: Verify the recipe PHP build
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      run: python3 bin/php-build verify
