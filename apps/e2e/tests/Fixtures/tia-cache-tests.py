@@ -1597,6 +1597,8 @@ class CiCacheRefTest(CacheFixture):
 
     def test_fresh_clone_setup_uses_ci_ref_and_private_package_cache_with_cold_fallback(self):
         ref = self.publish_ref()
+        # CI may initialize bare repositories with a different default branch.
+        cache.git(self.remote, 'symbolic-ref', 'HEAD', 'refs/heads/master')
         resources = Path(cache.__file__).resolve().parent.parent / 'apps/gateway/resources/task-vms'
         packages = runpy.run_path(str(resources / 'package-cache.py'))
         seed = runpy.run_path(str(resources / 'package-cache-seed.py'))['seed']
@@ -1617,7 +1619,9 @@ class CiCacheRefTest(CacheFixture):
         for present in (True, False):
             with self.subTest(caches_present=present):
                 workspace = Path(self.temporary.name) / ('warm' if present else 'cold')
-                cache.git(self.root, 'clone', '--no-local', str(self.remote), str(workspace))
+                cache.git(self.root, 'clone', '--depth', '1', '--branch', 'main', self.remote.as_uri(), str(workspace))
+                self.assertEqual(cache.git(workspace, 'rev-parse', '--is-shallow-repository'), 'true')
+                self.assertEqual(cache.git(workspace, 'rev-parse', 'HEAD'), self.commit)
                 home = workspace / '.private-home'
                 seed(shared, home, [artifact] if present else [])
                 if present:
@@ -1639,7 +1643,6 @@ class CiCacheRefTest(CacheFixture):
                                          '--no-progress'], cwd=setup, env=environment, capture_output=True)
                 self.assertEqual(result.returncode, 0, result.stderr.decode())
                 self.assertEqual((setup / 'vendor/acme/demo/proof.txt').read_text(), 'installed')
-                self.assertEqual(cache.git(workspace, 'rev-parse', 'HEAD'), self.commit)
                 self.assertEqual((workspace / self.project / '.orbit-tia/graph.json').exists(), present)
                 self.assertEqual((shared / artifact['key']).read_bytes(), data)
 
