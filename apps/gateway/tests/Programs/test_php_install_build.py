@@ -17,7 +17,9 @@ FAKES = {
     # Installed packages live in $STATE/installed/<name>, holding the version.
     'dpkg-query': 'for f in "$STATE"/installed/*; do [ -f "$f" ] && printf "%s\\tinstall ok installed\\t%s\\n" '
                   '"$(basename "$f")" "$(cat "$f")"; done; exit 0',
-    'dpkg': 'case "$1" in --print-architecture) echo amd64;; --purge|--remove) op="${1#--}"; shift; [ "$1" = -- ] && shift; '
+    # A path is owned by a package when $STATE/owned/<file name> exists.
+    'dpkg': 'case "$1" in --print-architecture) echo amd64;; -S) [ "$2" = -- ] && shift; '
+            '[ -f "$STATE/owned/$(basename "$2")" ] && echo "php8.5-common: $2" || exit 1;; --purge|--remove) op="${1#--}"; shift; [ "$1" = -- ] && shift; '
             'echo "$op $*" >> "$STATE/calls"; [ -f "$STATE/fail-$op" ] && exit 1; '
             'for p in "$@"; do rm -f "$STATE/installed/$p"; done;; esac',
     # A fake .deb is a text file: "<name> <version> <architecture>".
@@ -165,7 +167,7 @@ class InstallBuildTest(unittest.TestCase):
 
         outcome, data = self.run_program(mode='plan')
 
-        self.assertEqual((outcome, data), ('planned', {'pending': ['php-common', 'php8.5-cli', 'php8.5-pcov'], 'extras': []}))
+        self.assertEqual((outcome, data), ('planned', {'pending': ['php-common', 'php8.5-cli', 'php8.5-pcov'], 'extras': [], 'unowned': []}))
         self.assertEqual(self.calls(), [])
 
     def test_refuses_another_php_source_and_deletes_the_retired_orbit_source(self):
@@ -204,6 +206,73 @@ class InstallBuildTest(unittest.TestCase):
         reinstall = [call for call in self.calls() if call.startswith('apt-get') and '.deb' in call][-1]
         self.assertIn('--allow-downgrades', reinstall)
         self.assertEqual(len(self.cached()), 6, 'The new and the previous build both stay in the cache.')
+
+    def unowned_extension(self, module='amqp'):
+        """A setup-php style extension: an .ini and .so that no package owns, linked into the CLI and PHP-FPM."""
+        (self.root / 'etc/php/8.5/mods-available').mkdir(parents=True, exist_ok=True)
+        (self.root / 'usr/lib/php/20250925').mkdir(parents=True, exist_ok=True)
+        ini = self.root / f'etc/php/8.5/mods-available/{module}.ini'
+        ini.write_text(f'extension={module}.so\n')
+        (self.root / f'usr/lib/php/20250925/{module}.so').write_text('so')
+        for sapi in ('cli', 'fpm'):
+            (self.root / f'etc/php/8.5/{sapi}/conf.d/20-{module}.ini').symlink_to(ini)
+        return ini
+
+    def test_purge_extras_disables_and_keeps_extensions_that_no_package_owns(self):
+        self.previous_build()
+        ini = self.unowned_extension()
+        (self.state / 'owned').mkdir()
+        # A recipe extension's own .ini is never touched, also when no package claims it here.
+        (self.root / 'etc/php/8.5/mods-available/gd.ini').write_text('extension=gd.so\n')
+
+        outcome, data = self.run_program(extras='purge')
+
+        self.assertEqual((outcome, data['disabled']), ('applied', ['php8.5:amqp']), data)
+        self.assertFalse(ini.exists())
+        self.assertFalse((self.root / 'usr/lib/php/20250925/amqp.so').exists())
+        for sapi in ('cli', 'fpm'):
+            self.assertFalse((self.root / f'etc/php/8.5/{sapi}/conf.d/20-amqp.ini').is_symlink())
+        kept = sorted(path.name for path in (self.root / 'var/cache/orbit/php-unowned-extensions').rglob('*') if path.is_file())
+        self.assertEqual(kept, ['amqp.ini', 'amqp.so'])
+        self.assertTrue((self.root / 'etc/php/8.5/mods-available/gd.ini').exists())
+
+    def test_refuses_unowned_extensions_before_any_change_unless_purging(self):
+        self.previous_build()
+        self.unowned_extension()
+
+        outcome, data = self.run_program()
+
+        self.assertEqual((outcome, data), ('unowned_extensions', {'extensions': ['php8.5:amqp']}))
+        self.assertFalse([call for call in self.calls() if call.startswith(('apt-get', 'curl'))])
+        planned = self.run_program(mode='plan')
+        self.assertEqual(planned[0], 'unowned_extensions')
+
+    def test_an_owned_extension_ini_is_left_to_the_package_rules(self):
+        self.previous_build()
+        self.unowned_extension()
+        (self.state / 'owned').mkdir()
+        for name in ('amqp.ini', 'amqp.so'):
+            (self.state / 'owned' / name).touch()
+
+        outcome, data = self.run_program(mode='plan')
+
+        self.assertEqual((outcome, data['unowned']), ('planned', []))
+
+    def test_a_rollback_puts_disabled_unowned_extensions_back(self):
+        self.previous_build()
+        ini = self.unowned_extension()
+        (self.state / 'active-php8.5-fpm.service').touch()
+        (self.state / 'breaks-8.5.12-1').touch()
+
+        outcome, data = self.run_program(extras='purge')
+
+        self.assertEqual((outcome, data.get('restored')), ('rolled_back', True), data)
+        self.assertEqual(ini.read_text(), 'extension=amqp.so\n')
+        self.assertTrue((self.root / 'usr/lib/php/20250925/amqp.so').is_file())
+        for sapi in ('cli', 'fpm'):
+            link = self.root / f'etc/php/8.5/{sapi}/conf.d/20-amqp.ini'
+            self.assertEqual(os.readlink(link), str(ini))
+        self.assert_previous_build()
 
     def previous_build(self):
         for name in ('php8.5-cli', 'php-common'):

@@ -1,12 +1,13 @@
 # Program: php.install-build
 # Uses: lib/program.py
-# Outcomes: planned current applied platform_unsupported conflicting_source extra_packages download_failed rollback_unavailable install_failed modules_mismatch fpm_invalid rolled_back rollback_failed
+# Outcomes: planned current applied platform_unsupported conflicting_source extra_packages unowned_extensions download_failed rollback_unavailable install_failed modules_mismatch fpm_invalid rolled_back rollback_failed
 # Timeout: 900
 # Input: {"mode": "plan" or "apply", "versions": {"8.5": {"packages": [{"name", "version", "architecture", "url",
 #   "sha256"}], "extensions": [...]}}, "mirror": base URL or "", "pcov": bool, "extras": "refuse", "keep", or "purge",
 #   "fpm": "none", "shared", or "all", "repack": {"package", "version"}, "release": {"id", "codenames"} or
 #   null, "root": "/" (tests only)}
-# Result: planned: {"pending": [...], "extras": [...]}. current or applied: {"changed": [...], "purged": [...],
+# Result: planned: {"pending": [...], "extras": [...], "unowned": [...]}. current or applied: {"changed": [...],
+#   "purged": [...], "disabled": [...],
 #   "restarted": [...], "deferred": [...], "stale_masters": [...]}. A refusal names what it found: {"packages": [...]}, {"sources": [...]},
 #   {"package": ...}, {"missing": [...], "extra": [...]}, {"id", "codename"}, or {"unit", "reason"}. A failure after the
 #   swap adds "restored": true once the previous build is back and checked; otherwise it ends with rollback_failed.
@@ -26,6 +27,9 @@ SURY = re.compile(r'ppa\.launchpadcontent\.net/ondrej/php|packages\.sury\.org/ph
 RETIRED_SOURCE = 'etc/apt/sources.list.d/orbit-php.sources'
 RETIRED_KEYRING = 'usr/share/keyrings/orbit-sury-php.gpg'
 CACHE = 'var/cache/orbit/php-packages'
+# Extension files that no package owns, such as setup-php's, are moved here when --purge-extras disables them.
+UNOWNED_BACKUP = 'var/cache/orbit/php-unowned-extensions'
+EXTENSION_LINE = re.compile(r'^\s*(?:zend_)?extension\s*=\s*"?([^"\s;]+)', re.M)
 POLICY = 'usr/sbin/policy-rc.d'
 FPM_MODULES = ['bcmath', 'curl', 'gd', 'imagick', 'intl', 'mbstring', 'mysqli', 'pdo_mysql', 'pdo_pgsql', 'pdo_sqlite',
                'redis', 'simplexml', 'xml', 'zip']
@@ -215,6 +219,47 @@ def apt_install(host, files):
             host.run(['rm', '-f', '--', str(policy)], privileged=True)
 
 
+def owned(host, path):
+    return host.ok(['dpkg', '-S', '--', str(path)])
+
+
+def unowned_extensions(host, version, extensions):
+    """Extensions outside the recipe whose mods-available .ini no package owns, with their .so files that no package
+    owns: [(module, [files])]. Package-owned extras are handled as packages."""
+    directory = host.path(f'etc/php/{version}/mods-available')
+    found = []
+    for ini in sorted(directory.glob('*.ini')) if directory.is_dir() else []:
+        module = ini.stem.lower()
+        if module in extensions or owned(host, ini):
+            continue
+        files = [ini]
+        for name in EXTENSION_LINE.findall(ini.read_text(errors='replace')):
+            library = Path(name)
+            candidates = [library] if library.is_absolute() else \
+                sorted(host.path('usr/lib/php').glob(f'*/{library.stem}.so'))
+            files += [path for path in candidates if path.is_file() and not owned(host, path)]
+        found.append((module, files))
+    return found
+
+
+def disable_unowned(host, version, unowned, backup):
+    """Removes the conf.d links of each unowned extension and moves its files into `backup`. Returns the moves."""
+    moved = []
+    for _module, files in unowned:
+        ini = files[0]
+        for sapi in ('cli', 'fpm'):
+            for name, target in links(host, version)[sapi].items():
+                if Path(target).name == ini.name:
+                    host.run(['rm', '-f', '--', str(host.path(f'etc/php/{version}/{sapi}/conf.d') / name)],
+                             privileged=True)
+        for path in files:
+            kept = backup / version / path.relative_to(host.root)
+            host.run(['install', '-d', '-m', '0755', str(kept.parent)], privileged=True)
+            host.run(['mv', '--', str(path), str(kept)], privileged=True)
+            moved.append((path, kept))
+    return moved
+
+
 def links(host, version):
     """The module links of the CLI and PHP-FPM of one version: SAPI to {file name: target}."""
     found = {}
@@ -348,10 +393,16 @@ def main(payload):
         log('PHP packages outside the recipe are installed: ' + ', '.join(extras) + '. Remove them, then retry.')
         raise Outcome('extra_packages', {'packages': extras})
     purge = extras if extras_policy == 'purge' else []
+    unowned = {version: unowned_extensions(host, version, set(build['extensions'])) for version, build in versions.items()}
+    unowned_names = sorted({f'php{version}:{module}' for version, found in unowned.items() for module, _ in found})
+    if unowned_names and extras_policy == 'refuse':
+        log('PHP extensions outside the recipe that no package owns are enabled: ' + ', '.join(unowned_names)
+            + '. Remove their .ini and .so files, then retry.')
+        raise Outcome('unowned_extensions', {'extensions': unowned_names})
     pins = {name: pin for build in versions.values() for name, pin in build['pins'].items()}
     pending = sorted(name for name, pin in pins.items() if packages.get(name) != pin['version'])
     if payload['mode'] == 'plan':
-        return 'planned', {'pending': pending, 'extras': extras}
+        return 'planned', {'pending': pending, 'extras': extras, 'unowned': unowned_names}
 
     # Orbit installs PHP from the recipe's files. These sources would let apt move PHP to another build.
     for path in [host.path(RETIRED_SOURCE), host.path(RETIRED_KEYRING), *map(Path, sources)]:
@@ -368,6 +419,7 @@ def main(payload):
     # Packages that the change adds: a rollback removes them first, because the core Sury extensions of the previous
     # build depend on its exact php<version>-common.
     added = sorted(name for name in pending if name not in packages)
+    moved = []
 
     def roll_back(reason, restarted):
         """Put the previous build back and check it. Returns True only when every package is at its old version."""
@@ -388,6 +440,8 @@ def main(payload):
         if wrong:
             log('The previous PHP build is not restored: ' + ', '.join(wrong))
             ok = False
+        for original, kept in reversed(moved):
+            ok = host.ok(['mv', '--', str(kept), str(original)], privileged=True) and ok
         for version, recorded in before.items():
             restore_links(host, version, recorded)
         for unit in restarted:
@@ -401,6 +455,13 @@ def main(payload):
             raise Outcome('rollback_failed', {**data, 'reason': f'{reason}; the rollback failed too'})
         raise Outcome(outcome, {**data, 'reason': data.get('reason', reason), 'restored': True})
 
+    if extras_policy == 'purge' and unowned_names:
+        backup = host.path(UNOWNED_BACKUP) / str(os.getpid())
+        try:
+            for version, found in unowned.items():
+                moved += disable_unowned(host, version, found, backup)
+        except RuntimeError as error:
+            fail('install_failed', {'reason': str(error)}, 'disabling unowned extensions failed', [])
     if purge and not host.ok(['dpkg', '--purge', '--', *purge], privileged=True):
         fail('install_failed', {'package': purge[0]}, 'dpkg --purge failed', [])
     if files and not apt_install(host, files):
@@ -417,7 +478,7 @@ def main(payload):
     except Outcome as refused:
         fail(refused.outcome, refused.data, refused.outcome, [])
     restarted, stale, deferred = [], [], []
-    changed = bool(pending or purge) or any(links(host, version) != before[version] for version in versions)
+    changed = bool(pending or purge or moved) or any(links(host, version) != before[version] for version in versions)
     if changed and payload['fpm'] != 'none':
         for version in versions:
             units, skipped = fpm_units(host, version, payload['fpm'])
@@ -435,7 +496,7 @@ def main(payload):
                     continue
                 fail('fpm_invalid' if reason == 'fpm_invalid' else 'rolled_back', {'unit': unit, 'reason': reason},
                      f'{unit}: {reason}', restarted)
-    result = {'changed': pending, 'purged': purge, 'restarted': restarted, 'deferred': deferred,
+    result = {'changed': pending, 'purged': purge, 'disabled': unowned_names if moved else [], 'restarted': restarted, 'deferred': deferred,
               'stale_masters': sorted(stale)}
     return ('applied' if changed else 'current'), result
 

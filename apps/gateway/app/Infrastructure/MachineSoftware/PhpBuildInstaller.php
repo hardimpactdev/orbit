@@ -83,6 +83,7 @@ final readonly class PhpBuildInstaller
 
         return match ($result->outcome) {
             'extra_packages' => 'PHP packages outside the recipe are installed: '.$list('packages').'. Remove them, then retry.',
+            'unowned_extensions' => 'PHP extensions outside the recipe that no package owns are enabled: '.$list('extensions').'. Remove their .ini and .so files, then retry.',
             'conflicting_source' => 'Another PHP apt source is configured: '.$list('sources').'. Remove it, then retry.',
             'modules_mismatch' => 'The PHP CLI loads other extensions than the recipe. Missing: ['.$list('missing').']. Extra: ['.$list('extra').'].',
             default => "The PHP build installer ended with [{$result->outcome}]".(is_string($data['reason'] ?? null) ? ": {$data['reason']}" : '').(is_string($data['package'] ?? null) ? " ({$data['package']})" : '').(is_string($data['unit'] ?? null) ? " on {$data['unit']}" : '').'.',

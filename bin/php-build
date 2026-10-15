@@ -212,10 +212,11 @@ def install(recipe, version, ci, coverage, composer, purge):
     outcome, data, log = run_installer(installer_input(recipe, [version], extras='purge' if purge else 'refuse'))
     if outcome not in ('current', 'applied'):
         details = ', '.join(f'{key}: {value}' for key, value in data.items())
-        hint = ' Rerun with --purge-extras on a CI machine to remove them.' if outcome in ('extra_packages', 'conflicting_source') else ''
+        hint = ' Rerun with --purge-extras on a CI machine to remove them.' if outcome in ('extra_packages', 'unowned_extensions', 'conflicting_source') else ''
         raise BuildError(f'php.install-build ended with {outcome} ({details}).{hint}\n{log[-4000:]}')
     print(f'php.install-build: {outcome}; changed {", ".join(data.get("changed", [])) or "nothing"}, '
-          f'purged {", ".join(data.get("purged", [])) or "nothing"}.')
+          f'purged {", ".join(data.get("purged", [])) or "nothing"}, '
+          f'disabled {", ".join(data.get("disabled", [])) or "nothing"}.')
     conf = Path(f'/etc/php/{version}/cli/conf.d')
     ci_ini, coverage_ini = conf / '99-orbit-ci.ini', conf / '99-orbit-coverage.ini'
     ci_ini.write_text('zend.exception_ignore_args=0\n') if ci else ci_ini.unlink(missing_ok=True)
