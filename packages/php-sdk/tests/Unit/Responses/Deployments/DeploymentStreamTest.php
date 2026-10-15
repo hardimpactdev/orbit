@@ -112,6 +112,19 @@ describe(DeploymentStream::class, function (): void {
             ->and($closed)->toBeTrue();
     });
 
+    it('decodes the production Process restart phase', function (): void {
+        $body = deployment_stream_line([
+            'type' => 'phase', 'sequence' => 1, 'request_id' => deployment_stream_request_id(), 'phase' => 'process_restart',
+        ]).deployment_stream_line(deployment_stream_result(2));
+        $closed = false;
+        $events = iterator_to_array(deployment_chunked_stream($body, [3], $closed));
+
+        expect($events[0])->toBeInstanceOf(DeploymentPhaseEvent::class)
+            ->and($events[0]->phase)->toBe('process_restart')
+            ->and($events[0]->stepName)->toBeNull()
+            ->and($events[1]->succeeded())->toBeTrue();
+    });
+
     it('yields a typed terminal failure without reporting success', function (): void {
         $body = deployment_stream_line([
             ...deployment_stream_result(1),

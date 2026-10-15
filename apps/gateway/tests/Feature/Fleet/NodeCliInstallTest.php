@@ -19,7 +19,8 @@ use Tests\Support\Fleet\ScriptedSshExecutor;
 
 function cliInstallNode(): Node
 {
-    FleetFixtures::node('gateway', [RoleName::Gateway]);
+    // The CLI profile names the Gateway's own WireGuard address, so the test sets it rather than the fixture counter.
+    FleetFixtures::node('gateway', [RoleName::Gateway])->update(['wireguard_ip' => '10.44.0.1']);
 
     return new Node(['name' => 'dev', 'platform' => 'linux', 'architecture' => 'x86_64', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.2']);
 }

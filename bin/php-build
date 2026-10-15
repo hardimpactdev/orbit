@@ -1,0 +1,431 @@
+#!/usr/bin/env python3
+"""Install, verify, and bump the one PHP build that the machine software recipe pins. See ADR 0216.
+
+  bin/php-build verify [--recipe PATH] [--version X.Y]
+  sudo bin/php-build install [--ci] [--purge-extras] [--coverage pcov|none] [--no-composer] [--recipe PATH] [--version X.Y]
+  bin/php-build mirror --directory DIR # download every pinned file for the php-build-mirror release
+  bin/php-build key [--all]            # digest of the pins, for a download cache key
+  bin/php-build describe               # the upstream PHP releases the recipe pins
+  bin/php-build bump [--dry-run]       # move every Sury PHP pin to Sury's newest build
+
+`install` runs apps/gateway/resources/remote/php/install-build.py, the one installer that Nodes and images run too.
+`verify` exits 1 when the `php` on PATH is not the recipe build: its PHP_VERSION, its CLI modules, or a package version.
+"""
+import argparse
+import gzip
+import hashlib
+import json
+import lzma
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import urllib.request
+
+ROOT = Path(__file__).resolve().parent.parent
+RECIPE = ROOT / 'apps/gateway/resources/machine-software/recipe.json'
+REMOTE = ROOT / 'apps/gateway/resources/remote'
+# php.install-build keeps every pinned and repacked file here; they are the rollback.
+CACHE = Path('/var/cache/orbit/php-packages')
+SURY = 'https://packages.sury.org/php/'
+# The Sury signing key, pinned as in apps/gateway/app/Infrastructure/Nodes and docs/reference/node-provisioning.md.
+SURY_KEY_SHA256 = 'b486fd5488185c4c46467960fa69c53d5085fec492cf76b9eaf3db33561c9d7c'
+CODENAMES = {'26.04': 'resolute'}
+COMPOSER_VERSION = '2.10.3'
+COMPOSER_SHA256 = '7a2d379d5b8ffdaa028580ef26494c36d2feef4b178d3dd1473a4dbc5e17c8d6'
+FIX = ('Fix the host: on a GitHub-hosted runner the PHP action installs the build; on Sabre run '
+       '`php artisan node:converge-recipe sabre --profile=ci-runner` on the Gateway; in a shard container run '
+       '`tools/ci-runners/setup.sh container NAME` on its host; elsewhere run `sudo bin/php-build install`.')
+
+
+class BuildError(Exception):
+    pass
+
+
+def load(path):
+    return json.loads(Path(path).read_text())
+
+
+def upstream(version):
+    """`8.5.11-1+0~...` and `2:8.5.11-1` both report PHP_VERSION 8.5.11."""
+    return re.sub(r'^[0-9]+:', '', version).split('-', 1)[0]
+
+
+def build(recipe, version=None, architecture=None):
+    """The recipe's PHP set of one version: its pins for one architecture and the CLI extensions."""
+    php = recipe['php']
+    version = version or php['ci']
+    if version not in php['versions']:
+        raise BuildError(f'The recipe has no PHP {version} build.')
+    selected = php['versions'][version]
+    names = sorted(set(selected['packages']) | set(php['shared']))
+    pins = {}
+    for name in names:
+        tool = recipe['tools'][name]
+        if architecture is not None:
+            artifact = tool['artifacts'].get(architecture)
+            if artifact is None:
+                raise BuildError(f'The recipe has no {architecture} package for {name}.')
+            pins[name] = {'version': tool['version'], 'url': artifact['url'], 'sha256': artifact['sha256']}
+    return {'version': version, 'php_version': upstream(recipe['tools'][f'php{version}-common']['version']),
+            'packages': names, 'extensions': list(selected['extensions']), 'pins': pins}
+
+
+def modules(text):
+    """`php -m` as the recipe lists it: lower case, sorted, unique, without section headers."""
+    return sorted({line.strip().lower() for line in text.splitlines() if line.strip() and not line.startswith('[')})
+
+
+def compare(expected, php_version, loaded, installed):
+    """Every difference between the host and the recipe build, as readable lines. Empty means the build matches."""
+    problems = []
+    if php_version != expected['php_version']:
+        problems.append(f'PHP_VERSION is {php_version or "missing"}, expected {expected["php_version"]}.')
+    missing = sorted(set(expected['extensions']) - set(loaded))
+    extra = sorted(set(loaded) - set(expected['extensions']))
+    if missing:
+        problems.append('Missing extensions: ' + ', '.join(missing) + '.')
+    if extra:
+        problems.append('Extra extensions: ' + ', '.join(extra) + '.')
+    for name, pin in sorted(expected['pins'].items()):
+        if installed.get(name) != pin['version']:
+            problems.append(f'{name} is {installed.get(name) or "not installed"}, expected {pin["version"]}.')
+    return problems
+
+
+def pins_digest(recipe, architecture, versions):
+    lines = []
+    for version in versions:
+        for name, pin in sorted(build(recipe, version, architecture)['pins'].items()):
+            lines.append(f'{name} {pin["version"]} {pin["sha256"]}')
+    return hashlib.sha256('\n'.join(sorted(set(lines))).encode()).hexdigest()
+
+
+def run(argv, **kwargs):
+    result = subprocess.run(argv, capture_output=True, text=True, **kwargs)
+    if result.returncode:
+        raise BuildError(f'{" ".join(argv[:3])} failed: {result.stderr.strip()[-2000:]}')
+    return result.stdout
+
+
+def architecture():
+    return run(['dpkg', '--print-architecture']).strip()
+
+
+def installed_versions():
+    output = run(['dpkg-query', '-W', '-f=${Package} ${Status} ${Version}\n'])
+    versions = {}
+    for line in output.splitlines():
+        fields = line.split()
+        if len(fields) == 5 and fields[1:4] == ['install', 'ok', 'installed']:
+            versions[fields[0]] = fields[4]
+    return versions
+
+
+def host_build(php='php'):
+    if shutil.which(php) is None:
+        return '', []
+    version = subprocess.run([php, '-r', 'echo PHP_VERSION;'], capture_output=True, text=True).stdout.strip()
+    loaded = modules(subprocess.run([php, '-m'], capture_output=True, text=True).stdout)
+    return version, loaded
+
+
+def verify(recipe, version):
+    expected = build(recipe, version, architecture())
+    php_version, loaded = host_build()
+    problems = compare(expected, php_version, loaded, installed_versions())
+    if problems:
+        raise BuildError(f'The PHP on this host is not the recipe build (PHP {expected["version"]}, '
+                         f'{RECIPE.relative_to(ROOT)}):\n  ' + '\n  '.join(problems) + '\n' + FIX)
+    print(f'PHP {php_version} matches the recipe build: {len(expected["pins"])} packages, '
+          f'{len(expected["extensions"])} extensions.')
+
+
+def download(url, destination, sha256):
+    if destination.is_file() and hashlib.sha256(destination.read_bytes()).hexdigest() == sha256:
+        return
+    if not url.startswith('https://'):
+        raise BuildError(f'Refusing a non-HTTPS URL: {url}')
+    partial = destination.with_suffix('.partial')
+    try:
+        with urllib.request.urlopen(url, timeout=60) as response:
+            if not response.geturl().startswith('https://'):
+                raise BuildError(f'{url} redirected away from HTTPS.')
+            partial.write_bytes(response.read())
+    except OSError as error:
+        raise BuildError(f'{url} cannot be downloaded ({error}). Sury may have published a newer build; '
+                         'run `bin/php-build bump`.') from error
+    if hashlib.sha256(partial.read_bytes()).hexdigest() != sha256:
+        partial.unlink()
+        raise BuildError(f'{url} does not match its recipe SHA-256 digest.')
+    partial.rename(destination)
+
+
+def installer_input(recipe, versions, *, mode='apply', pcov=True, extras='refuse', fpm='shared'):
+    """The input of php.install-build, as PhpBuildInstaller::input() builds it in the Gateway."""
+    sets = {}
+    for version in versions:
+        selected = recipe['php']['versions'][version]
+        packages = []
+        for name in sorted(set(selected['packages']) | set(recipe['php']['shared'])):
+            tool = recipe['tools'][name]
+            for architecture, artifact in tool['artifacts'].items():
+                packages.append({'name': name, 'version': tool['version'], 'architecture': architecture,
+                                 'url': artifact['url'], 'sha256': artifact['sha256']})
+        sets[version] = {'packages': packages, 'extensions': selected['extensions']}
+    rollback = recipe['php']['rollback']
+    return {'mode': mode, 'versions': sets, 'mirror': recipe['php']['mirror'], 'pcov': pcov, 'extras': extras,
+            'fpm': fpm, 'repack': {'package': rollback, 'version': recipe['tools'][rollback]['version']},
+            'release': {'id': 'ubuntu', 'codenames': [CODENAMES[recipe['ubuntu']['release']]]}, 'git_read': {}}
+
+
+def assemble(name):
+    """The program as the Gateway sends it: the libraries on its `Uses` line, then the program."""
+    area, stem = name.split('.')
+    text = (REMOTE / area / f'{stem}.py').read_text()
+    uses = next((line.split(':', 1)[1].split() for line in text.splitlines() if line.startswith('# Uses:')), [])
+    parts = [(REMOTE / library).read_text() for library in uses] + [text]
+    return ''.join(part if part.endswith('\n') else part + '\n' for part in parts)
+
+
+def run_installer(payload):
+    """Run php.install-build, the one installer of the PHP build (ADR 0216), and return (outcome, data, log)."""
+    completed = subprocess.run(['python3', '-I', '-c', (REMOTE / 'bootstrap.py').read_text(), 'php.install-build'],
+                               input=assemble('php.install-build').encode() + b'\0' + json.dumps(payload).encode(),
+                               capture_output=True, timeout=1800)
+    log = completed.stderr.decode(errors='replace')
+    try:
+        result = json.loads(completed.stdout.decode().strip().splitlines()[-1])
+    except (IndexError, ValueError):
+        raise BuildError('php.install-build ended without a result:\n' + log[-4000:])
+    return result['outcome'], result['data'], log
+
+
+def install(recipe, version, ci, coverage, composer, purge):
+    if os.geteuid() != 0:
+        raise BuildError('Install needs root: run `sudo bin/php-build install`.')
+    version = version or recipe['php']['ci']
+    # A CI machine purges the PHP packages outside the recipe only when asked: --purge-extras.
+    outcome, data, log = run_installer(installer_input(recipe, [version], extras='purge' if purge else 'refuse'))
+    if outcome not in ('current', 'applied'):
+        details = ', '.join(f'{key}: {value}' for key, value in data.items())
+        hint = ' Rerun with --purge-extras on a CI machine to remove them.' if outcome in ('extra_packages', 'unowned_extensions', 'conflicting_source') else ''
+        raise BuildError(f'php.install-build ended with {outcome} ({details}).{hint}\n{log[-4000:]}')
+    print(f'php.install-build: {outcome}; changed {", ".join(data.get("changed", [])) or "nothing"}, '
+          f'repaired {", ".join(data.get("repaired", [])) or "nothing"}, '
+          f'purged {", ".join(data.get("purged", [])) or "nothing"}, '
+          f'disabled {", ".join(data.get("disabled", [])) or "nothing"}.')
+    conf = Path(f'/etc/php/{version}/cli/conf.d')
+    ci_ini, coverage_ini = conf / '99-orbit-ci.ini', conf / '99-orbit-coverage.ini'
+    ci_ini.write_text('zend.exception_ignore_args=0\n') if ci else ci_ini.unlink(missing_ok=True)
+    # Without coverage the extension stays loaded, so the loaded set still matches the recipe.
+    coverage_ini.write_text('pcov.enabled=0\n') if coverage == 'none' else coverage_ini.unlink(missing_ok=True)
+    if Path(f'/usr/bin/php{version}').exists():
+        run(['update-alternatives', '--set', 'php', f'/usr/bin/php{version}'])
+    if composer:
+        target = Path('/usr/local/bin/composer')
+        CACHE.mkdir(parents=True, exist_ok=True)
+        phar = CACHE / f'composer-{COMPOSER_VERSION}.phar'
+        download(f'https://getcomposer.org/download/{COMPOSER_VERSION}/composer.phar', phar, COMPOSER_SHA256)
+        if not target.is_file() or hashlib.sha256(target.read_bytes()).hexdigest() != COMPOSER_SHA256:
+            shutil.copyfile(phar, target)
+        target.chmod(0o755)
+    verify(recipe, version)
+
+
+def mirror(recipe, directory):
+    """Download every pinned PHP file of every version and architecture into `directory`, named as the mirror serves
+    them, `<package>_<sha256>.deb`. CI publishes the directory as the php-build-mirror release."""
+    directory.mkdir(parents=True, exist_ok=True)
+    names = set(recipe['php']['shared']).union(*(set(v['packages']) for v in recipe['php']['versions'].values()))
+    for name in sorted(names):
+        for artifact in recipe['tools'][name]['artifacts'].values():
+            download(artifact['url'], directory / f'{name}_{artifact["sha256"]}.deb', artifact['sha256'])
+    print(f'{len(list(directory.glob("*.deb")))} files in {directory}')
+
+
+def fetch(url):
+    with urllib.request.urlopen(url, timeout=60) as response:
+        return response.read()
+
+
+def signed_release(codename, work):
+    key = work / 'sury.gpg'
+    key.write_bytes(fetch(SURY + 'apt.gpg'))
+    if hashlib.sha256(key.read_bytes()).hexdigest() != SURY_KEY_SHA256:
+        raise BuildError('The Sury signing key does not match its pinned digest.')
+    release = work / 'InRelease'
+    release.write_bytes(fetch(f'{SURY}dists/{codename}/InRelease'))
+    result = subprocess.run(['gpgv', '--keyring', str(key), '--output', '-', str(release)], capture_output=True)
+    if result.returncode:
+        raise BuildError('The Sury InRelease signature does not verify: ' + result.stderr.decode(errors='replace'))
+    return result.stdout.decode()
+
+
+def release_hashes(text):
+    hashes, section = {}, False
+    for line in text.splitlines():
+        if not line.startswith(' '):
+            section = line.strip() == 'SHA256:'
+            continue
+        if section:
+            digest, _size, name = line.split()
+            hashes[name] = digest
+    return hashes
+
+
+def stanzas(text):
+    for block in text.split('\n\n'):
+        fields = {}
+        for line in block.splitlines():
+            if line and not line.startswith(' ') and ':' in line:
+                key, value = line.split(':', 1)
+                fields[key] = value.strip()
+        if fields.get('Package'):
+            yield fields
+
+
+def _order(character):
+    if character == '~':
+        return -1
+    if character.isalpha():
+        return ord(character)
+    return ord(character) + 256 if character else 0
+
+
+def _compare_part(left, right):
+    """Debian's comparison of an upstream version or revision: alternating non-digit and digit runs."""
+    while left or right:
+        left_text = re.match(r'[^0-9]*', left).group()
+        right_text = re.match(r'[^0-9]*', right).group()
+        for index in range(max(len(left_text), len(right_text))):
+            a = _order(left_text[index] if index < len(left_text) else '')
+            b = _order(right_text[index] if index < len(right_text) else '')
+            if a != b:
+                return -1 if a < b else 1
+        left, right = left[len(left_text):], right[len(right_text):]
+        left_number = re.match(r'[0-9]*', left).group()
+        right_number = re.match(r'[0-9]*', right).group()
+        if int(left_number or 0) != int(right_number or 0):
+            return -1 if int(left_number or 0) < int(right_number or 0) else 1
+        left, right = left[len(left_number):], right[len(right_number):]
+    return 0
+
+
+def compare_versions(left, right):
+    """dpkg --compare-versions, so the bump picks the same newest build as apt."""
+    def split(version):
+        epoch, _, rest = version.rpartition(':') if ':' in version else ('0', '', version)
+        upstream_part, _, revision = rest.rpartition('-') if '-' in rest else (rest, '', '0')
+        return int(epoch or 0), upstream_part, revision
+    left_epoch, left_upstream, left_revision = split(left)
+    right_epoch, right_upstream, right_revision = split(right)
+    if left_epoch != right_epoch:
+        return -1 if left_epoch < right_epoch else 1
+    return _compare_part(left_upstream, right_upstream) or _compare_part(left_revision, right_revision)
+
+
+def newer(left, right):
+    return compare_versions(left, right) > 0
+
+
+def index(codename, arch, hashes, work):
+    for suffix, decompress in (('.xz', lzma.decompress), ('.gz', gzip.decompress), ('', lambda data: data)):
+        name = f'main/binary-{arch}/Packages{suffix}'
+        if name in hashes:
+            data = fetch(f'{SURY}dists/{codename}/{name}')
+            if hashlib.sha256(data).hexdigest() != hashes[name]:
+                raise BuildError(f'{name} does not match the signed InRelease.')
+            return decompress(data).decode()
+    raise BuildError(f'Sury publishes no package index for {codename} {arch}.')
+
+
+def bump_recipe(recipe, indexes):
+    """Move every pin of every PHP set to the newest build in `indexes` (architecture to Packages text)."""
+    php = recipe['php']
+    names = sorted(set(php['shared']).union(*(set(v['packages']) for v in php['versions'].values())))
+    changes = []
+    for arch, text in indexes.items():
+        newest = {}
+        for fields in stanzas(text):
+            name = fields['Package']
+            if name in names and fields.get('Architecture') in (arch, 'all'):
+                if name not in newest or newer(fields['Version'], newest[name]['Version']):
+                    newest[name] = fields
+        for name in names:
+            if name not in newest:
+                raise BuildError(f'Sury has no {arch} package {name}.')
+            fields, tool = newest[name], recipe['tools'][name]
+            artifact = {'url': SURY + fields['Filename'], 'sha256': fields['SHA256']}
+            if tool['version'] != fields['Version'] or tool['artifacts'][arch] != artifact:
+                changes.append(f'{name} {arch}: {tool["version"]} -> {fields["Version"]}')
+                tool['version'] = fields['Version']
+                tool['artifacts'][arch] = artifact
+    for version, selected in php['versions'].items():
+        common = recipe['tools'][f'php{version}-common']['version']
+        for name in selected['packages']:
+            pinned = recipe['tools'][name]['version']
+            if pinned.startswith(version + '.') and pinned != common:
+                raise BuildError(f'Sury publishes {name} {pinned} beside php{version}-common {common}. '
+                                 'It is between builds; run the bump again later.')
+    return changes
+
+
+def bump(path, dry_run):
+    recipe = load(path)
+    codename = CODENAMES[recipe['ubuntu']['release']]
+    with tempfile.TemporaryDirectory(prefix='orbit-php-bump-') as directory:
+        hashes = release_hashes(signed_release(codename, Path(directory)))
+        indexes = {arch: index(codename, arch, hashes, Path(directory)) for arch in recipe['architectures']}
+    changes = bump_recipe(recipe, indexes)
+    for change in changes:
+        print(change)
+    if not changes:
+        print('The recipe pins Sury\'s newest PHP build.')
+    elif not dry_run:
+        Path(path).write_text(json.dumps(recipe, indent=4) + '\n')
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    commands = parser.add_subparsers(dest='command', required=True)
+    for name in ('verify', 'install', 'key', 'describe', 'bump', 'mirror'):
+        command = commands.add_parser(name)
+        command.add_argument('--recipe', default=str(RECIPE))
+        if name in ('verify', 'install', 'key'):
+            command.add_argument('--version')
+    commands.choices['install'].add_argument('--ci', action='store_true', help='Set zend.exception_ignore_args=0 for the CLI.')
+    commands.choices['install'].add_argument('--coverage', choices=('pcov', 'none'), default='pcov')
+    commands.choices['install'].add_argument('--purge-extras', action='store_true',
+                                             help='Purge PHP packages and apt sources outside the recipe. CI machines only.')
+    commands.choices['mirror'].add_argument('--directory', required=True)
+    commands.choices['install'].add_argument('--no-composer', action='store_true')
+    commands.choices['key'].add_argument('--all', action='store_true')
+    commands.choices['bump'].add_argument('--dry-run', action='store_true')
+    arguments = parser.parse_args(argv)
+    try:
+        recipe = load(arguments.recipe)
+        if arguments.command == 'verify':
+            verify(recipe, arguments.version)
+        elif arguments.command == 'install':
+            install(recipe, arguments.version, arguments.ci, arguments.coverage, not arguments.no_composer, arguments.purge_extras)
+        elif arguments.command == 'mirror':
+            mirror(recipe, Path(arguments.directory))
+        elif arguments.command == 'key':
+            versions = sorted(recipe['php']['versions']) if arguments.all else [arguments.version or recipe['php']['ci']]
+            print(pins_digest(recipe, architecture(), versions))
+        elif arguments.command == 'describe':
+            print(', '.join(f'PHP {build(recipe, v)["php_version"]}' for v in recipe['php']['versions']))
+        else:
+            bump(arguments.recipe, arguments.dry_run)
+    except BuildError as error:
+        print(f'php-build: {error}', file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

@@ -139,7 +139,7 @@ final readonly class CreateProcessAction
     }
 
     /**
-     * @return array{process: Process, created: bool, attributes: array{runtime: ProcessRuntime, working_directory: ?string, runtime_config: array<string, mixed>, restart_policy: string, keep_alive: bool}}
+     * @return array{process: Process, created: bool, attributes: array{runtime: ProcessRuntime, working_directory: ?string, runtime_config: array<string, mixed>, restart_policy: string, keep_alive: bool, restart_on_deploy: bool}}
      */
     private function reserveAdmission(#[SensitiveParameter] AddProcessData $data): array
     {

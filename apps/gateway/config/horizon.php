@@ -19,6 +19,7 @@ return [
         'gateway:tasks' => 60,
         'gateway:task-vms' => 600,
         'gateway:builds' => 3600,
+        'gateway:operations' => 300,
     ],
     'trim' => [
         'recent' => 60,
@@ -82,6 +83,22 @@ return [
             'timeout' => 1700,
             'nice' => 0,
         ],
+        // Operations, such as an Instance deploy (docs/reference/operations.md). One worker: an operation holds its target
+        // anyway, a single operator rarely deploys two targets at once, and the Gateway's memory is better spent on PHP-FPM.
+        // A second operation waits in the queue until the first ends. The timeout stays above the deadline of 1600 seconds.
+        'operations' => [
+            'connection' => 'gateway',
+            'queue' => ['operations'],
+            'balance' => false,
+            'minProcesses' => 1,
+            'maxProcesses' => 1,
+            'maxTime' => 0,
+            'maxJobs' => 0,
+            'memory' => 256,
+            'tries' => 1,
+            'timeout' => 1700,
+            'nice' => 0,
+        ],
     ],
     // The same supervisors in every environment.
     'environments' => [
@@ -89,6 +106,7 @@ return [
             'tasks' => [],
             'task-vms' => [],
             'builds' => [],
+            'operations' => [],
         ],
     ],
     'watch' => [],

@@ -18,5 +18,5 @@ it('keeps documentation tooling guidance beside the project', function (): void 
     expect($composer['scripts']['guidance:check'] ?? null)
         ->toBe('../../bin/guidance-check')
         ->and($composer['scripts']['test'] ?? null)
-        ->toBe('../../bin/pest-plain vendor/bin/pest --parallel --tia --compact --colors=never');
+        ->toBe('../../bin/pest-plain vendor/bin/pest --parallel --processes=$(../../bin/check-processes) --tia --compact --colors=never');
 });

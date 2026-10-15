@@ -79,7 +79,7 @@ final readonly class SshProgramRunner implements RemoteProgramRunner
         }
 
         return $program->language === RemoteProgramLanguage::Python
-            ? $this->pythonResult($program, $result)
+            ? self::pythonResult($program, $result)
             : $this->bashResult($result);
     }
 
@@ -100,12 +100,35 @@ final readonly class SshProgramRunner implements RemoteProgramRunner
         $payload = $program->source."\0".json_encode($input, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 
         return new RemoteCommand(
-            arguments: ['python3', '-I', '-c', $this->catalog->bootstrap(), $program->name],
+            arguments: self::pythonArguments($program, $this->catalog->bootstrap()),
             input: $variables === [] ? $payload : null,
             protectedInput: $variables === [] ? null : ProtectedInput::gitCredential($payload),
             maxOutputBytes: self::OutputLimitBytes,
             cancelled: $cancelled,
             timeout: $timeout,
+        );
+    }
+
+    /** @return list<string> How a Python program starts on a Node. */
+    public static function pythonArguments(RemoteProgram $program, string $bootstrap): array
+    {
+        return ['python3', '-I', '-c', $bootstrap, $program->name];
+    }
+
+    /**
+     * The command that runs a Python program without a Git credential, for a caller with its own SSH executor.
+     *
+     * @param  array<string, mixed>  $input
+     */
+    public static function pythonCommand(RemoteProgram $program, string $bootstrap, array $input): RemoteCommand
+    {
+        $input['git_read'] = new stdClass;
+
+        return new RemoteCommand(
+            arguments: self::pythonArguments($program, $bootstrap),
+            input: $program->source."\0".json_encode($input, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+            maxOutputBytes: self::OutputLimitBytes,
+            timeout: (float) $program->timeoutSeconds,
         );
     }
 
@@ -134,7 +157,13 @@ final readonly class SshProgramRunner implements RemoteProgramRunner
         );
     }
 
-    private function pythonResult(RemoteProgram $program, CommandResult $result): ProgramResult
+    /**
+     * The result of a Python program run. A caller that sends the program through its own SSH executor, such as the PHP
+     * step of an Instance, reads its result here, so the result contract stays in one place.
+     *
+     * @throws RemoteProgramFailed
+     */
+    public static function pythonResult(RemoteProgram $program, CommandResult $result): ProgramResult
     {
         if (! $result->succeeded()) {
             throw new RemoteProgramFailed($program->name, RemoteProgramFailure::NoResult, $result->stderr, exitCode: $result->exitCode);

@@ -4,56 +4,35 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Nodes;
 
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\UbuntuRelease;
+use App\Domain\RemotePrograms\ProgramResult;
+use App\Domain\RemotePrograms\RemoteProgramFailed;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\AppProd\ProductionSshExecutor;
+use App\Infrastructure\MachineSoftware\MachineRecipe;
+use App\Infrastructure\MachineSoftware\PhpBuildInstaller;
+use App\Infrastructure\MachineSoftware\RecipeLoader;
+use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
+use App\Infrastructure\RemotePrograms\SshProgramRunner;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
+/**
+ * The PHP step of an Instance. It installs the recipe's exact PHP build of each selected version through
+ * `php.install-build`, the one installer (ADR 0216), and then publishes the Orbit runtime module of each version.
+ * An Instance step keeps PHP packages outside the recipe and installs with --no-remove, so it never removes a site's
+ * extension; recipe convergence refuses such packages instead.
+ */
 final readonly class RemotePhpPackageManager
 {
     private const string EXPECTED_DISTRIBUTION = 'ubuntu';
 
-    private const string SOURCE_URI = 'https://packages.sury.org/php/';
-
-    private const string KEY_URL = 'https://packages.sury.org/php/apt.gpg';
-
-    private const string KEYRING_PATH = '/usr/share/keyrings/orbit-sury-php.gpg';
-
-    private const string SOURCE_PATH = '/etc/apt/sources.list.d/orbit-php.sources';
-
-    private const string KEY_SHA256 = 'b486fd5488185c4c46467960fa69c53d5085fec492cf76b9eaf3db33561c9d7c';
-
-    private const string PRIMARY_FINGERPRINT = '15058500A0235D97F5D10063B188E2B695BD4743';
-
-    private const string SECONDARY_FINGERPRINT = '45BEA3E529112086C622F8A4B214EAC28059B8AC';
-
-    private const string SURY_SIGNER = self::PRIMARY_FINGERPRINT;
-
-    /** The line the source script prints when it found the source and every package in place. */
-    private const string SourceCurrent = 'orbit-php-source: current';
-
-    /** @var list<string> */
-    private const array COMMON_SUFFIXES = [
-        'cli',
-        'fpm',
-        'common',
-        'bcmath',
-        'curl',
-        'gd',
-        'imagick',
-        'intl',
-        'mbstring',
-        'mysql',
-        'pgsql',
-        'redis',
-        'sqlite3',
-        'xml',
-        'zip',
-    ];
+    /** The installer keeps every downloaded and repacked file here: the files are the rollback. */
+    public const string CACHE_DIRECTORY = '/var/cache/orbit/php-packages';
 
     /** @var array{source_step: string, source_error: string, install_step: string, install_error: string} */
     private const array APP_DEV_FAILURE_CONTRACT = [
@@ -70,6 +49,14 @@ final readonly class RemotePhpPackageManager
         'install_step' => 'app-prod-php-fpm-install',
         'install_error' => 'app-prod.php_install_failed',
     ];
+
+    /** Installer outcomes that mean the source of the build, not its installation, failed. */
+    private const array SourceOutcomes = ['platform_unsupported', 'conflicting_source', 'download_failed'];
+
+    public function __construct(
+        private ?MachineRecipe $recipe = null,
+        private RemoteProgramCatalog $catalog = new RemoteProgramCatalog,
+    ) {}
 
     /** @param Collection<int, string> $versions */
     public function installForAppDev(Node $node, Collection $versions, DevelopmentSshExecutor $ssh): void
@@ -94,58 +81,38 @@ final readonly class RemotePhpPackageManager
     /** @param Collection<int, string> $versions */
     public function installForAppProd(Node $node, Collection $versions, ProductionSshExecutor $ssh): void
     {
-        $needsPcov = $node->roles->pluck('role')->contains(RoleName::AppDev);
-
-        $profile = $needsPcov ? 'app-dev' : 'app-prod';
+        $profile = $node->roles->pluck('role')->contains(RoleName::AppDev) ? 'app-dev' : 'app-prod';
 
         $this->install($node, $versions, $ssh, RoleName::AppProd, $profile);
     }
 
-    /** @param Collection<int, string> $versions */
+    /**
+     * Installs the build for a dedicated production master. It restarts no PHP-FPM service: the production runtime
+     * restarts its own master.
+     *
+     * @param  Collection<int, string>  $versions
+     */
     public function installPackagesOnlyForAppProd(Node $node, Collection $versions, ProductionSshExecutor $ssh): void
     {
         if ($versions->isEmpty()) {
             return;
         }
 
-        $profiles = [];
-
-        foreach ($versions as $version) {
-            $profiles[$version] = $this->packages($version, 'app-prod');
-        }
-
-        $allPackages = array_values(array_unique(array_merge(...array_values($profiles))));
-        $allowCliPcov = $node->roles->pluck('role')->contains(RoleName::AppDev);
-        $this->convergeSource(
-            $node,
-            $allPackages,
-            $ssh,
-            self::APP_PROD_FAILURE_CONTRACT,
-            RoleName::AppProd,
-        );
-
-        foreach ($profiles as $version => $packages) {
-            $this->installPackagesOnlyProfile($node, $version, $packages, $allowCliPcov, $ssh);
-        }
+        $this->runInstaller($node, array_values($versions->all()), $ssh, self::APP_PROD_FAILURE_CONTRACT, RoleName::AppProd, $this->pcov($node), fpm: 'none');
     }
 
     /**
-     * The programs that install the `app-dev` PHP packages of `$versions` on an `app-dev` Node, as
-     * {@see self::installForAppDev()} runs them: the source first, then one install for each version. The task VM
-     * base image runs them, so a task VM's Instance finds its packages installed and its source current.
+     * The programs that install the `app-dev` PHP build of `$versions` on an `app-dev` Node, as
+     * {@see self::installForAppDev()} runs them: the installer first, then the runtime module of each version.
      *
      * @param  list<string>  $versions
-     * @return array<string, RemoteCommand> keyed `source` and the version
+     * @return array<string, RemoteCommand> keyed `install` and the version
      */
     public function appDevPrograms(array $versions): array
     {
-        $profiles = [];
-        foreach ($versions as $version) {
-            $profiles[$version] = $this->packages($version, 'app-dev');
-        }
-        $programs = ['source' => $this->sourceCommand(array_values(array_unique(array_merge(...array_values($profiles)))), RoleName::AppDev)];
-        foreach ($profiles as $version => $packages) {
-            $programs[$version] = $this->profileCommand($version, 'app-dev', $packages, RoleName::AppDev);
+        $programs = ['install' => $this->installerCommand($versions, RoleName::AppDev, pcov: true, fpm: 'shared')];
+        foreach (array_values(array_unique($versions)) as $version) {
+            $programs[$version] = $this->profileCommand($version, 'app-dev', RoleName::AppDev);
         }
 
         return $programs;
@@ -170,372 +137,119 @@ final readonly class RemotePhpPackageManager
             return;
         }
 
-        $profiles = [];
+        $selected = array_values(array_unique($versions->all()));
+        $this->runInstaller($node, $selected, $ssh, $failure, $role, pcov: $this->pcov($node), fpm: 'shared');
 
-        foreach ($versions as $version) {
-            $profiles[$version] = $this->packages($version, $profile);
-        }
-
-        $allPackages = array_values(array_unique(array_merge(...array_values($profiles))));
-
-        $this->convergeSource($node, $allPackages, $ssh, $failure, $role);
-
-        foreach ($profiles as $version => $packages) {
-            $this->installProfile(
+        foreach ($selected as $version) {
+            $ssh->execute(
                 $node,
-                $version,
-                $profile,
-                $packages,
-                $ssh,
-                $failure,
-                $role,
+                $this->profileCommand($version, $profile, $role),
+                step: $failure['install_step'],
+                errorCode: $failure['install_error'],
             );
         }
     }
 
     /**
-     * Converges the pinned Sury source, unless the source script finds everything in place: the keyring holds the
-     * pinned key, the source file is the one it renders, and every package is installed. Installation then installs
-     * nothing, so the key download, the source refresh, and the candidate checks, which guard only what apt would
-     * install, are skipped. The script still refuses a conflicting PHP source and unsafe source files first.
-     *
-     * @param  list<string>  $packages
+     * @param  list<string>  $versions
      * @param  array{source_step: string, source_error: string, install_step: string, install_error: string}  $failure
      */
-    private function convergeSource(
+    private function runInstaller(
         Node $node,
-        array $packages,
+        array $versions,
         DevelopmentSshExecutor|ProductionSshExecutor $ssh,
         array $failure,
         RoleName $role,
+        bool $pcov,
+        string $fpm,
     ): void {
-        $result = $ssh->execute(
-            $node,
-            $this->sourceCommand($packages, $role),
-            step: $failure['source_step'],
-            errorCode: $failure['source_error'],
-        );
-        if (in_array(self::SourceCurrent, explode("\n", $result->stdout), true)) {
-            Log::info('PHP packages are in place; skipped the package source refresh.', ['node' => $node->name, 'packages' => count($packages)]);
+        $recipe = $this->recipe ?? new RecipeLoader()->load();
+        foreach ($versions as $version) {
+            if (! isset($recipe->php[$version])) {
+                throw new RuntimeConvergenceException(
+                    step: $failure['source_step'],
+                    errorCode: $failure['source_error'],
+                    message: "The machine software recipe has no PHP {$version} build.",
+                );
+            }
         }
+        $command = $this->installerCommand($versions, $role, $pcov, $fpm);
+        $result = $ssh->execute($node, $command, step: $failure['source_step'], errorCode: $failure['source_error']);
+        $program = $this->catalog->program(PhpBuildInstaller::Program);
+        try {
+            $outcome = SshProgramRunner::pythonResult($program, $result);
+        } catch (RemoteProgramFailed $exception) {
+            throw new RuntimeConvergenceException(
+                step: $failure['install_step'],
+                errorCode: $failure['install_error'],
+                message: "The PHP build installer ended without a result on node [{$node->name}].",
+                previous: $exception,
+                result: $result,
+            );
+        }
+        if (in_array($outcome->outcome, PhpBuildInstaller::Succeeded, true)) {
+            $this->logOutcome($node, $outcome);
+
+            return;
+        }
+        $source = in_array($outcome->outcome, self::SourceOutcomes, true);
+        throw new RuntimeConvergenceException(
+            step: $source ? $failure['source_step'] : $failure['install_step'],
+            errorCode: $source ? $failure['source_error'] : $failure['install_error'],
+            message: $outcome->outcome === 'platform_unsupported'
+                ? UbuntuRelease::unsupportedText($outcome->string('id') ?? '', $outcome->string('codename') ?? '')
+                : PhpBuildInstaller::describe($outcome),
+            result: $result,
+        );
     }
 
-    /** @param list<string> $packages */
-    private function sourceCommand(array $packages, RoleName $role): RemoteCommand
+    /** @param  list<string>  $versions */
+    private function installerCommand(array $versions, RoleName $role, bool $pcov, string $fpm): RemoteCommand
     {
-        return new RemoteCommand(
-            arguments: [
-                'bash',
-                '-seu',
-                '--',
-                self::EXPECTED_DISTRIBUTION,
-                UbuntuRelease::unsupportedText(),
-                (string) count(UbuntuRelease::forRole($role)),
-                ...array_map(
-                    static fn (UbuntuRelease $release): string => $release->value,
-                    UbuntuRelease::forRole($role),
-                ),
-                self::SOURCE_URI,
-                self::KEY_URL,
-                self::KEYRING_PATH,
-                self::SOURCE_PATH,
-                self::KEY_SHA256,
-                self::PRIMARY_FINGERPRINT,
-                self::SECONDARY_FINGERPRINT,
-                self::SURY_SIGNER,
-                ...$packages,
-            ],
-            input: OsReleaseParserProgram::render()."\n".<<<'BASH'
-                expected_uri=$1
-                key_url=$2
-                keyring_path=$3
-                source_path=$4
-                expected_sha256=$5
-                primary_fingerprint=$6
-                secondary_fingerprint=$7
-                sury_signer=$8
-                shift 8
+        $recipe = $this->recipe ?? new RecipeLoader()->load();
+        $release = [
+            'id' => self::EXPECTED_DISTRIBUTION,
+            'codenames' => array_map(static fn (UbuntuRelease $release): string => $release->value, UbuntuRelease::forRole($role)),
+        ];
 
-                for configured_source in \
-                    /etc/apt/sources.list \
-                    /etc/apt/sources.list.d/*.list \
-                    /etc/apt/sources.list.d/*.sources
-                do
-                    if [ ! -f "$configured_source" ] || [ "$configured_source" = "$source_path" ]; then
-                        continue
-                    fi
-
-                    if sudo grep -Eiq \
-                        'ppa\.launchpadcontent\.net/ondrej/php|packages\.sury\.org/php|ondrej/php' \
-                        -- "$configured_source"
-                    then
-                        printf '%s\n' 'A conflicting PHP package source is configured.' >&2
-                        exit 1
-                    fi
-                done
-
-                for managed_path in "$keyring_path" "$source_path"; do
-                    if [ ! -e "$managed_path" ] && [ ! -L "$managed_path" ]; then
-                        continue
-                    fi
-
-                    if [ -L "$managed_path" ] \
-                        || [ ! -f "$managed_path" ] \
-                        || [ "$(stat -c '%U:%G' -- "$managed_path")" != root:root ] \
-                        || [ "$(stat -c '%a' -- "$managed_path")" != 644 ]
-                    then
-                        printf '%s\n' 'An Orbit PHP package source file has unsafe ownership or mode.' >&2
-                        exit 1
-                    fi
-                done
-
-                umask 077
-
-                # Everything in place: the keyring is the pinned key, the source file is the one this script
-                # writes, and every package is installed. Installation then installs nothing, so the download,
-                # the refresh, and the candidate checks below, which guard only what apt installs, are skipped.
-                source_current() {
-                    [ -f "$keyring_path" ] && [ -f "$source_path" ] || return 1
-                    printf '%s  %s\n' "$expected_sha256" "$keyring_path" | sha256sum --check --status || return 1
-                    printf 'Types: deb\nURIs: %s\nSuites: %s\nComponents: main\nSigned-By: %s\n' \
-                        "$expected_uri" \
-                        "$selected_codename" \
-                        "$keyring_path" \
-                        | cmp -s -- - "$source_path" || return 1
-                    probe_home=$(mktemp -d)
-                    current_fingerprints=$(GNUPGHOME="$probe_home" gpg --batch --with-colons --show-keys "$keyring_path" \
-                        | awk -F: '$1 == "fpr" { print $10 }' \
-                        | sort -u) || true
-                    rm -rf -- "$probe_home"
-                    [ "$current_fingerprints" = "$(printf '%s\n%s\n' "$primary_fingerprint" "$secondary_fingerprint" | sort -u)" ] \
-                        || return 1
-                    printf '%s\n' "$current_fingerprints" | grep -qxF "$sury_signer" || return 1
-                    for package in "$@"; do
-                        dpkg-query -W -f='${Status}' -- "$package" 2>/dev/null | grep -qxF 'install ok installed' || return 1
-                    done
-                }
-                if source_current "$@"; then
-                    printf '%s\n' 'orbit-php-source: current'
-                    exit 0
-                fi
-
-                work_directory=$(mktemp -d)
-                gnupg_home="$work_directory/gnupg"
-                install -d -m 0700 -- "$gnupg_home"
-                downloaded_key="$work_directory/apt.gpg"
-                source_candidate="$work_directory/orbit-php.sources"
-                key_backup="$work_directory/keyring.backup"
-                source_backup="$work_directory/source.backup"
-                had_key=0
-                had_source=0
-                published=0
-                keyring_candidate=''
-                apt_source_candidate=''
-
-                if [ -f "$keyring_path" ]; then
-                    cp -- "$keyring_path" "$key_backup"
-                    had_key=1
-                fi
-
-                if [ -f "$source_path" ]; then
-                    cp -- "$source_path" "$source_backup"
-                    had_source=1
-                fi
-
-                restore_source() {
-                    status=$?
-                    trap - EXIT
-
-                    if [ "$status" -ne 0 ] && [ "$published" -eq 1 ]; then
-                        if [ "$had_key" -eq 1 ]; then
-                            sudo install -m 0644 -o root -g root -- "$key_backup" "$keyring_path"
-                        else
-                            sudo rm -f -- "$keyring_path"
-                        fi
-
-                        if [ "$had_source" -eq 1 ]; then
-                            sudo install -m 0644 -o root -g root -- "$source_backup" "$source_path"
-                        else
-                            sudo rm -f -- "$source_path"
-                        fi
-                    fi
-
-                    if [ -n "$keyring_candidate" ]; then
-                        sudo rm -f -- "$keyring_candidate"
-                    fi
-
-                    if [ -n "$apt_source_candidate" ]; then
-                        sudo rm -f -- "$apt_source_candidate"
-                    fi
-
-                    rm -rf -- "$work_directory"
-                    exit "$status"
-                }
-                trap restore_source EXIT
-
-                curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
-                    --output "$downloaded_key" \
-                    "$key_url"
-                printf '%s  %s\n' "$expected_sha256" "$downloaded_key" | sha256sum --check --status
-
-                actual_fingerprints=$(GNUPGHOME="$gnupg_home" gpg --batch --with-colons --show-keys "$downloaded_key" \
-                    | awk -F: '$1 == "fpr" { print $10 }' \
-                    | sort -u)
-                expected_fingerprints=$(printf '%s\n%s\n' \
-                    "$primary_fingerprint" \
-                    "$secondary_fingerprint" \
-                    | sort -u)
-                if [ "$actual_fingerprints" != "$expected_fingerprints" ] \
-                    || ! printf '%s\n' "$actual_fingerprints" | grep -qxF "$sury_signer"
-                then
-                    printf '%s\n' 'The Sury PHP signing key identity does not match Orbit pins.' >&2
-                    exit 1
-                fi
-
-                printf 'Types: deb\nURIs: %s\nSuites: %s\nComponents: main\nSigned-By: %s\n' \
-                    "$expected_uri" \
-                    "$selected_codename" \
-                    "$keyring_path" \
-                    > "$source_candidate"
-
-                if [ ! -f "$keyring_path" ] || ! cmp -s -- "$downloaded_key" "$keyring_path"; then
-                    keyring_candidate=$(sudo mktemp "${keyring_path}.orbit.XXXXXX")
-                    published=1
-                    sudo install -m 0644 -o root -g root -- "$downloaded_key" "$keyring_candidate"
-                    sudo mv -- "$keyring_candidate" "$keyring_path"
-                    keyring_candidate=''
-                fi
-
-                if [ ! -f "$source_path" ] || ! cmp -s -- "$source_candidate" "$source_path"; then
-                    apt_source_candidate=$(sudo mktemp "${source_path}.orbit.XXXXXX")
-                    published=1
-                    sudo install -m 0644 -o root -g root -- "$source_candidate" "$apt_source_candidate"
-                    sudo mv -- "$apt_source_candidate" "$source_path"
-                    apt_source_candidate=''
-                fi
-
-                # Refresh only the Sury source. Another source that fails to fetch must not fail
-                # the PHP step, and the other sources' lists stay in place for the candidate checks.
-                sudo env DEBIAN_FRONTEND=noninteractive \
-                    apt-get -o DPkg::Lock::Timeout=300 \
-                    -o Dir::Etc::SourceList="$source_path" \
-                    -o Dir::Etc::SourceParts=- \
-                    -o APT::Get::List-Cleanup=0 \
-                    update
-
-                expected_origin="${expected_uri%/} $selected_codename/main"
-                package_architecture=$(dpkg --print-architecture)
-                for package in "$@"; do
-                    policy=$(apt-cache policy -- "$package")
-                    candidate=$(printf '%s\n' "$policy" | awk '$1 == "Candidate:" { print $2; exit }')
-                    if [ -z "$candidate" ] || [ "$candidate" = '(none)' ]; then
-                        printf '%s\n' "A required PHP package candidate is unavailable: $package" >&2
-                        exit 1
-                    fi
-
-                    madison=$(apt-cache madison -- "$package")
-                    if printf '%s\n' "$madison" | awk -F '|' \
-                        -v candidate="$candidate" \
-                        -v package="$package" \
-                        -v architecture="$package_architecture" \
-                        -v origin="$expected_origin" '
-                            function trim(value) {
-                                gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
-                                return value
-                            }
-                            NF != 3 || trim($1) != package { malformed = 1 }
-                            NF == 3 && trim($1) == package && trim($2) == candidate {
-                                value = trim($3)
-                                prefix = origin " "
-                                if (index(value, prefix) == 1) {
-                                    suffix = substr(value, length(prefix) + 1)
-                                    count = split(suffix, fields, /[[:space:]]+/)
-                                    if (count == 2 && fields[1] == architecture && fields[2] == "Packages") { found = 1 }
-                                }
-                                else { foreign = 1 }
-                            }
-                            END { exit found && ! foreign && ! malformed ? 0 : 1 }
-                        '; then
-                        continue
-                    fi
-
-                    installed=$(dpkg-query -W -f='${Status} ${Version}\n' -- "$package" 2>/dev/null || true)
-                    if ! printf '%s\n' "$installed" | awk -v candidate="$candidate" \
-                        '$1 == "install" && $2 == "ok" && $3 == "installed" && $4 == candidate { found = 1 } END { exit found ? 0 : 1 }'
-                    then
-                        printf '%s\n' "A required PHP package candidate is unavailable from the pinned Sury source: $package" >&2
-                        exit 1
-                    fi
-
-                    printf '%s\n' "$madison" | awk -F '|' -v candidate="$candidate" -v package="$package" -v architecture="$package_architecture" -v origin="$expected_origin" '
-                        function trim(value) { gsub(/^[[:space:]]+|[[:space:]]+$/, "", value); return value }
-                        NF != 3 || trim($1) != package { malformed = 1 }
-                        NF == 3 {
-                            version = trim($2); value = trim($3); prefix = origin " "
-                            if (trim($1) != package) { malformed = 1 }
-                            else if (version == candidate) { foreign = 1 }
-                            else if (index(value, prefix) == 1) {
-                                suffix = substr(value, length(prefix) + 1)
-                                count = split(suffix, fields, /[[:space:]]+/)
-                                if (count == 2 && fields[1] == architecture && fields[2] == "Packages") { found = 1 } else { malformed = 1 }
-                            }
-                        }
-                        END { exit found && ! foreign && ! malformed ? 0 : 1 }
-                    '
-                done
-
-                published=0
-                trap - EXIT
-                rm -rf -- "$work_directory"
-                BASH,
+        return SshProgramRunner::pythonCommand(
+            $this->catalog->program(PhpBuildInstaller::Program),
+            $this->catalog->bootstrap(),
+            PhpBuildInstaller::input($recipe, $versions, 'apply', $pcov, extras: 'keep', fpm: $fpm, release: $release),
         );
     }
 
     /**
-     * Installation enables the shared FPM service but never starts it. The caller starts or reloads
-     * it after it publishes the pools, so a stale pool that stops FPM from starting cannot block the
-     * publication that removes it. A changed runtime module reloads a running FPM only when the
-     * installed configuration passes `php-fpm -t`; otherwise the pool publication reloads it.
-     *
-     * @param  list<string>  $packages
-     * @param  array{source_step: string, source_error: string, install_step: string, install_error: string}  $failure
+     * PCOV follows the Node's roles, as in recipe convergence, so every step on one Node asks for the same placement and
+     * an Instance step never toggles PCOV or restarts PHP-FPM for it (ADR 0216).
      */
-    private function installProfile(
-        Node $node,
-        string $version,
-        string $profile,
-        array $packages,
-        DevelopmentSshExecutor|ProductionSshExecutor $ssh,
-        array $failure,
-        RoleName $role,
-    ): void {
-        $ssh->execute(
-            $node,
-            $this->profileCommand($version, $profile, $packages, $role),
-            step: $failure['install_step'],
-            errorCode: $failure['install_error'],
-        );
+    private function pcov(Node $node): bool
+    {
+        $roles = $node->roles->map(static fn ($role): string => $role->role->value)->all();
+        $recipe = $this->recipe ?? new RecipeLoader()->load();
+
+        return array_intersect($roles, $recipe->phpPolicy->pcovProfiles) !== [];
     }
 
-    /** @param list<string> $packages */
-    private function profileCommand(string $version, string $profile, array $packages, RoleName $role): RemoteCommand
+    private function logOutcome(Node $node, ProgramResult $outcome): void
     {
-        $pcovSetup = $profile === 'app-dev'
-            ? <<<'BASH'
-                sudo phpenmod -v "$version" -s cli pcov
-                sudo phpdismod -v "$version" -s fpm pcov
-                BASH
-            : '';
-        $pcovVerification = $profile === 'app-dev'
-            ? <<<'BASH'
-                printf '%s\n' "$cli_modules" | grep -qxF pcov
-                BASH
-            : <<<'BASH'
-                if printf '%s\n' "$cli_modules" | grep -qxF pcov; then
-                    exit 1
-                fi
-                BASH;
+        if ($outcome->outcome === 'current') {
+            Log::info('PHP packages match the recipe; skipped the package download.', ['node' => $node->name]);
+        }
+        $stale = $outcome->data['stale_masters'] ?? [];
+        if (is_array($stale) && $stale !== []) {
+            Log::warning('Dedicated PHP-FPM masters still run the previous PHP build until their next restart.', ['node' => $node->name, 'masters' => $stale]);
+        }
+    }
 
+    /**
+     * Publishes the Orbit runtime module of one version. Installation enables the shared FPM service but never starts
+     * it. The caller starts or reloads it after it publishes the pools, so a stale pool that stops FPM from starting
+     * cannot block the publication that removes it. A changed runtime module reloads a running FPM only when the
+     * installed configuration passes `php-fpm -t`; otherwise the pool publication reloads it.
+     */
+    private function profileCommand(string $version, string $profile, RoleName $role): RemoteCommand
+    {
         return new RemoteCommand(
             arguments: [
                 'bash',
@@ -544,14 +258,7 @@ final readonly class RemotePhpPackageManager
                 $version,
                 $profile,
                 base64_encode(new PhpFpmRuntimeIniRenderer()->render($profile)),
-                self::EXPECTED_DISTRIBUTION,
-                UbuntuRelease::unsupportedText(),
-                (string) count(UbuntuRelease::forRole($role)),
-                ...array_map(
-                    static fn (UbuntuRelease $release): string => $release->value,
-                    UbuntuRelease::forRole($role),
-                ),
-                ...$packages,
+                ...$this->releaseArguments($role),
             ],
             input: <<<'BASH'
                 version=$1
@@ -559,58 +266,7 @@ final readonly class RemotePhpPackageManager
                 runtime_ini=$3
                 shift 3
                 BASH."\n".OsReleaseParserProgram::render()."\n".<<<'BASH'
-                missing_packages=()
-                for package in "$@"; do
-                    case "$package" in
-                        "php$version-"*) ;;
-                        *) exit 1 ;;
-                    esac
-
-                    if ! dpkg-query -W -f='${Status}' -- "$package" 2>/dev/null \
-                        | grep -qxF 'install ok installed'
-                    then
-                        missing_packages+=("$package")
-                    fi
-                done
-
-                if [ "${#missing_packages[@]}" -gt 0 ]; then
-                    policy_path=/usr/sbin/policy-rc.d
-                    policy_work=$(mktemp -d)
-                    policy_backup="$policy_work/policy-rc.d"
-                    policy_had_file=0
-                    if [ -e "$policy_path" ] || [ -L "$policy_path" ]; then
-                        test -f "$policy_path"
-                        test ! -L "$policy_path"
-                        cp -a -- "$policy_path" "$policy_backup"
-                        policy_had_file=1
-                    fi
-                    restore_policy() {
-                        status=$?
-                        trap - EXIT
-                        if [ "$policy_had_file" = 1 ]; then
-                            sudo cp -a -- "$policy_backup" "$policy_path"
-                        else
-                            sudo rm -f -- "$policy_path"
-                        fi
-                        rm -rf -- "$policy_work"
-                        return "$status"
-                    }
-                    trap restore_policy EXIT
-                    printf '#!/bin/sh\nexit 101\n' > "$policy_work/policy-rc.d"
-                    sudo install -o root -g root -m 0755 -- "$policy_work/policy-rc.d" "$policy_path"
-                    sudo env DEBIAN_FRONTEND=noninteractive \
-                        DEB_SYSTEMD_INVOKE=0 \
-                        apt-get -o DPkg::Lock::Timeout=300 install \
-                        --yes --no-install-recommends -- \
-                        "${missing_packages[@]}"
-                    restore_policy
-                fi
-
-                for package in "$@"; do
-                    dpkg-query -W -f='${Status}' -- "$package" \
-                        | grep -qxF 'install ok installed'
-                done
-
+                packages_changed=0
                 runtime_module=orbit-runtime
                 runtime_available="/etc/php/$version/mods-available/$runtime_module.ini"
                 runtime_enabled="/etc/php/$version/fpm/conf.d/99-$runtime_module.ini"
@@ -627,7 +283,7 @@ final readonly class RemotePhpPackageManager
                 if [ -L "$runtime_enabled" ]; then
                     runtime_had_link=1
                 fi
-                runtime_changed=0
+                runtime_changed=$packages_changed
                 restore_runtime() {
                     status=$?
                     trap - EXIT
@@ -674,12 +330,6 @@ final readonly class RemotePhpPackageManager
                         exit 1
                     fi
                 done < "$runtime_candidate"
-                fpm_pcov_before=$(readlink -f -- /etc/php/"$version"/fpm/conf.d/*-pcov.ini 2>/dev/null || true)
-                BASH."\n".$pcovSetup."\n".<<<'BASH'
-                fpm_pcov_after=$(readlink -f -- /etc/php/"$version"/fpm/conf.d/*-pcov.ini 2>/dev/null || true)
-                if [ "$fpm_pcov_before" != "$fpm_pcov_after" ]; then
-                    runtime_changed=1
-                fi
                 if [ "$runtime_changed" = 1 ] \
                     && sudo systemctl is-active --quiet "php$version-fpm.service" \
                     && sudo /usr/sbin/php-fpm"$version" -t >/dev/null 2>&1
@@ -689,147 +339,29 @@ final readonly class RemotePhpPackageManager
                 trap - EXIT
                 rm -rf -- "$runtime_work"
                 sudo systemctl enable "php$version-fpm.service"
-
                 /usr/bin/php"$version" -v >/dev/null
                 /usr/sbin/php-fpm"$version" -v >/dev/null
-                cli_modules=$(/usr/bin/php"$version" -m | tr '[:upper:]' '[:lower:]')
                 fpm_modules=$(/usr/sbin/php-fpm"$version" -m | tr '[:upper:]' '[:lower:]')
-                for module in bcmath curl gd imagick intl mbstring mysqli pdo_mysql pdo_pgsql redis pdo_sqlite simplexml xml zip; do
-                    printf '%s\n' "$cli_modules" | grep -qxF "$module"
-                    printf '%s\n' "$fpm_modules" | grep -qxF "$module"
-                done
-                BASH."\n".$pcovVerification."\n".<<<'BASH'
                 if printf '%s\n' "$fpm_modules" | grep -qxF pcov; then
+                    printf 'PHP %s FPM loads PCOV.\n' "$version" >&2
                     exit 1
                 fi
-
                 sudo systemctl is-enabled --quiet "php$version-fpm.service"
                 BASH,
         );
     }
 
-    /** @param list<string> $packages */
-    private function installPackagesOnlyProfile(
-        Node $node,
-        string $version,
-        array $packages,
-        bool $allowCliPcov,
-        ProductionSshExecutor $ssh,
-    ): void {
-        $ssh->execute(
-            $node,
-            new RemoteCommand(
-                arguments: [
-                    'bash',
-                    '-seu',
-                    '--',
-                    $version,
-                    $allowCliPcov ? '1' : '0',
-                    self::EXPECTED_DISTRIBUTION,
-                    UbuntuRelease::unsupportedText(),
-                    (string) count(UbuntuRelease::forRole(RoleName::AppProd)),
-                    ...array_map(
-                        static fn (UbuntuRelease $release): string => $release->value,
-                        UbuntuRelease::forRole(RoleName::AppProd),
-                    ),
-                    ...$packages,
-                ],
-                input: <<<'BASH'
-                    version=$1
-                    allow_cli_pcov=$2
-                    shift 2
-                    BASH."\n".OsReleaseParserProgram::render()."\n".<<<'BASH'
-                    missing_packages=()
-                    for package in "$@"; do
-                        case "$package" in
-                            "php$version-"*) ;;
-                            *) exit 1 ;;
-                        esac
-
-                        if ! dpkg-query -W -f='${Status}' -- "$package" 2>/dev/null \
-                            | grep -qxF 'install ok installed'
-                        then
-                            missing_packages+=("$package")
-                        fi
-                    done
-
-                    if [ "${#missing_packages[@]}" -gt 0 ]; then
-                        policy_path=/usr/sbin/policy-rc.d
-                        policy_work=$(mktemp -d)
-                        policy_backup="$policy_work/policy-rc.d"
-                        policy_had_file=0
-                        if [ -e "$policy_path" ] || [ -L "$policy_path" ]; then
-                            test -f "$policy_path"
-                            test ! -L "$policy_path"
-                            cp -a -- "$policy_path" "$policy_backup"
-                            policy_had_file=1
-                        fi
-                        restore_policy() {
-                            status=$?
-                            trap - EXIT
-                            if [ "$policy_had_file" = 1 ]; then
-                                sudo cp -a -- "$policy_backup" "$policy_path"
-                            else
-                                sudo rm -f -- "$policy_path"
-                            fi
-                            rm -rf -- "$policy_work"
-                            return "$status"
-                        }
-                        trap restore_policy EXIT
-                        printf '#!/bin/sh\nexit 101\n' > "$policy_work/policy-rc.d"
-                        sudo install -o root -g root -m 0755 -- "$policy_work/policy-rc.d" "$policy_path"
-                        sudo env DEBIAN_FRONTEND=noninteractive \
-                            DEB_SYSTEMD_INVOKE=0 \
-                            apt-get -o DPkg::Lock::Timeout=300 install \
-                            --yes --no-install-recommends -- \
-                            "${missing_packages[@]}"
-                        restore_policy
-                    fi
-
-                    for package in "$@"; do
-                        dpkg-query -W -f='${Status}' -- "$package" \
-                            | grep -qxF 'install ok installed'
-                    done
-
-                    /usr/bin/php"$version" -v >/dev/null
-                    /usr/sbin/php-fpm"$version" -v >/dev/null
-                    cli_modules=$(/usr/bin/php"$version" -m | tr '[:upper:]' '[:lower:]')
-                    fpm_modules=$(/usr/sbin/php-fpm"$version" -m | tr '[:upper:]' '[:lower:]')
-                    for module in bcmath curl gd imagick intl mbstring mysqli pdo_mysql pdo_pgsql redis pdo_sqlite simplexml xml zip; do
-                        printf '%s\n' "$cli_modules" | grep -qxF "$module"
-                        printf '%s\n' "$fpm_modules" | grep -qxF "$module"
-                    done
-                    if [ "$allow_cli_pcov" = 1 ]; then
-                        printf '%s\n' "$cli_modules" | grep -qxF pcov
-                    elif printf '%s\n' "$cli_modules" | grep -qxF pcov; then
-                        exit 1
-                    fi
-                    if printf '%s\n' "$fpm_modules" | grep -qxF pcov; then
-                        exit 1
-                    fi
-                    BASH,
-            ),
-            step: self::APP_PROD_FAILURE_CONTRACT['install_step'],
-            errorCode: self::APP_PROD_FAILURE_CONTRACT['install_error'],
-        );
-    }
-
     /** @return list<string> */
-    private function packages(string $version, string $profile): array
+    private function releaseArguments(RoleName $role): array
     {
-        $suffixes = self::COMMON_SUFFIXES;
-
-        if ($version === '8.4') {
-            $suffixes[] = 'opcache';
-        }
-
-        if ($profile === 'app-dev') {
-            $suffixes[] = 'pcov';
-        }
-
-        return array_map(
-            static fn (string $suffix): string => "php{$version}-{$suffix}",
-            $suffixes,
-        );
+        return [
+            self::EXPECTED_DISTRIBUTION,
+            UbuntuRelease::unsupportedText(),
+            (string) count(UbuntuRelease::forRole($role)),
+            ...array_map(
+                static fn (UbuntuRelease $release): string => $release->value,
+                UbuntuRelease::forRole($role),
+            ),
+        ];
     }
 }

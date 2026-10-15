@@ -12,6 +12,7 @@ use App\Domain\Instances\Deployment\DeploymentOutputStream;
 use App\Domain\Instances\Deployment\DeploymentRequest;
 use App\Domain\Instances\Deployment\DevelopmentDeployment;
 use App\Domain\Instances\Deployment\DevelopmentTarget;
+use App\Domain\Instances\Deployment\InlineDeploymentSteps;
 use App\Domain\Instances\DevelopmentRouteProjector;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Projects\DevelopmentDeployStep;
@@ -36,7 +37,7 @@ describe('development default deployments', function (): void {
     it('checks out the default branch in place and runs the Project steps there', function (): void {
         $this->instance->update(['deployment_branch' => 'ignored-production-override']);
         dev935_steps($this->instance, [new DevelopmentDeployStep('install', 'incremental install'), new DevelopmentDeployStep('build', 'build')]);
-        $result = app(DeployInstanceAction::class)->execute($this->instance);
+        $result = app(DeployInstanceAction::class)->execute($this->instance, new InlineDeploymentSteps);
         $instance = $this->instance->refresh();
 
         expect($result->succeeded)->toBeTrue()
@@ -128,7 +129,7 @@ describe('development default deployments', function (): void {
         $this->instance->update(['seed_path' => $this->instance->checkout_path, 'seed_commit' => str_repeat('a', 40), 'seed_repository' => $this->instance->checkout_path]);
         dev935_steps($this->instance, [new DevelopmentDeployStep('install', 'false'), new DevelopmentDeployStep('build', 'never')]);
         $this->remote->failedStep = 'install';
-        $result = app(DeployInstanceAction::class)->execute($this->instance);
+        $result = app(DeployInstanceAction::class)->execute($this->instance, new InlineDeploymentSteps);
 
         expect($result->succeeded)->toBeFalse()
             ->and($result->failure?->boundary)->toBe(DeploymentFailureBoundary::BeforeActivation)

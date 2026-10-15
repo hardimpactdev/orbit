@@ -111,7 +111,8 @@
                         "analytics_instance_id": null,
                         "web_root": null
                     }
-                ]
+                ],
+                "shared_paths": []
             },
             {
                 "id": 4,
@@ -219,7 +220,8 @@
                         "analytics_instance_id": null,
                         "web_root": null
                     }
-                ]
+                ],
+                "shared_paths": []
             },
             {
                 "id": 3,
@@ -327,7 +329,8 @@
                         "analytics_instance_id": null,
                         "web_root": null
                     }
-                ]
+                ],
+                "shared_paths": []
             },
             {
                 "id": 2,
@@ -435,7 +438,8 @@
                         "analytics_instance_id": null,
                         "web_root": null
                     }
-                ]
+                ],
+                "shared_paths": []
             }
         ],
         "meta": {

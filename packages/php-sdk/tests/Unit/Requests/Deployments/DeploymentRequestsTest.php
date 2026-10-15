@@ -14,6 +14,7 @@ use Orbit\Sdk\Requests\Deployments\UpdateInstanceDeployStepRequest;
 use Orbit\Sdk\Requests\Instances\UpdateInstanceRequest;
 use Orbit\Sdk\Responses\Deployments\DeploymentReleasesResponse;
 use Orbit\Sdk\Responses\Deployments\DeploymentStream;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -35,6 +36,14 @@ describe('deployment requests', function (): void {
             expect($request->getMethod())->toBe($method)
                 ->and($request->resolveEndpoint())->toBe($path);
         }
+    });
+
+    it('preserves omitted shared paths explicit lists and the default reset', function (): void {
+        expect(new UpdateInstanceRequest(17, 'release')->body()->all())->toBe(['branch' => 'release']);
+        expect(new UpdateInstanceRequest(17, sharedPaths: ['storage'], sharedPathsProvided: true)->body()->all())->toBe(['shared_paths' => ['storage']]);
+        expect(new UpdateInstanceRequest(17, sharedPaths: [], sharedPathsProvided: true)->body()->all())->toBe(['shared_paths' => []]);
+        expect(new UpdateInstanceRequest(17, sharedPathsProvided: true)->body()->all())->toBe(['shared_paths' => null]);
+        expect(new UpdateInstanceRequest(17, 'release', [], true)->body()->all())->toBe(['branch' => 'release', 'shared_paths' => []]);
     });
 
     it('carries no deployment-config or deployment-layout request', function (): void {
@@ -114,7 +123,7 @@ describe('deployment requests', function (): void {
         );
     });
 
-    it('returns deployment and rollback as typed streams', function (): void {
+    it('returns a rollback as a typed stream', function (): void {
         $requestId = deployment_request_id();
         $result = json_encode([
             'type' => 'result',
@@ -126,21 +135,40 @@ describe('deployment requests', function (): void {
             'selected_release' => 'release-a',
         ], JSON_THROW_ON_ERROR)."\n";
         $mock = new MockClient([
-            DeployInstanceRequest::class => MockResponse::make($result, headers: [
-                'Content-Type' => 'application/x-ndjson',
-                'X-Orbit-Request-Id' => $requestId,
-            ]),
             RollbackInstanceRequest::class => MockResponse::make($result, headers: [
                 'Content-Type' => 'application/x-ndjson',
                 'X-Orbit-Request-Id' => $requestId,
             ]),
         ]);
-        $connector = deployment_connector($mock);
 
-        expect($connector->send(new DeployInstanceRequest(17))->dto())
-            ->toBeInstanceOf(DeploymentStream::class)
-            ->and($connector->send(new RollbackInstanceRequest(17, 'release-a'))->dto())
+        expect(deployment_connector($mock)->send(new RollbackInstanceRequest(17, 'release-a'))->dto())
             ->toBeInstanceOf(DeploymentStream::class);
+    });
+
+    it('returns a started deploy as its queued operation', function (): void {
+        $requestId = deployment_request_id();
+        $mock = new MockClient([
+            DeployInstanceRequest::class => MockResponse::make([
+                'data' => [
+                    'id' => 42, 'kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => 17, 'input' => [],
+                    'status' => 'queued', 'sequence' => 1, 'current_step' => null, 'failed_step' => null, 'error_code' => null,
+                    'result' => null, 'cancel_requested' => false, 'attempts' => 0, 'triggered_by' => 'laptop',
+                    'created_at' => '2026-10-15T10:00:00+00:00', 'started_at' => null, 'finished_at' => null, 'poll_after_seconds' => 2,
+                ],
+                'meta' => ['request_id' => $requestId],
+            ], 202, ['X-Orbit-Request-Id' => $requestId]),
+        ]);
+
+        $operation = deployment_connector($mock)->send(new DeployInstanceRequest(17))->dto();
+
+        expect($operation)->toBeInstanceOf(OperationResponse::class)
+            ->and($operation->id)->toBe(42)
+            ->and($operation->kind)->toBe('instance.deploy')
+            ->and($operation->status)->toBe('queued')
+            ->and($operation->terminal())->toBeFalse()
+            ->and($operation->pollAfterSeconds)->toBe(2)
+            ->and($operation->requestId)->toBe($requestId)
+            ->and($mock->getLastPendingRequest()?->headers()->get('Accept'))->toBe('application/json');
     });
 });
 

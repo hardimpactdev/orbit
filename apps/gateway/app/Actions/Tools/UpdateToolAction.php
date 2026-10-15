@@ -6,6 +6,7 @@ namespace App\Actions\Tools;
 
 use App\Domain\Nodes\NodeLockLoss;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tools\ReservesRolePackages;
 use App\Domain\Tools\ToolActionResult;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
@@ -60,6 +61,16 @@ final readonly class UpdateToolAction
                 outcome: ToolOutcome::ManagerFailed,
                 status: 409,
                 message: 'Tool ownership or manager state is invalid.',
+            );
+        }
+
+        if ($manager instanceof ReservesRolePackages && $manager->roleOwns($tool->package)) {
+            throw $this->failure(
+                tool: $tool,
+                errorCode: ReservesRolePackages::ERROR_CODE,
+                outcome: ToolOutcome::ManagerFailed,
+                status: 409,
+                message: 'A Node role owns this package, so a Tool cannot update it. Remove the Tool to drop its record.',
             );
         }
 

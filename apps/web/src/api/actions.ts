@@ -1,6 +1,7 @@
 import { processRuntimeIsActive } from "../fleet/fleet";
 import { applyRow } from "../realtime/apply";
 import { api, GatewayError } from "./client";
+import { instanceOperationsQuery, startDeploy } from "./operations";
 import { queryClient } from "./queryClient";
 import type {
     AnyRecord,
@@ -188,11 +189,18 @@ export function actionsFor(kind: Kind, row: AnyRecord): Action[] {
 
             return [
                 ...analyticsActions(instance, target),
-                leaves(
-                    "deploy",
-                    `orbit instance:deploy ${target}`,
-                    "A deploy streams for minutes; it is not run from inside the live screen.",
-                ),
+                {
+                    label: "deploy",
+                    description: `Deploy [${target}]. The deploy runs on the Gateway queue; its steps show on this page.`,
+                    run: async () => {
+                        const operation = await startDeploy(instance.id);
+                        await queryClient.invalidateQueries({
+                            queryKey: instanceOperationsQuery(instance.id).queryKey,
+                        });
+
+                        return `Deploy of [${target}] started as operation ${operation.id}.`;
+                    },
+                },
                 {
                     label: "profile",
                     description: `Profile one request to [${target}] from this machine.`,

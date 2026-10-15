@@ -7,6 +7,7 @@ use App\Domain\Fleet\FleetNodeVerification;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Releases\ReleaseAlertNotifier;
+use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Infrastructure\Fleet\NodeShell;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
@@ -20,6 +21,7 @@ use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\FakePhpBuildRunner;
 use Tests\Support\Fleet\FleetFixtures;
 use Tests\Support\Fleet\FleetTestSsh;
 use Tests\Support\Fleet\RecordingReleaseAlertNotifier;
@@ -77,6 +79,7 @@ function nightlyRecipeFleet(): array
     });
     $ssh->on('/^sudo timeout .* python3 - apply /', ScriptedSshExecutor::ok('{"changed_packages":["curl"],"restarted_services":[],"changed_tools":["curl"],"healthy":true}'));
     app()->instance(NodeShell::class, FleetTestSsh::shell($ssh));
+    app()->instance(RemoteProgramRunner::class, new FakePhpBuildRunner);
     app()->instance(NodeUpdateLock::class, new NodeUpdateLock(FleetTestSsh::shell($ssh)));
     $doctor = new NightlyRecipeDoctor;
     app()->instance(FleetNodeVerification::class, $doctor);
@@ -286,4 +289,29 @@ it('allows a running prod visit to finish past 06 but starts no next visit', fun
     expect($prod->refresh()->settings['machine_recipe']['version'])->toBe($record->recipe_identity);
     expect($vpn->refresh()->settings['machine_recipe'] ?? null)->toBeNull();
     expect($record->refresh()->fleet_convergence)->toMatchArray(['status' => 'ready', 'node_id' => $vpn->id]);
+});
+
+it('visits a roleless CI runner with its recorded ci-runner profile in the overnight service tier', function (): void {
+    [$record, $other, $doctor] = nightlyRecipeFleet();
+    $prod = FleetFixtures::node('ci-window-prod', [RoleName::AppProd]);
+    $sabre = FleetFixtures::node('ci-window-sabre');
+    $sabre->update(['settings' => ['machine_recipe' => ['version' => 'sha256:previous', 'profile' => 'ci-runner']]]);
+    FleetFixtures::node('ci-window-operator');
+    $this->travelTo(new DateTimeImmutable('2026-10-15 12:00:00 UTC'));
+    $action = app(ConvergeFleetRecipeAction::class);
+
+    for ($visit = 0; $visit < 3; $visit++) {
+        $action->execute();
+    }
+    expect($doctor->visited)->toBe([$record->host_node_id, $other->host_node_id])
+        ->and($record->refresh()->fleet_convergence)->toMatchArray(['status' => 'ready', 'node_id' => $sabre->id]);
+
+    $this->travelTo(new DateTimeImmutable('2026-10-16 01:00:00 UTC'));
+    for ($visit = 0; $visit < 3; $visit++) {
+        $action->execute();
+    }
+
+    expect($doctor->visited)->toBe([$record->host_node_id, $other->host_node_id, $sabre->id, $prod->id])
+        ->and($sabre->refresh()->settings['machine_recipe']['profile'])->toBe('ci-runner')
+        ->and($record->refresh()->fleet_convergence['status'])->toBe('succeeded');
 });

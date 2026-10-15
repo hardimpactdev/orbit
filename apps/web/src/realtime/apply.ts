@@ -252,4 +252,15 @@ export function applyEvent(client: QueryClient, event: RealtimeEvent): void {
         });
         void client.invalidateQueries({ queryKey: ["deployment-log", event.id] });
     }
+
+    // `orbit` carries an operation's start and status changes; its progress has its own channel (operation.ts).
+    if (family === "operation") {
+        const { target_type: targetType, target_id: targetId } = event.data;
+        void client.invalidateQueries({
+            queryKey:
+                typeof targetType === "string" && typeof targetId === "number"
+                    ? ["operations", targetType, targetId]
+                    : ["operations"],
+        });
+    }
 }

@@ -74,10 +74,12 @@ it('fails when a project drifts from the baseline', function (string $relative, 
     }
 })->with([
     'renamed script' => ['apps/cli/composer.json', '"guidance:update"', '"guidance:generate"', 'apps/cli/composer.json is missing script guidance:update.'],
-    'changed script' => ['apps/e2e/composer.json', '--processes=2', '--processes=4', 'apps/e2e/composer.json script test:affected is'],
+    'changed script' => ['apps/e2e/composer.json', '--processes=$(../../bin/check-processes) --tia', '--processes=4 --tia', 'apps/e2e/composer.json script test:affected is'],
+    'serial Pint check' => ['apps/cli/composer.json', 'pint --test --parallel', 'pint --test', 'apps/cli/composer.json script format:check is'],
     'inline guidance check' => ['packages/php-sdk/composer.json', '"../../bin/guidance-check"', '"vendor/bin/pest --configuration=phpunit.guidance.xml"', 'packages/php-sdk/composer.json script guidance:check is'],
     'unsafe Rector cache reuse' => ['apps/gateway/composer.json', ' --clear-cache', '', 'apps/gateway/composer.json script rector is'],
     'missing check step' => ['apps/docs/composer.json', '"@rector",', '', 'apps/docs/composer.json check is missing @rector.'],
+    'Rector before PHPStan' => ['apps/cli/composer.json', "\"@analyse\",\n            \"@rector\",", "\"@rector\",\n            \"@analyse\",", 'apps/cli/composer.json check must run @analyse before @rector.'],
     'undeclared check step' => ['apps/e2e/composer.json', '"@analyse"', '"@analyse", "@extra"', 'apps/e2e/composer.json check runs undeclared step "@extra".'],
     'lower PHPStan level' => ['apps/gateway/phpstan.neon', 'level: 9', 'level: 8', 'apps/gateway/phpstan.neon level is 8, expected 9.'],
     'changed PHPStan paths' => ['apps/e2e/phpstan.neon', "        - app\n", "        - app\n        - config\n", 'apps/e2e/phpstan.neon checks'],
@@ -131,7 +133,8 @@ PHP);
         $composer = json_decode((string) file_get_contents($root.'/apps/gateway/composer.json'), true, flags: JSON_THROW_ON_ERROR);
         $command = [...explode(' ', $composer['scripts']['rector']), '--config', $root.'/rector.php'];
         $project = dirname(__DIR__, 2);
-        $environment = ['PAO_DISABLE' => '1'];
+        // A plain run checks every configured path, also when an outer gate runs this suite.
+        $environment = ['PAO_DISABLE' => '1', 'ORBIT_CHECK_SCOPE' => false];
         $warm = new Process($command, $project, $environment);
         $warm->run();
         expect($warm->getExitCode())->toBe(0, $warm->getOutput().$warm->getErrorOutput());
