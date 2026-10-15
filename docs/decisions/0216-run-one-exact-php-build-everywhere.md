@@ -43,7 +43,7 @@ The recipe gets a `php` object:
 - `rollback` names the Ubuntu tool that repacks an installed build, `dpkg-repack`. Every profile with a PHP set gets it.
 - `pcov` lists the profiles whose PHP CLI loads PCOV: `app-dev`, `base`, and `ci-runner`.
 - `purge_extras` lists the profiles that purge PHP packages outside the recipe. Only `ci-runner` may be on it.
-- `mirror` is the base URL of Orbit's copy of the pinned files.
+The recipe-level `artifact_mirror` is the HTTPS base URL of Orbit's retained external Debian artifacts. It applies to PHP, Git, and other Debian artifacts.
 
 A profile names a PHP set as `php:<version>`. The loader expands it to the shared pins, the version's packages, and the rollback tool. A profile cannot name a PHP pin directly. `app-dev` and the base image name `php:8.5` and `php:8.4`. `app-prod`, `websocket`, and `gateway` name `php:8.5`. An `app-prod` Node still gets PHP 8.4 when one of its Instances selects it. A new `ci-runner` profile names `php:8.5` for a roleless Node that runs CI jobs, such as Sabre. Until [ADR 0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role) builds the `ci-runner` role, a roleless Node selects this profile with `node:converge-recipe --profile=ci-runner`, and the Node records it. ADR 0213 takes this profile for the tools of its runner containers; when that role is built, the role selects the profile and the `--profile` option goes away.
 
@@ -54,7 +54,7 @@ The loader rejects a recipe in which:
 - a Sury pin is built for another Ubuntu release than `ubuntu.release`;
 - the extension list is unsorted, has duplicates, or lacks `core` or `pcov`;
 - `ci` names a version that the recipe does not declare;
-- `purge_extras` names another profile than `ci-runner`, or `mirror` is not an HTTPS URL.
+- `purge_extras` names another profile than `ci-runner`.
 
 ### One installer
 
@@ -82,7 +82,7 @@ Three options set the differences between callers:
 
 ### Orbit mirrors the pinned files
 
-A workflow on `main` downloads every pinned PHP file, checks its digest, and publishes it as an asset of the `php-build-mirror` release, named `<package>_<sha256>.deb`. The installer tries this mirror before Sury, so a rollback, a new Node, or a CI run still gets the exact build after Sury deletes it.
+A workflow on `main` downloads every external pinned Debian file, checks its digest, and publishes it as an asset of the `php-build-mirror` release, named `<package>_<digest>.deb`. The installer tries this mirror before the original source, so a rollback, a new Node, or a CI run still gets the exact build after Sury deletes it.
 
 ### Tools cannot own role PHP packages
 
@@ -109,6 +109,14 @@ To move to a new Sury build, one pull request changes every pin of that version 
 2. Each task VM host builds a new base image from the recipe.
 3. Nightly recipe maintenance, or `php artisan node:converge-recipe`, brings each Node to the new build. The next PHP step of an Instance does the same for its versions.
 4. CI installs the new build on its next run. The self-hosted runners fail until an operator converges Sabre and reruns the shard container setup.
+
+### Git artifacts and security updates
+
+The recipe mirror retains every external Debian artifact, including the git-core PPA build of Git. Git and its companion packages come from one recipe package set on every Node and image. A live PPA would create a second owner, and an exact APT version alone is not durable because Launchpad deletes superseded builds. Exact URLs and digests plus retained release assets give every machine the same bytes.
+
+This choice moves Git security-update responsibility from unattended-upgrades to Orbit. The preference blocks other Ubuntu and PPA versions. A fix reaches machines only after a maintainer reviews a recipe bump and convergence rolls it out. The daily `Git build watch` workflow opens or updates a GitHub issue when Launchpad publishes a newer Git source build for the recipe release or Ubuntu publishes a Git USN on or after the recipe's explicit `git.usn_since` review date. Failed checks fail the workflow. Notices are conservative review signals, not proof that a PPA version is vulnerable or fixed. The maintainer reviews the patches named by each notice, advances the notice review date deliberately, verifies the signed PPA indexes and all artifact digests, and rolls out the reviewed pin.
+
+The snapshot and Sury PHP bump flows retain their narrow trust boundaries. Automated Git bumps would also need authenticated Launchpad index validation and separate review; the watch supplies an actionable signal without silently adopting live PPA candidates. After merge, run the artifact mirror workflow promptly, before Launchpad removes the pinned build. Existing release assets are retained and skipped on repeat runs.
 
 ## Rejected alternatives
 

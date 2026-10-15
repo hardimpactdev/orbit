@@ -426,16 +426,16 @@ describe(AptToolManager::class, function (): void {
         'an unrelated package' => ['jq', false],
     ]);
 
-    it('blocks adoption of an installed role-owned PHP package as protected', function (): void {
+    it('blocks adoption of installed recipe PHP and Git packages as protected', function (string $package): void {
         [$manager, $ssh] = apt_tool_manager([
             apt_result("apt 2.8.3 (amd64)\n"),
             apt_result("install ok installed\n8.5.11-1\n"),
         ]);
 
-        expect($manager->inspectForAdoption(apt_tool_node(), 'php8.5-sqlite3'))
+        expect($manager->inspectForAdoption(apt_tool_node(), $package))
             ->toEqual(new ToolAdoptionFact('8.5.11-1', ToolInventoryPackage::BLOCK_PROTECTED))
             ->and($ssh->commands)->toHaveCount(2);
-    });
+    })->with(['php8.5-sqlite3', 'git', 'git-man']);
 
     it('treats a missing apt package as absent during adoption', function (): void {
         [$manager, $ssh] = apt_tool_manager([

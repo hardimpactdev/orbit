@@ -104,6 +104,43 @@ final readonly class CloneInstanceDatabaseAction
         return rtrim(substr($slug, 0, 54), '-').'-'.substr(sha1($slug), 0, 8);
     }
 
+    /**
+     * Register a SQLite copy once, without adopting another owner's connection.
+     *
+     * @param  array<string, mixed>  $attributes
+     */
+    public function recordSqlite(Instance $instance, string $path, array $attributes = []): DatabaseConnection
+    {
+        $connection = DatabaseConnection::query()->firstOrCreate(
+            ['slug' => $this->slug($instance)],
+            [
+                ...$attributes,
+                'driver' => DatabaseDriver::Sqlite->value,
+                'node_id' => $instance->node_id,
+                'owner_instance_id' => $instance->id,
+                'path' => $path,
+            ],
+        );
+
+        if ($connection->owner_instance_id !== $instance->id) {
+            throw new ResourceOperationException(
+                errorCode: 'instance.clone_database_slug_taken',
+                message: 'The cloned database connection slug is already taken by another owner.',
+                status: 409,
+            );
+        }
+
+        if ($connection->wasRecentlyCreated) {
+            $this->broadcaster->broadcast(
+                RecordEventType::DatabaseCreated,
+                $connection->id,
+                DatabaseConnectionData::fromModel($connection)->toArray(),
+            );
+        }
+
+        return $connection;
+    }
+
     private function settledDatabase(Instance $instance): ?DatabaseConnection
     {
         $target = DatabaseConnectionTarget::query()
@@ -156,23 +193,10 @@ final readonly class CloneInstanceDatabaseAction
         }
 
         if (is_string($plan->relativePath)) {
-            $connection = DatabaseConnection::query()->create([
-                'slug' => $slug,
-                'driver' => DatabaseDriver::Sqlite->value,
-                'node_id' => $instance->node_id,
-                'owner_instance_id' => $instance->id,
+            return $this->recordSqlite($instance, rtrim($instance->checkout_path, '/').'/'.$plan->relativePath, [
                 'clone_step' => DatabaseCloneStep::Recorded,
                 'test_database' => self::SQLITE_TEST_DATABASE,
-                'path' => rtrim($instance->checkout_path, '/').'/'.$plan->relativePath,
             ]);
-
-            $this->broadcaster->broadcast(
-                RecordEventType::DatabaseCreated,
-                $connection->id,
-                DatabaseConnectionData::fromModel($connection)->toArray(),
-            );
-
-            return $connection;
         }
 
         if (! $plan->server instanceof DatabaseServer) {

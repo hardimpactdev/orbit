@@ -16,9 +16,11 @@ from unittest.mock import patch
 RESOURCE = Path(__file__).resolve().parents[2] / 'resources/machine-software'
 spec = importlib.util.spec_from_file_location('recipe_versions', RESOURCE / 'converge-node.py')
 recipe = importlib.util.module_from_spec(spec)
+exec(compile((Path(spec.origin).parent.parent / 'remote/lib/artifacts.py').read_text(), 'lib/artifacts.py', 'exec'), recipe.__dict__)
 spec.loader.exec_module(recipe)
 image_spec = importlib.util.spec_from_file_location('recipe_image_versions', RESOURCE / 'converge-node.py')
 image = importlib.util.module_from_spec(image_spec)
+exec(compile((RESOURCE.parent / 'remote/lib/artifacts.py').read_text(), 'lib/artifacts.py', 'exec'), image.__dict__)
 image_spec.loader.exec_module(image)
 exec(compile((RESOURCE / 'build-image.py').read_text(), 'build-image.py', 'exec'), image.__dict__)
 
@@ -805,7 +807,12 @@ class RecipeVersionsTest(unittest.TestCase):
                 image.image_packages(payload)
             self.assertFalse(any(c[:2] == ['apt-get', 'install'] for c in self.commands))
             self.assertTrue(any(c[:2] == ['apt-get', 'full-upgrade'] for c in self.commands))
-            with patch.object(image.Path, 'read_text', return_value=json.dumps({'identity': 'sha256:current', 'profile': 'base'})), \
+            original_read = Path.read_text
+            def read_text(path, *args, **kwargs):
+                if path == Path('/etc/orbit-machine-recipe.json'):
+                    return json.dumps({'identity': 'sha256:current', 'profile': 'base'})
+                return original_read(path, *args, **kwargs)
+            with patch.object(image.Path, 'read_text', read_text), \
                  patch.object(image.Path, 'exists', return_value=False), \
                  patch.object(image, 'publish', side_effect=lambda path, content, *args: Path(path).write_bytes(content)), \
                  patch.object(image, 'inspect', return_value={'curl': NEWER}), \

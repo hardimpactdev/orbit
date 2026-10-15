@@ -630,7 +630,7 @@ it('installs through the one PHP build installer and keeps extra packages on an 
         ->and($input['fpm'])->toBe('shared')
         ->and($input['pcov'])->toBeTrue()
         ->and($input['opentelemetry'])->toBeTrue()
-        ->and($input['mirror'])->toBe($recipe->phpPolicy->mirror)
+        ->and($input['mirror'])->toBe($recipe->artifactMirror)
         ->and($input['repack'])->toBe(['package' => 'dpkg-repack', 'version' => $recipe->tools['dpkg-repack']->version])
         ->and($input['release'])->toBe(['id' => 'ubuntu', 'codenames' => ['resolute']])
         ->and(array_keys($input['versions']))->toBe(['8.4', '8.5'])

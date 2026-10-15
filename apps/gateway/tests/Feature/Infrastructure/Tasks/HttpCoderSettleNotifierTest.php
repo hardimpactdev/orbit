@@ -159,6 +159,7 @@ it('does not fail settle when Coder refuses the webhook', function (): void {
 });
 
 it('posts a direction request to OpsBot and records the headers and body', function (): void {
+    $this->freezeTime();
     Http::preventStrayRequests();
     Http::fake([
         'https://coder.example.test/hooks/settle' => Http::response(['ok' => true]),
