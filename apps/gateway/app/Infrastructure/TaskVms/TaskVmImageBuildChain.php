@@ -45,7 +45,8 @@ final readonly class TaskVmImageBuildChain
             $pruned = false;
             if (! $restart) {
                 $images = $this->incus->images($this->settings->host($node->id), $node);
-                $pruned = array_any($build->images, static fn (array $image): bool => ! in_array($image['alias'], $images[$image['fingerprint']] ?? [], true));
+                $base = $build->images['base'] ?? null;
+                $pruned = $base === null || ! in_array($base['alias'], $images[$base['fingerprint']] ?? [], true);
                 $restart = $pruned;
             }
             $steps = $restart ? [] : array_values(array_filter($build->steps, static fn (array $entry): bool => ! in_array($entry['step'], [TaskVmImageBuildStep::Promote->value, TaskVmImageBuildStep::Prune->value], true)));
@@ -176,13 +177,8 @@ final readonly class TaskVmImageBuildChain
     public function jobs(TaskVmImageBuild $build): array
     {
         $jobs = [];
-        foreach (['base', ...RecipeImageBuilds::Roles] as $profile) {
-            $phases = $profile === 'base'
-                ? ['reset', 'launch', 'boot', 'packages', 'javascript', 'rust', 'agent', 'pi', 'prepare', 'clean', 'publish', 'smoke']
-                : ['launch', 'boot', 'packages', 'javascript', 'rust', 'agent', 'pi', 'clean', 'publish', 'smoke'];
-            foreach ($phases as $phase) {
-                $jobs[] = new BuildRecipeImageStep($build->id, $profile, $phase);
-            }
+        foreach (['reset', 'launch', 'boot', 'packages', 'javascript', 'rust', 'agent', 'pi', 'prepare', 'clean', 'publish', 'smoke'] as $phase) {
+            $jobs[] = new BuildRecipeImageStep($build->id, 'base', $phase);
         }
         $jobs[] = new PromoteImage($build->id);
         $jobs[] = new PruneRecipeImages($build->id);

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\AppDev\PrivateDnsManager;
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeObservation;
 use App\Domain\Nodes\NodeProvisioningException;
@@ -14,6 +15,8 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
+use Illuminate\Support\Facades\Artisan;
+use Symfony\Component\Console\Output\BufferedOutput;
 use Tests\Support\FakeToolManagerMaterializer;
 
 it('provisions the first peer from the gateway console', function (): void {
@@ -110,6 +113,42 @@ it('reports typed provisioning failures without leaking command output', functio
         ->doesntExpectOutputToContain('sensitive stdout')
         ->doesntExpectOutputToContain('sensitive stderr')
         ->assertExitCode(1);
+});
+
+it('reports a bounded redacted command tail when diagnostics are requested', function (): void {
+    app()->instance(NodeConverger::class, new class implements NodeConverger
+    {
+        public function converge(
+            Node $node,
+            NodeProvisioningIdentity $identity,
+            ?string $expectedSshHostFingerprint = null,
+            bool $rolelessOperator = false,
+        ): NodeObservation {
+            throw new NodeProvisioningException(
+                step: 'base-packages',
+                errorCode: 'node.package_install_failed',
+                message: 'sensitive command output',
+                result: new CommandResult(1, '', '', 42, false),
+                previous: new RuntimeConvergenceException('role-prerequisites', 'app-dev.prerequisite_failed', 'sensitive command output',
+                    result: new CommandResult(1, str_repeat("old output\n", 50), "apt dependency conflict\nTOKEN=do-not-print\n", 42, false)),
+            );
+        }
+    });
+
+    $output = new BufferedOutput;
+    $exit = Artisan::call('orbit:node-provision', [
+        'name' => 'operator',
+        'host' => '94.237.108.25',
+        '--architecture' => 'x86_64',
+        '--diagnostics' => true,
+        '--host-key-fingerprint' => 'SHA256:pinned',
+    ], $output);
+
+    $text = $output->fetch();
+    expect($exit)->toBe(1);
+    expect($text)->toContain('apt dependency conflict', '[REDACTED]')
+        ->not->toContain('do-not-print', 'sensitive command output');
+    expect(substr_count($text, 'old output'))->toBeLessThan(40);
 });
 
 it('passes explicit console user identities', function (): void {

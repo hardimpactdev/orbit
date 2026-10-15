@@ -320,7 +320,7 @@ The Gateway identifies a caller by its WireGuard address. A proxy in front of th
 
 ### Disposable UI work through an operator guest
 
-The development proxy runs inside the selected topology because the Gateway identifies callers by WireGuard address. Beast is already in the real fleet, and topologies reuse its WireGuard address range. Joining a topology tunnel in beast's network namespace would mix live and disposable traffic. A separate roleless operator container gives the proxy a topology identity without turning it into a workload host. Pinning both the URL and CA prevents an inherited live profile from sending destructive UI actions to the real fleet.
+The development proxy runs inside the selected topology because the Gateway identifies callers by WireGuard address. Beast is already in the real fleet, and topologies reuse its WireGuard address range. Joining a topology tunnel in beast's network namespace would mix live and disposable traffic. A separate roleless operator VM gives the proxy a topology identity without turning it into a workload host. Pinning both the URL and CA prevents an inherited live profile from sending destructive UI actions to the real fleet.
 
 Loopback publication plus SSH forwarding gives Mac access without a public listener or a new DNS/Caddy route. An ephemeral host port avoids collisions between groups; the strict guest port makes a conflicting server fail visibly. One foreground session per topology makes process and publication cleanup part of the same lifecycle.
 

@@ -34,8 +34,9 @@ final readonly class TaskVmTopologyUnit
     public function start(Node $node, string $run, string $checkout, string $issue, TaskTopology $topology, string $pool): void
     {
         $script = TaskVmScripts::read(self::Script);
+        $imports = TaskVmRoleImages::Directory.'/manifest.json';
         $this->run($node, new RemoteCommand(
-            ['bash', '-c', $script, 'topology', 'start', $run, $checkout, $issue, implode(',', $topology->toArray()), $pool, $this->vpn->subnet()],
+            ['bash', '-c', $script, 'topology', 'start', $run, $checkout, $issue, implode(',', $topology->toArray()), $pool, $this->vpn->subnet(), $imports],
             input: $script,
             maxOutputBytes: 16384,
             timeout: 60,

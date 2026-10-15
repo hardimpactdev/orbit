@@ -914,6 +914,7 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Deployment",
                 "Doctor",
                 "Gateway",
                 "Instance",

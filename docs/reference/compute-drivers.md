@@ -7,7 +7,7 @@ covers:
   - apps/gateway/{app/Infrastructure/MachineSoftware/**,app/Console/Commands/MachineRecipeCommand.php,resources/machine-software/**}
   - apps/gateway/{app/Models/PackageCache*.php,app/Console/Commands/PackageCacheUsageCommand.php,database/migrations/*create_package_cache_tables.php,config/package_cache.php,config/task_vms.php}
   - apps/gateway/resources/task-vms/**
-  - apps/gateway/database/migrations/*{create_task_vm_image_builds_table,add_recipe_to_task_vm_image_builds,fence_task_vm_image_build_attempts,create_task_vms_table,add_model_proxy_origin_to_task_vms,add_warm_pool_to_task_vms,retire_task_vm_warm_pool,add_upcloud_to_task_vms,add_size_to_task_vms,add_topology_to_task_vms,create_jobs_table,create_failed_jobs_table,create_task_sandboxes_table,add_fleet_enrollment_to_task_sandboxes,add_pi_ready_at_to_task_sandboxes,close_checks_of_destroyed_task_sandboxes,drop_task_sandboxes}.php
+  - apps/gateway/database/migrations/*{create_task_vm_image_builds_table,add_recipe_to_task_vm_image_builds,add_recipe_identity_to_task_vms,fence_task_vm_image_build_attempts,create_task_vms_table,add_model_proxy_origin_to_task_vms,add_warm_pool_to_task_vms,retire_task_vm_warm_pool,add_upcloud_to_task_vms,add_size_to_task_vms,add_topology_to_task_vms,create_jobs_table,create_failed_jobs_table,create_task_sandboxes_table,add_fleet_enrollment_to_task_sandboxes,add_pi_ready_at_to_task_sandboxes,close_checks_of_destroyed_task_sandboxes,drop_task_sandboxes}.php
 ---
 
 # Compute drivers
@@ -20,7 +20,7 @@ Task VMs are off until you [configure them](#configure-task-vms). Until then no 
 
 The repository's machine software recipe is [`apps/gateway/resources/machine-software/recipe.json`](https://github.com/nckrtl/orbit/blob/main/apps/gateway/resources/machine-software/recipe.json). It declares one Ubuntu snapshot, exact tool versions, and the tool sets for `gateway`, `app-dev`, `app-prod`, `operator`, and the task VM base image. Project dependencies, workspace setup, credentials, Node identity, and service configuration are not recipe inputs.
 
-The loader and validator define the recipe contract. [Recipe image builds](#build-the-base-image) use that document for host-local base and role images. [Node convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) applies its role tools to production Nodes. Claim gating and topology imports remain later ADR 0207 steps.
+The loader and validator define the recipe contract. [Recipe image builds](#build-the-base-image) use that document for a host-local base image. [Node convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) applies its role tools to production Nodes. Claims require the [current recipe](#claims-require-the-current-recipe), and topologies [import its base image](#prepare-the-topology).
 
 ### Recipe schema
 
@@ -76,7 +76,7 @@ The seed resolves the existing programs' selectors on 2026-10-14. It uses snapsh
 
 PHP's required readline packages and Sury's `libgd3` are explicit artifact inputs, alongside the selectable-version profiles. Other Ubuntu dependencies resolve from the same authenticated snapshot.
 
-Caddy and the Node agent retain the constants and checksums in their current installers. PHP artifacts use the Sury `resolute` package indexes, authenticated with the existing installer's pinned Sury key (`apt.gpg`, SHA-256 `b486fd5488185c4c46467960fa69c53d5085fec492cf76b9eaf3db33561c9d7c`). Vite+'s JavaScript package and pnpm tarballs match npm's release `dist.integrity`. The standalone Vite+ CLI uses the versioned GitHub release tarball and its release-asset SHA-256 digest; the similarly named npm platform package is a Node addon, not the standalone executable. These are separate pins.
+Caddy and the Node agent retain the constants and checksums in their current installers. PHP artifacts use the Sury `resolute` package indexes, authenticated with the existing installer's pinned Sury key (`apt.gpg`, SHA-256 `b486fd5488185c4c46467960fa69c53d5085fec492cf76b9eaf3db33561c9d7c`). Vite+'s JavaScript package and pnpm native archives match npm's release `dist.integrity`. pnpm 12.11.2 uses the architecture-specific `@pnpm/exe.linux-x64` and `@pnpm/exe.linux-arm64` archives; its npm wrapper delegates to a native executable. Image smoke executes `pnpm --version` as `orbit` as well as checking metadata. The standalone Vite+ CLI uses the versioned GitHub release tarball and its release-asset SHA-256 digest; the similarly named npm platform package is a Node addon, not the standalone executable. These are separate pins.
 
 Node resolves the current LTS from `nodejs.org/dist/index.json`, with both distributions checked against that release's `SHASUMS256.txt`; the distribution also pins its bundled npm/npx. Bun's distributions match the release asset digests. Rust uses the stable channel's versioned distribution manifest and its hashes for rustc, Cargo, the standard library, clippy, and rustfmt, rather than retaining `stable` or an unpinned rustup installer. Pi uses the operator-approved source commit and digest above. The JSON holds the resolved versions and hashes; none of these moving discovery endpoints is consulted by validation.
 
@@ -539,38 +539,40 @@ The restrictions forbid privileged and nested containers, disks outside a storag
 
 The dropped egress ranges are `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, `100.64.0.0/10`, `224.0.0.0/4`, and `240.0.0.0/4`. Port isolation blocks traffic between VMs on the same bridge. Both are needed. The ufw rule lets bridge traffic pass the host's forward policy, and replies use the existing rule for established connections.
 
-After the script, the command [lets the hosts copy the image](#let-hosts-copy-the-image) to each other. It prints one line for each host that it set up and one for each probe.
-
 ### Build the base image
 
-Run `php artisan task-vms:build-recipe` on the Gateway to queue the current recipe on every active host in `settings.task_vms`. It returns build IDs without waiting for remote work. Repeating it for an unchanged recipe reuses the same rows, including failed rows; resume a failure with `task-vms:build-image NODE --resume=ID`, or restart failed builds with `task-vms:build-recipe --retry` after cleanup. A recipe revert reuses retained verified images. If pruning removed them, the chain rebuilds that identity from stock. `task-vms:image-builds` shows the recipe identity, host, steps, fingerprints, and immutable aliases. `task-vms:build-image NODE` builds the current recipe on that host; Every recipe starts from stock.
+Run `php artisan task-vms:build-recipe` on the Gateway to queue the current recipe on every active host in `settings.task_vms`. It returns build IDs without waiting for remote work. Repeating it for an unchanged recipe reuses the same rows, including failed rows; resume a failure with `task-vms:build-image NODE --resume=ID`, or restart failed builds with `task-vms:build-recipe --retry` after cleanup. A recipe revert reuses a retained verified base. If pruning removed it, the chain rebuilds that identity from stock. `task-vms:image-builds` shows the recipe identity, host, steps, fingerprints, and immutable aliases. `task-vms:build-image NODE` builds the current recipe on that host; every recipe starts from stock.
 
 Release handoff queues builds immediately when the deployed recipe identity changes. The scheduler checks each minute to recover missed submissions and pick up new hosts. There is no fixed nightly Incus rebuild. [ADR 0207 step 9](/decisions/0207-one-image-recipe-shared-package-cache-no-workspace-templates#implementation-plan) will add the nightly snapshot-date PR. Unchanged releases do not build images. A host added later builds the current recipe on its next check. UpCloud's separate template flow is unchanged.
 
-Each host uses [ADR 0206's chain model](/decisions/0206-build-task-vm-images-as-chains-of-small-jobs) with `Bus::chain` on `builds` and one `task_vm_image_builds` row for the complete set. The row stores the full recipe document, identity, desired generation, and all five image locations. Steps launch and boot a stock base builder, install snapshot packages and pinned artifacts, prepare boot, clean, publish, and smoke it. Each role then launches from that exact base fingerprint, applies its recipe tools, cleans, publishes, and smoke-boots.
+Each host uses [ADR 0206's chain model](/decisions/0206-build-task-vm-images-as-chains-of-small-jobs) with `Bus::chain` on `builds` and one `task_vm_image_builds` row for the base image. The row stores the full recipe document, identity, desired generation, and the base image location. Steps launch and boot a stock base builder, install snapshot packages and pinned artifacts, prepare boot, clean, publish, and smoke it. The shared base preserves the source image’s DNS configuration, including link DNS for internal names. Topology Nodes use that same base fingerprint for every role.
 
-The role images inherit the base tool set; their own profile can add tools. Each phase is a separate queued job. No workspace or Project setup runs and neither package caches nor CI cache refs enter an image.
+Role-specific builds add no software to the current base and do not run. Add them only when a role needs software absent from the base. Each phase is a separate queued job. No workspace or Project setup runs and neither package caches nor CI cache refs enter an image.
 
-Images live in each host's configured Incus project. All five are VM images. Their immutable aliases use `<image_alias>-recipe-<first 12 hex characters of the recipe SHA-256>-<profile>`, where the profile is `base`, `gateway`, `app-dev`, `app-prod`, or `operator`. The shared alias helper shortens the configured prefix when needed to keep every alias within Incus’s 64-character limit. The database and image properties keep the full recipe identity. Every image records `orbit.recipe` and `orbit.profile` properties and `/etc/orbit-machine-recipe.json`. The build row's `images` field exposes project, alias, fingerprint, and instance type for step 4's importer.
+Images live in each host's configured Incus project. The base is a VM image. Its immutable alias uses `<image_alias>-recipe-<first 12 hex characters of the recipe SHA-256>-<profile>`, where the built profile is `base`. The shared alias helper shortens the configured prefix when needed to keep every alias within Incus’s 64-character limit. The database and image properties keep the full recipe identity. Every image records `orbit.recipe` and `orbit.profile` properties and `/etc/orbit-machine-recipe.json`. The build row's `images` field exposes project, alias, fingerprint, and instance type for step 4's importer.
 
-This step does not change nested topology composition; the existing harness still builds its own images, including its operator container.
+The nested harness imports one base image and uses it for every role. Pre-recipe groups must drain or be cancelled before deployment; the harness has no legacy builder.
 
-Only a fully built and smoke-tested set can promote the host's base alias. Role aliases stay immutable; consumers select them through the succeeded build row. A database write fence serializes promotion with desired-recipe changes, so an older build cannot move the base alias after a newer recipe is desired. A failed build leaves the previous images in place. The previous recipe does not satisfy the future current-recipe claim gate.
+Only a built and smoke-tested base can promote the host's base alias. Consumers select the immutable base through the succeeded build row. A database write fence serializes promotion with desired-recipe changes, so an older build cannot move the base alias after a newer recipe is desired. A failed build leaves the previous images in place. The previous recipe does not satisfy the current-recipe claim gate.
 
 Failed recipe phases record the last 40 lines of command output in the build step error, with secrets redacted and a size limit. The error names the phase log under `/var/log/orbit/recipe-images/<profile>-<phase>.log` in the retained builder. Logs are root-only. Installer logs include subprocess stdout, stderr, exit status, and Python exceptions. If the builder cannot be reached, the error reports that the log is unavailable. Publishing runs on the Incus host, so a publish failure reports the host command error and host name.
 
 A running older build stops at its next step before that host admits the newest desired recipe. Failed resources retain ADR 0206's cleanup and resume rules. A restart gives the builder a name for that attempt, so delayed cleanup of an older attempt cannot delete the new builder or smoke VM.
 
-Images are retained for explicit future retention policy rather than pruning another recipe's immutable aliases.
+After promotion, the final chain step prunes old recipe images on that host. It keeps the current and previous promoted base images, images used by existing VMs, and images of other running builds. It also removes the unused gateway, app-dev, app-prod, and operator aliases for host-local build records, including current and previous recipes. Images and aliases used by existing VMs stay until unused. Otherwise aliased or retained base images stay; only their unused role aliases are removed. Pruning failures resume without rebuilding. The base-only chain has 14 jobs, including promotion and pruning.
 
-After promotion, the final chain step prunes older recipe images on that host. It keeps the current and previous promoted recipe identities and every image used by an existing VM. Pruning failures can resume without rebuilding.
+### Claims require the current recipe
+
+A new Incus claim requires a succeeded, promoted base image for the deployed recipe on its selected host. Fresh claims use that image's fingerprint. The VM records `recipe_identity` and `image_fingerprint` at allocation; launch uses the fingerprint, so a later alias move cannot change the selected image. Enrollment checks the observed fingerprint and trusts the image's software, as ADR 0206 requires. There is no full-enrollment fallback for stale images.
+
+A host still building, missing, or failing the current recipe cannot serve a new claim. The group's `capacity_wait_reason` says `Task VM: waiting for recipe <12-character digest> images on <host>.` Another host with a ready current base can serve it. Image unavailability never triggers UpCloud overflow. An existing group keeps its VM and recorded recipe across recipe changes, failures, parking, and resume. UpCloud's separate template flow is unchanged.
 
 ### Add a task VM host
 
 A second host needs Incus, ZFS, and ufw, and its managed user needs passwordless `sudo`. Then:
 
 1. Set the host Node's [`settings.task_vms`](/reference/node-settings#configure-a-task-vm-host) with `node:settings` or the Node settings API. Use a unique `cidr` and a new `zfs_dataset`, such as `data/orbit-tasks`.
-2. Run `task-vms:prepare-host {node}`. It creates the pool from the new dataset and sets up the host. Then it lets all hosts [copy the image](#let-hosts-copy-the-image) to each other, and probes each pair.
+2. Run `task-vms:prepare-host {node}`. It creates the pool from the new dataset and sets up the host.
 3. Run `task-vms:build-image {node}` to build the current recipe locally.
 
 To remove a host, lower its capacity to stop new placements, wait until all its task VMs are destroyed, then clear `settings.task_vms`. Its Incus project, images, bridge, ACL, pool, and any unused legacy workspace volumes remain for manual removal.
@@ -681,7 +683,7 @@ The reserved range must always be a private network. As soon as task VMs are ena
 Task VMs have these known limits.
 
 - Incus accepts DNS before the ACL, so a task VM can query port 53 on any host address. It can read instance names from the DNS of other bridges. This risk is accepted.
-- A base image is only as fresh as its last build. Recipe changes trigger base and role image builds on every host. A host without a base image cannot start task VMs.
+- A base image is only as fresh as its last build. Recipe changes trigger base image builds on every host. A host without a base image cannot start task VMs.
 - Copies over WireGuard may run through the VPN hub.
 - The worker runs one job at a time, so a long enrollment delays the jobs of other task VMs, including a resume.
 - Doctor can report task VM Nodes while they exist.
@@ -860,8 +862,10 @@ Before a subtask that declares a topology runs its baseline check or its impleme
 | Step | What happens |
 | --- | --- |
 | `host-setup` | `sudo bin/e2e-topology-host-setup --pool-size=SIZE`: Incus, the btrfs pool, and the [isolation table](/reference/incus-topologies#run-topologies-nested-in-a-task-vm). The pool is 25 GiB in a medium VM and 45 GiB in a large VM. |
-| `images` | `bin/e2e-topology-images ensure --nodes=<union>`: the harness builds each [role image](/reference/incus-topologies#role-images) that the declared nodes need and the VM does not have yet. A first build takes about 9 minutes. |
+| `images` | `bin/e2e-topology-images ensure --nodes=<union> --recipe-images=PATH` imports the claimed recipe's single base image by fingerprint and builds none. |
 | `acquire` | `bin/e2e-topology acquire TASK-<group> <checkout> --nodes=<union> --replace`, which first releases the topology the VM still holds from an earlier subtask. After a failure it runs once more; the log records the retry. |
+
+For medium and large VMs, the preparation job on `task-vms` transfers the single prebuilt base image before the VM becomes ready. This also supports subtasks added later within that VM's size. The manifest records the VM's recipe. This removes about 7 to 9 minutes of building per group; transfer and composition still take time. Successful imports remove their archives to free space before composition. Pre-recipe groups must drain or be cancelled before deployment.
 
 Every task VM's user `orbit` is in the `incus-admin` group from its first boot, so agents can run `bin/e2e-topology` once Incus is installed. The row stores the union in `topology`, its state in `topology_state` (`preparing` or `ready`), and the run in `topology_run`.
 

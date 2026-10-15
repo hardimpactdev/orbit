@@ -14,7 +14,7 @@ final class StatusCommand extends E2ECommand
     protected $signature = 'topology-images:status {--json}';
 
     #[\Override]
-    protected $description = 'Report each role image and whether it ran the programs the checkout renders now';
+    protected $description = 'Report the imported recipe base used by every topology Node';
 
     public function handle(RoleImages $images): int
     {

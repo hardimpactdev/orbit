@@ -28,7 +28,7 @@ final class WorktreeSynchronizerGuestFake implements GuestTransport
     public ?string $pushedMarker = null;
 
     /** @param array<string, string> $installed instance => the script marker it answers with */
-    public function __construct(public array $installed = [], public ?string $failOn = null) {}
+    public function __construct(public array $installed = [], public ?string $failOn = null, public string $failureOutput = 'failed') {}
 
     public function exec(string $instance, GuestCommand $command): GuestCommandResult
     {
@@ -42,7 +42,7 @@ final class WorktreeSynchronizerGuestFake implements GuestTransport
             $argv = $request['command']->command;
             $this->execs[] = ['instance' => $request['instance'], 'command' => $argv];
             if ($this->failOn !== null && str_contains(implode(' ', $argv), $this->failOn)) {
-                $results[$label] = new GuestCommandResult('', 'failed', 1);
+                $results[$label] = new GuestCommandResult('', $this->failureOutput, 1);
             } elseif ($argv[0] === 'cat') {
                 $marker = $this->installed[$request['instance']] ?? null;
                 $results[$label] = new GuestCommandResult($marker === null ? '' : $marker."\n", '', $marker === null ? 1 : 0);
@@ -157,11 +157,11 @@ describe('WorktreeSynchronizer', function () {
     });
 
     it('refuses to record the source when runtime preparation fails', function () {
-        $guest = new WorktreeSynchronizerGuestFake(failOn: 'configure-runtime');
+        $guest = new WorktreeSynchronizerGuestFake(failOn: 'configure-runtime', failureOutput: "permission denied\nBearer topology-secret-value");
         ['root' => $root, 'target' => $target, 'synchronizer' => $synchronizer] = worktreeSynchronizerFixture($guest);
 
         expect(fn () => $synchronizer->syncWorkingTree($target, $root, str_repeat('e', 64)))
-            ->toThrow(RuntimeException::class, 'Guest runtime preparation failed.');
+            ->toThrow(fn (RuntimeException $failure) => expect($failure->getMessage())->toContain('Guest runtime preparation failed.', 'runtime.gateway exited 1', 'permission denied', '[REDACTED]')->not->toContain('topology-secret-value'));
         expect(array_filter($guest->execs, static fn (array $exec): bool => in_array(WorktreeSynchronizer::SOURCE_STATE_MARKER, $exec['command'], true)))->toBe([]);
     });
 

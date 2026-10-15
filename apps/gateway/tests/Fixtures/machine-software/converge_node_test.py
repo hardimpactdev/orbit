@@ -249,6 +249,34 @@ class ConvergenceTest(unittest.TestCase):
             recipe.install_javascript({'vp-cli': {'version': '1.2.0'}}, {'vp-cli': archive}, work, account)
         self.assertEqual(subprocess.check_output([str(scope / 'bin/vp'), '--version'], text=True).strip(), 'vp 1.2.0')
 
+    def test_installs_native_pnpm_without_referencing_the_removed_cjs_entrypoint(self):
+        home = Path(self.directory.name)
+        scope = home / '.vite-plus'
+        (scope / 'bin').mkdir(parents=True)
+        (scope / 'bin/vp').write_text('existing vp')
+        work = home / 'work'
+        work.mkdir()
+        archive = work / 'pnpm.archive'
+        native = b'\x7fELF-pinned-native-pnpm'
+        with tarfile.open(archive, 'w:gz') as output:
+            for name, data in [('package/pnpm', native), ('package/package.json', b'{"version":"12.11.2"}')]:
+                item = tarfile.TarInfo(name)
+                item.mode = 0o755
+                item.size = len(data)
+                output.addfile(item, io.BytesIO(data))
+        account = SimpleNamespace(pw_uid=os.getuid(), pw_gid=os.getgid(), pw_dir=str(home), pw_name='test-user')
+        real_safe = recipe.safe_directory
+        real_publish = recipe.publish
+        def safe(path, uid=0, gid=0):
+            return home if str(path) == '/opt/orbit' else real_safe(path, uid, gid)
+        def publish(path, content, *args, **kwargs):
+            if not str(path).startswith('/usr/local/bin/'):
+                real_publish(path, content, *args, **kwargs)
+        with patch.object(recipe, 'safe_directory', side_effect=safe), patch.object(recipe, 'publish', side_effect=publish):
+            recipe.install_javascript({'pnpm': {'version': '12.11.2'}}, {'pnpm': archive}, work, account)
+        self.assertEqual((scope / 'bin/pnpm').read_bytes(), native)
+        self.assertEqual((scope / 'bin/pnpm').stat().st_mode & 0o777, 0o755)
+
     def test_activates_the_pinned_vite_package_using_only_matching_existing_dependencies(self):
         scope = Path(self.directory.name)
         modules = scope / 'current/node_modules'

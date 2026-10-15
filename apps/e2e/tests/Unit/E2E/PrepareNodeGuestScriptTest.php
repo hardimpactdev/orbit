@@ -138,7 +138,7 @@ describe('prepare node guest script', function () {
                     'systemctl is-active --quiet systemd-resolved',
                 ])
                 ->and(file_get_contents("{$root}/commands"))
-                ->toContain('find /home/orbit ( -nouser -o -nogroup ) -exec python3 -c');
+                ->toContain('find /home/orbit -xdev ( -nouser -o -nogroup ) -exec python3 -c');
         } finally {
             new Filesystem()->deleteDirectory($root);
         }
@@ -156,9 +156,11 @@ describe('prepare node guest script', function () {
             touch("{$root}/member");
         }
         $commands = [
+            'systemctl' => "if [ \"\$1\" = mask ]; then printf '%s\\n' \"\$*\" >> '{$root}/masks'; exit 0; fi; exit 3",
+            'find' => 'exit 0',
             'networkctl' => "printf '%s\\n' \"networkctl \$*\" >> '{$root}/calls'",
             'getent' => $docker ? 'exit 0' : 'exit 2',
-            'id' => "if [ -f '{$root}/member' ]; then echo 'orbit docker'; else echo orbit; fi",
+            'id' => "if [ \"\$1\" = -u ] || [ \"\$1\" = -g ]; then echo 1000; elif [ -f '{$root}/member' ]; then echo 'orbit docker'; else echo orbit; fi",
             'usermod' => "printf '%s\\n' \"usermod \$*\" >> '{$root}/calls'; touch '{$root}/member'",
             'docker' => 'exit 0',
         ];
@@ -166,8 +168,10 @@ describe('prepare node guest script', function () {
             file_put_contents("{$root}/bin/{$name}", "#!/bin/sh\n{$body}\n");
             chmod("{$root}/bin/{$name}", 0o700);
         }
+        mkdir("{$root}/home/orbit/.ssh", 0o700, true);
+        file_put_contents("{$root}/home/orbit/.ssh/known_hosts", "builder host key\n");
         $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/prepare-node.sh');
-        file_put_contents("{$root}/prepare-node.sh", str_replace('/etc/', "{$root}/etc/", $source));
+        file_put_contents("{$root}/prepare-node.sh", str_replace(['/etc/', '/root/', '/home/'], ["{$root}/etc/", "{$root}/root/", "{$root}/home/"], $source));
 
         for ($attempt = 0; $attempt < 2; $attempt++) {
             $process = new Process(['bash', "{$root}/prepare-node.sh", 'configure-runtime'], env: ['PATH' => "{$root}/bin:".getenv('PATH')]);
@@ -176,6 +180,8 @@ describe('prepare node guest script', function () {
 
         $expected = ($network ? "networkctl reload\n" : '').($docker && ! $member ? "usermod --append --groups docker orbit\n" : '');
         expect(is_file("{$root}/calls") ? file_get_contents("{$root}/calls") : '')->toBe($expected);
+        expect(file_get_contents("{$root}/home/orbit/.ssh/known_hosts"))->toBe('');
+        expect(file("{$root}/masks", FILE_IGNORE_NEW_LINES))->toBe(array_fill(0, 2, 'mask apt-daily.timer apt-daily-upgrade.timer unattended-upgrades.service motd-news.timer'));
         expect(is_file($path))->toBe($network);
         if ($network) {
             expect(file_get_contents($path))->toBe("[Match]\nType=ether\nName=en* eth*\n\n[Network]\nDHCP=ipv4\nLinkLocalAddressing=no\n");
@@ -187,6 +193,41 @@ describe('prepare node guest script', function () {
         'VM without Docker' => [true, false, false],
         'roleless container' => [false, false, false],
         'Docker without harness networking' => [false, true, false],
+    ]);
+
+    it('adapts only the known root-owned recipe Bun launcher, idempotently', function (string $contents, string $owner, bool $converted): void {
+        $root = temporaryPath('orbit-bun-', 4);
+        mkdir("{$root}/bin", 0o700, true);
+        mkdir("{$root}/usr/local/bin", 0o700, true);
+        $path = "{$root}/usr/local/bin/bun";
+        file_put_contents($path, $contents);
+        foreach ([
+            'id' => 'echo 1000',
+            'find' => 'exit 0',
+            'systemctl' => 'if [ "$1" = mask ]; then exit 0; fi; exit 3',
+            'getent' => 'exit 2',
+            'stat' => "echo '{$owner}'",
+        ] as $name => $body) {
+            file_put_contents("{$root}/bin/{$name}", "#!/bin/sh\n{$body}\n");
+            chmod("{$root}/bin/{$name}", 0o700);
+        }
+        $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/prepare-node.sh');
+        $source = str_replace(['/etc/', '/root/', '/home/', '/usr/local/bin/'], ["{$root}/etc/", "{$root}/root/", "{$root}/home/", "{$root}/usr/local/bin/"], $source);
+        file_put_contents("{$root}/prepare-node.sh", $source);
+        foreach ([1, 2] as $attempt) {
+            $process = new Process(['bash', "{$root}/prepare-node.sh", 'configure-runtime'], env: ['PATH' => "{$root}/bin:".getenv('PATH')]);
+            expect($process->run())->toBe(0, $process->getErrorOutput());
+        }
+        expect(is_link($path))->toBe($converted);
+        if ($converted) {
+            expect(readlink($path))->toBe('/opt/orbit/bun/bin/bun');
+        } else {
+            expect(file_get_contents($path))->toBe($contents);
+        }
+    })->with([
+        'recipe launcher' => ["#!/bin/sh\nexec /opt/orbit/bun/bin/bun \"$@\"\n", '0:0:755', true],
+        'foreign executable' => ["#!/bin/sh\necho custom\n", '0:0:755', false],
+        'foreign owner' => ["#!/bin/sh\nexec /opt/orbit/bun/bin/bun \"$@\"\n", '1000:1000:755', false],
     ]);
 
     it('does not expose an ssh-pins mode', function () {

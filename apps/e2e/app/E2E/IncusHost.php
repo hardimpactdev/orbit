@@ -245,7 +245,7 @@ final class IncusHost implements GuestTransport
      * harness ownership metadata, and, when given, the worktree mount. A container gets an unprivileged,
      * nesting-capable container; every other guest is a VM.
      *
-     * @param  array<string, array{image:string,name:string,network:string,node:string,address:int,slot:int,container:bool,memory:string,metadata:array<string,string>,config?:array<string,string>,mount?:array{device:string,source:string,path:string}}>  $guests
+     * @param  array<string, array{image:string,name:string,network:string,node:string,address:int,slot:int,container:bool,memory:string,metadata:array<string,string>,preserve_image_size?:bool,config?:array<string,string>,mount?:array{device:string,source:string,path:string}}>  $guests
      * @return array<string, IncusInstance>
      */
     public function initGuests(array $guests): array
@@ -289,8 +289,7 @@ final class IncusHost implements GuestTransport
                 'limits.memory='.$this->incusLimit('memory', $guest['memory']),
                 '--device',
                 'root,pool='.$this->pool,
-                '--device',
-                'root,size='.$this->incusLimit('root_size', '16GiB'),
+                ...(($guest['preserve_image_size'] ?? false) ? [] : ['--device', 'root,size='.$this->incusLimit('root_size', '16GiB')]),
                 '--device',
                 'eth0,network='.$guest['network'],
                 '--device',
@@ -403,6 +402,14 @@ final class IncusHost implements GuestTransport
         $this->run($arguments, 1800);
 
         return $this->imageFingerprint($alias, $type);
+    }
+
+    public function importImage(string $archive): void
+    {
+        if (! str_starts_with($archive, '/') || ! is_file($archive) || is_link($archive)) {
+            throw new RuntimeException('The recipe image archive path is invalid.');
+        }
+        $this->run(['image', 'import', $archive, "{$this->remote}:"], 600);
     }
 
     /** Points `$alias` at `$fingerprint` in one request, creating the alias when it is new. */

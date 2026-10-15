@@ -27,7 +27,7 @@ use Throwable;
 /**
  * Acquire, sync, verify, and exec on one issue's topology.
  *
- * Acquisition composes the declared Nodes: each guest starts from its role image on a new network, the
+ * Acquisition composes the declared Nodes: each guest starts from the shared recipe base image on a new network, the
  * worktree is mounted on the checkout Nodes, a fresh test Gateway is bootstrapped, and every other Node is
  * enrolled through it. The attempt lives in `<worktree>/.e2e/` and the topology stays until `release`.
  */
@@ -181,6 +181,7 @@ final readonly class TopologyAcquirer
                 $instances = array_values($target->instances());
                 $this->host->startAll($instances);
                 $this->host->waitForAgents($instances);
+                $this->images->settle($target);
                 $this->host->waitForGlobalIpv4($instances);
                 $this->guests->assertSourceMounted($target);
             });
@@ -229,7 +230,9 @@ final readonly class TopologyAcquirer
                     'node' => $node->key,
                     'address' => $node->address,
                     'slot' => $slot,
-                    'container' => $node->isContainer(),
+                    'container' => false,
+                    'preserve_image_size' => true,
+                    'config' => ['cloud-init.user-data' => "#cloud-config\nusers: []\n"],
                     'memory' => $node->memory,
                     'metadata' => [...$metadata, 'user.orbit.e2e.role-image' => $images[$node->image->value]],
                     ...(isset($mounts[$node->key]) ? ['mount' => $mounts[$node->key]] : []),

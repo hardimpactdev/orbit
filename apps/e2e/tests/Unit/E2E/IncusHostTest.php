@@ -521,7 +521,7 @@ describe('IncusHost reads', function () {
         expect(fn () => incusHost()->assertTopologyNetworkIdentity($target))
             ->toThrow(RuntimeException::class, $message);
     })->with([
-        'operator as a VM' => ['operator', 'type', 'virtual-machine', 'type does not match topology'],
+        'operator as a container' => ['operator', 'type', 'container', 'type does not match topology'],
         'another network' => ['app-dev', 'network', 'oe-other', 'network identity does not match topology'],
         'another MAC' => ['gateway', 'hwaddr', '00:16:3e:00:00:00', 'MAC identity does not match topology'],
         'another Node address' => ['app-dev', 'ipv4.address', '10.232.30.12', 'IPv4 identity does not match topology'],
