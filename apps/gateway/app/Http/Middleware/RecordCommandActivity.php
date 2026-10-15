@@ -576,14 +576,9 @@ final readonly class RecordCommandActivity
     {
         $command = $request->route()?->getName();
 
-        if (is_string($command) && str_starts_with($command, 'project:document:')) {
-            // Body parsing belongs after Node access, and document bytes never enter Activity.
-            return [];
-        }
-
         foreach ($this->contributions->of(ActivityInputRedaction::class) as $redaction) {
             if (in_array($command, $redaction->commands(), true)) {
-                return $this->inputSanitizer->sanitizeProperties($redaction->input((string) $command, $request->all()));
+                return $this->inputSanitizer->sanitizeProperties($redaction->input((string) $command, static fn (): array => $request->all()));
             }
         }
 

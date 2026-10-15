@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Extensions\Conn\Infrastructure;
 
 use App\Domain\Activity\ActivityInputRedaction;
+use Closure;
 use Orbit\Extensions\Conn\Domain\ConnProfileSections;
 
 /** Keeps admin sessions and settings documents out of Activity ([Activity](/cli/activity)). */
@@ -15,8 +16,10 @@ final readonly class ConnActivityInputRedaction implements ActivityInputRedactio
         return ['conn:environment:register', 'conn:profile:settings:update', 'conn:profile:settings:patch'];
     }
 
-    public function input(string $command, array $input): array
+    public function input(string $command, Closure $input): array
     {
+        $input = $input();
+
         if ($command === 'conn:environment:register') {
             // The admin session never enters Activity.
             return array_intersect_key($input, array_flip(['environment_id', 'label', 'url']));
