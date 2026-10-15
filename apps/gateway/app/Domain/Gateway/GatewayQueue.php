@@ -21,4 +21,7 @@ enum GatewayQueue: string
 
     /** Base image jobs, UpCloud image builds, and trusted package cache fills. */
     case Builds = 'builds';
+
+    /** Operations, such as an Instance deploy: one job runs one operation (docs/reference/operations.md). */
+    case Operations = 'operations';
 }

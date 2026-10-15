@@ -43,9 +43,8 @@ Check each checkpoint before you continue to the next step.
 
     ```bash Gateway machine · root
     apt-get update
-    apt-get install --yes git curl unzip openssl sqlite3 composer sudo gnupg \
-      openssh-server ca-certificates iproute2 ufw wireguard-tools dnsmasq \
-      php8.5-cli php8.5-fpm php8.5-curl php8.5-mbstring php8.5-sqlite3 php8.5-xml
+    apt-get install --yes git curl unzip openssl sqlite3 sudo gnupg python3 \
+      openssh-server ca-certificates iproute2 ufw wireguard-tools dnsmasq
     adduser --disabled-password --gecos '' orbit
     printf 'orbit ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/orbit
     chmod 0440 /etc/sudoers.d/orbit
@@ -62,6 +61,7 @@ Check each checkpoint before you continue to the next step.
     ```bash Gateway machine · orbit
     git clone https://github.com/nckrtl/orbit.git /home/orbit/orbit
     cd /home/orbit/orbit
+    sudo bin/php-build install
     composer --working-dir=apps/cli install --prefer-dist --no-interaction
     composer --working-dir=apps/cli check-platform-reqs
     composer --working-dir=apps/gateway install --prefer-dist --no-interaction
@@ -74,7 +74,9 @@ Check each checkpoint before you continue to the next step.
 
     This installs the current `main`. When a release tag exists, check it out with `git checkout --detach <TAG>` before you run Composer. Record the commit from `git rev-parse HEAD` and report it to the user at the end; it belongs in every [bug report](/reference/alpha#feedback).
 
-    If a platform check fails, for example because the package source has no PHP 8.5, stop and report the error. Do not install with `--ignore-platform-reqs`.
+    `bin/php-build install` installs the exact PHP build that the [machine software recipe](/reference/compute-drivers#php-build) pins and a pinned Composer release, and checks the result. Every Orbit machine runs this one PHP build, and later recipe convergence keeps the Gateway on it.
+
+    If `bin/php-build` or a platform check fails, stop and report the error. Do not install with `--ignore-platform-reqs`.
 
     Configure the Gateway:
 

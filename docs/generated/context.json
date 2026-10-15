@@ -35,7 +35,6 @@
             "concepts": [
                 "Activity",
                 "Cluster",
-                "Deployment",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -114,7 +113,6 @@
             "concepts": [
                 "Access grant",
                 "Activity",
-                "Deployment",
                 "Doctor",
                 "Extension",
                 "Gateway",
@@ -405,6 +403,20 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/cli/operation.mdx",
+            "title": "operation",
+            "kind": "product",
+            "components": [
+                "apps/cli"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Process"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/cli/overview.mdx",
             "title": "Using the CLI",
             "kind": "product",
@@ -615,6 +627,7 @@
                 "Doctor",
                 "Gateway",
                 "Node",
+                "Role",
                 "Tool"
             ],
             "governing_adrs": []
@@ -895,6 +908,33 @@
             ]
         },
         {
+            "path": "docs/decisions/0209-run-long-operations-as-durable-queued-operations.md",
+            "title": "ADR 0209: Run long operations as durable queued operations",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Activity",
+                "Deployment",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Route",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0206",
+                "0209"
+            ]
+        },
+        {
             "path": "docs/decisions/0210-give-each-extension-its-own-code-boundary.md",
             "title": "ADR 0210: Give each extension its own code boundary",
             "kind": "decision",
@@ -1026,6 +1066,63 @@
             ]
         },
         {
+            "path": "docs/decisions/0215-start-development-processes-from-project-definitions.md",
+            "title": "ADR 0215: Start development Processes from Project definitions",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Access grant",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Placement",
+                "Process",
+                "Project",
+                "Role",
+                "Route",
+                "Schedule",
+                "Subtask",
+                "Task",
+                "Task workspace"
+            ],
+            "governing_adrs": [
+                "0210",
+                "0213",
+                "0215"
+            ]
+        },
+        {
+            "path": "docs/decisions/0216-run-one-exact-php-build-everywhere.md",
+            "title": "ADR 0216: Run one exact PHP build everywhere",
+            "kind": "decision",
+            "components": [
+                "apps/e2e",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Role",
+                "Roleless Node",
+                "Schedule",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0213",
+                "0216"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -1078,11 +1175,14 @@
                 "0198",
                 "0200",
                 "0206",
+                "0209",
                 "0210",
                 "0211",
                 "0212",
                 "0213",
-                "0214"
+                "0214",
+                "0215",
+                "0216"
             ]
         },
         {
@@ -1477,6 +1577,7 @@
             "title": "Compute drivers",
             "kind": "reference",
             "components": [
+                "apps/cli",
                 "apps/e2e",
                 "apps/gateway"
             ],
@@ -1496,6 +1597,7 @@
                 "Process",
                 "Project",
                 "Role",
+                "Roleless Node",
                 "Route",
                 "Schedule",
                 "Subtask",
@@ -1506,7 +1608,8 @@
             ],
             "governing_adrs": [
                 "0200",
-                "0206"
+                "0206",
+                "0216"
             ]
         },
         {
@@ -1632,7 +1735,8 @@
                 "Project",
                 "Role",
                 "Route",
-                "Schedule"
+                "Schedule",
+                "Tool"
             ],
             "governing_adrs": []
         },
@@ -1780,6 +1884,7 @@
                 "Doctor",
                 "Extension",
                 "Gateway",
+                "Instance",
                 "Node",
                 "Process",
                 "Project",
@@ -2238,7 +2343,6 @@
                 "Activity",
                 "Cluster",
                 "Doctor",
-                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -2246,6 +2350,7 @@
                 "Process",
                 "Project",
                 "Role",
+                "Roleless Node",
                 "Route",
                 "Schedule",
                 "Task",
@@ -2291,6 +2396,32 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/reference/operations.md",
+            "title": "Operations",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Access grant",
+                "Deployment",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Role",
+                "Route",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0209"
+            ]
+        },
+        {
             "path": "docs/reference/php-runtime.md",
             "title": "PHP runtimes",
             "kind": "reference",
@@ -2301,6 +2432,7 @@
                 "Activity",
                 "Deployment",
                 "Doctor",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -2466,6 +2598,7 @@
             ],
             "concepts": [
                 "Activity",
+                "Deployment",
                 "Gateway",
                 "Instance",
                 "Node",

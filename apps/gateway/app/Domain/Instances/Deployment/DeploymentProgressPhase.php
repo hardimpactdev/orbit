@@ -11,6 +11,8 @@ enum DeploymentProgressPhase: string
     case BeforeActivation = 'before_activation';
     case Activation = 'activation';
     case PhpRefresh = 'php_refresh';
+    case ProcessRestart = 'process_restart';
     case AfterActivation = 'after_activation';
     case Rollback = 'rollback';
+    case Cleanup = 'cleanup';
 }

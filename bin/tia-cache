@@ -47,8 +47,6 @@ echo json_encode([
     'fingerprint' => Pest\Plugins\Tia\Fingerprint::compute($argv[1]),
 ], JSON_THROW_ON_ERROR);
 '''
-
-
 # import-ci exits with this code when an artifact does not fit the checkout. The project's tests then run cold.
 STALE_EXIT = 3
 
@@ -346,14 +344,39 @@ def replace_older_graph(root, project, path, graph, commit):
     return False
 
 
+def pint_mismatch(root, project, data):
+    """Pint discards a cache written by another PHP version, so compare the full version the cache records."""
+    try:
+        recorded = json.loads(data).get('php')
+    except (ValueError, AttributeError):
+        recorded = None
+    if not isinstance(recorded, str) or not recorded:
+        return ['the cache records no PHP version']
+    runtime = run(root / project, 'php', '-r', 'echo PHP_VERSION;')
+    return [] if recorded == runtime else [f'PHP {runtime} differs from CI PHP {recorded}']
+
+
+def phpstan_mismatch(root, project, data):
+    """PHPStan discards a result cache written on another PHP build. Compare the PHP version that its metadata records;
+    the extensions it also compares stay unchecked, so the import note says the cache may still run cold."""
+    recorded = re.search(rb's:10:"phpVersion";i:(\d+);', data[:262144])
+    if recorded is None:
+        return ['the cache records no PHP version']
+    cached, runtime = int(recorded.group(1)), int(run(root / project, 'php', '-r', 'echo PHP_VERSION_ID;'))
+    version = lambda value: f'{value // 10000}.{value // 100 % 100}.{value % 100}'
+    return [] if cached == runtime else [f'PHP {version(runtime)} differs from CI PHP {version(cached)}']
+
+
+QUALITY_MISMATCH = {'pint': pint_mismatch, 'phpstan': phpstan_mismatch}
+
+
 def import_quality(root, project, artifact, manifest, commit):
-    """Write the artifact's Pint and PHPStan caches where they are absent, under the rules of bin/worktree-cache:
-    the same lock file, tool configuration, and PHP minor version as the tested commit."""
+    """Write the artifact's Pint and PHPStan caches where they are absent and the tool would use them: the same lock
+    file and tool configuration as the tested commit, and the runtime facts that each tool compares itself."""
     quality = manifest.get('quality') or {}
     php = manifest.get('php')
     if not isinstance(quality, dict) or (quality and not (isinstance(php, str) and re.fullmatch(r'\d+\.\d+', php))):
         raise ValueError('The CI quality caches are invalid.')
-    runtime = run(root, 'php', '-r', 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;') if quality else None
     for tool, expected in sorted(quality.items()):
         if tool not in QUALITY:
             continue
@@ -372,16 +395,21 @@ def import_quality(root, project, artifact, manifest, commit):
             config = root / project / configuration
             if not config.is_file() or manifest.get('configurations', {}).get(tool) != digest(config.read_bytes()):
                 differs.append(configuration)
-        if runtime != php:
-            differs.append(f'PHP {runtime} (CI ran {php})')
-        if differs:
-            print(f'[{project}] {tool} cache not imported, it runs cold: {", ".join(differs)} differs from CI', flush=True)
+        reasons = [f'{", ".join(differs)} differs from CI'] if differs else []
+        if not reasons:
+            try:
+                reasons = QUALITY_MISMATCH[tool](root, project, data)
+            except (CommandFailure, OSError, ValueError, KeyError, TypeError) as error:
+                reasons = [f'its metadata cannot be read: {str(error).strip() or type(error).__name__}']
+        if reasons:
+            print(f'[{project}] {tool} cache not imported, it runs cold: {"; ".join(reasons)}', flush=True)
             continue
         try:
             atomic_write(destination, data, replace=False)
         except FileExistsError:
             continue
-        print(f'[{project}] imported CI {tool} cache', flush=True)
+        note = '; PHPStan may still run cold if the PHP build differs' if tool == 'phpstan' else ''
+        print(f'[{project}] imported CI {tool} cache{note}', flush=True)
 
 
 def read_publication(store, project):

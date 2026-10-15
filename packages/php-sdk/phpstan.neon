@@ -1,6 +1,7 @@
 includes:
     - vendor/spaze/phpstan-disallowed-calls/extension.neon
     - ../../tools/phpstan/orbit-rules.neon
+    - ../../tools/phpstan/parallel.php
 
 parameters:
     level: 9
@@ -8,5 +9,3 @@ parameters:
         - src
         - ../../tools/phpstan
     tmpDir: vendor/phpstan/cache
-    parallel:
-        maximumNumberOfProcesses: 2

@@ -6,6 +6,7 @@ namespace App\Infrastructure\Tools;
 
 use App\Domain\Nodes\RoleName;
 use App\Domain\Tools\DebianVersionNormalizer;
+use App\Domain\Tools\ReservesRolePackages;
 use App\Domain\Tools\SupportsToolAdoption;
 use App\Domain\Tools\ToolAdoptionFact;
 use App\Domain\Tools\ToolInventoryPackage;
@@ -14,12 +15,18 @@ use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolOperation;
 use App\Domain\Tools\ToolRemovalPlan;
+use App\Infrastructure\MachineSoftware\MachineRecipe;
+use App\Infrastructure\MachineSoftware\PhpBuild;
+use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Node;
 
-final readonly class AptToolManager implements SupportsToolAdoption, ToolManager
+final readonly class AptToolManager implements ReservesRolePackages, SupportsToolAdoption, ToolManager
 {
+    /** Any PHP version's packages belong to the PHP role, not only the versions the recipe declares today. */
+    private const string ROLE_PHP_PACKAGE_PATTERN = '/\Aphp[0-9]+\.[0-9]+-[a-z0-9.+-]+\z/D';
+
     private const int MAX_PACKAGE_LENGTH = 128;
 
     private const int MAX_VERSION_LENGTH = 255;
@@ -45,7 +52,21 @@ final readonly class AptToolManager implements SupportsToolAdoption, ToolManager
         private RemoteToolCommandRunner $commands,
         private DebianVersionNormalizer $versions,
         private ?NodeBootstrapPackageCatalog $packages = null,
+        private ?MachineRecipe $recipe = null,
     ) {}
+
+    /** The PHP role owns the recipe's PHP build, ADR 0216: every `php<version>-*` package and the shared PHP pins. */
+    public function roleOwns(string $package): bool
+    {
+        if (preg_match(self::ROLE_PHP_PACKAGE_PATTERN, $package) === 1) {
+            return true;
+        }
+
+        return array_any(
+            ($this->recipe ?? new RecipeLoader()->load())->php,
+            static fn (PhpBuild $build): bool => in_array($package, $build->packages, true),
+        );
+    }
 
     public function name(): ToolManagerName
     {
@@ -253,7 +274,7 @@ final readonly class AptToolManager implements SupportsToolAdoption, ToolManager
             return new ToolAdoptionFact(null, null);
         }
 
-        if (in_array($package, $this->protectedPackages($node), true)) {
+        if (in_array($package, $this->protectedPackages($node), true) || $this->roleOwns($package)) {
             return new ToolAdoptionFact($version, ToolInventoryPackage::BLOCK_PROTECTED);
         }
 

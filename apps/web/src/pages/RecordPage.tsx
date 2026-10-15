@@ -58,6 +58,7 @@ import { Properties, type Property } from "../ui/Properties";
 import { SectionMenu } from "../ui/SectionMenu";
 import { instanceColumns, processColumns, scheduleColumns } from "./columns";
 import { AnalyticsPanel } from "./AnalyticsPanel";
+import { OperationPanel } from "./OperationPanel";
 import { QueuePanel } from "./QueuePanel";
 import { QuotaProviderPage } from "./Quota";
 import { RecordLayout } from "./RecordLayout";
@@ -315,6 +316,8 @@ function InstanceOverview({ fleet, instance }: { fleet: Fleet; instance: Instanc
                     />
                 )}
             </div>
+            {/* A running deploy sits right under the properties, where a phone sees it first. */}
+            <OperationPanel instance={instance} />
             <div
                 className={`w-full min-w-0 max-w-full flex flex-col md:grid md:max-h-[30vh] md:grid-cols-2 ${GAPS}`}
             >

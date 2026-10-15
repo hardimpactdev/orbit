@@ -265,6 +265,15 @@ The Gateway records the task baseline in `refs/worktree/orbit/ci-baseline`, a pe
 
 The importer checks each project's identity, manifest schema, file checksums, dependency and test configuration, tool configuration, and PHP minor version before writing private caches. `bin/ci-cache-ref import` validates the whole cache tree before passing projects to `bin/tia-cache import-ci`. It imports the Pest TIA graph into `.orbit-tia/graph.json` and compatible Pint and PHPStan caches into their tool cache paths under `vendor/`. Rector exports no cache because its checks use `--clear-cache`. An absent optional tool cache leaves that tool cold.
 
+The importer also checks the PHP version that each quality cache records, because each tool discards a cache from another PHP version:
+
+| Cache | Must match the workspace |
+| --- | --- |
+| Pint | The full PHP version that the cache records under `php`, such as `8.5.11` |
+| PHPStan | The PHP version that the result cache metadata records, such as `80511` for 8.5.11 |
+
+PHPStan also compares the loaded PHP extensions and their versions. The importer does not check those, so after a PHPStan import the log says `[<project>] imported CI phpstan cache; PHPStan may still run cold if the PHP build differs`. When a cache does not match, or records no PHP version, the log says `[<project>] <tool> cache not imported, it runs cold: <reason>`, and the tool runs cold.
+
 Cache files must be regular files at allowed relative paths, with no symlinks or path traversal. The payload is limited to 1,024 files and 64 MiB of expanded data; temporary import files are removed when the step exits.
 
 PHPStan's result cache is PHP code, which PHPStan executes when it reads the cache. Orbit trusts it only because the repository's own successful main CI publishes the ref. Pull request and fork runs cannot publish workspace cache refs. The default branch, workflow, and users who can write repository refs must therefore be trusted to run code in the checkout. Checksums detect damaged bytes, not a malicious publisher. Matching SHAs and configuration guard compatibility; Git transport does not make an untrusted cache safe.

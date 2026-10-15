@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
+use App\Domain\Tools\ReservesRolePackages;
 use App\Domain\Tools\SupportsToolAdoption;
 use App\Domain\Tools\ToolAdoptionFact;
 use App\Domain\Tools\ToolManager;
@@ -13,8 +14,11 @@ use App\Domain\Tools\ToolRemovalPlan;
 use App\Models\Node;
 use Throwable;
 
-final class FakeToolManager implements SupportsToolAdoption, ToolManager
+final class FakeToolManager implements ReservesRolePackages, SupportsToolAdoption, ToolManager
 {
+    /** @var list<string> */
+    public array $roleOwned = [];
+
     /** @var list<string|null|Throwable> */
     public array $installedVersions = [];
 
@@ -43,6 +47,11 @@ final class FakeToolManager implements SupportsToolAdoption, ToolManager
         public ToolManagerName $managerName = ToolManagerName::Apt,
     ) {
         $this->removalPlan = new ToolRemovalPlan([]);
+    }
+
+    public function roleOwns(string $package): bool
+    {
+        return in_array($package, $this->roleOwned, true);
     }
 
     public function name(): ToolManagerName

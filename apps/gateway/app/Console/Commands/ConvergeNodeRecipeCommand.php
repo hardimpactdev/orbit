@@ -17,7 +17,7 @@ final class ConvergeNodeRecipeCommand extends Command
     use ReadsStringInput;
 
     #[\Override]
-    protected $signature = 'node:converge-recipe {node? : Node name or ID} {--recipe= : Require this full recipe identity} {--status : List the recorded recipe of every Node without SSH} {--dry-run : Read versions and show the plan without changing the Node}';
+    protected $signature = 'node:converge-recipe {node? : Node name or ID} {--recipe= : Require this full recipe identity} {--status : List the recorded recipe of every Node without SSH} {--dry-run : Read versions and show the plan without changing the Node} {--profile= : Recipe profile of a Node without roles: ci-runner. The Node records it for later runs}';
 
     #[\Override]
     protected $description = 'Converge one Node to the repository recipe and stop on any failed check';
@@ -43,7 +43,8 @@ final class ConvergeNodeRecipeCommand extends Command
             }
             $target = $this->stringArgument('node');
             $node = ctype_digit($target) ? Node::query()->findOrFail((int) $target) : Node::query()->where('name', $target)->firstOrFail();
-            $result = $converge->execute($node, $recipe, (bool) $this->option('dry-run'));
+            $profile = $this->option('profile');
+            $result = $converge->execute($node, $recipe, (bool) $this->option('dry-run'), is_string($profile) ? $profile : null);
             $this->output->writeln(json_encode($result, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
 
             return self::SUCCESS;

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
 
@@ -71,6 +72,26 @@ describe('POST /api/v1/broadcasting/auth', function (): void {
 
         foreach (['presence-node.12x', 'presence-node.', 'presence-orbit'] as $channel) {
             $this->postJson('/api/v1/broadcasting/auth', ['socket_id' => '1.1', 'channel_name' => $channel])
+                ->assertForbidden()->assertJsonPath('error.code', 'broadcast.channel_forbidden');
+        }
+    });
+
+    it('signs the channel of an existing operation and refuses one that does not exist', function (): void {
+        [, $credentials] = activate_websocket_role();
+        $node = $this->markAsGateway(Node::query()->create([
+            'name' => 'gateway', 'status' => LifecycleStatus::Active, 'platform' => 'linux',
+            'public_ssh_host' => '192.0.2.2', 'wireguard_ip' => '10.44.0.2',
+        ]));
+        $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
+        $operation = app(OperationStore::class)->create('instance.deploy', 'instance', 7, null, [], 'gateway', null);
+        $channel = "private-operation.{$operation->id}";
+
+        $this->postJson('/api/v1/broadcasting/auth', ['socket_id' => '1.1', 'channel_name' => $channel])
+            ->assertOk()
+            ->assertJsonPath('auth', $credentials->appKey.':'.hash_hmac('sha256', "1.1:{$channel}", $credentials->appSecret));
+
+        foreach (['private-operation.999999', 'private-operation.x', 'private-operation.'] as $missing) {
+            $this->postJson('/api/v1/broadcasting/auth', ['socket_id' => '1.1', 'channel_name' => $missing])
                 ->assertForbidden()->assertJsonPath('error.code', 'broadcast.channel_forbidden');
         }
     });

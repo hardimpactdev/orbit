@@ -17,6 +17,8 @@ bin/docs-openapi
 
 `composer docs-openapi` runs the same script. `bin/docs-openapi --check` fails when `docs/openapi.json` or those API groups differ from a fresh run. The check prints a unified diff and the regeneration command when an output is stale. It leaves the files unchanged. Continuous integration and the local candidate gate run the check.
 
+The fixed deployment stream schema includes `process_restart`, the phase between PHP refresh and after-activation commands. Keep its accepted phase values aligned with the Gateway and SDK.
+
 The Gateway rollback operation queues a code switch without a request body. Database restore is an explicit operator step; see [Gateway recovery](/reference/gateway-recovery#roll-back).
 
 ## Same checkout, same file
@@ -51,7 +53,9 @@ The `tasks:cancel` description follows [workspace cancellation](/reference/tasks
 
 A form-request rule `present` marks that property required, as `required` does.
 
-Requests that inspect raw JSON also declare their body fields in `rules()`. The generated bodies include the Instance branch, deploy-step fields, database connection patches, and Node settings. A keyed array rule such as `array:path` publishes a closed JSON object, and nullable objects and members keep their null type. The generator resolves the shared database rules' regex constants and translates their whole-string anchors for JSON Schema, so invalid connection fields remain invalid in OpenAPI and MCP. The raw JSON checks still enforce object shape and the domain rules at runtime.
+Requests that inspect raw JSON also declare their body fields in `rules()`. The generated bodies include the Instance branch and shared paths, deploy-step fields, database connection patches, and Node settings. A keyed array rule such as `array:path` publishes a closed JSON object, and nullable objects and members keep their null type. The generator resolves the shared database rules' regex constants and translates their whole-string anchors for JSON Schema, so invalid connection fields remain invalid in OpenAPI and MCP. The raw JSON checks still enforce object shape and the domain rules at runtime.
+
+The Instance update schema keeps `shared_paths` nullable, so `null` can restore its default; [shared paths](/reference/deployments#shared-paths) defines the directory rules.
 
 The installed [Process update](/reference/processes-and-schedules#update-in-place) uses `PATCH /api/v1/processes/{process}`. Its generated body reuses create rules but excludes identity, `preset`, and `start`, and requires `runtime` and `command`. Process create, installed update, and Project definition write schemas expose Docker `environment` as a name-to-string map, not a list. Process responses retain nullable `working_directory`. Regenerate the web API types with `bun run types` in `apps/web` after these schemas change.
 
@@ -61,7 +65,7 @@ The Project development deploy step operations publish typed step responses from
 
 [Project Documents](/reference/project-documents#api-contract) publish typed entry and version schemas, numeric entry IDs, cursor metadata, and the same JSON text/base64 bodies for HTTP and MCP. Their generated create schema distinguishes folders from files and requires exactly one content field for files. Write has the same content choice; metadata update requires a name or parent. These constraints remain on MCP tools when the body already has shared object properties. Create returns only HTTP 201, not an upsert retry response.
 
-The script publishes HTTP 202 and the queued release record for `gateway:release:deploy` and `gateway:release:rollback`, because the [Gateway release](/reference/gateway-recovery#deploy-through-the-api) runs in its own unit after the request ends. It also maps the automatic release controller to its state schema.
+The script publishes HTTP 202 and the queued release record for `gateway:release:deploy` and `gateway:release:rollback`, because the [Gateway release](/reference/gateway-recovery#deploy-through-the-api) runs in its own unit after the request ends. It publishes HTTP 202 and the queued [operation](/reference/operations) for `instance:deploy`, and the operation with its steps for `operation:show`. Only `instance:rollback` keeps the NDJSON response. It also maps the automatic release controller to its state schema.
 
 A request field the API validates as a boolean is a JSON `boolean` in `docs/openapi.json`. [MCP](/reference/mcp) keeps that type in the tool schema.
 

@@ -12,7 +12,7 @@ use App\Infrastructure\Ssh\SshExecutor;
 use Symfony\Component\Process\Process;
 
 /**
- * Runs each remote command in a local shell, so tests exercise the real remote program.
+ * Runs the real remote program locally. SSH does not forward local Composer credentials.
  */
 final class LocalShellSshExecutor implements SshExecutor
 {
@@ -23,7 +23,7 @@ final class LocalShellSshExecutor implements SshExecutor
     {
         $input = $command->protectedInput instanceof ProtectedInput ? stream_get_contents($command->protectedInput->stream()) : $command->input;
         HostPathGuardedProcessRunner::assertSafe($command->arguments, is_string($input) ? $input : null);
-        $process = new Process($command->arguments, null, $this->environment, $input);
+        $process = new Process($command->arguments, null, [...$this->environment, 'COMPOSER_AUTH' => false], $input);
         $process->run();
 
         return new CommandResult((int) $process->getExitCode(), $process->getOutput(), $process->getErrorOutput(), 1, false);

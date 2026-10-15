@@ -12,6 +12,7 @@ use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\RealtimeAuthRequest;
 use App\Models\Node;
+use App\Models\Operation;
 use Illuminate\Support\Facades\Broadcast;
 
 /** Authorises Gateway-accessible realtime subscriptions. */
@@ -48,6 +49,12 @@ final class RealtimeAuthController extends Controller
 
         // A live log stream's channel is signed only by the response that opens the stream (ADR 0153).
         if (str_starts_with($channel, 'presence-') || str_starts_with($channel, 'private-log-stream.')) {
+            throw new ResourceOperationException('broadcast.channel_forbidden', 'Channel is not authorized.', 403);
+        }
+
+        // An operation's progress channel exists while the operation does (docs/reference/operations.md).
+        if (str_starts_with($channel, 'private-operation.')
+            && (preg_match('/^private-operation\\.([1-9][0-9]*)$/', $channel, $match) !== 1 || ! Operation::query()->whereKey((int) $match[1])->exists())) {
             throw new ResourceOperationException('broadcast.channel_forbidden', 'Channel is not authorized.', 403);
         }
 

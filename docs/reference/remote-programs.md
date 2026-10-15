@@ -4,7 +4,7 @@ description: "How the Gateway ships a program to a Node: one file per program, a
 covers:
   - apps/gateway/app/Domain/RemotePrograms/**
   - apps/gateway/app/Infrastructure/RemotePrograms/**
-  - apps/gateway/resources/remote/{bootstrap.py,lib/program.py}
+  - apps/gateway/resources/remote/{bootstrap.py,lib/program.py,lib/production-shared-paths.sh}
   - apps/gateway/ruff.toml
   - apps/gateway/tests/Programs/{harness,test_program}.py
   - apps/gateway/tests/Unit/Architecture/InlineRemoteScriptTest.php
@@ -102,9 +102,11 @@ A finding is fixed, or suppressed on its line with a comment that gives the reas
 
 `tests/Unit/Architecture/InlineRemoteScriptTest.php` lists every file under `apps/gateway/app` and `apps/gateway/extensions` that still holds a nowdoc or heredoc labelled `BASH`, `PY`, `PYTHON`, `SH`, `SHELL`, or `AWK`. A file outside the list fails the test. A listed file without such a script fails too, so a migration removes its file from the list. The list only shrinks. Caddy, configuration, and text templates are configuration, not programs, and are out of scope.
 
+The existing production deployment program loads `lib/production-shared-paths.sh` to prepare [shared directories](/reference/deployments#shared-paths). This Bash library takes explicit arguments and runs within the existing deployment command while that command awaits migration. Shellcheck and the deployment filesystem tests check it.
+
 ## Programs
 
-These programs run on Nodes now. Each one replaced an inline script.
+These programs run on Nodes now. Each one replaced an inline script. The PHP step of an Instance sends `php.install-build` through its own SSH executor and reads the result with the runner's result contract, `SshProgramRunner::pythonResult`.
 
 | Program | Purpose |
 | --- | --- |
@@ -116,6 +118,7 @@ These programs run on Nodes now. Each one replaced an inline script.
 | `instances.read-removal-receipt` | Reports how complete a receipt-backed removal is. |
 | `instances.clean-removal-receipt` | Finishes a receipt-backed removal. |
 | `instances.finalize-source-removal` | Moves a recorded source into quarantine and deletes it. |
+| `php.install-build` | Installs and checks the recipe's [PHP build](/reference/compute-drivers#install-the-php-build), with a rollback. |
 
 ## Why it works this way
 

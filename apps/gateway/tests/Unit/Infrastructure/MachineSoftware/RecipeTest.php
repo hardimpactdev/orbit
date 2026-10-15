@@ -96,13 +96,31 @@ describe('machine recipe structure and identity', function (): void {
         $packages = new NodeBootstrapPackageCatalog;
         $common = $packages->forNode($node);
         $programs = new RemotePhpPackageManager()->appDevPrograms(new InstancePhpVersionCatalog()->versions());
-        $php = array_values(array_filter($programs['source']->arguments, fn (string $argument): bool => str_starts_with($argument, 'php8.')));
+        [, $json] = explode("\0", $programs['install']->input ?? '', 2);
+        $input = json_decode($json, true, flags: JSON_THROW_ON_ERROR);
+        $php = [];
+        foreach ($input['versions'] as $set) {
+            $php = [...$php, ...array_column($set['packages'], 'name')];
+        }
+        // Every machine with a PHP set also gets the tool that repacks its build for a rollback.
+        $php = [...array_values(array_unique($php)), 'dpkg-repack'];
+        $php85 = [...$recipe->php('8.5')->packages, 'dpkg-repack'];
         $javascript = ['vp', 'vp-cli', 'node', 'pnpm', 'bun'];
         $production = array_values(array_unique([...$common, ...$packages->forRole($node, RoleName::AppProd), ...$javascript]));
-        $development = [...$production, ...$php, 'php8.4-readline', 'php8.5-readline', 'libgd3', 'php-common', 'php8.4-igbinary', 'php8.5-igbinary'];
+        $development = [...$production, ...$php];
         $imagePackages = ['openssh-server', ...TaskVmCloudInit::WorkspaceTools, ...TaskVmCloudInit::ChromiumLibraries];
         $base = [...$development, ...$imagePackages, 'rust', 'rust-std', 'cargo', 'clippy', 'rustfmt', 'orbit-agent', 'pi'];
-        foreach (['operator' => $common, 'gateway' => [...$common, 'caddy'], 'app-prod' => $production, 'app-dev' => $development, 'base' => $base] as $role => $expected) {
+        $profiles = [
+            'operator' => $common,
+            'gateway' => [...$common, 'caddy', ...$php85],
+            'app-prod' => [...$production, ...$php85],
+            'app-dev' => $development,
+            'base' => $base,
+            'ci-runner' => [...$common, 'acl', 'attr', 'git', 'unzip', ...$php85],
+        ];
+        expect($php)->toBe([...array_values(array_unique([...$recipe->php('8.5')->packages, ...$recipe->php('8.4')->packages])), 'dpkg-repack']);
+        foreach ($profiles as $role => $expected) {
+            $expected = array_values(array_unique($expected));
             sort($expected, SORT_STRING);
             expect($recipe->profile($role))->toBe($expected);
         }
@@ -122,6 +140,96 @@ describe('machine recipe structure and identity', function (): void {
             ->and($recipe->tools['orbit-agent']->artifacts['amd64']->digest)->toBe(NodeAgentFootprint::checksum('x86_64'))
             ->and($recipe->tools['orbit-agent']->artifacts['arm64']->digest)->toBe(NodeAgentFootprint::checksum('aarch64'));
     });
+
+    it('names the rollback tool, the PCOV profiles, the only purging profile, and the mirror', function (): void {
+        $policy = new RecipeLoader()->load()->phpPolicy;
+
+        expect($policy->rollbackTool)->toBe('dpkg-repack')
+            ->and($policy->pcovProfiles)->toBe(['app-dev', 'base', 'ci-runner'])
+            ->and($policy->purgeProfiles)->toBe(['ci-runner'])
+            ->and($policy->mirror)->toBe('https://github.com/nckrtl/orbit/releases/download/php-build-mirror');
+    });
+
+    it('names one exact PHP build per version for every environment', function (): void {
+        $recipe = new RecipeLoader()->load();
+        $build = $recipe->php('8.5');
+
+        expect($recipe->ciPhp)->toBe('8.5')
+            ->and($build->phpVersion)->toBe('8.5.11')
+            ->and($recipe->php('8.4')->phpVersion)->toBe('8.4.26')
+            ->and($build->packages)->toContain('php-common', 'libgd3', 'php8.5-cli', 'php8.5-fpm', 'php8.5-pcov')
+            ->not->toContain('php8.4-cli')
+            ->and($build->extensions)->toContain('core', 'pcov', 'zend opcache', 'lexbor', 'uri')
+            ->and($recipe->php('8.4')->extensions)->not->toContain('lexbor', 'uri')
+            ->and(array_keys($recipe->php))->toBe(new InstancePhpVersionCatalog()->versions());
+        foreach (['gateway', 'app-prod', 'websocket', 'ci-runner', 'app-dev', 'base'] as $profile) {
+            expect($recipe->profile($profile))->toContain(...$build->packages);
+        }
+        foreach ($build->packages as $name) {
+            expect($recipe->tools[$name]->version)->toContain('+ubuntu26.04');
+            if (str_starts_with($recipe->tools[$name]->version, '8.5.')) {
+                expect($recipe->tools[$name]->version)->toBe($recipe->tools['php8.5-common']->version);
+            }
+        }
+    });
+
+    it('rejects a PHP build that is not one exact build', function (Closure $mutate, string $message): void {
+        $document = machine_recipe_document();
+        $mutate($document);
+        expect(fn () => machine_recipe_decode($document))->toThrow(InvalidArgumentException::class, $message);
+    })->with([
+        'one core pin of another patch' => [function (&$d): void {
+            $pin = &$d['tools']['php8.5-cli'];
+            $pin['version'] = str_replace('8.5.11-1', '8.5.10-1', $pin['version']);
+            foreach ($pin['artifacts'] as &$artifact) {
+                $artifact['url'] = str_replace('8.5.11-1', '8.5.10-1', $artifact['url']);
+            }
+        }, 'Change every pin of one PHP version together'],
+        'a pin for another Ubuntu release' => [function (&$d): void {
+            $pin = &$d['tools']['php8.5-redis'];
+            $pin['version'] = str_replace('ubuntu26.04', 'ubuntu24.04', $pin['version']);
+            foreach ($pin['artifacts'] as &$artifact) {
+                $artifact['url'] = str_replace('ubuntu26.04', 'ubuntu24.04', $artifact['url']);
+            }
+        }, 'is not built for Ubuntu 26.04'],
+        'a PHP pin named directly' => [function (&$d): void {
+            $d['roles']['gateway'][] = 'php8.5-cli';
+        }, 'names the PHP pin [php8.5-cli]'],
+        'a PHP pin outside every set' => [function (&$d): void {
+            $d['tools']['php8.5-soap'] = $d['tools']['php8.5-cli'];
+        }, 'tools.php8.5-soap: unknown tool'],
+        'a set without its CLI' => [function (&$d): void {
+            $d['php']['versions']['8.5']['packages'] = array_values(array_diff($d['php']['versions']['8.5']['packages'], ['php8.5-cli']));
+        }, 'missing php8.5-cli'],
+        'unsorted extensions' => [function (&$d): void {
+            $d['php']['versions']['8.5']['extensions'] = array_reverse($d['php']['versions']['8.5']['extensions']);
+        }, 'expected a sorted list'],
+        'extensions without PCOV' => [function (&$d): void {
+            $d['php']['versions']['8.5']['extensions'] = array_values(array_diff($d['php']['versions']['8.5']['extensions'], ['pcov']));
+        }, 'expected core and pcov'],
+        'an unknown set' => [function (&$d): void {
+            $d['roles']['gateway'][] = 'php:9.9';
+        }, 'unknown PHP set [php:9.9]'],
+        'an unused version' => [function (&$d): void {
+            $d['roles']['app-dev'] = array_values(array_diff($d['roles']['app-dev'], ['php:8.4']));
+            $d['base'] = array_values(array_diff($d['base'], ['php:8.4']));
+        }, 'no profile names php:8.4'],
+        'an undeclared CI version' => [function (&$d): void {
+            $d['php']['ci'] = '8.3';
+        }, 'php.ci: [8.3] is not a declared PHP version'],
+        'purging on a site profile' => [function (&$d): void {
+            $d['php']['purge_extras'][] = 'app-prod';
+        }, 'only the ci-runner profile may purge PHP packages'],
+        'PCOV for an unknown profile' => [function (&$d): void {
+            $d['php']['pcov'][] = 'typo';
+        }, 'php.pcov: expected recipe profiles'],
+        'a mirror without HTTPS' => [function (&$d): void {
+            $d['php']['mirror'] = 'http://example.com/php';
+        }, 'php.mirror: expected an HTTPS base URL'],
+        'a rollback tool that is not an Ubuntu package' => [function (&$d): void {
+            $d['php']['rollback'] = 'caddy';
+        }, 'php.rollback'],
+    ]);
 
     it('canonicalizes object key order and whitespace but preserves meaningful changes', function (): void {
         $document = machine_recipe_document();

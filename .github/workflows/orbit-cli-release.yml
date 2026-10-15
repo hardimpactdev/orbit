@@ -202,7 +202,6 @@ jobs:
           tagged="$(gh api "repos/${REPOSITORY}/git/ref/tags/${TAG}" --jq .object.sha)"
           test "$tagged" = "$COMMIT"
           mkdir verify
-          curl --fail --silent --show-error --location --retry 4 \
-            --output verify/SHA256SUMS "https://github.com/${REPOSITORY}/releases/download/${TAG}/SHA256SUMS"
+          gh release download "$TAG" --repo "$REPOSITORY" --pattern SHA256SUMS --dir verify
           cmp verify/SHA256SUMS release/SHA256SUMS
           echo "Published ${TAG} for ${COMMIT}."

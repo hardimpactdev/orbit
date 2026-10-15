@@ -16,7 +16,7 @@ The API listens on HTTPS on the Gateway's WireGuard address. Orbit private DNS r
 
 The Gateway presents a certificate from the Orbit root certificate authority (CA). `GET /api/v1/ca/root` returns that certificate and its fingerprint without authentication so a new client can pin it; `orbit gateway:add` and `orbit gateway:trust` do this for you and install the certificate in the operating-system trust store. A client that already trusts the certificate passes it as its CA bundle, for example with `curl --cacert`.
 
-Redirects are never followed. The Gateway answers JSON for every endpoint except the two deployment streams, which answer newline-delimited JSON, and the runtime activation page, which answers HTML for Caddy.
+Redirects are never followed. The Gateway answers JSON for every endpoint except the rollback stream, which answers newline-delimited JSON, and the runtime activation page, which answers HTML for Caddy.
 
 ## Identify the caller
 
@@ -117,6 +117,8 @@ Injected-failure tests must stop the operation after the registry save but befor
 
 This entry is the docs-first endpoint contract. The generated API sidebar and OpenAPI operation are added from the route, request, SDK, and CLI definitions when the command is implemented; generated files are not hand-edited to advertise a route that does not yet exist.
 
-## Stream a deployment
+## Follow a long operation
 
-`POST /api/v1/instances/{instance}/deploy` and `POST /api/v1/instances/{instance}/rollback` answer `application/x-ndjson`. Each line is one event with `type`, a monotonically increasing `sequence`, and the `request_id`: `phase` events name the phase and step, `output` events carry at most 16 KiB of base64-encoded stdout or stderr, and exactly one final `result` event reports `succeeded` or `failed` with the selected release. A client closes the connection to cancel; the Gateway never replays events. The [production release layout](/reference/deployments#use-the-deployment-api) describes the phases and limits.
+`POST /api/v1/instances/{instance}/deploy` answers `202 Accepted` with an [operation](/reference/operations) and returns at once. The deploy runs on the Gateway queue. Read `GET /api/v1/operations/{operation}?after_sequence=N` after the record's `poll_after_seconds` until its `status` is `succeeded`, `failed`, or `cancelled`, or subscribe to `private-operation.{id}` over Reverb. Closing the connection does not stop the deploy; `POST /api/v1/operations/{operation}/cancel` does.
+
+`POST /api/v1/instances/{instance}/rollback` still answers `application/x-ndjson`. Each line is one event with `type`, a monotonically increasing `sequence`, and the `request_id`: `phase` events name the phase, `output` events carry at most 16 KiB of base64-encoded stdout or stderr, and exactly one final `result` event reports `succeeded` or `failed` with the selected release. A client closes the connection to cancel; the Gateway never replays events. [The rollback stream](/reference/deployments#the-rollback-stream) describes the limits.

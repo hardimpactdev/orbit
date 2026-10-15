@@ -39,8 +39,11 @@ def image_packages(payload):
         with tempfile.TemporaryDirectory(prefix='orbit-image-packages-') as directory:
             work = Path(directory)
             debs = []
+            php = php_packages(payload)
             for name, pin in payload['tools'].items():
                 if pin['source'] != 'artifact' or not pin['artifacts'][payload['architecture']]['url'].endswith('.deb'):
+                    continue
+                if name in php:
                     continue
                 if installed.get(name) == pin['version']:
                     continue
@@ -55,6 +58,8 @@ def image_packages(payload):
                      *options, '--', *debs], env=environment)
     finally:
         POLICY.unlink()
+    if payload.get('php') and php_install(payload) not in ('applied', 'current'):
+        raise RecipeFailure()
     # dnsmasq and Caddy are configured at enrollment, not while baking the disk.
     for service in ('ssh', 'docker', 'containerd'):
         if run(['systemctl', 'show', '-p', 'LoadState', '--value', service], required=False).stdout.strip() == 'loaded':
@@ -156,12 +161,31 @@ def image_agent(payload):
         publish('/usr/local/bin/orbit-agent', artifact.read_bytes(), 0o755)
 
 
+def php_packages(payload):
+    """The packages of the PHP build. php.install-build installs them, not the image package phase."""
+    php = payload.get('php') or {}
+    versions = php.get('input', {}).get('versions', {})
+    return {pin['name'] for build in versions.values() for pin in build['packages']}
+
+
+def php_install(payload):
+    """Run php.install-build, the one installer of the recipe's PHP build, and return its outcome."""
+    php = payload['php']
+    result = subprocess.run(['python3', '-I', '-c', php['bootstrap'], 'php.install-build'], capture_output=True, text=True,
+                            input=php['program'] + '\0' + json.dumps({**php['input'], 'git_read': {}}), timeout=900)
+    command_output(result)
+    try:
+        return json.loads(result.stdout.strip().splitlines()[-1])['outcome']
+    except (IndexError, KeyError, ValueError):
+        raise RecipeFailure()
+
+
 def image_verify(payload):
     marker = json.loads(Path('/etc/orbit-machine-recipe.json').read_text())
     if marker != {'identity': payload['identity'], 'profile': payload['profile']}:
         raise RecipeFailure()
     selected = {name: pin for name, pin in payload['tools'].items()
-                if name not in ('rust', 'cargo', 'rust-std', 'clippy', 'rustfmt', 'orbit-agent', 'pi')}
+                if name not in ('rust', 'cargo', 'rust-std', 'clippy', 'rustfmt', 'orbit-agent', 'pi') and name not in php_packages(payload)}
     os.environ['SUDO_USER'] = 'orbit'
     observed = inspect(selected)
     if any(observed[name] != pin['version'] for name, pin in selected.items()):
@@ -178,6 +202,9 @@ def image_verify(payload):
             with open(path, 'rb') as stream:
                 if hashlib.file_digest(stream, algorithm).hexdigest() != artifact[algorithm]:
                     raise RecipeFailure()
+    # The installer finds nothing to change and checks the CLI's loaded extensions against the recipe.
+    if payload.get('php') and php_install(payload) != 'current':
+        raise RecipeFailure()
     rust_pins = {name: payload['tools'][name]['artifacts'][payload['architecture']]
                  for name in ('rust', 'cargo', 'rust-std', 'clippy', 'rustfmt') if name in payload['tools']}
     if rust_pins and json_file(Path('/opt/orbit/rust/.recipe-artifacts.json')) != rust_pins:

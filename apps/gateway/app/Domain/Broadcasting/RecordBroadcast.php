@@ -11,9 +11,9 @@ use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Support\Carbon;
 
 /**
- * The single envelope broadcast for every record change on the `orbit`
- * channel: `{ type, id, at, data }`. `data` is the same Spatie Data object
- * shape the record's list/show endpoint returns.
+ * The single envelope broadcast for every record change: `{ type, id, at, data }`. `data` is the same Spatie Data
+ * object shape the record's list/show endpoint returns, or a notice. Record events go out on the private `orbit`
+ * channel; the progress of one operation also goes out on its own `private-operation.{id}` channel.
  */
 final readonly class RecordBroadcast implements ShouldBroadcastNow
 {
@@ -24,6 +24,7 @@ final readonly class RecordBroadcast implements ShouldBroadcastNow
         public RecordEventType $type,
         public int|string $id,
         public array $data,
+        public string $channel = 'orbit',
     ) {
         $this->at = Carbon::now()->format(DateTimeInterface::ATOM);
     }
@@ -31,7 +32,7 @@ final readonly class RecordBroadcast implements ShouldBroadcastNow
     /** @return list<Channel> */
     public function broadcastOn(): array
     {
-        return [new PrivateChannel('orbit')];
+        return [new PrivateChannel($this->channel)];
     }
 
     public function broadcastAs(): string

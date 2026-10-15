@@ -72,155 +72,7 @@ describe('retained releases', function (): void {
     });
 });
 
-describe('deployment streams', function (): void {
-    it('renders a progress tree with incremental application bytes safely for a human', function (): void {
-        $bytes = "first\x1b[31m\xff\n";
-        $mock = MockClient::global([
-            DeployInstanceRequest::class => deployment_cli_stream_response([
-                deployment_cli_phase(1, 'source_preparation'),
-                deployment_cli_phase(2, 'environment_sync'),
-                deployment_cli_phase(3, 'before_activation', 'migrate'),
-                deployment_cli_output(4, 'stdout', $bytes),
-                deployment_cli_output(5, 'stderr', "warning\r\n"),
-                deployment_cli_phase(6, 'activation'),
-                deployment_cli_result(7, 'succeeded', selectedRelease: 'release-b'),
-            ]),
-        ]);
-
-        $exitCode = Artisan::call('instance:deploy', [
-            'instance' => '17',
-            '--no-interaction' => true,
-        ]);
-        $output = Artisan::output();
-
-        expect($exitCode)->toBe(0)
-            ->and($output)
-            ->toContain(
-                'Deploy Instance [17]',
-                '● Resolved release',
-                '● Synced environment',
-                '● Ran migrate',
-                'stdout: "first\\u001b[31m\\ufffd\\n"',
-                'stderr: "warning\\r\\n"',
-                '● Activated release',
-                'Deployment succeeded.',
-                'Selected release: release-b',
-                'Request ID: '.deployment_cli_request_id(),
-            )
-            ->not->toContain("\x1b[31m")
-            ->and($output)->not->toContain("\xff")
-            ->and($mock->getRecordedResponses())
-            ->toHaveCount(1)
-            ->and($mock->getLastResponse()?->stream()->isReadable())
-            ->toBeFalse();
-        // The revealed before_activation row must sit before activation in the tree, not
-        // appended after it (M3): admitBefore(), not admit(), places it at its real position.
-        expect(strpos($output, '● Ran migrate'))->toBeLessThan(strpos($output, '● Activated release'));
-    });
-
-    it('does not repeat the tree frame while several output lines print during one step', function (): void {
-        $mock = MockClient::global([
-            DeployInstanceRequest::class => deployment_cli_stream_response([
-                deployment_cli_phase(1, 'source_preparation'),
-                deployment_cli_phase(2, 'environment_sync'),
-                deployment_cli_phase(3, 'before_activation', 'slow'),
-                deployment_cli_output(4, 'stdout', "line one\n"),
-                deployment_cli_output(5, 'stdout', "line two\n"),
-                deployment_cli_output(6, 'stdout', "line three\n"),
-                deployment_cli_phase(7, 'activation'),
-                deployment_cli_result(8, 'succeeded', selectedRelease: 'release-b'),
-            ]),
-        ]);
-
-        $exitCode = Artisan::call('instance:deploy', ['instance' => '17', '--no-interaction' => true]);
-        $output = Artisan::output();
-
-        expect($exitCode)->toBe(0)
-            ->and($output)
-            ->toContain('stdout: "line one\\n"', 'stdout: "line two\\n"', 'stdout: "line three\\n"')
-            ->and(substr_count($output, 'Deploy Instance [17]'))->toBe(1)
-            ->and(substr_count($output, 'Deployment succeeded.'))->toBe(1)
-            ->and($mock->getRecordedResponses())
-            ->toHaveCount(1);
-    });
-
-    it('sends streamed step output through printLine() over a real decorated terminal, never a clear-and-restart cycle (F4/M22)', function (): void {
-        if (! defined('SIGINT') || ! function_exists('posix_kill') || ! function_exists('openssl_csr_new')) {
-            $this->markTestSkipped('POSIX signals are unavailable.');
-        }
-
-        if (! Process::isPtySupported()) {
-            $this->markTestSkipped('PTY is unavailable.');
-        }
-
-        $fixture = deployment_cli_signal_fixture($this->orbitHome, 'streamed-output');
-        $output = '';
-        $command = new Process(
-            [PHP_BINARY, dirname(__DIR__, 3).'/orbit', 'instance:deploy', '17', '--ansi', '--no-interaction'],
-            env: ['ORBIT_HOME' => $fixture['home']],
-            timeout: 10,
-        );
-        $command->setPty(true);
-
-        try {
-            $command->run(static function (string $type, string $data) use (&$output): void {
-                $output .= $data;
-            });
-            $serverExitCode = $fixture['server']->wait();
-
-            expect($command->getExitCode())->toBe(0)
-                ->and($serverExitCode)->toBe(0)
-                ->and($output)->toContain('line one', 'line two', 'line three', 'Deployment succeeded.')
-                // Each of the 4 admitted steps (source_preparation, environment_sync, the
-                // before_activation step, activation) starts and stops its own renderer once,
-                // hiding and showing the cursor once each: 4 pairs for the whole command.
-                // Animation::printLine() (F4) reprints the live frame in the same write as each
-                // of the 3 streamed lines inside the before_activation step's own renderer,
-                // without an extra stop/restart per line. A clear-and-restart regression (M22,
-                // using withoutRepainting() here instead) would stop and restart the renderer
-                // once per printed line too, raising the count to 4 + 3 = 7.
-                ->and(substr_count($output, "\e[?25l"))->toBe(4)
-                ->and(substr_count($output, "\e[?25h"))->toBe(4);
-        } finally {
-            if ($command->isRunning()) {
-                $command->stop(0.1, 9);
-            }
-
-            if ($fixture['server']->isRunning()) {
-                $fixture['server']->stop(0.1, 9);
-            }
-        }
-    });
-
-    it('emits only exact compact NDJSON events in JSON mode', function (): void {
-        $events = [
-            deployment_cli_phase(1, 'source_preparation'),
-            deployment_cli_output(2, 'stdout', "first\0bytes\n"),
-            deployment_cli_result(3, 'succeeded', selectedRelease: 'release-b'),
-        ];
-        MockClient::global([
-            DeployInstanceRequest::class => deployment_cli_stream_response($events),
-        ]);
-
-        $exitCode = Artisan::call('instance:deploy', [
-            'instance' => '17',
-            '--json' => true,
-            '--no-interaction' => true,
-        ]);
-        $lines = array_values(array_filter(explode("\n", trim(Artisan::output()))));
-
-        expect($exitCode)->toBe(0)
-            ->and($lines)->toHaveCount(3)
-            ->and(array_map(
-                static fn (string $line): array => json_decode($line, true, flags: JSON_THROW_ON_ERROR),
-                $lines,
-            ))->toBe($events)
-            ->and(Artisan::output())->not->toContain('Phase:')
-            ->and(Artisan::output())->not->toContain('Result:')
-            ->and(Artisan::output())->not->toContain('Request ID:')
-            ->and(Artisan::output())->not->toContain('?');
-    });
-
+describe('rollback streams', function (): void {
     it('renders a rollback progress tree for a human', function (): void {
         $mock = MockClient::global([
             RollbackInstanceRequest::class => deployment_cli_stream_response([
@@ -248,6 +100,35 @@ describe('deployment streams', function (): void {
 
         expect($mock->getRecordedResponses())->toHaveCount(1);
     });
+
+    it('reports the rollback Process restart phase in human and JSON output', function (bool $fails, bool $json): void {
+        MockClient::global([
+            RollbackInstanceRequest::class => deployment_cli_stream_response([
+                deployment_cli_phase(1, 'rollback'),
+                deployment_cli_phase(2, 'process_restart'),
+                deployment_cli_output(3, $fails ? 'stderr' : 'stdout', $fails ? "Failed to restart Process 12.\n" : "Restarted Process 12.\n"),
+                deployment_cli_result(4, $fails ? 'failed' : 'succeeded', failedStep: $fails ? 'after_activation' : null,
+                    errorCode: $fails ? 'process.restart_failed' : null, selectedRelease: 'release-a'),
+            ]),
+        ]);
+
+        $exitCode = Artisan::call('instance:rollback', [
+            'instance' => '17', '--release' => 'release-a', '--no-interaction' => true, '--json' => $json,
+        ]);
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe($fails ? 1 : 0);
+        if ($json) {
+            $events = array_map(fn (string $line): array => json_decode($line, associative: true, flags: JSON_THROW_ON_ERROR), explode("\n", trim($output)));
+            expect($events[1]['phase'])->toBe('process_restart')
+                ->and($events[3]['status'])->toBe($fails ? 'failed' : 'succeeded')
+                ->and($events[3]['selected_release'])->toBe('release-a');
+        } else {
+            expect($output)->toContain($fails ? 'Restarting Processes' : 'Restarted Processes')
+                ->and($output)->toContain($fails ? 'Rollback failed.' : 'Rollback succeeded.')
+                ->and($output)->toContain('Selected release: release-a');
+        }
+    })->with([false, true])->with([false, true]);
 
     it('marks the current row failed for a rollback activation failure (F2a)', function (): void {
         // rollback's only admitted row is 'rollback' ('Select release'); activation has no
@@ -360,11 +241,12 @@ describe('deployment streams', function (): void {
             errorCode: 'deployment_config.unavailable',
         );
         MockClient::global([
-            DeployInstanceRequest::class => deployment_cli_stream_response([$event]),
+            RollbackInstanceRequest::class => deployment_cli_stream_response([$event]),
         ]);
 
-        $exitCode = Artisan::call('instance:deploy', [
+        $exitCode = Artisan::call('instance:rollback', [
             'instance' => '17',
+            '--release' => 'release-a',
             '--json' => true,
             '--no-interaction' => true,
         ]);
@@ -375,333 +257,16 @@ describe('deployment streams', function (): void {
             ->and($payload)->not->toHaveKey('error');
     });
 
-    it('shows a failed named deploy step with its name and error in the progress tree', function (): void {
-        $mock = MockClient::global([
-            DeployInstanceRequest::class => deployment_cli_stream_response([
-                deployment_cli_phase(1, 'source_preparation'),
-                deployment_cli_phase(2, 'environment_sync'),
-                deployment_cli_phase(3, 'activation'),
-                deployment_cli_phase(4, 'after_activation', 'notify'),
-                deployment_cli_result(
-                    5,
-                    'failed',
-                    failedStep: 'after_activation',
-                    errorCode: 'deployment.step_failed',
-                    selectedRelease: 'release-b',
-                ),
-            ]),
-        ]);
-
-        $exitCode = Artisan::call('instance:deploy', ['instance' => '17', '--no-interaction' => true]);
-        $output = Artisan::output();
-
-        expect($exitCode)->toBe(1)
-            ->and($output)
-            ->toContain(
-                '● Resolved release',
-                '● Synced environment',
-                '● Activated release',
-                '● Running notify',
-                'deployment.step_failed',
-                'Deployment failed.',
-                'Failed boundary: after_activation',
-                'Error code: deployment.step_failed',
-                'Selected release: release-b',
-                'Request ID: '.deployment_cli_request_id(),
-            );
-
-        expect($mock->getRecordedResponses())->toHaveCount(1);
-    });
-
-    it('reveals the php_refresh row between activation and after_activation (F7)', function (): void {
-        $mock = MockClient::global([
-            DeployInstanceRequest::class => deployment_cli_stream_response([
-                deployment_cli_phase(1, 'source_preparation'),
-                deployment_cli_phase(2, 'environment_sync'),
-                deployment_cli_phase(3, 'activation'),
-                deployment_cli_phase(4, 'php_refresh'),
-                deployment_cli_phase(5, 'after_activation', 'notify'),
-                deployment_cli_result(6, 'succeeded', selectedRelease: 'release-b'),
-            ]),
-        ]);
-
-        $exitCode = Artisan::call('instance:deploy', ['instance' => '17', '--no-interaction' => true]);
-        $output = Artisan::output();
-
-        expect($exitCode)->toBe(0)
-            ->and($output)
-            ->toContain(
-                '● Resolved release',
-                '● Synced environment',
-                '● Activated release',
-                '● Refreshed PHP cache',
-                '● Ran notify',
-                'Deployment succeeded.',
-                'Selected release: release-b',
-            )
-            ->and(strpos($output, '● Activated release'))->toBeLessThan(strpos($output, '● Refreshed PHP cache'))
-            ->and(strpos($output, '● Refreshed PHP cache'))->toBeLessThan(strpos($output, '● Ran notify'));
-
-        expect($mock->getRecordedResponses())->toHaveCount(1);
-    });
-
-    it('shows a before-activation step failure and skips the unreached activation row', function (): void {
-        $mock = MockClient::global([
-            DeployInstanceRequest::class => deployment_cli_stream_response([
-                deployment_cli_phase(1, 'source_preparation'),
-                deployment_cli_phase(2, 'environment_sync'),
-                deployment_cli_phase(3, 'before_activation', 'migrate'),
-                deployment_cli_result(4, 'failed', failedStep: 'before_activation', errorCode: 'deployment.step_failed'),
-            ]),
-        ]);
-
-        $exitCode = Artisan::call('instance:deploy', ['instance' => '17', '--no-interaction' => true]);
-        $output = Artisan::output();
-
-        expect($exitCode)->toBe(1)
-            ->and($output)
-            ->toContain(
-                '● Resolved release',
-                '● Synced environment',
-                '● Running migrate',
-                'deployment.step_failed',
-                '● Activate release',
-                'Not reached.',
-                'Deployment failed.',
-                'Failed boundary: before_activation',
-                'Error code: deployment.step_failed',
-            )
-            ->not->toContain('Selected release:');
-
-        expect($mock->getRecordedResponses())->toHaveCount(1);
-    });
-
-    it('marks the current row failed for an operation-level failure before any deploy phase starts', function (): void {
-        $mock = MockClient::global([
-            DeployInstanceRequest::class => deployment_cli_stream_response([
-                deployment_cli_result(1, 'failed', failedStep: 'operation', errorCode: 'deployment_config.unavailable'),
-            ]),
-        ]);
-
-        $exitCode = Artisan::call('instance:deploy', ['instance' => '17', '--no-interaction' => true]);
-        $output = Artisan::output();
-
-        // The "operation" boundary has no row of its own (F2): the row that was current when
-        // the stream ended (the opening phase, never even started here) takes the failure
-        // instead of every row merely looking skipped.
-        expect($exitCode)->toBe(1)
-            ->and($output)
-            ->toContain(
-                'Deploy Instance [17]',
-                '● Resolving release',
-                'deployment_config.unavailable',
-                '● Sync environment',
-                '● Activate release',
-                'Not reached.',
-                'Deployment failed.',
-                'Failed boundary: operation',
-                'Error code: deployment_config.unavailable',
-                'Request ID: '.deployment_cli_request_id(),
-            )
-            ->not->toContain('Selected release:')
-            ->and($output)->not->toContain('Resolved release')
-            ->and($output)->not->toContain('Synced environment')
-            ->and($output)->not->toContain('Activated release');
-
-        expect($mock->getRecordedResponses())->toHaveCount(1);
-    });
-
-    it('renders a wrong opening phase as a best-effort tree instead of rejecting it, in human and JSON alike (F6)', function (string $mode): void {
-        // main's JSON contract accepts this SDK-valid stream, and human must not be stricter
-        // than JSON: neither mode rejects it. Human renders it best-effort (the opening row
-        // still stands in for whatever phase actually arrived first).
-        MockClient::global([
-            DeployInstanceRequest::class => deployment_cli_stream_response([
-                deployment_cli_phase(1, 'environment_sync'),
-                deployment_cli_result(2, 'succeeded', selectedRelease: 'release-a'),
-            ]),
-        ]);
-
-        $exitCode = Artisan::call('instance:deploy', array_filter([
-            'instance' => '17',
-            '--no-interaction' => true,
-            '--json' => $mode === '--json' ?: null,
-        ]));
-        $output = Artisan::output();
-
-        expect($exitCode)->toBe(0)->and($output)->not->toContain('deployment.stream_invalid', 'stream is invalid');
-    })->with(['human' => 'human', 'JSON' => '--json']);
-
-    it('renders an out-of-order phase as a best-effort tree instead of rejecting it (F6)', function (): void {
-        MockClient::global([
-            DeployInstanceRequest::class => deployment_cli_stream_response([
-                deployment_cli_phase(1, 'source_preparation'),
-                deployment_cli_phase(2, 'activation'),
-                deployment_cli_phase(3, 'environment_sync'),
-                deployment_cli_result(4, 'succeeded', selectedRelease: 'release-a'),
-            ]),
-        ]);
-
-        $exitCode = Artisan::call('instance:deploy', ['instance' => '17', '--no-interaction' => true]);
-        $output = Artisan::output();
-
-        // 'environment_sync' (order 1) arriving after 'activation' (order 2) is out of order,
-        // but not a literal duplicate, so it renders as the next step rather than refusing.
-        expect($exitCode)->toBe(0)
-            ->and($output)
-            ->toContain('● Resolved release', '● Activated release', '● Synced environment', 'Deployment succeeded.')
-            ->not->toContain('deployment.stream_invalid', 'stream is invalid');
-    });
-
-    it('settles the tree for a literal duplicate phase and matches JSON\'s exit status (F6)', function (): void {
-        $events = [
-            deployment_cli_phase(1, 'source_preparation'),
-            deployment_cli_phase(2, 'source_preparation'),
-            deployment_cli_result(3, 'succeeded', selectedRelease: 'release-a'),
-        ];
-
-        // A literal duplicate (the same step named twice) cannot be re-admitted or re-started
-        // as a tree row, since ProgressDisplay's own guards refuse to reuse an already-terminal
-        // row. JSON never rejects this SDK-valid stream (main's contract) and the stream still
-        // ends in a succeeded result, so human mode must not fail it either (F6): it degrades to
-        // plain lines for the rest of the stream instead, and exits with JSON's status.
-        MockClient::global([DeployInstanceRequest::class => deployment_cli_stream_response($events)]);
-        $jsonExitCode = Artisan::call('instance:deploy', ['instance' => '17', '--json' => true, '--no-interaction' => true]);
-
-        MockClient::global([DeployInstanceRequest::class => deployment_cli_stream_response($events)]);
-        $humanExitCode = Artisan::call('instance:deploy', ['instance' => '17', '--no-interaction' => true]);
-        $output = Artisan::output();
-
-        expect($jsonExitCode)->toBe(0)
-            ->and($humanExitCode)->toBe($jsonExitCode)
-            ->and($output)
-            ->toContain(
-                'Gateway deployment stream repeated a step.',
-                'Not reached.',
-                'Phase: source_preparation',
-                'Selected release: release-a',
-            )
-            ->not->toContain('LogicException', 'Deployment failed.');
-    });
-
-    it('degrades a literal duplicate phase to plain lines but still matches JSON\'s failure (F6)', function (): void {
-        $events = [
-            deployment_cli_phase(1, 'source_preparation'),
-            deployment_cli_phase(2, 'source_preparation'),
-            deployment_cli_result(3, 'failed', failedStep: 'activation', errorCode: 'deployment.activation_failed'),
-        ];
-
-        MockClient::global([DeployInstanceRequest::class => deployment_cli_stream_response($events)]);
-        $jsonExitCode = Artisan::call('instance:deploy', ['instance' => '17', '--json' => true, '--no-interaction' => true]);
-
-        MockClient::global([DeployInstanceRequest::class => deployment_cli_stream_response($events)]);
-        $humanExitCode = Artisan::call('instance:deploy', ['instance' => '17', '--no-interaction' => true]);
-        $output = Artisan::output();
-
-        expect($jsonExitCode)->toBe(1)
-            ->and($humanExitCode)->toBe($jsonExitCode)
-            ->and($output)
-            ->toContain('deployment.activation_failed', 'Failed boundary: activation');
-    });
-
-    it('appends a named before_activation step that arrives after activation and matches JSON\'s success (F6/R2)', function (): void {
-        $events = [
-            deployment_cli_phase(1, 'source_preparation'),
-            deployment_cli_phase(2, 'environment_sync'),
-            deployment_cli_phase(3, 'activation'),
-            deployment_cli_phase(4, 'before_activation', 'late-migrate'),
-            deployment_cli_result(5, 'succeeded', selectedRelease: 'release-a'),
-        ];
-
-        // admitBefore() cannot position this row ahead of 'activation' once that row has
-        // already settled: the Gateway never emits this order live, but the stream is still
-        // SDK-valid, and JSON accepts it without complaint. Before R2's fix this threw a
-        // LogicException out of admitBefore(), which human mode reported as the generic
-        // "Deployment stream failed." and exit 1, while JSON kept reading and exited 0 for
-        // the same stream.
-        MockClient::global([DeployInstanceRequest::class => deployment_cli_stream_response($events)]);
-        $jsonExitCode = Artisan::call('instance:deploy', ['instance' => '17', '--json' => true, '--no-interaction' => true]);
-
-        MockClient::global([DeployInstanceRequest::class => deployment_cli_stream_response($events)]);
-        $humanExitCode = Artisan::call('instance:deploy', ['instance' => '17', '--no-interaction' => true]);
-        $output = Artisan::output();
-
-        expect($jsonExitCode)->toBe(0)
-            ->and($humanExitCode)->toBe($jsonExitCode)
-            ->and($output)
-            ->toContain('● Ran late-migrate', 'Deployment succeeded.', 'Selected release: release-a')
-            ->not->toContain('Deployment stream failed.', 'LogicException');
-    });
-
-    it('appends a named before_activation step after activation and still matches JSON\'s failure (F6/R2)', function (): void {
-        $events = [
-            deployment_cli_phase(1, 'source_preparation'),
-            deployment_cli_phase(2, 'environment_sync'),
-            deployment_cli_phase(3, 'activation'),
-            deployment_cli_phase(4, 'before_activation', 'late-migrate'),
-            deployment_cli_result(5, 'failed', failedStep: 'before_activation', errorCode: 'deployment.step_failed'),
-        ];
-
-        MockClient::global([DeployInstanceRequest::class => deployment_cli_stream_response($events)]);
-        $jsonExitCode = Artisan::call('instance:deploy', ['instance' => '17', '--json' => true, '--no-interaction' => true]);
-
-        MockClient::global([DeployInstanceRequest::class => deployment_cli_stream_response($events)]);
-        $humanExitCode = Artisan::call('instance:deploy', ['instance' => '17', '--no-interaction' => true]);
-        $output = Artisan::output();
-
-        expect($jsonExitCode)->toBe(1)
-            ->and($humanExitCode)->toBe($jsonExitCode)
-            ->and($output)
-            ->toContain('deployment.step_failed', 'Failed boundary: before_activation')
-            ->not->toContain('Deployment stream failed.', 'LogicException');
-    });
-
-    it('does not lose the request ID for an output-first stream (F6)', function (): void {
-        MockClient::global([
-            DeployInstanceRequest::class => deployment_cli_stream_response([
-                deployment_cli_output(1, 'stdout', 'too early'),
-                deployment_cli_phase(2, 'source_preparation'),
-                deployment_cli_result(3, 'succeeded', selectedRelease: 'release-a'),
-            ]),
-        ]);
-
-        $exitCode = Artisan::call('instance:deploy', ['instance' => '17', '--no-interaction' => true]);
-        $output = Artisan::output();
-
-        expect($exitCode)->toBe(0)->and($output)->toContain(
-            'stdout: "too early"', 'Deployment succeeded.', 'Request ID: '.deployment_cli_request_id(),
-        );
-    });
-
-    it('guards finish() for a succeeded result that never reached activation (F6)', function (): void {
-        MockClient::global([
-            DeployInstanceRequest::class => deployment_cli_stream_response([
-                deployment_cli_phase(1, 'source_preparation'),
-                deployment_cli_result(2, 'succeeded', selectedRelease: 'release-a'),
-            ]),
-        ]);
-
-        // The Gateway cannot send this today (a succeeded result before every always-emitted
-        // phase fired), but finish() must not throw an uncaught LogicException over it: the
-        // never-started rows settle as skipped, like any other unreached row, not success.
-        $exitCode = Artisan::call('instance:deploy', ['instance' => '17', '--no-interaction' => true]);
-        $output = Artisan::output();
-
-        expect($exitCode)->toBe(0)
-            ->and($output)
-            ->toContain('● Resolved release', 'Sync environment', 'Activate release', 'Not reached.', 'Deployment succeeded.')
-            ->not->toContain('LogicException');
-    });
-
     it('rejects a truncated stream with a correlated safe error and no resubmission', function (): void {
         $mock = MockClient::global([
-            DeployInstanceRequest::class => deployment_cli_stream_response([
-                deployment_cli_phase(1, 'source_preparation'),
+            RollbackInstanceRequest::class => deployment_cli_stream_response([
+                deployment_cli_phase(1, 'rollback'),
             ]),
         ]);
 
-        $exitCode = Artisan::call('instance:deploy', [
+        $exitCode = Artisan::call('instance:rollback', [
             'instance' => '17',
+            '--release' => 'release-a',
             '--json' => true,
             '--no-interaction' => true,
         ]);
@@ -710,7 +275,7 @@ describe('deployment streams', function (): void {
         expect($exitCode)->toBe(1)
             ->and($lines)->toHaveCount(2)
             ->and(json_decode($lines[0], true, flags: JSON_THROW_ON_ERROR))
-            ->toBe(deployment_cli_phase(1, 'source_preparation'))
+            ->toBe(deployment_cli_phase(1, 'rollback'))
             ->and($lines[1])
             ->toBe(deployment_cli_error(
                 'deployment.stream_invalid',
@@ -800,12 +365,12 @@ describe('deployment streams', function (): void {
         $command = new Process(
             [PHP_BINARY, dirname(__DIR__, 3).'/orbit', 'node:role:add', '17', 'app-prod', '--converge', $mode],
             env: ['ORBIT_HOME' => $fixture['home']],
-            timeout: 10,
+            timeout: $fixture['deadline'] - microtime(true),
         );
 
         try {
             $command->start();
-            deployment_cli_wait_until(static fn (): bool => is_file($fixture['request']));
+            subprocess_fixture_wait_until($fixture['server'], static fn (): bool => is_file($fixture['request']));
             expect($command->isRunning())->toBeTrue();
             $startedAt = microtime(true);
             $command->signal($signal);
@@ -813,7 +378,7 @@ describe('deployment streams', function (): void {
             $elapsed = microtime(true) - $startedAt;
             expect($exitCode)->toBe(128 + $signal)
                 ->and($elapsed)->toBeLessThan(2.0);
-            deployment_cli_wait_until(static fn (): bool => is_file($fixture['disconnected']));
+            subprocess_fixture_wait_until($fixture['server'], static fn (): bool => is_file($fixture['disconnected']));
 
             expect($fixture['server']->wait())->toBe(0)
                 ->and($command->getErrorOutput())->toBe('')
@@ -844,16 +409,16 @@ describe('deployment streams', function (): void {
         $fixture = deployment_cli_signal_fixture($this->orbitHome, 'headers-late');
         $output = '';
         $command = new Process(
-            [PHP_BINARY, dirname(__DIR__, 3).'/orbit', 'instance:deploy', '17', '--json', '--no-interaction'],
+            [PHP_BINARY, dirname(__DIR__, 3).'/orbit', 'instance:rollback', '17', '--release=release-a', '--json', '--no-interaction'],
             env: ['ORBIT_HOME' => $fixture['home']],
-            timeout: 10,
+            timeout: $fixture['deadline'] - microtime(true),
         );
 
         try {
             $command->start(static function (string $type, string $data) use (&$output): void {
                 $output .= $data;
             });
-            deployment_cli_wait_until(static fn (): bool => is_file($fixture['request']));
+            subprocess_fixture_wait_until($fixture['server'], static fn (): bool => is_file($fixture['request']));
 
             if (! $command->isRunning()) {
                 throw new RuntimeException(
@@ -867,7 +432,7 @@ describe('deployment streams', function (): void {
             $command->signal(SIGINT);
             $exitCode = $command->wait();
             $elapsed = microtime(true) - $startedAt;
-            deployment_cli_wait_until(static fn (): bool => is_file($fixture['disconnected']));
+            subprocess_fixture_wait_until($fixture['server'], static fn (): bool => is_file($fixture['disconnected']));
             $serverExitCode = $fixture['server']->wait();
 
             expect($exitCode)->not->toBe(0)
@@ -899,9 +464,9 @@ describe('deployment streams', function (): void {
         $fixture = deployment_cli_signal_fixture($this->orbitHome, 'body-blocked');
         $output = '';
         $command = new Process(
-            [PHP_BINARY, dirname(__DIR__, 3).'/orbit', 'instance:deploy', '17', $mode, '--no-interaction'],
+            [PHP_BINARY, dirname(__DIR__, 3).'/orbit', 'instance:rollback', '17', '--release=release-a', $mode, '--no-interaction'],
             env: ['ORBIT_HOME' => $fixture['home']],
-            timeout: 10,
+            timeout: $fixture['deadline'] - microtime(true),
         );
 
         if ($mode === '--ansi') {
@@ -912,7 +477,7 @@ describe('deployment streams', function (): void {
             $command->start(static function (string $type, string $data) use (&$output): void {
                 $output .= $data;
             });
-            deployment_cli_wait_until(static fn (): bool => is_file($fixture['stream']));
+            subprocess_fixture_wait_until($fixture['server'], static fn (): bool => is_file($fixture['stream']));
             usleep(100_000);
 
             if (! $command->isRunning()) {
@@ -927,7 +492,7 @@ describe('deployment streams', function (): void {
             $command->signal(SIGINT);
             $exitCode = $command->wait();
             $elapsed = microtime(true) - $startedAt;
-            deployment_cli_wait_until(static fn (): bool => is_file($fixture['disconnected']));
+            subprocess_fixture_wait_until($fixture['server'], static fn (): bool => is_file($fixture['disconnected']));
             $serverExitCode = $fixture['server']->wait();
 
             expect($exitCode)->toBe(130)
@@ -1055,6 +620,7 @@ function deployment_cli_request_id(): string
  *     stream: string,
  *     disconnected: string,
  *     server: Process,
+ *     deadline: float,
  * }
  */
 function deployment_cli_signal_fixture(string $root, string $mode): array
@@ -1062,7 +628,6 @@ function deployment_cli_signal_fixture(string $root, string $mode): array
     $directory = "{$root}/signal-{$mode}";
     mkdir($directory, 0o700, recursive: true);
     [$certificate, $privateKey] = deployment_cli_signal_certificate($directory);
-    $ready = "{$directory}/ready";
     $request = "{$directory}/request";
     $stream = "{$directory}/stream";
     $disconnected = "{$directory}/disconnected";
@@ -1094,8 +659,9 @@ function deployment_cli_signal_fixture(string $root, string $mode): array
                 exit(2);
             }
 
-            file_put_contents($argv[3], $address);
-            $connection = stream_socket_accept($server, 5);
+            fwrite(STDOUT, $address."\n");
+            fflush(STDOUT);
+            $connection = stream_socket_accept($server, -1);
 
             if ($connection === false) {
                 exit(3);
@@ -1113,9 +679,9 @@ function deployment_cli_signal_fixture(string $root, string $mode): array
                 $request .= $chunk;
             }
 
-            file_put_contents($argv[4], $request);
+            file_put_contents($argv[3], $request);
 
-            if ($argv[7] === 'body-blocked') {
+            if ($argv[6] === 'body-blocked') {
                 preg_match('/^X-Orbit-Request-Id:\s*([^\r\n]+)\r?$/mi', $request, $matches);
                 $requestId = $matches[1] ?? '';
                 $headers = "HTTP/1.1 200 OK\r\n"
@@ -1129,7 +695,7 @@ function deployment_cli_signal_fixture(string $root, string $mode): array
                         'type' => 'phase',
                         'sequence' => 1,
                         'request_id' => $requestId,
-                        'phase' => 'source_preparation',
+                        'phase' => 'rollback',
                     ],
                     [
                         'type' => 'phase',
@@ -1153,8 +719,8 @@ function deployment_cli_signal_fixture(string $root, string $mode): array
                     fflush($connection);
                 }
 
-                file_put_contents($argv[5], 'sent');
-            } elseif ($argv[7] === 'streamed-output') {
+                file_put_contents($argv[4], 'sent');
+            } elseif ($argv[6] === 'streamed-output') {
                 preg_match('/^X-Orbit-Request-Id:\s*([^\r\n]+)\r?$/mi', $request, $matches);
                 $requestId = $matches[1] ?? '';
                 $headers = "HTTP/1.1 200 OK\r\n"
@@ -1168,7 +734,7 @@ function deployment_cli_signal_fixture(string $root, string $mode): array
                         'type' => 'phase',
                         'sequence' => 1,
                         'request_id' => $requestId,
-                        'phase' => 'source_preparation',
+                        'phase' => 'rollback',
                     ],
                     [
                         'type' => 'phase',
@@ -1229,15 +795,13 @@ function deployment_cli_signal_fixture(string $root, string $mode): array
 
                 fwrite($connection, "0\r\n\r\n");
                 fflush($connection);
-                file_put_contents($argv[5], 'sent');
+                file_put_contents($argv[4], 'sent');
                 stream_set_blocking($connection, false);
-                $deadline = microtime(true) + 5;
-
-                while (microtime(true) < $deadline) {
+                while (true) {
                     $data = @fread($connection, 8192);
 
                     if ($data === '' && feof($connection)) {
-                        file_put_contents($argv[6], 'closed');
+                        file_put_contents($argv[5], 'closed');
 
                         break;
                     }
@@ -1251,9 +815,7 @@ function deployment_cli_signal_fixture(string $root, string $mode): array
             }
 
             stream_set_blocking($connection, false);
-            $deadline = microtime(true) + 5;
-
-            while (microtime(true) < $deadline) {
+            while (true) {
                 $read = [$connection];
                 $write = null;
                 $except = null;
@@ -1262,7 +824,7 @@ function deployment_cli_signal_fixture(string $root, string $mode): array
                     $data = fread($connection, 8192);
 
                     if ($data === '' && feof($connection)) {
-                        file_put_contents($argv[6], 'closed');
+                        file_put_contents($argv[5], 'closed');
                         fclose($connection);
                         fclose($server);
                         exit(0);
@@ -1270,23 +832,17 @@ function deployment_cli_signal_fixture(string $root, string $mode): array
                 }
             }
 
-            exit(5);
             PHP,
         $certificate,
         $privateKey,
-        $ready,
         $request,
         $stream,
         $disconnected,
         $mode,
-    ], timeout: 8);
+    ], timeout: 10);
     $server->start();
-    deployment_cli_wait_until(static fn (): bool => is_file($ready));
-    $address = file_get_contents($ready);
-
-    if (! is_string($address) || $address === '') {
-        throw new RuntimeException('Could not resolve the deployment signal fixture address.');
-    }
+    $deadline = $server->getStartTime() + $server->getTimeout();
+    $address = subprocess_fixture_address($server);
 
     $home = "{$directory}/home";
     mkdir($home, 0o700);
@@ -1296,7 +852,7 @@ function deployment_cli_signal_fixture(string $root, string $mode): array
         caPath: $certificate,
     ));
 
-    return compact('home', 'request', 'stream', 'disconnected', 'server');
+    return compact('home', 'request', 'stream', 'disconnected', 'server', 'deadline');
 }
 
 /** @return array{string, string} */
@@ -1343,17 +899,4 @@ function deployment_cli_signal_certificate(string $directory): array
     chmod($privateKeyPath, 0o600);
 
     return [$certificatePath, $privateKeyPath];
-}
-
-function deployment_cli_wait_until(Closure $condition, float $timeoutSeconds = 5): void
-{
-    $deadline = microtime(true) + $timeoutSeconds;
-
-    while (! $condition()) {
-        if (microtime(true) >= $deadline) {
-            throw new RuntimeException('Timed out waiting for the deployment signal fixture.');
-        }
-
-        usleep(10_000);
-    }
 }

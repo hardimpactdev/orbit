@@ -14,6 +14,7 @@ use App\Domain\Instances\Deployment\DeploymentReleaseState;
 use App\Domain\Instances\Deployment\DeploymentRequest;
 use App\Domain\Instances\Deployment\DeploymentStep;
 use App\Domain\Instances\Deployment\ProductionDeployment;
+use App\Domain\Instances\Deployment\SharedPaths;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\ProductionRepositoryBinding;
 use App\Domain\Routes\RouteWebRoot;
@@ -98,19 +99,19 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                     test "$(sudo -u "$user" -H realpath -e -- "$release__APPLICATION_SUFFIX__")" = "$release__APPLICATION_SUFFIX__"
                     sudo -u "$user" -H ln -s __ENVIRONMENT_TARGET__ "$release_environment"
                     test "$(sudo -u "$user" -H realpath -e -- "$release_environment")" = "$environment"
+                    __SHARED_PATHS__
                     __SERVED_LINKS__
                     selected_root=$(sudo -u "$user" -H realpath -m -- "$release/$relative_root")
                     case "$selected_root" in "$release"|"$release"/*) ;; *) exit 1 ;; esac
                     sudo -u "$user" -H test -d "$selected_root"
-                    unexpected_symlink=$(sudo find -P "$selected_root" -type l -print -quit)
-                    test -z "$unexpected_symlink"
+                    check_web_root_links "$release" "$selected_root"
                     unexpected_user=$(sudo find -P "$release" -xdev ! -user "$user" -print -quit)
                     test -z "$unexpected_user"
                     unexpected_group=$(sudo find -P "$release" -xdev ! -group "$user" -print -quit)
                     test -z "$unexpected_group"
                     commit=$(sudo -u "$user" -H git -C "$release" rev-parse --verify HEAD)
                     printf '%s\t%s\n' "$name" "$commit"
-                    BASH, $served, ['__SERVED_LINKS__' => 'link_served_environments "$release"']), $root));
+                    BASH, $served, ['__SERVED_LINKS__' => 'link_served_environments "$release"']), $root, SharedPaths::forInstance($instance)));
         $result = $this->executeBound(
             $instance,
             new RemoteCommand(
@@ -311,8 +312,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                     selected_root=$(sudo -u "$user" -H realpath -m -- "$release/$relative_root")
                     case "$selected_root" in "$release"|"$release"/*) ;; *) exit 1 ;; esac
                     sudo -u "$user" -H test -d "$selected_root"
-                    unexpected_symlink=$(sudo find -P "$selected_root" -type l -print -quit)
-                    test -z "$unexpected_symlink"
+                    check_web_root_links "$release" "$selected_root"
                     unexpected_user=$(sudo find -P "$release" -xdev ! -user "$user" -print -quit)
                     test -z "$unexpected_user"
                     unexpected_group=$(sudo find -P "$release" -xdev ! -group "$user" -print -quit)
@@ -328,6 +328,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                     sudo setfacl -m u:caddy:--x "$release"
                     sudo setfacl -P -R -m u:caddy:r-X "$selected_root"
                     sudo find -P "$selected_root" -type d -exec setfacl -m d:u:caddy:r-x -- {} +
+                    grant_public_storage "$release" "$selected_root"
                     __SERVED_ACTIVATION__
                     temporary="$home/.current.$$.tmp"
                     trap 'sudo -u "$user" -H rm -f -- "$temporary"' EXIT
@@ -465,7 +466,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                         fi
                     done < <(sudo -u "$user" -H find -P "$releases" -mindepth 1 -maxdepth 1 -type d -printf '%f\0' | sort -z)
                     test -n "${found[$selected]:-}"
-                    # A deployment does not restart Processes, so a running process can still work in an older release.
+                    # A Process can opt out of restart or leave children that still use an older release.
                     # Keep every release that is the working directory, root, or executable of a process of the user.
                     # When a live process cannot be read, nothing is removed.
                     declare -A busy=()
@@ -552,7 +553,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
      */
     private function inventoryScript(): string
     {
-        return <<<'BASH'
+        return ProductionWebRootProgram::linkChecks()."\n".<<<'BASH'
             # find must restore its working directory after sudo changes users.
             cd /
             repository=$1
@@ -605,8 +606,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                 selected_root=$(sudo -u "$user" -H realpath -m -- "$release/$relative_root") || return 1
                 case "$selected_root" in "$release"|"$release"/*) ;; *) return 1 ;; esac
                 sudo -u "$user" -H test -d "$selected_root" || return 1
-                unexpected_symlink=$(sudo find -P "$selected_root" -type l -print -quit) || return 1
-                test -z "$unexpected_symlink" || return 1
+                check_web_root_links "$release" "$selected_root" || return 1
                 unexpected_user=$(sudo find -P "$release" -xdev ! -user "$user" -print -quit) || return 1
                 test -z "$unexpected_user" || return 1
                 unexpected_group=$(sudo find -P "$release" -xdev ! -group "$user" -print -quit) || return 1
@@ -632,8 +632,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
     }
 
     /**
-     * Adds the web-root work to a release program only for an Instance with such a Route, so the program
-     * of any other Instance stays byte for byte as it was.
+     * Adds link checks to each release program, and Route web-root work when the Instance serves such Routes.
      *
      * @param  list<string>  $served
      * @param  array<string, string>  $calls  Placeholder line to the command that replaces it.
@@ -646,7 +645,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
             $replacements["{$placeholder}\n"] = $served === [] ? '' : "{$command}\n";
         }
 
-        return ($served === [] ? '' : ProductionWebRootProgram::functions()."\n").strtr($program, $replacements);
+        return ($served === [] ? ProductionWebRootProgram::linkChecks() : ProductionWebRootProgram::functions())."\n".strtr($program, $replacements);
     }
 
     /** @return array{string, string, string, string} */
@@ -732,8 +731,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
             selected_root=$(sudo -u "$user" -H realpath -m -- "$release/$relative_root")
             case "$selected_root" in "$release"|"$release"/*) ;; *) exit 1 ;; esac
             sudo -u "$user" -H test -d "$selected_root"
-            unexpected_symlink=$(sudo find -P "$selected_root" -type l -print -quit)
-            test -z "$unexpected_symlink"
+            check_web_root_links "$release" "$selected_root"
             unexpected_user=$(sudo find -P "$release" -xdev ! -user "$user" -print -quit)
             test -z "$unexpected_user"
             unexpected_group=$(sudo find -P "$release" -xdev ! -group "$user" -print -quit)
@@ -742,7 +740,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
             printf '%s\t%s\n' "$name" "$commit"
             BASH;
 
-        return str_replace('__SELECTION__', $selection, $script);
+        return ProductionWebRootProgram::linkChecks()."\n".str_replace('__SELECTION__', $selection, $script);
     }
 
     private function execute(

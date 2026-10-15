@@ -4,20 +4,19 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
-use App\Actions\Instances\DeployInstanceAction;
 use App\Actions\Instances\ListInstanceDeploymentsAction;
+use App\Actions\Instances\StartInstanceDeployAction;
 use App\Data\Instances\InstanceDeploymentData;
+use App\Data\Operations\OperationData;
 use App\Http\Authorization\CallerName;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Instances\DeployInstanceRequest;
-use App\Http\Streaming\DeploymentStreamResponse;
 use App\Models\Instance;
 use App\Models\InstanceDeployment;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Symfony\Component\HttpFoundation\StreamedResponse;
 
 final class InstanceDeploymentsController extends Controller
 {
@@ -48,19 +47,20 @@ final class InstanceDeploymentsController extends Controller
         ]);
     }
 
+    /** Starts an `instance.deploy` operation and answers 202 with it; the deploy runs on the Gateway queue. */
     #[RequiresNodeAccess(ServingNode::InstanceOwning)]
     public function store(
         DeployInstanceRequest $request,
         Instance $instance,
-        DeployInstanceAction $action,
-        DeploymentStreamResponse $stream,
-    ): StreamedResponse {
-        $triggeredBy = CallerName::fromRequest($request);
+        StartInstanceDeployAction $action,
+    ): JsonResponse {
+        $requestId = $request->attributes->getString('orbit.request_id');
+        $operation = $action->execute($instance, CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
 
-        return $stream->make($request, $instance, $triggeredBy, static fn ($deploymentRequest) => $action->execute(
-            $instance,
-            $deploymentRequest,
-        ));
+        return response()->json([
+            'data' => OperationData::fromModel($operation)->toArray(),
+            'meta' => $this->meta($request),
+        ], 202);
     }
 
     /** @return array{request_id: string} */

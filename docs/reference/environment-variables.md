@@ -24,6 +24,8 @@ Incus hosts are configured through [Node `settings.task_vms`](/reference/node-se
 
 `ORBIT_TASK_VMS_UPCLOUD_ENABLED`, `ORBIT_TASK_VMS_UPCLOUD_PROJECTS`, `ORBIT_TASK_VMS_UPCLOUD_TOKEN_FILE`, `ORBIT_TASK_VMS_UPCLOUD_MAX_VMS`, `ORBIT_TASK_VMS_UPCLOUD_ZONE`, `ORBIT_TASK_VMS_UPCLOUD_PLAN`, `ORBIT_TASK_VMS_UPCLOUD_DISK_GB`, and `ORBIT_TASK_VMS_UPCLOUD_SOURCE_TEMPLATE` configure the [UpCloud overflow](/reference/compute-drivers#configure-upcloud) of task VMs in the Gateway's own environment. They are not Instance keys. The overflow is off by default and unconfigured while the token file is unset. With the token file set, the Gateway sweeps UpCloud and refreshes the template every night, also with the switch off. The token stays in its protected file on the Gateway. The Gateway ignores the old `ORBIT_UPCLOUD_*` keys; remove them from its environment.
 
+`ORBIT_CHECK_PROCESSES`, `ORBIT_CHECK_SCOPE`, and `ORBIT_CHECK_BASE` configure the repository's [local checks](/reference/implementation-loop#parallel-processes) in the shell that runs them. They are not Instance keys. `ORBIT_CHECK_PROCESSES` sets the number of processes that Pest, PHPStan, Rector, and Pint start. The default is the machine's core count, up to 4. `bin/test` still reads the older `ORBIT_TEST_PROCESSES` when it is unset. The candidate gate sets the other two so that Pint and Rector [check the changed files](/reference/implementation-loop#changed-file-quality-checks). `bin/quality-scope` checks every file when `CI` or `GITHUB_ACTIONS` is set.
+
 The Gateway's own environment is separate from an Instance's stored configuration. Set `ORBIT_TASKS_IMPLEMENTER_EFFORT` and `ORBIT_TASKS_REVIEWER_EFFORT` in the Gateway's `.env`, not the task workspace's `.env`. See [Tasks configuration](/reference/tasks#configuration) for their defaults and when changes apply.
 
 `APP_VERSION` in the Gateway's own `.env` sets the version that `gateway:status` reports. When it is unset or empty, the Gateway reports the commit in its release's `REVISION` file, or `dev` outside a release. Leave it unset in the [release layout](/reference/gateway-recovery#release-layout), so every release reports its own commit. `.env.example` does not set it, and [adoption](/reference/gateway-recovery#adopt-the-release-layout) comments it out of the shared env file. It is not an Instance key.
@@ -95,7 +97,7 @@ The Gateway derives the file location and the user from the Instance's placement
 
 For Laravel, the [application directory](/reference/projects#application-directory) is the effective web root without its trailing `/public`. With root `apps/site/public`, development reads and writes `<checkout>/apps/site/.env`, and `.env.testing` lives beside it. A development default uses the same paths in its checkout, which it serves directly without a `current` link.
 
-On `app-prod`, every release links `.env` in its application directory to the production home's file. With root `apps/site/public`, `<home>/releases/<name>/apps/site/.env` links to `<home>/.env`; no release-root `.env` link is needed. See [Production release layout](/reference/deployments).
+On `app-prod`, every release links `.env` in its application directory to the production home's file. With root `apps/site/public`, `<home>/releases/<name>/apps/site/.env` links to `<home>/.env`; no release-root `.env` link is needed. Application data uses separate [shared directories](/reference/deployments#shared-paths); changing those paths does not change the environment file. See [Production release layout](/reference/deployments).
 
 ## Import
 
