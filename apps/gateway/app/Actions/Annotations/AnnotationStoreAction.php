@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Actions\Annotations;
 
-use App\Data\Annotations\AnnotationData;
 use App\Data\Annotations\AnnotationInput;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
@@ -129,7 +128,7 @@ final readonly class AnnotationStoreAction
         });
     }
 
-    /** The caller holds the transaction so the record and its event commit together. */
+    /** The caller holds the transaction so the record and its revision commit together. */
     public function record(Annotation $annotation): Annotation
     {
         $sequence = DB::table('annotation_events')->insertGetId([
@@ -141,9 +140,6 @@ final readonly class AnnotationStoreAction
             $annotation->submission_order = $sequence;
         }
         $annotation->save();
-        DB::table('annotation_events')->where('id', $sequence)->update([
-            'payload' => json_encode(AnnotationData::fromModel($annotation)->annotation, JSON_THROW_ON_ERROR),
-        ]);
 
         $id = $annotation->id;
         $data = ['id' => $id, 'instanceId' => $annotation->instance_id, 'revision' => $sequence];
