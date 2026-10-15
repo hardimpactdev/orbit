@@ -61,7 +61,8 @@ def build(recipe, version=None, architecture=None):
     if version not in php['versions']:
         raise BuildError(f'The recipe has no PHP {version} build.')
     selected = php['versions'][version]
-    names = sorted(set(selected['packages']) | set(php['shared']))
+    # CI and base images exclude the app-dev-only instrumentation extension.
+    names = sorted((set(selected['packages']) | set(php['shared'])) - {f'php{version}-opentelemetry'})
     pins = {}
     for name in names:
         tool = recipe['tools'][name]
@@ -71,7 +72,7 @@ def build(recipe, version=None, architecture=None):
                 raise BuildError(f'The recipe has no {architecture} package for {name}.')
             pins[name] = {'version': tool['version'], 'url': artifact['url'], 'sha256': artifact['sha256']}
     return {'version': version, 'php_version': upstream(recipe['tools'][f'php{version}-common']['version']),
-            'packages': names, 'extensions': list(selected['extensions']), 'pins': pins}
+            'packages': names, 'extensions': [name for name in selected['extensions'] if name != 'opentelemetry'], 'pins': pins}
 
 
 def modules(text):
@@ -168,16 +169,15 @@ def installer_input(recipe, versions, *, mode='apply', pcov=True, extras='refuse
     """The input of php.install-build, as PhpBuildInstaller::input() builds it in the Gateway."""
     sets = {}
     for version in versions:
-        selected = recipe['php']['versions'][version]
         packages = []
-        for name in sorted(set(selected['packages']) | set(recipe['php']['shared'])):
+        for name in build(recipe, version)['packages']:
             tool = recipe['tools'][name]
             for architecture, artifact in tool['artifacts'].items():
                 packages.append({'name': name, 'version': tool['version'], 'architecture': architecture,
                                  'url': artifact['url'], 'sha256': artifact['sha256']})
-        sets[version] = {'packages': packages, 'extensions': selected['extensions']}
+        sets[version] = {'packages': packages, 'extensions': build(recipe, version)['extensions']}
     rollback = recipe['php']['rollback']
-    return {'mode': mode, 'versions': sets, 'mirror': recipe['php']['mirror'], 'pcov': pcov, 'extras': extras,
+    return {'mode': mode, 'versions': sets, 'mirror': recipe['php']['mirror'], 'pcov': pcov, 'opentelemetry': False, 'extras': extras,
             'fpm': fpm, 'repack': {'package': rollback, 'version': recipe['tools'][rollback]['version']},
             'release': {'id': 'ubuntu', 'codenames': [CODENAMES[recipe['ubuntu']['release']]]}, 'git_read': {}}
 

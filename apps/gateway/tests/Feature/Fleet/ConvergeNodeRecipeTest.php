@@ -135,7 +135,7 @@ it('selects each service role prerequisite without development-only software', f
 
     $pins = app(NodeRecipeProgram::class)->tools($node, $recipe);
 
-    $php = $role === RoleName::WebSocket ? [...$recipe->php('8.5')->packages, 'dpkg-repack'] : [];
+    $php = $role === RoleName::WebSocket ? [...$recipe->php('8.5')->packagesFor(false), 'dpkg-repack'] : [];
     $expected = array_unique([...$recipe->profile('operator'), ...new NodeBootstrapPackageCatalog()->forRole($node, $role), ...$php]);
     sort($expected);
     expect(array_keys($pins))->toBe($expected)->not->toContain('rust', 'node', 'pi');
@@ -147,9 +147,9 @@ it('gives every role that runs PHP the whole recipe PHP 8.5 set', function (Role
 
     $pins = array_keys(app(NodeRecipeProgram::class)->tools($node, $recipe));
 
-    expect($pins)->toContain(...$recipe->php('8.5')->packages)
+    expect($pins)->toContain(...$recipe->php('8.5')->packagesFor(false))
         ->not->toContain('php8.4-cli')
-        ->and($recipe->phpExtensions($pins))->toBe(['8.5' => $recipe->php('8.5')->extensions]);
+        ->and($recipe->phpExtensions($pins))->toBe(['8.5' => $recipe->php('8.5')->cliExtensions()]);
 })->with([RoleName::AppProd, RoleName::WebSocket, RoleName::Gateway]);
 
 it('installs the PHP build with the one installer after the other tools, strictly and without PCOV on the Gateway', function (): void {
@@ -168,6 +168,24 @@ it('installs the PHP build with the one installer after the other tools, strictl
         ->and($php->inputs[2])->toMatchArray(['pcov' => false, 'extras' => 'refuse', 'fpm' => 'all'])
         ->and(array_keys($php->inputs[2]['versions']))->toBe(['8.5'])
         ->and($result['changes']['php'])->toMatchArray(['changed' => [], 'stale_masters' => []]);
+});
+
+it('plans both pinned OpenTelemetry packages for an app-dev Node like Beast', function (): void {
+    $node = FleetFixtures::node('recipe-beast', [RoleName::AppDev]);
+    $ssh = recipeSsh();
+    $php = app(RemoteProgramRunner::class);
+
+    $result = app(ConvergeNodeRecipeAction::class)->execute($node, new RecipeLoader()->load(), dryRun: true);
+
+    expect($result['applied'])->toBeFalse()
+        ->and($result['plan']->tools)->toHaveKeys(['php8.4-opentelemetry', 'php8.5-opentelemetry'])
+        ->and($php->inputs)->toHaveCount(1)
+        ->and($php->inputs[0])->toMatchArray(['mode' => 'plan', 'opentelemetry' => true, 'extras' => 'refuse']);
+    foreach (['8.4', '8.5'] as $version) {
+        expect(array_column($php->inputs[0]['versions'][$version]['packages'], 'name'))->toContain("php{$version}-opentelemetry");
+        expect($php->inputs[0]['versions'][$version]['extensions'])->not->toContain('opentelemetry');
+    }
+    expect($ssh->commands)->toHaveCount(1);
 });
 
 it('refuses extra PHP packages or another PHP source before any change, also in a dry run', function (bool $dryRun): void {
@@ -209,8 +227,8 @@ it('loads PCOV and purges extra PHP packages only for the ci-runner profile', fu
     app(ConvergeNodeRecipeAction::class)->execute($dev, new RecipeLoader()->load());
 
     $applies = array_values(array_filter($php->inputs, static fn (array $input): bool => $input['mode'] === 'apply'));
-    expect($applies[0])->toMatchArray(['pcov' => true, 'extras' => 'purge'])
-        ->and($applies[1])->toMatchArray(['pcov' => true, 'extras' => 'refuse']);
+    expect($applies[0])->toMatchArray(['pcov' => true, 'opentelemetry' => false, 'extras' => 'purge'])
+        ->and($applies[1])->toMatchArray(['pcov' => true, 'opentelemetry' => true, 'extras' => 'refuse']);
 });
 
 it('converges a roleless CI runner with the ci-runner profile and records the profile', function (): void {
@@ -223,7 +241,7 @@ it('converges a roleless CI runner with the ci-runner profile and records the pr
     $result = app(ConvergeNodeRecipeAction::class)->execute($node, $recipe, profile: 'ci-runner');
     $later = app(ConvergeNodeRecipeAction::class)->execute($node->refresh(), $recipe, dryRun: true);
 
-    expect(array_keys($result['plan']->tools))->toContain(...$recipe->php('8.5')->packages)
+    expect(array_keys($result['plan']->tools))->toContain(...$recipe->php('8.5')->packagesFor(false))
         ->and($node->settings['machine_recipe'])->toBe(['version' => $recipe->identity, 'snapshot' => $recipe->snapshot, 'converged_at' => now()->toIso8601String(), 'profile' => 'ci-runner'])
         ->and(array_keys($later['plan']->tools))->toBe(array_keys($result['plan']->tools))
         ->and(array_keys(app(NodeRecipeProgram::class)->tools(FleetFixtures::node('recipe-operator'), $recipe)))->not->toContain('php8.5-cli');

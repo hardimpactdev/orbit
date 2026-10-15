@@ -3,7 +3,7 @@
 # Outcomes: planned current applied platform_unsupported conflicting_source extra_packages unowned_extensions download_failed rollback_unavailable install_failed modules_mismatch fpm_invalid rolled_back rollback_failed
 # Timeout: 900
 # Input: {"mode": "plan" or "apply", "versions": {"8.5": {"packages": [{"name", "version", "architecture", "url",
-#   "sha256"}], "extensions": [...]}}, "mirror": base URL or "", "pcov": bool, "extras": "refuse", "keep", or "purge",
+#   "sha256"}], "extensions": [...]}}, "mirror": base URL or "", "pcov": bool, "opentelemetry": bool, "extras": "refuse", "keep", or "purge",
 #   "fpm": "none", "shared", or "all", "repack": {"package", "version"}, "release": {"id", "codenames"} or
 #   null, "root": "/" (tests only)}
 # Result: planned: {"pending": [...], "repair": [...], "extras": [...], "unowned": [...]}. current or applied:
@@ -15,7 +15,7 @@
 # The one installer of the recipe's PHP build (ADR 0216). Recipe convergence, the PHP step of an Instance, the task VM
 # image build, and bin/php-build run it. It refuses another PHP apt source and PHP packages outside the recipe set
 # before it changes anything, keeps the previous build as .deb files for a rollback, installs the recipe's files with
-# --no-remove and --allow-downgrades, places PCOV, checks the loaded extensions, and restarts PHP-FPM only after
+# --no-remove and --allow-downgrades, places PCOV and OpenTelemetry, checks the loaded extensions, and restarts PHP-FPM only after
 # `php-fpm -t` passes. A failed check after the swap reinstalls the previous build and restarts PHP-FPM again.
 import hashlib
 import os
@@ -123,11 +123,15 @@ def selected(payload, architecture):
 
 
 def extra_packages(versions, packages):
-    """Installed php<version>-* packages of a handled version that are not in its recipe set."""
+    """Installed php<version>-* packages outside the recipe, except known disabled OpenTelemetry.
+
+    Losing app-dev leaves its package installed. place_opentelemetry disables it in both SAPIs instead of refusing
+    the next convergence or implicitly removing a package when a role is removed."""
     extras = []
     for version, build in versions.items():
         prefix = f'php{version}-'
-        extras += [name for name in packages if name.startswith(prefix) and name not in build['pins']]
+        extras += [name for name in packages if name.startswith(prefix) and name not in build['pins']
+                   and name != f'{prefix}opentelemetry']
     return sorted(set(extras))
 
 
@@ -422,6 +426,12 @@ def place_pcov(host, version, pcov):
     host.run(['phpdismod', '-v', version, '-s', 'fpm', 'pcov'], privileged=True)
 
 
+def place_opentelemetry(host, version, enabled):
+    """app-dev loads OpenTelemetry in FPM for php-data-bridge. Keep CLI parity with CI even after Sury's postinst."""
+    host.run(['phpdismod', '-v', version, '-s', 'cli', 'opentelemetry'], privileged=True)
+    host.run(['phpenmod' if enabled else 'phpdismod', '-v', version, '-s', 'fpm', 'opentelemetry'], privileged=True)
+
+
 def modules(host, binary):
     output = host.run([binary, '-m'], check=False).stdout
     return sorted({line.strip().lower() for line in output.splitlines() if line.strip() and not line.startswith('[')})
@@ -475,7 +485,7 @@ def fpm_units(host, version, scope):
     return units, []
 
 
-def restart(host, version, unit, configuration):
+def restart(host, version, unit, configuration, opentelemetry=False):
     """Validate, restart, and check one master. Returns the reason it failed, or None."""
     binary = str(host.path(f'usr/sbin/php-fpm{version}'))
     test = [binary, '-t'] + (['--fpm-config', configuration] if not unit.startswith('php') else [])
@@ -487,6 +497,8 @@ def restart(host, version, unit, configuration):
     loaded = modules(host, binary)
     if 'pcov' in loaded or set(FPM_MODULES) - set(loaded):
         return 'PHP-FPM loads PCOV or lacks a required extension'
+    if ('opentelemetry' in loaded) != opentelemetry:
+        return 'PHP-FPM OpenTelemetry module does not match the profile'
     for socket in pool_sockets(host, configuration):
         if not host.ok(['python3', '-I', '-c', PING, socket], privileged=True):
             return f'the pool at {socket} does not answer FastCGI'
@@ -615,6 +627,7 @@ def main(payload):
     try:
         for version, build in versions.items():
             place_pcov(host, version, payload['pcov'])
+            place_opentelemetry(host, version, payload.get('opentelemetry', False))
             check_cli(host, version, build['extensions'], payload['pcov'], extras_policy)
     except Outcome as refused:
         fail(refused.outcome, refused.data, refused.outcome, [])
@@ -625,7 +638,7 @@ def main(payload):
             units, skipped = fpm_units(host, version, payload['fpm'])
             stale += skipped
             for unit, configuration in units:
-                reason = restart(host, version, unit, configuration)
+                reason = restart(host, version, unit, configuration, payload.get('opentelemetry', False))
                 if reason == 'fpm_invalid' and payload['fpm'] == 'shared':
                     # An Instance step leaves a running service alone when its pools fail validation, as before a
                     # change: the pool publication that follows removes a stale pool and reloads the service.
