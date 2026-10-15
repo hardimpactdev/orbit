@@ -3,6 +3,10 @@
 declare(strict_types=1);
 
 use Illuminate\Http\Client\Factory;
+use Illuminate\Support\Facades\File;
+use Symfony\Component\Process\Process;
+
+pest()->group('subprocess');
 
 function cli_binary_repo_root(): string
 {
@@ -137,3 +141,64 @@ it('prints a git describe version', function (): void {
     expect($exitCode)->toBe(0)
         ->and(trim($output))->not->toBe('');
 });
+
+it('authenticates the PHPacker archive directly without forwarding its token through redirects', function (): void {
+    $directory = sys_get_temp_dir().'/orbit-phpacker-auth-'.bin2hex(random_bytes(6));
+    mkdir($directory, 0700, true);
+    $script = <<<'PHP_SCRIPT'
+        require $argv[1];
+        class ArchiveStream
+        {
+            public mixed $context;
+            public static array $requests = [];
+            private int $offset = 0;
+            public function stream_open(string $path, string $mode, int $options, ?string &$openedPath): bool
+            {
+                self::$requests[] = ['url' => $path, 'options' => stream_context_get_options($this->context)];
+                return true;
+            }
+            public function stream_read(int $count): string
+            {
+                $chunk = substr('archive', $this->offset, $count);
+                $this->offset += strlen($chunk);
+                return $chunk;
+            }
+            public function stream_eof(): bool { return $this->offset >= 7; }
+            public function stream_stat(): array { return []; }
+        }
+        stream_wrapper_unregister('https');
+        stream_wrapper_register('https', ArchiveStream::class);
+        $path = orbit_phpacker_archive('phpacker/php-bin', 'v1.2.3', $argv[2], 'ghs_archive_sentinel');
+        $request = ArchiveStream::$requests[0];
+        echo json_encode([
+            'url' => $request['url'],
+            'authenticated' => in_array('Authorization: Bearer ghs_archive_sentinel', $request['options']['http']['header'], true),
+            'redirects' => $request['options']['http']['follow_location'],
+            'contents' => file_get_contents($path),
+        ]);
+        PHP_SCRIPT;
+    try {
+        $process = new Process(['php', '-r', $script, base_path('phpacker/run.php'), $directory]);
+        $process->run();
+
+        expect($process->isSuccessful())->toBeTrue($process->getErrorOutput());
+        expect(json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR))->toBe([
+            'url' => 'https://codeload.github.com/phpacker/php-bin/legacy.zip/v1.2.3',
+            'authenticated' => true,
+            'redirects' => 0,
+            'contents' => 'archive',
+        ]);
+    } finally {
+        File::deleteDirectory($directory);
+    }
+});
+
+it('rejects missing credentials and invalid PHPacker download identities before downloading', function (string $repository, string $token): void {
+    require_once base_path('phpacker/run.php');
+
+    expect(fn () => orbit_phpacker_archive($repository, 'v1.2.3', sys_get_temp_dir(), $token))->toThrow(RuntimeException::class);
+})->with([
+    'missing token' => ['phpacker/php-bin', ''],
+    'invalid token header' => ['phpacker/php-bin', "sentinel\r\nX-Injected: value"],
+    'invalid repository' => ['phpacker/php-bin/../../other', 'sentinel'],
+]);

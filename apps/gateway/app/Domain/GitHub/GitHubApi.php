@@ -41,6 +41,13 @@ interface GitHubApi
         GitHubRepository $repository,
     ): string;
 
+    /** A one-hour token that grants only repository metadata access. */
+    public function repositoryMetadataToken(
+        GitHubAppCredentials $credentials,
+        int $installationId,
+        GitHubRepository $repository,
+    ): string;
+
     public function repositoryPullRequestToken(
         GitHubAppCredentials $credentials,
         int $installationId,

@@ -1,0 +1,41 @@
+<?php
+
+declare(strict_types=1);
+use Composer\Console\Application;
+use Composer\IO\IOInterface;
+use Composer\Util\Platform;
+use Symfony\Component\Console\Input\ArgvInput;
+
+$auth = json_decode(stream_get_contents(STDIN), true, flags: JSON_THROW_ON_ERROR);
+$binary = $argv[1];
+try {
+    Phar::loadPhar($binary);
+    require 'phar://composer.phar/vendor/autoload.php';
+} catch (Throwable) {
+    require '/usr/share/php/Composer/autoload.php';
+}
+Platform::putEnv('COMPOSER_BINARY', realpath($binary) ?: $binary);
+$application = new class($auth) extends Application
+{
+    public function __construct(#[SensitiveParameter] private array $auth)
+    {
+        parent::__construct();
+    }
+
+    public function getIO(): IOInterface
+    {
+        $io = parent::getIO();
+        $io->setAuthentication('github.com', $this->auth['github-oauth']['github.com'], 'x-oauth-basic');
+        $io->setAuthentication('codeload.github.com', $this->auth['bearer']['codeload.github.com'], 'bearer');
+
+        return $io;
+    }
+
+    public function getComposer(bool $required = true, ?bool $disablePlugins = null, ?bool $disableScripts = null): ?Composer\Composer
+    {
+        $this->getIO();
+
+        return parent::getComposer($required, $disablePlugins, $disableScripts);
+    }
+};
+exit($application->run(new ArgvInput(['composer', ...array_slice($argv, 2)])));

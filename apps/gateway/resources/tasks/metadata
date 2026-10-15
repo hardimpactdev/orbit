@@ -190,6 +190,8 @@ def perform(checkout, operation, payload):
             if operation in {'check', 'snapshot'}:
                 metadata.publish(orbit, 'check', base64.b64decode(payload['script'], validate=True), 0o755)
                 if operation == 'check':
+                    if 'composer' in payload:
+                        metadata.publish(orbit, 'composer.php', base64.b64decode(payload['composer'], validate=True))
                     metadata.publish(orbit, 'setup.json', payload['setup'].encode())
                     metadata.publish(orbit, 'check-command', payload['command'].encode())
                     if payload['deliverables'] is None:
