@@ -4802,8 +4802,8 @@
     {
       "name": "instance-update",
       "extension": null,
-      "title": "Update the deployment branch",
-      "description": "Update a production Instance deployment branch.",
+      "title": "Update production deployment settings",
+      "description": "Update a production Instance deployment branch or shared paths. shared_paths replaces the list; null restores the Project-type default and an empty list disables sharing. Applies to the next deployment.",
       "method": "PATCH",
       "path": "/api/v1/instances/{instance}",
       "path_inputs": [
@@ -4823,12 +4823,23 @@
           "branch": {
             "type": "string",
             "description": "Deployment branch"
+          },
+          "shared_paths": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "maxItems": 32,
+            "items": {
+              "type": "string",
+              "maxLength": 255
+            },
+            "description": "JSON list of shared directories; [] disables sharing and null restores the default"
           }
         },
         "additionalProperties": false,
         "required": [
-          "instance",
-          "branch"
+          "instance"
         ]
       }
     },

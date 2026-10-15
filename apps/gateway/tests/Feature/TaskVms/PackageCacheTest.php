@@ -24,8 +24,10 @@ use App\Models\TaskVm;
 use Illuminate\Bus\UniqueLock;
 use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Symfony\Component\Process\Process;
+use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\TaskVmSettingsBuilder;
 use Tests\Support\TestOrbitHome;
 
@@ -168,6 +170,15 @@ it('attaches a host-enforced read-only directory and refuses a writable existing
 });
 
 it('publishes verified Project usage only after a successful fill and skips a superseded snapshot', function (): void {
+    Http::preventStrayRequests();
+    GitHubTestSupport::storeApp();
+    Http::fake([
+        'https://api.github.com/repos/acme/cache/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/repos/acme/uncovered/installation' => Http::response([], 404),
+        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_cache_sentinel'], 201),
+    ]);
+    $uncovered = Project::query()->create(['repository_url' => 'https://github.com/acme/uncovered.git', 'name' => 'Uncovered', 'slug' => 'uncovered']);
+    PackageCacheSnapshot::query()->create(['project_id' => $uncovered->id, 'blobs' => [], 'artifacts' => []]);
     $node = Node::query()->create(['public_ssh_host' => '192.0.2.7', 'name' => 'cache-host', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.7', 'user' => 'orbit']);
     $settings = TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($node->id)]]);
     $project = Project::query()->create(['repository_url' => 'https://github.com/acme/cache.git', 'name' => 'Shop', 'slug' => 'shop']);
@@ -181,7 +192,13 @@ it('publishes verified Project usage only after a successful fill and skips a su
 
         public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
         {
-            $payload = json_decode($command->input ?? '', true, flags: JSON_THROW_ON_ERROR);
+            $payload = json_decode(stream_get_contents($command->protectedInput?->stream() ?? throw new LogicException('Cache input must be protected.')), true, flags: JSON_THROW_ON_ERROR);
+            expect($command->input)->toBeNull();
+            expect(implode(' ', $command->arguments))->not->toContain('ghs_cache_sentinel');
+            if ($payload['artifacts'] !== []) {
+                expect($payload['github_token'])->toBe('ghs_cache_sentinel');
+            }
+
             $hashes = [];
             foreach ($payload['artifacts'] as $artifact) {
                 $hashes[$artifact['key']] = 'sha256-'.str_repeat('b', 64);
@@ -206,4 +223,41 @@ it('publishes verified Project usage only after a successful fill and skips a su
     $ssh->duringFill = null;
     $fill->execute($node->id);
     expect(PackageCacheEntry::query()->count())->toBe(0);
+});
+
+it('publishes available cache artifacts without App coverage and rejects invalid returned hashes', function (): void {
+    Http::preventStrayRequests();
+    GitHubTestSupport::storeApp();
+    Http::fake(['https://api.github.com/repos/acme/uncovered/installation' => Http::response([], 404)]);
+    $node = Node::query()->create(['public_ssh_host' => '192.0.2.7', 'name' => 'cache-host', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.7', 'user' => 'orbit']);
+    $settings = TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($node->id)]]);
+    $project = Project::query()->create(['repository_url' => 'https://github.com/acme/uncovered.git', 'name' => 'Uncovered', 'slug' => 'uncovered']);
+    PackageCacheSnapshot::query()->create(['project_id' => $project->id, 'blobs' => [], 'artifacts' => [
+        ['key' => 'composer-miss', 'manager' => 'composer', 'package' => 'acme/demo', 'version' => '1.0.0', 'url' => 'https://api.github.com/repos/acme/demo/zipball/'.str_repeat('a', 40), 'integrity' => null],
+        ['key' => 'npm-hit', 'manager' => 'npm', 'package' => 'demo', 'version' => '1.0.0', 'url' => 'https://registry.npmjs.org/demo/-/demo-1.0.0.tgz', 'integrity' => 'sha512-ZGVtbw=='],
+    ]]);
+    $ssh = new class implements SshExecutor
+    {
+        public bool $invalid = false;
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            $payload = json_decode(stream_get_contents($command->protectedInput->stream()), true, flags: JSON_THROW_ON_ERROR);
+            expect($payload['github_token'])->toBeNull();
+            $hashes = ['npm-hit' => 'sha256-'.str_repeat('b', 64)];
+            if ($this->invalid) {
+                $hashes['composer-miss'] = null;
+            }
+
+            return new CommandResult(0, json_encode($hashes, JSON_THROW_ON_ERROR), '', 1, false);
+        }
+    };
+    $fill = new FillPackageCacheAction($settings, package_cache_transport($ssh));
+
+    $fill->execute($node->id);
+
+    expect(PackageCacheEntry::query()->sole()->manager)->toBe('npm');
+    $ssh->invalid = true;
+    expect(fn () => $fill->execute($node->id))->toThrow(TaskVmException::class, 'no verified archive hash');
+    expect(PackageCacheEntry::query()->sole()->manager)->toBe('npm');
 });

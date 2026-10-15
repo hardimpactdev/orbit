@@ -12,6 +12,7 @@ use SensitiveParameter;
 
 /**
  * @phpstan-type InstanceRecordFields array{
+ *     shared_paths?: list<string>,
  *     annotator_port: int|null,
  *     annotator_url: string|null,
  *     id: int,
@@ -44,6 +45,7 @@ use SensitiveParameter;
  *     deploy_steps: list<array{name: string, phase: string, command: string, timeout_seconds: int}>
  * }
  * @phpstan-type InstanceRecord array{
+ *     shared_paths?: list<string>,
  *     annotator_port: int|null,
  *     annotator_url: string|null,
  *     id: int,
@@ -113,6 +115,8 @@ final readonly class InstanceResponse
         public ?string $annotatorUrl = null,
         /** @var list<RouteResponse> Every Route of the Instance, including Routes with a web root. */
         public array $routes = [],
+        /** @var list<string>|null */
+        public ?array $sharedPaths = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -153,6 +157,7 @@ final readonly class InstanceResponse
             removal: self::removal($data['removal'] ?? null),
             transfer: self::transfer($data['transfer'] ?? null),
             deploySteps: self::parseDeploySteps($data['deploy_steps'] ?? []),
+            sharedPaths: self::sharedPaths($data['shared_paths'] ?? null),
             requestId: $requestId,
         );
     }
@@ -194,8 +199,19 @@ final readonly class InstanceResponse
                 static fn (DeploymentStepResponse $step): array => $step->toArray(),
                 $this->deploySteps,
             ),
+            ...($this->sharedPaths === null ? [] : ['shared_paths' => $this->sharedPaths]),
             'request_id' => $this->requestId,
         ];
+    }
+
+    /** @return list<string>|null */
+    private static function sharedPaths(#[SensitiveParameter] mixed $value): ?array
+    {
+        if (! is_array($value) || ! array_is_list($value) || ! array_all($value, static fn (mixed $path): bool => is_string($path))) {
+            return null;
+        }
+
+        return $value;
     }
 
     /** @return list<RouteResponse> */

@@ -8356,7 +8356,7 @@
       },
       "patch": {
         "operationId": "instance-update",
-        "summary": "Update the deployment branch",
+        "summary": "Update production deployment settings",
         "tags": [
           "Instances"
         ],
@@ -8372,7 +8372,7 @@
             "description": "Numeric Instance ID."
           }
         ],
-        "description": "Update a production Instance deployment branch.",
+        "description": "Update a production Instance deployment branch or shared paths. shared_paths replaces the list; null restores the Project-type default and an empty list disables sharing. Applies to the next deployment.",
         "requestBody": {
           "required": true,
           "content": {
@@ -8383,11 +8383,21 @@
                   "branch": {
                     "type": "string",
                     "description": "Deployment branch"
+                  },
+                  "shared_paths": {
+                    "type": [
+                      "array",
+                      "null"
+                    ],
+                    "maxItems": 32,
+                    "items": {
+                      "type": "string",
+                      "maxLength": 255
+                    },
+                    "description": "JSON list of shared directories; [] disables sharing and null restores the default"
                   }
                 },
-                "required": [
-                  "branch"
-                ],
+                "minProperties": 1,
                 "additionalProperties": false
               }
             }
@@ -8461,12 +8471,12 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/instances/12\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"branch\": \"main\"}'\n"
+            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/instances/12\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"branch\": \"main\", \"shared_paths\": [\"example\"]}'\n"
           },
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Instances\\UpdateInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new UpdateInstanceRequest(instanceId: 4, branch: 'main'))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Instances\\UpdateInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new UpdateInstanceRequest(\n    instanceId: 4,\n    sharedPaths: ['storage'],\n    sharedPathsProvided: true,\n))->dto();\n"
           }
         ]
       }
@@ -31740,6 +31750,12 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Route"
+            }
+          },
+          "shared_paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
             }
           }
         }

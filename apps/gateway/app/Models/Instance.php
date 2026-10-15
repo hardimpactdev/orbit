@@ -40,6 +40,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $production_php_socket
  * @property string|null $root
  * @property string|null $branch
+ * @property list<string>|null $shared_paths
  * @property string|null $deployment_branch
  * @property string|null $branch_override
  * @property int|null $clone_candidate_id
@@ -148,6 +149,7 @@ final class Instance extends Model
         'root',
         'branch',
         'deployment_branch',
+        'shared_paths',
         'branch_override',
         'clone_candidate_id',
         'clone_candidate_commit',
@@ -437,6 +439,7 @@ final class Instance extends Model
     protected function casts(): array
     {
         return [
+            'shared_paths' => 'array',
             'vite_port' => 'integer',
             'ssr_port' => 'integer',
             'agentation_port' => 'integer',
