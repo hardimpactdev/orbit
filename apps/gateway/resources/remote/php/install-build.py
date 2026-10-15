@@ -244,20 +244,22 @@ def owned(host, path):
 
 def unowned_extensions(host, version, extensions):
     """Extensions outside the recipe whose mods-available .ini no package owns, with their .so files that no package
-    owns: [(module, [files])]. Package-owned extras are handled as packages."""
+    owns: [(module, [files])]. Package-owned extras are handled as packages. An .ini without an extension= or
+    zend_extension= line only holds settings, such as Orbit's own orbit-runtime.ini: it is not an extension and stays.
+    The module name comes from the library that the .ini loads, not from the .ini file name."""
     directory = host.path(f'etc/php/{version}/mods-available')
     found = []
     for ini in sorted(directory.glob('*.ini')) if directory.is_dir() else []:
-        module = ini.stem.lower()
-        if module in extensions or owned(host, ini):
+        libraries = [Path(name) for name in EXTENSION_LINE.findall(ini.read_text(errors='replace'))]
+        modules = sorted({library.stem.lower() for library in libraries} - set(extensions))
+        if not modules or owned(host, ini):
             continue
         files = [ini]
-        for name in EXTENSION_LINE.findall(ini.read_text(errors='replace')):
-            library = Path(name)
+        for library in libraries:
             candidates = [library] if library.is_absolute() else \
                 sorted(host.path('usr/lib/php').glob(f'*/{library.stem}.so'))
             files += [path for path in candidates if path.is_file() and not owned(host, path)]
-        found.append((module, files))
+        found.append(('+'.join(modules), files))
     return found
 
 

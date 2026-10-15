@@ -238,6 +238,44 @@ class InstallBuildTest(unittest.TestCase):
         self.assertEqual(kept, ['amqp.ini', 'amqp.so'])
         self.assertTrue((self.root / 'etc/php/8.5/mods-available/gd.ini').exists())
 
+    def settings_only_ini(self):
+        """Orbit's own settings file: no package owns it and it loads no extension."""
+        (self.root / 'etc/php/8.5/mods-available').mkdir(parents=True, exist_ok=True)
+        ini = self.root / 'etc/php/8.5/mods-available/orbit-runtime.ini'
+        ini.write_text('; Orbit runtime settings\nopcache.memory_consumption=256\n')
+        (self.root / 'etc/php/8.5/fpm/conf.d/99-orbit-runtime.ini').symlink_to(ini)
+        return ini
+
+    def test_a_settings_only_ini_that_no_package_owns_is_never_an_extension(self):
+        for extras in ('refuse', 'keep', 'purge'):
+            with self.subTest(extras=extras):
+                self.setUp()
+                self.previous_build()
+                ini = self.settings_only_ini()
+
+                planned = self.run_program(mode='plan', extras=extras)
+                outcome, data = self.run_program(extras=extras, fpm='none')
+
+                self.assertEqual((planned[0], planned[1]['unowned']), ('planned', []), planned)
+                self.assertIn(outcome, ('applied', 'current'), data)
+                self.assertEqual(data['disabled'], [])
+                self.assertTrue(ini.is_file())
+                self.assertEqual(os.readlink(self.root / 'etc/php/8.5/fpm/conf.d/99-orbit-runtime.ini'), str(ini))
+
+    def test_names_an_unowned_extension_by_the_library_it_loads(self):
+        self.previous_build()
+        self.settings_only_ini()
+        (self.root / 'etc/php/8.5/mods-available').mkdir(parents=True, exist_ok=True)
+        (self.root / 'usr/lib/php/20250925').mkdir(parents=True, exist_ok=True)
+        (self.root / 'etc/php/8.5/mods-available/setup-php-cache.ini').write_text('zend_extension=apcu.so\n')
+        (self.root / 'usr/lib/php/20250925/apcu.so').write_text('so')
+        # An unowned .ini that loads a recipe extension is not an extra.
+        (self.root / 'etc/php/8.5/mods-available/my-gd.ini').write_text('extension=gd.so\n')
+
+        outcome, data = self.run_program()
+
+        self.assertEqual((outcome, data), ('unowned_extensions', {'extensions': ['php8.5:apcu']}))
+
     def test_refuses_unowned_extensions_before_any_change_unless_purging(self):
         self.previous_build()
         self.unowned_extension()
