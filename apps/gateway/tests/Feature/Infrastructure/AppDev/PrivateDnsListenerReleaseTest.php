@@ -49,7 +49,7 @@ it('runs from the release without the Gateway autoloader and serves a published 
     $selfTest = new Process([PHP_BINARY, $directory.'/serve.php', '--self-test']);
     $selfTest->run();
     $port = orb_release_free_port();
-    // Cover listener startup, catalog publication, and the DNS queries before shutdown.
+    // Allow 60 seconds for the helper to observe the initial catalog becoming ready.
     $listener = new Process([PHP_BINARY, $directory.'/serve.php', '--listen=127.0.0.1', '--port='.$port, '--catalog='.$catalog, '--upstream=127.0.0.1:9'], timeout: 60);
 
     try {

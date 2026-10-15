@@ -61,7 +61,7 @@ function deletion_provider(array $objects = []): void
 {
     deletion_bucket($objects);
     $home = config()->string('orbit.home');
-    // Allow startup and all provider requests in this test to share a 60-second budget.
+    // Allow 60 seconds for the provider to print its readiness line.
     $server = new Process(['python3', base_path('tests/Fixtures/ProjectDocuments/inventory_http_server.py'), $home.'/bucket.json', $home.'/requests.json'], timeout: 60);
     test()->deletionServer = $server;
     $server->start();
@@ -312,7 +312,8 @@ function deletion_scheduler(string $command = 'schedule:work', ?string $staleTok
 {
     $home = config()->string('orbit.home');
 
-    // Allow 20 seconds for startup and each of the consumer's five scheduler ticks.
+    // Allow 20 seconds for startup and each of five ticks.
+    // Readiness and tick waits check the shared 120-second deadline.
     return new Process([PHP_BINARY, base_path('tests/Fixtures/ProjectDocuments/document_scheduler.php'), $command, '--no-interaction'], base_path(), [
         'ORBIT_HOME' => $home, 'ORBIT_DOCUMENT_CLEANUP_RUNTIME' => $home.'/runtime', 'APP_ENV' => 'testing',
         'DB_DATABASE' => $home.'/database.sqlite', 'DB_URL' => '', 'APP_KEY' => config()->string('app.key'),

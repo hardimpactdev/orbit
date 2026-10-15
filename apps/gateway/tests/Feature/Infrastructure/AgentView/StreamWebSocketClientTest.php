@@ -40,7 +40,7 @@ final class ScriptedWebSocketServer
     public function __construct(public readonly string $caPath, string $keyPath, string $mode, array $arguments = [])
     {
         $command = [PHP_BINARY, base_path('tests/Fixtures/AgentView/websocket-server.php'), $caPath, $keyPath, $mode, ...$arguments];
-        // Cover TLS startup and the scripted frame exchanges, including deliberate stalls.
+        // Allow 60 seconds for the TLS fixture to print its readiness line.
         $this->process = new Process($command, timeout: 60);
         try {
             $this->process->start();

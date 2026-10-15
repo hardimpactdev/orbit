@@ -681,7 +681,7 @@ describe('delivery-line proof commands', function (): void {
             '-subj', '/CN=127.0.0.1',
         ]))->mustRun();
 
-        // Cover Python/TLS startup and the verification command's 15-second deadline.
+        // Allow 60 seconds for the Python TLS server to print its readiness line.
         $server = new Process([
             'python3', '-c',
             <<<'PY'
