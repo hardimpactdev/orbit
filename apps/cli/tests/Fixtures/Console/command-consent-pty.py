@@ -40,7 +40,8 @@ while process.poll() is None:
         process.wait()
         raise RuntimeError('Command fixture timed out: ' + output.decode(errors='replace'))
     ready = ready or configuration['prompt'].encode() in output
-    if ready and keys and not awaiting_output:
+    pending_input = struct.unpack('i', fcntl.ioctl(slave, termios.FIONREAD, struct.pack('i', 0)))[0]
+    if ready and keys and not awaiting_output and pending_input == 0:
         os.write(master, keys.pop(0))
         awaiting_output = True
 while select.select([master], [], [], 0.02)[0]:
