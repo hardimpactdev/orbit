@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\MachineSoftware;
 
-/** One PHP version of the recipe: its exact Sury pins and the extensions its CLI loads. See ADR 0215. */
+/** One PHP version of the recipe: its exact Sury pins and the extensions its CLI loads. See ADR 0216. */
 final readonly class PhpBuild
 {
     /**

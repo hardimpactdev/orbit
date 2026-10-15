@@ -6,10 +6,8 @@ covers:
   - bin/{review-check,bug-repro,task-group-check,pr-head-check,deploy-verify,test,tia-cache,ci-cache-ref,ci-tia,worktree-cache,worktree-create,worktree-remove,check-classification-fakes,check-processes,quality-scope,php-build}
   - tools/{check-processes,rector-cache}.php
   - "{apps/*,packages/php-sdk}/rector.php"
-  - tools/phpstan/**
-  - tools/ci-runners/setup.sh
-  - .github/workflows/ci.yml
-  - .github/actions/php/action.yml
+  - tools/{phpstan/**,ci-runners/setup.sh}
+  - .github/{workflows/ci.yml,actions/php/action.yml}
   - apps/gateway/tests/Support/TestDatabase{Environment,Guard}.php
 ---
 

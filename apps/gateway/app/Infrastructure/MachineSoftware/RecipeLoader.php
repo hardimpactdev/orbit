@@ -168,7 +168,7 @@ final readonly class RecipeLoader
     }
 
     /**
-     * Structure of the `php` object, before the pins exist. See ADR 0215.
+     * Structure of the `php` object, before the pins exist. See ADR 0216.
      *
      * @param  array<string, string>  $catalog
      * @return array{ci: string, shared: list<string>, rollback: string, pcov: list<string>, purge_extras: list<string>, mirror: string, versions: array<string, array{packages: list<string>, extensions: list<string>}>}

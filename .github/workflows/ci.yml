@@ -83,7 +83,7 @@ jobs:
         working-directory: .
         run: git reset --hard "$GITHUB_SHA"
 
-      # The recipe's exact PHP build (ADR 0215). A hosted runner installs it; Sabre only verifies it, because a job never
+      # The recipe's exact PHP build (ADR 0216). A hosted runner installs it; Sabre only verifies it, because a job never
       # installs software on a self-hosted runner.
       - name: Set up PHP
         uses: ./.github/actions/php
@@ -608,7 +608,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      # The recipe's exact PHP build (ADR 0215), as in every other PHP job.
+      # The recipe's exact PHP build (ADR 0216), as in every other PHP job.
       - name: Set up PHP
         uses: ./.github/actions/php
         with:
@@ -676,7 +676,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7
 
-      # The recipe's exact PHP build (ADR 0215), with PCOV loaded and disabled.
+      # The recipe's exact PHP build (ADR 0216), with PCOV loaded and disabled.
       - name: Set up PHP
         uses: ./.github/actions/php
         with:

@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
 /**
- * Part of the nightly recipe maintenance: opens one PR that moves every Sury PHP pin to Sury's newest build (ADR 0215).
+ * Part of the nightly recipe maintenance: opens one PR that moves every Sury PHP pin to Sury's newest build (ADR 0216).
  * Its branch is not a date branch, so the nightly auto-merge never takes it; a maintainer reviews it.
  */
 final readonly class OpenPhpBuildPullRequestAction

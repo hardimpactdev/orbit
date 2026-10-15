@@ -55,7 +55,7 @@ final readonly class AptToolManager implements ReservesRolePackages, SupportsToo
         private ?MachineRecipe $recipe = null,
     ) {}
 
-    /** The PHP role owns the recipe's PHP build, ADR 0215: every `php<version>-*` package and the shared PHP pins. */
+    /** The PHP role owns the recipe's PHP build, ADR 0216: every `php<version>-*` package and the shared PHP pins. */
     public function roleOwns(string $package): bool
     {
         if (preg_match(self::ROLE_PHP_PACKAGE_PATTERN, $package) === 1) {

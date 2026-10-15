@@ -60,7 +60,7 @@ final readonly class RemoveToolAction
             throw $this->failure($tool, 'tool.state_invalid', 409, 'The tool is not in a removable state.');
         }
 
-        // The PHP role owns this package (ADR 0215). Drop only the record; the package stays at its recipe version.
+        // The PHP role owns this package (ADR 0216). Drop only the record; the package stays at its recipe version.
         if ($manager instanceof ReservesRolePackages && $manager->roleOwns($tool->package)) {
             return $this->removed($tool);
         }

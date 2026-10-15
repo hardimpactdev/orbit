@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install, verify, and bump the one PHP build that the machine software recipe pins. See ADR 0215.
+"""Install, verify, and bump the one PHP build that the machine software recipe pins. See ADR 0216.
 
   bin/php-build verify [--recipe PATH] [--version X.Y]
   sudo bin/php-build install [--ci] [--purge-extras] [--coverage pcov|none] [--no-composer] [--recipe PATH] [--version X.Y]
@@ -192,7 +192,7 @@ def assemble(name):
 
 
 def run_installer(payload):
-    """Run php.install-build, the one installer of the PHP build (ADR 0215), and return (outcome, data, log)."""
+    """Run php.install-build, the one installer of the PHP build (ADR 0216), and return (outcome, data, log)."""
     completed = subprocess.run(['python3', '-I', '-c', (REMOTE / 'bootstrap.py').read_text(), 'php.install-build'],
                                input=assemble('php.install-build').encode() + b'\0' + json.dumps(payload).encode(),
                                capture_output=True, timeout=1800)

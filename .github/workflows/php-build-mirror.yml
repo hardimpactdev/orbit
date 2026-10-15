@@ -3,7 +3,7 @@ name: PHP build mirror
 # Sury deletes a build from its pool when it publishes the next one. This workflow keeps every pinned PHP file of the
 # machine software recipe as an asset of the php-build-mirror release, named <package>_<sha256>.deb. php.install-build
 # tries this mirror before the pin's own Sury URL, so a rollback, a new Node, or CI still gets the exact build after
-# Sury moves on. See ADR 0215.
+# Sury moves on. See ADR 0216.
 on:
   push:
     branches: [main]
@@ -42,7 +42,7 @@ jobs:
           release=php-build-mirror
           if ! gh release view "$release" >/dev/null 2>&1; then
             gh release create "$release" --prerelease --latest=false --title 'PHP build mirror' \
-              --notes 'The pinned Sury PHP packages of the machine software recipe, named <package>_<sha256>.deb. See ADR 0215.'
+              --notes 'The pinned Sury PHP packages of the machine software recipe, named <package>_<sha256>.deb. See ADR 0216.'
           fi
           present=$(gh release view "$release" --json assets --jq '.assets[].name')
           for file in "$RUNNER_TEMP"/php-build-mirror/*.deb; do

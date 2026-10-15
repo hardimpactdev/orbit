@@ -132,7 +132,7 @@ final readonly class NodeRecipeProgram
     {
         $this->phpPreflight($node, $recipe, $tools, $profile);
         $versions = self::phpVersions($recipe, $tools);
-        // The PHP build has one installer, php.install-build (ADR 0215); the recipe program installs the rest.
+        // The PHP build has one installer, php.install-build (ADR 0216); the recipe program installs the rest.
         $others = array_diff_key($tools, array_flip(self::phpPackages($recipe, $versions)));
         $report = $this->run($node, $recipe, $others, 'apply');
         if (($report['healthy'] ?? false) !== true) {

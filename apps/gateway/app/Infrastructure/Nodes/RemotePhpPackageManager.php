@@ -23,7 +23,7 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * The PHP step of an Instance. It installs the recipe's exact PHP build of each selected version through
- * `php.install-build`, the one installer (ADR 0215), and then publishes the Orbit runtime module of each version.
+ * `php.install-build`, the one installer (ADR 0216), and then publishes the Orbit runtime module of each version.
  * An Instance step keeps PHP packages outside the recipe and installs with --no-remove, so it never removes a site's
  * extension; recipe convergence refuses such packages instead.
  */

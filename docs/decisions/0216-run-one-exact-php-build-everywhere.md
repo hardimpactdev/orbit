@@ -1,10 +1,10 @@
 ---
-title: "ADR 0215: Run one exact PHP build everywhere"
-sidebarTitle: "0215 One PHP build"
+title: "ADR 0216: Run one exact PHP build everywhere"
+sidebarTitle: "0216 One PHP build"
 description: "In progress. The machine software recipe names one exact PHP build, the Sury patch version and the loaded extension set, for Nodes, the Gateway, task VMs, and CI."
 ---
 
-# ADR 0215: Run one exact PHP build everywhere
+# ADR 0216: Run one exact PHP build everywhere
 
 The [machine software recipe](/reference/compute-drivers#machine-software-recipe) is the single source of truth for Orbit's PHP build. It names, for each PHP version, the exact Sury packages and the extensions the PHP CLI loads. Every machine that runs Orbit's PHP installs that build and checks it: development and production Nodes, the Gateway, task VMs, and CI. A PHP patch release is one recipe change.
 

@@ -110,7 +110,7 @@ container() {
   [ "$(incus list "$name" --project "$PROJECT" -c s -f csv)" = RUNNING ] || incus start "$name" --project "$PROJECT"
   for _ in $(seq 90); do in_ct "$name" getent hosts archive.ubuntu.com >/dev/null 2>&1 && break; sleep 1; done
 
-  # The recipe's exact PHP build (ADR 0215), the same one that CI publishes caches for. A rerun moves it to the recipe.
+  # The recipe's exact PHP build (ADR 0216), the same one that CI publishes caches for. A rerun moves it to the recipe.
   # bin/php-build runs php.install-build, the installer that Nodes run too, so the container gets both with the
   # repository layout that bin/php-build reads.
   local file

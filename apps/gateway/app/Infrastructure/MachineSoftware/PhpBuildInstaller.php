@@ -11,7 +11,7 @@ use App\Models\Node;
 use InvalidArgumentException;
 
 /**
- * Runs `php.install-build`, the one installer of the recipe's PHP build (ADR 0215), on a Node. Recipe convergence and
+ * Runs `php.install-build`, the one installer of the recipe's PHP build (ADR 0216), on a Node. Recipe convergence and
  * the PHP step of an Instance call it; the image build and bin/php-build run the same program with the same input.
  */
 final readonly class PhpBuildInstaller

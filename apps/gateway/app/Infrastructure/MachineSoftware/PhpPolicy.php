@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\MachineSoftware;
 
-/** How machines install the recipe's PHP build (ADR 0215). */
+/** How machines install the recipe's PHP build (ADR 0216). */
 final readonly class PhpPolicy
 {
     /**

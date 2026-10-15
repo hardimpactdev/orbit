@@ -31,7 +31,7 @@ final class AppDevFakeSshExecutor implements SshExecutor
         $this->commands[] = $command;
         $result = array_shift($this->results) ?? new CommandResult(0, '', '', 1, false);
 
-        // A queued empty success stands for a successful run of the PHP build installer (ADR 0215).
+        // A queued empty success stands for a successful run of the PHP build installer (ADR 0216).
         if (($command->arguments[4] ?? null) === 'php.install-build' && $result->exitCode === 0 && $result->stdout === '') {
             return new CommandResult(0, self::InstallerApplied, $result->stderr, $result->durationMs, false);
         }

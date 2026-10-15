@@ -134,7 +134,7 @@ final readonly class ConvergeFleetRecipeAction
         return $tier;
     }
 
-    /** A roleless Node that an operator converged once with the ci-runner profile (ADR 0215). */
+    /** A roleless Node that an operator converged once with the ci-runner profile (ADR 0216). */
     private static function ciRunner(Node $node): bool
     {
         return $node->roles->isEmpty() && NodeRecipeProgram::recordedProfile($node) === NodeRecipeProgram::CiRunnerProfile;

@@ -175,7 +175,7 @@ Sury keeps only its newest build in its pool, so keep the recipe on Sury's newes
 
 PHPStan writes `PHP_VERSION_ID` and the sorted `get_loaded_extensions()` into its result cache metadata, and Pint keys its cache on the full PHP version. [CI cache refs](/reference/implementation-loop#ci-cache-refs) only help where the PHP build matches exactly. One build also gives every machine the same behavior and the same security patches.
 
-`setup-php` with a floating version was rejected: it cannot pin a patch, and it loads extensions that Orbit does not use. A separate pin for each environment was rejected because copies drift. Installing `package=version` from the Sury apt source was rejected because Sury removes a version from its index when it publishes the next one. The recipe's files are checked by digest, and the same files build images and converge Nodes. [ADR 0215](/decisions/0215-run-one-exact-php-build-everywhere) records this decision.
+`setup-php` with a floating version was rejected: it cannot pin a patch, and it loads extensions that Orbit does not use. A separate pin for each environment was rejected because copies drift. Installing `package=version` from the Sury apt source was rejected because Sury removes a version from its index when it publishes the next one. The recipe's files are checked by digest, and the same files build images and converge Nodes. [ADR 0216](/decisions/0216-run-one-exact-php-build-everywhere) records this decision.
 
 ### Recipe identity
 

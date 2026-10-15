@@ -10,7 +10,7 @@
 #   "restarted": [...], "deferred": [...], "stale_masters": [...]}. A refusal names what it found: {"packages": [...]}, {"sources": [...]},
 #   {"package": ...}, {"missing": [...], "extra": [...]}, {"id", "codename"}, or {"unit", "reason"}. A failure after the
 #   swap adds "restored": true once the previous build is back and checked; otherwise it ends with rollback_failed.
-# The one installer of the recipe's PHP build (ADR 0215). Recipe convergence, the PHP step of an Instance, the task VM
+# The one installer of the recipe's PHP build (ADR 0216). Recipe convergence, the PHP step of an Instance, the task VM
 # image build, and bin/php-build run it. It refuses another PHP apt source and PHP packages outside the recipe set
 # before it changes anything, keeps the previous build as .deb files for a rollback, installs the recipe's files with
 # --no-remove and --allow-downgrades, places PCOV, checks the loaded extensions, and restarts PHP-FPM only after

@@ -71,7 +71,7 @@ final readonly class RecipeImagePrograms
 
         $versions = array_map(strval(...), array_keys($recipe->phpExtensions(array_keys($tools))));
         $catalog = new RemoteProgramCatalog;
-        // The image installs its PHP build with php.install-build, the one installer (ADR 0215). Images run no PHP-FPM.
+        // The image installs its PHP build with php.install-build, the one installer (ADR 0216). Images run no PHP-FPM.
         $php = $versions === [] ? null : [
             'program' => $catalog->program(PhpBuildInstaller::Program)->source,
             'bootstrap' => $catalog->bootstrap(),

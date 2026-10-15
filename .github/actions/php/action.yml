@@ -2,7 +2,7 @@ name: Set up the recipe PHP build
 description: >-
   Installs the machine software recipe's PHP build on a GitHub-hosted runner with bin/php-build, which runs
   php.install-build, the installer that Nodes and images run too. It verifies the build on every runner. A self-hosted
-  runner is never changed; the job fails when its PHP differs from the recipe. See ADR 0215.
+  runner is never changed; the job fails when its PHP differs from the recipe. See ADR 0216.
 inputs:
   coverage:
     description: pcov loads PCOV and enables coverage; none keeps PCOV loaded with pcov.enabled=0
