@@ -1,6 +1,6 @@
 ---
 title: "Gateway queue"
-description: "The Gateway's Redis queue, its two queues, Laravel Horizon, and how a release moves them."
+description: "The Gateway's Redis connection, three queues, Laravel Horizon, and how a release moves them."
 covers:
   - apps/gateway/app/Domain/Gateway/GatewayQueue.php
   - apps/gateway/app/{Infrastructure/Gateway/GatewayQueue*,Infrastructure/Gateway/GatewayHorizon.php,Console/Scheduling/**,Jobs/RunScheduledCommand.php,Providers/GatewayQueueServiceProvider.php}
@@ -9,7 +9,7 @@ covers:
 
 # Gateway queue
 
-The Gateway scheduler only dispatches. Each scheduled command that does work, such as `tasks:tick`, becomes a queued job, and [Laravel Horizon](https://laravel.com/docs/horizon) runs the jobs. A long build therefore never delays a tick, and a slow tick never delays the next minute of the schedule.
+The Gateway scheduler dispatches most of its work. Each scheduled command that does work, such as `tasks:tick`, becomes a queued job, and [Laravel Horizon](https://laravel.com/docs/horizon) runs the jobs. A long build therefore never delays a tick, and a slow tick never delays the next minute of the schedule. Problem collection and filing, and document cleanup, run in the scheduler itself, as [Scheduled work](#scheduled-work) lists.
 
 ## Connection
 
@@ -22,7 +22,7 @@ The queue connection `gateway` uses the Redis driver. Its Redis server is a [Red
 
 The Gateway reads the host, port, and password of that connection from its records when a process first uses Redis. When the key names no Redis connection, the Gateway logs an error and every dispatch to the queue fails. Every key starts with `orbit-gateway:`, and Horizon's own keys with `orbit-gateway-horizon:`. The Redis client is Predis, so the Gateway needs no PHP Redis extension.
 
-`services-valkey` listens on the WireGuard address of `services` and has no password. Only WireGuard peers reach it. A Valkey ACL user with a password for the Gateway is a follow-up.
+`services-valkey` is the `valkey` Docker Process on `services`. It listens on the WireGuard address of `services`, so only WireGuard peers reach it. It requires a password (`requirepass`), which its Database connection stores, and it writes an append-only file (`--appendonly yes`) to the `services-valkey-data` volume, so queued jobs survive a restart. A separate Valkey ACL user for the Gateway is a follow-up.
 
 ## Queues
 
@@ -32,13 +32,13 @@ Laravel Horizon runs three queues on the connection. Each has its own supervisor
 | --- | --- | --- |
 | `tasks` | 3 | The scheduled commands below and the publish of an approved commit. The Git mirror's lock keeps one push per Project at a time |
 | `task-vms` | 1 | Task VM provision, enroll, prepare, park, resume, and destroy, the host sweep |
-| `builds` | 1 | The [base image step chains and refreshes](/reference/compute-drivers#build-the-base-image), the [UpCloud template refresh](/reference/compute-drivers#refresh-the-upcloud-template-every-night), and trusted [package cache fills](/reference/compute-drivers#shared-package-cache) |
+| `builds` | 2 | The [base image step chains and refreshes](/reference/compute-drivers#build-the-base-image), the [UpCloud template refresh](/reference/compute-drivers#refresh-the-upcloud-template-every-night), trusted [package cache fills](/reference/compute-drivers#shared-package-cache), and [recipe maintenance](/reference/compute-drivers#nightly-recipe-maintenance) |
 
 The `task-vms` jobs run one at a time and in order, so no two jobs change the same VM at once.
 
 A `task-vms` job runs at most 1500 seconds, and any other job at most 1700 seconds. A job that a worker lost, for example when its process was killed, runs again after 1800 seconds. An idle worker waits on the queue with a blocking read, so a job starts within about a second when a process is free.
 
-One `builds` process runs one job at a time in the fleet. Recipe base and role image steps and UpCloud template builds take turns. The deployed recipe is checked each minute; unchanged identities dispatch no builds. The image build row allows one `running` base image build per host.
+Two `builds` workers let hosts build in parallel; `Bus::chain` orders each build, the database permits one running build per host, and pruning stays on that host and protects running builds.
 
 ## Scheduled work
 
@@ -52,19 +52,26 @@ The scheduler dispatches each of these as a unique job. While the job waits or r
 | `orbit:vault-sync` | minute | `tasks` | 900 seconds |
 | `orbit:desired-fleet-state` | 5 minutes | `tasks` | 600 seconds |
 | `orbit:activity-finalize-interrupted` | 5 minutes | `tasks` | 600 seconds |
-| `problems:collect` | 10 minutes | `tasks` | 900 seconds |
-| `problems:file` | hour | `tasks` | 1800 seconds |
 | `horizon:snapshot` | 5 minutes | `tasks` | 300 seconds |
 
 The job runs the command in its own PHP process, as the scheduler did, so a command keeps no state from an earlier run. A command that exits nonzero is logged as an error. `tasks:tick` keeps its own lock of 300 seconds. The "unique for" time only matters when a worker is lost: the lock then frees itself after that time.
 
-The [task VM jobs](/reference/compute-drivers#jobs) that the scheduler queues, the host sweep, the pool refill, and the nightly refreshes, go to the same connection.
+The [task VM jobs](/reference/compute-drivers#jobs) that the scheduler queues, the host sweep, image reconciliation, and [recipe maintenance](/reference/compute-drivers#nightly-recipe-maintenance), go to the same connection.
 
-The [document cleanup](/reference/project-documents) commands stay in the scheduler, because their permit belongs to the scheduler's start.
+These commands stay in the scheduler and never go to the queue, also while it is set:
+
+| Command | Every | Overlap lock |
+| --- | --- | --- |
+| `problems:collect` | 10 minutes | 15 minutes |
+| `problems:file` | hour | 30 minutes |
+| `project-documents:probes:reconcile` | minute | 10 minutes |
+| `project-documents:cleanup:work` | 5 minutes | 60 minutes |
+
+[Problem collection and filing](/reference/tasks#outer-loop) watch Horizon, so they must not depend on it. A collection usually takes under a minute. While it runs, the rest of that minute's scheduler run waits, so the 10-second dispatches of that minute run late. The [document cleanup](/reference/project-documents) commands stay because their permit belongs to the scheduler's start.
 
 ### Without a queue
 
-While `ORBIT_GATEWAY_QUEUE_CONNECTION` is empty, the scheduler runs the commands above itself, with their overlap locks, as before, and the Gateway creates no `horizon` Process. Task VMs need the queue. While task VMs are enabled, or the UpCloud token file is set, each due run of the host sweep, the pool refill, or a nightly refresh fails with an error that names the key, instead of being skipped. A task VM claim fails the same way.
+While `ORBIT_GATEWAY_QUEUE_CONNECTION` is empty, the scheduler runs the commands above itself, with their overlap locks, as before, and the Gateway creates no `horizon` Process. Task VMs need the queue. While task VMs are enabled, or the UpCloud token file is set, each due run of the host sweep, image reconciliation, or recipe maintenance fails with an error that names the key, instead of being skipped. A task VM claim fails the same way.
 
 ## Horizon
 
@@ -97,7 +104,7 @@ A release moves Horizon in the serving phase, right after the switch, and the ol
 
 `horizon:terminate` sends SIGTERM to the Horizon master. Horizon does not use fast termination: the master waits until each worker has finished its running job, on the release that job started on, and then exits. The Process's restart policy then starts Horizon again, on the new release. A new `task-vms` worker therefore never starts while an old one runs, and task VM jobs stay in order.
 
-The cost is the wait. A release during a base image build waits for one short step, not the whole build. The build is a [chain of jobs](/reference/compute-drivers#build-the-base-image), and the next step runs on the new release. Until the running jobs end, no new job starts on any queue, and `tasks:tick` waits too. Workspace template builds and refreshes are removed. The master waits at most the longest supervisor timeout, 1700 seconds, and then exits.
+The cost is the wait. A release during a base image build waits for one short step, not the whole build. The build is a [chain of jobs](/reference/compute-drivers#build-the-base-image), and the next step runs on the new release. Until the running jobs end, no new job starts on any queue, and `tasks:tick` waits too. The master waits at most the longest supervisor timeout, 1700 seconds, and then exits.
 
 The release does not wait for the new master. A failure of the step fails the handoff with `gateway.release_units_failed`, and the release switches back.
 
@@ -150,12 +157,14 @@ Run each `php artisan` command as `orbit` in `/home/orbit/orbit/apps/gateway`.
 
 ## Not built
 
-Doctor does not report a stopped Horizon or an old `last_tick_at` yet. Until it does, check the `horizon` Process and [`orbit tasks:status`](/cli/tasks#orbit-tasksstatus) when task groups stop moving.
+Doctor does not report an old `last_tick_at` yet. Until it does, check [`orbit tasks:status`](/cli/tasks#orbit-tasksstatus) when task groups stop moving.
+
+A Horizon that is down while its Process should run is ordinary Process drift. Doctor reports it as `process.state_mismatch`, or `process.crash_loop` when systemd keeps restarting it. Problem collection runs in the scheduler, so it records that issue within one collection cycle, and `problems:file` files it once two collections 10 minutes apart saw it. A Horizon stopped with `orbit process:stop` is not drift and is not reported.
 
 ## Why it works this way
 
-The scheduler used to run its work, and the task VM workers, as foreground commands. A foreground command holds the scheduler's run for that minute, so a slow tick or a VM job could hold a publish for minutes. With dispatch only, the scheduler's run takes milliseconds, and each queue's workers decide when a job starts.
+The scheduler used to run its work, and the task VM workers, as foreground commands. A foreground command holds the scheduler's run for that minute, so a slow tick or a VM job could hold a publish for minutes. With dispatch, the scheduler's run takes milliseconds, and each queue's workers decide when a job starts.
+
+Problem collection is the exception, because it is how a stopped Horizon gets recorded. As a queued job, it would stop with Horizon, and the failure it should report would go unseen. In the scheduler, a collection costs late 10-second dispatches once every 10 minutes, and a release's [scheduler drain](/reference/gateway-recovery#runtime-handoff) waits for a running collection. Both are short and need no extra machinery.
 
 Horizon needs Redis. The fleet already runs Valkey on the `database` role, so the Gateway uses that registered connection instead of a second server on its own host. Orbit's records keep its address, as for every other Database connection.
-
-Trusted [package cache fills](/reference/compute-drivers#shared-package-cache) run on `builds`, coalesced by task VM host. A running fill can have one pending successor, so a default-branch lock change during filling is retained. The host writer locks and publishes only verified missing archives.

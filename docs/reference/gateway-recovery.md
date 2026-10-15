@@ -254,7 +254,7 @@ The drain needs the scheduler's PHP to have the `pcntl` extension, so `schedule:
 2. It sends SIGTERM to the `schedule:work` main process only. That process starts no new `schedule:run` and waits for the running ones, so a long command such as a development deploy finishes on the release it started on.
 3. When the main process has exited, it starts the unit, which now runs the new release, and waits until it is active.
 
-Each command ran to its end and released its own overlap lock, so the handoff clears none. While the old scheduler drains, it starts nothing, so `tasks:tick` pauses for the drain at most. While the [Gateway queue](/reference/gateway-queue) is set, the scheduler only dispatches, so the drain takes seconds, and a running tick finishes in Laravel Horizon.
+Each command ran to its end and released its own overlap lock, so the handoff clears none. While the old scheduler drains, it starts nothing, so `tasks:tick` pauses for the drain at most. While the [Gateway queue](/reference/gateway-queue) is set, the scheduler dispatches most work, so a running tick finishes in Laravel Horizon. Problem collection and filing [still run in the scheduler](/reference/gateway-queue#scheduled-work), so the drain waits for a running one, usually under a minute. Otherwise the drain takes seconds.
 
 The drain waits at most `ORBIT_GATEWAY_RELEASE_SCHEDULER_DRAIN_SECONDS` (default 600). After that limit, the handoff takes the `tasks:tick` lock and stops the unit, which ends what still runs. It then clears the schedule's overlap locks with `schedule:clear-cache`, because the stopped commands cannot release them, and starts the unit. The release record's `handoff.scheduler_drain` shows `outcome` (`drained`, `forced`, or `not_running`), `waited_ms`, the commands that were `running` when the drain began, and, after a forced stop, the commands it `stopped`.
 
@@ -972,6 +972,6 @@ An unreachable Node changed nothing, so it does not halt the fleet; the catch-up
 
 ## Recipe convergence
 
-`php artisan node:converge-recipe <node> [--recipe=sha256:<digest>] [--dry-run]` is the synchronous [recipe maintenance operation](/reference/node-provisioning#converge-a-node-to-a-recipe) for one Node. It shares the fleet rollout’s Node role lock, self-update lock, SSH transport, and Doctor machinery. A package, inventory, service health, or Doctor failure returns a failure immediately and leaves the Node partly changed; it neither rolls back nor visits another Node. Only a fully checked Node receives the recipe success marker.
+[Node recipe convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) applies and verifies machine software on one Node. It shares the Node role and self-update locks with release rollout.
 
-The release rollout and its catch-up timer do not invoke recipe convergence. Nightly recipe changes, image builds, smoke tests, Node ordering, and operator notifications remain ADR 0207 step 9. Before advancing a future recipe rollout, require this operation to succeed for the current Node. Manual recovery pins the previous recipe snapshot and any previous third-party tool pins.
+Release rollout updates Orbit itself, with a timer to catch up missed Nodes. [Nightly recipe maintenance](/reference/compute-drivers#nightly-recipe-maintenance) waits for every configured host to promote the deployed recipe, then calls Node recipe convergence in fleet order. That page owns the schedule, night window, alerts, and recovery policy.

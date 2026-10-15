@@ -16,11 +16,9 @@ final readonly class TaskSchedule
         GatewaySchedule::command($schedule, 'tasks:tick', uniqueFor: 330)
             ->everyTenSeconds()
             ->when($enabled);
-        GatewaySchedule::command($schedule, 'problems:collect', uniqueFor: 900, overlapMinutes: 15)
-            ->everyTenMinutes()
-            ->when($enabled);
-        GatewaySchedule::command($schedule, 'problems:file', uniqueFor: 1800, overlapMinutes: 30)
-            ->hourly()
-            ->when($enabled);
+        // Problem collection reports a stopped Horizon, so it runs in the scheduler, never on the queue
+        // (docs/reference/gateway-queue.md#scheduled-work).
+        $schedule->command('problems:collect')->everyTenMinutes()->withoutOverlapping(15)->when($enabled);
+        $schedule->command('problems:file')->hourly()->withoutOverlapping(30)->when($enabled);
     }
 }

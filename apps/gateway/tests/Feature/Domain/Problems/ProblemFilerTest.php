@@ -64,6 +64,34 @@ it('files a repro-first group when a fingerprint is over the threshold', functio
         ->and(Task::topLevel()->count())->toBe(1);
 });
 
+it('files nothing from an interrupted filing and files the problem once on the next run', function (): void {
+    problem_filer_project();
+    $fingerprint = problem_filer_fingerprint('activity|instance:clone|instance.clone_failed', 10, [
+        'error_message' => 'Clone failed',
+        ...problem_filer_windows(10),
+    ]);
+    ProblemFingerprint::saving(static function (ProblemFingerprint $row): void {
+        if ($row->task_group_id !== null) {
+            throw new RuntimeException('Killed after the group insert, before the fingerprint write.');
+        }
+    });
+
+    try {
+        expect(Artisan::call('problems:file'))->toBe(1)
+            ->and(Task::query()->withoutGlobalScope('subtask')->count())->toBe(0)
+            ->and($fingerprint->refresh()->task_group_id)->toBeNull()
+            ->and($fingerprint->filed_at)->toBeNull()
+            ->and($fingerprint->occurrences)->toBe(10);
+    } finally {
+        ProblemFingerprint::flushEventListeners();
+    }
+
+    expect(Artisan::call('problems:file'))->toBe(0)
+        ->and(Artisan::call('problems:file'))->toBe(0)
+        ->and(Task::topLevel()->count())->toBe(1)
+        ->and($fingerprint->refresh()->task_group_id)->toBe(Task::topLevel()->sole()->id);
+});
+
 it('files a filed template with occurrence history and a review placeholder instead of an unscoped command', function (): void {
     problem_filer_project();
     problem_filer_fingerprint(

@@ -284,7 +284,7 @@ From the task workspace on beast, run:
 bin/e2e-topology web TASK-58
 ```
 
-The command requires an already acquired topology and its configured `operator` guest. It never acquires a topology implicitly. The operator is a small Incus system container on the topology network, registered as a roleless Node with a Gateway grant and its own WireGuard peer. It trusts the topology's Orbit CA and mounts the worktree live at `/home/orbit/orbit`, so host edits are live in the dev server.
+The command requires an already acquired topology and its configured `operator` guest. It never acquires a topology implicitly. The operator is a roleless VM on the topology network, registered as a roleless Node with a Gateway grant and its own WireGuard peer. It trusts the topology's Orbit CA and mounts the worktree live at `/home/orbit/orbit`, so host edits are live in the dev server.
 
 `web` runs `vp dev` in the operator's `apps/web`, on guest TCP port `5173` with strict-port behavior. If that guest port is occupied, startup fails rather than selecting another port. The session pins the Gateway URL and trusted CA to the selected topology. Gateway, realtime, and metrics traffic stay in that topology; inherited endpoint overrides cannot redirect them to the live fleet. Missing topology or operator configuration fails clearly, with no fallback to a live profile, real Gateway, or another user's credentials.
 

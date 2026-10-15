@@ -1,12 +1,12 @@
 ---
 title: "ADR 0206: Build task VM images as chains of small jobs"
 sidebarTitle: "0206 Image build jobs"
-description: "In progress. The task VM base image is built by a chain of small queued jobs, one for each step, recorded in one image build row. Each build starts from the current image, and task VM enrollment trusts the image instead of a manifest."
+description: "In progress. The task VM base image is built by a chain of small queued jobs, one for each step, recorded in one image build row. ADR 0207 supersedes image inputs and scheduling; the UpCloud chain remains unfinished."
 ---
 
 # ADR 0206: Build task VM images as chains of small jobs
 
-The Gateway builds the task VM base image with a chain of small queued jobs, one job for each step. One `task_vm_image_builds` row records the build, its current step, and each step's time and error. A build starts from the host's current `orbit-task-base` and changes only what changed. A full build from the stock Ubuntu image runs once a week and on demand. Task VM enrollment trusts the image for the `app-dev` software, so the image manifest and its fingerprints go away.
+The Gateway builds the task VM base image with a chain of small queued jobs. One `task_vm_image_builds` row records its progress and failure. ADR 0207 supersedes this record's image inputs, build phases, nightly trigger, sync, and workspace plans. The [machine software reference](/reference/compute-drivers#machine-software-recipe) holds that implemented decision. The UpCloud chain remains unfinished.
 
 ## Status
 
@@ -16,11 +16,11 @@ Principle: [Lean](/mission#principles). The image build keeps its result and dro
 
 ## Context
 
-[ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) item 1 builds one base image every night and on demand. Today, one job runs the whole build ([Build the base image](/reference/compute-drivers#build-the-base-image)), and the same job then syncs the image to each other host. On beast the build takes about 3.5 minutes. It may run up to 25 minutes, and a sync up to about 24 more.
+Before this decision, [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) used one job for a nightly base build and sync to other hosts. On beast the build takes about 3.5 minutes. It may run up to 25 minutes, and a sync up to about 24 more.
 
-An audit of the image code on 13 Oct 2026 found that most of its weight and most of its bugs sit around the build, not in it:
+An audit on 13 Oct 2026 found these problems in the former build:
 
-- **One long job is fragile.** The build is one job on the `builds` queue. A release during a build waits for it: [Horizon](/reference/gateway-queue#releases) starts no new job on any queue until the build ends, `tasks:tick` included. A job that runs past its timeout loses its work. A `failed()` handler, a signal trap in the command, and a host lock with an expiry time clean up after it. That lock can expire before a long build ends, and the next build then deletes the running one's builder. The workspace template build has the same flaw.
+- **One long job is fragile.** The build is one job on the `builds` queue. A release during a build waits for it: [Horizon](/reference/gateway-queue#releases) starts no new job on any queue until the build ends, `tasks:tick` included. A job that runs past its timeout loses its work. A `failed()` handler, a signal trap in the command, and a host lock with an expiry time clean up after it. That lock can expire before a long build ends, and the next build then deletes the running one's builder. The former workspace builder had the same flaw.
 - **The manifest couples the image to enrollment.** The image runs the enrollment programs of an `app-dev` Node and records a fingerprint for each one. Enrollment renders each program again and skips it only when its fingerprint matches. This keeps an older image correct, but it ties every change to an enrollment program to the image.
 - **Every build starts from scratch.** Each night the build boots the stock Ubuntu image and installs everything again: the packages, both PHP versions, Composer, Vite+, Bun, Caddy, Docker, and the Rust toolchain.
 - **A failure is hard to place.** The log names the stage of a failed build, but a person must find the log line. Nothing records how far a build got.
@@ -34,23 +34,9 @@ The Gateway owns the image build. This decision changes item 1 of [ADR 0200](/de
 
 ### The build is a chain of jobs
 
-A base image build is one Laravel job chain (`Bus::chain`) on the `builds` queue, with one job for each step. The chain stops at the first step that fails, and the originating job records failure. ADR 0207 removes the template-refresh callback. Failed resources stay available for resume. Horizon shows individual jobs, not the whole chain. The build row and `task-vms:image-builds` report the whole build. The chain for an Incus host is:
+A base image build is one Laravel job chain (`Bus::chain`) on `builds`. A failed step stops the chain and records its error. The build row reports the whole build; Horizon shows individual jobs.
 
-| Step | What it does |
-| --- | --- |
-| `LaunchImageBuilder` | Records the source image on the row and launches the builder VM `tvm-image-<build id>` from it |
-| `AwaitImageBuilderBoot` | Waits for cloud-init to finish without errors |
-| `UpgradeImagePackages` | Runs `apt-get update` and `apt-get full-upgrade`, and installs the image's apt packages |
-| One job for each program | Runs one program of the `app-dev` software: `bootstrap`, `caddy-package`, `app-dev-prerequisites`, `vp-manager`, `composer-manager`, the PHP source and each selectable PHP version, `rust-toolchain`, the agent binary, and Pi |
-| `PrepareImageBoot` | Applies the single boot and the lean boot |
-| `CleanImageBuilder` | Runs `base-image-clean.sh`, which removes the VM's identity |
-| `PublishImage` | Stops the builder, publishes it as `orbit-task-base-<time>`, and deletes the builder |
-| `SmokeImage` | Boots a VM from the new image with the task VM user-data and runs `image-check.sh` |
-| `PromoteImage` | Points `orbit-task-base` at the new image and deletes images that no VM or running image build owns |
-
-The programs are the ones that enrollment renders today, rendered by the same code. A new tool or package is a new program and one new step in the chain. The build of a host's image never edits one shared script.
-
-Each step is idempotent. A step that runs again finds its work done, so a step can fail, retry, or run after a release without harm. `AwaitImageBuilderBoot` and `SmokeImage` read cloud-init status first and poll within the worker run for up to 600 seconds. Queue wait never consumes this boot budget, including on redelivery. Polling in one run avoids repeatedly joining the back of the single `builds` queue. It can hold that worker for the boot window; other steps still remain separate jobs. These jobs use `tries=0` for redelivery and do not use `retryUntil()`, which Laravel fixes in the queued payload and would count time before execution.
+**Build phases superseded by ADR 0207.** The old enrollment-program steps are replaced by [recipe phases](/reference/compute-drivers#build-the-base-image). Every host builds the current recipe from stock. Two [build workers](/reference/gateway-queue#queues) can serve different hosts in parallel; each chain preserves its step order.
 
 ### The build row holds the state
 
@@ -64,29 +50,25 @@ Pruning protects the fingerprints and dated aliases of running and retained fail
 
 The [host sweep](/reference/compute-drivers#report-strays) deletes a `tvm-image-<build id>` VM whose build is neither running nor within failed-build retention, and its stray report reads the same row. Both the host sweep and the base image sweep atomically claim cleanup on a recorded non-running build before deleting either its builder or smoke VM. They share the cleanup job's durable fence against resume: if resume wins, deletion skips the VM; if deletion wins, resume refuses even while the builder still exists. Neither reads a time from the VM's name. Failed-build retention counts from the row's failure update; running builds have no age limit.
 
-ADR 0207 removes template refresh recovery from the host sweep. Failed build rows still fence cleanup and resume.
+**Refresh recovery superseded by ADR 0207.** The host sweep no longer dispatches workspace refreshes. Failed build rows still fence cleanup and resume.
 
 Package update retries lists-lock contention for up to 300 seconds because APT does not apply `DPkg::Lock::Timeout` to that lock. Upgrade and install use that option for their dpkg locks. The package job allows 1500 seconds, with remote calls bounded to 1440 seconds, so lock waits leave time for package work.
 
 ### Each build starts from the current image
 
-Superseded by [ADR 0207](/decisions/0207-one-image-recipe-shared-package-cache-no-workspace-templates). Each recipe build starts from stock. Current-image builds and the weekly full build are removed.
+Superseded by [the implemented ADR 0207 contract](/reference/compute-drivers#machine-software-recipe). Each recipe build starts from stock. Current-image builds and the weekly full build are removed.
 
 ### Enrollment trusts the image
 
 A task VM boots from a base image that the same Gateway code built. Its enrollment no longer runs the `app-dev` software programs and no longer reads a manifest. It still renders and applies everything that is specific to the VM: the host key, WireGuard, the firewall, Caddy, DNS, the agent and its secret, and Pi. The manifest file, `TaskVmBakedPrograms`, and the build's `manifest` step go away.
 
-A change to one of those programs reaches task VMs with the next nightly image build, or at once with `task-vms:build-image`. Long-lived `app-dev` Nodes still run every program at enrollment, as today.
+**Nightly trigger superseded by ADR 0207.** [Recipe changes](/reference/compute-drivers#build-the-base-image) trigger host builds. [Nightly maintenance](/reference/compute-drivers#nightly-recipe-maintenance) supplies the snapshot-date PR; new claims require its deployed recipe's image.
 
 ### Next steps in the same model
 
-[ADR 0207](/decisions/0207-one-image-recipe-shared-package-cache-no-workspace-templates) partly supersedes this record. Its template-free workspace implementation removes the template next step below and all template refresh dispatches, including failure recovery. The base image job chain, build records, retained failures, and enrollment trust remain. Other unfinished next steps keep this ADR In progress.
+**Sync and workspace plans superseded by ADR 0207.** [Host-local builds](/reference/compute-drivers#build-the-base-image) replace inter-host sync. [Clone and setup](/reference/compute-drivers#clone-and-set-up-every-workspace) replaces workspace snapshots and their refresh callbacks.
 
-Each of these gets its own pull request after the base image chain is built, as its own chain with its own row:
-
-1. **Sync (superseded).** ADR 0207 builds each recipe locally on every host. Inter-host image sync is removed.
-2. **Workspace templates (superseded).** ADR 0207 decision 2 replaces this next step with clone-plus-setup workspaces; no template chain will be built.
-3. **UpCloud.** The UpCloud template runs the same steps through its SSH guest shell, so both providers run one list of steps.
+The remaining step is to move the [UpCloud builder](/reference/compute-drivers#build-the-upcloud-template) into a queued chain. This unfinished step keeps ADR 0206 in progress.
 
 ## Rejected alternatives
 
@@ -101,10 +83,10 @@ Each of these gets its own pull request after the base image chain is built, as 
 
 - A release waits at most for one short step instead of a whole build.
 - A failed build names its step on its row, and it can be continued from that step.
-- A new package or tool is one program and one step, not an edit to a shared script.
+- **Superseded by ADR 0207:** new tools are pinned recipe inputs, applied by the recipe phases.
 - **Superseded by ADR 0207:** current-image incremental builds and weekly full builds. Recipe builds start from stock with pinned inputs.
-- A task VM can run software that is up to a day older than the Gateway's programs. A tool that the image lacks shows only when a setup step or a check that needs it fails. Run `task-vms:build-image` after a change to a program.
-- The `builds` queue runs one job at a time in the fleet, so base image and sync jobs take turns. A build takes longer from start to end. Each job holds the worker only for its step, including at most 600 seconds of cloud-init polling.
+- **Superseded by ADR 0207:** new claims wait for the deployed recipe; running groups keep their recorded recipe.
+- **Superseded by ADR 0207 and the queue update:** two `builds` workers run host-local chains in parallel. A release waits for active steps, not whole chains.
 - This change removes the image manifest, the image host lock with its expiry time, the build's signal trap and `failed()` cleanup, and the stage runner of the base image build.
 
 ## Affects

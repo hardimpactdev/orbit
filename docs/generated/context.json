@@ -847,9 +847,7 @@
                 "Task workspace"
             ],
             "governing_adrs": [
-                "0200",
-                "0206",
-                "0207"
+                "0200"
             ]
         },
         {
@@ -891,38 +889,7 @@
             ],
             "governing_adrs": [
                 "0200",
-                "0206",
-                "0207"
-            ]
-        },
-        {
-            "path": "docs/decisions/0207-one-image-recipe-shared-package-cache-no-workspace-templates.md",
-            "title": "ADR 0207: One image recipe, shared package cache, no workspace templates",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/e2e",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Deployment",
-                "Doctor",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Placement",
-                "Project",
-                "Role",
-                "Schedule",
-                "Subtask",
-                "Task",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0200",
-                "0206",
-                "0207"
+                "0206"
             ]
         },
         {
@@ -1400,6 +1367,7 @@
             ],
             "concepts": [
                 "Access grant",
+                "Activity",
                 "Cluster",
                 "Deliverable",
                 "Deployment",
@@ -1423,8 +1391,7 @@
             ],
             "governing_adrs": [
                 "0200",
-                "0206",
-                "0207"
+                "0206"
             ]
         },
         {
@@ -2419,7 +2386,6 @@
                 "Process",
                 "Project",
                 "Project Documents",
-                "Role",
                 "Schedule",
                 "Task"
             ],

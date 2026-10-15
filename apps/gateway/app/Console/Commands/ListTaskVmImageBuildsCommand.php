@@ -38,6 +38,9 @@ final class ListTaskVmImageBuildsCommand extends Command
                     $this->line("  {$profile} | {$image['project']}/{$image['alias']} | {$image['fingerprint']} | {$image['type']}");
                 }
             }
+            if ($build->fleet_convergence !== null) {
+                $this->line('  Fleet convergence: '.json_encode($build->fleet_convergence, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+            }
             foreach ($build->steps as $record) {
                 $name = in_array($record['step'], [TaskVmImageBuildStep::Program->value, TaskVmImageBuildStep::Recipe->value], true) ? $record['step'].':'.$record['program'] : $record['step'];
                 $seconds = $record['seconds'] === null ? '-' : sprintf('%.1fs', $record['seconds']);

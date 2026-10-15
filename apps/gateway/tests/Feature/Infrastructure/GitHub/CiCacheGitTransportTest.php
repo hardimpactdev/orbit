@@ -145,4 +145,17 @@ describe('CI cache Git transport replacing Actions downloads', function (): void
             ->and(ci_ref_git($this->root.'/vm', ['rev-parse', 'HEAD']))->toBe($this->sha)
             ->and(ci_ref_git($this->root.'/vm', ['for-each-ref', 'refs/remotes/origin/main']))->toBe('');
     });
+
+    it('sends the caches of HEAD for another branch at an older main commit', function (): void {
+        ci_ref_git($this->root.'/source', ['push', '--quiet', $this->root.'/origin.git', $this->cacheCommit.':'.$this->cacheRef]);
+        ci_ref_git($this->root.'/vm', ['fetch', '--quiet', $this->root.'/origin.git', 'main']);
+        ci_ref_git($this->root.'/vm', ['checkout', '--quiet', '-B', 't3/agent', 'FETCH_HEAD']);
+        ci_ref_git($this->root.'/source', ['commit', '--quiet', '--allow-empty', '-m', 'new main']);
+        ci_ref_git($this->root.'/source', ['push', '--quiet', $this->root.'/origin.git', 'main']);
+        $tips = $this->git->fetch($this->project, ['main'], $this->access, 'tasks.fetch_failed');
+        $this->git->send($this->project, $this->root.'/vm', $tips, $this->run, 'tasks.fetch_failed', cachesOnly: true);
+
+        expect(ci_ref_git($this->root.'/vm', ['rev-parse', $this->cacheRef]))->toBe($this->cacheCommit)
+            ->and(ci_ref_git($this->root.'/vm', ['rev-parse', 'refs/worktree/orbit/ci-baseline']))->toBe($this->sha);
+    });
 });

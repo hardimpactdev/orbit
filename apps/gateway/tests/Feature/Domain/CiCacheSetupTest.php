@@ -91,12 +91,24 @@ describe('CI main cache setup', function (): void {
 
     it('runs cold without a recorded task baseline rather than choosing the newest main ref', function (): void {
         ci_setup_git($this->checkout, ['checkout', '--quiet', '-b', 'task-1574']);
+        ci_setup_git($this->checkout, ['-c', 'user.name=CI', '-c', 'user.email=ci@example.test', 'commit', '--allow-empty', '--quiet', '-m', 'task change']);
         ci_setup_git($this->checkout, ['update-ref', '-d', 'refs/worktree/orbit/ci-baseline']);
         $process = ci_setup_run($this->checkout, app(CiCacheSetup::class)->command(new Project, 60));
 
         expect($process->getExitCode())->toBe(0)
             ->and($process->getOutput())->toContain('cold: no recorded code baseline')
             ->and(file_exists($this->checkout.'/imports.log'))->toBeFalse();
+    });
+
+    it('imports the HEAD commit of another branch at a main commit, not a newer main', function (): void {
+        ci_setup_git($this->checkout, ['checkout', '--quiet', '-b', 't3/agent']);
+        ci_setup_git($this->checkout, ['update-ref', '-d', 'refs/worktree/orbit/ci-baseline']);
+        $newer = ci_setup_git($this->checkout, ['-c', 'user.name=CI', '-c', 'user.email=ci@example.test', 'commit-tree', 'HEAD^{tree}', '-p', 'HEAD', '-m', 'new main']);
+        ci_setup_git($this->checkout, ['update-ref', 'refs/remotes/origin/main', $newer]);
+        $process = ci_setup_run($this->checkout, app(CiCacheSetup::class)->command(new Project, 60));
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+            ->and(file_get_contents($this->checkout.'/imports.log'))->toBe('import --commit '.$this->baseline);
     });
 
     it('runs as a Gateway-owned Instance setup step and only in setup', function (): void {
