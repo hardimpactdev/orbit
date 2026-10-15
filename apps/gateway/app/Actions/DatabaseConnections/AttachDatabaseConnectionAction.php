@@ -7,9 +7,11 @@ namespace App\Actions\DatabaseConnections;
 use App\Data\DatabaseConnections\DatabaseConnectionAttachmentData;
 use App\Domain\DatabaseConnections\DatabaseConnectionEnvProjection;
 use App\Domain\DatabaseConnections\DatabaseConnectionPrefix;
+use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Instance;
@@ -38,7 +40,17 @@ final readonly class AttachDatabaseConnectionAction
             $connection,
             $normalizedPrefix,
         ): DatabaseConnectionAttachmentData {
-            $context = $this->contexts->resolve($instance->refresh(), requireActiveNode: false);
+            $instance->refresh();
+
+            if ($connection->driver === DatabaseDriver::Sqlite && $connection->node_id !== $instance->node_id) {
+                throw new ResourceOperationException(
+                    errorCode: 'database.node_mismatch',
+                    message: 'A SQLite connection must be on the same Node as the Instance.',
+                    status: 422,
+                );
+            }
+
+            $context = $this->contexts->resolve($instance, requireActiveNode: false);
             $projected = $this->projection->project($connection, $normalizedPrefix);
 
             return DB::transaction(function () use (

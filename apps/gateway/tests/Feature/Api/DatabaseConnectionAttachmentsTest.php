@@ -121,6 +121,7 @@ it('writes sqlite-appropriate keys and clears leftover host keys on prefix reuse
     $this->postJson('/api/v1/database-connections', [
         'slug' => 'local',
         'driver' => 'sqlite',
+        'node_id' => $this->instance->node_id,
         'path' => '/var/lib/app/database.sqlite',
     ])->assertCreated();
 
@@ -283,6 +284,23 @@ it('detaches the mapping and clears related stored keys without logging the pass
         ->assertOk()
         ->assertJsonPath('data.slug', 'app');
 });
+
+it('rejects sqlite attachments without the same Node before changing stored state', function (bool $missingNode): void {
+    $this->instance->environmentValues()->create(['env_key' => 'DB_DATABASE', 'env_value' => 'keep-me']);
+    $this->postJson('/api/v1/database-connections', [
+        'slug' => 'wrong-node',
+        'driver' => 'sqlite',
+        'node_id' => $missingNode ? null : $this->caller->id,
+        'path' => '/var/lib/app/database.sqlite',
+    ])->assertCreated();
+
+    $this->putJson("/api/v1/instances/{$this->instance->id}/database-connections/wrong-node", ['prefix' => 'DB'])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'database.node_mismatch');
+
+    expect(DatabaseConnectionTarget::query()->exists())->toBeFalse()
+        ->and(stored_env($this->instance))->toBe(['DB_DATABASE' => 'keep-me']);
+})->with([true, false]);
 
 it('refuses an unsupported attach key and an invalid prefix', function (): void {
     $this->postJson('/api/v1/database-connections', [

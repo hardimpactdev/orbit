@@ -7,6 +7,7 @@ namespace App\Infrastructure\DatabaseConnections;
 use App\Domain\DatabaseConnections\DatabaseQueryResult;
 use App\Domain\DatabaseConnections\DatabaseSchemaTable;
 use App\Domain\DatabaseConnections\DatabaseTableColumn;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\CommandResult;
@@ -186,17 +187,79 @@ final readonly class SqliteNodeDatabaseInspector
                     knownHostsFile: $this->knownHosts->path(),
                     commandTimeout: 30.0,
                 ),
-                new RemoteCommand($this->arguments(), protectedInput: $input, timeout: 30.0),
+                new RemoteCommand($this->executionArguments($connection, $node), protectedInput: $input, timeout: 30.0),
             );
         } finally {
             $input->close();
         }
 
         if (! $result->succeeded()) {
+            $error = json_decode($result->stdout, true);
+            $details = is_array($error) ? ($error['error'] ?? null) : null;
+
+            if (is_array($details) && ($details['code'] ?? null) === 'database.sqlite_unreadable') {
+                $this->unreadable('The SQLite file is not readable or writable by the inspection user.');
+            }
+
+            $stderr = strtolower($result->stderr);
+
+            if (str_contains($stderr, 'permission denied')
+                || str_contains($stderr, 'is not allowed to execute')
+                || str_contains($stderr, 'is not in the sudoers file')
+                || (str_contains($stderr, 'sudo:') && (
+                    str_contains($stderr, 'password is required')
+                    || str_contains($stderr, 'not allowed')
+                    || str_contains($stderr, 'not in the sudoers')
+                    || str_contains($stderr, 'a terminal is required')
+                ))) {
+                $this->unreadable('The Node could not run SQLite inspection as the required user; check sudo access and CLI executable permissions.');
+            }
+
             $this->fail($connection);
         }
 
         return $result;
+    }
+
+    /** @return non-empty-list<string> */
+    private function executionArguments(DatabaseConnection $connection, Node $node): array
+    {
+        if (! $node->roles->contains('role', RoleName::AppProd)
+            || $node->roles->contains('role', RoleName::AppDev)) {
+            return $this->arguments();
+        }
+
+        $owner = $connection->ownerInstance;
+
+        if ($owner !== null && $owner->node_id === $node->id
+            && is_string($owner->production_user) && $owner->production_user !== '') {
+            return ['sudo', '-n', '-u', $owner->production_user, '-H', ...$this->arguments()];
+        }
+
+        $path = $connection->path ?? '';
+
+        // Do not infer ownership from a path that escapes its apparent home.
+        if (! in_array('..', explode('/', $path), true)) {
+            foreach ($node->instances()->whereNotNull('production_home')->whereNotNull('production_user')->get() as $instance) {
+                $home = rtrim($instance->production_home ?? '', '/');
+
+                if ($home !== '' && $instance->production_user !== ''
+                    && str_starts_with($path, $home.'/')) {
+                    return ['sudo', '-n', '-u', (string) $instance->production_user, '-H', ...$this->arguments()];
+                }
+            }
+        }
+
+        return $this->arguments();
+    }
+
+    private function unreadable(string $reason): never
+    {
+        throw new ResourceOperationException(
+            errorCode: 'database.sqlite_unreadable',
+            message: $reason,
+            status: 422,
+        );
     }
 
     private function owningNode(DatabaseConnection $connection): Node
