@@ -239,6 +239,7 @@ it('sends repeatable provision settings and rejects invalid setting input locall
     expect($mockClient->getLastRequest()?->body()->all()['settings'] ?? null)
         ->toBe([
             'apps' => ['path' => '/srv/orbit:data/apps'],
+            'task_vms' => null,
         ]);
 
     MockClient::destroyGlobal();

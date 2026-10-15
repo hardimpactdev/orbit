@@ -1093,7 +1093,8 @@ describe('a warm VM', function (): void {
 
 describe('schedule', function (): void {
     it('queues the refill every minute only while a host has warm_vms or a pool VM exists', function (): void {
-        config(['task_vms.enabled' => true, 'task_vms.incus.hosts' => [['node_id' => 1, 'cidr' => '10.251.77.0/24', 'max_vms' => 2]]]);
+        config(['task_vms.enabled' => true]);
+        task_vm_node_hosts([['node_id' => 1, 'cidr' => '10.251.77.0/24', 'max_vms' => 2]]);
         Artisan::call('schedule:list');
         $event = collect(app(Schedule::class)->events())->first(fn ($event): bool => $event instanceof CallbackEvent && $event->description === RefillTaskVmPool::class);
 
@@ -1101,7 +1102,7 @@ describe('schedule', function (): void {
             ->and($event->expression)->toBe('* * * * *')
             ->and(RefillTaskVmPool::due())->toBeFalse();
 
-        config(['task_vms.incus.hosts' => [['node_id' => 1, 'cidr' => '10.251.77.0/24', 'max_vms' => 2, 'warm_vms' => 1]]]);
+        task_vm_node_hosts([['node_id' => 1, 'cidr' => '10.251.77.0/24', 'max_vms' => 2, 'warm_vms' => 1]]);
         expect(RefillTaskVmPool::due())->toBeTrue();
 
         config(['task_vms.enabled' => false]);

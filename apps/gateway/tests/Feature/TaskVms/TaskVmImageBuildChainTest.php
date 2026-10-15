@@ -352,6 +352,20 @@ it('resumes smoke and promote failures using the published image after the build
     'promote' => ['query', TaskVmImageBuildStep::Promote],
 ]);
 
+it('finds resumable published images in the configured host alias namespace', function (bool $latest): void {
+    TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($this->host->id, ['imageAlias' => 'beast-task-base'])]]);
+    $chain = app(TaskVmImageBuildChain::class);
+    $build = TaskVmImageBuild::query()->create([
+        'host_node_id' => $this->host->id, 'state' => TaskVmImageBuildState::Failed,
+        'current_step' => TaskVmImageBuildStep::Smoke, 'image_fingerprint' => IMAGE_NEW,
+    ]);
+    $this->incus->images[IMAGE_NEW] = ['beast-task-base-'.$build->created_at->format('YmdHis').'-'.$build->id];
+
+    $resumed = $latest ? $chain->resumeLatest($this->host) : $chain->resume($this->host, $build->id);
+    expect($resumed->id)->toBe($build->id)
+        ->and($build->refresh()->state)->toBe(TaskVmImageBuildState::Running);
+})->with(['latest' => true, 'explicit' => false]);
+
 it('refuses a post-publish resume when its published image was discarded', function (): void {
     $build = $this->chain->start($this->host);
     $this->incus->fail = 'lean boot';

@@ -4,14 +4,17 @@ declare(strict_types=1);
 
 namespace App\Domain\TaskVms;
 
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Domain\WireGuard\VpnSettings;
+use App\Models\Node;
 use Closure;
 use Illuminate\Support\Facades\Config;
 use InvalidArgumentException;
 
 /**
- * The validated `task_vms` config. Resolve it from the container: the singleton validates once. The defaults live in
+ * The validated `task_vms` config and Node-owned host intent. Resolve it from the container: validation runs once
+ * per request or queued job. The defaults live in
  * `config/task_vms.php`; this class only validates, with Laravel's validator, and each host and the UpCloud overflow
  * validate their own entry ({@see TaskVmHost::fromConfig()}, {@see TaskVmUpCloud::fromConfig()}). The scheduler reads
  * the raw config leniently through {@see self::scheduled()}, so an invalid value never stops it.
@@ -144,13 +147,12 @@ final readonly class TaskVmSettings
     public static function scheduled(): TaskVmSchedule
     {
         $enabled = Config::get('task_vms.enabled') === true;
-        $hosts = Config::get('task_vms.incus.hosts');
+        $hosts = self::hostEntries();
 
         return new TaskVmSchedule(
             enabled: $enabled,
             upcloudConfigured: filled(Config::get('task_vms.upcloud.token_file')),
-            warmVmsWanted: $enabled && is_array($hosts)
-                && array_any($hosts, static fn (mixed $host): bool => is_array($host) && is_int($host['warm_vms'] ?? null) && $host['warm_vms'] > 0),
+            warmVmsWanted: $enabled && array_any($hosts, static fn (array $host): bool => is_int($host['warm_vms'] ?? null) && $host['warm_vms'] > 0),
         );
     }
 
@@ -194,11 +196,14 @@ final readonly class TaskVmSettings
     {
         $config = Config::get('task_vms');
 
-        return is_array($config) ? $config : [];
+        $config = is_array($config) ? $config : [];
+        $config['incus'] = [...(is_array($config['incus'] ?? null) ? $config['incus'] : []), 'hosts' => self::hostEntries()];
+
+        return $config;
     }
 
     /**
-     * Task VMs are enabled, or the Cluster, the origin, or a host is set. Malformed hosts JSON counts as set.
+     * Task VMs are enabled, or the Cluster, the origin, or an active Node's host intent is set.
      *
      * @param  array<string, mixed>  $config
      */
@@ -208,6 +213,20 @@ final readonly class TaskVmSettings
             || TaskVmConfig::filled($config['dev_cluster_id'] ?? null) !== null
             || TaskVmConfig::filled($config['model_proxy_origin'] ?? null) !== null
             || (is_array($config['incus'] ?? null) ? $config['incus']['hosts'] ?? null : null) !== [];
+    }
+
+    /** @return list<array<string, mixed>> */
+    private static function hostEntries(): array
+    {
+        $entries = [];
+        foreach (Node::query()->where('status', LifecycleStatus::Active->value)->orderBy('id')->get() as $node) {
+            $settings = $node->settings;
+            if (is_array($settings) && is_array($settings['task_vms'] ?? null)) {
+                $entries[] = [...$settings['task_vms'], 'node_id' => $node->id];
+            }
+        }
+
+        return $entries;
     }
 
     private static function vpnSubnet(Ipv4Subnet $range): Ipv4Subnet
@@ -241,6 +260,14 @@ final readonly class TaskVmSettings
                 throw TaskVmConfig::invalid("incus.hosts.{$index}.node_id is listed twice.");
             }
             $hosts[$host->nodeId] = $host;
+        }
+
+        foreach ($hosts as $host) {
+            foreach ($hosts as $other) {
+                if ($host->nodeId !== $other->nodeId && (Ipv4Subnet::from($host->cidr)->contains($other->bridgeAddress()) || Ipv4Subnet::from($other->cidr)->contains($host->bridgeAddress()))) {
+                    throw TaskVmConfig::invalid('task_vms host bridges must not overlap.');
+                }
+            }
         }
 
         return array_values($hosts);

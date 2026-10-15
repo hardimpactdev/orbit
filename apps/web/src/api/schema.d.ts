@@ -2276,7 +2276,7 @@ export interface paths {
         head?: never;
         /**
          * Update Node settings
-         * @description Update typed storage settings on a node.
+         * @description Update typed settings on a node.
          */
         patch: operations["node-settings"];
         trace?: never;
@@ -4505,9 +4505,24 @@ export interface components {
         };
         NodeSettings: {
             apps?: components["schemas"]["NodeStorageApps"] | null;
+            task_vms?: components["schemas"]["NodeTaskVms"] | null;
         };
         NodeStorageApps: {
             path?: string | null;
+        };
+        NodeTaskVms: {
+            cidr?: string;
+            max_vms?: number;
+            project?: string;
+            network?: string;
+            pool?: string;
+            image_alias?: string;
+            zfs_dataset?: string | null;
+            cpus?: number;
+            memory?: string;
+            disk?: string;
+            warm_vms?: number;
+            operator_owned?: string[];
         };
         NodeUpdating: {
             /** @enum {string} */
@@ -13413,6 +13428,20 @@ export interface operations {
                 "application/json": {
                     apps?: {
                         path?: string | null;
+                    } | null;
+                    task_vms?: {
+                        cidr?: string;
+                        max_vms?: number;
+                        project?: string;
+                        network?: string;
+                        pool?: string;
+                        image_alias?: string;
+                        zfs_dataset?: string | null;
+                        cpus?: number;
+                        memory?: string;
+                        disk?: string;
+                        warm_vms?: number;
+                        operator_owned?: string[];
                     } | null;
                 };
             };

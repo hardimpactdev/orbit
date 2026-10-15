@@ -59,8 +59,8 @@ final readonly class IncusTaskVmImageSync
      */
     public function current(TaskVmHost $host, Node $node): string
     {
-        return $this->incus->aliasTarget($host, $node, TaskVmHost::BaseImage)
-            ?? throw new TaskVmException('task_vm.base_image_missing', "Node [{$node->name}] has no base image [".TaskVmHost::BaseImage.']. Build it with task-vms:build-image.');
+        return $this->incus->aliasTarget($host, $node, $host->imageAlias)
+            ?? throw new TaskVmException('task_vm.base_image_missing', "Node [{$node->name}] has no base image [".$host->imageAlias.']. Build it with task-vms:build-image.');
     }
 
     /**
@@ -121,8 +121,10 @@ final readonly class IncusTaskVmImageSync
         $work = "base image sync of Node [{$node->name}] from Node [{$source->name}]";
 
         try {
-            [$alias, $images] = $this->stage($work, $progress, 'inspect', fn (): array => [$this->datedAlias($sourceHost, $source, $fingerprint), $this->incus->images($host, $node)]);
-            if (in_array(TaskVmHost::BaseImage, $images[$fingerprint] ?? [], true)) {
+            [$sourceAlias, $images] = $this->stage($work, $progress, 'inspect', fn (): array => [$this->datedAlias($sourceHost, $source, $fingerprint), $this->incus->images($host, $node)]);
+            // Keep the date/build identity, but use the receiver's namespace for later syncs and pruning.
+            $alias = $host->imageAlias.substr($sourceAlias, strlen($sourceHost->imageAlias));
+            if (in_array($host->imageAlias, $images[$fingerprint] ?? [], true)) {
                 return false;
             }
             $this->stage($work, $progress, 'sweep', fn () => $this->image->sweep($host, $node));
@@ -234,13 +236,13 @@ final readonly class IncusTaskVmImageSync
         return TaskVmBuildStage::run('task_vm.image_sync_failed', $work, $name, $progress, $stage);
     }
 
-    /** The source image's dated alias `orbit-task-base-<time>`, which the copy keeps. */
+    /** The source image's dated alias; the receiver keeps its suffix under its own image alias. */
     private function datedAlias(TaskVmHost $host, Node $node, string $fingerprint): string
     {
         $aliases = $this->incus->images($host, $node)[$fingerprint]
             ?? throw new TaskVmException('task_vm.base_image_missing', "Node [{$node->name}] has no image [{$fingerprint}].");
         foreach ($aliases as $alias) {
-            if (str_starts_with($alias, TaskVmHost::BaseImage.'-')) {
+            if (str_starts_with($alias, $host->imageAlias.'-')) {
                 return $alias;
             }
         }
@@ -310,7 +312,7 @@ final readonly class IncusTaskVmImageSync
 
     /**
      * The target must hold the source's image: Incus names an image by the SHA-256 of its content. The dated alias
-     * of the source goes on it.
+     * uses the target's prefix with the source's date/build suffix.
      */
     private function verify(TaskVmHost $host, Node $node, string $alias, string $fingerprint, bool $copied): void
     {

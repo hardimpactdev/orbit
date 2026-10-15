@@ -300,9 +300,10 @@ describe('settings', function (): void {
         config(['task_vms' => task_vm_config([
             'enabled' => $taskVms, 'dev_cluster_id' => $taskVms ? 4 : null,
             'model_proxy_origin' => $taskVms ? 'http://10.44.0.3:8317' : null,
-            'incus' => ['hosts' => $taskVms ? [['node_id' => 7, 'cidr' => '10.251.77.0/24', 'max_vms' => 4]] : []],
+            // Host intent is stored separately from global task VM switches.
             'upcloud' => $upcloud,
         ])]);
+        task_vm_node_hosts($taskVms ? [['node_id' => 7, 'cidr' => '10.251.77.0/24', 'max_vms' => 4]] : []);
     }
 
     it('leaves UpCloud unconfigured while every value is unset', function (): void {

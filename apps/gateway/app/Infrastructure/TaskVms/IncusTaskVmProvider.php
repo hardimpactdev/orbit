@@ -6,7 +6,6 @@ namespace App\Infrastructure\TaskVms;
 
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmGuestCommand;
-use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\VmObservation;
@@ -43,13 +42,13 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
         }
 
         $host = $this->settings->host((int) $vm->host_node_id);
-        $result = $this->incus->launch($host, $vm->incusHostNode(), $vm->name, TaskVmHost::BaseImage, $userData, $vm->size);
+        $result = $this->incus->launch($host, $vm->incusHostNode(), $vm->name, $host->imageAlias, $userData, $vm->size);
 
         // Only a launch whose answer was lost and whose VM runs counts: a VM that did not start keeps the launch error.
         if (! $result->succeeded() && $this->observe($vm)?->running !== true) {
             // A missing base image is a setup step, not a launch problem, and the stock image would never enroll.
-            if ($this->incus->aliasTarget($host, $vm->incusHostNode(), TaskVmHost::BaseImage) === null) {
-                throw new TaskVmException('task_vm.base_image_missing', "The Incus project [{$host->project}] on the host of task VM [{$vm->name}] has no base image [".TaskVmHost::BaseImage.']. Sync it with task-vms:sync-image, or build it with task-vms:build-image.');
+            if ($this->incus->aliasTarget($host, $vm->incusHostNode(), $host->imageAlias) === null) {
+                throw new TaskVmException('task_vm.base_image_missing', "The Incus project [{$host->project}] on the host of task VM [{$vm->name}] has no base image [".$host->imageAlias.']. Sync it with task-vms:sync-image, or build it with task-vms:build-image.');
             }
 
             throw $this->failed($vm, 'launch', $result);

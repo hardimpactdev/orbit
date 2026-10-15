@@ -18,9 +18,22 @@ describe(NodeSettings::class, function (): void {
             ->and($settings->apps?->path)
             ->toBe('/srv/orbit/apps')
             ->and($settings->toArray())
-            ->toBe(['apps' => ['path' => '/srv/orbit/apps']])
+            ->toBe(['apps' => ['path' => '/srv/orbit/apps'], 'task_vms' => null])
             ->and($settings->isEmpty())
             ->toBeFalse();
+    });
+
+    it('maps typed task VM settings without inventing role intent', function (): void {
+        $settings = NodeSettings::fromGatewayData(['task_vms' => [
+            'cidr' => '10.251.77.0/24', 'max_vms' => 4, 'warm_vms' => 0,
+            'image_alias' => 'custom-base', 'operator_owned' => [],
+        ]]);
+        expect($settings->isEmpty())->toBeFalse()
+            ->and($settings->task_vms?->max_vms)->toBe(4)
+            ->and($settings->toArray()['task_vms'])->toBe([
+                'cidr' => '10.251.77.0/24', 'max_vms' => 4,
+                'image_alias' => 'custom-base', 'warm_vms' => 0, 'operator_owned' => [],
+            ]);
     });
 
     it('bounds malformed apps settings without restoring legacy keys', function (): void {
@@ -32,7 +45,7 @@ describe(NodeSettings::class, function (): void {
         expect($settings->apps)
             ->toBeNull()
             ->and($settings->toArray())
-            ->toBe(['apps' => null])
+            ->toBe(['apps' => null, 'task_vms' => null])
             ->and($settings->isEmpty())
             ->toBeTrue();
     });

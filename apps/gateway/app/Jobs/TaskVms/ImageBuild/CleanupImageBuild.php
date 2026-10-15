@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Jobs\TaskVms\ImageBuild;
 
-use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\TaskVms\IncusHost;
@@ -36,7 +35,7 @@ final class CleanupImageBuild implements ShouldQueue
         $node = $build->hostNode;
         $name = (string) $build->builder_vm_name;
         $host = $settings->host($node->id);
-        $alias = TaskVmHost::BaseImage.'-'.$build->created_at?->format('YmdHis').'-'.$build->id;
+        $alias = $host->imageAlias.'-'.$build->created_at?->format('YmdHis').'-'.$build->id;
         $fingerprint = $build->image_fingerprint;
         try {
             $fingerprint ??= $incus->aliasTarget($host, $node, $alias);

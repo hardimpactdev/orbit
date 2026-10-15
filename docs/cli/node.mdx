@@ -13,7 +13,7 @@ covers:
 
 A Node is a machine that the Gateway manages over SSH and reaches over WireGuard. The `node` family adds a machine, converges it again, renames it, assigns and moves its roles, records which Node may act on which, sets its apps root, and removes it.
 
-[Node provisioning](/reference/node-provisioning) explains what add, converge, role changes, and removal do on the machine. [Node settings](/reference/node-settings) owns the apps root.
+[Node provisioning](/reference/node-provisioning) explains what add, converge, role changes, and removal do on the machine. [Node settings](/reference/node-settings) owns the apps root and operator-approved task VM host configuration.
 
 ## Commands
 
@@ -25,7 +25,7 @@ A Node is a machine that the Gateway manages over SSH and reaches over WireGuard
 | [`node:show`](#orbit-nodeshow) | Show one Node. |
 | [`node:metrics`](#orbit-nodemetrics) | Show one metrics snapshot of a Node. |
 | [`node:rename`](#orbit-noderename) | Change the name of a Node. |
-| [`node:settings`](#orbit-nodesettings) | Set the apps root of a Node. |
+| [`node:settings`](#orbit-nodesettings) | Set the apps root or task VM host configuration of a Node. |
 | [`node:wireguard-key`](#orbit-nodewireguard-key) | Set an unmanaged Node's WireGuard public key and reconverge the hub. |
 | [`node:role:add`](#orbit-noderoleadd) | Add a role, or converge an existing role. |
 | [`node:role:list`](#orbit-noderolelist) | List the roles of a Node. |
@@ -172,6 +172,8 @@ Set the apps root of a Node, the directory under which the Gateway creates devel
 ```bash
 orbit node:settings <node> --setting=apps.path:/mnt/apps [--json]
 ```
+
+Configure a task VM host with `--setting='task_vms:{"cidr":"10.251.77.0/24","max_vms":4,"pool":"orbit-tasks","image_alias":"orbit-task-base"}'`. The JSON object supports the [typed host fields](/reference/node-settings#configure-a-task-vm-host); it has no `node_id` because the selected Node supplies its identity. This example is not the live configuration of any host. Preserve the host's current values when changing it. Use `--setting=task_vms:null` to remove host intent after destroying its task VMs. An `app-dev` role alone never makes a Node a task VM host.
 
 The command needs at least one `--setting`. It sends `{"apps":{"path":"/mnt/apps"}}` to the settings API, without a `settings` wrapper. An empty value unsets the path: `--setting=apps.path:` sends `{"apps":{"path":null}}`. The [API reference](/api/overview) and [MCP](/reference/mcp) publish the same nullable path inside a closed `apps` object. A change never moves an existing checkout. [Node settings](/reference/node-settings#validation) lists the validation rules and failure codes.
 

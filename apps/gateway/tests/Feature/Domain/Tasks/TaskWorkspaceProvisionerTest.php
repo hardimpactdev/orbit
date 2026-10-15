@@ -616,7 +616,7 @@ it('keeps the source-resolved orbit clone and asks for assistance when removal i
 
 describe('task VMs', function (): void {
     it('makes a group wait while a task VM value is invalid', function (): void {
-        config(['task_vms.incus.hosts' => [['node_id' => 9, 'cidr' => '10.251.77.0/24', 'max_vms' => 2, 'pool' => 'Bad_Pool']]]);
+        task_vm_node_hosts([['node_id' => 9, 'cidr' => '10.251.77.0/24', 'max_vms' => 2, 'pool' => 'Bad_Pool']]);
         app()->forgetInstance(TaskVmSettings::class);
         provisioner_node('beast', '10.44.0.7');
         bind_task_workspace_fakes();

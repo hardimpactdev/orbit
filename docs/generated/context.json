@@ -1630,10 +1630,12 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Deployment",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Node agent",
+                "Process",
                 "Role",
                 "Task"
             ],
@@ -2044,6 +2046,7 @@
                 "Process",
                 "Project",
                 "Project Documents",
+                "Role",
                 "Route",
                 "Schedule",
                 "Subtask",
@@ -2150,12 +2153,15 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Deployment",
                 "Doctor",
                 "Gateway",
                 "Instance",
                 "Node",
+                "Placement",
                 "Project",
-                "Role"
+                "Role",
+                "Task"
             ],
             "governing_adrs": []
         },

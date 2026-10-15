@@ -47,6 +47,8 @@ An installed Gateway caches its configuration, so an edit takes effect only afte
 
 Other `ORBIT_` keys belong to one feature, and the page for that feature documents them.
 
+Task VM hosts use [Node `settings.task_vms`](/reference/node-settings#configure-a-task-vm-host), not an environment list. The deployment migration reads the former `ORBIT_TASK_VMS_INCUS_HOSTS` JSON list from the process environment or the Gateway's `.env`, including when configuration is cached. Keep the existing deployment values until migration copies them into the host Nodes, verify the stored settings, and then remove the variable with [Apply an env change](/reference/gateway-recovery#apply-an-env-change). Runtime host selection has no environment-list fallback.
+
 ## Drift check
 
 `bin/env-docs` runs in CI. It fails when:

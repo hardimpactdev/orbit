@@ -127,12 +127,12 @@ final class FakeIncusFleetHost
         return new CommandResult(0, is_string($output) ? $output : '', '', 1, false);
     }
 
-    public function retarget(string $fingerprint): void
+    public function retarget(string $fingerprint, string $alias = TaskVmHost::BaseImage): void
     {
         foreach ($this->images as $image => $aliases) {
-            $this->images[$image] = array_values(array_diff($aliases, [TaskVmHost::BaseImage]));
+            $this->images[$image] = array_values(array_diff($aliases, [$alias]));
         }
-        $this->images[$fingerprint][] = TaskVmHost::BaseImage;
+        $this->images[$fingerprint][] = $alias;
     }
 
     /** @param  list<string>  $command */

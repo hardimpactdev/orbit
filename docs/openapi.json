@@ -16046,7 +16046,7 @@
             "description": "Numeric Node ID."
           }
         ],
-        "description": "Update typed storage settings on a node.",
+        "description": "Update typed settings on a node.",
         "requestBody": {
           "required": false,
           "content": {
@@ -16066,6 +16066,62 @@
                           "string",
                           "null"
                         ]
+                      }
+                    }
+                  },
+                  "task_vms": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "cidr": {
+                        "type": "string"
+                      },
+                      "max_vms": {
+                        "type": "integer",
+                        "maximum": 64,
+                        "minimum": 1
+                      },
+                      "project": {
+                        "type": "string"
+                      },
+                      "network": {
+                        "type": "string"
+                      },
+                      "pool": {
+                        "type": "string"
+                      },
+                      "image_alias": {
+                        "type": "string"
+                      },
+                      "zfs_dataset": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "cpus": {
+                        "type": "integer",
+                        "maximum": 64,
+                        "minimum": 1
+                      },
+                      "memory": {
+                        "type": "string"
+                      },
+                      "disk": {
+                        "type": "string"
+                      },
+                      "warm_vms": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "operator_owned": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
                       }
                     }
                   }
@@ -16143,7 +16199,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/nodes/7/settings\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"apps\": {\"path\": \"/srv/orbit/apps\"}}'\n"
+            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/nodes/7/settings\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"apps\": {\"path\": \"/srv/orbit/apps\"}, \"task_vms\": {}}'\n"
           },
           {
             "lang": "php",
@@ -33231,6 +33287,16 @@
                 "type": "null"
               }
             ]
+          },
+          "task_vms": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NodeTaskVms"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -33242,6 +33308,53 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "NodeTaskVms": {
+        "type": "object",
+        "properties": {
+          "cidr": {
+            "type": "string"
+          },
+          "max_vms": {
+            "type": "integer"
+          },
+          "project": {
+            "type": "string"
+          },
+          "network": {
+            "type": "string"
+          },
+          "pool": {
+            "type": "string"
+          },
+          "image_alias": {
+            "type": "string"
+          },
+          "zfs_dataset": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cpus": {
+            "type": "integer"
+          },
+          "memory": {
+            "type": "string"
+          },
+          "disk": {
+            "type": "string"
+          },
+          "warm_vms": {
+            "type": "integer"
+          },
+          "operator_owned": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },

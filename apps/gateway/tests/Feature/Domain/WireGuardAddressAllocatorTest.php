@@ -113,9 +113,10 @@ it('allocates fleet addresses as before while the reserved range lies outside th
     expect(app(WireGuardAddressAllocator::class)->next())->toBe('10.44.0.1');
 });
 
-it('fails closed when a task VM value is invalid', function (): void {
+it('fails closed when a configured task VM range is invalid', function (): void {
     configure_wireguard_subnet('10.44.0.0/24');
-    config()->set('task_vms.incus.hosts', null);
+    config()->set('task_vms.enabled', true);
+    config()->set('task_vms.wireguard_range', 'invalid');
 
     expect(fn (): string => app(WireGuardAddressAllocator::class)->next())
         ->toThrow(function (ResourceOperationException $exception): void {

@@ -99,11 +99,11 @@ final class FakeIncusFleet implements SshExecutor
 
         return match (true) {
             $argv[0] === 'query' && $host->fail === 'query reply' => (function () use ($host, $argv): CommandResult {
-                $host->retarget(json_decode($argv[4], true)['target']);
+                $host->retarget(json_decode($argv[4], true)['target'], rawurldecode(basename(explode('?', $argv[6], 2)[0])));
 
                 return new CommandResult(255, '', "Connection reset by peer\n", 1, false);
             })(),
-            $argv[0] === 'query' => $host->answer('query', fn () => $host->retarget(json_decode($argv[4], true)['target'])),
+            $argv[0] === 'query' => $host->answer('query', fn () => $host->retarget(json_decode($argv[4], true)['target'], rawurldecode(basename(explode('?', $argv[6], 2)[0])))),
             default => throw new RuntimeException('Unexpected incus command: '.implode(' ', $argv)),
         };
     }

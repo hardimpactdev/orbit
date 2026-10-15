@@ -8,6 +8,7 @@ use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Responses\Nodes\AppsSettings;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
 use Orbit\Sdk\Responses\Nodes\NodeSettings;
+use Orbit\Sdk\Responses\Nodes\TaskVmsSettings;
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
@@ -24,6 +25,8 @@ final class UpdateNodeSettingsRequest extends GatewayRequest implements HasBody
         private readonly int $nodeId,
         private readonly bool $hasApps = false,
         private readonly ?AppsSettings $apps = null,
+        private readonly bool $hasTaskVms = false,
+        private readonly ?TaskVmsSettings $taskVms = null,
     ) {}
 
     public static function fromSettings(int $nodeId, NodeSettings $settings): self
@@ -32,6 +35,8 @@ final class UpdateNodeSettingsRequest extends GatewayRequest implements HasBody
             nodeId: $nodeId,
             hasApps: true,
             apps: $settings->apps,
+            hasTaskVms: $settings->task_vms !== null,
+            taskVms: $settings->task_vms,
         );
     }
 
@@ -55,6 +60,10 @@ final class UpdateNodeSettingsRequest extends GatewayRequest implements HasBody
 
         if ($this->hasApps) {
             $body['apps'] = $this->apps?->toArray();
+        }
+
+        if ($this->hasTaskVms) {
+            $body['task_vms'] = $this->taskVms?->toArray();
         }
 
         return $body;

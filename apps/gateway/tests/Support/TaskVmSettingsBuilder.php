@@ -51,10 +51,9 @@ final class TaskVmSettingsBuilder
      */
     public static function bind(array $overrides = []): TaskVmSettings
     {
-        $settings = self::make($overrides);
-        app()->instance(TaskVmSettings::class, $settings);
+        app()->scoped(TaskVmSettings::class, static fn (): TaskVmSettings => self::make($overrides));
 
-        return $settings;
+        return app(TaskVmSettings::class);
     }
 
     /** Settings with every value unset, as a Gateway without task VMs reads them. */
