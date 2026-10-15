@@ -71,7 +71,7 @@ CI runs shellcheck on Bash and ruff on Python for every program in `apps/gateway
 
 ### A ratchet on inline scripts
 
-An architecture test lists the files under `apps/gateway/app` that may still contain a nowdoc or heredoc labelled `BASH`, `PY`, `PYTHON`, `SH`, `SHELL`, or `AWK`. A file outside the list fails, and a listed file without one fails too. So a migration must shrink the list, and a new inline script needs a reviewed exception. Caddy, configuration, and text templates are configuration and stay out of scope.
+An architecture test lists the files under `apps/gateway/app` and `apps/gateway/extensions` that may still contain a nowdoc or heredoc labelled `BASH`, `PY`, `PYTHON`, `SH`, `SHELL`, or `AWK`. A file outside the list fails, and a listed file without one fails too. So a migration must shrink the list, and a new inline script needs a reviewed exception. Caddy, configuration, and text templates are configuration and stay out of scope.
 
 ### The first migration
 

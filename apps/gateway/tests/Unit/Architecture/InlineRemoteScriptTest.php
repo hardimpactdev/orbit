@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 /*
- * Files under app/ that still hold an inline script for a Node: a nowdoc or heredoc labelled BASH, PY, PYTHON, SH,
+ * Files under app/ and extensions/ that still hold an inline script for a Node: a nowdoc or heredoc labelled BASH, PY, PYTHON, SH,
  * SHELL, or AWK. New Node code is a remote program under resources/remote (ADR 0211, docs/reference/remote-programs.md).
  * This list only shrinks: migrate a file and remove it here. Caddy, configuration, and text templates are not listed.
  */
@@ -115,15 +115,17 @@ it('lists exactly the files that still hold an inline Node script', function ():
     $gateway = dirname(path: __DIR__, levels: 3);
     $found = [];
 
-    foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($gateway.'/app', FilesystemIterator::SKIP_DOTS)) as $file) {
-        if (! $file instanceof SplFileInfo || $file->getExtension() !== 'php') {
-            continue;
-        }
+    foreach (['app', 'extensions'] as $directory) {
+        foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator("{$gateway}/{$directory}", FilesystemIterator::SKIP_DOTS)) as $file) {
+            if (! $file instanceof SplFileInfo || $file->getExtension() !== 'php') {
+                continue;
+            }
 
-        $contents = (string) file_get_contents($file->getPathname());
+            $contents = (string) file_get_contents($file->getPathname());
 
-        if (preg_match('/<<<[ \t]*([\'"]?)(?:BASH|PY|PYTHON|SH|SHELL|AWK)\1[ \t]*$/m', $contents) === 1) {
-            $found[] = substr($file->getPathname(), strlen($gateway) + 1);
+            if (preg_match('/<<<[ \t]*([\'"]?)(?:BASH|PY|PYTHON|SH|SHELL|AWK)\1[ \t]*$/m', $contents) === 1) {
+                $found[] = substr($file->getPathname(), strlen($gateway) + 1);
+            }
         }
     }
 
