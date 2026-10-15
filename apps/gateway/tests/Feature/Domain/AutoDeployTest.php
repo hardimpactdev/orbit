@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 use App\Actions\Instances\StartInstanceDeployAction;
 use App\Actions\Instances\UpdateInstanceAction;
+use App\Domain\Instances\Deployment\AutomaticDeployState;
+use App\Domain\Releases\ReleaseAlertKind;
+use App\Domain\Releases\ReleaseAlertNotifier;
 use App\Domain\SourceControl\RemoteBranchHeads;
 use App\Models\Activity;
 use App\Models\Instance;
@@ -14,6 +17,7 @@ use Illuminate\Support\Facades\Http;
 use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Feature\GitHub\GreenCommitFixtures;
 use Tests\Support\FakeRemoteBranchHeads;
+use Tests\Support\Fleet\RecordingReleaseAlertNotifier;
 use Tests\Support\Orb220DeploymentApiFixture;
 
 /**
@@ -321,4 +325,107 @@ describe('automatic deployment of a production Instance', function (): void {
         expect(Operation::query()->count())->toBe(0)
             ->and($this->heads->reads)->toBe([]);
     });
+});
+
+describe('release alerts of automatic deployments', function (): void {
+    beforeEach(function (): void {
+        $this->notifier = new RecordingReleaseAlertNotifier;
+        app()->instance(ReleaseAlertNotifier::class, $this->notifier);
+    });
+
+    it('alerts once for each commit whose automatic deployment failed', function (): void {
+        auto_deploy_github($this, [$this->a => 'success', $this->b => 'success', $this->c => 'success']);
+        $failed = auto_deploy_row($this->instance, ['commit' => $this->b, 'triggered_by' => 'schedule', 'status' => 'failed', 'failed_step' => 'before_activation', 'error_code' => 'deployment.step_failed']);
+
+        auto_deploy_tick($this);
+        auto_deploy_tick($this);
+
+        expect($this->notifier->alerts)->toHaveCount(1)
+            ->and($this->notifier->alerts[0]->kind)->toBe(ReleaseAlertKind::InstanceDeployFailed)
+            ->and($this->notifier->alerts[0]->subject->toArray())->toBe([
+                'target' => "instance:{$this->instance->id}", 'repository' => 'acme/shop', 'sha' => $this->b, 'release_id' => "deployment-{$failed->id}",
+            ])
+            ->and($this->notifier->alerts[0]->summary)->toContain('before_activation', 'deployment.step_failed');
+
+        auto_deploy_row($this->instance, ['commit' => $this->c, 'triggered_by' => 'schedule', 'status' => 'failed', 'failed_step' => 'after_activation', 'error_code' => 'deployment.step_failed']);
+        auto_deploy_tick($this);
+
+        expect($this->notifier->alerts)->toHaveCount(2)
+            ->and($this->notifier->alerts[1]->subject->sha)->toBe($this->c);
+    });
+
+    it('does not alert a failure from before auto_deploy was set', function (): void {
+        $this->instance->update(['auto_deploy' => false]);
+        auto_deploy_row($this->instance, ['commit' => $this->b, 'triggered_by' => 'schedule', 'status' => 'failed', 'failed_step' => 'before_activation', 'error_code' => 'deployment.step_failed']);
+        app(UpdateInstanceAction::class)->execute($this->instance, null, true);
+        auto_deploy_github($this, [$this->a => 'success', $this->b => 'success']);
+
+        auto_deploy_tick($this);
+
+        expect($this->notifier->alerts)->toBe([]);
+    });
+
+    it('alerts once when a rollback pauses automatic deployment', function (): void {
+        auto_deploy_github($this, [$this->a => 'success', $this->b => 'success']);
+        auto_deploy_row($this->instance, ['commit' => $this->a, 'kind' => 'rollback']);
+
+        auto_deploy_tick($this);
+        auto_deploy_tick($this);
+
+        expect($this->notifier->alerts)->toHaveCount(1)
+            ->and($this->notifier->alerts[0]->kind)->toBe(ReleaseAlertKind::InstanceDeployPaused)
+            ->and($this->notifier->alerts[0]->summary)->toContain("orbit instance:update {$this->instance->id} --auto-deploy=true");
+    });
+
+    it('alerts once when a green commit has waited thirty minutes to deploy', function (): void {
+        auto_deploy_github($this, [$this->a => 'success', $this->b => 'success']);
+        app(StartInstanceDeployAction::class)->execute($this->instance, 'laptop', null);
+
+        auto_deploy_tick($this);
+        $this->travel(29)->minutes();
+        auto_deploy_tick($this);
+        expect($this->notifier->alerts)->toBe([]);
+
+        $this->travel(2)->minutes();
+        auto_deploy_tick($this);
+        $this->travel(30)->minutes();
+        auto_deploy_tick($this);
+
+        expect($this->notifier->alerts)->toHaveCount(1)
+            ->and($this->notifier->alerts[0]->kind)->toBe(ReleaseAlertKind::InstanceDeployStalled)
+            ->and($this->notifier->alerts[0]->subject->sha)->toBe($this->b)
+            ->and($this->notifier->alerts[0]->summary)->toContain('busy');
+    });
+
+    it('ends a stall once the commit deploys', function (): void {
+        auto_deploy_github($this, [$this->a => 'success', $this->b => 'success']);
+        auto_deploy_tick($this);
+        expect(AutomaticDeployState::of($this->instance->fresh())->stall()['sha'] ?? null)->toBe($this->b);
+
+        run_operation_jobs();
+        auto_deploy_tick($this);
+
+        expect(AutomaticDeployState::of($this->instance->fresh())->stall())->toBeNull();
+    });
+
+    it('skips the alert of a Project outside GitHub', function (): void {
+        $this->instance->project->update(['repository_url' => 'https://example.test/shop.git', 'merge_check' => null]);
+        $this->heads->set($this->instance->project, 'main', $this->a);
+        auto_deploy_row($this->instance, ['commit' => $this->b, 'triggered_by' => 'schedule', 'status' => 'failed', 'failed_step' => 'before_activation', 'error_code' => 'deployment.step_failed']);
+
+        $this->artisan('orbit:auto-deploy')->assertSuccessful();
+
+        expect($this->notifier->alerts)->toBe([]);
+    });
+});
+
+it('records an automatic deployment alert in Activity through the release alert notifier', function (): void {
+    auto_deploy_github($this, [$this->a => 'success', $this->b => 'success']);
+    auto_deploy_row($this->instance, ['commit' => $this->b, 'triggered_by' => 'schedule', 'status' => 'failed', 'failed_step' => 'before_activation', 'error_code' => 'deployment.step_failed']);
+
+    auto_deploy_tick($this);
+    $activity = Activity::query()->where('command', 'release:alert')->sole();
+
+    expect($activity->description)->toBe('instance_deploy_failed')
+        ->and($activity->properties?->get('subject'))->toMatchArray(['target' => "instance:{$this->instance->id}", 'sha' => $this->b]);
 });

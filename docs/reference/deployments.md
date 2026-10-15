@@ -3,9 +3,9 @@ title: "Instance releases"
 description: "How production Instances build releases and select current code, and how development defaults deploy in their checkout."
 covers:
   - apps/gateway/app/Domain/{Instances/Deployment/**,Instances/ProductionWebRootManager.php,Projects/*DeployStep*.php}
-  - apps/gateway/app/Actions/Instances/{DeployInstanceAction,DeployDefaultInstanceAction,StartInstanceDeployAction,RollbackInstanceAction,InstanceDeploymentConfigResolver,UpdateInstanceAction,ListInstanceReleasesAction,ListInstanceDeploymentsAction,*InstanceDeployStep*Action}.php
+  - apps/gateway/app/Actions/Instances/{DeployInstanceAction,DeployDefaultInstanceAction,StartInstanceDeployAction,RunAutomaticDeploysAction,RollbackInstanceAction,InstanceDeploymentConfigResolver,UpdateInstanceAction,ListInstanceReleasesAction,ListInstanceDeploymentsAction,*InstanceDeployStep*Action}.php
   - apps/gateway/app/Infrastructure/Instances/{RemoteProductionDeployment,RemoteDevelopmentDeployment,DevelopmentCheckoutProgram,ProductionApplicationPaths,ProductionWebRootProgram,RemoteProductionWebRootManager}.php
-  - apps/gateway/app/Console/Commands/DeployDevelopmentDefaultsCommand.php
+  - apps/gateway/app/Console/Commands/AutoDeployCommand.php
   - apps/gateway/app/Http/Streaming/**
   - apps/gateway/app/Http/{Controllers/Api/{InstanceDeploymentsController,InstanceDeployStepsController,InstanceReleasesController,InstanceRollbacksController,ProjectDevelopmentDeployStepsController},Requests/Projects/*ProjectDevelopmentDeployStepRequest}.php
   - apps/gateway/app/Models/{InstanceDeployment,InstanceDeployStep,ProjectDevelopmentDeployStep}.php
@@ -209,18 +209,60 @@ A rollback selects one retained release through `current`. The Gateway checks th
 
 ## Automatic deployments
 
-The Gateway runs `orbit:auto-deploy` every minute, a job on the [Gateway queue](/reference/gateway-queue#scheduled-work). The command `orbit:deploy-development-defaults` is its old name and still works. One tick serves every [development default](#development-defaults).
+The Gateway runs `orbit:auto-deploy` every minute, a job on the [Gateway queue](/reference/gateway-queue#scheduled-work). The command `orbit:deploy-development-defaults` is its old name and still works. One tick serves every [development default](#development-defaults) and every production Instance with `auto_deploy` on.
 
-For each Instance, the tick reads the branch head on the Gateway with `git ls-remote` and the Project's [read credential](/reference/instance-setup#credentialed-git). It keeps the GitHub App installation and its read token for up to 50 minutes, so a quiet minute costs one `ls-remote` and no GitHub API call.
+For each Instance, the tick reads the branch head on the Gateway with `git ls-remote` and the Project's [read credential](/reference/instance-setup#credentialed-git). It keeps the GitHub App installation and its read tokens for up to 50 minutes, so a quiet minute costs one `ls-remote` and no GitHub API call. A failed read drops them.
 
-- When the Instance already runs the head, the tick starts nothing and writes nothing. For a development default, the deployed commit is its `seed_commit`.
-- Otherwise it starts an [`instance.deploy` operation](#the-deploy-operation) pinned to the head, with `triggered_by` `schedule`. The deployment checks out exactly that commit, after it proves that the branch contains it. Pushes that arrive meanwhile wait for the next tick, which reads the newest head, so intermediate commits coalesce.
+- When the Instance already runs the commit the tick would deploy, the tick starts nothing and writes no history row.
+- Otherwise it starts an [`instance.deploy` operation](#the-deploy-operation) pinned to that commit, with `triggered_by` `schedule`.
+- The deployment proves that the branch contains the commit and checks out exactly that commit. It fails with `deployment.commit_not_on_branch` otherwise.
+- Pushes that arrive meanwhile wait for the next tick. That tick reads the newest head, so intermediate commits coalesce.
 - While another operation holds the Instance, the tick skips it and reports `busy`. Its own operation that has not ended yet is `deploying`.
-- After a failed automatic deployment, the tick waits 10 minutes before it deploys the same commit again (`backing_off`). A new commit deploys at once.
 
-Operations need the [Gateway queue](/reference/gateway-queue#without-a-queue). Without it, the tick fails with `operation.queue_unavailable` for each Instance that has a commit to deploy, and changes nothing.
+Operations need the [Gateway queue](/reference/gateway-queue#without-a-queue). Without it, the tick fails with `operation.queue_unavailable` for each Instance that has a commit to deploy, and changes nothing. A head the Gateway cannot read fails the tick for that Instance with `source.head_unavailable`. The other Instances still deploy.
 
-A head the Gateway cannot read fails the tick for that Instance with `source.head_unavailable`. The other Instances still deploy.
+### Automatic development defaults
+
+A default deploys its default branch's head. Its deployed commit is its `seed_commit`. After a failed automatic deployment, the tick deploys the same commit again after 10 minutes (`backing_off`). A new commit deploys at once.
+
+### Production Instances
+
+A production Instance deploys automatically after you turn it on:
+
+```bash
+orbit instance:update <instance> --auto-deploy=true
+```
+
+The tick starts from the commit of the Instance's newest succeeded deployment or rollback. Until a first deployment succeeds, it reports `not_deployed`; deploy the Instance by hand once. It reads the head of the deployment branch: the `--branch` that `instance:update` set, or the Instance's branch.
+
+When the Project has a `merge_check`, the tick deploys the newest commit that passed it. It finds that commit the way [automatic Gateway releases](/reference/github-app#find-the-newest-green-commit) do. The commit is on the branch's first-parent history, and a GitHub Actions check run of that name passed on exactly that commit. It strictly descends from the deployed commit and has not failed an automatic deployment. It never deploys a red or pending commit. When the head is red, it can deploy an older green commit behind it. A commit deploys within about 2 minutes after its check passes.
+
+| Result | Meaning |
+| --- | --- |
+| `up_to_date` | The Instance runs the head. |
+| `started` | The tick started a deployment of the commit it names. |
+| `deploying` | The tick's deployment has not ended yet. |
+| `gate_pending` | The head's check has not finished, and no older commit is green. The tick reads the check again each minute. |
+| `gate_failed` | The head's check failed, and no older commit is green. |
+| `no_green_commit` | The head passed, but no commit may deploy: it failed a deployment, or it does not descend from the deployed commit, for example after a force push. |
+| `commit_failed` | Without a `merge_check`: the head failed its automatic deployment. |
+| `busy` | Another operation holds the Instance. |
+| `backing_off` | The commit failed for a transient cause less than 10 minutes ago. |
+| `paused` | A rollback paused automatic deployment. |
+| `not_deployed` | No deployment of the Instance has succeeded yet. |
+| `failed` | The tick could not read the head or the check, or could not start the deployment. `error_code` names why. |
+
+The tick reads the check runs only when the head changed, or while the head's check has not finished. A settled answer stays until the head, the deployed commit, or the list of failed commits changes.
+
+Without a `merge_check`, the tick deploys every new head. `instance:update` accepts that and warns about it. A `merge_check` is read through the [GitHub App](/reference/github-app). A Project that reads through the GitHub CLI, or is not on `github.com`, cannot gate: `instance:update --auto-deploy=true` refuses it with `instance.auto_deploy_gate_unreadable` while it has a `merge_check`.
+
+**Failures.** A failure before any of the Project's own steps ran, at `operation`, `preparation`, or `environment`, is transient: the tick deploys the commit again after 10 minutes. A cancelled deployment, a commit not on the branch, a home that records another repository, and a failure in a deploy step or later are not. The commit then does not deploy automatically again. A new commit deploys at once, and a manual deployment clears every earlier failure.
+
+**Rollback.** A rollback after `auto_deploy` was last set pauses the Instance, and the tick never overrides it. It stays paused until you set `--auto-deploy=true` again; a new commit does not resume it. Resuming continues from the commit the rollback selected. A manual deployment does not pause: it deploys the branch head, and the tick continues from that commit.
+
+**Visibility.** Each automatic deployment has its operation and its [history row](#history) with `triggered_by` `schedule`. `instance:show` shows the last result, its commit, the head, and a pause. When a result other than `up_to_date`, `deploying`, or `gate_pending` starts, the tick writes one Activity entry, `auto_deploy.<result>`, with the command `orbit:auto-deploy`. A [release alert](/reference/gateway-recovery#release-alerts) with the target `instance:<id>` reports a failed automatic deployment once per commit, a commit that waited 30 minutes to deploy once per commit, and a pause.
+
+**One worker.** Development defaults, production Instances, and manual deployments share the one `operations` worker, as [One worker for every operation](/reference/operations#one-worker-for-every-operation) describes. A tick's deployment waits in the queue while another deployment runs. Instances behind one Route deploy one after another, not together.
 
 ## History
 
@@ -271,7 +313,15 @@ Release preparation, the switch, and the PHP-FPM refresh are the same for every 
 
 ### Deploy a branch, not a commit
 
-The operation is "deploy what the branch holds now". So a deployment takes no commit. Two deployments of one branch can produce different code.
+A manual deployment means "deploy what the branch holds now". So it takes no commit, and two manual deployments of one branch can produce different code. An automatic deployment is the exception: it deploys the commit that passed the gate, so it pins that commit, and the branch must contain it. Without the pin, a newer, unchecked head could deploy in place of the checked commit.
+
+### Poll, do not wait for a webhook
+
+The Gateway reads the branch head every minute instead of receiving a GitHub push webhook. A webhook would need a public endpoint and a webhook secret on a Gateway that otherwise answers only WireGuard peers. The tick reuses the paths that development defaults and automatic Gateway releases already use. A quiet minute costs one `git ls-remote`, and a pending check costs a few GitHub API reads, well within the App's rate limit. The price is up to one minute of delay.
+
+### One operations worker for every deployment
+
+Automatic deployments run as operations on the one `operations` worker, like manual ones. One worker keeps one deployment at a time in the fleet and lets each Instance's lock and a lost worker work the same way for every deployment. A deployment of one Instance can wait for another's, and Instances behind one Route deploy in turn.
 
 ### Three releases per home
 

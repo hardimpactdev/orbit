@@ -929,7 +929,8 @@
             ],
             "governing_adrs": [
                 "0206",
-                "0209"
+                "0209",
+                "0217"
             ]
         },
         {
@@ -1097,6 +1098,30 @@
             ]
         },
         {
+            "path": "docs/decisions/0217-deploy-production-instances-automatically-by-polling.md",
+            "title": "ADR 0217: Deploy production Instances automatically by polling",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Activity",
+                "Deployment",
+                "Gateway",
+                "Instance",
+                "Project",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0209",
+                "0217"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -1155,7 +1180,8 @@
                 "0212",
                 "0213",
                 "0214",
-                "0215"
+                "0215",
+                "0217"
             ]
         },
         {
@@ -1875,6 +1901,7 @@
             ],
             "concepts": [
                 "Activity",
+                "Deployment",
                 "Doctor",
                 "Extension",
                 "Gateway",

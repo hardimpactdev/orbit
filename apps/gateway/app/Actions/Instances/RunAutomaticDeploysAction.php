@@ -11,6 +11,7 @@ use App\Domain\GitHub\GreenCommit;
 use App\Domain\GitHub\GreenCommitResolver;
 use App\Domain\GitHub\RequiredCheckReader;
 use App\Domain\GitHub\RequiredCheckState;
+use App\Domain\Instances\Deployment\AutomaticDeployAlerts;
 use App\Domain\Instances\Deployment\AutomaticDeployFailure;
 use App\Domain\Instances\Deployment\AutomaticDeployOutcome;
 use App\Domain\Instances\Deployment\AutomaticDeployResult;
@@ -22,8 +23,10 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Projects\ProjectSourceAccess;
+use App\Domain\Releases\ReleaseAlertKind;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\SourceControl\GitCommitSha;
 use App\Domain\SourceControl\RemoteBranchHeads;
 use App\Infrastructure\GitHub\GitHubTokenCache;
 use App\Models\Activity;
@@ -53,7 +56,8 @@ use Throwable;
  * deployment.
  *
  * The tick keeps what it saw in `instances.auto_deploy_state` and writes an Activity entry when a notable result
- * starts.
+ * starts. For a production Instance it raises a release alert once for each failed commit, for a pause, and for a
+ * commit that waits {@see self::StallAlertMinutes} minutes to deploy.
  */
 final readonly class RunAutomaticDeploysAction
 {
@@ -66,12 +70,16 @@ final readonly class RunAutomaticDeploysAction
     /** A commit whose automatic deployment failed for a transient cause is tried again after this long. */
     public const int RetryMinutes = 10;
 
+    /** A commit that waits this long to deploy raises the stalled alert once. */
+    public const int StallAlertMinutes = 30;
+
     public function __construct(
         private RemoteBranchHeads $heads,
         private StartInstanceDeployAction $deploys,
         private DeployDefaultInstanceAction $defaults,
         private GreenCommitResolver $resolver,
         private RequiredCheckReader $checks,
+        private AutomaticDeployAlerts $alerts,
         private ?GitHubTokenCache $tokens = null,
     ) {}
 
@@ -85,14 +93,18 @@ final readonly class RunAutomaticDeploysAction
         }
 
         foreach ($this->productionInstances() as $instance) {
-            $outcomes[] = $this->tick($instance, fn (AutomaticDeployState $state): AutomaticDeployOutcome => $this->production($instance, $state));
+            $outcomes[] = $this->tick($instance, fn (AutomaticDeployState $state): AutomaticDeployOutcome => $this->production($instance, $state), alerts: true);
         }
 
         return $outcomes;
     }
 
-    /** @param \Closure(AutomaticDeployState): AutomaticDeployOutcome $check */
-    private function tick(Instance $instance, \Closure $check): AutomaticDeployOutcome
+    /**
+     * Runs one Instance's check, records its result, and, for a production Instance, watches for a stall.
+     *
+     * @param  \Closure(AutomaticDeployState): AutomaticDeployOutcome  $check
+     */
+    private function tick(Instance $instance, \Closure $check, bool $alerts = false): AutomaticDeployOutcome
     {
         $state = AutomaticDeployState::of($instance);
 
@@ -105,6 +117,10 @@ final readonly class RunAutomaticDeploysAction
 
         if ($state->result($outcome) && $outcome->result->isNotable()) {
             $this->activity($instance, $outcome);
+        }
+
+        if ($alerts) {
+            $this->watchStall($instance, $state, $outcome);
         }
 
         $state->save($instance);
@@ -137,6 +153,7 @@ final readonly class RunAutomaticDeploysAction
 
     private function production(Instance $instance, AutomaticDeployState $state): AutomaticDeployOutcome
     {
+        $this->alertFailure($instance, $state);
         $rollback = InstanceDeployment::query()
             ->where('instance_id', $instance->id)
             ->where('kind', InstanceDeployment::Rollback)
@@ -146,7 +163,9 @@ final readonly class RunAutomaticDeploysAction
             ->first();
 
         if ($rollback instanceof InstanceDeployment) {
-            $state->pauseFor('rollback', $rollback->id, $rollback->commit);
+            if ($state->pauseFor('rollback', $rollback->id, $rollback->commit) && is_string($rollback->commit)) {
+                $this->alerts->paused($instance, $rollback);
+            }
             $state->forgetGate();
 
             return new AutomaticDeployOutcome($instance->id, AutomaticDeployResult::Paused, $rollback->commit, message: "Rollback {$rollback->id} paused automatic deployment. Set auto_deploy again to resume.");
@@ -262,6 +281,46 @@ final readonly class RunAutomaticDeploysAction
         }
 
         return new AutomaticDeployOutcome($instance->id, AutomaticDeployResult::Started, $commit, $operation->id);
+    }
+
+    /** Raises the failed alert once for each commit whose automatic deployment failed since `auto_deploy` was set. */
+    private function alertFailure(Instance $instance, AutomaticDeployState $state): void
+    {
+        $last = InstanceDeployment::query()
+            ->where('instance_id', $instance->id)
+            ->where('kind', 'deploy')
+            ->where('triggered_by', self::Trigger)
+            ->where('status', '!=', 'running')
+            ->where('id', '>', $instance->auto_deploy_resumed_after)
+            ->latest('id')
+            ->first();
+
+        if ($last instanceof InstanceDeployment && $last->status === 'failed' && is_string($last->commit)
+            && $state->alertOnce(ReleaseAlertKind::InstanceDeployFailed->value, $last->commit)) {
+            $this->alerts->failed($instance, $last);
+        }
+    }
+
+    /**
+     * A commit the tick would deploy, but that has not deployed for {@see self::StallAlertMinutes} minutes, raises the
+     * stalled alert once. Any other result ends the stall.
+     */
+    private function watchStall(Instance $instance, AutomaticDeployState $state, AutomaticDeployOutcome $outcome): void
+    {
+        $sha = match ($outcome->result) {
+            AutomaticDeployResult::Started, AutomaticDeployResult::Deploying, AutomaticDeployResult::Busy, AutomaticDeployResult::BackingOff, AutomaticDeployResult::Failed => $outcome->commit,
+            default => null,
+        };
+
+        if ($sha === null || ! GitCommitSha::isValid($sha)) {
+            $state->clearStall();
+
+            return;
+        }
+
+        if ($state->stalled($sha, self::StallAlertMinutes)) {
+            $this->alerts->stalled($instance, $sha, $state->stall()['since'] ?? '', $outcome);
+        }
     }
 
     /** The operation that holds the Instance, if any. */

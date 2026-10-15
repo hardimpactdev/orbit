@@ -115,7 +115,7 @@ This pull request moves the API, MCP, CLI, and web deploy of an Instance onto op
 1. **Rollback.** `instance:rollback` keeps its NDJSON stream until it moves. The stream code goes with it.
 2. **Instance create and remove.** Their operations replace `InstanceCreationRecovery` and `InstanceRemovalMember`.
 3. **Route convergence.** Its operation replaces `RouteRemovalResidue`.
-4. **The scheduled development deploy.** `orbit:deploy-development-defaults` becomes an operation in a pull request of its own, as the maintainer decided on 15 Oct 2026. Until then it keeps calling the deploy directly from its scheduled job on the queue, and an unchanged commit still creates no record.
+4. **The scheduled development deploy.** `orbit:deploy-development-defaults` becomes an operation in a pull request of its own, as the maintainer decided on 15 Oct 2026. [ADR 0217](/decisions/0217-deploy-production-instances-automatically-by-polling) does this: `orbit:auto-deploy` starts a pinned `instance.deploy` operation only for a changed commit, so an unchanged commit still creates no record.
 5. **The PHP-FPM limit.** It stays at 600 seconds until no long operation runs in a request.
 
 `orbit:activity-finalize-interrupted` stays: it ends Activity rows of requests that PHP-FPM killed, which operations do not replace.
