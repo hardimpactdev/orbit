@@ -30,6 +30,6 @@ final readonly class StartInstanceDeployAction
         $this->operations->assertAvailable();
         $this->deploy->plan($instance);
 
-        return $this->operations->execute(OperationKinds::InstanceDeploy, 'instance', $instance->id, $instance->node_id, $commit === null ? [] : ['commit' => $commit], $triggeredBy, $requestId);
+        return $this->operations->execute(OperationKinds::InstanceDeploy, OperationKinds::InstanceTarget, $instance->id, $instance->node_id, $commit === null ? [] : ['commit' => $commit], $triggeredBy, $requestId);
     }
 }

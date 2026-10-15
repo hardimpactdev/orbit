@@ -1672,6 +1672,7 @@
                 "Instance",
                 "Node",
                 "Process",
+                "Project",
                 "Role",
                 "Route"
             ],
@@ -1871,6 +1872,7 @@
                 "Project Documents",
                 "Route",
                 "Schedule",
+                "Task",
                 "Tool"
             ],
             "governing_adrs": [

@@ -16,9 +16,11 @@ final readonly class InstanceEnvironmentResult
         public ?string $runtimeRefresh = null,
         public ?bool $environmentChanged = null,
         public ?array $restartedProcessIds = null,
+        /** @var list<string> */
+        public array $warnings = [],
     ) {}
 
-    /** @return array{instance_id: int, operation: string, changed: bool, key_count: int, runtime_refresh?: string, restarted_process_ids?: list<int>} */
+    /** @return array{instance_id: int, operation: string, changed: bool, key_count: int, runtime_refresh?: string, restarted_process_ids?: list<int>, warnings?: list<string>} */
     public function toArray(): array
     {
         return [
@@ -28,6 +30,7 @@ final readonly class InstanceEnvironmentResult
             'key_count' => $this->keyCount,
             ...($this->runtimeRefresh === null ? [] : ['runtime_refresh' => $this->runtimeRefresh]),
             ...($this->restartedProcessIds === null ? [] : ['restarted_process_ids' => $this->restartedProcessIds]),
+            ...($this->operation === 'clone' ? ['warnings' => $this->warnings] : []),
         ];
     }
 }

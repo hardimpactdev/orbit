@@ -17,6 +17,8 @@ bin/docs-openapi
 
 `composer docs-openapi` runs the same script. `bin/docs-openapi --check` fails when `docs/openapi.json` or those API groups differ from a fresh run. The check prints a unified diff and the regeneration command when an output is stale. It leaves the files unchanged. Continuous integration and the local candidate gate run the check.
 
+The clone response schema extends the Instance schema with required `data.warnings`, an array of key-only review hints. Both a newly created clone (201) and an identical retry (200) include it; an empty array means no hints apply. The generator keeps this operation-specific field out of other Instance responses. See [Instance cloning](/reference/instance-cloning#what-the-clone-gets) for the warning rules.
+
 The fixed deployment stream schema includes `process_restart`, the phase between PHP refresh and after-activation commands. Keep its accepted phase values aligned with the Gateway and SDK.
 
 The Gateway rollback operation queues a code switch without a request body. Database restore is an explicit operator step; see [Gateway recovery](/reference/gateway-recovery#roll-back).

@@ -32,7 +32,7 @@ Laravel Horizon runs four queues on the connection. Each has its own supervisor,
 | --- | --- | --- |
 | `tasks` | 3 | The scheduled commands below and the publish of an approved commit. The Git mirror's lock keeps one push per Project at a time |
 | `task-vms` | 1 | Task VM provision, enroll, prepare, park, resume, and destroy, the host sweep |
-| `builds` | 2 | The [base image step chains and refreshes](/reference/compute-drivers#build-the-base-image), the [UpCloud template refresh](/reference/compute-drivers#refresh-the-upcloud-template-every-night), trusted [package cache fills](/reference/compute-drivers#shared-package-cache), and [recipe maintenance](/reference/compute-drivers#nightly-recipe-maintenance) |
+| `builds` | 2 | The [base image step chains and refreshes](/reference/compute-drivers#build-the-base-image), the [UpCloud template refresh](/reference/compute-drivers#refresh-the-upcloud-template-on-recipe-changes), trusted [package cache fills](/reference/compute-drivers#shared-package-cache), and [recipe maintenance](/reference/compute-drivers#nightly-recipe-maintenance) |
 | `operations` | 1 | [Operations](/reference/operations), such as an Instance deploy. One job runs one operation, one at a time |
 
 The `task-vms` jobs run one at a time and in order, so no two jobs change the same VM at once.

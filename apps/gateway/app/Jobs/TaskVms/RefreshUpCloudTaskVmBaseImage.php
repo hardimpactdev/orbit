@@ -31,20 +31,26 @@ final class RefreshUpCloudTaskVmBaseImage implements ShouldBeUnique, ShouldQueue
 
     public int $uniqueFor = 3600;
 
-    public function __construct()
+    public function __construct(public ?string $recipeIdentity = null, public ?int $afterAttemptId = null)
     {
         $this->onTaskVmQueue(GatewayQueue::Builds);
     }
 
     public function handle(TaskVmSettings $settings, UpCloudServers $servers, UpCloudTaskVmImageBuilder $builder, RecipeImageBuilds $builds): void
     {
-        if ($settings->upcloud === null || $servers->currentTemplate($builds->currentRecipe()->identity) !== null) {
+        $recipe = $builds->currentRecipe();
+        // Jobs queued before the recipe fence have neither property in their serialized payload.
+        $identity = $this->recipeIdentity ?? $recipe->identity;
+        $afterAttemptId = $this->afterAttemptId ?? 0;
+        if ($settings->upcloud === null || $identity !== $recipe->identity
+            || UpCloudTaskVmImageBuilder::lastAttempt($recipe->identity) !== $afterAttemptId
+            || $servers->currentTemplate($recipe->identity) !== null) {
             return;
         }
 
         $template = $builder->build(static function (string $stage, float $seconds): void {
             Log::info('UpCloud task VM template build stage done.', ['stage' => $stage, 'seconds' => $seconds]);
-        });
+        }, $recipe, $afterAttemptId);
         Log::info('UpCloud task VM template refreshed.', ['template' => $template]);
     }
 }

@@ -213,6 +213,8 @@ def load_controllers():
                 'requests': re.findall(r'(\w+Request) \$', params),
                 'data': sorted({a or b for a, b in re.findall(r'(\w+Data)::fromModel|(\w+Data)::from\w*\(', body)}),
                 'created': bool(re.search(r'\b201\b', body)),
+                # A start request answers 202 with the operation record (docs/reference/operations.md#start-an-operation).
+                'starts_operation': bool(re.search(r'\b202\b', body)) and bool(re.search(r'\bOperationData::', body)),
             }
     return ctrl
 
@@ -707,7 +709,7 @@ DESCRIPTIONS = {
     'gateway:release:deploy': 'Queues a manual release of one commit and starts `orbit-gateway-release-run@<record>.service`, which prepares, migrates, switches, verifies, and smoke-tests it. Answers 202 with the queued release record; the release never runs in the API request. Follow it with `gateway:release:show <id>` until `finished` is true. See /reference/gateway-recovery#deploy-a-release.',
     'instance:deploy': 'Starts an `instance.deploy` operation and answers 202 with it at once; the deploy runs on the Gateway queue. Follow it with `operation:show` and `after_sequence` after `poll_after_seconds`, until `status` is `succeeded`, `failed`, or `cancelled`. A second deploy while one holds the Instance returns `operation.target_busy` (409) with `details.operation_id`. See /reference/operations.',
     'operation:show': 'Returns one operation and its steps from one database read. With `after_sequence`, returns only the steps whose `sequence` is greater. `poll_after_seconds` says when to read again; it is null once `status` is terminal. A finished operation carries `result`, or `failed_step` and `error_code`. See /reference/operations#read-an-operation.',
-    'operation:list': 'Lists the 50 newest operations on Nodes the caller can access, newest first, without steps. Filter by `status`, `kind`, `target_type`, and `target_id`; `status=running` finds the operations still at work.',
+    'operation:list': 'Lists the 50 newest operations on Nodes the caller can access, newest first, without steps. Filter by `status`, `kind`, `target_type`, and `target_id`; `status=running` finds the operations still at work. `kind` is two names joined by `.`, such as `instance.deploy`, and `target_type` one name, such as `instance`. A name starts with a lower-case letter and holds only lower-case letters, digits, and `_`. A well-formed value that no operation has returns an empty list. See /reference/operations#filter-the-list.',
     'operation:cancel': 'Asks an operation to stop. A queued operation ends `cancelled` at once; a running one finishes its running step and ends `cancelled`. A finished operation stays as it is. Returns the operation with its steps.',
     'gateway:release:rollback': 'Queues a rollback to a retained release, named by its 12-digit id, and starts its release unit. Switches code only; restoring a database snapshot is an explicit operator step. Answers 202 with the queued release record. See /reference/gateway-recovery#roll-back.',
     'gateway:release:list': 'Lists the 50 newest Gateway release records, newest first, including queued and running ones.',
@@ -784,7 +786,7 @@ DESCRIPTIONS = {
     'extension:enable': 'Enable a Gateway extension for every client. The Gateway runs the extension\'s enable hook first and turns the switch on only after it succeeds; a failed hook leaves the switch off and returns the hook\'s error. Use `tasks`, `proxycli`, `documents`, `vault`, or `conn`; an unknown slug returns `validation.failed` (422), and a disabled dependency returns `extension.dependency_disabled` (409). Returns the extension name and `enabled: true`.',
     'extension:disable': 'Disables one Gateway-wide extension without removing its setup data, then runs its disable hook. Use `tasks`, `proxycli`, `documents`, `vault`, or `conn`; an unknown slug returns `validation.failed` (422), and an enabled extension that depends on it returns `extension.required` (409). Returns the extension name and `enabled: false`.',
     'proxycli:setup': 'Deploys one collector Process and publishes https://collector.cli-proxy-api.orbit after a Redis Database connection for shared Valkey is in place. Fails closed when that connection is missing, is not Redis, or names a Node without the database role. A custom proxy Route that already serves the collector hostname on that Node is withdrawn in the same Caddy reload and removed; any other Route on that name fails with proxycli.hostname_taken. The response never includes tokens or the management key.',
-    'proxycli:teardown': 'Stops the collector Process for the whole fleet, withdraws collector.cli-proxy-api.orbit and its certificate, deletes the stored CLIProxyAPI management key and the read and control tokens, and hides provider reads. Setting up again needs the management key. The Redis connection and Valkey data stay.',
+    'proxycli:teardown': 'Stops the collector Process for the whole fleet, withdraws collector.cli-proxy-api.orbit and its certificate, deletes the stored CLIProxyAPI management key and the read and control tokens, and hides provider reads. Setting up again needs the management key. The Redis connection and Valkey data stay. Refuses with extension.required (409) while the tasks extension is enabled, with proxycli.keys_outstanding (409) while a task VM holds a model key, and with proxycli.keys_busy (409) while a model key operation holds the lock for more than 60 seconds.',
     'proxycli:status': 'Returns whether the fleet feature is enabled, which Node and cache connection it uses, and when the snapshot was last written.',
     'proxycli:list': 'Returns provider pools from the Valkey snapshot. The request never calls CLIProxyAPI.',
     'proxycli:show': 'Returns one provider pool and its accounts from the Valkey snapshot. Window titles are duration labels. A missing window is omitted.',
@@ -1815,7 +1817,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             body_schema['additionalProperties'] = False
         op['requestBody'] = {'required': body_required or bool(body_schema.get('required')), 'content': {'application/json': {'schema': body_schema}}}
     stream = route['name'] == 'instance:rollback'
-    if route['name'] == 'instance:deploy':
+    starts_operation = controllers.get(action, {}).get('starts_operation', False)
+    if starts_operation:
         op['x-orbit-operation'] = 'start'
         if body_schema is None:
             op['requestBody'] = {'required': True, 'content': {'application/json': {'schema': {'type': 'object', 'additionalProperties': False}}}}
@@ -1900,10 +1903,15 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         responses['503'] = {'description': 'An HTML failure page with the animated Orbit mark, the stored error, and a Try again link. It does not poll.', 'content': {'text/html': {'schema': {'type': 'string'}}}}
     else:
         data, is_list = data_schema_for(route)
+        if route['name'] == 'instance:clone':
+            data = {'allOf': [data, {'type': 'object', 'properties': {
+                'warnings': {'type': 'array', 'items': {'type': 'string'},
+                    'description': 'Key-only review hints for copied development hosts, filesystem paths, and service drivers. Values are never included; settings are not rewritten. Empty when no hints apply.'},
+            }, 'required': ['warnings']}]}
         if is_list:
             data = {'type': 'array', 'items': data}
-        if route['name'] == 'instance:deploy':
-            responses['202'] = envelope(ref('OperationData'), 'Accepted. The `instance.deploy` operation is queued; follow it with `operation:show`.')
+        if starts_operation:
+            responses['202'] = envelope(ref('OperationData'), 'Accepted. The operation is queued; follow it with `operation:show`.')
             responses['503'] = error_response('The Gateway has no queue (`operation.queue_unavailable`) and recorded nothing, or it could not queue the job (`operation.dispatch_failed`) and ended the operation as failed.')
         elif route['name'] in ('gateway:release:deploy', 'gateway:release:rollback'):
             responses['202'] = envelope(data, 'Accepted. The release record is queued and its unit started.')

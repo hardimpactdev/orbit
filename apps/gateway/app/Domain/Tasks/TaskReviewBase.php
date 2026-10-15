@@ -55,11 +55,21 @@ final class TaskReviewBase
     /** The last review whose findings this turn addresses, including a final-review fixup. */
     public static function previousReview(Task $task): ?Task
     {
-        if (self::isTree($task->review_workspace_tree)) {
+        if ($task->fixup_problem !== TaskFinalReview::BaseMergeReview && self::isTree($task->review_workspace_tree)) {
             return $task;
         }
         if (! $task->isFinalReview()) {
             return null;
+        }
+        if ($task->fixup_problem === TaskFinalReview::BaseMergeReview) {
+            $review = $task->parent->tasks()->where('position', '<', $task->position)
+                ->where('type', TaskType::FinalReview)
+                ->whereHas('comments', static fn ($query) => $query->where('type', TaskCommentType::Approved)
+                    ->where('author', TaskThreadRole::Reviewer->value)->whereColumn('task_comments.review_attempt', 'tasks.review_attempt')
+                    ->whereNotNull('receipt_hash')->whereNotNull('commit_sha'))
+                ->whereNotNull('review_workspace_tree')->reorder('position', 'desc')->first();
+
+            return $review instanceof Task && self::isTree($review->review_workspace_tree) ? $review : null;
         }
         $previous = $task->parent->tasks()->where('position', '<', $task->position)->reorder('position', 'desc')->first();
         if (! $previous instanceof Task || $previous->fixup_problem !== TaskFinalReview::FixupProblem) {

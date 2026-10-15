@@ -8,7 +8,7 @@ covers:
   - .github/workflows/php-build-mirror.yml
   - apps/gateway/{app/Models/PackageCache*.php,app/Console/Commands/PackageCacheUsageCommand.php,database/migrations/*create_package_cache_tables.php,config/package_cache.php,config/task_vms.php}
   - apps/gateway/resources/task-vms/**
-  - apps/gateway/database/migrations/*{create_task_vm_image_builds_table,add_recipe_to_task_vm_image_builds,add_recipe_identity_to_task_vms,fence_task_vm_image_build_attempts,create_task_vms_table,add_model_proxy_origin_to_task_vms,add_warm_pool_to_task_vms,retire_task_vm_warm_pool,add_upcloud_to_task_vms,add_size_to_task_vms,add_topology_to_task_vms,create_jobs_table,create_failed_jobs_table,create_task_sandboxes_table,add_fleet_enrollment_to_task_sandboxes,add_pi_ready_at_to_task_sandboxes,close_checks_of_destroyed_task_sandboxes,drop_task_sandboxes}.php
+  - apps/gateway/database/migrations/*{create_task_vm_image_builds_table,create_upcloud_task_vm_image_builds_table,add_recipe_to_task_vm_image_builds,add_recipe_identity_to_task_vms,fence_task_vm_image_build_attempts,create_task_vms_table,add_model_proxy_origin_to_task_vms,add_warm_pool_to_task_vms,retire_task_vm_warm_pool,add_upcloud_to_task_vms,add_size_to_task_vms,add_topology_to_task_vms,create_jobs_table,create_failed_jobs_table,create_task_sandboxes_table,add_fleet_enrollment_to_task_sandboxes,add_pi_ready_at_to_task_sandboxes,close_checks_of_destroyed_task_sandboxes,drop_task_sandboxes}.php
 ---
 
 # Compute drivers
@@ -96,22 +96,23 @@ The base also includes the existing image builder's 26 explicit Ubuntu packages:
 
 ### PHP build
 
-The recipe is the single source of truth for Orbit's PHP build. Every machine that runs Orbit's PHP installs this build and checks it: development and production Nodes, the Gateway, task VMs, and [CI](/reference/implementation-loop#one-php-build-in-ci). A PHP build is the exact Sury package versions and the extensions that the PHP CLI loads.
+The recipe is the single source of truth for Orbit's PHP build. Every machine that runs Orbit's PHP installs this build and checks it: development and production Nodes, the Gateway, task VMs, and [CI](/reference/implementation-loop#one-php-build-in-ci). A PHP build is the exact Sury package versions and the modules available to CLI and PHP-FPM.
 
 | Field | Contract |
 | --- | --- |
 | `php.versions.<version>.packages` | The `php<version>-*` pins of that version. Every such pin in `tools` must be in this list |
-| `php.versions.<version>.extensions` | The modules that `php<version> -m` prints for the CLI, in lower case, sorted, without section headers. `Zend OPcache` is `zend opcache`. The list includes `core` and `pcov` |
+| `php.versions.<version>.extensions` | The build's modules, in lower case, sorted, without section headers. `Zend OPcache` is `zend opcache`. The list includes `core`, CLI-only `pcov`, and FPM-only `opentelemetry` |
 | `php.shared` | Pins that every version needs: `php-common` and `libgd3` |
 | `php.ci` | The version that CI installs |
 | `php.rollback` | The Ubuntu tool that repacks an installed build for a rollback, `dpkg-repack`. Every profile with a PHP set gets it |
 | `php.pcov` | The profiles whose PHP CLI loads PCOV: `app-dev`, `base`, and `ci-runner` |
+| `php.opentelemetry` | The profiles that install OpenTelemetry and load it in PHP-FPM only: `app-dev` only |
 | `php.purge_extras` | The profiles that purge PHP packages outside the recipe. Only `ci-runner` may be listed |
 | `php.mirror` | The HTTPS base URL of Orbit's copy of the pinned files, tried before each pin's own URL |
 
-A profile names a PHP set as `php:<version>`. The set is the shared pins, the version's packages, and the rollback tool. A profile cannot name a PHP pin directly, so no profile gets part of a set. A version that no profile names is an error.
+A profile names a PHP set as `php:<version>`. The set is the shared pins, the version's packages, and the rollback tool. OpenTelemetry follows `php.opentelemetry`. A profile cannot name a PHP pin directly to choose individual packages from a set. A version that no profile names is an error.
 
-Extensions with their own release, such as `igbinary`, `imagick`, `pcov`, and `redis`, keep their own versions. The loader also rejects a recipe in which:
+Extensions with their own release, such as `igbinary`, `imagick`, `opentelemetry`, `pcov`, and `redis`, keep their own versions. The loader also rejects a recipe in which:
 
 - the PHP core pins of a version have different versions. A core pin has a version that starts with `<version>.`, and it must equal `php<version>-common`;
 - a Sury pin is built for another Ubuntu release: its version must contain `+ubuntu<ubuntu.release>`;
@@ -120,6 +121,10 @@ Extensions with their own release, such as `igbinary`, `imagick`, `pcov`, and `r
 
 PCOV loads in the CLI of the `php.pcov` profiles only, and never in PHP-FPM. Those are the machines that run checks and share CI caches, so their loaded extension set matches CI's. Production Nodes and the Gateway keep PCOV installed but not loaded.
 
+OpenTelemetry is installed for the `php.opentelemetry` profiles and enabled in PHP-FPM only. The `app-dev` profile needs its `OpenTelemetry\Instrumentation\hook()` API for php-data-bridge, an FPM-only bridge that instruments web requests. The installer always disables OpenTelemetry in the CLI, including links enabled by Sury's package hooks. This preserves the CLI extension parity with CI that PHPStan's shared result cache needs.
+
+On a Node with both app-dev and app-prod, dedicated production FPM masters also load OpenTelemetry because they share the Node's FPM extension configuration. Production, CI-runner, base, and Gateway profiles do not install its packages. If a Node loses app-dev, convergence keeps an installed OpenTelemetry package as a known disabled package and disables it in both CLI and FPM. The recipe lists OpenTelemetry among the build's packages and modules; the CLI module check always excludes it.
+
 #### Install the PHP build
 
 `php.install-build`, a [remote program](/reference/remote-programs), is the one installer of the PHP build. Recipe convergence and the PHP step of an Instance send it to the Node. The image build runs it in the guest, and `bin/php-build install` runs it on a CI machine.
@@ -127,7 +132,7 @@ PCOV loads in the CLI of the `php.pcov` profiles only, and never in PHP-FPM. Tho
 Before it changes anything, the installer checks the machine:
 
 1. It refuses another PHP apt source, such as `ppa:ondrej/php`, and names it.
-2. It refuses each installed PHP package of a handled version that the recipe set does not hold, and names it.
+2. It refuses installed PHP packages outside the handled recipe sets, except OpenTelemetry packages kept disabled after app-dev removal.
 3. A plan run, such as a dry run, stops here and lists the packages it would change.
 
 Then it gets the files:
@@ -160,14 +165,16 @@ Then it swaps the build:
 1. It installs the files with `--no-remove` and `--allow-downgrades`. A newer or an older build becomes the recipe build, and no other package is removed.
 2. Package hooks cannot start or restart a service during the install.
 3. It loads PCOV in the CLI on the `php.pcov` profiles only, and never in PHP-FPM.
-4. It checks that `php<version> -m` prints the recipe's extensions.
+4. It enables OpenTelemetry in PHP-FPM only on the `php.opentelemetry` profiles and disables it in the CLI on every profile.
+5. It checks that `php<version> -m` prints the recipe's extensions for the selected profile.
 
 After a change, it restarts PHP-FPM:
 
 1. It validates each master with `php-fpm<version> -t`. A dedicated production master uses its own `--fpm-config`.
 2. It restarts the master and checks that the service is active.
-3. It checks that `php-fpm<version> -m` loads the required extensions and not PCOV.
-4. It sends a FastCGI request to each pool socket in the master's configuration and waits for the answer.
+3. It checks that `php-fpm<version> -m` loads the required extensions and excludes PCOV.
+4. It checks that OpenTelemetry loading matches the selected profile.
+5. It sends a FastCGI request to each pool socket in the master's configuration and waits for the answer.
 
 When a check after the swap fails, the installer rolls back. It reinstalls the previous build with `--allow-downgrades`, restores the module links, and restarts the masters again. It ends with `rolled_back`, or with `rollback_failed` when that fails too.
 
@@ -603,7 +610,7 @@ The task VM jobs run on the [Gateway queue](/reference/gateway-queue), which Lar
 | `SweepTaskVmHosts` | Never. It runs again 10 minutes later |
 | `RefreshTaskVmBaseImages` | Never. The next minute checks again |
 | Base image step jobs | Poll until the step's deadline. Failure stops the chain. Failed builders stay available for resume |
-| `RefreshUpCloudTaskVmBaseImage` | Never. Recipe reconcile requests it again while the current template is missing |
+| `RefreshUpCloudTaskVmBaseImage` | Never. An attempted identity needs an explicit `task-vms:build-recipe --retry`; a new recipe identity can build automatically |
 
 The jobs log each step with its seconds as `Task VM step done.`. The wait for the worker is a step of its own, apart from the work: `queue` before `create` in `ProvisionTaskVm`, and `enroll-queue` before `boot` in `EnrollTaskVm`. The guest boots during `enroll-queue`. A `boot` after a released try counts from the launch.
 
@@ -654,7 +661,9 @@ The dropped egress ranges are `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `
 
 ### Build the base image
 
-Run `php artisan task-vms:build-recipe` on the Gateway to queue the current recipe on every active host in `settings.task_vms`. It returns build IDs without waiting for remote work. Repeating it for an unchanged recipe reuses the same rows, including failed rows; resume a failure with `task-vms:build-image NODE --resume=ID`, or restart failed builds with `task-vms:build-recipe --retry` after cleanup. A recipe revert reuses a retained verified base. If pruning removed it, the chain rebuilds that identity from stock. `task-vms:image-builds` shows the recipe identity, host, steps, fingerprints, and immutable aliases. `task-vms:build-image NODE` builds the current recipe on that host; every recipe starts from stock.
+Run `php artisan task-vms:build-recipe` on the Gateway to queue the current recipe on every active host in `settings.task_vms`. It returns build IDs without waiting for remote work. Repeating it for an unchanged recipe reuses the same rows, including failed rows; resume a failure with `task-vms:build-image NODE --resume=ID`, or restart failed builds with `task-vms:build-recipe --retry` after cleanup. `--retry` applies to both Incus builds and UpCloud template attempts.
+
+A recipe revert reuses a retained verified base. If pruning removed it, the chain rebuilds that identity from stock. `task-vms:image-builds` (also `task-vms:list-image-builds`) shows Incus recipe identities, hosts, steps, fingerprints, and immutable aliases, plus recent UpCloud attempt IDs, identities, states, times, and template UUIDs. `task-vms:build-recipe` prints the current UpCloud attempt and whether a refresh was requested or a verified template already exists. `task-vms:build-image NODE` builds the current recipe on that host; every recipe starts from stock.
 
 Release handoff queues builds immediately when the deployed recipe identity changes. The scheduler checks each minute to recover missed submissions and pick up new hosts. There is no fixed nightly Incus rebuild. The [nightly snapshot-date PR](#nightly-recipe-maintenance) supplies the daily recipe change. Unchanged releases do not build images. A host added later builds the current recipe on its next check. The same reconcile path refreshes configured UpCloud templates when their recipe identity differs.
 
@@ -763,6 +772,10 @@ Global keys live in the Gateway's `config/task_vms.php`. Set them in the Gateway
 
 Each task VM stores `model_proxy_origin` with its model key, and revokes the key at that origin. So changing the origin never strands a key. A task VM that holds a key at another origin cannot prepare Pi again.
 
+`TaskVmRuntime` reaches CLIProxyAPI only through the core interface `App\Domain\TaskVms\ModelKeyIssuer`: `assertReady()`, `origin()`, `issue(origin, key)`, and `revoke(origin, key)`. The [proxycli extension](/reference/proxycli) binds it and keeps the management key and the anchor key, so task VM code never sees them. `TaskVmRuntime` creates the group key and stores it with its origin on the task VM row before it calls `issue()`, so a retry registers the same key.
+
+Every key change holds the lock `ModelKeyIssuer::Lock` (`orbit:compute:model-keys`). Under that lock, preparation calls `assertReady()` before it stores a key, and refuses with `task_vm.model_key_failed` (409) while the router cannot revoke keys. The `tasks` extension depends on `proxycli`, and enabling `tasks` calls `assertReady()`, which refuses until proxycli holds a management key. `proxycli:teardown` holds the same lock and refuses while a task VM holds a key. See [Teardown](/reference/proxycli#teardown).
+
 The [Node settings field table](/reference/node-settings#task-vm-fields) owns the host configuration. The containing Node supplies host identity. `operator_owned` keeps listed resources out of the [stray report](#report-strays).
 
 Placement selects active Nodes with this setting and capacity reads their slot budget. Host preparation uses its pool, network, and image alias. Package-cache targeting follows the same setting, without making `app-dev` a host marker.
@@ -842,7 +855,9 @@ When beast and shark have no free slot, a group of an opted-in Project may get i
 
 An UpCloud task VM follows the same path as an Incus one. It is a `task_vms` row with the provider `upcloud` and no host Node. The same jobs create, enroll, park, resume, and destroy it.
 
-It gets the same task VM user-data, enrolls as the `app-dev` Node `tvm-<id>` of the dev Cluster with an address from the reserved WireGuard range, and starts from a verified [UpCloud template](#build-the-upcloud-template). UpCloud uses the same `recipe.json` base-profile installer as Incus. Its template's `orbit.recipe` storage label records the full recipe identity, and each new claim pins a verified template for that identity. So the hub filter, the Caddy guard, the rollout exclusion, and the placement invariant apply unchanged. Each claim [clones and sets up its workspace](#clone-and-set-up-every-workspace), as on Incus, without a shared host package cache on UpCloud.
+It gets the same task VM user-data, enrolls as the `app-dev` Node `tvm-<id>` of the dev Cluster with an address from the reserved WireGuard range, and starts from a verified [UpCloud template](#build-the-upcloud-template). UpCloud uses the same `recipe.json` base-profile installer as Incus.
+
+Its template's `orbit.recipe` storage label records the full recipe identity, and each new claim records the verified template UUID for that identity. Template lookup runs before the admission transaction; admission rechecks the deployed identity and capacity. Provisioning clones the recorded UUID, including after a recipe change. So the hub filter, the Caddy guard, the rollout exclusion, and the placement invariant apply unchanged. Each claim [clones and sets up its workspace](#clone-and-set-up-every-workspace), as on Incus, without a shared host package cache on UpCloud.
 
 ### Place a VM at UpCloud
 
@@ -875,7 +890,7 @@ A park stops the server cleanly, and a hard stop follows after 150 seconds. UpCl
 | `clean` | Runs `base-image-clean.sh` |
 | `templatize`, `delete-builder` | Stops the builder, turns its disk into the template `orbit-task-base-<time>-unverified`, and deletes the builder |
 | `smoke` | Boots a server from the template with the task VM user-data, and checks cloud-init, ufw, and the key, uid, and gid of `orbit` |
-| `promote`, `prune` | Records the `orbit.recipe` storage label, renames the template to `orbit-task-base-<time>`, and deletes all but the two newest verified templates |
+| `promote`, `prune` | Records the `orbit.recipe` storage label, renames the template to `orbit-task-base-<time>`, and deletes older verified templates except those pinned by live VMs awaiting server creation |
 
 A failed build deletes its servers and its unverified template, and keeps the previous template. Without a verified template for the claim's recipe, a create fails with `task_vm.base_image_missing`.
 
@@ -883,7 +898,11 @@ One build runs at a time. A build marks its time stamp as running for two hours,
 
 ### Refresh the UpCloud template on recipe changes
 
-The per-minute recipe reconcile and release handoff queue `RefreshUpCloudTaskVmBaseImage` on the `builds` queue when UpCloud is configured and no verified template matches the deployed recipe. There is no separate nightly schedule. The job checks the identity again before building and keeps the two newest verified templates. It also runs with overflow off without enabling claims. A failed build keeps the previous template, but a stale template cannot serve a new claim. Reconcile reports UpCloud token, API, or refresh-dispatch errors and continues Incus submission recovery and image scheduling.
+The per-minute recipe reconcile and release handoff queue `RefreshUpCloudTaskVmBaseImage` on the `builds` queue when UpCloud is configured and no verified template matches the deployed recipe. There is no separate nightly schedule. The job checks the identity again before building. A database ledger records each attempt before remote work, including failed and interrupted builds. Reconcile does not dispatch that identity again unless `task-vms:build-recipe --retry` explicitly requests it. A new identity can build automatically. The manual `task-vms:build-upcloud-image` command also starts an explicit attempt.
+
+Reconcile raises a recipe-maintenance alert when the current identity has a failed attempt, or a running attempt at least two hours old, and no verified template. The alert names the identity and attempt and includes `php artisan task-vms:build-recipe --retry`. Repeated alerts for an attempt are limited to one per hour. The build command also reports this fenced state. Reconcile reports only the latest attempt and stops alerting once a verified template exists. `--retry` also retries failed Incus builds.
+
+The build keeps the two newest verified templates and any template pinned by a live VM awaiting server creation. Pruning ignores the source template reference once the VM has a server UUID. It also runs with overflow off without enabling claims. A failed build keeps the previous template, but a stale template cannot serve a new claim. Reconcile reports UpCloud token, API, or refresh-dispatch errors and continues Incus submission recovery and image scheduling.
 
 The build takes about 20 minutes and occupies one `builds` worker. When it runs past its 1700 seconds, the worker stops it, and the sweep deletes its servers two hours after its start.
 

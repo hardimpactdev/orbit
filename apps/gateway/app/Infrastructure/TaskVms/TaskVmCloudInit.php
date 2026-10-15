@@ -10,9 +10,7 @@ use App\Domain\TaskVms\TaskVmException;
  * The cloud-init user-data of task VMs: the `orbit` user with passwordless sudo and the Gateway's
  * SSH key. A task VM boots from the host's base image, which already holds everything else, so its
  * user-data installs nothing. The base image builder gets the same user, created with the pinned uid and
- * gid {@see self::Owner}, plus a package upgrade,
- * `openssh-server`, which the stock linuxcontainers Ubuntu cloud image lacks, Chromium's system
- * libraries, so a Project's Playwright browser tests run, and the {@see self::WorkspaceTools}.
+ * gid {@see self::Owner}. The shared recipe installer handles packages after cloud-init.
  *
  * It sets no SSH option such as `ssh_pwauth`: on that image cloud-init applies it before
  * `openssh-server` exists, writes a one-line `sshd_config` with `UsePAM no`, and sshd then
@@ -73,15 +71,13 @@ final readonly class TaskVmCloudInit
     }
 
     /** The user-data of the base image builder, which boots from the stock image. */
-    public function renderImageBuilder(string $gatewayPublicKey, bool $upgradePackages = true): string
+    public function renderImageBuilder(string $gatewayPublicKey): string
     {
         // bootcmd runs before cloud-init creates users, so the group exists with its pinned gid. A taken uid or gid
         // makes cloud-init fail, and with it the build.
         return self::document([
             'bootcmd' => [['sh', '-c', 'getent group '.self::User.' >/dev/null || groupadd --gid '.self::Uid.' '.self::User]],
             'users' => [[...$this->user($gatewayPublicKey), 'uid' => self::Uid, 'primary_group' => self::User, 'no_user_group' => true]],
-            // Legacy provider builds still upgrade in cloud-init. The Incus chain has a separate apt job.
-            ...($upgradePackages ? ['package_update' => true, 'package_upgrade' => true, 'packages' => ['openssh-server', ...self::ChromiumLibraries, ...self::WorkspaceTools]] : []),
         ]);
     }
 

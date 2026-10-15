@@ -16,6 +16,8 @@ The web app is Orbit's live view of the fleet. It is a static single-page app th
 
 The generated environment-operation schema includes the optional `runtime_refresh` result and `restarted_process_ids` for production env-sync. They report config-cache and FPM opcache refresh outcomes and the opted-in Processes restarted by the Gateway. These types do not add an environment editor. See [Instance environment variables](/reference/environment-variables#synchronize).
 
+The generated clone response types include required `data.warnings: string[]` for both creation and retry. These hints from the Gateway name environment keys to review; they do not change app settings. The schema update adds no clone UI; [Instance cloning](/reference/instance-cloning) describes the operator workflow.
+
 The generated API schema includes `PATCH /api/v1/nodes/{node}/wireguard-key`, with a `wireguard_public_key` input and the standard Node response. These types describe the [unmanaged peer key contract](/cli/node#orbit-nodewireguard-key); they do not add a web key editor. Regenerate them with `bun run types` when the operation changes.
 
 The generated Node settings schema includes nullable `task_vms` alongside `apps`. The Node settings PATCH input accepts the typed host object or null, and Node responses expose its stored host configuration. These types describe [operator-owned task VM hosts](/reference/node-settings#configure-a-task-vm-host); they add no web settings editor and do not make an `app-dev` Node a host.

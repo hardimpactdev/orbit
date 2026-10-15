@@ -6,6 +6,7 @@ namespace App\Console\Commands;
 
 use App\Domain\TaskVms\TaskVmImageBuildStep;
 use App\Models\TaskVmImageBuild;
+use App\Models\UpCloudTaskVmImageBuild;
 use Illuminate\Console\Command;
 
 /** Reads recent build records without reaching a host or changing a build. */
@@ -14,13 +15,18 @@ final class ListTaskVmImageBuildsCommand extends Command
     #[\Override]
     protected $signature = 'task-vms:image-builds';
 
+    /** @var list<string> */
     #[\Override]
-    protected $description = 'List the 20 most recent task VM image builds with their steps and errors.';
+    protected $aliases = ['task-vms:list-image-builds'];
+
+    #[\Override]
+    protected $description = 'List the 20 most recent Incus builds and UpCloud attempts with their results.';
 
     public function handle(): int
     {
         $builds = TaskVmImageBuild::query()->with('hostNode')->orderByDesc('created_at')->orderByDesc('id')->limit(20)->get();
-        if ($builds->isEmpty()) {
+        $upcloud = UpCloudTaskVmImageBuild::query()->latest('id')->limit(20)->get();
+        if ($builds->isEmpty() && $upcloud->isEmpty()) {
             $this->line('No task VM image builds.');
 
             return self::SUCCESS;
@@ -46,6 +52,11 @@ final class ListTaskVmImageBuildsCommand extends Command
                 $seconds = $record['seconds'] === null ? '-' : sprintf('%.1fs', $record['seconds']);
                 $this->line(sprintf('  %s | %s | error: %s', $name, $seconds, $record['error'] ?? '-'));
             }
+        }
+
+        foreach ($upcloud as $attempt) {
+            $this->line("UpCloud build [{$attempt->id}] | {$attempt->recipe_identity} | {$attempt->status()}");
+            $this->line('  Started: '.$attempt->started_at->toIso8601String().' | finished: '.($attempt->finished_at?->toIso8601String() ?? '-').' | template: '.($attempt->template_uuid ?? '-'));
         }
 
         return self::SUCCESS;

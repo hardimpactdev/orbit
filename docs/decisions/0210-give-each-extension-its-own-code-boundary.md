@@ -67,7 +67,7 @@ The Conn move adds a third point:
 | --- | --- | --- |
 | `App\Domain\Activity\ActivityInputRedaction` | `RecordCommandActivity` | Names the commands whose input it decides, and returns the part of the input that Activity may keep. |
 
-Core sanitizes what the redaction returns like any other input. The redaction runs whether or not the switch is on, because Activity records a refused request too.
+`input()` receives the request input as a lazy closure. A redaction that keeps nothing never calls it, so the body is never parsed. Core sanitizes what the redaction returns like any other input. The redaction runs whether or not the switch is on, because Activity records a refused request too.
 
 Each extension that moves after Documents adds points the same way: Caddy site sources, private DNS records, reserved hostnames, footprint artifacts, firewall rules, ownership guards, Activity redaction, and schedule entries. Each point is a narrow typed interface. A generic event bus or hook registry is not part of the design.
 
@@ -141,7 +141,7 @@ Runtime install, a Composer package for each extension, separate processes, and 
 - An extension can be found, reviewed, and deleted as one directory plus its tests and one provider line.
 - Core states what an extension may change through plug-in interfaces, and the architecture test keeps core from reaching back.
 - Two Documents footprints stay in core until their plug-in points exist: the PHP-FPM startup hook that runs `project-documents:cleanup:invalidate`, and `ValidateDocumentPostSize`, which keeps document request bodies exact. They name an artisan command and a URL path, not an extension class.
-- A third Documents footprint stays in `RecordCommandActivity`: it matches `project:document:*` by route name, so Activity never parses a document body. A separate small pull request after the Vault and Conn move puts this rule behind `ActivityInputRedaction`.
+- Documents contributes its Activity rule through `ActivityInputRedaction`: it matches `project:document:*` by route name and never calls the input closure, so Activity never parses a document body.
 - `bin/docs-openapi` also reads controllers, form requests, and data classes under `apps/gateway/extensions/*/src`.
 - The CLI and `bin/docs-openapi` keep their own slug lists. The CLI shows every slug as `UNKNOWN` when the Gateway cannot answer, and the OpenAPI document is generated without a database. A new extension updates both lists.
 - While `documents` is off, its background cleanup still runs and still needs its storage credentials.

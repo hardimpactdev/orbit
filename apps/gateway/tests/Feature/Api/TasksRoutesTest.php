@@ -51,6 +51,7 @@ use Orbit\Sdk\Responses\Tasks\TaskGroupResponse;
 use Symfony\Component\Process\Process;
 use Tests\Support\DeliverablePathWorkspace;
 use Tests\Support\FakeTaskCheckRunner;
+use Tests\Support\TaskModelRouter;
 use Tests\Support\TestOrbitHome;
 
 function tasks_gateway(): Node
@@ -81,6 +82,7 @@ function tasks_app(string $slug = 'commander-demo'): Project
 
 function enable_tasks(): void
 {
+    TaskModelRouter::ready();
     test()->postJson('/api/v1/extensions/tasks/enable')->assertOk()->assertJsonPath('data.enabled', true);
 }
 
@@ -195,6 +197,7 @@ it('enables and disables the extension through empty JSON objects', function ():
         ->assertOk()
         ->assertJsonPath('data.enabled', false);
 
+    TaskModelRouter::ready();
     $this->postJson('/api/v1/extensions/tasks/enable')
         ->assertOk()
         ->assertJsonPath('data.enabled', true)
