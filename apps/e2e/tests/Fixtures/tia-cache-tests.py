@@ -1488,7 +1488,9 @@ fi
         source.parent.mkdir()
         source.write_text('<?php // candidate')
         candidate = self.commit_change('gateway candidate')
-        result = subprocess.run([str(runner)], env={**self.gate_env, 'ORBIT_TASK_CHECK_BASE': candidate},
+        # This fixture exercises a local handoff; CI deliberately ignores the task test base.
+        result = subprocess.run([str(runner)], env={**self.gate_env, 'ORBIT_TASK_CHECK_BASE': candidate,
+                                                  'CI': '', 'GITHUB_ACTIONS': ''},
                                 capture_output=True, text=True)
         self.assertEqual(1, result.returncode, result.stdout + result.stderr)
         report = json.loads(next((self.common / 'orbit-checks').glob('*/*/result.json')).read_text())
