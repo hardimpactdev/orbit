@@ -27,6 +27,7 @@ use App\Infrastructure\Nodes\NodeAgentFootprint;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
 use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Support\Facades\Artisan;
@@ -210,7 +211,7 @@ function runtime_handoff(?string $livePool = null, int $drainSeconds = 5, ?Fleet
             recipeImages: $recipeImages,
             builds: $builds,
             fpmRenderer: new GatewayFpmConfigRenderer,
-            fpm: new NativeGatewayFpmConverger($processes, app(Contributions::class)->of(GatewayServiceStartHook::class)),
+            fpm: new NativeGatewayFpmConverger($processes, app(RemoteProgramCatalog::class), app(Contributions::class)->of(GatewayServiceStartHook::class)),
             files: new ProtectedFileWriter,
             hibernator: $units,
             agentView: $units,
@@ -502,6 +503,27 @@ describe('gateway:release:handoff', function (): void {
         expect(fn () => $handoff->serve())
             ->toThrow(fn (GatewayReleaseException $exception) => expect([$exception->errorCode, $exception->getMessage()])->toBe(['gateway.release_units_failed', 'Runtime handoff step [horizon] failed: Redis is down.']));
     });
+
+    it('installs the start hooks for an unchanged pool, and runs them only before a reload', function (?string $livePool, array $expected): void {
+        handoff_gateway();
+        [$handoff, $processes] = runtime_handoff(livePool: $livePool);
+
+        $handoff->serve();
+        $steps = [];
+        foreach ($processes->ran as $arguments) {
+            $steps[] = match (true) {
+                array_slice($arguments, 0, 5) === ['sudo', 'bash', '-seu', '--', '/etc/orbit'] => 'install '.$arguments[7],
+                $arguments === ['sudo', '/etc/orbit/project-document-cleanup-start'] => 'run',
+                $arguments === ['sudo', 'systemctl', 'reload-or-restart', 'php8.5-fpm'] => 'reload',
+                default => null,
+            };
+        }
+
+        expect(array_values(array_filter($steps)))->toBe($expected);
+    })->with([
+        'unchanged pool' => [null, ['install project-document-cleanup-start']],
+        'changed pool' => ["[orbit-gateway]\nchdir = /old\n", ['install project-document-cleanup-start', 'run', 'reload']],
+    ]);
 
     it('reloads FPM only when the rendered pool differs from the live pool', function (): void {
         handoff_scheduler(handoff_gateway());

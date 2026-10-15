@@ -8,7 +8,6 @@ use App\Actions\GatewayReleases\DeployGatewayReleaseAction;
 use App\Domain\AgentView\AgentViewConverger;
 use App\Domain\Extensions\Contributions;
 use App\Domain\Fleet\FleetConvergeUnits;
-use App\Domain\Gateway\GatewayServiceStartHook;
 use App\Domain\GatewayReleases\GatewayReleaseAutomation;
 use App\Domain\GatewayReleases\GatewayReleaseCleanup;
 use App\Domain\GatewayReleases\GatewayReleaseDatabase;
@@ -119,7 +118,7 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
             static fn (Application $app): GatewayRuntimeHandoff => new GatewayRuntimeHandoff(
                 builds: $app->make(NodeCaddyBuilds::class),
                 fpmRenderer: $app->make(GatewayFpmConfigRenderer::class),
-                fpm: new NativeGatewayFpmConverger($app->make(ProcessRunner::class), $app->make(Contributions::class)->of(GatewayServiceStartHook::class)),
+                fpm: $app->make(NativeGatewayFpmConverger::class),
                 files: $app->make(ProtectedFileWriter::class),
                 hibernator: $app->make(RuntimeHibernatorConverger::class),
                 agentView: $app->make(AgentViewConverger::class),

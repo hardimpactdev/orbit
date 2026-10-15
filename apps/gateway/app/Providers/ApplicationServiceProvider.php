@@ -367,6 +367,7 @@ use App\Infrastructure\ProxyCli\RecordingProxyCliPublicationManager;
 use App\Infrastructure\ProxyCli\RecordingProxyCliRuntimeLifecycle;
 use App\Infrastructure\ProxyCli\ValkeyProxyCliCache;
 use App\Infrastructure\Releases\HttpReleaseAlertWebhook;
+use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
 use App\Infrastructure\RemotePrograms\SshProgramRunner;
 use App\Infrastructure\Routes\NativeClusterRouterReplacementProjector;
 use App\Infrastructure\Routes\NativeCustomProxyRouteProjector;
@@ -859,6 +860,15 @@ final class ApplicationServiceProvider extends ServiceProvider
                 orbitHome: rtrim(string: Config::string('orbit.home'), characters: '/'),
             ),
         );
+        // One converger, with the contributed start hooks, for Gateway web convergence and the release handoff.
+        $this->app->bind(
+            NativeGatewayFpmConverger::class,
+            static fn (): NativeGatewayFpmConverger => new NativeGatewayFpmConverger(
+                app(ProcessRunner::class),
+                app(RemoteProgramCatalog::class),
+                app(Contributions::class)->of(GatewayServiceStartHook::class),
+            ),
+        );
         $this->app->singleton(
             GatewayWebConverger::class,
             static fn (): GatewayWebConverger => new NativeGatewayWebConverger(
@@ -877,7 +887,7 @@ final class ApplicationServiceProvider extends ServiceProvider
                     processes: app(ProcessRunner::class),
                     orbitHome: rtrim(string: Config::string('orbit.home'), characters: '/'),
                 ),
-                fpm: new NativeGatewayFpmConverger(app(ProcessRunner::class), app(Contributions::class)->of(GatewayServiceStartHook::class)),
+                fpm: app(NativeGatewayFpmConverger::class),
                 builds: app(NodeCaddyBuilds::class),
                 caddyInstaller: new NativeGatewayCaddyInstaller(app(ProcessRunner::class)),
                 orbitHome: rtrim(string: Config::string('orbit.home'), characters: '/'),

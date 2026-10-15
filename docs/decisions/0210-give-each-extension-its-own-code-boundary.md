@@ -73,10 +73,10 @@ Two more points move the last Documents footprints out of core:
 
 | Interface | Core caller | What an extension does |
 | --- | --- | --- |
-| `App\Domain\Gateway\GatewayServiceStartHook` | `NativeGatewayFpmConverger` | Names a program and its `php8.5-fpm` drop-in, and renders the program. Core installs both, runs the program in `ExecStartPre`, and runs it once before each pool reload. |
+| `App\Domain\Gateway\GatewayServiceStartHook` | `NativeGatewayFpmConverger`, bound once for web convergence and the release handoff | Names a `<name>-start` program, its `orbit-<name>.conf` drop-in, and a one-line description, and renders the program. Core runs the program at each PHP-FPM start and before each pool reload. |
 | `App\Domain\Gateway\ExactRequestBody` | `ValidateRequestBodySize` | Matches request paths whose body stays exact. Core skips PHP's `post_max_size` check, string trimming, and empty-string conversion for them. The route bounds the body after authorization. |
 
-Core keeps the MCP envelopes exact itself. Documents contributes its startup hook and its document routes. The hook and its drop-in keep their paths and bytes, so a live Gateway gets no changed or leftover file.
+Core checks each start hook before it changes anything, then installs the program and its drop-in. Core keeps the MCP envelopes exact itself. Documents contributes its startup hook and its document routes. The hook and its drop-in keep their paths and bytes. Core records the hooks it installed in a manifest and removes only what the manifest lists. The first run on a Gateway without a manifest adopts the Documents files and removes nothing.
 
 Each extension that moves after Documents adds points the same way: Caddy site sources, private DNS records, reserved hostnames, footprint artifacts, firewall rules, ownership guards, Activity redaction, and schedule entries. Each point is a narrow typed interface. A generic event bus or hook registry is not part of the design.
 
@@ -147,10 +147,9 @@ Runtime install, a Composer package for each extension, separate processes, and 
 
 ## Consequences
 
-- An extension can be found, reviewed, and deleted as one directory plus its tests and one provider line.
+- An extension can be found, reviewed, and deleted as one directory plus its tests and one provider line. The next Gateway convergence removes the start hooks of a deleted extension.
 - Core states what an extension may change through plug-in interfaces, and the architecture test keeps core from reaching back.
 - Core no longer installs the Documents PHP-FPM startup hook or matches document routes. Documents contributes the hook, which runs `project-documents:cleanup:invalidate`, through `GatewayServiceStartHook`, and its exact request bodies through `ExactRequestBody`.
-- Core installs only the start hooks it gets and never removes one. Deleting an extension that contributes a hook also needs a step that removes its program and drop-in from the Gateway, or the next PHP-FPM start fails.
 - Documents contributes its Activity rule through `ActivityInputRedaction`: it matches `project:document:*` by route name and never calls the input closure, so Activity never parses a document body.
 - `bin/docs-openapi` also reads controllers, form requests, and data classes under `apps/gateway/extensions/*/src`.
 - The CLI and `bin/docs-openapi` keep their own slug lists. The CLI shows every slug as `UNKNOWN` when the Gateway cannot answer, and the OpenAPI document is generated without a database. A new extension updates both lists.

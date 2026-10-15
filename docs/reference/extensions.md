@@ -5,7 +5,7 @@ covers:
   - apps/gateway/app/{Domain,Actions}/Extensions/**
   - apps/gateway/app/Providers/{ExtensionServiceProvider,ProxyCliServiceProvider,TasksServiceProvider}.php
   - apps/gateway/app/Domain/{Projects/ProjectRemovalHook,GatewayReleases/GatewayReleaseCleanup,Activity/ActivityInputRedaction,Gateway/GatewayServiceStartHook,Gateway/ExactRequestBody}.php
-  - apps/gateway/app/{Infrastructure/GatewayReleases/GatewayCleanupHandoff,Infrastructure/Gateway/NativeGatewayFpmConverger,Http/Middleware/RequireEnabledExtension,Http/Middleware/ValidateRequestBodySize}.php
+  - apps/gateway/{app/Infrastructure/GatewayReleases/GatewayCleanupHandoff.php,app/Infrastructure/Gateway/NativeGatewayFpmConverger.php,app/Http/Middleware/RequireEnabledExtension.php,app/Http/Middleware/ValidateRequestBodySize.php,resources/remote/gateway/install-start-hooks.sh}
   - apps/gateway/bootstrap/providers.php
   - apps/gateway/extensions/*/src/*ServiceProvider.php
   - apps/gateway/extensions/*/database/migrations/*_enable_*_extension_*.php
@@ -73,7 +73,7 @@ Core resolves every tagged implementation and calls each one.
 | `App\Domain\Projects\ProjectRemovalHook` | `project:destroy` | `lock()` and `remove()` |
 | `App\Domain\GatewayReleases\GatewayReleaseCleanup` | The [release handoff](/reference/gateway-recovery) | `configured()`, `status()`, `reconcile()`, and `resume()` |
 | `App\Domain\Activity\ActivityInputRedaction` | The [Activity](/cli/activity) recorder | `commands()` and `input()` |
-| `App\Domain\Gateway\GatewayServiceStartHook` | The Gateway PHP-FPM convergence | `name()`, `dropIn()`, `description()`, and `renderHook()` |
+| `App\Domain\Gateway\GatewayServiceStartHook` | Gateway [web convergence](/reference/web-app) and the [release handoff](/reference/gateway-recovery#runtime-handoff) | `name()`, `dropIn()`, `description()`, and `renderHook()` |
 | `App\Domain\Gateway\ExactRequestBody` | The request body size check | `matches()` |
 
 `ProjectRemovalHook::lock()` runs first in the removal transaction, before the guards, so the extension's writers wait for the removal. `remove()` runs after every guard passed and before the Project row is deleted. It may refuse with a `ResourceOperationException`, which rolls back the whole removal.
@@ -82,9 +82,18 @@ After the release handoff restarts the scheduler, it waits for each configured `
 
 `ActivityInputRedaction::commands()` names the route names whose input the extension decides. For those commands, Activity stores only what `input()` returns, then sanitizes it like any other input. `input()` receives a closure that returns the request input. Activity runs before authorization, so the request body is parsed only when the extension calls that closure. Conn uses it so that a T3 admin session and the content of a settings document never enter Activity. Documents never calls the closure, so document bytes are never parsed or recorded before authorization.
 
-`GatewayServiceStartHook` adds a program that runs as root each time the Gateway PHP-FPM service starts. Each PHP-FPM convergence on the Gateway, in [web convergence](/reference/web-app) and in the [release handoff](/reference/gateway-recovery#runtime-handoff), installs the program as `/etc/orbit/<name>` and a `php8.5-fpm` drop-in that runs it in `ExecStartPre`. Then it runs each program once before it reloads the pool, because a reload skips `ExecStartPre`. A failed program stops the activation. Core never removes a program or drop-in, so an extension that stops contributing a hook must remove both from the Gateway first. Documents uses it to invalidate document-body cleanup on each start.
+`GatewayServiceStartHook` adds a program that runs as root each time the Gateway PHP-FPM service starts. Web convergence and the release handoff install every contributed hook with the [remote program](/reference/remote-programs) `gateway.install-start-hooks`. It writes the program as `/etc/orbit/<name>` and a `php8.5-fpm` drop-in that runs it in `ExecStartPre`. A file that already holds its bytes, owner, and mode stays as it is. Before either caller reloads the pool, it runs each program, because a reload skips `ExecStartPre`. The handoff reloads only when the pool changed. A failed program stops the activation, and the error names the hook. Documents uses the point to invalidate document-body cleanup on each start.
 
-`ExactRequestBody::matches()` receives the request path, never the body. For a matching path, the Gateway skips PHP's `post_max_size` check and does not trim strings or turn empty strings into null. The body stays exact and is not parsed before authorization, so the route must bound it after authorization. Core keeps the two MCP envelopes exact itself. Documents matches its document routes, which accept up to 15 MiB of JSON.
+Core checks every hook before it changes anything:
+
+- A name ends in `-start`. No core path in `/etc/orbit` does, so a hook cannot take a core file or directory.
+- A drop-in is `orbit-<name>.conf`, which systemd reads, and not `orbit-vpn.conf`, which core writes.
+- A description is one printable line, so it cannot add a directive to the drop-in.
+- No two hooks share a name or a drop-in.
+
+The program replaces a file with `mv -fT`, so it never moves a hook into a directory that holds its name. It records the hooks it installed in `/etc/orbit/php-fpm-start-hooks`. Each run removes a listed hook that no extension contributes: its drop-in first, then one `daemon-reload`, then its program. Core removes only the files its manifest lists. A Gateway without a manifest keeps every file it has, and the first run records the current hooks. So the next convergence after an extension is deleted removes its hooks.
+
+`ExactRequestBody::matches()` receives the request path, never the body. For a matching path, the Gateway skips PHP's `post_max_size` check and does not trim strings or turn empty strings into null. The body stays exact and is not parsed before authorization, so the route must bound it after authorization. Contribute a matcher only for a route that bounds its body itself after authorization. Core keeps the two MCP envelopes exact itself. Documents matches its document routes, which accept up to 15 MiB of JSON. The Gateway asks the matchers once per request.
 
 A plug-in contribution runs whether or not the switch is on. Removing a Project must also remove its documents, a scheduled deletion must finish, and a request to a disabled extension still records Activity, so its secrets must still stay out. Each PHP-FPM start must also close the document cleanup gate.
 
