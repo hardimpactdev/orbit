@@ -116,7 +116,6 @@
               "reference/tools",
               "reference/github-app",
               "reference/database-role",
-              "reference/ci-runner-role",
               "reference/node-agent",
               "reference/metrics",
               "reference/service-metrics",

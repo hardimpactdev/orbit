@@ -636,7 +636,6 @@
             "concepts": [
                 "Access grant",
                 "Activity",
-                "CI runner",
                 "Cluster",
                 "Database server",
                 "Deliverable",
@@ -902,7 +901,6 @@
                 "apps/web"
             ],
             "concepts": [
-                "CI runner",
                 "Cluster",
                 "Doctor",
                 "Gateway",
@@ -1292,30 +1290,6 @@
                 "Task"
             ],
             "governing_adrs": []
-        },
-        {
-            "path": "docs/reference/ci-runner-role.md",
-            "title": "CI runner role",
-            "kind": "reference",
-            "components": [
-                "apps/gateway"
-            ],
-            "concepts": [
-                "CI runner",
-                "Cluster",
-                "Doctor",
-                "Gateway",
-                "Node",
-                "Process",
-                "Project",
-                "Role",
-                "Route",
-                "Task",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0213"
-            ]
         },
         {
             "path": "docs/reference/cli-binaries.md",
@@ -1753,7 +1727,6 @@
             ],
             "concepts": [
                 "Activity",
-                "CI runner",
                 "Deployment",
                 "Doctor",
                 "Extension",
@@ -1764,7 +1737,6 @@
                 "Pi server",
                 "Process",
                 "Project",
-                "Role",
                 "Schedule",
                 "Subtask",
                 "Task",

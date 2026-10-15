@@ -109,5 +109,5 @@ The pull request that builds this decision deletes `tools/ci-runners/`, rewrites
 
 - Components: apps/gateway, apps/cli, apps/web, apps/docs, apps/e2e
 - ADRs: none
-- Detail: [CI runner role](/reference/ci-runner-role), [Role compatibility](/reference/node-provisioning#role-compatibility), [GitHub App](/reference/github-app#what-the-app-is), [Implementation loop](/reference/implementation-loop#self-hosted-gateway-runner)
+- Detail: a new reference page, CI runner role, written by the implementation pull request; [Role compatibility](/reference/node-provisioning#role-compatibility); [GitHub App](/reference/github-app#what-the-app-is); [Implementation loop](/reference/implementation-loop#self-hosted-gateway-runner)
 - Verify: Gateway feature tests for the role conflicts, records, token scope, and removal; CLI command surface test; an Incus E2E that adds the role, creates a runner against a test repository, and destroys it

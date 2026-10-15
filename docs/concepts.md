@@ -15,7 +15,6 @@ These are the terms every part of Orbit shares. Each domain page defines the ter
 - **Role**: One kind of work a Node does, such as `app-dev` or `ingress`. See [Architecture](/architecture#nodes-and-roles).
 - **Cluster**: An optional group of Nodes that share routing.
 - **Access grant**: A directed permission that lets one Node act on another through the Gateway. See [node](/cli/node).
-- **CI runner**: A self-hosted CI runner that Orbit registers and runs on a Node with the `ci-runner` role. See [CI runner role](/reference/ci-runner-role).
 - **Tool**: A package that Orbit installs or explicitly adopts, then updates on a Node. See [Tools](/reference/tools).
 
 ## Applications

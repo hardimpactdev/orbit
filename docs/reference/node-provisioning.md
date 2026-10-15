@@ -297,14 +297,13 @@ Some roles never share a Node. The Gateway refuses a conflicting role before it 
 
 | Role | Never shares a Node with |
 | --- | --- |
-| `gateway` | `ingress`, `app-dev`, `app-prod`, `database`, `analytics`, `ci-runner` |
+| `gateway` | `ingress`, `app-dev`, `app-prod`, `database`, `analytics` |
 | `ingress` | `gateway`, `app-dev`, `database` |
-| `vpn` | `database`, `ci-runner` |
+| `vpn` | `database` |
 | `app-dev` | `gateway`, `ingress`, `app-prod` |
 | `app-prod` | `gateway`, `app-dev`, `database` |
 | `database` | `gateway`, `vpn`, `ingress`, `app-prod` |
 | `analytics` | `gateway` |
-| `ci-runner` | `gateway`, `vpn` |
 
 `router`, `metrics`, and `websocket` share a Node with any role. `node:role:add` and `node:role:relocate` answer `validation.failed` with `Role [ROLE] conflicts with assigned role [OTHER].` `node:add` answers `node.role_conflict` (HTTP 422), with `Role [ROLE] conflicts with requested role [OTHER].` when one request names both roles. [Doctor](/cli/doctor) reports each assignment of a conflicting pair as `role.assignment_conflict`.
 
@@ -315,7 +314,7 @@ Not every role can be added the same way.
 | `app-dev`, `app-prod`, `database`, `metrics`, `websocket` | Yes | Yes |
 | `gateway` | Yes, as a singleton | Yes, as a singleton |
 | `vpn` | Yes, as a singleton | No |
-| `ingress`, `analytics`, `ci-runner` | No | Yes |
+| `ingress`, `analytics` | No | Yes |
 | `router` | No | No. Use [`cluster:router:set`](/cli/cluster#orbit-clusterrouterset). |
 
 ## Package sources
