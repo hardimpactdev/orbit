@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Infrastructure\ProjectDocuments\CleanupGate;
 use Illuminate\Console\Events\CommandStarting;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Console\Scheduling\ScheduleWorkCommand;
@@ -11,6 +10,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Orbit\Extensions\Documents\Infrastructure\CleanupGate;
 use Symfony\Component\Console\Input\ArgvInput;
 
 // Keep Laravel's real worker loop, child command construction, scheduler, and scheduled command execution.
@@ -31,7 +31,7 @@ $kernel = $app->make(Kernel::class);
 $kernel->rerouteSymfonyCommandEvents();
 $kernel->bootstrap();
 config(['database.connections.sqlite.database' => $home.'/database.sqlite', 'orbit.home' => $home,
-    'orbit.document_cleanup_runtime' => $home.'/runtime']);
+    'documents.cleanup_runtime' => $home.'/runtime']);
 DB::purge('sqlite');
 // Initializing Artisan runs Application::withSchedule's registration callback.
 $kernel->all();

@@ -5824,7 +5824,7 @@
         "tags": [
           "Extensions"
         ],
-        "description": "Returns the Gateway-wide extension switch state as an object keyed by extension slug. The initial slugs are `tasks` and `proxycli`.",
+        "description": "Returns the Gateway-wide extension switch state as an object keyed by extension slug. The slugs come from the registered extension providers: `tasks`, `proxycli`, and `documents`.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -5842,11 +5842,15 @@
                         },
                         "proxycli": {
                           "type": "boolean"
+                        },
+                        "documents": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
                         "tasks",
-                        "proxycli"
+                        "proxycli",
+                        "documents"
                       ],
                       "additionalProperties": false
                     },
@@ -5903,13 +5907,14 @@
               "type": "string",
               "enum": [
                 "tasks",
-                "proxycli"
+                "proxycli",
+                "documents"
               ]
             },
-            "description": "Extension slug: `tasks` or `proxycli`."
+            "description": "Extension slug: `tasks`, `proxycli`, or `documents`."
           }
         ],
-        "description": "Disables one Gateway-wide extension without removing its setup data. Use `tasks` or `proxycli`; an unknown slug returns `validation.failed` (422). Returns the extension name and `enabled: false`.",
+        "description": "Disables one Gateway-wide extension without removing its setup data, then runs its disable hook. Use `tasks`, `proxycli`, or `documents`; an unknown slug returns `validation.failed` (422), and an enabled extension that depends on it returns `extension.required` (409). Returns the extension name and `enabled: false`.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -5962,7 +5967,7 @@
             }
           },
           "409": {
-            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "description": "An enabled extension depends on this one (`extension.required`); `error.details.required_by` names it.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6007,13 +6012,14 @@
               "type": "string",
               "enum": [
                 "tasks",
-                "proxycli"
+                "proxycli",
+                "documents"
               ]
             },
-            "description": "Extension slug: `tasks` or `proxycli`."
+            "description": "Extension slug: `tasks`, `proxycli`, or `documents`."
           }
         ],
-        "description": "Enable a Gateway extension for every client. Use `tasks` or `proxycli`; an unknown slug returns `validation.failed` (422). Returns the extension name and `enabled: true`.",
+        "description": "Enable a Gateway extension for every client, then run its enable hook. Use `tasks`, `proxycli`, or `documents`; an unknown slug returns `validation.failed` (422), and a disabled dependency returns `extension.dependency_disabled` (409). Returns the extension name and `enabled: true`.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -6066,7 +6072,7 @@
             }
           },
           "409": {
-            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "description": "A dependency of the extension is disabled (`extension.dependency_disabled`); `error.details.dependency` names it.",
             "content": {
               "application/json": {
                 "schema": {
@@ -18154,6 +18160,7 @@
         "tags": [
           "Projects"
         ],
+        "x-orbit-extension": "documents",
         "description": "Show private Project Document storage.",
         "responses": {
           "200": {
@@ -18187,6 +18194,16 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "A disabled extension returns HTTP 409 (`extension.disabled`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "x-codeSamples": [
@@ -18208,6 +18225,7 @@
         "tags": [
           "Projects"
         ],
+        "x-orbit-extension": "documents",
         "description": "Update private Project Document storage.",
         "requestBody": {
           "required": true,
@@ -18277,7 +18295,7 @@
             }
           },
           "409": {
-            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -19442,6 +19460,7 @@
             }
           }
         ],
+        "x-orbit-extension": "documents",
         "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
         "responses": {
           "200": {
@@ -19507,6 +19526,16 @@
               }
             }
           },
+          "409": {
+            "description": "A disabled extension returns HTTP 409 (`extension.disabled`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "422": {
             "description": "Invalid fields, content encoding, names, hierarchy, query or cursor (`validation.failed`), folder content operation (`project_documents.not_file`), or content outside inline editing limits (`project_documents.not_editable`).",
             "content": {
@@ -19549,6 +19578,7 @@
             "description": "Numeric Project ID."
           }
         ],
+        "x-orbit-extension": "documents",
         "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
         "requestBody": {
           "required": true,
@@ -19839,6 +19869,7 @@
             }
           }
         ],
+        "x-orbit-extension": "documents",
         "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
         "responses": {
           "200": {
@@ -19904,6 +19935,16 @@
               }
             }
           },
+          "409": {
+            "description": "A disabled extension returns HTTP 409 (`extension.disabled`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "422": {
             "description": "Invalid fields, content encoding, names, hierarchy, query or cursor (`validation.failed`), folder content operation (`project_documents.not_file`), or content outside inline editing limits (`project_documents.not_editable`).",
             "content": {
@@ -19958,6 +19999,7 @@
             "description": "Numeric Project Document entry ID."
           }
         ],
+        "x-orbit-extension": "documents",
         "requestBody": {
           "required": true,
           "content": {
@@ -20104,6 +20146,7 @@
             "description": "Numeric Project Document entry ID."
           }
         ],
+        "x-orbit-extension": "documents",
         "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
         "responses": {
           "200": {
@@ -20140,6 +20183,16 @@
           },
           "404": {
             "description": "Project-scoped entry or file-scoped version not found (`project_documents.not_found`); a missing Project returns `http.404`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A disabled extension returns HTTP 409 (`extension.disabled`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -20200,6 +20253,7 @@
             "description": "Numeric Project Document entry ID."
           }
         ],
+        "x-orbit-extension": "documents",
         "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
         "requestBody": {
           "required": true,
@@ -20352,6 +20406,7 @@
             "description": "Numeric Project Document entry ID."
           }
         ],
+        "x-orbit-extension": "documents",
         "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
         "requestBody": {
           "required": true,
@@ -20490,6 +20545,7 @@
             }
           }
         ],
+        "x-orbit-extension": "documents",
         "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
         "responses": {
           "200": {
@@ -20555,8 +20611,8 @@
               }
             }
           },
-          "422": {
-            "description": "Invalid fields, content encoding, names, hierarchy, query or cursor (`validation.failed`), folder content operation (`project_documents.not_file`), or content outside inline editing limits (`project_documents.not_editable`).",
+          "409": {
+            "description": "Storage is not configured (`project_documents.storage_not_configured`); metadata remains available.",
             "content": {
               "application/json": {
                 "schema": {
@@ -20565,8 +20621,8 @@
               }
             }
           },
-          "409": {
-            "description": "Storage is not configured (`project_documents.storage_not_configured`); metadata remains available.",
+          "422": {
+            "description": "Invalid fields, content encoding, names, hierarchy, query or cursor (`validation.failed`), folder content operation (`project_documents.not_file`), or content outside inline editing limits (`project_documents.not_editable`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -20647,6 +20703,7 @@
             "description": "Numeric Project Document entry ID."
           }
         ],
+        "x-orbit-extension": "documents",
         "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
         "requestBody": {
           "required": true,
@@ -20852,6 +20909,7 @@
             }
           }
         ],
+        "x-orbit-extension": "documents",
         "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
         "responses": {
           "200": {
@@ -20917,8 +20975,8 @@
               }
             }
           },
-          "422": {
-            "description": "Invalid fields, content encoding, names, hierarchy, query or cursor (`validation.failed`), folder content operation (`project_documents.not_file`), or content outside inline editing limits (`project_documents.not_editable`).",
+          "409": {
+            "description": "Storage is not configured (`project_documents.storage_not_configured`); metadata remains available.",
             "content": {
               "application/json": {
                 "schema": {
@@ -20927,8 +20985,8 @@
               }
             }
           },
-          "409": {
-            "description": "Storage is not configured (`project_documents.storage_not_configured`); metadata remains available.",
+          "422": {
+            "description": "Invalid fields, content encoding, names, hierarchy, query or cursor (`validation.failed`), folder content operation (`project_documents.not_file`), or content outside inline editing limits (`project_documents.not_editable`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -21011,6 +21069,7 @@
             "description": "Numeric Project Document entry ID."
           }
         ],
+        "x-orbit-extension": "documents",
         "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
         "requestBody": {
           "required": true,
@@ -21140,6 +21199,7 @@
             "description": "Numeric Project Document entry ID."
           }
         ],
+        "x-orbit-extension": "documents",
         "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
         "requestBody": {
           "required": true,
@@ -21323,6 +21383,7 @@
             }
           }
         ],
+        "x-orbit-extension": "documents",
         "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
         "responses": {
           "200": {
@@ -21380,6 +21441,16 @@
           },
           "404": {
             "description": "Project-scoped entry or file-scoped version not found (`project_documents.not_found`); a missing Project returns `http.404`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A disabled extension returns HTTP 409 (`extension.disabled`).",
             "content": {
               "application/json": {
                 "schema": {

@@ -40,7 +40,7 @@ function gateway_fixture_mock(string ...$names): array
 {
     $mocks = [
         ListExtensionsRequest::class => MockResponse::make([
-            'data' => ['tasks' => true, 'proxycli' => true],
+            'data' => ['tasks' => true, 'proxycli' => true, 'documents' => true],
             'meta' => ['request_id' => 'test-discovery'],
         ]),
     ];

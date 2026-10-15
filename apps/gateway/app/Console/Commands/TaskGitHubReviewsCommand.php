@@ -11,6 +11,8 @@ use Symfony\Component\Console\Output\OutputInterface;
 
 final class TaskGitHubReviewsCommand extends Command
 {
+    use ReadsStringInput;
+
     #[\Override]
     protected $signature = 'orbit:tasks:github-reviews {group-id : Stored task group ID} {--json : Print local approval evidence as JSON}';
 
@@ -19,7 +21,7 @@ final class TaskGitHubReviewsCommand extends Command
 
     public function handle(TaskGitHubReviewObservations $observations): int
     {
-        $id = (string) $this->argument('group-id');
+        $id = $this->stringArgument('group-id');
         $group = ctype_digit($id) ? Task::topLevel()->find($id) : null;
         if ($group === null) {
             $this->error('Unknown task group.');

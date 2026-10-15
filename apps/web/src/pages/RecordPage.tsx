@@ -62,7 +62,7 @@ import { OperationPanel } from "./OperationPanel";
 import { QueuePanel } from "./QueuePanel";
 import { QuotaProviderPage } from "./Quota";
 import { RecordLayout } from "./RecordLayout";
-import { ProjectMenu } from "./ProjectDocuments";
+import { ProjectMenu } from "./ProjectMenu";
 
 const GAPS = "gap-x-[1ch] gap-y-[var(--panel-gap)]";
 

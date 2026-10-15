@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace App\Commands\ProjectDocuments;
 
 use App\Commands\GatewayCommand;
+use App\Commands\ProjectDocuments\Concerns\GatesDocumentsExtension;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleWriter;
 use App\Support\Console\PromptAborted;
 use App\Support\DocumentFileWriter;
+use App\Support\GatedExtensionCommand;
 use Closure;
 use ErrorException;
 use Illuminate\Console\OutputStyle;
@@ -47,8 +49,10 @@ use Symfony\Component\Console\Output\ConsoleOutputInterface;
 use Symfony\Component\Console\Output\StreamOutput;
 use UnexpectedValueException;
 
-abstract class ProjectDocumentCommand extends GatewayCommand
+abstract class ProjectDocumentCommand extends GatewayCommand implements GatedExtensionCommand
 {
+    use GatesDocumentsExtension;
+
     protected string $verb;
 
     private ?string $downloadOutput = null;

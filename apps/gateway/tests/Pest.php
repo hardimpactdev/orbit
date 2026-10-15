@@ -6,6 +6,7 @@ use App\Domain\AppDev\AgentationSiteProjection;
 use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\AppDev\VitePortRuntime;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Instances\Deployment\DeploymentPhase;
 use App\Domain\Instances\Deployment\DeploymentStep;
@@ -111,6 +112,13 @@ uses(TestCase::class, RefreshDatabase::class)
         app(SshGuardedProcessRunner::class)->assertNoStrayProcesses();
     })
     ->in('Feature');
+
+// The documents extension's tests run with its switch on (docs/reference/extensions.md#the-runtime-switch).
+uses()
+    ->beforeEach(function (): void {
+        app(ExtensionStore::class)->set('documents', true);
+    })
+    ->in('Feature/Extensions/Documents');
 
 pest()
     ->tia()

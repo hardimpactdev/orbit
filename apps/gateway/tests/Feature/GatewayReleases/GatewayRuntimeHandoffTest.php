@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\AgentView\AgentViewConverger;
 use App\Domain\Fleet\FleetConvergeUnits;
-use App\Domain\GatewayReleases\GatewayDocumentCleanup;
+use App\Domain\GatewayReleases\GatewayReleaseCleanup;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseUnitConverger;
 use App\Domain\Hibernation\RuntimeHibernatorConverger;
@@ -88,7 +88,7 @@ final class HandoffProcessRunner implements ProcessRunner
     }
 }
 
-final class FakeDocumentCleanup implements GatewayDocumentCleanup
+final class FakeReleaseCleanup implements GatewayReleaseCleanup
 {
     public bool $isConfigured = true;
 
@@ -191,13 +191,13 @@ final class SchedulerDrainProbe
 }
 
 /**
- * @return array{GatewayRuntimeHandoff, HandoffProcessRunner, FakeDocumentCleanup, FakeNodeCaddyBuilds, RecordingHandoffUnits, SchedulerDrainProbe}
+ * @return array{GatewayRuntimeHandoff, HandoffProcessRunner, FakeReleaseCleanup, FakeNodeCaddyBuilds, RecordingHandoffUnits, SchedulerDrainProbe}
  */
 function runtime_handoff(?string $livePool = null, int $drainSeconds = 5, ?FleetConvergeUnits $fleet = null, bool $agent = false, ?GatewayHorizon $horizon = null, ?Closure $recipeImages = null): array
 {
     $processes = new HandoffProcessRunner;
     $probe = new SchedulerDrainProbe;
-    $cleanup = new FakeDocumentCleanup;
+    $cleanup = new FakeReleaseCleanup;
     $builds = new FakeNodeCaddyBuilds;
     $units = new RecordingHandoffUnits('units');
     $orbitHome = sys_get_temp_dir().'/orbit-handoff-'.bin2hex(random_bytes(4));
@@ -227,7 +227,7 @@ function runtime_handoff(?string $livePool = null, int $drainSeconds = 5, ?Fleet
                 },
                 members: static fn (): array => $probe->members,
             ),
-            cleanup: new GatewayCleanupHandoff($cleanup, generationWaitSeconds: 1, sleep: static function (): void {
+            cleanup: new GatewayCleanupHandoff([$cleanup], generationWaitSeconds: 1, sleep: static function (): void {
                 usleep(50_000);
             }),
             applicationPath: HANDOFF_APP,
@@ -597,20 +597,44 @@ describe('gateway:release:handoff', function (): void {
 });
 
 describe(GatewayCleanupHandoff::class, function (): void {
+    it('skips when no extension contributes a cleanup', function (): void {
+        $handoff = new GatewayCleanupHandoff([]);
+
+        expect($handoff->generation())->toBe([])
+            ->and($handoff->resume($handoff->generation(), true))->toBe(['outcome' => 'skipped', 'paused' => false]);
+    });
+
+    it('reports a paused cleanup before a resumed one, and resumes each cleanup in its own generation', function (): void {
+        $paused = new FakeReleaseCleanup;
+        $paused->statuses = [['cleanup_state' => 'paused', 'cleanup_generation' => 'a2']];
+        $paused->report = ['report_id' => 'ra', 'report_state' => 'complete', 'difference_count' => 1];
+        $resumed = new FakeReleaseCleanup;
+        $resumed->statuses = [['cleanup_state' => 'paused', 'cleanup_generation' => 'b2']];
+
+        expect(new GatewayCleanupHandoff([$resumed, $paused], sleep: static function (): void {})->resume(['b1', 'a1'], true))->toBe([
+            'outcome' => 'paused',
+            'paused' => true,
+            'error_code' => 'gateway.release_cleanup_unresolved',
+            'report_id' => 'ra',
+            'difference_count' => 1,
+        ])->and($resumed->calls)->toContain('resume:r1')
+            ->and($paused->calls)->not->toContain('resume:ra');
+    });
+
     it('skips cleanup when document storage is not configured', function (): void {
-        $cleanup = new FakeDocumentCleanup;
+        $cleanup = new FakeReleaseCleanup;
         $cleanup->isConfigured = false;
 
-        expect(new GatewayCleanupHandoff($cleanup)->resume(null, true))->toBe(['outcome' => 'skipped', 'paused' => false])
+        expect(new GatewayCleanupHandoff([$cleanup])->resume([null], true))->toBe(['outcome' => 'skipped', 'paused' => false])
             ->and($cleanup->calls)->toBe([]);
     });
 
     it('stays paused and reports why when the report has differences', function (): void {
-        $cleanup = new FakeDocumentCleanup;
+        $cleanup = new FakeReleaseCleanup;
         $cleanup->statuses = [['cleanup_state' => 'paused', 'cleanup_generation' => 'g2']];
         $cleanup->report = ['report_id' => 'r2', 'report_state' => 'complete', 'difference_count' => 2];
 
-        expect(new GatewayCleanupHandoff($cleanup, sleep: static function (): void {})->resume('g1', true))->toBe([
+        expect(new GatewayCleanupHandoff([$cleanup], sleep: static function (): void {})->resume(['g1'], true))->toBe([
             'outcome' => 'paused',
             'paused' => true,
             'error_code' => 'gateway.release_cleanup_unresolved',
@@ -620,26 +644,26 @@ describe(GatewayCleanupHandoff::class, function (): void {
     });
 
     it('stays paused when the new scheduler never rotates the generation', function (): void {
-        $cleanup = new FakeDocumentCleanup;
+        $cleanup = new FakeReleaseCleanup;
         $cleanup->statuses = [['cleanup_state' => 'paused', 'cleanup_generation' => 'g1']];
 
-        expect(new GatewayCleanupHandoff($cleanup, generationWaitSeconds: 0, sleep: static function (): void {})->resume('g1', true))
+        expect(new GatewayCleanupHandoff([$cleanup], generationWaitSeconds: 0, sleep: static function (): void {})->resume(['g1'], true))
             ->toBe(['outcome' => 'paused', 'paused' => true, 'error_code' => 'gateway.release_cleanup_generation_unchanged']);
     });
 
     it('reconciles and resumes a cleanup that is paused without a restart', function (): void {
-        $cleanup = new FakeDocumentCleanup;
+        $cleanup = new FakeReleaseCleanup;
         $cleanup->statuses = [['cleanup_state' => 'paused', 'cleanup_generation' => 'g1']];
 
-        expect(new GatewayCleanupHandoff($cleanup)->resume('g1', false))->toBe(['outcome' => 'resumed', 'paused' => false, 'report_id' => 'r1']);
+        expect(new GatewayCleanupHandoff([$cleanup])->resume(['g1'], false))->toBe(['outcome' => 'resumed', 'paused' => false, 'report_id' => 'r1']);
     });
 
     it('stays paused when resume is refused', function (): void {
-        $cleanup = new FakeDocumentCleanup;
+        $cleanup = new FakeReleaseCleanup;
         $cleanup->statuses = [['cleanup_state' => 'paused', 'cleanup_generation' => 'g1']];
         $cleanup->resumed = ['cleanup_state' => 'paused', 'error_code' => 'project_documents.cleanup_inventory_changed'];
 
-        expect(new GatewayCleanupHandoff($cleanup)->resume('g1', false))
+        expect(new GatewayCleanupHandoff([$cleanup])->resume(['g1'], false))
             ->toBe(['outcome' => 'paused', 'paused' => true, 'error_code' => 'project_documents.cleanup_inventory_changed', 'report_id' => 'r1']);
     });
 });

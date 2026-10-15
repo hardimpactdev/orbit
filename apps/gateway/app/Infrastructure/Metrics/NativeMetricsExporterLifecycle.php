@@ -180,7 +180,7 @@ final readonly class NativeMetricsExporterLifecycle implements MetricsExporterLi
             MetricsReconcileComponent::Exporter,
             $node->id,
             $structured->errorCode ?? 'metrics.exporter_reconcile_failed',
-            $structured === null ? 'Metrics exporter reconciliation failed.' : $structured->getMessage(),
+            $structured?->getMessage() ?? 'Metrics exporter reconciliation failed.',
             $structured->status ?? 502,
             $exception,
             $structured->details ?? [],

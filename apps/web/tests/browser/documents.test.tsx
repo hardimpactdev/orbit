@@ -363,3 +363,19 @@ it("retains folder and filters while appending cursor pages", async () => {
         )
         .toBeGreaterThan(1);
 });
+
+it("hides the Documents section and page while the documents extension is disabled", async () => {
+    const app = await openApp("/projects/1", { documents: false });
+    await expect.element(page.getByTestId("project-overview")).toBeVisible();
+    expect(document.querySelector("[data-testid=project-documents]")).toBeNull();
+
+    await app.router.navigate({ to: "/projects/$id/documents", params: { id: "1" }, search: {} });
+    await expect
+        .element(page.getByText("The documents extension is disabled on this Gateway."))
+        .toBeVisible();
+    expect(
+        app.gateway.requests.some((request) =>
+            request.path.startsWith("/api/v1/projects/1/documents"),
+        ),
+    ).toBe(false);
+});

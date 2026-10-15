@@ -3,4 +3,5 @@
  ├───────────┼──────────┼────────┤
  │ tasks     │ disabled │ —      │
  │ proxycli  │ disabled │ —      │
+ │ documents │ disabled │ —      │
  └───────────┴──────────┴────────┘

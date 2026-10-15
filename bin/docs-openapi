@@ -7,7 +7,7 @@ Run from any directory:
     bin/docs-openapi --check    exit 1 when either file differs from what the sources produce
 
 The script reads the Gateway route table through `php apps/gateway/artisan route:list --json`, parses the
-controllers, form requests, data classes, and enums under apps/gateway/app, the request and response classes
+controllers, form requests, data classes, and enums under apps/gateway/app and apps/gateway/extensions/*/src, the request and response classes
 under packages/php-sdk/src, and the command descriptions from the signature, description, and help properties
 under apps/cli/app/Commands. It does not run `orbit list`: that list hides extension commands unless a Gateway
 reports the extension enabled, and it needs apps/cli/vendor, so the same checkout would not always match.
@@ -196,9 +196,15 @@ def load_commands():
     return commands
 
 
+def gateway_files(core, extension, recursive=True):
+    """PHP files under apps/gateway/<core> and under <extension> in each extension's src (docs/reference/extensions.md)."""
+    roots = [GW / core] + sorted(path for path in (GW / 'extensions').glob('*/src/' + extension) if path.is_dir())
+    return [f for root in roots for f in (root.rglob('*.php') if recursive else root.glob('*.php'))]
+
+
 def load_controllers():
     ctrl = {}
-    for f in sorted((GW / 'app/Http/Controllers/Api').glob('*.php')):
+    for f in sorted(gateway_files('app/Http/Controllers/Api', 'Http/Controllers', recursive=False)):
         s = f.read_text()
         for m in re.finditer(r'public function (\w+)\((.*?)\)\s*:\s*([\w|\\]+)', s, re.S):
             params = re.sub(r'\s+', ' ', m.group(2))
@@ -246,7 +252,7 @@ def resolve_rule_constants(source, path):
 
 def load_form_requests():
     reqs = {}
-    for f in sorted((GW / 'app/Http/Requests').rglob('*.php')):
+    for f in sorted(gateway_files('app/Http/Requests', 'Http/Requests')):
         s = resolve_rule_constants(f.read_text(), f)
         i = s.find('function rules(')
         if i < 0:
@@ -480,7 +486,7 @@ def word_after(text, i):
 
 def load_data_classes():
     data = {}
-    for f in sorted((GW / 'app/Data').rglob('*.php')):
+    for f in sorted(gateway_files('app/Data', 'Data')):
         s = f.read_text()
         m = re.search(r'class (\w+)', s)
         if not m:
@@ -506,7 +512,7 @@ def load_enums():
     enums = {}
     enum_cases = {}
     pattern = re.compile(r'enum (\w+)(?::\s*string)?\s*(?:implements [\w, \\]+)?\s*\{')
-    for f in sorted((GW / 'app').rglob('*.php')):
+    for f in sorted(gateway_files('app', '')):
         s = f.read_text()
         for m in pattern.finditer(s):
             pairs = re.findall(r"case (\w+)\s*=\s*'([^']+)'", block(s, m.start()))
@@ -773,9 +779,9 @@ DESCRIPTIONS = {
     'conn:pairing:list': 'Lists the pairing links the Gateway minted on one T3 server, newest first, with the Node and revocation time of each.',
     'conn:pairing:create': 'Mints a one-time pairing link on the T3 server for the calling Node and records it. Open `pairing_url` in Conn to pair. An expired admin session returns `conn.session_expired` (409).',
     'conn:pairing:revoke': 'Revokes the sessions a Node paired from its links on one T3 server, and its unused links. Without `node_id` it revokes the calling Node. WireGuard access does not change.',
-    'extension:list': 'Returns the Gateway-wide extension switch state as an object keyed by extension slug. The initial slugs are `tasks` and `proxycli`.',
-    'extension:enable': 'Enable a Gateway extension for every client. Use `tasks` or `proxycli`; an unknown slug returns `validation.failed` (422). Returns the extension name and `enabled: true`.',
-    'extension:disable': 'Disables one Gateway-wide extension without removing its setup data. Use `tasks` or `proxycli`; an unknown slug returns `validation.failed` (422). Returns the extension name and `enabled: false`.',
+    'extension:list': 'Returns the Gateway-wide extension switch state as an object keyed by extension slug. The slugs come from the registered extension providers: `tasks`, `proxycli`, and `documents`.',
+    'extension:enable': 'Enable a Gateway extension for every client, then run its enable hook. Use `tasks`, `proxycli`, or `documents`; an unknown slug returns `validation.failed` (422), and a disabled dependency returns `extension.dependency_disabled` (409). Returns the extension name and `enabled: true`.',
+    'extension:disable': 'Disables one Gateway-wide extension without removing its setup data, then runs its disable hook. Use `tasks`, `proxycli`, or `documents`; an unknown slug returns `validation.failed` (422), and an enabled extension that depends on it returns `extension.required` (409). Returns the extension name and `enabled: false`.',
     'proxycli:setup': 'Deploys one collector Process and publishes https://collector.cli-proxy-api.orbit after a Redis Database connection for shared Valkey is in place. Fails closed when that connection is missing, is not Redis, or names a Node without the database role. A custom proxy Route that already serves the collector hostname on that Node is withdrawn in the same Caddy reload and removed; any other Route on that name fails with proxycli.hostname_taken. The response never includes tokens or the management key.',
     'proxycli:teardown': 'Stops the collector Process for the whole fleet, withdraws collector.cli-proxy-api.orbit and its certificate, deletes the stored CLIProxyAPI management key and the read and control tokens, and hides provider reads. Setting up again needs the management key. The Redis connection and Valkey data stay.',
     'proxycli:status': 'Returns whether the fleet feature is enabled, which Node and cache connection it uses, and when the snapshot was last written.',
@@ -825,7 +831,7 @@ def description_for(route):
 # ---------------------------------------------------------------- path parameters
 PARAM_RENAME = {'firewallRule:name': 'firewall_rule', 'servingNode': 'serving_node', 'consumerNode': 'consumer_node', 'processDefinition': 'process_definition', 'scheduleDefinition': 'schedule_definition'}
 PARAM_SCHEMAS = {
-    'extension': ({'type': 'string', 'enum': ['tasks', 'proxycli']}, 'Extension slug: `tasks` or `proxycli`.'),
+    'extension': ({'type': 'string', 'enum': ['tasks', 'proxycli', 'documents']}, 'Extension slug: `tasks`, `proxycli`, or `documents`.'),
     'node': ({'type': 'integer', 'minimum': 1}, 'Numeric Node ID.'),
     'operation': ({'type': 'integer', 'minimum': 1}, 'Numeric operation ID.'),
     'serving_node': ({'type': 'integer', 'minimum': 1}, 'Numeric ID of the Node that receives commands.'),
@@ -1532,7 +1538,7 @@ RESPONSE_OVERRIDES = {
     'ProjectDevelopmentDeployStepsController@store': DEVELOPMENT_DEPLOY_STEP_SCHEMA,
     'ProjectDevelopmentDeployStepsController@update': DEVELOPMENT_DEPLOY_STEP_SCHEMA,
     'ProjectDevelopmentDeployStepsController@destroy': DEVELOPMENT_DEPLOY_STEP_SCHEMA,
-    'ExtensionsController@index': {'type': 'object', 'description': 'Enabled state keyed by extension slug.', 'properties': {'tasks': {'type': 'boolean'}, 'proxycli': {'type': 'boolean'}}, 'required': ['tasks', 'proxycli'], 'additionalProperties': False},
+    'ExtensionsController@index': {'type': 'object', 'description': 'Enabled state keyed by extension slug.', 'properties': {'tasks': {'type': 'boolean'}, 'proxycli': {'type': 'boolean'}, 'documents': {'type': 'boolean'}}, 'required': ['tasks', 'proxycli', 'documents'], 'additionalProperties': False},
     'ExtensionsController@enable': {'type': 'object', 'properties': {'name': {'type': 'string', 'enum': ['tasks', 'proxycli']}, 'enabled': {'type': 'boolean', 'const': True}}, 'required': ['name', 'enabled'], 'additionalProperties': False},
     'ExtensionsController@disable': {'type': 'object', 'properties': {'name': {'type': 'string', 'enum': ['tasks', 'proxycli']}, 'enabled': {'type': 'boolean', 'const': False}}, 'required': ['name', 'enabled'], 'additionalProperties': False},
     'RootCaCertificatesController@show': {'type': 'object', 'properties': {'root_ca': {'type': 'string', 'description': 'PEM-encoded root certificate.'}, 'sha256': {'type': 'string', 'description': 'SHA-256 fingerprint of the certificate.'}}},
@@ -1675,6 +1681,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         op['x-orbit-extension'] = 'tasks'
     elif route['name'] and route['name'].startswith('proxycli:'):
         op['x-orbit-extension'] = 'proxycli'
+    elif route['name'] and route['name'].startswith('project:document'):
+        op['x-orbit-extension'] = 'documents'
     description = description_for(route)
     if description:
         op['description'] = description
@@ -1951,6 +1959,10 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         responses['409'] = error_response('The collector is not set up (`proxycli.disabled`). A disabled extension returns HTTP 409 (`extension.disabled`).')
     if route['name'] in ('extension:enable', 'extension:disable'):
         responses['422'] = error_response('The extension slug is unknown (`validation.failed`).')
+    if route['name'] == 'extension:enable':
+        responses['409'] = error_response('A dependency of the extension is disabled (`extension.dependency_disabled`); `error.details.dependency` names it.')
+    if route['name'] == 'extension:disable':
+        responses['409'] = error_response('An enabled extension depends on this one (`extension.required`); `error.details.required_by` names it.')
     if body_schema is not None or stream:
         responses['422'] = error_response('The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).')
     if route['name'] in ('node:role:add', 'node:role:remove', 'node:role:relocate'):

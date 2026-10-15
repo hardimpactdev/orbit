@@ -263,6 +263,8 @@
                 "Gateway",
                 "Node",
                 "Process",
+                "Project",
+                "Project Documents",
                 "Task",
                 "Tool"
             ],
@@ -482,6 +484,7 @@
             ],
             "concepts": [
                 "Deployment",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -928,6 +931,57 @@
             ]
         },
         {
+            "path": "docs/decisions/0210-give-each-extension-its-own-code-boundary.md",
+            "title": "ADR 0210: Give each extension its own code boundary",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "apps/web"
+            ],
+            "concepts": [
+                "Activity",
+                "Extension",
+                "Gateway",
+                "Project",
+                "Project Documents",
+                "Route",
+                "Schedule",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0210"
+            ]
+        },
+        {
+            "path": "docs/decisions/0213-run-ci-runners-through-a-ci-runner-role.md",
+            "title": "ADR 0213: Run CI runners through a ci-runner role",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "apps/web"
+            ],
+            "concepts": [
+                "Cluster",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Process",
+                "Project",
+                "Role",
+                "Route",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0213"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -980,7 +1034,9 @@
                 "0198",
                 "0200",
                 "0206",
-                "0209"
+                "0209",
+                "0210",
+                "0213"
             ]
         },
         {
@@ -1623,6 +1679,27 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/reference/extensions.md",
+            "title": "Extensions",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Extension",
+                "Gateway",
+                "Process",
+                "Project",
+                "Project Documents",
+                "Route",
+                "Schedule",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0210"
+            ]
+        },
+        {
             "path": "docs/reference/gateway-environment.md",
             "title": "Gateway environment",
             "kind": "reference",
@@ -1631,6 +1708,7 @@
             ],
             "concepts": [
                 "Deployment",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -2286,6 +2364,7 @@
             "title": "Project Documents",
             "kind": "reference",
             "components": [
+                "apps/cli",
                 "apps/gateway",
                 "apps/web"
             ],
@@ -2298,6 +2377,7 @@
                 "Process",
                 "Project",
                 "Project Documents",
+                "Route",
                 "Schedule",
                 "Task",
                 "Tool"
@@ -2316,6 +2396,7 @@
                 "Activity",
                 "Deployment",
                 "Doctor",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
