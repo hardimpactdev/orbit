@@ -11,6 +11,6 @@
     ],
     "cache-file": "vendor/pint.cache",
     "notPath": [
-        "#^(?!(?:app|bootstrap|config|database|routes|tests)/)#"
+        "#^(?!(?:app|bootstrap|config|database|extensions|routes|tests)/)#"
     ]
 }

@@ -265,6 +265,8 @@
                 "Gateway",
                 "Node",
                 "Process",
+                "Project",
+                "Project Documents",
                 "Task",
                 "Tool"
             ],
@@ -471,6 +473,7 @@
             ],
             "concepts": [
                 "Deployment",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -890,6 +893,30 @@
             ]
         },
         {
+            "path": "docs/decisions/0210-give-each-extension-its-own-code-boundary.md",
+            "title": "ADR 0210: Give each extension its own code boundary",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "apps/web"
+            ],
+            "concepts": [
+                "Activity",
+                "Extension",
+                "Gateway",
+                "Project",
+                "Project Documents",
+                "Route",
+                "Schedule",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0210"
+            ]
+        },
+        {
             "path": "docs/decisions/0211-ship-node-changes-as-remote-programs.md",
             "title": "ADR 0211: Ship Node changes as remote programs",
             "kind": "decision",
@@ -989,6 +1016,7 @@
                 "0198",
                 "0200",
                 "0206",
+                "0210",
                 "0211",
                 "0213"
             ]
@@ -1632,6 +1660,27 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/reference/extensions.md",
+            "title": "Extensions",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Extension",
+                "Gateway",
+                "Process",
+                "Project",
+                "Project Documents",
+                "Route",
+                "Schedule",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0210"
+            ]
+        },
+        {
             "path": "docs/reference/gateway-environment.md",
             "title": "Gateway environment",
             "kind": "reference",
@@ -1640,6 +1689,7 @@
             ],
             "concepts": [
                 "Deployment",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -2268,6 +2318,7 @@
             "title": "Project Documents",
             "kind": "reference",
             "components": [
+                "apps/cli",
                 "apps/gateway",
                 "apps/web"
             ],
@@ -2280,6 +2331,7 @@
                 "Process",
                 "Project",
                 "Project Documents",
+                "Route",
                 "Schedule",
                 "Task",
                 "Tool"
@@ -2298,6 +2350,7 @@
                 "Activity",
                 "Deployment",
                 "Doctor",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",

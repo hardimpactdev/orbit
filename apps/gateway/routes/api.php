@@ -51,8 +51,6 @@ use App\Http\Controllers\Api\NodesController;
 use App\Http\Controllers\Api\ProcessesController;
 use App\Http\Controllers\Api\ProcessLogStreamsController;
 use App\Http\Controllers\Api\ProjectDevelopmentDeployStepsController;
-use App\Http\Controllers\Api\ProjectDocumentsController;
-use App\Http\Controllers\Api\ProjectDocumentStorageController;
 use App\Http\Controllers\Api\ProjectExcludedNodesController;
 use App\Http\Controllers\Api\ProjectLifecycleStepsController;
 use App\Http\Controllers\Api\ProjectRuntimeDefinitionsController;
@@ -76,6 +74,7 @@ use App\Http\Controllers\Api\ToolsController;
 use App\Http\Controllers\Api\VaultController;
 use App\Http\Middleware\RecordCommandActivity;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
+use App\Http\Middleware\RequireEnabledExtension;
 use App\Http\Middleware\RequireNodeAccess;
 use App\Http\Middleware\RequireNodeAgentSecret;
 use Illuminate\Support\Facades\Route;
@@ -209,10 +208,6 @@ Route::prefix('v1')->group(function (): void {
         RequireActiveWireGuardPeer::class,
         RequireNodeAccess::class,
     ])->group(function (): void {
-        Route::get('project-document-storage', [ProjectDocumentStorageController::class, 'show'])
-            ->name('project:document-storage:show');
-        Route::put('project-document-storage', [ProjectDocumentStorageController::class, 'update'])
-            ->name('project:document-storage:update');
         Route::get('nodes', [NodesController::class, 'index'])
             ->name('node:list');
         Route::post('github/app/install', [GitHubAppController::class, 'install'])->name('github:app:install');
@@ -328,21 +323,6 @@ Route::prefix('v1')->group(function (): void {
             ->scopeBindings()
             ->name('firewall:remove');
         Route::get('projects', [ProjectsController::class, 'index'])->name('project:list');
-        Route::prefix('projects/{project}/documents')->whereNumber(['project', 'entry'])->group(function (): void {
-            Route::get('', [ProjectDocumentsController::class, 'index'])->name('project:document:list');
-            Route::get('search', [ProjectDocumentsController::class, 'search'])->name('project:document:search');
-            Route::post('', [ProjectDocumentsController::class, 'store'])->name('project:document:create');
-            Route::get('{entry}', [ProjectDocumentsController::class, 'show'])->name('project:document:show');
-            Route::patch('{entry}', [ProjectDocumentsController::class, 'update'])->name('project:document:update');
-            Route::put('{entry}/content', [ProjectDocumentsController::class, 'write'])->name('project:document:write');
-            Route::get('{entry}/content', [ProjectDocumentsController::class, 'read'])->name('project:document:read');
-            Route::get('{entry}/download', [ProjectDocumentsController::class, 'download'])->name('project:document:download');
-            Route::get('{entry}/versions', [ProjectDocumentsController::class, 'versions'])->name('project:document:version:list');
-            Route::post('{entry}/restore-version', [ProjectDocumentsController::class, 'restoreVersion'])->name('project:document:restore-version');
-            Route::post('{entry}/archive', [ProjectDocumentsController::class, 'archive'])->name('project:document:archive');
-            Route::post('{entry}/restore', [ProjectDocumentsController::class, 'restore'])->name('project:document:restore');
-            Route::delete('{entry}', [ProjectDocumentsController::class, 'destroy'])->name('project:document:destroy');
-        });
         Route::get('projects/{project}', [ProjectsController::class, 'show'])->name('project:show');
         Route::post('projects', [ProjectsController::class, 'store'])->name('project:create');
         Route::patch('projects/{project}', [ProjectsController::class, 'update'])->name('project:update');
@@ -630,17 +610,19 @@ Route::prefix('v1')->group(function (): void {
         Route::delete('tools/{tool}', [ToolsController::class, 'destroy'])
             ->whereNumber('tool')
             ->name('tool:remove');
-        Route::post('proxycli', [ProxyCliController::class, 'store'])->name('proxycli:setup');
-        Route::delete('proxycli', [ProxyCliController::class, 'destroy'])->name('proxycli:teardown');
-        Route::get('proxycli', [ProxyCliController::class, 'status'])->name('proxycli:status');
-        Route::get('proxycli/providers', [ProxyCliController::class, 'index'])->name('proxycli:list');
-        Route::get('proxycli/providers/{provider}', [ProxyCliController::class, 'show'])
-            ->where('provider', '[a-z][a-z0-9-]*')
-            ->name('proxycli:show');
-        Route::get('proxycli/models', [ProxyCliController::class, 'models'])->name('proxycli:models');
-        Route::patch('proxycli/accounts/{account}', [ProxyCliController::class, 'update'])
-            ->where('account', '[A-Za-z0-9._-]+')
-            ->name('proxycli:update');
+        Route::middleware(RequireEnabledExtension::class.':proxycli')->group(function (): void {
+            Route::post('proxycli', [ProxyCliController::class, 'store'])->name('proxycli:setup');
+            Route::delete('proxycli', [ProxyCliController::class, 'destroy'])->name('proxycli:teardown');
+            Route::get('proxycli', [ProxyCliController::class, 'status'])->name('proxycli:status');
+            Route::get('proxycli/providers', [ProxyCliController::class, 'index'])->name('proxycli:list');
+            Route::get('proxycli/providers/{provider}', [ProxyCliController::class, 'show'])
+                ->where('provider', '[a-z][a-z0-9-]*')
+                ->name('proxycli:show');
+            Route::get('proxycli/models', [ProxyCliController::class, 'models'])->name('proxycli:models');
+            Route::patch('proxycli/accounts/{account}', [ProxyCliController::class, 'update'])
+                ->where('account', '[A-Za-z0-9._-]+')
+                ->name('proxycli:update');
+        });
         Route::get('vault', [VaultController::class, 'status'])->name('vault:status');
         Route::put('vault', [VaultController::class, 'setup'])->name('vault:setup');
         Route::post('vault/sync', [VaultController::class, 'sync'])->name('vault:sync');
@@ -661,43 +643,45 @@ Route::prefix('v1')->group(function (): void {
         Route::delete('metrics/exporters/{node}', [MetricsController::class, 'disableExporter'])
             ->whereNumber('node')
             ->name('metrics:exporter:disable');
-        Route::get('task-groups/{group}/agents', [AgentThreadsController::class, 'index'])
-            ->whereNumber('group')->withoutMiddleware(RecordCommandActivity::class)->name('tasks:agents');
-        Route::get('task-groups/{group}/agents/{session}/stream', [AgentThreadsController::class, 'stream'])
-            ->whereNumber('group')->whereNumber('session')->withoutMiddleware(RecordCommandActivity::class)->name('tasks:agent-stream');
         Route::get('tasks/status', [TasksController::class, 'status'])->name('tasks:status');
-        Route::get('task-groups', [TaskGroupsController::class, 'index'])->name('tasks:list');
-        Route::get('task-questions', [TaskQuestionsController::class, 'index'])->name('tasks:question:list');
-        Route::post('task-questions/{question}/close', [TaskQuestionsController::class, 'close'])
-            ->whereNumber('question')
-            ->name('tasks:question:close');
-        Route::post('task-groups', [TaskGroupsController::class, 'store'])->name('tasks:create');
-        Route::get('task-groups/{group}', [TaskGroupsController::class, 'show'])
-            ->whereNumber('group')
-            ->name('tasks:show');
-        Route::patch('task-groups/{group}', [TaskGroupsController::class, 'update'])
-            ->whereNumber('group')
-            ->name('tasks:update');
-        Route::post('task-groups/{group}/tasks', [TaskGroupsController::class, 'createTask'])
-            ->whereNumber('group')
-            ->name('tasks:subtask:create');
-        Route::patch('task-groups/{group}/tasks/{task}', [TaskGroupsController::class, 'updateTask'])
-            ->whereNumber('group')->whereNumber('task')->name('tasks:subtask:update');
-        Route::delete('task-groups/{group}/tasks/{task}', [TaskGroupsController::class, 'destroyTask'])
-            ->whereNumber('group')->whereNumber('task')->name('tasks:subtask:destroy');
-        Route::post('task-groups/{group}/tasks/{task}/cancel', [TaskGroupsController::class, 'cancelSubtask'])
-            ->whereNumber('group')->whereNumber('task')->name('tasks:subtask:cancel');
-        Route::post('task-groups/{group}/tasks/{task}/check/cancel', [TaskGroupsController::class, 'cancelCheck'])
-            ->whereNumber('group')->whereNumber('task')->name('tasks:check:cancel');
-        Route::post('task-groups/{group}/tasks/{task}/comments', [TaskGroupsController::class, 'storeComment'])
-            ->whereNumber('group')->whereNumber('task')->name('tasks:comment:create');
-        Route::get('task-groups/{group}/tasks/{task}/comments', [TaskGroupsController::class, 'comments'])
-            ->whereNumber('group')->whereNumber('task')->name('tasks:comment:list');
-        Route::post('task-groups/{group}/cancel', [TaskGroupsController::class, 'cancel'])
-            ->whereNumber('group')
-            ->name('tasks:cancel');
-        Route::post('task-groups/{group}/complete', [TaskGroupsController::class, 'complete'])
-            ->whereNumber('group')
-            ->name('tasks:complete');
+        Route::middleware(RequireEnabledExtension::class.':tasks')->group(function (): void {
+            Route::get('task-groups/{group}/agents', [AgentThreadsController::class, 'index'])
+                ->whereNumber('group')->withoutMiddleware(RecordCommandActivity::class)->name('tasks:agents');
+            Route::get('task-groups/{group}/agents/{session}/stream', [AgentThreadsController::class, 'stream'])
+                ->whereNumber('group')->whereNumber('session')->withoutMiddleware(RecordCommandActivity::class)->name('tasks:agent-stream');
+            Route::get('task-groups', [TaskGroupsController::class, 'index'])->name('tasks:list');
+            Route::get('task-questions', [TaskQuestionsController::class, 'index'])->name('tasks:question:list');
+            Route::post('task-questions/{question}/close', [TaskQuestionsController::class, 'close'])
+                ->whereNumber('question')
+                ->name('tasks:question:close');
+            Route::post('task-groups', [TaskGroupsController::class, 'store'])->name('tasks:create');
+            Route::get('task-groups/{group}', [TaskGroupsController::class, 'show'])
+                ->whereNumber('group')
+                ->name('tasks:show');
+            Route::patch('task-groups/{group}', [TaskGroupsController::class, 'update'])
+                ->whereNumber('group')
+                ->name('tasks:update');
+            Route::post('task-groups/{group}/tasks', [TaskGroupsController::class, 'createTask'])
+                ->whereNumber('group')
+                ->name('tasks:subtask:create');
+            Route::patch('task-groups/{group}/tasks/{task}', [TaskGroupsController::class, 'updateTask'])
+                ->whereNumber('group')->whereNumber('task')->name('tasks:subtask:update');
+            Route::delete('task-groups/{group}/tasks/{task}', [TaskGroupsController::class, 'destroyTask'])
+                ->whereNumber('group')->whereNumber('task')->name('tasks:subtask:destroy');
+            Route::post('task-groups/{group}/tasks/{task}/cancel', [TaskGroupsController::class, 'cancelSubtask'])
+                ->whereNumber('group')->whereNumber('task')->name('tasks:subtask:cancel');
+            Route::post('task-groups/{group}/tasks/{task}/check/cancel', [TaskGroupsController::class, 'cancelCheck'])
+                ->whereNumber('group')->whereNumber('task')->name('tasks:check:cancel');
+            Route::post('task-groups/{group}/tasks/{task}/comments', [TaskGroupsController::class, 'storeComment'])
+                ->whereNumber('group')->whereNumber('task')->name('tasks:comment:create');
+            Route::get('task-groups/{group}/tasks/{task}/comments', [TaskGroupsController::class, 'comments'])
+                ->whereNumber('group')->whereNumber('task')->name('tasks:comment:list');
+            Route::post('task-groups/{group}/cancel', [TaskGroupsController::class, 'cancel'])
+                ->whereNumber('group')
+                ->name('tasks:cancel');
+            Route::post('task-groups/{group}/complete', [TaskGroupsController::class, 'complete'])
+                ->whereNumber('group')
+                ->name('tasks:complete');
+        });
     });
 });

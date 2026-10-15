@@ -11,6 +11,7 @@ use App\Commands\ProjectDocuments\WriteProjectDocumentCommand;
 use App\Console\Kernel;
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
+use App\Services\Extensions\GatewayExtensionState;
 use App\Support\Console\CommandPrompts;
 use App\Support\Console\ConsoleMode;
 use App\Support\Console\PromptAborted;
@@ -23,12 +24,15 @@ use Illuminate\Support\Str;
 use Laravel\Prompts\Key;
 use Laravel\Prompts\Prompt;
 use Laravel\Prompts\Terminal;
+use Orbit\Sdk\Requests\Extensions\ListExtensionsRequest;
 use Orbit\Sdk\Requests\ProjectDocuments\ShowProjectDocumentRequest;
 use Orbit\Sdk\Requests\ProjectDocuments\ShowProjectDocumentStorageRequest;
 use Orbit\Sdk\Requests\ProjectDocuments\UpdateProjectDocumentStorageRequest;
 use Orbit\Sdk\Requests\Projects\ListProjectsRequest;
+use Saloon\Exceptions\Request\FatalRequestException;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
+use Saloon\Http\PendingRequest;
 use Symfony\Component\Console\Input\StringInput;
 use Symfony\Component\Console\Output\BufferedOutput;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -78,6 +82,56 @@ function cli_document_mock(string $operation): MockClient
 }
 
 describe('Project Documents CLI', function (): void {
+    it('sends document requests without requiring extension discovery', function (string $failure, bool $discoverFirst): void {
+        $fixture = cli_document_fixture('show');
+        $discoveryCalls = 0;
+        $mock = MockClient::global([
+            ListExtensionsRequest::class => static function (PendingRequest $request) use ($failure, &$discoveryCalls): MockResponse {
+                $discoveryCalls++;
+                if ($failure === 'access denied') {
+                    return MockResponse::make(['error' => ['code' => 'node.access_denied', 'message' => 'Node access denied.']], 403);
+                }
+
+                throw new FatalRequestException(new RuntimeException($failure === 'timeout'
+                    ? 'cURL error 28: Operation timed out after 2000 milliseconds'
+                    : 'cURL error 7: Failed to connect to host'), $request);
+            },
+            ShowProjectDocumentRequest::class => MockResponse::make($fixture['body']),
+        ]);
+
+        if ($discoverFirst) {
+            $state = app(GatewayExtensionState::class)->discover();
+            expect($state->isKnown())->toBeFalse()
+                ->and($state->errorCode)->toBe($failure === 'access denied' ? 'node.access_denied' : 'gateway.unreachable');
+        }
+
+        expect(Artisan::call('project:document:show', ['project' => '1', 'entry' => '1', '--json' => true]))->toBe(0);
+        expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR))->toBe($fixture['body']);
+        expect($discoveryCalls)->toBe($discoverFirst ? 1 : 0);
+        $mock->assertSentCount(1, ShowProjectDocumentRequest::class);
+    })->with(['access denied', 'timeout', 'network error'])->with([false, true]);
+
+    it('preserves the Gateway disabled-extension refusal', function (string $operation, bool $json): void {
+        $requestId = '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
+        $error = ['code' => 'extension.disabled', 'message' => 'The documents extension is disabled.', 'request_id' => $requestId];
+        $request = $operation === 'show' ? ShowProjectDocumentRequest::class : ShowProjectDocumentStorageRequest::class;
+        $mock = MockClient::global([
+            $request => MockResponse::make(['error' => $error], 409, ['X-Orbit-Request-Id' => $requestId]),
+        ]);
+        $arguments = $operation === 'show' ? ['project' => '1', 'entry' => '1'] : [];
+        $command = $operation === 'show' ? 'project:document:show' : 'project:document-storage:show';
+
+        expect(Artisan::call($command, [...$arguments, '--json' => $json]))->toBe(1);
+        $output = Artisan::output();
+        if ($json) {
+            expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR))->toBe(['error' => $error]);
+        } else {
+            expect($output)->toContain($error['message'], $requestId);
+        }
+        $mock->assertSentCount(1, $request);
+        $mock->assertSentCount(0, ListExtensionsRequest::class);
+    })->with(['show', 'storage-show'])->with([false, true]);
+
     it('shows redacted storage status and sends credential files without exposing them', function (): void {
         $fixture = cli_document_fixture('storage-show');
         $mock = MockClient::global([

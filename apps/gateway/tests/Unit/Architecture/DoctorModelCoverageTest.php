@@ -45,11 +45,6 @@ use App\Models\Process;
 use App\Models\ProcessDefinition;
 use App\Models\Project;
 use App\Models\ProjectDevelopmentDeployStep;
-use App\Models\ProjectDocumentCleanup;
-use App\Models\ProjectDocumentEntry;
-use App\Models\ProjectDocumentStorage;
-use App\Models\ProjectDocumentUpload;
-use App\Models\ProjectDocumentVersion;
 use App\Models\ProjectLifecycleStep;
 use App\Models\ProjectNodeExclusion;
 use App\Models\ProjectUpdate;
@@ -71,6 +66,11 @@ use App\Models\TaskVmImageBuild;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 use App\Models\VaultItem;
+use Orbit\Extensions\Documents\Models\ProjectDocumentCleanup;
+use Orbit\Extensions\Documents\Models\ProjectDocumentEntry;
+use Orbit\Extensions\Documents\Models\ProjectDocumentStorage;
+use Orbit\Extensions\Documents\Models\ProjectDocumentUpload;
+use Orbit\Extensions\Documents\Models\ProjectDocumentVersion;
 
 it('partitions every persisted model across doctor dispositions', function (): void {
     $familyModels = [
@@ -152,23 +152,26 @@ it('partitions every persisted model across doctor dispositions', function (): v
     if (! is_string($modelsDirectory)) {
         throw new RuntimeException('Unable to locate model directory.');
     }
-    $modelFiles = array_values(array_filter(
-        iterator_to_array(new FilesystemIterator(dirname($modelsDirectory))),
-        static function (mixed $file): bool {
+    // Core models, and each extension's models under extensions/<name>/src/Models.
+    $directories = ['App\\Models\\' => dirname($modelsDirectory)];
+    foreach (glob(dirname(__DIR__, 3).'/extensions/*/src/Models', GLOB_ONLYDIR) ?: [] as $directory) {
+        $directories['Orbit\\Extensions\\'.ucfirst(basename(dirname($directory, 2))).'\\Models\\'] = $directory;
+    }
+    $models = [];
+    foreach ($directories as $namespace => $directory) {
+        foreach (new FilesystemIterator($directory) as $file) {
             if (! $file instanceof SplFileInfo || ! $file->isFile()) {
-                return false;
+                continue;
             }
 
             $contents = file_get_contents($file->getPathname());
 
-            return is_string($contents)
-                && preg_match('/\b(?:class|enum)\s+'.preg_quote($file->getBasename('.php'), '/').'\b/', $contents) === 1;
-        },
-    ));
-    $models = array_map(
-        static fn (SplFileInfo $file): string => 'App\\Models\\'.$file->getBasename('.php'),
-        $modelFiles,
-    );
+            if (is_string($contents)
+                && preg_match('/\b(?:class|enum)\s+'.preg_quote($file->getBasename('.php'), '/').'\b/', $contents) === 1) {
+                $models[] = $namespace.$file->getBasename('.php');
+            }
+        }
+    }
 
     expect(array_diff($models, array_merge(array_keys($familyModels), $ownerInputs, $excluded)))
         ->toBeEmpty()

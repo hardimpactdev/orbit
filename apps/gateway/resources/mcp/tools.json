@@ -2568,7 +2568,7 @@
       "name": "extension-disable",
       "extension": null,
       "title": "Disable an extension",
-      "description": "Disables one Gateway-wide extension without removing its setup data. Use `tasks` or `proxycli`; an unknown slug returns `validation.failed` (422). Returns the extension name and `enabled: false`.",
+      "description": "Disables one Gateway-wide extension without removing its setup data, then runs its disable hook. Use `tasks`, `proxycli`, or `documents`; an unknown slug returns `validation.failed` (422), and an enabled extension that depends on it returns `extension.required` (409). Returns the extension name and `enabled: false`.",
       "method": "POST",
       "path": "/api/v1/extensions/{extension}/disable",
       "path_inputs": [
@@ -2583,9 +2583,10 @@
             "type": "string",
             "enum": [
               "tasks",
-              "proxycli"
+              "proxycli",
+              "documents"
             ],
-            "description": "Extension slug: `tasks` or `proxycli`."
+            "description": "Extension slug: `tasks`, `proxycli`, or `documents`."
           }
         },
         "additionalProperties": false,
@@ -2598,7 +2599,7 @@
       "name": "extension-enable",
       "extension": null,
       "title": "Enable an extension",
-      "description": "Enable a Gateway extension for every client. Use `tasks` or `proxycli`; an unknown slug returns `validation.failed` (422). Returns the extension name and `enabled: true`.",
+      "description": "Enable a Gateway extension for every client, then run its enable hook. Use `tasks`, `proxycli`, or `documents`; an unknown slug returns `validation.failed` (422), and a disabled dependency returns `extension.dependency_disabled` (409). Returns the extension name and `enabled: true`.",
       "method": "POST",
       "path": "/api/v1/extensions/{extension}/enable",
       "path_inputs": [
@@ -2613,9 +2614,10 @@
             "type": "string",
             "enum": [
               "tasks",
-              "proxycli"
+              "proxycli",
+              "documents"
             ],
-            "description": "Extension slug: `tasks` or `proxycli`."
+            "description": "Extension slug: `tasks`, `proxycli`, or `documents`."
           }
         },
         "additionalProperties": false,
@@ -2628,7 +2630,7 @@
       "name": "extension-list",
       "extension": null,
       "title": "List extensions",
-      "description": "Returns the Gateway-wide extension switch state as an object keyed by extension slug. The initial slugs are `tasks` and `proxycli`.",
+      "description": "Returns the Gateway-wide extension switch state as an object keyed by extension slug. The slugs come from the registered extension providers: `tasks`, `proxycli`, and `documents`.",
       "method": "GET",
       "path": "/api/v1/extensions",
       "path_inputs": [],
@@ -6400,7 +6402,7 @@
     },
     {
       "name": "project-document-archive",
-      "extension": null,
+      "extension": "documents",
       "title": "project:document:archive",
       "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
       "method": "POST",
@@ -6440,7 +6442,7 @@
     },
     {
       "name": "project-document-create",
-      "extension": null,
+      "extension": "documents",
       "title": "project:document:create",
       "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
       "method": "POST",
@@ -6560,7 +6562,7 @@
     },
     {
       "name": "project-document-destroy",
-      "extension": null,
+      "extension": "documents",
       "title": "project:document:destroy",
       "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
       "method": "DELETE",
@@ -6602,7 +6604,7 @@
     },
     {
       "name": "project-document-download",
-      "extension": null,
+      "extension": "documents",
       "title": "project:document:download",
       "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
       "method": "GET",
@@ -6642,7 +6644,7 @@
     },
     {
       "name": "project-document-list",
-      "extension": null,
+      "extension": "documents",
       "title": "project:document:list",
       "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
       "method": "GET",
@@ -6706,7 +6708,7 @@
     },
     {
       "name": "project-document-read",
-      "extension": null,
+      "extension": "documents",
       "title": "project:document:read",
       "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
       "method": "GET",
@@ -6746,7 +6748,7 @@
     },
     {
       "name": "project-document-restore",
-      "extension": null,
+      "extension": "documents",
       "title": "project:document:restore",
       "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
       "method": "POST",
@@ -6786,7 +6788,7 @@
     },
     {
       "name": "project-document-restore-version",
-      "extension": null,
+      "extension": "documents",
       "title": "project:document:restore-version",
       "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
       "method": "POST",
@@ -6831,7 +6833,7 @@
     },
     {
       "name": "project-document-search",
-      "extension": null,
+      "extension": "documents",
       "title": "project:document:search",
       "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
       "method": "GET",
@@ -6894,7 +6896,7 @@
     },
     {
       "name": "project-document-show",
-      "extension": null,
+      "extension": "documents",
       "title": "project:document:show",
       "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
       "method": "GET",
@@ -6928,7 +6930,7 @@
     },
     {
       "name": "project-document-storage-show",
-      "extension": null,
+      "extension": "documents",
       "title": "project:document-storage:show",
       "description": "Show private Project Document storage.",
       "method": "GET",
@@ -6944,7 +6946,7 @@
     },
     {
       "name": "project-document-storage-update",
-      "extension": null,
+      "extension": "documents",
       "title": "project:document-storage:update",
       "description": "Update private Project Document storage.",
       "method": "PUT",
@@ -6982,7 +6984,7 @@
     },
     {
       "name": "project-document-update",
-      "extension": null,
+      "extension": "documents",
       "title": "project:document:update",
       "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
       "method": "PATCH",
@@ -7045,7 +7047,7 @@
     },
     {
       "name": "project-document-version-list",
-      "extension": null,
+      "extension": "documents",
       "title": "project:document:version:list",
       "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
       "method": "GET",
@@ -7091,7 +7093,7 @@
     },
     {
       "name": "project-document-write",
-      "extension": null,
+      "extension": "documents",
       "title": "project:document:write",
       "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
       "method": "PUT",

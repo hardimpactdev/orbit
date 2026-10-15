@@ -32,10 +32,10 @@ One input still reads outside the checkout. `php artisan route:list` loads the G
 | Input | What the generator keeps |
 | --- | --- |
 | `php apps/gateway/artisan route:list --json --path=api` | Method, URI, route name, and controller action for each `api/` route. The command runs in `apps/gateway`. |
-| `apps/gateway/app/Http/Controllers/Api/*.php` | The form request, the data class, and whether the action returns HTTP 201. |
-| `apps/gateway/app/Http/Requests/**/*.php` | The `rules()` body of each form request, including shared database update rules and their regex constants. |
-| `apps/gateway/app/Data/**/*.php` | Constructor properties, snake-case mapping, `toArray()` keys, and property docblocks. |
-| `apps/gateway/app/**/*.php` | The quoted string cases of each enum under this tree. |
+| `apps/gateway/app/Http/Controllers/Api/*.php` and `apps/gateway/extensions/*/src/Http/Controllers/*.php` | The form request, the data class, and whether the action returns HTTP 201. |
+| `apps/gateway/app/Http/Requests/**/*.php` and `apps/gateway/extensions/*/src/Http/Requests/**/*.php` | The `rules()` body of each form request, including shared database update rules and their regex constants. |
+| `apps/gateway/app/Data/**/*.php` and `apps/gateway/extensions/*/src/Data/**/*.php` | Constructor properties, snake-case mapping, `toArray()` keys, and property docblocks. |
+| `apps/gateway/app/**/*.php` and `apps/gateway/extensions/*/src/**/*.php` | The quoted string cases of each enum under these trees. |
 | `packages/php-sdk/src/Requests/**/*.php` | Method, endpoint, constructor, JSON body, and query of each request class. |
 | `packages/php-sdk/src/Responses/**/*.php` | Constructor properties of each response class. |
 | `apps/cli/app/Commands/**/*.php` | Command name, description, help, and each argument and option description. |

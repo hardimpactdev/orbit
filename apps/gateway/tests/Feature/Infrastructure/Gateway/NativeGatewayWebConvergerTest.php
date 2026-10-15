@@ -29,7 +29,6 @@ use App\Infrastructure\Nodes\CaddyPackageProgram;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
-use App\Infrastructure\ProjectDocuments\CleanupGate;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
@@ -39,6 +38,7 @@ use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
+use Orbit\Extensions\Documents\Infrastructure\CleanupGate;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
 
@@ -61,7 +61,7 @@ it('installs and executes the FPM pre-start gate before accepting traffic and re
         chmod($root.'/bin/'.$binary, 0700);
     }
     $runtime = $root.'/run/orbit/project-documents';
-    config(['orbit.document_cleanup_runtime' => $runtime]);
+    config(['documents.cleanup_runtime' => $runtime]);
     // Reproduce a coordinator's group-writable umask for native installation subprocesses.
     $previousUmask = umask(0002);
     try {
