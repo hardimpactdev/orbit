@@ -364,4 +364,12 @@ An Instance has a Dependencies section with separate Composer and npm tables. Ea
 
 The page shows when each snapshot was observed and distinguishes unscanned, absent, stale, failed, and empty inventories. A failed scan can still show the previous snapshot, labelled with the failure. Dependencies remains available when the Tasks extension is disabled.
 
-The Instance overview shows the latest 25 deployments, in the order returned by the Gateway. The database Tables panel shows a query error when a table read fails, instead of reporting an empty database. MySQL inspection requires the MySQL PDO driver in the Gateway PHP runtime.
+## Deploy an Instance
+
+The Instance overview shows the latest 25 deployments, in the order returned by the Gateway.
+
+Its Deploy action starts an `instance.deploy` [operation](/reference/operations) with the same request as `instance:deploy`. A Deploy pane then shows each step's status and the running step's output tail. The pane subscribes to `private-operation.{id}`, reads the operation, and reads it again with `after_sequence` for each newer event, as [Follow an operation over Reverb](/reference/operations#follow-an-operation-over-reverb) describes. Without realtime it reads every `poll_after_seconds`. While a deploy of the Instance runs, the overview shows it, also when another client started it.
+
+## Database tables
+
+The database Tables panel shows a query error when a table read fails, instead of reporting an empty database. MySQL inspection requires the MySQL PDO driver in the Gateway PHP runtime.

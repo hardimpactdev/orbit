@@ -125,6 +125,7 @@ def tool(method, path, operation, components):
         'path_inputs': path_inputs,
         'query_inputs': query_inputs,
         'streams': streams,
+        'starts_operation': operation.get('x-orbit-operation') == 'start',
         'input_schema': schema,
     }
 

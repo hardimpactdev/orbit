@@ -9,6 +9,7 @@ covers:
   - apps/gateway/app/Actions/Broadcasting/**
   - apps/gateway/app/Domain/Tasks/TaskBroadcasts.php
   - apps/gateway/app/Domain/Activity/ActivityBroadcaster.php
+  - apps/gateway/app/Domain/Operations/OperationBroadcaster.php
   - apps/gateway/routes/channels.php
 ---
 
@@ -26,7 +27,7 @@ The Gateway sends events to Laravel Reverb at `wss://reverb.orbit`. Reverb runs 
 
 A client connects to Reverb directly, not to the Gateway. The Gateway only publishes, as a Pusher-protocol client.
 
-The Gateway broadcasts inside the request that changed the record. It uses no queue. A broadcast waits at most 2 seconds to connect and 5 seconds in total. A failed broadcast never fails the request: the Gateway logs the warning `Failed to broadcast a record event.` and continues. So an API response proves that the change happened, not that its event was sent.
+The Gateway broadcasts from the request that changed the record, or from the queued job that changed it, such as an [operation](/reference/operations). It never queues the broadcast itself. A broadcast waits at most 2 seconds to connect and 5 seconds in total. A failed broadcast never fails the request: the Gateway logs the warning `Failed to broadcast a record event.` and continues. So an API response proves that the change happened, not that its event was sent.
 
 The Gateway looks up the connection at most once per request, and only when the request broadcasts or asks for the realtime connection. It connects to the `websocket` Node's WireGuard address and verifies the name `reverb.orbit` against the Orbit root CA.
 
@@ -34,7 +35,7 @@ During a `websocket` move, clients that connected before the move still listen o
 
 ## Channel and authorization
 
-Every Gateway event goes out on one private channel, `orbit`. A client signs its subscription through `POST /api/v1/broadcasting/auth`. The endpoint needs Gateway access: the caller is the Gateway Node or holds an access grant to it. It identifies the caller by WireGuard address, as the rest of the API does.
+Every Gateway record event goes out on one private channel, `orbit`. The progress of one operation also goes out on its own private channel, `private-operation.{id}`. A client signs its subscription through `POST /api/v1/broadcasting/auth`. The endpoint needs Gateway access: the caller is the Gateway Node or holds an access grant to it. It identifies the caller by WireGuard address, as the rest of the API does.
 
 | Code | HTTP | Meaning |
 | --- | --- | --- |
@@ -43,7 +44,7 @@ Every Gateway event goes out on one private channel, `orbit`. A client signs its
 | `realtime.not_configured` | 404 | No `websocket` role is active. |
 | `broadcast.channel_forbidden` | 403 | The channel is a `presence-*` channel other than `presence-node.{id}`, a malformed `presence-node.*` name, or a `private-log-stream.*` channel. |
 
-The same endpoint signs a viewer membership on `presence-node.{id}`, as [Node agent channels](#node-agent-channels) describes.
+The same endpoint signs `private-operation.{id}` for an operation that exists, and a viewer membership on `presence-node.{id}`, as [Node agent channels](#node-agent-channels) describes. It refuses `private-operation.{id}` for a missing operation with `broadcast.channel_forbidden`.
 
 ## Discovery
 
@@ -180,6 +181,16 @@ A Route that Orbit creates or replaces as part of another action sends no `route
 
 `data` matches one row of `GET /api/v1/instances/{instance}/deployments`. It never carries the run's output. The Gateway keeps the 50 newest rows per Instance and removes older rows without an event.
 
+### Operation
+
+| Type | Channel | Fires when | Data |
+| --- | --- | --- | --- |
+| `operation.created` | `orbit` | An operation is queued. | `{ id, kind, target_type, target_id, status, sequence, current_step }` |
+| `operation.updated` | `orbit` | An operation starts, ends, or a cancel is requested. | The same fields |
+| `operation.updated` | `private-operation.{id}` | The operation or one of its steps changes. | The same fields |
+
+`id` is the operation ID. These events are notices: they never carry input, steps, output, or the result. On its own channel, an operation sends at most one output change per second, and every status and step change at once. A client drops an event whose `sequence` is not greater than the one it has read, and reads the operation with `after_sequence` for the rest. [Follow an operation over Reverb](/reference/operations#follow-an-operation-over-reverb) describes the order.
+
 ### Annotation
 
 | Type | Fires when | Data |
@@ -291,9 +302,13 @@ These reasons explain the design. Check them before you propose a change.
 
 A WebSocket server holds long-lived connections. The Gateway process serves every API request, so it must not hold them too. Reverb is a purpose-built server that fans events out to every client. It runs as an unmodified Laravel app, so it carries no Orbit code. The `websocket` role installs it with one command. Running Reverb as an Instance behind a custom proxy Route takes six manual steps, and that Instance cannot share the Gateway's Node, because `gateway` conflicts with `app-prod`.
 
-### Broadcast inside the request, without a queue
+### Broadcast where the change happens
 
-The Gateway runs every action inside its own request and has no queue worker. A queued event could also arrive after a second change to the same record and look newer than it is.
+The Gateway broadcasts from the request or the job that made the change, not from a queued broadcast job. A queued event could arrive after a second change to the same record and look newer than it is. An operation's events carry its `sequence`, so a client can tell an old event from a new one even when they arrive out of order.
+
+### A channel for each operation
+
+A deploy can change its steps many times a second. On `orbit`, every subscriber, such as every open page of the web app, would receive each change. An operation's own channel reaches only the clients that follow it, so `orbit` carries only its status changes.
 
 ### Events do not replace HTTP
 

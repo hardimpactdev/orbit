@@ -16,6 +16,8 @@ use App\Domain\Instances\Deployment\DeploymentProgressPhase;
 use App\Domain\Instances\Deployment\DeploymentRelease;
 use App\Domain\Instances\Deployment\DeploymentRequest;
 use App\Domain\Instances\Deployment\DeploymentResult;
+use App\Domain\Instances\Deployment\DeploymentStepName;
+use App\Domain\Instances\Deployment\DeploymentSteps;
 use App\Domain\Instances\Deployment\ProductionDeployment;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\Environment\InstanceEnvironmentSynchronizer;
@@ -27,6 +29,11 @@ use App\Models\Instance;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Throwable;
 
+/**
+ * Deploys an Instance as named steps (docs/reference/deployments.md#the-deploy-operation). The steps run through
+ * {@see DeploymentSteps}, so an operation that resumes after a lost worker skips the steps that already succeeded and
+ * reuses the release they prepared. A development default deploys through {@see DeployDefaultInstanceAction}.
+ */
 final readonly class DeployInstanceAction
 {
     public function __construct(
@@ -40,12 +47,47 @@ final readonly class DeployInstanceAction
         private ?DeployDefaultInstanceAction $development = null,
     ) {}
 
-    public function execute(Instance $instance, ?DeploymentRequest $request = null): DeploymentResult
+    /**
+     * The steps a deployment of this Instance runs, in order.
+     *
+     * @return list<DeploymentStepName>
+     *
+     * @throws ResourceOperationException `deployment_config.unavailable` when the Instance cannot be deployed
+     */
+    public function plan(Instance $instance): array
+    {
+        $instance->refresh();
+
+        if ($instance->placedOnAppDev()) {
+            return $this->developmentAction()->plan($instance);
+        }
+
+        $config = $this->configs->resolve($instance);
+        $plan = [
+            new DeploymentStepName(DeploymentProgressPhase::SourcePreparation),
+            new DeploymentStepName(DeploymentProgressPhase::EnvironmentSync),
+            ...$this->stepNames($config, DeploymentPhase::BeforeActivation),
+            new DeploymentStepName(DeploymentProgressPhase::Activation),
+        ];
+
+        if (is_string($instance->selected_php_version)) {
+            $plan[] = new DeploymentStepName(DeploymentProgressPhase::PhpRefresh);
+        }
+
+        return [
+            ...$plan,
+            ...$this->stepNames($config, DeploymentPhase::AfterActivation),
+            new DeploymentStepName(DeploymentProgressPhase::Cleanup),
+        ];
+    }
+
+    /** Runs the deployment's steps through `$steps`: the steps of an `instance.deploy` operation. */
+    public function execute(Instance $instance, DeploymentSteps $steps, ?DeploymentRequest $request = null): DeploymentResult
     {
         $request ??= DeploymentRequest::withoutOutput();
         $instance->refresh();
         if ($instance->placedOnAppDev()) {
-            $result = ($this->development ?? app(DeployDefaultInstanceAction::class))->execute($instance, $request);
+            $result = $this->developmentAction()->execute($instance, $request, steps: $steps);
             assert($result instanceof DeploymentResult);
 
             return $result;
@@ -65,7 +107,7 @@ final readonly class DeployInstanceAction
         try {
             return $this->operations->run(
                 [$instance->id],
-                fn (): DeploymentResult => $this->deadline->within(DeploymentDeadline::for($config)->seconds, fn (): DeploymentResult => $this->deploy($instance->refresh(), $config, $request)),
+                fn (): DeploymentResult => $this->deadline->within(DeploymentDeadline::for($config)->seconds, fn (): DeploymentResult => $this->deploy($instance->refresh(), $config, $request, $steps)),
             );
         } catch (Throwable $exception) {
             return DeploymentResult::failed(
@@ -77,10 +119,27 @@ final readonly class DeployInstanceAction
         }
     }
 
+    /** Reads a release that a step stored as its value. */
+    public static function storedRelease(mixed $value): ?DeploymentRelease
+    {
+        if (! is_array($value) || ! is_string($value['name'] ?? null) || ! is_string($value['path'] ?? null) || ! is_string($value['commit'] ?? null)) {
+            return null;
+        }
+
+        return new DeploymentRelease($value['name'], $value['path'], $value['commit']);
+    }
+
+    /** @return array{name: string, path: string, commit: string}|null */
+    public static function storableRelease(?DeploymentRelease $release): ?array
+    {
+        return $release === null ? null : ['name' => $release->name, 'path' => $release->path, 'commit' => $release->commit];
+    }
+
     private function deploy(
         Instance $instance,
         DeploymentConfig $config,
         DeploymentRequest $request,
+        DeploymentSteps $steps,
     ): DeploymentResult {
         $boundary = DeploymentFailureBoundary::Preparation;
         $release = null;
@@ -88,36 +147,58 @@ final readonly class DeployInstanceAction
         $commands = [];
 
         try {
-            $request->emitPhase(DeploymentProgressPhase::SourcePreparation);
-            $this->assertNotCancelled($request);
-            $selected = $this->deployment->selected($instance);
-            $previous = $selected;
-            $release = $this->deployment->prepare($instance, $config->branch);
+            $prepared = $steps->run(new DeploymentStepName(DeploymentProgressPhase::SourcePreparation), $request, function () use ($instance, $config, &$selected): array {
+                // A failed preparation reports the selection it found.
+                $selected = $this->deployment->selected($instance);
+
+                return [
+                    'previous' => self::storableRelease($selected),
+                    'release' => self::storableRelease($this->deployment->prepare($instance, $config->branch)),
+                ];
+            });
+            $previous = self::storedRelease(is_array($prepared) ? ($prepared['previous'] ?? null) : null);
+            $selected = $previous;
+            $release = self::storedRelease(is_array($prepared) ? ($prepared['release'] ?? null) : null)
+                ?? throw new ResourceOperationException('deployment.interrupted', 'The prepared release is missing.', 500);
             $boundary = DeploymentFailureBoundary::Environment;
-            $request->emitPhase(DeploymentProgressPhase::EnvironmentSync);
-            $this->assertNotCancelled($request);
-            $this->environment->execute($instance);
+            $steps->run(new DeploymentStepName(DeploymentProgressPhase::EnvironmentSync), $request, function () use ($instance): null {
+                $this->environment->execute($instance);
+
+                return null;
+            });
             $boundary = DeploymentFailureBoundary::BeforeActivation;
-            $this->executeSteps($instance, $release, $config, DeploymentPhase::BeforeActivation, $request, $commands);
+            $this->executeSteps($instance, $release, $config, DeploymentPhase::BeforeActivation, $request, $steps, $commands);
             $boundary = DeploymentFailureBoundary::Activation;
-            $request->emitPhase(DeploymentProgressPhase::Activation);
-            $this->assertNotCancelled($request);
-            $selected = $this->deployment->activate($instance, $release);
-            $instance->update(['checkout_path' => $selected->path]);
+            $activated = $steps->run(new DeploymentStepName(DeploymentProgressPhase::Activation), $request, function () use ($instance, $release, &$boundary, &$selected): ?array {
+                $selected = $this->deployment->activate($instance, $release);
+                $instance->update(['checkout_path' => $selected->path]);
+                $boundary = DeploymentFailureBoundary::AfterActivation;
+                $this->definitions->installCaptured($instance);
+
+                return self::storableRelease($selected);
+            });
+            $selected = self::storedRelease($activated) ?? $selected;
             $boundary = DeploymentFailureBoundary::AfterActivation;
-            $this->definitions->installCaptured($instance);
 
             if (is_string($instance->selected_php_version)) {
                 $boundary = DeploymentFailureBoundary::CacheRefresh;
-                $request->emitPhase(DeploymentProgressPhase::PhpRefresh);
-                $this->assertNotCancelled($request);
-                $this->runtime->converge($instance);
-                $this->runtime->refreshCache($instance);
+                $steps->run(new DeploymentStepName(DeploymentProgressPhase::PhpRefresh), $request, function () use ($instance): null {
+                    $this->runtime->converge($instance);
+                    $this->runtime->refreshCache($instance);
+
+                    return null;
+                });
             }
 
             $boundary = DeploymentFailureBoundary::AfterActivation;
-            $this->executeSteps($instance, $release, $config, DeploymentPhase::AfterActivation, $request, $commands);
-            $this->prune($instance, $selected, $previous, $request);
+            $this->executeSteps($instance, $release, $config, DeploymentPhase::AfterActivation, $request, $steps, $commands);
+            $steps->run(new DeploymentStepName(DeploymentProgressPhase::Cleanup), $request, function () use ($instance, $selected, $previous, $request): null {
+                if ($selected instanceof DeploymentRelease) {
+                    $this->prune($instance, $selected, $previous, $request);
+                }
+
+                return null;
+            });
 
             return DeploymentResult::succeeded($release, $commands);
         } catch (Throwable $exception) {
@@ -176,6 +257,27 @@ final readonly class DeployInstanceAction
         return $selected;
     }
 
+    /** @return list<DeploymentStepName> */
+    private function stepNames(DeploymentConfig $config, DeploymentPhase $phase): array
+    {
+        $names = [];
+
+        foreach ($config->steps as $step) {
+            if ($step->phase === $phase) {
+                $names[] = new DeploymentStepName(self::progressPhase($phase), $step->name);
+            }
+        }
+
+        return $names;
+    }
+
+    private static function progressPhase(DeploymentPhase $phase): DeploymentProgressPhase
+    {
+        return $phase === DeploymentPhase::BeforeActivation
+            ? DeploymentProgressPhase::BeforeActivation
+            : DeploymentProgressPhase::AfterActivation;
+    }
+
     /**
      * @param  list<DeploymentCommandResult>  $commands
      */
@@ -185,6 +287,7 @@ final readonly class DeployInstanceAction
         DeploymentConfig $config,
         DeploymentPhase $phase,
         DeploymentRequest $request,
+        DeploymentSteps $steps,
         array &$commands,
     ): void {
         foreach ($config->steps as $step) {
@@ -192,17 +295,14 @@ final readonly class DeployInstanceAction
                 continue;
             }
 
-            $request->emitPhase(
-                $phase === DeploymentPhase::BeforeActivation
-                    ? DeploymentProgressPhase::BeforeActivation
-                    : DeploymentProgressPhase::AfterActivation,
-                $step->name,
-            );
-            $this->assertNotCancelled($request);
-            $commands[] = new DeploymentCommandResult(
-                $step->name,
-                $this->deployment->executeStep($instance, $release, $step, $request),
-            );
+            $steps->run(new DeploymentStepName(self::progressPhase($phase), $step->name), $request, function () use ($instance, $release, $step, $request, &$commands): null {
+                $commands[] = new DeploymentCommandResult(
+                    $step->name,
+                    $this->deployment->executeStep($instance, $release, $step, $request),
+                );
+
+                return null;
+            });
         }
     }
 
@@ -219,11 +319,9 @@ final readonly class DeployInstanceAction
         $commands[] = new DeploymentCommandResult($name, $exception->result);
     }
 
-    private function assertNotCancelled(DeploymentRequest $request): void
+    private function developmentAction(): DeployDefaultInstanceAction
     {
-        if ($request->cancellation->requested()) {
-            throw new ProcessCancelledException;
-        }
+        return $this->development ?? app(DeployDefaultInstanceAction::class);
     }
 
     private function errorCode(Throwable $exception): string

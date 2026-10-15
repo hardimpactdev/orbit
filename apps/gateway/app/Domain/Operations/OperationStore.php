@@ -1,0 +1,216 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Domain\Operations;
+
+use App\Domain\Shared\ResourceOperationException;
+use App\Models\Operation;
+use App\Models\OperationStep;
+use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
+use LogicException;
+
+/**
+ * Every write to an operation and its steps. Each change takes the next `sequence` in the same transaction as the
+ * change itself, so a reader that sees sequence N sees every change up to N. Each change then sends its notices.
+ */
+final readonly class OperationStore
+{
+    public function __construct(private OperationBroadcaster $broadcaster) {}
+
+    public static function lockKey(string $targetType, int $targetId): string
+    {
+        return "{$targetType}:{$targetId}";
+    }
+
+    /**
+     * Creates a queued operation that holds its target until it ends.
+     *
+     * @param  array<string, mixed>  $input
+     *
+     * @throws ResourceOperationException `operation.target_busy` while another operation holds the target
+     */
+    public function create(string $kind, string $targetType, int $targetId, ?int $nodeId, array $input, ?string $triggeredBy, ?string $requestId): Operation
+    {
+        $lockKey = self::lockKey($targetType, $targetId);
+
+        try {
+            $operation = Operation::query()->create([
+                'kind' => $kind,
+                'target_type' => $targetType,
+                'target_id' => $targetId,
+                'node_id' => $nodeId,
+                'lock_key' => $lockKey,
+                'input' => $input,
+                'status' => OperationStatus::Queued,
+                'sequence' => 1,
+                'attempts' => 0,
+                'triggered_by' => $triggeredBy,
+                'request_id' => $requestId,
+            ]);
+        } catch (UniqueConstraintViolationException $exception) {
+            $holder = Operation::query()->where('lock_key', $lockKey)->value('id');
+
+            throw new ResourceOperationException(
+                'operation.target_busy',
+                'Another operation on this target has not ended. Follow it, or cancel it, before you start another.',
+                409,
+                $exception,
+                is_int($holder) ? ['operation_id' => $holder] : [],
+            );
+        }
+
+        $this->broadcaster->created($operation);
+
+        return $operation;
+    }
+
+    /**
+     * Applies the changes to the operation and to one of its steps under one new sequence.
+     *
+     * @param  array<string, mixed>  $changes
+     * @param  array<string, mixed>  $stepChanges
+     */
+    public function change(Operation $operation, array $changes = [], ?OperationStep $step = null, array $stepChanges = []): void
+    {
+        $before = $operation->status;
+        $cancelRequested = array_key_exists('cancel_requested_at', $changes) && $operation->cancel_requested_at === null;
+
+        DB::transaction(function () use ($operation, $changes, $step, $stepChanges): void {
+            $sequence = $this->nextSequence($operation);
+            $operation->forceFill([...$changes, 'sequence' => $sequence])->save();
+            $step?->forceFill([...$stepChanges, 'sequence' => $sequence])->save();
+        });
+
+        $this->broadcaster->changed($operation, $before !== $operation->status || $cancelRequested);
+    }
+
+    /**
+     * Creates the planned steps, all pending, under one new sequence.
+     *
+     * @param  list<OperationStepPlan>  $plan
+     */
+    public function plan(Operation $operation, array $plan): void
+    {
+        DB::transaction(function () use ($operation, $plan): void {
+            $sequence = $this->nextSequence($operation);
+            $operation->forceFill(['sequence' => $sequence])->save();
+
+            foreach ($plan as $index => $step) {
+                OperationStep::query()->create([
+                    'operation_id' => $operation->id,
+                    'position' => $index + 1,
+                    'name' => $step->name,
+                    'status' => OperationStepStatus::Pending,
+                    'resumable' => $step->resumable,
+                    'sequence' => $sequence,
+                ]);
+            }
+        });
+
+        $operation->unsetRelation('steps');
+        $this->broadcaster->changed($operation, false);
+    }
+
+    /**
+     * Moves a queued operation to running for this worker. Only one worker wins; any other copy of its job does
+     * nothing.
+     */
+    public function claim(Operation $operation, string $worker): bool
+    {
+        $claimed = DB::transaction(function () use ($operation, $worker): bool {
+            $now = Carbon::now();
+            $updated = Operation::query()
+                ->whereKey($operation->id)
+                ->where('status', OperationStatus::Queued->value)
+                ->update([
+                    'status' => OperationStatus::Running->value,
+                    'worker' => $worker,
+                    'attempts' => DB::raw('attempts + 1'),
+                    'sequence' => DB::raw('sequence + 1'),
+                    'updated_at' => $now,
+                ]);
+
+            if ($updated !== 1) {
+                return false;
+            }
+
+            Operation::query()->whereKey($operation->id)->whereNull('started_at')->update(['started_at' => $now]);
+
+            return true;
+        });
+
+        $operation->refresh();
+
+        if ($claimed) {
+            $this->broadcaster->changed($operation, true);
+        }
+
+        return $claimed;
+    }
+
+    /** Ends an operation that no worker started as cancelled. Any other operation stops at its next step instead. */
+    public function cancelQueued(Operation $operation): bool
+    {
+        $now = Carbon::now();
+        $cancelled = Operation::query()
+            ->whereKey($operation->id)
+            ->where('status', OperationStatus::Queued->value)
+            // A requeued operation already ran steps; its next worker stops it and finishes its records.
+            ->where('attempts', 0)
+            ->update([
+                'status' => OperationStatus::Cancelled->value,
+                'lock_key' => null,
+                'finished_at' => $now,
+                'sequence' => DB::raw('sequence + 1'),
+                'updated_at' => $now,
+            ]) === 1;
+
+        $operation->refresh();
+
+        if ($cancelled) {
+            OperationStep::query()->where('operation_id', $operation->id)->where('status', OperationStepStatus::Pending->value)
+                ->update(['status' => OperationStepStatus::Cancelled->value, 'finished_at' => $now, 'sequence' => $operation->sequence]);
+            $this->broadcaster->changed($operation, true);
+        }
+
+        return $cancelled;
+    }
+
+    /** Returns a running operation whose worker was lost to the queue, so the next worker resumes or fails it. */
+    public function requeue(Operation $operation): bool
+    {
+        $requeued = Operation::query()
+            ->whereKey($operation->id)
+            ->where('status', OperationStatus::Running->value)
+            ->where('worker', $operation->worker)
+            ->update([
+                'status' => OperationStatus::Queued->value,
+                'worker' => null,
+                'sequence' => DB::raw('sequence + 1'),
+                'updated_at' => Carbon::now(),
+            ]) === 1;
+
+        $operation->refresh();
+
+        if ($requeued) {
+            $this->broadcaster->changed($operation, true);
+        }
+
+        return $requeued;
+    }
+
+    private function nextSequence(Operation $operation): int
+    {
+        Operation::query()->whereKey($operation->id)->increment('sequence');
+        $sequence = Operation::query()->whereKey($operation->id)->value('sequence');
+
+        if (! is_int($sequence)) {
+            throw new LogicException("Operation [{$operation->id}] has no sequence.");
+        }
+
+        return $sequence;
+    }
+}

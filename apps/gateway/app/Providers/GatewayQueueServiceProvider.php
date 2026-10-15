@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace App\Providers;
 
 use App\Domain\Nodes\NodeAccessAuthorizer;
+use App\Domain\Operations\OperationAttemptLease;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
 use App\Models\Node;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Horizon\Horizon;
@@ -18,6 +20,17 @@ use Throwable;
 /** The Gateway queue and Laravel Horizon (docs/reference/gateway-queue.md). */
 final class GatewayQueueServiceProvider extends ServiceProvider
 {
+    public function register(): void
+    {
+        // The lease of each operation attempt on the `operations` queue (docs/reference/operations.md).
+        $this->app->singleton(
+            OperationAttemptLease::class,
+            static fn (): OperationAttemptLease => new OperationAttemptLease(
+                rtrim(string: Config::string('orbit.home'), characters: '/').'/locks/operations',
+            ),
+        );
+    }
+
     public function boot(): void
     {
         // The dashboard admits the WireGuard peers with Gateway access, the same peers the Gateway API admits.

@@ -124,6 +124,7 @@
               "reference/extensions",
               "reference/proxycli",
               "reference/gateway-queue",
+              "reference/operations",
               "reference/tasks",
               "reference/compute-drivers",
               "reference/pi-server",
@@ -208,6 +209,7 @@
               "cli/profile",
               "cli/self-update",
               "cli/activity",
+              "cli/operation",
               "cli/realtime",
               "cli/extension",
               "cli/fleet",
@@ -576,6 +578,15 @@
             ]
           },
           {
+            "group": "Operations",
+            "openapi": "/openapi.json",
+            "pages": [
+              "GET /api/v1/operations",
+              "GET /api/v1/operations/{operation}",
+              "POST /api/v1/operations/{operation}/cancel"
+            ]
+          },
+          {
             "group": "proxycli",
             "openapi": "/openapi.json",
             "pages": [
@@ -661,6 +672,7 @@
               "decisions/0200-run-each-task-group-in-its-own-sandbox-vm",
               "decisions/0205-publish-database-credentials-to-vaultwarden",
               "decisions/0206-build-task-vm-images-as-chains-of-small-jobs",
+              "decisions/0209-run-long-operations-as-durable-queued-operations",
               "decisions/0210-give-each-extension-its-own-code-boundary",
               "decisions/0211-ship-node-changes-as-remote-programs",
               "decisions/0212-turn-proxycli-into-the-ai-router-extension",
