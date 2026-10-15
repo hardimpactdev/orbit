@@ -20,6 +20,7 @@ use Orbit\Extensions\Documents\Infrastructure\ProbeResponseBuffer;
 use Orbit\Extensions\Documents\Infrastructure\VerifyDocumentStorage;
 use Orbit\Extensions\Documents\Models\ProjectDocumentStorage;
 use Symfony\Component\Process\Process;
+use Tests\Support\SubprocessFixture;
 
 beforeEach(function (): void {
     $this->probeTransportHome = sys_get_temp_dir().'/orbit-probe-transport-'.Str::uuid();
@@ -35,11 +36,7 @@ function probe_transport_fixture(string $mode): array
 {
     $server = new Process(['python3', base_path('tests/Fixtures/ProjectDocuments/probe_http_server.py'), $mode, config()->string('orbit.home').'/http-state.json']);
     $server->start();
-    $deadline = hrtime(true) + 3_000_000_000;
-    while (trim($server->getOutput()) === '' && $server->isRunning() && hrtime(true) < $deadline) {
-        usleep(10_000);
-    }
-    $port = trim($server->getOutput());
+    $port = SubprocessFixture::line($server);
     if (! ctype_digit($port)) {
         $server->stop();
         throw new RuntimeException('Loopback S3 transport fixture did not start.');

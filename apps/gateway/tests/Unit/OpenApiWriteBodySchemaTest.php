@@ -68,7 +68,7 @@ it('publishes validated write body fields in OpenAPI and MCP', function (string 
         expect($body['properties']['timeout_seconds']['maximum'])->toBe(900);
     }
 })->with([
-    'instance branch' => ['instance-update', UpdateInstanceRequest::class, ['branch' => 'string'], ['branch']],
+    'instance deployment settings' => ['instance-update', UpdateInstanceRequest::class, ['branch' => 'string', 'shared_paths' => ['array', 'null'], 'auto_deploy' => 'boolean'], []],
     'create deploy step' => ['instance-deploy-step-create', StoreInstanceDeployStepRequest::class, [
         'name' => 'string', 'command' => 'string', 'phase' => 'string', 'timeout_seconds' => 'integer', 'before' => 'string', 'after' => 'string',
     ], ['name', 'command']],

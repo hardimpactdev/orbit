@@ -808,7 +808,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             ['instance', 'node'],
             ['name' => null, 'sqlite-source-path' => null, 'force' => false, 'json' => false],
         ],
-        'instance:update' => [['instance'], ['branch' => null, 'json' => false]],
+        'instance:update' => [['instance'], ['branch' => null, 'shared-paths' => null, 'auto-deploy' => null, 'json' => false]],
         'metrics:credentials' => [[], ['reset' => false, 'json' => false]],
         'metrics:disable' => [[], ['force' => false, 'purge-data' => false, 'json' => false]],
         'metrics:enable' => [['node'], ['json' => false]],

@@ -60,6 +60,7 @@ describe(InstanceResponse::class, function (): void {
             'removal' => null,
             'transfer' => null,
             'deploy_steps' => [],
+            'auto_deploy' => null,
             'request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
         ]);
     });
@@ -133,4 +134,32 @@ it('exposes a valid assigned SSR port and rejects invalid transport values', fun
     foreach ([0, 1023, 65536, '13714', false] as $invalid) {
         expect(InstanceResponse::fromGatewayData(['ssr_port' => $invalid], 'request-id')->ssrPort)->toBeNull();
     }
+});
+
+it('preserves effective shared paths and omits unavailable or malformed values', function (): void {
+    foreach ([['storage', 'var/uploads'], []] as $paths) {
+        $response = InstanceResponse::fromGatewayData(['shared_paths' => $paths], 'request-id');
+        expect($response->sharedPaths)->toBe($paths)
+            ->and($response->toArray()['shared_paths'])->toBe($paths);
+    }
+    foreach ([null, 'storage', ['storage', false], ['path' => 'storage']] as $invalid) {
+        $response = InstanceResponse::fromGatewayData(['shared_paths' => $invalid], 'request-id');
+        expect($response->sharedPaths)->toBeNull()
+            ->and($response->toArray())->not->toHaveKey('shared_paths');
+    }
+});
+
+it('maps automatic deployment and drops a malformed pause', function (): void {
+    $auto = [
+        'enabled' => true, 'gate' => 'Required checks', 'warning' => null, 'result' => 'paused', 'commit' => str_repeat('a', 40),
+        'head' => str_repeat('c', 40), 'since' => '2026-10-15T10:00:00+00:00', 'error_code' => null, 'message' => 'Rollback 41 paused automatic deployment.',
+        'pause' => ['reason' => 'rollback', 'deployment_id' => 41, 'commit' => str_repeat('a', 40), 'paused_at' => '2026-10-15T10:00:00+00:00'],
+    ];
+    $response = InstanceResponse::fromGatewayData(['id' => 7, 'auto_deploy' => $auto], 'request-id');
+
+    expect($response->autoDeploy?->enabled)->toBeTrue()
+        ->and($response->autoDeploy?->gate)->toBe('Required checks')
+        ->and($response->toArray()['auto_deploy'])->toBe($auto)
+        ->and(InstanceResponse::fromGatewayData(['auto_deploy' => [...$auto, 'pause' => ['reason' => 'rollback']]], 'request-id')->autoDeploy?->pause)->toBeNull()
+        ->and(InstanceResponse::fromGatewayData(['auto_deploy' => 'on'], 'request-id')->autoDeploy)->toBeNull();
 });

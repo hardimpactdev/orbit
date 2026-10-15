@@ -38,6 +38,20 @@ describe('deployment requests', function (): void {
         }
     });
 
+    it('preserves omitted shared paths explicit lists and the default reset', function (): void {
+        expect(new UpdateInstanceRequest(17, 'release')->body()->all())->toBe(['branch' => 'release']);
+        expect(new UpdateInstanceRequest(17, sharedPaths: ['storage'], sharedPathsProvided: true)->body()->all())->toBe(['shared_paths' => ['storage']]);
+        expect(new UpdateInstanceRequest(17, sharedPaths: [], sharedPathsProvided: true)->body()->all())->toBe(['shared_paths' => []]);
+        expect(new UpdateInstanceRequest(17, sharedPathsProvided: true)->body()->all())->toBe(['shared_paths' => null]);
+        expect(new UpdateInstanceRequest(17, 'release', [], true)->body()->all())->toBe(['branch' => 'release', 'shared_paths' => []]);
+    });
+
+    it('sends only the Instance fields it changes', function (): void {
+        expect(new UpdateInstanceRequest(17, 'release')->body()->all())->toBe(['branch' => 'release'])
+            ->and(new UpdateInstanceRequest(17, autoDeploy: false)->body()->all())->toBe(['auto_deploy' => false])
+            ->and(new UpdateInstanceRequest(17, 'release', autoDeploy: true)->body()->all())->toBe(['branch' => 'release', 'auto_deploy' => true]);
+    });
+
     it('carries no deployment-config or deployment-layout request', function (): void {
         $paths = [];
         $files = new RecursiveIteratorIterator(

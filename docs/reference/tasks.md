@@ -653,6 +653,8 @@ The claim [creates a fresh VM from the current recipe](/reference/compute-driver
 
 The checkout [clones from the Gateway mirror](/reference/compute-drivers#clone-and-set-up-every-workspace). The baseline check runs every setup step, using private package caches seeded from the read-only host cache and the selected CI cache ref. The check log shows at most the first 4096 characters of each setup command.
 
+A failed setup step with an HTTP 429 or a GitHub rate-limit message retries on the same workspace after 1, 2, 4, then 8 minutes. The scheduler starts each retry on the first tick after its delay, without sleeping or starting an agent. At most four automatic retries run for one baseline resolution. Failed attempts remain visible in the task checks. Classification uses only the failed step’s output, excluding earlier steps. A missing completion timestamp uses the check’s last update time. Exhausted retries, ordinary forbidden responses, and failures in the Project check ask for assistance. A resolution starts a new retry budget.
+
 A routed workspace on a task VM starts its baseline check before its Route. The check needs the checkout, its `.env`, and the PHP packages, not the Route. So workspace creation classifies the source, writes `APP_URL` and the other `.env` values, and installs the PHP packages, and leaves the workspace `source_resolved` with its Route `pending`. The claim starts the baseline check and then projects the Route while the check runs: certificates, Caddy, PHP-FPM, the Router, and DNS. Then the workspace becomes `active`.
 
 Work that uses the Route waits for it. Before the first implementer or the final review starts, Orbit finishes a Route that is still pending. A Route that fails there counts as a communication failure, and Orbit tries again on the next ticks. After the fifth failure, the subtask asks for assistance with the reason `The task workspace Route could not be finished, so no agent started.` and the error. No agent starts on a workspace whose Route failed. A failure at the claim only logs a warning, because the gate tries again. See [From claim to workspace](/reference/compute-drivers#from-claim-to-workspace).
@@ -881,6 +883,8 @@ The start records that claim before the process exists. The tick waits while the
 The check runs only the Project's ordered [setup steps](/reference/instance-setup), with their configured timeouts, and then its configured task check. It runs setup even when no task check is configured. Without a task check, it runs no check command. The engine neither inspects manifests nor infers install commands from the check text. The Project must record any dependency installation it needs as setup steps. Handoff checks run no setup.
 
 Setup commands run in a login shell from a private temporary script file, which the check removes when the step ends or times out. Large cache payloads do not enter shell arguments or depend on the operating system's argument-size limit.
+
+Each setup step owns one process group. The check stops that group when the shell exits, times out, or is cancelled, including background children. Setup steps must finish their work before returning. Run long-lived services as [Processes](/reference/processes-and-schedules). After cleanup, output has one second to close; a detached process holding it open fails the step with exit code 124 instead of blocking the check.
 
 The Orbit repository's own check seeds its caches from a registered main cache store, as [Feature delivery](/reference/implementation-loop#seed-a-checkout) describes.
 

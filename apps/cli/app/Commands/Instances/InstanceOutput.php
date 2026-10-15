@@ -40,6 +40,10 @@ trait InstanceOutput
             $fields['Production home'] = $instance->productionHome;
         }
 
+        if ($instance->productionUser !== null || $instance->autoDeploy?->enabled === true) {
+            $fields += InstanceAutoDeployFields::of($instance);
+        }
+
         if ($instance->removal !== null) {
             $removal = $instance->removal;
             $fields += [

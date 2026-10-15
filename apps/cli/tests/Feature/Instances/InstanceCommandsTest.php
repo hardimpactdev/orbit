@@ -569,6 +569,114 @@ describe('instance:update', function (): void {
             ->toBeInstanceOf(UpdateInstanceRequest::class)
             ->and($mock->getLastRequest()?->body()->all())->toBe(['branch' => 'release/next']);
     });
+    it('updates shared paths without changing the branch and renders the accepted paths', function (string $raw, ?array $paths, array $effective, bool $json): void {
+        $payload = instance_payload();
+        $payload['shared_paths'] = $effective;
+        $mock = MockClient::global([UpdateInstanceRequest::class => instance_mock_response(payload: $payload)]);
+        $arguments = ['instance' => '5', '--shared-paths' => $raw, '--json' => $json];
+
+        expect(Artisan::call('instance:update', $arguments))->toBe(0);
+        expect($mock->getLastRequest()?->body()->all())->toBe(['shared_paths' => $paths]);
+        if ($json) {
+            expect(json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR)['shared_paths'])->toBe($effective);
+        } else {
+            expect(instance_source_text(Artisan::output()))->toContain('Shared paths '.($effective === [] ? 'None' : implode(', ', $effective)))
+                ->not->toContain('Deployment branch');
+        }
+    })->with([
+        'replace' => ['["storage","var/uploads"]', ['storage', 'var/uploads'], ['storage', 'var/uploads']],
+        'disable' => ['[]', [], []],
+        'default' => ['null', null, ['storage']],
+    ])->with([false, true]);
+
+    it('updates the branch and shared paths in one request', function (): void {
+        $mock = MockClient::global([UpdateInstanceRequest::class => instance_mock_response()]);
+
+        expect(Artisan::call('instance:update', ['instance' => '5', '--branch' => 'release', '--shared-paths' => '[]', '--json' => true]))->toBe(0);
+        expect($mock->getLastRequest()?->body()->all())->toBe(['branch' => 'release', 'shared_paths' => []]);
+    });
+
+    it('refuses malformed shared path input before sending a request', function (?string $raw): void {
+        $mock = MockClient::global([UpdateInstanceRequest::class => instance_mock_response()]);
+
+        expect(Artisan::call('instance:update', ['instance' => '5', '--shared-paths' => $raw, '--json' => true]))->toBe(1);
+        expect(json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR))
+            ->toMatchArray(['error' => ['code' => 'instance.shared_paths_invalid', 'message' => 'Shared paths must be a JSON list of directory paths or null.', 'request_id' => null]]);
+        $mock->assertNothingSent();
+    })->with(['', 'storage', '{}', '{"0":"storage"}', '[false]', '[null]', '["storage",]', 'no value' => [null]]);
+
+    it('refuses an empty branch even when shared paths are supplied', function (): void {
+        $mock = MockClient::global([UpdateInstanceRequest::class => instance_mock_response()]);
+
+        expect(Artisan::call('instance:update', ['instance' => '5', '--branch' => '', '--shared-paths' => '[]', '--json' => true]))->toBe(1);
+        expect(json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('instance.branch_required');
+        $mock->assertNothingSent();
+    });
+
+    it('requires a branch or shared paths before sending a request', function (): void {
+        $mock = MockClient::global([UpdateInstanceRequest::class => instance_mock_response()]);
+
+        expect(Artisan::call('instance:update', ['instance' => '5', '--json' => true]))->toBe(1);
+        expect(json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('instance.update_required');
+        $mock->assertNothingSent();
+    });
+});
+
+describe('instance:update --auto-deploy', function (): void {
+    it('turns automatic deployment on, shows the gate, and sends only that field', function (): void {
+        $payload = [...instance_payload(), 'production_user' => 'orbit-app-3', 'auto_deploy' => instance_auto_deploy_payload(['enabled' => true, 'gate' => 'Required checks', 'result' => 'up_to_date', 'commit' => str_repeat('c', 40)])];
+        $mock = MockClient::global([UpdateInstanceRequest::class => instance_mock_response(payload: $payload)]);
+
+        expect(Artisan::call('instance:update', ['instance' => '5', '--auto-deploy' => 'true']))->toBe(0);
+
+        expect(instance_source_text(Artisan::output()))->toContain('Auto deploy on, after Required checks passes', 'Auto deploy state up_to_date cccccccccccc')
+            ->not->toContain('Deployment branch')
+            ->and($mock->getLastRequest()?->body()->all())->toBe(['auto_deploy' => true]);
+    });
+
+    it('warns when every commit deploys without a merge check', function (): void {
+        $warning = 'The Project has no merge_check, so every new commit on the branch deploys without a check.';
+        $payload = [...instance_payload(), 'production_user' => 'orbit-app-3', 'auto_deploy' => instance_auto_deploy_payload(['enabled' => true, 'warning' => $warning])];
+        MockClient::global([UpdateInstanceRequest::class => instance_mock_response(payload: $payload)]);
+
+        expect(Artisan::call('instance:update', ['instance' => '5', '--auto-deploy' => 'true']))->toBe(0);
+
+        expect(instance_source_text(Artisan::output()))->toContain('Auto deploy on, without a merge check', $warning);
+    });
+
+    it('turns automatic deployment off together with the branch', function (): void {
+        $mock = MockClient::global([UpdateInstanceRequest::class => instance_mock_response()]);
+
+        expect(Artisan::call('instance:update', ['instance' => '5', '--branch' => 'release', '--auto-deploy' => 'false']))->toBe(0);
+
+        expect(instance_source_text(Artisan::output()))->toContain('Deployment branch release', 'Auto deploy off')
+            ->and($mock->getLastRequest()?->body()->all())->toBe(['branch' => 'release', 'auto_deploy' => false]);
+    });
+
+    it('refuses a value other than true or false, and an update without a field, before it sends anything', function (array $options, string $code): void {
+        $mock = MockClient::global([UpdateInstanceRequest::class => instance_mock_response()]);
+
+        $this->artisan('instance:update', ['instance' => '5', '--json' => true, ...$options])
+            ->expectsOutputToContain($code)
+            ->assertExitCode(1);
+
+        expect($mock->getLastRequest())->toBeNull();
+    })->with([
+        'yes' => [['--auto-deploy' => 'yes'], 'instance.auto_deploy_invalid'],
+        'nothing' => [[], 'instance.update_required'],
+    ]);
+
+    it('shows a paused production Instance and how to resume it', function (): void {
+        $payload = [...instance_payload(), 'production_user' => 'orbit-app-3', 'production_home' => '/home/orbit-app-3', 'auto_deploy' => instance_auto_deploy_payload([
+            'enabled' => true, 'gate' => 'Required checks', 'result' => 'paused', 'commit' => str_repeat('a', 40),
+            'pause' => ['reason' => 'rollback', 'deployment_id' => 41, 'commit' => str_repeat('a', 40), 'paused_at' => '2026-10-15T10:00:00+00:00'],
+        ])];
+        MockClient::global([ShowInstanceRequest::class => instance_mock_response(payload: $payload), ListProcessesRequest::class => no_processes_response()]);
+
+        expect(Artisan::call('instance:show', ['instance' => '5']))->toBe(0);
+
+        expect(instance_source_text(Artisan::output()))->toContain('Auto deploy paused rollback (deployment 41); run instance:update 5 --auto-deploy=true to resume');
+    });
 });
 
 describe('instance:show', function (): void {
