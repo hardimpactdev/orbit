@@ -232,6 +232,7 @@ describe('site sources', function (): void {
     });
 
     it('renders the services Node byte for byte as main did before the ProxyCli source became a contribution', function (): void {
+        config(['orbit.websocket.port' => 8790]);
         $node = caddy_build_services_node();
         caddy_build_task_vms();
         $main = strtr((string) file_get_contents(base_path('tests/Fixtures/Caddy/services-caddyfile-main.caddy')), [
