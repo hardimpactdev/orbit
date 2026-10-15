@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\Documents;
 
+use App\Domain\Activity\ActivityInputRedaction;
 use App\Domain\GatewayReleases\GatewayReleaseCleanup;
 use App\Domain\Projects\ProjectRemovalHook;
 use App\Providers\ExtensionServiceProvider;
@@ -23,6 +24,7 @@ use Orbit\Extensions\Documents\Console\Commands\ShowDocumentCleanupStatus;
 use Orbit\Extensions\Documents\Console\Commands\WorkDocumentCleanup;
 use Orbit\Extensions\Documents\Infrastructure\CleanupGate;
 use Orbit\Extensions\Documents\Infrastructure\CleanupSchedulerSession;
+use Orbit\Extensions\Documents\Infrastructure\DocumentsActivityInputRedaction;
 use Orbit\Extensions\Documents\Infrastructure\DocumentsFilesystem;
 use Orbit\Extensions\Documents\Infrastructure\DocumentsProjectRemoval;
 use Orbit\Extensions\Documents\Infrastructure\DocumentsReleaseCleanup;
@@ -49,6 +51,7 @@ final class DocumentsServiceProvider extends ExtensionServiceProvider
         $this->app->singleton(CleanupSchedulerSession::class);
         $this->contribute(ProjectRemovalHook::class, DocumentsProjectRemoval::class);
         $this->contribute(GatewayReleaseCleanup::class, DocumentsReleaseCleanup::class);
+        $this->contribute(ActivityInputRedaction::class, DocumentsActivityInputRedaction::class);
     }
 
     public function boot(): void
