@@ -81,6 +81,7 @@ function tasks_app(string $slug = 'commander-demo'): Project
 
 function enable_tasks(): void
 {
+    test()->postJson('/api/v1/extensions/proxycli/enable')->assertOk();
     test()->postJson('/api/v1/extensions/tasks/enable')->assertOk()->assertJsonPath('data.enabled', true);
 }
 
@@ -194,6 +195,8 @@ it('enables and disables the extension through empty JSON objects', function ():
     $this->getJson('/api/v1/tasks/status')
         ->assertOk()
         ->assertJsonPath('data.enabled', false);
+
+    $this->postJson('/api/v1/extensions/proxycli/enable')->assertOk();
 
     $this->postJson('/api/v1/extensions/tasks/enable')
         ->assertOk()

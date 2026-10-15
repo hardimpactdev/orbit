@@ -195,6 +195,13 @@ orbit proxycli:teardown
 
 Teardown removes the collector Process and script, withdraws the Caddy site and its certificate, and publishes private DNS without the collector name. It deletes the stored management key and the read and control tokens. A later setup needs the key file again and gives CodexBar a new read token. Valkey data and the Redis connection stay. Teardown does not change the extension switch.
 
+Teardown refuses with HTTP 409 and changes nothing while it would strand Tasks:
+
+- `extension.required` while the `tasks` extension is enabled. Tasks depends on `proxycli`, because Pi on a task VM reaches models only through this CLIProxyAPI. `error.details.required_by` is `tasks`.
+- `proxycli.keys_outstanding` while a task VM holds a model key. Only the management key can revoke that key. `error.details.task_vms` is the number of such task VMs. Run teardown after they are destroyed.
+
+Task VM code reaches CLIProxyAPI only through the core interface `App\Domain\TaskVms\ModelKeyIssuer`. This extension binds it to `ProxyCliModelKeyIssuer`, which holds the management key and the anchor key. See [Configure task VMs](/reference/compute-drivers#configure-task-vms).
+
 ## Errors
 
 These codes come from the Gateway on setup, teardown, reads, and toggles.
@@ -214,6 +221,8 @@ These codes come from the Gateway on setup, teardown, reads, and toggles.
 | `proxycli.hostname_taken` | 409 | A Route that setup cannot take over holds `collector.cli-proxy-api.orbit`. Setup changes nothing. |
 | `proxycli.caddy_publication_failed` | 422 | Setup could not install Caddy or build the Node's Caddy configuration. |
 | `proxycli.upstream_failed` | 502 | The collector refused or did not answer an account toggle. |
+| `extension.required` | 409 | Teardown runs while the `tasks` extension is enabled. Teardown changes nothing. |
+| `proxycli.keys_outstanding` | 409 | Teardown runs while a task VM holds a model key. Teardown changes nothing. |
 | `resource.not_found` | 404 | The provider or account is not in the snapshot. |
 
 ## Why it works this way

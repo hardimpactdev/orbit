@@ -20,6 +20,7 @@ function pi_only_project(): Project
     ]);
     test()->markAsGateway($gateway);
     test()->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
+    test()->postJson('/api/v1/extensions/proxycli/enable')->assertOk();
     test()->postJson('/api/v1/extensions/tasks/enable')->assertOk();
 
     return Project::query()->create([

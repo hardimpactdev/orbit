@@ -25,6 +25,7 @@ describe('retired T3 task history', function (): void {
         $node = Node::query()->create(['name' => 'history-gateway', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '10.44.0.80', 'wireguard_ip' => '10.44.0.80']);
         $this->markAsGateway($node);
         $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
+        $this->postJson('/api/v1/extensions/proxycli/enable')->assertOk();
         $this->postJson('/api/v1/extensions/tasks/enable')->assertOk();
         $project = Project::query()->create(['name' => 'history', 'slug' => 'history', 'repository_url' => 'git@example.test:history.git', 'default_branch' => 'main']);
         $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Finished T3 work', 'brief' => 'Keep the record.', 'status' => 'completed']);

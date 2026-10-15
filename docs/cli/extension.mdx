@@ -102,6 +102,8 @@ orbit extension:disable <extension> [--json]
 
 JSON returns `name` and `enabled`. Disabling a disabled extension succeeds and changes nothing. Disabling an extension that an enabled extension depends on fails with `extension.required`. Disabling `proxycli` does not stop its collector. Run [`proxycli:teardown`](/cli/proxycli#orbit-proxycliteardown) for that.
 
+`tasks` depends on `proxycli`. Enable `proxycli` before `tasks`, and disable `tasks` before `proxycli`.
+
 ## Errors
 
 | Code | Meaning |

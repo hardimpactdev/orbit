@@ -16,6 +16,15 @@ final readonly class DisableExtensionAction
     public function handle(string $name): void
     {
         $extension = $this->registry->find($name);
+        $this->assertNotRequired($name);
+
+        $this->store->set($name, false);
+        $extension->disable();
+    }
+
+    /** Refuses while an enabled extension depends on the named one. */
+    public function assertNotRequired(string $name): void
+    {
         foreach ($this->registry->all() as $dependent) {
             if (in_array($name, $dependent->dependencies(), true) && $this->store->enabled($dependent->name())) {
                 throw new ResourceOperationException(
@@ -26,8 +35,5 @@ final readonly class DisableExtensionAction
                 );
             }
         }
-
-        $this->store->set($name, false);
-        $extension->disable();
     }
 }

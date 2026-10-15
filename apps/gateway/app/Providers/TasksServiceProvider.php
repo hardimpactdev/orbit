@@ -104,6 +104,13 @@ final class TasksServiceProvider extends ExtensionServiceProvider
         return 'Runs planned work with coding agents and delivers it as a pull request.';
     }
 
+    /** Pi on a task VM reaches models only through the proxycli CLIProxyAPI. */
+    #[\Override]
+    public function dependencies(): array
+    {
+        return ['proxycli'];
+    }
+
     public function enable(): void
     {
         $this->app->make(TaskBroadcasts::class)->extensionChanged(true);

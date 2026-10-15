@@ -25,7 +25,7 @@ The Gateway has five extensions. This table shows where each one's code lives to
 | Extension | Code | Depends on |
 | --- | --- | --- |
 | `documents` | `apps/gateway/extensions/documents`. See [Project Documents](/reference/project-documents). | nothing |
-| `tasks` | Core, in the `Tasks` and `TaskVms` namespaces. See [Tasks](/reference/tasks). | nothing |
+| `tasks` | Core, in the `Tasks` and `TaskVms` namespaces. See [Tasks](/reference/tasks). | `proxycli` |
 | `proxycli` | Core, in the `ProxyCli` namespaces. See [proxycli](/reference/proxycli). | nothing |
 | `vault` | `apps/gateway/extensions/vault`. See [Vaultwarden](/reference/vaultwarden). | nothing |
 | `conn` | `apps/gateway/extensions/conn`. See [Conn layer](/reference/conn). | nothing |
@@ -99,6 +99,8 @@ Background work that finishes recorded work keeps running while the switch is of
 `extension:enable` refuses with HTTP 409 `extension.dependency_disabled` while a dependency is off. `extension:disable` refuses with HTTP 409 `extension.required` while an enabled extension depends on the one being disabled. Both name the other extension in `error.details`.
 
 `extension:enable` runs the extension's `enable()` hook first and turns the switch on only after the hook returns. A failed enable leaves the switch off: when the hook throws, the switch keeps its earlier state and the API returns the hook's error code, message, and details. The hook runs while the switch is still off, so it must not rely on the switch. `extension:disable` turns the switch off, then runs `disable()`. Both run in the same request. Enabling an enabled extension runs `enable()` again, so a hook must be safe to repeat. Tasks uses its hooks to broadcast the [`tasks.updated`](/reference/events#tasks) event. Documents, Vault, and Conn use neither.
+
+Tasks depends on `proxycli`, because Pi on a task VM reaches models only through its CLIProxyAPI. Task VM code calls the core interface `App\Domain\TaskVms\ModelKeyIssuer`, and the `proxycli` provider binds it. `proxycli:teardown` refuses while `tasks` is enabled or a task VM holds a model key. See [Teardown](/reference/proxycli#teardown).
 
 ### Defaults
 

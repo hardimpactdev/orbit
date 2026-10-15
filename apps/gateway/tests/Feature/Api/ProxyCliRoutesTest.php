@@ -22,6 +22,7 @@ use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\TaskVms\TaskVmState;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Api\ProxyCliController;
@@ -32,7 +33,10 @@ use App\Models\Activity;
 use App\Models\DatabaseConnection;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Route as OrbitRoute;
+use App\Models\Task;
+use App\Models\TaskVm;
 use Illuminate\Routing\Route;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -591,6 +595,52 @@ it('disables the extension, stops the process, and hides provider reads', functi
         ->assertStatus(409)
         ->assertJsonPath('error.code', 'proxycli.disabled');
 });
+
+it('refuses the teardown with 409 and changes nothing while Tasks needs it or a task VM holds a model key', function (Closure $hold, string $code, array $details): void {
+    $gateway = proxycli_gateway();
+    $node = proxycli_node();
+    proxycli_valkey($node);
+
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
+        ->postJson('/api/v1/proxycli', [
+            'node_id' => $node->id,
+            'cache_connection' => 'valkey',
+            'cliproxy_url' => 'http://127.0.0.1:8317',
+            'cliproxy_management_key' => 'management-key',
+        ])
+        ->assertCreated();
+    $hold($node);
+
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
+        ->deleteJson('/api/v1/proxycli')
+        ->assertStatus(409)
+        ->assertJsonPath('error.code', $code)
+        ->assertJsonPath('error.details', $details);
+
+    expect(app(ProxyCliState::class)->cliproxyManagementKey())->toBe('management-key')
+        ->and(app(ProxyCliState::class)->enabled())->toBeTrue()
+        ->and(Process::query()->where('name', ProxyCliProcess::NAME)->exists())->toBeTrue()
+        ->and(app(RecordingProxyCliRuntimeLifecycle::class)->removed)->toBeFalse()
+        ->and(app(RecordingProxyCliPublicationManager::class)->removed)->toBeFalse();
+})->with([
+    'tasks is enabled' => [
+        static fn (): mixed => app(ExtensionStore::class)->set('tasks', true),
+        'extension.required',
+        ['extension' => 'proxycli', 'required_by' => 'tasks'],
+    ],
+    'a task VM holds a model key' => [
+        static function (Node $node): void {
+            $project = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@github.com:acme/shop.git', 'default_branch' => 'main']);
+            $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Export', 'brief' => 'Work', 'status' => 'running']);
+            TaskVm::query()->create([
+                'group_id' => $group->id, 'host_node_id' => $node->id, 'provider' => 'incus', 'name' => 'tvm-1',
+                'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.130', 'model_key' => str_repeat('a', 64),
+            ]);
+        },
+        'proxycli.keys_outstanding',
+        ['task_vms' => 1],
+    ],
+]);
 
 it('republishes private DNS without the collector name when the extension is disabled', function (): void {
     $gateway = proxycli_gateway();

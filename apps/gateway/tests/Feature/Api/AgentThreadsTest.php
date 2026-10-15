@@ -19,6 +19,7 @@ function agent_viewer_fixture(): array
     $node = Node::query()->create(['name' => 'agent-gateway', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '10.44.0.80', 'wireguard_ip' => '10.44.0.80']);
     test()->markAsGateway($node);
     test()->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
+    test()->postJson('/api/v1/extensions/proxycli/enable')->assertOk();
     test()->postJson('/api/v1/extensions/tasks/enable')->assertOk();
     $project = Project::query()->create(['name' => 'viewer', 'slug' => 'viewer', 'repository_url' => 'git@example.test:viewer.git', 'default_branch' => 'main']);
     $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Viewer', 'brief' => 'Read sessions']);

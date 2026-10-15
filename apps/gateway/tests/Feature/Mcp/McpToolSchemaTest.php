@@ -16,6 +16,7 @@ beforeEach(function (): void {
         'wireguard_ip' => '10.44.0.71',
     ]));
     $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
+    $this->postJson('/api/v1/extensions/proxycli/enable')->assertOk();
     $this->postJson('/api/v1/extensions/tasks/enable')->assertOk();
     $this->postJson('/api/v1/extensions/proxycli/enable')->assertOk();
     $this->postJson('/api/v1/extensions/documents/enable')->assertOk();

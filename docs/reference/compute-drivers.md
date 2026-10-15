@@ -765,6 +765,8 @@ Global keys live in the Gateway's `config/task_vms.php`. Set them in the Gateway
 
 Each task VM stores `model_proxy_origin` with its model key, and revokes the key at that origin. So changing the origin never strands a key. A task VM that holds a key at another origin cannot prepare Pi again.
 
+`TaskVmRuntime` reaches CLIProxyAPI only through the core interface `App\Domain\TaskVms\ModelKeyIssuer`: `origin()`, `issue(origin, key)`, and `revoke(origin, key)`. The [proxycli extension](/reference/proxycli) binds it and keeps the management key and the anchor key, so task VM code never sees them. `TaskVmRuntime` creates the group key and stores it with its origin on the task VM row before it calls `issue()`, so a retry registers the same key. The `tasks` extension depends on `proxycli`, and `proxycli:teardown` refuses while a task VM holds a key. See [Teardown](/reference/proxycli#teardown).
+
 The [Node settings field table](/reference/node-settings#task-vm-fields) owns the host configuration. The containing Node supplies host identity. `operator_owned` keeps listed resources out of the [stray report](#report-strays).
 
 Placement selects active Nodes with this setting and capacity reads their slot budget. Host preparation uses its pool, network, and image alias. Package-cache targeting follows the same setting, without making `app-dev` a host marker.

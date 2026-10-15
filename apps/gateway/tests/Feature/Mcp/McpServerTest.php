@@ -98,6 +98,7 @@ describe('POST /mcp', function (): void {
     });
 
     it('lists one tool for every manifest entry', function (): void {
+        $this->postJson('/api/v1/extensions/proxycli/enable')->assertOk();
         $this->postJson('/api/v1/extensions/tasks/enable')->assertOk();
         $this->postJson('/api/v1/extensions/proxycli/enable')->assertOk();
         $this->postJson('/api/v1/extensions/documents/enable')->assertOk();
@@ -275,6 +276,7 @@ describe('/mcp tool list changes', function (): void {
         expect($initialized->json('result.capabilities.tools.listChanged'))->toBeFalse();
 
         // The tool list changes after the client connected. The client still sends the session id it holds.
+        $this->postJson('/api/v1/extensions/proxycli/enable')->assertOk();
         $this->postJson('/api/v1/extensions/tasks/enable')->assertOk();
         $this->withHeader('Mcp-Session-Id', '0123456789abcdef.0123456789abcdef0123456789abcdef');
     });

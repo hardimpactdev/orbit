@@ -63,6 +63,7 @@ describe('MCP tool input schemas', function (): void {
     });
 
     it('serves a valid input schema for every tool', function (): void {
+        $this->postJson('/api/v1/extensions/proxycli/enable')->assertOk();
         $this->postJson('/api/v1/extensions/tasks/enable')->assertOk();
         $this->postJson('/api/v1/extensions/proxycli/enable')->assertOk();
 

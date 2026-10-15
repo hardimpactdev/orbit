@@ -40,6 +40,7 @@ it('claimNext continues after provision null', function (): void {
         'wireguard_ip' => '10.44.0.87',
     ]));
     $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
+    $this->postJson('/api/v1/extensions/proxycli/enable')->assertOk();
     $this->postJson('/api/v1/extensions/tasks/enable')->assertOk();
 
     $project = Project::query()->create([
@@ -288,6 +289,7 @@ function claim_hol_enable(): Node
         'wireguard_ip' => '10.44.0.87',
     ]));
     test()->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
+    test()->postJson('/api/v1/extensions/proxycli/enable')->assertOk();
     test()->postJson('/api/v1/extensions/tasks/enable')->assertOk();
 
     return $gateway;

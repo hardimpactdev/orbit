@@ -44,6 +44,7 @@ function workspace_route_claim(array $routeResults): array
         'wireguard_ip' => '10.44.0.91',
     ]));
     test()->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
+    test()->postJson('/api/v1/extensions/proxycli/enable')->assertOk();
     test()->postJson('/api/v1/extensions/tasks/enable')->assertOk();
     $project = Project::query()->create([
         'name' => 'Workspace route',

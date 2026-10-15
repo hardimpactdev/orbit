@@ -8,11 +8,7 @@ use App\Actions\Processes\CreateProcessAction;
 use App\Data\Processes\AddProcessData;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessTargetType;
-use App\Domain\ProxyCli\ProxyCliState;
-use App\Domain\Settings\SettingRepository;
-use App\Domain\Settings\SettingScope;
-use App\Domain\Settings\SettingScopeType;
-use App\Domain\Settings\SettingValueProtection;
+use App\Domain\TaskVms\ModelKeyIssuer;
 use App\Domain\TaskVms\TaskVmConfig;
 use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
@@ -33,7 +29,7 @@ use Throwable;
 
 /**
  * Prepares Pi on an enrolled task VM over the Node's normal SSH connection, as its managed user:
- * the group's CLIProxyAPI key, the pinned Pi executable, `models.json`, the token, and the normal
+ * the group's model key, the pinned Pi executable, `models.json`, the token, and the normal
  * `pi-server` Process. Every step is idempotent, so a retried job repeats it. `release` revokes the key.
  */
 final readonly class TaskVmRuntime
@@ -85,9 +81,7 @@ final readonly class TaskVmRuntime
     public function __construct(
         private TaskVmSettings $settings,
         private DevelopmentSshExecutor $ssh,
-        private TaskVmModelKeys $keys,
-        private ProxyCliState $proxy,
-        private SettingRepository $gatewaySettings,
+        private ModelKeyIssuer $keys,
         private CreateProcessAction $processes,
         private PiConnection $pi,
         private TaskVmStepClock $clock,
@@ -97,10 +91,7 @@ final readonly class TaskVmRuntime
     {
         $node = $vm->node ?? throw new TaskVmException(TaskVmError::NotEnrolled, "Task VM [{$vm->name}] has no Node yet.");
         $token = $vm->pi_token ?? throw new TaskVmException(TaskVmError::RuntimeFailed, "Task VM [{$vm->name}] has no Pi token: no task group claimed it.", 409);
-        $origin = $this->origin();
-        if (rtrim((string) $this->proxy->cliproxyUrl(), '/') !== $origin) {
-            throw TaskVmConfig::invalid('model_proxy_origin must be the CLIProxyAPI URL of the proxycli extension.');
-        }
+        $origin = $this->keys->origin();
         if ($vm->model_proxy_origin !== null && $vm->model_proxy_origin !== $origin) {
             throw TaskVmConfig::invalid("model_proxy_origin changed while task VM [{$vm->name}] holds a key at [{$vm->model_proxy_origin}].");
         }
@@ -178,11 +169,11 @@ final readonly class TaskVmRuntime
         if ($vm->model_key === null) {
             return;
         }
-        $origin = $vm->model_proxy_origin ?? $this->origin();
+        $origin = $vm->model_proxy_origin ?? $this->keys->origin();
         $this->withModelKeyLock(60, function () use ($vm, $origin): void {
             $vm->refresh();
             if ($vm->model_key !== null) {
-                $this->keys->revoke($origin, $this->managementKey(), $this->anchor($origin), $vm->model_key);
+                $this->keys->revoke($origin, $vm->model_key);
                 $vm->update(['model_key' => null]);
             }
         });
@@ -197,7 +188,7 @@ final readonly class TaskVmRuntime
                 $vm->update(['model_key' => bin2hex(random_bytes(32)), 'model_proxy_origin' => $origin]);
             }
             $key = (string) $vm->model_key;
-            $this->keys->ensure($origin, $this->managementKey(), $this->anchor($origin), $key);
+            $this->keys->issue($origin, $key);
 
             return $key;
         });
@@ -236,34 +227,5 @@ final readonly class TaskVmRuntime
     private function run(Node $node, array $arguments, ?ProtectedInput $input, string $step, float $timeout): CommandResult
     {
         return $this->ssh->execute($node, new RemoteCommand($arguments, protectedInput: $input, timeout: $timeout), $step, 'task_vm.runtime_failed', $timeout, 'Task VM runtime');
-    }
-
-    private function origin(): string
-    {
-        return $this->settings->modelProxyOrigin ?? throw TaskVmConfig::invalid('model_proxy_origin is required to prepare a task VM.');
-    }
-
-    private function managementKey(): string
-    {
-        $key = $this->proxy->cliproxyManagementKey();
-        if ($key === null || $key === '') {
-            throw new TaskVmException(TaskVmError::ModelKeyFailed, 'Set up the proxycli extension: it holds the CLIProxyAPI management key.', 409);
-        }
-
-        return $key;
-    }
-
-    /** One random anchor key per origin keeps CLIProxyAPI's key list from ever becoming empty, which would open it. */
-    private function anchor(string $origin): string
-    {
-        $scope = new SettingScope(SettingScopeType::Gateway);
-        $name = 'compute.model_proxy.anchor.'.hash('sha256', $origin);
-        $key = $this->gatewaySettings->get($scope, $name);
-        if ($key === null) {
-            $key = bin2hex(random_bytes(32));
-            $this->gatewaySettings->put($scope, $name, $key, SettingValueProtection::Secret);
-        }
-
-        return $key;
     }
 }
