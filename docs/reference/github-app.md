@@ -187,6 +187,8 @@ One answer costs these reads:
 
 Each answer also mints one `contents: read` token, and one `checks: read` token when a candidate needs it. No new App permission is needed. When the deployed commit is the branch head, the answer needs only the installation, one token, and the commit list.
 
+The [automatic deployment tick](/reference/deployments#automatic-deployments) asks the same question for a production Instance, with the Project's `merge_check` as the required check. It asks only when the branch head changed or while the head's check is unfinished. When there is no answer, it reads the head's own check runs once more to tell a pending check from a failed one.
+
 The Gateway reads the branch through its full ref, so a tag with the same name is never read instead. When none of the 20 newest candidates qualifies, there is no answer until a newer commit turns green. Every failure fails closed: an App that is not registered or not installed, a refused token, an unknown commit, a check run list that changes or ends before its `total_count`, or a malformed record means no answer for that attempt.
 
 ## What the App does not cover
@@ -261,6 +263,10 @@ The existing App grant can mint a token narrowed to `pull_requests: read`. Feedb
 ### One App reviews and merges
 
 The App already publishes Orbit's task pull requests, so it reviews and merges with the grants it holds. The maintainer's GitHub CLI profile was rejected for this: it is a personal identity with admin bypass, so a merge through it skips the ruleset. The App is bound to the ruleset like any other actor. A second App with only review rights was rejected: it would add a registration, a private key, and an installation for each account, and it still could not approve Orbit's own pull requests.
+
+### Keep the tokens of scheduled reads
+
+The automatic deployment tick reads branch heads and gates every minute. It keeps a repository's installation id for an hour and its `contents: read` and `checks: read` tokens for 50 minutes, encrypted with the application key in the Gateway cache. A token lives one hour, so a cached token never expires in use. A failed read drops the repository's entries, and the next read mints them again. Every other read still creates its token at the moment of use.
 
 ### No webhooks
 
