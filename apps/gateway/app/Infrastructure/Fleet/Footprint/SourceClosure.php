@@ -23,17 +23,18 @@ final class SourceClosure
 
     /**
      * @param  list<string>  $directories  Directories relative to the Gateway's base path, such as `app/Infrastructure/Caddy`.
+     * @param  list<class-string>  $classes  More start classes outside those directories.
      * @return list<string> Paths relative to the base path, sorted.
      */
-    public static function of(array $directories): array
+    public static function of(array $directories, array $classes = []): array
     {
-        $key = implode("\0", $directories);
+        $key = implode("\0", [...$directories, ...$classes]);
 
         if (isset(self::$cache[$key])) {
             return self::$cache[$key];
         }
 
-        $pending = [];
+        $pending = $classes;
 
         foreach ($directories as $directory) {
             $absolute = base_path($directory);

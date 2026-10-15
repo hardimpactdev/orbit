@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Fleet\Footprint;
 
+use App\Domain\Extensions\Contributions;
 use App\Domain\Fleet\FleetNodeConverger;
 use App\Domain\Fleet\FootprintArtifactSkipped;
 use App\Domain\Fleet\NodeFootprintArtifact;
@@ -13,6 +14,7 @@ use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildResult;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
+use App\Infrastructure\Caddy\Build\NodeCaddySiteSource;
 use App\Models\Node;
 
 /** The Node's Caddyfile, published like `orbit:caddy-build`: a graceful reload only when it changed. */
@@ -48,14 +50,17 @@ final readonly class CaddyFootprintArtifact implements NodeFootprintArtifact
     }
 
     /**
-     * Every Gateway source file the Caddy build renders from: the build, its site sources, and the classes
-     * they use, such as `DevelopmentSite` and the `CaddyRelease` pin.
+     * Every Gateway source file the Caddy build renders from: the build, its site sources, the sources that
+     * extensions contribute, and the classes they use, such as `DevelopmentSite` and the `CaddyRelease` pin.
      *
      * @return list<string>
      */
     public static function inputs(): array
     {
-        return SourceClosure::of(['app/Infrastructure/Caddy']);
+        return SourceClosure::of(['app/Infrastructure/Caddy'], array_map(
+            static fn (NodeCaddySiteSource $source): string => $source::class,
+            app(Contributions::class)->of(NodeCaddySiteSource::class),
+        ));
     }
 
     public function apply(Node $node): bool

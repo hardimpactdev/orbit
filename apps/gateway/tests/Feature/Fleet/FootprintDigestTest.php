@@ -34,6 +34,8 @@ describe('footprint digests', function (): void {
             'app/Infrastructure/Caddy/Build/Sources/RouteCaddySiteSource.php',
             'app/Infrastructure/AppDev/DevelopmentSite.php',
             'app/Domain/Nodes/CaddyRelease.php',
+            'app/Infrastructure/ProxyCli/ProxyCliCaddySiteSource.php',
+            'app/Infrastructure/ProxyCli/ProxyCliCaddySiteRenderer.php',
         )
             ->and(array_filter($inputs, static fn (string $path): bool => str_starts_with($path, 'app/Models/')))->toBe([])
             ->and($artifact->digest($node))->toBe(SourceDigest::of($inputs))
