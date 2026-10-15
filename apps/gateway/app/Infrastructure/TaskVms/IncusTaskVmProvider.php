@@ -29,7 +29,7 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
     public function __construct(
         private IncusHost $incus,
         private TaskVmSettings $settings,
-        private TaskVmWorkspaceTemplates $templates,
+        private TaskVmWorkspaceVolumes $volumes,
     ) {}
 
     public function create(TaskVm $vm, string $userData): void
@@ -140,7 +140,7 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
         if (! $result->succeeded() && $this->observe($vm) instanceof VmObservation) {
             throw $this->failed($vm, 'delete', $result);
         }
-        $this->templates->release($this->settings->host((int) $vm->host_node_id), $vm->incusHostNode(), $vm);
+        $this->volumes->release($this->settings->host((int) $vm->host_node_id), $vm->incusHostNode(), $vm);
     }
 
     private function startObserved(TaskVm $vm, VmObservation $observation): void

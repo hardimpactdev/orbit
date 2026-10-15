@@ -11,7 +11,6 @@ use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Jobs\TaskVms\ImageBuild\SyncBuiltImage;
-use App\Jobs\TaskVms\RefreshTaskVmWorkspaceTemplates;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Sleep;
@@ -97,7 +96,9 @@ final readonly class TaskVmImageBuildSteps
                         $sync[] = new SyncBuiltImage($build->id, $peer->nodeId);
                     }
                 }
-                Bus::chain([...$sync, new RefreshTaskVmWorkspaceTemplates])->onConnection('gateway')->onQueue('builds')->dispatch();
+                if ($sync !== []) {
+                    Bus::chain($sync)->onConnection('gateway')->onQueue('builds')->dispatch();
+                }
                 break;
         }
 

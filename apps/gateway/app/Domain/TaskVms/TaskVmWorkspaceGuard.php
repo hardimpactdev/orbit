@@ -18,7 +18,7 @@ final class TaskVmWorkspaceGuard
 {
     /**
      * The checkout of the one workspace on a task VM, below the Project's directory in the apps root. The name is
-     * fixed, unlike `task-<group id>` on a shared Node, so the workspace template is built at the same path.
+     * fixed across claims so imported CI caches retain their absolute paths.
      */
     public const string WorkspaceCheckout = 'workspace';
 

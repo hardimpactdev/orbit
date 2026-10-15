@@ -452,7 +452,7 @@ function routing_mode_bind_boundaries(): void
     });
     app()->instance(DevelopmentInstanceSourceLifecycle::class, new class implements DevelopmentInstanceSourceLifecycle
     {
-        public function prepare(Instance $instance, bool $allowExisting, ?string $template = null): void {}
+        public function prepare(Instance $instance, bool $allowExisting): void {}
 
         public function inspectPrepared(Instance $instance): void {}
 

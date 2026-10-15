@@ -8,7 +8,7 @@ use App\Domain\TaskVms\TaskVmException;
 use Closure;
 use Throwable;
 
-/** Runs the stages of a base image build or sync and of a workspace template build, with every provider. */
+/** Runs the stages of a base image build or sync with every provider. */
 final class TaskVmBuildStage
 {
     /**

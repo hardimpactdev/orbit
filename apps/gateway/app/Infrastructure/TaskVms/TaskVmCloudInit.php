@@ -27,8 +27,7 @@ final readonly class TaskVmCloudInit
     public const string Home = '/home/'.self::User;
 
     /**
-     * The uid and gid of `orbit` in the base image. They are pinned, so a workspace template's files belong to `orbit`
-     * on every VM, whatever users a newer stock image or package adds.
+     * The stable uid and gid of `orbit`, including on VMs with an existing workspace volume.
      */
     public const int Uid = 1000;
 

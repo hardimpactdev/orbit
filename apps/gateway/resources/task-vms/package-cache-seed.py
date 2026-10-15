@@ -71,11 +71,12 @@ def seed_npm(source, home, artifact, digest):
         return
     bun.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=bun.parent, prefix='.orbit-extract-') as work:
-        extracted = Path(work) / 'package'
         with tarfile.open(source, 'r:gz') as archive:
-            for member in archive.getmembers():
-                if member.name != 'package' and not member.name.startswith('package/'):
-                    raise ValueError('Registry archive has an unexpected root')
+            members = archive.getmembers()
+            roots = {member.name.split('/', 1)[0] for member in members}
+            if len(roots) != 1 or next(iter(roots)) in ('', '.', '..'):
+                raise ValueError('Registry archive has an unexpected root')
+            extracted = Path(work) / roots.pop()
             archive.extractall(work, filter='data')
         if not extracted.is_dir() or extracted.is_symlink():
             raise ValueError('Registry archive has no package directory')

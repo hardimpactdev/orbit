@@ -49,7 +49,7 @@ Registration never infers a nested root from source files. Configure the Project
 
 ## Setup and teardown steps
 
-A Project owns ordered [setup and teardown lists](/reference/instance-setup) for its development Instances. Each named command runs on the Instance's Node from the repository root. A setup step can also name a [Gateway-owned operation](/reference/instance-setup#gateway-owned-setup-steps), such as `@orbit/ci-caches`, which the Gateway renders before the step runs. Production Instances run neither list.
+A Project owns ordered [setup and teardown lists](/reference/instance-setup) for its development Instances. Each named command runs on the Instance's Node from the repository root. A setup step can also name a [Gateway-owned operation](/reference/instance-setup#gateway-owned-setup-steps), such as `@orbit/ci-caches`, which the Gateway renders before the step runs. Production Instances run neither list. Task workspaces clone from the Gateway mirror and run the Project's setup list on each creation. The [package cache](/reference/compute-drivers#shared-package-cache) and CI cache ref speed those steps; there is no per-Project template setting or build.
 
 Declaring `@orbit/ci-caches` also lets source setup transfer the selected SHA's cache ref from the Gateway mirror. The operation renders a script, not an artifact payload or a GitHub credential. Put it after dependency installation. [CI main caches](/reference/instance-setup#import-ci-main-caches) describes exact SHA matching and the cold fallback; missing cache refs do not prevent source setup.
 

@@ -19,7 +19,6 @@ use App\Jobs\TaskVms\ImageBuild\PublishImage;
 use App\Jobs\TaskVms\ImageBuild\RunImageProgram;
 use App\Jobs\TaskVms\ImageBuild\SmokeImage;
 use App\Jobs\TaskVms\ImageBuild\UpgradeImagePackages;
-use App\Jobs\TaskVms\RefreshTaskVmWorkspaceTemplates;
 use App\Models\Node;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Support\Facades\Bus;
@@ -124,18 +123,6 @@ final readonly class TaskVmImageBuildChain
         }
     }
 
-    /** Reconcile from durable state after a missed catch enqueue, without an outbox or new marker. */
-    public function recoverTemplateRefresh(): void
-    {
-        $latestFailed = TaskVmImageBuild::query()->where('state', TaskVmImageBuildState::Failed)
-            ->whereNotExists(fn ($query) => $query->selectRaw('1')->from('task_vm_image_builds as newer')
-                ->whereColumn('newer.host_node_id', 'task_vm_image_builds.host_node_id')
-                ->whereColumn('newer.id', '>', 'task_vm_image_builds.id'))->exists();
-        if ($latestFailed) {
-            RefreshTaskVmWorkspaceTemplates::dispatch()->onConnection('gateway')->onQueue('builds');
-        }
-    }
-
     private function submit(TaskVmImageBuild $build, bool $resume = false): void
     {
         // Include any caller's transaction: acknowledging before its after-commit enqueue would
@@ -206,10 +193,6 @@ final readonly class TaskVmImageBuildChain
         if ($jobs === []) {
             throw new TaskVmException('task_vm.image_build_failed', 'The failed step is not in the current image recipe. Start a new build instead.');
         }
-        Bus::chain($jobs)->onConnection('gateway')->onQueue('builds')->catch(static function (Throwable $error): void {
-            // The originating job's catch wrapper records the fenced failure before refresh enqueue.
-            // Keep the failed build's VMs for resume; refresh against the images still current.
-            RefreshTaskVmWorkspaceTemplates::dispatch()->onConnection('gateway')->onQueue('builds');
-        })->dispatch();
+        Bus::chain($jobs)->onConnection('gateway')->onQueue('builds')->dispatch();
     }
 }

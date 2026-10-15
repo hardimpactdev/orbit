@@ -9,7 +9,6 @@ use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Jobs\TaskVms\RefreshTaskVmWorkspaceTemplates;
 use App\Models\Node;
 use App\Models\TaskVmImageBuild;
 use Closure;
@@ -18,7 +17,6 @@ use Closure;
  * The Incus steps that the base image build and the base image sync share on one host: the smoke boot,
  * the alias move, and the prune. Builder and smoke VMs are named `tvm-image-<time>…`
  * ({@see TaskVmImageRecipe::WorkPrefix}), so a later build or sync of the host deletes what an interrupted one left.
- * The workspace template build launches and deletes its builder VM with it too.
  */
 final readonly class IncusTaskVmBaseImage
 {
@@ -101,11 +99,7 @@ final readonly class IncusTaskVmBaseImage
         }
     }
 
-    /**
-     * Points `orbit-task-base` at `$fingerprint` in one request, or creates the alias on the first image. Workspace
-     * templates belong to the image they were built on, so whoever builds or syncs queues
-     * {@see RefreshTaskVmWorkspaceTemplates} once it is done with every host.
-     */
+    /** Points `orbit-task-base` at the fingerprint, or creates the alias on the first image. */
     public function promote(TaskVmHost $host, Node $node, string $fingerprint): void
     {
         try {

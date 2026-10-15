@@ -2,6 +2,9 @@
 import copy
 from contextlib import contextmanager, redirect_stdout
 import io
+import hashlib
+import runpy
+import zipfile
 import fcntl
 import importlib.machinery
 import importlib.util
@@ -1457,6 +1460,54 @@ class CiCacheRefTest(CacheFixture):
             self.assertEqual(json.loads((self.root / project / '.orbit-tia/graph.json').read_text())['baselines']['main']['sha'], self.commit)
             self.assertEqual((self.root / project / 'vendor/phpstan/cache/resultCache.php').read_bytes(), b'<?php // trusted CI')
         self.assertIn('kept existing', self.import_ref())
+
+    def test_fresh_clone_setup_uses_ci_ref_and_private_package_cache_with_cold_fallback(self):
+        ref = self.publish_ref()
+        resources = Path(cache.__file__).resolve().parent.parent / 'apps/gateway/resources/task-vms'
+        packages = runpy.run_path(str(resources / 'package-cache.py'))
+        seed = runpy.run_path(str(resources / 'package-cache-seed.py'))['seed']
+        archive = Path(self.temporary.name) / 'demo.zip'
+        with zipfile.ZipFile(archive, 'w') as output:
+            output.writestr('demo/composer.json', json.dumps({'name': 'acme/demo', 'version': '1.0.0'}))
+            output.writestr('demo/proof.txt', 'installed')
+        data = archive.read_bytes()
+        url = 'https://api.github.com/repos/acme/demo/zipball/' + 'a' * 40
+        artifact = dict(manager='composer', package='acme/demo', version='1.0.0', url=url,
+                        integrity='sha1-' + hashlib.sha1(data).hexdigest(),
+                        key='composer/acme/demo/' + hashlib.sha1(url.encode()).hexdigest() + '.zip')
+        shared = Path(self.temporary.name) / 'shared'
+        packages['fill'](shared, [artifact], 100000, lambda source: io.BytesIO(data))
+        for path in shared.rglob('*'):
+            path.chmod(0o555 if path.is_dir() else 0o444)
+        shared.chmod(0o555)
+        for present in (True, False):
+            with self.subTest(caches_present=present):
+                workspace = Path(self.temporary.name) / ('warm' if present else 'cold')
+                cache.git(self.root, 'clone', '--no-local', str(self.remote), str(workspace))
+                home = workspace / '.private-home'
+                seed(shared, home, [artifact] if present else [])
+                if present:
+                    cache.git(workspace, 'fetch', 'origin', ref + ':' + ref)
+                with patch.object(self.refs.tia, 'metadata', return_value={**self.info, 'cache': str(workspace / '.cache')}):
+                    output = io.StringIO()
+                    with redirect_stdout(output):
+                        self.refs.import_ref(workspace, self.commit)
+                self.assertIn('imported CI baseline' if present else 'cold', output.getvalue())
+                setup = workspace / 'install'
+                setup.mkdir()
+                (setup / 'composer.json').write_text(json.dumps({'require': {'acme/demo': '1.0.0'}}))
+                dist = dict(type='zip', url=url if present else 'file://' + str(archive), shasum=hashlib.sha1(data).hexdigest())
+                (setup / 'composer.lock').write_text(json.dumps({'content-hash': 'fixture', 'packages': [
+                    dict(name='acme/demo', version='1.0.0', type='library', dist=dist)], 'packages-dev': []}))
+                environment = {**os.environ, 'COMPOSER_CACHE_DIR': str(home / '.cache/composer'),
+                               'COMPOSER_HOME': str(home / '.composer'), 'COMPOSER_ALLOW_SUPERUSER': '1'}
+                result = subprocess.run(['composer', 'install', '--no-interaction', '--no-plugins', '--no-scripts',
+                                         '--no-progress'], cwd=setup, env=environment, capture_output=True)
+                self.assertEqual(result.returncode, 0, result.stderr.decode())
+                self.assertEqual((setup / 'vendor/acme/demo/proof.txt').read_text(), 'installed')
+                self.assertEqual(cache.git(workspace, 'rev-parse', 'HEAD'), self.commit)
+                self.assertEqual((workspace / self.project / '.orbit-tia/graph.json').exists(), present)
+                self.assertEqual((shared / artifact['key']).read_bytes(), data)
 
     def test_missing_ref_and_ref_for_another_sha_run_cold(self):
         self.assertIn('cold', self.import_ref())

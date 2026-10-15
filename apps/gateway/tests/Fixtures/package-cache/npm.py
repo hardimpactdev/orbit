@@ -17,10 +17,10 @@ cache = runpy.run_path(sys.argv[1])
 seed = runpy.run_path(sys.argv[2])['seed']
 
 
-def package(name='@acme/demo', version='1.2.3'):
+def package(name='@acme/demo', version='1.2.3', root='package'):
     stream = io.BytesIO()
     with tarfile.open(fileobj=stream, mode='w:gz') as archive:
-        for filename, data in {'package/package.json': json.dumps({'name': name, 'version': version, 'scripts': {'postinstall': 'exit 33'}}).encode(), 'package/proof.txt': b'installed'}.items():
+        for filename, data in {root + '/package.json': json.dumps({'name': name, 'version': version, 'scripts': {'postinstall': 'exit 33'}}).encode(), root + '/proof.txt': b'installed'}.items():
             member = tarfile.TarInfo(filename)
             member.size = len(data)
             member.mode = 0o644
@@ -65,6 +65,19 @@ class NpmCacheTest(unittest.TestCase):
                 self.assertEqual(installed.read_text(), 'installed')
                 installed.write_text('private change')
                 self.assertEqual((shared / spec['key']).read_bytes(), data)
+
+    def test_type_archives_with_a_named_root_seed_bun_without_running_scripts(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            data = package(name='@types/demo', root='demo')
+            spec = artifact(data, name='@types/demo')
+            cache['fill'](root / 'shared', [spec], 100000, lambda url: io.BytesIO(data))
+
+            seed(root / 'shared', root / 'home', [spec])
+
+            installed = root / 'home/.bun/install/cache/@types/demo@1.2.3@@@1'
+            self.assertEqual((installed / 'proof.txt').read_text(), 'installed')
+            self.assertEqual((root / 'shared' / spec['key']).read_bytes(), data)
 
     def test_integrity_and_path_traversal_are_refused(self):
         with tempfile.TemporaryDirectory() as temporary:

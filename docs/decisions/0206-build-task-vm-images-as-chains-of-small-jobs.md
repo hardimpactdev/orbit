@@ -34,7 +34,7 @@ The Gateway owns the image build. This decision changes item 1 of [ADR 0200](/de
 
 ### The build is a chain of jobs
 
-A base image build is one Laravel job chain (`Bus::chain`) on the `builds` queue, with one job for each step. The chain stops at the first step that fails, and its one `catch` callback records failure and queues a workspace template refresh against the images still current. Failed resources stay available for resume. Horizon shows individual jobs, not the whole chain. The build row and `task-vms:image-builds` report the whole build. The chain for an Incus host is:
+A base image build is one Laravel job chain (`Bus::chain`) on the `builds` queue, with one job for each step. The chain stops at the first step that fails, and the originating job records failure. ADR 0207 removes the template-refresh callback. Failed resources stay available for resume. Horizon shows individual jobs, not the whole chain. The build row and `task-vms:image-builds` report the whole build. The chain for an Incus host is:
 
 | Step | What it does |
 | --- | --- |
@@ -50,7 +50,7 @@ A base image build is one Laravel job chain (`Bus::chain`) on the `builds` queue
 
 The programs are the ones that enrollment renders today, rendered by the same code. A new tool or package is a new program and one new step in the chain. The build of a host's image never edits one shared script.
 
-Each step is idempotent. A step that runs again finds its work done, so a step can fail, retry, or run after a release without harm. `AwaitImageBuilderBoot` and `SmokeImage` read cloud-init status first and poll within the worker run for up to 600 seconds. Queue wait never consumes this boot budget, including on redelivery. Polling in one run avoids repeatedly joining the back of the single `builds` queue behind template builds. It can hold that worker for the boot window; other steps still remain separate jobs. These jobs use `tries=0` for redelivery and do not use `retryUntil()`, which Laravel fixes in the queued payload and would count time before execution.
+Each step is idempotent. A step that runs again finds its work done, so a step can fail, retry, or run after a release without harm. `AwaitImageBuilderBoot` and `SmokeImage` read cloud-init status first and poll within the worker run for up to 600 seconds. Queue wait never consumes this boot budget, including on redelivery. Polling in one run avoids repeatedly joining the back of the single `builds` queue. It can hold that worker for the boot window; other steps still remain separate jobs. These jobs use `tries=0` for redelivery and do not use `retryUntil()`, which Laravel fixes in the queued payload and would count time before execution.
 
 ### The build row holds the state
 
@@ -64,7 +64,7 @@ Pruning protects the fingerprints and dated aliases of running and retained fail
 
 The [host sweep](/reference/compute-drivers#report-strays) deletes a `tvm-image-<build id>` VM whose build is neither running nor within failed-build retention, and its stray report reads the same row. Both the host sweep and the base image sweep atomically claim cleanup on a recorded non-running build before deleting either its builder or smoke VM. They share the cleanup job's durable fence against resume: if resume wins, deletion skips the VM; if deletion wins, resume refuses even while the builder still exists. Neither reads a time from the VM's name. Failed-build retention counts from the row's failure update; running builds have no age limit.
 
-The host sweep queues a template refresh while any host's latest build is failed. The durable failed state recovers a missed catch enqueue or a rejected dispatch without a new marker or lock. The existing refresh uniqueness absorbs repeats; an abandoned enqueue lease expires within one hour. Refresh reads current aliases and skips current templates, so replay is safe. Recovery stops when the build resumes or a newer build exists.
+ADR 0207 removes template refresh recovery from the host sweep. Failed build rows still fence cleanup and resume.
 
 Package update retries lists-lock contention for up to 300 seconds because APT does not apply `DPkg::Lock::Timeout` to that lock. Upgrade and install use that option for their dpkg locks. The package job allows 1500 seconds, with remote calls bounded to 1440 seconds, so lock waits leave time for package work.
 
@@ -82,10 +82,12 @@ A change to one of those programs reaches task VMs with the next nightly image b
 
 ### Next steps in the same model
 
+[ADR 0207](/decisions/0207-one-image-recipe-shared-package-cache-no-workspace-templates) partly supersedes this record. Its template-free workspace implementation removes the template next step below and all template refresh dispatches, including failure recovery. The base image job chain, build records, retained failures, and enrollment trust remain. Other unfinished next steps keep this ADR In progress.
+
 Each of these gets its own pull request after the base image chain is built, as its own chain with its own row:
 
 1. **Sync.** The copy to each other host becomes a chain for that host: export, transfer, verify, smoke, and promote. A failed host names its step, and the other hosts go on.
-2. **Workspace templates.** A template build becomes a chain: launch, volume, clone, one step for each setup step, warm check, verify, detach, and publish. Its budget, its lock with an expiry time, and its retry count go away with the long job.
+2. **Workspace templates (superseded).** ADR 0207 decision 2 replaces this next step with clone-plus-setup workspaces; no template chain will be built.
 3. **UpCloud.** The UpCloud template runs the same steps through its SSH guest shell, so both providers run one list of steps.
 
 ## Rejected alternatives
@@ -105,7 +107,7 @@ Each of these gets its own pull request after the base image chain is built, as 
 - A nightly build that starts from the current image does less work. Its time depends on what changed.
 - A build is no longer byte-for-byte reproducible from the stock image each night. The weekly full build limits the drift to a week.
 - A task VM can run software that is up to a day older than the Gateway's programs. A tool that the image lacks shows only when a setup step or a check that needs it fails. Run `task-vms:build-image` after a change to a program.
-- The `builds` queue runs one job at a time in the fleet, so the steps of a base image build and of a template build take turns. A build takes longer from start to end. Each job holds the worker only for its step, including at most 600 seconds of cloud-init polling.
+- The `builds` queue runs one job at a time in the fleet, so base image and sync jobs take turns. A build takes longer from start to end. Each job holds the worker only for its step, including at most 600 seconds of cloud-init polling.
 - This change removes the image manifest, the image host lock with its expiry time, the build's signal trap and `failed()` cleanup, and the stage runner of the base image build.
 
 ## Affects

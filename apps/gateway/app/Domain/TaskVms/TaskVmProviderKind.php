@@ -6,7 +6,7 @@ namespace App\Domain\TaskVms;
 
 /**
  * Where a task VM runs, as its row's `provider` stores it. An `incus` VM runs on a configured host Node: the host's
- * `max_vms` slots bound it, and the host holds its workspace templates. An `upcloud` VM is an UpCloud server, the
+ * `max_vms` slots bound it. An `upcloud` VM is an UpCloud server, the
  * overflow of the Incus hosts: it has no host Node, a fixed plan, and costs money for as long as it exists.
  */
 enum TaskVmProviderKind: string
@@ -27,12 +27,6 @@ enum TaskVmProviderKind: string
     public function supports(TaskVmSize $size): bool
     {
         return $this === self::Incus || $size === TaskVmSize::Normal;
-    }
-
-    /** Whether a claim may attach a workspace template volume, which lives on an Incus host. */
-    public function hasWorkspaceTemplates(): bool
-    {
-        return $this === self::Incus;
     }
 
     /**
