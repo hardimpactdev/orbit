@@ -660,6 +660,7 @@
               "decisions/0205-publish-database-credentials-to-vaultwarden",
               "decisions/0206-build-task-vm-images-as-chains-of-small-jobs",
               "decisions/0212-turn-proxycli-into-the-ai-router-extension",
+              "decisions/0213-run-ci-runners-through-a-ci-runner-role",
               "decisions/0214-pin-the-ai-router-version-and-flag-upgrades"
             ]
           }
