@@ -13,7 +13,9 @@ Replace the repository and IDs with your own values. The [Quickstart](https://or
 
 ## Alpha status
 
-Orbit is being prepared for a source-based alpha. Use disposable machines and test data. The [alpha guide](docs/reference/alpha.md) defines the trial path, limits, and release criteria. It does not claim that the fresh-machine trial or production readiness has passed.
+Orbit runs a live fleet. Adding fresh machines as Nodes is proven in regular use: the maintainer adds Nodes to the fleet, and each task group runs on a fresh Ubuntu VM that Orbit enrolls as a Node.
+
+A source alpha tag has not been published. Use disposable machines and test data. The [alpha guide](docs/reference/alpha.md) defines the trial path, limits, and release criteria. Its checks for a fresh Gateway installation, the first application, and recovery are still open. Production readiness is not claimed.
 
 The CLI requires PHP 8.5 and Composer 2. Managed Nodes, including the Gateway, require Ubuntu 26.04; Ubuntu 24.04 is unsupported. [Your part](https://orbit.nckrtl.com/docs/quickstart#your-part) of the Quickstart lists the machines and network access you need before you start.
 
