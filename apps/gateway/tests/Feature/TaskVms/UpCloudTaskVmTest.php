@@ -7,6 +7,7 @@ use App\Domain\Releases\ReleaseAlertNotifier;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmPlacementPolicy;
 use App\Domain\TaskVms\TaskVmProvider;
@@ -1091,7 +1092,10 @@ describe('recipe-driven UpCloud base image refresh', function (): void {
         $identity = app(RecipeImageBuilds::class)->currentRecipe()->identity;
         DB::table('upcloud_task_vm_image_builds')->insert(['recipe_identity' => $identity, 'state' => 'failed', 'started_at' => now()]);
 
-        expect(fn () => app(UpCloudTaskVmImageBuilder::class)->build(afterAttemptId: 0))->toThrow(TaskVmException::class, 'explicit retry');
+        expect(fn () => app(UpCloudTaskVmImageBuilder::class)->build(afterAttemptId: 0))->toThrow(function (TaskVmException $error): void {
+            expect($error->errorCode)->toBe(TaskVmError::ImageBuildSuperseded->value);
+            expect($error->getMessage())->toContain('explicit retry');
+        });
 
         expect($this->upcloud->requests)->toBe([]);
         $this->assertDatabaseCount('upcloud_task_vm_image_builds', 1);
