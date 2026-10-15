@@ -83,6 +83,23 @@ describe('machine recipe structure and identity', function (): void {
         expect($recipe->tools['php-common']->version)->toStartWith('2:');
     });
 
+    it('installs OpenTelemetry packages and checks its modules only for app-dev', function (): void {
+        $recipe = new RecipeLoader()->load();
+
+        foreach (['8.4', '8.5'] as $version) {
+            $name = "php{$version}-opentelemetry";
+            expect($recipe->profile('app-dev'))->toContain($name);
+            expect($recipe->phpExtensions($recipe->profile('app-dev'))[$version])->toContain('opentelemetry');
+            expect($recipe->tools[$name]->version)->toBe('1.2.1-2+0~20260623.18+ubuntu26.04~1.gbpdbb97a');
+            foreach (['app-prod', 'ci-runner', 'base', 'gateway'] as $profile) {
+                expect($recipe->profile($profile))->not->toContain($name);
+                foreach ($recipe->phpExtensions($recipe->profile($profile)) as $extensions) {
+                    expect($extensions)->not->toContain('opentelemetry');
+                }
+            }
+        }
+    });
+
     it('rejects a wrong Debian release version even when the epoch is omitted in the filename', function (): void {
         $data = machine_recipe_document();
         $data['tools']['php-common']['version'] = '2:999';
@@ -104,12 +121,12 @@ describe('machine recipe structure and identity', function (): void {
         }
         // Every machine with a PHP set also gets the tool that repacks its build for a rollback.
         $php = [...array_values(array_unique($php)), 'dpkg-repack'];
-        $php85 = [...$recipe->php('8.5')->packages, 'dpkg-repack'];
+        $php85 = [...$recipe->php('8.5')->packagesFor(false), 'dpkg-repack'];
         $javascript = ['vp', 'vp-cli', 'node', 'pnpm', 'bun'];
         $production = array_values(array_unique([...$common, ...$packages->forRole($node, RoleName::AppProd), ...$javascript]));
         $development = [...$production, ...$php];
         $imagePackages = ['openssh-server', ...TaskVmCloudInit::WorkspaceTools, ...TaskVmCloudInit::ChromiumLibraries];
-        $base = [...$development, ...$imagePackages, 'rust', 'rust-std', 'cargo', 'clippy', 'rustfmt', 'orbit-agent', 'pi'];
+        $base = [...array_diff($development, ['php8.4-opentelemetry', 'php8.5-opentelemetry']), ...$imagePackages, 'rust', 'rust-std', 'cargo', 'clippy', 'rustfmt', 'orbit-agent', 'pi'];
         $profiles = [
             'operator' => $common,
             'gateway' => [...$common, 'caddy', ...$php85],
@@ -146,6 +163,7 @@ describe('machine recipe structure and identity', function (): void {
 
         expect($policy->rollbackTool)->toBe('dpkg-repack')
             ->and($policy->pcovProfiles)->toBe(['app-dev', 'base', 'ci-runner'])
+            ->and($policy->opentelemetryProfiles)->toBe(['app-dev'])
             ->and($policy->purgeProfiles)->toBe(['ci-runner'])
             ->and($policy->mirror)->toBe('https://github.com/nckrtl/orbit/releases/download/php-build-mirror');
     });
@@ -163,7 +181,7 @@ describe('machine recipe structure and identity', function (): void {
             ->and($recipe->php('8.4')->extensions)->not->toContain('lexbor', 'uri')
             ->and(array_keys($recipe->php))->toBe(new InstancePhpVersionCatalog()->versions());
         foreach (['gateway', 'app-prod', 'websocket', 'ci-runner', 'app-dev', 'base'] as $profile) {
-            expect($recipe->profile($profile))->toContain(...$build->packages);
+            expect($recipe->profile($profile))->toContain(...$build->packagesFor($profile === 'app-dev'));
         }
         foreach ($build->packages as $name) {
             expect($recipe->tools[$name]->version)->toContain('+ubuntu26.04');
@@ -223,6 +241,12 @@ describe('machine recipe structure and identity', function (): void {
         'PCOV for an unknown profile' => [function (&$d): void {
             $d['php']['pcov'][] = 'typo';
         }, 'php.pcov: expected recipe profiles'],
+        'OpenTelemetry without its module' => [function (&$d): void {
+            $d['php']['versions']['8.5']['extensions'] = array_values(array_diff($d['php']['versions']['8.5']['extensions'], ['opentelemetry']));
+        }, 'OpenTelemetry package and extension must match'],
+        'OpenTelemetry on production' => [function (&$d): void {
+            $d['php']['opentelemetry'][] = 'app-prod';
+        }, 'only the app-dev profile'],
         'a mirror without HTTPS' => [function (&$d): void {
             $d['php']['mirror'] = 'http://example.com/php';
         }, 'php.mirror: expected an HTTPS base URL'],

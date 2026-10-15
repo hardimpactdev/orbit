@@ -75,7 +75,7 @@ final readonly class RecipeImagePrograms
         $php = $versions === [] ? null : [
             'program' => $catalog->program(PhpBuildInstaller::Program)->source,
             'bootstrap' => $catalog->bootstrap(),
-            'input' => PhpBuildInstaller::input($recipe, $versions, 'apply', in_array($profile, $recipe->phpPolicy->pcovProfiles, true), 'refuse', 'none'),
+            'input' => PhpBuildInstaller::input($recipe, $versions, 'apply', in_array($profile, $recipe->phpPolicy->pcovProfiles, true), 'refuse', 'none', opentelemetry: in_array($profile, $recipe->phpPolicy->opentelemetryProfiles, true)),
         ];
 
         return ['identity' => $recipe->identity, 'snapshot' => $recipe->snapshot, 'architecture' => $architecture,

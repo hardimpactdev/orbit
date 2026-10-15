@@ -42,8 +42,8 @@ final readonly class MachineRecipe
     {
         $extensions = [];
         foreach ($this->php as $version => $build) {
-            if (array_diff($build->packages, $tools) === []) {
-                $extensions[$version] = $build->extensions;
+            if (array_diff($build->packagesFor(false), $tools) === []) {
+                $extensions[$version] = $build->extensionsFor(in_array("php{$version}-opentelemetry", $tools, true));
             }
         }
 

@@ -629,6 +629,7 @@ it('installs through the one PHP build installer and keeps extra packages on an 
         ->and($input['extras'])->toBe('keep')
         ->and($input['fpm'])->toBe('shared')
         ->and($input['pcov'])->toBeTrue()
+        ->and($input['opentelemetry'])->toBeTrue()
         ->and($input['mirror'])->toBe($recipe->phpPolicy->mirror)
         ->and($input['repack'])->toBe(['package' => 'dpkg-repack', 'version' => $recipe->tools['dpkg-repack']->version])
         ->and($input['release'])->toBe(['id' => 'ubuntu', 'codenames' => ['resolute']])
@@ -653,6 +654,10 @@ it('loads PCOV only on app-dev Nodes', function (array $roles, bool $pcov): void
     new RemotePhpPackageManager()->installForAppProd($node->load('roles'), collect(['8.5']), php_package_app_prod_ssh($transport));
 
     expect(php_package_installer_input($transport->commands[0])['pcov'])->toBe($pcov);
+    $input = php_package_installer_input($transport->commands[0]);
+    expect($input['opentelemetry'])->toBe($pcov);
+    expect(in_array('php8.5-opentelemetry', array_column($input['versions']['8.5']['packages'], 'name'), true))->toBe($pcov);
+    expect(in_array('opentelemetry', $input['versions']['8.5']['extensions'], true))->toBe($pcov);
 })->with([
     'a production Node' => [[RoleName::AppProd], false],
     'a Node with both roles' => [[RoleName::AppProd, RoleName::AppDev], true],
@@ -673,6 +678,8 @@ it('asks for the same PCOV placement from every step on a Node with both applica
     $installers = array_values(array_filter($transport->commands, static fn (RemoteCommand $command): bool => ($command->arguments[4] ?? null) === 'php.install-build'));
     expect($installers)->toHaveCount(4)
         ->and(array_map(static fn (RemoteCommand $command): bool => php_package_installer_input($command)['pcov'], $installers))
+        ->toBe([true, true, true, true])
+        ->and(array_map(static fn (RemoteCommand $command): bool => php_package_installer_input($command)['opentelemetry'], $installers))
         ->toBe([true, true, true, true]);
 });
 
@@ -682,7 +689,7 @@ it('installs a dedicated master build without restarting any PHP-FPM service', f
     new RemotePhpPackageManager()->installPackagesOnlyForAppProd(php_package_node(RoleName::AppProd), collect(['8.5']), php_package_app_prod_ssh($transport));
 
     expect($transport->commands)->toHaveCount(1)
-        ->and(php_package_installer_input($transport->commands[0]))->toMatchArray(['fpm' => 'none', 'extras' => 'keep', 'pcov' => false]);
+        ->and(php_package_installer_input($transport->commands[0]))->toMatchArray(['fpm' => 'none', 'extras' => 'keep', 'pcov' => false, 'opentelemetry' => false]);
 });
 
 it('refuses a PHP version that the recipe does not build before any remote work', function (string $role): void {

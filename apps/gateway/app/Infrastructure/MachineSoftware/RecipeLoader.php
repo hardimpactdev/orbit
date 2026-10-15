@@ -130,6 +130,7 @@ final readonly class RecipeLoader
         $allowed = [...$required, 'vpn', 'router', 'ingress', 'metrics', 'database', 'websocket', 'analytics', NodeRecipeProgram::CiRunnerProfile];
         $this->require(array_diff($required, $roleNames) === [] && array_diff($roleNames, $allowed) === [], 'roles: expected the four required profiles and only known Node roles.');
         $this->require(array_diff($phpSets['pcov'], [...$roleNames, 'base']) === [], 'php.pcov: expected recipe profiles.');
+        $this->require(array_diff($phpSets['opentelemetry'], ['app-dev']) === [], 'php.opentelemetry: only the app-dev profile may load OpenTelemetry.');
         // Purging PHP packages outside the recipe is for machines that run only CI jobs, never for a site's Node.
         $this->require(array_diff($phpSets['purge_extras'], [NodeRecipeProgram::CiRunnerProfile]) === [], 'php.purge_extras: only the ci-runner profile may purge PHP packages.');
         $profiles = [];
@@ -145,6 +146,9 @@ final readonly class RecipeLoader
             }
             $used = [...$used, ...$extra];
             $effective = array_values(array_unique([...$common, ...$extra]));
+            if (! in_array($role, $phpSets['opentelemetry'], true)) {
+                $effective = array_values(array_filter($effective, static fn (string $name): bool => ! str_ends_with($name, '-opentelemetry')));
+            }
             sort($effective, SORT_STRING);
             $profiles[$role] = $effective;
         }
@@ -164,24 +168,25 @@ final readonly class RecipeLoader
         $canonical = json_encode($this->canonical($identityData), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
 
         return new MachineRecipe('sha256:'.hash('sha256', $canonical), $snapshot, $architectures, $tools, $profiles, $canonical, $json, $php, $phpSets['ci'],
-            new PhpPolicy($phpSets['rollback'], $phpSets['pcov'], $phpSets['purge_extras'], $phpSets['mirror']));
+            new PhpPolicy($phpSets['rollback'], $phpSets['pcov'], $phpSets['purge_extras'], $phpSets['mirror'], $phpSets['opentelemetry']));
     }
 
     /**
      * Structure of the `php` object, before the pins exist. See ADR 0216.
      *
      * @param  array<string, string>  $catalog
-     * @return array{ci: string, shared: list<string>, rollback: string, pcov: list<string>, purge_extras: list<string>, mirror: string, versions: array<string, array{packages: list<string>, extensions: list<string>}>}
+     * @return array{ci: string, shared: list<string>, rollback: string, pcov: list<string>, opentelemetry: list<string>, purge_extras: list<string>, mirror: string, versions: array<string, array{packages: list<string>, extensions: list<string>}>}
      */
     private function phpSets(mixed $value, array $catalog): array
     {
-        $raw = $this->object($value, 'php', ['ci', 'shared', 'rollback', 'pcov', 'purge_extras', 'mirror', 'versions']);
+        $raw = $this->object($value, 'php', ['ci', 'shared', 'rollback', 'pcov', 'opentelemetry', 'purge_extras', 'mirror', 'versions']);
         $mirror = $this->text($raw->mirror, 'php.mirror');
         $url = parse_url($mirror);
         $this->require(is_array($url) && ($url['scheme'] ?? '') === 'https' && isset($url['host']) && ! isset($url['user']) && ! isset($url['query']) && ! str_ends_with($mirror, '/'), 'php.mirror: expected an HTTPS base URL without a final slash.');
         $rollback = $this->text($raw->rollback, 'php.rollback');
         $this->require(($catalog[$rollback] ?? null) === 'ubuntu', 'php.rollback: expected an Ubuntu tool that repacks installed packages, such as dpkg-repack.');
         $pcov = $this->strings($raw->pcov, 'php.pcov');
+        $opentelemetry = $this->strings($raw->opentelemetry, 'php.opentelemetry');
         $purge = $this->strings($raw->purge_extras, 'php.purge_extras');
         $shared = $this->strings($raw->shared, 'php.shared');
         $this->require($shared !== [], 'php.shared: expected the shared PHP pins.');
@@ -208,20 +213,21 @@ final readonly class RecipeLoader
                 $this->require(preg_match('/^[a-z0-9_]+(?: [a-z0-9_]+)?$/D', $extension) === 1, "{$field}.extensions: [{$extension}] is not a lower-case module name.");
             }
             $this->require(in_array('core', $extensions, true) && in_array('pcov', $extensions, true), "{$field}.extensions: expected core and pcov.");
+            $this->require(in_array('opentelemetry', $extensions, true) === in_array("php{$version}-opentelemetry", $packages, true), "{$field}: OpenTelemetry package and extension must match.");
             $versions[(string) $version] = ['packages' => $packages, 'extensions' => $extensions];
         }
         $this->require($versions !== [], 'php.versions: expected at least one PHP version.');
         $ci = $this->text($raw->ci, 'php.ci');
         $this->require(isset($versions[$ci]), "php.ci: [{$ci}] is not a declared PHP version.");
 
-        return ['ci' => $ci, 'shared' => $shared, 'rollback' => $rollback, 'pcov' => $pcov, 'purge_extras' => $purge, 'mirror' => $mirror, 'versions' => $versions];
+        return ['ci' => $ci, 'shared' => $shared, 'rollback' => $rollback, 'pcov' => $pcov, 'opentelemetry' => $opentelemetry, 'purge_extras' => $purge, 'mirror' => $mirror, 'versions' => $versions];
     }
 
     /**
      * One exact build per version: the PHP core pins share the `php<version>-common` version, and every pin is built
      * for the recipe's Ubuntu release.
      *
-     * @param  array{ci: string, shared: list<string>, rollback: string, pcov: list<string>, purge_extras: list<string>, mirror: string, versions: array<string, array{packages: list<string>, extensions: list<string>}>}  $sets
+     * @param  array{ci: string, shared: list<string>, rollback: string, pcov: list<string>, opentelemetry: list<string>, purge_extras: list<string>, mirror: string, versions: array<string, array{packages: list<string>, extensions: list<string>}>}  $sets
      * @param  array<string, ToolPin>  $tools
      * @return array<string, PhpBuild>
      */

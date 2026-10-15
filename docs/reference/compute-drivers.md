@@ -106,19 +106,22 @@ The recipe is the single source of truth for Orbit's PHP build. Every machine th
 | `php.ci` | The version that CI installs |
 | `php.rollback` | The Ubuntu tool that repacks an installed build for a rollback, `dpkg-repack`. Every profile with a PHP set gets it |
 | `php.pcov` | The profiles whose PHP CLI loads PCOV: `app-dev`, `base`, and `ci-runner` |
+| `php.opentelemetry` | The profiles that install and load OpenTelemetry in CLI and PHP-FPM: `app-dev` only |
 | `php.purge_extras` | The profiles that purge PHP packages outside the recipe. Only `ci-runner` may be listed |
 | `php.mirror` | The HTTPS base URL of Orbit's copy of the pinned files, tried before each pin's own URL |
 
-A profile names a PHP set as `php:<version>`. The set is the shared pins, the version's packages, and the rollback tool. A profile cannot name a PHP pin directly, so no profile gets part of a set. A version that no profile names is an error.
+A profile names a PHP set as `php:<version>`. The set is the shared pins, the version's packages, and the rollback tool. OpenTelemetry follows `php.opentelemetry`. A profile cannot name a PHP pin directly to choose individual packages from a set. A version that no profile names is an error.
 
-Extensions with their own release, such as `igbinary`, `imagick`, `pcov`, and `redis`, keep their own versions. The loader also rejects a recipe in which:
+Extensions with their own release, such as `igbinary`, `imagick`, `opentelemetry`, `pcov`, and `redis`, keep their own versions. The loader also rejects a recipe in which:
 
 - the PHP core pins of a version have different versions. A core pin has a version that starts with `<version>.`, and it must equal `php<version>-common`;
 - a Sury pin is built for another Ubuntu release: its version must contain `+ubuntu<ubuntu.release>`;
 - `php.ci` names an undeclared version;
 - `php.purge_extras` names another profile than `ci-runner`, or `php.mirror` is not an HTTPS URL.
 
-PCOV loads in the CLI of the `php.pcov` profiles only, and never in PHP-FPM. Those are the machines that run checks and share CI caches, so their loaded extension set matches CI's. Production Nodes and the Gateway keep PCOV installed but not loaded.
+PCOV loads in the CLI of the `php.pcov` profiles only, and never in PHP-FPM. Those are the machines that run checks and need coverage. Production Nodes and the Gateway keep PCOV installed but not loaded.
+
+OpenTelemetry is installed and enabled in both CLI and PHP-FPM only on the `php.opentelemetry` profiles. The `app-dev` profile needs its `OpenTelemetry\Instrumentation\hook()` API for php-data-bridge to instrument web requests, so CLI-only loading is insufficient. Production, CI-runner, base, and Gateway profiles exclude its packages and loaded module. The recipe lists OpenTelemetry alongside the other PHP packages and extensions; profile selection removes it from both lists elsewhere.
 
 #### Install the PHP build
 
@@ -160,14 +163,16 @@ Then it swaps the build:
 1. It installs the files with `--no-remove` and `--allow-downgrades`. A newer or an older build becomes the recipe build, and no other package is removed.
 2. Package hooks cannot start or restart a service during the install.
 3. It loads PCOV in the CLI on the `php.pcov` profiles only, and never in PHP-FPM.
-4. It checks that `php<version> -m` prints the recipe's extensions.
+4. It installs and loads OpenTelemetry in CLI and PHP-FPM only on the `php.opentelemetry` profiles.
+5. It checks that `php<version> -m` prints the recipe's extensions for the selected profile.
 
 After a change, it restarts PHP-FPM:
 
 1. It validates each master with `php-fpm<version> -t`. A dedicated production master uses its own `--fpm-config`.
 2. It restarts the master and checks that the service is active.
-3. It checks that `php-fpm<version> -m` loads the required extensions and not PCOV.
-4. It sends a FastCGI request to each pool socket in the master's configuration and waits for the answer.
+3. It checks that `php-fpm<version> -m` loads the required extensions and excludes PCOV.
+4. It checks that OpenTelemetry loading matches the selected profile.
+5. It sends a FastCGI request to each pool socket in the master's configuration and waits for the answer.
 
 When a check after the swap fails, the installer rolls back. It reinstalls the previous build with `--allow-downgrades`, restores the module links, and restarts the masters again. It ends with `rolled_back`, or with `rollback_failed` when that fails too.
 

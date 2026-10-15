@@ -18,4 +18,16 @@ final readonly class PhpBuild
         public array $packages,
         public array $extensions,
     ) {}
+
+    /** @return list<string> */
+    public function packagesFor(bool $opentelemetry): array
+    {
+        return $opentelemetry ? $this->packages : array_values(array_diff($this->packages, ["php{$this->version}-opentelemetry"]));
+    }
+
+    /** @return list<string> */
+    public function extensionsFor(bool $opentelemetry): array
+    {
+        return $opentelemetry ? $this->extensions : array_values(array_diff($this->extensions, ['opentelemetry']));
+    }
 }
