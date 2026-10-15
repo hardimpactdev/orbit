@@ -150,7 +150,6 @@ use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\NodeRoleFollowUpReport;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
-use App\Domain\Operations\OperationAttemptLease;
 use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessEnvironmentProjection;
 use App\Domain\Processes\ProcessRuntimeLease;
@@ -752,12 +751,6 @@ final class ApplicationServiceProvider extends ServiceProvider
             ),
         );
         $this->app->scoped(ProcessRuntimeLease::class, NativeProcessRuntimeLease::class);
-        $this->app->singleton(
-            OperationAttemptLease::class,
-            static fn (): OperationAttemptLease => new OperationAttemptLease(
-                rtrim(string: Config::string('orbit.home'), characters: '/').'/locks/operations',
-            ),
-        );
         $this->app->scoped(
             DevelopmentProjectionOperationLock::class,
             static fn (): DevelopmentProjectionOperationLock => new NativeDevelopmentProjectionOperationLock(
