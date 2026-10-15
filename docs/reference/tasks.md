@@ -458,7 +458,7 @@ The second subtask reproduces the failure and then fixes it. Its deliverable id 
 
 ### Collection
 
-`problems:collect` runs every 10 minutes. Both commands run only while the Tasks extension is enabled. `TaskSchedule` registers both, as unique jobs on the [Gateway queue](/reference/gateway-queue#scheduled-work). A lost collector job frees its lock after 15 minutes, and a lost filer job after 30 minutes.
+`problems:collect` runs every 10 minutes. Both commands run only while the Tasks extension is enabled. `TaskSchedule` registers both [in the scheduler itself](/reference/gateway-queue#scheduled-work), never on the Gateway queue, so they keep running while Horizon is down. Each holds an overlap lock and its own lock: 15 minutes for the collector, and 30 minutes for the filer. A killed run leaves its locks until they expire, so the collector can skip one run after a kill, and the filer skips none.
 
 | Source | Bound per run |
 | --- | --- |
@@ -477,7 +477,7 @@ A failure in one source does not skip the others. The same exception class for o
 
 ## Scheduler
 
-The scheduler command `tasks:tick` does all work of the extension. The Gateway's Laravel schedule dispatches it every 10 seconds, `problems:collect` every 10 minutes, and `problems:file` every hour, while the extension is enabled. Each is a unique job on the [Gateway queue](/reference/gateway-queue#scheduled-work), so a slow tick never stacks up, and Laravel Horizon runs it. The Gateway host must run `php artisan schedule:work` and Horizon, or no task advances. One cache lock, held for up to 300 seconds, protects scheduled and manual ticks. A tick that finds the lock held does nothing.
+The scheduler command `tasks:tick` does all work of the extension. The Gateway's Laravel schedule dispatches it every 10 seconds while the extension is enabled. It is a unique job on the [Gateway queue](/reference/gateway-queue#scheduled-work), so a slow tick never stacks up, and Laravel Horizon runs it. The scheduler also runs `problems:collect` every 10 minutes and `problems:file` every hour, itself, as [Collection](#collection) describes. The Gateway host must run `php artisan schedule:work` and Horizon, or no task advances. One cache lock, held for up to 300 seconds, protects scheduled and manual ticks. A tick that finds the lock held does nothing.
 
 A tick that takes the lock records that time in the Gateway cache, and [`tasks:status`](/cli/tasks#orbit-tasksstatus) reports it as `last_tick_at`. A ticking scheduler moves it forward about every 10 seconds. Clearing the cache forgets it until the next tick. [`bin/gateway-smoke`](/reference/delivery-line#bingateway-smoke) reads it to prove the scheduler runs after a Gateway release.
 
@@ -649,7 +649,7 @@ When the acting thread stops, the tick reads `$(git rev-parse --git-path orbit)/
 
 Every task group runs in its own [task VM](/reference/compute-drivers#task-vms). The claim sizes the VM by the topology its subtasks [declare](/reference/compute-drivers#size-by-declared-topology) and by the Project: a Project in `task_vms.medium_projects` gets a medium VM. A subtask that declares a topology runs with it nested in the VM. Orbit [prepares](/reference/compute-drivers#prepare-the-topology) it before the subtask's baseline check or implementer, and the reviewer [proves](/reference/compute-drivers#prove-work-on-a-topology) the deliverables on the declared nodes with recorded evidence.
 
-For a normal VM the claim takes a [warm VM](/reference/compute-drivers#keep-warm-vms) when its host keeps one, or else it creates a VM. Then it waits until the VM is `ready`. Until then, the task returns to `todo` with a [`Task VM:` reason](/reference/compute-drivers#from-claim-to-workspace), and the next tick tries again. Then Orbit creates the workspace on the VM's Node: the Instance `task-{id}`, and its private Route when the workspace is routed.
+The claim [creates a fresh VM from the current recipe](/reference/compute-drivers#claims-require-the-current-recipe), then waits until it is `ready`. Until then, the task returns to `todo` with a [`Task VM:` reason](/reference/compute-drivers#from-claim-to-workspace), and the next tick tries again. Then Orbit creates the workspace on the VM's Node: the Instance `task-{id}`, and its private Route when the workspace is routed.
 
 The checkout [clones from the Gateway mirror](/reference/compute-drivers#clone-and-set-up-every-workspace). The baseline check runs every setup step, using private package caches seeded from the read-only host cache and the selected CI cache ref. The check log shows at most the first 4096 characters of each setup command.
 

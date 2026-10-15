@@ -19,8 +19,8 @@ use Throwable;
 
 /**
  * Registers scheduled work (docs/reference/gateway-queue.md#scheduled-work). While the Gateway queue is set, the
- * scheduler only dispatches, so nothing heavy runs in `schedule:work`. Without the queue, it runs a command itself,
- * with its overlap lock, as before.
+ * scheduler only dispatches these commands, so they never hold `schedule:work`. Without the queue, it runs a command
+ * itself, with its overlap lock, as before.
  */
 final readonly class GatewaySchedule
 {

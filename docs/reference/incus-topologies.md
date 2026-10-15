@@ -14,7 +14,7 @@ covers:
 
 This page is for the contributor, agent, or reviewer who runs Orbit on disposable Incus machines. The `apps/e2e` harness composes one topology per issue from the Nodes the issue declares. Each Node starts from the same prepared recipe base image, and the harness then bootstraps a fresh test Gateway and enrolls the Nodes. `bin/e2e-topology` controls a topology, `bin/e2e-topology-images` imports the recipe base image, and `bin/e2e-topology-host-setup` prepares a machine, such as a task VM, to run topologies nested. The [using-incus-topologies](https://github.com/nckrtl/orbit/blob/main/.agents/skills/using-incus-topologies/SKILL.md) skill covers the working habits.
 
-Task workspaces clone from the Gateway mirror and run Project setup on every creation. The [shared package cache](/reference/compute-drivers#shared-package-cache) and [CI cache refs](/reference/instance-setup#import-ci-main-caches) speed setup without workspace templates. Existing groups keep their VM and checkout.
+[Compute drivers](/reference/compute-drivers#clone-and-set-up-every-workspace) describes task workspace creation and its package and CI caches.
 
 ## Declared topologies in task VM groups
 
@@ -34,7 +34,7 @@ Every topology has a `gateway` VM and an `operator` VM. `acquire --nodes=LIST` a
 
 `app-prod-2` is a second `app-prod` Node from the same base image. Each production Node gets its own name as its development TLD, and `app-dev` gets `beast`.
 
-The Node catalog `apps/e2e/resources/topology-nodes.json` holds this table. For each Node it names the role image, address position, checkout, memory, TLD, and the Node it requires. It also names the default list, the roles an entry may add, and the roles that put a Node in its own Cluster. Topology selection, composition, and readiness derive from it.
+The Node catalog `apps/e2e/resources/topology-nodes.json` holds this table. For each Node it names the software profile, address position, checkout, memory, TLD, and the Node it requires. It also names the default list, the roles an entry may add, and the roles that put a Node in its own Cluster. Topology selection, composition, and readiness derive from it.
 
 The WireGuard address is the address position minus 9. The network's DHCP range ends at the highest position the topology uses. A new Node kind needs one catalog entry and one case of the harness `RoleImage` enum. A Gateway test reads the same file, so the Gateway accepts the same `topology` entries as the harness.
 
@@ -56,8 +56,6 @@ The operator is separate from the host's network namespace. A host such as beast
 ## One recipe base image
 
 Every topology Node launches the same base fingerprint built on its task VM host, including the operator VM. The task VM receives one archive and a manifest; `bin/e2e-topology-images ensure --recipe-images=PATH` imports and validates its recipe identity, base profile, fingerprint, and VM type. Imports are repeatable and remove the archive after verification. The harness does not build images. Standalone hosts must import an approved base archive through the same manifest contract.
-
-Before deployment, drain or cancel all pre-recipe task groups and release their topologies. They cannot use the new harness. There is no fallback to local role builds or an operator container. No automatic cancellation or host cleanup runs during deployment.
 
 The base already provides pinned software, `orbit` with uid/gid 1000 and passwordless sudo, masked apt timers, and identity cleanup before publication. The shared base preserves DNS configuration for normal task VMs. Only nested topology guests receive persistent public DNS upstreams: as soon as their guest agents respond, the harness sets them before waiting for cloud-init. This avoids the two-minute network-online timeout on topology bridges without usable DNS, while normal task VMs keep their link DNS for internal names.
 

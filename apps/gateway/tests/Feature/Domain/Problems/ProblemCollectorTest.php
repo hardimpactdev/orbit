@@ -59,6 +59,38 @@ it('collects fingerprints for the same doctor issue across two runs', function (
         ->toBe([2, 2]);
 });
 
+it('records nothing from an interrupted doctor pass and records every issue once on the next run', function (): void {
+    problem_collector_sandbox();
+    $nodes = [problem_collector_node('drift-a'), problem_collector_node('drift-b')];
+    app()->instance(NodeStateInspector::class, new class implements NodeStateInspector
+    {
+        public function inspect(Node $node): NodeInspectionData
+        {
+            return new NodeInspectionData(false, null, null, null);
+        }
+    });
+    $saves = 0;
+    ProblemFingerprint::saving(static function () use (&$saves): void {
+        if (++$saves === 2) {
+            throw new RuntimeException('Killed between two fingerprint writes.');
+        }
+    });
+
+    try {
+        expect(Artisan::call('problems:collect'))->toBe(1)
+            ->and(ProblemFingerprint::query()->count())->toBe(0)
+            ->and(ProblemCollectorState::query()->sole()->doctor_resume_key)->toBeNull();
+    } finally {
+        ProblemFingerprint::flushEventListeners();
+    }
+
+    expect(Artisan::call('problems:collect'))->toBe(0)
+        ->and(ProblemFingerprint::query()->orderBy('fingerprint')->pluck('occurrences', 'fingerprint')->all())->toBe([
+            'doctor|node.lifecycle_not_active|node|'.$nodes[0]->id => 1,
+            'doctor|node.lifecycle_not_active|node|'.$nodes[1]->id => 1,
+        ]);
+});
+
 it('collects no fingerprint for an informational doctor issue', function (): void {
     problem_collector_sandbox();
     $node = problem_collector_node('informational');
