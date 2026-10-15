@@ -73,10 +73,11 @@ FULL_SUITE = ('../../bin/pest-plain', 'vendor/bin/pest', '--no-tia',
 SHARED_LANES = {'apps/web': 'apps/gateway', 'repository': 'apps/gateway'}
 
 
-def full_suite(processes):
-    """The whole-suite fallback runs in parallel: in one process the Gateway suite takes about 11 minutes."""
-    return ('../../bin/pest-plain', 'vendor/bin/pest', '--parallel', f'--processes={processes}', '--no-tia',
-            '--fail-on-empty-test-suite', '--compact', '--colors=never')
+# The whole-suite fallback runs in parallel: in one process the Gateway suite takes about 30 minutes. The lane fills in
+# its process count when the command starts.
+LANE_PROCESSES = '--processes=LANE'
+PARALLEL_FULL_SUITE = ('../../bin/pest-plain', 'vendor/bin/pest', '--parallel', LANE_PROCESSES, '--no-tia',
+                       '--fail-on-empty-test-suite', '--compact', '--colors=never')
 
 
 def check_processes(root):
@@ -95,10 +96,64 @@ def lanes(selected):
     return list(groups.values())
 
 
-def lane_budget(groups, processes):
-    """Split the process budget between the lanes, so the tools of all lanes together stay within it."""
-    count = max(1, min(len(groups), processes))
-    return count, max(1, processes // count)
+def lane_key(entries):
+    return SHARED_LANES.get(entries[0][1], entries[0][1])
+
+
+def lane_weight(root, entries):
+    """A lane's share of the budget follows the size of its test suites; other checks count as one."""
+    weight = 0
+    for _order, project, _commands in entries:
+        tests = root / project / 'tests'
+        weight += max(1, sum(1 for _path in tests.rglob('*Test.php'))) if project in PHP_PROJECTS and tests.is_dir() else 1
+    return weight
+
+
+def lane_count(groups, processes):
+    """How many lanes run at once. The heaviest lane keeps at least half the budget, so with the default of 4 the
+    Gateway runs two processes while two other lanes run one each."""
+    return max(1, min(len(groups), 1 + processes // 2))
+
+
+class ProcessBudget:
+    """Hands out processes to the commands of the running lanes, so the tools of all lanes together stay within the
+    budget. A command gets its lane's weighted share of the lanes that are still running, so a lane gets the
+    processes that finished lanes freed. A command waits when every process is in use."""
+
+    def __init__(self, processes, weights):
+        self.processes, self.weights = processes, weights
+        self.held, self.running = {}, set()
+        self.condition = threading.Condition()
+
+    def start(self, lane):
+        with self.condition:
+            self.running.add(lane)
+
+    def finish(self, lane):
+        with self.condition:
+            self.running.discard(lane)
+            self.held.pop(lane, None)
+            self.condition.notify_all()
+
+    def acquire(self, lane):
+        with self.condition:
+            while True:
+                others = [other for other in self.running if other != lane]
+                free = self.processes - sum(self.held.get(other, 0) for other in others)
+                # Keep one process for each running lane between commands, so it can continue.
+                waiting = sum(1 for other in others if not self.held.get(other))
+                total = sum(self.weights[other] for other in self.running | {lane})
+                share = max(1, self.processes * self.weights[lane] // total)
+                granted = min(share, free - waiting) if free - waiting >= 1 else min(1, free)
+                if granted >= 1:
+                    self.held[lane] = granted
+                    return granted
+                self.condition.wait()
+
+    def release(self, lane):
+        with self.condition:
+            self.held[lane] = 0
+            self.condition.notify_all()
 
 
 def git(root, *args):
@@ -406,8 +461,10 @@ def main():
         'ORBIT_CHECK_SCOPE': 'changed', 'ORBIT_CHECK_BASE': base or ''}
     lane_checks = []
     groups = lanes(selected_projects(paths, root))
-    lane_count, lane_processes = lane_budget(groups, processes)
-    parallel_full_suite = full_suite(lane_processes)
+    weights = {lane_key(entries): lane_weight(root, entries) for entries in groups}
+    # The heaviest lane starts first, so it never waits for a free lane.
+    groups.sort(key=lambda entries: -weights[lane_key(entries)])
+    budget = ProcessBudget(processes, weights)
     lane_warnings = []
     lock = threading.Lock()
 
@@ -415,7 +472,7 @@ def main():
         with lock:
             print(message, flush=True)
 
-    def run_entry(order, project, project_commands):
+    def run_entry(lane, order, project, project_commands):
         commands_run = []
         commands = list(project_commands)
         triggers = (project + '/', *ARCHITECTURE_TRIGGERS.get(project, ()))
@@ -426,6 +483,8 @@ def main():
         while index < len(commands):
             command = commands[index]
             index += 1
+            lane_processes = budget.acquire(lane)
+            command = tuple(f'--processes={lane_processes}' if part == LANE_PROCESSES else part for part in command)
             log = directory / (project.replace('/', '-') + '-' + command_log_name(command) + '.log')
             started = time.monotonic()
             command_environment = {**os.environ, 'COMPOSER_PROCESS_TIMEOUT': '0',
@@ -445,6 +504,7 @@ def main():
                     missing = error.filename or command[0]
                     output.write(f'{missing}: required tool not found\n')
                     result = subprocess.CompletedProcess(command, 127)
+            budget.release(lane)
             if len(command) > 1 and command[1] == '--list-tests' and result.returncode == 0:
                 if not re.search(r'^\s*-\s+\S+', log.read_text(errors='replace'), re.MULTILINE):
                     result = subprocess.CompletedProcess(command, 1)
@@ -471,7 +531,7 @@ def main():
                 check['selection_evidence_current'] = has_current_evidence
                 check['selection_artifact'] = str(run_tia_directory / 'affected.json')
                 if warning is not None:
-                    commands.append(parallel_full_suite)
+                    commands.append(PARALLEL_FULL_SUITE)
                 for test in changed_php_tests(test_paths):
                     if not test.startswith(project + '/'):
                         continue
@@ -481,10 +541,15 @@ def main():
                                          (*FULL_SUITE, relative)))
 
     def run_lane(entries):
-        for order, project, project_commands in entries:
-            run_entry(order, project, project_commands)
+        lane = lane_key(entries)
+        budget.start(lane)
+        try:
+            for order, project, project_commands in entries:
+                run_entry(lane, order, project, project_commands)
+        finally:
+            budget.finish(lane)
 
-    with ThreadPoolExecutor(max_workers=lane_count) as pool:
+    with ThreadPoolExecutor(max_workers=lane_count(groups, processes)) as pool:
         for future in [pool.submit(run_lane, entries) for entries in groups]:
             future.result()
     # Lanes finish in any order; the receipt lists the checks in the order the gate selected them.

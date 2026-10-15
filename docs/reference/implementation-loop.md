@@ -337,12 +337,15 @@ When that project has changed and `test:affected` selects no tests, the gate run
 
 #### Projects run at the same time
 
-The gate groups its project checks by project and runs the groups at the same time. Each group runs its own commands in order. `ORBIT_CHECK_PROCESSES` is the budget of the whole gate:
+The gate groups its project checks by project and runs the groups at the same time. Each group runs its own commands in order. `ORBIT_CHECK_PROCESSES` is the budget of the whole gate, and the tools of all groups together stay within it. The gate shares the budget in three ways:
 
-- At most that many groups run at once.
-- The budget is split between them. Each group's tools get the budget divided by the number of groups that run at once, and at least 1.
+1. It runs one more group than half the budget at once. So the largest group can keep at least half of the budget.
+2. It gives each command a share by the size of its group's test suites. The share compares the group with the groups that still run.
+3. It holds back a command until a process is free. Each command frees its processes at its end.
 
-With the default of 4, four groups run at once with one process each. With `ORBIT_CHECK_PROCESSES=10`, five groups run with two processes each. Set it to `1` to check one project at a time. The gate prints each result when the command ends. The receipt lists the checks and warnings in the gate's own order.
+The largest group starts first. Its later commands get the processes that finished groups freed.
+
+With the default of 4, the Gateway's checks run with two processes while two other groups run with one each. Set the budget to `1` to check one project at a time. The gate prints each result when the command ends. The receipt lists the checks and warnings in the gate's own order.
 
 The web checks and the repository checks run in the Gateway's group, after the Gateway's checks. The Gateway's `composer check` reads `apps/web/node_modules` for the annotator check, and the web group runs `bun install` there. `bin/docs-openapi --check` boots the Gateway application. The other groups share no files that a check writes.
 
@@ -673,7 +676,7 @@ CI checks every file. It tests the merge result of a pull request, and its resul
 
 All four tools run in parallel processes. The old limits of two PHPStan and Pest processes had no recorded reason. Rector ran in one process, and parallel workers that share its cache directory can fail on a half-written cache file, so each worker now has its own directory. With 16 processes on a 16-core machine, a full Rector run in the Gateway takes about 32 seconds with the same findings, and a cold Pint run about 37 seconds.
 
-Memory is the real limit. A task VM with 2 GB cannot run 16 PHPStan workers, so the default stops at 4, and the gate splits that budget between the projects it runs at once instead of giving each project the whole budget. `ORBIT_CHECK_PROCESSES` changes every tool at once.
+Memory is the real limit. A task VM with 2 GB cannot run 16 PHPStan workers, so the default stops at 4, and the gate shares that budget between the projects it runs at once instead of giving each project the whole budget. The Gateway's suite is the largest, so it gets the largest share. An even split once left its full-suite fallback with one process for half an hour. `ORBIT_CHECK_PROCESSES` changes every tool at once.
 
 ### Findings are fixed, not silenced
 

@@ -12,6 +12,7 @@ import json
 import os
 import signal
 import shutil
+import threading
 import time
 from pathlib import Path
 import subprocess
@@ -1449,25 +1450,63 @@ fi
         self.assertEqual(sorted(f'{Path(project).name}|full|' for project in cache.PROJECTS),
                          sorted((self.common / 'scopes').read_text().splitlines()))
 
-    def test_gate_splits_the_process_budget_between_the_lanes(self):
+    def gate_module(self, runner):
+        loader = importlib.machinery.SourceFileLoader('review_check_lanes', str(runner))
+        gate = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
+        loader.exec_module(gate)
+        return gate
+
+    def test_gate_keeps_every_tool_within_the_process_budget(self):
         runner = self.gate_fixture()
-        for budget, expected in (('10', '2'), ('3', '1'), ('64', '12')):
+        for budget in ('1', '4', '10'):
             with self.subTest(budget=budget):
                 (self.common / 'processes').unlink(missing_ok=True)
                 result = subprocess.run([str(runner)], env={**self.gate_env, 'ORBIT_CHECK_PROCESSES': budget},
                                         capture_output=True, text=True)
                 self.assertEqual(0, result.returncode, result.stderr + result.stdout)
-                # Five lanes: the repository checks share the Gateway lane, because docs-openapi boots the Gateway.
-                self.assertEqual(sorted(f'{Path(project).name}|{expected}' for project in cache.PROJECTS),
-                                 sorted((self.common / 'processes').read_text().splitlines()))
-        loader = importlib.machinery.SourceFileLoader('review_check_lanes', str(runner))
-        gate = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
-        loader.exec_module(gate)
+                lines = (self.common / 'processes').read_text().splitlines()
+                self.assertEqual(sorted(Path(project).name for project in cache.PROJECTS),
+                                 sorted(line.split('|')[0] for line in lines))
+                for line in lines:
+                    self.assertTrue(1 <= int(line.split('|')[1]) <= int(budget), line)
+        gate = self.gate_module(runner)
         groups = gate.lanes([('apps/gateway', ()), ('apps/cli', ()), ('repository', ()), ('apps/web', ())])
+        # The repository checks share the Gateway lane, because bin/docs-openapi --check boots the Gateway.
         self.assertEqual([['apps/gateway', 'repository', 'apps/web'], ['apps/cli']],
                          [[project for _order, project, _commands in group] for group in groups])
-        self.assertEqual((2, 3), gate.lane_budget(groups, 6))
-        self.assertEqual((1, 1), gate.lane_budget(groups, 1))
+        self.assertEqual([1, 2, 3, 3, 5, 5], [gate.lane_count([[()]] * 5, budget) for budget in (1, 2, 4, 5, 8, 16)])
+
+    def test_the_heaviest_lane_gets_most_of_the_budget_and_the_processes_that_others_free(self):
+        gate = self.gate_module(self.gate_fixture())
+        weights = {'apps/gateway': 1500, 'apps/cli': 200, 'apps/docs': 20, 'apps/e2e': 100, 'packages/php-sdk': 80}
+        # The default budget of 4 runs three lanes at once: the Gateway gets two processes, whichever lane asks first.
+        for first in ('apps/gateway', 'apps/cli'):
+            with self.subTest(first=first):
+                budget = gate.ProcessBudget(4, weights)
+                for lane in ('apps/gateway', 'apps/cli', 'apps/docs'):
+                    budget.start(lane)
+                granted = {lane: budget.acquire(lane) for lane in (first, *(lane for lane in ('apps/gateway', 'apps/cli', 'apps/docs') if lane != first))}
+                self.assertEqual({'apps/gateway': 2, 'apps/cli': 1, 'apps/docs': 1}, granted)
+                self.assertEqual(4, sum(budget.held.values()))
+        # When the other lanes finish, the Gateway's next command gets the processes they freed.
+        budget.release('apps/gateway')
+        budget.finish('apps/cli')
+        budget.finish('apps/docs')
+        self.assertEqual(4, budget.acquire('apps/gateway'))
+        # With every process in use, a command waits until another command releases one.
+        budget = gate.ProcessBudget(2, weights)
+        for lane in ('apps/gateway', 'apps/cli', 'apps/docs'):
+            budget.start(lane)
+        self.assertEqual(1, budget.acquire('apps/gateway'))
+        self.assertEqual(1, budget.acquire('apps/cli'))
+        acquired = []
+        waiter = threading.Thread(target=lambda: acquired.append(budget.acquire('apps/docs')))
+        waiter.start()
+        time.sleep(0.2)
+        self.assertEqual([], acquired)
+        budget.release('apps/cli')
+        waiter.join(5)
+        self.assertEqual([1], acquired)
 
     def test_gate_runs_projects_at_the_same_time_up_to_the_process_setting(self):
         runner = self.gate_fixture()

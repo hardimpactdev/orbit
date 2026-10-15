@@ -214,8 +214,8 @@ function orb277_run_gate(
         'ORBIT_TASK_CHECK_BASE' => $testBase ?? false,
         'CI' => $ci ? 'true' : false,
         'GITHUB_ACTIONS' => false,
-        // Five project lanes share this budget, so each lane's full-suite fallback runs four Pest processes.
-        'ORBIT_CHECK_PROCESSES' => '20',
+        // One process: the projects run one after another, and the full-suite fallback runs one Pest process.
+        'ORBIT_CHECK_PROCESSES' => '1',
         'ORBIT_CHECK_SCOPE' => false,
     ]);
     $process->setTimeout(60);
@@ -238,7 +238,7 @@ function orb277_run_gate(
 function orb277_full_suite_command(): array
 {
     return [
-        '../../bin/pest-plain', 'vendor/bin/pest', '--parallel', '--processes=4', '--no-tia', '--fail-on-empty-test-suite',
+        '../../bin/pest-plain', 'vendor/bin/pest', '--parallel', '--processes=1', '--no-tia', '--fail-on-empty-test-suite',
         '--compact', '--colors=never',
     ];
 }
