@@ -258,3 +258,13 @@ it('leaves the switch off and returns the hook error when an enable hook fails',
         ->and(app(ExtensionStore::class)->enabled('failing'))->toBeFalse();
     $this->getJson('/api/v1/extensions')->assertOk()->assertJsonPath('data.failing', false);
 });
+
+it('keeps an enabled extension enabled when its enable hook fails again', function (): void {
+    $this->app->register(new FailingTestExtension($this->app));
+    app(ExtensionStore::class)->set('failing', true);
+
+    $this->postJson('/api/v1/extensions/failing/enable')->assertStatus(409)
+        ->assertJsonPath('error.code', 'failing.setup_failed');
+
+    expect(app(ExtensionStore::class)->enabled('failing'))->toBeTrue();
+});
