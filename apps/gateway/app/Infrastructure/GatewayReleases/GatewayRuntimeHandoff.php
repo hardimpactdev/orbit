@@ -37,7 +37,7 @@ use Throwable;
  * 4. Laravel Horizon moves to the new release ({@see GatewayHorizon}): `horizon:terminate` lets it finish its running
  *    jobs, and its Process starts it again.
  * 5. The scheduler finishes its running commands and starts on the new release ({@see GatewaySchedulerHandoff}).
- * 6. Document cleanup is reconciled and resumed ({@see GatewayCleanupHandoff}).
+ * 6. Each extension's release cleanup is reconciled and resumed ({@see GatewayCleanupHandoff}).
  * 7. The Gateway Node's own `orbit-agent` moves to the release's pin ({@see GatewayNodeAgentUpdate}), which the
  *    fleet rollout never does for the Gateway's machine.
  *
@@ -140,8 +140,8 @@ final readonly class GatewayRuntimeHandoff
     }
 
     /**
-     * What runs in the background, after verify, because each step can wait: the scheduler drain and restart, document
-     * cleanup, the Gateway Node's agent update, and the OPcache reset.
+     * What runs in the background, after verify, because each step can wait: the scheduler drain and restart, extension
+     * cleanups, the Gateway Node's agent update, and the OPcache reset.
      *
      * @return HandoffResult
      *

@@ -115,7 +115,7 @@ it('renders Gateway extension state as JSON', function (): void {
     $exit = Artisan::call('extension:list', ['--json' => true]);
     $output = Artisan::output();
     expect($exit)->toBe(0)
-        ->and(trim($output))->toBe('{"extensions":[{"extension":"tasks","enabled":true},{"extension":"proxycli","enabled":false}]}');
+        ->and(trim($output))->toBe('{"extensions":[{"extension":"tasks","enabled":true},{"extension":"proxycli","enabled":false},{"extension":"documents","enabled":false}]}');
 });
 
 it('renders Gateway extension state as a human table', function (): void {

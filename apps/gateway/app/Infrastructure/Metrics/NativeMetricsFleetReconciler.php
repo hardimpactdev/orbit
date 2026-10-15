@@ -126,9 +126,7 @@ final readonly class NativeMetricsFleetReconciler implements MetricsFleetReconci
             $component,
             $nodeId,
             $structured->errorCode ?? 'metrics.'.$component->value.'_reconcile_failed',
-            $structured === null
-                ? 'Metrics '.$component->value.' reconciliation failed.'
-                : $structured->getMessage(),
+            $structured?->getMessage() ?? 'Metrics '.$component->value.' reconciliation failed.',
             $structured->status ?? 502,
             $exception,
             $structured->details ?? [],

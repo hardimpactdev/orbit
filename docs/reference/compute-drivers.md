@@ -295,7 +295,7 @@ A lock lets one operation at a time change the mirror of a Project. The lock cov
 5. When the default branch was sent, the VM points `refs/remotes/origin/HEAD` at it, as a clone does. Pest's test selection reads the default branch there.
 6. In a separate optional transfer, it sends only the cache ref for the selected code SHA. Failure of this transfer does not undo source delivery.
 
-A main checkout uses its selected main commit. A task branch keeps its recorded main baseline in the worktree-private `refs/worktree/orbit/ci-baseline`. [CI cache import](/reference/instance-setup#import-ci-main-caches) validates the ref and payload before using any cache files.
+A main checkout uses its selected main commit. A task branch keeps its recorded main baseline in the worktree-private `refs/worktree/orbit/ci-baseline`. Another branch with no recorded baseline whose `HEAD` is a main commit, such as a fresh agent branch, uses that `HEAD` commit, not a newer main commit. [CI cache import](/reference/instance-setup#import-ci-main-caches) validates the ref and payload before using any cache files.
 
 | Operation | Branches |
 | --- | --- |

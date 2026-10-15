@@ -21,6 +21,7 @@ export async function openApp(
         proxycli?: boolean;
         proxycliExtension?: boolean;
         tasks?: boolean;
+        documents?: boolean;
         wrapTransport?: (inner: Transport) => Transport;
     } = {},
 ) {
@@ -43,6 +44,9 @@ export async function openApp(
     }
     if (options.tasks === false) {
         gateway.disableTasks();
+    }
+    if (options.documents === false) {
+        gateway.disableDocuments();
     }
 
     if (options.wrapTransport !== undefined) {

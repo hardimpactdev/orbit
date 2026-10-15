@@ -153,6 +153,7 @@ export function createDemoGateway() {
     let proxycliExtensionEnabled = false;
     let proxycliConfigured = false;
     let tasksEnabled = true;
+    let documentsEnabled = true;
     const rules = (node: string) =>
         list<FirewallRule>("GET /api/v1/nodes/{node}/firewall-rules", node);
     const tools = list<Tool>("GET /api/v1/tools");
@@ -567,7 +568,12 @@ export function createDemoGateway() {
             [
                 "GET",
                 /^\/api\/v1\/extensions$/,
-                () => ok({ tasks: tasksEnabled, proxycli: proxycliExtensionEnabled }),
+                () =>
+                    ok({
+                        tasks: tasksEnabled,
+                        proxycli: proxycliExtensionEnabled,
+                        documents: documentsEnabled,
+                    }),
             ],
             [
                 "GET",
@@ -1107,6 +1113,9 @@ export function createDemoGateway() {
         },
         disableTasks(): void {
             tasksEnabled = false;
+        },
+        disableDocuments(): void {
+            documentsEnabled = false;
         },
     };
 }

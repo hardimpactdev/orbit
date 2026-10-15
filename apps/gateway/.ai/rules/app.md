@@ -6,6 +6,7 @@ paths:
   - 'app/Exceptions/**'
   - 'app/Infrastructure/**'
   - 'app/Rules/**'
+  - 'extensions/**'
 ---
 
 # App
@@ -18,3 +19,7 @@ Enforce binary directed node access at the HTTP boundary. One access edge permit
 
 ## Keep Linux privilege boundaries narrow
 Linux control-plane work runs through pinned gateway SSH with explicit narrow sudo.
+
+## Keep extensions behind their boundary
+
+An optional feature lives in `extensions/<name>/` with one provider that implements `App\Domain\Extensions\Extension`. Code under `App\` never uses `Orbit\Extensions\*`; core reaches an extension only through a tagged plug-in interface, and `tests/Unit/Architecture/ExtensionBoundaryTest.php` enforces this. Keep extension routes, migrations, and MCP tools always registered and gate them at runtime with `RequireEnabledExtension:<name>`. Add a plug-in point only when an extension needs it ([Extensions](../../../docs/reference/extensions.md)).

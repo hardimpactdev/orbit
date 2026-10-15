@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-use App\Infrastructure\ProjectDocuments\CleanupGate;
 use Illuminate\Contracts\Console\Kernel;
+use Orbit\Extensions\Documents\Infrastructure\CleanupGate;
 
 require __DIR__.'/../../../vendor/autoload.php';
 $app = require __DIR__.'/../../../bootstrap/app.php';
 $app->make(Kernel::class)->bootstrap();
-config(['orbit.document_cleanup_runtime' => $argv[1]]);
+config(['documents.cleanup_runtime' => $argv[1]]);
 $gate = $app->make(CleanupGate::class);
 if (($argv[2] ?? '') === 'pause') {
     echo "pause-starting\n";

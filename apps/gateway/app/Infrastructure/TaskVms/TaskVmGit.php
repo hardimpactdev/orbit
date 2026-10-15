@@ -69,6 +69,8 @@ final readonly class TaskVmGit
         printf 'baseline %s\n' "$baseline"
         branch=$(command git -C "$1" symbolic-ref --quiet --short HEAD || true)
         printf 'branch %s\n' "$branch"
+        head=$(command git -C "$1" rev-parse --verify --quiet HEAD || true)
+        printf 'head %s\n' "$head"
         BASH;
 
     /** Indexes the pack on stdin, then sets each `<ref> <commit>` pair, or deletes the ref for `-`. */
@@ -240,16 +242,23 @@ final readonly class TaskVmGit
         $state = $run(new RemoteCommand(['bash', '-c', self::ReadRefs, '--', $checkout]))->stdout;
         $haves = $this->commitIds($state);
         $default = is_string($project->default_branch) ? $project->default_branch : '';
-        $baseline = preg_match('/^baseline ([0-9a-f]{40}(?:[0-9a-f]{24})?)$/m', $state, $match) === 1 ? $match[1] : ($tips[$default] ?? null);
-        if (str_contains($state, "branch {$default}\n")) {
-            $baseline = $tips[$default] ?? $baseline;
-        }
-        $cacheRef = $cachesOnly && is_string($baseline) ? 'refs/orbit/ci-cache/'.$baseline : null;
+        $recorded = preg_match('/^baseline ([0-9a-f]{40}(?:[0-9a-f]{24})?)$/m', $state, $match) === 1 ? $match[1] : null;
+        $head = preg_match('/^head ([0-9a-f]{40}(?:[0-9a-f]{24})?)$/m', $state, $match) === 1 ? $match[1] : null;
+        $tip = $tips[$default] ?? null;
+        $onDefault = str_contains($state, "branch {$default}\n");
+        $baseline = $onDefault ? ($tip ?? $recorded) : ($recorded ?? $tip);
         $scratch = $this->scratch($errorCode);
         try {
+            $cacheRef = null;
             $cacheCommit = null;
-            $pack = $this->locked($project, $errorCode, function () use ($project, $tips, $haves, $scratch, $errorCode, $cacheRef, $cachesOnly, &$cacheCommit): string {
+            $pack = $this->locked($project, $errorCode, function () use ($project, $tips, $haves, $scratch, $errorCode, $cachesOnly, $recorded, $head, $tip, $onDefault, &$baseline, &$cacheRef, &$cacheCommit): string {
                 $mirror = $this->mirror($project, $errorCode);
+                // Another branch at a main commit, such as a fresh agent branch, uses that commit's own caches.
+                if ($cachesOnly && ! $onDefault && $recorded === null && is_string($head) && is_string($tip)
+                    && $this->git($mirror, ['merge-base', '--is-ancestor', $head, $tip])->succeeded()) {
+                    $baseline = $head;
+                }
+                $cacheRef = $cachesOnly && is_string($baseline) ? 'refs/orbit/ci-cache/'.$baseline : null;
                 if ($cacheRef !== null) {
                     $result = $this->git($mirror, ['rev-parse', '--verify', '--quiet', $cacheRef.'^{commit}']);
                     $cacheCommit = $result->succeeded() ? trim($result->stdout) : null;
@@ -262,7 +271,7 @@ final readonly class TaskVmGit
                 $updates[] = 'refs/remotes/origin/'.$branch;
                 $updates[] = $commit ?? '-';
             }
-            if ($cacheRef !== null) {
+            if ($cacheRef !== null && is_string($baseline)) {
                 $updates[] = $cacheRef;
                 $updates[] = $cacheCommit ?? '-';
                 $updates[] = 'refs/worktree/orbit/ci-baseline';

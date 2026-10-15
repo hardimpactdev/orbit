@@ -18,6 +18,7 @@ beforeEach(function (): void {
     $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
     $this->postJson('/api/v1/extensions/tasks/enable')->assertOk();
     $this->postJson('/api/v1/extensions/proxycli/enable')->assertOk();
+    $this->postJson('/api/v1/extensions/documents/enable')->assertOk();
 });
 
 describe('MCP tool schemas', function (): void {

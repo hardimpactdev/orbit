@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-use App\Actions\ProjectDocuments\WorkDocumentCleanupAction;
 use Aws\Handler\Guzzle\GuzzleHandler;
 use GuzzleHttp\Client;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\DB;
+use Orbit\Extensions\Documents\Actions\WorkDocumentCleanupAction;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
 
@@ -17,7 +17,7 @@ $app->make(Kernel::class)->bootstrap();
 $home = $argv[1];
 $mode = $argv[2];
 config(['database.connections.sqlite.database' => $home.'/database.sqlite',
-    'orbit.home' => $home, 'orbit.document_cleanup_runtime' => $home.'/runtime']);
+    'orbit.home' => $home, 'documents.cleanup_runtime' => $home.'/runtime']);
 DB::purge('sqlite');
 if ($mode === 'before-handoff') {
     $pdo = DB::getPdo();

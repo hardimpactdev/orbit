@@ -458,7 +458,7 @@ The second subtask reproduces the failure and then fixes it. Its deliverable id 
 
 ### Collection
 
-`problems:collect` runs every 10 minutes. Both commands run only while the Tasks extension is enabled. `TaskSchedule` registers both, as unique jobs on the [Gateway queue](/reference/gateway-queue#scheduled-work). A lost collector job frees its lock after 15 minutes, and a lost filer job after 30 minutes.
+`problems:collect` runs every 10 minutes. Both commands run only while the Tasks extension is enabled. `TaskSchedule` registers both [in the scheduler itself](/reference/gateway-queue#scheduled-work), never on the Gateway queue, so they keep running while Horizon is down. Each holds an overlap lock and its own lock: 15 minutes for the collector, and 30 minutes for the filer. A killed run leaves its locks until they expire, so the collector can skip one run after a kill, and the filer skips none.
 
 | Source | Bound per run |
 | --- | --- |
@@ -477,7 +477,7 @@ A failure in one source does not skip the others. The same exception class for o
 
 ## Scheduler
 
-The scheduler command `tasks:tick` does all work of the extension. The Gateway's Laravel schedule dispatches it every 10 seconds, `problems:collect` every 10 minutes, and `problems:file` every hour, while the extension is enabled. Each is a unique job on the [Gateway queue](/reference/gateway-queue#scheduled-work), so a slow tick never stacks up, and Laravel Horizon runs it. The Gateway host must run `php artisan schedule:work` and Horizon, or no task advances. One cache lock, held for up to 300 seconds, protects scheduled and manual ticks. A tick that finds the lock held does nothing.
+The scheduler command `tasks:tick` does all work of the extension. The Gateway's Laravel schedule dispatches it every 10 seconds while the extension is enabled. It is a unique job on the [Gateway queue](/reference/gateway-queue#scheduled-work), so a slow tick never stacks up, and Laravel Horizon runs it. The scheduler also runs `problems:collect` every 10 minutes and `problems:file` every hour, itself, as [Collection](#collection) describes. The Gateway host must run `php artisan schedule:work` and Horizon, or no task advances. One cache lock, held for up to 300 seconds, protects scheduled and manual ticks. A tick that finds the lock held does nothing.
 
 A tick that takes the lock records that time in the Gateway cache, and [`tasks:status`](/cli/tasks#orbit-tasksstatus) reports it as `last_tick_at`. A ticking scheduler moves it forward about every 10 seconds. Clearing the cache forgets it until the next tick. [`bin/gateway-smoke`](/reference/delivery-line#bingateway-smoke) reads it to prove the scheduler runs after a Gateway release.
 
@@ -490,6 +490,10 @@ Each tick runs these steps in order:
 5. Claim `todo` tasks.
 
 Steps 1 and 2 run each task on its own. A failure in one task does not stop the other tasks, and the tick does not fail. Orbit reports the error with the task id, and the next tick tries that task again.
+
+`TaskScheduler` coordinates the phases. `TaskClaimAdmission` owns reservations and provisioning. `TaskSubtaskRunner` advances subtasks and owns implementer starts, baseline checks, and handoff checks. `TaskReviewOutcome` handles reviewer results, re-review, and final review. `TaskPublication` publishes approved commits and merges reviewed pull requests. `TaskSettling` handles pull request health, fixups, completion, and workspace cleanup. `TaskConsultation` handles consults, direction relays, assistance, and turn communication. The container wires these final services.
+
+The subtask phase takes the group's execution hold in `tick()`, before advancing its subtasks, rather than taking separate holds for implementer completion, reviewer outcomes, and baseline results. Other entry points keep their admission holds. This split does not change the state machine, events, database writes, or tick interval.
 
 When the task fails on two ticks in a row, the task and its open subtasks ask for assistance with a reason that starts with `The tick failed on this group.` and names the error. Every tick failure is reported, including failures while the task already asks for assistance. The assistance reason contains at most 2,000 characters; the report keeps the full exception. A failure to save a row that breaks the task model asks at once, because the row cannot heal by itself. Fix the cause, then post a `resolution` on the subtask. A tick in which the task succeeds resets the count.
 

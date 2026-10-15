@@ -9,16 +9,17 @@ use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
+/**
+ * Refuses an extension's operation while its switch is off. An extension's route group adds
+ * `RequireEnabledExtension:<name>` ([Extensions](/reference/extensions#the-runtime-switch)).
+ */
 final readonly class RequireEnabledExtension
 {
     public function __construct(private ExtensionStore $extensions) {}
 
-    public function handle(Request $request, Closure $next): Response
+    public function handle(Request $request, Closure $next, string $extension): Response
     {
-        $name = (string) $request->route()?->getName();
-        $extension = str_starts_with($name, 'tasks:') ? 'tasks' : (str_starts_with($name, 'proxycli:') ? 'proxycli' : null);
-
-        if ($extension !== null && ! in_array($name, ['tasks:status'], true) && ! $this->extensions->enabled($extension)) {
+        if (! $this->extensions->enabled($extension)) {
             return response()->json([
                 'status' => 409,
                 'error' => [

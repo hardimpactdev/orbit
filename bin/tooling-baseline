@@ -65,10 +65,11 @@ const TOOLING_BASELINE_PROJECTS = [
     ],
     'apps/gateway' => [
         'phpunit' => 'phpunit.xml',
-        'rector' => ['app'],
+        // extensions holds each extension's code, routes, and migrations (docs/reference/extensions.md).
+        'rector' => ['app', 'extensions'],
         // Routes and migrations are Gateway runtime code.
-        'phpstan' => ['app', 'routes', 'database/migrations', '../../tools/phpstan'],
-        'pint' => ['app', 'bootstrap', 'config', 'database', 'routes', 'tests'],
+        'phpstan' => ['app', 'routes', 'database/migrations', 'extensions', '../../tools/phpstan'],
+        'pint' => ['app', 'bootstrap', 'config', 'database', 'extensions', 'routes', 'tests'],
         'scripts' => [
             'guidance:update' => [TOOLING_BASELINE_BOOST_UPDATE, 'The Gateway generates its guidance with Boost.'],
             'test:affected' => [

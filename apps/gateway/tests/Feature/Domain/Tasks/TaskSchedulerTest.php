@@ -26,6 +26,7 @@ use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
+use App\Domain\Tasks\TaskClaimAdmission;
 use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupMetricsRefresher;
@@ -624,8 +625,8 @@ it('preserves a direction hold without threshold notification when releasing a f
     }
     mock(CoderSettleNotifier::class)->shouldNotReceive('assistance');
 
-    DB::transaction(fn (): mixed => (new ReflectionMethod(TaskScheduler::class, 'releaseProvisioningFailure'))
-        ->invoke(app(TaskScheduler::class), $reserved, new InstanceProvisionFailure('node-7 unreachable')));
+    DB::transaction(fn (): mixed => (new ReflectionMethod(TaskClaimAdmission::class, 'releaseProvisioningFailure'))
+        ->invoke(app(TaskClaimAdmission::class), app(TaskScheduler::class), $reserved, new InstanceProvisionFailure('node-7 unreachable')));
 
     expect($group->fresh()->status)->toBe(TaskGroupStatus::Todo)
         ->and($group->fresh()->assistance_requested)->toBeTrue()
@@ -792,7 +793,7 @@ it('provisioning failures raise assistance using the original streak after a sta
     $group->refresh()->update(['status' => TaskGroupStatus::Reserved, 'reserved_at' => now()]);
 
     expect(fn () => DB::transaction(function () use ($group, $instance): void {
-        expect((new ReflectionMethod(TaskScheduler::class, 'startReserved'))->invoke(app(TaskScheduler::class), $group, $instance))->toBeInstanceOf(Task::class);
+        expect((new ReflectionMethod(TaskClaimAdmission::class, 'startReserved'))->invoke(app(TaskClaimAdmission::class), app(TaskScheduler::class), $group, $instance))->toBeInstanceOf(Task::class);
         throw new RuntimeException('Injected crash before commit.');
     }))->toThrow(RuntimeException::class, 'Injected crash before commit.');
     expect($group->fresh()->status)->toBe(TaskGroupStatus::Reserved)
@@ -827,7 +828,7 @@ it('provisioning failures raise assistance from a new generation after a success
         }
         Cache::swap($cache);
     }
-    DB::transaction(fn (): mixed => (new ReflectionMethod(TaskScheduler::class, 'startReserved'))->invoke(app(TaskScheduler::class), $group, $instance));
+    DB::transaction(fn (): mixed => (new ReflectionMethod(TaskClaimAdmission::class, 'startReserved'))->invoke(app(TaskClaimAdmission::class), app(TaskScheduler::class), $group, $instance));
     expect(Cache::get('tasks:provisioning-failures:'.$group->id)['failures'])->toBe(2);
     $firstGeneration = Activity::query()->where('subject_type', Task::class)->where('subject_id', $group->id)->where('description', 'Task workspace started.')->sole()->id;
     $group->refresh()->update(['status' => TaskGroupStatus::Todo]);
@@ -837,7 +838,7 @@ it('provisioning failures raise assistance from a new generation after a success
         ->and(Cache::get('tasks:provisioning-failures:'.$group->id.':'.$firstGeneration)['failures'])->toBe(2);
 
     $group->refresh()->update(['status' => TaskGroupStatus::Reserved, 'reserved_at' => now()]);
-    DB::transaction(fn (): mixed => (new ReflectionMethod(TaskScheduler::class, 'startReserved'))->invoke(app(TaskScheduler::class), $group, $instance));
+    DB::transaction(fn (): mixed => (new ReflectionMethod(TaskClaimAdmission::class, 'startReserved'))->invoke(app(TaskClaimAdmission::class), app(TaskScheduler::class), $group, $instance));
     $group->refresh()->update(['status' => TaskGroupStatus::Todo]);
     app(TaskScheduler::class)->claimAvailable();
     app(TaskScheduler::class)->claimAvailable();

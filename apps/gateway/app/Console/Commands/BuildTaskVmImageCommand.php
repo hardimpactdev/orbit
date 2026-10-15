@@ -15,6 +15,7 @@ use Illuminate\Support\Sleep;
 /** Watches the durable row. Interrupting this command never interrupts the queued build. */
 final class BuildTaskVmImageCommand extends Command
 {
+    use ReadsStringInput;
     use ResolvesTaskVmHostNode;
 
     #[\Override]
@@ -26,11 +27,11 @@ final class BuildTaskVmImageCommand extends Command
     public function handle(TaskVmImageBuildChain $chain, TaskVmSettings $settings): int
     {
         try {
-            $node = $this->activeNode((string) $this->argument('node'));
+            $node = $this->activeNode($this->stringArgument('node'));
             $settings->host($node->id);
-            $resume = $this->option('resume');
+            $resume = $this->stringOption('resume');
             $resuming = $this->input->hasParameterOption('--resume');
-            if ($resuming && $resume !== null && ! ctype_digit((string) $resume)) {
+            if ($resuming && $resume !== null && ! ctype_digit($resume)) {
                 $this->error('--resume accepts a build id or no value.');
 
                 return self::FAILURE;

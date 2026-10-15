@@ -35,7 +35,7 @@ These are the terms every part of Orbit shares. Each domain page defines the ter
 - **Activity**: The Gateway's record of requests. It keeps every change and every failed request, plus a sample of successful reads. See [Activity](/cli/activity).
 - **Pi server**: The service on a Node that runs Pi coding-agent sessions for the Tasks `pi` driver. See [Pi server](/reference/pi-server). Server alone names neither it nor a Database server.
 - **Node agent**: The program on managed Linux Nodes that reports presence and Process state. It never changes a Node. See [Node agent](/reference/node-agent).
-- **Extension**: An optional Gateway feature with one switch at the Gateway. A disabled extension is invisible to every client. See [extension](/cli/extension).
+- **Extension**: An optional Gateway feature with one switch. A disabled extension is invisible to every client. Core reaches its code only through plug-in points. See [extension](/cli/extension) and [Extensions](/reference/extensions).
 
 ## Tasks
 

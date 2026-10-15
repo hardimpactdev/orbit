@@ -26,7 +26,7 @@ describe('local GitHub approval report', function (): void {
         $tasks = DB::table('tasks')->get()->toJson();
         $scans = DB::table('task_github_review_scans')->get()->toJson();
         $sources = DB::table('task_github_review_observations')->get()->toJson();
-        expect(Artisan::call('orbit:tasks:github-reviews', ['group-id' => $group->id, '--json' => true]))->toBe(0);
+        expect(Artisan::call('orbit:tasks:github-reviews', ['group-id' => (string) $group->id, '--json' => true]))->toBe(0);
         $json = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
         expect($json)->toBe($records->report($group))
             ->and(array_column(array_column($json['records'], 'source'), 'review_id'))->toBe([102, 101, 201])
@@ -52,7 +52,7 @@ describe('local GitHub approval report', function (): void {
             };
             $records->finish($group, $records->begin($group), $observation);
         }
-        expect(Artisan::call('orbit:tasks:github-reviews', ['group-id' => $group->id, '--json' => true]))->toBe(0);
+        expect(Artisan::call('orbit:tasks:github-reviews', ['group-id' => (string) $group->id, '--json' => true]))->toBe(0);
         $json = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
         expect($json['scan']['read_status'])->toBe($expected)
             ->and($json['records'])->toBe([])->and($json['empty'])->toBeTrue();
@@ -70,7 +70,7 @@ describe('local GitHub approval report', function (): void {
         $records = new TaskGitHubReviewObservations;
         $records->finish($group, $records->begin($group), Fixtures::observation([Fixtures::review()]));
         $this->travel($milliseconds)->milliseconds();
-        Artisan::call('orbit:tasks:github-reviews', ['group-id' => $group->id, '--json' => true]);
+        Artisan::call('orbit:tasks:github-reviews', ['group-id' => (string) $group->id, '--json' => true]);
         $json = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
         expect($json['scan']['freshness'])->toBe($freshness)
             ->and($json['records'][0]['reported_status'])->toBe($status)
@@ -88,7 +88,7 @@ describe('local GitHub approval report', function (): void {
         $records = new TaskGitHubReviewObservations;
         $records->finish($group, $records->begin($group), Fixtures::observation([Fixtures::review()]));
         $this->travel(61)->seconds();
-        Artisan::call('orbit:tasks:github-reviews', ['group-id' => $group->id, '--json' => true]);
+        Artisan::call('orbit:tasks:github-reviews', ['group-id' => (string) $group->id, '--json' => true]);
         $json = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
         expect($json['scan']['freshness'])->toBe('unverified')
             ->and($json['records'][0]['reported_status'])->toBe('unverified')
@@ -101,7 +101,7 @@ describe('local GitHub approval report', function (): void {
             ->and(Artisan::output())->toContain('Unknown task group.');
         $group = Fixtures::group();
         $child = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Child', 'brief' => 'No approval authority.', 'status' => 'todo']);
-        expect(Artisan::call('orbit:tasks:github-reviews', ['group-id' => $child->id, '--json' => true]))->toBe(1);
+        expect(Artisan::call('orbit:tasks:github-reviews', ['group-id' => (string) $child->id, '--json' => true]))->toBe(1);
         Http::assertNothingSent();
     });
 });
