@@ -1,4 +1,7 @@
 """Fixed, synchronous recipe operations. Only bounded package failure diagnostics escape this boundary."""
+from contextlib import contextmanager
+from datetime import datetime, timezone
+import gzip
 import hashlib
 import json
 import os
@@ -16,6 +19,7 @@ from urllib.parse import urlsplit
 
 POLICY = Path('/usr/sbin/policy-rc.d')
 APT_ETC = Path('/etc/apt')
+DPKG_LOG = Path('/var/log/dpkg.log')
 UBUNTU_KEYRING = '/usr/share/keyrings/ubuntu-archive-keyring.gpg'
 
 
@@ -82,7 +86,77 @@ def packages():
 
 
 def ubuntu_origin(package, version, options=None):
-    return policy_origin(package, version, []) or (options is not None and policy_origin(package, version, options))
+    origins = [policy_origin(package, version, [])]
+    if options is not None:
+        origins.append(policy_origin(package, version, options))
+    # Check every listing before accepting any trusted listing, including cached snapshots.
+    if any(untrusted for trusted, untrusted, status in origins):
+        return False
+    if any(trusted for trusted, untrusted, status in origins):
+        return True
+    return any(status for trusted, untrusted, status in origins) and snapshot_origin(package, version)
+
+
+def install_snapshot(package, version):
+    """Use the latest successful native/all install record, not an attempted upgrade."""
+    architecture = run(['dpkg', '--print-architecture']).stdout.strip()
+    latest = None
+    try:
+        for path in DPKG_LOG.parent.glob(DPKG_LOG.name + '*'):
+            opener = gzip.open if path.suffix == '.gz' else open
+            with opener(path, 'rt', encoding='utf-8', errors='replace') as stream:
+                for line in stream:
+                    fields = line.split()
+                    if (len(fields) != 6 or fields[2:4] != ['status', 'installed'] or fields[5] != version
+                            or fields[4] not in (package, package + ':' + architecture, package + ':all')):
+                        continue
+                    installed = datetime.strptime(' '.join(fields[:2]), '%Y-%m-%d %H:%M:%S').astimezone(timezone.utc)
+                    latest = max(latest, installed) if latest else installed
+    except (OSError, EOFError, ValueError):
+        return None
+    return latest.strftime('%Y%m%dT%H%M%SZ') if latest else None
+
+
+def apt_environment(options):
+    environment = dict(os.environ, LC_ALL='C')
+    if '-c' in options:
+        environment['APT_CONFIG'] = options[options.index('-c') + 1]
+    return environment
+
+
+@contextmanager
+def temporary_indexes(source):
+    """Read authenticated indexes without system hooks, locks, caches, or list writes."""
+    with tempfile.TemporaryDirectory(prefix='orbit-recipe-indexes-') as directory:
+        work = Path(directory)
+        (work / 'ubuntu.sources').write_text(source)
+        for name in ('lists', 'cache', 'log'):
+            (work / name).mkdir()
+        config = work / 'apt.conf'
+        # APT_CONFIG is read before the normal apt.conf.d hooks. Apply the same configuration
+        # to apt-cache so it can only inspect these temporary, authenticated lists.
+        config.write_text('Dir::Etc::parts "-";\nDir::Etc::main "-";\n')
+        options = ['-c', str(config), '-o', 'Dir::Etc::sourcelist=' + str(work / 'ubuntu.sources'),
+                   '-o', 'Dir::Etc::sourceparts=-', '-o', 'Dir::State::lists=' + str(work / 'lists'),
+                   '-o', 'Dir::Cache=' + str(work / 'cache'), '-o', 'Dir::Log=' + str(work / 'log'),
+                   '-o', 'Debug::NoLocking=true', '-o', 'APT::Sandbox::User=',
+                   '-o', 'Acquire::Languages=none', '-o', 'Acquire::Retries=0',
+                   '-o', 'Acquire::http::Timeout=15', '-o', 'Acquire::https::Timeout=15',
+                   '-o', 'APT::Update::Error-Mode=any']
+        run(['apt-get', 'update', *options], env=apt_environment(options))
+        yield options
+
+
+def snapshot_origin(package, version):
+    snapshot = install_snapshot(package, version)
+    if snapshot is None:
+        return False
+    try:
+        with temporary_indexes(snapshot_source(snapshot)) as options:
+            trusted, untrusted, status = policy_origin(package, version, options)
+            return trusted and not untrusted
+    except (RecipeFailure, OSError):
+        return False
 
 
 def ubuntu_signed_sources(options):
@@ -126,7 +200,10 @@ def ubuntu_signed_sources(options):
 
 
 def ubuntu_index(index, signed_sources):
-    uri, suite, architecture, kind = index.split()
+    fields = index.split()
+    if len(fields) != 4:
+        return False
+    uri, suite, architecture, kind = fields
     url = urlsplit(uri)
     host = url.hostname or ''
     ubuntu_host = host in ('archive.ubuntu.com', 'security.ubuntu.com', 'ports.ubuntu.com', 'snapshot.ubuntu.com') or host.endswith('.archive.ubuntu.com')
@@ -134,12 +211,8 @@ def ubuntu_index(index, signed_sources):
 
 
 def policy_origin(package, version, options):
-    """Require Ubuntu Release metadata plus an Ubuntu host or the scoped Ubuntu keyring.
-
-    A newer trusted pocket build also satisfies the floor: rolling indexes drop superseded
-    builds, and preserving the installed version needs no install-date guess or downgrade.
-    """
-    environment = dict(os.environ, LC_ALL='C')
+    """Classify every index for this exact version; a newer candidate proves nothing."""
+    environment = apt_environment(options)
     policy = run(['apt-cache', 'policy', *options], env=environment).stdout
     trusted = set()
     signed_sources = ubuntu_signed_sources(options)
@@ -156,28 +229,25 @@ def policy_origin(package, version, options):
             index = None
     architecture = run(['dpkg', '--print-architecture']).stdout.strip()
     policy = run(['apt-cache', 'policy', package + ':' + architecture, *options], env=environment).stdout
-    candidate = re.search(r'^\s*Candidate:\s+(\S+)\s*$', policy, re.MULTILINE)
-    candidate = candidate.group(1) if candidate else None
     selected = None
+    found_trusted = found_untrusted = status = False
     for line in policy.splitlines():
         entry = re.fullmatch(r'\s*(?:\*\*\*\s+)?(\S+)\s+-?\d+(?:\s+\([^)]*\))?\s*', line)
         if entry:
             selected = entry.group(1)
             continue
-        entry = re.fullmatch(r'\s*-?\d+\s+(.+ Packages)\s*', line)
-        if selected and entry and ' '.join(entry.group(1).split()) in trusted:
-            if selected == version:
-                return True
-            if selected != candidate:
-                continue
-            comparison = run(['dpkg', '--compare-versions', selected, 'gt', version], required=False)
-            if comparison.returncode == 0:
-                return True
-            if comparison.returncode != 1:
-                raise RecipeFailure('origin:' + package)
+        entry = re.fullmatch(r'\s*-?\d+\s+(.+?)\s*', line)
+        if selected == version and entry:
+            index = ' '.join(entry.group(1).split())
+            if index == '/var/lib/dpkg/status':
+                status = True
+            elif index in trusted:
+                found_trusted = True
+            else:
+                found_untrusted = True
         if not entry:
             selected = None
-    return False
+    return found_trusted, found_untrusted, status
 
 
 def assess(tools, versions=None, options=None):
@@ -202,6 +272,13 @@ def assess(tools, versions=None, options=None):
     return report
 
 
+def audit_packages(environment):
+    result = run(['dpkg', '--audit'], env=environment)
+    # dpkg reports incomplete packages on stdout but can still exit successfully.
+    if result.stdout.strip() or result.stderr.strip():
+        raise RecipeFailure('packages', result=result)
+
+
 def supported(report):
     for name, tool in report.items():
         if tool['status'] == 'unsupported_newer':
@@ -219,22 +296,48 @@ def snapshot_source(snapshot):
               'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\nCheck-Valid-Until: no\n')
 
 
-def repair_ubuntu_sources(architecture):
+def ubuntu_sources_repair():
     path = APT_ETC / 'sources.list.d/ubuntu.sources'
     if not path.is_file() or path.is_symlink():
-        return False
+        return None
     content = path.read_bytes()
     match = re.fullmatch(rb'Types: deb\nURIs: https://snapshot\.ubuntu\.com/ubuntu/(\d{8}T\d{6}Z)/\n.*', content, re.DOTALL)
     if not match or content != snapshot_source(match.group(1).decode()).encode():
-        return False
+        return None
+    return content
+
+
+def rolling_source(architecture):
     archive = 'http://ports.ubuntu.com/ubuntu-ports' if architecture == 'arm64' else 'http://archive.ubuntu.com/ubuntu'
     security = 'http://ports.ubuntu.com/ubuntu-ports' if architecture == 'arm64' else 'http://security.ubuntu.com/ubuntu'
-    source = (f'Types: deb\nURIs: {archive}\nSuites: resolute resolute-updates resolute-backports\n'
+    return (f'Types: deb\nURIs: {archive}\nSuites: resolute resolute-updates resolute-backports\n'
               f'Components: main universe restricted multiverse\nSigned-By: {UBUNTU_KEYRING}\n\n'
               f'Types: deb\nURIs: {security}\nSuites: resolute-security\n'
               f'Components: main universe restricted multiverse\nSigned-By: {UBUNTU_KEYRING}\n')
-    publish(path, source.encode())
+
+
+def repair_ubuntu_sources(architecture):
+    content = ubuntu_sources_repair()
+    if content is None:
+        return False
+    path = APT_ETC / 'sources.list.d/ubuntu.sources'
+    backup = APT_ETC / 'ubuntu.sources.orbit-snapshot-backup'
+    if backup.exists() or backup.is_symlink():
+        if backup.is_symlink() or not backup.is_file() or backup.read_bytes() != content:
+            raise RecipeFailure('apt-source')
+    else:
+        publish(backup, content)
+    publish(path, rolling_source(architecture).encode())
+    run(['logger', '--tag', 'orbit-recipe', '--', 'Restored generic Ubuntu sources in ' + str(path) + '; backup: ' + str(backup)])
     return True
+
+
+def plan(payload):
+    if ubuntu_sources_repair() is None:
+        return assess(payload['tools'])
+    with temporary_indexes(rolling_source(payload['architecture'])) as options:
+        report = assess(payload['tools'], options=options)
+    return {**report, '_actions': ['repair_ubuntu_sources']}
 
 
 def snapshot_options(payload, work):
@@ -577,9 +680,11 @@ def apply(payload):
         if policy.exists() or policy.is_symlink():
             raise RecipeFailure()
         stage = 'apt-source'
-        repair_ubuntu_sources(payload['architecture'])
+        repaired = repair_ubuntu_sources(payload['architecture'])
+        repair_options = (['-o', 'Dir::Etc::sourcelist=' + str(APT_ETC / 'sources.list.d/ubuntu.sources'),
+                           '-o', 'Dir::Etc::sourceparts=-', '-o', 'APT::Get::List-Cleanup=false'] if repaired else [])
         # Refresh the rolling pockets before assessing even an already-converged Node.
-        package_command(['apt-get', 'update', '-o', 'APT::Update::Error-Mode=any'], [])
+        package_command(['apt-get', 'update', *repair_options, '-o', 'APT::Update::Error-Mode=any'], [])
         stage = 'preflight'
         account = pwd.getpwnam(os.environ.get('SUDO_USER', 'orbit'))
         before = packages()
@@ -621,6 +726,7 @@ def apply(payload):
                     install_exact_debs(debs, tools, packages(), apt_options, environment)
                 if ubuntu or debs:
                     package_command(['apt-get', 'check'], ubuntu + [Path(deb).stem for deb in debs], env=environment)
+                    audit_packages(environment)
             finally:
                 policy.unlink()
             stage = 'tools'
@@ -664,7 +770,7 @@ def main():
     try:
         platform_check(payload['architecture'])
         stage = 'inventory'
-        result = assess(payload['tools']) if mode == 'inspect' else apply(payload)
+        result = plan(payload) if mode == 'inspect' else apply(payload)
         print(json.dumps(result))
         return 0
     except Exception as error:

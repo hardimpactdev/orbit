@@ -99,9 +99,9 @@ final readonly class ConvergeNodeRecipeAction
         $this->checkConstraints($node, $pins);
         // Another PHP source or a PHP package outside the recipe refuses the plan, also in a dry run.
         $this->program->phpPreflight($node, $recipe, $pins, $profile);
-        $tools = $this->program->inspect($node, $recipe, $pins);
+        $inspection = $this->program->inspect($node, $recipe, $pins);
 
-        return new NodeRecipePlan($node->id, $recipe->identity, $recipe->snapshot, array_values($node->roles->map(fn ($role): string => $role->role->value)->all()), $tools);
+        return new NodeRecipePlan($node->id, $recipe->identity, $recipe->snapshot, array_values($node->roles->map(fn ($role): string => $role->role->value)->all()), $inspection['tools'], $inspection['actions']);
     }
 
     /** @param array<string, ToolPin> $pins */

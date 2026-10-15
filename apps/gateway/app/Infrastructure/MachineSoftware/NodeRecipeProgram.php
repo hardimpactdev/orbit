@@ -84,7 +84,7 @@ final readonly class NodeRecipeProgram
 
     /**
      * @param  array<string, ToolPin>  $tools
-     * @return array<string, array{source: string, version: string, installed: ?string, changed: bool, status: string, refusal?: string}>
+     * @return array{tools: array<string, array{source: string, version: string, installed: ?string, changed: bool, status: string, refusal?: string}>, actions: list<string>}
      */
     public function inspect(Node $node, MachineRecipe $recipe, array $tools): array
     {
@@ -103,7 +103,12 @@ final readonly class NodeRecipeProgram
             }
         }
 
-        return $assessment;
+        $actions = $report['_actions'] ?? [];
+        if (! is_array($actions) || ! array_is_list($actions) || array_diff($actions, ['repair_ubuntu_sources']) !== []) {
+            throw new RuntimeException('Recipe inspection returned invalid planned actions.');
+        }
+
+        return ['tools' => $assessment, 'actions' => $actions];
     }
 
     /**
@@ -230,7 +235,7 @@ final readonly class NodeRecipeProgram
             $mode === 'inspect' ? ['python3', '-', $mode, $payload] : ['sudo', 'timeout', '--signal=TERM', '--kill-after=10', '840', 'python3', '-', $mode, $payload],
             input: $program,
             maxOutputBytes: 65536,
-            timeout: $mode === 'inspect' ? 60 : 900,
+            timeout: 900,
         ));
         if (! $result->succeeded() || $result->truncated) {
             // Only the fixed packages-stage envelope can expose output, after redaction and bounding.

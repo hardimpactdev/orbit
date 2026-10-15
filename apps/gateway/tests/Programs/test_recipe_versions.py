@@ -1,5 +1,6 @@
 """Recipe floors and diagnostics. All APT, dpkg, service and network operations are faked."""
 import contextlib
+import gzip
 import importlib.util
 import io
 import json
@@ -43,6 +44,9 @@ class RecipeVersionsTest(unittest.TestCase):
             source_patch = patch.object(module, 'APT_ETC', self.apt)
             source_patch.start()
             self.addCleanup(source_patch.stop)
+            log_patch = patch.object(module, 'DPKG_LOG', self.apt / 'dpkg.log')
+            log_patch.start()
+            self.addCleanup(log_patch.stop)
         self.tools = {'curl': {'source': 'ubuntu', 'package': 'curl', 'version': PIN}}
         self.release = 'v=26.04,o=Ubuntu,a=resolute-security,n=resolute,l=Ubuntu,c=main,b=amd64'
         self.version_policy = f'''curl:
@@ -56,9 +60,13 @@ class RecipeVersionsTest(unittest.TestCase):
         500 https://snapshot.ubuntu.com/ubuntu/20261014T000000Z resolute/main amd64 Packages
 '''
         self.commands = []
+        self.snapshot_version_policy = ''
 
     def command(self, argv, **kwargs):
         self.commands.append(argv)
+        isolated = any(arg.startswith('Dir::State::lists=') for arg in argv)
+        if argv[0] == 'apt-cache' and '-o' in argv:
+            argv = argv[:argv.index('-c')] if '-c' in argv else argv[:argv.index('-o')]
         output = ''
         code = 0
         if argv[:2] == ['dpkg', '--compare-versions']:
@@ -71,7 +79,7 @@ class RecipeVersionsTest(unittest.TestCase):
         elif argv == ['apt-cache', 'policy']:
             output = f'Package files:\n 500 {INDEX}\n     release {self.release}\n     origin security.ubuntu.com\n'
         elif argv == ['apt-cache', 'policy', 'curl:amd64']:
-            output = self.version_policy
+            output = self.snapshot_version_policy if isolated else self.version_policy
         return subprocess.CompletedProcess(argv, code, output, '')
 
     def assess(self, installed):
@@ -180,7 +188,138 @@ class RecipeVersionsTest(unittest.TestCase):
         publish.assert_not_called()
         self.assertEqual([c[:2] for c in self.commands if c[0] == 'apt-get'], [['apt-get', 'update']])
 
-    def test_superseded_installed_security_build_is_kept_when_trusted_pocket_has_newer_build(self):
+    def status_only_policy(self):
+        self.version_policy = f'''curl:
+  Installed: {NEWER}
+  Candidate: {SUPERSEDED_BY}
+  Version table:
+     {SUPERSEDED_BY} 500 (phased 20%)
+        500 {INDEX}
+ *** {NEWER} 100
+        100 /var/lib/dpkg/status
+'''
+
+    def install_log(self, filename='dpkg.log', timestamp='2026-10-14 12:30:00', package='curl:amd64', version=NEWER):
+        content = f'{timestamp} status installed {package} {version}\n'
+        path = self.apt / filename
+        if filename.endswith('.gz'):
+            with gzip.open(path, 'wt') as stream:
+                stream.write(content)
+        else:
+            path.write_text(content)
+
+    def test_newer_trusted_candidate_does_not_prove_a_status_only_installed_build(self):
+        self.status_only_policy()
+        self.assertEqual(self.assess(NEWER)['status'], 'unsupported_newer')
+        self.assertFalse(any(c[0] == 'apt-get' for c in self.commands))
+
+    def test_superseded_security_build_requires_exact_signed_snapshot_proof_at_install_time(self):
+        self.status_only_policy()
+        self.install_log()
+        self.snapshot_version_policy = f'curl:\n *** {NEWER} 500\n        500 {INDEX}\n'
+        with patch.dict(os.environ, TZ='UTC'):
+            tool = self.assess(NEWER)
+        self.assertEqual((tool['status'], tool['changed']), ('newer_than_recipe', False))
+        updates = [c for c in self.commands if c[:2] == ['apt-get', 'update']]
+        self.assertEqual(len(updates), 1)
+        self.assertTrue(any(arg.startswith('Dir::State::lists=') for arg in updates[0]))
+        self.assertIn('Dir::Etc::sourceparts=-', updates[0])
+
+    def test_install_date_uses_the_latest_successful_native_or_all_record_across_rotated_logs(self):
+        self.install_log('dpkg.log.2.gz', '2026-10-12 12:30:00')
+        self.install_log('dpkg.log.1', '2026-10-13 12:30:00', package='curl:all')
+        self.install_log('dpkg.log', '2026-10-14 12:30:00', package='curl:arm64')
+        with (self.apt / 'dpkg.log').open('a') as stream:
+            stream.write(f'2026-10-15 12:30:00 upgrade curl:amd64 {PIN} {NEWER}\n')
+            stream.write(f'2026-10-16 12:30:00 status installed curl:amd64 {SUPERSEDED_BY}\n')
+        with patch.object(recipe, 'run', side_effect=self.command), patch.dict(os.environ, TZ='UTC'):
+            self.assertEqual(recipe.install_snapshot('curl', NEWER), '20261013T123000Z')
+
+    def test_status_only_build_is_refused_without_proof_even_when_the_snapshot_has_a_newer_candidate(self):
+        self.status_only_policy()
+        self.install_log()
+        untrusted_version = f'curl:\n *** {NEWER} 500\n        500 https://vendor.example/ubuntu resolute/main amd64 Packages\n'
+        for policy in ('', self.version_policy, untrusted_version):
+            with self.subTest(policy=policy):
+                self.snapshot_version_policy = policy
+                self.assertEqual(self.assess(NEWER)['status'], 'unsupported_newer')
+
+    def test_missing_unreadable_or_malformed_install_history_refuses_before_snapshot_access(self):
+        self.status_only_policy()
+        for content in ('', f'bad-date 12:00:00 status installed curl:amd64 {NEWER}\n'):
+            with self.subTest(content=content):
+                (self.apt / 'dpkg.log').write_text(content)
+                self.assertEqual(self.assess(NEWER)['status'], 'unsupported_newer')
+        (self.apt / 'dpkg.log').unlink()
+        (self.apt / 'dpkg.log').mkdir()
+        self.assertEqual(self.assess(NEWER)['status'], 'unsupported_newer')
+        self.assertFalse(any(c[0] == 'apt-get' for c in self.commands))
+
+    def test_snapshot_refresh_failure_refuses_instead_of_accepting_the_newer_candidate(self):
+        self.status_only_policy()
+        self.install_log()
+        def command(argv, **kwargs):
+            if argv[:2] == ['apt-get', 'update']:
+                raise recipe.RecipeFailure(result=subprocess.CompletedProcess(argv, 100, '', 'signature or network failure'))
+            return self.command(argv, **kwargs)
+        with patch.object(recipe, 'run', side_effect=command):
+            self.assertEqual(recipe.assess(self.tools, {'curl': NEWER})['curl']['refusal'], 'origin:curl')
+
+    def test_any_untrusted_installed_listing_refuses_even_with_a_trusted_listing_or_newer_candidate(self):
+        for trusted_listing in (True, False):
+            for foreign_first in (True, False):
+                with self.subTest(trusted_listing=trusted_listing, foreign_first=foreign_first):
+                    self.status_only_policy()
+                    listings = ['        500 https://ppa.example/ubuntu resolute/main amd64 Packages\n']
+                    if trusted_listing:
+                        listings.append(f'        500 {INDEX}\n')
+                    if foreign_first:
+                        listings.reverse()
+                    self.version_policy += ''.join(listings)
+                    with patch.object(recipe, 'snapshot_origin') as snapshot:
+                        self.assertEqual(self.assess(NEWER)['status'], 'unsupported_newer')
+                    snapshot.assert_not_called()
+
+    def test_normal_and_cached_snapshot_policies_cannot_override_each_others_untrusted_listing(self):
+        trusted = f'curl:\n *** {NEWER} 500\n        500 {INDEX}\n'
+        untrusted = f'curl:\n *** {NEWER} 500\n        500 https://ppa.example/ubuntu resolute/main amd64 Packages\n'
+        for normal, snapshot in ((trusted, untrusted), (untrusted, trusted)):
+            with self.subTest(normal=normal, snapshot=snapshot):
+                self.version_policy = normal
+                def command(argv, snapshot=snapshot, **kwargs):
+                    if argv[:3] == ['apt-cache', 'policy', 'curl:amd64'] and '-o' in argv:
+                        return subprocess.CompletedProcess(argv, 0, snapshot, '')
+                    return self.command(argv, **kwargs)
+                with patch.object(recipe, 'run', side_effect=command):
+                    self.assertEqual(recipe.assess(self.tools, {'curl': NEWER}, ['-o', 'snapshot-options'])['curl']['status'], 'unsupported_newer')
+
+    def test_installed_version_in_an_untrusted_file_index_is_refused(self):
+        self.version_policy += f' *** {NEWER} 100\n        100 file:/vendor ./ Packages\n'
+        def command(argv, **kwargs):
+            result = self.command(argv, **kwargs)
+            if argv == ['apt-cache', 'policy']:
+                result.stdout += ' 100 file:/vendor ./ Packages\n     release c=\n'
+            return result
+        with patch.object(recipe, 'run', side_effect=command):
+            self.assertEqual(recipe.assess(self.tools, {'curl': NEWER})['curl']['status'], 'unsupported_newer')
+
+    def test_historical_snapshot_source_is_the_logged_time_and_does_not_load_system_apt_hooks(self):
+        self.status_only_policy()
+        self.install_log()
+        self.snapshot_version_policy = f'curl:\n *** {NEWER} 500\n        500 {INDEX}\n'
+        def command(argv, **kwargs):
+            if argv[:2] == ['apt-get', 'update']:
+                source = Path(next(arg.split('=', 1)[1] for arg in argv if arg.startswith('Dir::Etc::sourcelist=')))
+                self.assertIn('https://snapshot.ubuntu.com/ubuntu/20261014T123000Z/', source.read_text())
+                self.assertIn('Signed-By: ' + recipe.UBUNTU_KEYRING, source.read_text())
+                config = Path(kwargs['env']['APT_CONFIG'])
+                self.assertEqual(config.read_text(), 'Dir::Etc::parts "-";\nDir::Etc::main "-";\n')
+                self.assertEqual(config.parent, source.parent)
+            return self.command(argv, **kwargs)
+        with patch.object(recipe, 'run', side_effect=command), patch.dict(os.environ, TZ='UTC'):
+            self.assertEqual(recipe.assess(self.tools, {'curl': NEWER})['curl']['status'], 'newer_than_recipe')
+
+    def test_superseded_build_without_an_install_record_is_refused(self):
         self.version_policy = f'''curl:
   Installed: {NEWER}
   Candidate: {SUPERSEDED_BY}
@@ -191,7 +330,7 @@ class RecipeVersionsTest(unittest.TestCase):
         100 /var/lib/dpkg/status
 '''
         tool = self.assess(NEWER)
-        self.assertEqual((tool['status'], tool['changed']), ('newer_than_recipe', False))
+        self.assertEqual((tool['status'], tool['changed']), ('unsupported_newer', False))
         self.assertFalse(any(c[0] == 'apt-get' for c in self.commands))
 
     def test_phased_installed_version_and_later_version_blocks_are_parsed_independently(self):
@@ -275,7 +414,10 @@ class RecipeVersionsTest(unittest.TestCase):
                 refreshed = False
                 def command(argv, architecture=architecture, **kwargs):
                     nonlocal refreshed
-                    if argv[:2] == ['apt-get', 'update'] and 'Dir::Etc::sourceparts=-' not in argv:
+                    if argv[:2] == ['apt-get', 'update'] and ('Dir::Etc::sourcelist=' + str(source)) in argv:
+                        self.assertIn('Dir::Etc::sourceparts=-', argv)
+                        self.assertIn('APT::Get::List-Cleanup=false', argv)
+                        self.assertEqual((self.apt / 'ubuntu.sources.orbit-snapshot-backup').read_bytes(), LEGACY_SOURCE)
                         self.assertNotIn('snapshot.ubuntu.com', source.read_text())
                         self.assertIn('Suites: resolute resolute-updates resolute-backports\n', source.read_text())
                         self.assertIn('Suites: resolute-security\n', source.read_text())
@@ -299,10 +441,112 @@ class RecipeVersionsTest(unittest.TestCase):
                     with patch.object(recipe, 'publish', side_effect=lambda path, content, mode=0o644, original_publish=original_publish: original_publish(path, content, mode, uid=os.getuid(), gid=os.getgid())):
                         result = recipe.apply({'tools': self.tools, 'architecture': architecture, 'snapshot': '20261014T000000Z'})
                 self.assertTrue(refreshed)
+                repairs = [c for c in self.commands if c[0] == 'logger']
+                self.assertTrue(any('Restored generic Ubuntu sources' in c[-1] and 'ubuntu.sources.orbit-snapshot-backup' in c[-1] for c in repairs))
                 self.assertEqual(result['changed_tools'], [])
                 self.assertEqual(result['newer_than_recipe']['curl']['installed'], NEWER)
                 self.assertEqual(custom.read_text(), 'deb https://vendor.example resolute main\n')
                 self.assertFalse(any(c[:2] == ['apt-get', 'install'] for c in self.commands))
+
+    def test_failed_backup_stops_before_replacing_sources_refreshing_indexes_or_logging_success(self):
+        source = self.apt / 'sources.list.d/ubuntu.sources'
+        source.write_bytes(LEGACY_SOURCE)
+        with patch.object(recipe, 'publish', side_effect=recipe.RecipeFailure('apt-source')) as publish, \
+             patch.object(recipe, 'run', side_effect=self.command):
+            with self.assertRaisesRegex(recipe.RecipeFailure, 'apt-source'):
+                recipe.repair_ubuntu_sources('amd64')
+        self.assertEqual(publish.call_count, 1)
+        self.assertEqual(publish.call_args.args[0], self.apt / 'ubuntu.sources.orbit-snapshot-backup')
+        self.assertEqual(source.read_bytes(), LEGACY_SOURCE)
+        self.assertEqual(self.commands, [])
+
+    def test_repair_refuses_to_overwrite_a_different_backup_or_follow_a_backup_symlink(self):
+        source = self.apt / 'sources.list.d/ubuntu.sources'
+        source.write_bytes(LEGACY_SOURCE)
+        backup = self.apt / 'ubuntu.sources.orbit-snapshot-backup'
+        backup.write_text('earlier backup')
+        with self.assertRaisesRegex(recipe.RecipeFailure, 'apt-source'):
+            recipe.repair_ubuntu_sources('amd64')
+        self.assertEqual(backup.read_text(), 'earlier backup')
+        backup.unlink()
+        backup.symlink_to(source)
+        with self.assertRaisesRegex(recipe.RecipeFailure, 'apt-source'):
+            recipe.repair_ubuntu_sources('amd64')
+        self.assertEqual(source.read_bytes(), LEGACY_SOURCE)
+
+    def test_repair_can_retry_after_a_successful_backup_and_failed_source_publication(self):
+        source = self.apt / 'sources.list.d/ubuntu.sources'
+        source.write_bytes(LEGACY_SOURCE)
+        backup = self.apt / 'ubuntu.sources.orbit-snapshot-backup'
+        backup.write_bytes(LEGACY_SOURCE)
+        with patch.object(recipe, 'publish', side_effect=lambda path, content: path.write_bytes(content)), \
+             patch.object(recipe, 'run', side_effect=self.command):
+            self.assertTrue(recipe.repair_ubuntu_sources('amd64'))
+        self.assertEqual(backup.read_bytes(), LEGACY_SOURCE)
+        self.assertNotIn('snapshot.ubuntu.com', source.read_text())
+
+    def test_dry_run_plans_repair_and_matches_apply_origin_refusals_without_changing_system_sources(self):
+        source = self.apt / 'sources.list.d/ubuntu.sources'
+        custom = self.apt / 'sources.list.d/custom.list'
+        custom.write_text('deb https://broken.example resolute main\n')
+        source.write_bytes(LEGACY_SOURCE)
+        self.status_only_policy()
+        rolling_policy = f'curl:\n *** {NEWER} 500\n        500 {INDEX}\n'
+        for trusted in (True, False):
+            with self.subTest(trusted=trusted):
+                self.commands = []
+                refreshed = False
+                state = {'applied': False}
+                def command(argv, trusted=trusted, state=state, **kwargs):
+                    nonlocal refreshed
+                    if argv[:2] == ['apt-get', 'update']:
+                        self.assertIn('Dir::Etc::sourceparts=-', argv)
+                        selected_source = Path(next(arg.split('=', 1)[1] for arg in argv if arg.startswith('Dir::Etc::sourcelist=')))
+                        if state['applied'] and selected_source != source:
+                            return self.command(argv, **kwargs)
+                        self.assertIn('http://archive.ubuntu.com/ubuntu', selected_source.read_text())
+                        self.assertIn('Suites: resolute-security', selected_source.read_text())
+                        if not state['applied']:
+                            self.assertEqual(source.read_bytes(), LEGACY_SOURCE)
+                            self.assertNotEqual(selected_source, source)
+                        refreshed = True
+                    result = self.command(argv, **kwargs)
+                    if argv[:3] == ['apt-cache', 'policy', 'curl:amd64'] and (('-c' in argv) or state['applied']):
+                        self.assertTrue(refreshed)
+                        result.stdout = rolling_policy if trusted else rolling_policy.replace('security.ubuntu.com', 'ppa.example')
+                    return result
+                with patch.object(recipe, 'platform_check'), \
+                     patch.object(recipe, 'inspect', return_value={'curl': NEWER}), \
+                     patch.object(recipe, 'run', side_effect=command), \
+                     patch.object(recipe, 'publish') as publish, \
+                     patch.object(sys, 'argv', ['program', 'inspect', json.dumps({'architecture': 'amd64', 'tools': self.tools})]), \
+                     contextlib.redirect_stdout(io.StringIO()) as output:
+                    self.assertEqual(recipe.main(), 0)
+                planned = json.loads(output.getvalue())
+                self.assertEqual(planned['_actions'], ['repair_ubuntu_sources'])
+                self.assertEqual(planned['curl']['status'], 'newer_than_recipe' if trusted else 'unsupported_newer')
+                publish.assert_not_called()
+                self.assertEqual(source.read_bytes(), LEGACY_SOURCE)
+                self.assertFalse((self.apt / 'ubuntu.sources.orbit-snapshot-backup').exists())
+                self.assertFalse(any(c[0] in ('logger', 'systemctl') or c[:2] == ['apt-get', 'install'] for c in self.commands))
+                state['applied'] = True
+                refreshed = False
+                with patch.object(recipe, 'POLICY', self.apt / 'policy'), \
+                     patch.object(recipe, 'packages', return_value={'curl': NEWER}), \
+                     patch.object(recipe, 'inspect', return_value={'curl': NEWER}), \
+                     patch.object(recipe, 'active_services', return_value=set()), \
+                     patch.object(recipe, 'publish', side_effect=lambda path, content, *args: Path(path).write_bytes(content)), \
+                     patch.object(recipe.pwd, 'getpwnam', return_value=None), \
+                     patch.object(recipe, 'run', side_effect=command):
+                    payload = {'architecture': 'amd64', 'snapshot': '20261014T000000Z', 'tools': self.tools}
+                    if trusted:
+                        self.assertEqual(recipe.apply(payload)['newer_than_recipe']['curl']['installed'], NEWER)
+                    else:
+                        with self.assertRaisesRegex(recipe.RecipeFailure, planned['curl']['refusal']):
+                            recipe.apply(payload)
+                self.assertEqual(custom.read_text(), 'deb https://broken.example resolute main\n')
+                source.write_bytes(LEGACY_SOURCE)
+                (self.apt / 'ubuntu.sources.orbit-snapshot-backup').unlink()
 
     def test_similar_but_not_exact_sources_and_symlinks_are_never_overwritten(self):
         source = self.apt / 'sources.list.d/ubuntu.sources'
@@ -403,6 +647,16 @@ class RecipeVersionsTest(unittest.TestCase):
                 self.assertEqual(observed, {'curl': NEWER, 'caddy': '2.0'})
                 self.assertEqual(sum(c[:2] == ['apt-get', 'install'] for c in commands), 2)
                 self.assertIn(['apt-get', 'check'], commands)
+                self.assertIn(['dpkg', '--audit'], commands)
+
+    def test_audit_output_refuses_incomplete_packages_even_when_dpkg_exits_zero(self):
+        for stdout in ('The following packages are only half configured: curl\n', ''):
+            with self.subTest(stdout=stdout), patch.object(recipe, 'run', return_value=subprocess.CompletedProcess(['dpkg', '--audit'], 0, stdout, '')):
+                if stdout:
+                    with self.assertRaisesRegex(recipe.RecipeFailure, 'packages'):
+                        recipe.audit_packages({})
+                else:
+                    recipe.audit_packages({})
 
     def test_failed_rolling_index_refresh_stops_before_assessment_or_download(self):
         def command(argv, **kwargs):

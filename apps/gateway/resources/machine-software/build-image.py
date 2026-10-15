@@ -59,6 +59,7 @@ def image_install_packages(payload, options):
             if debs:
                 install_exact_debs(debs, payload['tools'], packages(), options, environment)
         run(['apt-get', 'check'], env=environment)
+        audit_packages(environment)
     finally:
         POLICY.unlink()
     if payload.get('php') and php_install(payload) not in ('applied', 'current'):

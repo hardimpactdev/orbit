@@ -10,6 +10,7 @@ final readonly class NodeRecipePlan
     /**
      * @param  list<string>  $roles
      * @param  array<string, array{source: string, version: string, installed: ?string, changed: bool, status: string, refusal?: string}>  $tools
+     * @param  list<string>  $actions
      */
     public function __construct(
         public int $nodeId,
@@ -17,5 +18,6 @@ final readonly class NodeRecipePlan
         public string $snapshot,
         public array $roles,
         public array $tools,
+        public array $actions = [],
     ) {}
 }
