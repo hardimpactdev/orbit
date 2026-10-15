@@ -5,7 +5,6 @@ covers:
   - apps/gateway/app/{Domain,Infrastructure}/ProxyCli/**
   - apps/gateway/app/{Actions,Data,Http/Requests}/ProxyCli/**
   - apps/gateway/app/Http/Controllers/Api/ProxyCliController.php
-  - apps/gateway/app/Infrastructure/Caddy/Build/Sources/ProxyCliCaddySiteSource.php
   - apps/gateway/resources/proxycli/**
   - apps/web/src/pages/Quota.tsx
 ---
@@ -104,6 +103,8 @@ While setup holds the collector, `process:destroy` refuses to remove the Process
 Before it changes anything, setup checks for a Route on `collector.cli-proxy-api.orbit`. It takes over a custom proxy Route on the collector Node to `http://127.0.0.1:8787` with no Process target: one Caddy reload moves the name to the collector site, and setup then removes the Route. Any other Route on that name fails setup with `proxycli.hostname_taken` (409).
 
 Setup runs the shared [Caddy package step](/reference/node-provisioning#package-sources) before it publishes the Caddy site and updates the collector Process in place. An installed Caddy at or above the floor stays in place. The site retries the loopback collector for up to 5 seconds, so a request that arrives during the restart waits instead of failing.
+
+The `proxycli` provider contributes the collector site to the [Node Caddy build](/reference/caddy-configuration#node-caddy-build) through a [plug-in point](/reference/extensions#plug-in-points). The site renders on the collector Node while setup holds the collector and the Node has the collector certificate.
 
 ## Collection
 

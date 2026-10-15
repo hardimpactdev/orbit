@@ -73,6 +73,7 @@ Core resolves every tagged implementation and calls each one.
 | `App\Domain\Projects\ProjectRemovalHook` | `project:destroy` | `lock()` and `remove()` |
 | `App\Domain\GatewayReleases\GatewayReleaseCleanup` | The [release handoff](/reference/gateway-recovery) | `configured()`, `status()`, `reconcile()`, and `resume()` |
 | `App\Domain\Activity\ActivityInputRedaction` | The [Activity](/cli/activity) recorder | `commands()` and `input()` |
+| `App\Infrastructure\Caddy\Build\NodeCaddySiteSource` | The [Node Caddy build](/reference/caddy-configuration#node-caddy-build) | `sites()` |
 
 `ProjectRemovalHook::lock()` runs first in the removal transaction, before the guards, so the extension's writers wait for the removal. `remove()` runs after every guard passed and before the Project row is deleted. It may refuse with a `ResourceOperationException`, which rolls back the whole removal.
 
@@ -80,7 +81,9 @@ After the release handoff restarts the scheduler, it waits for each configured `
 
 `ActivityInputRedaction::commands()` names the route names whose input the extension decides. For those commands, Activity stores only what `input()` returns, then sanitizes it like any other input. `input()` receives a closure that returns the request input. Activity runs before authorization, so the request body is parsed only when the extension calls that closure. Conn uses it so that a T3 admin session and the content of a settings document never enter Activity. Documents never calls the closure, so document bytes are never parsed or recorded before authorization.
 
-A plug-in contribution runs whether or not the switch is on. Removing a Project must also remove its documents, a scheduled deletion must finish, and a request to a disabled extension still records Activity, so its secrets must still stay out.
+The Node Caddy build renders core's own site sources first, then each contributed `NodeCaddySiteSource` in provider order. A contributed source renders from stored state only, as core's sources do. When its site uses an Orbit CA certificate, the source keeps its own slug for `CaddySiteCertificates` and renders the site only after its publisher recorded the certificate on the Node. ProxyCli contributes the collector site this way.
+
+A plug-in contribution runs whether or not the switch is on. Removing a Project must also remove its documents, a scheduled deletion must finish, and a request to a disabled extension still records Activity, so its secrets must still stay out. A Caddy build renders every site that is placed, so a site stays live until the extension removes it.
 
 ## The boundary
 

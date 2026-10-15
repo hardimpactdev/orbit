@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Extensions\Contributions;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\ProxyCli\ProxyCliState;
@@ -23,7 +24,6 @@ use App\Infrastructure\Caddy\Build\NodeCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\AnalyticsCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\GatewayWebCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\MetricsCaddySiteSource;
-use App\Infrastructure\Caddy\Build\Sources\ProxyCliCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\RouteCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\ServiceMetricsCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\WebSocketCaddySiteSource;
@@ -31,6 +31,7 @@ use App\Infrastructure\Caddy\CaddyGlobalOptions;
 use App\Infrastructure\Gateway\GatewayCaddyConfigRenderer;
 use App\Infrastructure\Metrics\MetricsPublicationRenderer;
 use App\Infrastructure\Metrics\ServiceMetricsConfigRenderer;
+use App\Infrastructure\ProxyCli\ProxyCliCaddySiteSource;
 use App\Infrastructure\WebSocket\WebSocketCaddySiteRenderer;
 use App\Models\Cluster;
 use App\Models\Instance;
@@ -228,6 +229,25 @@ describe('site sources', function (): void {
             ->toContain("analytics.orbit {\n    bind 10.44.0.7\n    @orbit_outside not remote_ip 10.44.0.0/24\n    abort @orbit_outside\n")
             ->toContain("collector.cli-proxy-api.orbit {\n    bind 10.44.0.7\n    @orbit_outside not remote_ip 10.44.0.0/24\n    abort @orbit_outside\n")
             ->not->toContain('__ORBIT_');
+    });
+
+    it('renders the services Node byte for byte as main did before the ProxyCli source became a contribution', function (): void {
+        $node = caddy_build_services_node();
+        caddy_build_task_vms();
+        $main = strtr((string) file_get_contents(base_path('tests/Fixtures/Caddy/services-caddyfile-main.caddy')), [
+            '{instance}' => (string) Instance::query()->sole()->id,
+        ]);
+
+        expect(app(NodeCaddyfileRenderer::class)->render($node)->content)->toBe($main);
+    });
+
+    it('keeps the certificate slugs that live Nodes store', function (): void {
+        expect([
+            CaddySiteCertificates::Websocket,
+            CaddySiteCertificates::Analytics,
+            CaddySiteCertificates::Metrics,
+            ProxyCliCaddySiteSource::CertificateSlug,
+        ])->toBe(['websocket', 'analytics', 'metrics', 'proxycli']);
     });
 
     it('leaves a role site out until its certificate is recorded on the Node, and after it is forgotten', function (): void {
@@ -557,7 +577,7 @@ function caddy_build_renderer(): NodeCaddyfileRenderer
         new RouteCaddySiteSource(new DevelopmentSiteRepository, new DevelopmentCaddyConfigRenderer),
         new WebSocketCaddySiteSource(new WebSocketCaddySiteRenderer, 8080),
         new AnalyticsCaddySiteSource,
-        app(ProxyCliCaddySiteSource::class),
+        ...app(Contributions::class)->of(NodeCaddySiteSource::class),
     ]);
 }
 

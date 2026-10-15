@@ -57,6 +57,7 @@ use App\Domain\Doctor\PublicRouteEdgeInspector;
 use App\Domain\Doctor\RoleStateInspector;
 use App\Domain\Doctor\RouteApplicationUrlInspector;
 use App\Domain\Doctor\ScheduleStateInspector;
+use App\Domain\Extensions\Contributions;
 use App\Domain\Firewall\FirewallInspector;
 use App\Domain\Firewall\FirewallManager;
 use App\Domain\Firewall\RouterLanIngressPublisher;
@@ -160,12 +161,6 @@ use App\Domain\Processes\ProcessUsageIndex;
 use App\Domain\Projects\ProjectUpdateProjectionMutator;
 use App\Domain\Projects\ProjectUpdateSourceMutator;
 use App\Domain\Projects\TiaBaselineSource;
-use App\Domain\ProxyCli\ProxyCliAccountControlClient;
-use App\Domain\ProxyCli\ProxyCliCache;
-use App\Domain\ProxyCli\ProxyCliPublicationManager;
-use App\Domain\ProxyCli\ProxyCliRuntimeLifecycle;
-use App\Domain\ProxyCli\ProxyCliSnapshotStore;
-use App\Domain\ProxyCli\ProxyCliState;
 use App\Domain\Releases\GatewayReleaseAlertNotifier;
 use App\Domain\Releases\ReleaseAlertNotifier;
 use App\Domain\Releases\ReleaseAlertWebhook;
@@ -223,10 +218,10 @@ use App\Infrastructure\Caddy\Build\NodeCaddyBuilder;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildLock;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
+use App\Infrastructure\Caddy\Build\NodeCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\AnalyticsCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\GatewayWebCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\MetricsCaddySiteSource;
-use App\Infrastructure\Caddy\Build\Sources\ProxyCliCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\RouteCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\ServiceMetricsCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\WebSocketCaddySiteSource;
@@ -357,13 +352,6 @@ use App\Infrastructure\Processes\PrometheusProcessUsageIndex;
 use App\Infrastructure\Processes\RemoteProcessRuntimeManager;
 use App\Infrastructure\Projects\NativeProjectUpdateProjectionMutator;
 use App\Infrastructure\Projects\RemoteProjectUpdateSourceMutator;
-use App\Infrastructure\ProxyCli\ArrayProxyCliCache;
-use App\Infrastructure\ProxyCli\HttpProxyCliAccountControlClient;
-use App\Infrastructure\ProxyCli\NativeProxyCliPublicationManager;
-use App\Infrastructure\ProxyCli\NativeProxyCliRuntimeLifecycle;
-use App\Infrastructure\ProxyCli\RecordingProxyCliPublicationManager;
-use App\Infrastructure\ProxyCli\RecordingProxyCliRuntimeLifecycle;
-use App\Infrastructure\ProxyCli\ValkeyProxyCliCache;
 use App\Infrastructure\Releases\HttpReleaseAlertWebhook;
 use App\Infrastructure\RemotePrograms\SshProgramRunner;
 use App\Infrastructure\Routes\NativeClusterRouterReplacementProjector;
@@ -403,7 +391,6 @@ use App\Infrastructure\WireGuard\VpnConfigurationRepository;
 use App\Infrastructure\WireGuard\WireGuardPeerConverger;
 use App\Infrastructure\WireGuard\WireGuardServerConfigRenderer;
 use App\Models\Activity;
-use App\Models\DatabaseConnection;
 use App\Models\Instance;
 use App\Support\ValidatedData;
 use Illuminate\Broadcasting\BroadcastManager;
@@ -559,37 +546,10 @@ final class ApplicationServiceProvider extends ServiceProvider
         WebSocketCredentialManager::class => NativeWebSocketCredentialManager::class,
         WebSocketPublicationManager::class => NativeWebSocketPublicationManager::class,
         WebSocketRuntimeLifecycle::class => NativeWebSocketRuntimeLifecycle::class,
-        ProxyCliAccountControlClient::class => HttpProxyCliAccountControlClient::class,
     ];
 
     public function register(): void
     {
-        $this->app->singleton(ArrayProxyCliCache::class);
-        $this->app->singleton(ProxyCliCache::class, function ($app): ProxyCliCache {
-            if ($app->environment('testing')) {
-                return $app->make(ArrayProxyCliCache::class);
-            }
-
-            $slug = $app->make(ProxyCliState::class)->cacheConnection();
-            $connection = is_string($slug)
-                ? DatabaseConnection::query()->where('slug', $slug)->first()
-                : null;
-
-            return $connection instanceof DatabaseConnection
-                ? new ValkeyProxyCliCache($connection)
-                : $app->make(ArrayProxyCliCache::class);
-        });
-        $this->app->singleton(ProxyCliSnapshotStore::class);
-        if ($this->app->environment('testing')) {
-            $this->app->singleton(RecordingProxyCliRuntimeLifecycle::class);
-            $this->app->singleton(RecordingProxyCliPublicationManager::class);
-            $this->app->singleton(ProxyCliRuntimeLifecycle::class, static fn ($app): ProxyCliRuntimeLifecycle => $app->make(RecordingProxyCliRuntimeLifecycle::class));
-            $this->app->singleton(ProxyCliPublicationManager::class, static fn ($app): ProxyCliPublicationManager => $app->make(RecordingProxyCliPublicationManager::class));
-        } else {
-            $this->app->bind(ProxyCliRuntimeLifecycle::class, NativeProxyCliRuntimeLifecycle::class);
-            $this->app->bind(ProxyCliPublicationManager::class, NativeProxyCliPublicationManager::class);
-        }
-
         $this->app->bind(
             SweepIdleAppDevRuntimesAction::class,
             static fn ($app): SweepIdleAppDevRuntimesAction => new SweepIdleAppDevRuntimesAction(
@@ -743,7 +703,7 @@ final class ApplicationServiceProvider extends ServiceProvider
                 app(RouteCaddySiteSource::class),
                 app(WebSocketCaddySiteSource::class),
                 app(AnalyticsCaddySiteSource::class),
-                app(ProxyCliCaddySiteSource::class),
+                ...app(Contributions::class)->of(NodeCaddySiteSource::class),
             ]),
         );
         $this->app->scoped(

@@ -18,6 +18,6 @@ enum CaddyListenerRule: string
     /** `gateway.orbit`, `metrics.orbit`, and the service metrics scrape site: the WireGuard address only. */
     case WireGuard = 'wireguard';
 
-    /** `websocket`, `analytics`, and ProxyCli: the WireGuard address. */
+    /** `websocket`, `analytics`, and the sites that extensions contribute: the WireGuard address. */
     case Shared = 'shared';
 }

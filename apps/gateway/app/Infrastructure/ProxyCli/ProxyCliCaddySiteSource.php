@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Infrastructure\Caddy\Build\Sources;
+namespace App\Infrastructure\ProxyCli;
 
 use App\Domain\ProxyCli\ProxyCliProcess;
 use App\Domain\ProxyCli\ProxyCliState;
@@ -10,15 +10,17 @@ use App\Infrastructure\Caddy\Build\CaddyListenerRule;
 use App\Infrastructure\Caddy\Build\CaddySite;
 use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Infrastructure\Caddy\Build\NodeCaddySiteSource;
-use App\Infrastructure\ProxyCli\ProxyCliCaddySiteRenderer;
-use App\Infrastructure\ProxyCli\ProxyCliFootprint;
 use App\Models\Node;
 
 /**
- * The collector site on the Node that the enabled ProxyCli extension names.
+ * The collector site on the Node that the enabled ProxyCli extension names. The provider contributes it to the
+ * Caddy site source plug-in point.
  */
 final readonly class ProxyCliCaddySiteSource implements NodeCaddySiteSource
 {
+    /** The collector's slug in CaddySiteCertificates. */
+    public const string CertificateSlug = 'proxycli';
+
     public function __construct(
         private ProxyCliState $state,
         private ProxyCliCaddySiteRenderer $renderer = new ProxyCliCaddySiteRenderer,
@@ -30,7 +32,7 @@ final readonly class ProxyCliCaddySiteSource implements NodeCaddySiteSource
         if (
             ! $this->state->enabled()
             || $this->state->nodeId() !== $node->id
-            || ! $this->certificates->published($node->id, CaddySiteCertificates::ProxyCli)
+            || ! $this->certificates->published($node->id, self::CertificateSlug)
         ) {
             return [];
         }
