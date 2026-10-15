@@ -98,7 +98,7 @@ final readonly class RemotePhpPackageManager
             return;
         }
 
-        $this->runInstaller($node, array_values($versions->all()), $ssh, self::APP_PROD_FAILURE_CONTRACT, RoleName::AppProd, $this->pcov($node), fpm: 'none');
+        $this->runInstaller($node, array_values($versions->all()), $ssh, self::APP_PROD_FAILURE_CONTRACT, RoleName::AppProd, $this->pcov($node), fpm: 'none', opentelemetry: $this->opentelemetry($node));
     }
 
     /**
@@ -110,7 +110,7 @@ final readonly class RemotePhpPackageManager
      */
     public function appDevPrograms(array $versions): array
     {
-        $programs = ['install' => $this->installerCommand($versions, RoleName::AppDev, pcov: true, fpm: 'shared')];
+        $programs = ['install' => $this->installerCommand($versions, RoleName::AppDev, pcov: true, fpm: 'shared', opentelemetry: in_array('app-dev', ($this->recipe ?? new RecipeLoader()->load())->phpPolicy->opentelemetryProfiles, true))];
         foreach (array_values(array_unique($versions)) as $version) {
             $programs[$version] = $this->profileCommand($version, 'app-dev', RoleName::AppDev);
         }
@@ -138,7 +138,7 @@ final readonly class RemotePhpPackageManager
         }
 
         $selected = array_values(array_unique($versions->all()));
-        $this->runInstaller($node, $selected, $ssh, $failure, $role, pcov: $this->pcov($node), fpm: 'shared');
+        $this->runInstaller($node, $selected, $ssh, $failure, $role, pcov: $this->pcov($node), fpm: 'shared', opentelemetry: $this->opentelemetry($node));
 
         foreach ($selected as $version) {
             $ssh->execute(
@@ -162,6 +162,7 @@ final readonly class RemotePhpPackageManager
         RoleName $role,
         bool $pcov,
         string $fpm,
+        bool $opentelemetry,
     ): void {
         $recipe = $this->recipe ?? new RecipeLoader()->load();
         foreach ($versions as $version) {
@@ -173,7 +174,7 @@ final readonly class RemotePhpPackageManager
                 );
             }
         }
-        $command = $this->installerCommand($versions, $role, $pcov, $fpm);
+        $command = $this->installerCommand($versions, $role, $pcov, $fpm, $opentelemetry);
         $result = $ssh->execute($node, $command, step: $failure['source_step'], errorCode: $failure['source_error']);
         $program = $this->catalog->program(PhpBuildInstaller::Program);
         try {
@@ -204,7 +205,7 @@ final readonly class RemotePhpPackageManager
     }
 
     /** @param  list<string>  $versions */
-    private function installerCommand(array $versions, RoleName $role, bool $pcov, string $fpm): RemoteCommand
+    private function installerCommand(array $versions, RoleName $role, bool $pcov, string $fpm, bool $opentelemetry): RemoteCommand
     {
         $recipe = $this->recipe ?? new RecipeLoader()->load();
         $release = [
@@ -215,7 +216,7 @@ final readonly class RemotePhpPackageManager
         return SshProgramRunner::pythonCommand(
             $this->catalog->program(PhpBuildInstaller::Program),
             $this->catalog->bootstrap(),
-            PhpBuildInstaller::input($recipe, $versions, 'apply', $pcov, extras: 'keep', fpm: $fpm, release: $release),
+            PhpBuildInstaller::input($recipe, $versions, 'apply', $pcov, extras: 'keep', fpm: $fpm, release: $release, opentelemetry: $opentelemetry),
         );
     }
 
@@ -229,6 +230,14 @@ final readonly class RemotePhpPackageManager
         $recipe = $this->recipe ?? new RecipeLoader()->load();
 
         return array_intersect($roles, $recipe->phpPolicy->pcovProfiles) !== [];
+    }
+
+    private function opentelemetry(Node $node): bool
+    {
+        $roles = $node->roles->map(static fn ($role): string => $role->role->value)->all();
+        $recipe = $this->recipe ?? new RecipeLoader()->load();
+
+        return array_intersect($roles, $recipe->phpPolicy->opentelemetryProfiles) !== [];
     }
 
     private function logOutcome(Node $node, ProgramResult $outcome): void
