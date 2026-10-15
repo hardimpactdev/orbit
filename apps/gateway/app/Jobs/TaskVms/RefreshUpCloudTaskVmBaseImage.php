@@ -6,6 +6,7 @@ namespace App\Jobs\TaskVms;
 
 use App\Domain\Gateway\GatewayQueue;
 use App\Domain\TaskVms\TaskVmSettings;
+use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Infrastructure\TaskVms\UpCloudServers;
 use App\Infrastructure\TaskVms\UpCloudTaskVmImageBuilder;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -13,10 +14,9 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Support\Facades\Log;
 
 /**
- * The nightly UpCloud refresh: builds a new UpCloud base image, a template in UpCloud, with the shared recipe, as
- * `task-vms:build-upcloud-image` does, and keeps the two newest verified templates. The first build is always that
- * command, so while UpCloud has no verified template the job changes nothing. A failed build keeps the current
- * template. It runs on the separate `builds` queue and holds its own build lock, so it holds up no task VM job.
+ * Recipe reconciliation requests this refresh when no verified UpCloud template matches the deployed identity.
+ * Recheck after queueing: an earlier job or manual build may already have supplied it. The builder keeps its lock
+ * and the two newest verified templates. Nothing here enables overflow claims.
  */
 final class RefreshUpCloudTaskVmBaseImage implements ShouldBeUnique, ShouldQueue
 {
@@ -36,9 +36,9 @@ final class RefreshUpCloudTaskVmBaseImage implements ShouldBeUnique, ShouldQueue
         $this->onTaskVmQueue(GatewayQueue::Builds);
     }
 
-    public function handle(TaskVmSettings $settings, UpCloudServers $servers, UpCloudTaskVmImageBuilder $builder): void
+    public function handle(TaskVmSettings $settings, UpCloudServers $servers, UpCloudTaskVmImageBuilder $builder, RecipeImageBuilds $builds): void
     {
-        if ($settings->upcloud === null || $servers->currentTemplate() === null) {
+        if ($settings->upcloud === null || $servers->currentTemplate($builds->currentRecipe()->identity) !== null) {
             return;
         }
 
