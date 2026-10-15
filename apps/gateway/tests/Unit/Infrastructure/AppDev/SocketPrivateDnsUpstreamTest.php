@@ -5,7 +5,10 @@ declare(strict_types=1);
 use App\Domain\AppDev\PrivateDnsAnswer;
 use App\Infrastructure\AppDev\PrivateDnsMessageCodec;
 use App\Infrastructure\AppDev\SocketPrivateDnsUpstream;
+use Symfony\Component\Process\InputStream;
+use Symfony\Component\Process\Process;
 use Tests\Support\SilentPrivateDnsPortPair;
+use Tests\Support\SubprocessFixture;
 
 pest()->group('subprocess');
 
@@ -20,7 +23,7 @@ it('returns a UDP upstream answer without waiting for the socket to close', func
 
         expect($resolved)
             ->toBe($response)
-            ->and(proc_get_status($responder['process'])['running'])
+            ->and($responder['process']->isRunning())
             ->toBeTrue();
     } finally {
         orb313_stop_process($responder);
@@ -85,7 +88,7 @@ it('gives up on a TCP upstream that accepts but never sends a response', functio
 });
 
 /**
- * @return array{process: resource, pipes: array<int, resource>, port: int, files: list<string>}
+ * @return array{process: Process, input: InputStream, port: int, files: list<string>}
  */
 function orb313_start_udp_responder(string $response): array
 {
@@ -94,8 +97,7 @@ function orb313_start_udp_responder(string $response): array
 
         declare(strict_types=1);
 
-        $portFile = $argv[1];
-        $response = hex2bin($argv[2]);
+        $response = hex2bin($argv[1]);
         if (! is_string($response)) {
             exit(1);
         }
@@ -110,7 +112,8 @@ function orb313_start_udp_responder(string $response): array
             exit(1);
         }
 
-        file_put_contents($portFile, (string) ((int) substr($name, strrpos($name, ':') + 1)));
+        echo substr($name, strrpos($name, ':') + 1)."\n";
+        fflush(STDOUT);
         $peer = '';
         $message = stream_socket_recvfrom($server, 65535, 0, $peer);
         if (is_string($message) && $peer !== '') {
@@ -124,7 +127,7 @@ function orb313_start_udp_responder(string $response): array
 }
 
 /**
- * @return array{process: resource, pipes: array<int, resource>, port: int, files: list<string>}
+ * @return array{process: Process, input: InputStream, port: int, files: list<string>}
  */
 function orb313_start_stalled_tcp_acceptor(): array
 {
@@ -133,7 +136,6 @@ function orb313_start_stalled_tcp_acceptor(): array
 
         declare(strict_types=1);
 
-        $portFile = $argv[1];
         $server = stream_socket_server('tcp://127.0.0.1:0', $error, $message);
         if (! is_resource($server)) {
             exit(1);
@@ -144,7 +146,8 @@ function orb313_start_stalled_tcp_acceptor(): array
             exit(1);
         }
 
-        file_put_contents($portFile, (string) ((int) substr($name, strrpos($name, ':') + 1)));
+        echo substr($name, strrpos($name, ':') + 1)."\n";
+        fflush(STDOUT);
         $connection = @stream_socket_accept($server, -1);
         if (is_resource($connection)) {
             fread(STDIN, 1);
@@ -157,61 +160,44 @@ function orb313_start_stalled_tcp_acceptor(): array
 
 /**
  * @param  list<string>  $arguments
- * @return array{process: resource, pipes: array<int, resource>, port: int, files: list<string>}
+ * @return array{process: Process, input: InputStream, port: int, files: list<string>}
  */
 function orb313_start_script(string $script, array $arguments): array
 {
     $scriptPath = tempnam(sys_get_temp_dir(), 'orbit-dns-script-');
-    $portFile = tempnam(sys_get_temp_dir(), 'orbit-dns-port-');
-    expect($scriptPath)->toBeString()->and($portFile)->toBeString();
+    expect($scriptPath)->toBeString();
     file_put_contents($scriptPath, $script);
-    file_put_contents($portFile, '');
+    $input = new InputStream;
+    $process = new Process([PHP_BINARY, $scriptPath, ...$arguments], input: $input, timeout: 15);
 
-    $pipes = [];
-    $process = proc_open(
-        [PHP_BINARY, $scriptPath, $portFile, ...$arguments],
-        [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-        $pipes,
-    );
-    expect($process)->toBeResource();
+    try {
+        $process->start();
+        $port = SubprocessFixture::line($process);
+        expect(ctype_digit($port))->toBeTrue();
+        expect((int) $port)->toBeGreaterThan(0);
+    } catch (Throwable $exception) {
+        $input->close();
+        $process->stop();
+        unlink($scriptPath);
 
-    $port = 0;
-    $deadline = microtime(true) + 15.0;
-    while (microtime(true) < $deadline) {
-        clearstatcache(true, $portFile);
-        $contents = file_get_contents($portFile);
-        if (is_string($contents) && ctype_digit(trim($contents))) {
-            $port = (int) trim($contents);
-
-            break;
-        }
-
-        usleep(10_000);
+        throw $exception;
     }
-
-    expect($port)->toBeGreaterThan(0);
 
     return [
         'process' => $process,
-        'pipes' => $pipes,
-        'port' => $port,
-        'files' => [$scriptPath, $portFile],
+        'input' => $input,
+        'port' => (int) $port,
+        'files' => [$scriptPath],
     ];
 }
 
 /**
- * @param  array{process: resource, pipes: array<int, resource>, port: int, files: list<string>}  $started
+ * @param  array{process: Process, input: InputStream, port: int, files: list<string>}  $started
  */
 function orb313_stop_process(array $started): void
 {
-    foreach ($started['pipes'] as $pipe) {
-        if (is_resource($pipe)) {
-            fclose($pipe);
-        }
-    }
-
-    proc_terminate($started['process']);
-    proc_close($started['process']);
+    $started['input']->close();
+    $started['process']->stop();
 
     foreach ($started['files'] as $path) {
         @unlink($path);

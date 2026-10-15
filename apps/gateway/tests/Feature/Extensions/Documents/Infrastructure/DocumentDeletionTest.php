@@ -26,6 +26,7 @@ use Orbit\Extensions\Documents\Models\ProjectDocumentVersion;
 use Psr\Http\Message\RequestInterface;
 use Symfony\Component\Process\Exception\ProcessSignaledException;
 use Symfony\Component\Process\Process;
+use Tests\Support\SubprocessFixture;
 
 pest()->group('subprocess');
 
@@ -63,11 +64,7 @@ function deletion_provider(array $objects = []): void
     $server = new Process(['python3', base_path('tests/Fixtures/ProjectDocuments/inventory_http_server.py'), $home.'/bucket.json', $home.'/requests.json']);
     test()->deletionServer = $server;
     $server->start();
-    $deadline = microtime(true) + 3;
-    while (trim($server->getOutput()) === '' && $server->isRunning() && microtime(true) < $deadline) {
-        usleep(10_000);
-    }
-    $port = trim($server->getOutput());
+    $port = SubprocessFixture::line($server);
     expect(ctype_digit($port))->toBeTrue();
     ProjectDocumentStorage::query()->findOrFail(1)->update([
         'endpoint' => 'http://127.0.0.1:'.$port, 'region' => 'fixture-1', 'bucket' => 'fixture-bucket',
@@ -329,28 +326,19 @@ function deletion_scheduler_clock(string $clock): void
 
 function deletion_scheduler_start(Process $consumer): void
 {
-    $home = config()->string('orbit.home');
-    if (is_file($home.'/scheduler-ready')) {
-        unlink($home.'/scheduler-ready');
-    }
     $consumer->start();
-    $deadline = microtime(true) + 10;
-    while (! is_file($home.'/scheduler-ready') && $consumer->isRunning() && microtime(true) < $deadline) {
-        clearstatcache();
-        usleep(10_000);
-    }
-    expect(is_file($home.'/scheduler-ready'))->toBeTrue($consumer->getOutput().$consumer->getErrorOutput());
+    expect(SubprocessFixture::line($consumer))->toBe('scheduler-ready');
 }
 
 function deletion_scheduler_tick(Process $consumer, string $clock): array
 {
     deletion_scheduler_clock($clock);
     $path = config()->string('orbit.home').'/tick-'.str_replace(':', '-', $clock);
-    $deadline = microtime(true) + 15;
-    while (! is_file($path) && $consumer->isRunning() && microtime(true) < $deadline) {
-        clearstatcache();
-        usleep(10_000);
-    }
+    SubprocessFixture::waitUntil($consumer, static function () use ($path): bool {
+        clearstatcache(true, $path);
+
+        return is_file($path);
+    });
     expect(is_file($path))->toBeTrue($consumer->getOutput().$consumer->getErrorOutput());
     $tick = json_decode(file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
     expect($tick['exit_code'])->toBe(0);
@@ -438,16 +426,14 @@ it('holds the execution lock through real HTTP completion and pause defeats the 
     $pause = new Process([PHP_BINARY, base_path('tests/Fixtures/ProjectDocuments/cleanup_gate_execution.php'), $this->deletionHome.'/runtime', 'pause']);
     try {
         $worker->start();
-        $deadline = microtime(true) + 5;
-        while (! is_file($this->deletionHome.'/authorized') && $worker->isRunning() && microtime(true) < $deadline) {
-            usleep(10_000);
-        }
+        SubprocessFixture::waitUntil($worker, function (): bool {
+            clearstatcache(true, $this->deletionHome.'/authorized');
+
+            return is_file($this->deletionHome.'/authorized');
+        });
         expect(is_file($this->deletionHome.'/authorized'))->toBeTrue($worker->getErrorOutput());
         $pause->start();
-        $deadline = microtime(true) + 3;
-        while (! str_contains($pause->getOutput(), 'pause-starting') && $pause->isRunning() && microtime(true) < $deadline) {
-            usleep(10_000);
-        }
+        expect(SubprocessFixture::line($pause))->toBe('pause-starting');
         expect($pause->isRunning())->toBeTrue();
         expect(deletion_requests())->toBe([]);
         touch($this->deletionHome.'/release');

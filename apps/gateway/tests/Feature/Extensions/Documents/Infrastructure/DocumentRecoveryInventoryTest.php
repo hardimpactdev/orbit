@@ -17,6 +17,7 @@ use Orbit\Extensions\Documents\Models\ProjectDocumentStorage;
 use Orbit\Extensions\Documents\Models\ProjectDocumentUpload;
 use Orbit\Extensions\Documents\Models\ProjectDocumentVersion;
 use Symfony\Component\Process\Process;
+use Tests\Support\SubprocessFixture;
 
 beforeEach(function (): void {
     DB::rollBack();
@@ -53,11 +54,7 @@ function recovery_fixture(array $objects = []): RecoverDocumentCleanupAction
     $server = new Process(['python3', base_path('tests/Fixtures/ProjectDocuments/inventory_http_server.py'), $home.'/bucket.json', $home.'/requests.json']);
     test()->inventoryServer = $server;
     $server->start();
-    $deadline = hrtime(true) + 3_000_000_000;
-    while (trim($server->getOutput()) === '' && $server->isRunning() && hrtime(true) < $deadline) {
-        usleep(10_000);
-    }
-    $port = trim($server->getOutput());
+    $port = SubprocessFixture::line($server);
     if (! ctype_digit($port)) {
         throw new RuntimeException('Disposable inventory provider did not start.');
     }
