@@ -181,19 +181,22 @@ it('refuses extra PHP packages or another PHP source before any change, also in 
     expect(collect($ssh->commands)->contains(fn (RemoteCommand $command): bool => in_array('apply', $command->arguments, true)))->toBeFalse();
 })->with(['apply' => [false], 'dry run' => [true]]);
 
-it('stops with the installer outcome when the PHP build rolls back and records no convergence', function (): void {
-    $node = FleetFixtures::node('recipe-php-rollback', [RoleName::AppProd]);
+it('stops with the installer outcome when the PHP build rolls back and records no convergence', function (string $outcome, array $data, string $message): void {
+    $node = FleetFixtures::node('recipe-php-rollback-'.$outcome, [RoleName::AppProd]);
     recipeSsh();
-    app()->instance(RemoteProgramRunner::class, new FakePhpBuildRunner(['apply' => ['rolled_back', ['unit' => 'orbit-shop-php8.5-fpm.service', 'reason' => 'the service did not start']]]));
+    app()->instance(RemoteProgramRunner::class, new FakePhpBuildRunner(['apply' => [$outcome, $data]]));
     $verification = new RecipeVerification;
     app()->instance(FleetNodeVerification::class, $verification);
 
     expect(fn () => app(ConvergeNodeRecipeAction::class)->execute($node, new RecipeLoader()->load()))
         ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('node.recipe_php_failed')
-            ->and($exception->getMessage())->toContain('orbit-shop-php8.5-fpm.service', 'restored the previous PHP build'));
+            ->and($exception->getMessage())->toContain('orbit-shop-php8.5-fpm.service', $message));
     expect($verification->calls)->toBe(0)
         ->and($node->refresh()->settings)->toBe([]);
-});
+})->with([
+    'a checked restore' => ['rolled_back', ['unit' => 'orbit-shop-php8.5-fpm.service', 'reason' => 'the service did not start', 'restored' => true], 'restored the previous PHP build and checked it'],
+    'a failed restore' => ['rollback_failed', ['unit' => 'orbit-shop-php8.5-fpm.service', 'reason' => 'the service did not start; the rollback failed too'], 'The rollback of the previous PHP build failed too'],
+]);
 
 it('loads PCOV and purges extra PHP packages only for the ci-runner profile', function (): void {
     $sabre = FleetFixtures::node('recipe-php-sabre');

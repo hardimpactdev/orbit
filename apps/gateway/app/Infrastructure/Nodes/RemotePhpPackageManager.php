@@ -98,8 +98,7 @@ final readonly class RemotePhpPackageManager
             return;
         }
 
-        $pcov = $node->roles->pluck('role')->contains(RoleName::AppDev);
-        $this->runInstaller($node, array_values($versions->all()), $ssh, self::APP_PROD_FAILURE_CONTRACT, RoleName::AppProd, $pcov, fpm: 'none');
+        $this->runInstaller($node, array_values($versions->all()), $ssh, self::APP_PROD_FAILURE_CONTRACT, RoleName::AppProd, $this->pcov($node), fpm: 'none');
     }
 
     /**
@@ -139,7 +138,7 @@ final readonly class RemotePhpPackageManager
         }
 
         $selected = array_values(array_unique($versions->all()));
-        $this->runInstaller($node, $selected, $ssh, $failure, $role, pcov: $profile === 'app-dev', fpm: 'shared');
+        $this->runInstaller($node, $selected, $ssh, $failure, $role, pcov: $this->pcov($node), fpm: 'shared');
 
         foreach ($selected as $version) {
             $ssh->execute(
@@ -218,6 +217,18 @@ final readonly class RemotePhpPackageManager
             $this->catalog->bootstrap(),
             PhpBuildInstaller::input($recipe, $versions, 'apply', $pcov, extras: 'keep', fpm: $fpm, release: $release),
         );
+    }
+
+    /**
+     * PCOV follows the Node's roles, as in recipe convergence, so every step on one Node asks for the same placement and
+     * an Instance step never toggles PCOV or restarts PHP-FPM for it (ADR 0216).
+     */
+    private function pcov(Node $node): bool
+    {
+        $roles = $node->roles->map(static fn ($role): string => $role->role->value)->all();
+        $recipe = $this->recipe ?? new RecipeLoader()->load();
+
+        return array_intersect($roles, $recipe->phpPolicy->pcovProfiles) !== [];
     }
 
     private function logOutcome(Node $node, ProgramResult $outcome): void

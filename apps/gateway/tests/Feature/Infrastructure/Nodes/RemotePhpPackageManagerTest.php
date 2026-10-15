@@ -658,6 +658,24 @@ it('loads PCOV only on app-dev Nodes', function (array $roles, bool $pcov): void
     'a Node with both roles' => [[RoleName::AppProd, RoleName::AppDev], true],
 ]);
 
+it('asks for the same PCOV placement from every step on a Node with both application roles', function (): void {
+    $node = php_package_node(RoleName::AppDev);
+    $node->roles()->create(['role' => RoleName::AppProd]);
+    $node->load('roles');
+    $transport = new AppDevFakeSshExecutor;
+    $manager = new RemotePhpPackageManager;
+
+    $manager->installForAppDev($node, collect(['8.5']), php_package_app_dev_ssh($transport));
+    $manager->installForInstance($node, collect(['8.5']), php_package_app_dev_ssh($transport), RoleName::AppProd);
+    $manager->installForAppProd($node, collect(['8.5']), php_package_app_prod_ssh($transport));
+    $manager->installPackagesOnlyForAppProd($node, collect(['8.5']), php_package_app_prod_ssh($transport));
+
+    $installers = array_values(array_filter($transport->commands, static fn (RemoteCommand $command): bool => ($command->arguments[4] ?? null) === 'php.install-build'));
+    expect($installers)->toHaveCount(4)
+        ->and(array_map(static fn (RemoteCommand $command): bool => php_package_installer_input($command)['pcov'], $installers))
+        ->toBe([true, true, true, true]);
+});
+
 it('installs a dedicated master build without restarting any PHP-FPM service', function (): void {
     $transport = new AppDevFakeSshExecutor;
 

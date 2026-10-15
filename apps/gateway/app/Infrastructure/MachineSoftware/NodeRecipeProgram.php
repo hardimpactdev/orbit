@@ -143,9 +143,12 @@ final readonly class NodeRecipeProgram
         }
         $result = $this->php->run($node, $recipe, $versions, 'apply', $this->pcov($node, $recipe, $profile), $this->extras($recipe, $profile), 'all');
         if (! in_array($result->outcome, PhpBuildInstaller::Succeeded, true)) {
-            $restored = in_array($result->outcome, ['rolled_back', 'fpm_invalid', 'install_failed', 'modules_mismatch'], true)
-                ? 'The installer restored the previous PHP build.'
-                : ($result->outcome === 'rollback_failed' ? 'The rollback of the previous PHP build failed too; inspect PHP-FPM now.' : 'The PHP packages were not changed.');
+            // Only the installer's own check of the old versions proves a restore (ADR 0216).
+            $restored = match (true) {
+                ($result->data['restored'] ?? false) === true => 'The installer restored the previous PHP build and checked it.',
+                $result->outcome === 'rollback_failed' => 'The rollback of the previous PHP build failed too. The Node may run a mixed PHP build; inspect its PHP packages and PHP-FPM now.',
+                default => 'The PHP packages were not changed.',
+            };
             throw new ResourceOperationException('node.recipe_php_failed', 'Recipe convergence stopped at the PHP build: '.PhpBuildInstaller::describe($result).' '.$restored, 502);
         }
         $names = static fn (mixed $list): array => is_array($list) ? array_values(array_filter($list, is_string(...))) : [];

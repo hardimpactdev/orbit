@@ -17,17 +17,20 @@ FAKES = {
     # Installed packages live in $STATE/installed/<name>, holding the version.
     'dpkg-query': 'for f in "$STATE"/installed/*; do [ -f "$f" ] && printf "%s\\tinstall ok installed\\t%s\\n" '
                   '"$(basename "$f")" "$(cat "$f")"; done; exit 0',
-    'dpkg': 'case "$1" in --print-architecture) echo amd64;; --purge) shift; [ "$1" = -- ] && shift; '
-            'echo "purge $*" >> "$STATE/calls"; [ -f "$STATE/fail-purge" ] && exit 1; '
+    'dpkg': 'case "$1" in --print-architecture) echo amd64;; --purge|--remove) op="${1#--}"; shift; [ "$1" = -- ] && shift; '
+            'echo "$op $*" >> "$STATE/calls"; [ -f "$STATE/fail-$op" ] && exit 1; '
             'for p in "$@"; do rm -f "$STATE/installed/$p"; done;; esac',
     # A fake .deb is a text file: "<name> <version> <architecture>".
     'dpkg-deb': 'read -r n v a < "$2"; printf "Package: %s\\nVersion: %s\\nArchitecture: %s\\n" "$n" "$v" "$a"',
     'curl': 'out=""; for a in "$@"; do [ "$prev" = --output ] && out="$a"; prev="$a"; done; url="${@: -1}"; '
             'echo "curl $url" >> "$STATE/calls"; src="$STATE/served/$(echo "$url" | sed "s|^https://||; s|/|_|g")"; '
             '[ -f "$src" ] || exit 22; cp "$src" "$out"',
-    'apt-get': 'echo "apt-get $*" >> "$STATE/calls"; [ -f "$STATE/fail-install" ] && { rm "$STATE/fail-install"; '
-               'exit 100; }; for a in "$@"; do case "$a" in *.deb) read -r n v x < "$a"; echo "$v" > '
-               '"$STATE/installed/$n"; if [ -f "$STATE/breaks-$v" ]; then touch "$STATE/broken"; else rm -f "$STATE/broken"; fi;; '
+    'apt-get': 'echo "apt-get $*" >> "$STATE/calls"; [ -f "$STATE/fail-every-install" ] && exit 100; '
+               '[ -f "$STATE/fail-install" ] && { rm "$STATE/fail-install"; exit 100; }; '
+               'for a in "$@"; do case "$a" in *.deb) read -r n v x < "$a"; '
+               '[ -f "$STATE/mismatch-$n" ] && v=9.9; echo "$v" > "$STATE/installed/$n"; '
+               'if [ -f "$STATE/partial-install" ]; then rm "$STATE/partial-install"; touch "$STATE/fail-every-install"; exit 100; fi; '
+               'if [ -f "$STATE/breaks-$v" ]; then touch "$STATE/broken"; else rm -f "$STATE/broken"; fi;; '
                'dpkg-repack=*) echo "${a#*=}" > "$STATE/installed/dpkg-repack";; esac; done; exit 0',
     'dpkg-repack': 'shift; echo "repack $1" >> "$STATE/calls"; printf "%s %s amd64\\n" "$1" "$(cat "$STATE/installed/$1")" '
                    '> "$1_$(cat "$STATE/installed/$1")_amd64.deb"',
@@ -193,12 +196,75 @@ class InstallBuildTest(unittest.TestCase):
 
         outcome, data = self.run_program()
 
-        self.assertEqual((outcome, data.get('unit')), ('rolled_back', 'php8.5-fpm.service'), data)
+        self.assertEqual((outcome, data.get('unit'), data.get('restored')), ('rolled_back', 'php8.5-fpm.service', True), data)
         self.assertEqual(self.calls().count('repack php8.5-cli'), 1)
         self.assertTrue(all((self.state / 'installed' / name).read_text().strip() == '8.5.11-1' for name in self.pins))
         reinstall = [call for call in self.calls() if call.startswith('apt-get') and '.deb' in call][-1]
         self.assertIn('--allow-downgrades', reinstall)
         self.assertEqual(len(self.cached()), 6, 'The new and the previous build both stay in the cache.')
+
+    def previous_build(self):
+        for name in ('php8.5-cli', 'php-common'):
+            self.install(name, '8.5.11-1')
+        self.install('dpkg-repack', '1.54build1')
+
+    def assert_previous_build(self):
+        """The packages that the change replaced are back at their old versions, and the added one is gone."""
+        self.assertEqual((self.state / 'installed/php8.5-cli').read_text().strip(), '8.5.11-1')
+        self.assertEqual((self.state / 'installed/php-common').read_text().strip(), '8.5.11-1')
+        self.assertFalse((self.state / 'installed/php8.5-pcov').exists())
+
+    def test_a_failed_install_removes_added_packages_and_restores_the_previous_build(self):
+        self.previous_build()
+        (self.state / 'fail-install').touch()
+
+        outcome, data = self.run_program()
+
+        self.assertEqual((outcome, data.get('restored'), data['reason']), ('install_failed', True, 'apt-get install failed'), data)
+        self.assert_previous_build()
+
+    def test_a_package_that_stays_at_another_version_ends_with_rollback_failed(self):
+        self.previous_build()
+        # Every install of php-common lands at another version, the rollback's too, so the restore check fails.
+        (self.state / 'mismatch-php-common').touch()
+
+        outcome, data = self.run_program()
+
+        self.assertEqual((outcome, data['package']), ('rollback_failed', 'php-common'))
+        self.assertNotIn('restored', data)
+
+    def test_a_failed_purge_rolls_back(self):
+        self.previous_build()
+        self.install('php8.5-opentelemetry', '1.2.1')
+        (self.state / 'fail-purge').touch()
+
+        outcome, data = self.run_program(extras='purge')
+
+        self.assertEqual((outcome, data['restored'], data['package']), ('install_failed', True, 'php8.5-opentelemetry'))
+        self.assertEqual((self.state / 'installed/php8.5-cli').read_text().strip(), '8.5.11-1')
+
+    def test_an_install_that_fails_midway_with_a_failing_rollback_ends_with_rollback_failed(self):
+        self.previous_build()
+        (self.state / 'partial-install').touch()
+
+        outcome, data = self.run_program()
+
+        self.assertEqual(outcome, 'rollback_failed')
+        self.assertIn('the rollback failed too', data['reason'])
+        self.assertNotIn('restored', data)
+
+    def test_other_extensions_roll_back_and_report_the_restored_build(self):
+        self.previous_build()
+        (self.state / 'extra-modules').write_text('apcu\n')
+
+        outcome, data = self.run_program()
+
+        self.assertEqual((outcome, data['restored']), ('modules_mismatch', True))
+        self.assert_previous_build()
+        # The added package goes first: the previous core packages depend on the exact previous php8.5-common.
+        removal = self.calls().index('remove php8.5-pcov')
+        reinstall = max(i for i, call in enumerate(self.calls()) if call.startswith('apt-get') and '.deb' in call)
+        self.assertLess(removal, reinstall)
 
     def test_never_restarts_into_a_configuration_that_fails_validation(self):
         for name in self.pins:
@@ -222,6 +288,18 @@ class InstallBuildTest(unittest.TestCase):
         self.assertEqual(self.run_program(pcov=True)[0], 'applied')
         self.assertTrue((self.root / 'etc/php/8.5/cli/conf.d/20-pcov.ini').is_symlink())
         self.assertFalse((self.root / 'etc/php/8.5/fpm/conf.d/20-pcov.ini').is_symlink())
+
+    def test_a_repeated_run_with_the_same_pcov_placement_changes_and_restarts_nothing(self):
+        (self.state / 'active-php8.5-fpm.service').touch()
+        for name in self.pins:
+            self.install(name, '8.5.12-1')
+        self.assertEqual(self.run_program(fpm='shared')[0], 'applied')
+        (self.state / 'calls').unlink()
+
+        for _ in range(2):
+            outcome, data = self.run_program(fpm='shared')
+            self.assertEqual((outcome, data['restarted']), ('current', []))
+        self.assertFalse([call for call in self.calls() if call.startswith(('systemctl restart', 'apt-get'))])
 
     def test_rolls_back_when_the_cli_loads_other_extensions(self):
         (self.state / 'extra-modules').write_text('apcu\n')

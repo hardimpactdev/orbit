@@ -8,7 +8,8 @@
 #   null, "root": "/" (tests only)}
 # Result: planned: {"pending": [...], "extras": [...]}. current or applied: {"changed": [...], "purged": [...],
 #   "restarted": [...], "deferred": [...], "stale_masters": [...]}. A refusal names what it found: {"packages": [...]}, {"sources": [...]},
-#   {"package": ...}, {"missing": [...], "extra": [...]}, {"id", "codename"}, or {"unit", "reason"}.
+#   {"package": ...}, {"missing": [...], "extra": [...]}, {"id", "codename"}, or {"unit", "reason"}. A failure after the
+#   swap adds "restored": true once the previous build is back and checked; otherwise it ends with rollback_failed.
 # The one installer of the recipe's PHP build (ADR 0215). Recipe convergence, the PHP step of an Instance, the task VM
 # image build, and bin/php-build run it. It refuses another PHP apt source and PHP packages outside the recipe set
 # before it changes anything, keeps the previous build as .deb files for a rollback, installs the recipe's files with
@@ -364,9 +365,25 @@ def main(payload):
         replaced = [name for name in pending if name in packages] + purge
         previous = previous_files(host, replaced, packages, payload['repack'], work)
 
+    # Packages that the change adds: a rollback removes them first, because the core Sury extensions of the previous
+    # build depend on its exact php<version>-common.
+    added = sorted(name for name in pending if name not in packages)
+
     def roll_back(reason, restarted):
+        """Put the previous build back and check it. Returns True only when every package is at its old version."""
         log(f'Rolling back the PHP build: {reason}')
-        ok = apt_install(host, list(previous.values())) if previous else True
+        ok = True
+        present = [name for name in added if name in installed(host)]
+        if present:
+            ok = host.ok(['dpkg', '--remove', '--', *present], privileged=True) and ok
+        if previous:
+            ok = apt_install(host, list(previous.values())) and ok
+        restored = installed(host)
+        wrong = sorted(name for name in replaced if restored.get(name) != packages[name])
+        wrong += sorted(name for name in added if name in restored)
+        if wrong:
+            log('The previous PHP build is not restored: ' + ', '.join(wrong))
+            ok = False
         for version, recorded in before.items():
             restore_links(host, version, recorded)
         for unit in restarted:
@@ -374,18 +391,27 @@ def main(payload):
             ok = host.ok(['systemctl', 'is-active', '--quiet', unit]) and ok
         return ok
 
+    def fail(outcome, data, reason, restarted):
+        """Roll back and end with `outcome` and restored: true, or with rollback_failed when the rollback failed."""
+        if not roll_back(reason, restarted):
+            raise Outcome('rollback_failed', {**data, 'reason': f'{reason}; the rollback failed too'})
+        raise Outcome(outcome, {**data, 'reason': data.get('reason', reason), 'restored': True})
+
     if purge and not host.ok(['dpkg', '--purge', '--', *purge], privileged=True):
-        roll_back('the extra packages could not be purged', [])
-        raise Outcome('install_failed', {'package': purge[0], 'reason': 'dpkg --purge failed'})
+        fail('install_failed', {'package': purge[0]}, 'dpkg --purge failed', [])
     if files and not apt_install(host, files):
-        roll_back('apt-get install failed', [])
-        raise Outcome('install_failed', {'package': pending[0], 'reason': 'apt-get install failed'})
+        fail('install_failed', {'package': pending[0]}, 'apt-get install failed', [])
     current = installed(host)
     wrong = sorted(name for name, pin in pins.items() if current.get(name) != pin['version'])
     if wrong:
-        roll_back('a package is not at its recipe version', [])
-        raise Outcome('install_failed', {'package': wrong[0], 'reason': 'not at its recipe version after install'})
+        fail('install_failed', {'package': wrong[0]}, 'not at its recipe version after install', [])
 
+    try:
+        for version, build in versions.items():
+            place_pcov(host, version, payload['pcov'])
+            check_cli(host, version, build['extensions'], payload['pcov'], extras_policy)
+    except Outcome as refused:
+        fail(refused.outcome, refused.data, refused.outcome, [])
     restarted, stale, deferred = [], [], []
     try:
         for version, build in versions.items():
@@ -410,11 +436,8 @@ def main(payload):
                     restarted.append(unit)
                 if reason is None:
                     continue
-                recovered = roll_back(f'{unit}: {reason}', restarted)
-                outcome = 'fpm_invalid' if reason == 'fpm_invalid' else 'rolled_back'
-                if not recovered:
-                    raise Outcome('rollback_failed', {'unit': unit, 'reason': reason})
-                raise Outcome(outcome, {'unit': unit, 'reason': reason})
+                fail('fpm_invalid' if reason == 'fpm_invalid' else 'rolled_back', {'unit': unit, 'reason': reason},
+                     f'{unit}: {reason}', restarted)
     result = {'changed': pending, 'purged': purge, 'restarted': restarted, 'deferred': deferred,
               'stale_masters': sorted(stale)}
     return ('applied' if changed else 'current'), result
