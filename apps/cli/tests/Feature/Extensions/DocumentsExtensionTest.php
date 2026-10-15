@@ -46,12 +46,36 @@ it('hides the Project Document commands according to the Gateway documents switc
     }
 })->with(['disabled' => [false], 'enabled' => [true]]);
 
-it('sends no document request while the documents switch is unknown', function (): void {
-    $mock = MockClient::global([ListExtensionsRequest::class => static function (PendingRequest $request): never {
-        throw new FatalRequestException(new RuntimeException('cURL error 7: Failed to connect'), $request);
-    }]);
+it('hides commands after failed discovery but leaves direct refusals to the Gateway', function (string $failure): void {
+    $discoveryCalls = 0;
+    $error = [
+        'code' => 'extension.disabled',
+        'message' => 'The documents extension is disabled.',
+        'request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
+    ];
+    $mock = MockClient::global([
+        ListExtensionsRequest::class => static function (PendingRequest $request) use ($failure, &$discoveryCalls): MockResponse {
+            $discoveryCalls++;
+            if ($failure === 'access denied') {
+                return MockResponse::make(['error' => ['code' => 'node.access_denied', 'message' => 'Node access denied.']], 403);
+            }
+
+            throw new FatalRequestException(new RuntimeException($failure === 'timeout'
+                ? 'cURL error 28: Operation timed out after 2000 milliseconds'
+                : 'cURL error 7: Failed to connect'), $request);
+        },
+        ShowProjectDocumentStorageRequest::class => MockResponse::make(['error' => $error], 409, ['X-Orbit-Request-Id' => $error['request_id']]),
+    ]);
+
+    foreach ([ListProjectDocumentCommand::class, ShowProjectDocumentStorageCommand::class] as $class) {
+        $command = app($class);
+        expect($command->isHidden())->toBeFalse()
+            ->and(ExtensionCommandVisibility::duringListing(static fn (): bool => $command->isHidden()))->toBeTrue();
+    }
+    expect(app(GatewayExtensionState::class)->discover()->isKnown())->toBeFalse();
 
     expect(Artisan::call('project:document-storage:show', ['--json' => true]))->toBe(1)
-        ->and(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('extension.state_unknown');
-    $mock->assertNotSent(ShowProjectDocumentStorageRequest::class);
-});
+        ->and(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR))->toBe(['error' => $error])
+        ->and($discoveryCalls)->toBe(1);
+    $mock->assertSentCount(1, ShowProjectDocumentStorageRequest::class);
+})->with(['access denied', 'timeout', 'network error']);
