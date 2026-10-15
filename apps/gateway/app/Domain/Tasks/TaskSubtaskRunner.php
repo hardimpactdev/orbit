@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 use App\Actions\Tasks\RequestEndedPullRequestAssistanceAction;
+use App\Actions\Tasks\ResumeDeliverableCorrectionAction;
+use App\Actions\Tasks\RetryTaskBaselineAction;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmSettings;
@@ -17,6 +19,7 @@ use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -41,6 +44,10 @@ final readonly class TaskSubtaskRunner
         private TaskTopologyAdmission $topologyAdmission,
         private DeliverablePathChecker $deliverablePaths,
         private TaskWorkspaceRoute $workspaceRoute,
+        private TaskSessionObserver $observer,
+        private TaskSessionActor $actor,
+        private RetryTaskBaselineAction $retryBaseline,
+        private ResumeDeliverableCorrectionAction $correctionResume,
     ) {}
 
     public function handleImplementerCompletion(TaskScheduler $scheduler, Task $group, Task $task, TaskSessionObservation $observation): bool
@@ -951,5 +958,216 @@ final readonly class TaskSubtaskRunner
                 TaskStatus::Cancelled,
                 TaskStatus::Failed,
             ], true));
+    }
+
+    /** @param  list<TaskSessionDecision>  $decisions */
+    public function tickSubtasks(TaskScheduler $scheduler, Task $group, bool $runningAtStart, array &$decisions): void
+    {
+        if ($group->status === TaskGroupStatus::Completed
+            || in_array($group->watched_pr_completion, ['merged', 'closed'], true)
+            || RequestEndedPullRequestAssistanceAction::isReason($group->assistance_reason)) {
+            return;
+        }
+        if ($runningAtStart) {
+            $scheduler->resumeStrandedSubtask($group);
+        }
+        $tasks = $group->tasks
+            ->filter(static fn (Task $task): bool => in_array($task->status, [TaskStatus::Running, TaskStatus::Reviewing], true))
+            ->sortBy(static fn (Task $task): array => [$task->position, $task->id]);
+
+        foreach ($tasks as $task) {
+            $task = $task->fresh();
+
+            if (! $task instanceof Task || ! in_array($task->status, [TaskStatus::Running, TaskStatus::Reviewing], true)) {
+                continue;
+            }
+            if ($task->status === TaskStatus::Running && ($task->deliverable_correction_resume['state'] ?? null) === 'pending') {
+                $this->correctionResume->execute($task);
+                $task->refresh();
+                $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
+            }
+            if ($task->status === TaskStatus::Running && $task->assistance_requested && $scheduler->queueBaselineRetryOnGreenTip($group, $task)) {
+                $task->refresh();
+            }
+            if ($task->status === TaskStatus::Running && $task->assistance_requested && $task->resolution_delivered_comment_id !== null) {
+                try {
+                    if (TaskExecutionHold::run($group, fn (): bool => $this->retryBaseline->recover($task)) === true) {
+                        $task->refresh();
+                        $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
+                    }
+                } catch (AgentDriverException $exception) {
+                    $scheduler->recordCommunicationFailure($task, $group, $exception->getMessage());
+
+                    continue;
+                }
+            }
+            if ($task->status === TaskStatus::Running) {
+                $this->recordSubtaskStart($task);
+            }
+            if ($task->assistance_requested || $scheduler->progressBlockedByAssistance($group)) {
+                if ($task->assistance_requested && ! $group->assistance_requested && $task->assistance_kind instanceof AssistanceKind && is_string($task->assistance_reason)) {
+                    $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
+                    if (! $group->assistance_requested) {
+                        $scheduler->requestAssistance($task, $group, $task->assistance_reason, null, $task->assistance_kind, $task->assistance_question);
+                    }
+                }
+                if ($task->status === TaskStatus::Reviewing) {
+                    $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
+                    $scheduler->retryCommittedApproval($group, $task);
+                }
+                $resolution = $task->status === TaskStatus::Running ? $scheduler->pendingRelayResolution($task) : null;
+                if ($resolution instanceof TaskComment && $this->spawner instanceof TaskAgentSpawner && $scheduler->subtaskReviewer($task) === null) {
+                    $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
+                    $scheduler->beginDirectionRelay($group, $task, $resolution);
+                }
+                if ($task->status === TaskStatus::Reviewing && $task->assistance_kind === AssistanceKind::Direction && $scheduler->subtaskReviewer($task) === null) {
+                    $scheduler->replayHeldDirectionReview($task);
+                }
+
+                continue;
+            }
+
+            $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
+            if ($task->status === TaskStatus::Running && $task->direction_relay_comment_id !== null) {
+                $scheduler->handleDirectionRelay($group, $task);
+
+                continue;
+            }
+            if ($task->status === TaskStatus::Running && $task->consult_comment_id !== null) {
+                $scheduler->handleConsult($group, $task);
+
+                continue;
+            }
+            if ($task->status === TaskStatus::Reviewing && $scheduler->retryCommittedApproval($group, $task)) {
+                continue;
+            }
+            if ($task->status === TaskStatus::Running && ! $this->hasImplementer($task)) {
+                $this->beginRunningTask($scheduler, $task);
+
+                continue;
+            }
+            if ($task->status === TaskStatus::Reviewing && $task->isFinalReview() && $task->review_notified_attempt !== $task->review_attempt) {
+                $scheduler->nudgeReviewer($task, null);
+
+                continue;
+            }
+            $observation = $this->observer->observe($group, $task);
+
+            if ($observation->available) {
+                $this->clearUnavailable($group);
+            }
+            if (($observation->available && $observation->threads === []) || ($task->status === TaskStatus::Running && $observation->thread(TaskThreadRole::Implementer) === null)) {
+                continue;
+            }
+
+            if ($observation->available && $task->status === TaskStatus::Running && $this->handleImplementerCompletion($scheduler, $group, $task, $observation)) {
+                continue;
+            }
+
+            if ($observation->available && $task->status === TaskStatus::Reviewing && $scheduler->handleReviewerOutcome($group, $task, $observation)) {
+                continue;
+            }
+
+            try {
+                $decision = ! $observation->available
+                    ? $this->unavailableDecision($group)
+                    : $this->classifyAvailable($group, $observation);
+            } catch (TaskSessionClassificationException $exception) {
+                $decision = TaskSessionDecision::escalate($exception->getMessage());
+            }
+
+            if ($decision->action === TaskSessionNextAction::EscalateCoder) {
+                if (! $observation->available) {
+                    $this->actor->execute($group, $observation, $decision);
+                    $decisions[] = $decision;
+
+                    continue;
+                }
+                $scheduler->requestAssistance($task, $group, $decision->reason, $observation);
+                $decisions[] = $decision;
+
+                continue;
+            }
+
+            try {
+                $this->actor->execute($group, $observation, $decision);
+                $this->advance($scheduler, $group, $task, $decision, $observation);
+                if ($task->communication_failures > 0) {
+                    $task->update(['communication_failures' => 0]);
+                }
+            } catch (AgentDriverException $exception) {
+                $decision = TaskSessionDecision::escalate($exception->getMessage());
+                $task->increment('communication_failures');
+                $task->refresh();
+                if ($task->communication_failures >= 5) {
+                    $scheduler->requestAssistance($task, $group, $exception->getMessage());
+                }
+                $this->actor->execute($group, $observation, $decision);
+            }
+
+            $decisions[] = $decision;
+        }
+    }
+
+    private function classifyAvailable(Task $group, TaskSessionObservation $observation): TaskSessionDecision
+    {
+        $this->clearUnavailable($group);
+
+        return new TaskSessionDecision(TaskSessionNextAction::Noop, 1.0, 'Waiting for a known agent state.');
+    }
+
+    public function clearUnavailable(Task $group): void
+    {
+        Task::topLevel()->whereKey($group->id)->whereNotNull('agent_unavailable_since')->update([
+            'agent_unavailable_since' => null, 'agent_unavailable_notified_at' => null,
+        ]);
+    }
+
+    public function unavailableDecision(Task $group): TaskSessionDecision
+    {
+        Task::topLevel()->whereKey($group->id)->whereNull('agent_unavailable_since')->update(['agent_unavailable_since' => now()]);
+        $group->refresh();
+        $grace = max(0, Config::integer('orbit.tasks.observation_grace_seconds', 120));
+        if ($group->agent_unavailable_since !== null && $group->agent_unavailable_since->lte(now()->subSeconds($grace))) {
+            $claimed = Task::topLevel()->whereKey($group->id)
+                ->where('agent_unavailable_since', $group->agent_unavailable_since)
+                ->whereNull('agent_unavailable_notified_at')
+                ->update(['agent_unavailable_notified_at' => now()]);
+            if ($claimed === 1) {
+                return TaskSessionDecision::escalate('Agent observation unavailable beyond the grace period.');
+            }
+        }
+
+        return new TaskSessionDecision(TaskSessionNextAction::Noop, 1.0, 'Waiting for an available agent observation.');
+    }
+
+    private function advance(TaskScheduler $scheduler, Task $group, Task $task, TaskSessionDecision $decision, TaskSessionObservation $observation): void
+    {
+        $group = $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
+        $current = $task->fresh();
+
+        if ($decision->action === TaskSessionNextAction::MarkSubtaskDone && $current instanceof Task) {
+            if ($current->status === TaskStatus::Running) {
+                $scheduler->settleImplementer($current, $observation->thread(TaskThreadRole::Reviewer));
+            } elseif ($current->status === TaskStatus::Reviewing) {
+                $scheduler->acceptReview($current);
+            }
+
+            return;
+        }
+
+        if ($decision->action !== TaskSessionNextAction::SettleGroup) {
+            return;
+        }
+
+        if ($current instanceof Task && $current->status === TaskStatus::Reviewing) {
+            $scheduler->acceptReview($current);
+
+            return;
+        }
+
+        if (in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)) {
+            $scheduler->settle($group);
+        }
     }
 }

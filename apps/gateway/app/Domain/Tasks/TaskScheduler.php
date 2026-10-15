@@ -4,36 +4,14 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Actions\Tasks\CompleteTaskGroupAction;
-use App\Actions\Tasks\RemoveTaskWorkspaceAction;
-use App\Actions\Tasks\RequestEndedPullRequestAssistanceAction;
-use App\Actions\Tasks\ResumeDeliverableCorrectionAction;
-use App\Actions\Tasks\RetryTaskBaselineAction;
-use App\Actions\Tasks\StoreTaskCommentAction;
-use App\Actions\Tasks\WatchTaskBranchPullRequestAction;
-use App\Actions\TaskVms\WakeTaskVmAction;
-use App\Domain\GitHub\GitHubReviewEvent;
-use App\Domain\GitHub\GitHubReviewState;
-use App\Domain\GitHub\RequiredCheckState;
-use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
-use App\Domain\TaskVms\TaskVmSettings;
-use App\Models\Activity;
 use App\Models\AgentThread;
-use App\Models\Instance;
 use App\Models\Task;
-use App\Models\TaskCheck;
 use App\Models\TaskComment;
-use App\Models\TaskQuestion;
-use App\Models\TaskReviewedCommit;
 use Closure;
-use Illuminate\Support\Carbon;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Context;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -75,12 +53,6 @@ final readonly class TaskScheduler
     /** Resumes reserved for one subtask before the next restart asks for assistance (ADR 0167). */
     public const int PiServerRestartResumeLimit = 2;
 
-    private const string PiRestartPending = 'pending';
-
-    private const string PiRestartAccepted = 'accepted';
-
-    private const string PiRestartSuperseded = 'superseded';
-
     /** Reasons the scheduler sets when a claim returns a group to todo. A start, a capacity wait, or a move to backlog clears them. */
     public const array ClaimFailureReasons = [
         self::ProvisioningFailedReason,
@@ -97,40 +69,21 @@ final readonly class TaskScheduler
     /** Starts the assistance reason when the workspace Route still fails before the implementer or the final review. */
     public const string WorkspaceRouteFailedReason = 'The task workspace Route could not be finished, so no agent started.';
 
+    /** Seconds one tick may spend removing abandoned workspaces, well inside the 300-second tick lock. */
+    public const int AbandonedWorkspaceBudgetSeconds = 60;
+
+    /** The first retry delay. The later delays are 2, 5, 10, and 30 minutes, and further failures stay at 30. */
+    public const int AbandonedWorkspaceBackoffSeconds = 60;
+
     public function __construct(
         private TaskClaimAdmission $claims,
+        private TaskReviewOutcome $reviews,
+        private TaskPublication $publication,
+        private TaskSettling $settling,
+        private TaskConsultation $consults,
         private TaskSubtaskRunner $runner,
-        private AgentSpawner $spawner,
-        private TaskSettleMetricsCollector $metrics,
-        private TaskWorkspaceStateReader $workspace,
-        private TaskPullRequestWatcher $pullRequestWatcher,
-        private TaskPullRequestUpdater $pullRequestUpdater,
-        private CompleteTaskGroupAction $completeGroup,
-        private CoderSettleNotifier $coder,
         private TaskExtensionState $extension,
-        private TaskSessionObserver $observer,
-        private TaskSessionActor $actor,
-        private TaskTurnReceipts $receipts,
-        private TaskWorkspaceSigner $signer,
-        private TaskBriefCoverage $coverage,
-        private BriefCoverageLabeler $coverageLabeler,
-        private TaskPullRequestPublisher $publisher,
-        private TaskCheckRunner $checks,
-        private TaskBroadcasts $broadcasts,
-        private RemoveTaskWorkspaceAction $workspaces,
-        private TaskBaseBranchFetcher $bases,
         private PrunePendingTaskThreads $pendingThreads,
-        private TaskReviewPacketBuilder $reviewPackets,
-        private WatchTaskBranchPullRequestAction $branchPullRequests,
-        private RequestEndedPullRequestAssistanceAction $endedPullRequests,
-        private TaskTurnFetcher $turnFetcher,
-        private RetryTaskBaselineAction $retryBaseline,
-        private TaskPullRequestReviewWatcher $reviewWatcher,
-        private TaskGitHubReviewConsumption $reviewConsumption,
-        private TaskGitHubReviewFeedback $reviewFeedback,
-        private TaskTopologyAdmission $topologyAdmission,
-        private TaskPullRequestMerger $merger,
-        private ResumeDeliverableCorrectionAction $correctionResume,
     ) {}
 
     /**
@@ -156,7 +109,7 @@ final readonly class TaskScheduler
 
         $failed = [];
         foreach ($groups as $group) {
-            $this->isolateGroup($group, $failed, fn () => $this->tickPullRequest($group));
+            $this->isolateGroup($group, $failed, fn () => $this->settling->tickPullRequest($this, $group));
         }
 
         $decisions = [];
@@ -165,7 +118,7 @@ final readonly class TaskScheduler
             if (! isset($failed[$group->id])) {
                 $this->isolateGroup($group, $failed, function () use ($group, $runningAtStart, &$decisions): void {
                     TaskExecutionHold::run($group, function () use ($group, $runningAtStart, &$decisions): void {
-                        $this->tickSubtasks($group, isset($runningAtStart[$group->id]), $decisions);
+                        $this->runner->tickSubtasks($this, $group, isset($runningAtStart[$group->id]), $decisions);
                     });
                 });
             }
@@ -218,993 +171,49 @@ final readonly class TaskScheduler
         }
     }
 
-    private function tickPullRequest(Task $group): void
+    public function handleReviewerOutcome(Task $group, Task $task, TaskSessionObservation $observation): bool
     {
-        $this->reportMissingReviewFixups($group);
-        if (in_array($group->status, [TaskGroupStatus::Running, TaskGroupStatus::Reviewing], true)
-            && in_array($group->watched_pr_completion, ['merged', 'closed'], true)) {
-            try {
-                $this->completeGroup->execute($group);
-            } catch (Throwable $exception) {
-                report($exception);
-            }
-
-            return;
-        }
-        $this->branchPullRequests->execute($group);
-        if ($this->endedPullRequests->execute($group)) {
-            return;
-        }
-        if (! in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)) {
-            return;
-        }
-        if (! is_string($group->pr_url) || $group->pr_url === '') {
-            if ($this->runner->lowestTodo($group->tasks) instanceof Task) {
-                $this->resumeWaitingSubtask($group);
-            } elseif (TaskFinalReview::due($group, $group->tasks)) {
-                $this->beginFinalReview($group);
-            } else {
-                $this->requestMissingPullRequest($group);
-            }
-
-            return;
-        }
-        $reviews = $this->observeReviewFeedback($group);
-        $health = $this->pullRequestWatcher->health($group);
-        $status = $health?->state;
-        // With open work, only the branch watch decides which pull request ended. Never
-        // auto-complete from pr_url here: it can name an older, reviewed pull request.
-        if (in_array($status, ['merged', 'closed'], true) && $group->tasks->contains(
-            static fn (Task $task): bool => in_array($task->status, [TaskStatus::Todo, TaskStatus::Running, TaskStatus::Reviewing], true),
-        )) {
-            return;
-        }
-        if ($status === 'merged') {
-            try {
-                $this->coverageLabeler->label($group, $health);
-            } catch (Throwable $exception) {
-                try {
-                    report($exception);
-                } catch (Throwable) {
-                }
-            }
-            // Revalidate even when a prior tick committed settling but stopped before its hold write.
-            $missedApproval = $this->checkReturningPullRequest($group, $health);
-            if (! $missedApproval && ! $this->orphanedCommit($group)) {
-                $this->completeMergedGroup($group);
-            }
-        } elseif ($status === 'closed') {
-            TaskAssistance::apply($group, AssistanceKind::Failure, null, 'The expected pull request closed without merging.', replaceFailure: true);
-        } elseif ($health instanceof TaskPullRequestHealth) {
-            $pendingMerge = TaskCheck::query()->whereHas('task', static fn ($query) => $query->where('parent_id', $group->id))
-                ->where('kind', TaskCheckKind::BaseMerge)->where('status', TaskCheckStatus::Running)->exists();
-            $pendingPush = TaskReviewedCommit::query()->where('task_id', $group->id)
-                ->where('source', TaskReviewedCommitSource::BaseMerge)->whereNull('pushed_at')->exists();
-            if ($group->reviewsBeforePush() && ! $group->assistance_requested && ($pendingMerge || $pendingPush)) {
-                if ($health->baseRef === $group->project->default_branch) {
-                    $this->appendBaseMerge($group, (string) $health->baseRef);
-                }
-
-                return;
-            }
-            $this->healOpenPullRequest($group, $health, $reviews);
-            if ($group->reviewsBeforePush()) {
-                $this->mergeWhenReady($group, $health, $reviews);
-            }
-        }
+        return $this->reviews->handleReviewerOutcome($this, $group, $task, $observation);
     }
 
-    /** @param  list<TaskSessionDecision>  $decisions */
-    private function tickSubtasks(Task $group, bool $runningAtStart, array &$decisions): void
+    public function retryCommittedApproval(Task $group, Task $task): bool
     {
-        if ($group->status === TaskGroupStatus::Completed
-            || in_array($group->watched_pr_completion, ['merged', 'closed'], true)
-            || RequestEndedPullRequestAssistanceAction::isReason($group->assistance_reason)) {
-            return;
-        }
-        if ($runningAtStart) {
-            $this->resumeStrandedSubtask($group);
-        }
-        $tasks = $group->tasks
-            ->filter(static fn (Task $task): bool => in_array($task->status, [TaskStatus::Running, TaskStatus::Reviewing], true))
-            ->sortBy(static fn (Task $task): array => [$task->position, $task->id]);
-
-        foreach ($tasks as $task) {
-            $task = $task->fresh();
-
-            if (! $task instanceof Task || ! in_array($task->status, [TaskStatus::Running, TaskStatus::Reviewing], true)) {
-                continue;
-            }
-            if ($task->status === TaskStatus::Running && ($task->deliverable_correction_resume['state'] ?? null) === 'pending') {
-                $this->correctionResume->execute($task);
-                $task->refresh();
-                $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
-            }
-            if ($task->status === TaskStatus::Running && $task->assistance_requested && $this->queueBaselineRetryOnGreenTip($group, $task)) {
-                $task->refresh();
-            }
-            if ($task->status === TaskStatus::Running && $task->assistance_requested && $task->resolution_delivered_comment_id !== null) {
-                try {
-                    if (TaskExecutionHold::run($group, fn (): bool => $this->retryBaseline->recover($task)) === true) {
-                        $task->refresh();
-                        $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
-                    }
-                } catch (AgentDriverException $exception) {
-                    $this->recordCommunicationFailure($task, $group, $exception->getMessage());
-
-                    continue;
-                }
-            }
-            if ($task->status === TaskStatus::Running) {
-                $this->runner->recordSubtaskStart($task);
-            }
-            if ($task->assistance_requested || $this->progressBlockedByAssistance($group)) {
-                if ($task->assistance_requested && ! $group->assistance_requested && $task->assistance_kind instanceof AssistanceKind && is_string($task->assistance_reason)) {
-                    $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
-                    if (! $group->assistance_requested) {
-                        $this->requestAssistance($task, $group, $task->assistance_reason, null, $task->assistance_kind, $task->assistance_question);
-                    }
-                }
-                if ($task->status === TaskStatus::Reviewing) {
-                    $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
-                    $this->retryCommittedApproval($group, $task);
-                }
-                $resolution = $task->status === TaskStatus::Running ? $this->pendingRelayResolution($task) : null;
-                if ($resolution instanceof TaskComment && $this->spawner instanceof TaskAgentSpawner && $this->subtaskReviewer($task) === null) {
-                    $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
-                    $this->beginDirectionRelay($group, $task, $resolution);
-                }
-                if ($task->status === TaskStatus::Reviewing && $task->assistance_kind === AssistanceKind::Direction && $this->subtaskReviewer($task) === null) {
-                    $this->replayHeldDirectionReview($task);
-                }
-
-                continue;
-            }
-
-            $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
-            if ($task->status === TaskStatus::Running && $task->direction_relay_comment_id !== null) {
-                $this->handleDirectionRelay($group, $task);
-
-                continue;
-            }
-            if ($task->status === TaskStatus::Running && $task->consult_comment_id !== null) {
-                $this->handleConsult($group, $task);
-
-                continue;
-            }
-            if ($task->status === TaskStatus::Reviewing && $this->retryCommittedApproval($group, $task)) {
-                continue;
-            }
-            if ($task->status === TaskStatus::Running && ! $this->runner->hasImplementer($task)) {
-                $this->runner->beginRunningTask($this, $task);
-
-                continue;
-            }
-            if ($task->status === TaskStatus::Reviewing && $task->isFinalReview() && $task->review_notified_attempt !== $task->review_attempt) {
-                $this->nudgeReviewer($task, null);
-
-                continue;
-            }
-            $observation = $this->observer->observe($group, $task);
-
-            if ($observation->available) {
-                $this->clearUnavailable($group);
-            }
-            if (($observation->available && $observation->threads === []) || ($task->status === TaskStatus::Running && $observation->thread(TaskThreadRole::Implementer) === null)) {
-                continue;
-            }
-
-            if ($observation->available && $task->status === TaskStatus::Running && $this->runner->handleImplementerCompletion($this, $group, $task, $observation)) {
-                continue;
-            }
-
-            if ($observation->available && $task->status === TaskStatus::Reviewing && $this->handleReviewerOutcome($group, $task, $observation)) {
-                continue;
-            }
-
-            try {
-                $decision = ! $observation->available
-                    ? $this->unavailableDecision($group)
-                    : $this->classifyAvailable($group, $observation);
-            } catch (TaskSessionClassificationException $exception) {
-                $decision = TaskSessionDecision::escalate($exception->getMessage());
-            }
-
-            if ($decision->action === TaskSessionNextAction::EscalateCoder) {
-                if (! $observation->available) {
-                    $this->actor->execute($group, $observation, $decision);
-                    $decisions[] = $decision;
-
-                    continue;
-                }
-                $this->requestAssistance($task, $group, $decision->reason, $observation);
-                $decisions[] = $decision;
-
-                continue;
-            }
-
-            try {
-                $this->actor->execute($group, $observation, $decision);
-                $this->advance($group, $task, $decision, $observation);
-                if ($task->communication_failures > 0) {
-                    $task->update(['communication_failures' => 0]);
-                }
-            } catch (AgentDriverException $exception) {
-                $decision = TaskSessionDecision::escalate($exception->getMessage());
-                $task->increment('communication_failures');
-                $task->refresh();
-                if ($task->communication_failures >= 5) {
-                    $this->requestAssistance($task, $group, $exception->getMessage());
-                }
-                $this->actor->execute($group, $observation, $decision);
-            }
-
-            $decisions[] = $decision;
-        }
+        return $this->reviews->retryCommittedApproval($this, $group, $task);
     }
 
-    private function handleReviewerOutcome(Task $group, Task $task, TaskSessionObservation $observation): bool
+    public function publishApprovedCommit(Task $group, Task $task, TaskComment $receipt): void
     {
-        $reviewer = $observation->thread(TaskThreadRole::Reviewer);
-        // Before this subtask's review is requested, the observed reviewer can be an earlier
-        // subtask's thread. A Pi restart of that turn is not this review. Request the review
-        // first, and recover only a review that was already requested (ADR 0167, ADR 0169).
-        if ($reviewer === null || $task->review_notified_attempt !== $task->review_attempt) {
-            $this->nudgeReviewer($task, $reviewer);
-
-            return true;
-        }
-        $this->reconcilePiRestart($task, $reviewer);
-        $state = AgentThreadState::tryFrom($reviewer->sessState);
-        if ($state === AgentThreadState::Failed) {
-            if (! $this->retryProviderFailure($task, $group, $reviewer) && $this->resumePiServerRestart($task, $group, $reviewer) !== 'handled') {
-                $this->requestAssistance($task, $group, 'The reviewer thread failed.', $observation);
-            }
-
-            return true;
-        }
-        if (! in_array($state, [AgentThreadState::Idle, AgentThreadState::Done, AgentThreadState::AskingForInput], true)) {
-            return false;
-        }
-        if (! $this->newerTurnHasStopped($task->review_notified_turn_id, $reviewer)) {
-            return true;
-        }
-
-        try {
-            $read = $this->collectReceipt($group, $task, TaskThreadRole::Reviewer);
-        } catch (TaskTurnReceiptException $exception) {
-            $this->recordCommunicationFailure($task, $group, $exception->getMessage());
-
-            return true;
-        }
-        $receipt = $this->pendingReceipt($task, TaskThreadRole::Reviewer);
-        $outcome = $receipt instanceof TaskComment ? $this->receiptOutcome($receipt) : null;
-        if ($receipt instanceof TaskComment && TaskQuestions::awaitsCause($task) && ! $receipt->cause instanceof QuestionCause) {
-            $this->remindOrAssist($group, $task, $reviewer, [
-                new TaskRubricItem('turn_receipt', false, 'This review follows a direction resolution and needs --cause with one of: brief_unclear, contract_gap, scope, environment, missed_contract.'),
-            ]);
-
-            return true;
-        }
-        if ($outcome === TaskTurnOutcome::Approved && $this->isWorking($observation->thread(TaskThreadRole::Implementer))) {
-            // Orbit commits the whole workspace, so the approval waits until the implementer stops changing it.
-            return true;
-        }
-        if ($outcome === TaskTurnOutcome::ChangesRequested && $this->isWorking($observation->thread(TaskThreadRole::Implementer))) {
-            return true;
-        }
-        if ($receipt instanceof TaskComment
-            && in_array($outcome, [TaskTurnOutcome::Blocked, TaskTurnOutcome::ChangesRequested, TaskTurnOutcome::Approved], true)) {
-            $decision = $this->reviewWorkspaceDecision($group, $task, $reviewer, $receipt, $observation);
-            if ($decision === 'orbit_commit') {
-                try {
-                    $recovered = $this->recoveredCommit($task, $this->workspaceSnapshot($group));
-                } catch (TaskCheckException $exception) {
-                    $this->recordCommunicationFailure($task, $group, $exception->getMessage());
-
-                    return true;
-                }
-                if ($recovered === null) {
-                    $this->recordCommunicationFailure($task, $group, 'Orbit could not commit the approved subtask.');
-
-                    return true;
-                }
-                $receipt->update(['commit_sha' => $recovered]);
-                $this->publishApprovedCommit($group, $task, $receipt);
-
-                return true;
-            }
-            if ($decision !== 'apply') {
-                return true;
-            }
-        }
-        if ($receipt instanceof TaskComment && $outcome === TaskTurnOutcome::Approved && $this->committedApproval($receipt)) {
-            // The commit is already stored and the workspace still holds it. Retry the push only; do not commit again.
-            $this->publishApprovedCommit($group, $task, $receipt);
-
-            return true;
-        }
-        if ($receipt instanceof TaskComment && $outcome === TaskTurnOutcome::Blocked) {
-            $this->requestAssistance($task, $group, TaskAssistance::ReviewerBlockedPrefix.$receipt->body, $observation, AssistanceKind::Direction, TaskAssistance::questionFromBlockedReason($receipt->body), ['review_handled_comment_id' => $receipt->id], $receipt);
-
-            return true;
-        }
-        if ($receipt instanceof TaskComment && $outcome === TaskTurnOutcome::ChangesRequested && $task->isFinalReview()) {
-            $this->applyFinalReviewFindings($group, $task, $receipt);
-
-            return true;
-        }
-        if ($receipt instanceof TaskComment && $outcome === TaskTurnOutcome::ChangesRequested) {
-            $this->relayFindings($group, $task, $observation, $receipt);
-
-            return true;
-        }
-
-        $instance = $group->taskable;
-        $pullRequest = null;
-        $evidenceSummary = null;
-        $items = [$this->receiptItem($read, $receipt)];
-        if ($receipt instanceof TaskComment && $outcome === TaskTurnOutcome::Approved) {
-            $onBranch = $instance instanceof Instance && $this->workspace->currentBranch($instance) === 'task-'.$group->id;
-            $items[] = new TaskRubricItem('branch', $onBranch, 'The workspace branch is not task-'.$group->id.'. Switch back to it.');
-            $confirmation = $this->confirmationItem($task, $receipt, TaskThreadRole::Reviewer);
-            if ($confirmation instanceof TaskRubricItem) {
-                $items[] = $confirmation;
-            }
-            try {
-                [$evidence, $evidenceSummary] = $this->topologyEvidenceItem($group, $task);
-            } catch (TaskCheckException $exception) {
-                $this->recordCommunicationFailure($task, $group, $exception->getMessage());
-
-                return true;
-            }
-            if ($evidence instanceof TaskRubricItem) {
-                $items[] = $evidence;
-            }
-            if ($task->opensPullRequest()) {
-                $pullRequest = TaskTurnPullRequest::fromArray($receipt->pull_request);
-                $items[] = new TaskRubricItem('pull_request_fields', $pullRequest instanceof TaskTurnPullRequest, 'The approval of the last subtask needs --pr-summary, --pr-change, and --pr-breaking.');
-            }
-        }
-        $waiting = $this->waitingItem($reviewer);
-        if ($waiting instanceof TaskRubricItem) {
-            $items[] = $waiting;
-        }
-        if ($this->failedItems($items) === [] && $pullRequest instanceof TaskTurnPullRequest) {
-            try {
-                $missing = $this->coverage->missing(
-                    $group,
-                    $pullRequest,
-                    $receipt->id,
-                    $pullRequest->changes,
-                );
-            } catch (TaskSessionClassificationException $exception) {
-                $this->recordCommunicationFailure($task, $group, $exception->getMessage());
-
-                return true;
-            }
-            foreach ($missing as $title) {
-                $items[] = new TaskRubricItem('brief_coverage', false, 'The pull request change list does not cover the subtask "'.$title.'".');
-            }
-        }
-        if (! $receipt instanceof TaskComment || $this->failedItems($items) !== []) {
-            if ($this->remindOrAssist($group, $task, $reviewer, $items) && $receipt instanceof TaskComment) {
-                $task->update(['review_handled_comment_id' => $receipt->id]);
-            }
-
-            return true;
-        }
-        // The counted records go into the approval, and so into its commit, for a person to audit.
-        if (is_string($evidenceSummary) && ! str_contains($receipt->body, $evidenceSummary)) {
-            $receipt->update(['body' => rtrim($receipt->body)."\n\n".$evidenceSummary]);
-        }
-
-        if ($task->isFinalReview()) {
-            // ADR 0203: a final review commits nothing. Its approval names the HEAD it reviewed, and only that HEAD is pushed.
-            $head = $task->review_workspace_head;
-            if (! is_string($head) || preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $head) !== 1) {
-                $this->recordCommunicationFailure($task, $group, 'Orbit could not read the head the final review approved.');
-
-                return true;
-            }
-            $receipt->update(['commit_sha' => $head]);
-            TaskFinalReview::log($group, 'final review approved', ['subtask_id' => $task->id, 'comment_id' => $receipt->id, 'commit_sha' => $head]);
-            $this->publishApprovedCommit($group, $task, $receipt);
-
-            return true;
-        }
-        $commit = $instance instanceof Instance ? $this->signer->commit($instance, $task->title."\n\n".$receipt->body) : null;
-        if ($commit === null && $instance instanceof Instance) {
-            // The commit can land and the SHA response can still be lost. The parent and tree identify Orbit's commit.
-            try {
-                $commit = $this->recoveredCommit($task, $this->workspaceSnapshot($group));
-            } catch (TaskCheckException $exception) {
-                $this->recordCommunicationFailure($task, $group, $exception->getMessage());
-
-                return true;
-            }
-        }
-        if ($commit === null) {
-            $this->recordCommunicationFailure($task, $group, 'Orbit could not commit the approved subtask.');
-
-            return true;
-        }
-        $receipt->update(['commit_sha' => $commit]);
-        $this->publishApprovedCommit($group, $task, $receipt);
-
-        return true;
+        $this->publication->publishApprovedCommit($this, $group, $task, $receipt);
     }
 
-    /**
-     * ADR 0160: the approval already names its commit, so a later tick pushes that commit and does not make another.
-     */
-    private function committedApproval(TaskComment $receipt): bool
+    public function replaceFinalReviewWithFixup(Task $group, Task $task, TaskComment $receipt, string $title, string $brief): ?Task
     {
-        return is_string($receipt->commit_sha) && $receipt->commit_sha !== '';
+        return $this->reviews->replaceFinalReviewWithFixup($group, $task, $receipt, $title, $brief);
     }
 
-    /**
-     * Pushes an approved commit that is already stored, and reports whether this tick did that.
-     * The tick calls this before it observes the reviewer, so an unavailable reviewer does not skip the retry.
-     * A failed push asks for assistance on the fifth failure, and the tick keeps retrying it. This does not commit again.
-     */
-    private function retryCommittedApproval(Task $group, Task $task): bool
+    public function stopAtFinalReviewCap(Task $group, Task $task, TaskComment $receipt, int $count): void
     {
-        return TaskExecutionHold::run($group, fn (): bool => $this->retryAdmittedApproval($group, $task)) ?? true;
+        $this->reviews->stopAtFinalReviewCap($group, $task, $receipt, $count);
     }
 
-    private function retryAdmittedApproval(Task $group, Task $task): bool
+    public function beginFinalReview(Task $group, ?string $head = null): void
     {
-        $receipt = $this->pendingReceipt($task, TaskThreadRole::Reviewer);
-        if (! $receipt instanceof TaskComment || $this->receiptOutcome($receipt) !== TaskTurnOutcome::Approved || ! $this->committedApproval($receipt)) {
-            return false;
-        }
-        if (! $this->retryIsDue($this->publicationBackoffKey($task), 'approved publication')) {
-            return true;
-        }
-
-        try {
-            $current = $this->workspaceSnapshot($group);
-        } catch (TaskCheckException $exception) {
-            $this->recordCommunicationFailure($task, $group, $exception->getMessage());
-
-            return true;
-        }
-        $tree = $task->review_workspace_tree;
-        if ($current->head !== $receipt->commit_sha || (is_string($tree) && $tree !== '' && $current->tree !== $tree)) {
-            // ADR 0133: the workspace no longer holds the approved commit. The reviewer outcome path reminds or asks for assistance.
-            return false;
-        }
-
-        $this->publishApprovedCommit($group, $task, $receipt);
-
-        return true;
+        $this->reviews->beginFinalReview($this, $group, $head);
     }
 
-    /**
-     * Pushes the stored commit, then opens the pull request when this approval is the one that publishes it.
-     * The open pushes that commit again. The refspec names the commit, never HEAD, and is not a force push.
-     * When the pull request URL is already stored, the push updates that pull request and Orbit does not open another (ADR 0164).
-     * A failed push or open leaves the subtask in review and keeps commit_sha.
-     */
-    private function publishApprovedCommit(Task $group, Task $task, TaskComment $receipt): void
-    {
-        $commit = $receipt->commit_sha;
-        if (! is_string($commit) || $commit === '') {
-            $this->recordCommunicationFailure($task, $group, 'Orbit could not commit the approved subtask.');
-
-            return;
-        }
-        if ($task->isFinalReview()) {
-            $this->publishReviewedHead($group, $task, $receipt, $commit);
-
-            return;
-        }
-        if ($group->reviewsBeforePush()) {
-            // ADR 0203: the approved commit stays in the workspace until a final review approves the whole branch.
-            $this->finishApproval($group, $task, $receipt);
-
-            return;
-        }
-        if (! $this->retryIsDue($this->publicationBackoffKey($task), 'approved publication')) {
-            return;
-        }
-        if (! $this->pullRequestStillOpen($group, $task, $commit)) {
-            return;
-        }
-        try {
-            $this->publisher->push($group, $commit);
-        } catch (TaskPullRequestException $exception) {
-            // A task VM's push runs in a queued job. A later tick sees it done.
-            if (! $exception->pending) {
-                $this->failPublication($group, $task, $exception->getMessage());
-            }
-
-            return;
-        }
-
-        if ($task->opensPullRequest()) {
-            $pullRequest = TaskTurnPullRequest::fromArray($receipt->pull_request);
-            if (! $pullRequest instanceof TaskTurnPullRequest) {
-                $this->recordCommunicationFailure($task, $group, 'The approval of the last subtask needs --pr-summary, --pr-change, and --pr-breaking.');
-
-                return;
-            }
-            try {
-                $url = $this->publisher->publish($group, TaskPullRequestDescription::render($pullRequest, $group->tasks()->whereNotIn('status', [TaskStatus::Cancelled, TaskStatus::Failed])->count(), $group->project->taskCheckCommand()), $commit);
-            } catch (TaskPullRequestException $exception) {
-                if (! $exception->pending) {
-                    $this->failPublication($group, $task, $exception->getMessage());
-                }
-
-                return;
-            }
-            $group->update(['pr_url' => $url]);
-        }
-
-        $this->finishApproval($group, $task, $receipt);
-    }
-
-    /** Marks a published, or held, approval handled and completes the subtask. */
-    private function finishApproval(Task $group, Task $task, TaskComment $receipt): void
-    {
-        $this->rememberBackoff($this->publicationBackoffKey($task), null, 'approved publication');
-        TaskQuestions::answerPending($task, $receipt);
-        $task->update([
-            'review_handled_comment_id' => $receipt->id,
-            'communication_failures' => 0,
-        ]);
-        $this->clearPublicationAssistance($task, $group);
-        $this->acceptReview($task);
-    }
-
-    /**
-     * ADR 0203: records the HEAD the final review approved as fully reviewed, then pushes it, opens the pull
-     * request when none exists, and approves an incoming pull request on GitHub. A head that is already the
-     * incoming pull request head is not pushed. A failed step keeps the final review open and retries it.
-     */
-    private function publishReviewedHead(Task $group, Task $task, TaskComment $receipt, string $commit): void
-    {
-        if (! $this->retryIsDue($this->publicationBackoffKey($task), 'approved publication')) {
-            return;
-        }
-        $incoming = $group->reviewsIncomingPullRequest();
-        $pullRequestHead = $incoming && is_string($task->fixup_head_sha) && $task->fixup_head_sha === $commit;
-        $reviewed = TaskReviewedCommit::query()->firstOrCreate(
-            ['task_id' => $group->id, 'sha' => $commit],
-            ['source' => $pullRequestHead ? TaskReviewedCommitSource::PullRequestReview : TaskReviewedCommitSource::OrbitPush, 'review_task_id' => $task->id],
-        );
-        if (! $pullRequestHead && $reviewed->pushed_at === null) {
-            if (! $this->pullRequestStillOpen($group, $task, $commit)) {
-                return;
-            }
-            try {
-                $this->publisher->push($group, $commit);
-                if ($task->opensPullRequest()) {
-                    $pullRequest = TaskTurnPullRequest::fromArray($receipt->pull_request);
-                    if (! $pullRequest instanceof TaskTurnPullRequest) {
-                        $this->recordCommunicationFailure($task, $group, 'The final review that opens the pull request needs --pr-summary, --pr-change, and --pr-breaking.');
-
-                        return;
-                    }
-                    $delivered = $group->tasks()->whereNotIn('status', [TaskStatus::Cancelled, TaskStatus::Failed])->withoutFinalReviews()->count();
-                    $url = $this->publisher->publish($group, TaskPullRequestDescription::render($pullRequest, $delivered, $group->project->taskCheckCommand()), $commit);
-                    $group->update(['pr_url' => $url]);
-                }
-            } catch (TaskPullRequestException $exception) {
-                if ($exception->pending) {
-                    return;
-                }
-                $moved = $incoming ? $this->pullRequestWatcher->health($group)?->headSha : null;
-                if (is_string($moved) && $moved !== $commit && ! TaskFinalReview::isReviewed($group, $moved)) {
-                    $this->mergeAuthorPush($group, $task, $receipt, $moved);
-
-                    return;
-                }
-                $this->failPublication($group, $task, $exception->getMessage());
-
-                return;
-            }
-            $reviewed->update(['pushed_at' => now()]);
-            TaskFinalReview::log($group, 'reviewed commit pushed', ['subtask_id' => $task->id, 'commit_sha' => $commit, 'pull_request' => $group->pr_url]);
-        }
-        if ($incoming && $reviewed->github_review_id === null) {
-            try {
-                $reviewId = $this->merger->review($group, $commit, GitHubReviewEvent::Approve, $this->approvalReviewBody($receipt, $commit));
-            } catch (TaskPullRequestException $exception) {
-                $this->failPublication($group, $task, $exception->getMessage());
-
-                return;
-            }
-            $reviewed->update(['github_review_id' => $reviewId]);
-            TaskFinalReview::log($group, 'pull request approved', ['subtask_id' => $task->id, 'commit_sha' => $commit, 'review_id' => $reviewId, 'pull_request' => $group->pr_url]);
-        }
-
-        $this->finishApproval($group, $task, $receipt);
-    }
-
-    private function approvalReviewBody(TaskComment $receipt, string $commit): string
-    {
-        return "Orbit reviewed the whole pull request at {$commit} and approves it.\n\n".mb_substr(trim($receipt->body), 0, 60000);
-    }
-
-    /**
-     * ADR 0203: a final review requested changes. On an incoming pull request whose head it reviewed, Orbit posts
-     * the findings as a `REQUEST_CHANGES` review first. Then, in one transaction, it completes the final review and
-     * starts a fixup subtask with the findings. The fourth set of findings in one window asks for assistance.
-     */
-    private function applyFinalReviewFindings(Task $group, Task $task, TaskComment $receipt): void
-    {
-        $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
-        $count = TaskFinalReview::fixupsInWindow($group->tasks);
-        if ($count >= TaskFinalReview::FixupLimit) {
-            $this->stopAtFinalReviewCap($group, $task, $receipt, $count);
-
-            return;
-        }
-        $head = $task->review_workspace_head;
-        if ($group->reviewsIncomingPullRequest() && is_string($head) && $head !== '' && $head === $task->fixup_head_sha) {
-            $key = 'tasks.final-review-request-changes.'.$receipt->id;
-            if (Cache::get($key) === null) {
-                try {
-                    $reviewId = $this->merger->review($group, $head, GitHubReviewEvent::RequestChanges, "Orbit reviewed the whole pull request at {$head} and requests changes. Orbit applies them itself.\n\n".mb_substr(trim($receipt->body), 0, 60000));
-                } catch (TaskPullRequestException $exception) {
-                    $this->recordCommunicationFailure($task, $group, $exception->getMessage());
-
-                    return;
-                }
-                Cache::forever($key, $reviewId);
-                TaskFinalReview::log($group, 'pull request changes requested', ['subtask_id' => $task->id, 'commit_sha' => $head, 'review_id' => $reviewId, 'pull_request' => $group->pr_url]);
-            }
-        }
-
-        $fixup = $this->replaceFinalReviewWithFixup($group, $task, $receipt, TaskFinalReview::FixupTitle, TaskFinalReview::fixupBrief($task, $receipt));
-        if (! $fixup instanceof Task) {
-            return;
-        }
-        TaskFinalReview::log($group, 'final review requested changes', ['subtask_id' => $task->id, 'comment_id' => $receipt->id, 'fixup_id' => $fixup->id]);
-        $this->runner->recordSubtaskStart($fixup);
-        $this->runner->assignImplementer($this, $fixup);
-    }
-
-    /**
-     * Completes the final review and starts a final-review fixup in one transaction. The caller starts its implementer.
-     */
-    private function replaceFinalReviewWithFixup(Task $group, Task $task, TaskComment $receipt, string $title, string $brief): ?Task
-    {
-        return DB::transaction(function () use ($group, $task, $receipt, $title, $brief): ?Task {
-            $lockedGroup = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)->lockForUpdate()->findOrFail($group->id);
-            $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
-            if (TaskExecutionHold::active($lockedGroup) || $locked->status !== TaskStatus::Reviewing || $locked->review_handled_comment_id === $receipt->id) {
-                return null;
-            }
-            $lockedGroup->loadMissing('project');
-            $fixup = Task::query()->create([
-                'parent_id' => $lockedGroup->id,
-                'position' => TaskFinalReview::nextPosition($this->runner->lockedTasks($lockedGroup)),
-                'title' => $title,
-                'brief' => $brief,
-                'deliverables' => TaskFinalReview::fixupDeliverables($lockedGroup->project->taskCheckCommand()),
-                'fixup_problem' => TaskFinalReview::FixupProblem,
-                'status' => TaskStatus::Todo,
-            ]);
-            TaskQuestions::answerPending($locked, $receipt);
-            $locked->update([
-                'status' => TaskStatus::Completed,
-                'settled_at' => $locked->settled_at ?? now(),
-                'review_handled_comment_id' => $receipt->id,
-                'communication_failures' => 0,
-            ]);
-            $this->runner->markRunning($fixup, $this->runner->lockedTasks($lockedGroup));
-            $lockedGroup->status = TaskGroupStatus::Running;
-            $lockedGroup->save();
-
-            return $fixup->fresh(['parent.tasks', 'parent.project', 'parent.taskable']) ?? $fixup;
-        });
-    }
-
-    /**
-     * The author pushed to an incoming pull request while Orbit's reviewed work waited, so Orbit's push is no
-     * longer a fast-forward. Orbit completes the final review and starts a fixup that merges the author's commits.
-     */
-    private function mergeAuthorPush(Task $group, Task $task, TaskComment $receipt, string $head): void
-    {
-        $branch = TaskRemoteBranch::for($group);
-        $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
-        $count = TaskFinalReview::fixupsInWindow($group->tasks);
-        if ($count >= TaskFinalReview::FixupLimit) {
-            $this->stopAtFinalReviewCap($group, $task, $receipt, $count);
-
-            return;
-        }
-        $fixup = $this->replaceFinalReviewWithFixup($group, $task, $receipt, 'Merge origin/'.$branch,
-            'The pull request author pushed '.$head.' to '.$branch.' after Orbit reviewed its own work, so Orbit cannot push without forcing. '
-            .'Merge origin/'.$branch.' into the task branch and resolve any conflicts. Do not rebase and do not force-push.');
-        if (! $fixup instanceof Task) {
-            return;
-        }
-        TaskFinalReview::log($group, 'pull request branch moved', ['subtask_id' => $task->id, 'head_sha' => $head, 'fixup_id' => $fixup->id]);
-        $this->runner->recordSubtaskStart($fixup);
-        $this->runner->assignImplementer($this, $fixup);
-    }
-
-    /**
-     * ADR 0203: the final review is complete and its findings wait for a person. The task settles and asks for
-     * assistance. An operator subtask appended to it resumes the task and, when it completes, opens a new window.
-     */
-    private function stopAtFinalReviewCap(Task $group, Task $task, TaskComment $receipt, int $count): void
-    {
-        $reason = TaskFinalReview::FixupCapPrefix.'Orbit already appended '.$count.' fixups for final review findings in this window. Read the findings of subtask #'.$task->id.', then append a subtask with tasks:subtask:create, or complete the task.';
-        $stopped = DB::transaction(function () use ($group, $task, $receipt, $reason): bool {
-            $lockedGroup = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)->lockForUpdate()->findOrFail($group->id);
-            $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
-            if (TaskExecutionHold::active($lockedGroup) || $locked->status !== TaskStatus::Reviewing || $locked->review_handled_comment_id === $receipt->id) {
-                return false;
-            }
-            TaskQuestions::answerPending($locked, $receipt);
-            $locked->update(['status' => TaskStatus::Completed, 'settled_at' => $locked->settled_at ?? now(), 'review_handled_comment_id' => $receipt->id, 'communication_failures' => 0]);
-            $lockedGroup->status = TaskGroupStatus::Settling;
-            $lockedGroup->save();
-
-            return TaskAssistance::apply($lockedGroup, AssistanceKind::Failure, null, $reason);
-        });
-        TaskFinalReview::log($group, 'final review requested changes', ['subtask_id' => $task->id, 'comment_id' => $receipt->id, 'fixup_id' => null, 'reason' => $reason]);
-        if ($stopped) {
-            $this->coder->assistance($group, $reason);
-        }
-    }
-
-    /**
-     * ADR 0203: appends a final review when none is open and starts it. On an incoming pull request,
-     * `$head` is the pull request head that the final review moves the workspace to.
-     */
-    private function beginFinalReview(Task $group, ?string $head = null): void
-    {
-        $appended = DB::transaction(function () use ($group, $head): bool {
-            $locked = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)->lockForUpdate()->findOrFail($group->id);
-            if (! in_array($locked->status, TaskGroupStatus::awaitingCompletion(), true) || TaskExecutionHold::active($locked)
-                || ($locked->assistance_requested && TaskFinalReview::isCapReason($locked->assistance_reason))) {
-                return false;
-            }
-            $tasks = $this->runner->lockedTasks($locked);
-            if ($tasks->contains(static fn (Task $task): bool => in_array($task->status, [TaskStatus::Todo, TaskStatus::Running, TaskStatus::Reviewing], true))) {
-                return false;
-            }
-            $locked->loadMissing('project');
-            Task::query()->create([
-                'parent_id' => $locked->id,
-                'position' => TaskFinalReview::nextPosition($tasks),
-                'type' => TaskType::FinalReview,
-                'title' => TaskFinalReview::Title,
-                'brief' => TaskFinalReview::brief($locked),
-                'deliverables' => TaskFinalReview::deliverables(),
-                'fixup_head_sha' => $head,
-                'status' => TaskStatus::Todo,
-            ]);
-
-            return true;
-        });
-        if ($appended) {
-            TaskFinalReview::log($group, 'final review appended', ['pull_request_head' => $head]);
-            $this->resumeWaitingSubtask($group);
-        }
-    }
-
-    /**
-     * ADR 0203: a final review skips the implementer and the task check. On an incoming pull request without
-     * unpushed approved work, the workspace first moves to the pull request head. The diff base is the merge
-     * base with the default branch, so the reviewer sees the whole branch.
-     */
     public function startFinalReview(Task $group, Task $task, bool $alreadyFetched): void
     {
-        if ($task->status !== TaskStatus::Running || ! $this->runner->workspaceRouteReady($this, $group, $task)) {
-            return;
-        }
-        try {
-            if (! $alreadyFetched) {
-                $this->turnFetcher->fetch($group);
-            }
-            $preparingMerge = $task->checks()->where('kind', TaskCheckKind::BaseMerge)->exists();
-            if ($group->reviewsIncomingPullRequest() && ! TaskFinalReview::hasUnreviewedWork($group) && ! $preparingMerge) {
-                // The author can push before the review starts. Review the head the pull request has now.
-                $current = $this->pullRequestWatcher->health($group)?->headSha;
-                if (is_string($current) && $current !== '' && $current !== $task->fixup_head_sha) {
-                    $task->update(['fixup_head_sha' => $current]);
-                    if ($alreadyFetched) {
-                        $this->turnFetcher->fetch($group);
-                    }
-                }
-                $head = $task->fixup_head_sha;
-                if (! is_string($head) || $head === '') {
-                    throw new TaskPullRequestException('Orbit could not read the pull request head.');
-                }
-                $this->bases->moveTo($group, $head);
-            }
-            $merge = $this->prepareBaseMerge($group, $task);
-            if (in_array($merge, ['conflict', 'failed'], true)) {
-                $task->update(['status' => TaskStatus::Cancelled, 'settled_at' => now()]);
-                $group->update(['status' => TaskGroupStatus::Settling]);
-                $this->appendAgentBaseMerge($group, (string) $group->project->default_branch);
-
-                return;
-            }
-            if ($merge === 'waiting') {
-                return;
-            }
-            $base = $this->bases->mergeBase($group);
-        } catch (Throwable $exception) {
-            $this->recordCommunicationFailure($task, $group, $exception->getMessage());
-
-            return;
-        }
-        $started = DB::transaction(function () use ($task, $base): bool {
-            $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
-            $lockedGroup = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)->lockForUpdate()->findOrFail($locked->parent_id);
-            if (TaskExecutionHold::active($lockedGroup) || $locked->status !== TaskStatus::Running) {
-                return false;
-            }
-            $locked->update(['status' => TaskStatus::Reviewing, 'subtask_start_commit' => $base, 'communication_failures' => 0]);
-            $lockedGroup->update(['status' => TaskGroupStatus::Reviewing]);
-
-            return true;
-        });
-        if ($started) {
-            $this->clearCommunicationFailures($task);
-            $this->nudgeReviewer($task->fresh() ?? $task, null);
-        }
+        $this->reviews->startFinalReview($this, $group, $task, $alreadyFetched);
     }
 
-    /**
-     * ADR 0203: merges the pull request through the App when its head is one Orbit fully reviewed, the merge
-     * check passed on that exact head, GitHub reports it mergeable, and no trusted account requests changes.
-     * A head Orbit did not review is reviewed again on an incoming pull request, and asks for assistance on an
-     * Orbit task branch. Each result is stored on the task, and each change of result is recorded in Activity.
-     */
-    private function mergeWhenReady(Task $group, TaskPullRequestHealth $health, ?TaskReviewObservation $reviews): void
+    public function mergeWhenReady(Task $group, TaskPullRequestHealth $health, ?TaskReviewObservation $reviews): void
     {
-        $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
-        $head = $health->headSha;
-        if ($group->assistance_requested && TaskFinalReview::isUnreviewedHeadReason($group->assistance_reason)
-            && is_string($head) && TaskFinalReview::isReviewed($group, $head)) {
-            // The head is reviewed again, so the request that held the merge no longer applies.
-            $group->update(TaskAssistance::cleared());
-        }
-        if (! in_array($group->status, TaskGroupStatus::awaitingCompletion(), true) || $group->assistance_requested
-            || $group->tasks->contains(static fn (Task $task): bool => in_array($task->status, [TaskStatus::Todo, TaskStatus::Running, TaskStatus::Reviewing], true))
-            || TaskFinalReview::hasUnreviewedWork($group)) {
-            return;
-        }
-        if (! is_string($head) || $head === '') {
-            $this->recordMerge($group, TaskMergeStatus::Waiting, 'GitHub did not report the pull request head.');
-
-            return;
-        }
-        if (! TaskFinalReview::isReviewed($group, $head)) {
-            if ($group->reviewsIncomingPullRequest()) {
-                $this->recordMerge($group, TaskMergeStatus::Waiting, 'Orbit reviews the new head '.$head.'.');
-                $this->beginFinalReview($group, $head);
-
-                return;
-            }
-            $reason = TaskFinalReview::UnreviewedHeadPrefix.'someone other than Orbit pushed '.$head.' to '.TaskRemoteBranch::for($group).'. Orbit does not merge it. Append a subtask so Orbit reviews and pushes the branch again, or complete the task.';
-            $this->recordMerge($group, TaskMergeStatus::Refused, $reason);
-            if (TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason)) {
-                $this->coder->assistance($group, $reason);
-            }
-
-            return;
-        }
-        $default = $group->project->default_branch;
-        if (! is_string($health->baseRef) || $health->baseRef !== $default) {
-            $this->recordMerge($group, TaskMergeStatus::Refused, 'The pull request base is '.($health->baseRef ?? 'unknown').', not the default branch '.($default ?? 'unknown').'. Orbit merges only into the default branch it reviewed against.');
-
-            return;
-        }
-        if ($health->conflicts || $health->mergeable !== true) {
-            $this->recordMerge($group, TaskMergeStatus::Waiting, 'GitHub has not reported '.$group->pr_url.' mergeable.');
-
-            return;
-        }
-        // One full evaluation per head and minute. The pull request read above already runs every tick.
-        if (! Cache::add('tasks.merge-gate.'.$group->id.'.'.$head, true, 60)) {
-            return;
-        }
-        $check = $group->project->mergeCheckName() ?? '';
-        $state = $this->merger->requiredCheck($group, $head, $check);
-        if ($state !== RequiredCheckState::Passed) {
-            $this->recordMerge($group, $state === RequiredCheckState::Failed ? TaskMergeStatus::Refused : TaskMergeStatus::Waiting, match ($state) {
-                RequiredCheckState::Pending => 'Check '.$check.' is still running on '.$head.'.',
-                RequiredCheckState::Missing => 'Check '.$check.' has no run on '.$head.' yet.',
-                RequiredCheckState::Failed => 'Check '.$check.' did not pass on '.$head.', or a run of that name came from an App other than github-actions.',
-                default => 'Orbit could not read check '.$check.' on '.$head.'.',
-            });
-
-            return;
-        }
-        $blocked = $this->trustedChangesRequested($reviews);
-        if ($blocked !== null) {
-            $this->recordMerge($group, $reviews?->status === TaskReviewReadStatus::Complete ? TaskMergeStatus::Refused : TaskMergeStatus::Waiting, $blocked);
-
-            return;
-        }
-        try {
-            $result = $this->merger->merge($group, $head);
-        } catch (TaskPullRequestException $exception) {
-            $this->recordMerge($group, TaskMergeStatus::Waiting, $exception->getMessage());
-
-            return;
-        }
-        if (! $result->merged) {
-            $this->recordMerge($group, TaskMergeStatus::Refused, 'GitHub refused the merge of '.$head.' ('.$result->status.'): '.($result->message !== '' ? $result->message : 'no message').'.');
-            if ($health->behind) {
-                // A branch protection rule can require an up-to-date branch. Orbit merges the base itself.
-                $this->appendBaseMerge($group, (string) $default);
-            }
-
-            return;
-        }
-        $group->update(['merge_status' => TaskMergeStatus::Merged, 'merge_reason' => null, 'merged_sha' => $result->sha]);
-        TaskFinalReview::log($group, 'pull request merged', ['pull_request' => $group->pr_url, 'head_sha' => $head, 'merge_sha' => $result->sha]);
-        $this->broadcasts->groupChanged($group->id);
+        $this->publication->mergeWhenReady($this, $group, $health, $reviews);
     }
 
-    /**
-     * GitHub refused a behind branch. Merge locally and gate it; only a conflict or failed gate needs an agent.
-     * A clean merge inherits the reviewed first parent's evidence. It never asks GitHub to update the branch.
-     */
-    private function appendBaseMerge(Task $group, string $base): void
+    public function appendBaseMerge(Task $group, string $base): void
     {
-        TaskExecutionHold::run($group, function () use ($group, $base): void {
-            $task = $group->tasks()->whereHas('checks', static fn ($query) => $query
-                ->where('kind', TaskCheckKind::BaseMerge)->where('status', TaskCheckStatus::Running))->reorder('position', 'desc')->first()
-                ?? $group->tasks()->where('status', TaskStatus::Completed)->reorder('position', 'desc')->first();
-            if (! $task instanceof Task) {
-                return;
-            }
-            try {
-                $this->turnFetcher->fetch($group);
-                $current = $this->workspaceSnapshot($group);
-                $pending = $task->checks()->where('kind', TaskCheckKind::BaseMerge)
-                    ->where(function ($query) use ($current): void {
-                        $query->where('status', TaskCheckStatus::Running)->orWhere('head_after', $current->head);
-                    })->exists();
-                if (! TaskFinalReview::isReviewed($group, $current->head)
-                    && (! $pending || ! is_string($current->parent) || ! TaskFinalReview::isReviewed($group, $current->parent))) {
-                    throw new TaskPullRequestException('The workspace head has no review for a mechanical main merge.');
-                }
-                $gated = TaskReviewedCommit::query()->where('task_id', $group->id)->where('sha', $current->head)
-                    ->where('source', TaskReviewedCommitSource::BaseMerge)->whereNull('pushed_at')->exists();
-                $merge = $gated ? 'passed' : $this->prepareBaseMerge($group, $task);
-                if (in_array($merge, ['conflict', 'failed'], true)) {
-                    $this->appendAgentBaseMerge($group, $base);
-
-                    return;
-                }
-                if ($merge === 'waiting') {
-                    return;
-                }
-                $snapshot = $this->workspaceSnapshot($group);
-                $reviewed = TaskReviewedCommit::query()->where('task_id', $group->id)->where('sha', $snapshot->head)->first();
-                if (! $reviewed instanceof TaskReviewedCommit) {
-                    $parent = TaskReviewedCommit::query()->where('task_id', $group->id)->where('sha', $snapshot->parent)->first();
-                    if (! $parent instanceof TaskReviewedCommit) {
-                        throw new TaskPullRequestException('The main merge does not descend directly from a reviewed head.');
-                    }
-                    $reviewed = TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => $snapshot->head,
-                        'source' => TaskReviewedCommitSource::BaseMerge, 'review_task_id' => $parent->review_task_id]);
-                }
-                if ($reviewed->pushed_at === null) {
-                    if (! $this->pullRequestStillOpen($group, $task, $snapshot->head)) {
-                        return;
-                    }
-                    $this->publisher->push($group, $snapshot->head);
-                    $reviewed->update(['pushed_at' => now()]);
-                    TaskFinalReview::log($group, 'base merge pushed', ['commit_sha' => $snapshot->head]);
-                }
-            } catch (TaskCheckException|TaskPullRequestException $exception) {
-                $this->recordMerge($group, TaskMergeStatus::Waiting, $exception->getMessage());
-            }
-        });
+        $this->publication->appendBaseMerge($this, $group, $base);
     }
 
     /**
@@ -1213,290 +222,30 @@ final readonly class TaskScheduler
      *
      * @return 'passed'|'waiting'|'conflict'|'failed'
      */
-    private function prepareBaseMerge(Task $group, Task $task): string
+    public function prepareBaseMerge(Task $group, Task $task): string
     {
-        $instance = $group->taskable;
-        if (! $instance instanceof Instance) {
-            throw new TaskCheckException('The task workspace is unavailable.');
-        }
-        $snapshot = $this->workspaceSnapshot($group);
-        $check = $task->checks()->where('kind', TaskCheckKind::BaseMerge)->latest('id')->first();
-        if ($check instanceof TaskCheck && $check->status === TaskCheckStatus::Running && $check->pid > 0) {
-            $reading = $this->checks->read($instance, $check->process());
-            if ($reading->state === 'running') {
-                return 'waiting';
-            }
-            $this->runner->recordReading($check, $reading);
-            $snapshot = $this->workspaceSnapshot($group);
-            if ($check->status === TaskCheckStatus::Passed && $check->head_after === $snapshot->head && $check->tree_after === $snapshot->tree) {
-                return 'passed';
-            }
-        }
-        $retryGate = $check instanceof TaskCheck && $check->status === TaskCheckStatus::Lost;
-        if ($check instanceof TaskCheck && $check->status === TaskCheckStatus::Cancelled) {
-            throw new TaskCheckException('The main merge gate was cancelled. Resolve the check before continuing.');
-        }
-        if ($retryGate && $task->checks()->where('kind', TaskCheckKind::BaseMerge)->where('status', TaskCheckStatus::Lost)->count() >= 2) {
-            throw new TaskCheckException('The main merge gate stopped twice without a result.');
-        }
-        if ($check instanceof TaskCheck && $check->status !== TaskCheckStatus::Running) {
-            if ($check->status !== TaskCheckStatus::Passed && ! $retryGate) {
-                return $check->failed_step === 'merge_conflict' ? 'conflict' : 'failed';
-            }
-            $check = null;
-        }
-        if (! $check instanceof TaskCheck) {
-            $check = TaskCheck::query()->create(['task_id' => $task->id, 'kind' => TaskCheckKind::BaseMerge,
-                'status' => TaskCheckStatus::Running, 'pid' => 0, 'process_started' => '',
-                'head_before' => $snapshot->head, 'tree_before' => $snapshot->tree, 'started_at' => now()]);
-        }
-        $head = $this->bases->mergeDefault($group);
-        if ($head === null) {
-            $check->update(['status' => TaskCheckStatus::Failed, 'failed_step' => 'merge_conflict', 'finished_at' => now()]);
-
-            return 'conflict';
-        }
-        if ($head === $check->head_before && ! $retryGate) {
-            $check->update(['status' => TaskCheckStatus::Passed, 'head_after' => $snapshot->head, 'tree_after' => $snapshot->tree,
-                'exit_code' => 0, 'finished_at' => now()]);
-
-            return 'passed';
-        }
-        $process = $this->checks->start($instance, $group->project->taskCheckCommand());
-        $check->update(['pid' => $process->pid, 'process_started' => $process->started,
-            'head_before' => $process->head, 'tree_before' => $process->tree]);
-
-        return 'waiting';
+        return $this->publication->prepareBaseMerge($this, $group, $task);
     }
 
-    private function appendAgentBaseMerge(Task $group, string $base): void
+    public function appendAgentBaseMerge(Task $group, string $base): void
     {
-        if (TaskFinalReview::fixupsInWindow($group->tasks) >= TaskFinalReview::FixupLimit) {
-            $reason = TaskFinalReview::FixupCapPrefix.'Merging '.$base.' needs an agent fixup, and Orbit already appended '.TaskFinalReview::FixupLimit.' final-review fixups in this window. Append a subtask with tasks:subtask:create, or complete the task.';
-            if (TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason)) {
-                $this->coder->assistance($group, $reason);
-            }
-
-            return;
-        }
-        $appended = DB::transaction(function () use ($group, $base): bool {
-            $locked = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)->lockForUpdate()->findOrFail($group->id);
-            $tasks = $this->runner->lockedTasks($locked);
-            if (! in_array($locked->status, TaskGroupStatus::awaitingCompletion(), true) || TaskExecutionHold::active($locked) || $locked->assistance_requested
-                || $tasks->contains(static fn (Task $task): bool => in_array($task->status, [TaskStatus::Todo, TaskStatus::Running, TaskStatus::Reviewing], true))) {
-                return false;
-            }
-            $locked->loadMissing('project');
-            Task::query()->create([
-                'parent_id' => $locked->id,
-                'position' => TaskFinalReview::nextPosition($tasks),
-                'title' => 'Merge origin/'.$base,
-                'brief' => 'The mechanical main merge conflicted or its Project gate failed. Merge origin/'.$base.' into the task branch and resolve any conflicts. Do not rebase and do not force-push.',
-                'deliverables' => TaskFinalReview::fixupDeliverables($locked->project->taskCheckCommand()),
-                'fixup_problem' => TaskFinalReview::FixupProblem,
-                'status' => TaskStatus::Todo,
-            ]);
-
-            return true;
-        });
-        if ($appended) {
-            TaskFinalReview::log($group, 'base merge appended', ['base' => $base, 'pull_request' => $group->pr_url]);
-            $this->resumeWaitingSubtask($group);
-        }
-    }
-
-    /** The reason a trusted request for changes, or an incomplete review read, blocks the merge. Null when nothing blocks. */
-    private function trustedChangesRequested(?TaskReviewObservation $reviews): ?string
-    {
-        if (! $reviews instanceof TaskReviewObservation) {
-            return 'Orbit waits to read the pull request reviews again.';
-        }
-        if ($reviews->status === TaskReviewReadStatus::Disabled) {
-            return null;
-        }
-        if ($reviews->status !== TaskReviewReadStatus::Complete) {
-            return 'Orbit could not read every review of the pull request ('.$reviews->status->value.').';
-        }
-        foreach ($reviews->selection->effective ?? [] as $review) {
-            if ($review->state === GitHubReviewState::ChangesRequested) {
-                return 'Trusted reviewer '.$review->reviewerLogin.' requested changes in review '.$review->id.'. They must approve or dismiss it first.';
-            }
-        }
-
-        return null;
-    }
-
-    /** Stores the merge gate's result. A changed result is recorded in Activity once. */
-    private function recordMerge(Task $group, TaskMergeStatus $status, string $reason): void
-    {
-        if ($group->merge_status === $status && $group->merge_reason === $reason) {
-            return;
-        }
-        $group->update(['merge_status' => $status, 'merge_reason' => $reason]);
-        TaskFinalReview::log($group, 'merge '.$status->value, ['pull_request' => $group->pr_url, 'reason' => $reason]);
-    }
-
-    /**
-     * ADR 0164: before a commit is pushed to a stored pull request, re-read its state. A merged or closed
-     * pull request would never carry the commit, so Orbit does not push it and asks for assistance naming
-     * it. An unreadable state is a publication failure that waits out the backoff.
-     */
-    private function pullRequestStillOpen(Task $group, Task $task, string $commit): bool
-    {
-        if (! is_string($group->pr_url) || $group->pr_url === '') {
-            return true;
-        }
-        $state = $this->pullRequestWatcher->status($group);
-        if ($state === 'open') {
-            return true;
-        }
-        if ($state === null) {
-            $this->failPublication($group, $task, 'Orbit could not read the state of '.$group->pr_url.'.');
-
-            return false;
-        }
-
-        $key = $this->publicationBackoffKey($task);
-        $this->extendBackoff($key, $this->readBackoff($key, 'approved publication'), 'approved publication');
-        $this->requestAssistance($task, $group, self::OrphanedCommitPrefix.'Orbit did not push commit '.$commit.' of subtask #'.$task->id.' because '.$group->pr_url.' is already '.$state.'. Push that commit to a new branch and open a pull request, or cancel the group.');
-
-        return false;
+        $this->publication->appendAgentBaseMerge($this, $group, $base);
     }
 
     /** Whether the group waits for an operator because an approved commit missed its merged pull request. */
-    private function orphanedCommit(Task $group): bool
+    public function orphanedCommit(Task $group): bool
     {
-        return $group->assistance_requested && is_string($group->assistance_reason)
-            && str_starts_with($group->assistance_reason, self::OrphanedCommitPrefix);
+        return $this->publication->orphanedCommit($group);
     }
 
-    /**
-     * ADR 0164: returning to settling and every merged cleanup tick revalidate the pull request. When its
-     * head is not the latest approved commit, that commit missed the merge. The group asks for assistance
-     * naming the commit and is not completed, so its workspace stays.
-     */
     public function checkReturningPullRequest(Task $group, ?TaskPullRequestHealth $health = null): bool
     {
-        $health ??= $this->pullRequestWatcher->health($group);
-        if (! $health instanceof TaskPullRequestHealth || $health->state !== 'merged' || $health->headSha === null) {
-            return false;
-        }
-        $commit = TaskComment::query()
-            ->where('task_group_id', $group->id)
-            ->where('type', TaskCommentType::Approved)
-            ->whereNotNull('commit_sha')
-            ->latest('id')
-            ->value('commit_sha');
-        if (! is_string($commit) || $commit === '' || $commit === $health->headSha || $this->orphanedCommit($group)) {
-            return $this->orphanedCommit($group);
-        }
-
-        $inherited = TaskReviewedCommit::query()->where('task_id', $group->id)->where('sha', $health->headSha)
-            ->where('source', TaskReviewedCommitSource::BaseMerge)->first();
-        if ($inherited instanceof TaskReviewedCommit && $inherited->review_task_id !== null
-            && TaskFinalReview::isReviewed($group, $commit)
-            && TaskComment::query()->where('task_id', $inherited->review_task_id)->where('type', TaskCommentType::Approved)->where('commit_sha', $commit)->exists()) {
-            return false;
-        }
-
-        $reason = self::OrphanedCommitPrefix.'Commit '.$commit.' reached task-'.$group->id.' after '.$group->pr_url.' merged at '.$health->headSha.'. Open a pull request for task-'.$group->id.', or complete the group.';
-        if (TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason, replaceFailure: true)) {
-            $this->coder->assistance($group, $reason);
-        }
-
-        // A direction request keeps its question, but the missed approval still protects the workspace.
-        return true;
+        return $this->publication->checkReturningPullRequest($group, $health);
     }
 
-    /** A failed push or open waits out the backoff and asks for assistance on the fifth failure. */
-    private function failPublication(Task $group, Task $task, string $reason): void
+    public function publicationBackoffKey(Task $task): string
     {
-        $key = $this->publicationBackoffKey($task);
-        $this->extendBackoff($key, $this->readBackoff($key, 'approved publication'), 'approved publication');
-        $this->recordCommunicationFailure($task, $group, self::PublicationFailedPrefix.$reason);
-    }
-
-    /** Clears the publication failure only. A blocked question or any other cause stays on the subtask and the group. */
-    private function clearPublicationAssistance(Task $task, Task $group): void
-    {
-        $task->refresh();
-        $group->refresh();
-        if (is_string($task->assistance_reason) && str_starts_with($task->assistance_reason, self::PublicationFailedPrefix)) {
-            $task->update(TaskAssistance::cleared());
-        }
-        if (is_string($group->assistance_reason) && str_starts_with($group->assistance_reason, self::PublicationFailedPrefix)) {
-            $group->update(TaskAssistance::cleared());
-        }
-    }
-
-    private function publicationBackoffKey(Task $task): string
-    {
-        return 'tasks.approved-publication.'.$task->id;
-    }
-
-    private function relayFindings(Task $group, Task $task, TaskSessionObservation $observation, TaskComment $findings): void
-    {
-        $implementer = $observation->thread(TaskThreadRole::Implementer);
-        if ($implementer === null) {
-            $this->requestAssistance($task, $group, 'The implementer thread is unavailable for the review findings.', $observation);
-
-            return;
-        }
-        if ($this->isWorking($implementer)) {
-            return;
-        }
-        try {
-            if (! $this->runner->prepareTurn($this, $group, $task, TaskThreadRole::Implementer, $implementer->threadId)) {
-                return;
-            }
-            $this->actor->relayReviewBody($group, $implementer, $findings->body);
-        } catch (AgentDriverException|TaskTurnReceiptException $exception) {
-            $this->recordCommunicationFailure($task, $group, $exception->getMessage());
-
-            return;
-        }
-        TaskQuestions::answerPending($task, $findings);
-        $task->update([
-            'status' => TaskStatus::Running,
-            'review_handled_comment_id' => $findings->id,
-            'review_attempt' => $task->review_attempt + 1,
-            'review_reminder_attempt' => null,
-            'review_reminder_input_id' => null,
-            'completion_attempt' => $task->completion_attempt + 1,
-            'completion_handoff_attempt' => $task->completion_attempt + 1,
-            'completion_handoff_turn_id' => $implementer->turnId,
-            'communication_failures' => 0,
-            'completion_handoff_comment_id' => null,
-            'completion_reminder_attempt' => null,
-            'completion_reminder_input_id' => null,
-        ]);
-        $group->update(['status' => TaskGroupStatus::Running]);
-    }
-
-    /**
-     * ADR 0200: the approval of a subtask that declares a topology needs recorded evidence on each declared node,
-     * started after the implementer's last handoff. Returns the rubric item and the summary of the counted records,
-     * which the approval carries for a person to audit; both null when the subtask declares none.
-     *
-     * @return array{0: ?TaskRubricItem, 1: ?string}
-     *
-     * @throws TaskCheckException when the evidence log cannot be read
-     */
-    private function topologyEvidenceItem(Task $group, Task $task): array
-    {
-        $nodes = $task->topology->nodes();
-        if ($nodes === []) {
-            return [null, null];
-        }
-        $handoff = $task->completion_handoff_comment_id === null ? null : TaskComment::query()->find($task->completion_handoff_comment_id);
-        $since = $handoff instanceof TaskComment ? $handoff->posted_at : ($task->started_at ?? now());
-        $evidence = $this->topologyAdmission->evidence($group, $since);
-        $missing = $evidence->missing($nodes);
-
-        return [
-            new TaskRubricItem('topology_evidence', $missing === [], $missing === [] ? '' : TaskTopologyEvidence::reminder($group->id, $missing)),
-            $missing === [] ? $evidence->summary($nodes) : null,
-        ];
+        return $this->publication->publicationBackoffKey($task);
     }
 
     /**
@@ -1505,22 +254,7 @@ final readonly class TaskScheduler
      */
     public function topologyRequiredItem(Task $group, ?TaskDeliverableEvidence $evidence): ?TaskRubricItem
     {
-        $patterns = app(TaskVmSettings::class)->topologyPaths[(int) $group->project_id] ?? [];
-        if ($patterns === [] || ! TaskTopology::forGroup($group)->isEmpty()) {
-            return null;
-        }
-        if (! $evidence instanceof TaskDeliverableEvidence || $evidence->topologyDiff === null) {
-            return new TaskRubricItem('topology_required', false, "Orbit could not read the group's diff against origin/main to check the paths that need a declared topology.");
-        }
-        $paths = array_values(array_unique(array_map(
-            static fn (array $entry): string => $entry['path'],
-            array_filter($evidence->topologyDiff, static fn (array $entry): bool => array_any($patterns, static fn (string $pattern): bool => TaskDeliverableVerifier::matches($pattern, $entry['path']))),
-        )));
-        if ($paths === []) {
-            return null;
-        }
-
-        return new TaskRubricItem('topology_required', false, 'This subtask changes paths that need real machines ('.implode(', ', array_slice($paths, 0, 10)).(count($paths) > 10 ? ', and '.(count($paths) - 10).' more' : '').'), but no subtask of the group declares a topology, so the change cannot be proven on test nodes. Revert those changes, or end your turn blocked so the operator can add a subtask that declares a topology.');
+        return $this->consults->topologyRequiredItem($group, $evidence);
     }
 
     /**
@@ -1529,22 +263,12 @@ final readonly class TaskScheduler
      */
     public function confirmationItem(Task $task, ?TaskComment $receipt, TaskThreadRole $role): ?TaskRubricItem
     {
-        $deliverables = $task->deliverableList();
-        if ($deliverables === [] || ! $receipt instanceof TaskComment) {
-            return null;
-        }
-        $missing = TaskDeliverableVerifier::unconfirmed($deliverables, $receipt->deliverables ?? [], $role);
-
-        return new TaskRubricItem('deliverables', $missing === [], $missing === [] ? '' : 'The turn receipt does not confirm the deliverables '.implode(', ', $missing).'. Pass --deliverable=ID=evidence for each one.');
+        return $this->consults->confirmationItem($task, $receipt, $role);
     }
 
     public function receiptItem(?TaskTurnReceipt $read, ?TaskComment $receipt): TaskRubricItem
     {
-        if ($receipt instanceof TaskComment) {
-            return new TaskRubricItem('turn_receipt', true, '');
-        }
-
-        return new TaskRubricItem('turn_receipt', false, $read instanceof TaskTurnReceipt ? 'The turn receipt was not valid for this turn.' : 'No turn receipt was found.');
+        return $this->consults->receiptItem($read, $receipt);
     }
 
     /**
@@ -1555,47 +279,7 @@ final readonly class TaskScheduler
      */
     public function collectReceipt(Task $group, Task $task, TaskThreadRole $role): ?TaskTurnReceipt
     {
-        $instance = $group->taskable;
-        if (! $instance instanceof Instance) {
-            throw new TaskTurnReceiptException('The task workspace is unavailable.');
-        }
-        $actingThreadId = $this->actingThreadId($group, $task, $role);
-        $receipt = $this->receipts->read($instance, $actingThreadId);
-        if (! $receipt instanceof TaskTurnReceipt || ! $this->receiptMatchesActingThread($receipt, $actingThreadId)) {
-            return null;
-        }
-        if ($receipt->outcome instanceof TaskTurnOutcome && $receipt->fits($role)) {
-            TaskComment::query()->firstOrCreate(['task_id' => $task->id, 'receipt_hash' => $receipt->hash], [
-                'task_group_id' => $group->id,
-                'agent_thread_id' => $role === TaskThreadRole::Implementer ? $task->implementer_agent_thread_id : $group->reviewer_agent_thread_id,
-                'completion_attempt' => $task->completion_attempt,
-                'review_attempt' => $role === TaskThreadRole::Reviewer ? $task->review_attempt : null,
-                'type' => $receipt->outcome->commentType(),
-                'body' => $receipt->body(),
-                'pull_request' => $receipt->pullRequest?->toArray(),
-                'deliverables' => $receipt->deliverables === [] ? null : $receipt->deliverables,
-                'cause' => $receipt->cause,
-                'author' => $role->value,
-                'posted_at' => now(),
-            ]);
-        }
-        $this->receipts->clear($instance, $receipt);
-
-        return $receipt;
-    }
-
-    /** The Orbit id of the thread this phase acts as, or null when that thread has not been stored. */
-    private function actingThreadId(Task $group, Task $task, TaskThreadRole $role): ?int
-    {
-        $id = $role === TaskThreadRole::Implementer ? $task->implementer_agent_thread_id : $group->reviewer_agent_thread_id;
-
-        return is_numeric($id) ? (int) $id : null;
-    }
-
-    /** A receipt applies only when it names the acting thread. An unbound receipt does not. */
-    private function receiptMatchesActingThread(TaskTurnReceipt $receipt, ?int $actingThreadId): bool
-    {
-        return $actingThreadId === null || $receipt->threadId === $actingThreadId;
+        return $this->consults->collectReceipt($group, $task, $role);
     }
 
     /**
@@ -1603,37 +287,17 @@ final readonly class TaskScheduler
      */
     public function pendingReceipt(Task $task, TaskThreadRole $role): ?TaskComment
     {
-        $implementer = $role === TaskThreadRole::Implementer;
-        $receipt = $task->comments()
-            ->whereNotNull('receipt_hash')
-            ->where('author', $role->value)
-            ->where($implementer ? 'completion_attempt' : 'review_attempt', $implementer ? $task->completion_attempt : $task->review_attempt)
-            ->latest('id')
-            ->first();
-        $handled = $implementer ? $task->completion_handoff_comment_id : $task->review_handled_comment_id;
-
-        return $receipt instanceof TaskComment && $receipt->id !== $handled ? $receipt : null;
+        return $this->consults->pendingReceipt($task, $role);
     }
 
     public function receiptOutcome(TaskComment $receipt): ?TaskTurnOutcome
     {
-        $type = $receipt->getRawOriginal('type');
-
-        return TaskTurnOutcome::tryFrom(is_string($type) ? $type : '');
+        return $this->consults->receiptOutcome($receipt);
     }
 
     public function waitingItem(TaskThreadObservation $thread): ?TaskRubricItem
     {
-        $waiting = $thread->sessState === AgentThreadState::AskingForInput->value
-            || $thread->pendingApprovalId !== null
-            || $thread->pendingUserInputId !== null;
-        if (! $waiting) {
-            return null;
-        }
-
-        $work = $thread->role === TaskThreadRole::Implementer ? 'brief' : 'review';
-
-        return new TaskRubricItem('waiting_for_input', false, 'The thread is waiting for input. Continue the current '.$work.' without it.');
+        return $this->consults->waitingItem($thread);
     }
 
     /**
@@ -1644,36 +308,7 @@ final readonly class TaskScheduler
      */
     public function remindOrAssist(Task $group, Task $task, TaskThreadObservation $thread, array $items): bool
     {
-        $failures = $this->failedItems($items);
-        $implementer = $thread->role === TaskThreadRole::Implementer;
-        $attempt = $implementer ? 'completion_attempt' : 'review_attempt';
-        $reminder = $implementer ? 'completion_reminder_attempt' : 'review_reminder_attempt';
-        $input = $implementer ? 'completion_reminder_input_id' : 'review_reminder_input_id';
-        $pendingId = $thread->pendingUserInputId ?? $thread->pendingApprovalId;
-        if ($task->{$reminder} === $task->{$attempt} && $pendingId !== null && $pendingId === $task->{$input}) {
-            return false;
-        }
-        if ($task->{$reminder} !== $task->{$attempt}) {
-            try {
-                if (! $this->runner->prepareTurn($this, $group, $task, $thread->role, $thread->threadId)) {
-                    return false;
-                }
-                $mode = TaskTurnMode::forTask($task, $thread->role);
-                $this->actor->remindRubric($group, $thread, TaskRubricReminder::compose($thread->role, $failures, ! $implementer && $task->opensPullRequest(), $task->deliverableList(), $group->project->taskCheckCommand(), $thread->threadId, $mode));
-            } catch (AgentDriverException|TaskTurnReceiptException $exception) {
-                $this->recordCommunicationFailure($task, $group, $exception->getMessage());
-
-                return false;
-            }
-            $task->update([$reminder => $task->{$attempt}, $input => $pendingId, 'communication_failures' => 0]);
-
-            return true;
-        }
-
-        $reasons = array_map(static fn (TaskRubricItem $item): string => $item->reminder, $failures);
-        $this->requestAssistance($task, $group, 'Checks still failed after the reminder. '.implode(' ', $reasons));
-
-        return true;
+        return $this->consults->remindOrAssist($this, $group, $task, $thread, $items);
     }
 
     /** @param list<TaskRubricItem> $items
@@ -1681,23 +316,17 @@ final readonly class TaskScheduler
      */
     public function failedItems(array $items): array
     {
-        return array_values(array_filter($items, static fn (TaskRubricItem $item): bool => ! $item->passed));
+        return $this->consults->failedItems($items);
     }
 
     public function clearCommunicationFailures(Task $task): void
     {
-        if ($task->communication_failures > 0) {
-            $task->update(['communication_failures' => 0]);
-        }
+        $this->consults->clearCommunicationFailures($task);
     }
 
     public function recordCommunicationFailure(Task $task, Task $group, string $reason): void
     {
-        $task->increment('communication_failures');
-        $task->refresh();
-        if ($task->communication_failures >= 5) {
-            $this->requestAssistance($task, $group, $reason);
-        }
+        $this->consults->recordCommunicationFailure($task, $group, $reason);
     }
 
     /**
@@ -1706,526 +335,37 @@ final readonly class TaskScheduler
      */
     public function beginConsult(Task $group, Task $task, TaskComment $receipt, TaskSessionObservation $observation): void
     {
-        if (TaskQuestions::consultCount($task) >= TaskQuestions::ConsultLimit) {
-            $this->requestAssistance($task, $group, $this->thirdBlockReason($task, $receipt), $observation, AssistanceKind::Direction, TaskAssistance::questionFromBlockedReason($receipt->body), ['completion_handoff_comment_id' => $receipt->id], $receipt);
-
-            return;
-        }
-
-        if (! $this->spawner instanceof TaskAgentSpawner) {
-            $this->recordCommunicationFailure($task, $group, self::ReviewRequestFailedReason.' (AgentSpawner).');
-
-            return;
-        }
-        $instance = $group->taskable;
-        if (! $instance instanceof Instance) {
-            $this->recordCommunicationFailure($task, $group, 'The task workspace is unavailable.');
-
-            return;
-        }
-
-        $this->recordConsultIntent($task, $receipt, $observation);
-        $task->refresh();
-        $this->dispatchConsult($group, $task, $receipt, $observation);
-    }
-
-    /** Records the consult for this blocked receipt before the send, so a lost response can be recovered. */
-    private function recordConsultIntent(Task $task, TaskComment $receipt, TaskSessionObservation $observation): void
-    {
-        $own = $this->ownReviewer($task, $observation);
-        $source = $own instanceof TaskThreadObservation && is_string($own->turnId) && $own->turnId !== '' ? $own->turnId : null;
-        $key = $this->consultSendKey($receipt);
-        DB::transaction(function () use ($task, $receipt, $key, $source): void {
-            $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
-            if ($locked->consult_comment_id !== null || $locked->assistance_requested) {
-                return;
-            }
-            TaskQuestions::openConsult($locked, $receipt);
-            $locked->update([
-                'consult_comment_id' => $receipt->id,
-                'completion_handoff_comment_id' => $receipt->id,
-                'direction_answer_key' => $key,
-                'direction_answer_source_turn_id' => $source,
-                'communication_failures' => 0,
-            ]);
-        });
-    }
-
-    /** Sends the reserved consult once. An accepted key, or a later reviewer turn, is not sent again. */
-    private function dispatchConsult(Task $group, Task $task, TaskComment $receipt, TaskSessionObservation $observation): void
-    {
-        $task->refresh();
-        if (! $this->consultSendPending($task, $receipt)) {
-            return;
-        }
-        $own = $this->ownReviewer($task, $observation);
-        if ($own instanceof TaskThreadObservation && $this->relayAnswerAccepted($own, $task)) {
-            $this->confirmConsultDispatch($group, $task, $own->threadId);
-
-            return;
-        }
-        if ($own instanceof TaskThreadObservation && $this->isWorking($own)) {
-            return;
-        }
-        $existing = $this->subtaskReviewer($task);
-        if ($existing instanceof AgentThread && $own === null && $observation->available && $observation->threads === []) {
-            return;
-        }
-        if (! $this->spawner instanceof TaskAgentSpawner) {
-            $this->recordCommunicationFailure($task, $group, self::ReviewRequestFailedReason.' (AgentSpawner).');
-
-            return;
-        }
-        $instance = $group->taskable;
-        if (! $instance instanceof Instance) {
-            $this->recordCommunicationFailure($task, $group, 'The task workspace is unavailable.');
-
-            return;
-        }
-
-        try {
-            $reserved = $this->spawner->reserveReviewer($task);
-            $this->turnFetcher->beforeTurn($group);
-            $this->receipts->prepare($instance, TaskThreadRole::Reviewer, false, $task->deliverableList(), $reserved, new TaskTurnMode(consult: true), $this->reviewPackets->reviewContext($task));
-            $threadId = $this->spawner->consult($task, trim($receipt->body)."\n\n".TaskTurnInstructions::consult($reserved), $this->consultSendKey($receipt));
-            if ($threadId === null) {
-                throw new AgentDriverException('The reviewer conversation could not be started.');
-            }
-        } catch (Throwable $exception) {
-            report($exception);
-            $this->recordCommunicationFailure($task, $group, self::ReviewRequestFailedReason.' ('.class_basename($exception).').');
-
-            return;
-        }
-        $this->confirmConsultDispatch($group, $task, $threadId);
-    }
-
-    private function confirmConsultDispatch(Task $group, Task $task, ?int $threadId): void
-    {
-        DB::transaction(function () use ($group, $task, $threadId): void {
-            $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
-            if ($locked->consult_comment_id === null) {
-                return;
-            }
-            $locked->update([
-                'direction_answer_key' => null,
-                'direction_answer_source_turn_id' => null,
-                'communication_failures' => 0,
-            ]);
-            if (is_int($threadId)) {
-                Task::topLevel()->whereKey($group->id)->update(['reviewer_agent_thread_id' => $threadId]);
-            }
-        });
-    }
-
-    private function consultSendPending(Task $task, TaskComment $receipt): bool
-    {
-        return $task->consult_comment_id === $receipt->id && $task->direction_answer_key === $this->consultSendKey($receipt);
-    }
-
-    /** The same blocked receipt always reserves the same reviewer send. */
-    private function consultSendKey(TaskComment $receipt): string
-    {
-        return $this->relayAnswerKey($receipt, 'consult');
-    }
-
-    private function blockedConsultReceipt(Task $task): ?TaskComment
-    {
-        $id = $task->consult_comment_id;
-        if (! is_int($id)) {
-            return null;
-        }
-        $receipt = TaskComment::query()->find($id);
-
-        return $receipt instanceof TaskComment ? $receipt : null;
-    }
-
-    /** This subtask's reviewer, not an earlier subtask's thread that happens to be observed first. */
-    private function ownReviewer(Task $task, TaskSessionObservation $observation): ?TaskThreadObservation
-    {
-        $existing = $this->subtaskReviewer($task);
-        if (! $existing instanceof AgentThread) {
-            return null;
-        }
-        foreach ($observation->threads as $thread) {
-            if ($thread->role === TaskThreadRole::Reviewer && $thread->threadId === $existing->id) {
-                return $thread;
-            }
-        }
-
-        return null;
+        $this->consults->beginConsult($group, $task, $receipt, $observation);
     }
 
     /** Reads the consult receipt. `answered` continues the implementer. `blocked` asks for direction. */
-    private function handleConsult(Task $group, Task $task): void
+    public function handleConsult(Task $group, Task $task): void
     {
-        $observation = $this->observer->observe($group, $task);
-        if (! $observation->available) {
-            $decision = $this->unavailableDecision($group);
-            if ($decision->action === TaskSessionNextAction::EscalateCoder) {
-                $this->requestAssistance($task, $group, $decision->reason, $observation, AssistanceKind::Failure);
-            }
-
-            return;
-        }
-        $this->clearUnavailable($group);
-        $blocked = $this->blockedConsultReceipt($task);
-        if ($blocked instanceof TaskComment && $this->consultSendPending($task, $blocked)) {
-            $this->dispatchConsult($group, $task, $blocked, $observation);
-            $task->refresh();
-            if ($this->consultSendPending($task, $blocked)) {
-                return;
-            }
-            $observation = $this->observer->observe($group, $task);
-        }
-        $reviewer = $this->ownReviewer($task, $observation);
-        if ($reviewer === null || $this->isWorking($reviewer)) {
-            return;
-        }
-        $this->reconcilePiRestart($task, $reviewer);
-        $state = AgentThreadState::tryFrom($reviewer->sessState);
-        if ($state === AgentThreadState::Failed) {
-            if (! $this->retryProviderFailure($task, $group, $reviewer) && $this->resumePiServerRestart($task, $group, $reviewer) !== 'handled') {
-                $this->requestAssistance($task, $group, 'The reviewer thread failed.', $observation, AssistanceKind::Failure);
-            }
-
-            return;
-        }
-        if (! in_array($state, [AgentThreadState::Idle, AgentThreadState::Done, AgentThreadState::AskingForInput], true)) {
-            return;
-        }
-        if (! $this->newerTurnHasStopped($task->review_notified_turn_id, $reviewer)) {
-            return;
-        }
-
-        try {
-            $read = $this->collectReceipt($group, $task, TaskThreadRole::Reviewer);
-        } catch (TaskTurnReceiptException $exception) {
-            $this->recordCommunicationFailure($task, $group, $exception->getMessage());
-
-            return;
-        }
-        $receipt = $this->pendingReceipt($task, TaskThreadRole::Reviewer);
-        $outcome = $receipt instanceof TaskComment ? $this->receiptOutcome($receipt) : null;
-        if (! $receipt instanceof TaskComment || ! in_array($outcome, [TaskTurnOutcome::Answered, TaskTurnOutcome::Blocked], true)) {
-            $this->remindOrAssist($group, $task, $reviewer, [
-                $receipt instanceof TaskComment
-                    ? new TaskRubricItem('turn_receipt', false, 'A consult needs --outcome=answered or --outcome=blocked, with --cause.')
-                    : $this->receiptItem($read, $receipt),
-            ]);
-
-            return;
-        }
-        if (! $receipt->cause instanceof QuestionCause) {
-            $this->remindOrAssist($group, $task, $reviewer, [
-                new TaskRubricItem('turn_receipt', false, 'A consult needs --cause with one of: brief_unclear, contract_gap, scope, environment, missed_contract.'),
-            ]);
-
-            return;
-        }
-        if ($outcome === TaskTurnOutcome::Blocked) {
-            $this->requestAssistance($task, $group, TaskAssistance::ReviewerBlockedPrefix.$receipt->body, $observation, AssistanceKind::Direction, TaskAssistance::questionFromBlockedReason($receipt->body), ['review_handled_comment_id' => $receipt->id], $receipt);
-
-            return;
-        }
-        if (! TaskQuestions::answerConsult($task, $receipt)) {
-            return;
-        }
-        $this->deliverConsultAnswer($group, $task, $observation, $receipt);
-    }
-
-    /** Sends the reviewer's answer to the implementer and keeps the same attempt. */
-    private function deliverConsultAnswer(Task $group, Task $task, TaskSessionObservation $observation, TaskComment $receipt): void
-    {
-        $implementer = $observation->thread(TaskThreadRole::Implementer);
-        if ($implementer === null || $this->isWorking($implementer)) {
-            return;
-        }
-        $key = $this->relayAnswerKey($receipt, 'consult-answer');
-        if ($task->direction_answer_key !== $key) {
-            $sourceTurn = $implementer->turnId;
-            $task->update([
-                'direction_answer_key' => $key,
-                'direction_answer_source_turn_id' => is_string($sourceTurn) && $sourceTurn !== '' ? $sourceTurn : null,
-            ]);
-            $task->refresh();
-        }
-        if ($this->relayAnswerAccepted($implementer, $task)) {
-            $this->finishConsultDelivery($task, $receipt);
-
-            return;
-        }
-        try {
-            if (! $this->runner->prepareTurn($this, $group, $task, TaskThreadRole::Implementer, $implementer->threadId)) {
-                return;
-            }
-            $this->actor->relayAnswer($group, $implementer, $this->correctionResume->continuationMessage($task, $receipt->body), $key);
-        } catch (Throwable $exception) {
-            report($exception);
-            $this->recordCommunicationFailure($task, $group, 'The consult answer could not be sent to the implementer. ('.class_basename($exception).').');
-
-            return;
-        }
-        $this->finishConsultDelivery($task, $receipt);
-    }
-
-    private function finishConsultDelivery(Task $task, TaskComment $receipt): void
-    {
-        DB::transaction(function () use ($task, $receipt): void {
-            $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
-            if ($locked->consult_comment_id === null) {
-                return;
-            }
-            $this->correctionResume->supersede($locked, $receipt);
-            $locked->update([
-                'consult_comment_id' => null,
-                'direction_answer_key' => null,
-                'direction_answer_source_turn_id' => null,
-                'review_handled_comment_id' => $receipt->id,
-                'communication_failures' => 0,
-            ]);
-        });
-    }
-
-    /** The third block in one attempt asks the operator, and the reason keeps both earlier answers. */
-    private function thirdBlockReason(Task $task, TaskComment $receipt): string
-    {
-        $lines = array_map(
-            static fn (string $answer): string => '- '.($answer !== '' ? $answer : '(no answer)'),
-            TaskQuestions::earlierAnswers($task),
-        );
-
-        return TaskAssistance::ImplementerBlockedPrefix.$receipt->body."\n\nEarlier answers:\n".implode("\n", $lines);
+        $this->consults->handleConsult($this, $group, $task);
     }
 
     /** A direction resolution is waiting to be relayed because the subtask has no reviewer yet. */
-    private function pendingRelayResolution(Task $task): ?TaskComment
+    public function pendingRelayResolution(Task $task): ?TaskComment
     {
-        if ($task->assistance_kind !== AssistanceKind::Direction || $task->direction_relay_comment_id !== null) {
-            return null;
-        }
-        $question = TaskQuestion::query()
-            ->where('subtask_id', $task->id)
-            ->where('status', QuestionStatus::Escalated)
-            ->latest('id')
-            ->first();
-        if (! $question instanceof TaskQuestion) {
-            return null;
-        }
-        if (is_int($question->resolution_comment_id)) {
-            $held = TaskComment::query()->find($question->resolution_comment_id);
-            $rawType = $held?->getRawOriginal('type');
-
-            return $held instanceof TaskComment && $rawType === TaskCommentType::Resolution->value ? $held : null;
-        }
-
-        $openedCommentId = $question->opened_comment_id;
-        $resolution = TaskComment::query()
-            ->where('task_id', $task->id)
-            ->where('type', TaskCommentType::Resolution)
-            ->when(is_int($openedCommentId), static fn ($query) => $query->where('id', '>', $openedCommentId))
-            ->latest('id')
-            ->first();
-
-        return $resolution instanceof TaskComment ? $resolution : null;
+        return $this->consults->pendingRelayResolution($task);
     }
 
     /** Starts the reviewer and sends the operator's resolution as a relay, not as a review packet. */
-    private function beginDirectionRelay(Task $group, Task $task, TaskComment $resolution): void
+    public function beginDirectionRelay(Task $group, Task $task, TaskComment $resolution): void
     {
-        $instance = $group->taskable;
-        if (! $instance instanceof Instance || ! $this->spawner instanceof TaskAgentSpawner) {
-            return;
-        }
-
-        try {
-            $reserved = $this->spawner->reserveReviewer($task);
-            $this->turnFetcher->beforeTurn($group);
-            $this->receipts->prepare($instance, TaskThreadRole::Reviewer, $task->opensPullRequest(), $task->deliverableList(), $reserved, new TaskTurnMode(relay: true), $this->reviewPackets->reviewContext($task));
-            $threadId = $this->spawner->relay($task, trim($resolution->body)."\n\n".TaskTurnInstructions::relay($reserved));
-            if ($threadId === null) {
-                throw new AgentDriverException('The reviewer conversation could not be started.');
-            }
-        } catch (Throwable $exception) {
-            report($exception);
-            $this->recordCommunicationFailure($task, $group, self::ReviewRequestFailedReason.' ('.class_basename($exception).').');
-
-            return;
-        }
-
-        DB::transaction(function () use ($task, $group, $resolution, $threadId): void {
-            $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
-            if (! $locked->assistance_requested || $locked->assistance_kind !== AssistanceKind::Direction) {
-                return;
-            }
-            $locked->update([
-                ...TaskAssistance::cleared(),
-                'communication_failures' => 0,
-                'direction_relay_comment_id' => $resolution->id,
-                'resolution_delivered_comment_id' => $resolution->id,
-            ]);
-            Task::topLevel()->whereKey($group->id)->update([
-                ...TaskAssistance::cleared(),
-                'reviewer_agent_thread_id' => $threadId,
-            ]);
-            TaskQuestions::attachResolution($locked, $resolution);
-        });
+        $this->consults->beginDirectionRelay($group, $task, $resolution);
     }
 
     /** Reads the relay receipt. `answered` records the operator's answer. `blocked` keeps the same question. */
-    private function handleDirectionRelay(Task $group, Task $task): void
+    public function handleDirectionRelay(Task $group, Task $task): void
     {
-        $observation = $this->observer->observe($group, $task);
-        $reviewer = $observation->thread(TaskThreadRole::Reviewer);
-        if (! $observation->available || $reviewer === null || $this->isWorking($reviewer)) {
-            return;
-        }
-        if (! $this->newerTurnHasStopped($task->review_notified_turn_id, $reviewer)) {
-            return;
-        }
-
-        try {
-            $read = $this->collectReceipt($group, $task, TaskThreadRole::Reviewer);
-        } catch (TaskTurnReceiptException $exception) {
-            $this->recordCommunicationFailure($task, $group, $exception->getMessage());
-
-            return;
-        }
-        $receipt = $this->pendingReceipt($task, TaskThreadRole::Reviewer);
-        $outcome = $receipt instanceof TaskComment ? $this->receiptOutcome($receipt) : null;
-        if (! $receipt instanceof TaskComment || ! in_array($outcome, [TaskTurnOutcome::Answered, TaskTurnOutcome::Blocked], true)) {
-            if ($read instanceof TaskTurnReceipt || $receipt instanceof TaskComment) {
-                $this->remindOrAssist($group, $task, $reviewer, [
-                    new TaskRubricItem('turn_receipt', false, 'A relay needs --outcome=answered or --outcome=blocked, with --cause.'),
-                ]);
-            }
-
-            return;
-        }
-        if (! $receipt->cause instanceof QuestionCause) {
-            $this->remindOrAssist($group, $task, $reviewer, [
-                new TaskRubricItem('turn_receipt', false, 'A relay needs --cause with one of: brief_unclear, contract_gap, scope, environment, missed_contract.'),
-            ]);
-
-            return;
-        }
-        if ($outcome === TaskTurnOutcome::Blocked) {
-            $this->requestAssistance($task, $group, TaskAssistance::ReviewerBlockedPrefix.$receipt->body, $observation, AssistanceKind::Direction, TaskAssistance::questionFromBlockedReason($receipt->body), ['review_handled_comment_id' => $receipt->id], $receipt);
-
-            return;
-        }
-
-        // The answer is durable immediately. The relay stays until the implementer has the summary.
-        // A receipt-keyed reservation is reused, and an accepted or superseded turn is not sent again.
-        TaskQuestions::answerPending($task, $receipt);
-        $implementer = $observation->thread(TaskThreadRole::Implementer);
-        if ($implementer === null || $this->isWorking($implementer)) {
-            return;
-        }
-        $key = $this->relayAnswerKey($receipt);
-        if ($task->direction_answer_key !== $key) {
-            $sourceTurn = $implementer->turnId;
-            $task->update([
-                'direction_answer_key' => $key,
-                'direction_answer_source_turn_id' => is_string($sourceTurn) && $sourceTurn !== '' ? $sourceTurn : null,
-            ]);
-            $task->refresh();
-        }
-        if ($this->relayAnswerAccepted($implementer, $task)) {
-            $this->finishRelayDelivery($task, $receipt);
-
-            return;
-        }
-        try {
-            if (! $this->runner->prepareTurn($this, $group, $task, TaskThreadRole::Implementer, $implementer->threadId)) {
-                return;
-            }
-            $this->actor->relayAnswer($group, $implementer, $this->correctionResume->continuationMessage($task, $receipt->body), $key);
-        } catch (Throwable $exception) {
-            // Keep this receipt's key. An uncertain response may still have been accepted, and a
-            // rejected T3 command id stays rejected, so the same id is not replaced on this failure.
-            report($exception);
-            $this->recordCommunicationFailure($task, $group, 'The relay answer could not be sent to the implementer. ('.class_basename($exception).').');
-
-            return;
-        }
-        $this->finishRelayDelivery($task, $receipt);
-    }
-
-    /** The same reviewer receipt always reserves the same implementer send. */
-    private function relayAnswerKey(TaskComment $receipt, string $prefix = 'relay-answer'): string
-    {
-        $hash = md5($prefix.':'.$receipt->id);
-
-        return sprintf(
-            '%s-%s-%s-%s-%s',
-            substr($hash, 0, 8),
-            substr($hash, 8, 4),
-            substr($hash, 12, 4),
-            substr($hash, 16, 4),
-            substr($hash, 20, 12),
-        );
-    }
-
-    /** An accepted key, its message, or a later implementer turn means the send already landed. */
-    private function relayAnswerAccepted(TaskThreadObservation $implementer, Task $task): bool
-    {
-        $key = $task->direction_answer_key;
-        if (! is_string($key) || $key === '') {
-            return false;
-        }
-        $turnId = $implementer->turnId;
-        if (is_string($turnId) && $turnId !== '' && $turnId === $key) {
-            return true;
-        }
-        foreach ($implementer->recentMessages as $message) {
-            if ($message['id'] === $key) {
-                return true;
-            }
-        }
-        $source = $task->direction_answer_source_turn_id;
-
-        return is_string($turnId) && $turnId !== ''
-            && is_string($source) && $source !== ''
-            && $turnId !== $source;
-    }
-
-    private function finishRelayDelivery(Task $task, TaskComment $receipt): void
-    {
-        DB::transaction(function () use ($task, $receipt): void {
-            $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
-            if ($locked->direction_relay_comment_id === null) {
-                return;
-            }
-            $this->correctionResume->supersede($locked, $receipt);
-            $locked->update([
-                'direction_relay_comment_id' => null,
-                'direction_answer_key' => null,
-                'direction_answer_source_turn_id' => null,
-                'review_handled_comment_id' => $receipt->id,
-                'communication_failures' => 0,
-            ]);
-        });
+        $this->consults->handleDirectionRelay($this, $group, $task);
     }
 
     /** Finishes a reviewing direction hold from the resolution comment already stored. */
-    private function replayHeldDirectionReview(Task $task): void
+    public function replayHeldDirectionReview(Task $task): void
     {
-        $opened = TaskQuestion::query()
-            ->where('subtask_id', $task->id)
-            ->where('status', QuestionStatus::Escalated)
-            ->latest('id')
-            ->value('opened_comment_id');
-        $resolution = TaskComment::query()
-            ->where('task_id', $task->id)
-            ->where('type', TaskCommentType::Resolution)
-            ->when(is_int($opened), fn ($query) => $query->where('id', '>', $opened))
-            ->latest('id')
-            ->first();
-        if (! $resolution instanceof TaskComment) {
-            return;
-        }
-        app(StoreTaskCommentAction::class)->commitHeldDirectionReview($task, $resolution);
+        $this->consults->replayHeldDirectionReview($task);
     }
 
     /**
@@ -2233,37 +373,7 @@ final readonly class TaskScheduler
      */
     public function requestAssistance(Task $task, Task $group, string $reason, ?TaskSessionObservation $observation = null, AssistanceKind $kind = AssistanceKind::Failure, ?string $question = null, array $handled = [], ?TaskComment $source = null): void
     {
-        $notifyReason = null;
-        DB::transaction(function () use ($task, $group, $reason, $kind, $question, $handled, $source, &$notifyReason): void {
-            if ($handled !== []) {
-                $task->update($handled);
-            }
-            $wasAsking = (bool) DB::table('tasks')->where('id', $group->id)->value('assistance_requested');
-            TaskAssistance::apply($task, $kind, $question, $reason);
-            $task->refresh();
-            $taskKind = $task->assistance_kind;
-            $taskReason = $task->assistance_reason;
-            if ($task->assistance_requested && $taskKind instanceof AssistanceKind && is_string($taskReason)) {
-                TaskAssistance::apply($group, $taskKind, $task->assistance_question, $taskReason);
-            } else {
-                TaskAssistance::apply($group, $kind, $question, $reason);
-            }
-            $group->refresh();
-            if ($kind === AssistanceKind::Direction && $source instanceof TaskComment) {
-                if (TaskQuestions::escalateOpen($task, $source)) {
-                    $task->update(['consult_comment_id' => null]);
-                } else {
-                    TaskQuestions::recordBlocked($task, $source);
-                }
-            }
-            $groupReason = $group->assistance_reason;
-            if (! $wasAsking && $group->assistance_requested && is_string($groupReason)) {
-                $notifyReason = $groupReason;
-            }
-        });
-        if (is_string($notifyReason)) {
-            $this->coder->assistance($group, $notifyReason);
-        }
+        $this->consults->requestAssistance($task, $group, $reason, $observation, $kind, $question, $handled, $source);
     }
 
     /**
@@ -2272,85 +382,13 @@ final readonly class TaskScheduler
      */
     public function reconcilePiRestart(Task $task, TaskThreadObservation $acting): void
     {
-        $retry = $task->provider_retry;
-        if ($retry !== null && $retry['thread_id'] === $acting->threadId) {
-            if ($acting->sessState === AgentThreadState::Done->value || $acting->sessState === AgentThreadState::Idle->value) {
-                $task->update(['provider_retry' => null]);
-            } elseif (is_string($acting->turnId) && $acting->turnId !== '' && $acting->turnId === $task->pi_restart_key) {
-                // A server restart during a provider retry must not buy a fresh budget.
-                $task->update(['provider_retry' => [...$retry, 'key' => $acting->turnId]]);
-            }
-        }
-        if ($task->pi_restart_reservation !== self::PiRestartPending || (int) $task->pi_restart_thread_id !== $acting->threadId) {
-            return;
-        }
-        $turnId = $acting->turnId;
-        if (! is_string($turnId) || $turnId === '') {
-            return;
-        }
-        if ($turnId === $task->pi_restart_key) {
-            $task->update(['pi_restart_reservation' => self::PiRestartAccepted]);
-
-            return;
-        }
-        if ($turnId !== $task->pi_restart_source_turn_id) {
-            $task->update(['pi_restart_reservation' => self::PiRestartSuperseded]);
-        }
+        $this->consults->reconcilePiRestart($task, $acting);
     }
 
     /** Reserves a delayed, idempotent continuation of the same work before asking for assistance. */
     public function retryProviderFailure(Task $task, Task $group, TaskThreadObservation $acting): bool
     {
-        if (! in_array($acting->providerError, ['overloaded', 'rate_limited', 'server_error'], true)
-            || ! is_string($acting->turnId) || $acting->turnId === ''
-            || AgentThread::query()->find($acting->threadId)?->driver !== 'pi') {
-            return false;
-        }
-
-        $retry = $task->provider_retry;
-        if ($retry !== null && ($retry['thread_id'] !== $acting->threadId
-            || ! in_array($acting->turnId, [$retry['source_turn_id'], $retry['key']], true))) {
-            $retry = null;
-        }
-        if ($retry === null || $acting->turnId !== $retry['source_turn_id']) {
-            $history = $retry['history'] ?? [];
-            $attempt = count($history) + 1;
-            if ($attempt > 4) {
-                $this->requestAssistance($task, $group, "Provider retries exhausted after 4 retries.\n"
-                    .implode("\n", $history)."\nFinal failure: turn {$acting->turnId}, {$acting->providerError}.");
-
-                return true;
-            }
-            $due = now()->addMinutes(2 ** ($attempt - 1))->toIso8601String();
-            $entry = "Provider retry {$attempt}/4: {$acting->role->value} turn {$acting->turnId}, {$acting->providerError}; due {$due}.";
-            $retry = [
-                'thread_id' => $acting->threadId, 'source_turn_id' => $acting->turnId,
-                'key' => (string) Str::uuid(), 'due_at' => $due, 'history' => [...$history, $entry],
-            ];
-            DB::transaction(function () use ($task, $group, $acting, $retry, $entry): void {
-                $task->update(['provider_retry' => $retry]);
-                TaskComment::query()->create([
-                    'task_group_id' => $group->id, 'task_id' => $task->id, 'agent_thread_id' => $acting->threadId,
-                    'type' => TaskCommentType::ProviderRetry, 'body' => $entry, 'author' => 'orbit', 'posted_at' => now(),
-                ]);
-            });
-        }
-        if (now()->lt(Carbon::parse($retry['due_at']))) {
-            return true;
-        }
-        $this->turnFetcher->beforeTurn($group);
-        try {
-            $this->actor->resumeInterruptedTurn($group, $acting,
-                'Your previous turn failed because of a transient provider error. Continue the same assignment from the existing workspace. Check git status and git diff before continuing, and hand off with the turn command.',
-                $retry['key']);
-        } catch (AgentDriverException $exception) {
-            $this->recordCommunicationFailure($task, $group, $exception->getMessage());
-
-            return true;
-        }
-        $this->clearCommunicationFailures($task);
-
-        return true;
+        return $this->consults->retryProviderFailure($task, $group, $acting);
     }
 
     /**
@@ -2360,117 +398,17 @@ final readonly class TaskScheduler
      */
     public function resumePiServerRestart(Task $task, Task $group, TaskThreadObservation $acting): string
     {
-        $record = AgentThread::query()->find($acting->threadId);
-        if (! $record instanceof AgentThread || ! $this->isServerRestartError($record->driver, $acting->error)) {
-            return 'skip';
-        }
-        if (! is_string($acting->turnId) || $acting->turnId === '') {
-            return 'skip';
-        }
-        if ($task->pi_restart_reservation === self::PiRestartPending
-            && (int) $task->pi_restart_thread_id === $acting->threadId
-            && $acting->turnId === $task->pi_restart_source_turn_id
-            && is_string($task->pi_restart_key)
-            && $task->pi_restart_key !== '') {
-            $this->sendPiRestartResume($task, $group, $acting, $task->pi_restart_key);
-
-            return 'handled';
-        }
-        if ((int) $task->pi_restart_resumes >= self::PiServerRestartResumeLimit) {
-            return 'assist';
-        }
-        $key = (string) Str::uuid();
-        $task->update([
-            'pi_restart_resumes' => (int) $task->pi_restart_resumes + 1,
-            'pi_restart_key' => $key,
-            'pi_restart_thread_id' => $acting->threadId,
-            'pi_restart_source_turn_id' => $acting->turnId,
-            'pi_restart_reservation' => self::PiRestartPending,
-        ]);
-        $this->sendPiRestartResume($task, $group, $acting, $key);
-
-        return 'handled';
+        return $this->consults->resumePiServerRestart($task, $group, $acting);
     }
 
-    /** Only Pi restart failures can resume a task-agent turn. */
-    private function isServerRestartError(string $driver, ?string $error): bool
+    public function clearUnavailable(Task $group): void
     {
-        return $driver === 'pi' && $error === self::PiServerRestartError;
+        $this->runner->clearUnavailable($group);
     }
 
-    private function sendPiRestartResume(Task $task, Task $group, TaskThreadObservation $acting, string $key): void
+    public function unavailableDecision(Task $group): TaskSessionDecision
     {
-        $this->turnFetcher->beforeTurn($group);
-        try {
-            $this->actor->resumeInterruptedTurn($group, $acting, self::PiServerRestartContinue, $key);
-        } catch (AgentDriverException $exception) {
-            $this->recordCommunicationFailure($task, $group, $exception->getMessage());
-
-            return;
-        }
-        $this->clearCommunicationFailures($task);
-    }
-
-    private function classifyAvailable(Task $group, TaskSessionObservation $observation): TaskSessionDecision
-    {
-        $this->clearUnavailable($group);
-
-        return new TaskSessionDecision(TaskSessionNextAction::Noop, 1.0, 'Waiting for a known agent state.');
-    }
-
-    private function clearUnavailable(Task $group): void
-    {
-        Task::topLevel()->whereKey($group->id)->whereNotNull('agent_unavailable_since')->update([
-            'agent_unavailable_since' => null, 'agent_unavailable_notified_at' => null,
-        ]);
-    }
-
-    private function unavailableDecision(Task $group): TaskSessionDecision
-    {
-        Task::topLevel()->whereKey($group->id)->whereNull('agent_unavailable_since')->update(['agent_unavailable_since' => now()]);
-        $group->refresh();
-        $grace = max(0, Config::integer('orbit.tasks.observation_grace_seconds', 120));
-        if ($group->agent_unavailable_since !== null && $group->agent_unavailable_since->lte(now()->subSeconds($grace))) {
-            $claimed = Task::topLevel()->whereKey($group->id)
-                ->where('agent_unavailable_since', $group->agent_unavailable_since)
-                ->whereNull('agent_unavailable_notified_at')
-                ->update(['agent_unavailable_notified_at' => now()]);
-            if ($claimed === 1) {
-                return TaskSessionDecision::escalate('Agent observation unavailable beyond the grace period.');
-            }
-        }
-
-        return new TaskSessionDecision(TaskSessionNextAction::Noop, 1.0, 'Waiting for an available agent observation.');
-    }
-
-    private function advance(Task $group, Task $task, TaskSessionDecision $decision, TaskSessionObservation $observation): void
-    {
-        $group = $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
-        $current = $task->fresh();
-
-        if ($decision->action === TaskSessionNextAction::MarkSubtaskDone && $current instanceof Task) {
-            if ($current->status === TaskStatus::Running) {
-                $this->settleImplementer($current, $observation->thread(TaskThreadRole::Reviewer));
-            } elseif ($current->status === TaskStatus::Reviewing) {
-                $this->acceptReview($current);
-            }
-
-            return;
-        }
-
-        if ($decision->action !== TaskSessionNextAction::SettleGroup) {
-            return;
-        }
-
-        if ($current instanceof Task && $current->status === TaskStatus::Reviewing) {
-            $this->acceptReview($current);
-
-            return;
-        }
-
-        if (in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)) {
-            $this->settle($group);
-        }
+        return $this->runner->unavailableDecision($group);
     }
 
     /** @param list<int> $skipped */
@@ -2484,186 +422,32 @@ final readonly class TaskScheduler
         return $this->claims->releaseStaleReservations();
     }
 
-    /** Seconds one tick may spend removing abandoned workspaces, well inside the 300-second tick lock. */
-    public const int AbandonedWorkspaceBudgetSeconds = 60;
-
-    /** The first retry delay. The later delays are 2, 5, 10, and 30 minutes, and further failures stay at 30. */
-    public const int AbandonedWorkspaceBackoffSeconds = 60;
-
     /**
      * Delay before the next push or removal attempt after this many failures.
      * The first failure waits one minute, then 2, 5, 10, and 30 minutes.
      */
     public static function retryDelaySeconds(int $failures): int
     {
-        $schedule = [self::AbandonedWorkspaceBackoffSeconds, 120, 300, 600, 1800];
-        $index = min(max($failures, 1), count($schedule)) - 1;
-
-        return $schedule[$index];
+        return TaskSettling::retryDelaySeconds($failures);
     }
 
-    /**
-     * Removes the workspace of a cancelled or completed group, attached or found by its `task-{group id}` name and
-     * branch, and of a settling group whose merged pull request cleanup failed. An unattached workspace waits while
-     * a live claim can still own it. The tick does not remove the workspace of a group that is still active.
-     *
-     * One query selects the candidates. A failed removal is reported, asks for assistance, and backs off per
-     * Instance, so a workspace that keeps failing never blocks the others. The sweep stops starting removals once
-     * it has spent its time budget; the rest wait for the next tick. Success clears removal assistance only.
-     * A cancelled group pushes its stored approval before the checkout is deleted. A user Instance attached to a
-     * non-managed group is never a candidate.
-     */
     public function removeAbandonedWorkspaces(): int
     {
-        $started = now();
-        $removed = 0;
-
-        foreach ($this->abandonedWorkspaces() as $workspace) {
-            if ($started->diffInSeconds(now(), true) >= self::AbandonedWorkspaceBudgetSeconds) {
-                break;
-            }
-
-            $backoffKey = 'tasks.workspace-removal.'.$workspace->id;
-            $backoff = $this->readBackoff($backoffKey, 'workspace removal');
-            if ($backoff !== null && $backoff['due'] > now()->getTimestamp()) {
-                continue;
-            }
-
-            $instance = Instance::query()->find($workspace->id);
-            $group = Task::topLevel()->find($workspace->getAttribute('ended_task_group_id'));
-            if (! $instance instanceof Instance || ! $group instanceof Task || ! $this->shouldRemoveWorkspace($group, $instance)) {
-                continue;
-            }
-            // A parked task VM starts first. The removal waits for it without a failure or a backoff.
-            if (! app(WakeTaskVmAction::class)->forInstance($instance)) {
-                continue;
-            }
-
-            try {
-                $this->pushCancelledApproval($group, $instance);
-                $this->workspaces->remove($instance);
-                $this->rememberBackoff($backoffKey, null, 'workspace removal');
-                $this->releaseRemovedWorkspace($group, $instance->id);
-                Log::warning('Removed the workspace of an ended task group.', ['task_group_id' => $group->id, 'instance_id' => $instance->id]);
-                $removed++;
-            } catch (Throwable $exception) {
-                // The push of a cancelled approval from a task VM runs in a queued job. A later sweep removes the workspace.
-                if ($exception instanceof TaskPullRequestException && $exception->pending) {
-                    continue;
-                }
-                report($exception);
-                $prefix = in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)
-                    ? RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix
-                    : RemoveTaskWorkspaceAction::RemovalFailedPrefix;
-                $this->workspaces->recordFailure($group, $exception, $prefix);
-                $this->extendBackoff($backoffKey, $backoff, 'workspace removal');
-            }
-        }
-
-        return $removed;
-    }
-
-    /** Retries merged pull request cleanup at once the first time, then on the same per-Instance backoff as the sweep. */
-    private function completeMergedGroup(Task $group): void
-    {
-        $attached = $group->taskable;
-        $instance = $attached instanceof Instance ? $attached : $this->workspaces->find($group);
-        $backoffKey = $instance instanceof Instance ? 'tasks.workspace-removal.'.$instance->id : null;
-        $backoff = is_string($backoffKey) ? $this->readBackoff($backoffKey, 'workspace removal') : null;
-
-        if ($backoff !== null && $backoff['due'] > now()->getTimestamp()) {
-            return;
-        }
-        // A parked task VM starts first. The merge cleanup waits for it without a failure or a backoff.
-        if ($instance instanceof Instance && ! app(WakeTaskVmAction::class)->forInstance($instance)) {
-            return;
-        }
-
-        try {
-            if (TaskPullRequestHealth::isReason($group->assistance_reason)) {
-                $group->update(TaskAssistance::cleared());
-            }
-            $this->completeGroup->execute($group, finishWhenRemovalFails: false);
-            if (is_string($backoffKey)) {
-                $this->rememberBackoff($backoffKey, null, 'workspace removal');
-            }
-        } catch (Throwable $exception) {
-            TaskAssistance::apply($group, AssistanceKind::Failure, null, RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix.$exception->getMessage(), replaceFailure: true);
-            if (is_string($backoffKey)) {
-                $this->extendBackoff($backoffKey, $backoff, 'workspace removal');
-            }
-        }
-    }
-
-    /** Pushes the latest stored approval before a cancelled checkout is deleted. A group with no approval is unchanged. */
-    private function pushCancelledApproval(Task $group, Instance $instance): void
-    {
-        if ($group->status !== TaskGroupStatus::Cancelled) {
-            return;
-        }
-        $commit = TaskFinalReview::cancelPushCommit($group);
-        if ($commit === null) {
-            return;
-        }
-        $group->setRelation('taskable', $instance);
-        $group->loadMissing('project');
-        $this->publisher->push($group, $commit);
-    }
-
-    private function shouldRemoveWorkspace(Task $group, Instance $instance): bool
-    {
-        if ($instance->project_id !== $group->project_id || $this->attachedToUnmanagedGroup($instance)) {
-            return false;
-        }
-
-        $attached = $group->taskable_id === $instance->id;
-        $named = $group->taskable_id === null
-            && $instance->name === TaskWorkspaceName::for($group)
-            && $instance->branch_override === $instance->name;
-
-        if (! $attached && ! $named) {
-            return false;
-        }
-
-        if (in_array($group->status, [TaskGroupStatus::Cancelled, TaskGroupStatus::Completed], true)) {
-            return $attached
-                || ! $group->reserved_at instanceof Carbon
-                || $group->reserved_at->lessThanOrEqualTo(RemoveTaskWorkspaceAction::reservationCutoff());
-        }
-
-        return in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)
-            && is_string($group->assistance_reason)
-            && str_starts_with($group->assistance_reason, RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix);
-    }
-
-    private function releaseRemovedWorkspace(Task $group, int $instanceId): void
-    {
-        $group->refresh();
-
-        if ($group->taskable_id === $instanceId) {
-            $group->taskable()->dissociate();
-            $group->save();
-        }
-
-        $this->workspaces->clearFailure($group);
+        return $this->settling->removeAbandonedWorkspaces();
     }
 
     /**
      * @param  array{failures: int, due: int}|null  $backoff
      */
-    private function extendBackoff(string $key, ?array $backoff, string $label): void
+    public function extendBackoff(string $key, ?array $backoff, string $label): void
     {
-        $failures = ($backoff['failures'] ?? 0) + 1;
-        $delay = self::retryDelaySeconds($failures);
-        $this->rememberBackoff($key, ['failures' => $failures, 'due' => now()->addSeconds($delay)->getTimestamp()], $label, $delay * 2);
+        $this->settling->extendBackoff($key, $backoff, $label);
     }
 
     /** The next attempt waits until `due`. A missing backoff, or a cache read that fails, means try now. */
-    private function retryIsDue(string $key, string $label): bool
+    public function retryIsDue(string $key, string $label): bool
     {
-        $backoff = $this->readBackoff($key, $label);
-
-        return $backoff === null || $backoff['due'] <= now()->getTimestamp();
+        return $this->settling->retryIsDue($key, $label);
     }
 
     /**
@@ -2674,17 +458,7 @@ final readonly class TaskScheduler
      */
     public function readBackoff(string $key, string $label): ?array
     {
-        try {
-            $backoff = Cache::get($key);
-        } catch (Throwable $exception) {
-            Log::warning('The '.$label.' backoff could not be read.', ['key' => $key, 'exception' => $exception::class, 'reason' => $exception->getMessage()]);
-
-            return null;
-        }
-
-        return is_array($backoff) && is_int($backoff['failures'] ?? null) && is_int($backoff['due'] ?? null)
-            ? ['failures' => $backoff['failures'], 'due' => $backoff['due']]
-            : null;
+        return $this->settling->readBackoff($key, $label);
     }
 
     /**
@@ -2694,89 +468,7 @@ final readonly class TaskScheduler
      */
     public function rememberBackoff(string $key, ?array $backoff, string $label, int $seconds = 0): bool
     {
-        try {
-            if ($backoff === null) {
-                $written = Cache::forget($key);
-                if (! $written && ! Cache::has($key)) {
-                    return true;
-                }
-            } elseif ($seconds === 0) {
-                $written = Cache::forever($key, $backoff);
-            } else {
-                $written = Cache::put($key, $backoff, now()->addSeconds($seconds));
-            }
-
-            if (! $written) {
-                Log::warning('The '.$label.' backoff could not be written.', ['key' => $key, 'reason' => 'Cache store returned false.']);
-            }
-
-            return $written;
-        } catch (Throwable $exception) {
-            Log::warning('The '.$label.' backoff could not be written.', ['key' => $key, 'exception' => $exception::class, 'reason' => $exception->getMessage()]);
-
-            return false;
-        }
-    }
-
-    /** A user Instance that backs a non-managed group is never a task workspace the sweep may delete. */
-    private function attachedToUnmanagedGroup(Instance $instance): bool
-    {
-        return Task::topLevel()
-            ->where('taskable_type', TaskableType::Instance)
-            ->where('taskable_id', $instance->id)
-            ->where('execution_mode', '!=', TaskExecutionMode::Managed->value)
-            ->exists();
-    }
-
-    /** @return Collection<int, Instance> */
-    private function abandonedWorkspaces(): Collection
-    {
-        $workspaceName = match (DB::connection()->getDriverName()) {
-            'mysql', 'mariadb' => "CONCAT('task-', tasks.id)",
-            default => "'task-' || tasks.id",
-        };
-
-        $cutoff = RemoveTaskWorkspaceAction::reservationCutoff();
-        $mergePrefix = RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix.'%';
-
-        return Instance::query()
-            ->select('instances.*', 'tasks.id as ended_task_group_id')
-            ->join('tasks', function ($join) use ($workspaceName): void {
-                $join->on('tasks.project_id', '=', 'instances.project_id')
-                    ->whereNull('tasks.parent_id')
-                    ->where(function ($link) use ($workspaceName): void {
-                        $link->whereColumn('tasks.taskable_id', 'instances.id')
-                            ->orWhere(function ($named) use ($workspaceName): void {
-                                $named->whereRaw("instances.name = {$workspaceName}")
-                                    ->whereColumn('instances.branch_override', 'instances.name')
-                                    ->whereNull('tasks.taskable_id');
-                            });
-                    });
-            })
-            ->where('tasks.execution_mode', TaskExecutionMode::Managed->value)
-            ->whereNotExists(function ($userGroup): void {
-                $userGroup->selectRaw('1')
-                    ->from('tasks as user_groups')
-                    ->whereNull('user_groups.parent_id')
-                    ->whereColumn('user_groups.taskable_id', 'instances.id')
-                    ->where('user_groups.taskable_type', TaskableType::Instance)
-                    ->where('user_groups.execution_mode', '!=', TaskExecutionMode::Managed->value);
-            })
-            ->where(function ($ended) use ($cutoff, $mergePrefix): void {
-                $ended->where(function ($finished) use ($cutoff): void {
-                    $finished->whereIn('tasks.status', [TaskGroupStatus::Cancelled->value, TaskGroupStatus::Completed->value])
-                        ->where(function ($reservation) use ($cutoff): void {
-                            $reservation->whereColumn('tasks.taskable_id', 'instances.id')
-                                ->orWhereNull('tasks.reserved_at')
-                                ->orWhere('tasks.reserved_at', '<=', $cutoff);
-                        });
-                })->orWhere(function ($settling) use ($mergePrefix): void {
-                    $settling->whereIn('tasks.status', TaskGroupStatus::awaitingCompletion())
-                        ->where('tasks.assistance_reason', 'like', $mergePrefix);
-                });
-            })
-            ->orderBy('instances.id')
-            ->get();
+        return $this->settling->rememberBackoff($key, $backoff, $label, $seconds);
     }
 
     public static function isClaimFailureReason(?string $reason): bool
@@ -2790,265 +482,39 @@ final readonly class TaskScheduler
         return $this->claims->claimAvailable($this);
     }
 
-    /**
-     * ADR 0133: a reviewer turn is read-only. The receipt stays unapplied while the workspace differs
-     * from the pair recorded with the review request, unless a newer implementer turn explains the
-     * difference or the commit below is Orbit's. One reminder, then the scheduler waits for a newer
-     * stopped reviewer turn before it looks again. That later turn applies the outcome when the
-     * workspace matches, and asks for assistance when it still differs. Another poll of the reminded
-     * turn does neither. A failed read is a communication failure, not a change. A review notified
-     * before a baseline existed has nothing to compare, so its outcome applies as before.
-     * A commit already stored on the receipt is Orbit's. Publication retries only while HEAD is
-     * that commit and the working tree still matches. The HEAD from before the approval is not
-     * accepted after Orbit has committed, so a reset that drops the commit is refused.
-     *
-     * @return 'apply'|'orbit_commit'|'wait'|'reopened'|'reminded'|'unreadable'
-     */
-    private function reviewWorkspaceDecision(Task $group, Task $task, TaskThreadObservation $reviewer, TaskComment $receipt, TaskSessionObservation $observation): string
-    {
-        try {
-            $current = $this->workspaceSnapshot($group);
-        } catch (TaskCheckException $exception) {
-            $this->recordCommunicationFailure($task, $group, $exception->getMessage());
-
-            return 'unreadable';
-        }
-        if ($this->workspaceMatchesReview($task, $receipt, $current)) {
-            return 'apply';
-        }
-        if (! $task->isFinalReview() && $this->receiptOutcome($receipt) === TaskTurnOutcome::Approved && ! $this->committedApproval($receipt) && $this->recoveredCommit($task, $current) !== null) {
-            return 'orbit_commit';
-        }
-        $implementer = $observation->thread(TaskThreadRole::Implementer);
-        if ($this->newerImplementerTurn($task, $implementer)) {
-            if ($implementer instanceof TaskThreadObservation && $this->newerTurnHasStopped($task->completion_handoff_turn_id, $implementer)) {
-                $this->reopenHandoff($group, $task, $receipt);
-
-                return 'reopened';
-            }
-
-            return 'wait';
-        }
-        $this->remindOrAssist($group, $task, $reviewer, [
-            new TaskRubricItem('workspace_unchanged', false, self::WorkspaceChangedReminder),
-        ]);
-        if ($task->assistance_requested) {
-            $task->update(['review_handled_comment_id' => $receipt->id]);
-        } elseif ($task->review_reminder_attempt === $task->review_attempt && is_string($reviewer->turnId) && $reviewer->turnId !== '') {
-            // The same stopped turn is not a second change. The next look waits for a newer one.
-            $task->update(['review_notified_turn_id' => $reviewer->turnId]);
-        }
-
-        return 'reminded';
-    }
-
-    private function workspaceMatchesReview(Task $task, TaskComment $receipt, TaskWorkspaceSnapshot $current): bool
-    {
-        $head = $task->review_workspace_head;
-        $tree = $task->review_workspace_tree;
-        $storedCommit = $receipt->commit_sha;
-        $orbitCommit = is_string($storedCommit) && $storedCommit !== '' ? $storedCommit : null;
-        $treeMatches = ! is_string($tree) || $tree === '' || $current->tree === $tree;
-        $headMatches = $orbitCommit !== null
-            ? $current->head === $orbitCommit
-            : ! is_string($head) || $head === '' || $current->head === $head;
-
-        return $headMatches && $treeMatches;
-    }
-
-    /**
-     * Orbit's commit after a lost response: HEAD's parent is the HEAD recorded with the review
-     * request, and HEAD's tree is the tree recorded with that request (ADR 0133).
-     */
-    private function recoveredCommit(Task $task, TaskWorkspaceSnapshot $current): ?string
-    {
-        $head = $task->review_workspace_head;
-        $tree = $task->review_workspace_tree;
-        if (! is_string($head) || $head === '' || ! is_string($tree) || $tree === '' || $current->head === '' || $current->head === $head) {
-            return null;
-        }
-        if ($current->parent !== $head || $current->commitTree !== $tree) {
-            return null;
-        }
-
-        return $current->head;
-    }
-
-    private function newerImplementerTurn(Task $task, ?TaskThreadObservation $implementer): bool
-    {
-        $handoff = $task->completion_handoff_turn_id;
-
-        return is_string($handoff) && $handoff !== ''
-            && $implementer instanceof TaskThreadObservation
-            && is_string($implementer->turnId) && $implementer->turnId !== ''
-            && $implementer->turnId !== $handoff;
-    }
-
-    /**
-     * A newer implementer turn changed the workspace during review. The reviewer outcome is not
-     * applied and the reviewer is not reminded. The subtask needs a new receipt and a passing check.
-     */
-    private function reopenHandoff(Task $group, Task $task, TaskComment $receipt): void
-    {
-        $task->update([
-            'status' => TaskStatus::Running,
-            'review_handled_comment_id' => $receipt->id,
-            'review_attempt' => $task->review_attempt + 1,
-            'review_reminder_attempt' => null,
-            'review_reminder_input_id' => null,
-            'completion_attempt' => $task->completion_attempt + 1,
-            'completion_handoff_attempt' => null,
-            'completion_handoff_comment_id' => null,
-            'completion_reminder_attempt' => null,
-            'completion_reminder_input_id' => null,
-            'communication_failures' => 0,
-        ]);
-        $group->update(['status' => TaskGroupStatus::Running]);
-    }
-
     /** @throws TaskCheckException */
-    private function workspaceSnapshot(Task $group): TaskWorkspaceSnapshot
+    public function workspaceSnapshot(Task $group): TaskWorkspaceSnapshot
     {
-        $instance = $group->taskable;
-        if (! $instance instanceof Instance) {
-            throw new TaskCheckException('The task workspace is unavailable.');
-        }
-
-        return $this->checks->snapshot($instance);
+        return $this->reviews->workspaceSnapshot($group);
     }
 
-    /**
-     * Starts a fresh reviewer for this subtask's first review, or continues that subtask's reviewer.
-     * A working continued reviewer gets no request. An earlier subtask's reviewer does not
-     * delay a fresh review. The task stays unnotified until the request is sent.
-     */
-    private function nudgeReviewer(Task $task, ?TaskThreadObservation $reviewer): void
+    public function nudgeReviewer(Task $task, ?TaskThreadObservation $reviewer): void
     {
-        TaskExecutionHold::run($task->parent, fn () => $this->nudgeAdmittedReviewer($task, $reviewer));
-    }
-
-    private function nudgeAdmittedReviewer(Task $task, ?TaskThreadObservation $reviewer): void
-    {
-        if ($task->review_notified_attempt === $task->review_attempt) {
-            return;
-        }
-        $existing = $this->subtaskReviewer($task);
-        if ($existing !== null && $reviewer !== null && $reviewer->threadId === $existing->id && $this->isWorking($reviewer)) {
-            return;
-        }
-        $group = $task->parent()->with('taskable')->firstOrFail();
-
-        try {
-            // Read at send time. Do not copy the hash from an earlier check row: the request may have waited.
-            $snapshot = $this->workspaceSnapshot($group);
-            if ($existing === null && $this->spawner instanceof TaskAgentSpawner) {
-                $reserved = $this->spawner->reserveReviewer($task);
-                if (! $this->runner->prepareTurn($this, $group, $task, TaskThreadRole::Reviewer, $reserved)) {
-                    return;
-                }
-                $threadId = $this->spawner->spawnReviewer($task);
-                if ($threadId === null) {
-                    throw new AgentDriverException('The reviewer conversation could not be started.');
-                }
-            } elseif ($existing === null) {
-                if (! $this->runner->prepareTurn($this, $group, $task, TaskThreadRole::Reviewer)) {
-                    return;
-                }
-                $threadId = $this->spawner->spawnReviewer($task);
-                if ($threadId === null) {
-                    throw new AgentDriverException('The reviewer conversation could not be started.');
-                }
-            } else {
-                if (! $this->runner->prepareTurn($this, $group, $task, TaskThreadRole::Reviewer, $existing->id)) {
-                    return;
-                }
-                $this->spawner->requestReview($task);
-                $continued = $this->subtaskReviewer($task);
-                $threadId = $continued instanceof AgentThread ? $continued->id : $existing->id;
-            }
-            $group->update(['reviewer_agent_thread_id' => $threadId]);
-        } catch (Throwable $exception) {
-            report($exception);
-            $this->recordCommunicationFailure($task, $group, self::ReviewRequestFailedReason.' ('.class_basename($exception).').');
-
-            return;
-        }
-
-        $task->update([
-            'review_notified_attempt' => $task->review_attempt,
-            'review_notified_turn_id' => $reviewer?->turnId,
-            'review_workspace_head' => $snapshot->head,
-            'review_workspace_tree' => $snapshot->tree,
-        ]);
-        $this->clearCommunicationFailures($task);
+        $this->reviews->nudgeReviewer($this, $task, $reviewer);
     }
 
     /** The reviewer thread for this subtask, preferring the one the group currently points at. */
-    private function subtaskReviewer(Task $task): ?AgentThread
+    public function subtaskReviewer(Task $task): ?AgentThread
     {
-        $query = AgentThread::query()
-            ->where('task_group_id', $task->parent_id)
-            ->where('task_id', $task->id)
-            ->where('role', TaskThreadRole::Reviewer->value)
-            ->where('external_id', 'not like', TaskAgentSpawner::PendingPrefix.'%');
-        $pointed = Task::topLevel()->whereKey($task->parent_id)->value('reviewer_agent_thread_id');
-        if (is_numeric($pointed)) {
-            $match = (clone $query)->whereKey((int) $pointed)->first();
-            if ($match instanceof AgentThread) {
-                return $match;
-            }
-        }
-
-        return $query->orderByDesc('id')->first();
+        return $this->consults->subtaskReviewer($task);
     }
 
     /**
      * A working thread never receives a turn; the scheduler sends it on a later tick.
      */
-    private function isWorking(?TaskThreadObservation $thread): bool
+    public function isWorking(?TaskThreadObservation $thread): bool
     {
-        return $thread?->sessState === AgentThreadState::Working->value;
+        return $this->consults->isWorking($thread);
     }
 
     public function newerTurnHasStopped(?string $previousTurnId, TaskThreadObservation $thread): bool
     {
-        return is_string($thread->turnId) && $thread->turnId !== ''
-            && $thread->turnId !== $previousTurnId
-            && in_array($thread->sessState, [AgentThreadState::Done->value, AgentThreadState::AskingForInput->value], true);
+        return $this->consults->newerTurnHasStopped($previousTurnId, $thread);
     }
 
     public function settleImplementer(Task $task, ?TaskThreadObservation $reviewer = null): Task
     {
-        $task->parent->requireManagedExecution();
-        $group = DB::transaction(function () use ($task): Task {
-            $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
-            $group = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
-                ->with(['tasks', 'project', 'taskable'])
-                ->lockForUpdate()
-                ->findOrFail($locked->parent_id);
-
-            if (TaskExecutionHold::active($group) || RequestEndedPullRequestAssistanceAction::isReason($group->assistance_reason)
-                || $group->status !== TaskGroupStatus::Running || $locked->status !== TaskStatus::Running) {
-                return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
-            }
-
-            $locked->status = TaskStatus::Reviewing;
-            $locked->save();
-            $group->status = TaskGroupStatus::Reviewing;
-            $group->save();
-
-            return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
-        });
-
-        $reviewing = $group->tasks->first(
-            static fn (Task $candidate): bool => $candidate->id === $task->id,
-        );
-
-        if ($reviewing instanceof Task && $reviewing->status === TaskStatus::Reviewing) {
-            $this->nudgeReviewer($reviewing, $reviewer);
-        }
-
-        return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
+        return $this->reviews->settleImplementer($this, $task, $reviewer);
     }
 
     public function startTask(Task $task): Task
@@ -3056,180 +522,15 @@ final readonly class TaskScheduler
         return $this->runner->startTask($this, $task);
     }
 
-    /**
-     * Cancels a todo subtask without starting anything, or cancels a running subtask and starts the next
-     * one. `$stop` makes the remote calls that stop a running subtask's implementer and check. It runs
-     * outside any database transaction, so a slow Node or agent never holds the Gateway's SQLite write
-     * lock. An exception from `$stop` leaves the subtask and its check running. The state change then
-     * applies only when the subtask is still running: when it moved on while `$stop` ran, its new state
-     * stands and the cancel returns a conflict.
-     *
-     * @param  Closure(Task): void  $stop
-     */
+    /** @param Closure(Task): void $stop */
     public function cancelRunningSubtask(Task $parent, Task $task, Closure $stop): Task
     {
-        $parent->requireManagedExecution();
-        $candidate = Task::query()->where('parent_id', $parent->id)->findOrFail($task->id);
-
-        if ($candidate->status === TaskStatus::Todo) {
-            $group = DB::transaction(function () use ($parent, $task): Task {
-                $locked = Task::query()->where('parent_id', $parent->id)->lockForUpdate()->findOrFail($task->id);
-                $group = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
-                    ->lockForUpdate()
-                    ->findOrFail($locked->parent_id);
-
-                if ($locked->status !== TaskStatus::Todo || ! in_array($group->status, [
-                    TaskGroupStatus::Todo,
-                    TaskGroupStatus::Running,
-                    TaskGroupStatus::Reviewing,
-                    TaskGroupStatus::Settling,
-                    TaskGroupStatus::WaitingForReview,
-                ], true)) {
-                    throw new ResourceOperationException(
-                        errorCode: 'tasks.subtask_not_running',
-                        message: __('Only a todo or running subtask can be cancelled.'),
-                        status: 409,
-                    );
-                }
-
-                if (TaskExecutionHold::active($group)) {
-                    return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
-                }
-                $assistanceReason = $this->markSubtaskCancelled($locked);
-                $tasks = $this->runner->lockedTasks($group);
-                $this->clearCancelledSubtaskAssistance($group, $locked, $assistanceReason);
-                if (! $this->hasOpenSubtask($tasks)) {
-                    $group->status = TaskGroupStatus::Settling;
-                }
-                $group->save();
-
-                return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
-            });
-
-            if (in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)) {
-                return $this->settle($group, requestMissingPullRequest: false, checkReturningPullRequest: false);
-            }
-
-            return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
-        }
-
-        if ($candidate->status !== TaskStatus::Running) {
-            throw new ResourceOperationException(
-                errorCode: 'tasks.subtask_not_running',
-                message: __('Only a todo or running subtask can be cancelled.'),
-                status: 409,
-            );
-        }
-
-        $stop($candidate);
-
-        $next = null;
-        $group = DB::transaction(function () use ($parent, $task, &$next): Task {
-            $locked = Task::query()->where('parent_id', $parent->id)->lockForUpdate()->findOrFail($task->id);
-            $group = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
-                ->lockForUpdate()
-                ->findOrFail($locked->parent_id);
-
-            if ($locked->status !== TaskStatus::Running) {
-                throw new ResourceOperationException(
-                    errorCode: 'tasks.subtask_not_running',
-                    message: __('The subtask stopped running while Orbit stopped it, so its new state stands.'),
-                    status: 409,
-                );
-            }
-
-            if (TaskExecutionHold::active($group)) {
-                return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
-            }
-            $assistanceReason = $this->markSubtaskCancelled($locked);
-            $tasks = $this->runner->lockedTasks($group);
-            $this->clearCancelledSubtaskAssistance($group, $locked, $assistanceReason);
-            if (RequestEndedPullRequestAssistanceAction::isReason($group->assistance_reason)) {
-                return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
-            }
-
-            $next = $this->runner->lowestTodo($tasks);
-            if ($next instanceof Task) {
-                try {
-                    $this->runner->markRunning($next, $tasks);
-                    $group->status = TaskGroupStatus::Running;
-                } catch (TaskSequenceException) {
-                    $next = null;
-                    $group->status = $this->statusWithOpenSubtasks($group, $tasks);
-                }
-            } elseif ($this->hasOpenSubtask($tasks)) {
-                $group->status = $this->statusWithOpenSubtasks($group, $tasks);
-            } else {
-                $group->status = TaskGroupStatus::Settling;
-            }
-            $group->save();
-
-            return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
-        });
-
-        if ($next instanceof Task && $next->status === TaskStatus::Running) {
-            $this->runner->beginRunningTask($this, $next);
-        }
-
-        if (in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)) {
-            return $this->settle($group);
-        }
-
-        return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
+        return $this->settling->cancelRunningSubtask($this, $parent, $task, $stop);
     }
 
     public function acceptReview(Task $task): Task
     {
-        $task->parent->requireManagedExecution();
-        $next = null;
-        $group = DB::transaction(function () use ($task, &$next): Task {
-            $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
-            $group = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
-                ->with(['tasks', 'project', 'taskable'])
-                ->lockForUpdate()
-                ->findOrFail($locked->parent_id);
-
-            if (TaskExecutionHold::active($group) || RequestEndedPullRequestAssistanceAction::isReason($group->assistance_reason)
-                || $group->status !== TaskGroupStatus::Reviewing || $locked->status !== TaskStatus::Reviewing) {
-                return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
-            }
-
-            $locked->status = TaskStatus::Completed;
-            $locked->settled_at ??= now();
-            $locked->save();
-
-            $tasks = $this->runner->lockedTasks($group);
-            $next = $this->runner->lowestTodo($tasks);
-
-            if ($next instanceof Task) {
-                try {
-                    $this->runner->markRunning($next, $tasks);
-                    $group->status = TaskGroupStatus::Running;
-                } catch (TaskSequenceException) {
-                    $next = null;
-                    $group->status = $this->runner->runningSibling($tasks) instanceof Task
-                        ? TaskGroupStatus::Running
-                        : TaskGroupStatus::Reviewing;
-                }
-            } else {
-                $group->status = TaskGroupStatus::Settling;
-            }
-
-            $group->save();
-
-            return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
-        });
-
-        if ($next instanceof Task && $next->status === TaskStatus::Running) {
-            $this->runner->recordSubtaskStart($next);
-            $this->runner->assignImplementer($this, $next);
-        }
-
-        if (in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)) {
-            return $this->settle($group);
-        }
-
-        return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
+        return $this->reviews->acceptReview($this, $task);
     }
 
     public function settle(
@@ -3237,872 +538,49 @@ final readonly class TaskScheduler
         bool $requestMissingPullRequest = true,
         bool $checkReturningPullRequest = true,
     ): Task {
-        $group->requireManagedExecution();
-        $group->loadMissing(['project', 'tasks', 'taskable']);
-
-        if (! in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)) {
-            return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
-        }
-
-        $url = $group->pr_url;
-
-        if (TaskFinalReview::due($group, $group->tasks)) {
-            $this->beginFinalReview($group);
-
-            return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
-        }
-
-        if (! is_string($url) || $url === '') {
-            if ($requestMissingPullRequest && ! $this->runner->lowestTodo($group->tasks) instanceof Task) {
-                $this->requestMissingPullRequest($group);
-            }
-
-            return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
-        }
-
-        // ADR 0164: returning to settling refreshes metrics and does not post task_group.settled again.
-        $returning = $group->settled_at !== null;
-        if ($returning && $checkReturningPullRequest) {
-            $this->checkReturningPullRequest($group);
-        }
-        $metrics = $this->metrics->collect($group);
-        $group->tokens = $metrics->tokens;
-        $group->line_diff = $metrics->lineDiff;
-        $group->duration_ms = $metrics->durationMs;
-        $group->questions = $metrics->questions;
-        $group->escalations = $metrics->escalations;
-        $group->settled_at ??= now();
-        if ($group->status === TaskGroupStatus::Settling) {
-            $group->status = TaskGroupStatus::WaitingForReview;
-        }
-        $group->save();
-
-        $settled = $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
-
-        if ($settled->notify_coder && ! $returning) {
-            $this->coder->notify($settled);
-        }
-
-        return $settled->fresh(['tasks', 'project', 'taskable']) ?? $settled;
-    }
-
-    /**
-     * Appends one fixup when a current problem still has one left, or asks for assistance when every
-     * current problem is at the cap. A waiting subtask starts instead, and no fixup is appended.
-     *
-     * ADR 0164 bounds the fixups. No fixup is appended while the head is the one the last fixup was
-     * created for, or while a check on the head has been pending for 60 minutes or less. A completed
-     * genuine failure is still reported during that wait. A conflict does not wait. A check pending for
-     * more than 60 minutes is infrastructure, with cancelled checks and checks that could not start.
-     * A fixup that changed nothing asks for assistance instead of a second try on the same result.
-     * A group keeps at most three Gateway fixups in total.
-     */
-    private function healOpenPullRequest(Task $group, TaskPullRequestHealth $health, ?TaskReviewObservation $reviews): void
-    {
-        if ($this->hasBusyTask($group->tasks)) {
-            return;
-        }
-
-        // An operator subtask resumes past a review-and-merge request that waits for one (ADR 0203).
-        if ($this->runner->lowestTodo($group->tasks) instanceof Task
-            && (! $this->otherAssistance($group) || TaskFinalReview::isResumableReason($group->assistance_reason))) {
-            $this->resumeWaitingSubtask($group);
-
-            return;
-        }
-
-        if ($this->otherAssistance($group)) {
-            return;
-        }
-
-        // ADR 0203: unreviewed work gets its final review first. No settling fixup builds on it meanwhile.
-        if ($group->reviewsBeforePush() && TaskFinalReview::hasUnreviewedWork($group)) {
-            $this->beginFinalReview($group);
-
-            return;
-        }
-
-        // ADR 0203: GitHub's merge commit would land without Orbit's review, so a review-and-merge task never
-        // asks GitHub to update its branch. A conflict gets a merge fixup instead, and a behind branch still merges.
-        if (($health->conflicts || $health->behind) && ! $group->reviewsBeforePush()) {
-            $update = is_string($health->headSha) && $health->headSha !== ''
-                ? $this->pullRequestUpdater->updateBranch($group, $health->headSha)
-                : TaskBranchUpdate::Unavailable;
-            if ($update !== TaskBranchUpdate::Conflict) {
-                $this->reportPullRequestHealth($group, new TaskPullRequestHealth('open', $update === TaskBranchUpdate::Accepted ? [] : [
-                    'GitHub could not update the base branch. Orbit will retry after a fresh observation.',
-                ]));
-
-                return;
-            }
-            if (! $health->conflicts) {
-                // A concurrent base change can reveal a conflict after the health read.
-                return;
-            }
-        }
-
-        if ($health->infrastructureChecks === []) {
-            $this->rememberBackoff($this->infrastructureBackoffKey($group), null, 'infrastructure check');
-        }
-
-        if ($health->problems === []) {
-            $this->reportPullRequestHealth($group, $health);
-        }
-
-        $fixups = $this->runner->orderedTasks($group->tasks)
-            ->filter(static fn (Task $task): bool => $task->isSettlingFixup())
-            ->values();
-        $latest = $fixups->last();
-        if ($latest instanceof Task && is_string($latest->fixup_head_sha) && $latest->fixup_head_sha === $health->headSha) {
-            if ($this->fixupChangedNothing($latest)) {
-                $reason = 'Fixup subtask #'.$latest->id.' changed nothing, so Orbit does not try again on the same result.';
-                if ($health->problems === [] && ($reviews?->selection->requests ?? []) !== []) {
-                    $this->reviewFeedbackAssistance($group, $reason, 'unchanged-head');
-                } else {
-                    $this->reportPullRequestHealth($group, $health, $reason);
-                }
-            }
-
-            return;
-        }
-
-        $this->changeReviewFeedback($group, 'unchanged-head', null);
-
-        // A check pending for 60 minutes or less is not a result yet. Report a completed genuine
-        // failure, and append no check fixup. A conflict does not wait. Infrastructure backoff starts
-        // only once every current problem is infrastructure and nothing is still inside that span.
-        if ($health->checksYoungPending && ! $health->conflicts) {
-            if ($health->failedChecks !== []) {
-                $this->reportPullRequestHealth($group, $health);
-            }
-
-            return;
-        }
-
-        if (! $health->conflicts && $health->failedChecks === [] && $health->infrastructureChecks !== []) {
-            $this->awaitInfrastructureChecks($group, $health);
-
-            return;
-        }
-
-        $plan = $this->nextFixup($group, $health, $health->checksYoungPending);
-        if (! $plan instanceof TaskSettlingFixup && ! $health->checksPending && $health->infrastructureChecks === []) {
-            if ($this->appendReviewFeedback($group, $health, $reviews)) {
-                $this->resumeWaitingSubtask($group);
-
-                return;
-            }
-        }
-        if (! $plan instanceof TaskSettlingFixup) {
-            $this->reportPullRequestHealth(
-                $group,
-                $health,
-                $this->reachedFixupIdentityCaps($group, $health, $health->checksYoungPending),
-            );
-
-            return;
-        }
-
-        if (array_sum($this->fixupCountsSinceOperatorWork($group)) >= TaskSettlingFixup::GroupLimit) {
-            $this->reportPullRequestHealth($group, $health, 'Orbit already appended '.TaskSettlingFixup::GroupLimit.' fixups to this group.');
-
-            return;
-        }
-
-        if ($this->appendFixup($group, $this->mergeBaseFirstWhenGreenAhead($group, $health, $plan), $health->headSha) instanceof Task) {
-            $this->resumeWaitingSubtask($group);
-        }
-    }
-
-    /**
-     * A failed check may already be fixed on the base. When the base tip passed the merge check, or
-     * `Required checks` without one, and is strictly ahead of the head's merge base, the fixup merges the base first.
-     * The GitHub reads run before appendFixup takes its lock.
-     */
-    private function mergeBaseFirstWhenGreenAhead(Task $group, TaskPullRequestHealth $health, TaskSettlingFixup $plan): TaskSettlingFixup
-    {
-        if (! str_starts_with($plan->identity, 'check:') || ! is_string($health->baseRef) || $health->baseRef === ''
-            || ! is_string($health->headSha) || $health->headSha === '') {
-            return $plan;
-        }
-        $check = $group->project->mergeCheckName() ?? TaskPullRequestCheck::ROLLUP_NAMES[0];
-
-        return $this->merger->baseTipGreenAhead($group, $health->baseRef, $health->headSha, $check)
-            ? $plan->mergingBaseFirst($health->baseRef)
-            : $plan;
-    }
-
-    private static function isReviewFeedbackReason(?string $reason): bool
-    {
-        return TaskGitHubReviewFeedback::isReason($reason);
-    }
-
-    /** Source-specific causes are durable; presentation never replaces unrelated assistance. */
-    private function changeReviewFeedback(Task $group, string $source, ?string $reason): void
-    {
-        if ($this->reviewFeedback->change($group, [$source => $reason])) {
-            $this->broadcasts->groupChanged($group->id);
-            if ($group->assistance_requested && is_string($group->assistance_reason)) {
-                $this->coder->assistance($group, $group->assistance_reason);
-            }
-        }
-    }
-
-    private function reviewFeedbackAssistance(Task $group, string $reason, string $source): void
-    {
-        $this->changeReviewFeedback($group, $source, $reason);
-    }
-
-    private function reportMissingReviewFixups(Task $group): void
-    {
-        $missing = $this->reviewConsumption->missingFixups($group);
-        foreach ($this->reviewFeedback->causes($group) as $source => $reason) {
-            if (str_starts_with($source, 'missing:') && ! isset($missing[$source])) {
-                $this->changeReviewFeedback($group, $source, null);
-            }
-        }
-        foreach ($missing as $source => $reason) {
-            $this->reviewFeedbackAssistance($group, $reason, $source);
-        }
-    }
-
-    private function reviewReadBackoffKey(Task $group, string $operation): string
-    {
-        return 'tasks.github-review-read.'.$group->id.($operation === 'list' ? '' : '.'.$operation);
-    }
-
-    private function reviewReadResult(Task $group, TaskReviewReadStatus $status, string $operation = 'list'): void
-    {
-        $key = $this->reviewReadBackoffKey($group, $operation);
-        if ($status === TaskReviewReadStatus::Unreadable) {
-            $backoff = $this->readBackoff($key, 'GitHub review read');
-            if ($backoff !== null && $backoff['failures'] >= self::InfrastructureCheckRetries) {
-                $this->reviewFeedbackAssistance($group, 'The trusted review source remains unreadable ('.$operation.'). Restore review-read access.', $operation);
-            }
-            $this->extendBackoff($key, $backoff, 'GitHub review read');
-
-            return;
-        }
-        if ($status === TaskReviewReadStatus::Changed) {
-            return;
-        }
-        if ($status === TaskReviewReadStatus::Overflow) {
-            $this->reviewFeedbackAssistance($group, 'The complete GitHub review source exceeds the pagination limit ('.$operation.'). Split the findings or append a scoped operator subtask.', $operation);
-
-            return;
-        }
-        $this->rememberBackoff($key, null, 'GitHub review read');
-        if ($status === TaskReviewReadStatus::InvalidTrust) {
-            $this->reviewFeedbackAssistance($group, 'The operator reviewer configuration is invalid. Correct the trusted numeric accounts.', 'trust');
-
-            return;
-        }
-        $this->changeReviewFeedback($group, $operation, null);
-        if ($operation === 'list') {
-            $this->changeReviewFeedback($group, 'trust', null);
-        }
-    }
-
-    private function observeReviewFeedback(Task $group): ?TaskReviewObservation
-    {
-        if (! $this->retryIsDue('tasks.github-review-read.'.$group->id, 'GitHub review read')) {
-            return null;
-        }
-        $observation = $this->reviewWatcher->reviews($group, fresh: true);
-        $this->reviewReadResult($group, $observation->status);
-        if (in_array($observation->status, [TaskReviewReadStatus::Complete, TaskReviewReadStatus::Disabled], true)) {
-            $eligible = array_map(static fn ($review): int => $review->id, $observation->selection->requests ?? []);
-            if ($eligible === []) {
-                $this->changeReviewFeedback($group, 'unchanged-head', null);
-            }
-            foreach ($this->reviewFeedback->causes($group) as $source => $reason) {
-                if (preg_match('/^review:([0-9]+):/', $source, $match) === 1 && ! in_array((int) $match[1], $eligible, true)) {
-                    $this->rememberBackoff($this->reviewReadBackoffKey($group, $source), null, 'GitHub review read');
-                    $this->changeReviewFeedback($group, $source, null);
-                }
-            }
-        }
-
-        return $observation;
-    }
-
-    /** Final source reads stay outside the append transaction. Local eligibility is checked again inside it. */
-    private function appendReviewFeedback(Task $group, TaskPullRequestHealth $health, ?TaskReviewObservation $observation): bool
-    {
-        if ($observation?->status !== TaskReviewReadStatus::Complete || $observation->repository === null || $observation->number === null) {
-            return false;
-        }
-        $dispatchGroup = clone $group;
-        $counts = $this->fixupCountsSinceOperatorWork($group);
-        foreach ($observation->selection->requests ?? [] as $review) {
-            if ($this->reviewConsumption->consumed($group, $observation->repository->owner.'/'.$observation->repository->name, $observation->number, $review->id)) {
-                continue;
-            }
-            if (($counts['review:'.$review->reviewerId] ?? 0) >= TaskSettlingFixup::Limit || array_sum($counts) >= TaskSettlingFixup::GroupLimit) {
-                $this->reviewFeedbackAssistance($group, 'The automatic fixup cap was reached for account '.$review->reviewerId.' or this group. Append a scoped operator subtask.', 'review:'.$review->id.':cap');
-
-                continue;
-            }
-            $this->changeReviewFeedback($group, 'review:'.$review->id.':cap', null);
-            $findings = 'review:'.$review->id.':findings';
-            $validation = 'review:'.$review->id.':validation';
-            if (! $this->retryIsDue($this->reviewReadBackoffKey($group, $findings), 'GitHub review findings')
-                || ! $this->retryIsDue($this->reviewReadBackoffKey($group, $validation), 'GitHub review revalidation')) {
-                continue;
-            }
-            $result = $this->reviewWatcher->reviewCandidate($group, $review->id, fresh: true);
-            $this->reviewReadResult($group, $result->status, $findings);
-            if ($result->status !== TaskReviewReadStatus::Complete || $result->candidate === null) {
-                return false;
-            }
-            $candidate = $result->candidate;
-            if ($candidate->head !== $health->headSha) {
-                return false;
-            }
-            try {
-                $packet = TaskReviewFindingsPacket::fromCandidate($candidate);
-            } catch (\InvalidArgumentException|\LengthException $exception) {
-                $this->reviewFeedbackAssistance($group, $exception->getMessage(), 'review:'.$review->id.':packet');
-
-                return false;
-            }
-            $this->changeReviewFeedback($group, 'review:'.$review->id.':packet', null);
-            $result = $this->reviewWatcher->revalidateReviewCandidate($group, $candidate);
-            $this->reviewReadResult($group, $result->status, $validation);
-            if ($result->status !== TaskReviewReadStatus::Complete || $result->candidate === null) {
-                return false;
-            }
-
-            return $this->appendFixup($dispatchGroup, TaskSettlingFixup::reviewPlan($dispatchGroup->project->taskCheckCommand(), $packet), $candidate->head, $candidate) instanceof Task;
-        }
-
-        return false;
-    }
-
-    /**
-     * Whether a fixup left the pull request head where it was: it never reached an approval, or its
-     * approved commit is the head it was created for. A fixup that did commit waits for GitHub to see the push.
-     */
-    private function fixupChangedNothing(Task $fixup): bool
-    {
-        $commit = TaskComment::query()
-            ->where('task_id', $fixup->id)
-            ->where('type', TaskCommentType::Approved)
-            ->whereNotNull('commit_sha')
-            ->latest('id')
-            ->value('commit_sha');
-
-        return ! is_string($commit) || $commit === '' || $commit === $fixup->fixup_head_sha;
-    }
-
-    /**
-     * Only cancelled checks, checks that could not start, or checks pending for more than 60 minutes
-     * stand between the pull request and a merge. Those are not the branch's fault, so no fixup is
-     * appended. The group re-evaluates on the backoff of 1, 2, 5, 10, and 30 minutes, and asks for
-     * assistance when they persist after that.
-     */
-    private function awaitInfrastructureChecks(Task $group, TaskPullRequestHealth $health): void
-    {
-        $key = $this->infrastructureBackoffKey($group);
-        $backoff = $this->readBackoff($key, 'infrastructure check');
-        if ($backoff !== null && $backoff['due'] > now()->getTimestamp()) {
-            return;
-        }
-        if ($backoff !== null && $backoff['failures'] >= self::InfrastructureCheckRetries) {
-            $this->reportPullRequestHealth($group, $health, 'Those checks were cancelled or could not start, and did not recover. Re-run them.');
-
-            return;
-        }
-        $this->extendBackoff($key, $backoff, 'infrastructure check');
-    }
-
-    private function infrastructureBackoffKey(Task $group): string
-    {
-        return 'tasks.pull-request-infrastructure.'.$group->id;
-    }
-
-    /** Whether assistance was requested for a cause other than the open pull request's own problems. */
-    private function otherAssistance(Task $group): bool
-    {
-        return $group->assistance_requested && ! TaskPullRequestHealth::isReason($group->assistance_reason)
-            && ! self::isReviewFeedbackReason($group->assistance_reason);
+        return $this->settling->settle($this, $group, $requestMissingPullRequest, $checkReturningPullRequest);
     }
 
     /** Review-source problems are observations, not a hold on otherwise authorized ongoing work. */
-    private function progressBlockedByAssistance(Task $group): bool
+    public function progressBlockedByAssistance(Task $group): bool
     {
-        return $group->assistance_requested && ! self::isReviewFeedbackReason($group->assistance_reason);
+        return $this->settling->progressBlockedByAssistance($group);
     }
 
-    /**
-     * A baseline that failed on a red default-branch commit retries once the branch tip is green and contains
-     * that commit, as an operator resolution would. GitHub is read before the lock, at most every five minutes
-     * per check. The queue then locks the rows and validates the retry again. The recovery after it resets.
-     */
-    private function queueBaselineRetryOnGreenTip(Task $group, Task $task): bool
+    public function queueBaselineRetryOnGreenTip(Task $group, Task $task): bool
     {
-        $check = $this->retryBaseline->unrequested($task);
-        if (! $check instanceof TaskCheck || ! Cache::add('tasks.baseline-green-tip.'.$check->id, true, 300)) {
-            return false;
-        }
-        $name = $group->project->mergeCheckName() ?? TaskPullRequestCheck::ROLLUP_NAMES[0];
-        if ($this->merger->requiredCheck($group, $check->head_before, $name) !== RequiredCheckState::Failed) {
-            return false;
-        }
-        $tip = $this->merger->greenDefaultTipAfter($group, $check->head_before, $name);
-        if ($tip === null) {
-            return false;
-        }
-
-        return TaskExecutionHold::run($group, fn (): bool => DB::transaction(function () use ($task, $check, $name, $tip): bool {
-            if ($this->retryBaseline->unrequested($task)?->id !== $check->id) {
-                return false;
-            }
-            $comment = TaskComment::query()->create([
-                'task_group_id' => $task->parent_id, 'task_id' => $task->id, 'completion_attempt' => $task->completion_attempt,
-                'type' => TaskCommentType::Resolution, 'author' => 'orbit', 'posted_at' => now(),
-                'body' => 'The baseline failed on '.$check->head_before.', where '.$name.' failed. The default branch tip '.$tip
-                    .' contains it and passed '.$name.', so Orbit retries the baseline.',
-            ]);
-
-            return $this->retryBaseline->queue($task, $comment);
-        })) === true;
+        return $this->settling->queueBaselineRetryOnGreenTip($group, $task);
     }
 
-    /** @param  Collection<int, Task>  $tasks */
-    private function hasBusyTask(Collection $tasks): bool
+    public function resumeStrandedSubtask(Task $group): void
     {
-        return $tasks->contains(
-            static fn (Task $task): bool => in_array($task->status, [TaskStatus::Running, TaskStatus::Reviewing], true),
-        );
+        $this->settling->resumeStrandedSubtask($this, $group);
     }
 
-    private function nextFixup(Task $group, TaskPullRequestHealth $health, bool $conflictOnly = false): ?TaskSettlingFixup
-    {
-        $counts = $this->fixupCountsSinceOperatorWork($group);
-
-        foreach (TaskSettlingFixup::plans($group->project->taskCheckCommand(), $health->conflicts, $health->baseRef, $health->failedChecks) as $plan) {
-            if ($conflictOnly && $plan->conflictBase() === null) {
-                continue;
-            }
-            if (($counts[$plan->identity] ?? 0) < TaskSettlingFixup::Limit) {
-                return $plan;
-            }
-        }
-
-        return null;
-    }
-
-    /** Explain each current problem whose per-identity cap has been reached in the active window. */
-    private function reachedFixupIdentityCaps(Task $group, TaskPullRequestHealth $health, bool $conflictOnly): ?string
-    {
-        $counts = $this->fixupCountsSinceOperatorWork($group);
-        $reasons = [];
-
-        foreach (TaskSettlingFixup::plans($group->project->taskCheckCommand(), $health->conflicts, $health->baseRef, $health->failedChecks) as $plan) {
-            if ($conflictOnly && $plan->conflictBase() === null) {
-                continue;
-            }
-            $count = $counts[$plan->identity] ?? 0;
-            if ($count >= TaskSettlingFixup::Limit) {
-                $reasons[] = 'Orbit reached the cap of '.TaskSettlingFixup::Limit.' fixups for '.$plan->identity.' in the current window ('.$count.' counted).';
-            }
-        }
-
-        return $reasons === [] ? null : implode(' ', $reasons);
-    }
-
-    /** @return array<string, int> */
-    private function fixupCountsSinceOperatorWork(Task $group): array
-    {
-        $counts = $this->reviewConsumption->orphanCharges($group, $group->tasks);
-        foreach ($this->fixupsSinceOperatorWork($this->runner->orderedTasks($group->tasks)) as $task) {
-            if ($task->isSettlingFixup()) {
-                $counts[(string) $task->fixup_problem] = ($counts[(string) $task->fixup_problem] ?? 0) + 1;
-            }
-        }
-
-        return $counts;
-    }
-
-    /**
-     * Fixup caps include only entries positioned after the latest completed non-fixup task.
-     * Task order is defined by position (with id as a tie-breaker), so position defines this reset boundary.
-     * Every fixup status counts; unfinished non-fixup tasks do not reset the window.
-     *
-     * @param  Collection<int, Task>  $tasks
-     * @return Collection<int, Task>
-     */
-    private function fixupsSinceOperatorWork(Collection $tasks): Collection
-    {
-        $lastCompletedOperatorPosition = $tasks
-            ->filter(static fn (Task $task): bool => $task->isOperatorWork() && $task->status === TaskStatus::Completed)
-            ->max('position');
-
-        return $tasks
-            ->filter(static fn (Task $task): bool => is_string($task->fixup_problem)
-                && $task->fixup_problem !== ''
-                && ($lastCompletedOperatorPosition === null || $task->position > $lastCompletedOperatorPosition))
-            ->values();
-    }
-
-    private function appendFixup(Task $group, TaskSettlingFixup $plan, ?string $headSha, ?TaskReviewCandidate $candidate = null): ?Task
-    {
-        return DB::transaction(function () use ($group, $plan, $headSha, $candidate): ?Task {
-            $locked = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
-                ->lockForUpdate()
-                ->findOrFail($group->id);
-            if (! in_array($locked->status, TaskGroupStatus::awaitingCompletion(), true) || $this->otherAssistance($locked)) {
-                return null;
-            }
-
-            $tasks = $this->runner->lockedTasks($locked);
-            if ($this->hasBusyTask($tasks) || $this->runner->lowestTodo($tasks) instanceof Task) {
-                return null;
-            }
-            $locked->setRelation('tasks', $tasks);
-            if ($candidate !== null) {
-                $trust = TaskReviewTrust::fromConfig($candidate->repository, config('orbit.tasks.github_reviewers', []));
-                if ($locked->pr_url !== $group->pr_url || $locked->project_id !== $group->project_id
-                    || ! is_string($locked->pr_url) || $candidate->repository->pullRequestNumber($locked->pr_url) !== $candidate->number
-                    || ! $trust->valid || $trust->revision !== $candidate->trustRevision
-                    || $this->reviewConsumption->consumed($locked, $candidate->repository->owner.'/'.$candidate->repository->name, $candidate->number, $candidate->review->id)) {
-                    return null;
-                }
-            }
-            $latest = $this->runner->orderedTasks($tasks)->filter(static fn (Task $task): bool => $task->isSettlingFixup())->last();
-            if ($latest instanceof Task && $latest->fixup_head_sha === $headSha) {
-                return null;
-            }
-            $counts = $this->fixupCountsSinceOperatorWork($locked);
-            $count = $counts[$plan->identity] ?? 0;
-            $total = array_sum($counts);
-            if ($count >= TaskSettlingFixup::Limit || $total >= TaskSettlingFixup::GroupLimit) {
-                return null;
-            }
-
-            $fixup = Task::query()->create([
-                'parent_id' => $locked->id,
-                'position' => StoredInteger::fromOrZero($tasks->max('position')) + 1,
-                'title' => $plan->title,
-                'brief' => $plan->brief,
-                'deliverables' => $plan->deliverables,
-                'fixup_problem' => $plan->identity,
-                'fixup_head_sha' => $headSha,
-                'status' => TaskStatus::Todo,
-            ]);
-            if ($candidate !== null) {
-                $this->reviewConsumption->record($locked, $fixup, $candidate, $tasks);
-            }
-
-            return $fixup;
-        });
-    }
-
-    /**
-     * Starts a later subtask left todo after the group returned to running, including a conflict fixup
-     * whose base fetch failed. The group's first subtask is started by claim, not by this retry.
-     */
-    private function resumeStrandedSubtask(Task $group): void
-    {
-        if ($this->progressBlockedByAssistance($group) || $this->hasBusyTask($group->tasks)) {
-            return;
-        }
-
-        $todo = $this->runner->lowestTodo($group->tasks);
-        if (! $todo instanceof Task || ! $this->followedAnotherSubtask($todo, $group->tasks)) {
-            return;
-        }
-
-        $this->resumeWaitingSubtask($group);
-    }
-
-    /**
-     * Returns a settling group to running and starts its lowest todo subtask. A check fixup or an operator
-     * subtask becomes running in that same commit; the implementer starts afterwards. A conflict fixup
-     * returns the group to running before the base fetch, and a failed fetch leaves that subtask todo.
-     */
     public function resumeWaitingSubtask(Task $group): void
     {
-        TaskExecutionHold::run($group, fn () => $this->resumeAdmittedSubtask($group));
-    }
-
-    private function resumeAdmittedSubtask(Task $group): void
-    {
-        if ($group->relationLoaded('tasks') && $this->hasBusyTask($group->tasks)) {
-            return;
-        }
-
-        $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
-        if (! in_array($group->status, [TaskGroupStatus::Settling, TaskGroupStatus::WaitingForReview, TaskGroupStatus::Running], true)) {
-            return;
-        }
-        if ($group->status === TaskGroupStatus::Running && $this->progressBlockedByAssistance($group)) {
-            return;
-        }
-        if (in_array($group->status, TaskGroupStatus::awaitingCompletion(), true) && self::resumeBlocked($group)) {
-            return;
-        }
-        if ($this->hasBusyTask($group->tasks)) {
-            return;
-        }
-
-        $todo = $this->runner->lowestTodo($group->tasks);
-        if (! $todo instanceof Task) {
-            return;
-        }
-
-        if (! app(WakeTaskVmAction::class)->forGroup($group)) {
-            return;
-        }
-
-        $base = $this->conflictBase($todo);
-        if ($base !== null && in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)) {
-            $this->leaveSettling($group);
-        }
-        if (! $this->prepareResumedWorkspace($group, $todo)) {
-            return;
-        }
-
-        $started = $this->activateResumedTask($todo);
-        if ($started instanceof Task) {
-            $this->runner->beginRunningTask($this, $started, alreadyFetched: true);
-        }
-    }
-
-    /**
-     * Reuses the general turn fetch, then fast-forwards the workspace to `origin/task-{group id}` when
-     * it is strictly behind. A failure waits out #760's backoff of 1, 2,
-     * 5, 10, and 30 minutes, leaves the subtask todo, and asks for assistance on the fifth failure.
-     * On a group with no pull request, a missing `origin/task-{group id}` is not a failure.
-     */
-    private function prepareResumedWorkspace(Task $group, Task $todo): bool
-    {
-        $key = 'tasks.resume-fetch.'.$todo->id;
-        if (! $this->retryIsDue($key, 'resume fetch')) {
-            return false;
-        }
-        try {
-            $fresh = $group->fresh(['project', 'taskable']) ?? $group;
-            $this->turnFetcher->fetch($fresh);
-            $this->bases->fastForward($fresh, ! is_string($fresh->pr_url) || $fresh->pr_url === '');
-        } catch (Throwable $exception) {
-            $this->extendBackoff($key, $this->readBackoff($key, 'resume fetch'), 'resume fetch');
-            $this->recordCommunicationFailure($todo, $group, $exception->getMessage());
-
-            return false;
-        }
-        $this->rememberBackoff($key, null, 'resume fetch');
-        $this->clearCommunicationFailures($todo);
-
-        return true;
-    }
-
-    /** Records the return to running before a conflict fixup's base fetch, which stays outside the commit. */
-    private function leaveSettling(Task $group): void
-    {
-        $this->clearResumeAssistance($group);
-        $group->status = TaskGroupStatus::Running;
-        $group->save();
-    }
-
-    /**
-     * Marks the resumed subtask running, and returns a settling group to running, in one transaction.
-     * The caller starts the implementer after the commit.
-     */
-    private function activateResumedTask(Task $todo): ?Task
-    {
-        try {
-            return DB::transaction(function () use ($todo): ?Task {
-                $locked = Task::query()->lockForUpdate()->findOrFail($todo->id);
-                $group = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
-                    ->lockForUpdate()
-                    ->findOrFail($locked->parent_id);
-                if (TaskExecutionHold::active($group) || ! in_array($group->status, [TaskGroupStatus::Settling, TaskGroupStatus::WaitingForReview, TaskGroupStatus::Running], true)) {
-                    return null;
-                }
-                if ($group->status === TaskGroupStatus::Running && $this->progressBlockedByAssistance($group)) {
-                    return null;
-                }
-                if (in_array($group->status, TaskGroupStatus::awaitingCompletion(), true) && self::resumeBlocked($group)) {
-                    return null;
-                }
-
-                $tasks = $this->runner->lockedTasks($group);
-                if ($this->hasBusyTask($tasks)) {
-                    return null;
-                }
-                if (in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)) {
-                    $this->clearResumeAssistance($group);
-                    $group->status = TaskGroupStatus::Running;
-                    $group->save();
-                }
-
-                $this->runner->markRunning($locked, $tasks);
-
-                return $locked->fresh(['parent.tasks', 'parent.project', 'parent.taskable']) ?? $locked;
-            });
-        } catch (TaskSequenceException) {
-            return null;
-        }
-    }
-
-    /** @param  Collection<int, Task>  $tasks */
-    private function followedAnotherSubtask(Task $task, Collection $tasks): bool
-    {
-        return $this->runner->orderedTasks($tasks)->contains(
-            static fn (Task $candidate): bool => $candidate->position < $task->position
-                || ($candidate->position === $task->position && $candidate->id < $task->id),
-        );
+        $this->settling->resumeWaitingSubtask($this, $group);
     }
 
     /** The base ref stored on a conflict fixup, or null when the subtask is not one. */
     public function conflictBase(Task $task): ?string
     {
-        $problem = $task->fixup_problem;
-        if (! is_string($problem) || ! str_starts_with($problem, 'conflict:')) {
-            return null;
-        }
-
-        return substr($problem, strlen('conflict:'));
-    }
-
-    private function requestMissingPullRequest(Task $group): void
-    {
-        $reason = self::MissingPullRequestPrefix.' Cancel the group to push its approved commits to task-'.$group->id.' and remove its workspace.';
-        if (TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason)) {
-            $this->coder->assistance($group, $reason);
-        }
+        return $this->settling->conflictBase($task);
     }
 
     public static function isMissingPullRequestReason(?string $reason): bool
     {
-        return is_string($reason) && str_starts_with($reason, self::MissingPullRequestPrefix);
+        return TaskSettling::isMissingPullRequestReason($reason);
     }
 
     /** Another assistance cause blocks a resume. The missing-pull-request reason does not. */
     public static function resumeBlocked(Task $group): bool
     {
-        return $group->assistance_requested
-            && ! TaskPullRequestHealth::isReason($group->assistance_reason)
-            && ! self::isMissingPullRequestReason($group->assistance_reason)
-            && ! self::isReviewFeedbackReason($group->assistance_reason)
-            && ! TaskFinalReview::isResumableReason($group->assistance_reason);
-    }
-
-    /** Clears the pull-request and missing-pull-request reasons when a resumed subtask starts. */
-    private function clearResumeAssistance(Task $group): void
-    {
-        if (! TaskPullRequestHealth::isReason($group->assistance_reason) && ! self::isMissingPullRequestReason($group->assistance_reason)
-            && ! TaskFinalReview::isResumableReason($group->assistance_reason)) {
-            return;
-        }
-        $group->fill(TaskAssistance::cleared());
-    }
-
-    /**
-     * Asks for assistance once per distinct set of pull request problems, and withdraws only its own
-     * request when the pull request is healthy again. Another cause of assistance is left alone.
-     */
-    private function reportPullRequestHealth(Task $group, TaskPullRequestHealth $health, ?string $extra = null): void
-    {
-        $group->refresh();
-        $ownRequest = TaskPullRequestHealth::isReason($group->assistance_reason);
-
-        if ($health->problems === []) {
-            if ($ownRequest) {
-                $group->update(TaskAssistance::cleared());
-            }
-
-            return;
-        }
-
-        $reason = $health->reason($extra);
-        if ($group->assistance_requested && (! $ownRequest || $group->assistance_reason === $reason)) {
-            return;
-        }
-
-        if (TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason, replaceFailure: $ownRequest)) {
-            $this->coder->assistance($group, $reason);
-        }
-    }
-
-    private function markSubtaskCancelled(Task $task): ?string
-    {
-        TaskCheck::query()->where('task_id', $task->id)
-            ->where('status', TaskCheckStatus::Running->value)
-            ->update(['status' => TaskCheckStatus::Cancelled->value, 'finished_at' => now(), 'updated_at' => now()]);
-
-        $assistanceReason = $task->assistance_reason;
-        $task->update([
-            'status' => TaskStatus::Cancelled,
-            'settled_at' => now(),
-            'completion_summary' => 'Cancelled by operator.',
-            ...TaskAssistance::cleared(),
-        ]);
-
-        return $assistanceReason;
-    }
-
-    private function clearCancelledSubtaskAssistance(Task $group, Task $task, ?string $assistanceReason): void
-    {
-        if (RequestEndedPullRequestAssistanceAction::isReason($group->assistance_reason)
-            || ! $group->assistance_requested || $assistanceReason === null || $group->assistance_reason !== $assistanceReason) {
-            return;
-        }
-
-        $otherAssistance = $group->tasks()
-            ->whereKeyNot($task->id)
-            ->where('assistance_requested', true)
-            ->exists();
-        if (! $otherAssistance) {
-            $group->fill(TaskAssistance::cleared());
-        }
-    }
-
-    /** @param  Collection<int, Task>  $tasks */
-    private function hasOpenSubtask(Collection $tasks): bool
-    {
-        return $tasks->contains(static fn (Task $task): bool => in_array($task->status, [
-            TaskStatus::Todo,
-            TaskStatus::Reserved,
-            TaskStatus::Running,
-            TaskStatus::Reviewing,
-        ], true));
-    }
-
-    /** @param  Collection<int, Task>  $tasks */
-    private function statusWithOpenSubtasks(Task $group, Collection $tasks): TaskGroupStatus
-    {
-        if ($this->runner->runningSibling($tasks) instanceof Task || $tasks->contains(static fn (Task $task): bool => $task->status === TaskStatus::Running)) {
-            return TaskGroupStatus::Running;
-        }
-        if ($tasks->contains(static fn (Task $task): bool => $task->status === TaskStatus::Reviewing)) {
-            return TaskGroupStatus::Reviewing;
-        }
-        if ($tasks->contains(static fn (Task $task): bool => $task->status === TaskStatus::Reserved)) {
-            return TaskGroupStatus::Reserved;
-        }
-
-        return $group->groupStatus();
+        return TaskSettling::resumeBlocked($group);
     }
 
     public function failSpawn(?Task $group, ?Task $task, string $agent): void
     {
-        if ($task instanceof Task) {
-            $task->status = TaskStatus::Failed;
-            $task->save();
-        }
-
-        if ($group instanceof Task) {
-            $group->status = TaskGroupStatus::Failed;
-            $group->save();
-        }
-
-        Log::error('A task group agent spawn returned no thread id.', [
-            'task_group_id' => $group?->id,
-            'task_id' => $task?->id,
-            'agent' => $agent,
-        ]);
+        $this->consults->failSpawn($group, $task, $agent);
     }
 }
