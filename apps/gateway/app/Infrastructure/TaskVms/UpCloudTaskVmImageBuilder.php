@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\TaskVms;
 
+use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmUpCloud;
@@ -82,7 +83,7 @@ final readonly class UpCloudTaskVmImageBuilder
         $attempt = null;
         try {
             if ($afterAttemptId !== null && self::lastAttempt($machineRecipe->identity) !== $afterAttemptId) {
-                throw new TaskVmException('task_vm.image_build_superseded', 'This UpCloud recipe was already attempted. Request an explicit retry.');
+                throw new TaskVmException(TaskVmError::ImageBuildSuperseded, 'This UpCloud recipe was already attempted. Request an explicit retry.');
             }
             $attempt = DB::table('upcloud_task_vm_image_builds')->insertGetId([
                 'recipe_identity' => $machineRecipe->identity, 'state' => 'running', 'started_at' => now(),
