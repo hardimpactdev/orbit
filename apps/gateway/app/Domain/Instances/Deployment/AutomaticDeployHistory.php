@@ -49,18 +49,31 @@ final readonly class AutomaticDeployHistory
             ->first();
     }
 
-    /** The commit that was live when the rollback started: the newest succeeded deployment or rollback before it. */
-    public function rolledAwayFrom(InstanceDeployment $rollback): ?string
+    /**
+     * The commits that rollbacks moved away from: for each rollback in the retained history, the commit of the newest
+     * succeeded deployment or rollback before it. They come from the rows, not from what a tick saw, so a rollback
+     * that a resume or a manual deployment followed within a minute still counts.
+     *
+     * @return list<string>
+     */
+    public function rolledAway(): array
     {
-        $commit = InstanceDeployment::query()
-            ->where('instance_id', $this->instance->id)
-            ->where('id', '<', $rollback->id)
-            ->where('status', 'succeeded')
-            ->whereNotNull('commit')
-            ->latest('id')
-            ->value('commit');
+        $live = null;
+        $commits = [];
 
-        return is_string($commit) && $commit !== $rollback->commit ? $commit : null;
+        foreach (InstanceDeployment::query()
+            ->where('instance_id', $this->instance->id)
+            ->orderBy('id')
+            ->get(['id', 'kind', 'status', 'commit']) as $deployment) {
+            if ($deployment->kind === InstanceDeployment::Rollback && is_string($live) && $live !== $deployment->commit) {
+                $commits[$live] = true;
+            }
+            if ($deployment->status === 'succeeded' && is_string($deployment->commit)) {
+                $live = $deployment->commit;
+            }
+        }
+
+        return array_keys($commits);
     }
 
     /**

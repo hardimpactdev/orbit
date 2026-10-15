@@ -341,6 +341,52 @@ describe('automatic deployment of a production Instance', function (): void {
         expect(Operation::query()->sole()->input)->toBe(['commit' => $this->d]);
     });
 
+    it('blocks the rolled-away head when auto_deploy is set again before any tick saw the rollback', function (): void {
+        auto_deploy_github($this, [$this->a => 'success', $this->c => 'success']);
+        auto_deploy_row($this->instance, ['commit' => $this->c, 'triggered_by' => AutomaticDeployHistory::Trigger]);
+        auto_deploy_row($this->instance, ['commit' => $this->a, 'kind' => 'rollback']);
+        app(UpdateInstanceAction::class)->execute($this->instance, null, autoDeploy: true);
+
+        auto_deploy_tick($this);
+
+        expect(Operation::query()->count())->toBe(0)
+            ->and($this->instance->fresh()->auto_deploy_state['result'] ?? null)->toBe('no_green_commit')
+            ->and($this->instance->fresh()->auto_deploy_state['blocked'] ?? null)->toBe([$this->c]);
+    });
+
+    it('blocks the rolled-away head when a manual deployment followed the rollback before any tick', function (): void {
+        auto_deploy_github($this, [$this->a => 'success', $this->c => 'success']);
+        auto_deploy_row($this->instance, ['commit' => $this->c, 'triggered_by' => AutomaticDeployHistory::Trigger]);
+        auto_deploy_row($this->instance, ['commit' => $this->a, 'kind' => 'rollback']);
+        auto_deploy_row($this->instance, ['commit' => $this->c, 'triggered_by' => 'laptop', 'status' => 'failed', 'failed_step' => 'environment', 'error_code' => 'env.sync_failed']);
+
+        auto_deploy_tick($this);
+        expect($this->instance->fresh()->auto_deploy_state['pause']['reason'] ?? null)->toBe('manual_deploy');
+
+        app(UpdateInstanceAction::class)->execute($this->instance, null, autoDeploy: true);
+        auto_deploy_tick($this);
+        expect(Operation::query()->count())->toBe(0);
+
+        auto_deploy_github($this, [$this->a => 'success', $this->c => 'success', $this->d => 'success']);
+        auto_deploy_tick($this);
+
+        expect(Operation::query()->sole()->input)->toBe(['commit' => $this->d]);
+    });
+
+    it('keeps a rolled-away commit blocked after its rows leave the history', function (): void {
+        auto_deploy_github($this, [$this->a => 'success', $this->c => 'success']);
+        auto_deploy_row($this->instance, ['commit' => $this->c, 'triggered_by' => AutomaticDeployHistory::Trigger]);
+        $rollback = auto_deploy_row($this->instance, ['commit' => $this->a, 'kind' => 'rollback']);
+        app(UpdateInstanceAction::class)->execute($this->instance, null, autoDeploy: true);
+        auto_deploy_tick($this);
+
+        InstanceDeployment::query()->where('id', '<', $rollback->id)->delete();
+        auto_deploy_tick($this);
+
+        expect(Operation::query()->count())->toBe(0)
+            ->and($this->instance->fresh()->auto_deploy_state['blocked'] ?? null)->toBe([$this->c]);
+    });
+
     it('pauses for a rollback that still waits for the Instance lock', function (): void {
         auto_deploy_github($this, [$this->a => 'success', $this->b => 'success']);
         auto_deploy_row($this->instance, ['commit' => null, 'kind' => 'rollback', 'status' => 'running', 'finished_at' => null]);

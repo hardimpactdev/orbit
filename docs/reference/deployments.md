@@ -306,7 +306,9 @@ A blocked commit does not deploy automatically again. A new commit deploys at on
 
 A manual deployment or a rollback after `auto_deploy` was last set pauses the Instance, whether it succeeded or not. A rollback that still waits for the Instance lock counts. The Instance stays paused until you set `--auto-deploy=true` again; a new commit does not resume it.
 
-Resuming continues from the commit that is live then. The commit a rollback moved away from stays blocked, so resuming never deploys it again; a newer commit deploys.
+Resuming continues from the commit that is live then. The commit a rollback moved away from is blocked. The tick reads it from the deployment history, so it counts also when you resume or deploy by hand before a tick saw the rollback. The tick also keeps it in `auto_deploy_state.blocked`, so it stays blocked after its rows leave the history.
+
+A blocked commit stays blocked. It never deploys automatically again, until a newer commit lands on the branch: that commit deploys, and the blocked one is behind it.
 
 An automatic deployment checks for a pause again under the Instance lock, which a rollback takes too. A rollback that came after the tick queued the deployment wins: the operation ends with `deployment.paused`, deploys nothing, and writes no history row.
 

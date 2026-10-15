@@ -155,16 +155,17 @@ final readonly class RunAutomaticDeploysAction
     {
         $this->alertFailure($instance, $state);
         $history = new AutomaticDeployHistory($instance);
+
+        // The state keeps rolled-away commits after their rows are pruned from the history.
+        foreach ($history->rolledAway() as $commit) {
+            $state->block($commit);
+        }
         $pause = $history->pausedBy();
 
         if ($pause instanceof InstanceDeployment) {
             $rollback = $pause->kind === InstanceDeployment::Rollback;
 
             if ($state->pauseFor($rollback ? 'rollback' : 'manual_deploy', $pause->id, $pause->commit)) {
-                $rolledAway = $rollback ? $history->rolledAwayFrom($pause) : null;
-                if ($rolledAway !== null) {
-                    $state->block($rolledAway);
-                }
                 $this->alerts->paused($instance, $pause);
             }
             $state->forgetGate();
