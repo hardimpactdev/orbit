@@ -64,7 +64,7 @@ final readonly class ConvergeNodeRecipeAction
                     throw new ResourceOperationException('node.recipe_doctor_failed', 'Recipe convergence stopped at Doctor. The Node may be partly changed. No automatic rollback was attempted. Run Doctor for this Node before continuing.', 502);
                 }
                 $settings = $node->refresh()->settings ?? [];
-                $settings['machine_recipe'] = ['version' => $recipe->identity, 'snapshot' => $recipe->snapshot, 'converged_at' => now()->toIso8601String(), ...($profile === null ? [] : ['profile' => $profile])];
+                $settings['machine_recipe'] = ['version' => $recipe->identity, 'snapshot' => $recipe->snapshot, 'converged_at' => now()->toIso8601String(), ...(($changes['newer_than_recipe'] ?? []) === [] ? [] : ['newer_than_recipe' => $changes['newer_than_recipe']]), ...($profile === null ? [] : ['profile' => $profile])];
                 $node->update(['settings' => $settings]);
 
                 return ['plan' => $plan, 'applied' => true, 'changes' => $changes];
@@ -99,13 +99,9 @@ final readonly class ConvergeNodeRecipeAction
         $this->checkConstraints($node, $pins);
         // Another PHP source or a PHP package outside the recipe refuses the plan, also in a dry run.
         $this->program->phpPreflight($node, $recipe, $pins, $profile);
-        $installed = $this->program->inspect($node, $recipe, $pins);
-        $tools = [];
-        foreach ($pins as $name => $pin) {
-            $tools[$name] = ['source' => $pin->source, 'version' => $pin->version, 'installed' => $installed[$name], 'changed' => $installed[$name] !== $pin->version];
-        }
+        $inspection = $this->program->inspect($node, $recipe, $pins);
 
-        return new NodeRecipePlan($node->id, $recipe->identity, $recipe->snapshot, array_values($node->roles->map(fn ($role): string => $role->role->value)->all()), $tools);
+        return new NodeRecipePlan($node->id, $recipe->identity, $recipe->snapshot, array_values($node->roles->map(fn ($role): string => $role->role->value)->all()), $inspection['tools'], $inspection['actions']);
     }
 
     /** @param array<string, ToolPin> $pins */

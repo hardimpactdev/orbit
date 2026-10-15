@@ -34,7 +34,8 @@ beforeEach(function (): void {
 /** @return array{Process, S3Client, ProjectDocumentStorage} */
 function probe_transport_fixture(string $mode): array
 {
-    $server = new Process(['python3', base_path('tests/Fixtures/ProjectDocuments/probe_http_server.py'), $mode, config()->string('orbit.home').'/http-state.json']);
+    // Allow 60 seconds for the transport fixture to print its readiness line.
+    $server = new Process(['python3', base_path('tests/Fixtures/ProjectDocuments/probe_http_server.py'), $mode, config()->string('orbit.home').'/http-state.json'], timeout: 60);
     $server->start();
     $port = SubprocessFixture::line($server);
     if (! ctype_digit($port)) {
