@@ -6,6 +6,8 @@ use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
 
+pest()->group('subprocess');
+
 function cli_binary_repo_root(): string
 {
     return dirname(base_path(), 2);
