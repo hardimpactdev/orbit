@@ -1,16 +1,18 @@
 ---
 title: "ADR 0182: Start tasks from Project task definitions"
 sidebarTitle: "0182 Start tasks from task definitions"
-description: "In progress. A Task is one row in one tasks table, and its subtasks are child tasks. Each Project stores task definitions in the Gateway: ordered subtasks of five generic kinds, with forward routes on outcomes and declared parameters. Every task starts from a definition, now or at a scheduled time. Six slices build it."
+description: "Withdrawn on 2026-10-15. Task definitions were deleted because they were never executed."
 ---
 
 # ADR 0182: Start tasks from Project task definitions
+
+Withdrawn. Task definitions were deleted on 2026-10-15 because they were never executed.
 
 Orbit has one task model. A **task** is one row in the `tasks` table, and the subtasks of a task are its child tasks. Each Project stores **task definitions** in the Gateway database: predefined tasks with ordered subtasks, conditions between the subtasks, and the parameters they accept. Every task starts from a definition, either now or at a scheduled time. The Gateway code knows the task kinds but no Project's definitions, so any Orbit user can define work for a Project without changing code, and an agent can change a definition through the API.
 
 ## Status
 
-In progress.
+Withdrawn on 2026-10-15.
 
 Principle: this decision serves [one way, one name](/mission#principles) and [deterministic first](/mission#principles). One model and one table hold every task and subtask, every task starts from a definition, and code decides every subtask outcome it can.
 

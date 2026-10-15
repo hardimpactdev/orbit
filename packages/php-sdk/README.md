@@ -9,7 +9,7 @@ gateway application.
 During monorepo development, `apps/cli` consumes this package through a
 Composer path repository with symlinking enabled.
 
-The SDK exposes exactly 215 public Gateway operations. It preserves typed
+The SDK exposes exactly 210 public Gateway operations. It preserves typed
 payloads, bounded responses, structured errors, and request IDs without
 applying Gateway policy. It does not define command-line presentation or
 remote execution behavior.
@@ -87,7 +87,7 @@ The SDK exposes typed status, setup, sync, and teardown requests for publishing 
 
 ## Tasks
 
-The SDK exposes typed enable, disable, status, list, show, create, update, cancel, complete, subtask create, update, and destroy, comment create and list, question list and close, agent thread list, and task definition list, show, create, update, and destroy requests for the Gateway tasks extension. Create and update of a task definition send the caller's exact JSON document. List accepts an optional Project ID filter. Show, update, and destroy address one definition by Project ID and name. Create sends the Project ID, title, brief, and the optional status, Coder notification flag, and ordered `SubtaskInput` values. Updates send only the supplied fields and an empty JSON object when none is supplied. Question list sends optional Project, cause, status, and since filters. Question close sends the status and the reason. Toggle, status, cancel, complete, destroy, and question list requests are bodyless. Group and subtask responses keep `assistance_kind`, `assistance_question`, `questions`, and `escalations`, keep subtasks in position order, and give the human reference, such as `ORB-13`. The Gateway owns the lifecycle, scheduling, and every status rule.
+The SDK exposes typed enable, disable, status, list, show, create, update, cancel, complete, subtask create, update, and destroy, comment create and list, question list and close, agent thread list requests for the Gateway tasks extension. Create sends the Project ID, title, brief, and the optional status, Coder notification flag, and ordered `SubtaskInput` values. Updates send only the supplied fields and an empty JSON object when none is supplied. Question list sends optional Project, cause, status, and since filters. Question close sends the status and the reason. Toggle, status, cancel, complete, destroy, and question list requests are bodyless. Group and subtask responses keep `assistance_kind`, `assistance_question`, `questions`, and `escalations`, keep subtasks in position order, and give the human reference, such as `ORB-13`. The Gateway owns the lifecycle, scheduling, and every status rule.
 
 ## Logs
 

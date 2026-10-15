@@ -226,7 +226,7 @@ orbit project:update 3 --repository=https://github.com/acme/site.git
 
 ## Remove a Project
 
-`project:destroy` removes a Project that has no Instances and no Routes. It deletes the Project's process and Schedule definitions, [task definitions](/reference/tasks#task-definitions), setup and teardown steps, Node exclusions, and update records.
+`project:destroy` removes a Project that has no Instances and no Routes. It deletes the Project's process and Schedule definitions, setup and teardown steps, Node exclusions, and update records.
 
 A Project with tasks cannot be removed. The Gateway refuses the request with HTTP 409 and `project.has_task_groups`.
 

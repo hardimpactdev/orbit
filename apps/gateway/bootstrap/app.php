@@ -15,8 +15,6 @@ use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Schedules\ScheduleOperationException;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\TaskDefinitionInvalid;
-use App\Domain\Tasks\TaskDefinitionViolation;
 use App\Domain\Tasks\TaskSchedule;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\Tools\ToolOperationException;
@@ -309,25 +307,6 @@ return Application::configure(basePath: dirname(__DIR__))
                             'code' => $exception->errorCode,
                             'message' => $exception->getMessage(),
                             'details' => $details,
-                        ],
-                    ], GatewayExceptionStatus::for($exception))
-                    ->header('X-Orbit-Request-Id', $requestIdFor($request));
-            });
-            $exceptions->render(function (TaskDefinitionInvalid $exception, Request $request) use ($requestIdFor): JsonResponse {
-                $request->attributes->set('orbit.error_code', TaskDefinitionInvalid::CODE);
-                $request->attributes->set('orbit.error_message', $exception->getMessage());
-
-                return response()
-                    ->json([
-                        'error' => [
-                            'code' => TaskDefinitionInvalid::CODE,
-                            'message' => $exception->getMessage(),
-                            'details' => [
-                                'rules' => array_map(
-                                    static fn (TaskDefinitionViolation $violation): array => $violation->toArray(),
-                                    $exception->rules,
-                                ),
-                            ],
                         ],
                     ], GatewayExceptionStatus::for($exception))
                     ->header('X-Orbit-Request-Id', $requestIdFor($request));

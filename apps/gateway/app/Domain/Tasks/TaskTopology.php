@@ -82,7 +82,7 @@ final readonly class TaskTopology implements Castable
     }
 
     /**
-     * A declaration from a request, CLI file, or task definition, in canonical form: each entry's roles in
+     * A declaration from a request or CLI file, in canonical form: each entry's roles in
      * {@see self::ExtraRoles} order.
      *
      * @throws ResourceOperationException when the declaration is invalid

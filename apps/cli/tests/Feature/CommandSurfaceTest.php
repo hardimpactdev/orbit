@@ -991,29 +991,6 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             'since' => null,
             'json' => false,
         ]],
-        'tasks:definition:create' => [[], [
-            'project' => null,
-            'definition' => null,
-            'json' => false,
-        ]],
-        'tasks:definition:destroy' => [['name'], [
-            'project' => null,
-            'yes' => false,
-            'json' => false,
-        ]],
-        'tasks:definition:list' => [[], [
-            'project' => null,
-            'json' => false,
-        ]],
-        'tasks:definition:show' => [['name'], [
-            'project' => null,
-            'json' => false,
-        ]],
-        'tasks:definition:update' => [['name'], [
-            'project' => null,
-            'definition' => null,
-            'json' => false,
-        ]],
         'tasks:status' => [[], ['json' => false]],
         'tool:remove' => [['tool'], ['yes' => false, 'json' => false]],
         'tool:scan' => [[], ['node' => null, 'json' => false]],
@@ -1070,7 +1047,6 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             'tasks:comment:create', 'tasks:comment:list', 'tasks:subtask:cancel', 'tasks:subtask:destroy', 'tasks:subtask:update' => ['group', 'subtask'],
             'tasks:create' => ['title'],
             'tasks:question:close' => ['question'],
-            'tasks:definition:destroy', 'tasks:definition:show', 'tasks:definition:update' => ['name'],
             'tasks:subtask:create' => ['group', 'title'],
             default => [],
         };

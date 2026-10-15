@@ -1,6 +1,6 @@
 # Public contract
 
-The SDK models exactly 215 concrete public Gateway API operations:
+The SDK models exactly 210 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
@@ -25,7 +25,7 @@ The SDK models exactly 215 concrete public Gateway API operations:
 - Gateway releases: list, show, deploy, rollback, and automatic release status, enable, disable, and resume.
 - proxycli: enable, disable, status, provider list, provider show, account update, and model list.
 - Vault: status, setup, sync, and teardown.
-- Tasks: enable, disable, status, group list, show, create, update, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, question list and close, agent thread list, and task definition list, show, create, update, and destroy.
+- Tasks: enable, disable, status, group list, show, create, update, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, question list and close, and agent thread list.
 
 The four abstract request bases are implementation details, not extra Gateway
 operations. Keep the public API typed and small.
@@ -124,7 +124,7 @@ operations. Keep the public API typed and small.
   destroy, and question list requests are bodyless. Task and subtask responses
   keep `assistance_kind`, `assistance_question`, `questions`, and `escalations`.
   The Gateway owns the lifecycle, scheduling, and every status rule.
-  Task definition requests use a numeric Project ID, an optional project_id list filter, a definition name for show, update, and destroy, and the caller's exact JSON document for create and full update. List, show, and destroy are bodyless. The Gateway owns definition validation. The agent conversation stream stays outside the SDK.
+  The agent conversation stream stays outside the SDK.
 - Keep Gateway release transport limited to a record id or a hex SHA of 7 to
   40 characters for show, a hex SHA of 7 to 40 characters for deploy, and a
   12-digit release id for a bodyless code rollback. List and the

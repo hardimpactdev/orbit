@@ -11,7 +11,6 @@ use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\DeliverablePathRepository;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\LocalTaskSettleMetricsCollector;
-use App\Domain\Tasks\OpenApiTaskActions;
 use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskBaseBranchFetcher;
 use App\Domain\Tasks\TaskBriefCoverage;
@@ -105,7 +104,6 @@ final class TasksServiceProvider extends ServiceProvider
             rtrim(Config::string('orbit.home'), '/').'/locks/task-execution',
         ));
         $this->app->singleton(TaskBroadcasts::class);
-        $this->app->singleton(OpenApiTaskActions::class);
         $this->app->singleton(TaskTurnFetchNotice::class);
     }
 

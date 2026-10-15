@@ -2,15 +2,33 @@
 
 declare(strict_types=1);
 
+use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskTopology;
+use App\Models\Node;
+use App\Models\Project;
 use App\Models\Task;
-use App\Models\TaskDefinition;
 
-require_once __DIR__.'/../../Support/TaskDefinitions.php';
+beforeEach(function (): void {
+    $gateway = Node::query()->create([
+        'name' => 'topology-gateway',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.90',
+        'wireguard_ip' => '10.44.0.90',
+    ]);
+    $this->markAsGateway($gateway);
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
+    app(TaskExtensionState::class)->enable();
+});
 
 it('preserves per-subtask declarations through group creation edits and standalone creation', function (): void {
-    task_definition_gateway();
-    $project = task_definition_project('orbit');
+    $project = Project::query()->create([
+        'name' => 'orbit',
+        'slug' => 'orbit',
+        'repository_url' => 'git@example.test:orbit.git',
+        'default_branch' => 'main',
+    ]);
     $group = $this->postJson('/api/v1/task-groups', [
         'project_id' => $project->id, 'title' => 'Declared nodes', 'brief' => 'Use private workload nodes.',
         'tasks' => [
@@ -33,8 +51,12 @@ it('preserves per-subtask declarations through group creation edits and standalo
 });
 
 it('rejects invalid declarations without creating a group', function (mixed $topology): void {
-    task_definition_gateway();
-    $project = task_definition_project('orbit');
+    $project = Project::query()->create([
+        'name' => 'orbit',
+        'slug' => 'orbit',
+        'repository_url' => 'git@example.test:orbit.git',
+        'default_branch' => 'main',
+    ]);
     $this->postJson('/api/v1/task-groups', [
         'project_id' => $project->id, 'title' => 'Invalid', 'brief' => 'Invalid inventory.',
         'tasks' => [['title' => 'Step', 'brief' => 'No start.', 'topology' => $topology]],
@@ -50,8 +72,12 @@ it('rejects invalid declarations without creating a group', function (mixed $top
 ]);
 
 it('stores declared roles and refuses a role that does not fit its node', function (): void {
-    task_definition_gateway();
-    $project = task_definition_project('orbit');
+    $project = Project::query()->create([
+        'name' => 'orbit',
+        'slug' => 'orbit',
+        'repository_url' => 'git@example.test:orbit.git',
+        'default_branch' => 'main',
+    ]);
     $group = $this->postJson('/api/v1/task-groups', [
         'project_id' => $project->id, 'title' => 'Roles', 'brief' => 'Declared roles.',
         'tasks' => [['title' => 'Ingress', 'brief' => 'Public edge.', 'topology' => ['app-prod+ingress', 'app-dev']]],
@@ -71,32 +97,15 @@ it('stores declared roles and refuses a role that does not fit its node', functi
 });
 
 it('keeps declarations locked after a subtask has started even if its status is reset', function (): void {
-    task_definition_gateway();
-    $project = task_definition_project('orbit');
+    $project = Project::query()->create([
+        'name' => 'orbit',
+        'slug' => 'orbit',
+        'repository_url' => 'git@example.test:orbit.git',
+        'default_branch' => 'main',
+    ]);
     $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Group', 'brief' => 'Work', 'status' => 'backlog']);
     $task = $group->tasks()->create(['title' => 'Started', 'brief' => 'Work', 'position' => 1, 'status' => 'todo',
         'topology' => ['app-dev'], 'subtask_start_commit' => str_repeat('a', 40)]);
     $this->patchJson('/api/v1/task-groups/'.$group->id.'/tasks/'.$task->id, ['topology' => ['app-prod']])->assertUnprocessable();
     expect($task->fresh()->topology->toArray())->toBe(['app-dev']);
-});
-
-it('round trips declared nodes in stored task definitions', function (): void {
-    task_definition_gateway();
-    $project = task_definition_project('orbit');
-    $payload = task_definition_payload(['subtasks' => [
-        ['key' => 'build', 'title' => 'Build', 'kind' => 'agent', 'topology' => ['app-dev', 'app-prod']],
-    ]]);
-    $this->postJson('/api/v1/projects/'.$project->id.'/task-definitions', $payload)
-        ->assertCreated()->assertJsonPath('data.subtasks.0.topology', ['app-dev', 'app-prod']);
-    expect(TaskDefinition::query()->sole()->subtasks[0]['topology'])->toBe(['app-dev', 'app-prod']);
-});
-
-it('refuses invalid declared nodes in stored definitions', function (): void {
-    task_definition_gateway();
-    $project = task_definition_project('orbit');
-    $payload = task_definition_payload(['subtasks' => [
-        ['key' => 'build', 'title' => 'Build', 'kind' => 'agent', 'topology' => ['operator']],
-    ]]);
-    $this->postJson('/api/v1/projects/'.$project->id.'/task-definitions', $payload)->assertUnprocessable();
-    expect(TaskDefinition::query()->count())->toBe(0);
 });

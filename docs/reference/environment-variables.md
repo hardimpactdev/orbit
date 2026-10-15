@@ -50,7 +50,7 @@ The Gateway's own environment is separate from an Instance's stored configuratio
 
 Set `ORBIT_TASKS_PROVISIONING_FAILURE_THRESHOLD` in the Gateway's `.env` to choose how many consecutive workspace provisioning failures request failure assistance (default `3`, minimum `1`). A successful start resets the count. See [Claim and provision](/reference/tasks#claim-and-provision) for the cause-carrying reason and logging.
 
-Reviewer trust is not an Instance environment setting. The Gateway operator sets `ORBIT_TASKS_GITHUB_REVIEWERS` in the Gateway's `.env`. A task workspace's `.env`, task definition, or branch cannot grant [GitHub feedback authority](/reference/tasks#trusted-github-feedback).
+Reviewer trust is not an Instance environment setting. The Gateway operator sets `ORBIT_TASKS_GITHUB_REVIEWERS` in the Gateway's `.env`. A task workspace's `.env` or branch cannot grant [GitHub feedback authority](/reference/tasks#trusted-github-feedback).
 
 The authors whose pull requests Orbit reviews and merges are Gateway configuration too. The operator sets `ORBIT_TASKS_PULL_REQUEST_AUTHORS` in the Gateway's `.env`, in the same format. A pull request cannot name its own author as trusted. See [Incoming pull requests](/reference/tasks#incoming-pull-requests).
 

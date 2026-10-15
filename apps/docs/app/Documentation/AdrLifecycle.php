@@ -150,8 +150,8 @@ final readonly class AdrLifecycle
                 }
             }
             $status = $statusLine === null ? [] : array_map(trim(...), $record->sectionLines($statusLine));
-            if (! in_array('In progress.', $status, true)) {
-                $findings[] = $this->error($path, 'ADR 0180+ must say In progress. in its Status section.');
+            if (! in_array('In progress.', $status, true) && count(array_filter($status, static fn (string $line): bool => preg_match('/^Withdrawn on \d{4}-\d{2}-\d{2}\.$/', $line) === 1)) === 0) {
+                $findings[] = $this->error($path, 'ADR 0180+ must say In progress. or Withdrawn on YYYY-MM-DD. in its Status section.');
             }
             if (count(array_filter($status, static fn (string $line): bool => preg_match('/^Principle:\s*\S/', $line) === 1)) === 0) {
                 $findings[] = $this->error($path, 'ADR 0180+ must include a Principle: line in its Status section.');

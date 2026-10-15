@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Domain\Tasks\TaskDefinitionName;
 use App\Http\Controllers\Api\ActivitiesController;
 use App\Http\Controllers\Api\AgentRealtimeController;
 use App\Http\Controllers\Api\AgentThreadsController;
@@ -68,7 +67,6 @@ use App\Http\Controllers\Api\RoutesController;
 use App\Http\Controllers\Api\RuntimeActivationsController;
 use App\Http\Controllers\Api\ScheduleCompletionsController;
 use App\Http\Controllers\Api\SchedulesController;
-use App\Http\Controllers\Api\TaskDefinitionsController;
 use App\Http\Controllers\Api\TaskGroupsController;
 use App\Http\Controllers\Api\TaskQuestionsController;
 use App\Http\Controllers\Api\TasksController;
@@ -701,17 +699,5 @@ Route::prefix('v1')->group(function (): void {
         Route::post('task-groups/{group}/complete', [TaskGroupsController::class, 'complete'])
             ->whereNumber('group')
             ->name('tasks:complete');
-        Route::get('task-definitions', [TaskDefinitionsController::class, 'index'])->name('tasks:definition:list');
-        Route::get('projects/{project}/task-definitions/{name}', [TaskDefinitionsController::class, 'show'])
-            ->where('name', TaskDefinitionName::Pattern)
-            ->name('tasks:definition:show');
-        Route::post('projects/{project}/task-definitions', [TaskDefinitionsController::class, 'store'])
-            ->name('tasks:definition:create');
-        Route::put('projects/{project}/task-definitions/{name}', [TaskDefinitionsController::class, 'update'])
-            ->where('name', TaskDefinitionName::Pattern)
-            ->name('tasks:definition:update');
-        Route::delete('projects/{project}/task-definitions/{name}', [TaskDefinitionsController::class, 'destroy'])
-            ->where('name', TaskDefinitionName::Pattern)
-            ->name('tasks:definition:destroy');
     });
 });

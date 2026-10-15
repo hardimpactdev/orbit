@@ -1,15 +1,15 @@
 ---
 title: "Tasks"
-description: "How the optional Gateway Tasks extension runs tasks and stores each Project's task definitions. It covers the model, definition fields, validation, the lifecycle, typed deliverables, the task check, agent threads, review, the pull request, fixups, metrics, cleanup, and the outer loop that files recurring problems."
+description: "How the optional Gateway Tasks extension runs tasks. It covers the model, the lifecycle, typed deliverables, the task check, agent threads, review, the pull request, fixups, metrics, cleanup, and the outer loop that files recurring problems."
 covers:
   - "apps/gateway/app/{Domain/{Tasks,Problems},Infrastructure/Tasks}/**"
   - "apps/gateway/app/Actions/Tasks/**"
   - "apps/gateway/app/Http/Requests/Tasks/**"
-  - "apps/gateway/app/Http/Controllers/Api/{TasksController,TaskGroupsController,TaskDefinitionsController,AgentThreadsController,TaskQuestionsController}.php"
+  - "apps/gateway/app/Http/Controllers/Api/{TasksController,TaskGroupsController,AgentThreadsController,TaskQuestionsController}.php"
   - "apps/gateway/app/Console/Commands/{TickTaskSessionsCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand,TaskGitHubReviewsCommand}.php"
-  - "apps/gateway/app/Models/{Task,TaskDefinition,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,TaskReviewedCommit,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
+  - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,TaskReviewedCommit,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
   - "apps/gateway/resources/tasks/**"
-  - "apps/gateway/database/migrations/*_{merge_task_groups_into_tasks,create_task_github_review_consumptions_table,create_task_github_review_observations_table,convert_test_deliverables_to_commands,add_continuation_source_to_tasks,create_task_definitions_table,create_problem_fingerprints,clear_assistance_on_ended_tasks,add_assistance_kind_to_tasks,create_task_questions,add_model_and_effort_to_task_agent_sessions,add_watched_pr_url_to_tasks,add_review_and_merge}.php"
+  - "apps/gateway/database/migrations/*_{merge_task_groups_into_tasks,create_task_github_review_consumptions_table,create_task_github_review_observations_table,convert_test_deliverables_to_commands,add_continuation_source_to_tasks,drop_task_definitions_table,create_problem_fingerprints,clear_assistance_on_ended_tasks,add_assistance_kind_to_tasks,create_task_questions,add_model_and_effort_to_task_agent_sessions,add_watched_pr_url_to_tasks,add_review_and_merge}.php"
 ---
 
 # Tasks
@@ -26,13 +26,13 @@ Agents use the Tasks tools of the [MCP server](/reference/mcp). The [`tasks` CLI
 
 ## Extension switch and status
 
-Enable and disable the extension with `orbit extension:enable tasks` and `orbit extension:disable tasks`. Both need Gateway access. While the switch is off, the `tasks` commands, MCP tools, and web pages are hidden, except `tasks:status` and the `tasks-status` tool. Every other task operation, including the [definition operations](#definition-operations), refuses with HTTP 409 `extension.disabled` and changes nothing. Stored tasks, subtasks, and task definitions stay. [`extension`](/cli/extension) describes the switch.
+Enable and disable the extension with `orbit extension:enable tasks` and `orbit extension:disable tasks`. Both need Gateway access. While the switch is off, the `tasks` commands, MCP tools, and web pages are hidden, except `tasks:status` and the `tasks-status` tool. Every other task operation refuses with HTTP 409 `extension.disabled` and changes nothing. Stored tasks and subtasks stay. [`extension`](/cli/extension) describes the switch.
 
 `tasks:status` is an assistance and status view, not a switch. Its route returns `enabled`, `assistance`, `last_tick_at`, and `merges`. `merges` lists the open tasks of [review-and-merge](#records-and-status) Projects. `assistance` lists every task whose `assistance_requested` is true, in ascending task id order. Each entry has `id`, `project_id`, `project`, `project_code`, `title`, `status`, `assistance_kind`, `assistance_question`, and `assistance_reason`. A completed or cancelled task never asks for assistance and keeps its last reason. A task that is not asking is absent, even when it still stores an old reason. A flagged subtask does not add its task unless the task itself is asking. The view remains available while tasks is disabled.
 
 ## Model
 
-A task is one row in the `tasks` table. A row with no `parent_id` is a top-level task: the Tasks board shows it, and it is one feature or bug fix delivered as one pull request. A row with `parent_id` is a subtask of that parent. A subtask has no children. [ADR 0182](/decisions/0182-start-tasks-from-project-task-definitions#one-task-model) records why one table holds both levels.
+A task is one row in the `tasks` table. A row with no `parent_id` is a top-level task: the Tasks board shows it, and it is one feature or bug fix delivered as one pull request. A row with `parent_id` is a subtask of that parent. A subtask has no children.
 
 A top-level task holds the task workspace, the branch, the reviewed pull request, the watched pull request, the current reviewer thread, and the settle metrics. A subtask holds its position, its deliverables, its implementer thread, its task checks, and its turn receipts. Both levels store a title, a brief, a status, assistance, comments, and metrics. The Gateway rejects a value in a column that the level does not use.
 
@@ -95,113 +95,6 @@ A task moves through these statuses from preparation to its end.
 | `cancelled` | An operator cancelled the task. |
 
 Subtask statuses are `todo`, `running`, `reviewing`, `completed`, `failed`, and `cancelled`. At most one subtask in a task runs at a time. The next `todo` subtask starts only after every earlier subtask has ended.
-
-## Task definitions
-
-A task definition belongs to one Project and is a Gateway record. It stores ordered subtask definitions, the routes on their outcomes, and the parameters it declares. The Gateway knows the kinds and the validation rules. It does not hard-code any Project's definitions. [ADR 0182](/decisions/0182-start-tasks-from-project-task-definitions#task-definitions) is the contract.
-
-Creating, replacing, or deleting a definition does not start a task. These operations do not create a task, a workspace, or a pull request. The repository `orbit-tasks` skill remains the guidance an agent reads while it works. A definition is the Project's stored plan, not a copy of that skill.
-
-The [web app](/reference/web-app#task-definitions) lists definitions on the Tasks page and on each Project page, and it draws one definition from the live API.
-
-### Fields
-
-A definition has these fields.
-
-| Field | Contract |
-| --- | --- |
-| `name` | Unique in the Project. 1 to 63 lowercase ASCII letters or digits, with hyphens only between them |
-| `title`, `brief` | The title and brief of a task from this definition. Either can include a declared parameter as `{parameter}` |
-| `parameters` | Required ordered list of parameters. At most 50. An empty list is valid |
-| `status` | `backlog` or `todo`: the status a task from this definition begins in |
-| `schedule` | Optional. A five-field cron expression in UTC, and at most 100 parameter values for that schedule |
-| `phases` | Optional ordered phases. At most 50. A phase groups subtasks for the drawing only |
-| `subtasks` | Ordered subtask definitions. At least one and at most 100 |
-
-A phase is `{key, title, brief, repeat}`. A stored schedule does not create a task.
-
-### Parameters
-
-Each parameter is `{name, type, required, default}`. `type` is `text`, `app`, or `subtasks`. The field is required, and an empty list is valid. Omitting it returns HTTP 422 `validation.failed`.
-
-A `{parameter}` in the title or brief names a parameter in `parameters`. Parameter names are unique, and a duplicate name is refused. The definition declares at most one parameter whose type is `subtasks`.
-
-A schedule value names a parameter the definition declares. The schedule includes a value for each required parameter.
-
-### Subtask definitions
-
-Each subtask definition has `key`, `title`, and `kind`. It may also have `brief`, `phase`, `deliverables`, and `routes`. `key` is unique in the definition. The names `complete` and `fail` are reserved for [route ends](#routes), so a subtask cannot use them. `deliverables` follow the [deliverables](#deliverables) contract. A `phase` is a key in `phases`. The subtasks of one phase sit next to each other.
-
-The kind adds fields and declares the outcomes a route may name.
-
-| Kind | Fields | Outcomes |
-| --- | --- | --- |
-| `agent` | Optional `implementer_model` and `reviewer_model` | `passed`, `skipped`, `failed` |
-| `check` | At least one `command` deliverable | `passed`, `skipped`, `failed` |
-| `merge` | None | `passed`, `skipped`, `failed` |
-| `action` | `operation` and `arguments`, with at most 50 arguments | `passed`, `failed` |
-| `decide` | `question`, `options`, `evidence`, and optional `min_probability` | One outcome for each option |
-
-An `action` `operation` is an OpenAPI operation marked `x-orbit-task-action: true`. Orbit marks `instance:deploy` and `instance:rollback`. The Gateway reads those names from the list `bin/mcp-tools` generates, and `bin/mcp-tools --check` keeps that list current. Marking another operation needs its own decision. A `decide` subtask's `evidence` names earlier subtasks by `key`. `min_probability` is from 0 to 1 and defaults to 0.8.
-
-A write refuses an empty `implementer_model` or `reviewer_model`. It does not check either name against the [ProxyCli model list](/reference/proxycli#models), because that list changes over time. When that list is available, the definition view reports a model that no driver can run. A model is known when ProxyCli offers it through a provider Pi runs. A Claude model is not known, and neither is a listed model whose provider Pi does not run, such as `claude` or `google`. When the model list is missing, empty, or refused, the view says that the model list is unavailable and reports no driver findings.
-
-### Routes
-
-A subtask's `routes` map each declared outcome to one target. The target is the `key` of a later subtask, `complete`, or `fail`. `complete` and `fail` are reserved, so they are never subtask keys, and the Gateway and the drawing read every route the same way. A route cannot target the same subtask or an earlier subtask.
-
-An outcome with no route uses this default. A `decide` subtask has no defaults. Its routes name a target for every option.
-
-| Outcome | Default target |
-| --- | --- |
-| `passed` | The next subtask, or `complete` after the last subtask |
-| `skipped` | `complete` |
-| `failed` | `fail` |
-
-### Validation
-
-The Gateway validates a definition on every write. An invalid definition is not stored.
-
-| Rule | The write is refused when |
-| --- | --- |
-| Keys | A subtask key is duplicated, or it is the reserved name `complete` or `fail` |
-| Kind | The kind is unknown |
-| Fields | The kind does not declare a field, a field the kind requires is missing, or a model name is empty |
-| Route outcome | A route names an outcome the kind does not declare |
-| Route target | A route names an unknown key, the same subtask, or an earlier subtask |
-| Decide routes | A `decide` subtask has no route for an option |
-| Reachability | No path from the first subtask reaches a subtask |
-| Phases | A subtask `phase` is not in `phases`, or one phase's subtasks are not adjacent |
-| Phase keys | A phase key is duplicated |
-| Action | The `operation` is not marked as a task action |
-| Parameters | A `{parameter}` is not declared, a parameter name is duplicated, or more than one parameter has type `subtasks` |
-| Schedule names | A schedule value names an undeclared parameter |
-| Cron | The cron expression is not five valid fields |
-| Schedule values | The schedule omits a value for a required parameter |
-| Bounds | More than 100 subtasks, 50 parameters, 50 phases, 50 arguments on one subtask, or 100 schedule values |
-
-| Error | HTTP | When |
-| --- | --- | --- |
-| `tasks.definition_invalid` | 422 | The definition breaks a rule above. `details.rules` lists one `{rule, subtask}` for each failure |
-| `tasks.definition_exists` | 409 | The Project already uses the name |
-
-`rule` is `keys`, `kind`, `fields`, `route_outcome`, `route_target`, `decide_routes`, `reachability`, `phases`, `phase_keys`, `action`, `parameters`, `bounds`, `schedule_names`, `cron`, or `schedule_values`. `subtask` is the subtask key, or null when the rule concerns the whole definition. A `bounds` failure for one subtask's arguments names that subtask.
-
-### Definition operations
-
-Five operations read and write definitions. None of them starts a task.
-
-| Operation | Route | Access |
-| --- | --- | --- |
-| `tasks:definition:list` | `GET /api/v1/task-definitions` | Any authorized peer |
-| `tasks:definition:show` | `GET /api/v1/projects/{project}/task-definitions/{name}` | Any authorized peer |
-| `tasks:definition:create` | `POST /api/v1/projects/{project}/task-definitions` | Gateway |
-| `tasks:definition:update` | `PUT /api/v1/projects/{project}/task-definitions/{name}` | Gateway |
-| `tasks:definition:destroy` | `DELETE /api/v1/projects/{project}/task-definitions/{name}` | Gateway |
-
-List accepts an optional `project_id` filter. Update replaces the whole definition, so an agent reads it, changes it, and writes it back. The update body may omit `name`. The Gateway uses the name in the path. MCP does this, because the path argument is not repeated in the body. A body `name` that is present and different from the path is refused. Only Gateway access can write a definition, so a definition cannot grant a caller more authority than that caller already has.
-
-The [CLI commands](/cli/tasks#orbit-tasksdefinitionlist) for create and update take the definition as a JSON file. The [MCP tools](/reference/mcp) are generated from these operations. While the tasks extension is off, each operation refuses with HTTP 409 `extension.disabled` and changes nothing.
 
 ## Tasks and subtasks
 
@@ -868,7 +761,7 @@ Every assistance request has a kind, `direction` or `failure`. The task and the 
 | `direction` | A reviewer's `blocked` in a consult or a review, a third implementer block in one attempt, or an operator's `assistance_requested` comment | The one question for the operator |
 | `failure` | Every other cause, such as a failed push, check, thread, or webhook | Null |
 
-The task takes the kind and the question of the subtask that asks. While a task asks for direction, a later failure does not replace that request. `tasks:status` lists direction requests first in its table. An unsure `decide` subtask still asks for assistance as `failure`. [ADR 0182](/decisions/0182-start-tasks-from-project-task-definitions) keeps that rule until it says otherwise.
+The task takes the kind and the question of the subtask that asks. While a task asks for direction, a later failure does not replace that request. `tasks:status` lists direction requests first in its table.
 
 #### Migrate open requests
 
@@ -1153,7 +1046,7 @@ A `settling` task without `pr_url` and without a `todo` subtask asks for assista
 
 #### Trusted GitHub feedback
 
-The Gateway operator sets `ORBIT_TASKS_GITHUB_REVIEWERS` in the Gateway's `.env`. Each entry maps a `github.com` repository name, `owner/repository`, to a comma-separated list of positive GitHub numeric account IDs. Semicolons separate entries. For example, `ORBIT_TASKS_GITHUB_REVIEWERS=acme/widgets:123456,789012;acme/api:123456` trusts those accounts for those repositories only. The Gateway lower-cases repository names. Unset or empty creates no work from GitHub feedback until the operator opts in. The value is Gateway configuration, `orbit.tasks.github_reviewers`, not a Project input, Instance environment variable, task definition, CLI option, or repository file read from the task branch. Rebuild the Gateway's configuration cache and reload the Gateway and scheduler after a change.
+The Gateway operator sets `ORBIT_TASKS_GITHUB_REVIEWERS` in the Gateway's `.env`. Each entry maps a `github.com` repository name, `owner/repository`, to a comma-separated list of positive GitHub numeric account IDs. Semicolons separate entries. For example, `ORBIT_TASKS_GITHUB_REVIEWERS=acme/widgets:123456,789012;acme/api:123456` trusts those accounts for those repositories only. The Gateway lower-cases repository names. Unset or empty creates no work from GitHub feedback until the operator opts in. The value is Gateway configuration, `orbit.tasks.github_reviewers`, not a Project input, Instance environment variable, CLI option, or repository file read from the task branch. Rebuild the Gateway's configuration cache and reload the Gateway and scheduler after a change.
 
 Review requests, logins, repository roles, `author_association`, and App ownership confer no trust.
 
@@ -1453,8 +1346,6 @@ The task board and the subtasks board hide lanes with no cards. The remaining la
 
 Each card shows the Project code and the task id, such as `ORB-13`, its line counts, its status, and its duration. A card for a task that asks for direction says `Needs your direction`. A card for a task that asks because of a failure says `Needs attention`. A task page shows the brief, the metrics, a board of its subtasks, and an Agents section. When the task asks for direction, its page shows the question first. A subtask page shows that subtask's implementer and reviewer. The board is read-only. The [web app](/reference/web-app#live-tasks) keeps it current from task events.
 
-The same Tasks page lists task definitions. Opening one draws it, and that drawing does not start a task.
-
 ## Agent viewer
 
 The Agents section lists every started thread of the task. `GET /api/v1/task-groups/{group}/agents` returns each thread with its driver, external id, state, observation time, errors, and metrics. `GET /api/v1/task-groups/{group}/agents/{session}/stream` streams the thread's normalized conversation to the browser. Both need Gateway access and an enabled extension. Runtime credentials stay in the Gateway.
@@ -1672,7 +1563,7 @@ Each approved subtask becomes one commit on the shared branch before the next su
 
 ### One table for a task and its subtasks
 
-A task and its subtasks share a lifecycle and most of their fields, so both are rows in `tasks`. A second model would give one concept two names. A subtask has no children, because the workspace, the branch, and the pull request belong to the top-level task. [ADR 0182](/decisions/0182-start-tasks-from-project-task-definitions#one-task-model) records the alternatives this rejects.
+A task and its subtasks share a lifecycle and most of their fields, so both are rows in `tasks`. A second model would give one concept two names. A subtask has no children, because the workspace, the branch, and the pull request belong to the top-level task.
 
 ### The turn receipt ends a turn
 
@@ -1784,7 +1675,7 @@ GitHub review prose does not grant authority. The operator lists numeric account
 
 The ledger couples one review to one fixup in a local transaction. A cursor misses edits and out-of-order results; a cache loses deduplication on restart. A digest and immutable findings packet keep the scope that the internal reviewer actually checked. Reading complete bounded lists and refusing overflow costs operator intervention on unusually large reviews, but partial findings cannot safely define repair scope. Review IDs identify consumption, while reviewer IDs identify the cap, so repeated submissions do not buy unlimited automatic work.
 
-Trust belongs in Gateway configuration, not a task definition or branch: the work being reviewed must not authorize its own instruction source. Trusting all collaborators, associations, or the App would exceed the operator's consent. Comments remain informational because prose alone cannot distinguish advice from a formal requested-change decision. Filtering by head before selecting the latest decisive review would revive superseded decisions.
+Trust belongs in Gateway configuration, not a task branch: the work being reviewed must not authorize its own instruction source. Trusting all collaborators, associations, or the App would exceed the operator's consent. Comments remain informational because prose alone cannot distinguish advice from a formal requested-change decision. Filtering by head before selecting the latest decisive review would revive superseded decisions.
 
 Consumption and fixup creation commit together because either order in separate transactions can lose work or duplicate it after a crash. Consumed scope stays immutable even if GitHub edits or dismisses the source; rewriting or cancelling active work would need a separate interruption protocol. The operator can cancel through the existing lifecycle, but cancellation retains consumption and cap charges. The API still permits deletion only in Backlog; a missing link is corruption or unsupported cleanup, not permission to recreate work.
 
@@ -1851,9 +1742,3 @@ Finishing an open T3 task turn would preserve the second runtime, so a managed t
 ### Jev only checks coverage
 
 Code decides every fact that code can check. Jev answers only whether the change list covers each subtask, because the reviewer writes that list and code cannot compare prose. Every call is stored with its input and later labeled by rule from the merged pull request, so the checks can be measured without a second model.
-
-### Definitions stay Project data
-
-The Gateway stays generic by storing each Project's plan as a task definition instead of as code. An operator or an agent can change that plan through the API. Kinds stay in code, because a kind is executable behavior, and definitions stay data. [ADR 0182](/decisions/0182-start-tasks-from-project-task-definitions#task-definitions) records the alternatives this rejects.
-
-Task VM workspaces seed their private package manager caches from the host's [read-only shared package cache](/reference/compute-drivers#shared-package-cache) before setup. A miss uses the normal registry.

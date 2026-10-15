@@ -15,7 +15,6 @@ import type {
 } from "../api/types";
 import type { Activity } from "../api/activities";
 import type { TaskGroup } from "../api/tasks";
-import type { Definition } from "../definitions/definition";
 import { createDemoDocuments } from "./documents";
 
 type Fixture = { route: string; status: number; body: { data: unknown } };
@@ -121,7 +120,6 @@ export function createDemoGateway() {
     const databases = list<Database>("GET /api/v1/database-connections");
     const instances = list<Instance>("GET /api/v1/instances");
     const taskGroups = list<TaskGroup>("GET /api/v1/task-groups");
-    const taskDefinitions = list<Definition>("GET /api/v1/task-definitions");
     const proxyModels = list<{ id: string; provider: string }>("GET /api/v1/proxycli/models");
     const activities = list<Activity>("GET /api/v1/activities");
     // The instances that publish a tracking host; none does until a test or a visitor enables one.
@@ -672,46 +670,6 @@ export function createDemoGateway() {
             ["GET", /^\/api\/v1\/processes$/, () => ok(processes)],
             ["GET", /^\/api\/v1\/schedules$/, () => ok(schedules)],
             ["GET", /^\/api\/v1\/database-connections$/, () => ok(databases)],
-            [
-                "GET",
-                /^\/api\/v1\/task-definitions(?:\?(.*))?$/,
-                ([query = ""]) => {
-                    if (!tasksEnabled) {
-                        return failure(
-                            409,
-                            "extension.disabled",
-                            "The tasks extension is disabled.",
-                        );
-                    }
-                    const projectId = new URLSearchParams(query).get("project_id");
-                    const rows =
-                        projectId === null
-                            ? taskDefinitions
-                            : taskDefinitions.filter((row) => String(row.project_id) === projectId);
-
-                    return ok(rows);
-                },
-            ],
-            [
-                "GET",
-                /^\/api\/v1\/projects\/(\d+)\/task-definitions\/([^/]+)$/,
-                ([project = "", name = ""]) => {
-                    if (!tasksEnabled) {
-                        return failure(
-                            409,
-                            "extension.disabled",
-                            "The tasks extension is disabled.",
-                        );
-                    }
-                    const found = taskDefinitions.find(
-                        (row) =>
-                            String(row.project_id) === project &&
-                            row.name === decodeURIComponent(name),
-                    );
-
-                    return found === undefined ? notFound("Task definition") : ok(found);
-                },
-            ],
             [
                 "GET",
                 /^\/api\/v1\/proxycli\/models$/,

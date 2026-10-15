@@ -119,7 +119,6 @@ it('selects only the tests that cover a non-PHP runtime resource', function (): 
     $paths = [
         'resources/tasks/check',
         'resources/tasks/turn',
-        'resources/tasks/actions.json',
         'resources/mcp/tools.json',
         'resources/scripts/service-metrics.py',
         'resources/scripts/service-metrics-fpm.py',
@@ -145,7 +144,6 @@ it('selects only the tests that cover a non-PHP runtime resource', function (): 
     expect($selected)->toBe([
         'resources/tasks/check' => ['tests/Feature/Infrastructure/Tasks/RemoteTaskCheckRunnerTest.php'],
         'resources/tasks/turn' => ['tests/Feature/Tasks/TurnReceiptTest.php'],
-        'resources/tasks/actions.json' => ['tests/Feature/Tasks/TaskDefinitionValidationTest.php'],
         'resources/mcp/tools.json' => ['tests/Feature/Mcp'],
         'resources/scripts/service-metrics.py' => ['tests/Feature/Infrastructure/Metrics/ServiceMetricsProgramTest.php'],
         'resources/scripts/service-metrics-fpm.py' => ['tests/Feature/Infrastructure/Metrics/ServiceMetricsProgramTest.php'],

@@ -21,26 +21,6 @@ beforeEach(function (): void {
 });
 
 describe('MCP tool schemas', function (): void {
-    it('empty object schemas stay objects', function (): void {
-        $response = $this->postJson('/mcp', [
-            'jsonrpc' => '2.0',
-            'id' => 1,
-            'method' => 'tools/list',
-            'params' => (object) [],
-        ]);
-        $response->assertOk();
-        $document = mcp_schema_document($response);
-        $tools = collect($document->result->tools)->keyBy('name');
-
-        foreach (['tasks-definition-create', 'tasks-definition-update'] as $name) {
-            $tool = $tools->get($name);
-            expect($tool)->toBeInstanceOf(stdClass::class);
-            $schema = $tool->inputSchema->properties->parameters->items->properties->default;
-            expect($schema)->toBeInstanceOf(stdClass::class)
-                ->and(json_encode($schema, JSON_THROW_ON_ERROR))->toBe('{}');
-        }
-    });
-
     it('serves every generated input schema unchanged through tools/list', function (): void {
         $generated = json_decode((string) file_get_contents(resource_path('mcp/tools.json')), associative: false, flags: JSON_THROW_ON_ERROR);
         $tools = [];

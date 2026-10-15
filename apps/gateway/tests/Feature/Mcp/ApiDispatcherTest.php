@@ -51,3 +51,28 @@ it('gives a bodiless internal request empty content instead of the caller body',
     expect($kernel->request?->getPathInfo())->toBe('/api/v1/task-groups/4/tasks/7')
         ->and(new ReflectionProperty(SymfonyRequest::class, 'content')->getValue($kernel->request))->toBe('');
 })->with(['DELETE', 'GET']);
+
+it('keeps nested empty objects in the tool body and result', function (): void {
+    $kernel = Mockery::mock(Kernel::class);
+    $kernel->shouldReceive('handle')->once()->withArgs(function (Request $request): bool {
+        expect($request->getContent())->toBe('{"options":{},"flags":[]}');
+
+        return true;
+    })->andReturn(new Response('{"data":{"options":{},"flags":[]}}', 200));
+    $definition = new ToolDefinition(
+        name: 'example-create',
+        title: 'Create an example',
+        description: 'Preserve JSON types.',
+        method: 'POST',
+        path: '/api/v1/examples',
+        pathInputs: [],
+        queryInputs: [],
+        streams: false,
+        inputSchema: ['type' => 'object'],
+    );
+    $caller = Request::create('/mcp', 'POST', content: '{"params":{"name":"example-create","arguments":{"options":{},"flags":[]}}}');
+
+    $result = new ApiDispatcher(app(), $kernel)->dispatch($definition, ['options' => [], 'flags' => []], $caller);
+
+    expect(json_encode($result->json(), JSON_THROW_ON_ERROR))->toBe('{"data":{"options":{},"flags":[]}}');
+});

@@ -2,7 +2,6 @@ import { InstanceDependenciesPage } from "./InstanceDependencies";
 import { extensionsQuery } from "../api/extensions";
 import { taskGroupsQuery, tasksForInstance } from "../api/tasks";
 import { useTaskPoll } from "../realtime/polling";
-import { DefinitionPane } from "../definitions/definition-pane";
 import { TasksBoard } from "./Tasks";
 import { ProjectCodeEditor } from "../ui/ProjectCodeEditor";
 import { useQuery } from "@tanstack/react-query";
@@ -102,11 +101,6 @@ function ProjectOverview({ fleet, project }: { fleet: Fleet; project: Project })
             >
                 <ProjectCodeEditor key={project.id} project={project} />
             </Properties>
-            <DefinitionPane
-                projectId={project.id}
-                order={1}
-                className="w-full min-h-[140px] max-h-[32vh] md:max-h-none"
-            />
             <Pane
                 name="instances"
                 order={2}

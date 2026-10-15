@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Http\Mcp;
 
-use App\Domain\Tasks\TaskDefinitionJson;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Http\Request;
@@ -81,7 +80,7 @@ final readonly class ApiDispatcher
      */
     private function argumentsKeepingObjects(ToolDefinition $definition, array $arguments, string $raw): array
     {
-        $decoded = TaskDefinitionJson::decode($raw);
+        $decoded = JsonObjects::decode($raw);
         $params = is_array($decoded) ? ($decoded['params'] ?? null) : null;
 
         if (! is_array($params) || ($params['name'] ?? null) !== $definition->name || ! is_array($params['arguments'] ?? null) || array_is_list($params['arguments'])) {

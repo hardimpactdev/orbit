@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Http\Mcp;
 
-use App\Domain\Tasks\TaskDefinitionJson;
 use App\Support\ValidatedData;
 use stdClass;
 
@@ -53,7 +52,7 @@ final readonly class ApiResult
     /** @return array<string, mixed>|null */
     private function decode(string $json): ?array
     {
-        $decoded = TaskDefinitionJson::decode($json);
+        $decoded = JsonObjects::decode($json);
 
         if ($decoded instanceof stdClass) {
             return [];

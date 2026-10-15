@@ -19,6 +19,10 @@ The docs-first subtask of a task writes the ADR, when one is needed, together wi
 
 A new ADR has the status `In progress.` The maintainer reviews it together with the feature. A change to a decision that is still in progress edits that ADR. A change to built behavior edits the documentation directly, and needs a new ADR only when it is itself a significant decision.
 
+## Withdraw a decision
+
+When a decision is abandoned, keep its ADR and mark its Status `Withdrawn on YYYY-MM-DD.` Add a short note at the top with the reason, and update the overview. A withdrawn record stays at its existing path and needs no redirect.
+
 ## Absorb and retire
 
 The pull request that completes a decision absorbs it into the documentation and retires the ADR in the same change:
