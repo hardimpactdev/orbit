@@ -1211,7 +1211,8 @@
                 "Instance",
                 "Node",
                 "Role",
-                "Route"
+                "Route",
+                "Task"
             ],
             "governing_adrs": []
         },
