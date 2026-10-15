@@ -342,7 +342,7 @@ final readonly class RunAutomaticDeploysAction
     /** The operation that holds the Instance, if any. */
     private function holder(Instance $instance): ?Operation
     {
-        return Operation::query()->where('lock_key', OperationStore::lockKey('instance', $instance->id))->first();
+        return Operation::query()->where('lock_key', OperationStore::lockKey(OperationKinds::InstanceTarget, $instance->id))->first();
     }
 
     private function activity(Instance $instance, AutomaticDeployOutcome $outcome): void

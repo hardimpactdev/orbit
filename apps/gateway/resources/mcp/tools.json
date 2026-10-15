@@ -5837,7 +5837,7 @@
       "name": "operation-list",
       "extension": null,
       "title": "List operations",
-      "description": "Lists the 50 newest operations on Nodes the caller can access, newest first, without steps. Filter by `status`, `kind`, `target_type`, and `target_id`; `status=running` finds the operations still at work.",
+      "description": "Lists the 50 newest operations on Nodes the caller can access, newest first, without steps. Filter by `status`, `kind`, `target_type`, and `target_id`; `status=running` finds the operations still at work. `kind` is two names joined by `.`, such as `instance.deploy`, and `target_type` one name, such as `instance`. A name starts with a lower-case letter and holds only lower-case letters, digits, and `_`. A well-formed value that no operation has returns an empty list. See /reference/operations#filter-the-list.",
       "method": "GET",
       "path": "/api/v1/operations",
       "path_inputs": [],
@@ -5864,15 +5864,13 @@
           },
           "kind": {
             "type": "string",
-            "enum": [
-              "instance.deploy"
-            ]
+            "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$(?![\\s\\S])",
+            "maxLength": 64
           },
           "target_type": {
             "type": "string",
-            "enum": [
-              "instance"
-            ]
+            "pattern": "^[a-z][a-z0-9_]*$(?![\\s\\S])",
+            "maxLength": 32
           },
           "target_id": {
             "type": "integer",

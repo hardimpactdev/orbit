@@ -2334,7 +2334,7 @@ export interface paths {
         };
         /**
          * List operations
-         * @description Lists the 50 newest operations on Nodes the caller can access, newest first, without steps. Filter by `status`, `kind`, `target_type`, and `target_id`; `status=running` finds the operations still at work.
+         * @description Lists the 50 newest operations on Nodes the caller can access, newest first, without steps. Filter by `status`, `kind`, `target_type`, and `target_id`; `status=running` finds the operations still at work. `kind` is two names joined by `.`, such as `instance.deploy`, and `target_type` one name, such as `instance`. A name starts with a lower-case letter and holds only lower-case letters, digits, and `_`. A well-formed value that no operation has returns an empty list. See /reference/operations#filter-the-list.
          */
         get: operations["operation-list"];
         put?: never;
@@ -10395,7 +10395,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Accepted. The `instance.deploy` operation is queued; follow it with `operation:show`. */
+            /** @description Accepted. The operation is queued; follow it with `operation:show`. */
             202: {
                 headers: {
                     [name: string]: unknown;
@@ -13713,8 +13713,8 @@ export interface operations {
         parameters: {
             query?: {
                 status?: "queued" | "running" | "succeeded" | "failed" | "cancelled";
-                kind?: "instance.deploy";
-                target_type?: "instance";
+                kind?: string;
+                target_type?: string;
                 target_id?: number;
             };
             header?: never;
