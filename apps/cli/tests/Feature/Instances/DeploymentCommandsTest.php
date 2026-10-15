@@ -336,12 +336,12 @@ describe('rollback streams', function (): void {
         $command = new Process(
             [PHP_BINARY, dirname(__DIR__, 3).'/orbit', 'node:role:add', '17', 'app-prod', '--converge', $mode],
             env: ['ORBIT_HOME' => $fixture['home']],
-            timeout: 10,
+            timeout: $fixture['deadline'] - microtime(true),
         );
 
         try {
             $command->start();
-            deployment_cli_wait_until(static fn (): bool => is_file($fixture['request']));
+            subprocess_fixture_wait_until($fixture['server'], static fn (): bool => is_file($fixture['request']));
             expect($command->isRunning())->toBeTrue();
             $startedAt = microtime(true);
             $command->signal($signal);
@@ -349,7 +349,7 @@ describe('rollback streams', function (): void {
             $elapsed = microtime(true) - $startedAt;
             expect($exitCode)->toBe(128 + $signal)
                 ->and($elapsed)->toBeLessThan(2.0);
-            deployment_cli_wait_until(static fn (): bool => is_file($fixture['disconnected']));
+            subprocess_fixture_wait_until($fixture['server'], static fn (): bool => is_file($fixture['disconnected']));
 
             expect($fixture['server']->wait())->toBe(0)
                 ->and($command->getErrorOutput())->toBe('')
@@ -382,14 +382,14 @@ describe('rollback streams', function (): void {
         $command = new Process(
             [PHP_BINARY, dirname(__DIR__, 3).'/orbit', 'instance:rollback', '17', '--release=release-a', '--json', '--no-interaction'],
             env: ['ORBIT_HOME' => $fixture['home']],
-            timeout: 10,
+            timeout: $fixture['deadline'] - microtime(true),
         );
 
         try {
             $command->start(static function (string $type, string $data) use (&$output): void {
                 $output .= $data;
             });
-            deployment_cli_wait_until(static fn (): bool => is_file($fixture['request']));
+            subprocess_fixture_wait_until($fixture['server'], static fn (): bool => is_file($fixture['request']));
 
             if (! $command->isRunning()) {
                 throw new RuntimeException(
@@ -403,7 +403,7 @@ describe('rollback streams', function (): void {
             $command->signal(SIGINT);
             $exitCode = $command->wait();
             $elapsed = microtime(true) - $startedAt;
-            deployment_cli_wait_until(static fn (): bool => is_file($fixture['disconnected']));
+            subprocess_fixture_wait_until($fixture['server'], static fn (): bool => is_file($fixture['disconnected']));
             $serverExitCode = $fixture['server']->wait();
 
             expect($exitCode)->not->toBe(0)
@@ -437,7 +437,7 @@ describe('rollback streams', function (): void {
         $command = new Process(
             [PHP_BINARY, dirname(__DIR__, 3).'/orbit', 'instance:rollback', '17', '--release=release-a', $mode, '--no-interaction'],
             env: ['ORBIT_HOME' => $fixture['home']],
-            timeout: 10,
+            timeout: $fixture['deadline'] - microtime(true),
         );
 
         if ($mode === '--ansi') {
@@ -448,7 +448,7 @@ describe('rollback streams', function (): void {
             $command->start(static function (string $type, string $data) use (&$output): void {
                 $output .= $data;
             });
-            deployment_cli_wait_until(static fn (): bool => is_file($fixture['stream']));
+            subprocess_fixture_wait_until($fixture['server'], static fn (): bool => is_file($fixture['stream']));
             usleep(100_000);
 
             if (! $command->isRunning()) {
@@ -463,7 +463,7 @@ describe('rollback streams', function (): void {
             $command->signal(SIGINT);
             $exitCode = $command->wait();
             $elapsed = microtime(true) - $startedAt;
-            deployment_cli_wait_until(static fn (): bool => is_file($fixture['disconnected']));
+            subprocess_fixture_wait_until($fixture['server'], static fn (): bool => is_file($fixture['disconnected']));
             $serverExitCode = $fixture['server']->wait();
 
             expect($exitCode)->toBe(130)
@@ -591,6 +591,7 @@ function deployment_cli_request_id(): string
  *     stream: string,
  *     disconnected: string,
  *     server: Process,
+ *     deadline: float,
  * }
  */
 function deployment_cli_signal_fixture(string $root, string $mode): array
@@ -598,7 +599,6 @@ function deployment_cli_signal_fixture(string $root, string $mode): array
     $directory = "{$root}/signal-{$mode}";
     mkdir($directory, 0o700, recursive: true);
     [$certificate, $privateKey] = deployment_cli_signal_certificate($directory);
-    $ready = "{$directory}/ready";
     $request = "{$directory}/request";
     $stream = "{$directory}/stream";
     $disconnected = "{$directory}/disconnected";
@@ -630,8 +630,9 @@ function deployment_cli_signal_fixture(string $root, string $mode): array
                 exit(2);
             }
 
-            file_put_contents($argv[3], $address);
-            $connection = stream_socket_accept($server, 5);
+            fwrite(STDOUT, $address."\n");
+            fflush(STDOUT);
+            $connection = stream_socket_accept($server, -1);
 
             if ($connection === false) {
                 exit(3);
@@ -649,9 +650,9 @@ function deployment_cli_signal_fixture(string $root, string $mode): array
                 $request .= $chunk;
             }
 
-            file_put_contents($argv[4], $request);
+            file_put_contents($argv[3], $request);
 
-            if ($argv[7] === 'body-blocked') {
+            if ($argv[6] === 'body-blocked') {
                 preg_match('/^X-Orbit-Request-Id:\s*([^\r\n]+)\r?$/mi', $request, $matches);
                 $requestId = $matches[1] ?? '';
                 $headers = "HTTP/1.1 200 OK\r\n"
@@ -689,8 +690,8 @@ function deployment_cli_signal_fixture(string $root, string $mode): array
                     fflush($connection);
                 }
 
-                file_put_contents($argv[5], 'sent');
-            } elseif ($argv[7] === 'streamed-output') {
+                file_put_contents($argv[4], 'sent');
+            } elseif ($argv[6] === 'streamed-output') {
                 preg_match('/^X-Orbit-Request-Id:\s*([^\r\n]+)\r?$/mi', $request, $matches);
                 $requestId = $matches[1] ?? '';
                 $headers = "HTTP/1.1 200 OK\r\n"
@@ -765,15 +766,13 @@ function deployment_cli_signal_fixture(string $root, string $mode): array
 
                 fwrite($connection, "0\r\n\r\n");
                 fflush($connection);
-                file_put_contents($argv[5], 'sent');
+                file_put_contents($argv[4], 'sent');
                 stream_set_blocking($connection, false);
-                $deadline = microtime(true) + 5;
-
-                while (microtime(true) < $deadline) {
+                while (true) {
                     $data = @fread($connection, 8192);
 
                     if ($data === '' && feof($connection)) {
-                        file_put_contents($argv[6], 'closed');
+                        file_put_contents($argv[5], 'closed');
 
                         break;
                     }
@@ -787,9 +786,7 @@ function deployment_cli_signal_fixture(string $root, string $mode): array
             }
 
             stream_set_blocking($connection, false);
-            $deadline = microtime(true) + 5;
-
-            while (microtime(true) < $deadline) {
+            while (true) {
                 $read = [$connection];
                 $write = null;
                 $except = null;
@@ -798,7 +795,7 @@ function deployment_cli_signal_fixture(string $root, string $mode): array
                     $data = fread($connection, 8192);
 
                     if ($data === '' && feof($connection)) {
-                        file_put_contents($argv[6], 'closed');
+                        file_put_contents($argv[5], 'closed');
                         fclose($connection);
                         fclose($server);
                         exit(0);
@@ -806,23 +803,17 @@ function deployment_cli_signal_fixture(string $root, string $mode): array
                 }
             }
 
-            exit(5);
             PHP,
         $certificate,
         $privateKey,
-        $ready,
         $request,
         $stream,
         $disconnected,
         $mode,
-    ], timeout: 8);
+    ], timeout: 10);
     $server->start();
-    deployment_cli_wait_until(static fn (): bool => is_file($ready));
-    $address = file_get_contents($ready);
-
-    if (! is_string($address) || $address === '') {
-        throw new RuntimeException('Could not resolve the deployment signal fixture address.');
-    }
+    $deadline = $server->getStartTime() + $server->getTimeout();
+    $address = subprocess_fixture_address($server);
 
     $home = "{$directory}/home";
     mkdir($home, 0o700);
@@ -832,7 +823,7 @@ function deployment_cli_signal_fixture(string $root, string $mode): array
         caPath: $certificate,
     ));
 
-    return compact('home', 'request', 'stream', 'disconnected', 'server');
+    return compact('home', 'request', 'stream', 'disconnected', 'server', 'deadline');
 }
 
 /** @return array{string, string} */
@@ -879,17 +870,4 @@ function deployment_cli_signal_certificate(string $directory): array
     chmod($privateKeyPath, 0o600);
 
     return [$certificatePath, $privateKeyPath];
-}
-
-function deployment_cli_wait_until(Closure $condition, float $timeoutSeconds = 5): void
-{
-    $deadline = microtime(true) + $timeoutSeconds;
-
-    while (! $condition()) {
-        if (microtime(true) >= $deadline) {
-            throw new RuntimeException('Timed out waiting for the deployment signal fixture.');
-        }
-
-        usleep(10_000);
-    }
 }
