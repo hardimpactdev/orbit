@@ -890,6 +890,33 @@
             ]
         },
         {
+            "path": "docs/decisions/0213-run-ci-runners-through-a-ci-runner-role.md",
+            "title": "ADR 0213: Run CI runners through a ci-runner role",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "apps/web"
+            ],
+            "concepts": [
+                "Cluster",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Process",
+                "Project",
+                "Role",
+                "Route",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0213"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -941,7 +968,8 @@
                 "0196",
                 "0198",
                 "0200",
-                "0206"
+                "0206",
+                "0213"
             ]
         },
         {
