@@ -1,12 +1,12 @@
 ---
 title: "ADR 0212: Turn ProxyCli into the AI router extension"
 sidebarTitle: "0212 AI router"
-description: "In progress. ProxyCli becomes the ai-router extension with a singleton ai-router role, an Orbit-managed router Process, and a cliproxyapi driver. Tasks requires it and reaches it through a core model key interface."
+description: "In progress. ProxyCli becomes the ai-router extension with a singleton ai-router role, an Orbit-managed router Process, and a cliproxyapi driver. Tasks requires it and reaches it through a core model key interface. ADR 0214 adds router upgrades."
 ---
 
 # ADR 0212: Turn ProxyCli into the AI router extension
 
-The `proxycli` extension becomes the `ai-router` extension, and every surface takes the new name with no alias. CLIProxyAPI becomes its `cliproxyapi` driver. A new singleton `ai-router` Node role places an Orbit-managed router Process and its quota collector. Tasks requires the AI router, reaches it through a small core interface, and the AI router cannot be disabled while Tasks is enabled. Orbit pins the router version, Doctor flags a newer upstream release, and the operator upgrades with `ai-router:update`.
+The `proxycli` extension becomes the `ai-router` extension, and every surface takes the new name with no alias. CLIProxyAPI becomes its `cliproxyapi` driver. A new singleton `ai-router` Node role places an Orbit-managed router Process and its quota collector. Tasks requires the AI router, reaches it through a small core interface, and the AI router cannot be disabled while Tasks is enabled. [ADR 0214](/decisions/0214-pin-the-ai-router-version-and-flag-upgrades) builds on this record: it pins the router version, flags a newer upstream release, and adds `ai-router:update`.
 
 ## Status
 
@@ -49,14 +49,12 @@ Every `proxycli` name moves at once. No alias, redirect command, or old error co
 | `proxycli:show PROVIDER` | `ai-router:provider:show PROVIDER` |
 | `proxycli:models` | `ai-router:model:list` |
 | `proxycli:update ACCOUNT --disabled` / `--enabled` | `ai-router:account:disable ACCOUNT` / `ai-router:account:enable ACCOUNT` |
-| None | `ai-router:update VERSION`, the router upgrade |
-| MCP `proxycli-status`, `-list`, `-show`, `-models`, `-update`, `-setup`, `-teardown` | `ai-router-status`, `ai-router-provider-list`, `ai-router-provider-show`, `ai-router-model-list`, `ai-router-account-enable`, `ai-router-account-disable`, `ai-router-update` |
+| MCP `proxycli-status`, `-list`, `-show`, `-models`, `-update`, `-setup`, `-teardown` | `ai-router-status`, `ai-router-provider-list`, `ai-router-provider-show`, `ai-router-model-list`, `ai-router-account-enable`, `ai-router-account-disable`. `-setup` and `-teardown` are removed |
 | `GET /api/v1/proxycli` | `GET /api/v1/ai-router` |
 | `POST /api/v1/proxycli`, `DELETE /api/v1/proxycli` | Removed |
 | `GET /api/v1/proxycli/providers`, `.../providers/{provider}` | `GET /api/v1/ai-router/providers`, `.../providers/{provider}` |
 | `GET /api/v1/proxycli/models` | `GET /api/v1/ai-router/models` |
 | `PATCH /api/v1/proxycli/accounts/{account}` | `POST /api/v1/ai-router/accounts/{account}/enable` and `.../disable` |
-| None | `POST /api/v1/ai-router/update` |
 | Route names `proxycli:*` | Route names equal to the new CLI commands |
 | Error codes `proxycli.*` | `ai_router.*`, such as `ai_router.cache_missing` |
 | `process.required_by_proxycli` | `process.required_by_ai_router` |
@@ -76,13 +74,13 @@ Every `proxycli` name moves at once. No alias, redirect command, or old error co
 | Setting `proxycli.cache_connection` | The `ai-router` role's cache connection |
 | Settings `proxycli.cliproxy_management_key`, `proxycli.read_token`, `proxycli.control_token`, `proxycli.process_port` | `ai_router.management_key`, `ai_router.read_token`, `ai_router.control_token`, `ai_router.collector_port` |
 | Setting `compute.model_proxy.anchor.<sha256(origin)>` | `ai_router.anchor.<sha256(origin)>`, same hash input and value |
-| None | `ai_router.version`, the pinned driver version, default from `ORBIT_AI_ROUTER_VERSION` |
+| None | Gateway variable `ORBIT_AI_ROUTER_VERSION`, the driver version that a new router installs |
 | Config `task_vms.model_proxy_origin`, `ORBIT_TASK_VMS_MODEL_PROXY_ORIGIN` | Removed. The origin comes from the role |
 | Column `task_vms.model_proxy_origin` | `task_vms.ai_router_origin` |
 | Columns `processes.proxycli_source_revision`, `processes.proxycli_source_activation_pending` | An extension-owned table `ai_router_process_sources` with the same two values |
 | Pages `/reference/proxycli`, `/cli/proxycli` | `/reference/ai-router`, `/cli/ai-router`. The old paths get no redirect |
 
-`ai-router:account:enable` and `:disable` use the toggle pair of the [command vocabulary](/reference/cli-command-vocabulary#verb-pairs). Providers and models use `list` and `show` under their own nouns, so the family keeps only two family actions: `status` and the version `update`. `update VERSION` follows `analytics:update`.
+`ai-router:account:enable` and `:disable` use the toggle pair of the [command vocabulary](/reference/cli-command-vocabulary#verb-pairs). Providers and models use `list` and `show` under their own nouns, so the family keeps one family action, `status`. [ADR 0214](/decisions/0214-pin-the-ai-router-version-and-flag-upgrades) adds the second, `update`, with its MCP tool and API operation.
 
 CodexBar reads the collector by URL and token. The operator changes its URL to `https://collector.ai-router.orbit` once. The read token stays the same.
 
@@ -98,9 +96,9 @@ A driver implements this contract. It is a PHP interface inside the extension, n
 | Adopt | Checks that an existing Process runs this driver's program, and reports its installed version and configuration paths. |
 | Issue and revoke keys | Registers a per-group model key and keeps one anchor key present, so the key list is never empty. Revokes a key and confirms that it no longer works. |
 | Report quota and accounts | Supplies the collector program, which writes the shared snapshot of provider pools, windows, and models, and toggles one account. |
-| Report versions | Reports the installed version on the Node and the latest upstream release. For `cliproxyapi` that is the newest release of [router-for-me/CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI/releases). |
+| Report the installed version | Reports the version that runs on the Node, for adoption and for [ADR 0214](/decisions/0214-pin-the-ai-router-version-and-flag-upgrades). |
 
-Every driver step is idempotent. A driver never overwrites configuration that the router changes at run time, such as its key list and its account files. Today's `TaskVmModelKeys` behavior moves into the `cliproxyapi` driver unchanged.
+Every driver step is idempotent. A driver never overwrites configuration that the router changes at run time, such as its key list and its account files. Today's `TaskVmModelKeys` behavior moves into the `cliproxyapi` driver unchanged. [ADR 0214](/decisions/0214-pin-the-ai-router-version-and-flag-upgrades) adds one capability: report the latest upstream release.
 
 The `cliproxyapi` driver keeps today's layout: versions under `~orbit/.local/share/cliproxyapi/`, the `current` link, and the configuration in `~orbit/.config/cliproxyapi/config.yaml`. The router listens on port 8317. Adoption therefore moves no file.
 
@@ -129,7 +127,7 @@ This removes today's hazard. Disabling removes the router Process, the collector
 
 `ai-router` is a core role in `RoleName` and `RoleRegistry`, like `analytics`. It decides where the router Process and its collector run.
 
-This follows ADR 0210's planned order, step 4: Analytics stays core while `RoleName` is a core enum. For the same reason, the role's name and its definition below are core. Unlike Analytics, the role's behavior is extension code: assignment checks, convergence, removal, firewall rules, and the version report reach core through the [plug-in points](#plug-in-points). Core names the role only by its `RoleName` case, never by an extension class, so the boundary test still holds.
+This follows ADR 0210's planned order, step 4: Analytics stays core while `RoleName` is a core enum. For the same reason, the role's name and its definition below are core. Unlike Analytics, the role's behavior is extension code: assignment checks, convergence, removal, and firewall rules reach core through the [plug-in points](#plug-in-points). Core names the role only by its `RoleName` case, never by an extension class, so the boundary test still holds.
 
 | Property | Value |
 | --- | --- |
@@ -148,7 +146,7 @@ The router holds the credentials of every model account. So it stays off the pub
 - `--process` adopts an existing router Process on that Node. See [Migration of live state](#migration-of-live-state). It exists only to adopt Process 103. Step 4 adds it, and step 5 removes it.
 - While the extension is off, the assignment places nothing. It records the Node and the cache connection, and `--process` marks the adopted Process. Adoption reads only the role, the Process, and the stored settings, never the switch.
 
-`node:role:remove NODE ai-router` refuses with `ai_router.role_required` while the extension is enabled. Removal deletes the stored management key, anchors, read and control tokens, and the version pin. It leaves the router's files on the Node, as `analytics` leaves its databases.
+`node:role:remove NODE ai-router` refuses with `ai_router.role_required` while the extension is enabled. Removal deletes the stored management key, anchors, and read and control tokens. It leaves the router's files on the Node, as `analytics` leaves its databases.
 
 The task VM origin is `http://<role Node WireGuard address>:<driver port>`, for example `http://10.44.0.3:8317`. It replaces `task_vms.model_proxy_origin`.
 
@@ -166,7 +164,7 @@ The Caddy guard that aborts task VM clients still covers the collector site, bec
 
 `extension:enable ai-router` refuses with `ai_router.role_missing` while no Node holds an active `ai-router` role. Otherwise its `enable()` hook converges, idempotently:
 
-1. The router Process `ai-router` on the role Node, through the driver, at the pinned version. A new install gets a generated management key. An adopted Process keeps its key.
+1. The router Process `ai-router` on the role Node, through the driver, at the version in `ORBIT_AI_ROUTER_VERSION`. [ADR 0214](/decisions/0214-pin-the-ai-router-version-and-flag-upgrades) replaces that variable with a stored pin. A new install gets a generated management key. An adopted Process keeps its key.
 2. The collector Process `ai-router-collector` on the same Node, with the cache connection of the role.
 3. The collector's Orbit CA leaf, its Caddy site, and the private DNS record `collector.ai-router.orbit`.
 4. The role's firewall rules.
@@ -184,19 +182,9 @@ ADR 0210 keeps fleet work in a separate setup command, as `proxycli:setup` did. 
 
 Both Processes are Orbit-managed. `process:destroy` refuses them with `process.required_by_ai_router`. Logs, restart, start, and stop work as for any Process. Only `extension:disable ai-router` removes them.
 
-### Upgrades: a pinned version and a flag
-
-The extension pins the driver version in `ai_router.version`, as the analytics role pins Plausible. There are no automatic upgrades.
-
-- A daily extension schedule asks the driver for the latest upstream release and stores it with the time of the check. Doctor reads that stored value and makes no network call.
-- Doctor's `role` family reports `role.update_available` on the `ai-router` assignment when the latest release is newer than the pin. Its expected value is the latest version, and its observed value is the pin. The kind is `informational`, so `orbit doctor` stays healthy and exits 0 while a newer release exists. A failed release check is not a finding.
-- The [problem collector](/reference/tasks#outer-loop) skips informational findings, with one explicit exception: it records `role.update_available`. A stale pin therefore still gets a fingerprint, and the filer files it like any Doctor problem.
-- `orbit ai-router:update VERSION` installs that version through the driver, switches the `current` link, restarts the router Process, and stores the pin. It keeps the configuration, the key list, and the account files. `ai_router.version_unknown` refuses a version that upstream does not publish.
-- `ai-router:update` runs while task groups run. A Pi turn whose model call fails during the restart follows the Tasks [transient provider retry](/reference/tasks#retry-a-transient-provider-error): the same thread retries after a backoff of 1, 2, 4, then 8 minutes. The update adds no wait or refusal of its own.
-
 ### Plug-in points
 
-Each point is a typed core interface that the extension tags. ADR 0210 lists six of them as points for the extensions that move after Documents. The other six are new, which ADR 0210 allows: each extension that moves adds its points the same way. For each point, the pull request that adds it deletes the hard-coded call in the last column.
+Each point is a typed core interface that the extension tags. ADR 0210 lists six of them as points for the extensions that move after Documents. The other five are new, which ADR 0210 allows: each extension that moves adds its points the same way. For each point, the pull request that adds it deletes the hard-coded call in the last column.
 
 | Point | In ADR 0210's list | Core caller | Hard-coded call it replaces and deletes |
 | --- | --- | --- | --- |
@@ -209,7 +197,6 @@ Each point is a typed core interface that the extension tags. ADR 0210 lists six
 | Database connection update hook | No | `UpdateDatabaseConnectionAction` | `ReconvergeProxyCliConnectionAction::validate()` and `::execute()` |
 | Database connection removal guard | No | `DestroyDatabaseConnectionAction` | None. It adds the missing guard `database_connection.required_by_ai_router` |
 | Role baseline and assignment check | No | `NativeRoleBaselineConverger`, `AddNodeRoleAction`, `node:role:remove` | None. The `ai-router` arm resolves the tagged `RoleBaseline` instead of naming a class. The other roles keep their arms |
-| Role version report | No | Doctor `role` family | None |
 | `ModelKeyIssuer` | No | `TaskVmRuntime`, `task-vms:prepare-hub` | In `TaskVmRuntime`: the `ProxyCliState` dependency, the URL check in `prepare()`, `managementKey()`, and `anchor()`. `TaskVmModelKeys` moves into the driver. In `PrepareTaskVmHubCommand`: the read of `modelProxyOrigin` |
 | Process source record | No | `Process` model | The `proxycli_source_*` properties, which only `NativeProxyCliRuntimeLifecycle` uses. They move to the extension table |
 
@@ -242,18 +229,18 @@ Adoption of Process 103:
 
 1. `orbit node:role:add services ai-router --cache-connection=services-valkey --process=103`.
 2. The Gateway checks that the Process is a systemd Process on that Node, that the driver recognizes its program, that a management key is stored, and that the derived origin `http://10.44.0.3:8317` equals the transitional router URL and the origin of every task VM that holds a key. A mismatch refuses with `ai_router.adoption_refused` and changes nothing.
-3. The Gateway marks Process 103 as the Orbit-managed router and records the installed version as the pin. It does not rewrite the unit, rename the Process, or restart it. In-flight Pi turns see no change.
-4. The first `ai-router:update` replaces the Process as `ai-router` at the new version. That is the first restart, and the operator chooses its time.
+3. The Gateway marks Process 103 as the Orbit-managed router and records its installed version. It does not rewrite the unit, rename the Process, or restart it. In-flight Pi turns see no change.
+4. Process 103 keeps running unchanged. The first router upgrade of [ADR 0214](/decisions/0214-pin-the-ai-router-version-and-flag-upgrades) replaces it as `ai-router`. That is the first restart, and the operator chooses its time.
 
 ### Build order
 
-Each step is one pull request. Each keeps Tasks working, and each passes the acceptance test below before merge.
+Each step is one pull request. Each keeps Tasks working, and each passes the acceptance test below before merge. The router upgrades of [ADR 0214](/decisions/0214-pin-the-ai-router-version-and-flag-upgrades) come after these five steps.
 
 1. **Core seam and hazard fix.** Add `ModelKeyIssuer`. ProxyCli implements it with today's settings and anchor key. `TaskVmRuntime` uses it and stops importing ProxyCli. `tasks` declares `proxycli` in `dependencies()`. `proxycli:teardown` refuses with HTTP 409 while Tasks is enabled or a task VM holds a key. Needs ADR 0210 merged.
 2. **Plug-in points.** Add the points in the table above. ProxyCli contributes through tags, and core stops naming it, except in the provider list. Move the `processes.proxycli_*` columns into the extension table. Add the cache connection removal guard. No other behavior changes.
 3. **Move and rename.** Move ProxyCli into `extensions/ai-router` and rename every surface, setting, Valkey key, environment variable, hostname, certificate slug, footprint artifact, and page. `proxycli:setup` and `proxycli:teardown` become `ai-router:setup` and `ai-router:teardown` until step 4 removes them. `/reference/proxycli` and `/cli/proxycli` get no redirect. The redirects of retired ADRs 0104, 0109, 0145, and 0150, and of `/solutions/cutover-proxycli`, point at the matching sections of the new pages. The router Process is untouched. The collector restarts once under its new name and hostname.
-4. **Role, driver, and managed router.** Add the `ai-router` role, the driver contract, the `cliproxyapi` driver, adoption with `--process`, and the `enable()` and `disable()` hooks. Needs amendments A1 to A3 in ADR 0210. Remove `ai-router:setup` and `ai-router:teardown`. The origin comes from the role when one is assigned, otherwise from the transitional router URL. `task-vms:prepare-hub` reads it through `ModelKeyIssuer`. Adopt Process 103 on this fleet.
-5. **Version flag and cleanup.** Add the release check schedule, the informational `role.update_available`, and `ai-router:update`. Change the problem collector so that it records `role.update_available` although it skips other informational findings. Remove the `--process` option of `node:role:add`. Remove the transitional router URL, `task_vms.model_proxy_origin`, and `ORBIT_TASK_VMS_MODEL_PROXY_ORIGIN`. Absorb this record into the AI router reference page and retire it.
+4. **Role, driver, and managed router.** Add the `ai-router` role, the driver contract, the `cliproxyapi` driver, adoption with `--process`, and the `enable()` and `disable()` hooks. Add [amendments A1 and A3](#required-amendments-to-adr-0210) to ADR 0210 and to the code. Remove `ai-router:setup` and `ai-router:teardown`. The origin comes from the role when one is assigned, otherwise from the transitional router URL. `task-vms:prepare-hub` reads it through `ModelKeyIssuer`. Adopt Process 103 on this fleet.
+5. **Cleanup.** Remove the `--process` option of `node:role:add`. Remove the transitional router URL, `task_vms.model_proxy_origin`, and `ORBIT_TASK_VMS_MODEL_PROXY_ORIGIN`. Absorb this record into the AI router reference page and retire it.
 
 ### Acceptance test
 
@@ -266,19 +253,18 @@ Every pull request in [Build order](#build-order) passes these checks on the liv
    - `extension:enable tasks` while the router extension is off refuses with `extension.dependency_disabled`.
    - With no open task group: `extension:disable tasks`, `extension:disable ai-router`, `extension:enable ai-router`, `extension:enable tasks`. From step 4 on, the router Process comes back with the same accounts.
    - From step 4 on, `process:destroy` on the router Process refuses with `process.required_by_ai_router`.
-   - From step 5 on, `ai-router:update` to the current pin is a no-op, and an update to a newer release passes the canary.
-4. From step 5 on, an `ai-router:update` while the canary's Pi turn is running restarts the router mid-turn. The turn fails with a transient provider error, the [provider retry](/reference/tasks#retry-a-transient-provider-error) posts a `provider_retry` comment and retries on the same thread, and the group then settles normally with only the anchor key left.
-5. From step 5 on, with the pin behind the latest release, `orbit doctor` reports the informational `role.update_available`, stays healthy, and exits 0. The problem collector records a fingerprint for it.
+
+[ADR 0214](/decisions/0214-pin-the-ai-router-version-and-flag-upgrades) adds the upgrade checks to this test.
 
 ### Required amendments to ADR 0210
 
-ADR 0210 is in review in [#1247](https://github.com/nckrtl/orbit/pull/1247). These changes belong in that record, not here. Step 4 of [Build order](#build-order) needs all three.
+[#1247](https://github.com/nckrtl/orbit/pull/1247) merges ADR 0210 as reviewed, with A2. A1 and A3 are not added to #1247. The pull request of build step 4 is the first that uses them, so it adds them to ADR 0210 and to the code, with their tests. If ADR 0210 is retired by then, it adds them to the page that absorbed it.
 
-| ID | Amendment | Why the AI router needs it |
-| --- | --- | --- |
-| A1 | An extension can refuse to be disabled. A pre-disable guard runs before the switch changes, after the `extension.required` check, and may refuse with a `ResourceOperationException`. | `ai_router.keys_outstanding` must refuse before the switch turns off. Today `DisableExtensionAction` turns the switch off and then calls `disable()`. |
-| A2 | The Gateway runs `enable()` first and turns the switch on only after the hook succeeds. A failed hook leaves the switch off and returns its error. | The maintainer decided this rule for every extension. Tasks must never see the router switch on without a router. |
-| A3 | An `enable()` or `disable()` hook may do fleet work over SSH, within the request's command deadline. It replaces the rule that fleet work belongs in a separate setup command. | The router has one switch and no setup command. |
+| ID | Amendment | Added by | Why the AI router needs it |
+| --- | --- | --- | --- |
+| A1 | An extension can refuse to be disabled. A pre-disable guard runs after the `extension.required` check and before the switch changes. It may refuse with a `ResourceOperationException`. | Build step 4 | `ai_router.keys_outstanding` must refuse before the switch turns off. ADR 0210 turns the switch off and then calls `disable()`. |
+| A2 | The Gateway runs `enable()` first and turns the switch on only after the hook succeeds. A failed hook leaves the switch off and returns its error. | #1247 | The maintainer decided this rule for every extension. Tasks must never see the router switch on without a router. |
+| A3 | An `enable()` or `disable()` hook may do fleet work over SSH, within the request's command deadline. It replaces the rule that fleet work belongs in a separate setup command. | Build step 4 | The router has one switch and no setup command. |
 
 The new plug-in points in [Plug-in points](#plug-in-points) need no amendment, because ADR 0210 lets each extension add its points. The links to ADR 0210 in this record point at #1247 until it merges. This record merges after #1247, and its links then move to the `/decisions` path.
 
@@ -288,17 +274,13 @@ The new plug-in points in [Plug-in points](#plug-in-points) need no amendment, b
 - Keep `proxycli` aliases during a transition: [No exceptions and no legacy](/mission#principles) forbids it, and the CLI keeps [no aliases](/reference/cli-command-vocabulary#no-aliases).
 - Move the management key into core, so Tasks can use it without the extension: core would own a backend secret, and the router would have two owners.
 - Keep Tasks independent and let it fall back to a hand-made CLIProxyAPI: that is a second model route to maintain, and the teardown hazard would stay.
-- Let the operator keep creating the router Process by hand: Orbit then cannot pin its version, flag an upgrade, refuse its removal, or derive the task VM origin.
+- Let the operator keep creating the router Process by hand: Orbit then cannot refuse its removal, derive the task VM origin, or, with [ADR 0214](/decisions/0214-pin-the-ai-router-version-and-flag-upgrades), pin and upgrade its version.
 - Make the router an extension without a role, placed by a setup command with `--node`: placement would hide in a setting, Doctor cannot check a setting as a role, and the firewall would need a special case. The analytics role is the precedent for a singleton service.
 - A separate setup and teardown command beside the switch: two commands would start the same thing, and today's split is how teardown came to break Tasks.
-- Upgrade automatically to the latest release: a router upgrade can break every running agent at once. The operator chooses the time.
-- Report `role.update_available` as drift: `orbit doctor` would exit 1 for a choice the operator may make on purpose, and every other Doctor check would look unhealthy until the update.
 - Make the collector and its cache optional for a fleet that only wants Tasks: a second mode doubles setup, Doctor checks, and tests. One way is cheaper.
-- Refuse `ai-router:update` while task groups run: Tasks already retries a transient provider error, and a fleet with running groups would then never get an update window.
 - Redirect `/reference/proxycli` and `/cli/proxycli`: a redirect keeps the old name alive, which [No exceptions and no legacy](/mission#principles) forbids.
 - Allow the router on the `ingress` Node: that Node accepts internet traffic, and the router holds every model account's credentials.
-- Check upstream releases inside Doctor: Doctor would depend on GitHub and slow down. A stored check keeps Doctor bounded.
-- Adopt Process 103 by recreating it under the new name: that restarts the router under in-flight Pi turns. Adoption in place defers the restart to the first update.
+- Adopt Process 103 by recreating it under the new name: that restarts the router under in-flight Pi turns. Adoption in place defers the restart to the first upgrade.
 
 ## Consequences
 
@@ -306,15 +288,13 @@ The new plug-in points in [Plug-in points](#plug-in-points) need no amendment, b
 - Tasks has one model route, and core knows it only as `ModelKeyIssuer`. When Tasks moves into its own extension, it keeps that interface or imports the AI router as a declared dependency.
 - A second backend becomes a new driver, not a change to Tasks.
 - The operator updates the CodexBar URL once.
-- `orbit doctor` stays healthy while a newer router release exists, but the outer loop still files a task for it. The problem collector gains one named exception to its rule of skipping informational findings.
 - Step 4 carries a transitional router URL until the role is assigned. Step 5 removes it.
 - The role's cache connection makes Valkey a requirement of the AI router, also for a fleet that only wants Tasks.
-- A router update can interrupt running Pi turns. Tasks recovers them through its provider retry, which costs at least one minute of backoff for each interrupted turn.
 - Old links to `/reference/proxycli` and `/cli/proxycli` break.
 
 ## Affects
 
 - Components: apps/gateway, apps/cli, apps/web, packages/php-sdk, apps/docs
-- ADRs: builds on [ADR 0210](https://github.com/nckrtl/orbit/pull/1247) and needs its [amendments A1 to A3](#required-amendments-to-adr-0210). Changes the model proxy origin of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm): the hub filter and Pi read it from the `ai-router` role.
+- ADRs: builds on [ADR 0210](https://github.com/nckrtl/orbit/pull/1247), and step 4 adds its [amendments A1 and A3](#required-amendments-to-adr-0210). [ADR 0214](/decisions/0214-pin-the-ai-router-version-and-flag-upgrades) builds on this record and adds router upgrades. Changes the model proxy origin of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm): the hub filter and Pi read it from the `ai-router` role.
 - Detail: a new AI router reference page and `ai-router` CLI page that replace [proxycli](/reference/proxycli) and [proxycli commands](/cli/proxycli); [Compute drivers: Configure task VMs](/reference/compute-drivers#configure-task-vms) and its hub filter; [Pi server: Run Pi on a task VM](/reference/pi-server#run-pi-on-a-task-vm); [doctor](/cli/doctor); [extension](/cli/extension); [CLI command vocabulary](/reference/cli-command-vocabulary); [Private DNS](/reference/private-dns); [Node provisioning](/reference/node-provisioning#converge-the-orbit-footprint).
 - Verify: the [Acceptance test](#acceptance-test) after each step; the extension dependency and refusal tests; a `ModelKeyIssuer` contract test; a migration test that keeps the management key, each anchor, and each task VM key and origin; the role conflict and adoption tests; and the architecture test that keeps `App\` free of `Orbit\Extensions\AiRouter\`.
