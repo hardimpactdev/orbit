@@ -3,15 +3,14 @@ title: "Vaultwarden"
 description: "How the Gateway publishes database credentials into a Vaultwarden collection as Database items, keeps them current, and deletes them when their source is gone."
 covers:
   - apps/gateway/app/Infrastructure/Certificates/OrbitCaCurlFactory.php
-  - apps/gateway/app/{Actions,Data,Domain,Infrastructure,Http/Requests}/Vault/**
-  - apps/gateway/app/Http/Controllers/Api/VaultController.php
-  - apps/gateway/app/Console/Commands/VaultSyncCommand.php
-  - apps/gateway/app/Models/VaultItem.php
+  - apps/gateway/extensions/vault/**
 ---
 
 # Vaultwarden
 
 The Gateway can publish the database credentials it holds into one collection of a [Vaultwarden](https://github.com/dani-garcia/vaultwarden) organization. Each credential becomes one **Database item**. The Vault app and Conn read those items, so people get current credentials without asking Orbit. Orbit stays the source of truth: it creates, rewrites, and permanently deletes the items. [`vault`](/cli/vault) lists the commands.
+
+Vaultwarden publishing is the `vault` [extension](/reference/extensions). Its code lives in `apps/gateway/extensions/vault`. While the switch is off, its API operations and MCP tools refuse with `extension.disabled`, the CLI hides its commands, and the sync does not run. The stored setup and the record of published items stay. An install that had a stored setup or a published item before the move keeps `vault` on.
 
 ## Set up
 
@@ -63,7 +62,7 @@ The note says that Orbit manages the item. Orbit overwrites changes made in Vaul
 
 ## Sync
 
-The scheduler runs `orbit:vault-sync` every minute while Vaultwarden is set up, as a job on the [Gateway queue](/reference/gateway-queue#scheduled-work). The command builds the wanted items from the database records and compares them with the published items it recorded:
+The scheduler runs `orbit:vault-sync` every minute while the `vault` extension is on and Vaultwarden is set up. It does not run while `vault` is off, so a published item stays as it was until the switch turns on again. The first run after that creates, rewrites, and deletes whatever changed meanwhile. The sync runs as a job on the [Gateway queue](/reference/gateway-queue#scheduled-work). The command builds the wanted items from the database records and compares them with the published items it recorded:
 
 | Wanted item | Published item | Action |
 | --- | --- | --- |
@@ -121,6 +120,7 @@ All operations need access to the Gateway.
 
 | Error | Status | When |
 | --- | --- | --- |
+| `extension.disabled` | 409 | The `vault` extension is off. |
 | `vault.not_configured` | 409 | Sync or teardown while Vaultwarden is not set up. |
 | `vault.sync_busy` | 409 | Another setup, sync, or teardown is running. |
 | `vault.items_published` | 409 | Setup names another organization or collection while items are published. |
@@ -144,6 +144,10 @@ Orbit stays the source of truth. If the secrets lived only in Vaultwarden, the G
 ### The scheduler runs the sync
 
 The sync runs from the scheduler instead of inside each database write. When Vaultwarden is down, database operations still succeed, and the Gateway needs no general job queue.
+
+### The sync stops while the extension is off
+
+Publishing is the feature itself, not the end of work that was already recorded, as the Documents cleanup is. If the sync kept running while `vault` is off, the Gateway would keep sending credentials to Vaultwarden after the operator turned the feature off. A stale item is the smaller cost, and the first run after the switch turns on fixes it.
 
 ### The Gateway encrypts items itself
 

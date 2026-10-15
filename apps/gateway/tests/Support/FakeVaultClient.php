@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
-use App\Domain\Vault\VaultCipher;
-use App\Domain\Vault\VaultClient;
-use App\Domain\Vault\VaultCollection;
-use App\Domain\Vault\VaultCredentials;
-use App\Domain\Vault\VaultException;
-use App\Domain\Vault\VaultOrganization;
-use App\Domain\Vault\VaultRemoteCipher;
-use App\Domain\Vault\VaultSession;
+use Orbit\Extensions\Vault\Domain\VaultCipher;
+use Orbit\Extensions\Vault\Domain\VaultClient;
+use Orbit\Extensions\Vault\Domain\VaultCollection;
+use Orbit\Extensions\Vault\Domain\VaultCredentials;
+use Orbit\Extensions\Vault\Domain\VaultException;
+use Orbit\Extensions\Vault\Domain\VaultOrganization;
+use Orbit\Extensions\Vault\Domain\VaultRemoteCipher;
+use Orbit\Extensions\Vault\Domain\VaultSession;
 
 /** An in-memory Vaultwarden with one account, for feature tests. */
 final class FakeVaultClient implements VaultClient

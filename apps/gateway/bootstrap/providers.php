@@ -10,7 +10,9 @@ use App\Providers\GatewayReleasesServiceProvider;
 use App\Providers\ProxyCliServiceProvider;
 use App\Providers\TasksServiceProvider;
 use App\Providers\TaskVmServiceProvider;
+use Orbit\Extensions\Conn\ConnServiceProvider;
 use Orbit\Extensions\Documents\DocumentsServiceProvider;
+use Orbit\Extensions\Vault\VaultServiceProvider;
 
 return [
     ApplicationServiceProvider::class,
@@ -18,9 +20,11 @@ return [
     GatewayBoostServiceProvider::class,
     GatewayQueueServiceProvider::class,
     GatewayReleasesServiceProvider::class,
-    // Tasks, ProxyCli, and Documents are extensions: their providers implement App\Domain\Extensions\Extension.
+    // Tasks, ProxyCli, Documents, Vault, and Conn are extensions: their providers implement App\Domain\Extensions\Extension.
     TasksServiceProvider::class,
     TaskVmServiceProvider::class,
     ProxyCliServiceProvider::class,
     DocumentsServiceProvider::class,
+    VaultServiceProvider::class,
+    ConnServiceProvider::class,
 ];

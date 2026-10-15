@@ -31,6 +31,8 @@ it("hides disabled extensions from both desktop and phone navigation", async () 
             tasks: false,
             proxycli: false,
             documents: true,
+            vault: false,
+            conn: false,
         });
     expect(desktopNav().textContent).not.toContain("Tasks");
     await page.getByTestId("nav-menu").click();

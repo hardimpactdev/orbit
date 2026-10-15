@@ -2,13 +2,7 @@
 title: "Conn layer"
 description: "How the Gateway signs in Conn devices as Nodes, shares workspaces, appearance, and per-device settings through profiles, holds an admin session for each registered T3 server, and mints and revokes device pairings."
 covers:
-  - apps/gateway/app/Actions/Conn/**
-  - apps/gateway/app/Data/Conn/**
-  - apps/gateway/app/Domain/Conn/**
-  - apps/gateway/app/Infrastructure/Conn/**
-  - apps/gateway/app/Http/Controllers/Api/Conn*.php
-  - apps/gateway/app/Http/Requests/Conn/**
-  - apps/gateway/app/Models/Conn*.php
+  - apps/gateway/extensions/conn/**
 ---
 
 # Conn layer
@@ -16,6 +10,8 @@ covers:
 This page is for the person who builds the Conn client, and for the Gateway maintainer. Conn is the fork of T3 Code that works with Orbit. The Gateway gives Conn one central layer: a device signs in as its Node, sees every registered T3 server, and shares workspaces, appearance, and device settings with the other devices of its profile. T3 traffic does not pass through the Gateway. A device talks to each T3 server directly over WireGuard.
 
 The Gateway answers lists, profiles, and pairing. It mints T3 pairing links with an admin session that each T3 server hands it at registration, and it revokes the sessions it paired.
+
+The Conn layer is the `conn` [extension](/reference/extensions). Its code lives in `apps/gateway/extensions/conn`. While the switch is off, every endpoint below refuses with `extension.disabled` (409), including registration by a T3 server, and the MCP server hides the Conn tools. Profiles, servers, and pairings stay. An install that had a registered T3 server or a profile before the move keeps `conn` on. Activity keeps admin sessions and settings documents out through the `ActivityInputRedaction` plug-in point, also while the switch is off.
 
 ## Identity
 

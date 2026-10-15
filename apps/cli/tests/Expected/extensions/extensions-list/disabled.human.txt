@@ -4,4 +4,6 @@
  │ tasks     │ disabled │ —      │
  │ proxycli  │ disabled │ —      │
  │ documents │ disabled │ —      │
+ │ vault     │ disabled │ —      │
+ │ conn      │ disabled │ —      │
  └───────────┴──────────┴────────┘

@@ -19,6 +19,8 @@ beforeEach(function (): void {
     $this->postJson('/api/v1/extensions/tasks/enable')->assertOk();
     $this->postJson('/api/v1/extensions/proxycli/enable')->assertOk();
     $this->postJson('/api/v1/extensions/documents/enable')->assertOk();
+    $this->postJson('/api/v1/extensions/vault/enable')->assertOk();
+    $this->postJson('/api/v1/extensions/conn/enable')->assertOk();
 });
 
 describe('MCP tool schemas', function (): void {

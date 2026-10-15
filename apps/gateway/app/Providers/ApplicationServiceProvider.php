@@ -40,7 +40,6 @@ use App\Domain\Broadcasting\RealtimeConnection;
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Clusters\ClusterRouterOperationLock;
-use App\Domain\Conn\T3ServerClient;
 use App\Domain\DatabaseConnections\DatabaseInspectionExecutor;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\Doctor\CaddyBuildInspector;
@@ -182,7 +181,6 @@ use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\Tools\ToolManagerRegistry;
 use App\Domain\Tools\ToolManagerScopeLock;
 use App\Domain\Tools\ToolOperationLock;
-use App\Domain\Vault\VaultClient;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketPublicationManager;
 use App\Domain\WebSocket\WebSocketRuntimeLifecycle;
@@ -233,7 +231,6 @@ use App\Infrastructure\Certificates\OpenSslGatewayCertificateIssuer;
 use App\Infrastructure\Certificates\OpenSslGatewayCertificateValidator;
 use App\Infrastructure\Certificates\OpenSslLeafCertificateSigner;
 use App\Infrastructure\Clusters\NativeClusterRouterOperationLock;
-use App\Infrastructure\Conn\HttpT3ServerClient;
 use App\Infrastructure\DatabaseConnections\RegisteredDatabaseInspectionExecutor;
 use App\Infrastructure\DatabaseServers\RemoteDatabaseServerAdmin;
 use App\Infrastructure\Doctor\NativeCaddyBuildInspector;
@@ -389,8 +386,6 @@ use App\Infrastructure\Tools\NativeToolManagerScopeLock;
 use App\Infrastructure\Tools\NativeToolOperationLock;
 use App\Infrastructure\Tools\ToolCommandBudget;
 use App\Infrastructure\Tools\VpToolManager;
-use App\Infrastructure\Vault\BitwardenCrypto;
-use App\Infrastructure\Vault\HttpVaultClient;
 use App\Infrastructure\WebSocket\NativeWebSocketCredentialManager;
 use App\Infrastructure\WebSocket\NativeWebSocketPublicationManager;
 use App\Infrastructure\WebSocket\NativeWebSocketRuntimeLifecycle;
@@ -418,7 +413,6 @@ final class ApplicationServiceProvider extends ServiceProvider
 {
     /** @var array<class-string, class-string> */
     public array $bindings = [
-        T3ServerClient::class => HttpT3ServerClient::class,
         ReleaseAlertNotifier::class => GatewayReleaseAlertNotifier::class,
         ReleaseAlertWebhook::class => HttpReleaseAlertWebhook::class,
         InstanceDestinationGuard::class => RemoteInstanceDestinationGuard::class,
@@ -821,14 +815,6 @@ final class ApplicationServiceProvider extends ServiceProvider
             static fn (): LeafCertificateSigner => new OpenSslLeafCertificateSigner(
                 processes: app(ProcessRunner::class),
                 orbitHome: rtrim(string: Config::string('orbit.home'), characters: '/'),
-            ),
-        );
-        $this->app->bind(
-            VaultClient::class,
-            static fn (): VaultClient => new HttpVaultClient(
-                crypto: app(BitwardenCrypto::class),
-                certificates: app(LeafCertificateSigner::class),
-                rootCertificatePath: rtrim(string: Config::string('orbit.home'), characters: '/').'/ca/root.pem',
             ),
         );
         $this->app->singleton(
