@@ -124,11 +124,12 @@ describe('running a deploy', function (): void {
             'before_activation.prepare',
             'activation',
             'php_refresh',
+            'process_restart',
             'after_activation.finish',
             'cleanup',
         ])
             ->and(array_unique(array_column($show->json('data.steps'), 'status')))->toBe(['succeeded'])
-            ->and(array_column($show->json('data.steps'), 'resumable'))->toBe([true, true, false, true, true, false, true])
+            ->and(array_column($show->json('data.steps'), 'resumable'))->toBe([true, true, false, true, true, true, false, true])
             ->and($deployment->status)->toBe('succeeded')
             ->and($deployment->triggered_by)->toBe($this->fixture->caller->name)
             ->and(array_column($deployment->events ?? [], 'type'))->toContain('phase', 'output')

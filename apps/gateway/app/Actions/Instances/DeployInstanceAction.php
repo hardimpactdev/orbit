@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Instances;
 
+use App\Actions\Processes\RestartProcessAction;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\Deployment\DeploymentCommandResult;
 use App\Domain\Instances\Deployment\DeploymentConfig;
@@ -22,10 +23,16 @@ use App\Domain\Instances\Deployment\ProductionDeployment;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\Environment\InstanceEnvironmentSynchronizer;
 use App\Domain\Instances\ProductionPhpRuntimeManager;
+use App\Domain\Processes\DesiredProcessState;
+use App\Domain\Processes\ProcessAdmissionLock;
+use App\Domain\Processes\ProcessOperationException;
+use App\Domain\Processes\ProcessRuntimeLease;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\ProcessCancelledException;
 use App\Models\Instance;
+use App\Models\Process;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Throwable;
 
@@ -45,6 +52,7 @@ final readonly class DeployInstanceAction
         private InstantiateProjectRuntimeDefinitionsAction $definitions,
         private CommandDeadline $deadline,
         private ?DeployDefaultInstanceAction $development = null,
+        private ?RestartProcessAction $restartProcess = null,
     ) {}
 
     /**
@@ -76,6 +84,7 @@ final readonly class DeployInstanceAction
 
         return [
             ...$plan,
+            new DeploymentStepName(DeploymentProgressPhase::ProcessRestart),
             ...$this->stepNames($config, DeploymentPhase::AfterActivation),
             new DeploymentStepName(DeploymentProgressPhase::Cleanup),
         ];
@@ -191,6 +200,11 @@ final readonly class DeployInstanceAction
             }
 
             $boundary = DeploymentFailureBoundary::AfterActivation;
+            $steps->run(new DeploymentStepName(DeploymentProgressPhase::ProcessRestart), $request, function () use ($instance, $request): null {
+                $this->restartProcesses($instance, $request);
+
+                return null;
+            });
             $this->executeSteps($instance, $release, $config, DeploymentPhase::AfterActivation, $request, $steps, $commands);
             $steps->run(new DeploymentStepName(DeploymentProgressPhase::Cleanup), $request, function () use ($instance, $selected, $previous, $request): null {
                 if ($selected instanceof DeploymentRelease) {
@@ -218,6 +232,37 @@ final readonly class DeployInstanceAction
         }
     }
 
+    private function restartProcesses(Instance $instance, DeploymentRequest $request): void
+    {
+        app(ProcessAdmissionLock::class)->run([$instance->id], function () use ($instance, $request): void {
+            $processes = Process::query()
+                ->whereIn('owner_type', Instance::morphTypes())
+                ->where('owner_id', $instance->id)
+                ->where('status', LifecycleStatus::Active)
+                ->where('desired_state', DesiredProcessState::Running)
+                ->where('restart_on_deploy', true)
+                ->orderBy('id')
+                ->get();
+
+            foreach ($processes as $process) {
+                try {
+                    app(ProcessRuntimeLease::class)->run($process, function (Process $fresh) use ($request): void {
+                        if ($fresh->status !== LifecycleStatus::Active || $fresh->desired_state !== DesiredProcessState::Running || ! $fresh->restart_on_deploy) {
+                            return;
+                        }
+
+                        ($this->restartProcess ?? app(RestartProcessAction::class))->execute($fresh);
+                        $request->emit(new DeploymentEvent('process_restart', DeploymentOutputStream::Stdout, "Restarted Process {$fresh->id}.\n"));
+                    });
+                } catch (Throwable $exception) {
+                    $request->emit(new DeploymentEvent('process_restart', DeploymentOutputStream::Stderr, "Failed to restart Process {$process->id}: {$this->errorCode($exception)}.\n", important: true));
+
+                    throw $exception;
+                }
+            }
+        });
+    }
+
     /** Pruning is not the deployment. A release that stays is removed by a later deployment. */
     private function prune(Instance $instance, DeploymentRelease $selected, ?DeploymentRelease $previous, DeploymentRequest $request): void
     {
@@ -229,7 +274,7 @@ final readonly class DeployInstanceAction
             }
 
             foreach ($outcome['in_use'] as $name) {
-                $request->emit(new DeploymentEvent('cleanup', DeploymentOutputStream::Stderr, "Kept old release {$name}: a running process still uses it. Restart that Process to free it.\n", important: true));
+                $request->emit(new DeploymentEvent('cleanup', DeploymentOutputStream::Stderr, "Kept old release {$name}: a running process still uses it. Stop or restart its remaining processes to free it.\n", important: true));
             }
         } catch (Throwable) {
             $request->emit(new DeploymentEvent('cleanup', DeploymentOutputStream::Stderr, "Release cleanup failed; a later deployment will retry cleanup.\n", important: true));
@@ -330,7 +375,7 @@ final readonly class DeployInstanceAction
             return 'deployment.deadline_exceeded';
         }
 
-        if ($exception instanceof ResourceOperationException || $exception instanceof RuntimeConvergenceException) {
+        if ($exception instanceof ResourceOperationException || $exception instanceof RuntimeConvergenceException || $exception instanceof ProcessOperationException) {
             return $exception->errorCode;
         }
 

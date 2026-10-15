@@ -70,6 +70,7 @@ orbit process:create <name> (--instance=ID-or-domain | --node=ID-or-name | --pro
 | `--volume=SOURCE:TARGET[:ro]` | none | Docker volume. Repeat as needed. |
 | `--restart=POLICY` | `never` | `never`, `on-failure`, `always`, or `unless-stopped`. |
 | `--keep-alive` | off | Keep the Process running through app-dev idle hibernation. |
+| `--no-restart-on-deploy` | off | Opt an installed Process out of automatic restart after production activation. Not accepted for Project definitions. |
 | `--start` | off | Start the Process after it installs. Not accepted for a definition. |
 
 A preset owns the runtime, command, working directory, and environment, and refuses those options. It refuses `--keep-alive` for `annotator` and the two Agentation presets. It also refuses `--user`.
@@ -124,7 +125,7 @@ A production Process can be installed only after `instance:deploy` selects a rel
 
 ## orbit process:list
 
-List the Processes of one Instance or Node with their desired and observed states and `keep_alive`, or the definitions of one Project.
+List the Processes of one Instance or Node with their desired and observed states, `keep_alive`, and `restart_on_deploy`, or the definitions of one Project.
 
 ```bash
 orbit process:list (--instance=ID | --node=ID-or-name | --project=ID) [--json]
@@ -143,7 +144,7 @@ orbit process:show <name> --project=ID [--json]
 Replace the complete specification of an installed Process, keeping its ID, name, owner, and desired state. A running Process restarts in place; a stopped Process stays stopped. This is not destroy followed by create. It can interrupt a running service and discard a replaced Docker container's writable layer. It does not delete named volumes or require destructive consent. Back up and migrate container-layer data before updating a stateful container; see [Move data before removing an override](/reference/processes-and-schedules#move-data-before-removing-an-override).
 
 ```bash
-orbit process:update <process> [--runtime=systemd|docker] [--command=ARG ...] [--image=IMAGE] [--working-directory=PATH] [--environment=NAME=VALUE ...] [--port=HOST:CONTAINER ...] [--volume=SOURCE:TARGET ...] [--restart=POLICY] [--keep-alive] [--user=NAME] [--json]
+orbit process:update <process> [--runtime=systemd|docker] [--command=ARG ...] [--image=IMAGE] [--working-directory=PATH] [--environment=NAME=VALUE ...] [--port=HOST:CONTAINER ...] [--volume=SOURCE:TARGET ...] [--restart=POLICY] [--keep-alive] [--no-restart-on-deploy] [--user=NAME] [--json]
 ```
 
 | Argument or option | Default | Meaning |
@@ -152,7 +153,7 @@ orbit process:update <process> [--runtime=systemd|docker] [--command=ARG ...] [-
 | `name` | required with `--project` | Definition name in the Project form. |
 | `--project=ID` | none | Select the Project-definition form instead of an installed Process. |
 | `--for=production` | none | Required only with `--project`; refused for an installed Process. |
-| Runtime options | same as create | A complete specification, not a field-by-field merge. `--runtime` defaults to `systemd`, `--restart` to `never`, and `--keep-alive` to off. Supply every setting to retain. |
+| Runtime options | same as create | A complete specification, not a field-by-field merge. `--runtime` defaults to `systemd`, `--restart` to `never`, and `--keep-alive` to off. `--no-restart-on-deploy` sets `restart_on_deploy` to false; omitting it sets true. Supply every setting to retain. |
 | `--working-directory=PATH` | owner-derived for systemd; image default for Docker | Omit to remove a prior explicit override. |
 | `--environment=NAME=VALUE` | empty map | Repeat for each Docker variable. Replaces the whole map; omit to clear it. Values can contain `=`. |
 | `--port`, `--volume` | empty lists | Repeat for each Docker binding or mount to retain. |

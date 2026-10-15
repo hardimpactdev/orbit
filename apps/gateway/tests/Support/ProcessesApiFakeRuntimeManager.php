@@ -36,6 +36,8 @@ final class ProcessesApiFakeRuntimeManager implements ProcessRuntimeManager
 
     public bool $failConverge = false;
 
+    public ?ProcessOperationException $restartFailure = null;
+
     public bool $failStartDuringCall = false;
 
     public ?ProcessOperationException $lastConvergeFailure = null;
@@ -85,6 +87,10 @@ final class ProcessesApiFakeRuntimeManager implements ProcessRuntimeManager
     public function restart(Process $process): void
     {
         $this->restarted[] = $process->id;
+
+        if ($this->restartFailure !== null) {
+            throw $this->restartFailure;
+        }
     }
 
     public function remove(Process $process): void

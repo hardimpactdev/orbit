@@ -40,6 +40,7 @@ final class CreateProcessRequest extends GatewayRequest implements HasBody
         private readonly bool $keepAlive = false,
         private readonly ?string $preset = null,
         private readonly ?string $user = null,
+        private readonly bool $restartOnDeploy = true,
     ) {}
 
     public function resolveEndpoint(): string
@@ -68,6 +69,7 @@ final class CreateProcessRequest extends GatewayRequest implements HasBody
             ...($this->user !== null ? ['user' => $this->user] : []),
             'start' => $this->start,
             'keep_alive' => $this->keepAlive,
+            'restart_on_deploy' => $this->restartOnDeploy,
         ];
 
         if ($this->environment !== null) {
