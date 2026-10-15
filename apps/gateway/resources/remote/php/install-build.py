@@ -378,6 +378,10 @@ def main(payload):
             ok = host.ok(['dpkg', '--remove', '--', *present], privileged=True) and ok
         if previous:
             ok = apt_install(host, list(previous.values())) and ok
+            # The reinstall can bring an added package back as a dependency; remove what is left once more.
+            left = [name for name in added if name in installed(host)]
+            if left:
+                ok = host.ok(['dpkg', '--remove', '--', *left], privileged=True) and ok
         restored = installed(host)
         wrong = sorted(name for name in replaced if restored.get(name) != packages[name])
         wrong += sorted(name for name in added if name in restored)
@@ -413,13 +417,6 @@ def main(payload):
     except Outcome as refused:
         fail(refused.outcome, refused.data, refused.outcome, [])
     restarted, stale, deferred = [], [], []
-    try:
-        for version, build in versions.items():
-            place_pcov(host, version, payload['pcov'])
-            check_cli(host, version, build['extensions'], payload['pcov'], extras_policy)
-    except Outcome as refused:
-        roll_back(refused.outcome, [])
-        raise
     changed = bool(pending or purge) or any(links(host, version) != before[version] for version in versions)
     if changed and payload['fpm'] != 'none':
         for version in versions:

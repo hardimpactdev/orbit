@@ -29,6 +29,8 @@ FAKES = {
                '[ -f "$STATE/fail-install" ] && { rm "$STATE/fail-install"; exit 100; }; '
                'for a in "$@"; do case "$a" in *.deb) read -r n v x < "$a"; '
                '[ -f "$STATE/mismatch-$n" ] && v=9.9; echo "$v" > "$STATE/installed/$n"; '
+               # A rollback reinstall that brings an added package back as a dependency.
+               '[ -f "$STATE/revives-$v" ] && echo 8.5.12-1 > "$STATE/installed/$(cat "$STATE/revives-$v")"; '
                'if [ -f "$STATE/partial-install" ]; then rm "$STATE/partial-install"; touch "$STATE/fail-every-install"; exit 100; fi; '
                'if [ -f "$STATE/breaks-$v" ]; then touch "$STATE/broken"; else rm -f "$STATE/broken"; fi;; '
                'dpkg-repack=*) echo "${a#*=}" > "$STATE/installed/dpkg-repack";; esac; done; exit 0',
@@ -222,6 +224,17 @@ class InstallBuildTest(unittest.TestCase):
 
         self.assertEqual((outcome, data.get('restored'), data['reason']), ('install_failed', True, 'apt-get install failed'), data)
         self.assert_previous_build()
+
+    def test_removes_an_added_package_again_when_the_rollback_reinstall_brings_it_back(self):
+        self.previous_build()
+        (self.state / 'extra-modules').write_text('soap\n')
+        (self.state / 'revives-8.5.11-1').write_text('php8.5-pcov')
+
+        outcome, data = self.run_program()
+
+        self.assertEqual(data.get('restored'), True, (outcome, data))
+        self.assert_previous_build()
+        self.assertEqual(2, sum(call.startswith('remove ') and 'php8.5-pcov' in call for call in self.calls()))
 
     def test_a_package_that_stays_at_another_version_ends_with_rollback_failed(self):
         self.previous_build()
