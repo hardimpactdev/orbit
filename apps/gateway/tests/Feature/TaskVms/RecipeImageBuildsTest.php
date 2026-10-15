@@ -138,7 +138,7 @@ it('installs OpenTelemetry only in app-dev image profiles', function (string $pr
     foreach (['8.4', '8.5'] as $version) {
         expect(isset($payload['tools']["php{$version}-opentelemetry"]))->toBe($enabled);
         expect(in_array("php{$version}-opentelemetry", array_column($payload['php']['input']['versions'][$version]['packages'], 'name'), true))->toBe($enabled);
-        expect(in_array('opentelemetry', $payload['php']['input']['versions'][$version]['extensions'], true))->toBe($enabled);
+        expect($payload['php']['input']['versions'][$version]['extensions'])->not->toContain('opentelemetry');
     }
 })->with(['app-dev' => ['app-dev', true], 'app-prod' => ['app-prod', false], 'base' => ['base', false], 'ci-runner' => ['ci-runner', false]]);
 

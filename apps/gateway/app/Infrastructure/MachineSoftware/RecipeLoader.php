@@ -147,7 +147,7 @@ final readonly class RecipeLoader
             $used = [...$used, ...$extra];
             $effective = array_values(array_unique([...$common, ...$extra]));
             if (! in_array($role, $phpSets['opentelemetry'], true)) {
-                $effective = array_values(array_filter($effective, static fn (string $name): bool => ! str_ends_with($name, '-opentelemetry')));
+                $effective = array_values(array_filter($effective, static fn (string $name): bool => preg_match('/^php\d+\.\d+-opentelemetry$/D', $name) !== 1));
             }
             sort($effective, SORT_STRING);
             $profiles[$role] = $effective;

@@ -634,7 +634,7 @@ it('installs through the one PHP build installer and keeps extra packages on an 
         ->and($input['repack'])->toBe(['package' => 'dpkg-repack', 'version' => $recipe->tools['dpkg-repack']->version])
         ->and($input['release'])->toBe(['id' => 'ubuntu', 'codenames' => ['resolute']])
         ->and(array_keys($input['versions']))->toBe(['8.4', '8.5'])
-        ->and($input['versions']['8.5']['extensions'])->toBe($recipe->php('8.5')->extensions)
+        ->and($input['versions']['8.5']['extensions'])->toBe($recipe->php('8.5')->cliExtensions())
         ->and(array_values(array_unique(array_column($input['versions']['8.5']['packages'], 'name'))))->toBe($recipe->php('8.5')->packages)
         ->and($transport->commands[1]->arguments[3])->toBe('8.4')
         ->and($transport->commands[2]->arguments[3])->toBe('8.5');
@@ -657,7 +657,7 @@ it('loads PCOV only on app-dev Nodes', function (array $roles, bool $pcov): void
     $input = php_package_installer_input($transport->commands[0]);
     expect($input['opentelemetry'])->toBe($pcov);
     expect(in_array('php8.5-opentelemetry', array_column($input['versions']['8.5']['packages'], 'name'), true))->toBe($pcov);
-    expect(in_array('opentelemetry', $input['versions']['8.5']['extensions'], true))->toBe($pcov);
+    expect($input['versions']['8.5']['extensions'])->not->toContain('opentelemetry');
 })->with([
     'a production Node' => [[RoleName::AppProd], false],
     'a Node with both roles' => [[RoleName::AppProd, RoleName::AppDev], true],

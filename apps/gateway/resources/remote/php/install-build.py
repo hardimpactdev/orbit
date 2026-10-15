@@ -123,11 +123,15 @@ def selected(payload, architecture):
 
 
 def extra_packages(versions, packages):
-    """Installed php<version>-* packages of a handled version that are not in its recipe set."""
+    """Installed php<version>-* packages outside the recipe, except known disabled OpenTelemetry.
+
+    Losing app-dev leaves its package installed. place_opentelemetry disables it in both SAPIs instead of refusing
+    the next convergence or implicitly removing a package when a role is removed."""
     extras = []
     for version, build in versions.items():
         prefix = f'php{version}-'
-        extras += [name for name in packages if name.startswith(prefix) and name not in build['pins']]
+        extras += [name for name in packages if name.startswith(prefix) and name not in build['pins']
+                   and name != f'{prefix}opentelemetry']
     return sorted(set(extras))
 
 
@@ -423,9 +427,9 @@ def place_pcov(host, version, pcov):
 
 
 def place_opentelemetry(host, version, enabled):
-    """app-dev loads OpenTelemetry in CLI and FPM so hook() can instrument web requests."""
-    for sapi in ('cli', 'fpm'):
-        host.run(['phpenmod' if enabled else 'phpdismod', '-v', version, '-s', sapi, 'opentelemetry'], privileged=True)
+    """app-dev loads OpenTelemetry in FPM for php-data-bridge. Keep CLI parity with CI even after Sury's postinst."""
+    host.run(['phpdismod', '-v', version, '-s', 'cli', 'opentelemetry'], privileged=True)
+    host.run(['phpenmod' if enabled else 'phpdismod', '-v', version, '-s', 'fpm', 'opentelemetry'], privileged=True)
 
 
 def modules(host, binary):
@@ -433,10 +437,8 @@ def modules(host, binary):
     return sorted({line.strip().lower() for line in output.splitlines() if line.strip() and not line.startswith('[')})
 
 
-def check_cli(host, version, extensions, pcov, extras, opentelemetry=False):
+def check_cli(host, version, extensions, pcov, extras):
     expected = sorted(set(extensions) - (set() if pcov else {'pcov'}))
-    if not opentelemetry:
-        expected = sorted(set(expected) - {'opentelemetry'})
     loaded = modules(host, str(host.path(f'usr/bin/php{version}')))
     missing = sorted(set(expected) - set(loaded))
     extra = sorted(set(loaded) - set(expected)) if extras != 'keep' else []
@@ -626,7 +628,7 @@ def main(payload):
         for version, build in versions.items():
             place_pcov(host, version, payload['pcov'])
             place_opentelemetry(host, version, payload.get('opentelemetry', False))
-            check_cli(host, version, build['extensions'], payload['pcov'], extras_policy, payload.get('opentelemetry', False))
+            check_cli(host, version, build['extensions'], payload['pcov'], extras_policy)
     except Outcome as refused:
         fail(refused.outcome, refused.data, refused.outcome, [])
     restarted, stale, deferred = [], [], []

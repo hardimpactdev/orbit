@@ -83,13 +83,13 @@ describe('machine recipe structure and identity', function (): void {
         expect($recipe->tools['php-common']->version)->toStartWith('2:');
     });
 
-    it('installs OpenTelemetry packages and checks its modules only for app-dev', function (): void {
+    it('installs OpenTelemetry packages only for app-dev and excludes it from every CLI module check', function (): void {
         $recipe = new RecipeLoader()->load();
 
         foreach (['8.4', '8.5'] as $version) {
             $name = "php{$version}-opentelemetry";
             expect($recipe->profile('app-dev'))->toContain($name);
-            expect($recipe->phpExtensions($recipe->profile('app-dev'))[$version])->toContain('opentelemetry');
+            expect($recipe->phpExtensions($recipe->profile('app-dev'))[$version])->not->toContain('opentelemetry');
             expect($recipe->tools[$name]->version)->toBe('1.2.1-2+0~20260623.18+ubuntu26.04~1.gbpdbb97a');
             foreach (['app-prod', 'ci-runner', 'base', 'gateway'] as $profile) {
                 expect($recipe->profile($profile))->not->toContain($name);
@@ -98,6 +98,14 @@ describe('machine recipe structure and identity', function (): void {
                 }
             }
         }
+    });
+
+    it('keeps the app-dev CLI extension set equal to CI for their shared PHPStan cache', function (): void {
+        $recipe = new RecipeLoader()->load();
+        $development = $recipe->phpExtensions($recipe->profile('app-dev'));
+        $ci = $recipe->phpExtensions($recipe->profile('ci-runner'));
+
+        expect($development[$recipe->ciPhp])->toBe($ci[$recipe->ciPhp]);
     });
 
     it('rejects a wrong Debian release version even when the epoch is omitted in the filename', function (): void {

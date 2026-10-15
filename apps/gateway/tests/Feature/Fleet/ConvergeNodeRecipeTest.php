@@ -149,7 +149,7 @@ it('gives every role that runs PHP the whole recipe PHP 8.5 set', function (Role
 
     expect($pins)->toContain(...$recipe->php('8.5')->packagesFor(false))
         ->not->toContain('php8.4-cli')
-        ->and($recipe->phpExtensions($pins))->toBe(['8.5' => $recipe->php('8.5')->extensionsFor(false)]);
+        ->and($recipe->phpExtensions($pins))->toBe(['8.5' => $recipe->php('8.5')->cliExtensions()]);
 })->with([RoleName::AppProd, RoleName::WebSocket, RoleName::Gateway]);
 
 it('installs the PHP build with the one installer after the other tools, strictly and without PCOV on the Gateway', function (): void {
@@ -183,7 +183,7 @@ it('plans both pinned OpenTelemetry packages for an app-dev Node like Beast', fu
         ->and($php->inputs[0])->toMatchArray(['mode' => 'plan', 'opentelemetry' => true, 'extras' => 'refuse']);
     foreach (['8.4', '8.5'] as $version) {
         expect(array_column($php->inputs[0]['versions'][$version]['packages'], 'name'))->toContain("php{$version}-opentelemetry");
-        expect($php->inputs[0]['versions'][$version]['extensions'])->toContain('opentelemetry');
+        expect($php->inputs[0]['versions'][$version]['extensions'])->not->toContain('opentelemetry');
     }
     expect($ssh->commands)->toHaveCount(1);
 });
