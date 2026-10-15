@@ -23,6 +23,7 @@ use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Tests\Support\TaskModelRouter;
 
 function live_group(string $status = 'running'): Task
 {
@@ -215,8 +216,7 @@ describe('task broadcasts', function (): void {
         ]));
         $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
 
-        $this->postJson('/api/v1/extensions/proxycli/enable')->assertOk();
-
+        TaskModelRouter::ready();
         $this->postJson('/api/v1/extensions/tasks/enable')->assertOk();
         $this->postJson('/api/v1/extensions/tasks/disable')->assertOk();
 

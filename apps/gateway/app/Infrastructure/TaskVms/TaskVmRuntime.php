@@ -34,13 +34,10 @@ use Throwable;
  */
 final readonly class TaskVmRuntime
 {
-    /** The only `models.json` provider on a task VM. CLIProxyAPI is the VM's only model route. */
+    /** The only `models.json` provider on a task VM. The model router is the VM's only model route. */
     public const string PiProvider = 'orbit-task-vm';
 
     public const int ArtifactMaxBytes = 268435456;
-
-    /** One lock for every model key change, so one anchor key guards each CLIProxyAPI. */
-    private const string ModelKeyLock = 'orbit:compute:model-keys';
 
     /** The Pi executable of the managed user. The base image holds the Gateway's pinned build there. */
     public const string PiPath = '.local/bin/pi-server';
@@ -179,7 +176,7 @@ final readonly class TaskVmRuntime
         });
     }
 
-    /** The key and its origin are stored before CLIProxyAPI learns the key, so a retry registers the same key there. */
+    /** The key and its origin are stored before the model router learns the key, so a retry registers the same key there. */
     private function ensureModelKey(TaskVm $vm, string $origin, int $wait = 60): string
     {
         return $this->withModelKeyLock($wait, function () use ($vm, $origin): string {
@@ -203,13 +200,13 @@ final readonly class TaskVmRuntime
     private function withModelKeyLock(int $wait, callable $operation): mixed
     {
         try {
-            return Cache::lock(self::ModelKeyLock, 600)->block($wait, $operation);
+            return Cache::lock(ModelKeyIssuer::Lock, 600)->block($wait, $operation);
         } catch (TaskVmException $exception) {
             throw $exception;
         } catch (LockTimeoutException $exception) {
             throw new TaskVmException(TaskVmError::ModelKeyFailed, 'Another model key operation is running.', 409, $exception);
         } catch (Throwable $exception) {
-            throw new TaskVmException(TaskVmError::ModelKeyFailed, 'The group model key could not be confirmed with CLIProxyAPI.', 502, $exception);
+            throw new TaskVmException(TaskVmError::ModelKeyFailed, 'The group model key could not be confirmed with the model router.', 502, $exception);
         }
     }
 

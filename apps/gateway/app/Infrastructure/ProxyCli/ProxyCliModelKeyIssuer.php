@@ -9,6 +9,7 @@ use App\Domain\Settings\SettingRepository;
 use App\Domain\Settings\SettingScope;
 use App\Domain\Settings\SettingScopeType;
 use App\Domain\Settings\SettingValueProtection;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\ModelKeyIssuer;
 use App\Domain\TaskVms\TaskVmConfig;
 use App\Domain\TaskVms\TaskVmError;
@@ -26,6 +27,18 @@ final readonly class ProxyCliModelKeyIssuer implements ModelKeyIssuer
         private SettingRepository $gatewaySettings,
         private TaskVmModelKeys $keys,
     ) {}
+
+    public function assertReady(): void
+    {
+        $key = $this->proxy->cliproxyManagementKey();
+        if ($key === null || $key === '') {
+            throw new ResourceOperationException(
+                'proxycli.disabled',
+                'Set up the proxycli extension with proxycli:setup first. Task VMs get their model keys from its CLIProxyAPI.',
+                409,
+            );
+        }
+    }
 
     public function origin(): string
     {

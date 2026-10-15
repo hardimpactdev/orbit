@@ -200,6 +200,10 @@ Teardown refuses with HTTP 409 and changes nothing while it would strand Tasks:
 - `extension.required` while the `tasks` extension is enabled. Tasks depends on `proxycli`, because Pi on a task VM reaches models only through this CLIProxyAPI. `error.details.required_by` is `tasks`.
 - `proxycli.keys_outstanding` while a task VM holds a model key. Only the management key can revoke that key. `error.details.task_vms` is the number of such task VMs. Run teardown after they are destroyed.
 
+Teardown holds the model key lock `orbit:compute:model-keys` from these checks until it has removed the collector and deleted the keys. Task VMs take the same lock to issue or revoke a key, so no task VM gets a key during a teardown. When a key operation holds the lock for more than 60 seconds, teardown refuses with `proxycli.keys_outstanding` and changes nothing.
+
+`extension:enable tasks` refuses with `proxycli.disabled` (409) while no management key is stored: before the first setup or after a teardown. A task VM stores its key before CLIProxyAPI registers it, so Tasks must not start without a key that can revoke it.
+
 Task VM code reaches CLIProxyAPI only through the core interface `App\Domain\TaskVms\ModelKeyIssuer`. This extension binds it to `ProxyCliModelKeyIssuer`, which holds the management key and the anchor key. See [Configure task VMs](/reference/compute-drivers#configure-task-vms).
 
 ## Errors
@@ -209,7 +213,7 @@ These codes come from the Gateway on setup, teardown, reads, and toggles.
 | Code | Status | When |
 | --- | --- | --- |
 | `extension.disabled` | 409 | The `proxycli` extension is disabled. |
-| `proxycli.disabled` | 409 | A read, the model list, or a toggle runs while the collector is not set up. |
+| `proxycli.disabled` | 409 | A read, the model list, a toggle, or `extension:enable tasks` runs while the collector is not set up. |
 | `validation.failed` | 422 | Invalid setup input, including a `cliproxy_url` that differs from `task_vms.model_proxy_origin` while task VMs are enabled. |
 | `proxycli.cache_missing` | 422 | No Database connection has the cache slug. |
 | `proxycli.cache_invalid` | 422 | The cache connection is not Redis. |
@@ -222,7 +226,7 @@ These codes come from the Gateway on setup, teardown, reads, and toggles.
 | `proxycli.caddy_publication_failed` | 422 | Setup could not install Caddy or build the Node's Caddy configuration. |
 | `proxycli.upstream_failed` | 502 | The collector refused or did not answer an account toggle. |
 | `extension.required` | 409 | Teardown runs while the `tasks` extension is enabled. Teardown changes nothing. |
-| `proxycli.keys_outstanding` | 409 | Teardown runs while a task VM holds a model key. Teardown changes nothing. |
+| `proxycli.keys_outstanding` | 409 | Teardown runs while a task VM holds a model key, or a model key operation holds the lock for more than 60 seconds. Teardown changes nothing. |
 | `resource.not_found` | 404 | The provider or account is not in the snapshot. |
 
 ## Why it works this way

@@ -3141,7 +3141,7 @@ export interface paths {
         post: operations["proxycli-setup"];
         /**
          * Tear down proxycli
-         * @description Stops the collector Process for the whole fleet, withdraws collector.cli-proxy-api.orbit and its certificate, deletes the stored CLIProxyAPI management key and the read and control tokens, and hides provider reads. Setting up again needs the management key. The Redis connection and Valkey data stay. Refuses with extension.required (409) while the tasks extension is enabled, and with proxycli.keys_outstanding (409) while a task VM holds a model key.
+         * @description Stops the collector Process for the whole fleet, withdraws collector.cli-proxy-api.orbit and its certificate, deletes the stored CLIProxyAPI management key and the read and control tokens, and hides provider reads. Setting up again needs the management key. The Redis connection and Valkey data stay. Refuses with extension.required (409) while the tasks extension is enabled, and with proxycli.keys_outstanding (409) while a task VM holds a model key or a model key operation holds the lock for more than 60 seconds.
          */
         delete: operations["proxycli-teardown"];
         options?: never;

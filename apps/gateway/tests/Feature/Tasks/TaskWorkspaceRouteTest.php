@@ -25,6 +25,7 @@ use App\Models\Task;
 use App\Models\TaskCheck;
 use Illuminate\Support\Facades\Log;
 use Tests\Support\FakeTaskCheckRunner;
+use Tests\Support\TaskModelRouter;
 
 /**
  * A todo group whose provisioner returns a routed task VM workspace before its Route, as a task VM claim does. The
@@ -44,7 +45,7 @@ function workspace_route_claim(array $routeResults): array
         'wireguard_ip' => '10.44.0.91',
     ]));
     test()->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
-    test()->postJson('/api/v1/extensions/proxycli/enable')->assertOk();
+    TaskModelRouter::ready();
     test()->postJson('/api/v1/extensions/tasks/enable')->assertOk();
     $project = Project::query()->create([
         'name' => 'Workspace route',
