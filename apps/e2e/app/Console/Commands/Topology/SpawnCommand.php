@@ -31,9 +31,9 @@ final class SpawnCommand extends E2ECommand
             if ($stdin !== null) {
                 throw new InvalidArgumentException('A spawned process reads no stdin.');
             }
-            $process = new GuestProcess((string) $this->argument('name'));
+            $process = new GuestProcess($this->stringArgument('name'));
             $request = $this->request();
-            $role = (string) $this->argument('node');
+            $role = $this->stringArgument('node');
             $result = $acquirer->execute($request, $role, $process->spawnArgv($argv));
             $redactedArgv = json_encode($redactor->redactArgv($argv), JSON_THROW_ON_ERROR);
             $this->log($request, "role={$role} spawn={$process->name} exit={$result->exitCode} argv={$redactedArgv}");

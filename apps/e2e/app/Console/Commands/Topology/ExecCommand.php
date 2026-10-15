@@ -34,7 +34,7 @@ final class ExecCommand extends E2ECommand
             $timeout = $this->timeoutOption();
             $label = $this->evidenceLabel();
             $request = $this->request();
-            $role = (string) $this->argument('node');
+            $role = $this->stringArgument('node');
             $startedAt = $this->evidenceClock();
             $result = $acquirer->execute($request, $role, $argv, $stdin, $timeout);
             $this->recordEvidence($label, $request, $role, $argv, $result, $startedAt, $this->evidenceClock());

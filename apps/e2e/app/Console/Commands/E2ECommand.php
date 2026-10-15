@@ -17,6 +17,26 @@ abstract class E2ECommand extends Command
     /** The option every issue command accepts to name the worktree explicitly. */
     protected const string WORKTREE_OPTION = '{--worktree= : The registered Git worktree of the issue}';
 
+    protected function stringArgument(string $name): string
+    {
+        $value = $this->input->getArgument($name);
+        if (! is_string($value)) {
+            throw new InvalidArgumentException("The {$name} argument must be a string.");
+        }
+
+        return $value;
+    }
+
+    protected function stringOption(string $name): ?string
+    {
+        $value = $this->input->getOption($name);
+        if ($value !== null && ! is_string($value)) {
+            throw new InvalidArgumentException("The --{$name} option must be a string.");
+        }
+
+        return $value;
+    }
+
     protected function outputFailure(Throwable $exception): void
     {
         $message = app(SecretRedactor::class)->redact($exception->getMessage());
@@ -41,19 +61,9 @@ abstract class E2ECommand extends Command
     /** The issue and its worktree; the attempt is whatever `<worktree>/.e2e/` names. */
     protected function request(): TopologyRequest
     {
-        // option() and argument() are typed from each subclass signature, and that type depends
-        // on command discovery order. The input value is what a caller actually passed.
-        $worktree = $this->input->hasOption('worktree') ? $this->input->getOption('worktree') : null;
-        // A mixed parameter would still call argument(), which Larastan checks on every
-        // subclass, including commands that do not declare issue.
-        $issue = $this->input->getArgument('issue');
-        if (! is_string($issue)) {
-            throw new InvalidArgumentException('The issue argument must be a string.');
-        }
-
         return app(WorktreeLocator::class)->locate(
-            $issue,
-            is_string($worktree) ? $worktree : null,
+            $this->stringArgument('issue'),
+            $this->input->hasOption('worktree') ? $this->stringOption('worktree') : null,
         );
     }
 

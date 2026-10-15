@@ -31,7 +31,7 @@ final class AcquireCommand extends E2ECommand
             $this->trap([SIGINT, SIGTERM, SIGHUP], static function (int $signal): never {
                 throw Interrupted::bySignal($signal);
             });
-            $request = new TopologyRequest((string) $this->argument('issue'), (string) $this->argument('worktree'));
+            $request = new TopologyRequest($this->stringArgument('issue'), $this->stringArgument('worktree'));
             $nodes = $this->option('nodes');
             $recipe = TopologyRecipe::fromOption(is_string($nodes) ? $nodes : null);
             $timings = [];
