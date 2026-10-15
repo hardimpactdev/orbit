@@ -18,14 +18,14 @@ final readonly class ConnActivityInputRedaction implements ActivityInputRedactio
 
     public function input(string $command, Closure $input): array
     {
-        $input = $input();
+        $values = $input();
 
         if ($command === 'conn:environment:register') {
             // The admin session never enters Activity.
-            return array_intersect_key($input, array_flip(['environment_id', 'label', 'url']));
+            return array_intersect_key($values, array_flip(['environment_id', 'label', 'url']));
         }
 
-        return $this->settingsInput($command, $input);
+        return $this->settingsInput($command, $values);
     }
 
     /**
