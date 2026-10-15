@@ -14,6 +14,7 @@ use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\Tasks\TaskBaseBranchFetcher;
+use App\Domain\Tasks\TaskBaseMerge;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskRemoteBranch;
 use App\Domain\TaskVms\TaskVmWorkspaceGuard;
@@ -165,7 +166,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
         return $this->commitFrom($instance, $script, [$default], 'task-merge-base', 'The merge base could not be read.');
     }
 
-    public function mergeDefault(Task $group): ?string
+    public function mergeDefault(Task $group): TaskBaseMerge
     {
         $instance = $this->workspace($group);
         $default = $group->project->default_branch;
@@ -183,8 +184,9 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
             export GIT_COMMITTER_NAME=orbit GIT_COMMITTER_EMAIL=tasks@orbit
             if ! git -C "$checkout" -c commit.gpgSign=false merge --no-ff --no-edit --quiet "$tip" >&2; then
                 if [ -n "$(git -C "$checkout" ls-files --unmerged)" ]; then
-                    git -C "$checkout" merge --abort
                     printf 'conflict\n'
+                    git -C "$checkout" diff --name-only --diff-filter=U -z
+                    git -C "$checkout" merge --abort
                     exit 0
                 fi
                 exit 1
@@ -199,15 +201,53 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
         } catch (RuntimeConvergenceException $exception) {
             throw new TaskPullRequestException('The default branch could not be merged.', previous: $exception);
         }
-        $head = trim($result->stdout);
-        if ($head === 'conflict') {
-            return null;
+        if (str_starts_with($result->stdout, "conflict\n")) {
+            return new TaskBaseMerge(null, array_values(array_filter(explode("\0", substr($result->stdout, 9)), static fn (string $path): bool => $path !== '')));
         }
+        $head = trim($result->stdout);
         if (preg_match('/\A[0-9a-f]{40}\z/D', $head) !== 1) {
             throw new TaskPullRequestException('The merged head could not be read.');
         }
 
-        return $head;
+        return new TaskBaseMerge($head);
+    }
+
+    public function overlappingPaths(Task $group, string $before, string $after): array
+    {
+        if ($before === $after) {
+            return [];
+        }
+        foreach ([$before, $after] as $sha) {
+            if (preg_match('/\A[0-9a-f]{40}\z/D', $sha) !== 1) {
+                throw new TaskPullRequestException('The main merge comparison needs commit SHAs.');
+            }
+        }
+        $instance = $this->workspace($group);
+        $script = WorkspaceGit::bashPreamble().<<<'BASH'
+            checkout=$1
+            before=$2
+            after=$3
+            base=$(git -C "$checkout" merge-base "$before" "$after^2")
+            git -C "$checkout" diff --no-renames --name-only -z "$base" "$before" --
+            printf '\0'
+            git -C "$checkout" diff --no-renames --name-only -z "$before" "$after" --
+            BASH;
+        try {
+            $result = $this->workspaces->execute($instance, new RemoteCommand(
+                arguments: ['bash', '-seu', '--', $instance->checkout_path, $before, $after],
+                input: $script,
+            ), 'task-base-merge-paths', 'tasks.merge_failed');
+        } catch (RuntimeConvergenceException $exception) {
+            throw new TaskPullRequestException('The main merge paths could not be compared.', previous: $exception);
+        }
+        // The empty path separates the two NUL-delimited lists, including an empty first list.
+        $paths = explode("\0", $result->stdout);
+        $separator = array_search('', $paths, true);
+        if ($separator === false) {
+            throw new TaskPullRequestException('The main merge paths could not be read.');
+        }
+
+        return array_values(array_intersect(array_slice($paths, 0, $separator), array_slice($paths, $separator + 1)));
     }
 
     public function moveTo(Task $group, string $sha): void

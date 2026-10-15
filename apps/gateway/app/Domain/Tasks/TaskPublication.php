@@ -123,6 +123,42 @@ final readonly class TaskPublication
             ['task_id' => $group->id, 'sha' => $commit],
             ['source' => $pullRequestHead ? TaskReviewedCommitSource::PullRequestReview : TaskReviewedCommitSource::OrbitPush, 'review_task_id' => $task->id],
         );
+        if ($reviewed->pushed_at === null && $task->fixup_problem !== TaskFinalReview::BaseMergeReview) {
+            try {
+                if (! $task->checks()->where('kind', TaskCheckKind::BaseMerge)->where('task_comment_id', $receipt->id)->exists()) {
+                    $this->turnFetcher->fetch($group);
+                }
+                $merge = $this->prepareBaseMerge($scheduler, $group, $task, $receipt);
+                if ($merge === 'conflict') {
+                    $task->update(['status' => TaskStatus::Completed, 'settled_at' => now(), 'review_handled_comment_id' => $receipt->id]);
+                    $group->update(['status' => TaskGroupStatus::Settling]);
+                    $this->appendAgentBaseMerge($scheduler, $group->fresh(['tasks']) ?? $group, (string) $group->project->default_branch);
+
+                    return;
+                }
+                if ($merge === 'waiting') {
+                    return;
+                }
+                $snapshot = $scheduler->workspaceSnapshot($group);
+                if ($snapshot->head !== $commit) {
+                    if ($this->bases->overlappingPaths($group, $commit, $snapshot->head) !== []) {
+                        $this->appendDeltaReview($scheduler, $group, $task, $receipt);
+
+                        return;
+                    }
+                    $commit = $snapshot->head;
+                    $pullRequestHead = false;
+                    $reviewed = TaskReviewedCommit::query()->firstOrCreate(
+                        ['task_id' => $group->id, 'sha' => $commit],
+                        ['source' => TaskReviewedCommitSource::BaseMerge, 'review_task_id' => $task->id],
+                    );
+                }
+            } catch (TaskCheckException|TaskPullRequestException $exception) {
+                $this->failPublication($scheduler, $group, $task, $exception->getMessage());
+
+                return;
+            }
+        }
         if (! $pullRequestHead && $reviewed->pushed_at === null) {
             if (! $this->pullRequestStillOpen($scheduler, $group, $task, $commit)) {
                 return;
@@ -297,8 +333,9 @@ final readonly class TaskPublication
     }
 
     /**
-     * GitHub refused a behind branch. Merge locally and gate it; only a conflict or failed gate needs an agent.
-     * A clean merge inherits the reviewed first parent's evidence. It never asks GitHub to update the branch.
+     * GitHub refused a behind branch. Merge locally and gate it; only a Git conflict needs a merge agent.
+     * A non-overlapping merge inherits the reviewed first parent's evidence; an overlap gets a delta review.
+     * It never asks GitHub to update the branch.
      */
     public function appendBaseMerge(TaskScheduler $scheduler, Task $group, string $base): void
     {
@@ -322,8 +359,8 @@ final readonly class TaskPublication
                 }
                 $gated = TaskReviewedCommit::query()->where('task_id', $group->id)->where('sha', $current->head)
                     ->where('source', TaskReviewedCommitSource::BaseMerge)->whereNull('pushed_at')->exists();
-                $merge = $gated ? 'passed' : $this->prepareBaseMerge($scheduler, $group, $task);
-                if (in_array($merge, ['conflict', 'failed'], true)) {
+                $merge = $gated ? 'passed' : $this->prepareBaseMerge($scheduler, $group, $task, refreshPassed: true);
+                if ($merge === 'conflict') {
                     $this->appendAgentBaseMerge($scheduler, $group, $base);
 
                     return;
@@ -334,6 +371,11 @@ final readonly class TaskPublication
                 $snapshot = $scheduler->workspaceSnapshot($group);
                 $reviewed = TaskReviewedCommit::query()->where('task_id', $group->id)->where('sha', $snapshot->head)->first();
                 if (! $reviewed instanceof TaskReviewedCommit) {
+                    if (is_string($snapshot->parent) && $this->bases->overlappingPaths($group, $snapshot->parent, $snapshot->head) !== []) {
+                        $this->appendDeltaReview($scheduler, $group, $task);
+
+                        return;
+                    }
                     $parent = TaskReviewedCommit::query()->where('task_id', $group->id)->where('sha', $snapshot->parent)->first();
                     if (! $parent instanceof TaskReviewedCommit) {
                         throw new TaskPullRequestException('The main merge does not descend directly from a reviewed head.');
@@ -355,20 +397,64 @@ final readonly class TaskPublication
         });
     }
 
+    /** Called under the comment transaction's group/task locks. Queue only a gate retry, not a new review. */
+    public function queueBaseMergeRetry(Task $group, Task $task, TaskComment $resolution): bool
+    {
+        if ($group->execution_mode !== TaskExecutionMode::Managed || ! $task->isFinalReview()
+            || ! in_array($task->status, [TaskStatus::Running, TaskStatus::Reviewing], true)
+            || $task->assistance_kind !== AssistanceKind::Failure || $group->assistance_kind === AssistanceKind::Direction) {
+            return false;
+        }
+        $check = $task->checks()->where('kind', TaskCheckKind::BaseMerge)->latest('id')->first();
+        if (! $check instanceof TaskCheck || $check->status !== TaskCheckStatus::Failed || $check->pid === 0
+            || $check->failed_step === 'merge_conflict' || $check->head_after !== $check->head_before || $check->tree_after !== $check->tree_before) {
+            return false;
+        }
+        if ($task->status === TaskStatus::Reviewing) {
+            $approval = $task->comments()->whereKey($check->task_comment_id)->where('type', TaskCommentType::Approved)
+                ->where('author', TaskThreadRole::Reviewer->value)->whereNotNull('receipt_hash')->whereNotNull('commit_sha')
+                ->where('review_attempt', $task->review_attempt)->first();
+            if (! $approval instanceof TaskComment || $approval->id === $task->review_handled_comment_id) {
+                return false;
+            }
+        } elseif ($check->task_comment_id !== null) {
+            return false;
+        }
+
+        // A pending row after this failed gate is durable retry intent. Keep the failed row and approval untouched.
+        TaskCheck::query()->create(['task_id' => $task->id, 'task_comment_id' => $check->task_comment_id, 'kind' => TaskCheckKind::BaseMerge,
+            'status' => TaskCheckStatus::Running, 'pid' => 0, 'process_started' => '',
+            'head_before' => $check->head_before, 'tree_before' => $check->tree_before, 'started_at' => now()]);
+        $resolution->update(['review_attempt' => $task->review_attempt]);
+        TaskQuestions::attachResolution($task, $resolution);
+        $reason = $task->assistance_reason;
+        $task->update([...TaskAssistance::cleared(), 'communication_failures' => 0, 'resolution_delivered_comment_id' => $resolution->id]);
+        if ($group->assistance_reason === $reason && ! $group->tasks()->where('assistance_requested', true)->exists()) {
+            $group->update(TaskAssistance::cleared());
+        }
+        Cache::forget($this->publicationBackoffKey($task));
+
+        return true;
+    }
+
     /**
      * Runs Git and one stored gate, never an agent. The pending row also keeps a merge whose reply was lost
      * subject to the gate. A passed row applies only to the exact current head and tree.
      *
-     * @return 'passed'|'waiting'|'conflict'|'failed'
+     * @return 'passed'|'waiting'|'conflict'
      */
-    public function prepareBaseMerge(TaskScheduler $scheduler, Task $group, Task $task): string
+    public function prepareBaseMerge(TaskScheduler $scheduler, Task $group, Task $task, ?TaskComment $receipt = null, bool $refreshPassed = false): string
     {
         $instance = $group->taskable;
         if (! $instance instanceof Instance) {
             throw new TaskCheckException('The task workspace is unavailable.');
         }
         $snapshot = $scheduler->workspaceSnapshot($group);
-        $check = $task->checks()->where('kind', TaskCheckKind::BaseMerge)->latest('id')->first();
+        $query = $task->checks()->where('kind', TaskCheckKind::BaseMerge);
+        if (! $refreshPassed) {
+            $query->where('task_comment_id', $receipt?->id);
+        }
+        $check = $query->latest('id')->first();
         if ($check instanceof TaskCheck && $check->status === TaskCheckStatus::Running && $check->pid > 0) {
             $reading = $this->checks->read($instance, $check->process());
             if ($reading->state === 'running') {
@@ -380,27 +466,51 @@ final readonly class TaskPublication
                 return 'passed';
             }
         }
-        $retryGate = $check instanceof TaskCheck && $check->status === TaskCheckStatus::Lost;
+        // A resolution reserves a fresh pending check after the failed gate on the same head/tree.
+        // This survives a Gateway restart before the tick starts its process, without re-merging main.
+        $repairGate = $check instanceof TaskCheck && $check->status === TaskCheckStatus::Running && $check->pid === 0
+            && $task->checks()->where('kind', TaskCheckKind::BaseMerge)->where('task_comment_id', $check->task_comment_id)
+                ->where('id', '<', $check->id)->latest('id')->first()?->status === TaskCheckStatus::Failed;
+        $retryGate = $repairGate || ($check instanceof TaskCheck && $check->status === TaskCheckStatus::Lost);
+        if ($repairGate && ($check->head_before !== $snapshot->head || $check->tree_before !== $snapshot->tree)) {
+            throw new TaskCheckException('The workspace changed before retrying the main merge Project check #'.$check->id.'. The retained approval cannot publish changed work.');
+        }
         if ($check instanceof TaskCheck && $check->status === TaskCheckStatus::Cancelled) {
             throw new TaskCheckException('The main merge gate was cancelled. Resolve the check before continuing.');
         }
-        if ($retryGate && $task->checks()->where('kind', TaskCheckKind::BaseMerge)->where('status', TaskCheckStatus::Lost)->count() >= 2) {
+        if (! $repairGate && $retryGate && $task->checks()->where('kind', TaskCheckKind::BaseMerge)->where('status', TaskCheckStatus::Lost)->count() >= 2) {
             throw new TaskCheckException('The main merge gate stopped twice without a result.');
         }
         if ($check instanceof TaskCheck && $check->status !== TaskCheckStatus::Running) {
             if ($check->status !== TaskCheckStatus::Passed && ! $retryGate) {
-                return $check->failed_step === 'merge_conflict' ? 'conflict' : 'failed';
+                if ($check->failed_step === 'merge_conflict') {
+                    return 'conflict';
+                }
+                throw new TaskCheckException('The main merge Project check #'.$check->id.' failed (not a Git conflict). Repair the check failure before continuing. '.$check->output);
+            }
+            if (! $retryGate && ! $refreshPassed) {
+                if ($check->head_after !== $snapshot->head || $check->tree_after !== $snapshot->tree) {
+                    throw new TaskCheckException('The workspace changed after the main merge Project check #'.$check->id.'.');
+                }
+
+                return 'passed';
+            }
+            if ($retryGate && ($check->head_before !== $snapshot->head || $check->tree_before !== $snapshot->tree)) {
+                throw new TaskCheckException('The workspace changed after the lost main merge Project check #'.$check->id.'.');
             }
             $check = null;
         }
         if (! $check instanceof TaskCheck) {
-            $check = TaskCheck::query()->create(['task_id' => $task->id, 'kind' => TaskCheckKind::BaseMerge,
+            $check = TaskCheck::query()->create(['task_id' => $task->id, 'task_comment_id' => $receipt?->id, 'kind' => TaskCheckKind::BaseMerge,
                 'status' => TaskCheckStatus::Running, 'pid' => 0, 'process_started' => '',
                 'head_before' => $snapshot->head, 'tree_before' => $snapshot->tree, 'started_at' => now()]);
         }
-        $head = $this->bases->mergeDefault($group);
+        // A repaired or lost gate retries the same merged head, not a newer main tip.
+        $merge = $retryGate ? new TaskBaseMerge($snapshot->head) : $this->bases->mergeDefault($group);
+        $head = $merge->head;
         if ($head === null) {
-            $check->update(['status' => TaskCheckStatus::Failed, 'failed_step' => 'merge_conflict', 'finished_at' => now()]);
+            $check->update(['status' => TaskCheckStatus::Failed, 'failed_step' => 'merge_conflict',
+                'output' => "Conflicting files:\n".implode("\n", $merge->conflictingPaths), 'finished_at' => now()]);
 
             return 'conflict';
         }
@@ -439,7 +549,7 @@ final readonly class TaskPublication
                 'parent_id' => $locked->id,
                 'position' => TaskFinalReview::nextPosition($tasks),
                 'title' => 'Merge origin/'.$base,
-                'brief' => 'The mechanical main merge conflicted or its Project gate failed. Merge origin/'.$base.' into the task branch and resolve any conflicts. Do not rebase and do not force-push.',
+                'brief' => 'The mechanical main merge has a Git conflict. Merge origin/'.$base.' into the task branch and resolve the conflicting files. Do not rebase and do not force-push.'."\n\n".$this->conflictOutput($locked),
                 'deliverables' => TaskFinalReview::fixupDeliverables($locked->project->taskCheckCommand()),
                 'fixup_problem' => TaskFinalReview::FixupProblem,
                 'status' => TaskStatus::Todo,
@@ -451,6 +561,42 @@ final readonly class TaskPublication
             TaskFinalReview::log($group, 'base merge appended', ['base' => $base, 'pull_request' => $group->pr_url]);
             $scheduler->resumeWaitingSubtask($group);
         }
+    }
+
+    private function conflictOutput(Task $group): string
+    {
+        $output = TaskCheck::query()->whereIn('task_id', $group->tasks()->select('id'))
+            ->where('kind', TaskCheckKind::BaseMerge)->where('failed_step', 'merge_conflict')->latest('id')->value('output');
+
+        return is_string($output) ? $output : '';
+    }
+
+    /** Reuses final-review subtasks and #1235's reviewed-tree delta, without an implementation fixup. */
+    private function appendDeltaReview(TaskScheduler $scheduler, Task $group, Task $previous, ?TaskComment $receipt = null): void
+    {
+        DB::transaction(function () use ($group, $previous, $receipt): void {
+            $locked = Task::topLevel()->lockForUpdate()->findOrFail($group->id);
+            $tasks = $this->runner->lockedTasks($locked);
+            if (TaskExecutionHold::active($locked)) {
+                return;
+            }
+            if ($receipt instanceof TaskComment) {
+                $previous->update(['status' => TaskStatus::Completed, 'settled_at' => now(), 'review_handled_comment_id' => $receipt->id]);
+            }
+            if ($tasks->contains(static fn (Task $task): bool => $task->id !== $previous->id && in_array($task->status, [TaskStatus::Todo, TaskStatus::Running, TaskStatus::Reviewing], true))) {
+                return;
+            }
+            Task::query()->create([
+                'parent_id' => $group->id, 'position' => TaskFinalReview::nextPosition($tasks),
+                'type' => TaskType::FinalReview, 'title' => TaskFinalReview::Title,
+                'brief' => 'The mechanical main merge overlaps the group changes. Re-review only the delta since the last approved final-review tree, not the whole branch.',
+                'deliverables' => TaskFinalReview::deliverables(), 'fixup_problem' => TaskFinalReview::BaseMergeReview,
+                'status' => TaskStatus::Todo,
+            ]);
+            $locked->update(['status' => TaskGroupStatus::Running]);
+        });
+        TaskFinalReview::log($group, 'base merge delta review appended', ['previous_subtask_id' => $previous->id]);
+        $scheduler->resumeWaitingSubtask($group->fresh(['tasks']) ?? $group);
     }
 
     /** The reason a trusted request for changes, or an incomplete review read, blocks the merge. Null when nothing blocks. */

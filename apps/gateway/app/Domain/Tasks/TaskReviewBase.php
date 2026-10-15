@@ -61,6 +61,12 @@ final class TaskReviewBase
         if (! $task->isFinalReview()) {
             return null;
         }
+        if ($task->fixup_problem === TaskFinalReview::BaseMergeReview) {
+            $review = $task->parent->tasks()->where('position', '<', $task->position)
+                ->where('type', TaskType::FinalReview)->reorder('position', 'desc')->first();
+
+            return $review instanceof Task && self::isTree($review->review_workspace_tree) ? $review : null;
+        }
         $previous = $task->parent->tasks()->where('position', '<', $task->position)->reorder('position', 'desc')->first();
         if (! $previous instanceof Task || $previous->fixup_problem !== TaskFinalReview::FixupProblem) {
             return null;

@@ -27,6 +27,9 @@ final readonly class TaskFinalReview
 
     public const string FixupTitle = 'Address final review';
 
+    /** A delta-only final review of an overlapping mechanical main merge; not an agent fixup. */
+    public const string BaseMergeReview = 'base-merge-review';
+
     /** Final-review fixups in one window before the task asks for assistance. */
     public const int FixupLimit = 2;
 

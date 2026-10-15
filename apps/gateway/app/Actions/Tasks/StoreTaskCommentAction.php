@@ -13,6 +13,7 @@ use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskExecutionHold;
 use App\Domain\Tasks\TaskGroupGuard;
+use App\Domain\Tasks\TaskPublication;
 use App\Domain\Tasks\TaskQuestions;
 use App\Domain\Tasks\TaskReviewPacketBuilder;
 use App\Domain\Tasks\TaskStatus;
@@ -44,6 +45,7 @@ final readonly class StoreTaskCommentAction
         private TaskTurnFetchNotice $fetchNotice,
         private TaskReviewPacketBuilder $reviewPackets,
         private RetryTaskBaselineAction $retryBaseline,
+        private TaskPublication $publication,
         private ResumeDeliverableCorrectionAction $correctionResume,
     ) {}
 
@@ -96,6 +98,11 @@ final readonly class StoreTaskCommentAction
                         $group->update(TaskAssistance::cleared());
                     }
                     $this->log($task, $comment, 'resolution queued deliverable gate retry');
+
+                    return $comment;
+                }
+                if ($this->publication->queueBaseMergeRetry($group, $task, $comment)) {
+                    $this->log($task, $comment, 'resolution queued main merge gate retry');
 
                     return $comment;
                 }

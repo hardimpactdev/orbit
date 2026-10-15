@@ -1256,7 +1256,9 @@ The flow needs `source_access: github_app`. It is off by default. Each task stil
 
 ### Final review
 
-A final review is a subtask with `type` `final_review` and the title `Final review`. Orbit appends one when a review-and-merge task has no open subtask and its latest approved commit has no final review. Before the final review starts, Orbit fetches and merges `origin/{default branch}` into the group branch with Git. A conflict-free merge runs only the Project gate on that merge commit, without setup, deliverable commands, or an agent turn. No merge means no extra gate. A conflict or a failing gate creates the ordinary `Merge origin/{base}` agent fixup. The final review starts only after this preparation succeeds, so the pull request opens up to date.
+A final review is a subtask with `type` `final_review` and the title `Final review`. Orbit appends one when a review-and-merge task has no open subtask and its latest approved commit has no final review. Before the final review starts, Orbit fetches and merges `origin/{default branch}` into the group branch with Git. A conflict-free merge runs only the Project gate on that merge commit, without setup, deliverable commands, or an agent turn. No merge means no extra gate.
+
+Only a real Git conflict creates the `Merge origin/{base}` agent fixup; its brief lists the conflicting files. A failed Project gate blocks progress separately, with its check ID and output, rather than claiming that Git conflicted. The final review starts only after this preparation succeeds.
 
 It has no implementer and starts in `reviewing` with a fresh reviewer.
 
@@ -1270,7 +1272,13 @@ For the first final review, its start commit is the merge base of the workspace 
 | `changes_requested` | Completes the final review and starts the fixup subtask `Address final review`, whose brief holds the findings |
 | `blocked` | Asks for direction, as any reviewer does |
 
-A final review commits nothing. Orbit checks that the workspace still holds the reviewed `HEAD` and tree, as for any [reviewer outcome](#reviewer-outcomes). The approval stores that `HEAD` as its `commit_sha`. A failed push or pull request open keeps the final review in `reviewing` and retries on the [publication backoff](#pull-request-and-settle-metrics).
+A final review commits nothing. Orbit checks that the workspace still holds the reviewed `HEAD` and tree, as for any [reviewer outcome](#reviewer-outcomes). The approval stores that `HEAD` as its `commit_sha`.
+
+Orbit does not merge each new main tip while the reviewer works. After approval, just before pushing or opening the pull request, Orbit merges main once more and runs only the Project task check if HEAD changed. It compares the merge's changed paths with the group's paths before that merge. No overlap keeps the approved final review.
+
+An overlap starts a delta-only final review from the approved tree, with no implementer. Publication retries keep the gated head instead of chasing another main tip. A failed push or pull request open keeps the final review in `reviewing` and retries on the [publication backoff](#pull-request-and-settle-metrics).
+
+When a main merge's Project gate fails, repair the prerequisite and post a normal `resolution` on the blocked final-review subtask. Orbit retains the approval and merged head, records a new gate attempt, and resumes on the next tick without another merge or agent turn. This also retries a gate that failed before the reviewer started. The earlier failed check remains evidence. The retry requires the same head and tree: source changes cannot inherit the retained approval. A failed retry stays blocked until another repair and resolution.
 
 The fixup addresses each blocking finding with the smallest change, or explains in its handoff why the finding does not apply within the task brief. It lists follow-ups in the handoff instead of implementing them.
 
@@ -1282,9 +1290,9 @@ At most two final-review fixups run in one window. The window ends at the latest
 
 In a review-and-merge task, an approved subtask is committed and not pushed. Conflict, failed-check, and trusted-feedback fixups are subtasks too, so their approvals wait for a final review. A final review's approval pushes the feature commits. A later mechanical main merge uses the gate and inherits that review as described below.
 
-Orbit never asks GitHub to update the branch of such a task. If main moves after the pull request opens and GitHub refuses a behind branch, Orbit merges main locally and runs only the Project gate on the merge commit. A passing conflict-free merge inherits the prior head's review and is pushed without an agent or another full review. Its recorded source is `base_merge`. CI must still pass on that exact head.
+Orbit never asks GitHub to update the branch of such a task. If main moves after the pull request opens and GitHub refuses a behind branch, Orbit merges main locally and runs only the Project gate on the merge commit. A passing conflict-free merge that changes none of the group's paths inherits the prior head's review and is pushed without an agent or another review. Its recorded source is `base_merge`. An overlapping merge receives only a delta re-review against the earlier approved tree. CI must still pass on that exact head.
 
-Only a conflict or a failed gate creates an agent fixup and another final review. Mechanical merges do not consume the fixup cap. Topology checks still count only the group's own changes against the current merge base, including merge resolutions.
+Only a Git conflict creates an agent merge fixup and another final review. A failed gate remains blocking and is surfaced as a Project check failure, not a merge conflict. Mechanical merges and delta-only final reviews do not consume the fixup cap. Topology checks still count only the group's own changes against the current merge base, including merge resolutions.
 
 Cancel and the cancelled-task sweep push the latest approved commit only when a final review approved it. Approved work that no final review saw is removed with the workspace.
 
@@ -1709,7 +1717,9 @@ The merge condition is a fact Orbit recorded: this exact SHA passed Orbit's fina
 
 Asking GitHub to update a branch was rejected for these tasks, because its merge commit would land without the Project gate. Orbit merges main locally and records the gate on the exact merge commit.
 
-A clean merge inherits the feature review; conflicts and gate failures need an agent and another review. A trusted request for changes blocks the merge until that account approves or dismisses it, even after Orbit's fixup. A person still steers through briefs, direction answers, and requested changes. A merge deploys the Gateway, so a wrong final review ships. The merge check and trusted requested changes are the remaining guards.
+A clean main merge inherits the feature review when it changes none of the group's paths. An overlapping merge needs only a delta review; only a Git conflict needs a merge agent. Project gate failures block separately: a failed check does not mean that Git conflicted. Merging again only at publication avoids chasing every main tip while the reviewer works.
+
+A trusted request for changes blocks the merge until that account approves or dismisses it, even after Orbit's fixup. A person still steers through briefs, direction answers, and requested changes. A merge deploys the Gateway, so a wrong final review ships. The merge check and trusted requested changes are the remaining guards.
 
 ### Fixups are bounded
 
