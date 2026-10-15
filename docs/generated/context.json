@@ -1023,6 +1023,39 @@
             ]
         },
         {
+            "path": "docs/decisions/0215-start-development-processes-from-project-definitions.md",
+            "title": "ADR 0215: Start development Processes from Project definitions",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Access grant",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Placement",
+                "Process",
+                "Project",
+                "Role",
+                "Route",
+                "Schedule",
+                "Subtask",
+                "Task",
+                "Task workspace"
+            ],
+            "governing_adrs": [
+                "0210",
+                "0213",
+                "0215"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -1079,7 +1112,8 @@
                 "0211",
                 "0212",
                 "0213",
-                "0214"
+                "0214",
+                "0215"
             ]
         },
         {
