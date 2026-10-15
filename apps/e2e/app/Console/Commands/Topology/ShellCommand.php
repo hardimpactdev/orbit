@@ -30,7 +30,7 @@ final class ShellCommand extends E2ECommand
     {
         try {
             $request = $this->request();
-            $node = (string) $this->argument('node');
+            $node = $this->stringArgument('node');
             $instance = $acquirer->instance($request, $node);
             $this->log($request, "node={$node} instance={$instance}");
             $directory = in_array($node, ['gateway', 'app-dev', 'operator'], true)

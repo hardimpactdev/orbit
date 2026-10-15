@@ -656,7 +656,7 @@ final readonly class InstallToolAction
             outcome: $outcome,
             status: $status,
             nodeId: $data->nodeId,
-            manager: $manager === null ? $data->manager : $manager->value,
+            manager: $manager->value ?? $data->manager,
             package: $data->package,
             versionConstraint: $data->versionConstraint,
             message: $message,

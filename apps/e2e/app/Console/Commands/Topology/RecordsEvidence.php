@@ -21,7 +21,7 @@ trait RecordsEvidence
     /** The validated label, or null without `--record`; checked before any infrastructure access. */
     protected function evidenceLabel(): ?EvidenceLabel
     {
-        $value = $this->option('record');
+        $value = $this->stringOption('record');
 
         return $value === null ? null : new EvidenceLabel($value);
     }

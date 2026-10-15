@@ -2624,6 +2624,44 @@ it('hands off with the Project task check, and runs no command when the Project 
     'custom task check' => ['vp run check'],
 ]);
 
+it('skips assistance, Coder webhooks and communication failures when cancellation lands during observation', function (TaskStatus $status, AgentThreadState $state): void {
+    $group = tick_group();
+    $task = $group->tasks->sole();
+    $task->update(['status' => $status, 'review_notified_attempt' => $task->review_attempt]);
+    app(TaskExtensionState::class)->enable();
+    $driver = new FakeAgentDriver('example');
+    $driver->observation = new AgentObservation($state, turnId: 'cancel-race-turn');
+    AgentThread::query()->where('task_group_id', $group->id)->update(['driver' => 'example']);
+    app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
+    mock(TaskWorkspaceDiffReader::class)->shouldReceive('hasCommitsSince')->once()
+        ->andReturnUsing(function () use ($group): bool {
+            // Commit the cancellation while observe() is in flight, leaving its loaded models stale.
+            Task::topLevel()->whereKey($group->id)->update(['status' => TaskGroupStatus::Cancelled]);
+            $group->tasks()->update(['status' => TaskStatus::Cancelled, 'settled_at' => now(), 'assistance_requested' => false]);
+
+            return false;
+        });
+    mock(TaskTurnReceipts::class)->shouldReceive('read')
+        ->andThrow(new TaskTurnReceiptException('The cancelled workspace is no longer available.'));
+    mock(CoderSettleNotifier::class)->shouldNotReceive('assistance', 'escalate', 'notify');
+
+    $decisions = app(TaskScheduler::class)->tick();
+
+    expect($decisions)->toBe([])
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Cancelled)
+        ->and($group->fresh()?->assistance_requested)->toBeFalse()
+        ->and($group->fresh()?->assistance_reason)->toBeNull()
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Cancelled)
+        ->and($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and($task->fresh()?->assistance_reason)->toBeNull()
+        ->and($task->fresh()?->communication_failures)->toBe(0);
+})->with([
+    'failed implementer' => [TaskStatus::Running, AgentThreadState::Failed],
+    'implementer receipt read failure' => [TaskStatus::Running, AgentThreadState::Done],
+    'failed reviewer' => [TaskStatus::Reviewing, AgentThreadState::Failed],
+    'reviewer receipt read failure' => [TaskStatus::Reviewing, AgentThreadState::Done],
+]);
+
 it('records an unreachable workspace as a communication failure without aborting the tick', function (): void {
     $group = tick_group();
     $task = $group->tasks->sole();
