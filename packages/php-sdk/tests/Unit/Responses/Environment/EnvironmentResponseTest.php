@@ -54,6 +54,21 @@ describe('Instance environment response', function (): void {
         expect($response->runtimeRefresh)->toBe($outcome)->and($response->toArray()['runtime_refresh'])->toBe($outcome);
     })->with(['skipped_unchanged', 'skipped_no_php_version', 'skipped_no_current_release', 'config_cache_and_opcache_refreshed', 'opcache_refreshed_config_uncached']);
 
+    it('preserves restarted Process IDs', function (array $ids): void {
+        $response = EnvironmentOperationResponse::fromGatewayData([
+            'instance_id' => 17, 'operation' => 'sync', 'changed' => true, 'key_count' => 1,
+            'runtime_refresh' => 'config_cache_and_opcache_refreshed', 'restarted_process_ids' => $ids,
+        ], 'sync', '11111111-1111-4111-8111-111111111111');
+        expect($response->restartedProcessIds)->toBe($ids)->and($response->toArray()['restarted_process_ids'])->toBe($ids);
+    })->with(['none' => [[]], 'multiple' => [[12, 14]]]);
+
+    it('rejects malformed restarted Process IDs safely', function (mixed $ids): void {
+        expect(fn () => EnvironmentOperationResponse::fromGatewayData([
+            'instance_id' => 17, 'operation' => 'sync', 'changed' => true, 'key_count' => 1,
+            'runtime_refresh' => 'config_cache_and_opcache_refreshed', 'restarted_process_ids' => $ids,
+        ], 'sync', '11111111-1111-4111-8111-111111111111'))->toThrow(GatewayApiException::class);
+    })->with([null, 'SECRET', [[0]], [[-1]], [['12']], [[12, 12]], [['key' => 12]], [[['SECRET']]]]);
+
     it('rejects unknown runtime results and results on store-only operations', function (string $operation, mixed $outcome): void {
         expect(fn () => EnvironmentOperationResponse::fromGatewayData([
             'instance_id' => 17, 'operation' => $operation, 'changed' => true, 'key_count' => 1, 'runtime_refresh' => $outcome,

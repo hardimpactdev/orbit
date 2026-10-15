@@ -11133,6 +11133,13 @@
                             "string",
                             "null"
                           ]
+                        },
+                        "restarted_process_ids": {
+                          "type": [
+                            "array",
+                            "null"
+                          ],
+                          "items": {}
                         }
                       }
                     },
@@ -11261,6 +11268,13 @@
                             "string",
                             "null"
                           ]
+                        },
+                        "restarted_process_ids": {
+                          "type": [
+                            "array",
+                            "null"
+                          ],
+                          "items": {}
                         }
                       }
                     },
@@ -11408,6 +11422,13 @@
                             "string",
                             "null"
                           ]
+                        },
+                        "restarted_process_ids": {
+                          "type": [
+                            "array",
+                            "null"
+                          ],
+                          "items": {}
                         }
                       }
                     },

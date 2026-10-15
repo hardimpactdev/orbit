@@ -20,8 +20,6 @@ process = subprocess.Popen(sys.argv[1:4], stdin=slave, stdout=slave, stderr=slav
                            env={**os.environ, 'TERM': 'xterm-256color', 'PAO_DISABLE': '1'})
 output = bytearray()
 keys = [base64.b64decode(key) for key in configuration['keys']]
-key_prompts = configuration.get('key_prompts', {})
-keys_sent = 0
 ready = False
 awaiting_output = False
 idle_timeout = configuration.get('idle_timeout', 10)
@@ -42,13 +40,9 @@ while process.poll() is None:
         process.wait()
         raise RuntimeError('Command fixture timed out: ' + output.decode(errors='replace'))
     ready = ready or configuration['prompt'].encode() in output
-    # Multi-prompt commands must finish the transition before the next key is sent.
-    key_prompt = key_prompts.get(str(keys_sent))
-    prompt_ready = key_prompt is None or key_prompt.encode() in output
     pending_input = struct.unpack('i', fcntl.ioctl(slave, termios.FIONREAD, struct.pack('i', 0)))[0]
-    if ready and keys and prompt_ready and not awaiting_output and pending_input == 0:
+    if ready and keys and not awaiting_output and pending_input == 0:
         os.write(master, keys.pop(0))
-        keys_sent += 1
         awaiting_output = True
 while select.select([master], [], [], 0.02)[0]:
     try:

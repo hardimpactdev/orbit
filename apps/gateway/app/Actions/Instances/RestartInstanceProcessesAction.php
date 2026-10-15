@@ -15,6 +15,7 @@ use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Instance;
 use App\Models\Process;
+use Closure;
 use Throwable;
 
 final readonly class RestartInstanceProcessesAction
@@ -25,9 +26,10 @@ final readonly class RestartInstanceProcessesAction
         private RestartProcessAction $restart,
     ) {}
 
-    public function execute(Instance $instance, DeploymentRequest $request): void
+    /** @param (Closure(int): void)|null $onRestart */
+    public function execute(Instance $instance, DeploymentRequest $request, ?Closure $onRestart = null): void
     {
-        $this->admissions->run([$instance->id], function () use ($instance, $request): void {
+        $this->admissions->run([$instance->id], function () use ($instance, $request, $onRestart): void {
             $processes = Process::query()
                 ->whereIn('owner_type', Instance::morphTypes())
                 ->where('owner_id', $instance->id)
@@ -39,12 +41,13 @@ final readonly class RestartInstanceProcessesAction
 
             foreach ($processes as $process) {
                 try {
-                    $this->lease->run($process, function (Process $fresh) use ($request): void {
+                    $this->lease->run($process, function (Process $fresh) use ($request, $onRestart): void {
                         if ($fresh->status !== LifecycleStatus::Active || $fresh->desired_state !== DesiredProcessState::Running || ! $fresh->restart_on_deploy) {
                             return;
                         }
 
                         $this->restart->execute($fresh);
+                        $onRestart?->__invoke($fresh->id);
                         $request->emit(new DeploymentEvent('process_restart', DeploymentOutputStream::Stdout, "Restarted Process {$fresh->id}.\n"));
                     });
                 } catch (Throwable $exception) {

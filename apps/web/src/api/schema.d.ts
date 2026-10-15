@@ -10797,6 +10797,7 @@ export interface operations {
                             changed?: boolean;
                             key_count?: number;
                             runtime_refresh?: string | null;
+                            restarted_process_ids?: unknown[] | null;
                         };
                         meta: components["schemas"]["Meta"];
                     };
@@ -10869,6 +10870,7 @@ export interface operations {
                             changed?: boolean;
                             key_count?: number;
                             runtime_refresh?: string | null;
+                            restarted_process_ids?: unknown[] | null;
                         };
                         meta: components["schemas"]["Meta"];
                     };
@@ -10946,6 +10948,7 @@ export interface operations {
                             changed?: boolean;
                             key_count?: number;
                             runtime_refresh?: string | null;
+                            restarted_process_ids?: unknown[] | null;
                         };
                         meta: components["schemas"]["Meta"];
                     };

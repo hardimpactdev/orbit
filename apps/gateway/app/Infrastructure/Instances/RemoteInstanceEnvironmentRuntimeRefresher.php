@@ -4,15 +4,14 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Instances;
 
-use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\Environment\InstanceEnvironmentContext;
 use App\Domain\Instances\Environment\InstanceEnvironmentRuntimeRefresher;
 use App\Domain\Instances\ProductionPhpRuntimeManager;
-use App\Domain\RemotePrograms\RemoteProgramFailed;
 use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
 use App\Models\Instance;
+use Throwable;
 
 final readonly class RemoteInstanceEnvironmentRuntimeRefresher implements InstanceEnvironmentRuntimeRefresher
 {
@@ -24,7 +23,11 @@ final readonly class RemoteInstanceEnvironmentRuntimeRefresher implements Instan
 
     public function refresh(InstanceEnvironmentContext $context): string
     {
-        $instance = Instance::query()->findOrFail($context->instanceId);
+        try {
+            $instance = Instance::query()->findOrFail($context->instanceId);
+        } catch (Throwable) {
+            $this->configFailed();
+        }
 
         if ($instance->selected_php_version === null || $instance->selected_php_version === '') {
             return 'skipped_no_php_version';
@@ -41,7 +44,7 @@ final readonly class RemoteInstanceEnvironmentRuntimeRefresher implements Instan
                     'application' => $instance->applicationDirectory(),
                 ],
             );
-        } catch (RemoteProgramFailed) {
+        } catch (Throwable) {
             $this->configFailed();
         }
 
@@ -55,7 +58,7 @@ final readonly class RemoteInstanceEnvironmentRuntimeRefresher implements Instan
 
         try {
             $this->runtime->refreshCache($instance);
-        } catch (RuntimeConvergenceException|ResourceOperationException) {
+        } catch (Throwable) {
             throw new ResourceOperationException(
                 errorCode: 'env.php_runtime_refresh_failed',
                 message: 'The environment file changed and config cache preparation completed, but the production FPM opcache refresh failed.',
@@ -70,7 +73,7 @@ final readonly class RemoteInstanceEnvironmentRuntimeRefresher implements Instan
     {
         throw new ResourceOperationException(
             errorCode: 'env.config_cache_refresh_failed',
-            message: 'The environment file changed, but the production config cache refresh failed or was unconfirmed. FPM opcache was not reset.',
+            message: 'The environment file was synchronized, but production config cache preparation failed or was unconfirmed. A failed config build keeps the old cache. FPM opcache was not reset. Retry env-sync.',
             status: 502,
         );
     }

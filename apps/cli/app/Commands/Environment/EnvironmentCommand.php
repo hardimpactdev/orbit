@@ -62,6 +62,10 @@ abstract class EnvironmentCommand extends GatewayCommand
             };
         }
 
+        if ($response->restartedProcessIds !== null) {
+            $fields['Processes restarted'] = $response->restartedProcessIds === [] ? 'none' : implode(', ', $response->restartedProcessIds);
+        }
+
         $fields['Request ID'] = $response->requestId;
         ConsoleWriter::write($this->output, $this->humanRenderer()->detail('Instance environment', $fields));
 

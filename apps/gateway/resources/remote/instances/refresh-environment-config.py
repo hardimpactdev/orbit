@@ -27,7 +27,17 @@ def main(payload):
     if not succeeds(['test', '-f', application + '/bootstrap/cache/config.php']):
         return 'config_uncached', {}
     if not succeeds([
-        'bash', '-seu', '-c', 'cd -- "$1"; exec "php$2" artisan config:cache',
+        'bash', '-seu', '-c', '''cd -- "$1"
+cache="$PWD/bootstrap/cache/config.php"
+temporary=$(mktemp -d "$PWD/bootstrap/cache/.orbit-config-XXXXXXXX")
+trap 'rm -rf -- "$temporary"' EXIT
+export APP_CONFIG_CACHE="$temporary/config.php"
+"php$2" artisan config:cache
+[ -f "$APP_CONFIG_CACHE" ]
+# Boot Artisan against the temporary cache using the application's own autoload context.
+"php$2" artisan --version --no-interaction
+mv -f -- "$APP_CONFIG_CACHE" "$cache"
+''',
         '--', application, payload['version'],
     ]):
         return 'failed', {}
