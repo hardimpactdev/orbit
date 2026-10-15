@@ -220,6 +220,15 @@ class InstallBuildTest(unittest.TestCase):
         self.assertNotIn(f'php8.5-cli_{pin["sha256"]}.deb', self.cached())
         self.assertFalse([call for call in self.calls() if call.startswith('apt-get')])
 
+    def test_corrupt_mirror_stops_even_when_the_original_source_has_valid_bytes(self):
+        pin = self.pins['php8.5-cli']
+        mirror = self.state / 'served' / ('mirror.example_php_php8.5-cli_' + pin['sha256'] + '.deb')
+        mirror.write_bytes(b'corrupt bytes')
+
+        self.assertEqual(self.run_program()[0], 'download_failed')
+        self.assertNotIn('curl ' + pin['url'], self.calls())
+        self.assertFalse([call for call in self.calls() if call.startswith('apt-get')])
+
     def test_keeps_the_previous_build_and_rolls_back_when_php_fpm_does_not_start(self):
         for name in self.pins:
             self.install(name, '8.5.11-1')

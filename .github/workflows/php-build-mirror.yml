@@ -1,15 +1,16 @@
-name: PHP build mirror
+name: Recipe artifact mirror
 
-# Sury deletes a build from its pool when it publishes the next one. This workflow keeps every pinned PHP file of the
-# machine software recipe as an asset of the php-build-mirror release, named <package>_<sha256>.deb. php.install-build
-# tries this mirror before the pin's own Sury URL, so a rollback, a new Node, or CI still gets the exact build after
-# Sury moves on. See ADR 0216.
+# Sury and the git-core PPA delete superseded builds. This workflow keeps every external pinned Debian file of the
+# machine software recipe as an asset of the php-build-mirror release, named <package>_<digest>.deb. Installers
+# try this mirror before the pin's own URL, so a rollback, a new Node, or CI still gets the exact build after
+# either source moves on. See ADR 0216, including Git artifacts and security updates.
 on:
   push:
     branches: [main]
     paths:
       - apps/gateway/resources/machine-software/recipe.json
       - bin/php-build
+      - apps/gateway/resources/remote/lib/artifacts.py
       - .github/workflows/php-build-mirror.yml
   workflow_dispatch:
 
@@ -22,7 +23,7 @@ concurrency:
 
 jobs:
   mirror:
-    name: Mirror the pinned PHP files
+    name: Mirror the recipe Debian artifacts
     if: github.repository == 'nckrtl/orbit'
     runs-on: ubuntu-26.04
     steps:
@@ -31,22 +32,27 @@ jobs:
         with:
           persist-credentials: false
 
-      # Each download is checked against its recipe SHA-256 digest before it is kept.
-      - name: Download every pinned PHP file
-        run: python3 bin/php-build mirror --directory "$RUNNER_TEMP/php-build-mirror"
+      - name: List published assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view php-build-mirror >/dev/null 2>&1; then
+            gh release create php-build-mirror --prerelease --latest=false --title 'Recipe artifact mirror' \
+              --notes 'External Debian artifacts of the machine software recipe. See ADR 0216 and docs/reference/compute-drivers.md.'
+          fi
+          gh release edit php-build-mirror --title 'Recipe artifact mirror'
+          gh release view php-build-mirror --json assets --jq '.assets[].name' > "$RUNNER_TEMP/published-assets"
+
+      # Each new download is checked against its recipe digest before it is kept.
+      - name: Download missing recipe artifacts
+        run: python3 bin/php-build mirror --directory "$RUNNER_TEMP/php-build-mirror" --published "$RUNNER_TEMP/published-assets"
 
       - name: Publish the files that the release does not hold yet
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           release=php-build-mirror
-          if ! gh release view "$release" >/dev/null 2>&1; then
-            gh release create "$release" --prerelease --latest=false --title 'PHP build mirror' \
-              --notes 'The pinned Sury PHP packages of the machine software recipe, named <package>_<sha256>.deb. See ADR 0216.'
-          fi
-          present=$(gh release view "$release" --json assets --jq '.assets[].name')
+          shopt -s nullglob
           for file in "$RUNNER_TEMP"/php-build-mirror/*.deb; do
-            if ! grep -qxF "$(basename "$file")" <<<"$present"; then
-              gh release upload "$release" "$file"
-            fi
+            gh release upload "$release" "$file"
           done
