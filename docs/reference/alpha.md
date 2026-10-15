@@ -31,6 +31,8 @@ A documentation build or an automated test does not prove the Gateway installati
 
 Run `bin/bootstrap` only in a source checkout. In a Gateway [release](/reference/gateway-recovery#release-layout) it refuses, because a release is immutable; deploy another commit instead. Bootstrap seeds its test and quality caches from the [main caches](/reference/implementation-loop#main-caches) when they exist. It never publishes caches; only main CI does. Bootstrap writes the development Gateway key to `ORBIT_HOME/gateway.app-key` with `bin/gateway-app-key`, and keeps a key that exists. A nonempty `APP_KEY` in the environment [takes precedence](/reference/gateway-recovery#preserve-a-complete-state-set). `--with-bun` and `--with-rust` also install the locked dependencies of the [Bun and Rust projects](/reference/bun-and-rust-projects).
 
+Bootstrap also installs the [merge driver for generated files](/contributor-guide#merging-generated-files). Contributors who merge branches need the Docs and Gateway Composer dependencies and the web dependencies (`--with-bun`); a source alpha trial does not need to merge branches.
+
 ## Limits
 
 The trial has a small environment and workload on purpose.

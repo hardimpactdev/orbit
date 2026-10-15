@@ -625,6 +625,13 @@ class MainCacheTest(CacheFixture):
         (root / 'bin/bootstrap').write_bytes(Path(cache.__file__).with_name('bootstrap').read_bytes())
         (root / 'bin/gateway-app-key').write_bytes(Path(cache.__file__).with_name('gateway-app-key').read_bytes())
         (root / 'bin/gateway-app-key').chmod(0o755)
+        (root / 'bin/generated-merge').write_bytes(Path(cache.__file__).with_name('generated-merge').read_bytes())
+        (root / 'bin/generated-merge').chmod(0o755)
+        # The real bootstrap installs a clone-local merge driver. Give it a
+        # private repository, rather than letting Git find the parent checkout.
+        cache.git(root, 'init', '-b', 'main')
+        cache.git(root, 'config', 'user.name', 'Orbit')
+        cache.git(root, 'config', 'user.email', 'orbit@example.test')
         for project in cache.PROJECTS:
             (root / project).mkdir(parents=True)
         calls = root / 'calls'
@@ -645,6 +652,9 @@ class MainCacheTest(CacheFixture):
                        'TIA_TEST_COMPOSER_CACHE': str(root / 'downloads')}
         result = subprocess.run(['bash', str(root / 'bin/bootstrap')], capture_output=True, text=True, env=environment)
         self.assertEqual(0, result.returncode, result.stderr)
+        driver = cache.git(root, 'config', '--local', '--get', 'merge.orbit-generated.driver')
+        self.assertIn(str(root / 'bin/generated-merge'), driver)
+        self.assertIn('--merge %O %A %B %P %X %Y', driver)
         lines = calls.read_text().splitlines()
         self.assertEqual(5, sum(line.startswith('composer install') for line in lines))
         self.assertEqual('cache seed --repository=' + str(root), lines[5])
@@ -686,9 +696,6 @@ class MainCacheTest(CacheFixture):
 
         # A clean bootstrap at fetched main checks everything and still leaves the main caches to CI.
         (root / '.gitignore').write_text('/calls\n/orbit-home/\n')
-        cache.git(root, 'init', '-b', 'main')
-        cache.git(root, 'config', 'user.name', 'Orbit')
-        cache.git(root, 'config', 'user.email', 'orbit@example.test')
         cache.git(root, 'add', '.')
         cache.git(root, 'commit', '-m', 'bootstrap fixture')
         cache.git(root, 'update-ref', 'refs/remotes/origin/main', cache.git(root, 'rev-parse', 'HEAD'))

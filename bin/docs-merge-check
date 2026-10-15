@@ -46,6 +46,7 @@ trap 'rm -rf -- "$scratch"' EXIT
 trap 'exit 2' HUP INT TERM
 # A shared local clone reads source objects but writes preview objects only here.
 git clone --quiet --shared --no-checkout "$repo" "$scratch/tree" || fail 'temporary_checkout_failed: local clone failed'
+(cd "$scratch/tree" && "$TOOL_ROOT/bin/generated-merge" --install) || fail 'temporary_checkout_failed: cannot install generated-file merge driver'
 git -C "$scratch/tree" config gc.auto 0
 git -C "$scratch/tree" config maintenance.auto false
 # Local clones derive remote refs from local branches, not source remote refs.
@@ -56,10 +57,12 @@ if [[ -n "$baseline_commit" ]]; then
 else
     git -C "$scratch/tree" update-ref -d refs/remotes/origin/main || fail 'temporary_checkout_failed: cannot clear synthetic ratchet baseline'
 fi
+# Merge drivers read attributes from the checkout, including in merge-tree.
+git -C "$scratch/tree" -c core.hooksPath=/dev/null checkout --quiet --detach "$head_commit" || fail 'temporary_checkout_failed: checkout failed'
 preview="$head_commit"
 if ! "$head_only"; then
     set +e
-    merge_output="$(git -C "$scratch/tree" merge-tree --write-tree "$base_commit" "$head_commit" 2>&1)"
+    merge_output="$(ORBIT_GENERATED_MERGE_DEPENDENCIES="$TOOL_ROOT" git -C "$scratch/tree" merge-tree --write-tree "$base_commit" "$head_commit" 2>&1)"
     merge_status=$?
     set -e
     if ((merge_status == 1)); then

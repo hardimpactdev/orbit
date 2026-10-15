@@ -93,6 +93,8 @@ GitHub CI runs on every pull request, on every push to `main`, every night on `m
 
 Gateway project, subprocess, and shard jobs supply Bun 1.4.2 alongside Node/npm. The package-cache integration tests run real npm and Bun installs against seeded private caches and a local test registry.
 
+The Docs project job also supplies Bun 1.4.2 and installs the Gateway's Composer dependencies and the web app's locked Bun dependencies. Its [proof for merging generated files](/contributor-guide#merging-generated-files) runs the real generators in disposable clones, including during the subprocess test run.
+
 `Required checks` expects Docs (merge ref) and Gateway plan to succeed on pull requests and to be skipped on pushes and manual runs. It expects the Gateway shards to succeed when the plan chose shards, and to be skipped otherwise.
 
 On a pull request, each Composer project job runs the TIA-selected tests and the architecture tests. The architecture tests include the contract tests that read the workflow files, `CliBinaryBuildContractTest`, `ComposerConfigurationTest`, and `DocsMergeRefWorkflowTest`, because TIA does not link a workflow file to the tests that read it. They also include `CommandSurfaceTest`, which checks every CLI command against its section in `docs/cli`, so a pull request that changes only docs runs it too.
