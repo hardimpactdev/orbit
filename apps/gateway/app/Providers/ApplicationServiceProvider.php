@@ -214,11 +214,11 @@ use App\Infrastructure\AppDev\RemoteAppDevTldRouteManager;
 use App\Infrastructure\AppDev\RemoteVitePortRuntime;
 use App\Infrastructure\AppProd\RemoteAppProdCaddyManager;
 use App\Infrastructure\Broadcasting\ReverbBroadcaster;
+use App\Infrastructure\Caddy\Build\ContributedCaddySiteSource;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilder;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildLock;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
-use App\Infrastructure\Caddy\Build\NodeCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\AnalyticsCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\GatewayWebCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\MetricsCaddySiteSource;
@@ -703,8 +703,7 @@ final class ApplicationServiceProvider extends ServiceProvider
                 app(RouteCaddySiteSource::class),
                 app(WebSocketCaddySiteSource::class),
                 app(AnalyticsCaddySiteSource::class),
-                ...app(Contributions::class)->of(NodeCaddySiteSource::class),
-            ]),
+            ], app(Contributions::class)->of(ContributedCaddySiteSource::class)),
         );
         $this->app->scoped(
             ClusterRouterOperationLock::class,

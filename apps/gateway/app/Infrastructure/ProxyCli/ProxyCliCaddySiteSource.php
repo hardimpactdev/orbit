@@ -9,14 +9,14 @@ use App\Domain\ProxyCli\ProxyCliState;
 use App\Infrastructure\Caddy\Build\CaddyListenerRule;
 use App\Infrastructure\Caddy\Build\CaddySite;
 use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
-use App\Infrastructure\Caddy\Build\NodeCaddySiteSource;
+use App\Infrastructure\Caddy\Build\ContributedCaddySiteSource;
 use App\Models\Node;
 
 /**
  * The collector site on the Node that the enabled ProxyCli extension names. The provider contributes it to the
  * Caddy site source plug-in point.
  */
-final readonly class ProxyCliCaddySiteSource implements NodeCaddySiteSource
+final readonly class ProxyCliCaddySiteSource implements ContributedCaddySiteSource
 {
     /** The collector's slug in CaddySiteCertificates. */
     public const string CertificateSlug = 'proxycli';
@@ -26,6 +26,11 @@ final readonly class ProxyCliCaddySiteSource implements NodeCaddySiteSource
         private ProxyCliCaddySiteRenderer $renderer = new ProxyCliCaddySiteRenderer,
         private CaddySiteCertificates $certificates = new CaddySiteCertificates,
     ) {}
+
+    public function certificateSlug(): string
+    {
+        return self::CertificateSlug;
+    }
 
     public function sites(Node $node): array
     {

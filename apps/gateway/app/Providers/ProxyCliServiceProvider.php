@@ -11,7 +11,7 @@ use App\Domain\ProxyCli\ProxyCliRuntimeLifecycle;
 use App\Domain\ProxyCli\ProxyCliSnapshotStore;
 use App\Domain\ProxyCli\ProxyCliState;
 use App\Domain\TaskVms\ModelKeyIssuer;
-use App\Infrastructure\Caddy\Build\NodeCaddySiteSource;
+use App\Infrastructure\Caddy\Build\ContributedCaddySiteSource;
 use App\Infrastructure\ProxyCli\ArrayProxyCliCache;
 use App\Infrastructure\ProxyCli\HttpProxyCliAccountControlClient;
 use App\Infrastructure\ProxyCli\NativeProxyCliPublicationManager;
@@ -69,6 +69,6 @@ final class ProxyCliServiceProvider extends ExtensionServiceProvider
             $this->app->bind(ProxyCliRuntimeLifecycle::class, NativeProxyCliRuntimeLifecycle::class);
             $this->app->bind(ProxyCliPublicationManager::class, NativeProxyCliPublicationManager::class);
         }
-        $this->contribute(NodeCaddySiteSource::class, ProxyCliCaddySiteSource::class);
+        $this->contribute(ContributedCaddySiteSource::class, ProxyCliCaddySiteSource::class);
     }
 }

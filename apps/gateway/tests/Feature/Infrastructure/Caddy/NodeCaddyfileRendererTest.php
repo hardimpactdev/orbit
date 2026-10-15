@@ -18,6 +18,7 @@ use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Caddy\Build\CaddyListenerRule;
 use App\Infrastructure\Caddy\Build\CaddySite;
 use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
+use App\Infrastructure\Caddy\Build\ContributedCaddySiteSource;
 use App\Infrastructure\Caddy\Build\NodeCaddyfile;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Caddy\Build\NodeCaddySiteSource;
@@ -569,6 +570,25 @@ describe('duplicate addresses', function (): void {
     });
 });
 
+describe('contributed site sources', function (): void {
+    it('refuses a contributed site that uses a core source name', function (string $source): void {
+        $node = caddy_build_node('services', '10.44.0.3');
+        caddy_build_task_vms();
+        $site = caddy_build_rendered_site(CaddyListenerRule::Shared, host: 'collector.test', source: $source);
+
+        $caddyfile = new NodeCaddyfileRenderer([], [caddy_build_contribution(null, $site)])->render($node);
+
+        expect($caddyfile->buildable())->toBeFalse()
+            ->and($caddyfile->problems)->toBe(["The contributed {$source} site collector.test uses a core source name."])
+            ->and($caddyfile->sites)->toBe([]);
+    })->with(['gateway', 'websocket']);
+
+    it('refuses a contributed source that uses a core certificate slug', function (string $slug): void {
+        expect(fn (): NodeCaddyfileRenderer => new NodeCaddyfileRenderer([], [caddy_build_contribution($slug)]))
+            ->toThrow(LogicException::class, "uses the core certificate slug [{$slug}].");
+    })->with(CaddySiteCertificates::CoreSlugs);
+});
+
 function caddy_build_renderer(): NodeCaddyfileRenderer
 {
     return new NodeCaddyfileRenderer([
@@ -578,8 +598,26 @@ function caddy_build_renderer(): NodeCaddyfileRenderer
         new RouteCaddySiteSource(new DevelopmentSiteRepository, new DevelopmentCaddyConfigRenderer),
         new WebSocketCaddySiteSource(new WebSocketCaddySiteRenderer, 8080),
         new AnalyticsCaddySiteSource,
-        ...app(Contributions::class)->of(NodeCaddySiteSource::class),
-    ]);
+    ], app(Contributions::class)->of(ContributedCaddySiteSource::class));
+}
+
+function caddy_build_contribution(?string $slug, CaddySite ...$sites): ContributedCaddySiteSource
+{
+    return new readonly class($slug, $sites) implements ContributedCaddySiteSource
+    {
+        /** @param list<CaddySite> $sites */
+        public function __construct(private ?string $slug, private array $sites) {}
+
+        public function certificateSlug(): ?string
+        {
+            return $this->slug;
+        }
+
+        public function sites(Node $node): array
+        {
+            return $this->sites;
+        }
+    };
 }
 
 /** @param list<CaddySite> $sites */

@@ -10,11 +10,11 @@ use App\Domain\Fleet\FootprintArtifactSkipped;
 use App\Domain\Fleet\NodeFootprintArtifact;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Caddy\Build\CaddySiteRoles;
+use App\Infrastructure\Caddy\Build\ContributedCaddySiteSource;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildResult;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
-use App\Infrastructure\Caddy\Build\NodeCaddySiteSource;
 use App\Models\Node;
 
 /** The Node's Caddyfile, published like `orbit:caddy-build`: a graceful reload only when it changed. */
@@ -58,8 +58,8 @@ final readonly class CaddyFootprintArtifact implements NodeFootprintArtifact
     public static function inputs(): array
     {
         return SourceClosure::of(['app/Infrastructure/Caddy'], array_map(
-            static fn (NodeCaddySiteSource $source): string => $source::class,
-            app(Contributions::class)->of(NodeCaddySiteSource::class),
+            static fn (ContributedCaddySiteSource $source): string => $source::class,
+            app(Contributions::class)->of(ContributedCaddySiteSource::class),
         ));
     }
 
