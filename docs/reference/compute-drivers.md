@@ -702,9 +702,9 @@ No peer reaches a host's Incus API. The task VM project keeps its restrictions a
 
 Run `php artisan task-vms:build-recipe` on the Gateway to queue the current recipe on every active host in `settings.task_vms`. It returns build IDs without waiting for remote work. Repeating it for an unchanged recipe reuses the same rows, including failed rows; resume a failure with `task-vms:build-image NODE --resume=ID`, or restart failed builds with `task-vms:build-recipe --retry` after cleanup. A recipe revert reactivates its verified images without rebuilding them. `task-vms:image-builds` shows the recipe identity, host, steps, fingerprints, and immutable aliases. `task-vms:build-image NODE` builds the current recipe on that host; `--from-stock` is redundant because every recipe starts from stock.
 
-Release handoff queues builds immediately when the deployed recipe identity changes. The scheduler checks each minute to recover missed submissions and pick up new hosts. There is no fixed nightly Incus rebuild. ADR 0207 step 9 will add the nightly snapshot-date PR. Unchanged releases do not build images. A host added later builds the current recipe on its next check. UpCloud's separate template flow is unchanged.
+Release handoff queues builds immediately when the deployed recipe identity changes. The scheduler checks each minute to recover missed submissions and pick up new hosts. There is no fixed nightly Incus rebuild. [ADR 0207 step 9](/decisions/0207-one-image-recipe-shared-package-cache-no-workspace-templates#implementation-plan) will add the nightly snapshot-date PR. Unchanged releases do not build images. A host added later builds the current recipe on its next check. UpCloud's separate template flow is unchanged.
 
-Each host uses ADR 0206's `Bus::chain` on `builds` and one `task_vm_image_builds` row for the complete set. The row stores the full recipe document, identity, desired generation, and all five image locations. Steps launch and boot a stock base builder, install snapshot packages and pinned artifacts, prepare boot, clean, publish, and smoke it. Each role then launches from that exact base fingerprint, applies its recipe tools, cleans, publishes, and smoke-boots.
+Each host uses [ADR 0206's chain model](/decisions/0206-build-task-vm-images-as-chains-of-small-jobs) with `Bus::chain` on `builds` and one `task_vm_image_builds` row for the complete set. The row stores the full recipe document, identity, desired generation, and all five image locations. Steps launch and boot a stock base builder, install snapshot packages and pinned artifacts, prepare boot, clean, publish, and smoke it. Each role then launches from that exact base fingerprint, applies its recipe tools, cleans, publishes, and smoke-boots.
 
 The role images inherit the base tool set; their own profile can add tools. Each phase is a separate queued job. No workspace or Project setup runs and neither package caches nor CI cache refs enter an image.
 
@@ -714,7 +714,9 @@ This step does not change nested topology composition; the existing harness stil
 
 Only a fully built and smoke-tested set can promote the host's base alias. Role aliases stay immutable; consumers select them through the succeeded build row. A database write fence serializes promotion with desired-recipe changes, so an older build cannot move the base alias after a newer recipe is desired. A failed build leaves the previous images in place. The previous recipe does not satisfy the future current-recipe claim gate.
 
-A running older build stops at its next step before that host admits the newest desired recipe. Failed resources retain ADR 0206's cleanup and resume rules; images are retained for explicit future retention policy rather than pruning another recipe's immutable aliases.
+A running older build stops at its next step before that host admits the newest desired recipe. Failed resources retain ADR 0206's cleanup and resume rules. A restart gives the builder a name for that attempt, so delayed cleanup of an older attempt cannot delete the new builder or smoke VM.
+
+Images are retained for explicit future retention policy rather than pruning another recipe's immutable aliases.
 
 ### Sync the base image
 

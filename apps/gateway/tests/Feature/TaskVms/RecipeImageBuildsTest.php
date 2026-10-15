@@ -12,6 +12,7 @@ use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
+use App\Infrastructure\TaskVms\TaskVmHostAudit;
 use App\Infrastructure\TaskVms\TaskVmImageBuildChain;
 use App\Infrastructure\TaskVms\TaskVmImageBuildSteps;
 use App\Jobs\TaskVms\ImageBuild\BuildRecipeImageStep;
@@ -199,7 +200,7 @@ describe('recipe image triggers', function (): void {
         runRecipeImageBuild($build, promote: false);
         expect($build->recipe_identity)->toBe($identity);
         $this->artisan('task-vms:image-builds')->expectsOutputToContain($identity)
-            ->expectsOutputToContain($build->images['operator']['alias'])->assertSuccessful();
+            ->expectsOutputToContain($build->images['operator']['alias'])->expectsOutputToContain('operator:smoke')->assertSuccessful();
         expect(DB::table('task_vm_image_recipe')->value('generation'))->toBe(1);
     });
 });
@@ -269,4 +270,30 @@ it('automatically retries a missed queue submission without retrying a failed im
     app(RecipeImageBuilds::class)->reconcile();
     expect($build->refresh()->state)->toBe(TaskVmImageBuildState::Running);
     expect($build->attempt)->toBe(2);
+});
+
+it('keeps delayed cleanup of a failed attempt away from the restarted attempt resources', function (): void {
+    $host = recipeImageHost();
+    $incus = recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    $build = app(RecipeImageBuilds::class)->reconcile()[0];
+    $incus->fail = 'recipe app-prod:packages';
+    expect(fn () => runRecipeImageBuild($build))->toThrow(TaskVmException::class);
+    $oldName = $build->refresh()->builder_vm_name;
+    $incus->fail = null;
+    $incus->afterExecute = function ($command) use ($build, $incus, $oldName): void {
+        if (! in_array('delete', $command->arguments, true) || ! in_array($oldName, $command->arguments, true)) {
+            return;
+        }
+        $incus->afterExecute = null;
+        app(RecipeImageBuilds::class)->reconcile(retry: true);
+        $build->refresh();
+        // Interleave the new worker after cleanup captured the failed attempt's resource names.
+        $incus->instances[$build->builder_vm_name] = IMAGE_STOCK;
+        $incus->instances[$build->builder_vm_name.'-smoke'] = IMAGE_NEW;
+    };
+    app()->call([new CleanupImageBuild($build->id), 'handle']);
+    expect($build->builder_vm_name)->not->toBe($oldName);
+    expect($incus->instances)->toHaveKeys([$build->builder_vm_name, $build->builder_vm_name.'-smoke']);
+    expect(TaskVmHostAudit::claimBuildCleanup($host, $build->builder_vm_name))->toBeFalse();
 });

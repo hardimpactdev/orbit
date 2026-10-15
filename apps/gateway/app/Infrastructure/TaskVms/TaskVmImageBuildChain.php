@@ -50,7 +50,9 @@ final readonly class TaskVmImageBuildChain
                 throw new TaskVmException('task_vm.image_build_running', 'Another command has claimed this recipe build.');
             }
             $steps = $restart ? [] : array_values(array_filter($build->steps, static fn (array $entry): bool => $entry['step'] !== TaskVmImageBuildStep::Promote->value));
-            $build->refresh()->forceFill(['state' => TaskVmImageBuildState::Running, 'recipe_generation' => $generation,
+            $build->refresh();
+            $builder = $restart ? 'tvm-image-'.$build->id.'-attempt-'.$build->attempt : $build->builder_vm_name;
+            $build->forceFill(['builder_vm_name' => $builder, 'state' => TaskVmImageBuildState::Running, 'recipe_generation' => $generation,
                 'steps' => $steps, 'current_step' => $restart ? null : TaskVmImageBuildStep::Promote,
                 'current_program' => null, 'cleanup_started_at' => null, 'submission_pending_at' => now()->toISOString()])->save();
 
