@@ -30,6 +30,9 @@ use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Infrastructure\AppDev\RemoteAppDevTldRouteManager;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Caddy\CaddyPublicationLock;
+use App\Infrastructure\MachineSoftware\MachineRecipe;
+use App\Infrastructure\MachineSoftware\PhpBuild;
+use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
@@ -426,7 +429,7 @@ it('removes a newly activated app-dev pool when later PHP activation fails', fun
         renderer: $renderer,
         ssh: app_dev_ssh($ssh),
         accounts: app_dev_account_resolver(),
-        packages: new RemotePhpPackageManager,
+        packages: new RemotePhpPackageManager(app_dev_recipe_with_php_86()),
     );
 
     expect(fn () => $manager->converge($node))
@@ -474,8 +477,8 @@ it('installs selected PHP versions and validates a complete staged FPM configura
     expect($ssh->commands)
         ->toHaveCount(6)
         ->and($ssh->commands[2]->input)
-        ->toContain('apt-get -o DPkg::Lock::Timeout=300 install')
-        ->and($ssh->commands[2]->arguments)
+        ->toContain('--allow-downgrades')
+        ->and(array_map(static fn (string $argument): string => explode('|', $argument)[0], $ssh->commands[2]->arguments))
         ->toContain('php8.4-fpm', 'php8.4-pcov', 'php8.4-opcache')
         ->and($publishCalls)
         ->toHaveCount(2)
@@ -1862,4 +1865,20 @@ function app_dev_ssh(SshExecutor $ssh): DevelopmentSshExecutor
     };
 
     return new DevelopmentSshExecutor($ssh, $keys, $knownHosts);
+}
+
+/** The repository recipe plus a PHP 8.6 build, so a test can select a third PHP version. */
+function app_dev_recipe_with_php_86(): MachineRecipe
+{
+    $recipe = new RecipeLoader()->load();
+    $tools = $recipe->tools;
+    $packages = [];
+    foreach ($recipe->php('8.5')->packages as $name) {
+        $renamed = str_starts_with($name, 'php8.5-') ? 'php8.6-'.substr($name, 7) : $name;
+        $tools[$renamed] = $recipe->tools[$name];
+        $packages[] = $renamed;
+    }
+
+    return new MachineRecipe($recipe->identity, $recipe->snapshot, $recipe->architectures, $tools, $recipe->profiles, $recipe->canonicalJson, $recipe->json,
+        [...$recipe->php, '8.6' => new PhpBuild('8.6', '8.6.0', $packages, $recipe->php('8.5')->extensions)], $recipe->ciPhp);
 }

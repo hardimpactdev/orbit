@@ -41,7 +41,7 @@ The recipe gets a `php` object:
 - `shared` lists the Sury pins that every version needs: `php-common` and `libgd3`.
 - `ci` names the version CI runs, `8.5`.
 
-A profile names a PHP set as `php:<version>`. The loader expands it to the shared pins and the version's packages. A profile cannot name a PHP pin directly. `app-dev` and the base image name `php:8.5` and `php:8.4`. `app-prod`, `websocket`, and `gateway` name `php:8.5`. An `app-prod` Node still gets PHP 8.4 when one of its Instances selects it. A new `ci-runner` profile names `php:8.5` for a roleless Node that runs CI jobs, such as Sabre. It is a recipe profile, not a Node role: `node:converge-recipe --profile=ci-runner` selects it, and the Node records it.
+A profile names a PHP set as `php:<version>`. The loader expands it to the shared pins and the version's packages. A profile cannot name a PHP pin directly. `app-dev` and the base image name `php:8.5` and `php:8.4`. `app-prod`, `websocket`, and `gateway` name `php:8.5`. An `app-prod` Node still gets PHP 8.4 when one of its Instances selects it. A new `ci-runner` profile names `php:8.5` for a roleless Node that runs CI jobs, such as Sabre. Until [ADR 0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role) builds the `ci-runner` role, a roleless Node selects this profile with `node:converge-recipe --profile=ci-runner`, and the Node records it. ADR 0213 takes this profile for the tools of its runner containers; when that role is built, the role selects the profile and the `--profile` option goes away.
 
 The loader rejects a recipe in which:
 
@@ -86,7 +86,7 @@ To move to a new Sury build, one pull request changes every pin of that version 
 - **A separate scheduled GitHub workflow for the bump.** It would duplicate the nightly recipe pull request flow and its GitHub App, and a pull request that `GITHUB_TOKEN` opens starts no CI.
 - **Auto-merge the PHP bump with the snapshot.** A PHP bump changes software on every machine, so a maintainer reviews it. The snapshot pull request keeps its narrow one-line auto-merge.
 - **Roll back the packages when PHP-FPM fails to start.** Sury no longer serves the previous build, so the previous files do not exist. Convergence validates the configuration and the loaded extensions before the restart instead, restores only the configuration it changed, and stops for the operator.
-- **A `ci-runner` Node role.** A role adds services, firewall rules, Doctor checks, and an API surface. Sabre needs only its PHP build, so a recipe profile that a roleless Node selects is enough.
+- **Wait for the `ci-runner` role of ADR 0213.** Sabre's hand-managed PHP would keep breaking the cache match until that role is built. A profile that a roleless Node selects manages Sabre now, and the role selects the same profile when ADR 0213 is built.
 - **Load PCOV only on development machines.** The loaded extension set is part of PHPStan's cache key. PCOV records nothing until a test calls `\pcov\start()`, so it stays loaded in the CLI everywhere.
 
 ## Consequences
@@ -103,6 +103,6 @@ To move to a new Sury build, one pull request changes every pin of that version 
 ## Affects
 
 - Components: apps/e2e, apps/gateway
-- ADRs: none
+- ADRs: [0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role) uses the `ci-runner` profile that this decision adds
 - Detail: [Compute drivers: Machine software recipe](/reference/compute-drivers#machine-software-recipe), [PHP runtimes](/reference/php-runtime), [Node provisioning: Package sources](/reference/node-provisioning#package-sources), [Tools: Protected packages](/reference/tools#protected-packages), [Feature delivery: CI](/reference/implementation-loop#ci)
 - Verify: `RecipeTest`, `RemotePhpPackageManagerTest`, `ConvergeNodeRecipeTest`, `AptToolManagerTest` and the Tool action tests, the recipe convergence and image program tests, and the `bin/php-build` tests in `apps/e2e`

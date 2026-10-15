@@ -9,7 +9,7 @@ use Symfony\Component\Process\Process;
 
 /**
  * Moves every Sury PHP pin of a recipe document to Sury's newest build. It runs the repository's `bin/php-build bump`,
- * the one implementation that checks Sury's signed index (ADR 0212), on a temporary copy.
+ * the one implementation that checks Sury's signed index (ADR 0215), on a temporary copy.
  */
 class PhpBuildBump
 {
