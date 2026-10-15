@@ -99,7 +99,14 @@ final readonly class NodeRecipeProgram
             }
             $assessment[$name] = ['source' => $pin->source, 'version' => $pin->version, 'installed' => $value['installed'], 'changed' => $value['changed'], 'status' => $value['status']];
             if ($value['status'] === 'unsupported_newer') {
-                $assessment[$name]['refusal'] = 'origin:'.$name;
+                $refusal = $value['refusal'] ?? 'origin:'.$name;
+                $allowed = array_map(static fn (string $reason): string => 'origin:'.$name.$reason, [
+                    '', ':dpkg-log-missing', ':snapshot-unavailable', ':snapshot-unproved', ':snapshot-lookup-limit',
+                ]);
+                if (! in_array($refusal, $allowed, true)) {
+                    throw new RuntimeException('Recipe inspection returned an invalid refusal.');
+                }
+                $assessment[$name]['refusal'] = $refusal;
             }
         }
 

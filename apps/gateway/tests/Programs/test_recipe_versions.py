@@ -6,6 +6,7 @@ import io
 import json
 import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
 import tempfile
@@ -225,15 +226,27 @@ class RecipeVersionsTest(unittest.TestCase):
         self.assertTrue(any(arg.startswith('Dir::State::lists=') for arg in updates[0]))
         self.assertIn('Dir::Etc::sourceparts=-', updates[0])
 
-    def test_install_date_uses_the_latest_successful_native_or_all_record_across_rotated_logs(self):
+    def test_install_date_uses_action_before_later_trigger_status_across_rotated_logs(self):
         self.install_log('dpkg.log.2.gz', '2026-10-12 12:30:00')
         self.install_log('dpkg.log.1', '2026-10-13 12:30:00', package='curl:all')
         self.install_log('dpkg.log', '2026-10-14 12:30:00', package='curl:arm64')
+        with gzip.open(self.apt / 'dpkg.log.2.gz', 'at') as stream:
+            stream.write(f'2026-10-12 12:29:00 upgrade curl:amd64 {PIN} {NEWER}\n')
         with (self.apt / 'dpkg.log').open('a') as stream:
-            stream.write(f'2026-10-15 12:30:00 upgrade curl:amd64 {PIN} {NEWER}\n')
+            stream.write(f'2026-10-15 12:30:00 upgrade curl:amd64 {NEWER} {SUPERSEDED_BY}\n')
             stream.write(f'2026-10-16 12:30:00 status installed curl:amd64 {SUPERSEDED_BY}\n')
         with patch.object(recipe, 'run', side_effect=self.command), patch.dict(os.environ, TZ='UTC'):
-            self.assertEqual(recipe.install_snapshot('curl', NEWER), '20261013T123000Z')
+            self.assertEqual(recipe.install_snapshot('curl', NEWER), '20261012T122900Z')
+
+    def test_install_action_is_used_and_status_fallback_uses_earliest_native_or_all_record(self):
+        self.install_log('dpkg.log.2.gz', '2026-10-12 12:30:00', package='curl:all')
+        self.install_log('dpkg.log.1', '2026-10-13 12:30:00')
+        self.install_log('dpkg.log', '2026-10-11 12:30:00', package='curl:arm64')
+        with patch.object(recipe, 'run', side_effect=self.command), patch.dict(os.environ, TZ='UTC'):
+            self.assertEqual(recipe.install_snapshot('curl', NEWER), '20261012T123000Z')
+            with (self.apt / 'dpkg.log.1').open('a') as stream:
+                stream.write(f'2026-10-12 12:29:00 install curl:all <none> {NEWER}\n')
+            self.assertEqual(recipe.install_snapshot('curl', NEWER), '20261012T122900Z')
 
     def test_status_only_build_is_refused_without_proof_even_when_the_snapshot_has_a_newer_candidate(self):
         self.status_only_policy()
@@ -242,17 +255,21 @@ class RecipeVersionsTest(unittest.TestCase):
         for policy in ('', self.version_policy, untrusted_version):
             with self.subTest(policy=policy):
                 self.snapshot_version_policy = policy
-                self.assertEqual(self.assess(NEWER)['status'], 'unsupported_newer')
+                tool = self.assess(NEWER)
+                self.assertEqual(tool['status'], 'unsupported_newer')
+                self.assertEqual(tool['refusal'], 'origin:curl:snapshot-unproved')
+                with self.assertRaisesRegex(recipe.RecipeFailure, '^origin:curl:snapshot-unproved$'):
+                    recipe.supported({'curl': tool})
 
     def test_missing_unreadable_or_malformed_install_history_refuses_before_snapshot_access(self):
         self.status_only_policy()
         for content in ('', f'bad-date 12:00:00 status installed curl:amd64 {NEWER}\n'):
             with self.subTest(content=content):
                 (self.apt / 'dpkg.log').write_text(content)
-                self.assertEqual(self.assess(NEWER)['status'], 'unsupported_newer')
+                self.assertEqual(self.assess(NEWER)['refusal'], 'origin:curl:dpkg-log-missing')
         (self.apt / 'dpkg.log').unlink()
         (self.apt / 'dpkg.log').mkdir()
-        self.assertEqual(self.assess(NEWER)['status'], 'unsupported_newer')
+        self.assertEqual(self.assess(NEWER)['refusal'], 'origin:curl:dpkg-log-missing')
         self.assertFalse(any(c[0] == 'apt-get' for c in self.commands))
 
     def test_snapshot_refresh_failure_refuses_instead_of_accepting_the_newer_candidate(self):
@@ -263,7 +280,113 @@ class RecipeVersionsTest(unittest.TestCase):
                 raise recipe.RecipeFailure(result=subprocess.CompletedProcess(argv, 100, '', 'signature or network failure'))
             return self.command(argv, **kwargs)
         with patch.object(recipe, 'run', side_effect=command):
-            self.assertEqual(recipe.assess(self.tools, {'curl': NEWER})['curl']['refusal'], 'origin:curl')
+            self.assertEqual(recipe.assess(self.tools, {'curl': NEWER})['curl']['refusal'], 'origin:curl:snapshot-unavailable')
+
+    def test_snapshot_indexes_are_shared_by_packages_and_post_install_assessment_and_removed_after_apply(self):
+        self.status_only_policy()
+        self.install_log()
+        self.snapshot_version_policy = f'curl:\n *** {NEWER} 500\n        500 {INDEX}\n'
+        tools = {**self.tools, 'second-curl': dict(self.tools['curl'])}
+        observed = dict.fromkeys(tools, NEWER)
+        indexes = []
+        def command(argv, **kwargs):
+            if argv[:2] == ['apt-get', 'update'] and '-c' in argv:
+                indexes.append(Path(next(arg.split('=', 1)[1] for arg in argv if arg.startswith('Dir::State::lists='))))
+                self.assertEqual(kwargs['timeout'], 60)
+            if argv[:3] == ['apt-cache', 'policy', 'curl:amd64'] and '-c' in argv:
+                for path in indexes:
+                    self.assertTrue(path.is_dir())
+            return self.command(argv, **kwargs)
+        with patch.object(recipe, 'POLICY', self.apt / 'policy'), \
+             patch.object(recipe, 'packages', return_value={'curl': NEWER}), \
+             patch.object(recipe, 'inspect', return_value=observed), \
+             patch.object(recipe, 'active_services', return_value=set()), \
+             patch.object(recipe, 'publish', side_effect=lambda path, content, *args: Path(path).write_bytes(content)), \
+             patch.object(recipe.pwd, 'getpwnam', return_value=None), \
+             patch.object(recipe, 'run', side_effect=command):
+            result = recipe.apply({'tools': tools, 'architecture': 'amd64', 'snapshot': '20261014T000000Z'})
+        self.assertEqual(set(result['newer_than_recipe']), set(tools))
+        self.assertEqual(len(indexes), 1)
+        self.assertFalse(indexes[0].exists())
+        self.assertEqual(sum(c[:3] == ['apt-cache', 'policy', 'curl:amd64'] and '-c' in c for c in self.commands), 4)
+
+    def test_failed_snapshot_lookups_are_cached_and_the_cap_refuses_without_more_network_calls(self):
+        self.status_only_policy()
+        self.install_log()
+        updates = []
+        def command(argv, **kwargs):
+            if argv[:2] == ['apt-get', 'update']:
+                updates.append(argv)
+                raise recipe.RecipeFailure()
+            return self.command(argv, **kwargs)
+        with patch.object(recipe, 'run', side_effect=command), recipe.SnapshotLookups() as snapshots:
+            for day in (14, 15, 16, 17, 14):
+                self.install_log(timestamp=f'2026-10-{day} 12:30:00')
+                for repeated in range(2):
+                    tool = recipe.assess(self.tools, {'curl': NEWER}, snapshots=snapshots)['curl']
+                    reason = 'snapshot-lookup-limit' if day == 17 else 'snapshot-unavailable'
+                    self.assertEqual(tool['refusal'], 'origin:curl:' + reason)
+            self.assertEqual(len(updates), 3)
+        with patch.object(recipe, 'run', side_effect=command):
+            recipe.assess(self.tools, {'curl': NEWER})
+        self.assertEqual(len(updates), 4)
+
+    def test_successful_lookups_also_count_toward_cap_and_cached_results_stay_usable(self):
+        self.status_only_policy()
+        self.snapshot_version_policy = f'curl:\n *** {NEWER} 500\n        500 {INDEX}\n'
+        with patch.object(recipe, 'run', side_effect=self.command), recipe.SnapshotLookups() as snapshots:
+            for day in (14, 15, 16, 17, 14):
+                self.install_log(timestamp=f'2026-10-{day} 12:30:00')
+                tool = recipe.assess(self.tools, {'curl': NEWER}, snapshots=snapshots)['curl']
+                if day == 17:
+                    self.assertEqual(tool['refusal'], 'origin:curl:snapshot-lookup-limit')
+                else:
+                    self.assertEqual(tool['status'], 'newer_than_recipe')
+        self.assertEqual(sum(c[:2] == ['apt-get', 'update'] for c in self.commands), 3)
+
+    def test_arm64_build_is_proved_using_the_public_snapshot_archive_arm64_index(self):
+        self.status_only_policy()
+        self.install_log(package='curl:arm64')
+        self.snapshot_version_policy = f'curl:\n *** {NEWER} 500\n        500 {INDEX}\n'
+        def command(argv, **kwargs):
+            if argv == ['dpkg', '--print-architecture']:
+                return subprocess.CompletedProcess(argv, 0, 'arm64\n', '')
+            if argv[:2] == ['apt-get', 'update']:
+                source = Path(next(arg.split('=', 1)[1] for arg in argv if arg.startswith('Dir::Etc::sourcelist=')))
+                self.assertIn('https://snapshot.ubuntu.com/ubuntu/', source.read_text())
+            native_argv = [arg.replace('curl:arm64', 'curl:amd64') for arg in argv]
+            result = self.command(native_argv, **kwargs)
+            result.stdout = result.stdout.replace('amd64', 'arm64')
+            return result
+        with patch.object(recipe, 'run', side_effect=command):
+            self.assertEqual(recipe.assess(self.tools, {'curl': NEWER})['curl']['status'], 'newer_than_recipe')
+
+    def test_sigterm_during_snapshot_update_reaches_entrypoint_as_interrupted(self):
+        self.status_only_policy()
+        self.install_log()
+        def command(argv, **kwargs):
+            if argv[:2] == ['apt-get', 'update']:
+                os.kill(os.getpid(), signal.SIGTERM)
+            return self.command(argv, **kwargs)
+        previous_handler = signal.getsignal(signal.SIGTERM)
+        self.addCleanup(signal.signal, signal.SIGTERM, previous_handler)
+        previous_int_handler = signal.getsignal(signal.SIGINT)
+        self.addCleanup(signal.signal, signal.SIGINT, previous_int_handler)
+        with patch.object(recipe, 'run', side_effect=command), \
+             patch.object(recipe, 'inspect', return_value={'curl': NEWER}), \
+             patch.object(recipe, 'platform_check'), \
+             patch.object(sys, 'argv', ['program', 'inspect', json.dumps({'tools': self.tools, 'architecture': 'amd64'})]), \
+             contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(recipe.main(), 1)
+        self.assertEqual(output.getvalue(), 'recipe-stage:interrupted\n')
+
+    def test_command_cleanup_preserves_interruption_during_snapshot_subprocess(self):
+        with patch.object(recipe.subprocess, 'Popen') as popen, patch.object(recipe.os, 'killpg') as kill:
+            process = popen.return_value.__enter__.return_value
+            process.communicate.side_effect = [recipe.RecipeInterrupted('interrupted'), ('', '')]
+            with self.assertRaisesRegex(recipe.RecipeInterrupted, '^interrupted$'):
+                recipe.run(['apt-get', 'update'], timeout=60)
+        kill.assert_called_once_with(process.pid, signal.SIGTERM)
 
     def test_any_untrusted_installed_listing_refuses_even_with_a_trusted_listing_or_newer_candidate(self):
         for trusted_listing in (True, False):
