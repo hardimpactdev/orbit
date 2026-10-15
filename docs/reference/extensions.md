@@ -66,7 +66,7 @@ Core defines an interface for each place where an extension can add behavior. Th
 $this->contribute(ProjectRemovalHook::class, DocumentsProjectRemoval::class);
 ```
 
-Core resolves every tagged implementation and calls each one.
+Core resolves every tagged implementation and calls each one. When a tagged class does not implement the interface, or one class is tagged twice for the same interface, core throws a `LogicException`. It never drops or repeats a contribution.
 
 | Interface | Called by | Methods |
 | --- | --- | --- |
