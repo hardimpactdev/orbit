@@ -38,7 +38,7 @@ final readonly class DisableProxyCliAction
             $lock->block(60);
         } catch (LockTimeoutException $exception) {
             throw new ResourceOperationException(
-                errorCode: 'proxycli.keys_outstanding',
+                errorCode: 'proxycli.keys_busy',
                 message: 'A task VM model key operation is still running. Run the teardown again.',
                 status: 409,
                 previous: $exception,

@@ -705,7 +705,7 @@ it('refuses the teardown with 409 and changes nothing while a model key operatio
     $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
         ->deleteJson('/api/v1/proxycli')
         ->assertStatus(409)
-        ->assertJsonPath('error.code', 'proxycli.keys_outstanding');
+        ->assertJsonPath('error.code', 'proxycli.keys_busy');
 
     expect(app(ProxyCliState::class)->cliproxyManagementKey())->toBe('management-key')
         ->and(app(RecordingProxyCliRuntimeLifecycle::class)->removed)->toBeFalse()

@@ -59,7 +59,7 @@ orbit proxycli:teardown [--yes] [--json]
 
 In a terminal the command asks a default-No question that names the fleet effect. Without `--yes`, a noninteractive or JSON call fails with `input.confirmation_required` before any Gateway request. Declining fails with `input.cancelled` and changes nothing. To collect again, run `proxycli:setup` with the key file.
 
-The Gateway refuses the teardown and changes nothing while the `tasks` extension is enabled (`extension.required`) or a task VM holds a model key (`proxycli.keys_outstanding`). It waits up to 60 seconds for a running model key operation. See [Teardown](/reference/proxycli#teardown).
+The Gateway refuses the teardown and changes nothing while the `tasks` extension is enabled (`extension.required`) or a task VM holds a model key (`proxycli.keys_outstanding`). It waits up to 60 seconds for a running model key operation, then refuses with `proxycli.keys_busy`. See [Teardown](/reference/proxycli#teardown).
 
 ## orbit proxycli:status
 
@@ -132,6 +132,7 @@ When a model has no `owned_by`, `provider` comes from that model's auth file, us
 | `input.cancelled` | The operator declined the `proxycli:teardown` question. |
 | `extension.required` | `proxycli:teardown` ran while the `tasks` extension is enabled. |
 | `proxycli.keys_outstanding` | `proxycli:teardown` ran while a task VM holds a model key. |
+| `proxycli.keys_busy` | `proxycli:teardown` waited 60 seconds for a running model key operation. Run it again. |
 | `proxycli.key_required` | `proxycli:setup` has no `--cliproxy-management-key-file`. |
 | `proxycli.key_invalid` | The key file is unreadable or empty. |
 | `proxycli.url_invalid` | `--cliproxy-url` is not a URL. |

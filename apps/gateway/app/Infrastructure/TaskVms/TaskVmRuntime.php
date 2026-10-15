@@ -8,6 +8,7 @@ use App\Actions\Processes\CreateProcessAction;
 use App\Data\Processes\AddProcessData;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessTargetType;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\ModelKeyIssuer;
 use App\Domain\TaskVms\TaskVmConfig;
 use App\Domain\TaskVms\TaskVmError;
@@ -176,11 +177,19 @@ final readonly class TaskVmRuntime
         });
     }
 
-    /** The key and its origin are stored before the model router learns the key, so a retry registers the same key there. */
+    /**
+     * The key and its origin are stored before the model router learns the key, so a retry registers the same key there.
+     * The router must be ready first, under the same lock as its teardown, so no row stores a key it cannot revoke.
+     */
     private function ensureModelKey(TaskVm $vm, string $origin, int $wait = 60): string
     {
         return $this->withModelKeyLock($wait, function () use ($vm, $origin): string {
             $vm->refresh();
+            try {
+                $this->keys->assertReady();
+            } catch (ResourceOperationException $exception) {
+                throw new TaskVmException(TaskVmError::ModelKeyFailed, $exception->getMessage(), 409, $exception);
+            }
             if ($vm->model_key === null) {
                 $vm->update(['model_key' => bin2hex(random_bytes(32)), 'model_proxy_origin' => $origin]);
             }
