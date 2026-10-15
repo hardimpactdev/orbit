@@ -1060,11 +1060,11 @@ final readonly class TaskSubtaskRunner
                 continue;
             }
 
-            if ($observation->available && $task->status === TaskStatus::Running && $this->handleImplementerCompletion($scheduler, $group, $task, $observation)) {
+            if ($observation->available && $task->status === TaskStatus::Running && (TaskExecutionHold::run($group, fn (): bool => $this->handleImplementerCompletion($scheduler, $group, $task, $observation)) ?? true)) {
                 continue;
             }
 
-            if ($observation->available && $task->status === TaskStatus::Reviewing && $scheduler->handleReviewerOutcome($group, $task, $observation)) {
+            if ($observation->available && $task->status === TaskStatus::Reviewing && (TaskExecutionHold::run($group, fn (): bool => $scheduler->handleReviewerOutcome($group, $task, $observation)) ?? true)) {
                 continue;
             }
 
