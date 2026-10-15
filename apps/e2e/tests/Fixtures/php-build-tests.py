@@ -28,6 +28,7 @@ def pin(name, version, arch_url=None):
 
 def recipe():
     return {
+        'artifact_mirror': 'https://mirror.example/php',
         'ubuntu': {'release': '26.04'},
         'architectures': ['amd64'],
         'tools': {
@@ -39,7 +40,7 @@ def recipe():
             'dpkg-repack': {'source': 'ubuntu', 'package': 'dpkg-repack', 'version': '1.54build1'},
         },
         'php': {'ci': '8.5', 'shared': ['libgd3', 'php-common'], 'rollback': 'dpkg-repack', 'pcov': ['app-dev'],
-                'purge_extras': ['ci-runner'], 'mirror': 'https://mirror.example/php', 'versions': {
+                'purge_extras': ['ci-runner'], 'versions': {
             '8.5': {'packages': ['php8.5-cli', 'php8.5-common', 'php8.5-pcov'], 'extensions': ['core', 'pcov', 'zend opcache']},
         }},
     }
@@ -140,7 +141,7 @@ class BuildTest(unittest.TestCase):
 
     def test_the_installer_input_matches_the_gateway_contract(self):
         payload = build.installer_input(recipe(), ['8.5'])
-        self.assertEqual(sorted(payload), ['extras', 'fpm', 'git_read', 'mirror', 'mode', 'pcov', 'release', 'repack', 'versions'])
+        self.assertEqual(sorted(payload), ['extras', 'fpm', 'git_read', 'mirror', 'mode', 'opentelemetry', 'pcov', 'release', 'repack', 'versions'])
         names = [pin['name'] for pin in payload['versions']['8.5']['packages']]
         self.assertEqual(names, ['libgd3', 'php-common', 'php8.5-cli', 'php8.5-common', 'php8.5-pcov'])
         self.assertEqual(payload['release'], {'id': 'ubuntu', 'codenames': ['resolute']})
@@ -226,6 +227,17 @@ class BumpTest(unittest.TestCase):
 
 
 class RepositoryRecipeTest(unittest.TestCase):
+    def test_ci_build_and_installer_exclude_app_dev_opentelemetry(self):
+        document = build.load(build.RECIPE)
+        for version in document['php']['versions']:
+            selected = build.build(document, version, 'amd64')
+            self.assertNotIn(f'php{version}-opentelemetry', selected['packages'])
+            self.assertNotIn('opentelemetry', selected['extensions'])
+            payload = build.installer_input(document, [version])
+            self.assertFalse(payload['opentelemetry'])
+            self.assertNotIn(f'php{version}-opentelemetry', [pin['name'] for pin in payload['versions'][version]['packages']])
+            self.assertNotIn('opentelemetry', payload['versions'][version]['extensions'])
+
     def test_the_repository_recipe_names_one_exact_ci_build(self):
         document = build.load(build.RECIPE)
         selected = build.build(document, architecture='amd64')

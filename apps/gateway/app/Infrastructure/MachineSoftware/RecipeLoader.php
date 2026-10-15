@@ -17,14 +17,14 @@ final readonly class RecipeLoader
     {
         $catalog = array_fill_keys([
             'dnsmasq', 'ca-certificates', 'curl', 'gnupg', 'libnss-resolve', 'openssh-client', 'sudo', 'ufw', 'wireguard',
-            'acl', 'attr', 'composer', 'docker.io', 'git', 'openssl', 'php-curl', 'php-xml', 'unzip', 'dpkg-repack',
+            'acl', 'attr', 'composer', 'docker.io', 'openssl', 'php-curl', 'php-xml', 'unzip', 'dpkg-repack',
             'openssh-server', 'rsync', 'bind9-dnsutils', 'gcc', 'libc6-dev',
             'libasound2t64', 'libatk-bridge2.0-0t64', 'libatk1.0-0t64', 'libatspi2.0-0t64', 'libcairo2',
             'libcups2t64', 'libdbus-1-3', 'libdrm2', 'libgbm1', 'libglib2.0-0t64', 'libnspr4', 'libnss3',
             'libpango-1.0-0', 'libx11-6', 'libxcb1', 'libxcomposite1', 'libxdamage1', 'libxext6',
             'libxfixes3', 'libxkbcommon0', 'libxrandr2',
         ], 'ubuntu');
-        foreach (['caddy', 'vp', 'vp-cli', 'node', 'pnpm', 'bun', 'rust', 'cargo', 'rust-std', 'clippy', 'rustfmt', 'orbit-agent', 'libgd3', 'php-common'] as $name) {
+        foreach (['git', 'git-man', 'caddy', 'vp', 'vp-cli', 'node', 'pnpm', 'bun', 'rust', 'cargo', 'rust-std', 'clippy', 'rustfmt', 'orbit-agent', 'libgd3', 'php-common'] as $name) {
             $catalog[$name] = 'artifact';
         }
         // The `php<version>-*` pins are artifacts too. The recipe's `php` object lists them, so they have no copy here.
@@ -51,7 +51,15 @@ final readonly class RecipeLoader
     {
         $data = json_decode($json, false, 64, JSON_THROW_ON_ERROR);
         $this->rejectDuplicateKeys($json);
-        $root = $this->object($data, '$', ['schema_version', 'ubuntu', 'architectures', 'tools', 'common', 'php', 'roles', 'base']);
+        $root = $this->object($data, '$', ['schema_version', 'ubuntu', 'architectures', 'tools', 'common', 'php', 'roles', 'base', 'artifact_mirror', 'git']);
+        $mirror = $this->text($root->artifact_mirror, 'artifact_mirror');
+        $url = parse_url($mirror);
+        $this->require(is_array($url) && ($url['scheme'] ?? '') === 'https' && isset($url['host']) && ! isset($url['user']) && ! isset($url['query']) && ! isset($url['fragment']) && ! str_ends_with($mirror, '/'), 'artifact_mirror: expected an HTTPS base URL without a final slash.');
+        $git = $this->object($root->git, 'git', ['packages', 'usn_since']);
+        $gitPackages = $this->strings($git->packages, 'git.packages');
+        $this->require($gitPackages !== [] && in_array('git', $gitPackages, true) && in_array('git-man', $gitPackages, true), 'git.packages: expected git and its companion git-man.');
+        $noticeDate = DateTimeImmutable::createFromFormat('!Y-m-d', $this->text($git->usn_since, 'git.usn_since'));
+        $this->require($noticeDate !== false && $noticeDate->format('Y-m-d') === $git->usn_since, 'git.usn_since: expected a real date YYYY-MM-DD.');
         $this->require($root->schema_version === 1, 'schema_version: expected integer 1.');
         $ubuntu = $this->object($root->ubuntu, 'ubuntu', ['release', 'snapshot']);
         $this->require($ubuntu->release === '26.04', 'ubuntu.release: expected supported release 26.04.');
@@ -124,12 +132,14 @@ final readonly class RecipeLoader
         $php = $this->phpBuilds($phpSets, $tools, $ubuntu->release);
         $this->require(($tools[$phpSets['rollback']] ?? null)?->source === 'ubuntu', 'php.rollback: expected an Ubuntu tool that repacks installed packages, such as dpkg-repack.');
         $common = $this->references($root->common, 'common', $tools, $php, $phpSets['rollback']);
+        $this->gitBuild($tools, $common, $ubuntu->release, $gitPackages);
         $roles = $this->object($root->roles, 'roles');
         $roleNames = array_keys(get_object_vars($roles));
         $required = ['gateway', 'app-dev', 'app-prod', 'operator'];
         $allowed = [...$required, 'vpn', 'router', 'ingress', 'metrics', 'database', 'websocket', 'analytics', NodeRecipeProgram::CiRunnerProfile];
         $this->require(array_diff($required, $roleNames) === [] && array_diff($roleNames, $allowed) === [], 'roles: expected the four required profiles and only known Node roles.');
         $this->require(array_diff($phpSets['pcov'], [...$roleNames, 'base']) === [], 'php.pcov: expected recipe profiles.');
+        $this->require(array_diff($phpSets['opentelemetry'], ['app-dev']) === [], 'php.opentelemetry: only the app-dev profile may load OpenTelemetry.');
         // Purging PHP packages outside the recipe is for machines that run only CI jobs, never for a site's Node.
         $this->require(array_diff($phpSets['purge_extras'], [NodeRecipeProgram::CiRunnerProfile]) === [], 'php.purge_extras: only the ci-runner profile may purge PHP packages.');
         $profiles = [];
@@ -145,6 +155,9 @@ final readonly class RecipeLoader
             }
             $used = [...$used, ...$extra];
             $effective = array_values(array_unique([...$common, ...$extra]));
+            if (! in_array($role, $phpSets['opentelemetry'], true)) {
+                $effective = array_values(array_filter($effective, static fn (string $name): bool => preg_match('/^php\d+\.\d+-opentelemetry$/D', $name) !== 1));
+            }
             sort($effective, SORT_STRING);
             $profiles[$role] = $effective;
         }
@@ -164,24 +177,22 @@ final readonly class RecipeLoader
         $canonical = json_encode($this->canonical($identityData), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
 
         return new MachineRecipe('sha256:'.hash('sha256', $canonical), $snapshot, $architectures, $tools, $profiles, $canonical, $json, $php, $phpSets['ci'],
-            new PhpPolicy($phpSets['rollback'], $phpSets['pcov'], $phpSets['purge_extras'], $phpSets['mirror']));
+            new PhpPolicy($phpSets['rollback'], $phpSets['pcov'], $phpSets['purge_extras'], $phpSets['opentelemetry']), $mirror, $gitPackages);
     }
 
     /**
      * Structure of the `php` object, before the pins exist. See ADR 0216.
      *
      * @param  array<string, string>  $catalog
-     * @return array{ci: string, shared: list<string>, rollback: string, pcov: list<string>, purge_extras: list<string>, mirror: string, versions: array<string, array{packages: list<string>, extensions: list<string>}>}
+     * @return array{ci: string, shared: list<string>, rollback: string, pcov: list<string>, opentelemetry: list<string>, purge_extras: list<string>, versions: array<string, array{packages: list<string>, extensions: list<string>}>}
      */
     private function phpSets(mixed $value, array $catalog): array
     {
-        $raw = $this->object($value, 'php', ['ci', 'shared', 'rollback', 'pcov', 'purge_extras', 'mirror', 'versions']);
-        $mirror = $this->text($raw->mirror, 'php.mirror');
-        $url = parse_url($mirror);
-        $this->require(is_array($url) && ($url['scheme'] ?? '') === 'https' && isset($url['host']) && ! isset($url['user']) && ! isset($url['query']) && ! str_ends_with($mirror, '/'), 'php.mirror: expected an HTTPS base URL without a final slash.');
+        $raw = $this->object($value, 'php', ['ci', 'shared', 'rollback', 'pcov', 'opentelemetry', 'purge_extras', 'versions']);
         $rollback = $this->text($raw->rollback, 'php.rollback');
         $this->require(($catalog[$rollback] ?? null) === 'ubuntu', 'php.rollback: expected an Ubuntu tool that repacks installed packages, such as dpkg-repack.');
         $pcov = $this->strings($raw->pcov, 'php.pcov');
+        $opentelemetry = $this->strings($raw->opentelemetry, 'php.opentelemetry');
         $purge = $this->strings($raw->purge_extras, 'php.purge_extras');
         $shared = $this->strings($raw->shared, 'php.shared');
         $this->require($shared !== [], 'php.shared: expected the shared PHP pins.');
@@ -208,20 +219,21 @@ final readonly class RecipeLoader
                 $this->require(preg_match('/^[a-z0-9_]+(?: [a-z0-9_]+)?$/D', $extension) === 1, "{$field}.extensions: [{$extension}] is not a lower-case module name.");
             }
             $this->require(in_array('core', $extensions, true) && in_array('pcov', $extensions, true), "{$field}.extensions: expected core and pcov.");
+            $this->require(in_array('opentelemetry', $extensions, true) === in_array("php{$version}-opentelemetry", $packages, true), "{$field}: OpenTelemetry package and extension must match.");
             $versions[(string) $version] = ['packages' => $packages, 'extensions' => $extensions];
         }
         $this->require($versions !== [], 'php.versions: expected at least one PHP version.');
         $ci = $this->text($raw->ci, 'php.ci');
         $this->require(isset($versions[$ci]), "php.ci: [{$ci}] is not a declared PHP version.");
 
-        return ['ci' => $ci, 'shared' => $shared, 'rollback' => $rollback, 'pcov' => $pcov, 'purge_extras' => $purge, 'mirror' => $mirror, 'versions' => $versions];
+        return ['ci' => $ci, 'shared' => $shared, 'rollback' => $rollback, 'pcov' => $pcov, 'opentelemetry' => $opentelemetry, 'purge_extras' => $purge, 'versions' => $versions];
     }
 
     /**
      * One exact build per version: the PHP core pins share the `php<version>-common` version, and every pin is built
      * for the recipe's Ubuntu release.
      *
-     * @param  array{ci: string, shared: list<string>, rollback: string, pcov: list<string>, purge_extras: list<string>, mirror: string, versions: array<string, array{packages: list<string>, extensions: list<string>}>}  $sets
+     * @param  array{ci: string, shared: list<string>, rollback: string, pcov: list<string>, opentelemetry: list<string>, purge_extras: list<string>, versions: array<string, array{packages: list<string>, extensions: list<string>}>}  $sets
      * @param  array<string, ToolPin>  $tools
      * @return array<string, PhpBuild>
      */
@@ -247,6 +259,32 @@ final readonly class RecipeLoader
         }
 
         return $builds;
+    }
+
+    /**
+     * @param  array<string, ToolPin>  $tools
+     * @param  list<string>  $packages
+     * @param  list<string>  $common
+     */
+    private function gitBuild(array $tools, array $common, string $release, array $packages): void
+    {
+        foreach ($packages as $name) {
+            $this->require(isset($tools[$name]) && $tools[$name]->source === 'artifact', "git.packages: missing artifact tool [{$name}].");
+        }
+        $version = $tools['git']->version;
+        $this->require(str_contains($version, '~ubuntu'.$release.'.'), "git: expected a git-core build for Ubuntu {$release}.");
+        $filenameVersion = preg_replace('/^[0-9]+:/', '', $version) ?? $version;
+        foreach ($packages as $name) {
+            $this->require($tools[$name]->version === $version, 'git: all Git packages must pin the same build.');
+            $this->require(in_array($name, $common, true), "common: missing {$name}.");
+            foreach ($tools[$name]->artifacts as $architecture => $artifact) {
+                $debArchitecture = $name === 'git-man' ? 'all' : $architecture;
+                $expected = 'https://ppa.launchpadcontent.net/git-core/ppa/ubuntu/pool/main/g/git/'.$name.'_'.$filenameVersion.'_'.$debArchitecture.'.deb';
+                $this->require($artifact->algorithm === 'sha256' && $artifact->location === $expected, "tools.{$name}: expected a SHA-256-pinned git-core PPA Debian artifact.");
+            }
+        }
+        $digests = array_map(static fn (ArtifactPin $pin): string => $pin->digest, $tools['git-man']->artifacts);
+        $this->require(count(array_unique($digests)) === 1, 'git-man: architecture-independent artifacts must have the same digest.');
     }
 
     private function require(bool $condition, string $message): void

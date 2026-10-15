@@ -12,9 +12,11 @@ final readonly class InstanceEnvironmentResult
         public bool $changed,
         public int $keyCount,
         public ?InstanceTestEnvironmentOutcome $testing = null,
+        /** @var list<string> */
+        public array $warnings = [],
     ) {}
 
-    /** @return array{instance_id: int, operation: string, changed: bool, key_count: int} */
+    /** @return array{instance_id: int, operation: string, changed: bool, key_count: int, warnings?: list<string>} */
     public function toArray(): array
     {
         return [
@@ -22,6 +24,7 @@ final readonly class InstanceEnvironmentResult
             'operation' => $this->operation,
             'changed' => $this->changed,
             'key_count' => $this->keyCount,
+            ...($this->operation === 'clone' ? ['warnings' => $this->warnings] : []),
         ];
     }
 }

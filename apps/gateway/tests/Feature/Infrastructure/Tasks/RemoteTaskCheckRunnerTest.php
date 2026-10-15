@@ -354,6 +354,115 @@ it('runs login shells with the fixture account home and profile', function (): v
         ->and($reading->output)->toEndWith('fixture-user-home');
 });
 
+it('BaseMerge distinguishes merged-only source failures from missing executables without changing the checkout', function (string $failure): void {
+    $checkout = check_runner_checkout('true');
+    $git = static fn (array $arguments): string => trim((new Process(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', ...$arguments], $checkout))->mustRun()->getOutput());
+    File::ensureDirectoryExists($checkout.'/docs');
+    file_put_contents($checkout.'/format', 'v1');
+    file_put_contents($checkout.'/docs/original.txt', 'v1');
+    $git(['add', '.']);
+    $git(['commit', '-qm', 'initial generated docs']);
+    $git(['branch', 'main-fixture']);
+    file_put_contents($checkout.'/format', 'v2');
+    file_put_contents($checkout.'/docs/original.txt', 'v2');
+    $git(['commit', '-qam', 'new generator format']);
+    $feature = $git(['rev-parse', 'HEAD']);
+    $git(['checkout', '-q', 'main-fixture']);
+    file_put_contents($checkout.'/docs/new.txt', 'v1');
+    $git(['add', '.']);
+    $git(['commit', '-qm', 'main adds generated docs']);
+    $main = $git(['rev-parse', 'HEAD']);
+    $git(['checkout', '-q', '--detach', $feature]);
+    $git(['merge', '--no-ff', '-qm', 'mechanical main merge', $main]);
+    $merged = $git(['rev-parse', 'HEAD']);
+    $command = match ($failure) {
+        'merged docs' => 'for file in docs/*.txt; do grep -q "$(cat format)" "$file" || { echo "$file is stale"; exit 1; }; done',
+        'merged long output' => 'if test -f docs/new.txt && test "$(cat format)" = v2; then echo merged-tree-failure; exit 1; fi; python3 -c \'print("parent noise" * 10000)\'',
+        'pre-existing long output' => 'if test -f docs/new.txt && test "$(cat format)" = v2; then echo original-environment-failure; exit 1; fi; python3 -c \'print("parent noise" * 10000)\'; exit 1',
+        'merged class' => 'php -r \'if (is_file("docs/new.txt") && file_get_contents("format") === "v2") { new AddedFeature; }\'',
+        'merged resource' => 'php -r \'if (is_file("docs/new.txt") && file_get_contents("format") === "v2") { require "missing-resource.php"; }\'',
+        'pre-existing' => 'echo baseline check failed; exit 1',
+        'missing shellcheck' => 'PATH=/nonexistent shellcheck',
+        'wrapped missing shellcheck' => 'PATH=/nonexistent shellcheck; exit 1',
+        'required shellcheck' => 'echo "shellcheck: required tool not found"; exit 1',
+    };
+    $instance = check_runner_instance($checkout);
+    $runner = check_runner(new LocalShellSshExecutor);
+    $reading = check_runner_wait($runner, $instance, $runner->start($instance, $command, deliverables: ['start' => null, 'commands' => [], 'base_merge' => true]));
+
+    expect($reading->failedStep)->toBe(str_starts_with($failure, 'merged ') ? 'gate' : 'environment')
+        ->and($reading->exitCode)->not->toBe(0)
+        ->and($reading->headAfter)->toBe($merged)
+        ->and($reading->treeAfter)->toBe($reading->treeBefore)
+        ->and($git(['status', '--porcelain']))->toBe('')
+        ->and($git(['worktree', 'list', '--porcelain']))->not->toContain('orbit-base-');
+    $diagnostic = match ($failure) {
+        'merged docs' => 'docs/new.txt is stale',
+        'merged long output' => 'merged-tree-failure',
+        'pre-existing long output' => 'original-environment-failure',
+        'merged class' => 'Class "AddedFeature" not found',
+        'merged resource' => 'No such file or directory',
+        'pre-existing' => 'baseline check failed',
+        'required shellcheck' => 'shellcheck: required tool not found',
+        default => 'shellcheck: command not found',
+    };
+    expect($reading->output)->toContain($diagnostic);
+    expect($reading->output)->not->toContain('# main merge gate parent', 'parent noise');
+})->with(['merged docs', 'merged long output', 'merged class', 'merged resource', 'pre-existing', 'pre-existing long output', 'missing shellcheck', 'wrapped missing shellcheck', 'required shellcheck']);
+
+it('BaseMerge reuses only a matching handoff tree and gives slow parents the Project gate timeout', function (bool $matching): void {
+    $checkout = check_runner_checkout('true');
+    $git = static fn (array $arguments): string => trim((new Process(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', ...$arguments], $checkout))->mustRun()->getOutput());
+    $git(['branch', 'main-fixture']);
+    file_put_contents($checkout.'/feature', 'approved feature');
+    $git(['add', '.']);
+    $git(['commit', '-qm', 'feature']);
+    $feature = $git(['rev-parse', 'HEAD']);
+    $tree = $git(['rev-parse', 'HEAD^{tree}']);
+    $git(['checkout', '-q', 'main-fixture']);
+    file_put_contents($checkout.'/main', 'main changes');
+    $git(['add', '.']);
+    $git(['commit', '-qm', 'main']);
+    $main = $git(['rev-parse', 'HEAD']);
+    $git(['checkout', '-q', '--detach', $feature]);
+    $git(['merge', '--no-ff', '-qm', 'mechanical merge', $main]);
+    $head = $git(['rev-parse', 'HEAD']);
+    $harness = $this->directory.'/merge-parents.py';
+    file_put_contents($harness, <<<'PYTHON'
+import importlib.machinery
+import importlib.util
+import json
+import sys
+
+loader = importlib.machinery.SourceFileLoader('task_check', sys.argv[1])
+module = importlib.util.module_from_spec(importlib.util.spec_from_loader('task_check', loader))
+loader.exec_module(module)
+# Scale the command-deliverable limit down; parent gates must not inherit it.
+module.BASE_RUN_TIMEOUT = 0.01
+copies = []
+original_copy = module.copy_dependencies
+def copy_dependencies(checkout, scratch):
+    copies.append(scratch)
+    original_copy(checkout, scratch)
+module.copy_dependencies = copy_dependencies
+with open(sys.argv[5], 'wb') as log:
+    result = module.classify_merge_gate(sys.argv[2], sys.argv[3], 'sleep 0.05; echo parent-passed', 1,
+                                        'merged-tree-failure', log, sys.argv[4])
+print(json.dumps({'classification': result, 'copies': len(copies)}))
+PYTHON);
+    $log = $this->directory.'/parents.log';
+    $probe = new Process(['python3', $harness, resource_path('tasks/check'), $checkout, $head, $matching ? $tree : str_repeat('f', 40), $log], base_path(), ['HOME' => $this->directory.'/home']);
+    $result = json_decode($probe->mustRun()->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($result)->toBe(['classification' => 'gate', 'copies' => $matching ? 1 : 2])
+        ->and(file_get_contents($log))->toContain($main, 'parent-passed')
+        ->and($git(['status', '--porcelain']))->toBe('')
+        ->and($git(['worktree', 'list', '--porcelain']))->not->toContain('orbit-base-');
+    if ($matching) {
+        expect(file_get_contents($log))->toContain('reused passing handoff tree '.$tree);
+    }
+})->with(['matching approved tree' => true, 'different tree' => false]);
+
 it('runs composer check detached and reports running, then the exit code and output', function (string $check, int $exitCode, string $output): void {
     $checkout = check_runner_checkout($check);
     $instance = check_runner_instance($checkout);

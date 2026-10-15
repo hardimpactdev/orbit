@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 use App\Domain\Extensions\ExtensionRegistry;
 use App\Domain\Extensions\ExtensionStore;
+use App\Domain\ProxyCli\ProxyCliState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\Project;
 use App\Providers\ExtensionServiceProvider;
 use Illuminate\Testing\TestResponse;
+use Tests\Support\TaskModelRouter;
 
 function extensions_mcp(mixed $test, string $endpoint, string $method, array $params = []): TestResponse
 {
@@ -104,6 +106,7 @@ it('disabled extension is invisible for tasks API and MCP tools', function (): v
         ->and(array_column($earlierErrorPayload['results'], 'name'))->toBe(['not-a-tool'])
         ->and($earlierErrorPayload['results'][0]['content'][0]['text'])->toContain('not-a-tool');
 
+    TaskModelRouter::ready();
     $this->postJson('/api/v1/extensions/tasks/enable')->assertOk()->assertJsonPath('data.enabled', true);
     $this->getJson('/api/v1/task-groups')->assertOk();
     expect(array_column(extensions_mcp($this, '/mcp', 'tools/list')->json('result.tools'), 'name'))->toContain('tasks-list');
@@ -138,6 +141,40 @@ it('disabled extension is invisible for proxycli API and MCP tools', function ()
     expect(extensions_mcp($this, '/mcp/search', 'tools/call', [
         'name' => 'search_tools', 'arguments' => ['query' => 'proxycli status'],
     ])->json('result.content.0.text'))->toContain('proxycli-status');
+});
+
+it('keeps tasks behind the proxycli extension, which holds its model route', function (): void {
+    $this->postJson('/api/v1/extensions/tasks/enable')->assertStatus(409)
+        ->assertJsonPath('error.code', 'extension.dependency_disabled')
+        ->assertJsonPath('error.details', ['extension' => 'tasks', 'dependency' => 'proxycli']);
+    $this->getJson('/api/v1/extensions')->assertJsonPath('data.tasks', false);
+
+    TaskModelRouter::ready();
+    $this->postJson('/api/v1/extensions/tasks/enable')->assertOk();
+    $this->postJson('/api/v1/extensions/proxycli/disable')->assertStatus(409)
+        ->assertJsonPath('error.code', 'extension.required')
+        ->assertJsonPath('error.details', ['extension' => 'proxycli', 'required_by' => 'tasks']);
+    $this->getJson('/api/v1/extensions')->assertJsonPath('data.proxycli', true);
+
+    $this->postJson('/api/v1/extensions/tasks/disable')->assertOk();
+    $this->postJson('/api/v1/extensions/proxycli/disable')->assertOk();
+});
+
+it('refuses to enable tasks while proxycli holds no management key, so no task VM stores a key it cannot revoke', function (): void {
+    $this->postJson('/api/v1/extensions/proxycli/enable')->assertOk();
+    $this->postJson('/api/v1/extensions/tasks/enable')->assertStatus(409)
+        ->assertJsonPath('error.code', 'proxycli.disabled');
+    $this->getJson('/api/v1/extensions')->assertJsonPath('data.tasks', false);
+
+    TaskModelRouter::ready();
+    $this->postJson('/api/v1/extensions/tasks/enable')->assertOk();
+    $this->postJson('/api/v1/extensions/tasks/disable')->assertOk();
+    $this->deleteJson('/api/v1/proxycli')->assertOk();
+
+    expect(app(ProxyCliState::class)->cliproxyManagementKey())->toBeNull();
+    $this->postJson('/api/v1/extensions/tasks/enable')->assertStatus(409)
+        ->assertJsonPath('error.code', 'proxycli.disabled');
+    $this->getJson('/api/v1/extensions')->assertJsonPath('data.tasks', false);
 });
 
 final class DependentTestExtension extends ExtensionServiceProvider

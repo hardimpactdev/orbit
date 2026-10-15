@@ -13,6 +13,7 @@ use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
+use App\Infrastructure\TaskVms\UpCloudServers;
 use App\Jobs\TaskVms\ProvisionTaskVm;
 use App\Models\Task;
 use App\Models\TaskVm;
@@ -59,7 +60,18 @@ final readonly class AllocateTaskVmAction
 
     private function place(Task $group, TaskVmSize $size): TaskVm
     {
-        return DB::transaction(function () use ($group, $size): TaskVm {
+        $resolvedIdentity = $this->images->currentRecipe()->identity;
+        $template = null;
+        try {
+            $target = $this->policy->choose($size, $group, $this->capacity->freeSlots($this->capacity->activeHosts()));
+            if ($target->provider === TaskVmProviderKind::UpCloud) {
+                $template = app(UpCloudServers::class)->currentTemplate($resolvedIdentity);
+            }
+        } catch (TaskCapacityException) {
+            // Admission rechecks capacity under the row lock.
+        }
+
+        return DB::transaction(function () use ($group, $size, $resolvedIdentity, $template): TaskVm {
             // Serialize admission with desired-recipe changes and image promotion.
             DB::table('task_vm_image_recipe')->where('id', 1)->update(['generation' => DB::raw('generation')]);
             $existing = TaskVm::forGroup($group);
@@ -94,10 +106,12 @@ final readonly class AllocateTaskVmAction
                 }
                 throw $exception;
             }
-            $vm = $this->record->execute($group, $target, $size);
-            if ($target->hostNodeId !== null) {
-                $vm->update(['recipe_identity' => $recipe->identity, 'image_fingerprint' => $images[$target->hostNodeId]]);
+            $fingerprint = $target->hostNodeId !== null ? $images[$target->hostNodeId] : ($resolvedIdentity === $recipe->identity ? $template : null);
+            if ($fingerprint === null) {
+                throw new TaskCapacityException(TaskWait::Capacity, 'Task VM: waiting for recipe '.substr($recipe->identity, 7, 12).' template on UpCloud.');
             }
+            $vm = $this->record->execute($group, $target, $size);
+            $vm->update(['recipe_identity' => $recipe->identity, 'image_fingerprint' => $fingerprint]);
 
             return $vm;
         });

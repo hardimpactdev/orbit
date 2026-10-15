@@ -25,7 +25,7 @@ The Gateway has five extensions. This table shows where each one's code lives to
 | Extension | Code | Depends on |
 | --- | --- | --- |
 | `documents` | `apps/gateway/extensions/documents`. See [Project Documents](/reference/project-documents). | nothing |
-| `tasks` | Core, in the `Tasks` and `TaskVms` namespaces. See [Tasks](/reference/tasks). | nothing |
+| `tasks` | Core, in the `Tasks` and `TaskVms` namespaces. See [Tasks](/reference/tasks). | `proxycli` |
 | `proxycli` | Core, in the `ProxyCli` namespaces. See [proxycli](/reference/proxycli). | nothing |
 | `vault` | `apps/gateway/extensions/vault`. See [Vaultwarden](/reference/vaultwarden). | nothing |
 | `conn` | `apps/gateway/extensions/conn`. See [Conn layer](/reference/conn). | nothing |
@@ -78,7 +78,7 @@ Core resolves every tagged implementation and calls each one.
 
 After the release handoff restarts the scheduler, it waits for each configured `GatewayReleaseCleanup` to report a new generation. Then it reconciles and resumes that cleanup. The release records one cleanup outcome: `paused` when any cleanup stays paused, otherwise `resumed`, `running`, or `skipped`.
 
-`ActivityInputRedaction::commands()` names the route names whose input the extension decides. For those commands, Activity stores only what `input()` returns from the request input, then sanitizes it like any other input. Conn uses it so that a T3 admin session and the content of a settings document never enter Activity.
+`ActivityInputRedaction::commands()` names the route names whose input the extension decides. For those commands, Activity stores only what `input()` returns, then sanitizes it like any other input. `input()` receives a closure that returns the request input. Activity runs before authorization, so the request body is parsed only when the extension calls that closure. Conn uses it so that a T3 admin session and the content of a settings document never enter Activity. Documents never calls the closure, so document bytes are never parsed or recorded before authorization.
 
 A plug-in contribution runs whether or not the switch is on. Removing a Project must also remove its documents, a scheduled deletion must finish, and a request to a disabled extension still records Activity, so its secrets must still stay out.
 
@@ -99,6 +99,10 @@ Background work that finishes recorded work keeps running while the switch is of
 `extension:enable` refuses with HTTP 409 `extension.dependency_disabled` while a dependency is off. `extension:disable` refuses with HTTP 409 `extension.required` while an enabled extension depends on the one being disabled. Both name the other extension in `error.details`.
 
 `extension:enable` runs the extension's `enable()` hook first and turns the switch on only after the hook returns. A failed enable leaves the switch off: when the hook throws, the switch keeps its earlier state and the API returns the hook's error code, message, and details. The hook runs while the switch is still off, so it must not rely on the switch. `extension:disable` turns the switch off, then runs `disable()`. Both run in the same request. Enabling an enabled extension runs `enable()` again, so a hook must be safe to repeat. Tasks uses its hooks to broadcast the [`tasks.updated`](/reference/events#tasks) event. Documents, Vault, and Conn use neither.
+
+Tasks depends on `proxycli`, because Pi on a task VM reaches models only through its CLIProxyAPI. Task VM code calls the core interface `App\Domain\TaskVms\ModelKeyIssuer`, and the `proxycli` provider binds it. The Tasks `enable()` hook calls `ModelKeyIssuer::assertReady()`, so `extension:enable tasks` refuses with `proxycli.disabled` until proxycli is set up. `proxycli:teardown` refuses while `tasks` is enabled or a task VM holds a model key. See [Teardown](/reference/proxycli#teardown).
+
+`App\Domain\Extensions\ExtensionDependencies::assertNotRequired()` is the `extension.required` check. `extension:disable` uses it, and so does a command that removes what another extension needs, such as `proxycli:teardown`.
 
 ### Defaults
 

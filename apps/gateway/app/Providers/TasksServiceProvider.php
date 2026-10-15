@@ -33,6 +33,7 @@ use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Domain\Tasks\TaskWorkspaceRoute;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
+use App\Domain\TaskVms\ModelKeyIssuer;
 use App\Infrastructure\Tasks\AgentViewTaskWorkspaceDiffReader;
 use App\Infrastructure\Tasks\GitHubTaskBaseBranchFetcher;
 use App\Infrastructure\Tasks\GitHubTaskPullRequestMerger;
@@ -104,8 +105,17 @@ final class TasksServiceProvider extends ExtensionServiceProvider
         return 'Runs planned work with coding agents and delivers it as a pull request.';
     }
 
+    /** Pi on a task VM reaches models only through the proxycli CLIProxyAPI. */
+    #[\Override]
+    public function dependencies(): array
+    {
+        return ['proxycli'];
+    }
+
+    /** A task VM writes its model key before the router registers it, so Tasks starts only once the router can revoke keys. */
     public function enable(): void
     {
+        $this->app->make(ModelKeyIssuer::class)->assertReady();
         $this->app->make(TaskBroadcasts::class)->extensionChanged(true);
     }
 

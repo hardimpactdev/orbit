@@ -27,14 +27,19 @@ def image_install_packages(payload, options):
         raise RecipeFailure()
     publish(POLICY, b'#!/bin/sh\nexit 101\n', 0o755)
     try:
+        installed = packages()
+        tools = {name: pin for name, pin in payload['tools'].items() if pin['source'] == 'ubuntu' or name in git_packages(payload)}
+        check_git_siblings(payload)
+        assessment = assess(tools, {name: installed.get(pin.get('package', name)) for name, pin in tools.items()}, options, git_names=git_packages(payload))
+        supported(assessment)
+        configure_git(payload, apply=True)
         if payload['profile'] == 'base':
             run(['apt-get', 'full-upgrade', '--yes', *options], env=environment)
-        # full-upgrade may have installed a newer same-release version; inspect after it.
+        # full-upgrade may have installed a newer same-release version; inspect again with the same options.
         installed = packages()
-        tools = {name: pin for name, pin in payload['tools'].items() if pin['source'] == 'ubuntu'}
-        assessment = assess(tools, {name: installed.get(pin['package']) for name, pin in tools.items()}, options)
+        assessment = assess(tools, {name: installed.get(pin.get('package', name)) for name, pin in tools.items()}, options, git_names=git_packages(payload))
         supported(assessment)
-        ubuntu = [pin['package'] + '=' + pin['version'] for name, pin in tools.items() if assessment[name]['changed']]
+        ubuntu = [pin['package'] + '=' + pin['version'] for name, pin in tools.items() if pin['source'] == 'ubuntu' and assessment[name]['changed']]
         # Install the recipe's curl and CA packages before fetching third-party artifacts on a stock image.
         if ubuntu:
             run(['apt-get', 'install', '--yes', '--no-install-recommends', '--no-remove',
@@ -50,7 +55,7 @@ def image_install_packages(payload, options):
                     continue
                 if installed.get(name) == pin['version']:
                     continue
-                deb = download(pin, payload['architecture'], work / (name + '.deb'))
+                deb = download_deb(name, pin, payload, work / (name + '.deb'))
                 fields = run(['dpkg-deb', '-f', str(deb), 'Package', 'Version', 'Architecture']).stdout.splitlines()
                 metadata = [line.split(': ', 1)[-1] for line in fields]
                 if metadata[:2] != [name, pin['version']] or metadata[2:] not in ([payload['architecture']], ['all']):
@@ -60,6 +65,8 @@ def image_install_packages(payload, options):
                 install_exact_debs(debs, payload['tools'], packages(), options, environment)
         run(['apt-get', 'check'], env=environment)
         audit_packages(environment)
+        record_git(payload, packages())
+        pin_git(payload)
     finally:
         POLICY.unlink()
     if payload.get('php') and php_install(payload) not in ('applied', 'current'):
@@ -196,9 +203,9 @@ def image_verify(payload):
     # authenticated snapshot metadata too, without refreshing any index during verification.
     if any(pin['source'] == 'ubuntu' for pin in selected.values()):
         with tempfile.TemporaryDirectory(prefix='orbit-image-verify-') as directory:
-            assessment = assess(selected, observed, snapshot_options(payload, Path(directory)))
+            assessment = assess(selected, observed, snapshot_options(payload, Path(directory)), git_names=git_packages(payload))
     else:
-        assessment = assess(selected, observed)
+        assessment = assess(selected, observed, git_names=git_packages(payload))
     if any(tool['status'] not in ('current', 'newer_than_recipe') for tool in assessment.values()):
         raise RecipeFailure()
     if 'pnpm' in selected:

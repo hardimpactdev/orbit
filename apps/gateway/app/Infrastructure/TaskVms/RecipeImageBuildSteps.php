@@ -71,7 +71,7 @@ final readonly class RecipeImageBuildSteps
                     }
                     $source = $build->source_fingerprint ?? TaskVmHost::SourceImage;
                     if (! array_key_exists($name, $this->image->instances($host, $node))) {
-                        $this->image->launch($host, $node, $name, $source, $this->cloudInit->renderImageBuilder($this->keys->publicKey(), upgradePackages: false));
+                        $this->image->launch($host, $node, $name, $source, $this->cloudInit->renderImageBuilder($this->keys->publicKey()));
                     }
                     break;
                 case 'boot':

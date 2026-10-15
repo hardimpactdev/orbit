@@ -5837,7 +5837,7 @@
       "name": "operation-list",
       "extension": null,
       "title": "List operations",
-      "description": "Lists the 50 newest operations on Nodes the caller can access, newest first, without steps. Filter by `status`, `kind`, `target_type`, and `target_id`; `status=running` finds the operations still at work.",
+      "description": "Lists the 50 newest operations on Nodes the caller can access, newest first, without steps. Filter by `status`, `kind`, `target_type`, and `target_id`; `status=running` finds the operations still at work. `kind` is two names joined by `.`, such as `instance.deploy`, and `target_type` one name, such as `instance`. A name starts with a lower-case letter and holds only lower-case letters, digits, and `_`. A well-formed value that no operation has returns an empty list. See /reference/operations#filter-the-list.",
       "method": "GET",
       "path": "/api/v1/operations",
       "path_inputs": [],
@@ -5864,15 +5864,13 @@
           },
           "kind": {
             "type": "string",
-            "enum": [
-              "instance.deploy"
-            ]
+            "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$(?![\\s\\S])",
+            "maxLength": 64
           },
           "target_type": {
             "type": "string",
-            "enum": [
-              "instance"
-            ]
+            "pattern": "^[a-z][a-z0-9_]*$(?![\\s\\S])",
+            "maxLength": 32
           },
           "target_id": {
             "type": "integer",
@@ -8479,7 +8477,7 @@
       "name": "proxycli-teardown",
       "extension": "proxycli",
       "title": "Tear down proxycli",
-      "description": "Stops the collector Process for the whole fleet, withdraws collector.cli-proxy-api.orbit and its certificate, deletes the stored CLIProxyAPI management key and the read and control tokens, and hides provider reads. Setting up again needs the management key. The Redis connection and Valkey data stay.",
+      "description": "Stops the collector Process for the whole fleet, withdraws collector.cli-proxy-api.orbit and its certificate, deletes the stored CLIProxyAPI management key and the read and control tokens, and hides provider reads. Setting up again needs the management key. The Redis connection and Valkey data stay. Refuses with extension.required (409) while the tasks extension is enabled, with proxycli.keys_outstanding (409) while a task VM holds a model key, and with proxycli.keys_busy (409) while a model key operation holds the lock for more than 60 seconds.",
       "method": "DELETE",
       "path": "/api/v1/proxycli",
       "path_inputs": [],

@@ -117,7 +117,7 @@ An annotation ID and its T3 command ID never change. A retry then cannot create 
 
 ## Annotator Process
 
-Orbit runs the annotator as an Instance Process and publishes it under the Instance Route at `/__orbit/annotator`. Its `ANNOTATOR_URL` points to `/__orbit/annotator/annotations`, while the Instance API exposes the service base as `annotator_url`. The preset admits the page's HTTPS origin and the T3 renderer origin `t3code://app`; other supplied origins are refused for reads, SSE, deletion, and preflight. See [Annotator Process](/reference/agentation#annotator-process).
+Orbit runs the annotator as an Instance Process and publishes it under the Instance Route at `/__orbit/annotator`. Its `ANNOTATOR_URL` points to `/__orbit/annotator/annotations`, while the Instance API exposes the service base as `annotator_url`. The preset admits the page's HTTPS origin and the renderer origins of T3 Code (`t3code://app`, `t3code-dev://app`) and Conn (`conn://app`, `conn-dev://app`); other supplied origins are refused for reads, SSE, deletion, and preflight. See [Annotator Process](/reference/agentation#annotator-process).
 
 `GET /health` returns 200 without reading the annotation store. `GET /inject.js` serves the installed package's `dist/inject.js`; hosts can load the overlay from the same server and version rather than bundle a copy.
 

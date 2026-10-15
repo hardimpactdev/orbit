@@ -56,6 +56,52 @@ function artifact_only_recipe(ToolPin $pin): MachineRecipe
 }
 
 describe('machine recipe structure and identity', function (): void {
+    it('owns one git-core Git build in every profile and architecture', function (): void {
+        $recipe = new RecipeLoader()->load();
+
+        foreach (array_keys($recipe->profiles) as $profile) {
+            expect($recipe->profile($profile))->toContain('git', 'git-man');
+        }
+        foreach (['git', 'git-man'] as $name) {
+            expect($recipe->tools[$name]->source)->toBe('artifact')
+                ->and($recipe->tools[$name]->version)->toBe('1:2.55.0-0ppa1~ubuntu26.04.2')
+                ->and(array_keys($recipe->tools[$name]->artifacts))->toBe(['amd64', 'arm64']);
+        }
+    });
+
+    it('refuses an incomplete or foreign Git build', function (Closure $change, string $error): void {
+        $document = machine_recipe_document();
+        $change($document);
+
+        expect(fn () => machine_recipe_decode($document))->toThrow(InvalidArgumentException::class, $error);
+    })->with([
+        'missing companion policy' => [function (&$document): void {
+            $document['git']['packages'] = ['git'];
+        }, 'git.packages: expected git and its companion git-man'],
+        'missing grouped artifact' => [function (&$document): void {
+            $document['git']['packages'][] = 'gitk';
+        }, 'git.packages: missing artifact tool [gitk]'],
+        'invalid notice review date' => [function (&$document): void {
+            $document['git']['usn_since'] = '2026-02-30';
+        }, 'git.usn_since: expected a real date'],
+        'split versions' => [function (&$document): void {
+            $document['tools']['git-man']['version'] = str_replace('2.55.0', '2.54.0', $document['tools']['git-man']['version']);
+            foreach ($document['tools']['git-man']['artifacts'] as &$artifact) {
+                $artifact['url'] = str_replace('2.55.0', '2.54.0', $artifact['url']);
+            }
+        }, 'all Git packages must pin the same build'],
+        'another origin' => [function (&$document): void {
+            $document['tools']['git']['artifacts']['amd64']['url'] = str_replace('ppa.launchpadcontent.net', 'example.org', $document['tools']['git']['artifacts']['amd64']['url']);
+        }, 'expected a SHA-256-pinned git-core PPA Debian artifact'],
+        'not common' => [function (&$document): void {
+            $document['common'] = array_values(array_diff($document['common'], ['git-man']));
+            $document['roles']['app-dev'][] = 'git-man';
+        }, 'common: missing git-man'],
+        'different all bytes' => [function (&$document): void {
+            $document['tools']['git-man']['artifacts']['arm64']['sha256'] = str_repeat('a', 64);
+        }, 'architecture-independent artifacts must have the same digest'],
+    ]);
+
     it('loads the repository seed and exposes explicit profile membership', function (): void {
         Http::preventStrayRequests();
         $recipe = new RecipeLoader()->load();
@@ -83,6 +129,31 @@ describe('machine recipe structure and identity', function (): void {
         expect($recipe->tools['php-common']->version)->toStartWith('2:');
     });
 
+    it('installs OpenTelemetry packages only for app-dev and excludes it from every CLI module check', function (): void {
+        $recipe = new RecipeLoader()->load();
+
+        foreach (['8.4', '8.5'] as $version) {
+            $name = "php{$version}-opentelemetry";
+            expect($recipe->profile('app-dev'))->toContain($name);
+            expect($recipe->phpExtensions($recipe->profile('app-dev'))[$version])->not->toContain('opentelemetry');
+            expect($recipe->tools[$name]->version)->toBe('1.2.1-2+0~20260623.18+ubuntu26.04~1.gbpdbb97a');
+            foreach (['app-prod', 'ci-runner', 'base', 'gateway'] as $profile) {
+                expect($recipe->profile($profile))->not->toContain($name);
+                foreach ($recipe->phpExtensions($recipe->profile($profile)) as $extensions) {
+                    expect($extensions)->not->toContain('opentelemetry');
+                }
+            }
+        }
+    });
+
+    it('keeps the app-dev CLI extension set equal to CI for their shared PHPStan cache', function (): void {
+        $recipe = new RecipeLoader()->load();
+        $development = $recipe->phpExtensions($recipe->profile('app-dev'));
+        $ci = $recipe->phpExtensions($recipe->profile('ci-runner'));
+
+        expect($development[$recipe->ciPhp])->toBe($ci[$recipe->ciPhp]);
+    });
+
     it('rejects a wrong Debian release version even when the epoch is omitted in the filename', function (): void {
         $data = machine_recipe_document();
         $data['tools']['php-common']['version'] = '2:999';
@@ -94,7 +165,7 @@ describe('machine recipe structure and identity', function (): void {
         $recipe = new RecipeLoader()->load();
         $node = new Node;
         $packages = new NodeBootstrapPackageCatalog;
-        $common = $packages->forNode($node);
+        $common = [...$packages->forNode($node), 'git', 'git-man'];
         $programs = new RemotePhpPackageManager()->appDevPrograms(new InstancePhpVersionCatalog()->versions());
         [, $json] = explode("\0", $programs['install']->input ?? '', 2);
         $input = json_decode($json, true, flags: JSON_THROW_ON_ERROR);
@@ -104,12 +175,12 @@ describe('machine recipe structure and identity', function (): void {
         }
         // Every machine with a PHP set also gets the tool that repacks its build for a rollback.
         $php = [...array_values(array_unique($php)), 'dpkg-repack'];
-        $php85 = [...$recipe->php('8.5')->packages, 'dpkg-repack'];
+        $php85 = [...$recipe->php('8.5')->packagesFor(false), 'dpkg-repack'];
         $javascript = ['vp', 'vp-cli', 'node', 'pnpm', 'bun'];
         $production = array_values(array_unique([...$common, ...$packages->forRole($node, RoleName::AppProd), ...$javascript]));
         $development = [...$production, ...$php];
         $imagePackages = ['openssh-server', ...TaskVmCloudInit::WorkspaceTools, ...TaskVmCloudInit::ChromiumLibraries];
-        $base = [...$development, ...$imagePackages, 'rust', 'rust-std', 'cargo', 'clippy', 'rustfmt', 'orbit-agent', 'pi'];
+        $base = [...array_diff($development, ['php8.4-opentelemetry', 'php8.5-opentelemetry']), ...$imagePackages, 'rust', 'rust-std', 'cargo', 'clippy', 'rustfmt', 'orbit-agent', 'pi'];
         $profiles = [
             'operator' => $common,
             'gateway' => [...$common, 'caddy', ...$php85],
@@ -146,8 +217,9 @@ describe('machine recipe structure and identity', function (): void {
 
         expect($policy->rollbackTool)->toBe('dpkg-repack')
             ->and($policy->pcovProfiles)->toBe(['app-dev', 'base', 'ci-runner'])
+            ->and($policy->opentelemetryProfiles)->toBe(['app-dev'])
             ->and($policy->purgeProfiles)->toBe(['ci-runner'])
-            ->and($policy->mirror)->toBe('https://github.com/nckrtl/orbit/releases/download/php-build-mirror');
+            ->and(new RecipeLoader()->load()->artifactMirror)->toBe('https://github.com/nckrtl/orbit/releases/download/php-build-mirror');
     });
 
     it('names one exact PHP build per version for every environment', function (): void {
@@ -163,7 +235,7 @@ describe('machine recipe structure and identity', function (): void {
             ->and($recipe->php('8.4')->extensions)->not->toContain('lexbor', 'uri')
             ->and(array_keys($recipe->php))->toBe(new InstancePhpVersionCatalog()->versions());
         foreach (['gateway', 'app-prod', 'websocket', 'ci-runner', 'app-dev', 'base'] as $profile) {
-            expect($recipe->profile($profile))->toContain(...$build->packages);
+            expect($recipe->profile($profile))->toContain(...$build->packagesFor($profile === 'app-dev'));
         }
         foreach ($build->packages as $name) {
             expect($recipe->tools[$name]->version)->toContain('+ubuntu26.04');
@@ -223,9 +295,15 @@ describe('machine recipe structure and identity', function (): void {
         'PCOV for an unknown profile' => [function (&$d): void {
             $d['php']['pcov'][] = 'typo';
         }, 'php.pcov: expected recipe profiles'],
+        'OpenTelemetry without its module' => [function (&$d): void {
+            $d['php']['versions']['8.5']['extensions'] = array_values(array_diff($d['php']['versions']['8.5']['extensions'], ['opentelemetry']));
+        }, 'OpenTelemetry package and extension must match'],
+        'OpenTelemetry on production' => [function (&$d): void {
+            $d['php']['opentelemetry'][] = 'app-prod';
+        }, 'only the app-dev profile'],
         'a mirror without HTTPS' => [function (&$d): void {
-            $d['php']['mirror'] = 'http://example.com/php';
-        }, 'php.mirror: expected an HTTPS base URL'],
+            $d['artifact_mirror'] = 'http://example.com/php';
+        }, 'artifact_mirror: expected an HTTPS base URL'],
         'a rollback tool that is not an Ubuntu package' => [function (&$d): void {
             $d['php']['rollback'] = 'caddy';
         }, 'php.rollback'],
@@ -311,6 +389,15 @@ describe('machine recipe structure and identity', function (): void {
         }, 'amd64 only'],
     ]);
 
+    it('rejects a missing Git pin with a recipe validation exception', function (): void {
+        $data = json_decode(file_get_contents(resource_path('machine-software/recipe.json')), true, flags: JSON_THROW_ON_ERROR);
+        unset($data['tools']['git']);
+        $data['common'] = array_values(array_diff($data['common'], ['git']));
+
+        expect(fn () => new RecipeLoader()->decode(json_encode($data, JSON_THROW_ON_ERROR)))
+            ->toThrow(InvalidArgumentException::class, 'tools: missing catalog tools: git');
+    });
+
     it('rejects duplicate and escaped-equivalent object keys before hashing', function (): void {
         $json = file_get_contents(resource_path('machine-software/recipe.json'));
         $json = preg_replace('/"schema_version": 1/', '"schema_version": 1, "schema_\\u0076ersion": 1', $json);
@@ -339,6 +426,32 @@ describe('recipe availability and artifact integrity', function (): void {
     beforeEach(function (): void {
         Http::preventStrayRequests();
     });
+
+    it('verifies Git from the durable mirror and falls back to the PPA when absent', function (bool $present): void {
+        $url = 'https://ppa.example/git_2.55.0_amd64.deb';
+        $digest = hash('sha256', 'exact Git bytes');
+        $mirror = 'https://mirror.example/git_'.$digest.'.deb';
+        Http::fake([$mirror => Http::response($present ? 'exact Git bytes' : '', $present ? 200 : 404), $url => Http::response('exact Git bytes')]);
+        $pin = new ToolPin('artifact', '2.55.0', artifacts: ['amd64' => new ArtifactPin($url, 'sha256', $digest)]);
+        $recipe = new MachineRecipe('fixture', '20261014T000000Z', ['amd64'], ['git' => $pin], [], '{}', artifactMirror: 'https://mirror.example');
+
+        new RecipeValidator(machine_recipe_snapshot_probe())->validate($recipe, '/unused');
+
+        Http::assertSentCount($present ? 1 : 2);
+    })->with([true, false]);
+
+    it('refuses a corrupt mirror without falling back for any Debian artifact', function (string $name, string $algorithm): void {
+        $url = 'https://origin.example/'.$name.'_1.0.deb';
+        $digest = hash($algorithm, 'exact bytes');
+        $mirror = 'https://mirror.example/'.$name.'_'.$digest.'.deb';
+        Http::fake([$mirror => Http::response('corrupt bytes'), $url => Http::response('exact bytes')]);
+        $pin = new ToolPin('artifact', '1.0', artifacts: ['amd64' => new ArtifactPin($url, $algorithm, $digest)]);
+        $recipe = new MachineRecipe('fixture', '20261014T000000Z', ['amd64'], [$name => $pin], [], '{}', artifactMirror: 'https://mirror.example');
+
+        expect(fn () => new RecipeValidator(machine_recipe_snapshot_probe())->validate($recipe, '/unused'))
+            ->toThrow(RuntimeException::class, $algorithm.' mismatch');
+        Http::assertSentCount(1);
+    })->with([['git', 'sha256'], ['php8.5-cli', 'sha256'], ['caddy', 'sha512']]);
 
     it('fails an unavailable snapshot with a fake availability probe before artifact downloads', function (): void {
         $probe = machine_recipe_snapshot_probe('metadata URL returned 404');

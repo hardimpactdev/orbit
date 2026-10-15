@@ -15,9 +15,9 @@ final class KeepOnlyActivityInputRedaction implements ActivityInputRedaction
         return ['extension:list'];
     }
 
-    public function input(string $command, array $input): array
+    public function input(string $command, Closure $input): array
     {
-        return array_intersect_key($input, ['keep' => true]);
+        return array_intersect_key($input(), ['keep' => true]);
     }
 }
 

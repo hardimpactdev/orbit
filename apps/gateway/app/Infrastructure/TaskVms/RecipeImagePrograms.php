@@ -14,7 +14,7 @@ use RuntimeException;
 /** Runs only code-owned installers; the persisted recipe supplies package names and integrity pins. */
 final readonly class RecipeImagePrograms
 {
-    public function apply(IncusGuestShell $shell, MachineRecipe $recipe, string $profile, string $phase): void
+    public function apply(TaskVmGuestShell $shell, MachineRecipe $recipe, string $profile, string $phase): void
     {
         $payload = $this->payload($shell, $recipe, $profile);
         if ($phase === 'pi') {
@@ -39,7 +39,7 @@ final readonly class RecipeImagePrograms
         }
     }
 
-    public function verify(IncusGuestShell $shell, MachineRecipe $recipe, string $profile): void
+    public function verify(TaskVmGuestShell $shell, MachineRecipe $recipe, string $profile): void
     {
         $result = $shell->asRoot(['python3', '-', 'verify', json_encode($this->payload($shell, $recipe, $profile), JSON_THROW_ON_ERROR)], $this->script(), timeout: 120);
         if (! $result->succeeded() || $result->truncated || trim($result->stdout) !== '{"ok":true}') {
@@ -47,8 +47,8 @@ final readonly class RecipeImagePrograms
         }
     }
 
-    /** @return array{identity: string, snapshot: string, architecture: string, profile: string, tools: array<string, mixed>, php: array<string, mixed>|null} */
-    private function payload(IncusGuestShell $shell, MachineRecipe $recipe, string $profile): array
+    /** @return array{identity: string, snapshot: string, artifact_mirror: string, git_packages: list<string>, architecture: string, profile: string, tools: array<string, mixed>, php: array<string, mixed>|null} */
+    private function payload(TaskVmGuestShell $shell, MachineRecipe $recipe, string $profile): array
     {
         $arch = $shell->asRoot(['dpkg', '--print-architecture']);
         $architecture = trim($arch->stdout);
@@ -75,11 +75,11 @@ final readonly class RecipeImagePrograms
         $php = $versions === [] ? null : [
             'program' => $catalog->program(PhpBuildInstaller::Program)->source,
             'bootstrap' => $catalog->bootstrap(),
-            'input' => PhpBuildInstaller::input($recipe, $versions, 'apply', in_array($profile, $recipe->phpPolicy->pcovProfiles, true), 'refuse', 'none'),
+            'input' => PhpBuildInstaller::input($recipe, $versions, 'apply', in_array($profile, $recipe->phpPolicy->pcovProfiles, true), 'refuse', 'none', opentelemetry: in_array($profile, $recipe->phpPolicy->opentelemetryProfiles, true)),
         ];
 
         return ['identity' => $recipe->identity, 'snapshot' => $recipe->snapshot, 'architecture' => $architecture,
-            'profile' => $profile, 'tools' => $tools, 'php' => $php];
+            'profile' => $profile, 'tools' => $tools, 'php' => $php, 'git_packages' => $recipe->gitPackages, 'artifact_mirror' => $recipe->artifactMirror];
     }
 
     private function script(): string
@@ -91,6 +91,8 @@ final readonly class RecipeImagePrograms
         }
 
         // Reuse the checked download, archive extraction and platform helpers without invoking the Node entry point.
+        $shared = file_get_contents(resource_path('remote/lib/artifacts.py'))."\n".$shared;
+
         return str_replace("if __name__ == '__main__':\n    sys.exit(main())", '', $shared)."\n".$image;
     }
 }
