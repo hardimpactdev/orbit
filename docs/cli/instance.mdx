@@ -48,7 +48,7 @@ Release commands prepare and operate a production Instance.
 | Command | Result |
 | --- | --- |
 | [`instance:clone`](#orbit-instanceclone) | Clone a candidate into a prepared production Instance. |
-| [`instance:update`](#orbit-instanceupdate) | Change the deployment branch of a production Instance. |
+| [`instance:update`](#orbit-instanceupdate) | Change the deployment branch or automatic deployment of a production Instance. |
 | [`instance:deploy-step:create`](#orbit-instancedeploy-stepcreate) | Record one named deploy step. |
 | [`instance:deploy-step:list`](#orbit-instancedeploy-steplist) | List deploy steps in phase and placement order. |
 | [`instance:deploy-step:update`](#orbit-instancedeploy-stepupdate) | Change one named deploy step. |
@@ -271,7 +271,7 @@ orbit instance:list [--json]
 
 Show one Instance. When the `annotator` Process has an assigned port, human output includes `Annotator port` and `Annotator URL`. The URL uses the Instance's Route, for example `https://commander.test/__orbit/annotator`; without a Route, the display is an em dash. JSON keeps the `annotator_port` and `annotator_url` fields even when they are null. See [Annotator Process](/reference/agentation#annotator-process). Human output shows the [assigned SSR port](/reference/assigned-ssr-ports) as `SSR port` beside `Vite port`, and JSON has `ssr_port`. Both are empty when no SSR port is assigned.
 
-Production output includes the recorded user, home, selected branch, and deploy steps in phase and placement order.
+Production output includes the recorded user, home, selected branch, and deploy steps in phase and placement order. It also shows `Auto deploy`: `off`, or the merge check that gates it, with the state of the last [automatic deployment](/reference/deployments#automatic-deployments) tick and any pause. A development default shows it too. JSON has the same under `auto_deploy`.
 
 Human output lists the Instance's Routes with their domain, web root, and status. JSON has them under `routes`; `route` stays the Instance's own Route. See [Serve several web roots](/reference/routes#serve-several-web-roots).
 
@@ -471,12 +471,12 @@ Cloning ends with an active Instance and no release. Update its environment, rec
 
 ## orbit instance:update
 
-Change the deployment branch of a production Instance. The Gateway stores the branch and does not change deploy steps or start a deployment.
+Change the deployment branch, automatic deployment, or both, of a production Instance. The Gateway stores the settings and does not change deploy steps or start a deployment.
 
-The human result shows the accepted deployment branch and the currently selected source branch. JSON returns the existing Instance response; its `selected_branch` describes the source, not the newly stored deployment setting.
+The human result shows what you changed and the currently selected source branch. JSON returns the existing Instance response; its `selected_branch` describes the source, not the newly stored deployment setting.
 
 ```bash
-orbit instance:update <instance> --branch=BRANCH [--json]
+orbit instance:update <instance> [--branch=BRANCH] [--auto-deploy=true|false] [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -486,8 +486,9 @@ orbit instance:update <instance> --branch=BRANCH [--json]
 | Option | Meaning |
 | --- | --- |
 | `--branch=BRANCH` | Deployment branch. A later Project default change does not replace it. |
+| `--auto-deploy=true\|false` | Deploy each new commit of the branch that passed the Project's `merge_check` automatically. `true` also resumes automatic deployment after a rollback paused it. See [Automatic deployments](/reference/deployments#automatic-deployments). |
 
-The Gateway refuses a development Instance with a bounded conflict before it stores a branch.
+Give at least one option. The Gateway refuses a development Instance with a bounded conflict before it stores anything. It refuses `--auto-deploy=true` with `instance.auto_deploy_gate_unreadable` when the Project has a `merge_check` that the Gateway GitHub App cannot read: the Project reads through the GitHub CLI or is not on `github.com`. Without a `merge_check`, the Gateway accepts it, and the result warns that every commit deploys without a check.
 
 ## orbit instance:deploy-step:create
 

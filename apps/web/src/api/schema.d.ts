@@ -1262,7 +1262,7 @@ export interface paths {
         head?: never;
         /**
          * Update the deployment branch
-         * @description Update a production Instance deployment branch.
+         * @description Update a production Instance deployment branch or automatic deployment.
          */
         patch: operations["instance-update"];
         trace?: never;
@@ -4275,6 +4275,7 @@ export interface components {
             annotator_port?: number | null;
             annotator_url?: string | null;
             routes?: components["schemas"]["Route"][];
+            auto_deploy?: components["schemas"]["InstanceAutoDeploy"] | null;
         };
         ProjectIdentity: {
             id?: number;
@@ -4353,6 +4354,24 @@ export interface components {
             phase?: string;
             command?: string;
             timeout_seconds?: number;
+        };
+        InstanceAutoDeploy: {
+            enabled?: boolean;
+            gate?: string | null;
+            warning?: string | null;
+            result?: string | null;
+            commit?: string | null;
+            head?: string | null;
+            since?: string | null;
+            error_code?: string | null;
+            message?: string | null;
+            pause?: components["schemas"]["InstanceAutoDeployPause"] | null;
+        };
+        InstanceAutoDeployPause: {
+            reason?: string;
+            deployment_id?: number;
+            commit?: string | null;
+            paused_at?: string;
         };
         InstanceRegistration: {
             project?: components["schemas"]["Project"];
@@ -9323,7 +9342,9 @@ export interface operations {
             content: {
                 "application/json": {
                     /** @description Deployment branch */
-                    branch: string;
+                    branch?: string;
+                    /** @description Deploy each new green commit of the branch automatically (true or false) */
+                    auto_deploy?: boolean;
                 };
             };
         };

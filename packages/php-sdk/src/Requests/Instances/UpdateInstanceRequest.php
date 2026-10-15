@@ -18,9 +18,11 @@ final class UpdateInstanceRequest extends GatewayRequest implements HasBody
     #[\Override]
     protected Method $method = Method::PATCH;
 
+    /** Each null field keeps its value; send at least one. */
     public function __construct(
         private readonly int $instanceId,
-        private readonly string $branch,
+        private readonly ?string $branch = null,
+        private readonly ?bool $autoDeploy = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -36,9 +38,19 @@ final class UpdateInstanceRequest extends GatewayRequest implements HasBody
         );
     }
 
-    /** @return array{branch: string} */
+    /** @return array{branch?: string, auto_deploy?: bool} */
     protected function defaultBody(): array
     {
-        return ['branch' => $this->branch];
+        $body = [];
+
+        if ($this->branch !== null) {
+            $body['branch'] = $this->branch;
+        }
+
+        if ($this->autoDeploy !== null) {
+            $body['auto_deploy'] = $this->autoDeploy;
+        }
+
+        return $body;
     }
 }

@@ -11,6 +11,8 @@ use Orbit\Sdk\Responses\Routes\RouteResponse;
 use SensitiveParameter;
 
 /**
+ * @phpstan-import-type AutoDeployRecord from InstanceAutoDeployResponse
+ *
  * @phpstan-type InstanceRecordFields array{
  *     annotator_port: int|null,
  *     annotator_url: string|null,
@@ -41,7 +43,8 @@ use SensitiveParameter;
  *     url: string|null,
  *     removal: array<string, bool|int|string|null>|null,
  *     transfer: array<string, mixed>|null,
- *     deploy_steps: list<array{name: string, phase: string, command: string, timeout_seconds: int}>
+ *     deploy_steps: list<array{name: string, phase: string, command: string, timeout_seconds: int}>,
+ *     auto_deploy: AutoDeployRecord|null
  * }
  * @phpstan-type InstanceRecord array{
  *     annotator_port: int|null,
@@ -74,6 +77,7 @@ use SensitiveParameter;
  *     removal: array<string, bool|int|string|null>|null,
  *     transfer: array<string, mixed>|null,
  *     deploy_steps: list<array{name: string, phase: string, command: string, timeout_seconds: int}>,
+ *     auto_deploy: AutoDeployRecord|null,
  *     request_id: string
  * }
  */
@@ -113,6 +117,7 @@ final readonly class InstanceResponse
         public ?string $annotatorUrl = null,
         /** @var list<RouteResponse> Every Route of the Instance, including Routes with a web root. */
         public array $routes = [],
+        public ?InstanceAutoDeployResponse $autoDeploy = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -154,6 +159,7 @@ final readonly class InstanceResponse
             transfer: self::transfer($data['transfer'] ?? null),
             deploySteps: self::parseDeploySteps($data['deploy_steps'] ?? []),
             requestId: $requestId,
+            autoDeploy: InstanceAutoDeployResponse::tryFromGatewayData($data['auto_deploy'] ?? null),
         );
     }
 
@@ -194,6 +200,7 @@ final readonly class InstanceResponse
                 static fn (DeploymentStepResponse $step): array => $step->toArray(),
                 $this->deploySteps,
             ),
+            'auto_deploy' => $this->autoDeploy?->toArray(),
             'request_id' => $this->requestId,
         ];
     }

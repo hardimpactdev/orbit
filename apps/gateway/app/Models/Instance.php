@@ -85,6 +85,9 @@ use Illuminate\Support\Carbon;
  * @property bool $development_release_layout
  * @property bool $development_projection_pending
  * @property bool|null $task_workspace_routed
+ * @property bool $auto_deploy
+ * @property int $auto_deploy_resumed_after
+ * @property array<string, mixed>|null $auto_deploy_state
  * @property InstanceState $status
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -192,6 +195,9 @@ final class Instance extends Model
         'task_workspace_routed',
         'development_release_layout',
         'development_projection_pending',
+        'auto_deploy',
+        'auto_deploy_resumed_after',
+        'auto_deploy_state',
     ];
 
     public const string MorphAlias = 'instance';
@@ -455,6 +461,9 @@ final class Instance extends Model
             'task_workspace_routed' => 'boolean',
             'development_release_layout' => 'boolean',
             'development_projection_pending' => 'boolean',
+            'auto_deploy' => 'boolean',
+            'auto_deploy_resumed_after' => 'integer',
+            'auto_deploy_state' => 'array',
             'seed_selected' => 'boolean',
             'first_setup_pending' => 'boolean',
             'environment_owned_keys' => 'array',

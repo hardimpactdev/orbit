@@ -111,7 +111,19 @@
                         "analytics_instance_id": null,
                         "web_root": null
                     }
-                ]
+                ],
+                "auto_deploy": {
+                    "enabled": false,
+                    "gate": null,
+                    "warning": null,
+                    "result": null,
+                    "commit": null,
+                    "head": null,
+                    "since": null,
+                    "error_code": null,
+                    "message": null,
+                    "pause": null
+                }
             },
             {
                 "id": 4,
@@ -219,7 +231,19 @@
                         "analytics_instance_id": null,
                         "web_root": null
                     }
-                ]
+                ],
+                "auto_deploy": {
+                    "enabled": false,
+                    "gate": null,
+                    "warning": null,
+                    "result": null,
+                    "commit": null,
+                    "head": null,
+                    "since": null,
+                    "error_code": null,
+                    "message": null,
+                    "pause": null
+                }
             },
             {
                 "id": 3,
@@ -327,7 +351,19 @@
                         "analytics_instance_id": null,
                         "web_root": null
                     }
-                ]
+                ],
+                "auto_deploy": {
+                    "enabled": false,
+                    "gate": null,
+                    "warning": null,
+                    "result": null,
+                    "commit": null,
+                    "head": null,
+                    "since": null,
+                    "error_code": null,
+                    "message": null,
+                    "pause": null
+                }
             },
             {
                 "id": 2,
@@ -435,7 +471,19 @@
                         "analytics_instance_id": null,
                         "web_root": null
                     }
-                ]
+                ],
+                "auto_deploy": {
+                    "enabled": false,
+                    "gate": null,
+                    "warning": null,
+                    "result": null,
+                    "commit": null,
+                    "head": null,
+                    "since": null,
+                    "error_code": null,
+                    "message": null,
+                    "pause": null
+                }
             }
         ],
         "meta": {

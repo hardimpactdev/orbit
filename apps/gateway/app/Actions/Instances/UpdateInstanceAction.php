@@ -7,8 +7,13 @@ namespace App\Actions\Instances;
 use App\Data\Instances\InstanceData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\GitHub\GitHubRepository;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
+use App\Domain\Projects\ProjectSourceAccess;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
+use App\Models\InstanceDeployment;
+use App\Models\Project;
 
 final readonly class UpdateInstanceAction
 {
@@ -18,12 +23,31 @@ final readonly class UpdateInstanceAction
         private ?RecordEventBroadcaster $broadcaster = null,
     ) {}
 
-    public function execute(Instance $instance, string $branch): Instance
+    /**
+     * Sets the deployment branch, automatic deployment, or both, of a production Instance. Setting `auto_deploy` to
+     * true also resumes automatic deployment after a rollback paused it
+     * ([Automatic deployments](/reference/deployments#automatic-deployments)).
+     *
+     * @throws ResourceOperationException `instance.auto_deploy_gate_unreadable` when the Project has a merge check
+     *                                    that the Gateway GitHub App cannot read
+     */
+    public function execute(Instance $instance, ?string $branch, ?bool $autoDeploy = null): Instance
     {
-        $result = $this->operations->run([$instance->id], function () use ($instance, $branch): Instance {
+        $result = $this->operations->run([$instance->id], function () use ($instance, $branch, $autoDeploy): Instance {
             $locked = Instance::query()->lockForUpdate()->findOrFail($instance->id);
             $this->resolver->assertAvailable($locked);
-            $locked->update(['deployment_branch' => $branch]);
+            $changes = $branch === null ? [] : ['deployment_branch' => $branch];
+
+            if ($autoDeploy === true) {
+                $this->assertGateReadable($locked->project);
+                $resumedAfter = InstanceDeployment::query()->where('instance_id', $locked->id)->max('id');
+                $changes['auto_deploy'] = true;
+                $changes['auto_deploy_resumed_after'] = is_int($resumedAfter) ? $resumedAfter : 0;
+            } elseif ($autoDeploy === false) {
+                $changes['auto_deploy'] = false;
+            }
+
+            $locked->update($changes);
 
             return $locked->refresh();
         });
@@ -35,5 +59,21 @@ final readonly class UpdateInstanceAction
         );
 
         return $result;
+    }
+
+    /** A merge check is read through the Gateway GitHub App, so a Project that reads through the GitHub CLI cannot gate. */
+    private function assertGateReadable(Project $project): void
+    {
+        if ($project->mergeCheckName() === null) {
+            return;
+        }
+
+        if ($project->source_access !== ProjectSourceAccess::GitHubApp || ! GitHubRepository::fromOrigin($project->repository_url) instanceof GitHubRepository) {
+            throw new ResourceOperationException(
+                'instance.auto_deploy_gate_unreadable',
+                "Project [{$project->slug}] has the merge check [{$project->mergeCheckName()}], but the Gateway GitHub App cannot read its checks: the Project reads its repository through the GitHub CLI or is not on github.com. Remove the merge check or switch the Project to the GitHub App.",
+                409,
+            );
+        }
     }
 }

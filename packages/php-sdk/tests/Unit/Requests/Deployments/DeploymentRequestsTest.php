@@ -38,6 +38,12 @@ describe('deployment requests', function (): void {
         }
     });
 
+    it('sends only the Instance fields it changes', function (): void {
+        expect(new UpdateInstanceRequest(17, 'release')->body()->all())->toBe(['branch' => 'release'])
+            ->and(new UpdateInstanceRequest(17, autoDeploy: false)->body()->all())->toBe(['auto_deploy' => false])
+            ->and(new UpdateInstanceRequest(17, 'release', true)->body()->all())->toBe(['branch' => 'release', 'auto_deploy' => true]);
+    });
+
     it('carries no deployment-config or deployment-layout request', function (): void {
         $paths = [];
         $files = new RecursiveIteratorIterator(

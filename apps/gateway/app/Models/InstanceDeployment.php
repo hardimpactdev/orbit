@@ -22,6 +22,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $error_code
  * @property string|null $selected_release
  * @property string|null $triggered_by
+ * @property string $kind `deploy` or `rollback`
  * @property list<array<string, mixed>>|null $events
  * @property-read Instance $instance
  */
@@ -45,8 +46,11 @@ final class InstanceDeployment extends Model
         'error_code',
         'selected_release',
         'triggered_by',
+        'kind',
         'events',
     ];
+
+    public const string Rollback = 'rollback';
 
     /** @return BelongsTo<Instance, $this> */
     public function instance(): BelongsTo

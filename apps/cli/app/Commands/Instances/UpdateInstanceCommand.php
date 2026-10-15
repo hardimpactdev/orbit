@@ -17,10 +17,11 @@ final class UpdateInstanceCommand extends GatewayCommand
     protected $signature = 'instance:update
         {instance : Numeric instance ID}
         {--branch= : Deployment branch}
+        {--auto-deploy= : Deploy each new green commit of the branch automatically (true or false)}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Update a production Instance deployment branch.';
+    protected $description = 'Update a production Instance deployment branch or automatic deployment.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
@@ -31,11 +32,19 @@ final class UpdateInstanceCommand extends GatewayCommand
         }
 
         $branch = $this->stringOption('branch');
+        $autoDeployOption = $this->option('auto-deploy');
+        $autoDeployProvided = $this->input->hasParameterOption('--auto-deploy');
 
-        if ($branch === null) {
+        if ($autoDeployProvided && $autoDeployOption !== 'true' && $autoDeployOption !== 'false') {
+            return $this->renderGatewayFailure('instance.auto_deploy_invalid', 'Auto deploy must be true or false.');
+        }
+
+        $autoDeploy = $autoDeployProvided ? $autoDeployOption === 'true' : null;
+
+        if ($branch === null && $autoDeploy === null) {
             return $this->renderGatewayFailure(
-                'instance.branch_required',
-                'Provide --branch to update the deployment branch.',
+                'instance.update_required',
+                'Provide --branch, --auto-deploy, or both.',
             );
         }
 
@@ -47,7 +56,7 @@ final class UpdateInstanceCommand extends GatewayCommand
 
         $instance = $this->sendWithProgress(
             $connector,
-            new UpdateInstanceRequest($instanceId, $branch),
+            new UpdateInstanceRequest($instanceId, $branch, $autoDeploy),
             InstanceResponse::class,
             ['Update Instance', 'Updating Instance', 'Updated Instance'],
         );
@@ -62,13 +71,29 @@ final class UpdateInstanceCommand extends GatewayCommand
             return self::SUCCESS;
         }
 
-        ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Instance: {$instance->name}", [
+        $fields = [
             'ID' => $instance->id,
             'Status' => $instance->status,
-            'Deployment branch' => $branch,
-            'Selected branch' => $instance->selectedBranch,
-            'Request ID' => $instance->requestId,
-        ]));
+        ];
+
+        if ($branch !== null) {
+            $fields['Deployment branch'] = $branch;
+        }
+
+        $fields['Selected branch'] = $instance->selectedBranch;
+
+        if ($autoDeploy !== null) {
+            $fields += InstanceAutoDeployFields::of($instance);
+        }
+
+        $fields['Request ID'] = $instance->requestId;
+        ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Instance: {$instance->name}", $fields));
+
+        $warning = $instance->autoDeploy?->warning;
+
+        if ($autoDeploy === true && $warning !== null) {
+            $this->warn($warning);
+        }
 
         return self::SUCCESS;
     }
