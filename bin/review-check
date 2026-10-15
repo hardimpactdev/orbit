@@ -111,7 +111,10 @@ def lane_weight(root, entries):
 
 def lane_count(groups, processes):
     """How many lanes run at once. The heaviest lane keeps at least half the budget, so with the default of 4 the
-    Gateway runs two processes while two other lanes run one each."""
+    Gateway runs two processes while two other lanes run one each. A budget of 2 or less runs one lane: the budget
+    counts workers, not each tool's main process, so two lanes of PHPStan or Rector could outgrow a 2 GB task VM."""
+    if processes <= 2:
+        return 1
     return max(1, min(len(groups), 1 + processes // 2))
 
 

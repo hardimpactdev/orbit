@@ -345,6 +345,8 @@ The gate groups its project checks by project and runs the groups at the same ti
 
 The largest group starts first. Its later commands get the processes that finished groups freed.
 
+A budget of 2 or less runs one group at a time. The budget counts workers, not each tool's main process. Two groups of PHPStan or Rector at once could outgrow a 2 GB task VM.
+
 With the default of 4, the Gateway's checks run with two processes while two other groups run with one each. Set the budget to `1` to check one project at a time. The gate prints each result when the command ends. The receipt lists the checks and warnings in the gate's own order.
 
 The web checks and the repository checks run in the Gateway's group, after the Gateway's checks. The Gateway's `composer check` reads `apps/web/node_modules` for the annotator check, and the web group runs `bun install` there. `bin/docs-openapi --check` boots the Gateway application. The other groups share no files that a check writes.

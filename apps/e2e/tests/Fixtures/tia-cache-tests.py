@@ -1474,7 +1474,13 @@ fi
         # The repository checks share the Gateway lane, because bin/docs-openapi --check boots the Gateway.
         self.assertEqual([['apps/gateway', 'repository', 'apps/web'], ['apps/cli']],
                          [[project for _order, project, _commands in group] for group in groups])
-        self.assertEqual([1, 2, 3, 3, 5, 5], [gate.lane_count([[()]] * 5, budget) for budget in (1, 2, 4, 5, 8, 16)])
+        self.assertEqual([1, 1, 3, 3, 5, 5], [gate.lane_count([[()]] * 5, budget) for budget in (1, 2, 4, 5, 8, 16)])
+
+    def test_a_budget_of_two_or_less_runs_one_lane_to_fit_a_small_task_vm(self):
+        gate = self.gate_module(self.gate_fixture())
+        groups = [[(0, 'apps/gateway', ())], [(1, 'apps/cli', ())], [(2, 'apps/e2e', ())]]
+        self.assertEqual([1, 1], [gate.lane_count(groups, budget) for budget in (1, 2)])
+        self.assertEqual(2, gate.lane_count(groups, 3))
 
     def test_the_heaviest_lane_gets_most_of_the_budget_and_the_processes_that_others_free(self):
         gate = self.gate_module(self.gate_fixture())
@@ -1512,16 +1518,18 @@ fi
         runner = self.gate_fixture()
         barrier = Path(self.temporary.name) / 'barrier'
         barrier.mkdir()
-        environment = {**self.gate_env, 'GATE_TEST_BARRIER': str(barrier), 'ORBIT_CHECK_PROCESSES': '2'}
+        environment = {**self.gate_env, 'GATE_TEST_BARRIER': str(barrier), 'ORBIT_CHECK_PROCESSES': '3'}
         result = subprocess.run([str(runner)], env=environment, capture_output=True, text=True)
         self.assertEqual(0, result.returncode, result.stderr + result.stdout)
-        for name in ('cli', 'docs'):
-            (barrier / name).unlink()
-        # One project at a time: the CLI check waits for the Docs check, which has not started, and gives up.
-        result = subprocess.run([str(runner)], env={**environment, 'ORBIT_CHECK_PROCESSES': '1'},
-                                capture_output=True, text=True)
-        self.assertEqual(1, result.returncode, result.stderr + result.stdout)
-        self.assertIn('[apps/cli] composer check: FAILED', result.stdout)
+        # One project at a time, also at a budget of 2 so that a 2 GB task VM runs one PHPStan or Rector: the CLI
+        # check waits for the Docs check, which has not started, and gives up.
+        for budget in ('1', '2'):
+            for name in ('cli', 'docs'):
+                (barrier / name).unlink(missing_ok=True)
+            result = subprocess.run([str(runner)], env={**environment, 'ORBIT_CHECK_PROCESSES': budget},
+                                    capture_output=True, text=True)
+            self.assertEqual(1, result.returncode, result.stderr + result.stdout)
+            self.assertIn('[apps/cli] composer check: FAILED', result.stdout)
         result = subprocess.run([str(runner)], env={**environment, 'ORBIT_CHECK_PROCESSES': 'many'},
                                 capture_output=True, text=True)
         self.assertEqual(1, result.returncode, result.stderr + result.stdout)
