@@ -7,6 +7,7 @@ namespace App\Jobs;
 use App\Actions\Fleet\ConvergeFleetRecipeAction;
 use App\Actions\Fleet\MergeNightlyRecipePullRequestsAction;
 use App\Actions\Fleet\OpenNightlyRecipePullRequestAction;
+use App\Actions\Fleet\OpenPhpBuildPullRequestAction;
 use App\Domain\Fleet\FleetServingRelease;
 use App\Domain\Fleet\RecipeMaintenanceAlerts;
 use App\Domain\Gateway\GatewayQueue;
@@ -38,13 +39,15 @@ final class MaintainMachineRecipe implements ShouldBeUnique, ShouldQueue
         return $this->snapshot ? 'snapshot-pr' : 'fleet';
     }
 
-    public function handle(FleetServingRelease $serving, OpenNightlyRecipePullRequestAction $pullRequest, ConvergeFleetRecipeAction $fleet, MergeNightlyRecipePullRequestsAction $merge): void
+    public function handle(FleetServingRelease $serving, OpenNightlyRecipePullRequestAction $pullRequest, ConvergeFleetRecipeAction $fleet, MergeNightlyRecipePullRequestsAction $merge, OpenPhpBuildPullRequestAction $php): void
     {
         if ($serving->read()['state'] !== FleetServingRelease::Adopted || $serving->supersedes()) {
             return;
         }
         if ($this->snapshot) {
             Log::info('Nightly recipe snapshot PR.', ['url' => $pullRequest->execute()]);
+            // The same night also moves the Sury PHP pins to Sury's newest build, in a PR that a maintainer reviews.
+            Log::info('Nightly PHP build PR.', ['url' => $php->execute()]);
         } else {
             $merge->execute();
             $fleet->execute();

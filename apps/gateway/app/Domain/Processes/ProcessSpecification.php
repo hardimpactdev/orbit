@@ -10,7 +10,7 @@ use SensitiveParameter;
 
 final readonly class ProcessSpecification
 {
-    /** @return array{runtime: ProcessRuntime, working_directory: ?string, runtime_config: array<string, mixed>, restart_policy: string, keep_alive: bool} */
+    /** @return array{runtime: ProcessRuntime, working_directory: ?string, runtime_config: array<string, mixed>, restart_policy: string, keep_alive: bool, restart_on_deploy: bool} */
     public function attributes(#[SensitiveParameter] AddProcessData $data, ProcessTarget $target): array
     {
         if ($data->preset === AnnotatorPreset::NAME) {
@@ -20,6 +20,7 @@ final readonly class ProcessSpecification
                 'runtime_config' => ['command' => AnnotatorPreset::command(), 'environment_file' => $target->environmentFile, 'preset' => AnnotatorPreset::NAME],
                 'restart_policy' => 'on-failure',
                 'keep_alive' => false,
+                'restart_on_deploy' => $data->restartOnDeploy,
             ];
         }
         $workingDirectory =
@@ -47,10 +48,11 @@ final readonly class ProcessSpecification
             'runtime_config' => $this->canonicalRuntimeConfig($runtimeConfig),
             'restart_policy' => $data->restartPolicy,
             'keep_alive' => $data->keepAlive,
+            'restart_on_deploy' => $data->restartOnDeploy,
         ];
     }
 
-    /** @param array{runtime: ProcessRuntime, working_directory: ?string, runtime_config: array<string, mixed>, restart_policy: string, keep_alive: bool} $attributes */
+    /** @param array{runtime: ProcessRuntime, working_directory: ?string, runtime_config: array<string, mixed>, restart_policy: string, keep_alive: bool, restart_on_deploy: bool} $attributes */
     public function matches(
         #[SensitiveParameter]
         Process $process,
@@ -63,7 +65,8 @@ final readonly class ProcessSpecification
             && $this->canonicalRuntimeConfig($process->runtime_config)
             === $attributes['runtime_config']
             && $process->restart_policy === $attributes['restart_policy']
-            && $process->keep_alive === $attributes['keep_alive'];
+            && $process->keep_alive === $attributes['keep_alive']
+            && $process->restart_on_deploy === $attributes['restart_on_deploy'];
     }
 
     /**

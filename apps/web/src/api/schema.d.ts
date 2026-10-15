@@ -4637,6 +4637,7 @@ export interface components {
             cpu?: number | null;
             memory_bytes?: number | null;
             user?: string | null;
+            restart_on_deploy?: boolean;
         };
         DocumentStorage: {
             configured?: boolean;
@@ -11467,7 +11468,7 @@ export interface operations {
                         /** Format: uuid */
                         request_id: string;
                         /** @enum {string} */
-                        phase: "source_preparation" | "environment_sync" | "before_activation" | "activation" | "php_refresh" | "after_activation" | "rollback";
+                        phase: "source_preparation" | "environment_sync" | "before_activation" | "activation" | "php_refresh" | "process_restart" | "after_activation" | "rollback";
                         step_name?: string | null;
                     } | {
                         /** @enum {string} */
@@ -13917,6 +13918,7 @@ export interface operations {
                     start?: boolean;
                     /** @description Keep running through app-dev idle hibernation */
                     keep_alive?: boolean;
+                    restart_on_deploy?: boolean;
                 };
             };
         };
@@ -14067,6 +14069,7 @@ export interface operations {
                     restart_policy?: "never" | "on-failure" | "always" | "unless-stopped";
                     /** @description Keep running through app-dev idle hibernation */
                     keep_alive?: boolean;
+                    restart_on_deploy?: boolean;
                 };
             };
         };

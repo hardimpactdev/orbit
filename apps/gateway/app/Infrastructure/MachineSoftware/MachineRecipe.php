@@ -12,6 +12,7 @@ final readonly class MachineRecipe
      * @param  list<string>  $architectures
      * @param  array<string, ToolPin>  $tools
      * @param  array<string, list<string>>  $profiles  Effective, sorted tool sets, including common tools.
+     * @param  array<string, PhpBuild>  $php  Keyed by PHP version, such as 8.5.
      */
     public function __construct(
         public string $identity,
@@ -21,7 +22,33 @@ final readonly class MachineRecipe
         public array $profiles,
         public string $canonicalJson,
         public string $json = '{}',
+        public array $php = [],
+        public string $ciPhp = '',
+        public PhpPolicy $phpPolicy = new PhpPolicy,
     ) {}
+
+    public function php(string $version): PhpBuild
+    {
+        return $this->php[$version] ?? throw new InvalidArgumentException("The recipe has no PHP build for version [{$version}].");
+    }
+
+    /**
+     * The CLI extension list of each PHP set that `$tools` holds whole, for the remote programs to check.
+     *
+     * @param  list<string>  $tools
+     * @return array<string, list<string>>
+     */
+    public function phpExtensions(array $tools): array
+    {
+        $extensions = [];
+        foreach ($this->php as $version => $build) {
+            if (array_diff($build->packages, $tools) === []) {
+                $extensions[$version] = $build->extensions;
+            }
+        }
+
+        return $extensions;
+    }
 
     /** @return list<string> */
     public function profile(string $role, ?string $architecture = null): array

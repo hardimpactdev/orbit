@@ -101,6 +101,35 @@ describe('rollback streams', function (): void {
         expect($mock->getRecordedResponses())->toHaveCount(1);
     });
 
+    it('reports the rollback Process restart phase in human and JSON output', function (bool $fails, bool $json): void {
+        MockClient::global([
+            RollbackInstanceRequest::class => deployment_cli_stream_response([
+                deployment_cli_phase(1, 'rollback'),
+                deployment_cli_phase(2, 'process_restart'),
+                deployment_cli_output(3, $fails ? 'stderr' : 'stdout', $fails ? "Failed to restart Process 12.\n" : "Restarted Process 12.\n"),
+                deployment_cli_result(4, $fails ? 'failed' : 'succeeded', failedStep: $fails ? 'after_activation' : null,
+                    errorCode: $fails ? 'process.restart_failed' : null, selectedRelease: 'release-a'),
+            ]),
+        ]);
+
+        $exitCode = Artisan::call('instance:rollback', [
+            'instance' => '17', '--release' => 'release-a', '--no-interaction' => true, '--json' => $json,
+        ]);
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe($fails ? 1 : 0);
+        if ($json) {
+            $events = array_map(fn (string $line): array => json_decode($line, associative: true, flags: JSON_THROW_ON_ERROR), explode("\n", trim($output)));
+            expect($events[1]['phase'])->toBe('process_restart')
+                ->and($events[3]['status'])->toBe($fails ? 'failed' : 'succeeded')
+                ->and($events[3]['selected_release'])->toBe('release-a');
+        } else {
+            expect($output)->toContain($fails ? 'Restarting Processes' : 'Restarted Processes')
+                ->and($output)->toContain($fails ? 'Rollback failed.' : 'Rollback succeeded.')
+                ->and($output)->toContain('Selected release: release-a');
+        }
+    })->with([false, true])->with([false, true]);
+
     it('marks the current row failed for a rollback activation failure (F2a)', function (): void {
         // rollback's only admitted row is 'rollback' ('Select release'); activation has no
         // row of its own, so the reached row must take the failure instead of looking merely

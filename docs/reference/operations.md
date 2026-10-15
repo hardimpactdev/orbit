@@ -16,6 +16,8 @@ A long operation, such as an [Instance deploy](/reference/deployments#deploy-thr
 
 Instance deploy is an operation. Rollback, Instance create and remove, and Route convergence still run inside their request ([ADR 0209](/decisions/0209-run-long-operations-as-durable-queued-operations)).
 
+Production deployments include a resumable `process_restart` step after PHP refresh. It restarts active Instance Processes before after-activation commands. A completed restart step is skipped on recovery. An interrupted restart step can restart a Process again. A stored deploy plan from before this step was introduced keeps its original steps after a Gateway upgrade. See [Deploy](/reference/deployments#deploy) for the opt-out and failure behavior.
+
 ## The record
 
 Every operation has the same fields, whatever its kind.

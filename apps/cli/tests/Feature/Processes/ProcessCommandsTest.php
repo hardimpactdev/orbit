@@ -148,6 +148,7 @@ it('adds one explicit Docker process through the active gateway', function (): v
             'restart_policy' => 'unless-stopped',
             'start' => true,
             'keep_alive' => false,
+            'restart_on_deploy' => true,
         ]);
 });
 
@@ -182,6 +183,7 @@ it('passes Gateway-owned process policy values through the typed SDK request', f
             'restart_policy' => 'never',
             'start' => false,
             'keep_alive' => false,
+            'restart_on_deploy' => true,
             'environment' => ['APP_MODE' => 'test'],
             'ports' => ['not-a-port'],
             'volumes' => [['source' => 'source,readonly', 'target' => 'relative', 'read_only' => false]],
@@ -215,6 +217,7 @@ it('passes an empty Docker command and missing image to the Gateway for policy v
             'restart_policy' => 'never',
             'start' => false,
             'keep_alive' => false,
+            'restart_on_deploy' => true,
         ]);
 });
 
@@ -243,6 +246,7 @@ it('passes a relative systemd executable to the Gateway for policy validation', 
             'restart_policy' => 'never',
             'start' => false,
             'keep_alive' => false,
+            'restart_on_deploy' => true,
         ]);
 });
 
@@ -273,6 +277,7 @@ it('preserves explicitly supplied empty process arrays', function (): void {
             'restart_policy' => 'never',
             'start' => false,
             'keep_alive' => false,
+            'restart_on_deploy' => true,
             'environment' => (object) [],
             'ports' => [],
             'volumes' => [],
@@ -841,6 +846,7 @@ it('passes every explicit systemd field through the typed SDK request', function
             'restart_policy' => 'always',
             'start' => true,
             'keep_alive' => false,
+            'restart_on_deploy' => true,
             'environment' => ['APP_MODE' => 'test'],
             'ports' => ['8080:80'],
             'volumes' => [['source' => 'data', 'target' => '/data', 'read_only' => true]],
@@ -1477,6 +1483,7 @@ function process_cli_payload(array $overrides = []): array
         ],
         'restart_policy' => 'unless-stopped',
         'keep_alive' => false,
+        'restart_on_deploy' => true,
         'desired_state' => 'running',
         'status' => 'active',
         'runtime_status' => 'running',
@@ -1600,7 +1607,7 @@ it('sends an explicit preset with an instance domain and leaves port preparation
     $mock = MockClient::global([CreateProcessRequest::class => process_cli_response(201)]);
     $this->artisan('process:create', ['name' => 'assets', '--instance' => 'commander.test', '--preset' => 'vp-dev', '--start' => true, '--json' => true])->assertExitCode(0);
 
-    expect($mock->getLastRequest()?->body()->all())->toBe(['target_type' => 'instance', 'target_id' => 'commander.test', 'name' => 'assets', 'preset' => 'vp-dev', 'start' => true, 'keep_alive' => false]);
+    expect($mock->getLastRequest()?->body()->all())->toBe(['target_type' => 'instance', 'target_id' => 'commander.test', 'name' => 'assets', 'preset' => 'vp-dev', 'start' => true, 'keep_alive' => false, 'restart_on_deploy' => true]);
 });
 
 it('refuses preset overrides without sending a request', function (array $options): void {
@@ -1620,6 +1627,7 @@ it('sends Agentation presets without synthesizing runtime configuration', functi
         'preset' => $preset,
         'start' => true,
         'keep_alive' => false,
+        'restart_on_deploy' => true,
     ]);
 })->with(['annotator', 'agentation-mcp', 'antigravity-watch']);
 
@@ -1634,3 +1642,25 @@ it('refuses Agentation keep-alive without sending a request', function (): void 
     ])->assertExitCode(1);
     $mock->assertNothingSent();
 });
+
+it('sends the deploy restart opt-out through create and update', function (bool $optOut): void {
+    $mock = MockClient::global([
+        CreateProcessRequest::class => process_cli_response(201),
+        UpdateProcessRequest::class => process_cli_response(200),
+    ]);
+    $options = ['--command' => ['/usr/bin/php', 'artisan', 'horizon'], '--json' => true, ...($optOut ? ['--no-restart-on-deploy' => true] : [])];
+    $this->artisan('process:create', ['name' => 'horizon', '--instance' => '7', ...$options])->assertExitCode(0);
+    expect($mock->getLastRequest()?->body()->all()['restart_on_deploy'])->toBe(! $optOut);
+    $this->artisan('process:update', ['name' => '41', ...$options])->assertExitCode(0);
+    expect($mock->getLastRequest()?->body()->all()['restart_on_deploy'])->toBe(! $optOut);
+})->with([true, false]);
+
+it('refuses the installed Process deploy option on Project definitions', function (string $command): void {
+    $mock = MockClient::global([]);
+    [$exit, $output] = process_cli_display($command, [
+        'name' => 'horizon', '--project' => '3', '--for' => 'production',
+        '--command' => ['/usr/bin/php', 'artisan', 'horizon'], '--no-restart-on-deploy' => true, '--json' => true,
+    ]);
+    expect($exit)->toBe(1)->and(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('process.option_invalid');
+    $mock->assertNothingSent();
+})->with(['process:create', 'process:update']);

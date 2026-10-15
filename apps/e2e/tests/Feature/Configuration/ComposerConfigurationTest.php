@@ -691,3 +691,43 @@ it('publishes the web build of each main push for the Gateway to install', funct
     expect(array_search('Publish web build', $names, true))
         ->toBe(array_search('Build', $names, true) + 1);
 });
+
+it('sets up the recipe PHP build in every PHP job and never floats PHP with setup-php', function (): void {
+    $action = Yaml::parseFile(base_path('../../.github/actions/php/action.yml'));
+    $steps = array_column($action['runs']['steps'], null, 'name');
+    $phpJobs = [];
+    foreach (['ci.yml', 'dependency-audit.yml'] as $file) {
+        $contents = (string) file_get_contents(base_path('../../.github/workflows/'.$file));
+        expect($contents)->not->toContain('setup-php');
+        foreach (Yaml::parseFile(base_path('../../.github/workflows/'.$file))['jobs'] as $name => $job) {
+            $uses = array_column($job['steps'] ?? [], 'uses');
+            $runs = implode("\n", array_column($job['steps'] ?? [], 'run'));
+            $runsPhp = preg_match('/\b(?:composer|php|vendor\/bin\/pest)\b|bin\/(?:project-vocabulary|env-docs|tooling-baseline|docs-nav|docs-openapi|mcp-tools|dependency-audit)/', $runs) === 1;
+            if (in_array('./.github/actions/php', $uses, true)) {
+                $phpJobs[] = $name;
+                $step = collect($job['steps'])->firstWhere('uses', './.github/actions/php');
+                // A job without coverage keeps PCOV loaded, so its loaded extensions still match the recipe.
+                expect($step['with']['coverage'])->toBeIn(['pcov', 'none'])
+                    ->and($step)->not->toHaveKey('if');
+            } else {
+                expect($runsPhp)->toBeFalse("{$file} job {$name} runs PHP without the recipe PHP build");
+            }
+        }
+    }
+
+    expect($phpJobs)->toBe(['project', 'gateway-plan', 'gateway-shards', 'privileged', 'remote-programs', 'docs-merge-ref', 'api-reference', 'audit'])
+        ->and($steps['Install the recipe PHP build']['if'])->toBe("runner.environment == 'github-hosted'")
+        ->and($steps['Install the recipe PHP build']['run'])->toContain('sudo python3 bin/php-build install --ci --purge-extras --coverage "$COVERAGE"')
+        ->and($steps['Restore the PHP packages']['with']['path'])->toBe('/var/cache/orbit/php-packages')
+        ->and($steps['Restore the PHP packages']['if'])->toBe("runner.environment == 'github-hosted'")
+        ->and($steps['Restore the PHP packages']['with']['key'])->toBe('orbit-php-build-${{ steps.key.outputs.key }}')
+        ->and($steps['Verify the recipe PHP build'])->not->toHaveKey('if')
+        ->and($steps['Verify the recipe PHP build']['run'])->toBe('python3 bin/php-build verify');
+});
+
+it('runs the bin/php-build unit tests', function (): void {
+    $process = new Process(['python3', base_path('tests/Fixtures/php-build-tests.py'), base_path('../../bin/php-build')]);
+    $process->run();
+
+    expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+});

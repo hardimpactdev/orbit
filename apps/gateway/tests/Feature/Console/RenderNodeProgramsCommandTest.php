@@ -56,7 +56,7 @@ describe('orbit:node-programs', function (): void {
 
         expect($programs)->toBe($expected)
             ->and(array_slice(node_program_names($programs), 0, 5))->toBe(['bootstrap', 'caddy-package', 'app-dev-prerequisites', 'vp-manager', 'composer-manager'])
-            ->and(node_program_names($programs)[5])->toBe('app-dev-php-source')
+            ->and(node_program_names($programs)[5])->toBe('app-dev-php-install')
             ->and(array_keys($programs[0]))->toBe(['name', 'arguments', 'input', 'fingerprint'])
             ->and(array_column($programs, 'fingerprint'))->each->toMatch('/\A[a-f0-9]{64}\z/');
     });

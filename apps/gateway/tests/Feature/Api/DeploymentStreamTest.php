@@ -2,9 +2,15 @@
 
 declare(strict_types=1);
 
+use App\Domain\Instances\ProductionPhpRuntimeManager;
+use App\Domain\Processes\ProcessOperationException;
+use App\Domain\Processes\ProcessRuntimeManager;
 use App\Models\Activity;
+use App\Models\InstanceDeployment;
+use App\Models\Process;
 use Illuminate\Support\Str;
 use Tests\Support\Orb220DeploymentApiFixture;
+use Tests\Support\ProcessesApiFakeRuntimeManager;
 
 beforeEach(function (): void {
     $this->fixture = Orb220DeploymentApiFixture::create();
@@ -38,11 +44,11 @@ it('streams the rollback phase and terminal event schema as NDJSON', function ()
 
     expect(array_column($events, 'sequence'))->toBe(range(1, count($events)))
         ->and(array_values(array_unique(array_column($events, 'request_id'))))->toBe([$requestId])
-        ->and(array_column($events, 'type'))->toBe(['phase', 'result'])
+        ->and(array_column($events, 'type'))->toBe(['phase', 'phase', 'result'])
         ->and(array_keys($events[0]))->toBe(['type', 'sequence', 'request_id', 'phase'])
-        ->and(array_keys($events[1]))->toBe(['type', 'sequence', 'request_id', 'status', 'failed_step', 'error_code', 'selected_release'])
+        ->and(array_keys($events[2]))->toBe(['type', 'sequence', 'request_id', 'status', 'failed_step', 'error_code', 'selected_release'])
         ->and(max(array_map('strlen', $rawLines)))->toBeLessThanOrEqual(32 * 1024)
-        ->and($events[1])->toMatchArray(['status' => 'succeeded', 'failed_step' => null, 'error_code' => null, 'selected_release' => 'initial']);
+        ->and($events[2])->toMatchArray(['status' => 'succeeded', 'failed_step' => null, 'error_code' => null, 'selected_release' => 'initial']);
 
     expect(Activity::query()->sole()->refresh()->properties?->get('deployment'))->toBe([
         'status' => 'succeeded',
@@ -109,4 +115,68 @@ it('streams rollback with its release input and rollback phase', function (): vo
         ->toBe('initial')
         ->and(Activity::query()->sole()->refresh()->properties?->get('input'))
         ->toBe(['release' => 'initial']);
+});
+
+it('streams and records rollback Process restart results on the rollback release', function (bool $fails): void {
+    $runtime = new ProcessesApiFakeRuntimeManager;
+    if ($fails) {
+        $runtime->restartFailure = new ProcessOperationException('restart', 'process.restart_failed', 'private runtime output');
+    }
+    app()->instance(ProcessRuntimeManager::class, $runtime);
+    $process = Process::query()->create([
+        'owner_type' => $this->fixture->instance->getMorphClass(), 'owner_id' => $this->fixture->instance->id, 'name' => 'horizon',
+        'runtime' => 'systemd', 'runtime_config' => ['command' => ['/usr/bin/php', 'artisan', 'horizon']],
+        'restart_policy' => 'always', 'desired_state' => 'running', 'status' => 'active',
+    ]);
+    $this->fixture->deployment->current = 'fresh';
+
+    $response = $this->withServerVariables(['REMOTE_ADDR' => $this->fixture->caller->wireguard_ip])
+        ->call('POST', $this->url, server: ['CONTENT_TYPE' => 'application/json'], content: '{"release":"initial"}');
+    $events = collect(explode("\n", $response->streamedContent()))->filter(fn (string $line): bool => trim($line) !== '')
+        ->map(fn (string $line): array => json_decode($line, associative: true, flags: JSON_THROW_ON_ERROR))->values();
+    $deployment = InstanceDeployment::query()->sole();
+
+    expect($runtime->restarted)->toBe([$process->id])
+        ->and($this->fixture->deployment->current)->toBe('initial')
+        ->and($events->pluck('type')->all())->toBe(['phase', 'phase', 'output', 'result'])
+        ->and($events[1]['phase'])->toBe('process_restart')
+        ->and(base64_decode($events[2]['data_base64'], strict: true))->toBe($fails
+            ? "Failed to restart Process {$process->id}: process.restart_failed.\n"
+            : "Restarted Process {$process->id}.\n")
+        ->and($events[3]['status'])->toBe($fails ? 'failed' : 'succeeded')
+        ->and($events[3]['failed_step'])->toBe($fails ? 'after_activation' : null)
+        ->and($events[3]['selected_release'])->toBe('initial')
+        ->and($deployment->status)->toBe($fails ? 'failed' : 'succeeded')
+        ->and($deployment->error_code)->toBe($fails ? 'process.restart_failed' : null)
+        ->and(collect($deployment->events)->where('step', 'process_restart'))->toHaveCount(1);
+})->with([false, true]);
+
+it('finishes rollback PHP refresh and Process restart after the client disconnects during activation', function (): void {
+    $runtime = new ProcessesApiFakeRuntimeManager;
+    app()->instance(ProcessRuntimeManager::class, $runtime);
+    $php = Mockery::mock(ProductionPhpRuntimeManager::class);
+    $php->shouldReceive('converge')->once();
+    $php->shouldReceive('refreshCache')->once();
+    app()->instance(ProductionPhpRuntimeManager::class, $php);
+    $process = Process::query()->create([
+        'owner_type' => $this->fixture->instance->getMorphClass(), 'owner_id' => $this->fixture->instance->id, 'name' => 'horizon',
+        'runtime' => 'systemd', 'runtime_config' => ['command' => ['/usr/bin/php', 'artisan', 'horizon']],
+        'restart_policy' => 'always', 'desired_state' => 'running', 'status' => 'active',
+    ]);
+    $this->fixture->deployment->current = 'fresh';
+    $this->fixture->deployment->duringActivation = function (): void {
+        $this->fixture->connection->disconnected = true;
+    };
+
+    $response = $this->withServerVariables(['REMOTE_ADDR' => $this->fixture->caller->wireguard_ip])
+        ->call('POST', $this->url, server: ['CONTENT_TYPE' => 'application/json'], content: '{"release":"initial"}');
+    $content = $response->streamedContent();
+    $deployment = InstanceDeployment::query()->sole();
+
+    expect($runtime->restarted)->toBe([$process->id])
+        ->and($this->fixture->deployment->current)->toBe('initial')
+        ->and($content)->not->toContain('"type":"result"')
+        ->and($deployment->status)->toBe('succeeded')
+        ->and($deployment->error_code)->toBeNull()
+        ->and(collect($deployment->events)->where('step', 'process_restart'))->toHaveCount(1);
 });

@@ -212,6 +212,7 @@ final class DeploymentStream implements IteratorAggregate
                 'before_activation',
                 'activation',
                 'php_refresh',
+                'process_restart',
                 'after_activation',
                 'rollback',
             ], strict: true)

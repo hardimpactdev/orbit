@@ -66,6 +66,7 @@ use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
+use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
 use Tests\Support\SshNodeCaddyBuilds;
 
@@ -1866,7 +1867,10 @@ final class Orb127RouteSshExecutor implements SshExecutor
             return new CommandResult(1, '', 'injected failure', 1, false);
         }
 
-        return new CommandResult(0, '', '', 1, false);
+        // The PHP build installer prints one result line (ADR 0216).
+        $installer = ($command->arguments[4] ?? null) === 'php.install-build';
+
+        return new CommandResult(0, $installer ? AppDevFakeSshExecutor::InstallerApplied : '', '', 1, false);
     }
 }
 
