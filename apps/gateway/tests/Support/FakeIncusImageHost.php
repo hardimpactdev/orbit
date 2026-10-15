@@ -144,6 +144,12 @@ final class FakeIncusImageHost implements SshExecutor
             $operation[0] === 'delete' => $this->answer('delete '.end($operation), function () use ($operation): void {
                 unset($this->instances[end($operation)]);
             }),
+            $operation[0] === 'image' && $operation[1] === 'alias' && $operation[2] === 'delete' => $this->answer('image alias delete', function () use ($operation): void {
+                foreach ($this->images as &$aliases) {
+                    $aliases = array_values(array_diff($aliases, [end($operation)]));
+                }
+                unset($aliases);
+            }),
             $operation[0] === 'image' && $operation[1] === 'alias' => $this->answer('image alias', fn () => $this->images[$operation[5]][] = $operation[4]),
             $operation[0] === 'image' && $operation[1] === 'delete' => $this->answer('image delete', function () use ($operation): void {
                 unset($this->images[end($operation)]);

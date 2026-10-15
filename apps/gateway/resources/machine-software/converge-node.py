@@ -316,8 +316,16 @@ def install_javascript(tools, downloads, work, account):
             package_link(runtime, 'vp', target / 'package', uid, gid)
         elif name == 'pnpm':
             package_link(runtime, 'pnpm', target / 'package', uid, gid)
+            native = target / 'package/pnpm'
             executable = target / 'package/bin/pnpm.cjs'
-            publish(bin_dir / 'pnpm', ('#!/bin/sh\nexec "' + str(bin_dir / 'node') + '" "' + str(executable) + '" "$@"\n').encode(), 0o755, uid, gid, replace_link=True)
+            if json_file(target / 'package/package.json').get('version') != tools[name]['version']:
+                raise RecipeFailure()
+            if native.is_file() and native.read_bytes()[:4] == b'\x7fELF':
+                publish(bin_dir / 'pnpm', native.read_bytes(), 0o755, uid, gid, replace_link=True)
+            elif executable.is_file():
+                publish(bin_dir / 'pnpm', ('#!/bin/sh\nexec "' + str(bin_dir / 'node') + '" "' + str(executable) + '" "$@"\n').encode(), 0o755, uid, gid, replace_link=True)
+            else:
+                raise RecipeFailure()
         elif name == 'bun':
             executable = next(target.glob('*/bun'))
             os.chmod(executable, 0o755)

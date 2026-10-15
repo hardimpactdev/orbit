@@ -12,14 +12,11 @@ use RuntimeException;
 /**
  * @phpstan-type Program array{name:string,user:string,arguments:list<string>,input:?string}
  *
- * The programs one role image runs, in order. Harness programs prepare the builder and run as root. Gateway
- * programs are what Node enrollment runs for the role's Orbit roles, rendered by the checkout's own Gateway
+ * Gateway programs for topology convergence. These are what Node enrollment runs for the role's Orbit roles, rendered by the checkout's own Gateway
  * with `orbit:node-programs`; they run as `orbit` and start with `sudo`, as enrollment runs them over SSH.
  */
 final readonly class RoleImagePrograms
 {
-    private const string IMAGE_RESOURCES = '/apps/e2e/resources/image/';
-
     /** A public key with no private half anywhere; it only fills the Gateway key slot while rendering. */
     public const string PLACEHOLDER_KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPb2YoLP14UR+XxEQ1nPvQAlpRc7B9/4xS201KFQ3tyu orbit-e2e-role-image';
 
@@ -29,9 +26,6 @@ final readonly class RoleImagePrograms
     public function for(RoleImage $image): array
     {
         $programs = [];
-        foreach ($image->harnessPrograms() as [$name, $script, $arguments]) {
-            $programs[] = $this->harness($name, $script, $arguments);
-        }
         foreach ($this->render($image->programRoles()) as $program) {
             if ($program['name'] === 'bootstrap' && ! $image->runsBootstrapProgram()) {
                 continue;
@@ -58,37 +52,9 @@ final readonly class RoleImagePrograms
     }
 
     /**
-     * The fingerprint of a whole program list, which the image records and `status` compares.
-     *
-     * @param  list<Program>  $programs
-     */
-    public static function listFingerprint(array $programs): string
-    {
-        return hash('sha256', json_encode(
-            array_map(static fn (array $program): array => [$program['name'], self::fingerprint($program)], $programs),
-            JSON_THROW_ON_ERROR,
-        ));
-    }
-
-    /**
-     * @param  list<string>  $arguments
-     * @return Program
-     */
-    private function harness(string $name, string $script, array $arguments): array
-    {
-        $input = file_get_contents($this->repositoryRoot.self::IMAGE_RESOURCES.$script);
-        if (! is_string($input) || $input === '') {
-            throw new RuntimeException("The role image script [{$script}] is missing.");
-        }
-
-        return ['name' => $name, 'user' => 'root', 'arguments' => ['bash', '-s', '--', ...$arguments], 'input' => $input];
-    }
-
-    /**
      * Renders the enrollment programs with a throwaway Orbit home. The bootstrap program embeds the Gateway's
      * SSH public key, so the home holds one fixed placeholder key: renders stay identical, which keeps the
-     * fingerprint stable. Its private half was discarded, and the image build removes every authorized key
-     * before it publishes the image.
+     * fingerprint stable. Its private half was discarded. Gateway convergence skips the SSH bootstrap program.
      *
      * @param  list<string>  $roles
      * @return list<Program>

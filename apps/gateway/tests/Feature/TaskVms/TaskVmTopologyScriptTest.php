@@ -56,7 +56,7 @@ function topology_boot_id(): string
     return trim((string) file_get_contents('/proc/sys/kernel/random/boot_id'));
 }
 
-$runArguments = ['run', 'abcdef0123456789', '__CHECKOUT__', 'TASK-7', 'app-prod+ingress', '25GiB', '10.44.0.0/24'];
+$runArguments = ['run', 'abcdef0123456789', '__CHECKOUT__', 'TASK-7', 'app-prod+ingress', '25GiB', '10.44.0.0/24', '/var/lib/orbit/task-vm-role-images/manifest.json'];
 
 beforeEach(function (): void {
     if (! is_readable('/proc/sys/kernel/random/boot_id')) {
@@ -78,11 +78,18 @@ describe('the topology run', function () use ($runArguments): void {
         expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
             ->and(file("{$work}/harness.log", FILE_IGNORE_NEW_LINES))->toBe([
                 'host-setup --pool-size=25GiB --wireguard-subnet=10.44.0.0/24',
-                'images ensure --nodes=app-prod+ingress',
+                'images ensure --nodes=app-prod+ingress --recipe-images=/var/lib/orbit/task-vm-role-images/manifest.json',
                 "acquire acquire TASK-7 {$work}/checkout --nodes=app-prod+ingress --replace",
             ])
             ->and(array_keys($result))->toBe(['state', 'step', 'seconds', 'boot_id', 'log'])
             ->and($result)->toMatchArray(['state' => 'ready', 'step' => 'acquire', 'boot_id' => topology_boot_id()]);
+    });
+
+    it('requires the claimed recipe manifest instead of building role images', function () use ($runArguments): void {
+        [$process, $work] = topology_script($runArguments);
+
+        expect($process->getExitCode())->toBe(0);
+        expect(file("{$work}/harness.log", FILE_IGNORE_NEW_LINES)[1])->toBe('images ensure --nodes=app-prod+ingress --recipe-images=/var/lib/orbit/task-vm-role-images/manifest.json');
     });
 
     it('retries a failed acquire once and records it only in the log', function () use ($runArguments): void {

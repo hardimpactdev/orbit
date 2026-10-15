@@ -17,15 +17,12 @@ use Illuminate\Support\Facades\DB;
 /** Desired identity is persisted before dispatch; a busy host catches up on the next scheduler check. */
 final readonly class RecipeImageBuilds
 {
-    public const array Roles = ['gateway', 'app-dev', 'app-prod', 'operator'];
-
     public function __construct(private RecipeLoader $loader, private TaskVmSettings $settings, private TaskVmImageBuildChain $chain) {}
 
     /** @return list<TaskVmImageBuild> */
     public function reconcile(?int $hostId = null, bool $retry = false): array
     {
-        $path = rtrim(config()->string('orbit.gateway_checkout'), '/').'/resources/machine-software/recipe.json';
-        $recipe = $this->loader->load(is_link(dirname(config()->string('orbit.gateway_checkout'), 2)) ? $path : null);
+        $recipe = $this->currentRecipe();
         $generation = $this->desire($recipe);
         $builds = [];
         $this->chain->recoverSubmissions();
@@ -52,9 +49,7 @@ final readonly class RecipeImageBuilds
                 'aarch64', 'arm64' => 'arm64',
                 default => throw new TaskVmException('task_vm.image_build_failed', 'The image host architecture is unsupported.'),
             };
-            foreach (['base', ...self::Roles] as $profile) {
-                $recipe->profile($profile, $architecture);
-            }
+            $recipe->profile('base', $architecture);
             try {
                 $builds[] = $this->chain->start($node, $recipe, $generation);
             } catch (TaskVmException $error) {
@@ -66,6 +61,13 @@ final readonly class RecipeImageBuilds
         }
 
         return $builds;
+    }
+
+    public function currentRecipe(): MachineRecipe
+    {
+        $path = rtrim(config()->string('orbit.gateway_checkout'), '/').'/resources/machine-software/recipe.json';
+
+        return $this->loader->load(is_link(dirname(config()->string('orbit.gateway_checkout'), 2)) ? $path : null);
     }
 
     private function desire(MachineRecipe $recipe): int

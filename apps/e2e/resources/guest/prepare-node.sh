@@ -5,7 +5,25 @@ mode=${1-}
 case "$mode" in
   configure-runtime)
     [[ $# -eq 1 ]] || exit 64
-    # Only replace the harness-owned DHCP file. The operator container has no such file.
+    [[ "$(id -u orbit):$(id -g orbit)" == 1000:1000 ]] || { echo 'The recipe base must provide orbit uid/gid 1000.' >&2; exit 67; }
+    bash "$0" align-identity
+    # Recipe software publishes a launcher; enrollment owns this path as a symlink.
+    # Adapt only that exact root-owned launcher, never an unrelated executable.
+    if [[ -f /usr/local/bin/bun && ! -L /usr/local/bin/bun ]] \
+      && [[ "$(stat -c '%u:%g:%a' /usr/local/bin/bun)" == 0:0:755 ]] \
+      && cmp -s /usr/local/bin/bun <(printf '#!/bin/sh\nexec /opt/orbit/bun/bin/bun "$@"\n'); then
+      bun_link=$(mktemp -d /usr/local/bin/.orbit-recipe-bun.XXXXXXXX)
+      trap 'rm -rf -- "$bun_link"' EXIT
+      ln -s /opt/orbit/bun/bin/bun "$bun_link/bun"
+      mv -fT -- "$bun_link/bun" /usr/local/bin/bun
+      rmdir "$bun_link"
+      trap - EXIT
+    fi
+    systemctl mask apt-daily.timer apt-daily-upgrade.timer unattended-upgrades.service motd-news.timer >/dev/null
+    for hosts in /root/.ssh/known_hosts /home/*/.ssh/known_hosts; do
+      if [[ -f $hosts ]]; then : >"$hosts"; fi
+    done
+    # Only replace the harness-owned DHCP file.
     network=/etc/systemd/network/00-orbit-e2e.network
     if [[ -f "$network" ]]; then
       candidate=$(mktemp)
@@ -93,7 +111,8 @@ case "$mode" in
     fi
     # uutils chown/chgrp -h (Ubuntu 26.04) silently skip symlinks; lchown does not.
     # Ownership left behind by the old ids has no account any more; adopt it for orbit.
-    find /home/orbit \( -nouser -o -nogroup \) -exec python3 -c '
+    # Stay on the guest filesystem; the mounted checkout belongs to the host.
+    find /home/orbit -xdev \( -nouser -o -nogroup \) -exec python3 -c '
 import grp, os, pwd, sys
 def orphan(lookup, ident):
     try:

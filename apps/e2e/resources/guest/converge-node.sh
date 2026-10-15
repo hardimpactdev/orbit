@@ -23,4 +23,4 @@ fingerprint=$(ssh-keygen -lf - -E sha256 <<<"$keys" | awk 'NR == 1 { print $2 }'
 [[ $fingerprint =~ ^SHA256:[A-Za-z0-9+/]{43}$ ]]
 sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit ORBIT_GATEWAY_CHECKOUT=/home/orbit/orbit/apps/gateway \
   DB_DATABASE=/home/orbit/.orbit/gateway.sqlite php artisan orbit:node-provision "$1" "$2" "${role[@]}" \
-  --architecture="$3" --user=orbit --wireguard-ip="$4" --host-key-fingerprint="$fingerprint" --no-interaction
+  --architecture="$3" --user=orbit --wireguard-ip="$4" --host-key-fingerprint="$fingerprint" --diagnostics --no-interaction

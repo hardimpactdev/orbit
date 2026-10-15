@@ -22,8 +22,4 @@ return [
         'guest_seconds' => env('ORBIT_E2E_GUEST_READINESS_SECONDS', 900),
         'seconds' => env('ORBIT_E2E_READINESS_SECONDS', 600),
     ],
-    'images' => [
-        'vm_source' => env('ORBIT_E2E_IMAGE_VM_SOURCE', 'images:ubuntu/26.04/cloud'),
-        'container_source' => env('ORBIT_E2E_IMAGE_CONTAINER_SOURCE', 'images:ubuntu/26.04'),
-    ],
 ];

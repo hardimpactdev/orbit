@@ -39,7 +39,7 @@ A [task VM's enrollment trusts its base image](/reference/compute-drivers#skip-w
 
 After the agent, the Gateway installs the [Orbit CLI](#orbit-cli) on a Node of the [fleet rollout set](/reference/gateway-recovery#rollout-set-and-order). A role converge does the same after its agent converge. Both are best effort: an unpublished CLI release or a failed install only logs a warning, and the fleet catch-up installs the CLI later.
 
-The Gateway console command `orbit:node-provision` runs the same steps for the first Node. Role firewall state comes from the shared Node firewall rule catalog, keeping initial provisioning and later role reconciliation consistent.
+The Gateway console command `orbit:node-provision` runs the same steps for the first Node. On failure, `--diagnostics` includes a redacted command-output tail: at most 40 lines and 4,000 characters. The topology harness uses it to report the prerequisite error. Role firewall state comes from the shared Node firewall rule catalog, keeping initial provisioning and later role reconciliation consistent.
 
 ### Bootstrap identity
 

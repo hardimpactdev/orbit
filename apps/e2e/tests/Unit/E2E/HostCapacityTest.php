@@ -31,7 +31,7 @@ function fakeCapacityHost(array $harnessInstances, array $subnets): void
         $instances = array_map(
             static fn (string $name): array => [
                 'name' => $name,
-                'type' => str_ends_with($name, '-operator') ? 'container' : 'virtual-machine',
+                'type' => 'virtual-machine',
                 'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
             ],
             $harnessInstances,
@@ -56,7 +56,7 @@ describe('HostCapacity', function () {
             ['10.232.1.1/24', '10.232.3.1/24', '192.168.1.1/24'],
         );
 
-        expect(new HostCapacity(new IncusHost, 6)->reserveSlot(4))->toBe(2);
+        expect(new HostCapacity(new IncusHost, 7)->reserveSlot(4))->toBe(2);
     });
 
     it('refuses when every network slot is taken', function () {
@@ -66,16 +66,16 @@ describe('HostCapacity', function () {
             ->toThrow(RuntimeException::class, 'network slots are exhausted');
     });
 
-    it('counts VMs only, so the operator container takes no VM budget', function (): void {
+    it('counts the operator VM against the topology budget', function (): void {
         fakeCapacityHost([
             'orbit-e2e-tst-1-aaaaaaaa-gateway',
             'orbit-e2e-tst-1-aaaaaaaa-app-dev',
             'orbit-e2e-tst-1-aaaaaaaa-operator',
         ], []);
 
-        expect(new HostCapacity(new IncusHost, 4)->reserveSlot(2))->toBe(1)
-            ->and(fn () => new HostCapacity(new IncusHost, 4)->reserveSlot(3))
-            ->toThrow(RuntimeException::class, 'capacity is exhausted: 2 harness VMs exist and the limit is 4');
+        expect(new HostCapacity(new IncusHost, 4)->reserveSlot(1))->toBe(1)
+            ->and(fn () => new HostCapacity(new IncusHost, 4)->reserveSlot(2))
+            ->toThrow(RuntimeException::class, 'capacity is exhausted: 3 harness VMs exist and the limit is 4');
     });
 
     it('ships a default budget of 24 VMs', function () {

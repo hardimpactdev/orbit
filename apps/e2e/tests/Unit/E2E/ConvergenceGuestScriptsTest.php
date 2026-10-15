@@ -186,11 +186,11 @@ describe('Gateway convergence', function () {
             ]);
     });
 
-    it('keeps every guest and image script valid Bash', function () {
+    it('keeps every guest script valid Bash', function () {
         $resources = dirname(__DIR__, 3).'/resources';
-        $scripts = [...glob($resources.'/guest/*.sh'), ...glob($resources.'/image/*.sh')];
+        $scripts = glob($resources.'/guest/*.sh');
 
-        expect($scripts)->toHaveCount(7);
+        expect($scripts)->toHaveCount(6);
         foreach ($scripts as $script) {
             expect(new Process(['bash', '-n', $script], timeout: 5)->run())->toBe(0, $script);
         }
@@ -205,7 +205,7 @@ describe('Node convergence', function () {
             ->and(commandLog($fixture))->toBe([
                 'ssh-keyscan -T 5 -t ed25519 -- 192.0.2.12',
                 "php artisan orbit:node-provision {$node} 192.0.2.12 --role={$role} --tld={$node} --architecture=aarch64 --user=orbit "
-                    ."--wireguard-ip={$address} --host-key-fingerprint=SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA --no-interaction",
+                    ."--wireguard-ip={$address} --host-key-fingerprint=SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA --diagnostics --no-interaction",
             ]);
     })->with([
         'development' => ['app-dev', 'app-dev', '10.44.0.2'],
@@ -219,7 +219,7 @@ describe('Node convergence', function () {
         expect(runGuestScript($fixture, ['provision', 'operator', '192.0.2.14', 'x86_64', '10.44.0.5'])->getExitCode())->toBe(0)
             ->and(commandLog($fixture)[1])->toBe(
                 'php artisan orbit:node-provision operator 192.0.2.14 --architecture=x86_64 --user=orbit --wireguard-ip=10.44.0.5 '
-                    .'--host-key-fingerprint=SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA --no-interaction',
+                    .'--host-key-fingerprint=SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA --diagnostics --no-interaction',
             );
     });
 
@@ -448,4 +448,18 @@ describe('topology verifier', function () {
         'other hash expected' => ['other hash expected', 1],
         'not mounted' => ['not mounted', 1],
     ]);
+});
+
+it('sets topology guest public DNS before cloud-init and restarts the resolver only when configuration changes', function (): void {
+    $work = temporaryPath('orbit-topology-dns-', 6);
+    mkdir($work.'/bin', 0755, true);
+    file_put_contents($work.'/bin/systemctl', '#!/bin/sh'."\n".'printf "%s\n" "$*" >> "$WORK/calls"');
+    chmod($work.'/bin/systemctl', 0755);
+    $source = str_replace('/etc/systemd/resolved.conf.d', $work.'/resolved', guestScriptSource('public-dns.sh'));
+    foreach ([1, 2] as $attempt) {
+        $process = new Process(['bash', '-ceu', $source], env: ['PATH' => $work.'/bin:'.getenv('PATH'), 'WORK' => $work]);
+        expect($process->run())->toBe(0, $process->getErrorOutput());
+    }
+    expect(file_get_contents($work.'/resolved/orbit-public-upstream.conf'))->toBe("[Resolve]\nDNS=1.1.1.1 8.8.8.8\n");
+    expect(file($work.'/calls', FILE_IGNORE_NEW_LINES))->toBe(['is-active --quiet systemd-resolved', 'restart systemd-resolved']);
 });

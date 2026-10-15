@@ -10,17 +10,19 @@ covers:
 
 ## Problem
 
-An Orbit task group has no [Incus topology](/reference/incus-topologies) by default. The reviewer requests one when discovery needs it. An acquired topology has the declared workload VMs plus a Gateway VM and a small operator system container. The operator container is separate from the VM counts and memory measurements below. ZFS makes the VM disk copies cheap. The prepared image contents, new writes inside each guest, and each VM's memory allocation still use resources.
+An Orbit task group has no [Incus topology](/reference/incus-topologies) by default. The reviewer requests one when discovery needs it. An acquired topology has the declared workload VMs plus a Gateway and an operator. Task groups import one recipe base and run every Node, including the operator, as a VM; the harness counts them against capacity. Pre-recipe groups must drain or be cancelled before deployment. The measurements below used that container and exclude its memory. ZFS makes the VM disk copies cheap. The prepared image contents, new writes inside each guest, and each VM's memory allocation still use resources.
 
 ## Cause
 
-Incus creates each guest from its role image with a native ZFS clone. The test pool already uses LZ4 compression and sparse 16 GiB root volumes, with no space reservation. Copying another VM does not copy every disk block. The guest root filesystem is ext4, which does not support file reflinks. A [dependency copy](/domains/applications#dependency-copy) inside the guest writes the copied data again.
+Incus creates each guest from the recipe base image with a native ZFS clone. The measured test pool used LZ4 compression and sparse 16 GiB root volumes, with no space reservation. Imported recipe images keep their source disk size instead of forcing that smaller limit. Copying another VM does not copy every disk block. The guest root filesystem is ext4, which does not support file reflinks. A [dependency copy](/domains/applications#dependency-copy) inside the guest writes the copied data again.
 
 The original prepared Gateway and app-prod guests held Docker images despite running no Docker containers. Each Node had the same 2 GiB memory budget, although their workloads differ.
 
 ## Improvements, in priority order
 
-The role image build cleans caches before it publishes an image, and the harness uses fixed memory limits when it creates Nodes. The filesystem change remains a candidate for follow-up work.
+The host builds and smokes only the base image once per recipe. A topology group imports that one image for every role and builds none, avoiding about 7 to 9 minutes of repeated work. Check transfer time, archive space, nested boot, and the operator VM's memory on a real task VM before treating this as a measured net saving.
+
+The recipe base build cleans caches before it publishes an image, and the harness uses fixed memory limits when it creates Nodes. The filesystem change remains a candidate for follow-up work.
 
 | Priority | Candidate | Measured benefit | Added complexity |
 | --- | --- | --- | --- |
@@ -32,7 +34,7 @@ The role image build cleans caches before it publishes an image, and the harness
 
 The Gateway and app-prod experiments removed unused Docker images and ran `apt-get clean`, then `fstrim /`. They kept the installed tools, service configuration, application data, and running services. Together, their referenced disk data fell by about 9.2 GiB. Docker's logical reclaimed-space report differed from the ZFS result, so measure the ZFS volume too.
 
-The [role image build](/reference/incus-topologies#role-images) does this before it publishes an image: it clears cached APT archives, flushes root filesystem deletions with `sync -f /`, and trims the root of a VM. Role images start from the stock image, so they hold no Docker images that a role does not pull itself. The flush lets discard reach blocks whose deletions were still pending.
+The [recipe base build](/reference/compute-drivers#build-the-base-image) does this before it publishes an image: it clears cached APT archives, flushes root filesystem deletions with `sync -f /`, and trims the root of a VM. The base contains the recipe software; topology-specific Gateway and VPN programs run at convergence. The flush lets discard reach blocks whose deletions were still pending.
 
 Trimming a clone does not free blocks that its parent image still references. The experiment reduced the clone's referenced data. It did not prove an equal reduction in total pool usage.
 

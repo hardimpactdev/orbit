@@ -25,7 +25,7 @@ final class PrepareTaskVmRuntime implements ShouldBeUnique, ShouldQueue
 
     public int $backoff = 30;
 
-    public int $timeout = 900;
+    public int $timeout = 1500;
 
     /** Only a confirmed pre-submit failure releases our lock; an uncertain submission must stay unique. */
     public static function enqueue(int $taskVmId): void

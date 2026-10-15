@@ -4,7 +4,7 @@
     "app-dev": {"declarable": true, "base_role": "app-dev", "image": "app-dev", "address": 11, "checkout": true, "memory": "2GiB", "tld": "beast"},
     "app-prod": {"declarable": true, "base_role": "app-prod", "image": "app-prod", "address": 12, "checkout": false, "memory": "1GiB", "tld": "app-prod"},
     "app-prod-2": {"declarable": true, "base_role": "app-prod", "image": "app-prod", "address": 13, "checkout": false, "memory": "1GiB", "tld": "app-prod-2", "requires": "app-prod"},
-    "operator": {"declarable": false, "image": "operator", "address": 14, "checkout": true, "memory": "512MiB"}
+    "operator": {"declarable": false, "image": "operator", "address": 14, "checkout": true, "memory": "1GiB"}
   },
   "default": ["app-dev", "app-prod"],
   "extra_roles": ["ingress"],

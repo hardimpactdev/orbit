@@ -134,6 +134,16 @@ class ImageRecipeTest(unittest.TestCase):
             recipe.image_agent(self.payload)
         download.assert_not_called()
 
+    def test_smoke_rejects_broken_pnpm_even_when_its_package_metadata_matches(self):
+        self.payload.update({'identity': 'sha256:current', 'tools': {'pnpm': {'version': '12.11.2'}}})
+        marker = json.dumps({'identity': self.payload['identity'], 'profile': 'base'})
+        with patch.object(recipe.Path, 'read_text', return_value=marker), \
+             patch.object(recipe, 'inspect', return_value={'pnpm': '12.11.2'}), \
+             patch.object(recipe, 'run', side_effect=recipe.RecipeFailure('pnpm executable failed')) as command:
+            with self.assertRaises(recipe.RecipeFailure):
+                recipe.image_verify(self.payload)
+        self.assertEqual(command.call_args.args[0][-2:], ['/usr/local/bin/pnpm', '--version'])
+
     def test_smoke_rejects_wrong_recipe_identity_before_checking_software(self):
         self.payload.update({'identity': 'sha256:current'})
         with patch.object(recipe.Path, 'read_text', return_value='{"identity":"sha256:old","profile":"base"}'):

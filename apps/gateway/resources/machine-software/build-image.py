@@ -166,6 +166,11 @@ def image_verify(payload):
     observed = inspect(selected)
     if any(observed[name] != pin['version'] for name, pin in selected.items()):
         raise RecipeFailure()
+    if 'pnpm' in selected:
+        result = run(['sudo', '-u', 'orbit', '-H', 'env', '-C', '/home/orbit',
+                      '/usr/local/bin/pnpm', '--version'])
+        if result.stdout.strip() != selected['pnpm']['version']:
+            raise RecipeFailure()
     for name, path in [('pi', '/home/orbit/.local/bin/pi-server'), ('orbit-agent', '/usr/local/bin/orbit-agent')]:
         if name in payload['tools']:
             artifact = payload['tools'][name]['artifacts'][payload['architecture']]

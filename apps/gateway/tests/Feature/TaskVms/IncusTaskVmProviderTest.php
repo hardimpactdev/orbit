@@ -157,6 +157,25 @@ it('launches a medium VM with 4 vCPU, 8 GiB, a 40 GiB disk, and free page report
         ]]);
 });
 
+it('launches the recorded fingerprint even when the host alias changes', function (): void {
+    $fingerprint = str_repeat('c', 64);
+    $this->vm->update(['recipe_identity' => 'sha256:'.str_repeat('a', 64), 'image_fingerprint' => $fingerprint]);
+    ($this->answer)(incusList(), incusResult());
+
+    $this->provider->create($this->vm, "#cloud-config\n");
+
+    expect(($this->argv)()[1])->toContain($fingerprint)->not->toContain('orbit-task-base');
+});
+
+it('rejects an existing VM that booted a different fingerprint than its claim', function (): void {
+    $this->vm->update(['recipe_identity' => 'sha256:'.str_repeat('a', 64), 'image_fingerprint' => str_repeat('c', 64)]);
+    $instance = incusInstance('tvm-1');
+    $instance['config'] = ['volatile.base_image' => str_repeat('b', 64)];
+    ($this->answer)(incusList($instance));
+
+    expect(fn () => $this->provider->create($this->vm, ''))->toThrow(TaskVmException::class, 'did not launch its claimed recipe image');
+});
+
 it('observes the image the VM actually booted rather than the current base alias', function (): void {
     $instance = incusInstance();
     $instance['config'] = ['volatile.base_image' => str_repeat('b', 64)];
