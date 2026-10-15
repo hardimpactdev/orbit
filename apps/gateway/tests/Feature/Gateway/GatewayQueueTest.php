@@ -153,11 +153,11 @@ describe(GatewayQueueRedis::class, function (): void {
 });
 
 describe('Horizon', function (): void {
-    it('works tasks with three processes, task-vms and builds with one each, below the connection retry_after', function (): void {
+    it('works tasks with three processes, builds with two and task-vms with one, below the connection retry_after', function (): void {
         expect(config('horizon.use'))->toBe(GatewayQueue::Connection)
             ->and(config('horizon.fast_termination'))->toBeFalse()
             ->and([config('horizon.defaults.tasks.queue'), config('horizon.defaults.tasks.minProcesses'), config('horizon.defaults.tasks.maxProcesses')])->toBe([['tasks'], 3, 3])
-            ->and([config('horizon.defaults.builds.queue'), config('horizon.defaults.builds.minProcesses'), config('horizon.defaults.builds.maxProcesses')])->toBe([['builds'], 1, 1])
+            ->and([config('horizon.defaults.builds.queue'), config('horizon.defaults.builds.minProcesses'), config('horizon.defaults.builds.maxProcesses')])->toBe([['builds'], 2, 2])
             ->and([config('horizon.defaults.task-vms.queue'), config('horizon.defaults.task-vms.minProcesses'), config('horizon.defaults.task-vms.maxProcesses')])->toBe([['task-vms'], 1, 1])
             ->and(config('horizon.defaults.builds.timeout'))->toBeLessThan(config('queue.connections.gateway.retry_after'))
             ->and(array_keys(config('horizon.environments')))->toBe(['*']);
