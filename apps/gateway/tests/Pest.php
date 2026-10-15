@@ -146,6 +146,13 @@ pest()->tia()->watch([
     'resources/analytics/clickhouse/**/*.xml' => 'tests/Feature/Infrastructure/Analytics/NativeAnalyticsClickhouseConfigurationManagerTest.php',
     'resources/fpm/opcache-reset.php' => 'tests/Feature/GatewayReleases/GatewayRuntimeHandoffTest.php',
     'resources/private-dns/serve.php' => 'tests/Feature/Infrastructure/AppDev',
+    // Remote programs. bin/remote-programs-check lints them and runs tests/Programs; Pest reruns their PHP callers.
+    'resources/remote/bootstrap.py' => 'tests/Feature/Infrastructure/RemotePrograms',
+    'resources/remote/lib/program.py' => 'tests/Feature/Infrastructure/RemotePrograms',
+    'resources/remote/lib/source-removal.py' => 'tests/Feature/Infrastructure/Instances/RemoteDevelopmentInstanceSourceLifecycleTest.php',
+    'resources/remote/instances/*.py' => 'tests/Feature/Infrastructure/Instances/RemoteDevelopmentInstanceSourceLifecycleTest.php',
+    'tests/Programs/*.py' => 'tests/Feature/Infrastructure/RemotePrograms',
+    'ruff.toml' => 'tests/Feature/Infrastructure/RemotePrograms',
 ]);
 
 /** @param list<array{name: string, phase: string, command: string, timeout_seconds: int}> $steps */

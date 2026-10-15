@@ -168,6 +168,7 @@ use App\Domain\ProxyCli\ProxyCliState;
 use App\Domain\Releases\GatewayReleaseAlertNotifier;
 use App\Domain\Releases\ReleaseAlertNotifier;
 use App\Domain\Releases\ReleaseAlertWebhook;
+use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\Routes\ClusterRouterReplacementProjector;
 use App\Domain\Routes\CustomProxyRouteProjector;
 use App\Domain\Routes\PublicRouteEdgeProjector;
@@ -362,6 +363,7 @@ use App\Infrastructure\ProxyCli\RecordingProxyCliPublicationManager;
 use App\Infrastructure\ProxyCli\RecordingProxyCliRuntimeLifecycle;
 use App\Infrastructure\ProxyCli\ValkeyProxyCliCache;
 use App\Infrastructure\Releases\HttpReleaseAlertWebhook;
+use App\Infrastructure\RemotePrograms\SshProgramRunner;
 use App\Infrastructure\Routes\NativeClusterRouterReplacementProjector;
 use App\Infrastructure\Routes\NativeCustomProxyRouteProjector;
 use App\Infrastructure\Routes\NativePublicRouteEdgeProjector;
@@ -440,6 +442,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         DevelopmentInstanceBranchInspector::class => RemoteDevelopmentInstanceSourceLifecycle::class,
         RegistrationSourceManager::class => RemoteRegistrationSourceManager::class,
         DevelopmentInstanceSourceRemoval::class => RemoteDevelopmentInstanceSourceRemoval::class,
+        RemoteProgramRunner::class => SshProgramRunner::class,
         ProductionInstanceContentRetention::class => RecordedProductionInstanceContentRetention::class,
         InstanceRemover::class => DestroyInstanceAction::class,
         InstanceRemovalProjector::class => NativeInstanceRemovalProjector::class,

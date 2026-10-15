@@ -73,7 +73,8 @@ final class FleetFixtures
     /** @param list<RoleName> $roles */
     public static function node(string $name, array $roles = [], string $platform = 'linux', bool $managed = true, LifecycleStatus $status = LifecycleStatus::Active): Node
     {
-        $address = ++self::$address;
+        // The counter outlives each test in a parallel worker; keep the last octet a valid host address (11-250).
+        $address = 11 + (self::$address++ - 10) % 240;
         $node = Node::query()->create([
             'name' => $name,
             'status' => $status,

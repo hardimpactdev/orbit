@@ -6,6 +6,7 @@ namespace App\Infrastructure\Instances;
 
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Instances\InstanceCreationRecovery;
 use App\Domain\Instances\InstanceSourceLayout;
@@ -21,14 +22,15 @@ use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Projects\ProjectSourceAccess;
+use App\Domain\RemotePrograms\ProgramResult;
+use App\Domain\RemotePrograms\RemoteProgramFailed;
+use App\Domain\RemotePrograms\RemoteProgramFailure;
+use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\Schedules\ScheduleRenderer;
 use App\Domain\SourceControl\GitRepositoryIdentity;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
-use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
-use App\Infrastructure\SourceControl\WorkspaceGit;
-use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
 use App\Models\Instance;
 use App\Models\InstanceRemovalMember;
 use App\Models\Node;
@@ -37,31 +39,34 @@ use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
+use stdClass;
 
 final readonly class RemoteDevelopmentInstanceSourceRemoval implements DevelopmentInstanceSourceFinalizer, DevelopmentInstanceSourceRemoval
 {
     /**
-     * Exit statuses that the guest inspection and removal scripts use to name the identity check they refused.
+     * The outcomes with which `instances.inspect-source` and `instances.remove-source` name the identity check they
+     * refused ([Remote programs](/reference/remote-programs#programs)).
      *
-     * @var array<int, InstanceSourceMismatch>
+     * @var array<string, InstanceSourceMismatch>
      */
-    private const array ScriptMismatches = [
-        10 => InstanceSourceMismatch::Path,
-        11 => InstanceSourceMismatch::Ownership,
-        12 => InstanceSourceMismatch::Layout,
-        13 => InstanceSourceMismatch::Origin,
-        14 => InstanceSourceMismatch::Branch,
-        15 => InstanceSourceMismatch::Worktrees,
+    private const array ProgramMismatches = [
+        'path_mismatch' => InstanceSourceMismatch::Path,
+        'ownership_mismatch' => InstanceSourceMismatch::Ownership,
+        'layout_mismatch' => InstanceSourceMismatch::Layout,
+        'origin_mismatch' => InstanceSourceMismatch::Origin,
+        'branch_mismatch' => InstanceSourceMismatch::Branch,
+        'worktrees_mismatch' => InstanceSourceMismatch::Worktrees,
     ];
 
-    /** Exit status of the guest removal script when normal removal found dirty or unpublished source. */
-    private const int UnsafeContentStatus = 20;
+    /** The outcomes of a program step that refused or failed. The step fails with its own error code. */
+    private const array FailedOutcomes = ['refused', 'failed', 'cross_device'];
 
-    /** Exit status of the guest removal script when the source changed between inspection and deletion. */
-    private const int ChangedSourceStatus = 21;
+    /** The fields of the inspection evidence, each base64 of the bytes the Node read. */
+    private const array InspectionFields = ['top', 'common', 'origin', 'branch', 'commit', 'dirty', 'source_identity', 'worktrees'];
 
     public function __construct(
-        private DevelopmentSshExecutor $ssh,
+        private RemoteProgramRunner $programs,
+        private RemoteProgramCatalog $catalog,
         private ManagedUserAccountResolver $accounts,
         private CheckoutRemovalBoundary $boundaries,
         private AppDevSourceOperationLock $lock,
@@ -138,40 +143,33 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
         bool $unresolved = false,
         bool $allowAbsent = false,
     ): InstanceSourceInventory {
-        $result = $this->executeRefusable(
+        $result = $this->runRefusable(
             $instance,
-            new RemoteCommand(
-                arguments: [
-                    'bash',
-                    '-seu',
-                    '--',
-                    $physicalCheckout,
-                    $root->value,
-                    $user,
-                    $group,
-                    $layout,
-                    $expectedBranch ?? '',
-                    $inspectContent && ! $force ? '1' : '0',
-                    $unresolved ? '1' : '0',
-                    $allowAbsent ? '1' : '0',
-                    $instance->project->repository_url,
-                    $instance->source_prepare_id ?? '',
-                ],
-                input: self::inspectionScript(),
-            ),
+            'instances.inspect-source',
+            [
+                'checkout' => $physicalCheckout,
+                'root' => $root->value,
+                'user' => $user,
+                'group' => $group,
+                'layout' => $layout,
+                'branch' => $expectedBranch ?? '',
+                'inspect_content' => $inspectContent && ! $force,
+                'unresolved' => $unresolved,
+                'allow_absent' => $allowAbsent,
+                'origin' => $instance->project->repository_url,
+                'prepare_id' => $instance->source_prepare_id ?? '',
+            ],
             step: 'app-instance-source-removal-inspect',
             force: $force,
         );
 
-        $values = preg_split('/\R/', preg_replace('/\r?\n\z/', '', $result->stdout) ?? $result->stdout);
-
-        if (! is_array($values) || count($values) !== 8) {
+        if ($result->outcome !== 'inspected') {
             $this->invalidEvidence($instance, $force);
         }
 
         [$top, $common, $origin, $branch, $commit, $dirty, $sourceIdentity, $worktrees] = array_map(
-            fn (string $value): string => $this->decode($value, $instance, $force),
-            $values,
+            fn (string $field): string => $this->decode($result->string($field), $instance, $force),
+            self::InspectionFields,
         );
         $branch = $branch === '' ? null : $branch;
         $top = $top === $physicalCheckout ? $logicalCheckout : $top;
@@ -299,34 +297,31 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
         $groupingDirectory = $this->boundaries
             ->instanceGroupingDirectory($instance)
             ->value;
-        $script = GitReadScript::for(
-            $this->access->for($inventory->origin, $this->sourceAccess($instance->project_id)),
-            self::releaseEmptyGroupingDirectoryFunction(self::stopsCheckoutProcesses($instance), self::ownUnits($instance)).self::removalScript(),
-        );
-        $this->executeRefusable(
+        $result = $this->runRefusable(
             $instance,
-            new RemoteCommand(
-                arguments: [
-                    'bash',
-                    '-seu',
-                    '--',
-                    $inventory->checkoutPath,
-                    $inventory->root,
-                    $groupingDirectory,
-                    $context['user'],
-                    $context['group'],
-                    $inventory->branch ?? '',
-                    $inventory->startingCommit,
-                    $inventory->sourceIdentity,
-                    $inventory->repositoryIdentity,
-                    $force ? '1' : '0',
-                ],
-                input: $script->input,
-                protectedInput: $script->protectedInput,
-            ),
+            'instances.remove-source',
+            [
+                'checkout' => $inventory->checkoutPath,
+                'root' => $inventory->root,
+                'grouping_directory' => $groupingDirectory,
+                'user' => $context['user'],
+                'group' => $context['group'],
+                'branch' => $inventory->branch ?? '',
+                'commit' => $inventory->startingCommit,
+                'source_identity' => $inventory->sourceIdentity,
+                'repository_identity' => $inventory->repositoryIdentity,
+                'force' => $force,
+                'stop_processes' => self::stopsCheckoutProcesses($instance),
+                'own_units' => self::ownUnits($instance),
+            ],
             step: 'app-instance-source-remove',
             force: $force,
+            gitRead: $this->access->for($inventory->origin, $this->sourceAccess($instance->project_id)),
         );
+
+        if ($result->outcome !== 'removed') {
+            $this->invalidEvidence($instance, $force);
+        }
     }
 
     public function prepare(
@@ -336,26 +331,21 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
         $this->lock->synchronized($member->node_id, function () use ($member, $expectation): void {
             $this->inspectRecordedLocked($member, InstanceSourceRevalidationState::Present, $expectation);
             [$node, $user, $group, $root] = $this->memberContext($member);
-            $this->ssh->execute(
+            $this->runStep(
                 $node,
-                new RemoteCommand(
-                    arguments: [
-                        'bash',
-                        '-seu',
-                        '--',
-                        $root->value,
-                        $member->instance_removal_id,
-                        (string) $member->id,
-                        $member->source_digest,
-                        $user,
-                        $group,
-                        (string) $member->checkout_path,
-                        (string) $member->common_repository_path,
-                        $member->source_layout,
-                        (string) $member->source_identity,
-                    ],
-                    input: self::preparationScript(),
-                ),
+                'instances.prepare-source-removal',
+                [
+                    'root' => $root->value,
+                    'operation' => $member->instance_removal_id,
+                    'member' => (string) $member->id,
+                    'digest' => $member->source_digest,
+                    'user' => $user,
+                    'group' => $group,
+                    'checkout' => (string) $member->checkout_path,
+                    'common_repository' => (string) $member->common_repository_path,
+                    'layout' => $member->source_layout,
+                    'source_identity' => (string) $member->source_identity,
+                ],
                 step: 'app-instance-removal-prepare',
                 errorCode: 'instance.remove_refused',
             );
@@ -446,46 +436,38 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                 && ($inventory->sourceIdentity === 'absent'
                     || $instance->registration_request_id === null
                     && InstanceCreationRecovery::isPreActivation($instance, removing: true));
-            $input = self::releaseEmptyGroupingDirectoryFunction(self::stopsCheckoutProcesses($instance), self::ownUnits($instance)).self::finalizationScript();
-            $script = $failedCreation ? null : GitReadScript::for(
-                $this->access->for($inventory->origin, $this->sourceAccess($member->project_id)),
-                $input,
-            );
-            $result = $this->ssh->execute(
+            $result = $this->runStep(
                 $node,
-                new RemoteCommand(
-                    arguments: [
-                        'bash',
-                        '-seu',
-                        '--',
-                        (string) $member->checkout_path,
-                        $root->value,
-                        (string) $member->common_repository_path,
-                        $member->source_layout,
-                        $member->branch ?? '',
-                        $member->instance_removal_id,
-                        (string) $member->id,
-                        $member->source_digest,
-                        $receipt,
-                        $removal->force || $failedCreation ? '1' : '0',
-                        $user,
-                        $group,
-                        (string) $member->source_identity,
-                        $inventory->origin,
-                        base64_encode($inventory->worktreeInventory),
-                        (string) $member->source_commit,
-                        $groupingDirectory,
-                        $member->starting_commit === null && ! $member->runtime_published ? '1' : '0',
-                        $this->independentForcedWorktree($member) ? '1' : '0',
-                    ],
-                    input: $failedCreation ? $input : $script?->input,
-                    protectedInput: $script?->protectedInput,
-                ),
+                'instances.finalize-source-removal',
+                [
+                    'checkout' => (string) $member->checkout_path,
+                    'root' => $root->value,
+                    'common_repository' => (string) $member->common_repository_path,
+                    'layout' => $member->source_layout,
+                    'branch' => $member->branch ?? '',
+                    'operation' => $member->instance_removal_id,
+                    'member' => (string) $member->id,
+                    'digest' => $member->source_digest,
+                    'receipt' => $receipt,
+                    'force' => $removal->force || $failedCreation,
+                    'user' => $user,
+                    'group' => $group,
+                    'source_identity' => (string) $member->source_identity,
+                    'origin' => $inventory->origin,
+                    'worktrees' => base64_encode($inventory->worktreeInventory),
+                    'commit' => (string) $member->source_commit,
+                    'grouping_directory' => $groupingDirectory,
+                    'unresolved' => $member->starting_commit === null && ! $member->runtime_published,
+                    'independent_worktree' => $this->independentForcedWorktree($member),
+                    'stop_processes' => self::stopsCheckoutProcesses($instance),
+                    'own_units' => self::ownUnits($instance),
+                ],
                 step: 'app-instance-source-finalization',
                 errorCode: 'instance.removal_incomplete',
+                gitRead: $failedCreation ? null : $this->access->for($inventory->origin, $this->sourceAccess($member->project_id)),
             );
 
-            if (trim($result->stdout) !== $receipt) {
+            if ($result->string('receipt') !== $receipt) {
                 throw new RuntimeConvergenceException(
                     step: 'app-instance-source-finalization',
                     errorCode: 'instance.finalization_evidence_invalid',
@@ -641,33 +623,28 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
     private function cleanupReceiptLocked(InstanceRemovalMember $member, string $receipt): string
     {
         [$node, $user, $group, $root, $groupingDirectory] = $this->memberContext($member);
-        $result = $this->ssh->execute(
+        $result = $this->runStep(
             $node,
-            new RemoteCommand(
-                arguments: [
-                    'bash',
-                    '-seu',
-                    '--',
-                    (string) $member->checkout_path,
-                    $root->value,
-                    (string) $member->common_repository_path,
-                    $member->source_layout,
-                    $member->instance_removal_id,
-                    (string) $member->id,
-                    $member->source_digest,
-                    $receipt,
-                    $user,
-                    $group,
-                    (string) $member->source_identity,
-                    $groupingDirectory,
-                ],
-                input: self::releaseEmptyGroupingDirectoryFunction().self::receiptCleanupScript(),
-            ),
+            'instances.clean-removal-receipt',
+            [
+                'checkout' => (string) $member->checkout_path,
+                'root' => $root->value,
+                'common_repository' => (string) $member->common_repository_path,
+                'layout' => $member->source_layout,
+                'operation' => $member->instance_removal_id,
+                'member' => (string) $member->id,
+                'digest' => $member->source_digest,
+                'receipt' => $receipt,
+                'user' => $user,
+                'group' => $group,
+                'source_identity' => (string) $member->source_identity,
+                'grouping_directory' => $groupingDirectory,
+            ],
             step: 'app-instance-source-finalization',
             errorCode: 'instance.removal_incomplete',
         );
 
-        if (trim($result->stdout) !== $receipt) {
+        if ($result->string('receipt') !== $receipt) {
             throw new RuntimeConvergenceException(
                 step: 'app-instance-source-finalization',
                 errorCode: 'instance.finalization_evidence_invalid',
@@ -681,33 +658,28 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
     private function receiptStructureStateLocked(InstanceRemovalMember $member): string
     {
         [$node, $user, $group, $root] = $this->memberContext($member);
-        $result = $this->ssh->execute(
+        $result = $this->runStep(
             $node,
-            new RemoteCommand(
-                arguments: [
-                    'bash',
-                    '-seu',
-                    '--',
-                    (string) $member->checkout_path,
-                    $root->value,
-                    (string) $member->common_repository_path,
-                    $member->source_layout,
-                    $member->instance_removal_id,
-                    (string) $member->id,
-                    $member->source_digest,
-                    $this->receipt($member),
-                    $user,
-                    $group,
-                    (string) $member->source_identity,
-                ],
-                input: self::receiptStructureScript(),
-            ),
+            'instances.read-removal-receipt',
+            [
+                'checkout' => (string) $member->checkout_path,
+                'root' => $root->value,
+                'common_repository' => (string) $member->common_repository_path,
+                'layout' => $member->source_layout,
+                'operation' => $member->instance_removal_id,
+                'member' => (string) $member->id,
+                'digest' => $member->source_digest,
+                'receipt' => $this->receipt($member),
+                'user' => $user,
+                'group' => $group,
+                'source_identity' => (string) $member->source_identity,
+            ],
             step: 'app-instance-removal-revalidation',
             errorCode: 'instance.removal_conflict',
         );
 
-        return match (trim($result->stdout)) {
-            'complete', 'incomplete', 'intact' => trim($result->stdout),
+        return match ($result->outcome) {
+            'complete', 'incomplete', 'intact' => $result->outcome,
             default => $this->recordedConflict(
                 $member,
                 'Instance removal returned invalid receipt-recovery evidence.',
@@ -720,30 +692,25 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
     ): InstanceSourceRevalidationState {
         $this->assertDevelopmentMember($member);
         [$node, $user, $group, $root, $groupingDirectory] = $this->memberContext($member);
-        $result = $this->ssh->execute(
+        $result = $this->runStep(
             $node,
-            new RemoteCommand(
-                arguments: [
-                    'bash',
-                    '-seu',
-                    '--',
-                    (string) $member->checkout_path,
-                    $root->value,
-                    $member->instance_removal_id,
-                    (string) $member->id,
-                    $member->source_digest,
-                    $this->receipt($member),
-                    (string) $member->source_identity,
-                    $user,
-                    $group,
-                    $groupingDirectory,
-                ],
-                input: self::releaseEmptyGroupingDirectoryFunction().self::revalidationScript(),
-            ),
+            'instances.read-source-removal-state',
+            [
+                'checkout' => (string) $member->checkout_path,
+                'root' => $root->value,
+                'operation' => $member->instance_removal_id,
+                'member' => (string) $member->id,
+                'digest' => $member->source_digest,
+                'receipt' => $this->receipt($member),
+                'source_identity' => (string) $member->source_identity,
+                'user' => $user,
+                'group' => $group,
+                'grouping_directory' => $groupingDirectory,
+            ],
             step: 'app-instance-removal-revalidation',
             errorCode: 'instance.removal_conflict',
         );
-        $state = InstanceSourceRevalidationState::tryFrom(trim($result->stdout));
+        $state = InstanceSourceRevalidationState::tryFrom(str_replace('_', '-', $result->outcome));
 
         if (! $state instanceof InstanceSourceRevalidationState) {
             $this->recordedConflict($member, 'Instance removal returned invalid source-presence evidence.');
@@ -1079,27 +1046,24 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
 
     private function isPublished(Instance $instance, string $origin, string $commit): bool
     {
-        $script = GitReadScript::for($this->access->for($origin, $this->sourceAccess($instance->project_id)), self::publicationScript());
-        $result = $this->ssh->execute(
+        $result = $this->runStep(
             $instance->node,
-            new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $origin, $commit],
-                input: $script->input,
-                protectedInput: $script->protectedInput,
-            ),
+            'instances.check-publication',
+            ['origin' => $origin, 'commit' => $commit],
             step: 'app-instance-source-removal-publication',
             errorCode: 'instance.remove_refused',
+            gitRead: $this->access->for($origin, $this->sourceAccess($instance->project_id)),
         );
 
-        return trim($result->stdout) === '1';
+        return $result->outcome === 'published';
     }
 
     private function decode(
-        string $value,
+        ?string $value,
         Instance $instance,
         bool $force,
     ): string {
-        $decoded = base64_decode($value, true);
+        $decoded = is_string($value) ? base64_decode($value, true) : false;
 
         if (! is_string($decoded)) {
             $this->invalidEvidence($instance, $force);
@@ -1109,73 +1073,136 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
     }
 
     /**
-     * Run a guest script that refuses with a named exit status, and translate that status into its error code.
+     * Run a program whose outcome names the check it refused, and turn that outcome into its error code.
+     *
+     * @param  array<string, mixed>  $input
      */
-    private function executeRefusable(
+    private function runRefusable(
         Instance $instance,
-        RemoteCommand $command,
+        string $program,
+        array $input,
         string $step,
         bool $force,
-    ): CommandResult {
-        try {
-            return $this->ssh->execute(
-                $instance->node,
-                $command,
-                step: $step,
-                errorCode: $this->failureCode($force),
-            );
-        } catch (RuntimeConvergenceException $exception) {
-            $this->refuse($instance, $force, $exception);
-        }
-    }
-
-    private function refuse(Instance $instance, bool $force, RuntimeConvergenceException $exception): never
-    {
-        if (
-            $exception->errorCode !== $this->failureCode($force)
-            || ! $exception->result instanceof CommandResult
-        ) {
-            throw $exception;
-        }
-
-        $status = $exception->result->exitCode;
-        $mismatch = self::ScriptMismatches[$status] ?? null;
+        ?GitReadEnvironment $gitRead = null,
+    ): ProgramResult {
+        $result = $this->runStep($instance->node, $program, $input, $step, $this->failureCode($force), $gitRead);
+        $mismatch = self::ProgramMismatches[$result->outcome] ?? null;
 
         if ($mismatch instanceof InstanceSourceMismatch) {
-            $this->mismatch($instance, $mismatch, $exception->step);
+            $this->mismatch($instance, $mismatch, $step, self::output($result));
         }
 
-        match ($status) {
-            self::UnsafeContentStatus => $this->unsafeContent($instance, $exception->step),
-            self::ChangedSourceStatus => throw new RuntimeConvergenceException(
-                step: $exception->step,
+        return match ($result->outcome) {
+            'unsafe_content' => $this->unsafeContent($instance, $step, self::output($result)),
+            'source_changed' => throw new RuntimeConvergenceException(
+                step: $step,
                 errorCode: 'instance.removal_conflict',
                 message: "Instance [{$instance->name}] source changed after inspection.",
+                result: self::output($result),
             ),
-            default => throw $exception,
+            default => $result,
         };
+    }
+
+    /**
+     * Run a program on the Node. A run without a result, and the outcomes that refuse, fail the step with its error
+     * code. A timeout or cancellation keeps its own failure.
+     *
+     * @param  array<string, mixed>  $input
+     */
+    private function runStep(
+        Node $node,
+        string $program,
+        array $input,
+        string $step,
+        string $errorCode,
+        ?GitReadEnvironment $gitRead = null,
+    ): ProgramResult {
+        try {
+            $result = $this->programs->run($node, $this->catalog->program($program), $input, $gitRead);
+        } catch (RemoteProgramFailed $exception) {
+            if ($exception->reason === RemoteProgramFailure::Unreachable) {
+                throw new RuntimeConvergenceException(
+                    step: $step,
+                    errorCode: 'app-dev.wireguard_ip_missing',
+                    message: "Node [{$node->name}] has no WireGuard address.",
+                    previous: $exception,
+                );
+            }
+
+            if (in_array($exception->reason, [RemoteProgramFailure::TimedOut, RemoteProgramFailure::Cancelled], true)) {
+                throw $exception;
+            }
+
+            $this->stepFailed($node, $step, $errorCode, new CommandResult($exception->exitCode ?? 1, '', $exception->log, 0, false), $exception);
+        }
+
+        if (in_array($result->outcome, self::FailedOutcomes, true)) {
+            $this->stepFailed($node, $step, $errorCode, self::output($result));
+        }
+
+        return $result;
+    }
+
+    /**
+     * The step's failure with the program's output, so the Activity of the command keeps it, such as a line that starts
+     * with `cross-device:`.
+     */
+    private function stepFailed(
+        Node $node,
+        string $step,
+        string $errorCode,
+        CommandResult $output,
+        ?RemoteProgramFailed $previous = null,
+    ): never {
+        throw new RuntimeConvergenceException(
+            step: $step,
+            errorCode: $errorCode,
+            message: "App development step [{$step}] failed on node [{$node->name}].",
+            previous: $previous,
+            result: $output,
+        );
+    }
+
+    /**
+     * A refusing outcome as command output: the result line on standard output and the program's log on standard error.
+     * The exit status is 1, because the step failed although the program ended normally.
+     */
+    private static function output(ProgramResult $result): CommandResult
+    {
+        return new CommandResult(
+            exitCode: 1,
+            stdout: json_encode(['outcome' => $result->outcome, 'data' => $result->data === [] ? new stdClass : $result->data], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n",
+            stderr: $result->log,
+            durationMs: 0,
+            truncated: false,
+        );
     }
 
     private function mismatch(
         Instance $instance,
         InstanceSourceMismatch $mismatch,
         string $step = 'app-instance-source-removal-inspect',
+        ?CommandResult $output = null,
     ): never {
         throw new RuntimeConvergenceException(
             step: $step,
             errorCode: $mismatch->value,
             message: $mismatch->describe($instance->name),
+            result: $output,
         );
     }
 
     private function unsafeContent(
         Instance $instance,
         string $step = 'app-instance-source-removal-inspect',
+        ?CommandResult $output = null,
     ): never {
         throw new RuntimeConvergenceException(
             step: $step,
             errorCode: 'instance.remove_refused',
             message: "Instance [{$instance->name}] has dirty or unpublished source.",
+            result: $output,
         );
     }
 
@@ -1191,990 +1218,6 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
     private function failureCode(bool $force): string
     {
         return $force ? 'instance.force_failed' : 'instance.remove_refused';
-    }
-
-    private static function preparationScript(): string
-    {
-        return WorkspaceGit::bashPreamble().<<<'BASH'
-            root=$1
-            operation=$2
-            member=$3
-            digest=$4
-            managed_user=$5
-            managed_group=$6
-            checkout=$7
-            common_repository=$8
-            layout=$9
-            source_identity=${10}
-            state="$root/.orbit-removals"
-            journal="$state/$operation.$member.journal"
-            receipt="$state/$operation.$member.receipt"
-            quarantine="$state/$operation.$member.quarantine"
-            recovery="$state/$operation.$member.recovery"
-            test -d "$root"
-            test ! -L "$root"
-            test "$(realpath -e "$root")" = "$root"
-            test "$(stat -c '%U:%G' "$root")" = "$managed_user:$managed_group"
-            if [ -e "$state" ] || [ -L "$state" ]; then
-                test -d "$state"
-                test ! -L "$state"
-                test "$(realpath -e "$state")" = "$state"
-            else
-                install -d -m 0700 -- "$state"
-            fi
-            test "$(stat -c '%U:%G' "$state")" = "$managed_user:$managed_group"
-            test ! -e "$receipt"
-            test ! -L "$receipt"
-            test ! -e "$quarantine"
-            test ! -L "$quarantine"
-            test ! -e "$recovery"
-            test ! -L "$recovery"
-            if [ "$source_identity" = absent ]; then
-                # Authenticated absence owns no Git directory, including in a seed repository.
-                test ! -e "$checkout"
-                test ! -L "$checkout"
-            else
-                case "$layout" in
-                    checkout) ;;
-                    worktree)
-                        test -f "$checkout/.git"
-                        test ! -L "$checkout/.git"
-                        git_dir=$(git -C "$checkout" rev-parse --absolute-git-dir)
-                        test "$(dirname "$git_dir")" = "$common_repository/.git/worktrees"
-                        test -d "$git_dir"
-                        test ! -L "$git_dir"
-                        ;;
-                    *) exit 1 ;;
-                esac
-            fi
-            if [ -e "$journal" ] || [ -L "$journal" ]; then
-                test -f "$journal"
-                test ! -L "$journal"
-                printf '%s\n' "$digest" | cmp -s - "$journal"
-                exit 0
-            fi
-            candidate=$(mktemp "$state/.$operation.$member.journal.XXXXXX")
-            trap 'rm -f -- "$candidate"' EXIT
-            printf '%s\n' "$digest" > "$candidate"
-            chmod 0600 -- "$candidate"
-            mv -T -- "$candidate" "$journal"
-            trap - EXIT
-            BASH;
-    }
-
-    private static function revalidationScript(): string
-    {
-        return <<<'BASH'
-            checkout=$1
-            root=$2
-            operation=$3
-            member=$4
-            digest=$5
-            receipt=$6
-            source_identity=$7
-            managed_user=$8
-            managed_group=$9
-            state="$root/.orbit-removals"
-            journal="$state/$operation.$member.journal"
-            receipt_path="$state/$operation.$member.receipt"
-            quarantine="$state/$operation.$member.quarantine"
-            recovery="$state/$operation.$member.recovery"
-            test -d "$state"
-            test ! -L "$state"
-            test "$(realpath -e "$state")" = "$state"
-            test "$(stat -c '%U:%G' "$state")" = "$managed_user:$managed_group"
-            test -f "$journal"
-            test ! -L "$journal"
-            test "$(stat -c '%U:%G' "$journal")" = "$managed_user:$managed_group"
-            printf '%s\n' "$digest" | cmp -s - "$journal"
-            if [ "$source_identity" = absent ]; then
-                test ! -e "$checkout"
-                test ! -L "$checkout"
-                test ! -e "$quarantine"
-                test ! -L "$quarantine"
-                if [ -e "$receipt_path" ] || [ -L "$receipt_path" ]; then
-                    test -f "$receipt_path"
-                    test ! -L "$receipt_path"
-                    printf '%s\n' "$receipt" | cmp -s - "$receipt_path"
-                    printf 'completed\n'
-                else
-                    printf 'present\n'
-                fi
-                exit 0
-            fi
-            if [ -e "$checkout" ] || [ -L "$checkout" ]; then
-                test ! -e "$quarantine"
-                test ! -L "$quarantine"
-                test ! -e "$receipt_path"
-                test ! -L "$receipt_path"
-                test ! -e "$recovery"
-                test ! -L "$recovery"
-                test -d "$checkout"
-                test ! -L "$checkout"
-                test "$(stat -c '%d:%i' "$checkout")" = "$source_identity"
-                printf 'present\n'
-                exit 0
-            fi
-            if [ -e "$quarantine" ] || [ -L "$quarantine" ]; then
-                test -d "$quarantine"
-                test ! -L "$quarantine"
-                test "$(stat -c '%d:%i' "$quarantine")" = "$source_identity"
-                test "$(stat -c '%U:%G' "$quarantine")" = "$managed_user:$managed_group"
-                if [ -e "$receipt_path" ] || [ -L "$receipt_path" ]; then
-                    test -f "$receipt_path"
-                    test ! -L "$receipt_path"
-                    printf '%s\n' "$receipt" | cmp -s - "$receipt_path"
-                    printf 'receipt-pending-cleanup\n'
-                    exit 0
-                fi
-                printf 'quarantined\n'
-                exit 0
-            fi
-            test -f "$receipt_path"
-            test ! -L "$receipt_path"
-            printf '%s\n' "$receipt" | cmp -s - "$receipt_path"
-            test "$(stat -c '%U:%G' "$receipt_path")" = "$managed_user:$managed_group"
-            # Deletion and config publication are not atomic. Authenticate the
-            # completed removal, then retry exact-path trust cleanup before success.
-            release_empty_grouping_directory "${10}"
-            printf 'completed\n'
-            BASH;
-    }
-
-    private static function receiptStructureScript(): string
-    {
-        return <<<'BASH'
-            checkout=$1
-            root=$2
-            common_repository=$3
-            layout=$4
-            operation=$5
-            member=$6
-            digest=$7
-            receipt=$8
-            managed_user=$9
-            shift 9
-            managed_group=$1
-            source_identity=$2
-            state="$root/.orbit-removals"
-            journal="$state/$operation.$member.journal"
-            receipt_path="$state/$operation.$member.receipt"
-            quarantine="$state/$operation.$member.quarantine"
-            recovery="$state/$operation.$member.recovery"
-            test -d "$state"
-            test ! -L "$state"
-            test "$(realpath -e "$state")" = "$state"
-            test "$(stat -c '%U:%G' "$state")" = "$managed_user:$managed_group"
-            test -f "$journal"
-            test ! -L "$journal"
-            test "$(stat -c '%U:%G' "$journal")" = "$managed_user:$managed_group"
-            printf '%s\n' "$digest" | cmp -s - "$journal"
-            test -f "$receipt_path"
-            test ! -L "$receipt_path"
-            test "$(stat -c '%U:%G' "$receipt_path")" = "$managed_user:$managed_group"
-            printf '%s\n' "$receipt" | cmp -s - "$receipt_path"
-            test ! -e "$checkout"
-            test ! -L "$checkout"
-            quarantine_present=0
-            if [ -e "$quarantine" ] || [ -L "$quarantine" ]; then
-                test -d "$quarantine"
-                test ! -L "$quarantine"
-                test "$(realpath -e "$quarantine")" = "$quarantine"
-                test "$(stat -c '%d:%i' "$quarantine")" = "$source_identity"
-                test "$(stat -c '%U:%G' "$quarantine")" = "$managed_user:$managed_group"
-                quarantine_present=1
-            fi
-            case "$layout" in
-                checkout)
-                    test "$quarantine_present" = 1
-                    test ! -e "$recovery"
-                    test ! -L "$recovery"
-                    # The receipt authorizes cleanup even when partial deletion left a damaged .git.
-                    printf 'incomplete\n'
-                    ;;
-                worktree)
-                    test -f "$recovery"
-                    test ! -L "$recovery"
-                    test "$(stat -c '%U:%G' "$recovery")" = "$managed_user:$managed_group"
-                    mapfile -t recovery_fields < "$recovery"
-                    test "${#recovery_fields[@]}" = 4
-                    admin_encoded=${recovery_fields[0]}
-                    admin_identity=${recovery_fields[1]}
-                    common_identity=${recovery_fields[2]}
-                    worktrees_identity=${recovery_fields[3]}
-                    admin=$(printf '%s' "$admin_encoded" | base64 --decode)
-                    test "$(printf '%s' "$admin" | base64 --wrap=0)" = "$admin_encoded"
-                    [[ "$admin_identity" =~ ^[0-9]+:[0-9]+$ ]]
-                    [[ "$common_identity" =~ ^[0-9]+:[0-9]+$ ]]
-                    [[ "$worktrees_identity" =~ ^[0-9]+:[0-9]+$ ]]
-                    test "$(dirname "$admin")" = "$common_repository/.git/worktrees"
-                    worktrees="$common_repository/.git/worktrees"
-                    common_present=0
-                    if [ -e "$common_repository/.git" ] || [ -L "$common_repository/.git" ]; then
-                        test -d "$common_repository/.git"
-                        test ! -L "$common_repository/.git"
-                        test "$(stat -c '%d:%i' "$common_repository/.git")" = "$common_identity"
-                        test "$(stat -c '%U:%G' "$common_repository/.git")" = "$managed_user:$managed_group"
-                        common_present=1
-                    else
-                        test ! -e "$common_repository"
-                        test ! -L "$common_repository"
-                    fi
-                    worktrees_present=0
-                    if [ -e "$worktrees" ] || [ -L "$worktrees" ]; then
-                        test "$common_present" = 1
-                        test -d "$worktrees"
-                        test ! -L "$worktrees"
-                        test "$(stat -c '%d:%i' "$worktrees")" = "$worktrees_identity"
-                        test "$(stat -c '%U:%G' "$worktrees")" = "$managed_user:$managed_group"
-                        worktrees_present=1
-                    fi
-                    matching=0
-                    if [ "$worktrees_present" = 1 ]; then
-                        for candidate in "$worktrees"/*; do
-                            if [ ! -e "$candidate" ] && [ ! -L "$candidate" ]; then
-                                continue
-                            fi
-                            if [ -f "$candidate/gitdir" ] && [ ! -L "$candidate/gitdir" ] && \
-                                { printf '%s\n' "$checkout/.git" | cmp -s - "$candidate/gitdir" || \
-                                    printf '%s\n' "$quarantine/.git" | cmp -s - "$candidate/gitdir"; }; then
-                                test "$candidate" = "$admin"
-                                matching=$((matching + 1))
-                            fi
-                        done
-                    fi
-                    test "$matching" -le 1
-                    admin_present=0
-                    admin_complete=0
-                    if [ -e "$admin" ] || [ -L "$admin" ]; then
-                        test -d "$admin"
-                        test ! -L "$admin"
-                        test "$(stat -c '%d:%i' "$admin")" = "$admin_identity"
-                        test "$(stat -c '%U:%G' "$admin")" = "$managed_user:$managed_group"
-                        if [ -e "$admin/gitdir" ] || [ -L "$admin/gitdir" ]; then
-                            test -f "$admin/gitdir"
-                            test ! -L "$admin/gitdir"
-                            printf '%s\n' "$quarantine/.git" | cmp -s - "$admin/gitdir"
-                            test "$matching" = 1
-                            admin_complete=1
-                        else
-                            test "$matching" = 0
-                        fi
-                        admin_present=1
-                    else
-                        test "$matching" = 0
-                    fi
-                    git_file_present=0
-                    if [ -e "$quarantine/.git" ] || [ -L "$quarantine/.git" ]; then
-                        test -f "$quarantine/.git"
-                        test ! -L "$quarantine/.git"
-                        printf 'gitdir: %s\n' "$admin" | cmp -s - "$quarantine/.git"
-                        git_file_present=1
-                    fi
-                    if [ "$quarantine_present" = 0 ]; then
-                        if [ "$admin_present" = 0 ]; then
-                            printf 'complete\n'
-                        else
-                            printf 'incomplete\n'
-                        fi
-                    elif [ "$admin_complete" = 1 ] && [ "$git_file_present" = 1 ]; then
-                        printf 'intact\n'
-                    else
-                        printf 'incomplete\n'
-                    fi
-                    ;;
-                *) exit 1 ;;
-            esac
-            BASH;
-    }
-
-    private static function receiptCleanupScript(): string
-    {
-        return <<<'BASH'
-            checkout=$1
-            root=$2
-            common_repository=$3
-            layout=$4
-            operation=$5
-            member=$6
-            digest=$7
-            receipt=$8
-            managed_user=$9
-            shift 9
-            managed_group=$1
-            source_identity=$2
-            grouping_directory=$3
-            state="$root/.orbit-removals"
-            journal="$state/$operation.$member.journal"
-            receipt_path="$state/$operation.$member.receipt"
-            quarantine="$state/$operation.$member.quarantine"
-            recovery="$state/$operation.$member.recovery"
-            test -d "$state"
-            test ! -L "$state"
-            test "$(realpath -e "$state")" = "$state"
-            test "$(stat -c '%U:%G' "$state")" = "$managed_user:$managed_group"
-            test -f "$journal"
-            test ! -L "$journal"
-            test "$(stat -c '%U:%G' "$journal")" = "$managed_user:$managed_group"
-            printf '%s\n' "$digest" | cmp -s - "$journal"
-            test -f "$receipt_path"
-            test ! -L "$receipt_path"
-            test "$(stat -c '%U:%G' "$receipt_path")" = "$managed_user:$managed_group"
-            printf '%s\n' "$receipt" | cmp -s - "$receipt_path"
-            test ! -e "$checkout"
-            test ! -L "$checkout"
-            quarantine_present=0
-            if [ -e "$quarantine" ] || [ -L "$quarantine" ]; then
-                test -d "$quarantine"
-                test ! -L "$quarantine"
-                test "$(realpath -e "$quarantine")" = "$quarantine"
-                test "$(stat -c '%d:%i' "$quarantine")" = "$source_identity"
-                test "$(stat -c '%U:%G' "$quarantine")" = "$managed_user:$managed_group"
-                quarantine_present=1
-            fi
-            case "$layout" in
-                checkout)
-                    test "$quarantine_present" = 1
-                    test ! -e "$recovery"
-                    test ! -L "$recovery"
-                    test "$(stat -c '%d:%i' "$quarantine")" = "$source_identity"
-                    test "$(stat -c '%U:%G' "$quarantine")" = "$managed_user:$managed_group"
-                    remove_source_tree "$quarantine"
-                    ;;
-                worktree)
-                    test -f "$recovery"
-                    test ! -L "$recovery"
-                    test "$(stat -c '%U:%G' "$recovery")" = "$managed_user:$managed_group"
-                    mapfile -t recovery_fields < "$recovery"
-                    test "${#recovery_fields[@]}" = 4
-                    admin_encoded=${recovery_fields[0]}
-                    admin_identity=${recovery_fields[1]}
-                    common_identity=${recovery_fields[2]}
-                    worktrees_identity=${recovery_fields[3]}
-                    admin=$(printf '%s' "$admin_encoded" | base64 --decode)
-                    test "$(printf '%s' "$admin" | base64 --wrap=0)" = "$admin_encoded"
-                    [[ "$admin_identity" =~ ^[0-9]+:[0-9]+$ ]]
-                    [[ "$common_identity" =~ ^[0-9]+:[0-9]+$ ]]
-                    [[ "$worktrees_identity" =~ ^[0-9]+:[0-9]+$ ]]
-                    test "$(dirname "$admin")" = "$common_repository/.git/worktrees"
-                    test -d "$common_repository/.git"
-                    test ! -L "$common_repository/.git"
-                    test "$(stat -c '%d:%i' "$common_repository/.git")" = "$common_identity"
-                    test "$(stat -c '%U:%G' "$common_repository/.git")" = "$managed_user:$managed_group"
-                    worktrees="$common_repository/.git/worktrees"
-                    test -d "$worktrees"
-                    test ! -L "$worktrees"
-                    test "$(stat -c '%d:%i' "$worktrees")" = "$worktrees_identity"
-                    test "$(stat -c '%U:%G' "$worktrees")" = "$managed_user:$managed_group"
-                    matching=0
-                    for candidate in "$worktrees"/*; do
-                        if [ ! -e "$candidate" ] && [ ! -L "$candidate" ]; then
-                            continue
-                        fi
-                        if [ -f "$candidate/gitdir" ] && [ ! -L "$candidate/gitdir" ] && \
-                            { printf '%s\n' "$checkout/.git" | cmp -s - "$candidate/gitdir" || \
-                                printf '%s\n' "$quarantine/.git" | cmp -s - "$candidate/gitdir"; }; then
-                            test "$candidate" = "$admin"
-                            matching=$((matching + 1))
-                        fi
-                    done
-                    test "$matching" -le 1
-                    if [ -e "$admin" ] || [ -L "$admin" ]; then
-                        test -d "$admin"
-                        test ! -L "$admin"
-                        test "$(stat -c '%d:%i' "$admin")" = "$admin_identity"
-                        test "$(stat -c '%U:%G' "$admin")" = "$managed_user:$managed_group"
-                        if [ -e "$admin/gitdir" ] || [ -L "$admin/gitdir" ]; then
-                            test -f "$admin/gitdir"
-                            test ! -L "$admin/gitdir"
-                            printf '%s\n' "$quarantine/.git" | cmp -s - "$admin/gitdir"
-                            test "$matching" = 1
-                        else
-                            test "$matching" = 0
-                        fi
-                        if [ -e "$quarantine/.git" ] || [ -L "$quarantine/.git" ]; then
-                            test -f "$quarantine/.git"
-                            test ! -L "$quarantine/.git"
-                            printf 'gitdir: %s\n' "$admin" | cmp -s - "$quarantine/.git"
-                        fi
-                        test "$(stat -c '%d:%i' "$admin")" = "$admin_identity"
-                        test "$(stat -c '%U:%G' "$admin")" = "$managed_user:$managed_group"
-                        rm -rf -- "$admin"
-                    else
-                        test "$matching" = 0
-                    fi
-                    if [ "$quarantine_present" = 1 ]; then
-                        test "$(stat -c '%d:%i' "$quarantine")" = "$source_identity"
-                        test "$(stat -c '%U:%G' "$quarantine")" = "$managed_user:$managed_group"
-                        remove_source_tree "$quarantine"
-                    fi
-                    ;;
-                *) exit 1 ;;
-            esac
-            test ! -e "$quarantine"
-            test ! -L "$quarantine"
-            release_empty_grouping_directory "$grouping_directory"
-            printf '%s\n' "$receipt"
-            BASH;
-    }
-
-    private static function finalizationScript(): string
-    {
-        return WorkspaceGit::bashPreamble().<<<'BASH'
-            checkout=$1
-            root=$2
-            common_repository=$3
-            layout=$4
-            branch=$5
-            operation=$6
-            member=$7
-            digest=$8
-            shift 8
-            receipt=$1
-            force=$2
-            managed_user=$3
-            managed_group=$4
-            source_identity=$5
-            expected_origin=$6
-            expected_worktrees=$7
-            source_commit=$8
-            grouping_directory=$9
-            unresolved=${10}
-            independent_worktree=${11}
-            export GIT_OPTIONAL_LOCKS=0
-            state="$root/.orbit-removals"
-            journal="$state/$operation.$member.journal"
-            receipt_path="$state/$operation.$member.receipt"
-            quarantine="$state/$operation.$member.quarantine"
-            recovery="$state/$operation.$member.recovery"
-            test -d "$state"
-            test ! -L "$state"
-            test "$(realpath -e "$state")" = "$state"
-            test "$(stat -c '%U:%G' "$state")" = "$managed_user:$managed_group"
-            test -f "$journal"
-            test ! -L "$journal"
-            test "$(stat -c '%U:%G' "$journal")" = "$managed_user:$managed_group"
-            printf '%s\n' "$digest" | cmp -s - "$journal"
-            if [ "$source_identity" = absent ]; then
-                test ! -e "$checkout"
-                test ! -L "$checkout"
-                test ! -e "$quarantine"
-                test ! -L "$quarantine"
-                release_empty_grouping_directory "$grouping_directory"
-                if [ ! -e "$receipt_path" ] && [ ! -L "$receipt_path" ]; then
-                    candidate=$(mktemp "$state/.$operation.$member.receipt.XXXXXX")
-                    trap 'rm -f -- "$candidate"' EXIT
-                    printf '%s\n' "$receipt" > "$candidate"
-                    chmod 0600 -- "$candidate"
-                    mv -T -- "$candidate" "$receipt_path"
-                    trap - EXIT
-                fi
-                test -f "$receipt_path"
-                test ! -L "$receipt_path"
-                printf '%s\n' "$receipt" | cmp -s - "$receipt_path"
-                printf '%s\n' "$receipt"
-                exit 0
-            fi
-            if [ ! -e "$checkout" ] && [ ! -L "$checkout" ] && \
-                [ ! -e "$quarantine" ] && [ ! -L "$quarantine" ]; then
-                test -f "$receipt_path"
-                test ! -L "$receipt_path"
-                printf '%s\n' "$receipt" | cmp -s - "$receipt_path"
-                release_empty_grouping_directory "$grouping_directory"
-                printf '%s\n' "$receipt"
-                exit 0
-            fi
-            physical=$checkout
-            if [ -e "$checkout" ] || [ -L "$checkout" ]; then
-                test ! -e "$quarantine"
-                test ! -L "$quarantine"
-                test ! -e "$receipt_path"
-                test ! -L "$receipt_path"
-            else
-                physical=$quarantine
-                test -d "$quarantine"
-                test ! -L "$quarantine"
-                if [ -e "$receipt_path" ] || [ -L "$receipt_path" ]; then
-                    test -f "$receipt_path"
-                    test ! -L "$receipt_path"
-                    printf '%s\n' "$receipt" | cmp -s - "$receipt_path"
-                fi
-            fi
-            case "$physical" in "$root"/*) ;; *) exit 1 ;; esac
-            current=$root
-            relative=${physical#"$root"/}
-            old_ifs=$IFS
-            IFS=/
-            for segment in $relative; do
-                IFS=$old_ifs
-                current="$current/$segment"
-                test ! -L "$current"
-                IFS=/
-            done
-            IFS=$old_ifs
-            test -d "$physical"
-            test ! -L "$physical"
-            test "$(realpath -e "$physical")" = "$physical"
-            test "$(stat -c '%d:%i' "$physical")" = "$source_identity"
-            test "$(stat -c '%U:%G' "$physical")" = "$managed_user:$managed_group"
-            test "$(stat -c '%U:%G' "$(dirname "$physical")")" = "$managed_user:$managed_group"
-            test "$(git -C "$physical" rev-parse --show-toplevel)" = "$physical"
-            git_dir=$(git -C "$physical" rev-parse --absolute-git-dir)
-            common=$(git -C "$physical" rev-parse --path-format=absolute --git-common-dir)
-            case "$layout" in
-                checkout)
-                    test -d "$physical/.git"
-                    test ! -L "$physical/.git"
-                    test "$git_dir" = "$physical/.git"
-                    test "$common" = "$physical/.git"
-                    ;;
-                worktree)
-                    test -f "$physical/.git"
-                    test ! -L "$physical/.git"
-                    test "$git_dir" != "$common"
-                    test "$(dirname "$common")" = "$common_repository"
-                    test -d "$common_repository/.git"
-                    test ! -L "$common_repository/.git"
-                    ;;
-                *) exit 1 ;;
-            esac
-            current_branch=$(git -C "$physical" symbolic-ref --quiet --short HEAD || true)
-            if [ "$unresolved" != 1 ]; then
-                test "$current_branch" = "$branch"
-            fi
-            current_commit=$(git -C "$physical" rev-parse --verify HEAD^{commit} 2>/dev/null || printf '%040d' 0)
-            test "$current_commit" = "$source_commit"
-            origin_with_marker=$(git -C "$physical" config --get remote.origin.url && printf x)
-            origin=${origin_with_marker%x}
-            case "$origin" in
-                *$'\n') origin=${origin%$'\n'} ;;
-                *) exit 1 ;;
-            esac
-            test "$origin" = "$expected_origin"
-            if [ "$layout" != worktree ] || [ "$force" != 1 ] || [ "$independent_worktree" != 1 ]; then
-                worktrees=$(git -C "$physical" worktree list --porcelain -z | base64 --wrap=0)
-                test "$worktrees" = "$expected_worktrees"
-            fi
-            if [ "$force" != 1 ]; then
-                status=$(git -C "$physical" status --porcelain --untracked-files=all) || exit 1
-                test -z "$status"
-                scratch=$(mktemp -d)
-                trap 'rm -rf -- "$scratch"' EXIT
-                git init --bare --quiet "$scratch/repository.git"
-                git --git-dir="$scratch/repository.git" remote add origin "$origin"
-                git_read git --git-dir="$scratch/repository.git" fetch --quiet --no-tags --filter=blob:none origin \
-                    '+refs/heads/*:refs/remotes/origin/*' '+refs/tags/*:refs/tags/*'
-                published=0
-                if git --git-dir="$scratch/repository.git" cat-file -e "$source_commit^{commit}" 2>/dev/null; then
-                    while IFS= read -r advertised; do
-                        tip=$(git --git-dir="$scratch/repository.git" rev-parse --verify "$advertised^{commit}" 2>/dev/null) || continue
-                        if git --git-dir="$scratch/repository.git" merge-base --is-ancestor "$source_commit" "$tip"; then
-                            published=1
-                            break
-                        fi
-                    done < <(git --git-dir="$scratch/repository.git" for-each-ref \
-                        --format='%(refname)' refs/remotes/origin refs/tags)
-                fi
-                test "$published" = 1
-                rm -rf -- "$scratch"
-                trap - EXIT
-            fi
-            # A rename keeps the checkout's device and inode only within one filesystem. Across a mount, such as a task
-            # VM workspace volume, mv copies and deletes, and the identity check below fails after the copy. Refuse first.
-            if [ "$physical" = "$checkout" ] && [ "$(stat -c '%d' -- "$checkout")" != "$(stat -c '%d' -- "$state")" ]; then
-                printf 'cross-device: the checkout [%s] and [%s] are on different filesystems; Orbit does not move a checkout across a mount.\n' "$checkout" "$state" >&2
-                exit 1
-            fi
-            stop_tree_processes "$physical"
-            if [ "$physical" = "$checkout" ]; then
-                case "$layout" in
-                    worktree) git --git-dir="$common_repository/.git" worktree move "$checkout" "$quarantine" ;;
-                    checkout) mv -- "$checkout" "$quarantine" ;;
-                esac
-                physical=$quarantine
-            fi
-            test -d "$physical"
-            test ! -L "$physical"
-            test "$(stat -c '%d:%i' "$physical")" = "$source_identity"
-            case "$layout" in
-                checkout)
-                    test ! -e "$recovery"
-                    test ! -L "$recovery"
-                    ;;
-                worktree)
-                    git_dir=$(git -C "$physical" rev-parse --absolute-git-dir)
-                    worktrees="$common_repository/.git/worktrees"
-                    test "$(dirname "$git_dir")" = "$worktrees"
-                    test -d "$common_repository/.git"
-                    test ! -L "$common_repository/.git"
-                    test "$(stat -c '%U:%G' "$common_repository/.git")" = "$managed_user:$managed_group"
-                    test -d "$worktrees"
-                    test ! -L "$worktrees"
-                    test "$(stat -c '%U:%G' "$worktrees")" = "$managed_user:$managed_group"
-                    test -d "$git_dir"
-                    test ! -L "$git_dir"
-                    test "$(stat -c '%U:%G' "$git_dir")" = "$managed_user:$managed_group"
-                    admin_encoded=$(printf '%s' "$git_dir" | base64 --wrap=0)
-                    admin_identity=$(stat -c '%d:%i' "$git_dir")
-                    common_identity=$(stat -c '%d:%i' "$common_repository/.git")
-                    worktrees_identity=$(stat -c '%d:%i' "$worktrees")
-                    if [ -e "$recovery" ] || [ -L "$recovery" ]; then
-                        test -f "$recovery"
-                        test ! -L "$recovery"
-                        test "$(stat -c '%U:%G' "$recovery")" = "$managed_user:$managed_group"
-                        printf '%s\n%s\n%s\n%s\n' \
-                            "$admin_encoded" "$admin_identity" "$common_identity" "$worktrees_identity" | \
-                            cmp -s - "$recovery"
-                    else
-                        candidate=$(mktemp "$state/.$operation.$member.recovery.XXXXXX")
-                        trap 'rm -f -- "$candidate"' EXIT
-                        printf '%s\n%s\n%s\n%s\n' \
-                            "$admin_encoded" "$admin_identity" "$common_identity" "$worktrees_identity" > "$candidate"
-                        chmod 0600 -- "$candidate"
-                        mv -T -- "$candidate" "$recovery"
-                        trap - EXIT
-                    fi
-                    ;;
-                *) exit 1 ;;
-            esac
-            if [ ! -e "$receipt_path" ] && [ ! -L "$receipt_path" ]; then
-                candidate=$(mktemp "$state/.$operation.$member.receipt.XXXXXX")
-                trap 'rm -f -- "$candidate"' EXIT
-                printf '%s\n' "$receipt" > "$candidate"
-                chmod 0600 -- "$candidate"
-                mv -T -- "$candidate" "$receipt_path"
-                trap - EXIT
-            else
-                test -f "$receipt_path"
-                test ! -L "$receipt_path"
-                test "$(stat -c '%U:%G' "$receipt_path")" = "$managed_user:$managed_group"
-                printf '%s\n' "$receipt" | cmp -s - "$receipt_path"
-            fi
-            case "$layout" in
-                worktree) remove_source_tree "$quarantine" "$common_repository" ;;
-                checkout) remove_source_tree "$quarantine" ;;
-            esac
-            test ! -e "$quarantine"
-            test ! -L "$quarantine"
-            release_empty_grouping_directory "$grouping_directory"
-            printf '%s\n' "$receipt"
-            BASH;
-    }
-
-    private static function inspectionScript(): string
-    {
-        return WorkspaceGit::bashPreamble().<<<'BASH'
-            checkout=$1
-            root=$2
-            managed_user=$3
-            managed_group=$4
-            layout=$5
-            expected_branch=$6
-            inspect_content=$7
-            unresolved=$8
-            allow_absent=$9
-            expected_origin=${10}
-            prepare_id=${11:-}
-            encode() { printf '%s' "$1" | base64 --wrap=0; printf '\n'; }
-            export GIT_OPTIONAL_LOCKS=0
-            failure=10
-            trap 'exit "$failure"' ERR
-            case "$checkout" in "$root"/*) ;; *) exit "$failure" ;; esac
-            current=
-            relative=${checkout#/}
-            old_ifs=$IFS
-            IFS=/
-            for segment in $relative; do
-                IFS=$old_ifs
-                current="$current/$segment"
-                test ! -L "$current"
-                IFS=/
-            done
-            IFS=$old_ifs
-            if [ "$allow_absent" = 1 ] && [ ! -e "$checkout" ] && [ ! -L "$checkout" ]; then
-                case "$layout" in checkout|worktree) ;; *) exit "$failure" ;; esac
-                encode "$checkout"
-                encode "$checkout/.git"
-                encode "$expected_origin"
-                encode "$expected_branch"
-                encode "$(printf '%040d' 0)"
-                encode ''
-                encode absent
-                printf 'worktree %s\0\0' "$checkout" | base64 --wrap=0
-                printf '\n'
-                exit 0
-            fi
-            test -d "$checkout"
-            test "$(realpath -e "$checkout")" = "$checkout"
-            failure=11
-            test "$(stat -c '%U:%G' "$checkout")" = "$managed_user:$managed_group"
-            test "$(stat -c '%U:%G' "$(dirname "$checkout")")" = "$managed_user:$managed_group"
-            if [ -n "$prepare_id" ]; then
-                test ! -L "$checkout/.git"
-                prepare_git=$(git -C "$checkout" rev-parse --absolute-git-dir)
-                test -f "$prepare_git/orbit-source-prepare"
-                test ! -L "$prepare_git/orbit-source-prepare"
-                test "$(stat -c '%U:%G' "$prepare_git/orbit-source-prepare")" = "$managed_user:$managed_group"
-                test "$(cat "$prepare_git/orbit-source-prepare")" = "$prepare_id:$(stat -c '%d:%i' "$checkout")"
-            fi
-            failure=12
-            top=$(git -C "$checkout" rev-parse --show-toplevel)
-            git_dir=$(git -C "$checkout" rev-parse --absolute-git-dir)
-            common=$(git -C "$checkout" rev-parse --path-format=absolute --git-common-dir)
-            test "$top" = "$checkout"
-            case "$layout" in
-                checkout)
-                    test -d "$checkout/.git"
-                    test ! -L "$checkout/.git"
-                    test "$git_dir" = "$checkout/.git"
-                    test "$common" = "$checkout/.git"
-                    ;;
-                worktree)
-                    test -f "$checkout/.git"
-                    test ! -L "$checkout/.git"
-                    test "$git_dir" != "$common"
-                    test -d "$common"
-                    test ! -L "$common"
-                    ;;
-                *) exit "$failure" ;;
-            esac
-            if [ "$unresolved" = 1 ]; then
-                commit=$(git -C "$checkout" rev-parse --verify HEAD^{commit} 2>/dev/null || printf '%040d' 0)
-            else
-                commit=$(git -C "$checkout" rev-parse --verify HEAD^{commit})
-            fi
-            failure=13
-            origin_with_marker=$(git -C "$checkout" config --get remote.origin.url && printf x)
-            origin=${origin_with_marker%x}
-            case "$origin" in
-                *$'\n') origin=${origin%$'\n'} ;;
-                *) exit "$failure" ;;
-            esac
-            failure=14
-            branch=$(git -C "$checkout" symbolic-ref --quiet --short HEAD || true)
-            if [ "$unresolved" != 1 ]; then
-                test "$branch" = "$expected_branch"
-            fi
-            failure=1
-            dirty=
-            if [ "$inspect_content" = 1 ]; then
-                dirty=0
-                status=$(git -C "$checkout" status --porcelain --untracked-files=all) || exit 1
-                test -z "$status" || dirty=1
-            fi
-            encode() { printf '%s' "$1" | base64 --wrap=0; printf '\n'; }
-            encode "$top"
-            encode "$common"
-            encode "$origin"
-            encode "$branch"
-            encode "$commit"
-            encode "$dirty"
-            encode "$(stat -c '%d:%i' "$checkout")"
-            git -C "$checkout" worktree list --porcelain -z | base64 --wrap=0
-            printf '\n'
-            BASH;
-    }
-
-    private static function publicationScript(): string
-    {
-        return WorkspaceGit::bashPreamble().<<<'BASH'
-            origin=$1
-            commit=$2
-            scratch=$(mktemp -d)
-            trap 'rm -rf -- "$scratch"' EXIT
-            git init --bare --quiet "$scratch/repository.git"
-            git --git-dir="$scratch/repository.git" remote add origin "$origin"
-            git_read git --git-dir="$scratch/repository.git" fetch --quiet --no-tags --filter=blob:none origin \
-                '+refs/heads/*:refs/remotes/origin/*' '+refs/tags/*:refs/tags/*'
-            published=0
-            if git --git-dir="$scratch/repository.git" cat-file -e "$commit^{commit}" 2>/dev/null; then
-                while IFS= read -r advertised; do
-                    tip=$(git --git-dir="$scratch/repository.git" rev-parse --verify "$advertised^{commit}" 2>/dev/null) || continue
-                    if git --git-dir="$scratch/repository.git" merge-base --is-ancestor "$commit" "$tip"; then
-                        published=1
-                        break
-                    fi
-                done < <(git --git-dir="$scratch/repository.git" for-each-ref \
-                    --format='%(refname)' refs/remotes/origin refs/tags)
-            fi
-            printf '%s\n' "$published"
-            BASH;
-    }
-
-    private static function removalScript(): string
-    {
-        return WorkspaceGit::bashPreamble().<<<'BASH'
-            checkout=$1
-            root=$2
-            grouping_directory=$3
-            managed_user=$4
-            managed_group=$5
-            expected_branch=$6
-            expected_commit=$7
-            expected_source_identity=$8
-            shift 8
-            expected_repository_identity=$1
-            force=$2
-            export GIT_OPTIONAL_LOCKS=0
-            failure=10
-            trap 'exit "$failure"' ERR
-            test "$grouping_directory" = "$(dirname "$checkout")"
-            case "$checkout" in "$root"/*) ;; *) exit "$failure" ;; esac
-            current=$root
-            relative=${checkout#"$root"/}
-            old_ifs=$IFS
-            IFS=/
-            for segment in $relative; do
-                IFS=$old_ifs
-                current="$current/$segment"
-                test ! -L "$current"
-                IFS=/
-            done
-            IFS=$old_ifs
-            test -d "$checkout"
-            test "$(realpath -e "$checkout")" = "$checkout"
-            test -d "$grouping_directory"
-            test ! -L "$grouping_directory"
-            test "$(realpath -e "$grouping_directory")" = "$grouping_directory"
-            failure=21
-            test "$(stat -c '%d:%i' "$checkout")" = "$expected_source_identity"
-            failure=11
-            test "$(stat -c '%U:%G' "$checkout")" = "$managed_user:$managed_group"
-            test "$(stat -c '%U:%G' "$grouping_directory")" = "$managed_user:$managed_group"
-            failure=12
-            test -d "$checkout/.git"
-            test ! -L "$checkout/.git"
-            test "$(git -C "$checkout" rev-parse --show-toplevel)" = "$checkout"
-            test "$(git -C "$checkout" rev-parse --absolute-git-dir)" = "$checkout/.git"
-            test "$(git -C "$checkout" rev-parse --path-format=absolute --git-common-dir)" = "$checkout/.git"
-            failure=14
-            current_branch=$(git -C "$checkout" symbolic-ref --quiet --short HEAD || true)
-            test "$current_branch" = "$expected_branch"
-            failure=21
-            test "$(git -C "$checkout" rev-parse --verify HEAD^{commit})" = "$expected_commit"
-            failure=13
-            origin_with_marker=$(git -C "$checkout" config --get remote.origin.url && printf x)
-            origin=${origin_with_marker%x}
-            case "$origin" in
-                *$'\n') origin=${origin%$'\n'} ;;
-                *) exit "$failure" ;;
-            esac
-            repository_identity=$(printf '%s' "$origin" | php -r '
-                $repository = stream_get_contents(STDIN);
-
-                if (
-                    preg_match("//u", $repository) !== 1
-                    || $repository === ""
-                    || preg_match("/[\\p{Z}\\p{C}]/u", $repository) !== 0
-                ) {
-                    exit(1);
-                }
-
-                $matches = [];
-
-                if (preg_match("/\\Agit@([^:\\s?#]+):([^\\s?#]+)\\z/u", $repository, $matches) === 1) {
-                    $host = $matches[1];
-                    $path = $matches[2];
-                } else {
-                    $parts = parse_url($repository);
-
-                    if (!is_array($parts)) {
-                        exit(1);
-                    }
-
-                    $scheme = is_string($parts["scheme"] ?? null) ? $parts["scheme"] : null;
-                    $host = is_string($parts["host"] ?? null) ? $parts["host"] : null;
-                    $path = is_string($parts["path"] ?? null) ? $parts["path"] : null;
-
-                    if (!is_string($host) || $host === "" || !is_string($path) || $path === "") {
-                        exit(1);
-                    }
-
-                    if (array_key_exists("query", $parts) || array_key_exists("fragment", $parts)) {
-                        exit(1);
-                    }
-
-                    $https = $scheme === "https"
-                        && !array_key_exists("user", $parts)
-                        && !array_key_exists("pass", $parts);
-                    $ssh = $scheme === "ssh" && !array_key_exists("pass", $parts);
-
-                    if (!$https && !$ssh) {
-                        exit(1);
-                    }
-                }
-
-                $path = trim($path, "/");
-
-                if (str_ends_with($path, ".git")) {
-                    $path = substr($path, 0, -4);
-                }
-
-                fwrite(STDOUT, strtolower($host)."/".rtrim($path, "/"));
-            ')
-            test "$repository_identity" = "$expected_repository_identity"
-            failure=15
-            linked_count=0
-            linked_path=
-            linked_prunable=0
-            # A prunable worktree's directory is gone, so it does not keep the checkout in use.
-            count_linked() {
-                if [ -n "$linked_path" ] && [ "$linked_prunable" = 0 ]; then
-                    linked_count=$((linked_count + 1))
-                    test "$linked_path" = "$checkout"
-                fi
-                linked_path=
-                linked_prunable=0
-            }
-            while IFS= read -r -d '' field; do
-                case "$field" in
-                    'worktree '*)
-                        count_linked
-                        linked_path=${field#worktree }
-                        ;;
-                    prunable|'prunable '*)
-                        linked_prunable=1
-                        ;;
-                    '')
-                        count_linked
-                        ;;
-                esac
-            done < <(git -C "$checkout" worktree list --porcelain -z)
-            count_linked
-            test "$linked_count" = 1
-            if [ "$force" != 1 ]; then
-                failure=20
-                status=$(git -C "$checkout" status --porcelain --untracked-files=all) || exit 1
-                test -z "$status"
-                failure=1
-                scratch=$(mktemp -d)
-                trap 'rm -rf -- "$scratch"' EXIT
-                git init --bare --quiet "$scratch/repository.git"
-                git --git-dir="$scratch/repository.git" remote add origin "$origin"
-                git_read git --git-dir="$scratch/repository.git" fetch --quiet --no-tags --filter=blob:none origin \
-                    '+refs/heads/*:refs/remotes/origin/*' '+refs/tags/*:refs/tags/*'
-                published=0
-                if git --git-dir="$scratch/repository.git" cat-file -e "$expected_commit^{commit}" 2>/dev/null; then
-                    while IFS= read -r advertised; do
-                        tip=$(git --git-dir="$scratch/repository.git" rev-parse --verify "$advertised^{commit}" 2>/dev/null) || continue
-                        if git --git-dir="$scratch/repository.git" merge-base --is-ancestor "$expected_commit" "$tip"; then
-                            published=1
-                            break
-                        fi
-                    done < <(git --git-dir="$scratch/repository.git" for-each-ref \
-                        --format='%(refname)' refs/remotes/origin refs/tags)
-                fi
-                failure=20
-                test "$published" = 1
-                failure=1
-                rm -rf -- "$scratch"
-                trap - EXIT
-            fi
-            failure=1
-            stop_tree_processes "$checkout"
-            remove_source_tree "$checkout"
-            release_empty_grouping_directory "$grouping_directory"
-            BASH;
     }
 
     /**
@@ -2216,102 +1259,5 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
         sort($units);
 
         return $units;
-    }
-
-    /** @param  list<string>  $ownUnits */
-    public static function releaseEmptyGroupingDirectoryFunction(bool $stopProcesses = false, array $ownUnits = []): string
-    {
-        return 'stop_processes='.($stopProcesses ? '1' : '0')."\n"
-            .'own_units='.escapeshellarg(implode("\n", $ownUnits))."\n".<<<'SHELL'
-            # Stop the caller's own processes whose working directory or executable is inside the tree: SIGTERM,
-            # then SIGKILL, each for up to 5 seconds. The units in $own_units are the Instance's own Processes and
-            # Schedules, which runtime cleanup removes after ownership checks; their processes stay. A tmux or screen
-            # server is the operator's: it hosts sessions that work elsewhere, so it is left running.
-            stop_own_tree_processes() {
-                local tree=$1 signal started entry pid target found unit
-                for signal in TERM KILL; do
-                    started=${EPOCHREALTIME//[!0-9]/}
-                    while :; do
-                        found=0
-                        while IFS= read -r -d '' entry && IFS= read -r -d '' target; do
-                            case "$target" in
-                                "$tree"|"$tree"/*|"$tree (deleted)") ;;
-                                *) continue ;;
-                            esac
-                            pid=${entry#/proc/}
-                            if [ "$pid" = "$$" ] || [ "$pid" = "$BASHPID" ]; then
-                                continue
-                            fi
-                            unit=$(cat -- "$entry/cgroup" 2>/dev/null || true)
-                            unit=${unit##*/}
-                            case $'\n'"$own_units"$'\n' in
-                                *$'\n'"$unit"$'\n'*) [ -n "$unit" ] && continue ;;
-                            esac
-                            case "$(cat -- "$entry/comm" 2>/dev/null || true)" in
-                                'tmux: server'|screen|SCREEN) continue ;;
-                            esac
-                            found=1
-                            kill -s "$signal" "$pid" 2>/dev/null || true
-                        done < <(find -P /proc -mindepth 2 -maxdepth 2 -path '/proc/[0-9]*' \
-                            \( -name cwd -o -name exe \) -user "$(id -u)" -printf '%h\0%l\0' 2>/dev/null || true)
-                        if [ "$found" = 0 ]; then
-                            return 0
-                        fi
-                        if [ $(( ${EPOCHREALTIME//[!0-9]/} - started )) -ge 5000000 ]; then
-                            break
-                        fi
-                        sleep 0.1
-                    done
-                done
-                printf 'Processes inside %s did not stop.\n' "$tree" >&2
-                return 1
-            }
-
-            stop_tree_processes() {
-                local tree=$1
-                if [ "$stop_processes" != 1 ]; then
-                    return 0
-                fi
-                stop_own_tree_processes "$tree"
-            }
-
-            remove_source_tree() {
-                local tree=$1
-                if [ "$#" = 2 ]; then
-                    git --git-dir="$2/.git" worktree remove --force "$tree"
-                else
-                    rm -rf -- "$tree"
-                fi
-            }
-
-            release_empty_grouping_directory() {
-                test ! -e "$checkout"
-                test ! -L "$checkout"
-                grouping_directory=$1
-                test "$grouping_directory" != "$root"
-                test "$grouping_directory" = "$(dirname "$checkout")"
-                case "$grouping_directory" in
-                    "$root"/*) ;;
-                    *) return 1 ;;
-                esac
-                if [ ! -e "$grouping_directory" ] && [ ! -L "$grouping_directory" ]; then
-                    return 0
-                fi
-                if [ -L "$grouping_directory" ] || [ ! -d "$grouping_directory" ]; then
-                    return 0
-                fi
-                if [ "$(realpath -e "$grouping_directory")" != "$grouping_directory" ]; then
-                    return 0
-                fi
-                if [ "$(stat -c '%U:%G' "$grouping_directory")" != "$managed_user:$managed_group" ]; then
-                    return 0
-                fi
-                if [ -n "$(find -P "$grouping_directory" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
-                    return 0
-                fi
-                rmdir -- "$grouping_directory"
-            }
-
-            SHELL;
     }
 }
