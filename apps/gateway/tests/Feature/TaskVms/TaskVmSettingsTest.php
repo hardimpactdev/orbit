@@ -24,6 +24,7 @@ function enable_task_vms(array $overrides = []): void
         ],
         'incus' => ['hosts' => [['node_id' => 7, 'cidr' => '10.251.77.0/24', 'max_vms' => 4]]],
     ]), $overrides)]);
+    task_vm_node_hosts(config('task_vms.incus.hosts', []));
 }
 
 /** @param array<string, mixed> $host */
@@ -36,6 +37,7 @@ function task_vm_hosts(array $host): array
 function task_vms_off(array $values = []): void
 {
     config(['task_vms' => array_replace_recursive(task_vm_config(), $values)]);
+    task_vm_node_hosts(config('task_vms.incus.hosts', []));
 }
 
 /** The config file's `park_after_minutes` while its environment value is `$value`, or unset for null. */
@@ -147,7 +149,7 @@ describe('off but configured', function (): void {
         'Cluster' => [['dev_cluster_id' => 4], '10.44.0.128/25'],
         'origin' => [['model_proxy_origin' => 'http://10.44.0.3:8317'], '10.44.0.128/25'],
         'host' => [task_vm_hosts([]), '10.44.0.128/25'],
-        'malformed hosts JSON' => [['incus' => ['hosts' => null]], '10.44.0.128/25'],
+        'invalid host setting' => [task_vm_hosts(['cidr' => 'invalid']), '10.44.0.128/25'],
         'invalid values beside the range' => [['dev_cluster_id' => '4x', 'model_proxy_origin' => 'http://10.44.0.3:8317/v1', 'pi' => ['artifact_path' => '/home/orbit/pi']], '10.44.0.128/25'],
         'range outside the VPN subnet' => [['dev_cluster_id' => 4, 'wireguard_range' => '10.45.0.128/25'], '10.45.0.128/25'],
     ]);
@@ -175,8 +177,8 @@ describe('off but configured', function (): void {
 
         expect_invalid_task_vm_config($reason);
     })->with([
-        'malformed hosts JSON' => [['incus' => ['hosts' => null]], 'incus.hosts must be a JSON list'],
-        'hosts not a list' => [['incus' => ['hosts' => 'not json']], 'incus.hosts must be a JSON list'],
+        'invalid bridge type' => [task_vm_hosts(['cidr' => []]), 'incus.hosts.0.cidr'],
+        'unknown host field' => [task_vm_hosts(['unknown' => true]), 'incus.hosts.0 has unknown keys'],
         'bad host' => [task_vm_hosts(['max_vms' => 0]), 'incus.hosts.0.max_vms'],
         'bad Cluster' => [['dev_cluster_id' => '4x'], 'dev_cluster_id must be a Cluster id'],
         'blank Cluster' => [['dev_cluster_id' => '  '], 'dev_cluster_id must be a Cluster id'],
@@ -238,7 +240,7 @@ describe('enabled', function (): void {
 
     it('needs at least one host', function (): void {
         enable_task_vms();
-        config(['task_vms.incus.hosts' => []]);
+        task_vm_node_hosts([]);
 
         expect_invalid_task_vm_config('incus.hosts needs at least one host');
     });
@@ -259,7 +261,7 @@ describe('enabled', function (): void {
         'zero Cluster' => [['dev_cluster_id' => 0], 'dev_cluster_id must be a Cluster id'],
         'public reserved range' => [['wireguard_range' => '8.8.0.0/20'], 'wireguard_range must be a private'],
         'unknown host key' => [task_vm_hosts(['bridge' => 'orbittask0']), 'incus.hosts.0 has unknown keys'],
-        'missing host Node' => [task_vm_hosts(['node_id' => '7']), 'incus.hosts.0.node_id'],
+        'invalid image alias' => [task_vm_hosts(['image_alias' => '-unsafe']), 'incus.hosts.0.image_alias'],
         'missing capacity' => [task_vm_hosts(['max_vms' => 0]), 'incus.hosts.0.max_vms'],
         'bridge address instead of network' => [task_vm_hosts(['cidr' => '10.251.77.1/24']), 'incus.hosts.0.cidr must be an IPv4 network'],
         'public bridge' => [task_vm_hosts(['cidr' => '203.0.113.0/24']), 'incus.hosts.0.cidr must be a private'],
@@ -270,10 +272,10 @@ describe('enabled', function (): void {
         'whole ZFS pool as dataset' => [task_vm_hosts(['zfs_dataset' => 'fast']), 'incus.hosts.0.zfs_dataset'],
         'ZFS dataset with a space' => [task_vm_hosts(['zfs_dataset' => 'fast/orbit tasks']), 'incus.hosts.0.zfs_dataset'],
         'ZFS dataset as an option' => [task_vm_hosts(['zfs_dataset' => '-o/x']), 'incus.hosts.0.zfs_dataset'],
-        'duplicate host' => [['incus' => ['hosts' => [
+        'overlapping hosts' => [['incus' => ['hosts' => [
             ['node_id' => 7, 'cidr' => '10.251.77.0/24', 'max_vms' => 4],
-            ['node_id' => 7, 'cidr' => '10.251.78.0/24', 'max_vms' => 4],
-        ]]], 'incus.hosts.1.node_id is listed twice'],
+            ['node_id' => 8, 'cidr' => '10.251.77.0/25', 'max_vms' => 4],
+        ]]], 'task_vms host bridges must not overlap'],
         'origin with a path' => [['model_proxy_origin' => 'http://10.44.0.3:8317/v1'], 'model_proxy_origin'],
         'origin with credentials' => [['model_proxy_origin' => 'http://key@10.44.0.3:8317'], 'model_proxy_origin'],
         'missing origin' => [['model_proxy_origin' => null], 'model_proxy_origin is required'],
@@ -358,6 +360,6 @@ describe('scheduler reader', function (): void {
     })->with([
         'off' => [['incus' => ['hosts' => [['node_id' => 7, 'warm_vms' => 1]]]]],
         'no warm_vms' => [['enabled' => true, 'incus' => ['hosts' => [['node_id' => 7]]]]],
-        'malformed hosts JSON' => [['enabled' => true, 'incus' => ['hosts' => null]]],
+        'no host setting' => [['enabled' => true, 'incus' => ['hosts' => []]]],
     ]);
 });

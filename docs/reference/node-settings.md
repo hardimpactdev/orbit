@@ -3,12 +3,13 @@ title: "Node settings"
 description: "Typed Node settings for the apps root and operator-owned task VM hosts, with validation and migration."
 covers:
   - apps/gateway/app/Domain/Nodes/Storage/**
-  - apps/gateway/app/Actions/Nodes/UpdateNodeSettingsAction.php
+  - apps/gateway/app/{Actions/Nodes/UpdateNodeSettingsAction,Providers/TaskVmServiceProvider}.php
   - apps/gateway/app/Infrastructure/Nodes/RemoteNodeStorageRootPreparer.php
-  - apps/gateway/app/Data/Nodes/{NodeSettingsData,NodeStorageAppsData}.php
+  - apps/gateway/app/Data/Nodes/{NodeSettingsData,NodeStorageAppsData,NodeTaskVmsData}.php
+  - apps/gateway/database/migrations/*_migrate_task_vm_host_settings.php
   - apps/gateway/app/Http/Requests/Nodes/UpdateNodeSettingsRequest.php
   - apps/cli/app/{Support/NodeSettingOptions,Commands/Nodes/UpdateNodeSettingsCommand}.php
-  - packages/php-sdk/src/{Responses/Nodes/NodeSettings,Requests/Nodes/UpdateNodeSettingsRequest}.php
+  - packages/php-sdk/src/{Responses/Nodes/NodeSettings,Responses/Nodes/TaskVmsSettings,Requests/Nodes/UpdateNodeSettingsRequest}.php
 ---
 
 # Node settings
@@ -87,7 +88,7 @@ Use these fields to describe a host's network, storage, resources, and capacity.
 
 Unknown fields, invalid names, wrong types, and out-of-range values are rejected before storage. Integer fields are integers in JSON, not strings. Invalid configuration leaves the stored setting unchanged. The apps-root filesystem checks below apply only to `apps.path`, not to this object.
 
-Placement selects active Nodes with a valid, non-null `settings.task_vms`. Capacity reads their `max_vms`; host preparation, image sync, and the host sweep read the same configuration. Later package-cache targeting uses this host intent too; setting it does not install a cache. See [Compute drivers](/reference/compute-drivers#configure-task-vms) for runtime behavior. Being `app-dev` grants no host intent: `services` keeps that role for Recall and gets no task VMs.
+Placement selects active Nodes with a valid, non-null `settings.task_vms`. Requests and queued jobs take a fresh host-settings snapshot at the start of their lifecycle, so later jobs see changes without a worker restart. Capacity reads their `max_vms`; host preparation, image sync, and the host sweep read the same configuration. Later package-cache targeting uses this host intent too; setting it does not install a cache. See [Compute drivers](/reference/compute-drivers#configure-task-vms) for runtime behavior. Being `app-dev` grants no host intent: `services` keeps that role for Recall and gets no task VMs.
 
 ### Migrate the environment host list
 

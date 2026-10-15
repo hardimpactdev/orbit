@@ -6,7 +6,6 @@ namespace App\Jobs\TaskVms;
 
 use App\Domain\Gateway\GatewayQueue;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\TaskVms\IncusHost;
 use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplateLifecycle;
@@ -71,7 +70,7 @@ final class RefreshTaskVmWorkspaceTemplates implements ShouldBeUniqueUntilProces
             $image = null;
             $templates = [];
             try {
-                $image = $incus->aliasTarget($host, $node, TaskVmHost::BaseImage, 60.0);
+                $image = $incus->aliasTarget($host, $node, $host->imageAlias, 60.0);
                 $templates = $volumes->read($host, $node);
                 $deleted = $lifecycle->pruneStale($host, $node, $repositories, $image, $templates);
                 if ($deleted !== []) {

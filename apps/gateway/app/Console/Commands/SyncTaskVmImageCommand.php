@@ -6,7 +6,6 @@ namespace App\Console\Commands;
 
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmException;
-use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\TaskVms\IncusTaskVmImageSync;
 use App\Jobs\TaskVms\RefreshTaskVmWorkspaceTemplates;
@@ -71,7 +70,7 @@ final class SyncTaskVmImageCommand extends Command
 
         $this->info(sprintf(
             $copied ? 'Node [%s] has the base image [%s] (%s) of Node [%s] after %.1fs.' : 'Node [%s] already has the base image [%s] (%s) of Node [%s].',
-            $node->name, TaskVmHost::BaseImage, substr($fingerprint, 0, 12), $source->name, microtime(true) - $started,
+            $node->name, $host->imageAlias, substr($fingerprint, 0, 12), $source->name, microtime(true) - $started,
         ));
 
         return self::SUCCESS;

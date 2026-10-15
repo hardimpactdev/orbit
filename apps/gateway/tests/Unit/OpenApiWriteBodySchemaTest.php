@@ -79,7 +79,7 @@ it('publishes validated write body fields in OpenAPI and MCP', function (string 
         'driver' => 'string', 'node_id' => ['integer', 'null'], 'host' => ['string', 'null'], 'port' => ['integer', 'null'],
         'database' => ['string', 'null'], 'path' => ['string', 'null'], 'username' => ['string', 'null'], 'password' => ['string', 'null'],
     ], []],
-    'node settings' => ['node-settings', UpdateNodeSettingsRequest::class, ['apps' => ['object', 'null']], []],
+    'node settings' => ['node-settings', UpdateNodeSettingsRequest::class, ['apps' => ['object', 'null'], 'task_vms' => ['object', 'null']], []],
 ]);
 
 it('publishes database patterns that enforce the runtime field constraints', function (string $field, string $value, bool $valid): void {

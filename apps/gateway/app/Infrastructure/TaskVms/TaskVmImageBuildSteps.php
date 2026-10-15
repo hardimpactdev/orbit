@@ -27,12 +27,12 @@ final readonly class TaskVmImageBuildSteps
         $host = $this->settings->host($node->id);
         $name = (string) $build->builder_vm_name;
         $shell = $this->image->shell($host, $node, $name);
-        $alias = TaskVmHost::BaseImage.'-'.$build->created_at?->format('YmdHis').'-'.$build->id;
+        $alias = $host->imageAlias.'-'.$build->created_at?->format('YmdHis').'-'.$build->id;
         switch ($step) {
             case TaskVmImageBuildStep::Launch:
                 if ($build->source_alias === null) {
-                    $current = $build->from_stock ? null : $this->incus->aliasTarget($host, $node, TaskVmHost::BaseImage);
-                    $build->forceFill(['source_alias' => $current === null ? TaskVmHost::SourceImage : TaskVmHost::BaseImage, 'source_fingerprint' => $current ?? $this->incus->aliasTarget($host, $node, TaskVmHost::SourceImage)])->save();
+                    $current = $build->from_stock ? null : $this->incus->aliasTarget($host, $node, $host->imageAlias);
+                    $build->forceFill(['source_alias' => $current === null ? TaskVmHost::SourceImage : $host->imageAlias, 'source_fingerprint' => $current ?? $this->incus->aliasTarget($host, $node, TaskVmHost::SourceImage)])->save();
                 }
                 $this->image->sweep($host, $node, discardFailed: true);
                 if (! array_key_exists($name, $this->image->instances($host, $node))) {

@@ -35,7 +35,7 @@ final readonly class TaskVmBaseImageCache
             return is_string($cached['image'] ?? null) ? $cached['image'] : null;
         }
         try {
-            $image = $this->incus->aliasTarget($host, $node, TaskVmHost::BaseImage, self::ReadSeconds);
+            $image = $this->incus->aliasTarget($host, $node, $host->imageAlias, self::ReadSeconds);
         } catch (Throwable $exception) {
             Log::warning('A claim could not read the base image of a task VM host; its warm VMs wait a minute.', ['node_id' => $node->id, 'error' => $exception->getMessage()]);
             Cache::put($key, ['image' => null], self::FailureSeconds);

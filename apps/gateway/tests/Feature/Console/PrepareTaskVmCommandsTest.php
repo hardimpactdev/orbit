@@ -29,7 +29,7 @@ describe('task-vms:prepare-host', function (): void {
         $fleet = new FakeIncusFleet;
         app()->instance(SshExecutor::class, $fleet);
         $beast = task_vm_fleet_node('beast', '10.44.0.7', [RoleName::AppDev]);
-        config()->set('task_vms.incus.hosts', [[
+        task_vm_node_hosts([[
             'node_id' => $beast->id,
             'cidr' => '10.252.0.0/24',
             'pool' => 'orbit-e2e',
@@ -59,7 +59,7 @@ describe('task-vms:prepare-host', function (): void {
         $shark = task_vm_fleet_node('shark', '10.44.0.11', [RoleName::AppDev], cluster: $cluster);
         $beast->update(['lan_ip' => '192.168.6.20']);
         $shark->update(['lan_ip' => '192.168.6.40']);
-        config()->set('task_vms.incus.hosts', [
+        task_vm_node_hosts([
             ['node_id' => $beast->id, 'cidr' => '10.252.0.0/24', 'max_vms' => 4],
             ['node_id' => $shark->id, 'cidr' => '10.252.1.0/24', 'max_vms' => 4],
         ]);
@@ -83,7 +83,7 @@ describe('task-vms:prepare-host', function (): void {
         $fleet = new FakeIncusFleet;
         app()->instance(SshExecutor::class, $fleet);
         $beast = task_vm_fleet_node('beast', '10.44.0.7', [RoleName::AppDev]);
-        config()->set('task_vms.incus.hosts', [['node_id' => $beast->id, 'cidr' => '10.252.0.0/24', 'max_vms' => 4, 'zfs_dataset' => 'fast/orbit-tasks']]);
+        task_vm_node_hosts([['node_id' => $beast->id, 'cidr' => '10.252.0.0/24', 'max_vms' => 4, 'zfs_dataset' => 'fast/orbit-tasks']]);
 
         $this->artisan('task-vms:prepare-host', ['node' => 'beast'])->assertSuccessful();
 
@@ -94,7 +94,7 @@ describe('task-vms:prepare-host', function (): void {
 
     it('refuses invalid host settings before it connects', function (array $host, string $message): void {
         $beast = task_vm_fleet_node('beast', '10.44.0.7', [RoleName::AppDev]);
-        config()->set('task_vms.incus.hosts', [['node_id' => $beast->id, 'cidr' => '10.252.0.0/24', 'max_vms' => 4, ...$host]]);
+        task_vm_node_hosts([['node_id' => $beast->id, 'cidr' => '10.252.0.0/24', 'max_vms' => 4, ...$host]]);
 
         $this->artisan('task-vms:prepare-host', ['node' => (string) $beast->id])
             ->expectsOutputToContain($message)
@@ -118,7 +118,7 @@ describe('task-vms:prepare-host', function (): void {
 
     it('fails when the script does not confirm', function (): void {
         $beast = task_vm_fleet_node('beast', '10.44.0.7', [RoleName::AppDev]);
-        config()->set('task_vms.incus.hosts', [['node_id' => $beast->id, 'cidr' => '10.252.0.0/24', 'max_vms' => 4]]);
+        task_vm_node_hosts([['node_id' => $beast->id, 'cidr' => '10.252.0.0/24', 'max_vms' => 4]]);
         $this->ssh = new AppDevFakeSshExecutor([new CommandResult(1, '', "incus-host: ufw is not installed\n", 1, false)]);
         app()->instance(SshExecutor::class, $this->ssh);
 

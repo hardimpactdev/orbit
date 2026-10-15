@@ -133,7 +133,7 @@ final readonly class TaskVmImagePeers
     public function retire(int $nodeId): void
     {
         if ($this->settings->hasHost($nodeId)) {
-            throw new TaskVmException('task_vm.host_configured', "Node [{$nodeId}] is still in task_vms.incus.hosts. Remove its entry first.");
+            throw new TaskVmException('task_vm.host_configured', "Node [{$nodeId}] still has settings.task_vms. Clear it first.");
         }
         $live = TaskVm::query()->live()->where('host_node_id', $nodeId)->count();
         if ($live > 0) {

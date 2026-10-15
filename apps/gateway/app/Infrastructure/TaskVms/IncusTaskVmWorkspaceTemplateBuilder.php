@@ -112,7 +112,7 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
         try {
             $steps = $this->stage($node, $progress, 'render', fn (): array => $this->setupSteps($project));
             $this->stage($node, $progress, 'sweep', fn () => $this->sweep($host, $node));
-            $this->stage($node, $progress, 'launch', fn () => $this->image->launch($host, $node, $builder, TaskVmHost::BaseImage, $this->cloudInit->render($this->keys->publicKey())));
+            $this->stage($node, $progress, 'launch', fn () => $this->image->launch($host, $node, $builder, $host->imageAlias, $this->cloudInit->render($this->keys->publicKey())));
             $this->stage($node, $progress, 'cloud-init', fn () => $this->image->awaitCloudInit($host, $node, $builder));
             [$image, $fileOwner] = $this->stage($node, $progress, 'identity', fn (): array => $this->identity($host, $node, $builder));
             $this->stage($node, $progress, 'volume', fn () => $this->createVolume($host, $node, $builder, $volume));

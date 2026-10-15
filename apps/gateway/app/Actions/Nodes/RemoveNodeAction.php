@@ -402,7 +402,7 @@ final readonly class RemoveNodeAction
         if ($this->isTaskVmHost($node)) {
             throw $this->conflict(
                 'node.task_vm_host_configured',
-                "Node [{$node->name}] is still a task VM host. Remove its entry from task_vms.incus.hosts and run task-vms:retire-host first.",
+                "Node [{$node->name}] is still a task VM host. Clear its settings.task_vms and run task-vms:retire-host first.",
             );
         }
 

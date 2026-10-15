@@ -15,7 +15,8 @@ final class TaskVmServiceProvider extends ServiceProvider
     #[\Override]
     public function register(): void
     {
-        $this->app->singleton(TaskVmSettings::class, static fn (): TaskVmSettings => TaskVmSettings::fromConfig());
+        // Refresh Node-owned host intent for every request and queued job.
+        $this->app->scoped(TaskVmSettings::class, static fn (): TaskVmSettings => TaskVmSettings::fromConfig());
         $this->app->bind(TaskVmProvider::class, TaskVmProviders::class);
         // Scoped, so each queued job starts with a stopped clock and no baked programs.
         $this->app->scoped(TaskVmStepClock::class);

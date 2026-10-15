@@ -38,9 +38,10 @@ final readonly class TaskVmHost
         public ?string $zfsDataset = null,
         public int $warmVms = 0,
         public array $operatorOwned = [],
+        public string $imageAlias = self::BaseImage,
     ) {}
 
-    private const array Keys = ['node_id', 'project', 'network', 'cidr', 'max_vms', 'cpus', 'memory', 'disk', 'pool', 'zfs_dataset', 'warm_vms', 'operator_owned'];
+    private const array Keys = ['node_id', 'project', 'network', 'cidr', 'max_vms', 'cpus', 'memory', 'disk', 'pool', 'zfs_dataset', 'warm_vms', 'operator_owned', 'image_alias'];
 
     /**
      * Validates one entry of `task_vms.incus.hosts`, at `$index`, over `task_vms.incus.host_defaults`. The bridge must
@@ -54,7 +55,7 @@ final readonly class TaskVmHost
     {
         $key = "incus.hosts.{$index}";
         TaskVmConfig::validate(['entry' => $entry], ['entry' => ['array:'.implode(',', self::Keys)]], ['entry' => "{$key} has unknown keys."]);
-        $entry = [...$defaults, ...(is_array($entry) ? $entry : [])];
+        $entry = ['image_alias' => self::BaseImage, ...$defaults, ...(is_array($entry) ? $entry : [])];
         $maxVms = is_int($entry['max_vms'] ?? null) ? $entry['max_vms'] : 64;
         $int = static fn (int $minimum, int $maximum): array => ['required', 'integer:strict', "between:{$minimum},{$maximum}"];
         $name = static fn (string $pattern): array => ['required', 'string', "regex:{$pattern}"];
@@ -68,6 +69,7 @@ final readonly class TaskVmHost
             'cpus' => $int(1, 64),
             'memory' => $size,
             'disk' => $size,
+            'image_alias' => $name('/\A[A-Za-z0-9][A-Za-z0-9._\/-]{0,253}\z/D'),
             'pool' => $name('/\A[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?\z/D'),
             // A dataset below a ZFS pool, never a whole pool: Incus takes over the dataset it creates the pool on.
             'zfs_dataset' => ($entry['zfs_dataset'] ?? null) === null ? [] : ['required', 'string', 'regex:/\A(?=.{3,200}\z)[A-Za-z0-9][A-Za-z0-9_.:-]*(?:\/[A-Za-z0-9][A-Za-z0-9_.:-]*)+\z/D'],
@@ -85,6 +87,7 @@ final readonly class TaskVmHost
             'memory' => "{$key}.memory is invalid.",
             'disk' => "{$key}.disk is invalid.",
             'pool' => "{$key}.pool is invalid.",
+            'image_alias' => "{$key}.image_alias is invalid.",
             'zfs_dataset' => "{$key}.zfs_dataset is invalid.",
             'warm_vms' => "{$key}.warm_vms must be an integer from 0 to the host's max_vms.",
             'operator_owned' => "{$key}.operator_owned must be a JSON list of <project>/<name> or <project>/* entries.",
@@ -106,6 +109,7 @@ final readonly class TaskVmHost
             zfsDataset: is_string($zfsDataset) ? $zfsDataset : null,
             warmVms: $valid->integer('warm_vms'),
             operatorOwned: array_values(array_unique(TaskVmConfig::strings($entry['operator_owned'] ?? []))),
+            imageAlias: $valid->string('image_alias')->value(),
         );
     }
 

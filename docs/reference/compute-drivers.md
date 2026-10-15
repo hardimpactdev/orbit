@@ -779,7 +779,7 @@ The refresh has its own [worker](#jobs), so it delays no other task VM job. So t
 
 Run `task-vms:sync-image {node}` to copy the current base image to one host. By default it copies from the first configured host. `--from` names another host. It prints each stage with its time. `task-vms:build-image` and the nightly refresh run the same sync on every other host after a build.
 
-The source exports the image, and streams it with ssh and its [transfer key](#let-hosts-copy-the-image) to the receiver of the target, which imports it. The Gateway only starts the commands, and the image never passes through it. The source is only read. The target then gives the image the source's dated alias `orbit-task-base-<time>`.
+The source exports the image, and streams it with ssh and its [transfer key](#let-hosts-copy-the-image) to the receiver of the target, which imports it. The Gateway only starts the commands, and the image never passes through it. The source is only read. The target gives the image a dated alias under its own configured `image_alias`, preserving the source's timestamp and any build suffix. For example, `beast-base-20261010030000` becomes `shark-base-20261010030000` on a host whose alias is `shark-base`. This lets the receiver serve as a later sync source and lets its normal prune recognize obsolete received images.
 
 The export is a file, because `incus image export` writes no stream. The receiver writes the image once more into its staging file, because `incus image import` reads a file. ssh carries it between the two with no other copy. An image of about 3 GiB takes about half a minute on a 1 Gbit/s LAN.
 
@@ -789,7 +789,7 @@ The export is a file, because `incus image export` writes no stream. The receive
 | `sweep` | Deletes smoke VMs that an interrupted sync left; it leaves VMs linked to a `running` image build row alone |
 | `export` | The source runs `incus image export` into `/var/lib/orbit-task-vm-image/export/node-<target id>`, which only root reads. It empties the directory first, and expects one image file |
 | `transfer` | The source streams the file to the target's receiver, which imports it. The fingerprint that the receiver prints must be the source's |
-| `verify` | Gives the image the dated alias, and checks that the alias names the source's fingerprint. An equal fingerprint is an equal image |
+| `verify` | Gives the image the target's dated alias, and checks that the alias names the source's fingerprint. An equal fingerprint is an equal image |
 | `smoke` | Boots a smoke VM from the copy, with the same checks as the build's smoke boot |
 | `promote` | Points `orbit-task-base` at the copy in one step |
 | `prune` | Deletes every other `orbit-task-base-<time>` image that no VM in the project uses |

@@ -247,6 +247,7 @@ describe('resume', function (): void {
     });
 
     it('starts the VM, waits for the Node agent and Pi, and marks it ready', function (): void {
+        $this->freezeSecond();
         Http::fake(['http://10.44.0.129:3774/capabilities' => Http::sequence()->push([], 503)->push(['models' => []], 200)]);
         [, $vm] = tvm_park_waiting();
         $vm->update(['state' => TaskVmState::Parked]);

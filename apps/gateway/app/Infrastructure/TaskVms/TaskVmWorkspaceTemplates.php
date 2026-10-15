@@ -138,7 +138,7 @@ final readonly class TaskVmWorkspaceTemplates
         }
         $context = ['task_vm' => $vm->name, 'project_id' => $project->id, 'host_node_id' => $host->nodeId, 'image' => $image];
         if (TaskVmWorkspaceTemplate::newest($volumes, $project->id, $project->repository_url) !== null) {
-            $current = $this->incus->aliasTarget($host, $hostNode, TaskVmHost::BaseImage, 15.0);
+            $current = $this->incus->aliasTarget($host, $hostNode, $host->imageAlias, 15.0);
             if ($current !== $image) {
                 Log::warning('Task VM runs an older base image than the workspace templates; it starts from a fresh clone.', [...$context, 'current' => $current]);
 

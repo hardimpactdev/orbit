@@ -30,13 +30,7 @@ return [
         'models' => json_decode((string) (env('ORBIT_TASK_VMS_PI_MODELS') ?: '[]'), true),
     ],
     'incus' => [
-        /*
-         * A JSON list of hosts: node_id, cidr (the bridge network) and max_vms are required; the keys of
-         * host_defaults are optional. pool is a ZFS pool, zfs_dataset creates it, and warm_vms is how many
-         * enrolled VMs without a group the host keeps ready for claims, within max_vms. Task VMs launch the
-         * base image `orbit-task-base`.
-         */
-        'hosts' => json_decode((string) (env('ORBIT_TASK_VMS_INCUS_HOSTS') ?: '[]'), true),
+        // Host intent lives in Node settings.task_vms, never in a role or an environment list.
         'host_defaults' => [
             'project' => 'orbit-tasks',
             'network' => 'orbittask0',
@@ -44,6 +38,7 @@ return [
             'memory' => '4GiB',
             'disk' => '20GiB',
             'pool' => 'orbit-tasks',
+            'image_alias' => 'orbit-task-base',
             'zfs_dataset' => null,
             'warm_vms' => 0,
             // Incus instances and custom volumes the operator owns, as <project>/<name> or <project>/*: the stray report skips them.

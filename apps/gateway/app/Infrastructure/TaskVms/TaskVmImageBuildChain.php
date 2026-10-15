@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Infrastructure\TaskVms;
 
 use App\Domain\TaskVms\TaskVmException;
-use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmImageBuildStep;
 use App\Domain\TaskVms\TaskVmSettings;
@@ -52,7 +51,7 @@ final readonly class TaskVmImageBuildChain
             $host = $this->settings->host($node->id);
             $needsBuilder = true;
             if (in_array($build->current_step, [TaskVmImageBuildStep::Publish, TaskVmImageBuildStep::Smoke, TaskVmImageBuildStep::Promote], true)) {
-                $alias = TaskVmHost::BaseImage.'-'.$build->created_at?->format('YmdHis').'-'.$build->id;
+                $alias = $host->imageAlias.'-'.$build->created_at?->format('YmdHis').'-'.$build->id;
                 $published = $this->incus->aliasTarget($host, $node, $alias);
                 $needsBuilder = $published === null || ($published !== $build->image_fingerprint
                     && ! ($build->current_step === TaskVmImageBuildStep::Publish && $build->image_fingerprint === null));

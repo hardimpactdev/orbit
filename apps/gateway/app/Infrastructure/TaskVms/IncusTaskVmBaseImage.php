@@ -109,9 +109,9 @@ final readonly class IncusTaskVmBaseImage
     public function promote(TaskVmHost $host, Node $node, string $fingerprint): void
     {
         try {
-            $result = $this->incus->aliasTarget($host, $node, TaskVmHost::BaseImage) === null
-            ? $this->incus->run($host, $node, ['image', 'alias', 'create', '--', TaskVmHost::BaseImage, $fingerprint])
-            : $this->incus->query($host, $node, 'PATCH', '/1.0/images/aliases/'.TaskVmHost::BaseImage, json_encode(['target' => $fingerprint], JSON_THROW_ON_ERROR));
+            $result = $this->incus->aliasTarget($host, $node, $host->imageAlias) === null
+            ? $this->incus->run($host, $node, ['image', 'alias', 'create', '--', $host->imageAlias, $fingerprint])
+            : $this->incus->query($host, $node, 'PATCH', '/1.0/images/aliases/'.rawurlencode($host->imageAlias), json_encode(['target' => $fingerprint], JSON_THROW_ON_ERROR));
             if (! $result->succeeded()) {
                 throw IncusHost::failed("the base image of Node [{$node->name}]", 'image alias', $result);
             }
@@ -137,10 +137,10 @@ final readonly class IncusTaskVmBaseImage
                 ->orWhere(fn ($failed) => $failed->where('state', TaskVmImageBuildState::Failed)
                     ->whereNull('cleanup_started_at')->where('updated_at', '>', now()->subHours(TaskVmHostAudit::FailedBuildHours))))->get();
         $protected = $running->pluck('image_fingerprint')->all();
-        $pendingAliases = $running->map(static fn (TaskVmImageBuild $build): string => TaskVmHost::BaseImage.'-'.$build->created_at?->format('YmdHis').'-'.$build->id)->all();
+        $pendingAliases = $running->map(static fn (TaskVmImageBuild $build): string => $host->imageAlias.'-'.$build->created_at?->format('YmdHis').'-'.$build->id)->all();
         $deleted = [];
         foreach ($images as $fingerprint => $aliases) {
-            $dated = array_filter($aliases, static fn (string $alias): bool => str_starts_with($alias, TaskVmHost::BaseImage.'-'));
+            $dated = array_filter($aliases, static fn (string $alias): bool => str_starts_with($alias, $host->imageAlias.'-'));
             if ($fingerprint === $keep || $dated === [] || in_array($fingerprint, $used, true)
                 || in_array($fingerprint, $protected, true) || array_intersect($aliases, $pendingAliases) !== []) {
                 continue;
@@ -181,7 +181,7 @@ final readonly class IncusTaskVmBaseImage
         // A promote whose reply was lost may have moved the alias already: the image it names stays, and so does
         // an image whose alias cannot be read.
         try {
-            $base = $this->incus->aliasTarget($host, $node, TaskVmHost::BaseImage);
+            $base = $this->incus->aliasTarget($host, $node, $host->imageAlias);
         } catch (TaskVmException) {
             return;
         }

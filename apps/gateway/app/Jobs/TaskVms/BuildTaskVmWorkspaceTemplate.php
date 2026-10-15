@@ -7,7 +7,6 @@ namespace App\Jobs\TaskVms;
 use App\Domain\Gateway\GatewayQueue;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmException;
-use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\TaskVms\IncusHost;
 use App\Infrastructure\TaskVms\IncusTaskVmWorkspaceTemplateBuilder;
@@ -66,7 +65,7 @@ final class BuildTaskVmWorkspaceTemplate implements ShouldBeUnique, ShouldQueue
 
         $host = $settings->host($node->id);
         try {
-            if (TaskVmWorkspaceTemplateLifecycle::isCurrent($volumes->read($host, $node), $project, $incus->aliasTarget($host, $node, TaskVmHost::BaseImage, 60.0))) {
+            if (TaskVmWorkspaceTemplateLifecycle::isCurrent($volumes->read($host, $node), $project, $incus->aliasTarget($host, $node, $host->imageAlias, 60.0))) {
                 Log::info('Task VM workspace template is current; no build.', ['host_node_id' => $node->id, 'project_id' => $project->id]);
 
                 return;

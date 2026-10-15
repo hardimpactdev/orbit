@@ -184,6 +184,72 @@ describe('image peers', function (): void {
 });
 
 describe('a sync', function (): void {
+    describe('between different host image aliases', function (): void {
+        beforeEach(function (): void {
+            $this->settings = TaskVmSettingsBuilder::bind(['hosts' => [
+                TaskVmSettingsBuilder::host($this->beast->id, ['imageAlias' => 'beast-base']),
+                TaskVmSettingsBuilder::host($this->shark->id, ['imageAlias' => 'shark-base', 'cidr' => '10.251.78.0/24']),
+            ]]);
+            $this->fleet->host('10.44.0.7')->images = [SYNC_OLD => ['beast-base-20261010030000-91', 'beast-base']];
+            $this->fleet->host('10.44.0.11')->images = [];
+            ($this->link)();
+            $this->copyToShark = fn (string $fingerprint): bool => app(IncusTaskVmImageSync::class)->sync(
+                $this->settings->host($this->beast->id), $this->beast,
+                $this->settings->host($this->shark->id), $this->shark, $fingerprint,
+            );
+        });
+
+        it('copies the image with a receiver-local dated alias and preserves its build suffix', function (): void {
+            expect(($this->copyToShark)(SYNC_OLD))->toBeTrue()
+                ->and($this->fleet->host('10.44.0.11')->received)->toBe([SYNC_OLD])
+                ->and($this->fleet->host('10.44.0.11')->images)->toBe([
+                    SYNC_OLD => ['shark-base-20261010030000-91', 'shark-base'],
+                ])
+                ->and($this->fleet->host('10.44.0.7')->images)->toBe([
+                    SYNC_OLD => ['beast-base-20261010030000-91', 'beast-base'],
+                ]);
+        });
+
+        it('prunes an obsolete received image after copying the next image', function (): void {
+            expect(($this->copyToShark)(SYNC_OLD))->toBeTrue();
+            $this->fleet->host('10.44.0.7')->images[SYNC_NEW] = ['beast-base-20261011030000-92', 'beast-base'];
+
+            expect(($this->copyToShark)(SYNC_NEW))->toBeTrue()
+                ->and($this->fleet->host('10.44.0.11')->received)->toBe([SYNC_OLD, SYNC_NEW])
+                ->and($this->fleet->host('10.44.0.11')->images)->toBe([
+                    SYNC_NEW => ['shark-base-20261011030000-92', 'shark-base'],
+                ]);
+        });
+
+        it('can copy back from the receiver as source after the original source loses the image', function (): void {
+            expect(($this->copyToShark)(SYNC_OLD))->toBeTrue();
+            $this->fleet->host('10.44.0.7')->images = [];
+
+            expect(app(IncusTaskVmImageSync::class)->sync(
+                $this->settings->host($this->shark->id), $this->shark,
+                $this->settings->host($this->beast->id), $this->beast, SYNC_OLD,
+            ))->toBeTrue()
+                ->and($this->fleet->host('10.44.0.7')->received)->toBe([SYNC_OLD])
+                ->and($this->fleet->host('10.44.0.7')->images)->toBe([
+                    SYNC_OLD => ['beast-base-20261010030000-91', 'beast-base'],
+                ]);
+        });
+    });
+
+    it('reads each host image alias when finding the source and an already current target', function (): void {
+        $settings = TaskVmSettingsBuilder::bind(['hosts' => [
+            TaskVmSettingsBuilder::host($this->beast->id, ['imageAlias' => 'beast-base']),
+            TaskVmSettingsBuilder::host($this->shark->id, ['cidr' => '10.251.78.0/24', 'imageAlias' => 'shark-base']),
+        ]]);
+        $this->fleet->host('10.44.0.7')->images = [SYNC_OLD => ['beast-base-20261010030000', 'beast-base']];
+        $this->fleet->host('10.44.0.11')->images = [SYNC_OLD => ['beast-base-20261010030000', 'shark-base']];
+        $sync = app(IncusTaskVmImageSync::class);
+        expect($sync->current($settings->host($this->beast->id), $this->beast))->toBe(SYNC_OLD)
+            ->and($sync->current($settings->host($this->shark->id), $this->shark))->toBe(SYNC_OLD)
+            ->and($sync->sync($settings->host($this->beast->id), $this->beast, $settings->host($this->shark->id), $this->shark, SYNC_OLD))->toBeFalse()
+            ->and($this->fleet->host('10.44.0.11')->received)->toBe([]);
+    });
+
     it('exports the source image, streams it to the target, checks its fingerprint, smoke-tests it, promotes it, and prunes the old one', function (): void {
         ($this->link)();
         $stages = [];

@@ -23,6 +23,20 @@ final class UpdateNodeSettingsRequest extends FormRequest
         return [
             'apps' => ['sometimes', 'nullable', 'array:path'],
             'apps.path' => ['sometimes', 'nullable', 'string'],
+            'task_vms' => ['sometimes', 'nullable', 'array:cidr,max_vms,project,network,pool,image_alias,zfs_dataset,cpus,memory,disk,warm_vms,operator_owned'],
+            'task_vms.cidr' => ['required_with:task_vms', 'string'],
+            'task_vms.max_vms' => ['required_with:task_vms', 'integer:strict', 'between:1,64'],
+            'task_vms.project' => ['sometimes', 'string'],
+            'task_vms.network' => ['sometimes', 'string'],
+            'task_vms.pool' => ['sometimes', 'string'],
+            'task_vms.image_alias' => ['sometimes', 'string'],
+            'task_vms.zfs_dataset' => ['sometimes', 'nullable', 'string'],
+            'task_vms.cpus' => ['sometimes', 'integer:strict', 'between:1,64'],
+            'task_vms.memory' => ['sometimes', 'string'],
+            'task_vms.disk' => ['sometimes', 'string'],
+            'task_vms.warm_vms' => ['sometimes', 'integer:strict', 'min:0'],
+            'task_vms.operator_owned' => ['sometimes', 'list'],
+            'task_vms.operator_owned.*' => ['string'],
         ];
     }
 
@@ -31,7 +45,10 @@ final class UpdateNodeSettingsRequest extends FormRequest
     {
         $patch = $this->payload();
 
-        return $patch->hasApps ? ['apps' => $patch->apps === null ? null : ['path' => $patch->apps->path]] : [];
+        return [
+            ...($patch->hasApps ? ['apps' => $patch->apps === null ? null : ['path' => $patch->apps->path]] : []),
+            ...($patch->hasTaskVms ? ['task_vms' => $patch->taskVms?->toArray()] : []),
+        ];
     }
 
     public function payload(): NodeSettingsPatch

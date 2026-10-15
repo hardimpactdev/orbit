@@ -17,6 +17,8 @@ use App\Domain\Nodes\Storage\NodeSettingsPatch;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
+use App\Domain\WireGuard\Ipv4Subnet;
 use App\Models\Node;
 
 final readonly class UpdateNodeSettingsAction
@@ -32,7 +34,13 @@ final readonly class UpdateNodeSettingsAction
     public function execute(Node $node, NodeSettingsPatch $patch): Node
     {
         $merged = $patch->merge($this->normalizer->fromStored($node->settings));
-        $this->apply($node, $this->normalizer->normalize($merged));
+        $normalized = $this->normalizer->normalize($merged);
+        $this->validateHostBridge($node, $normalized);
+        if ($patch->hasApps) {
+            $this->apply($node, $normalized);
+        } else {
+            $this->persist($node, $normalized);
+        }
 
         $result = $node->refresh();
 
@@ -47,7 +55,28 @@ final readonly class UpdateNodeSettingsAction
 
     public function persistDuringProvisioning(Node $node, ?NodeSettingsData $settings): void
     {
-        $this->apply($node, $this->normalizer->normalize($settings));
+        $normalized = $this->normalizer->normalize($settings);
+        $this->validateHostBridge($node, $normalized);
+        $this->apply($node, $normalized);
+    }
+
+    private function validateHostBridge(Node $node, ?NodeSettingsData $settings): void
+    {
+        if ($settings?->task_vms === null) {
+            return;
+        }
+        $bridge = Ipv4Subnet::from($settings->task_vms->cidr);
+        foreach (Node::query()->where('id', '!=', $node->id)->get() as $other) {
+            $stored = $other->settings;
+            $host = is_array($stored) ? $stored['task_vms'] ?? null : null;
+            $cidr = is_array($host) ? $host['cidr'] ?? null : null;
+            if (is_string($cidr)) {
+                $subnet = Ipv4Subnet::from($cidr);
+                if ($bridge->contains($subnet->networkAddress()) || $subnet->contains($bridge->networkAddress())) {
+                    throw new ResourceOperationException('node.settings_invalid', 'The task_vms bridge overlaps another host.');
+                }
+            }
+        }
     }
 
     private function apply(Node $node, ?NodeSettingsData $normalized): void

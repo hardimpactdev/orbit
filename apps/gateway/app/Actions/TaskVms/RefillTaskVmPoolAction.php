@@ -99,7 +99,7 @@ final readonly class RefillTaskVmPoolAction
             return;
         }
         try {
-            $current = $this->incus->aliasTarget($host, $node, TaskVmHost::BaseImage, 120.0);
+            $current = $this->incus->aliasTarget($host, $node, $host->imageAlias, 120.0);
             $launched = $this->images->instances($host, $node);
         } catch (Throwable $exception) {
             Log::error('The task VM pool could not read the images of a host.', ['node_id' => $node->id, 'error_code' => TaskVmException::codeOf($exception), 'error' => $exception->getMessage()]);

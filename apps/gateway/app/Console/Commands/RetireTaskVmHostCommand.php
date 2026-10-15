@@ -10,7 +10,7 @@ use App\Infrastructure\TaskVms\TaskVmImagePeers;
 use Illuminate\Console\Command;
 
 /**
- * Removes the image transfer setup of a host whose entry is gone from `task_vms.incus.hosts`: its transfer key,
+ * Removes the image transfer setup of a host whose entry is cleared from `settings.task_vms`: its transfer key,
  * receiver, and peer keys, and its key on every remaining host.
  */
 final class RetireTaskVmHostCommand extends Command
