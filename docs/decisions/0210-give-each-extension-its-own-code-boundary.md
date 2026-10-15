@@ -45,7 +45,7 @@ Each extension has exactly one service provider. It extends `App\Providers\Exten
 | `name()` | The switch slug, such as `documents`. |
 | `description()` | One sentence that describes the extension. |
 | `dependencies()` | The slugs of the extensions that must be enabled first. |
-| `enable()` | Setup after the switch turns on. The default does nothing. |
+| `enable()` | Setup before the switch turns on. The default does nothing. |
 | `disable()` | Teardown after the switch turns off. The default does nothing. |
 
 The provider registers its routes, migrations, console commands, schedule entries, and plug-in contributions. `bootstrap/providers.php` lists it. `ExtensionRegistry` builds the list of known extensions from the registered providers that implement `Extension`. No other list of slugs exists in the Gateway.
@@ -78,7 +78,7 @@ The boundary is about who owns code. It does not decide what loads.
 
 ### Enable and disable
 
-Enabling an extension refuses with HTTP 409 `extension.dependency_disabled` while one of its dependencies is off. Disabling refuses with HTTP 409 `extension.required` while an enabled extension depends on it. After the switch changes, the Gateway runs the extension's `enable()` or `disable()` hook in the same request. A hook must be safe to repeat, because enabling an enabled extension runs it again. A hook that needs fleet resources still belongs in the extension's own setup command, as with `proxycli:setup`.
+Enabling an extension refuses with HTTP 409 `extension.dependency_disabled` while one of its dependencies is off. Disabling refuses with HTTP 409 `extension.required` while an enabled extension depends on it. The Gateway runs `enable()` first and writes the switch only after the hook returns. A failed enable leaves the switch off: when `enable()` throws, the switch keeps its earlier state and the API returns the hook's error. So the hook runs while the switch is still off and must not rely on it. `disable()` runs after the switch turns off. Both run in the same request. A hook must be safe to repeat, because enabling an enabled extension runs it again. A hook that needs fleet resources still belongs in the extension's own setup command, as with `proxycli:setup`.
 
 Documents declares no dependencies and needs neither hook.
 
