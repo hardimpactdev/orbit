@@ -183,15 +183,30 @@ describe('Composer configuration', function (): void {
         }
     });
 
-    it('publishes SHA-bound cache refs only after required main checks with job-scoped write access', function (): void {
+    it('publishes SHA-bound cache refs after required main checks despite skipped PR-only dependencies', function (): void {
         $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
         $publisher = $workflow['jobs']['publish-ci-cache'];
         expect($publisher['needs'])->toBe(['required'])
-            ->and($publisher['if'])->toBe("github.repository == 'nckrtl/orbit' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'")
+            ->and($publisher['if'])->toBe("\${{ !cancelled() && needs.required.result == 'success' && github.repository == 'nckrtl/orbit' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}")
             ->and($publisher['permissions'])->toBe(['actions' => 'read', 'contents' => 'write'])
             ->and($publisher['steps'][0]['with']['fetch-depth'])->toBe(0)
             ->and($publisher['steps'][1]['with']['pattern'])->toBe('sandbox-tia-*-${{ github.sha }}')
-            ->and($publisher['steps'][2]['run'])->toContain('bin/ci-cache-ref publish --commit "$GITHUB_SHA"');
+            ->and($publisher['steps'][1]['with']['path'])->toBe('${{ runner.temp }}/ci-cache-exports')
+            ->and($publisher['steps'][2]['run'])->toContain('bin/ci-cache-ref publish --commit "$GITHUB_SHA" --exports "$RUNNER_TEMP/ci-cache-exports"');
+        $projectSteps = array_column($workflow['jobs']['project']['steps'], null, 'name');
+        expect($projectSteps['Export main caches']['if'])
+            ->toBe("success() && matrix.part != 'subprocess' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'");
+        expect($projectSteps['Publish main caches'])->toMatchArray([
+            'if' => $projectSteps['Export main caches']['if'],
+            'uses' => 'actions/upload-artifact@v7',
+            'with' => [
+                'name' => 'sandbox-tia-${{ strategy.job-index }}-${{ github.sha }}',
+                'path' => "\${{ matrix.directory }}/.orbit-tia/graph.json\n\${{ matrix.directory }}/.orbit-tia/manifest.json\n\${{ matrix.directory }}/.orbit-tia/quality/\n",
+                'include-hidden-files' => true,
+                'if-no-files-found' => 'error',
+                'retention-days' => 14,
+            ],
+        ]);
         foreach ($workflow['jobs'] as $name => $job) {
             if ($name !== 'publish-ci-cache') {
                 expect($job['permissions']['contents'] ?? $workflow['permissions']['contents'])->toBe('read');

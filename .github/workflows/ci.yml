@@ -891,7 +891,8 @@ jobs:
   publish-ci-cache:
     name: Publish CI cache ref
     needs: [required]
-    if: github.repository == 'nckrtl/orbit' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    # Required checks accepts skipped PR-only jobs; override the implicit success() for that needs chain.
+    if: ${{ !cancelled() && needs.required.result == 'success' && github.repository == 'nckrtl/orbit' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
     runs-on: ubuntu-26.04
     permissions:
       actions: read
