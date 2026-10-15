@@ -636,6 +636,7 @@
             "concepts": [
                 "Access grant",
                 "Activity",
+                "CI runner",
                 "Cluster",
                 "Database server",
                 "Deliverable",
@@ -890,6 +891,34 @@
             ]
         },
         {
+            "path": "docs/decisions/0213-run-ci-runners-through-a-ci-runner-role.md",
+            "title": "ADR 0213: Run CI runners through a ci-runner role",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "apps/web"
+            ],
+            "concepts": [
+                "CI runner",
+                "Cluster",
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project",
+                "Role",
+                "Route",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0213"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -941,7 +970,8 @@
                 "0196",
                 "0198",
                 "0200",
-                "0206"
+                "0206",
+                "0213"
             ]
         },
         {
@@ -1262,6 +1292,28 @@
                 "Task"
             ],
             "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/ci-runner-role.md",
+            "title": "CI runner role",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "CI runner",
+                "Cluster",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Project",
+                "Role",
+                "Route",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0213"
+            ]
         },
         {
             "path": "docs/reference/cli-binaries.md",
@@ -1699,6 +1751,7 @@
             ],
             "concepts": [
                 "Activity",
+                "CI runner",
                 "Deployment",
                 "Doctor",
                 "Extension",
@@ -1709,6 +1762,7 @@
                 "Pi server",
                 "Process",
                 "Project",
+                "Role",
                 "Schedule",
                 "Subtask",
                 "Task",
@@ -2069,6 +2123,7 @@
             ],
             "concepts": [
                 "Activity",
+                "CI runner",
                 "Cluster",
                 "Doctor",
                 "Extension",
