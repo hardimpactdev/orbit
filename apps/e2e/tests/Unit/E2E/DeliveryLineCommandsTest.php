@@ -3,6 +3,9 @@
 declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
+use Tests\Support\SubprocessFixture;
+
+require_once dirname(__DIR__, 4).'/gateway/tests/Support/SubprocessFixture.php';
 
 /**
  * @param  list<string>  $arguments
@@ -705,15 +708,7 @@ PY
             , $cert, $key,
         ]);
         $server->start();
-        $port = null;
-        $deadline = microtime(true) + 5;
-        while ($port === null && microtime(true) < $deadline) {
-            $output = trim($server->getOutput());
-            if ($output !== '') {
-                $port = $output;
-            }
-            usleep(20_000);
-        }
+        $port = SubprocessFixture::line($server);
         expect($port)->not->toBeNull();
 
         $url = 'https://127.0.0.1:'.$port.'/up';

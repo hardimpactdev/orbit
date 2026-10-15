@@ -17,6 +17,8 @@ use App\Infrastructure\AgentView\WebSocketException;
 use App\Models\Node;
 use Illuminate\Support\Str;
 use Psr\Log\NullLogger;
+use Symfony\Component\Process\Process;
+use Tests\Support\SubprocessFixture;
 
 pest()->group('subprocess');
 
@@ -28,11 +30,9 @@ final class ScriptedWebSocketServer
 {
     public readonly int $port;
 
-    /** @var resource */
-    private mixed $process;
+    private Process $process;
 
-    /** @var resource */
-    private mixed $stdout;
+    private string $buffer = '';
 
     /** @var list<string> */
     private array $lines = [];
@@ -40,15 +40,18 @@ final class ScriptedWebSocketServer
     public function __construct(public readonly string $caPath, string $keyPath, string $mode, array $arguments = [])
     {
         $command = [PHP_BINARY, base_path('tests/Fixtures/AgentView/websocket-server.php'), $caPath, $keyPath, $mode, ...$arguments];
-        $process = proc_open($command, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+        $this->process = new Process($command);
+        try {
+            $this->process->start();
+            $port = SubprocessFixture::line($this->process);
+            if (! str_starts_with($port, 'port=')) {
+                throw new RuntimeException('The test WebSocket server did not print its port: '.$this->process->getErrorOutput());
+            }
+        } catch (Throwable $exception) {
+            $this->process->stop();
 
-        if (! is_resource($process)) {
-            throw new RuntimeException('The test WebSocket server did not start.');
+            throw $exception;
         }
-
-        $this->process = $process;
-        $this->stdout = $pipes[1];
-        $port = $this->waitFor('port=');
         $this->port = (int) substr($port, 5);
     }
 
@@ -79,6 +82,13 @@ final class ScriptedWebSocketServer
         $deadline = microtime(true) + $seconds;
 
         while (microtime(true) < $deadline) {
+            $running = $this->process->isRunning();
+            $this->buffer .= $this->process->getIncrementalOutput();
+            while (($newline = strpos($this->buffer, "\n")) !== false) {
+                $this->lines[] = rtrim(substr($this->buffer, 0, $newline));
+                $this->buffer = substr($this->buffer, $newline + 1);
+            }
+
             foreach ($this->lines as $index => $line) {
                 if (str_starts_with($line, $prefix)) {
                     unset($this->lines[$index]);
@@ -87,21 +97,14 @@ final class ScriptedWebSocketServer
                 }
             }
 
-            $read = [$this->stdout];
-            $write = $except = null;
-
-            if (@stream_select($read, $write, $except, 0, 100_000) > 0) {
-                $line = fgets($this->stdout);
-
-                if ($line === false) {
-                    break;
-                }
-
-                $this->lines[] = rtrim($line);
+            if (! $running) {
+                break;
             }
+
+            usleep(10_000);
         }
 
-        throw new RuntimeException("The test WebSocket server never printed [{$prefix}].");
+        throw new RuntimeException("The test WebSocket server never printed [{$prefix}]: ".$this->process->getErrorOutput());
     }
 
     /** Waits until the server process has exited, so a reset it sent has reached the client. */
@@ -109,7 +112,7 @@ final class ScriptedWebSocketServer
     {
         $deadline = microtime(true) + $seconds;
 
-        while (proc_get_status($this->process)['running']) {
+        while ($this->process->isRunning()) {
             if (microtime(true) > $deadline) {
                 throw new RuntimeException('The test WebSocket server did not exit.');
             }
@@ -120,10 +123,7 @@ final class ScriptedWebSocketServer
 
     public function stop(): void
     {
-        if (is_resource($this->process)) {
-            proc_terminate($this->process);
-            proc_close($this->process);
-        }
+        $this->process->stop();
     }
 }
 
