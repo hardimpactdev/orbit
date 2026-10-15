@@ -176,30 +176,57 @@ def download(host, pin, mirror, work, architecture):
                                       'reason': 'no source served the pinned file; Sury may have a newer build'})
 
 
-def previous_files(host, names, packages, repack, work):
+def previous_files(host, names, packages, repack, work, architecture):
     """A .deb of each installed version that the change replaces or removes, so a rollback can reinstall it. Sources,
     in order: Orbit's cache, apt's archive cache, then a repack of the installed package. Sury deletes old builds and
     the mirror holds only pinned ones, so the repack is the source that always exists. Each file must carry the
-    installed name, version, and architecture; a tool's exit code is not trusted."""
+    installed name, version, and architecture and pass its integrity check; a tool's exit code is not trusted."""
     files = {}
     for name in names:
         version = packages[name]
-        for candidate in [*sorted(host.path(CACHE).glob(f'{name}_*.deb')),
-                          *sorted(host.path(APT_ARCHIVES).glob(f'{name}_*.deb'))]:
-            if is_previous(host, candidate, name, version):
-                files[name] = candidate if candidate.parent == host.path(CACHE) else keep(host, candidate, name)
+        for cached in sorted(host.path(CACHE).glob(f'{name}_*.deb')):
+            # A cached file is named after its SHA-256 digest.
+            if cached.stem == f'{name}_{sha256(cached)}' and is_previous(host, cached, name, version, architecture):
+                files[name] = cached
                 break
         if name not in files:
-            files[name] = keep(host, repacked(host, name, version, packages, repack, work), name)
+            for archived in sorted(host.path(APT_ARCHIVES).glob(f'{name}_*.deb')):
+                if is_previous(host, archived, name, version, architecture) and matches_installed(host, archived, name, work):
+                    files[name] = keep(host, archived, name)
+                    break
+        if name not in files:
+            files[name] = keep(host, repacked(host, name, version, packages, repack, work, architecture), name)
     return files
 
 
-def is_previous(host, path, name, version):
+def is_previous(host, path, name, version, architecture):
     fields = deb_fields(host, path)
-    return fields.get('Package') == name and fields.get('Version') == version
+    return fields.get('Package') == name and fields.get('Version') == version \
+        and fields.get('Architecture') in (architecture, 'all')
 
 
-def repacked(host, name, version, packages, repack, work):
+def matches_installed(host, path, name, work):
+    """Whether every file that dpkg recorded for the installed package has the same MD5 sum in `path`. apt's archive
+    is not signed per file, so dpkg's own record of the installed package is the reference."""
+    info = host.path('var/lib/dpkg/info')
+    sums = next((candidate for candidate in (info / f'{name}.md5sums', *sorted(info.glob(f'{name}:*.md5sums')))
+                 if candidate.is_file()), None)
+    if sums is None:
+        log(f'{path.name}: dpkg records no MD5 sums for {name}, so the archive copy is not used')
+        return False
+    directory = Path(tempfile.mkdtemp(dir=work))
+    if not host.ok(['dpkg-deb', '--extract', '--', str(path), str(directory)]):
+        return False
+    for line in sums.read_text(errors='replace').splitlines():
+        digest, _, relative = line.partition('  ')
+        member = directory / relative.strip()
+        if not member.is_file() or hashlib.md5(member.read_bytes()).hexdigest() != digest.strip():
+            log(f'{path.name} differs from the installed {name} at /{relative.strip()}, so it is not used')
+            return False
+    return True
+
+
+def repacked(host, name, version, packages, repack, work, architecture):
     """Rebuilds the installed package from its files. dpkg-repack refuses a package whose conffile was removed on
     purpose, such as the www pool that Orbit disables, and still exits 0. So the program lets dpkg-repack only
     generate the build tree, drops the conffiles that are not on disk, and builds the file itself."""
@@ -228,7 +255,7 @@ def repacked(host, name, version, packages, repack, work):
             host.run(['rm', '-f', '--', str(conffiles)], privileged=True)
     output = directory / f'{name}_repacked.deb'
     host.run(['dpkg-deb', '--build', '--', str(tree), str(output)], privileged=True, check=False)
-    if not output.is_file() or not is_previous(host, output, name, version):
+    if not output.is_file() or not is_previous(host, output, name, version, architecture):
         raise Outcome('rollback_unavailable', {'package': name, 'reason': 'dpkg-deb wrote no file of the installed version'})
     return output
 
@@ -273,15 +300,18 @@ def owned(host, path):
 
 
 def owned_paths(host, paths):
-    """The paths that a package owns, in one dpkg -S call. dpkg names an unowned path on stderr; that is the answer
-    asked for, not an error, so the run stays quiet."""
+    """The paths that a package owns, in one dpkg -S call. dpkg exits 1 and names each unowned path on stderr; that
+    is the answer asked for, so only other stderr lines are logged. Any other exit code is an error."""
     if not paths:
         return set()
-    output = host.run(['dpkg', '-S', '--', *map(str, paths)], check=False, quiet=True).stdout
-    found = set()
-    for line in output.splitlines():
-        if ': ' in line:
-            found.update(part.strip() for part in line.split(': ', 1)[1].split(','))
+    completed = host.run(['dpkg', '-S', '--', *map(str, paths)], check=False, quiet=True)
+    unexpected = [line for line in completed.stderr.splitlines() if line.strip() and 'no path found' not in line]
+    if unexpected:
+        log('\n'.join(unexpected)[-2000:])
+    if completed.returncode not in (0, 1):
+        raise RuntimeError(f'dpkg -S exited {completed.returncode}')
+    # Each line is "<package>[, <package>...]: <path>". A path can hold a comma, so only ': ' separates.
+    found = {line.split(': ', 1)[1] for line in completed.stdout.splitlines() if ': ' in line}
     return found & set(map(str, paths))
 
 
@@ -348,10 +378,12 @@ def disable_unowned(host, version, unowned, backup):
     return moved
 
 
-def disabled_pools(host, versions):
-    """The default pool files that are absent, because Orbit or an operator disabled them. A package install or a
-    rollback must not bring them back: dpkg keeps a removed conffile removed, and this guard enforces it."""
-    return [path for path in (host.path(f'etc/php/{version}/fpm/pool.d/www.conf') for version in versions)
+def disabled_pools(host, versions, packages):
+    """The default pool files that are absent although php<version>-fpm is installed, because Orbit or an operator
+    disabled them. A package install or a rollback must not bring them back: dpkg keeps a removed conffile removed,
+    and this guard enforces it. A first install of php<version>-fpm keeps the pool that it brings."""
+    return [path for version in versions if f'php{version}-fpm' in packages
+            for path in [host.path(f'etc/php/{version}/fpm/pool.d/www.conf')]
             if not (path.exists() or path.is_symlink())]
 
 
@@ -514,13 +546,13 @@ def main(payload):
             host.run(['rm', '-f', '--', str(path)], privileged=True)
     host.run(['install', '-d', '-o', 'root', '-g', 'root', '-m', '0755', str(host.path(CACHE))], privileged=True)
     before = {version: links(host, version) for version in versions}
-    pools = disabled_pools(host, versions)
+    pools = disabled_pools(host, versions, packages)
     with tempfile.TemporaryDirectory(prefix='orbit-php-build-') as directory:
         work = Path(directory)
         files = [download(host, pins[name], payload.get('mirror', ''), work, architecture)
                  for name in pending + repair]
         replaced = [name for name in pending + repair if name in packages] + purge
-        previous = previous_files(host, replaced, packages, payload['repack'], work)
+        previous = previous_files(host, replaced, packages, payload['repack'], work, architecture)
 
     # Packages that the change adds: a rollback removes them first, because the core Sury extensions of the previous
     # build depend on its exact php<version>-common.

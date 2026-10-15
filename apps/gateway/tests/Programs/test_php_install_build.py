@@ -19,6 +19,7 @@ FAKES = {
                   '"$(basename "$f")" "$(cat "$f")"; done; exit 0',
     # A path is owned by a package when $STATE/owned/<file name> exists.
     'dpkg': 'case "$1" in --print-architecture) echo amd64;; -S) shift; [ "$1" = -- ] && shift; rc=0; '
+            '[ -f "$STATE/dpkg-S-fails" ] && { echo "dpkg-query: error: database is locked" >&2; exit 2; }; '
             'echo "dpkg -S $#" >> "$STATE/calls"; for p in "$@"; do if [ -f "$STATE/owned/$(basename "$p")" ]; then '
             'echo "php8.5-common: $p"; else echo "dpkg-query: no path found matching pattern $p" >&2; rc=1; fi; done; '
             'exit $rc;; '
@@ -29,7 +30,9 @@ FAKES = {
     # A fake .deb is a text file: "<name> <version> <architecture>".
     # dpkg-deb --build refuses a tree whose DEBIAN/conffiles names a file that is not in it, as the real one does.
     # $STATE/build-writes-nothing makes it exit 0 without a file, so the program must not trust the exit code.
-    'dpkg-deb': 'case "$1" in --build) shift; [ "$1" = -- ] && shift; tree="$1"; out="$2"; '
+    # dpkg-deb --extract writes the payload kept in $STATE/payload/<name>_<version>/.
+    'dpkg-deb': 'case "$1" in --extract) shift; [ "$1" = -- ] && shift; read -r n v a < "$1"; '
+                '[ -d "$STATE/payload/${n}_$v" ] && cp -r "$STATE/payload/${n}_$v/." "$2/"; exit 0;; --build) shift; [ "$1" = -- ] && shift; tree="$1"; out="$2"; '
                 '[ -f "$STATE/build-writes-nothing" ] && exit 0; '
                 'if [ -f "$tree/DEBIAN/conffiles" ]; then while read -r c; do [ -e "$tree$c" ] || exit 2; done '
                 '< "$tree/DEBIAN/conffiles"; fi; n=$(sed -n "s/^Package: //p" "$tree/DEBIAN/control"); '
@@ -464,6 +467,7 @@ class InstallBuildTest(unittest.TestCase):
         archives.mkdir(parents=True)
         for name in ('php8.5-cli', 'php-common'):
             (archives / f'{name}_8.5.11-1_amd64.deb').write_bytes(deb(name, '8.5.11-1'))
+            self.installed_payload(name, '8.5.11-1', {f'usr/share/doc/{name}/copyright': name})
         # Another version of the same package in the archive is never taken.
         (archives / 'php8.5-cli_8.5.10-1_amd64.deb').write_bytes(deb('php8.5-cli', '8.5.10-1'))
         (self.state / 'fail-install').touch()
@@ -489,6 +493,8 @@ class InstallBuildTest(unittest.TestCase):
 
     def test_an_install_never_brings_back_a_disabled_default_pool(self):
         self.disabled_pool_build()
+        self.pin('php8.5-fpm', '8.5.12-1')
+        self.install('php8.5-fpm', '8.5.11-1')
         (self.state / 'recreates-www').touch()
 
         outcome, data = self.run_program(fpm='none')
@@ -506,6 +512,78 @@ class InstallBuildTest(unittest.TestCase):
 
         self.assertEqual(outcome, 'applied', data)
         self.assertTrue((self.root / 'etc/php/8.5/fpm/pool.d/www.conf').exists())
+
+    def installed_payload(self, name, version, files, archived=None):
+        """dpkg's MD5 sums of the installed package, and the payload of its .deb (or `archived`, when it differs)."""
+        import hashlib as digests
+        info = self.root / 'var/lib/dpkg/info'
+        info.mkdir(parents=True, exist_ok=True)
+        (info / f'{name}.md5sums').write_text(''.join(
+            f'{digests.md5(content.encode()).hexdigest()}  {path}\n' for path, content in files.items()))
+        for path, content in (archived or files).items():
+            target = self.state / 'payload' / f'{name}_{version}' / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content)
+
+    def test_a_first_install_of_php_fpm_keeps_the_pool_it_brings(self):
+        self.previous_build()
+        (self.state / 'recreates-www').touch()
+
+        outcome, data = self.run_program(fpm='none')
+
+        self.assertEqual(outcome, 'applied', data)
+        self.assertTrue((self.root / 'etc/php/8.5/fpm/pool.d/www.conf').exists())
+
+    def test_an_archive_copy_that_differs_from_the_installed_files_is_not_used(self):
+        self.previous_build()
+        archives = self.root / 'var/cache/apt/archives'
+        archives.mkdir(parents=True)
+        (archives / 'php8.5-cli_8.5.11-1_amd64.deb').write_bytes(deb('php8.5-cli', '8.5.11-1'))
+        self.installed_payload('php8.5-cli', '8.5.11-1', {'usr/bin/php8.5': 'installed'},
+                               archived={'usr/bin/php8.5': 'tampered'})
+
+        outcome, data = self.run_program(mode='apply', fpm='none')
+
+        self.assertEqual(outcome, 'applied', data)
+        self.assertIn('repack php8.5-cli', self.calls())
+
+    def test_a_cached_copy_that_does_not_match_its_digest_or_architecture_is_not_used(self):
+        self.previous_build()
+        cache = self.root / 'var/cache/orbit/php-packages'
+        cache.mkdir(parents=True)
+        # Named after another digest, so its bytes changed after it was cached.
+        (cache / f'php8.5-cli_{"0" * 64}.deb').write_bytes(deb('php8.5-cli', '8.5.11-1'))
+        other = 'php-common 8.5.11-1 arm64\n'.encode()
+        (cache / f'php-common_{hashlib.sha256(other).hexdigest()}.deb').write_bytes(other)
+
+        outcome, data = self.run_program(fpm='none')
+
+        self.assertEqual(outcome, 'applied', data)
+        self.assertIn('repack php8.5-cli', self.calls())
+        self.assertIn('repack php-common', self.calls())
+
+    def test_a_dpkg_ownership_lookup_that_fails_stops_the_program(self):
+        self.previous_build()
+        (self.root / 'etc/php/8.5/mods-available').mkdir(parents=True, exist_ok=True)
+        (self.root / 'etc/php/8.5/mods-available/apcu.ini').write_text('extension=apcu.so\n')
+        (self.state / 'dpkg-S-fails').touch()
+
+        completed = execute('php.install-build', self.payload(), environment=self.environment)
+
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn(b'database is locked', completed.stderr)
+        self.assertFalse([call for call in self.calls() if call.startswith(('apt-get', 'curl'))])
+
+    def test_reads_an_owned_path_that_holds_a_comma(self):
+        self.previous_build()
+        (self.root / 'etc/php/8.5/mods-available').mkdir(parents=True, exist_ok=True)
+        (self.root / 'etc/php/8.5/mods-available/apcu,extra.ini').write_text('extension=/opt/none/apcu.so\n')
+        (self.state / 'owned').mkdir()
+        (self.state / 'owned' / 'apcu,extra.ini').touch()
+
+        outcome, data = self.run_program(mode='plan')
+
+        self.assertEqual((outcome, data['unowned']), ('planned', []), data)
 
     def test_asks_dpkg_for_ownership_once_and_logs_no_unowned_path_noise(self):
         self.previous_build()
