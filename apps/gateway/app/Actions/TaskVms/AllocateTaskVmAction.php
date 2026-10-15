@@ -13,6 +13,7 @@ use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
+use App\Infrastructure\TaskVms\UpCloudServers;
 use App\Jobs\TaskVms\ProvisionTaskVm;
 use App\Models\Task;
 use App\Models\TaskVm;
@@ -94,10 +95,12 @@ final readonly class AllocateTaskVmAction
                 }
                 throw $exception;
             }
-            $vm = $this->record->execute($group, $target, $size);
-            if ($target->hostNodeId !== null) {
-                $vm->update(['recipe_identity' => $recipe->identity, 'image_fingerprint' => $images[$target->hostNodeId]]);
+            $fingerprint = $target->hostNodeId !== null ? $images[$target->hostNodeId] : app(UpCloudServers::class)->currentTemplate($recipe->identity);
+            if ($fingerprint === null) {
+                throw new TaskCapacityException(TaskWait::Capacity, 'Task VM: waiting for recipe '.substr($recipe->identity, 7, 12).' template on UpCloud.');
             }
+            $vm = $this->record->execute($group, $target, $size);
+            $vm->update(['recipe_identity' => $recipe->identity, 'image_fingerprint' => $target->hostNodeId !== null ? $fingerprint : null]);
 
             return $vm;
         });

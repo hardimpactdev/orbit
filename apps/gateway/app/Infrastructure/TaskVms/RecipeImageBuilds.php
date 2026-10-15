@@ -10,9 +10,11 @@ use App\Domain\TaskVms\TaskVmImageBuildStep;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\MachineSoftware\MachineRecipe;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
+use App\Jobs\TaskVms\RefreshUpCloudTaskVmBaseImage;
 use App\Models\Node;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Support\Facades\DB;
+use Throwable;
 
 /** Desired identity is persisted before dispatch; a busy host catches up on the next scheduler check. */
 final readonly class RecipeImageBuilds
@@ -24,6 +26,14 @@ final readonly class RecipeImageBuilds
     {
         $recipe = $this->currentRecipe();
         $generation = $this->desire($recipe);
+        try {
+            if ($this->settings->upcloud !== null && app(UpCloudServers::class)->currentTemplate($recipe->identity) === null) {
+                RefreshUpCloudTaskVmBaseImage::dispatch();
+            }
+        } catch (Throwable $error) {
+            // Optional UpCloud refresh must not block Incus recovery or recipe builds.
+            report($error);
+        }
         $builds = [];
         $this->chain->recoverSubmissions();
         foreach ($this->settings->hosts as $host) {

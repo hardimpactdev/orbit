@@ -14,7 +14,7 @@ use RuntimeException;
 /** Runs only code-owned installers; the persisted recipe supplies package names and integrity pins. */
 final readonly class RecipeImagePrograms
 {
-    public function apply(IncusGuestShell $shell, MachineRecipe $recipe, string $profile, string $phase): void
+    public function apply(TaskVmGuestShell $shell, MachineRecipe $recipe, string $profile, string $phase): void
     {
         $payload = $this->payload($shell, $recipe, $profile);
         if ($phase === 'pi') {
@@ -39,7 +39,7 @@ final readonly class RecipeImagePrograms
         }
     }
 
-    public function verify(IncusGuestShell $shell, MachineRecipe $recipe, string $profile): void
+    public function verify(TaskVmGuestShell $shell, MachineRecipe $recipe, string $profile): void
     {
         $result = $shell->asRoot(['python3', '-', 'verify', json_encode($this->payload($shell, $recipe, $profile), JSON_THROW_ON_ERROR)], $this->script(), timeout: 120);
         if (! $result->succeeded() || $result->truncated || trim($result->stdout) !== '{"ok":true}') {
@@ -48,7 +48,7 @@ final readonly class RecipeImagePrograms
     }
 
     /** @return array{identity: string, snapshot: string, architecture: string, profile: string, tools: array<string, mixed>, php: array<string, mixed>|null} */
-    private function payload(IncusGuestShell $shell, MachineRecipe $recipe, string $profile): array
+    private function payload(TaskVmGuestShell $shell, MachineRecipe $recipe, string $profile): array
     {
         $arch = $shell->asRoot(['dpkg', '--print-architecture']);
         $architecture = trim($arch->stdout);
