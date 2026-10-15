@@ -13,6 +13,7 @@ use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskExecutionHold;
 use App\Domain\Tasks\TaskGroupGuard;
+use App\Domain\Tasks\TaskPublication;
 use App\Domain\Tasks\TaskQuestions;
 use App\Domain\Tasks\TaskReviewPacketBuilder;
 use App\Domain\Tasks\TaskStatus;
@@ -44,6 +45,7 @@ final readonly class StoreTaskCommentAction
         private TaskTurnFetchNotice $fetchNotice,
         private TaskReviewPacketBuilder $reviewPackets,
         private RetryTaskBaselineAction $retryBaseline,
+        private TaskPublication $publication,
         private ResumeDeliverableCorrectionAction $correctionResume,
     ) {}
 
@@ -75,6 +77,13 @@ final readonly class StoreTaskCommentAction
                 TaskAssistance::apply($group, AssistanceKind::Direction, $comment->body, $comment->body, replaceDirection: true);
                 TaskQuestions::recordOperator($task, $comment);
                 $this->log($task, $comment, 'assistance requested');
+            }
+            if ($type === TaskCommentType::Resolution && trim($comment->body) !== '' && ! $endedPullRequest
+                && ($task->assistance_requested || ($task->status === TaskStatus::Completed && $group->assistance_requested))
+                && $this->publication->queueBaseMergeRetry($group, $task, $comment)) {
+                $this->log($task, $comment, 'resolution queued main merge gate retry');
+
+                return $comment;
             }
             if ($type === TaskCommentType::Resolution && trim($comment->body) !== '' && $task->assistance_requested && ! $endedPullRequest) {
                 if ($task->assistance_kind !== AssistanceKind::Direction && TaskTopologyFailedException::caused($task->assistance_reason)) {
