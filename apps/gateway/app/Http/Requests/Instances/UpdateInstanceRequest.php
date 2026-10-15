@@ -16,6 +16,8 @@ final class UpdateInstanceRequest extends FormRequest
 {
     private ?string $branch = null;
 
+    private ?bool $autoDeploy = null;
+
     /** @return array<string, list<string>> */
     public function rules(): array
     {
@@ -23,6 +25,7 @@ final class UpdateInstanceRequest extends FormRequest
             'branch' => ['sometimes', 'required', 'string'],
             'shared_paths' => ['sometimes', 'nullable', 'array', 'list', 'max:32'],
             'shared_paths.*' => ['string', 'max:255'],
+            'auto_deploy' => ['sometimes', 'required', 'boolean'],
         ];
     }
 
@@ -30,17 +33,21 @@ final class UpdateInstanceRequest extends FormRequest
     public function validationData(): array
     {
         try {
-            $payload = app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['branch', 'shared_paths']);
+            $payload = app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['branch', 'shared_paths', 'auto_deploy']);
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }
 
         if ($payload === []) {
-            throw ValidationException::withMessages(['body' => ['Provide branch or shared_paths.']]);
+            throw ValidationException::withMessages(['body' => ['Provide branch, shared_paths, or auto_deploy.']]);
         }
 
         if (array_key_exists('branch', $payload) && ! is_string($payload['branch'])) {
             throw ValidationException::withMessages(['body' => ['The branch field must be a string.']]);
+        }
+
+        if (array_key_exists('auto_deploy', $payload) && ! is_bool($payload['auto_deploy'])) {
+            throw ValidationException::withMessages(['body' => ['The auto_deploy field must be true or false.']]);
         }
 
         try {
@@ -59,6 +66,7 @@ final class UpdateInstanceRequest extends FormRequest
         }
 
         $this->branch = $payload['branch'] ?? null;
+        $this->autoDeploy = $payload['auto_deploy'] ?? null;
 
         return $payload;
     }
@@ -71,8 +79,15 @@ final class UpdateInstanceRequest extends FormRequest
         return $paths === null ? null : SharedPaths::validate($paths);
     }
 
+    /** The new deployment branch, or null to keep it. */
     public function branch(): ?string
     {
         return $this->branch;
+    }
+
+    /** Whether to deploy the Instance automatically, or null to keep the setting. */
+    public function autoDeploy(): ?bool
+    {
+        return $this->autoDeploy;
     }
 }

@@ -163,6 +163,7 @@ it('keeps source Git credentials and Composer setup on reviewed remote paths', f
             'app/Domain/GitHub/GitReadEnvironment.php',
             'app/Infrastructure/GatewayReleases/GatewayReleaseBuilder.php',
             'app/Infrastructure/RemotePrograms/SshProgramRunner.php',
+            'app/Infrastructure/SourceControl/GitRemoteBranchHeads.php',
             'app/Infrastructure/SourceControl/NativeRepositoryDefaultBranchResolver.php',
             'app/Infrastructure/TaskVms/TaskVmGit.php',
             'app/Infrastructure/Tasks/NativeDeliverablePathRepository.php',

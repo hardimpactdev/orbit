@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace App\Domain\Instances\Deployment;
 
 use App\Actions\Instances\DeployInstanceAction;
+use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Operations\OperationKind;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationRun;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStepPlan;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\SourceControl\GitCommitSha;
 use App\Models\Instance;
 use App\Models\InstanceDeployment;
 use App\Models\Operation;
@@ -19,13 +21,15 @@ use InvalidArgumentException;
 /**
  * The `instance.deploy` operation (docs/reference/deployments.md#the-deploy-operation). It records one deployment
  * history row on its first attempt, runs the deployment's steps as the operation's steps, and saves the row's events
- * after each step, so a resumed attempt continues the same row.
+ * after each step, so a resumed attempt continues the same row. An input `commit` pins the deployment to that commit;
+ * a failed deployment then records it too.
  */
 final readonly class InstanceDeployOperation implements OperationKind
 {
     public function __construct(
         private DeployInstanceAction $deploy,
         private InstanceDeploymentRecorder $recorder,
+        private InstanceEnvironmentOperationLock $locks,
     ) {}
 
     public function run(Operation $operation, OperationRun $run): OperationOutcome
@@ -36,12 +40,54 @@ final readonly class InstanceDeployOperation implements OperationKind
             return OperationOutcome::failed('operation.target_missing');
         }
 
+        if ($operation->triggered_by !== AutomaticDeployHistory::Trigger || ! $instance->placedOnAppProd()) {
+            return $this->deploy($operation, $run, $instance);
+        }
+
+        // A rollback takes the same Instance lock, and records its row before it waits for the lock. Under the lock,
+        // a rollback or manual deployment that came after the tick started this operation therefore shows, and wins.
+        try {
+            return $this->locks->run([$instance->id], function () use ($operation, $run, $instance): OperationOutcome {
+                $pause = new AutomaticDeployHistory($instance->refresh())->pausedBy();
+
+                return $pause instanceof InstanceDeployment
+                    ? $this->paused($operation)
+                    : $this->deploy($operation, $run, $instance);
+            });
+        } catch (ResourceOperationException $exception) {
+            return OperationOutcome::failed($exception->errorCode);
+        }
+    }
+
+    /**
+     * Ends an automatic deployment that a pause stopped before it deployed. A first attempt writes no history row; a
+     * resumed attempt ends its row with `deployment.paused`, which counts as no failure of the commit.
+     */
+    private function paused(Operation $operation): OperationOutcome
+    {
+        $deploymentId = $operation->state['deployment_id'] ?? null;
+        $deployment = is_int($deploymentId) ? InstanceDeployment::query()->find($deploymentId) : null;
+
+        if ($deployment instanceof InstanceDeployment && $deployment->status === 'running') {
+            $this->recorder->finish(
+                $deployment,
+                DeploymentResult::failed(null, null, DeploymentFailureBoundary::Operation, AutomaticDeployHistory::Paused, commit: self::commit($operation)),
+                $deployment->events ?? [],
+            );
+        }
+
+        return OperationOutcome::failed(AutomaticDeployHistory::Paused);
+    }
+
+    private function deploy(Operation $operation, OperationRun $run, Instance $instance): OperationOutcome
+    {
         $deployment = $this->deployment($operation, $run, $instance);
+        $commit = self::commit($operation);
 
         try {
             $plan = $this->deploy->plan($instance);
         } catch (ResourceOperationException $exception) {
-            $result = DeploymentResult::failed(null, null, DeploymentFailureBoundary::Operation, $exception->errorCode);
+            $result = DeploymentResult::failed(null, null, DeploymentFailureBoundary::Operation, $exception->errorCode, commit: $commit);
             $this->recorder->finish($deployment, $result, $deployment->events ?? []);
 
             return $this->outcome($deployment, $result);
@@ -72,7 +118,7 @@ final readonly class InstanceDeployOperation implements OperationKind
             $deployment->update(['events' => $collector->events()]);
         }, restartProcesses: $restartProcesses);
 
-        $result = $this->deploy->execute($instance, $steps, $request);
+        $result = $this->deploy->execute($instance, $steps, $request, $commit);
         $this->recorder->finish($deployment, $result, $collector->events());
 
         return $this->outcome($deployment, $result);
@@ -97,6 +143,7 @@ final readonly class InstanceDeployOperation implements OperationKind
             $selected,
             $this->boundary($failedStep),
             $failure->status === OperationStatus::Cancelled ? 'deployment.cancelled' : ($failure->errorCode ?? 'deployment.interrupted'),
+            commit: self::commit($operation),
         );
 
         if ($deployment->status === 'running') {
@@ -106,6 +153,14 @@ final readonly class InstanceDeployOperation implements OperationKind
         return $failure->status === OperationStatus::Cancelled
             ? OperationOutcome::cancelled($this->result($deployment, $result))
             : OperationOutcome::failed($failure->errorCode ?? 'operation.failed', $this->result($deployment, $result));
+    }
+
+    /** The commit the operation deploys, or null for the branch's newest commit. */
+    public static function commit(Operation $operation): ?string
+    {
+        $commit = $operation->input['commit'] ?? null;
+
+        return is_string($commit) && GitCommitSha::isValid($commit) ? $commit : null;
     }
 
     /** The deployment row of this operation: created on the first attempt and kept in the operation's state. */

@@ -28,6 +28,7 @@ SURY = re.compile(r'ppa\.launchpadcontent\.net/ondrej/php|packages\.sury\.org/ph
 RETIRED_SOURCE = 'etc/apt/sources.list.d/orbit-php.sources'
 RETIRED_KEYRING = 'usr/share/keyrings/orbit-sury-php.gpg'
 CACHE = 'var/cache/orbit/php-packages'
+APT_ARCHIVES = 'var/cache/apt/archives'
 # Extension files that no package owns, such as setup-php's, are moved here when --purge-extras disables them.
 UNOWNED_BACKUP = 'var/cache/orbit/php-unowned-extensions'
 EXTENSION_LINE = re.compile(r'^\s*(?:zend_)?extension\s*=\s*"?([^"\s;]+)', re.M)
@@ -71,10 +72,10 @@ class Host:
     def path(self, relative):
         return self.root / relative
 
-    def run(self, argv, *, privileged=False, check=True, **options):
+    def run(self, argv, *, privileged=False, check=True, quiet=False, **options):
         argv = [*self.elevate, *argv] if privileged else argv
         completed = subprocess.run(argv, capture_output=True, text=True, **options)
-        if completed.stderr:
+        if completed.stderr and not quiet:
             log(completed.stderr.strip()[-2000:])
         if check and completed.returncode:
             raise RuntimeError(f'{" ".join(argv[:4])} exited {completed.returncode}')
@@ -175,32 +176,88 @@ def download(host, pin, mirror, work, architecture):
                                       'reason': 'no source served the pinned file; Sury may have a newer build'})
 
 
-def previous_files(host, names, packages, repack, work):
-    """A .deb of each installed version that the change replaces or removes, so a rollback can reinstall it."""
-    cache = host.path(CACHE)
+def previous_files(host, names, packages, repack, work, architecture):
+    """A .deb of each installed version that the change replaces or removes, so a rollback can reinstall it. Sources,
+    in order: Orbit's cache, apt's archive cache, then a repack of the installed package. Sury deletes old builds and
+    the mirror holds only pinned ones, so the repack is the source that always exists. Each file must carry the
+    installed name, version, and architecture and pass its integrity check; a tool's exit code is not trusted."""
     files = {}
     for name in names:
         version = packages[name]
-        for cached in sorted(cache.glob(f'{name}_*.deb')):
-            if deb_fields(host, cached).get('Version') == version:
+        for cached in sorted(host.path(CACHE).glob(f'{name}_*.deb')):
+            # A cached file is named after its SHA-256 digest.
+            if cached.stem == f'{name}_{sha256(cached)}' and is_previous(host, cached, name, version, architecture):
                 files[name] = cached
                 break
-        if name in files:
-            continue
-        if 'dpkg-repack' not in packages and not host.ok(
-                ['env', 'DEBIAN_FRONTEND=noninteractive', 'apt-get', '-o', 'DPkg::Lock::Timeout=300', 'install', '--yes',
-                 '--no-install-recommends', '--no-remove', f'{repack["package"]}={repack["version"]}'], privileged=True):
-            raise Outcome('rollback_unavailable', {'package': name, 'reason': 'dpkg-repack could not be installed'})
-        packages['dpkg-repack'] = repack['version']
-        directory = Path(tempfile.mkdtemp(dir=work))
-        os.chmod(directory, 0o777)
-        if host.run(['dpkg-repack', '--', name], privileged=True, check=False, cwd=directory).returncode:
-            raise Outcome('rollback_unavailable', {'package': name, 'reason': 'dpkg-repack failed'})
-        repacked = sorted(directory.glob(f'{name}_*.deb'))
-        if len(repacked) != 1:
-            raise Outcome('rollback_unavailable', {'package': name, 'reason': 'dpkg-repack wrote no file'})
-        files[name] = keep(host, repacked[0], name)
+        if name not in files:
+            for archived in sorted(host.path(APT_ARCHIVES).glob(f'{name}_*.deb')):
+                if is_previous(host, archived, name, version, architecture) and matches_installed(host, archived, name, work):
+                    files[name] = keep(host, archived, name)
+                    break
+        if name not in files:
+            files[name] = keep(host, repacked(host, name, version, packages, repack, work, architecture), name)
     return files
+
+
+def is_previous(host, path, name, version, architecture):
+    fields = deb_fields(host, path)
+    return fields.get('Package') == name and fields.get('Version') == version \
+        and fields.get('Architecture') in (architecture, 'all')
+
+
+def matches_installed(host, path, name, work):
+    """Whether every file that dpkg recorded for the installed package has the same MD5 sum in `path`. apt's archive
+    is not signed per file, so dpkg's own record of the installed package is the reference."""
+    info = host.path('var/lib/dpkg/info')
+    sums = next((candidate for candidate in (info / f'{name}.md5sums', *sorted(info.glob(f'{name}:*.md5sums')))
+                 if candidate.is_file()), None)
+    if sums is None:
+        log(f'{path.name}: dpkg records no MD5 sums for {name}, so the archive copy is not used')
+        return False
+    directory = Path(tempfile.mkdtemp(dir=work))
+    if not host.ok(['dpkg-deb', '--extract', '--', str(path), str(directory)]):
+        return False
+    for line in sums.read_text(errors='replace').splitlines():
+        digest, _, relative = line.partition('  ')
+        member = directory / relative.strip()
+        if not member.is_file() or hashlib.md5(member.read_bytes()).hexdigest() != digest.strip():
+            log(f'{path.name} differs from the installed {name} at /{relative.strip()}, so it is not used')
+            return False
+    return True
+
+
+def repacked(host, name, version, packages, repack, work, architecture):
+    """Rebuilds the installed package from its files. dpkg-repack refuses a package whose conffile was removed on
+    purpose, such as the www pool that Orbit disables, and still exits 0. So the program lets dpkg-repack only
+    generate the build tree, drops the conffiles that are not on disk, and builds the file itself."""
+    if 'dpkg-repack' not in packages and not host.ok(
+            ['env', 'DEBIAN_FRONTEND=noninteractive', 'apt-get', '-o', 'DPkg::Lock::Timeout=300', 'install', '--yes',
+             '--no-install-recommends', '--no-remove', f'{repack["package"]}={repack["version"]}'], privileged=True):
+        raise Outcome('rollback_unavailable', {'package': name, 'reason': 'dpkg-repack could not be installed'})
+    packages['dpkg-repack'] = repack['version']
+    directory = Path(tempfile.mkdtemp(dir=work))
+    os.chmod(directory, 0o777)
+    host.run(['dpkg-repack', '--generate', '--', name], privileged=True, check=False, cwd=directory)
+    trees = sorted(path for path in directory.glob(f'dpkg-repack.{name}.*') if path.is_dir())
+    if len(trees) != 1:
+        raise Outcome('rollback_unavailable', {'package': name, 'reason': 'dpkg-repack generated no build tree'})
+    tree = trees[0]
+    conffiles = tree / 'DEBIAN/conffiles'
+    listed = host.run(['cat', '--', str(conffiles)], privileged=True, check=False, quiet=True).stdout.splitlines()
+    kept = [line for line in listed if line.strip() and host.ok(['test', '-e', str(tree) + line.strip()],
+                                                                  privileged=True)]
+    if len(kept) != len([line for line in listed if line.strip()]):
+        dropped = sorted(set(line.strip() for line in listed if line.strip()) - set(line.strip() for line in kept))
+        log(f'{name}: the repack leaves out conffiles that are not on disk: ' + ', '.join(dropped))
+        if kept:
+            host.run(['tee', '--', str(conffiles)], privileged=True, input=''.join(line + '\n' for line in kept))
+        else:
+            host.run(['rm', '-f', '--', str(conffiles)], privileged=True)
+    output = directory / f'{name}_repacked.deb'
+    host.run(['dpkg-deb', '--build', '--', str(tree), str(output)], privileged=True, check=False)
+    if not output.is_file() or not is_previous(host, output, name, version, architecture):
+        raise Outcome('rollback_unavailable', {'package': name, 'reason': 'dpkg-deb wrote no file of the installed version'})
+    return output
 
 
 def damaged(host, names):
@@ -239,7 +296,23 @@ def apt_install(host, files, reinstall=False):
 
 
 def owned(host, path):
-    return host.ok(['dpkg', '-S', '--', str(path)])
+    return str(path) in owned_paths(host, [path])
+
+
+def owned_paths(host, paths):
+    """The paths that a package owns, in one dpkg -S call. dpkg exits 1 and names each unowned path on stderr; that
+    is the answer asked for, so only other stderr lines are logged. Any other exit code is an error."""
+    if not paths:
+        return set()
+    completed = host.run(['dpkg', '-S', '--', *map(str, paths)], check=False, quiet=True)
+    unexpected = [line for line in completed.stderr.splitlines() if line.strip() and 'no path found' not in line]
+    if unexpected:
+        log('\n'.join(unexpected)[-2000:])
+    if completed.returncode not in (0, 1):
+        raise RuntimeError(f'dpkg -S exited {completed.returncode}')
+    # Each line is "<package>[, <package>...]: <path>". A path can hold a comma, so only ': ' separates.
+    found = {line.split(': ', 1)[1] for line in completed.stdout.splitlines() if ': ' in line}
+    return found & set(map(str, paths))
 
 
 # Library file stems whose `php -m` name differs.
@@ -260,19 +333,23 @@ def unowned_extensions(host, version, extensions):
     to its `php -m` name. A library outside the recipe is foreign. A library that the recipe names is foreign too
     when the file it resolves to is not owned by a package, because only package-owned files are verified."""
     directory = host.path(f'etc/php/{version}/mods-available')
-    found = []
+    loading = {}
     for ini in sorted(directory.glob('*.ini')) if directory.is_dir() else []:
         libraries = [Path(name) for name in EXTENSION_LINE.findall(ini.read_text(errors='replace'))]
-        if not libraries or owned(host, ini):
+        if libraries:
+            loading[ini] = [(library, [path for path in (
+                [host.path(str(library).lstrip('/'))] if library.is_absolute()
+                else sorted(host.path('usr/lib/php').glob(f'*/{library.stem}.so'))) if path.is_file()])
+                for library in libraries]
+    known = owned_paths(host, [*loading, *(path for pairs in loading.values() for _, present in pairs
+                                           for path in present)])
+    found = []
+    for ini, pairs in loading.items():
+        if str(ini) in known:
             continue
         modules, files = set(), [ini]
-        for library in libraries:
-            if library.is_absolute():
-                candidates = [host.path(str(library).lstrip('/'))]
-            else:
-                candidates = sorted(host.path('usr/lib/php').glob(f'*/{library.stem}.so'))
-            present = [path for path in candidates if path.is_file()]
-            unowned = [path for path in present if not owned(host, path)]
+        for library, present in pairs:
+            unowned = [path for path in present if str(path) not in known]
             module = module_name(library)
             # A missing library loads nothing; the module check after the install reports a missing module.
             if module not in extensions or unowned:
@@ -299,6 +376,22 @@ def disable_unowned(host, version, unowned, backup):
             host.run(['mv', '--', str(path), str(kept)], privileged=True)
             moved.append((path, kept))
     return moved
+
+
+def disabled_pools(host, versions, packages):
+    """The default pool files that are absent although php<version>-fpm is installed, because Orbit or an operator
+    disabled them. A package install or a rollback must not bring them back: dpkg keeps a removed conffile removed,
+    and this guard enforces it. A first install of php<version>-fpm keeps the pool that it brings."""
+    return [path for version in versions if f'php{version}-fpm' in packages
+            for path in [host.path(f'etc/php/{version}/fpm/pool.d/www.conf')]
+            if not (path.exists() or path.is_symlink())]
+
+
+def keep_disabled(host, pools):
+    for path in pools:
+        if path.exists() or path.is_symlink():
+            log(f'Removing {path}: the default pool was disabled before the install')
+            host.run(['rm', '-f', '--', str(path)], privileged=True)
 
 
 def links(host, version):
@@ -453,12 +546,13 @@ def main(payload):
             host.run(['rm', '-f', '--', str(path)], privileged=True)
     host.run(['install', '-d', '-o', 'root', '-g', 'root', '-m', '0755', str(host.path(CACHE))], privileged=True)
     before = {version: links(host, version) for version in versions}
+    pools = disabled_pools(host, versions, packages)
     with tempfile.TemporaryDirectory(prefix='orbit-php-build-') as directory:
         work = Path(directory)
         files = [download(host, pins[name], payload.get('mirror', ''), work, architecture)
                  for name in pending + repair]
         replaced = [name for name in pending + repair if name in packages] + purge
-        previous = previous_files(host, replaced, packages, payload['repack'], work)
+        previous = previous_files(host, replaced, packages, payload['repack'], work, architecture)
 
     # Packages that the change adds: a rollback removes them first, because the core Sury extensions of the previous
     # build depend on its exact php<version>-common.
@@ -474,6 +568,7 @@ def main(payload):
             ok = host.ok(['dpkg', '--remove', '--', *present], privileged=True) and ok
         if previous:
             ok = apt_install(host, list(previous.values()), reinstall=bool(repair)) and ok
+            keep_disabled(host, pools)
             # The reinstall can bring an added package back as a dependency; remove what is left once more.
             left = [name for name in added if name in installed(host)]
             if left:
@@ -508,7 +603,9 @@ def main(payload):
             fail('install_failed', {'reason': str(error)}, 'disabling unowned extensions failed', [])
     if purge and not host.ok(['dpkg', '--purge', '--', *purge], privileged=True):
         fail('install_failed', {'package': purge[0]}, 'dpkg --purge failed', [])
-    if files and not apt_install(host, files, reinstall=bool(repair)):
+    installed_ok = not files or apt_install(host, files, reinstall=bool(repair))
+    keep_disabled(host, pools)
+    if not installed_ok:
         fail('install_failed', {'package': (pending + repair)[0]}, 'apt-get install failed', [])
     current = installed(host)
     wrong = sorted(name for name, pin in pins.items() if current.get(name) != pin['version'])

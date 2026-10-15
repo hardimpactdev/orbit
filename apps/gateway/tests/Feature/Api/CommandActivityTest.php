@@ -123,6 +123,7 @@ it('records database create destroy add and remove command names and Instance ta
         ->postJson('/api/v1/database-connections', [
             'slug' => 'app',
             'driver' => 'sqlite',
+            'node_id' => $instance->node_id,
             'path' => '/tmp/app.sqlite',
         ]);
     $create->assertCreated();

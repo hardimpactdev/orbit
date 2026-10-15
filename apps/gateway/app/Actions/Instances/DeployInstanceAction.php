@@ -82,16 +82,16 @@ final readonly class DeployInstanceAction
         ];
     }
 
-    /** Runs the deployment's steps through `$steps`: the steps of an `instance.deploy` operation. */
-    public function execute(Instance $instance, DeploymentSteps $steps, ?DeploymentRequest $request = null): DeploymentResult
+    /**
+     * Runs the deployment's steps through `$steps`: the steps of an `instance.deploy` operation. With `$commit`, it
+     * deploys that commit, which the branch must contain, instead of the branch's newest commit.
+     */
+    public function execute(Instance $instance, DeploymentSteps $steps, ?DeploymentRequest $request = null, ?string $commit = null): DeploymentResult
     {
         $request ??= DeploymentRequest::withoutOutput();
         $instance->refresh();
         if ($instance->placedOnAppDev()) {
-            $result = $this->developmentAction()->execute($instance, $request, steps: $steps);
-            assert($result instanceof DeploymentResult);
-
-            return $result;
+            return $this->developmentAction()->execute($instance, $request, $steps, $commit);
         }
 
         try {
@@ -102,13 +102,14 @@ final readonly class DeployInstanceAction
                 null,
                 DeploymentFailureBoundary::Operation,
                 DeploymentErrorCode::fromException($exception),
+                commit: $commit,
             );
         }
 
         try {
             return $this->operations->run(
                 [$instance->id],
-                fn (): DeploymentResult => $this->deadline->within(DeploymentDeadline::for($config)->seconds, fn (): DeploymentResult => $this->deploy($instance->refresh(), $config, $request, $steps)),
+                fn (): DeploymentResult => $this->deadline->within(DeploymentDeadline::for($config)->seconds, fn (): DeploymentResult => $this->deploy($instance->refresh(), $config, $request, $steps, $commit)),
             );
         } catch (Throwable $exception) {
             return DeploymentResult::failed(
@@ -116,6 +117,7 @@ final readonly class DeployInstanceAction
                 null,
                 DeploymentFailureBoundary::Operation,
                 DeploymentErrorCode::fromException($exception),
+                commit: $commit,
             );
         }
     }
@@ -141,6 +143,7 @@ final readonly class DeployInstanceAction
         DeploymentConfig $config,
         DeploymentRequest $request,
         DeploymentSteps $steps,
+        ?string $commit,
     ): DeploymentResult {
         $boundary = DeploymentFailureBoundary::Preparation;
         $release = null;
@@ -148,13 +151,13 @@ final readonly class DeployInstanceAction
         $commands = [];
 
         try {
-            $prepared = $steps->run(new DeploymentStepName(DeploymentProgressPhase::SourcePreparation), $request, function () use ($instance, $config, &$selected): array {
+            $prepared = $steps->run(new DeploymentStepName(DeploymentProgressPhase::SourcePreparation), $request, function () use ($instance, $config, $commit, &$selected): array {
                 // A failed preparation reports the selection it found.
                 $selected = $this->deployment->selected($instance);
 
                 return [
                     'previous' => self::storableRelease($selected),
-                    'release' => self::storableRelease($this->deployment->prepare($instance, $config->branch)),
+                    'release' => self::storableRelease($this->deployment->prepare($instance, $config->branch, $commit)),
                 ];
             });
             $previous = self::storedRelease(is_array($prepared) ? ($prepared['previous'] ?? null) : null);
@@ -220,6 +223,7 @@ final readonly class DeployInstanceAction
                 $boundary,
                 DeploymentErrorCode::fromException($exception),
                 $commands,
+                $commit,
             );
         }
     }
