@@ -506,3 +506,18 @@ function removal_tool_exception(Closure $callback): ToolOperationException
 
     throw new RuntimeException('Expected a ToolOperationException.');
 }
+
+it('drops only the record of a role-owned PHP package and leaves the package to the role', function (): void {
+    $node = removal_tool_node('removal-role-owned');
+    $tool = removal_tool_record($node, removal_tool_manager($node), package: 'php8.5-xml');
+    [$action, $manager, $lock] = removal_tool_action();
+    $manager->roleOwned = ['php8.5-xml'];
+
+    $result = $action->execute($tool);
+
+    expect($result->status)->toBe(ToolObjectStatus::Removed)
+        ->and($result->outcome)->toBe(ToolOutcome::Applied)
+        ->and($manager->calls)->toBe([])
+        ->and($lock->runs)->toBe(1)
+        ->and(Tool::query()->whereKey($tool->id)->exists())->toBeFalse();
+});

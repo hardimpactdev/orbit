@@ -171,7 +171,19 @@ Some installed packages keep SSH, the WireGuard tunnel, DNS, Docker, the firewal
 
 The apt names are every package `NodeBootstrapPackageCatalog` returns from `forNode` and `forRole`, plus `openssh-server` and `wireguard-tools`. The Gateway reads that catalog at the check. It does not keep a second copied list. The table is that union.
 
-`composer` and `brew-cask` have no protected names. The apt package `composer` is protected. The `composer` manager is a different scope and has none. A protected package still appears in scan, with `adoption` `unsupported` and `adoption_block` `protected`. Install, update, and adopt refuse it with no new Tool row. Install and update return `tool.package_protected` (HTTP 409, outcome `manager_failed`). Adopt returns `tool.adoption_unsupported` with that block token. `tool:remove` of an existing row returns `tool.package_protected`, leaves the row, and does not run the uninstaller. `tool.removal_plan_unsafe` does not replace this list. A plan that removes only `docker.io` or only `dnsmasq` is still refused.
+`composer` and `brew-cask` have no protected names. The [role-owned PHP packages](#role-owned-php-packages) are protected for `apt` too. The apt package `composer` is protected. The `composer` manager is a different scope and has none. A protected package still appears in scan, with `adoption` `unsupported` and `adoption_block` `protected`. Install, update, and adopt refuse it with no new Tool row. Install and update return `tool.package_protected` (HTTP 409, outcome `manager_failed`). Adopt returns `tool.adoption_unsupported` with that block token. `tool:remove` of an existing row returns `tool.package_protected`, leaves the row, and does not run the uninstaller. `tool.removal_plan_unsafe` does not replace this list. A plan that removes only `docker.io` or only `dnsmasq` is still refused.
+
+### Role-owned PHP packages
+
+The PHP role owns the [recipe's PHP build](/reference/compute-drivers#php-build). The apt manager also protects every `php<version>-*` package, for any version, and the recipe's shared PHP pins, `php-common` and `libgd3`. Adopt returns `tool.adoption_unsupported` with block `protected`. Install and update return `tool.package_role_owned` (HTTP 409, outcome `manager_failed`) before they take a lock or run a command. A Tool that moved a PHP package would break the one PHP build that every machine runs.
+
+A Tool record that an earlier release adopted for such a package stays until you remove it. `tool:remove` of that record deletes only the record. It runs no package manager command, so the package stays installed at its recipe version. The result is the usual `status` `removed` with outcome `applied`. For example, on Shark:
+
+```bash
+orbit tool:list --node=<shark-node-id>
+orbit tool:remove 23 --yes
+orbit tool:remove 24 --yes
+```
 
 ## Adopt a Tool
 
@@ -328,6 +340,7 @@ The Gateway first reads the installed version. For `apt`, it then plans the remo
 | The version probe fails on a Tool with a known package | `tool.version_probe_failed` | Kept as `failed` |
 | The macOS scope is absent or conflicting | `tool.manager_unavailable` | Kept as `failed` |
 | The removal fails or the package stays | `tool.remove_failed` | Kept as `failed` |
+| The package is a [role-owned PHP package](#role-owned-php-packages) | Success, `status` `removed` and `outcome` `applied`, with no manager command. The package stays installed | Deleted |
 
 Retry the same command with the Tool ID. The Gateway reads the live package state before it acts again.
 

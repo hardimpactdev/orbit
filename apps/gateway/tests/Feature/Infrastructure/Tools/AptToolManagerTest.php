@@ -412,6 +412,31 @@ describe(AptToolManager::class, function (): void {
             ->not->toContain('autoremove');
     });
 
+    it('reserves every PHP role package and the recipe shared PHP pins for the PHP role', function (string $package, bool $owned): void {
+        [$manager] = apt_tool_manager([]);
+
+        expect($manager->roleOwns($package))->toBe($owned);
+    })->with([
+        'a recipe extension' => ['php8.5-xml', true],
+        'another PHP version' => ['php8.3-cli', true],
+        'an extension outside the recipe' => ['php8.5-opentelemetry', true],
+        'the shared common pin' => ['php-common', true],
+        'the shared GD library' => ['libgd3', true],
+        'a pure PHP library' => ['php-symfony-console', false],
+        'an unrelated package' => ['jq', false],
+    ]);
+
+    it('blocks adoption of an installed role-owned PHP package as protected', function (): void {
+        [$manager, $ssh] = apt_tool_manager([
+            apt_result("apt 2.8.3 (amd64)\n"),
+            apt_result("install ok installed\n8.5.11-1\n"),
+        ]);
+
+        expect($manager->inspectForAdoption(apt_tool_node(), 'php8.5-sqlite3'))
+            ->toEqual(new ToolAdoptionFact('8.5.11-1', ToolInventoryPackage::BLOCK_PROTECTED))
+            ->and($ssh->commands)->toHaveCount(2);
+    });
+
     it('treats a missing apt package as absent during adoption', function (): void {
         [$manager, $ssh] = apt_tool_manager([
             apt_result("apt 2.8.3 (amd64)\n"),
