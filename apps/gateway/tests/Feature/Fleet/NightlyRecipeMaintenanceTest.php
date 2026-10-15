@@ -32,6 +32,8 @@ final class NightlyRecipeDoctor implements FleetNodeVerification
 
     public ?int $failNode = null;
 
+    public ?Closure $afterVerify = null;
+
     public function baseline(Node $node): array
     {
         throw new LogicException('Every recipe visit must pass Doctor.');
@@ -40,6 +42,7 @@ final class NightlyRecipeDoctor implements FleetNodeVerification
     public function verify(Node $node, array $baseline, string $pinnedAgentVersion, array $tolerated = []): array
     {
         $this->visited[] = $node->id;
+        $this->afterVerify?->__invoke();
 
         return ['passed' => $node->id !== $this->failNode, 'new_issues' => [], 'preexisting_issues' => [], 'agent_version' => $pinnedAgentVersion, 'presence' => 'matched'];
     }
@@ -48,6 +51,7 @@ final class NightlyRecipeDoctor implements FleetNodeVerification
 /** @return array{TaskVmImageBuild, TaskVmImageBuild, NightlyRecipeDoctor, RecordingReleaseAlertNotifier} */
 function nightlyRecipeFleet(): array
 {
+    test()->travelTo(new DateTimeImmutable('2026-10-15 01:00:00 UTC'));
     FleetFixtures::inPlace();
     FleetFixtures::adopt(FleetFixtures::Commit);
     FleetFixtures::runFrom(FleetFixtures::Commit);
@@ -206,3 +210,78 @@ it('schedules the date PR at Amsterdam 03:00 across DST and fleet visits each mi
     expect($events[0]->isDue(app()))->toBeTrue();
     expect($events[1]->expression)->toBe('* * * * *');
 })->with(['2026-07-15 01:00:00 UTC', '2026-12-15 02:00:00 UTC']);
+
+it('finishes dev and services mid-day then waits ready until 03:00 for prod vpn and Gateway', function (): void {
+    [$record, $other, $doctor, $alerts] = nightlyRecipeFleet();
+    $gateway = FleetFixtures::node('window-gateway', [RoleName::Gateway]);
+    $vpn = FleetFixtures::node('window-vpn', [RoleName::Vpn]);
+    $prod = FleetFixtures::node('window-prod', [RoleName::AppProd]);
+    $service = FleetFixtures::node('window-services', [RoleName::Metrics]);
+    $this->travelTo(new DateTimeImmutable('2026-10-15 12:00:00 UTC'));
+    $action = app(ConvergeFleetRecipeAction::class);
+
+    for ($visit = 0; $visit < 5; $visit++) {
+        $action->execute();
+    }
+
+    expect($doctor->visited)->toBe([$record->host_node_id, $other->host_node_id, $service->id]);
+    expect($record->refresh()->fleet_convergence)->toMatchArray(['status' => 'ready', 'node_id' => $prod->id]);
+    expect($prod->refresh()->settings['machine_recipe'] ?? null)->toBeNull();
+    expect($alerts->alerts)->toBe([]);
+
+    $this->travelTo(new DateTimeImmutable('2026-10-16 01:00:00 UTC'));
+    $action->execute();
+    $action->execute();
+    $action->execute();
+    $action->execute();
+
+    expect($doctor->visited)->toBe([$record->host_node_id, $other->host_node_id, $service->id, $prod->id, $vpn->id, $gateway->id]);
+    expect($record->refresh()->fleet_convergence['status'])->toBe('succeeded');
+});
+
+it('starts prod only inside the Amsterdam window including DST boundaries', function (string $utc, bool $allowed): void {
+    [$record, $other, $doctor, $alerts] = nightlyRecipeFleet();
+    foreach ([$record->hostNode, $other->hostNode] as $node) {
+        $node->update(['settings' => ['machine_recipe' => ['version' => $record->recipe_identity]]]);
+    }
+    $prod = FleetFixtures::node('window-boundary', [RoleName::AppProd]);
+    $this->travelTo(new DateTimeImmutable($utc));
+
+    app(ConvergeFleetRecipeAction::class)->execute();
+
+    expect($doctor->visited)->toBe($allowed ? [$prod->id] : []);
+    expect($record->refresh()->fleet_convergence['status'])->toBe('ready');
+    expect($alerts->alerts)->toBe([]);
+})->with([
+    'summer before 03' => ['2026-07-15 00:59:59 UTC', false],
+    'summer at 03' => ['2026-07-15 01:00:00 UTC', true],
+    'summer before 06' => ['2026-07-15 03:59:59 UTC', true],
+    'summer at 06' => ['2026-07-15 04:00:00 UTC', false],
+    'winter before 03' => ['2026-12-15 01:59:59 UTC', false],
+    'winter at 03' => ['2026-12-15 02:00:00 UTC', true],
+    'winter before 06' => ['2026-12-15 04:59:59 UTC', true],
+    'winter at 06' => ['2026-12-15 05:00:00 UTC', false],
+    'spring transition at 03' => ['2026-03-29 01:00:00 UTC', true],
+    'spring transition at 06' => ['2026-03-29 04:00:00 UTC', false],
+    'autumn repeated 02' => ['2026-10-25 01:30:00 UTC', false],
+    'autumn transition at 03' => ['2026-10-25 02:00:00 UTC', true],
+]);
+
+it('allows a running prod visit to finish past 06 but starts no next visit', function (): void {
+    [$record, $other, $doctor] = nightlyRecipeFleet();
+    foreach ([$record->hostNode, $other->hostNode] as $node) {
+        $node->update(['settings' => ['machine_recipe' => ['version' => $record->recipe_identity]]]);
+    }
+    $prod = FleetFixtures::node('window-finishes', [RoleName::AppProd]);
+    $vpn = FleetFixtures::node('window-next-night', [RoleName::Vpn]);
+    $this->travelTo(new DateTimeImmutable('2026-10-15 03:59:59 UTC'));
+    $doctor->afterVerify = fn () => $this->travelTo(new DateTimeImmutable('2026-10-15 04:01:00 UTC'));
+
+    app(ConvergeFleetRecipeAction::class)->execute();
+    app(ConvergeFleetRecipeAction::class)->execute();
+
+    expect($doctor->visited)->toBe([$prod->id]);
+    expect($prod->refresh()->settings['machine_recipe']['version'])->toBe($record->recipe_identity);
+    expect($vpn->refresh()->settings['machine_recipe'] ?? null)->toBeNull();
+    expect($record->refresh()->fleet_convergence)->toMatchArray(['status' => 'ready', 'node_id' => $vpn->id]);
+});

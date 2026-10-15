@@ -90,6 +90,12 @@ final readonly class ConvergeFleetRecipeAction
                 if ($this->builds->currentRecipe()->identity !== $recipe->identity) {
                     return;
                 }
+                $hour = now('Europe/Amsterdam')->hour;
+                if ($this->tier($node) >= 3 && ($hour < 3 || $hour >= 6)) {
+                    $record->forceFill(['fleet_convergence' => [...$progress, 'status' => 'ready', 'node_id' => $node->id]])->save();
+
+                    return;
+                }
                 $progress['status'] = 'visiting';
                 $progress['node_id'] = $node->id;
                 $record->forceFill(['fleet_convergence' => $progress])->save();

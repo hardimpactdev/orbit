@@ -16,7 +16,7 @@ use RuntimeException;
 /** Opens a date-only PR from main; repository rules still decide when it can merge. */
 final readonly class OpenNightlyRecipePullRequestAction
 {
-    private const string Path = 'apps/gateway/resources/machine-software/recipe.json';
+    public const string Path = 'apps/gateway/resources/machine-software/recipe.json';
 
     public function __construct(private RepositoryPullRequestAccess $access, private GitHubApi $github, private RecipeLoader $loader) {}
 
@@ -43,7 +43,7 @@ final readonly class OpenNightlyRecipePullRequestAction
         }
         $branch = 'nightly/recipe-'.substr($snapshot, 0, 8);
         $title = 'Bump machine recipe snapshot to '.$snapshot;
-        $draft = new GitHubPullRequestDraft($branch, 'main', $title, 'Advances only the Ubuntu snapshot date. Exact package versions and Sury artifact pins stay unchanged. Normal Required checks and review apply. After deployment, existing host image builds gate ordered fleet convergence.');
+        $draft = new GitHubPullRequestDraft($branch, 'main', $title, 'Advances only the Ubuntu snapshot date. Exact package versions and Sury artifact pins stay unchanged. The Gateway merges on green Required checks only after verifying its App authorship, one commit, and the exact date-only diff. After deployment, existing host image builds gate ordered fleet convergence.');
         $existing = $this->github->pullRequestsByHead($token, $repository, $branch);
         if ($existing !== []) {
             // A closed date PR is an operator decision too; never reopen or overwrite it.

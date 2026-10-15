@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Jobs;
 
 use App\Actions\Fleet\ConvergeFleetRecipeAction;
+use App\Actions\Fleet\MergeNightlyRecipePullRequestsAction;
 use App\Actions\Fleet\OpenNightlyRecipePullRequestAction;
 use App\Domain\Fleet\FleetServingRelease;
 use App\Domain\Fleet\RecipeMaintenanceAlerts;
@@ -37,7 +38,7 @@ final class MaintainMachineRecipe implements ShouldBeUnique, ShouldQueue
         return $this->snapshot ? 'snapshot-pr' : 'fleet';
     }
 
-    public function handle(FleetServingRelease $serving, OpenNightlyRecipePullRequestAction $pullRequest, ConvergeFleetRecipeAction $fleet): void
+    public function handle(FleetServingRelease $serving, OpenNightlyRecipePullRequestAction $pullRequest, ConvergeFleetRecipeAction $fleet, MergeNightlyRecipePullRequestsAction $merge): void
     {
         if ($serving->read()['state'] !== FleetServingRelease::Adopted || $serving->supersedes()) {
             return;
@@ -45,6 +46,7 @@ final class MaintainMachineRecipe implements ShouldBeUnique, ShouldQueue
         if ($this->snapshot) {
             Log::info('Nightly recipe snapshot PR.', ['url' => $pullRequest->execute()]);
         } else {
+            $merge->execute();
             $fleet->execute();
         }
     }
