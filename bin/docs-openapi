@@ -20,6 +20,7 @@ the controller returns the array fromModel() builds, and that schema is written 
 """
 
 import copy
+import difflib
 import json
 import pathlib
 import re
@@ -2098,8 +2099,14 @@ for tab in config['navigation']['tabs']:
 outputs[config_path] = json.dumps(config, indent=2) + '\n'
 
 if CHECK:
-    stale = [str(path.relative_to(ROOT)) for path, text in outputs.items() if path.read_text() != text]
+    stale = [str(path.relative_to(ROOT)) for path, text in outputs.items() if not path.exists() or path.read_text() != text]
     if stale:
+        for path, expected in outputs.items():
+            if str(path.relative_to(ROOT)) in stale:
+                actual = path.read_text() if path.exists() else ''
+                sys.stdout.writelines(difflib.unified_diff(
+                    actual.splitlines(keepends=True), expected.splitlines(keepends=True),
+                    fromfile=str(path.relative_to(ROOT)), tofile='generated/' + str(path.relative_to(ROOT))))
         sys.exit(f'{" and ".join(stale)} {"is" if len(stale) == 1 else "are"} stale. Run bin/docs-openapi and commit the result.')
     print(f'{OUTPUT.relative_to(ROOT)} and the API navigation match the Gateway sources')
     sys.exit(0)
