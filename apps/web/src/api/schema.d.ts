@@ -9162,7 +9162,10 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["Instance"];
+                        data: components["schemas"]["Instance"] & {
+                            /** @description Key-only review hints for copied development hosts, filesystem paths, and service drivers. Values are never included; settings are not rewritten. Empty when no hints apply. */
+                            warnings: string[];
+                        };
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -9174,7 +9177,10 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["Instance"];
+                        data: components["schemas"]["Instance"] & {
+                            /** @description Key-only review hints for copied development hosts, filesystem paths, and service drivers. Values are never included; settings are not rewritten. Empty when no hints apply. */
+                            warnings: string[];
+                        };
                         meta: components["schemas"]["Meta"];
                     };
                 };

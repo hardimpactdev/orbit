@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\DatabaseConnections\AttachDatabaseConnectionAction;
 use App\Actions\Instances\CloneInstanceAction;
+use App\Actions\Instances\CloneInstanceDatabaseAction;
 use App\Actions\Instances\CloneInstanceEnvironmentAction;
 use App\Actions\Instances\DeployInstanceAction;
 use App\Actions\Instances\InstanceDeploymentConfigResolver;
@@ -181,6 +182,7 @@ it('clones and deploys an Instance without a route', function (): void {
         $projectionOwner,
         app(AttachDatabaseConnectionAction::class),
         app(SynchronizeInstanceEnvironmentAction::class),
+        app(CloneInstanceDatabaseAction::class),
         $metrics,
     );
 
@@ -285,16 +287,29 @@ it('reports key-only warnings without rewriting copied settings and refreshes th
     bind_clone_environment_fakes();
     $action = app(CloneInstanceEnvironmentAction::class);
     $result = $action->execute($source, $target);
+    $warnings = $action->warnings($source, $target);
 
-    expect($result->warnings)->toHaveCount(5)
-        ->and(implode(' ', $result->warnings))->toContain('REDIS_URL:', 'CACHE_PATH:', 'QUEUE_CONNECTION:', 'SESSION_DOMAIN:', 'MAIL_HOST:')
-        ->not->toContain('SECRET_SENTINEL', 'APP_KEY:', 'redis.dev.orbit', '/outside/')
-        ->and($action->warnings($source, $target))->toBe($result->warnings);
+    expect($result->warnings)->toBeEmpty()
+        ->and($warnings)->toHaveCount(5)
+        ->and(implode(' ', $warnings))->toContain('REDIS_URL:', 'CACHE_PATH:', 'QUEUE_CONNECTION:', 'SESSION_DOMAIN:', 'MAIL_HOST:')
+        ->not->toContain('SECRET_SENTINEL', 'APP_KEY:', 'redis.dev.orbit', '/outside/');
     foreach ($values as $key => $value) {
         expect($target->environmentValues()->where('env_key', $key)->sole()->env_value)->toBe($value);
     }
     $target->environmentValues()->where('env_key', 'QUEUE_CONNECTION')->sole()->update(['env_value' => 'redis']);
-    expect(implode(' ', $action->execute($source, $target)->warnings))->not->toContain('QUEUE_CONNECTION:');
+    $action->execute($source, $target);
+    expect(implode(' ', $action->warnings($source, $target)))->not->toContain('QUEUE_CONNECTION:');
+});
+
+it('returns a typed unreadable environment error when warning values cannot decrypt', function (): void {
+    [$source, $target] = clone_environment_fixture();
+    $target->environmentValues()->create(['env_key' => 'REDIS_HOST', 'env_value' => 'secret']);
+    DB::table('instance_environment_values')->where('instance_id', $target->id)->update(['env_value' => 'broken-ciphertext']);
+    bind_clone_environment_fakes();
+
+    expect(fn () => app(CloneInstanceEnvironmentAction::class)->warnings($source, $target))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)
+            ->toBe('env.configuration_unreadable'));
 });
 
 it('supports a clone with no stored environment rows', function (): void {

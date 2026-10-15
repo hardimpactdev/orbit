@@ -31,15 +31,13 @@ final readonly class CloneInstanceEnvironmentAction
     public function warnings(Instance $source, Instance $target): array
     {
         $source->loadMissing('node');
-        $values = [];
-        foreach ($target->environmentValues()->get() as $row) {
-            $values[$row->env_key] = $row->env_value;
-        }
+        $target->loadMissing('node');
 
         return $this->warningDetector->detect(
-            $values,
+            $this->store->values($target),
             $source->node,
             $target->production_home ?? $target->checkout_path,
+            $target->node,
         );
     }
 
@@ -82,7 +80,6 @@ final readonly class CloneInstanceEnvironmentAction
                     operation: 'clone',
                     changed: $result->changed,
                     keyCount: $snapshot->keyCount(),
-                    warnings: $this->warningDetector->detect($snapshot->values(), $sourceContext->node, $targetContext->path),
                 );
             },
         );

@@ -380,6 +380,12 @@ final readonly class InstanceEnvironmentStore
     }
 
     /** @return array<string, string> */
+    public function values(Instance $instance): array
+    {
+        return DB::transaction(fn (): array => $this->storedValues($instance->id));
+    }
+
+    /** @return array<string, string> */
     private function storedValues(int $instanceId): array
     {
         try {

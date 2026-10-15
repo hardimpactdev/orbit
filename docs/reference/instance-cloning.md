@@ -78,7 +78,7 @@ Database attachments own the production `DB_*` values; the candidate's database 
 
 Before the clone completes, Orbit renders the new Instance's stored values and writes its `.env` in the production home. The first deployment links that file from the release's application directory, including a nested path such as `apps/site/.env`. It copies no `.env` file from the candidate, and no cached configuration, dependencies, logs, caches, or PHP-FPM tuning. Stored values such as `APP_KEY` copy as they are.
 
-The clone response includes `data.warnings`, also shown by `instance:clone` (and its JSON output). Warnings name keys, never values: they flag candidate-Node hosts and dev-TLD hosts, absolute paths outside the production home, and copied local/test service choices (`QUEUE_CONNECTION=database`, `sync`, or `null`; array cache/session drivers; log/array mailers). These are review hints, not proof that a service is unreachable. Orbit does not rewrite these settings.
+The clone response includes `data.warnings`, also shown by `instance:clone` (and its JSON output). Warnings name keys, never values: they flag candidate-Node hosts and dev-TLD hosts outside the target Node's TLD, absolute filesystem paths outside the production home (not URL paths such as `SESSION_PATH`), and copied local/test service choices (`QUEUE_CONNECTION=database`, `sync`, or `null`; array cache/session drivers; log/array mailers). These are review hints, not proof that a service is unreachable. Orbit does not rewrite these settings.
 
 Review Redis, cache, queue, session, and mail settings and use `env:update` followed by `env:sync` to correct them. Warnings are recalculated from the target's stored values on retry, so corrected settings stop appearing. References such as `{{instance.domain}}` resolve against the new Instance.
 
@@ -94,7 +94,7 @@ A missing Node TLD returns `route.tld_required`. A domain that another Route own
 
 `sqlite_source_path` must be inside the candidate's checkout or selected release, and it must be a readable SQLite database. Orbit takes a consistent snapshot while the candidate keeps writing, checks its integrity, and installs it as `<home>/database.sqlite`, owned by the new Instance's user. The Gateway checks the path and disk space on both Nodes before it replaces anything.
 
-Orbit registers a SQLite connection named `<project>-<instance>`, owned by the new Instance on the destination Node, attaches it under prefix `DB`, and syncs the production `.env` with `DB_CONNECTION=sqlite` and `DB_DATABASE=<home>/database.sqlite`. Retrying an interrupted clone reuses that connection and attachment. Without the option, the clone gets no database and no candidate `DB_*` values.
+Orbit registers a SQLite connection named `<project>-<instance>` (shortened with a stable hash when it exceeds 63 characters), owned by the new Instance on the destination Node, attaches it under prefix `DB`, and syncs the production `.env` with `DB_CONNECTION=sqlite` and `DB_DATABASE=<home>/database.sqlite`. Retrying an interrupted clone reuses that connection and attachment. Without the option, the clone gets no database and no candidate `DB_*` values.
 
 Cloning seeds a different production Instance at the fixed `<home>/database.sqlite` path. [Instance transfer](/reference/instance-transfer) instead keeps the Instance ID between development Nodes and installs the snapshot at the selected file's relative path in the destination checkout. Each transfer attempt has its own snapshot record. Transfer rollback abandons that seed and removes its owned temporary files before closure. An identical retry after restoration takes a fresh snapshot rather than reusing data captured before the source restarted. These transfer rules do not change the clone's destination or its identical-request retry.
 
@@ -131,6 +131,7 @@ The Gateway returns these codes for a clone. A failure after reservation records
 | `instance.clone_target_branch_missing` | The branch is not in the repository. |
 | `instance.clone_candidate_changed` | The candidate's commit, branch, or placement changed during the request. |
 | `sqlite.seed_preflight_failed`, `sqlite.seed_transfer_failed`, `sqlite.seed_failed` | The SQLite seed failed its checks, its copy, or its install. |
+| `instance.clone_database_slug_taken` | Another owner already has the database connection slug (409). |
 | `instance.clone_sqlite_unconfirmed` | Orbit cannot confirm the SQLite result. Retry. |
 | `instance.clone_failed` | Another step failed. |
 

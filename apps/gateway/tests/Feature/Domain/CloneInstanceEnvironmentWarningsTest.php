@@ -28,6 +28,9 @@ it('detects development references with host and path boundaries', function (str
     ['CACHE_PATH', '/home/production-other/cache', true],
     ['CACHE_PATH', '/home/production/../development/cache', true],
     ['CACHE_PATH', 'storage/cache', false],
+    ['SESSION_PATH', '/', false],
+    ['SESSION_PATH', '/account', false],
+    ['ASSET_URL', '/assets', false],
     ['QUEUE_CONNECTION', 'database', true],
     ['QUEUE_CONNECTION', 'redis', false],
     ['MAIL_MAILER', 'log', true],
@@ -37,3 +40,28 @@ it('detects development references with host and path boundaries', function (str
     ['APP_KEY', 'base64:secret', false],
     ['DB_HOST', 'dev-node.example.net', false],
 ]);
+
+it('does not flag fleet service hosts under the target TLD', function (string $host, bool $warn): void {
+    $candidate = new Node(['public_ssh_host' => 'dev.orbit', 'tld' => 'orbit']);
+    $target = new Node(['tld' => 'orbit']);
+
+    $warnings = (new CloneEnvironmentWarnings)->detect(['SERVICE_HOST' => $host], $candidate, '/home/production', $target);
+
+    expect($warnings)->toHaveCount($warn ? 1 : 0);
+})->with([
+    ['vault.orbit', false],
+    ['https://vault.orbit/secret', false],
+    ['dev.orbit', true],
+    ['vault.orbit.attacker.net', false],
+]);
+
+it('still flags a distinct development TLD outside the target TLD', function (): void {
+    $warnings = (new CloneEnvironmentWarnings)->detect(
+        ['REDIS_HOST' => 'cache.dev.example'],
+        new Node(['tld' => 'dev.example']),
+        '/home/production',
+        new Node(['tld' => 'prod.example']),
+    );
+
+    expect($warnings)->toHaveCount(1);
+});

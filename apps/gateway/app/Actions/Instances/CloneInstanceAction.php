@@ -9,7 +9,6 @@ use App\Actions\Routes\PublishPublicRouteAction;
 use App\Data\Instances\CloneInstanceData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
-use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Instances\CloneCandidateSource;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\InstanceCloneCandidateInspector;
@@ -31,7 +30,6 @@ use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\DatabaseConnection;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
@@ -55,6 +53,7 @@ final readonly class CloneInstanceAction
         private DevelopmentProjectionOperationLock $projectionOwner,
         private AttachDatabaseConnectionAction $attachDatabase,
         private SynchronizeInstanceEnvironmentAction $synchronizeEnvironment,
+        private CloneInstanceDatabaseAction $cloneDatabase,
         private ?MetricsFleetReconciler $metrics = null,
     ) {}
 
@@ -375,17 +374,9 @@ final readonly class CloneInstanceAction
 
         if ($target->provisioning_step === 'clone-sqlite-prepared') {
             if ($data->sqliteSourcePath !== null) {
-                $target->loadMissing('project');
-                $connection = DatabaseConnection::query()->firstOrCreate(
-                    [
-                        'owner_instance_id' => $target->id,
-                        'slug' => "{$target->project->slug}-{$target->name}",
-                    ],
-                    [
-                        'driver' => DatabaseDriver::Sqlite->value,
-                        'node_id' => $target->node_id,
-                        'path' => rtrim((string) $target->production_home, '/').'/database.sqlite',
-                    ],
+                $connection = $this->cloneDatabase->recordSqlite(
+                    $target,
+                    rtrim((string) $target->production_home, '/').'/database.sqlite',
                 );
                 $this->attachDatabase->execute($target, $connection, 'DB', forClone: true);
                 $this->synchronizeEnvironment->execute($target, forClone: true);

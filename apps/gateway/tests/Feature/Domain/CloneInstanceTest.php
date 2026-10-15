@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\DatabaseConnections\AttachDatabaseConnectionAction;
 use App\Actions\Instances\CloneInstanceAction;
+use App\Actions\Instances\CloneInstanceDatabaseAction;
 use App\Actions\Instances\CloneInstanceEnvironmentAction;
 use App\Actions\Instances\DestroyInstanceAction;
 use App\Actions\Instances\InstantiateProjectRuntimeDefinitionsAction;
@@ -11,6 +12,8 @@ use App\Actions\Instances\SynchronizeInstanceEnvironmentAction;
 use App\Data\Instances\CloneInstanceData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
+use App\Domain\Broadcasting\RecordBroadcast;
+use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\DatabaseConnections\DatabaseConnectionEnvProjection;
@@ -72,6 +75,7 @@ use App\Models\Process;
 use App\Models\Project;
 use App\Models\Route;
 use App\Models\Schedule;
+use Illuminate\Support\Facades\Event;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
 
@@ -174,6 +178,7 @@ beforeEach(function (): void {
         $this->projectionOwner,
         $this->attachDatabase,
         $this->synchronizeEnvironment,
+        app(CloneInstanceDatabaseAction::class),
         $this->metrics,
     );
     $this->data = new CloneInstanceData(
@@ -292,6 +297,7 @@ it('attaches an owned production SQLite connection and drops candidate database 
 });
 
 it('reuses the SQLite connection and attachment after a sync failure before the checkpoint', function (): void {
+    Event::fake([RecordBroadcast::class]);
     $this->writer->failDatabaseSync = true;
     expect(fn () => $this->action->execute($this->candidate, $this->data))->toThrow(RuntimeException::class, 'Injected database sync failure.');
     $target = Instance::query()->where('name', 'preview')->sole();
@@ -309,6 +315,45 @@ it('reuses the SQLite connection and attachment after a sync failure before the 
         ->and(DatabaseConnectionTarget::query()->sole()->id)->toBe($attachmentId)
         ->and($this->sqlite->calls)->toHaveCount(1)
         ->and($this->writer->contents)->toContain("DB_DATABASE=\"{$target->production_home}/database.sqlite\"");
+    $created = Event::dispatched(
+        RecordBroadcast::class,
+        fn ($event): bool => $event->type === RecordEventType::DatabaseCreated
+            && $event->id === $connectionId
+            && $event->data['slug'] === 'clone-domain-preview',
+    );
+    expect($created)->toHaveCount(1);
+});
+
+it('shortens long production database slugs to 63 characters and reuses them', function (): void {
+    $this->candidate->project->update(['slug' => str_repeat('a', 60)]);
+
+    $target = $this->action->execute($this->candidate, $this->data)['instance'];
+    $connection = DatabaseConnection::query()->sole();
+    $this->action->execute($this->candidate, $this->data);
+
+    expect(strlen($connection->slug))->toBeLessThanOrEqual(63)
+        ->and($connection->slug)->toStartWith(str_repeat('a', 54).'-')
+        ->and($connection->owner_instance_id)->toBe($target->id)
+        ->and(DatabaseConnection::query()->sole()->id)->toBe($connection->id);
+});
+
+it('refuses a production database slug owned by another Instance with a typed 409', function (): void {
+    $connection = DatabaseConnection::query()->create([
+        'slug' => 'clone-domain-preview',
+        'driver' => DatabaseDriver::Sqlite,
+        'node_id' => $this->targetNode->id,
+        'owner_instance_id' => $this->candidate->id,
+        'path' => '/existing/database.sqlite',
+    ]);
+
+    expect(fn () => $this->action->execute($this->candidate, $this->data))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)
+            ->toBe('instance.clone_database_slug_taken')->and($exception->status)->toBe(409));
+
+    expect(DatabaseConnection::query()->sole()->id)->toBe($connection->id)
+        ->and($connection->refresh()->owner_instance_id)->toBe($this->candidate->id)
+        ->and($connection->path)->toBe('/existing/database.sqlite')
+        ->and(DatabaseConnectionTarget::query()->exists())->toBeFalse();
 });
 
 it('omits candidate DB keys and creates no connection without a SQLite snapshot', function (): void {
@@ -429,6 +474,7 @@ it('captures production runtime definitions during clone and installs them only 
         $this->projectionOwner,
         $this->attachDatabase,
         $this->synchronizeEnvironment,
+        app(CloneInstanceDatabaseAction::class),
         $this->metrics,
     );
 
