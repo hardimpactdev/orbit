@@ -75,7 +75,7 @@ describe('the schedule', function (): void {
         expect($tick)->toBeInstanceOf(CallbackEvent::class)
             ->and(collect(gateway_queue_schedule())->filter(static fn (Event $event): bool => str_contains((string) $event->command, 'queue:work')))->toBeEmpty()
             ->and(collect(gateway_queue_schedule())->filter(static fn (Event $event): bool => is_string($event->command) && str_contains($event->command, 'artisan')
-                && ! str_contains($event->command, 'project-documents:')))->toBeEmpty();
+                && ! str_contains($event->command, 'project-documents:') && ! str_contains($event->command, 'problems:')))->toBeEmpty();
 
         $tick->run(app());
         $tick->run(app());
@@ -85,6 +85,23 @@ describe('the schedule', function (): void {
         expect($jobs->sole()->queue)->toBe(GatewayQueue::Tasks->value)
             ->and($job)->toBeInstanceOf(RunScheduledCommand::class)
             ->and([$job->command, $job->uniqueFor, $job->timeout, $job->connection])->toBe(['tasks:tick', 330, 330, GatewayQueue::Connection]);
+    });
+
+    it('runs problem collection and filing itself, with their overlap locks, while the Gateway queue is set', function (): void {
+        config(['orbit.gateway_queue.connection' => 'services-valkey']);
+        $collect = gateway_queue_event('problems:collect');
+        $file = gateway_queue_event('problems:file');
+
+        expect($collect)->not->toBeInstanceOf(CallbackEvent::class)
+            ->and($collect->command)->toEndWith("'artisan' problems:collect")
+            ->and([$collect->expression, $collect->withoutOverlapping, $collect->expiresAt])->toBe(['*/10 * * * *', true, 15])
+            ->and($file)->not->toBeInstanceOf(CallbackEvent::class)
+            ->and($file->command)->toEndWith("'artisan' problems:file")
+            ->and([$file->expression, $file->withoutOverlapping, $file->expiresAt])->toBe(['0 * * * *', true, 30]);
+
+        $collect->run(app());
+
+        expect(DB::table('jobs')->count())->toBe(0);
     });
 
     it('lists tasks:tick under its own name, as the release smoke reads it', function (): void {
