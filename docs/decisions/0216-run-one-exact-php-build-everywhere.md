@@ -63,7 +63,7 @@ The loader rejects a recipe in which:
 1. It refuses another PHP apt source, and PHP packages of the handled versions outside the recipe set. Both refusals come before any download or change and name what they found. A plan run, which a dry run uses, stops here.
 2. It deletes the Sury apt source of earlier Orbit releases, so `apt upgrade` cannot move PHP.
 3. It downloads each pinned file that is not installed at its version, from the mirror first and then from the pin's URL. It refuses a file whose SHA-256 digest, name, version, or architecture differs from the pin.
-4. It keeps the installed build for a rollback: a cached `.deb` of each package that the change replaces, or one that `dpkg-repack` writes. It never deletes a file from the cache, `/var/cache/orbit/php-packages`.
+4. It keeps the installed build for a rollback: a cached `.deb` of each package that the change replaces, one from apt's archive cache, or one rebuilt from the installed files, leaving out conffiles removed on purpose. It never deletes a file from the cache, `/var/cache/orbit/php-packages`.
 5. It installs the files with `--no-remove` and `--allow-downgrades`. Package hooks cannot start or restart a service.
 6. It loads PCOV in the CLI only on the PCOV profiles, and never in PHP-FPM. It checks that `php<version> -m` prints the recipe's extensions.
 7. It restarts PHP-FPM after a change. It validates each master with `php-fpm -t` first, then checks after the restart that the service is active, that `php-fpm -m` loads the required extensions and not PCOV, and that every pool socket answers a FastCGI request.
