@@ -75,6 +75,7 @@ require_once __DIR__.'/Helpers/ConfigFixtures.php';
 require_once __DIR__.'/Helpers/TaskVmHostFixtures.php';
 require_once __DIR__.'/Helpers/GatewayReleaseFixtures.php';
 require_once __DIR__.'/Helpers/CliReleaseFixtures.php';
+require_once __DIR__.'/Helpers/OperationFixtures.php';
 
 uses(TestCase::class, RefreshDatabase::class)
     ->beforeEach(function (): void {

@@ -576,6 +576,15 @@
             ]
           },
           {
+            "group": "Operations",
+            "openapi": "/openapi.json",
+            "pages": [
+              "GET /api/v1/operations",
+              "GET /api/v1/operations/{operation}",
+              "POST /api/v1/operations/{operation}/cancel"
+            ]
+          },
+          {
             "group": "proxycli",
             "openapi": "/openapi.json",
             "pages": [

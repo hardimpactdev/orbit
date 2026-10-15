@@ -2,20 +2,12 @@
 title: "Operations"
 description: "How the Gateway runs a long operation, such as an Instance deploy, as a queued record with named steps, how a client follows it, and how the Gateway recovers one that a lost worker interrupted."
 covers:
-  - apps/gateway/app/Domain/Operations/**
-  - apps/gateway/app/Actions/Operations/**
-  - apps/gateway/app/Jobs/RunOperation.php
-  - apps/gateway/app/Console/Commands/SweepOperationsCommand.php
-  - apps/gateway/app/Http/Controllers/Api/OperationsController.php
-  - apps/gateway/app/Http/Requests/Operations/**
-  - apps/gateway/app/Data/Operations/**
-  - apps/gateway/app/Models/{Operation,OperationStep}.php
+  - apps/gateway/app/{Domain/Operations/**,Actions/Operations/**,Data/Operations/**,Http/Requests/Operations/**}
+  - apps/gateway/app/{Jobs/RunOperation.php,Console/Commands/SweepOperationsCommand.php,Http/Controllers/Api/OperationsController.php,Models/Operation*.php}
   - apps/gateway/database/migrations/*_create_operations_tables.php
   - packages/php-sdk/src/{Requests,Responses}/Operations/**
-  - apps/cli/app/Commands/Operations/**
-  - apps/cli/app/Support/Operations/**
-  - apps/web/src/api/operations.ts
-  - apps/web/src/realtime/operation.ts
+  - apps/cli/app/{Commands/Operations/**,Support/Operations/**,Commands/Concerns/FollowsOperations.php}
+  - apps/web/src/{api/operations.ts,realtime/operation.ts,pages/OperationPanel.tsx}
 ---
 
 # Operations
@@ -59,7 +51,7 @@ Every operation has the same fields, whatever its kind.
 | `output` | The last 8 KiB of the step's standard output and standard error, as UTF-8 text |
 | `output_truncated` | Whether earlier output was dropped from `output` |
 
-Bytes of output that are not UTF-8 become U+FFFD. An operation fails outside a step when, for example, it cannot take the Instance's lock.
+The Gateway replaces each byte of output that is not valid UTF-8 with the character U+FFFD. An operation fails outside a step when, for example, it cannot take the Instance's lock.
 
 The steps appear when a worker first starts the operation, all `pending`. A queued operation has none. A best-effort step that fails, such as a development deploy step with `required: false`, ends `failed`, and the operation continues. `failed_step` names only the step that ended the operation.
 
@@ -132,12 +124,7 @@ A cancelled deploy records its deployment as `failed` with `deployment.cancelled
 
 The job `RunOperation` runs on the `operations` queue. It claims the operation with one conditional update from `queued` to `running`, so a second copy of the job does nothing. It records the worker's host, process ID, and process start time.
 
-The operation's kind plans its steps, then runs them in order. The runner:
-
-- skips a step that already succeeded, so a resumed operation continues where it stopped,
-- writes a step's output tail at most once a second while it runs,
-- marks the step `failed` when it throws, and ends the operation `failed` with the kind's error code,
-- checks for a cancel request before each step.
+The operation's kind plans its steps, then runs them in order. The runner skips a step that already succeeded, so a resumed operation continues where it stopped. It checks for a cancel request before each step. While a step runs, the runner writes its output tail at most once a second. A step that throws ends `failed`, and the operation ends `failed` with the kind's error code.
 
 An operation runs at most 1,600 seconds. Its job may run 1,700 seconds, under the queue's `retry_after` of 1,800, so Redis never gives a running job to a second worker. When the deadline stops a deploy, its error code is `deployment.deadline_exceeded`.
 

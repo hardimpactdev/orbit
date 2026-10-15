@@ -316,13 +316,18 @@ describe('repository guidance bootstrap', function (): void {
             'Orbit\\Sdk\\Requests\\Projects\\DestroyProjectDevelopmentDeployStepRequest',
         ];
         $proxycliSwitchRequests = [SetupProxyCliRequest::class, TeardownProxyCliRequest::class];
+        $operationRequests = [
+            'Orbit\\Sdk\\Requests\\Operations\\ListOperationsRequest',
+            'Orbit\\Sdk\\Requests\\Operations\\ShowOperationRequest',
+            'Orbit\\Sdk\\Requests\\Operations\\CancelOperationRequest',
+        ];
         $fleetRequests = [
             'Orbit\\Sdk\\Requests\\Gateway\\ShowDesiredFleetStateRequest',
             'Orbit\\Sdk\\Requests\\Fleet\\ShowFleetRolloutRequest',
             'Orbit\\Sdk\\Requests\\Fleet\\ResumeFleetRolloutRequest',
             'Orbit\\Sdk\\Requests\\Nodes\\ConvergeNodeRequest',
         ];
-        $expectedOperationCount = count($fleetRequests) + count($developmentDeployRequests) + count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($gitHubRequests) + count($gatewayReleaseRequests) + count($proxycliRequests) + count($vaultRequests) + count($taskRequests) + count($logRequests) + 17;
+        $expectedOperationCount = count($fleetRequests) + count($developmentDeployRequests) + count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($gitHubRequests) + count($gatewayReleaseRequests) + count($proxycliRequests) + count($vaultRequests) + count($taskRequests) + count($logRequests) + count($operationRequests) + 17;
         $expectedRequests = [
             'Orbit\\Sdk\\Requests\\Tools\\ListToolManagersRequest',
             'Orbit\\Sdk\\Requests\\Tools\\ScanToolInventoryRequest',
@@ -427,6 +432,7 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain(...$gatewayReleaseRequests)
             ->toContain(...$proxycliSwitchRequests)
             ->toContain(...$fleetRequests)
+            ->toContain(...$operationRequests)
             ->toContain(CloneInstanceRequest::class)
             ->toContain(TransferInstanceRequest::class)
             ->toContain(CreateInstanceRequest::class)
@@ -510,7 +516,7 @@ describe('repository guidance bootstrap', function (): void {
         $normalizedPublicContract = repository_guidance_normalized_contents('.ai/rules/public-contract.md');
 
         expect($publicContract)
-            ->toContain('The SDK models exactly 210 concrete public Gateway API operations:')
+            ->toContain('The SDK models exactly 213 concrete public Gateway API operations:')
             ->toContain('- Tasks: enable, disable, status, group list, show, create, update, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, question list and close, and agent thread list.')
             ->toContain('- Logs: Instance log read, and live log stream create, renew, and destroy for an Instance or a Process.')
             ->toContain('- Analytics: pin the Plausible version, and show, set, and unset the Stats API key. The key is never returned.')
@@ -585,7 +591,7 @@ describe('repository guidance bootstrap', function (): void {
 
         expect(repository_guidance_normalized_contents('README.md'))
             ->toContain(
-                'The SDK exposes exactly 210 public Gateway operations.',
+                'The SDK exposes exactly 213 public Gateway operations.',
                 'The SDK exposes typed enable, disable, status, provider list, provider show, account update, and model list requests for the optional CLIProxyAPI quota collector.',
                 'The SDK exposes typed status, setup, sync, and teardown requests for publishing database credentials to Vaultwarden.',
                 'The SDK exposes typed list, show, add, update, remove, attach, detach, query, tables, schema, describe, and user create requests for Gateway-owned database connection records.',

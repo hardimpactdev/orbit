@@ -13,4 +13,5 @@ enum DeploymentProgressPhase: string
     case PhpRefresh = 'php_refresh';
     case AfterActivation = 'after_activation';
     case Rollback = 'rollback';
+    case Cleanup = 'cleanup';
 }

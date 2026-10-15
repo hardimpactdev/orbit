@@ -15,6 +15,7 @@ import type {
 } from "../api/types";
 import type { Activity } from "../api/activities";
 import type { TaskGroup } from "../api/tasks";
+import { TERMINAL, type Operation } from "../api/operations";
 import { createDemoDocuments } from "./documents";
 
 type Fixture = { route: string; status: number; body: { data: unknown } };
@@ -47,6 +48,8 @@ const recordedFixture = (name: string): Fixture => {
 };
 
 const META = { request_id: "0198e15c-bf97-7c23-8f1f-61b8fe67a844" };
+
+const DEMO_STEPS = ["source_preparation", "environment_sync", "activation", "cleanup"];
 const ok = (data: unknown, status = 200): Answer => ({ status, payload: { data, meta: META } });
 const failure = (status: number, code: string, message: string): Answer => ({
     status,
@@ -153,6 +156,7 @@ export function createDemoGateway() {
     let proxycliExtensionEnabled = false;
     let proxycliConfigured = false;
     let tasksEnabled = true;
+    const operations: Operation[] = [];
     const rules = (node: string) =>
         list<FirewallRule>("GET /api/v1/nodes/{node}/firewall-rules", node);
     const tools = list<Tool>("GET /api/v1/tools");
@@ -769,6 +773,34 @@ export function createDemoGateway() {
                 () => ok(byRoute.get("GET /api/v1/metrics/credentials#")),
             ],
             [
+                "POST",
+                /^\/api\/v1\/instances\/(\d+)\/deploy$/,
+                ([instance = ""]) => startDemoDeploy(Number(instance)),
+            ],
+            [
+                "GET",
+                /^\/api\/v1\/operations(?:\?(.*))?$/,
+                ([query = ""]) => {
+                    const params = new URLSearchParams(query);
+                    const targetId = params.get("target_id");
+
+                    return ok(
+                        [...operations]
+                            .reverse()
+                            .filter(
+                                (operation) =>
+                                    targetId === null || String(operation.target_id) === targetId,
+                            )
+                            .map(({ steps: _steps, ...operation }) => operation),
+                    );
+                },
+            ],
+            [
+                "GET",
+                /^\/api\/v1\/operations\/(\d+)(?:\?(.*))?$/,
+                ([id = "", query = ""]) => readDemoOperation(Number(id), query),
+            ],
+            [
                 "GET",
                 /^\/api\/v1\/instances\/(\d+)\/deployments$/,
                 ([instance = ""]) =>
@@ -1065,6 +1097,127 @@ export function createDemoGateway() {
                 },
             ],
         ];
+
+    /** The demo deploy: each read moves it one step on, so the page shows a deploy run without a worker. */
+    function startDemoDeploy(instanceId: number): Answer {
+        if (
+            operations.some(
+                (operation) =>
+                    operation.target_id === instanceId && !TERMINAL.includes(operation.status),
+            )
+        ) {
+            return failure(
+                409,
+                "operation.target_busy",
+                "Another operation on this target has not ended.",
+            );
+        }
+
+        const operation: Operation = {
+            id: operations.length + 1,
+            kind: "instance.deploy",
+            target_type: "instance",
+            target_id: instanceId,
+            input: {},
+            status: "queued",
+            sequence: 1,
+            current_step: null,
+            failed_step: null,
+            error_code: null,
+            result: null,
+            cancel_requested: false,
+            attempts: 0,
+            triggered_by: "demo",
+            created_at: new Date().toISOString(),
+            started_at: null,
+            finished_at: null,
+            // The demo has no worker to wait for, so the page reads again at once.
+            poll_after_seconds: 0,
+            steps: [],
+        };
+        operations.push(operation);
+        const { steps: _steps, ...answer } = operation;
+
+        return ok(answer, 202);
+    }
+
+    function readDemoOperation(id: number, query: string): Answer {
+        const operation = operations.find((candidate) => candidate.id === id);
+
+        if (operation === undefined) {
+            return notFound("Operation");
+        }
+
+        advanceDemoOperation(operation);
+        const after = Number(new URLSearchParams(query).get("after_sequence") ?? -1);
+
+        return ok({
+            ...operation,
+            steps: (operation.steps ?? []).filter((step) => step.sequence > after),
+        });
+    }
+
+    function advanceDemoOperation(operation: Operation): void {
+        if (TERMINAL.includes(operation.status)) {
+            return;
+        }
+
+        const now = new Date().toISOString();
+        const sequence = operation.sequence + 1;
+        const steps = operation.steps ?? [];
+
+        if (operation.status === "queued") {
+            Object.assign(operation, { status: "running", attempts: 1, started_at: now, sequence });
+            operation.steps = DEMO_STEPS.map((name, index) => ({
+                name,
+                position: index + 1,
+                status: "pending",
+                resumable: true,
+                sequence,
+                started_at: null,
+                finished_at: null,
+                error_code: null,
+                output: null,
+                output_truncated: false,
+            }));
+
+            return;
+        }
+
+        const running = steps.find((step) => step.status === "running");
+
+        if (running !== undefined) {
+            Object.assign(running, { status: "succeeded", finished_at: now, sequence });
+        }
+
+        const next = steps.find((step) => step.status === "pending");
+
+        if (next === undefined) {
+            Object.assign(operation, {
+                status: "succeeded",
+                current_step: null,
+                finished_at: now,
+                poll_after_seconds: null,
+                result: {
+                    deployment_id: null,
+                    release: null,
+                    selected_release: null,
+                    commit: null,
+                },
+                sequence,
+            });
+
+            return;
+        }
+
+        Object.assign(next, {
+            status: "running",
+            started_at: now,
+            output: `${next.name}: done\n`,
+            sequence,
+        });
+        Object.assign(operation, { current_step: next.name, sequence });
+    }
 
     const documents = createDemoDocuments();
     const transport: Transport = async (method, path, body) => {

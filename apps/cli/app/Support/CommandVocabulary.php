@@ -46,6 +46,7 @@ final readonly class CommandVocabulary
         ],
         'metrics' => ['status'],
         'node' => ['converge', 'relocate', 'rename'],
+        'operation' => ['cancel'],
         'process' => ['logs', 'restart', 'start', 'stop'],
         'proxycli' => ['models', 'setup', 'status', 'teardown'],
         'project' => ['archive', 'download', 'read', 'restore', 'restore-version', 'search', 'upload', 'versions', 'write'],

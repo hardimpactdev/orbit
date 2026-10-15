@@ -48,6 +48,7 @@ use App\Http\Controllers\Api\NodeFootprintsController;
 use App\Http\Controllers\Api\NodeMetricsController;
 use App\Http\Controllers\Api\NodeRolesController;
 use App\Http\Controllers\Api\NodesController;
+use App\Http\Controllers\Api\OperationsController;
 use App\Http\Controllers\Api\ProcessesController;
 use App\Http\Controllers\Api\ProcessLogStreamsController;
 use App\Http\Controllers\Api\ProjectDevelopmentDeployStepsController;
@@ -489,6 +490,10 @@ Route::prefix('v1')->group(function (): void {
             'deployments/{deployment}',
             [InstanceDeploymentsController::class, 'show'],
         )->name('instance:deployment:show');
+        // Operations run on the Gateway queue; each read is one database query (docs/reference/operations.md).
+        Route::get('operations', [OperationsController::class, 'index'])->name('operation:list');
+        Route::get('operations/{operation}', [OperationsController::class, 'show'])->whereNumber('operation')->name('operation:show');
+        Route::post('operations/{operation}/cancel', [OperationsController::class, 'cancel'])->whereNumber('operation')->name('operation:cancel');
         Route::post(
             'instances/{instance}/environment/import',
             [InstanceEnvironmentImportsController::class, 'store'],

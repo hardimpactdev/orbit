@@ -58,6 +58,7 @@ import { Properties, type Property } from "../ui/Properties";
 import { SectionMenu } from "../ui/SectionMenu";
 import { instanceColumns, processColumns, scheduleColumns } from "./columns";
 import { AnalyticsPanel } from "./AnalyticsPanel";
+import { OperationPanel } from "./OperationPanel";
 import { QueuePanel } from "./QueuePanel";
 import { QuotaProviderPage } from "./Quota";
 import { RecordLayout } from "./RecordLayout";
@@ -341,6 +342,7 @@ function InstanceOverview({ fleet, instance }: { fleet: Fleet; instance: Instanc
                     target={(row) => ({ kind: "schedules", row })}
                 />
             </div>
+            <OperationPanel instance={instance} />
             <AnalyticsPanel instance={instance} />
             <QueuePanel instance={instance} />
             <LogPane

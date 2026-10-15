@@ -125,12 +125,21 @@ final class Orb220ProductionDeployment implements ProductionDeployment
 
     public ?string $requestedRelease = null;
 
+    public bool $failRollback = false;
+
+    /** Runs inside source preparation, such as a cancel request that lands while the deployment works. */
+    public ?Closure $duringPrepare = null;
+
     /** How many 16 KiB stdout chunks the `prepare` step emits. */
     public int $prepareOutputChunks = 1;
 
     public function prepare(Instance $instance, string $branch): DeploymentRelease
     {
         $this->invocations++;
+
+        if ($this->duringPrepare !== null) {
+            ($this->duringPrepare)();
+        }
 
         if ($this->failPreparation) {
             throw new ResourceOperationException('deployment.prepare_failed', 'Injected preparation failure.', 409);
@@ -184,6 +193,10 @@ final class Orb220ProductionDeployment implements ProductionDeployment
     {
         $this->invocations++;
         $this->requestedRelease = $name;
+
+        if ($this->failRollback) {
+            throw new ResourceOperationException('deployment.release_missing', 'Injected rollback failure.', 409);
+        }
 
         return $this->release($name);
     }

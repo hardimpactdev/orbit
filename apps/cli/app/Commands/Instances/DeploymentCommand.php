@@ -461,7 +461,6 @@ abstract class DeploymentCommand extends GatewayCommand
     private function alwaysEmittedPhases(string $openingPhase): array
     {
         return match ($openingPhase) {
-            'source_preparation' => ['source_preparation', 'environment_sync', 'activation'],
             'rollback' => ['rollback'],
             default => throw new LogicException("Unsupported opening phase [{$openingPhase}]."),
         };

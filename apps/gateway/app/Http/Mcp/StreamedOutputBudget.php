@@ -7,8 +7,8 @@ namespace App\Http\Mcp;
 /**
  * Bounds the `output` events of a streamed tool result, so the final `result` event always fits in the reply.
  *
- * A deploy streams each chunk of step output as a base64 `output` event. `execute_tools` refuses a reply over
- * `mcp.tool_search.max_output_bytes`, and the cap is checked only after the call has run, so a long deploy
+ * A rollback streams each chunk of output as a base64 `output` event. `execute_tools` refuses a reply over
+ * `mcp.tool_search.max_output_bytes`, and the cap is checked only after the call has run, so a long stream
  * would run but answer with no result. The output events may use half the cap: the first quarter and the last
  * quarter of it. One `output_truncated` event replaces the middle and names the bytes it dropped. Every other
  * event, the `result` event too, stays as it was.

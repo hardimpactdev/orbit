@@ -10,6 +10,7 @@ beforeEach(function (): void {
     $this->fixture = Orb220DeploymentApiFixture::create();
     $this->deployUrl = "/api/v1/instances/{$this->fixture->instance->id}/deploy";
     $this->rollbackUrl = "/api/v1/instances/{$this->fixture->instance->id}/rollback";
+    enable_operation_queue();
 });
 
 it('records a deployment row on deploy and lists it newest first with its phases and log', function (): void {
@@ -19,11 +20,11 @@ it('records a deployment row on deploy and lists it newest first with its phases
         ->withHeader('X-Orbit-Request-Id', $requestId)
         ->call('POST', $this->deployUrl, server: [
             'CONTENT_TYPE' => 'application/json',
-            'HTTP_ACCEPT' => 'application/x-ndjson',
+            'HTTP_ACCEPT' => 'application/json',
             'HTTP_X_ORBIT_REQUEST_ID' => $requestId,
         ], content: '{}');
-    $response->assertOk();
-    $response->streamedContent();
+    $response->assertAccepted();
+    run_operation_jobs();
 
     $deployment = InstanceDeployment::query()->sole();
 
@@ -66,16 +67,16 @@ it('records a failed deployment with its failed step and error code', function (
         ->withServerVariables(['REMOTE_ADDR' => $this->fixture->caller->wireguard_ip])
         ->call('POST', $this->deployUrl, server: [
             'CONTENT_TYPE' => 'application/json',
-            'HTTP_ACCEPT' => 'application/x-ndjson',
+            'HTTP_ACCEPT' => 'application/json',
         ], content: '{}');
-    $response->assertOk();
-    $response->streamedContent();
+    $response->assertAccepted();
+    run_operation_jobs();
 
     $deployment = InstanceDeployment::query()->sole();
 
     expect($deployment->status)->toBe('failed')
-        ->and($deployment->failed_step)->not->toBeNull()
-        ->and($deployment->error_code)->not->toBeNull();
+        ->and($deployment->failed_step)->toBe('preparation')
+        ->and($deployment->error_code)->toBe('deployment.prepare_failed');
 });
 
 it('records a rollback as its own deployment row', function (): void {
