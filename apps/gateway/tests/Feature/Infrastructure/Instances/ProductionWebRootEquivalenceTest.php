@@ -27,12 +27,12 @@ use Tests\Support\AppDevFakeSshExecutor;
 
 /*
  * Production Instances that existed before Routes with a web root reached production have no such
- * Route. The fixture holds what the code before that change rendered for them: the workload Caddy
+ * Route. The fixture records their current production release layout: the workload Caddy
  * file, every PHP-FPM file, the release `.env` link, and each command, with its arguments, standard
  * input, and protected input, that deploys, activates, converges, monitors, removes, or refreshes the
- * runtime on the Node. The current code must render the same bytes.
+ * runtime on the Node. Shared paths update only the deployment command baseline.
  */
-it('renders existing production Instances byte for byte as before production web roots', function (): void {
+it('renders existing production Instances against the release layout baseline', function (): void {
     $node = Node::query()->create([
         'name' => 'prod-equivalence',
         'status' => LifecycleStatus::Active,

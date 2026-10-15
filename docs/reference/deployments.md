@@ -38,9 +38,33 @@ The web root is the Instance root, or else the Project root, inside `current`. A
 
 With root `server/web/public`, both the initial clone and later releases link `server/web/.env` with target `../../../../.env`. Orbit does not create a second link at the release root. Release selection, retained-release listing, rollback validation, and [Doctor](/cli/doctor) check the link in that same application directory. Source classification reads that directory's `composer.json` and `artisan`, while ownership and Git identity checks still cover the whole release.
 
-A [Route with a web root](/reference/routes#web-roots-on-production) adds a web root in `current`, such as `apps/docs/public`. Source preparation links the release's `apps/docs/.env` to `<home>/env/apps/docs/.env`, with target `../../../../env/apps/docs/.env`, before the deploy steps run. Activation, for a deployment and for a rollback, checks that each such web root exists without a link, adds a missing `.env` link, and grants Caddy access before it switches `current`. Only active Routes count. An Instance without such a Route sends the same commands as before, byte for byte.
+A [Route with a web root](/reference/routes#web-roots-on-production) adds a web root in `current`, such as `apps/docs/public`. Source preparation links the release's `apps/docs/.env` to `<home>/env/apps/docs/.env`, with target `../../../../env/apps/docs/.env`, before the deploy steps run. Activation, for a deployment and for a rollback, checks each such web root and its links, adds a missing `.env` link, and grants Caddy access before it switches `current`. Only active Routes count. An Instance without such a Route uses only its Instance web root.
 
 A new release without such a directory fails at source preparation. Like any other preparation failure, it keeps the earlier selection and leaves the release directory. A rollback to an older release without the directory fails at activation and keeps the earlier selection.
+
+## Shared paths
+
+Production Instances keep shared directories in the Instance home. Before any `before_activation` step, Orbit links each declared path from the new release to `<home>/<path>`. A first deployment creates the persistent directory. If it is empty, Orbit seeds it from the directory in the new release. Later deployments keep its contents and discard the release copy. These operations run as the Instance user. Deploy steps must preserve these links.
+
+Laravel app Projects default to `storage`, relative to the application directory. For root `apps/site/public`, the default is `apps/site/storage`, linked to `<home>/apps/site/storage`. Other Project types default to no shared paths.
+
+Set `shared_paths` with `PATCH /api/v1/instances/{instance}`, for example `{"shared_paths":["storage","var/uploads"]}`. The list replaces the default. `[]` disables shared paths; `null` restores the Project-type default. Instance responses include the effective `shared_paths`. This setting requires access to the Instance's Node and the same operation lock as deployments. It applies to the next deployment and does not move files in the current release.
+
+Paths are relative to the repository root. Use at most 32 distinct, non-overlapping directory paths, each at most 255 bytes. Components use letters, digits, dots, underscores, and hyphens. Absolute paths, `.` and `..` components, hidden top-level paths, and Orbit's `releases`, `current`, `env`, and `database.sqlite` paths are refused. Source and destination ancestors must not be symlinks. Shared paths cannot replace a web root or its ancestors.
+
+### Public storage
+
+When the application's `storage` directory is shared and its web root is `public`, preparation creates `public/storage -> ../storage/app/public` if the link is absent. Do not add an Artisan `storage:link` step for this layout. An existing link is accepted only when it resolves to that application's `storage/app/public`, either inside the release or at the matching persistent path in the Instance home. All other web-root symlinks, broken links, and symlinks within the public storage directory are refused during preparation, activation, and release inspection.
+
+Activation grants Caddy read and directory access to `storage/app/public` and passage through its parents. It does not grant read access to private uploads or logs. Directories in the public storage tree receive default ACLs so new uploads inherit access.
+
+### Replace a hand-made link-storage step
+
+If the Instance already uses `<home>/storage`, leave that directory and its files in place. Confirm that the effective shared paths include `storage`, then remove the `link-storage` step with `DELETE /api/v1/instances/{instance}/deploy-steps/link-storage` before the next deployment. Orbit reuses the existing directory and creates the public storage link. For a nested application, use its matching persistent path.
+
+If files still live only in the selected release, copy them into the matching persistent directory before deploying. Use an application maintenance window when writes can occur during the copy. Automatic seeding uses the new release's source files, not the selected release's runtime data. Orbit does not change existing production files when this setting is saved.
+
+Prune removes the links with their releases and never follows them into the shared directories. A rollback selects older code and leaves shared data unchanged. A release created before shared paths were enabled keeps its original layout; deploy again to create a release with managed links.
 
 ## Development defaults
 
@@ -169,7 +193,7 @@ The Gateway flushes output while a command runs. Before each phase event, it wri
 
 A deployment reads the branch and the steps once, when it starts. Then it runs these phases in order.
 
-1. **Source preparation.** The Gateway clones the repository into a new release as the production user and checks out the latest commit of the branch. A branch that moves later does not change this release.
+1. **Source preparation.** The Gateway clones the branch into a new release as the production user, then prepares its shared paths and public storage link.
 2. **Environment sync.** The Gateway writes the stored configuration into `<home>/.env`, as [synchronization](/reference/environment-variables#synchronize) does. This needs exactly one Route on the Instance. An Instance without a Route fails here with `env.owner_unavailable`.
 3. **Before activation.** The Gateway runs each `before_activation` step in order, from the new release, as the production user, with a non-interactive shell.
 4. **Activation.** The Gateway replaces `current` atomically with a link to the new release.
