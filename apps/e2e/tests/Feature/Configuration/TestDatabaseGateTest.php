@@ -28,6 +28,10 @@ function orb247_gate_fixture(): array
     file_put_contents($root.'/bin/env-docs', "#!/usr/bin/env sh\nexit 0\n");
     file_put_contents($root.'/bin/tooling-baseline', "#!/usr/bin/env sh\nexit 0\n");
     file_put_contents($root.'/bin/docs-nav', "#!/usr/bin/env sh\nexit 0\n");
+    foreach (['docs-openapi', 'mcp-tools', 'api-fixtures'] as $generator) {
+        file_put_contents($root.'/bin/'.$generator, "#!/usr/bin/env sh\nexit 0\n");
+        chmod($root.'/bin/'.$generator, 0o700);
+    }
     copy($fixture.'/tia-cache', $root.'/bin/tia-cache');
     copy($fixture.'/composer', $root.'/tooling/composer');
     chmod($root.'/bin/review-check', 0o700);

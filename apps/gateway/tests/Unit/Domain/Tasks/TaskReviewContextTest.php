@@ -13,6 +13,7 @@ it('keeps every part the review packet cuts', function (): void {
     $command = str_repeat('C', 300).'COMMAND-END';
     $path = 'apps/gateway/'.str_repeat('p', 200).'PATH-END.php';
     $approval = str_repeat('A', 400)."\nAPPROVAL-END";
+    $findings = str_repeat('Finding. ', 400).'FINDINGS-END';
     $resolution = str_repeat('R', 2_100)."\nRESOLUTION-END";
     $consults = [['question' => str_repeat('Q', 500).'QUESTION-END', 'answer' => str_repeat('A', 500).'ANSWER-END']];
     $deliverable = TaskDeliverable::fromArray([
@@ -40,6 +41,7 @@ it('keeps every part the review packet cuts', function (): void {
         startCommit: str_repeat('a', 40),
         resolution: $resolution,
         consults: $consults,
+        findings: $findings,
     )->render();
     $context = new TaskReviewContext(
         taskBrief: $taskBrief,
@@ -48,6 +50,7 @@ it('keeps every part the review packet cuts', function (): void {
         approvals: [['title' => 'Earlier work', 'body' => $approval]],
         resolution: $resolution,
         consults: $consults,
+        findings: $findings,
     )->render();
 
     expect($packet)->not->toContain('GROUP-END')
@@ -68,6 +71,7 @@ it('keeps every part the review packet cuts', function (): void {
         ->and($context)->toContain('fails_on_base: true')
         ->and($context)->toContain($approval)
         ->and($context)->toContain($resolution)
+        ->and($context)->toContain($findings)
         ->and($context)->toContain($consults[0]['question'])
         ->and($context)->toContain($consults[0]['answer'])
         ->and($context)->toContain('### context-file')

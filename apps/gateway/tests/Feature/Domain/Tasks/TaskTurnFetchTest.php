@@ -91,6 +91,11 @@ function turn_fetch_fetcher(bool $fail = false): TaskBaseBranchFetcher
             return str_repeat('c', 40);
         }
 
+        public function mergeDefault(Task $group): ?string
+        {
+            return str_repeat('a', 40);
+        }
+
         public function moveTo(Task $group, string $sha): void {}
 
         public function fetchForTurn(Task $group): void

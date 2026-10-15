@@ -1219,11 +1219,11 @@ it('restores the builtin TIA baseline after dependency setup before a task check
     expect(file_get_contents($target.'/graph.json'))->toContain(str_repeat('a', 40));
 });
 
-it('passes the handoff test base only to a scoped project check', function (bool $scoped): void {
+it('passes the handoff test base only to a scoped project check', function (bool $scoped, bool $tree): void {
     $checkout = check_runner_checkout('true');
     $instance = check_runner_instance($checkout);
     $runner = check_runner(new LocalShellSshExecutor);
-    $base = trim((new Process(['git', 'rev-parse', 'HEAD'], $checkout))->mustRun()->getOutput());
+    $base = trim((new Process(['git', 'rev-parse', $tree ? 'HEAD^{tree}' : 'HEAD'], $checkout))->mustRun()->getOutput());
     $command = $scoped ? 'test "$ORBIT_TASK_CHECK_BASE" = '.escapeshellarg($base) : 'test -z "${ORBIT_TASK_CHECK_BASE+set}"';
     $deliverables = $scoped ? ['start' => $base, 'commands' => [], 'test_base' => $base] : null;
 
@@ -1231,7 +1231,7 @@ it('passes the handoff test base only to a scoped project check', function (bool
     $reading = check_runner_wait($runner, $instance, $process);
 
     expect($reading->exitCode)->toBe(0);
-})->with([true, false]);
+})->with(['scoped commit' => [true, false], 'scoped tree' => [true, true], 'unscoped' => [false, false]]);
 
 describe('ssr port', function (): void {
     it('starts the check of two workspaces on one Node with their own allocated ssr ports and never the held 13719', function (): void {

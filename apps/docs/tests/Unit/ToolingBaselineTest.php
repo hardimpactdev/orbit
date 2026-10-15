@@ -131,12 +131,13 @@ PHP);
         $composer = json_decode((string) file_get_contents($root.'/apps/gateway/composer.json'), true, flags: JSON_THROW_ON_ERROR);
         $command = [...explode(' ', $composer['scripts']['rector']), '--config', $root.'/rector.php'];
         $project = dirname(__DIR__, 2);
-        $warm = new Process($command, $project);
+        $environment = ['PAO_DISABLE' => '1'];
+        $warm = new Process($command, $project, $environment);
         $warm->run();
         expect($warm->getExitCode())->toBe(0, $warm->getOutput().$warm->getErrorOutput());
 
         file_put_contents($root.'/src/ParentClass.php', sprintf($parent, "    public string \$name = '';"));
-        $check = new Process($command, $project);
+        $check = new Process($command, $project, $environment);
         $check->run();
 
         expect($check->getExitCode())->toBe(2, $check->getOutput().$check->getErrorOutput())

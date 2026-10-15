@@ -459,3 +459,40 @@ it('refuses to move a workspace to a value that is not a commit SHA', function (
         ->toThrow(TaskPullRequestException::class, 'The pull request head is not a Git SHA.')
         ->and($transport->commands)->toBe([]);
 });
+
+it('merges main directly without hooks and aborts conflicts without losing the task tree', function (bool $conflict): void {
+    $checkout = TestOrbitHome::scratch('mechanical-main-merge');
+    mkdir($checkout, 0755, true);
+    fetcher_git($checkout, ['init', '--quiet']);
+    file_put_contents($checkout.'/shared.txt', "base\n");
+    fetcher_git($checkout, ['add', '.']);
+    fetcher_git($checkout, ['commit', '--quiet', '-m', 'base']);
+    $base = fetcher_git($checkout, ['rev-parse', 'HEAD']);
+    file_put_contents($checkout.'/shared.txt', "main\n");
+    fetcher_git($checkout, ['commit', '--quiet', '-am', 'main advances']);
+    $main = fetcher_git($checkout, ['rev-parse', 'HEAD']);
+    fetcher_git($checkout, ['update-ref', 'refs/remotes/origin/main', $main]);
+    $group = fetcher_group($checkout);
+    fetcher_git($checkout, ['checkout', '--quiet', '-b', 'task-'.$group->id, $base]);
+    file_put_contents($checkout.($conflict ? '/shared.txt' : '/feature.txt'), "feature\n");
+    fetcher_git($checkout, ['add', '.']);
+    fetcher_git($checkout, ['commit', '--quiet', '-m', 'feature']);
+    $head = fetcher_git($checkout, ['rev-parse', 'HEAD']);
+    $hook = $checkout.'/.git/hooks/pre-merge-commit';
+    file_put_contents($hook, "#!/bin/sh\nexit 91\n");
+    chmod($hook, 0755);
+
+    $merged = fetcher(new LocalShellSshExecutor)->mergeDefault($group);
+
+    expect(fetcher_git($checkout, ['status', '--porcelain']))->toBe('');
+    if ($conflict) {
+        expect($merged)->toBeNull()
+            ->and(fetcher_git($checkout, ['rev-parse', 'HEAD']))->toBe($head)
+            ->and(file_get_contents($checkout.'/shared.txt'))->toBe("feature\n");
+    } else {
+        expect($merged)->not->toBe($head)
+            ->and(fetcher_git($checkout, ['rev-parse', 'HEAD^1']))->toBe($head)
+            ->and(fetcher_git($checkout, ['rev-parse', 'HEAD^2']))->toBe($main)
+            ->and(fetcher(new LocalShellSshExecutor)->mergeDefault($group))->toBe($merged);
+    }
+})->with(['clean' => false, 'conflict' => true]);

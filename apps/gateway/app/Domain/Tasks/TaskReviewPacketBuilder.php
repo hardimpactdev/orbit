@@ -21,7 +21,7 @@ final readonly class TaskReviewPacketBuilder
     {
         $task->loadMissing(['parent.project', 'parent.taskable']);
         $group = $task->parent;
-        $start = TaskReviewBase::commit($task);
+        $start = TaskReviewBase::reviewBase($task);
         $instance = $group->taskable;
         if (! $instance instanceof Instance) {
             throw new TaskReviewDiffException('The review diff could not be read.');
@@ -57,6 +57,8 @@ final readonly class TaskReviewPacketBuilder
             groupId: $group->id,
             topology: $task->topology,
             mode: TaskTurnMode::forTask($task, TaskThreadRole::Reviewer),
+            delta: TaskReviewBase::previousReview($task) !== null,
+            findings: TaskReviewBase::findings($task),
         )->render();
     }
 
@@ -93,6 +95,7 @@ final readonly class TaskReviewPacketBuilder
             approvals: $this->approvalBodies($group, $task),
             resolution: $this->pendingResolution($task),
             consults: $this->consults($task),
+            findings: TaskReviewBase::findings($task),
         )->render();
     }
 

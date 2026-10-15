@@ -1267,7 +1267,7 @@ printf '%s|%s\\n' "$PWD" "$*" >> "$GATE_TEST_DOCS"
 if [ "$GATE_TEST_MODE" = docs ]; then exit 5; fi
 """)
         docs_impact.chmod(0o755)
-        for name in ('project-vocabulary', 'env-docs', 'tooling-baseline', 'docs-nav'):
+        for name in ('project-vocabulary', 'env-docs', 'tooling-baseline', 'docs-nav', 'docs-openapi', 'mcp-tools', 'api-fixtures'):
             check = self.root / 'bin' / name
             check.write_text('#!/bin/sh\nexit 0\n')
             check.chmod(0o755)
@@ -1321,11 +1321,14 @@ fi
         self.assertEqual('builder', report['role'])
         self.assertEqual(cache.git(self.root, 'rev-parse', 'HEAD'), report['candidate'])
         architecture_tests = {
-            'apps/cli': ['tests/Feature/CommandSurfaceTest.php'],
+            'apps/cli': ['tests/Feature/CommandSurfaceTest.php', 'tests/Feature/CliBinaryBuildContractTest.php'],
             'apps/gateway': ['tests/Unit/Architecture',
                              'tests/Feature/Infrastructure/Instances/ConfiguredOriginReadTest.php',
                              'tests/Feature/Infrastructure/Caddy/CaddyPublicationLockTest.php'],
-            'apps/e2e': ['tests/Unit/E2E/Value/TopologyNodeCatalogTest.php'],
+            'apps/e2e': ['tests/Unit/E2E/Value/TopologyNodeCatalogTest.php',
+                         'tests/Feature/Configuration/ComposerConfigurationTest.php',
+                         'tests/Feature/Configuration/SubprocessTestGroupTest.php',
+                         'tests/Feature/Configuration/DocsMergeRefWorkflowTest.php'],
             'packages/php-sdk': ['tests/Unit/SuccessRequestIdBoundaryTest.php',
                                  'tests/Unit/RepositoryGuidanceTest.php',
                                  'tests/Unit/Requests/Workspaces/WorkspaceRequestsTest.php',
@@ -1342,7 +1345,12 @@ fi
                 ['composer', 'validate', '--strict'], ['composer', 'check'], ['composer', 'test:affected']])
             expected.extend((project, ['vendor/bin/pest', path])
                             for path in architecture_tests.get(project, []))
+        expected.extend(('repository', [f'bin/{name}', '--check']) for name in ('docs-openapi', 'mcp-tools'))
+        expected.append(('repository', ['bin/api-fixtures', '--check']))
         self.assertEqual(expected, [(item['project'], item['command']) for item in report['checks']])
+        for check in report['checks']:
+            self.assertIn(f'[{check["project"]}] {" ".join(check["command"])}: passed ({check["seconds"]:.3f}s;',
+                          result.stdout)
         self.assertEqual([f'{self.root.resolve()}|--gate --base {self.commit}'],
                          (self.common / 'docs').read_text().splitlines())
         self.assertEqual(15, len((self.common / 'calls').read_text().splitlines()))
@@ -1370,6 +1378,132 @@ fi
         self.assertNotEqual(cache.git(self.root, 'rev-parse', 'HEAD^{tree}'), report['tree'])
         self.assertEqual(15, len((self.common / 'calls').read_text().splitlines()))
         self.assertEqual(status, cache.git(self.root, 'status', '--porcelain'))
+
+    def test_generated_checks_follow_inputs_and_outputs_without_running_for_unrelated_paths(self):
+        runner = self.gate_fixture()
+        gate_loader = importlib.machinery.SourceFileLoader('review_check', str(runner))
+        gate_spec = importlib.util.spec_from_loader(gate_loader.name, gate_loader)
+        gate = importlib.util.module_from_spec(gate_spec)
+        gate_loader.exec_module(gate)
+        for path in ('apps/gateway/routes/api.php', 'apps/cli/app/Commands/Example.php',
+                     'packages/php-sdk/src/Requests/Example.php', 'bin/docs-openapi', 'bin/mcp-tools',
+                     'docs/openapi.json', 'docs/docs.json', 'apps/gateway/resources/mcp/tools.json',
+                     'apps/gateway/resources/tasks/actions.json'):
+            with self.subTest(path=path):
+                commands = [command for project, commands in gate.selected_projects([path], self.root)
+                            if project == 'repository' for command in commands]
+                self.assertIn(('bin/docs-openapi', '--check'), commands)
+                self.assertIn(('bin/mcp-tools', '--check'), commands)
+        for path in ('packages/php-sdk/fixtures/example.json', 'apps/web/fixtures/example.json',
+                     'docs/openapi.json', 'bin/api-fixtures', 'bin/review-check'):
+            with self.subTest(fixture=path):
+                commands = [command for project, commands in gate.selected_projects([path], self.root)
+                            if project == 'repository' for command in commands]
+                self.assertIn(('bin/api-fixtures', '--check'), commands)
+        for path in ('docs/reference/example.md', 'apps/web/src/App.tsx', 'apps/pi-server/src/index.ts'):
+            with self.subTest(path=path):
+                self.assertNotIn('repository', dict(gate.selected_projects([path], self.root)))
+        profiles = dict(gate.selected_projects(['bin/check-classification-fakes'], self.root))
+        for project in cache.PROJECTS:
+            self.assertEqual((('php', '../../bin/check-classification-fakes', 'tests'),), profiles[project])
+        for paths, projects in ((['apps/agent/src/main.rs'], ['apps/agent']),
+                                (['apps/desktop/src/main.ts'], ['apps/desktop/src-tauri']),
+                                (['.github/workflows/ci.yml'], ['apps/agent', 'apps/desktop/src-tauri'])):
+            profiles = dict(gate.selected_projects(paths, self.root))
+            for project in projects:
+                self.assertEqual((('cargo', 'fmt', '--all', '--', '--check'),), profiles[project])
+
+    def test_gate_records_missing_artifact_tools_and_failed_rust_formatting(self):
+        runner = self.gate_fixture()
+        (self.root / 'bin/docs-openapi').unlink()
+        rust = self.root / 'apps/agent/src/main.rs'
+        rust.parent.mkdir(parents=True)
+        rust.write_text('fn main() {}')
+        cargo = Path(self.gate_env['PATH'].split(os.pathsep)[0]) / 'cargo'
+        cargo.write_text('#!/bin/sh\necho "Rust formatting differs"\nexit 7\n')
+        cargo.chmod(0o755)
+        result = subprocess.run([str(runner)], env=self.gate_env, capture_output=True, text=True)
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertIn('bin/docs-openapi: required tool not found', result.stdout)
+        self.assertIn('Rust formatting differs', result.stdout)
+        report = json.loads(next((self.common / 'orbit-checks').glob('*/*/result.json')).read_text())
+        check = next(item for item in report['checks'] if item['project'] == 'apps/agent')
+        self.assertEqual(['cargo', 'fmt', '--all', '--', '--check'], check['command'])
+        self.assertEqual(7, check['exit_code'])
+        self.assertFalse(report['passed'])
+
+    def test_gate_rejects_real_stale_mcp_outputs_and_names_the_regeneration_command(self):
+        runner = self.gate_fixture()
+        shutil.copyfile(Path(cache.__file__).with_name('mcp-tools'), self.root / 'bin/mcp-tools')
+        (self.root / 'docs').mkdir()
+        (self.root / 'docs/openapi.json').write_text('{"paths": {}}')
+        cache.git(self.root, 'update-ref', 'refs/remotes/origin/main', self.commit_change('generator fixture'))
+        manifest = self.root / 'apps/gateway/resources/mcp/tools.json'
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text('{"stale": true}')
+        status = cache.git(self.root, 'status', '--porcelain')
+        result = subprocess.run([str(runner)], env=self.gate_env, capture_output=True, text=True)
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertIn('apps/gateway/resources/mcp/tools.json', result.stdout)
+        self.assertIn('Run bin/mcp-tools.', result.stdout)
+        self.assertIn('--- apps/gateway/resources/mcp/tools.json', result.stdout)
+        self.assertIn('+++ generated/apps/gateway/resources/mcp/tools.json', result.stdout)
+        report = json.loads(next((self.common / 'orbit-checks').glob('*/*/result.json')).read_text())
+        check = next(item for item in report['checks'] if item['command'] == ['bin/mcp-tools', '--check'])
+        self.assertEqual(1, check['exit_code'])
+        self.assertFalse(report['passed'])
+        self.assertEqual('{"stale": true}', manifest.read_text())
+        self.assertEqual(status, cache.git(self.root, 'status', '--porcelain'))
+
+    def test_openapi_check_reports_the_generated_diff_without_writing_outputs(self):
+        fixture = Path(self.temporary.name) / 'openapi fixture'
+        (fixture / 'bin').mkdir(parents=True)
+        (fixture / 'apps').mkdir()
+        (fixture / 'docs').mkdir()
+        repository = Path(cache.__file__).resolve().parent.parent
+        for project in ('gateway', 'cli'):
+            (fixture / 'apps' / project).symlink_to(repository / 'apps' / project, target_is_directory=True)
+        (fixture / 'packages').symlink_to(repository / 'packages', target_is_directory=True)
+        script = fixture / 'bin/docs-openapi'
+        shutil.copyfile(repository / 'bin/docs-openapi', script)
+        shutil.copyfile(repository / 'docs/docs.json', fixture / 'docs/docs.json')
+        document = fixture / 'docs/openapi.json'
+        document.write_text('{"stale": true}\n')
+        navigation = (fixture / 'docs/docs.json').read_bytes()
+        result = subprocess.run([sys.executable, str(script), '--check'], capture_output=True, text=True)
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertIn('Run bin/docs-openapi', result.stderr)
+        self.assertIn('--- docs/openapi.json', result.stdout)
+        self.assertIn('+++ generated/docs/openapi.json', result.stdout)
+        self.assertIn('-{"stale": true}', result.stdout)
+        self.assertEqual('{"stale": true}\n', document.read_text())
+        self.assertEqual(navigation, (fixture / 'docs/docs.json').read_bytes())
+
+    def test_cross_project_contract_failures_block_even_when_tia_selects_nothing(self):
+        runner = self.gate_fixture()
+        failures = {'apps/e2e': 'tests/Feature/Configuration/SubprocessTestGroupTest.php'}
+        for project, contract in failures.items():
+            pest = self.root / project / 'vendor/bin/pest'
+            pest.write_text(f'#!/bin/sh\n[ "$1" != "{contract}" ] || exit 19\n')
+        base = self.commit_change('contract fixtures')
+        cache.git(self.root, 'update-ref', 'refs/remotes/origin/main', base)
+        source = self.root / 'apps/gateway/app/Example.php'
+        source.parent.mkdir()
+        source.write_text('<?php // candidate')
+        candidate = self.commit_change('gateway candidate')
+        # This fixture exercises a local handoff; CI deliberately ignores the task test base.
+        result = subprocess.run([str(runner)], env={**self.gate_env, 'ORBIT_TASK_CHECK_BASE': candidate,
+                                                  'CI': '', 'GITHUB_ACTIONS': ''},
+                                capture_output=True, text=True)
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        report = json.loads(next((self.common / 'orbit-checks').glob('*/*/result.json')).read_text())
+        self.assertEqual(['apps/gateway/app/Example.php'], report['changed_paths'])
+        self.assertEqual(candidate, report['test_base'])
+        for project, contract in failures.items():
+            check = next(item for item in report['checks'] if item['project'] == project
+                         and item['command'] == ['vendor/bin/pest', contract])
+            self.assertEqual(19, check['exit_code'])
+        self.assertFalse(report['passed'])
 
     @unittest.skipUnless(shutil.which('setfacl') and shutil.which('getfacl'), 'needs setfacl and getfacl')
     def test_review_directory_keeps_named_acl_entries_effective(self):
