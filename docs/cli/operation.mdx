@@ -58,7 +58,7 @@ orbit operation:show 42
 
 ## orbit operation:cancel
 
-Ask an operation to stop. A queued operation ends `cancelled` at once. A running one finishes its running step and ends `cancelled`. Orbit never undoes the steps that ran.
+Ask an operation to stop. A queued operation ends `cancelled` at once. A running one finishes its running step and ends `cancelled`. A deploy whose new release is already active finishes instead. Orbit never undoes the steps that ran.
 
 ```bash
 orbit operation:cancel <operation> [--json]

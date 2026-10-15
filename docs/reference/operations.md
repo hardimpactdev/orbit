@@ -120,13 +120,17 @@ An event never carries output. Reverb can lose an event, for example while the s
 
 A cancelled deploy records its deployment as `failed` with `deployment.cancelled`. Orbit never undoes the steps that ran.
 
+A deploy ignores a cancel request once its `activation` step succeeded: the new release is live, so it still refreshes PHP, runs the `after_activation` steps, and cleans up. It then ends `succeeded`, or `failed` when a later step fails, and `cancel_requested` stays true.
+
 ## How an operation runs
 
-The job `RunOperation` runs on the `operations` queue, which has one worker. One operation runs at a time in the fleet: an operation on another target stays `queued` until the running one ends. The job claims the operation with one conditional update from `queued` to `running`, so a second copy of the job does nothing. It records the worker's host, process ID, and process start time.
+The job `RunOperation` runs on the `operations` queue, which has one worker. One operation runs at a time in the fleet: an operation on another target stays `queued` until the running one ends. The job claims the operation with one conditional update from `queued` to `running`, so a second copy of the job does nothing. It records the worker's host and process ID, for people. While the attempt runs, it holds the operation's attempt lease, an exclusive lock on a file under `ORBIT_HOME/locks/operations`. The lease ends with the attempt's code, also when an error escapes it, and with the worker process.
+
+An error that escapes the attempt fails the operation with `operation.failed`. When the Gateway cannot even record that, for example while its database is locked, the operation stays `running` with a free lease until the sweep recovers it.
 
 The operation's kind plans its steps, then runs them in order. The runner skips a step that already succeeded, so a resumed operation continues where it stopped. It checks for a cancel request before each step. While a step runs, the runner writes its output tail at most once a second. A step that throws ends `failed`, and the operation ends `failed` with the kind's error code.
 
-An operation runs at most 1,600 seconds. Its job may run 1,700 seconds, under the queue's `retry_after` of 1,800, so Redis never gives a running job to a second worker. When the deadline stops a deploy, its error code is `deployment.deadline_exceeded`.
+An operation runs at most 1,600 seconds, and its last 20 seconds are a cleanup reserve. A step that runs out of forward time stops there, and the recovery after it uses the reserve, such as reading which release an interrupted activation selected. Its job may run 1,700 seconds, under the queue's `retry_after` of 1,800, so Redis never gives a running job to a second worker. When the deadline stops a deploy, its error code is `deployment.deadline_exceeded`.
 
 ### One operation per target
 
@@ -136,8 +140,7 @@ An operation holds its target from the start request to its terminal status. A s
 
 `orbit:operations-sweep` runs every minute as a [scheduled job](/reference/gateway-queue#scheduled-work). It queues the job again for:
 
-- each `running` operation whose worker process has exited,
-- each `running` operation whose process ID now belongs to a newer process, and
+- each `running` operation whose attempt lease is free, because its worker died or its attempt ended without recording the outcome, and
 - each `queued` operation whose job was queued more than 10 minutes ago and has not started.
 
 The next worker then looks at the step that was running:
@@ -147,6 +150,7 @@ The next worker then looks at the step that was running:
 | Is resumable | It runs again, and the operation continues |
 | Is not resumable | It ends `failed` with `operation.worker_lost`, and the operation fails at that step |
 | Belongs to an operation that started 3 times already | The same as not resumable |
+| Already ended `failed` | It never runs again. The operation fails at that step with `operation.worker_lost` |
 
 The kind finishes its domain record in both failure cases. A lost deploy ends its deployment row as `failed` with the boundary of that step.
 
@@ -186,9 +190,13 @@ One job holds the Instance's operation lock for the whole run, so no environment
 
 Orbit can prepare a release, sync the environment, switch `current`, refresh PHP, and prune again without harm. It cannot know whether a deploy step that migrates a database ran. So the runner repeats only steps that declare themselves resumable and fails the others at a named step. A guess in either direction would hide a broken deploy.
 
-### A process check instead of a heartbeat
+### An attempt lease instead of a heartbeat
 
-A step that waits on a silent remote command writes nothing for minutes. A heartbeat would need a timer inside the worker. Horizon kills a worker that passes its timeout, and a fatal error ends it, so the worker's process ID and start time tell the sweeper what it needs.
+A step that waits on a silent remote command writes nothing for minutes. A heartbeat would need a timer inside the worker. The kernel frees a file lock when its holder's code ends or its process dies, so the lease tells the sweeper whether an attempt still runs without a timer. A check of the worker process is not enough: a Horizon worker lives on after its job throws, so the operation would look alive and keep its target locked.
+
+### A cancel after activation finishes the deploy
+
+Once `current` points at the new release, the release serves traffic. Stopping before the PHP refresh, the `after_activation` steps, and cleanup would leave a half-done deploy. So the cancel arrives too late, and the deploy finishes.
 
 ### One worker for every operation
 

@@ -59,17 +59,19 @@ Operations need the queue. Without `ORBIT_GATEWAY_QUEUE_CONNECTION`, a start req
 
 ### Idempotent, resumable steps
 
-The runner claims a queued operation with one conditional update, so a second copy of the job does nothing. It records the worker's host, process ID, and process start time on the row.
+The runner claims a queued operation with one conditional update, so a second copy of the job does nothing. It records the worker's host and process ID on the row, for people. Each attempt holds an attempt lease: an exclusive `flock` on a file per operation under `ORBIT_HOME/locks/operations`. The kernel frees the lease when the attempt's code ends, also by an error that escapes it, and when the worker dies. An error that escapes the attempt fails the operation through its kind. When even that write fails, for example while the database is locked, the error goes to the queue, and the free lease lets the sweeper recover the operation.
+
+The runner starts each attempt's deadline with the 20-second cleanup reserve of an API command. When a step runs out of forward time, the recovery after it still has time to finish, such as reading which release an interrupted activation selected.
 
 The operation kind runs its work as named steps. Each step either is safe to run again or detects that its work is done; it declares this as `resumable`. The runner skips a step that already succeeded, so a resumed operation continues where it stopped. A step can store a small JSON value, such as the release it prepared, for the steps after it.
 
-A step that a person writes, such as a deploy step that migrates a database, is never resumable: Orbit cannot know whether it ran.
+A step that a person writes, such as a deploy step that migrates a database, is never resumable: Orbit cannot know whether it ran. A step that ended `failed` never runs again either. When an attempt ended before it recorded the outcome, the next attempt fails the operation at that step with `operation.worker_lost`.
 
 ### A sweeper recovers lost workers
 
 `orbit:operations-sweep` runs every minute on the Gateway queue. It requeues:
 
-- a `running` operation whose worker process is gone, or whose process ID now belongs to a newer process, and
+- a `running` operation whose attempt lease is free, because its worker died or its code ended without recording the outcome, and
 - a `queued` operation whose job was dispatched more than 10 minutes ago and has not started, because Redis can lose a job.
 
 The runner then decides what the interrupted step means. A resumable step runs again. A step that is not resumable fails with `operation.worker_lost`, and the operation fails at that step. An operation that has started three times fails the same way, so a step that kills its worker cannot loop. The kind finishes its domain record either way, so a lost deploy still ends its deployment row as failed.
@@ -85,6 +87,8 @@ While its job runs, a deploy also takes the Instance's existing operation lock, 
 ### Cancel
 
 `POST /api/v1/operations/{operation}/cancel` asks an operation to stop. A queued operation becomes `cancelled` at once. A running one stops before its next step and becomes `cancelled`; the running step finishes first. A cancelled deploy records its deployment as failed with `deployment.cancelled`. This maps onto `tasks/cancel` of MCP Tasks.
+
+A deploy ignores a cancel request once its `activation` step succeeded. The new release is then live, and stopping would skip the PHP refresh, the `after_activation` steps such as a queue restart, and the cleanup. The deploy finishes, and its operation keeps `cancel_requested` set. A half-done deploy marked `cancelled` would be worse than a late cancel, and a separate error code would report a failure where nothing failed.
 
 ### Delivery
 
@@ -123,7 +127,8 @@ This pull request moves the API, MCP, CLI, and web deploy of an Instance onto op
 - **A systemd unit per operation, as Gateway releases use.** A release must survive a restart of Horizon itself, so it cannot run on the queue. Other operations can, and a unit per operation would need its own lock, logs, and recovery.
 - **Long-held MCP requests or streamed tool results.** They hold a PHP-FPM worker for the whole operation and fail with the request deadline. Polling a record costs one short read per poll.
 - **Events that carry step output.** Reverb refuses messages over 10,000 bytes and drops events while a client is offline. The database keeps the output tail; events only say what changed.
-- **A heartbeat column instead of a process check.** A step that waits on a silent remote command writes nothing, so a heartbeat would need a timer in the worker. The worker's process ID and start time identify a dead worker without one.
+- **A heartbeat column instead of an attempt lease.** A step that waits on a silent remote command writes nothing, so a heartbeat would need a timer in the worker.
+- **A check of the worker process.** The first version compared the worker's process ID and start time. A Horizon worker lives on after its job throws, so an attempt that ended without its outcome looked alive and kept its target locked. The lease ends with the attempt, not with the process.
 - **Per-step jobs now.** Each step as its own job would remove the 1,600-second bound, but the Instance's operation lock would then be free between steps. One job per operation keeps the lock and fits every deploy that ran in a request before.
 - **Run operations without the queue.** A second path, such as running the job after the response inside PHP-FPM, keeps the 600-second limit and doubles the code that recovery must cover.
 

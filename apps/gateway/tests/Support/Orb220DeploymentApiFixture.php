@@ -19,6 +19,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Http\Streaming\DeploymentStreamConnection;
+use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessCancelledException;
 use App\Models\Instance;
@@ -130,6 +131,18 @@ final class Orb220ProductionDeployment implements ProductionDeployment
     /** Runs inside source preparation, such as a cancel request that lands while the deployment works. */
     public ?Closure $duringPrepare = null;
 
+    /** Runs inside activation, after `current` points at the new release. */
+    public ?Closure $duringActivation = null;
+
+    /** Makes each read of the selection a remote command that the command deadline bounds. */
+    public bool $readsAsRemoteCommand = false;
+
+    /** The release `current` selects on the Node. */
+    public string $current = 'initial';
+
+    /** @var list<string> */
+    public array $steps = [];
+
     /** How many 16 KiB stdout chunks the `prepare` step emits. */
     public int $prepareOutputChunks = 1;
 
@@ -154,6 +167,8 @@ final class Orb220ProductionDeployment implements ProductionDeployment
         DeploymentStep $step,
         DeploymentRequest $request,
     ): CommandResult {
+        $this->steps[] = $step->name;
+
         if ($this->disconnectAfterSilentStep) {
             if ($this->connection !== null) {
                 $this->connection->disconnectOnNextPhase = true;
@@ -180,13 +195,23 @@ final class Orb220ProductionDeployment implements ProductionDeployment
     public function activate(Instance $instance, DeploymentRelease $release): DeploymentRelease
     {
         $this->activations++;
+        $this->current = $release->name;
+
+        if ($this->duringActivation !== null) {
+            ($this->duringActivation)();
+        }
 
         return $release;
     }
 
     public function selected(Instance $instance): ?DeploymentRelease
     {
-        return $this->release('initial');
+        if ($this->readsAsRemoteCommand) {
+            // A real read is a remote command, bounded by the command deadline.
+            app(CommandDeadline::class)->cap(30.0);
+        }
+
+        return $this->release($this->current);
     }
 
     public function retained(Instance $instance, string $name): DeploymentRelease

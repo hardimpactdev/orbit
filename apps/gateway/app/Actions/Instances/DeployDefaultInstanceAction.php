@@ -100,7 +100,6 @@ final readonly class DeployDefaultInstanceAction
                     $commands = [];
                     $boundary = DeploymentFailureBoundary::Preparation;
                     try {
-                        $this->assertNotCancelled($output);
                         $prepared = $steps->run(new DeploymentStepName(DeploymentProgressPhase::SourcePreparation), $output, function () use ($instance, $output, $onlyChanged, $triggeredBy, &$record, &$commit): array {
                             // The pending mark is the receipt of route convergence. Repair before the unchanged
                             // fast path so a lost process cannot strand it; a completed projection skips the lock.
@@ -130,7 +129,6 @@ final readonly class DeployDefaultInstanceAction
                         $boundary = DeploymentFailureBoundary::BeforeActivation;
                         foreach ($deploySteps as $step) {
                             $steps->run(new DeploymentStepName(DeploymentProgressPhase::BeforeActivation, $step->name), $output, function () use ($instance, $step, $output, &$commands): null {
-                                $this->assertNotCancelled($output);
                                 try {
                                     $commands[] = new DeploymentCommandResult($step->name, $this->deployment->executeStep($instance, $step, $output));
                                 } catch (RuntimeConvergenceException $exception) {
@@ -186,13 +184,6 @@ final readonly class DeployDefaultInstanceAction
             $instance->update(['development_projection_pending' => true]);
             $this->projections->run(fn () => $this->routes->converge($instance, $route));
             $instance->update(['development_projection_pending' => false]);
-        }
-    }
-
-    private function assertNotCancelled(DeploymentRequest $request): void
-    {
-        if ($request->cancellation->requested()) {
-            throw new ProcessCancelledException;
         }
     }
 

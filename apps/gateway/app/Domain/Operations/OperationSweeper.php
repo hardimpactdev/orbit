@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Finds operations that a lost worker or a lost job left behind and queues their job again
+ * Finds operations that a lost attempt or a lost job left behind and queues their job again
  * (docs/reference/operations.md#recover-a-lost-worker). The next worker decides whether the interrupted step resumes
  * or fails, so the sweeper never finishes an operation itself.
  */
@@ -22,21 +22,25 @@ final readonly class OperationSweeper
     public function __construct(
         private OperationStore $store,
         private OperationDispatcher $dispatcher,
-        private OperationWorker $worker,
+        private OperationAttemptLease $lease,
     ) {}
 
     /** @return int the number of operations queued again */
     public function sweep(): int
     {
-        $requeued = 0;
+        $count = 0;
 
         foreach (Operation::query()->where('status', OperationStatus::Running->value)->orderBy('id')->get() as $operation) {
-            if (is_string($operation->worker) && $this->worker->alive($operation->worker)) {
-                continue;
-            }
+            $requeued = false;
+            // A held lease means an attempt still runs. A free one means its worker died or its code ended without
+            // recording the outcome. The lease is released before the dispatch, so the next worker can take it at once.
+            $this->lease->hold($operation->id, function () use ($operation, &$requeued): void {
+                $operation->refresh();
+                $requeued = $operation->status === OperationStatus::Running && $this->store->requeue($operation);
+            });
 
-            if ($this->store->requeue($operation) && $this->dispatch($operation)) {
-                $requeued++;
+            if ($requeued && $this->dispatch($operation)) {
+                $count++;
             }
         }
 
@@ -48,11 +52,11 @@ final readonly class OperationSweeper
             }
 
             if ($this->dispatch($operation)) {
-                $requeued++;
+                $count++;
             }
         }
 
-        return $requeued;
+        return $count;
     }
 
     private function dispatch(Operation $operation): bool

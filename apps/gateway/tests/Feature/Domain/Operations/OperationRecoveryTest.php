@@ -6,6 +6,7 @@ use App\Actions\Instances\DeployInstanceAction;
 use App\Domain\Gateway\GatewayQueue;
 use App\Domain\Instances\Deployment\DeploymentStepName;
 use App\Domain\Instances\Deployment\InstanceDeploymentRecorder;
+use App\Domain\Operations\OperationAttemptLease;
 use App\Domain\Operations\OperationPoll;
 use App\Domain\Operations\OperationRun;
 use App\Domain\Operations\OperationStatus;
@@ -17,6 +18,7 @@ use App\Domain\Operations\OperationWorker;
 use App\Models\InstanceDeployment;
 use App\Models\Operation;
 use App\Models\OperationStep;
+use Illuminate\Database\DeadlockException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\Orb220DeploymentApiFixture;
@@ -130,13 +132,62 @@ describe('a lost worker', function (): void {
     });
 });
 
+describe('an attempt that ends without its outcome', function (): void {
+    it('never runs a step again that failed before the attempt recorded the outcome', function (): void {
+        $operation = lost_deploy($this, 'before_activation.prepare');
+        $operation->steps()->where('name', 'before_activation.prepare')->update(['status' => OperationStepStatus::Failed->value, 'error_code' => null]);
+        app(OperationSweeper::class)->sweep();
+        run_operation_jobs();
+
+        $operation->refresh();
+        expect($operation->status)->toBe(OperationStatus::Failed)
+            ->and($operation->failed_step)->toBe('before_activation.prepare')
+            ->and($operation->error_code)->toBe('operation.worker_lost')
+            ->and($operation->lock_key)->toBeNull()
+            ->and($this->fixture->deployment->steps)->toBe([])
+            ->and($this->fixture->deployment->activations)->toBe(0)
+            ->and(InstanceDeployment::query()->sole()->failed_step)->toBe('before_activation');
+    });
+
+    it('frees the Instance after an error escapes the attempt, even while the worker process lives on', function (): void {
+        $response = $this->withServerVariables(['REMOTE_ADDR' => $this->fixture->caller->wireguard_ip])
+            ->call('POST', "/api/v1/instances/{$this->fixture->instance->id}/deploy", server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}');
+        $operation = Operation::query()->findOrFail($response->json('data.id'));
+        // Writes fail as while the database is locked: the steps cannot change, and the attempt cannot even record its failure.
+        DB::statement("CREATE TRIGGER operation_steps_locked BEFORE UPDATE ON operation_steps BEGIN SELECT RAISE(ABORT, 'database is locked'); END");
+        DB::statement("CREATE TRIGGER operations_locked BEFORE UPDATE OF status ON operations WHEN NEW.status = 'failed' BEGIN SELECT RAISE(ABORT, 'database is locked'); END");
+
+        expect(static fn () => run_operation_jobs())->toThrow(DeadlockException::class)
+            ->and($operation->refresh()->status)->toBe(OperationStatus::Running)
+            ->and($operation->lock_key)->not->toBeNull();
+
+        DB::statement('DROP TRIGGER operation_steps_locked');
+        DB::statement('DROP TRIGGER operations_locked');
+        DB::table('jobs')->delete();
+
+        expect(app(OperationSweeper::class)->sweep())->toBe(1)
+            ->and(run_operation_jobs())->toBe(1)
+            ->and($operation->refresh()->status)->toBe(OperationStatus::Succeeded)
+            ->and($operation->lock_key)->toBeNull()
+            ->and($operation->attempts)->toBe(2);
+    });
+});
+
 describe('the sweep', function (): void {
-    it('leaves an operation whose worker still runs', function (): void {
+    it('leaves an operation whose attempt still holds its lease, and requeues it once the lease is free', function (): void {
         $operation = lost_deploy($this, 'environment_sync');
         $operation->update(['worker' => app(OperationWorker::class)->current()]);
+        $swept = null;
 
-        expect(app(OperationSweeper::class)->sweep())->toBe(0)
-            ->and($operation->refresh()->status)->toBe(OperationStatus::Running);
+        app(OperationAttemptLease::class)->hold($operation->id, static function () use (&$swept): void {
+            $swept = app(OperationSweeper::class)->sweep();
+        });
+
+        expect($swept)->toBe(0)
+            ->and($operation->refresh()->status)->toBe(OperationStatus::Running)
+            // The worker process still lives, but no attempt holds the lease any more.
+            ->and(app(OperationSweeper::class)->sweep())->toBe(1)
+            ->and($operation->refresh()->status)->toBe(OperationStatus::Queued);
     });
 
     it('queues a job again only for a queued operation whose job was lost', function (): void {
@@ -154,28 +205,21 @@ describe('the sweep', function (): void {
     });
 });
 
-describe('the worker probe', function (): void {
-    beforeEach(function (): void {
-        $this->proc = sys_get_temp_dir().'/orbit-operation-proc-'.bin2hex(random_bytes(4));
-        mkdir("{$this->proc}/77", recursive: true);
-        file_put_contents("{$this->proc}/77/stat", '77 (php artisan (x)) S 1 77 77 0 -1 4194560 '.implode(' ', array_fill(0, 12, '0')).' 123456 0 0');
+describe('the attempt lease', function (): void {
+    it('lets one holder run an attempt at a time, and frees the lease when the attempt throws', function (): void {
+        $lease = new OperationAttemptLease(sys_get_temp_dir().'/orbit-operation-lease-'.bin2hex(random_bytes(4)));
+        $inner = null;
+
+        expect($lease->hold(7, static function () use ($lease, &$inner): void {
+            $inner = $lease->hold(7, static fn (): null => null);
+        }))->toBeTrue()
+            ->and($inner)->toBeFalse()
+            ->and(static fn () => $lease->hold(7, static fn () => throw new RuntimeException('database is locked')))->toThrow(RuntimeException::class)
+            ->and($lease->hold(7, static fn (): null => null))->toBeTrue();
     });
 
-    afterEach(function (): void {
-        @unlink("{$this->proc}/77/stat");
-        @rmdir("{$this->proc}/77");
-        @rmdir($this->proc);
-    });
-
-    it('names a worker by host, process ID, and start time, and knows it while that process runs', function (): void {
-        $worker = new OperationWorker($this->proc, 'gateway', 77);
-
-        expect($worker->current())->toBe('gateway:77:123456')
-            ->and($worker->alive('gateway:77:123456'))->toBeTrue()
-            ->and($worker->alive('gateway:77:999'))->toBeFalse()
-            ->and($worker->alive('gateway:78:123456'))->toBeFalse()
-            ->and($worker->alive('other:77:123456'))->toBeFalse()
-            ->and($worker->alive('nonsense'))->toBeFalse();
+    it('names a worker by host and process ID', function (): void {
+        expect(new OperationWorker('gateway', 77)->current())->toBe('gateway:77');
     });
 });
 

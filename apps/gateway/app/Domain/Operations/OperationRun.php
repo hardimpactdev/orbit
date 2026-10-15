@@ -98,6 +98,12 @@ final class OperationRun
         return $value;
     }
 
+    public function succeeded(string $name): bool
+    {
+        return OperationStep::query()->where('operation_id', $this->operation->id)->where('name', $name)
+            ->where('status', OperationStepStatus::Succeeded->value)->exists();
+    }
+
     public function cancelRequested(): bool
     {
         return Operation::query()->whereKey($this->operation->id)->whereNotNull('cancel_requested_at')->exists();
@@ -107,11 +113,15 @@ final class OperationRun
      * Runs one planned step, or returns the value it stored when it already succeeded. The work returns a JSON value
      * that the later steps of a resumed attempt need, or null.
      *
+     * A step that is not `$cancellable` runs even after a cancel request, such as the steps that complete a deploy
+     * whose new release is already live.
+     *
      * @param  Closure(): mixed  $work
      *
-     * @throws OperationCancelled when the operation was asked to stop before this step
+     * @throws OperationCancelled when the operation was asked to stop before this cancellable step
+     * @throws LogicException when the step failed on an earlier attempt that did not record the outcome
      */
-    public function step(string $name, Closure $work): mixed
+    public function step(string $name, Closure $work, bool $cancellable = true): mixed
     {
         $step = $this->stepNamed($name);
 
@@ -119,12 +129,17 @@ final class OperationRun
             return $this->stored($name);
         }
 
-        if ($step->status === OperationStepStatus::Failed && $step->error_code !== null) {
-            // A best-effort step that failed on an earlier attempt stays failed; the attempt goes on after it.
-            return null;
+        if ($step->status === OperationStepStatus::Failed) {
+            if ($step->error_code !== null) {
+                // A best-effort step that failed on an earlier attempt stays failed; the attempt goes on after it.
+                return null;
+            }
+
+            // The runner ends such an operation before it runs the kind; a failed step never runs again.
+            throw new LogicException("The step [{$name}] already failed.");
         }
 
-        if ($this->cancelRequested()) {
+        if ($cancellable && $this->cancelRequested()) {
             $this->store->change($this->operation, ['current_step' => null], $step, [
                 'status' => OperationStepStatus::Cancelled,
                 'finished_at' => Carbon::now(),

@@ -18,7 +18,6 @@ use App\Domain\Instances\Deployment\DeploymentRequest;
 use App\Domain\Instances\Deployment\DeploymentResult;
 use App\Domain\Instances\Deployment\DeploymentStepName;
 use App\Domain\Instances\Deployment\DeploymentSteps;
-use App\Domain\Instances\Deployment\InlineDeploymentSteps;
 use App\Domain\Instances\Deployment\ProductionDeployment;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\Environment\InstanceEnvironmentSynchronizer;
@@ -82,10 +81,10 @@ final readonly class DeployInstanceAction
         ];
     }
 
-    public function execute(Instance $instance, ?DeploymentRequest $request = null, ?DeploymentSteps $steps = null): DeploymentResult
+    /** Runs the deployment's steps through `$steps`: the steps of an `instance.deploy` operation. */
+    public function execute(Instance $instance, DeploymentSteps $steps, ?DeploymentRequest $request = null): DeploymentResult
     {
         $request ??= DeploymentRequest::withoutOutput();
-        $steps ??= new InlineDeploymentSteps;
         $instance->refresh();
         if ($instance->placedOnAppDev()) {
             $result = $this->developmentAction()->execute($instance, $request, steps: $steps);
@@ -148,8 +147,7 @@ final readonly class DeployInstanceAction
         $commands = [];
 
         try {
-            $prepared = $steps->run(new DeploymentStepName(DeploymentProgressPhase::SourcePreparation), $request, function () use ($instance, $config, $request, &$selected): array {
-                $this->assertNotCancelled($request);
+            $prepared = $steps->run(new DeploymentStepName(DeploymentProgressPhase::SourcePreparation), $request, function () use ($instance, $config, &$selected): array {
                 // A failed preparation reports the selection it found.
                 $selected = $this->deployment->selected($instance);
 
@@ -163,8 +161,7 @@ final readonly class DeployInstanceAction
             $release = self::storedRelease(is_array($prepared) ? ($prepared['release'] ?? null) : null)
                 ?? throw new ResourceOperationException('deployment.interrupted', 'The prepared release is missing.', 500);
             $boundary = DeploymentFailureBoundary::Environment;
-            $steps->run(new DeploymentStepName(DeploymentProgressPhase::EnvironmentSync), $request, function () use ($instance, $request): null {
-                $this->assertNotCancelled($request);
+            $steps->run(new DeploymentStepName(DeploymentProgressPhase::EnvironmentSync), $request, function () use ($instance): null {
                 $this->environment->execute($instance);
 
                 return null;
@@ -172,8 +169,7 @@ final readonly class DeployInstanceAction
             $boundary = DeploymentFailureBoundary::BeforeActivation;
             $this->executeSteps($instance, $release, $config, DeploymentPhase::BeforeActivation, $request, $steps, $commands);
             $boundary = DeploymentFailureBoundary::Activation;
-            $activated = $steps->run(new DeploymentStepName(DeploymentProgressPhase::Activation), $request, function () use ($instance, $release, $request, &$boundary, &$selected): ?array {
-                $this->assertNotCancelled($request);
+            $activated = $steps->run(new DeploymentStepName(DeploymentProgressPhase::Activation), $request, function () use ($instance, $release, &$boundary, &$selected): ?array {
                 $selected = $this->deployment->activate($instance, $release);
                 $instance->update(['checkout_path' => $selected->path]);
                 $boundary = DeploymentFailureBoundary::AfterActivation;
@@ -186,8 +182,7 @@ final readonly class DeployInstanceAction
 
             if (is_string($instance->selected_php_version)) {
                 $boundary = DeploymentFailureBoundary::CacheRefresh;
-                $steps->run(new DeploymentStepName(DeploymentProgressPhase::PhpRefresh), $request, function () use ($instance, $request): null {
-                    $this->assertNotCancelled($request);
+                $steps->run(new DeploymentStepName(DeploymentProgressPhase::PhpRefresh), $request, function () use ($instance): null {
                     $this->runtime->converge($instance);
                     $this->runtime->refreshCache($instance);
 
@@ -301,7 +296,6 @@ final readonly class DeployInstanceAction
             }
 
             $steps->run(new DeploymentStepName(self::progressPhase($phase), $step->name), $request, function () use ($instance, $release, $step, $request, &$commands): null {
-                $this->assertNotCancelled($request);
                 $commands[] = new DeploymentCommandResult(
                     $step->name,
                     $this->deployment->executeStep($instance, $release, $step, $request),
@@ -323,13 +317,6 @@ final readonly class DeployInstanceAction
             ? substr($exception->step, strlen('deployment-step-'))
             : $exception->step;
         $commands[] = new DeploymentCommandResult($name, $exception->result);
-    }
-
-    private function assertNotCancelled(DeploymentRequest $request): void
-    {
-        if ($request->cancellation->requested()) {
-            throw new ProcessCancelledException;
-        }
     }
 
     private function developmentAction(): DeployDefaultInstanceAction

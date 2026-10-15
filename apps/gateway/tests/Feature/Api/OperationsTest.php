@@ -8,6 +8,7 @@ use App\Domain\Gateway\GatewayQueue;
 use App\Domain\Operations\OperationDispatcher;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStepStatus;
+use App\Infrastructure\Processes\CommandDeadline;
 use App\Models\Activity;
 use App\Models\InstanceDeployment;
 use App\Models\Node;
@@ -179,6 +180,31 @@ describe('running a deploy', function (): void {
         start_deploy($this)->assertAccepted();
     });
 
+    it('keeps the cleanup reserve, so a deploy that runs out of time in activation still records the release it selected', function (): void {
+        $now = 1_000.0;
+        $deadline = new CommandDeadline(static function () use (&$now): float {
+            return $now;
+        });
+        app()->instance(CommandDeadline::class, $deadline);
+        $this->fixture->deployment->readsAsRemoteCommand = true;
+        // The switch of `current` is a remote command that runs until the forward deadline stops it.
+        $this->fixture->deployment->duringActivation = static function () use (&$now, $deadline): void {
+            $now = 1_930.0;
+            $now += $deadline->cap(30.0);
+
+            throw $deadline->exceeded();
+        };
+        $id = start_deploy($this)->json('data.id');
+        run_operation_jobs();
+
+        $operation = Operation::query()->findOrFail($id);
+        expect($operation->status)->toBe(OperationStatus::Failed)
+            ->and($operation->failed_step)->toBe('activation')
+            ->and($operation->error_code)->toBe('deployment.deadline_exceeded')
+            ->and($operation->result['selected_release'] ?? null)->toBe('fresh')
+            ->and(InstanceDeployment::query()->sole()->selected_release)->toBe('fresh');
+    });
+
     it('a second copy of the job does nothing', function (): void {
         $operation = Operation::query()->findOrFail(start_deploy($this)->json('data.id'));
         app(OperationDispatcher::class)->dispatch($operation);
@@ -239,6 +265,21 @@ describe('cancelling', function (): void {
             ->and($steps['cleanup']->status)->toBe(OperationStepStatus::Cancelled)
             ->and($this->fixture->deployment->activations)->toBe(0)
             ->and(InstanceDeployment::query()->sole()->error_code)->toBe('deployment.cancelled');
+    });
+
+    it('finishes a deploy whose new release is already live when the cancel arrives during activation', function (): void {
+        $id = start_deploy($this)->json('data.id');
+        $this->fixture->deployment->duringActivation = static function () use ($id): void {
+            app(CancelOperationAction::class)->execute(Operation::query()->findOrFail($id));
+        };
+        run_operation_jobs();
+
+        $operation = Operation::query()->sole();
+        expect($operation->status)->toBe(OperationStatus::Succeeded)
+            ->and($operation->cancel_requested_at)->not->toBeNull()
+            ->and($operation->steps()->pluck('status', 'name')->map(static fn (OperationStepStatus $status): string => $status->value)->unique()->values()->all())->toBe(['succeeded'])
+            ->and($this->fixture->deployment->steps)->toBe(['prepare', 'finish'])
+            ->and(InstanceDeployment::query()->sole()->status)->toBe('succeeded');
     });
 
     it('leaves a finished operation as it is', function (): void {

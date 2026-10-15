@@ -66,7 +66,7 @@ final readonly class InstanceDeployOperation implements OperationKind
             $deployment->update(['events' => $collector->events()]);
         });
 
-        $result = $this->deploy->execute($instance, $request, $steps);
+        $result = $this->deploy->execute($instance, $steps, $request);
         $this->recorder->finish($deployment, $result, $collector->events());
 
         return $this->outcome($deployment, $result);
