@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Instances;
 
+use App\Domain\Instances\Environment\CloneEnvironmentWarnings;
 use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\Environment\InstanceEnvironmentRenderer;
@@ -23,7 +24,22 @@ final readonly class CloneInstanceEnvironmentAction
         private InstanceOperationPreflight $preflight,
         private InstanceEnvironmentRenderer $renderer,
         private InstanceEnvironmentWriter $writer,
+        private CloneEnvironmentWarnings $warningDetector = new CloneEnvironmentWarnings,
     ) {}
+
+    /** @return list<string> */
+    public function warnings(Instance $source, Instance $target): array
+    {
+        $source->loadMissing('node');
+        $target->loadMissing('node');
+
+        return $this->warningDetector->detect(
+            $this->store->values($target),
+            $source->node,
+            $target->production_home ?? $target->checkout_path,
+            $target->node,
+        );
+    }
 
     public function execute(Instance $source, Instance $target): InstanceEnvironmentResult
     {

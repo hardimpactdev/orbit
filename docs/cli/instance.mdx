@@ -467,7 +467,7 @@ orbit node:add production production.example --role=app-prod --tld=prod.orbit
 orbit instance:clone 12 9 primary --preview-name=shop.com --sqlite-source-path=/srv/orbit/apps/acme/default/database/database.sqlite
 ```
 
-Cloning ends with an active Instance and no release. Update its environment, record deploy steps, then run `instance:deploy`. See [Instance cloning](/reference/instance-cloning#next-steps).
+Cloning ends with an active Instance and no release. The result shows key-only warnings for copied development service references and paths outside the production home; `--json` returns them in `warnings`. Review these hints with `env:update` and `env:sync`; Orbit leaves application service settings unchanged. See [environment copying](/reference/instance-cloning#what-the-clone-gets) for the detection rules. Update the environment, record deploy steps, then run `instance:deploy`. See [Instance cloning](/reference/instance-cloning#next-steps).
 
 ## orbit instance:update
 

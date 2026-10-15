@@ -28,6 +28,8 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Activity;
 use App\Models\Cluster;
+use App\Models\DatabaseConnection;
+use App\Models\DatabaseConnectionTarget;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
@@ -172,7 +174,11 @@ it('returns 404 for a missing candidate before clone execution', function (): vo
     expect(Instance::query()->count())->toBe(1);
 });
 
-it('returns the ordinary created Instance and records the target without SQLite path disclosure', function (): void {
+it('returns the ordinary created Instance and records the target without SQLite path disclosure', function (bool $withSqlite): void {
+    $writer = new Orb198ApiEnvironmentWriter;
+    $this->candidate->environmentValues()->create(['env_key' => 'DB_HOST', 'env_value' => 'dev-db']);
+    $this->candidate->environmentValues()->create(['env_key' => 'DB_DATABASE', 'env_value' => '/dev/database.sqlite']);
+    $this->candidate->environmentValues()->create(['env_key' => 'REDIS_URL', 'env_value' => 'redis://user:SECRET_SENTINEL@'.$this->candidateNode->public_ssh_host.':6379']);
     $this->destinationNode->update(['tld' => 'prod.orbit']);
     $this->destinationNode->roles()->create([
         'role' => RoleName::AppProd,
@@ -197,7 +203,7 @@ it('returns the ordinary created Instance and records the target without SQLite 
     app()->instance(AppDevSourceOperationLock::class, new Orb198ApiSourceLock);
     app()->instance(ProductionInstanceSourceLifecycle::class, new Orb198ApiProductionSource);
     app()->instance(InstanceOperationPreflight::class, new Orb198ApiEnvironmentPreflight);
-    app()->instance(InstanceEnvironmentWriter::class, new Orb198ApiEnvironmentWriter);
+    app()->instance(InstanceEnvironmentWriter::class, $writer);
     app()->instance(InstanceSqliteSeeder::class, new Orb198ApiSqliteSeeder);
     app()->instance(ProductionRouteProjector::class, new Orb198ApiProductionProjection);
     app()->instance(ProductionCloneRouteProjector::class, new Orb198ApiCloneProjection);
@@ -210,6 +216,7 @@ it('returns the ordinary created Instance and records the target without SQLite 
             'node_id' => $this->destinationNode->id,
             'name' => 'target',
             'preview_name' => 'shop.com',
+            ...($withSqlite ? ['sqlite_source_path' => $this->candidate->checkout_path.'/database.sqlite'] : []),
         ]);
 
     $target = Instance::query()->where('name', 'target')->sole();
@@ -217,8 +224,11 @@ it('returns the ordinary created Instance and records the target without SQLite 
         ->assertCreated()
         ->assertJsonPath('data.id', $target->id)
         ->assertJsonPath('data.name', 'target')
+        ->assertJsonPath('data.warnings', ['REDIS_URL: Copied host points at the candidate Node or its development TLD. Review with env:update, then env:sync.'])
         ->assertJsonPath('data.status', 'active')
         ->assertJsonMissingPath('data.environment');
+
+    expect($response->getContent())->not->toContain('SECRET_SENTINEL', 'redis://');
 
     $activity = Activity::query()->where('command', 'instance:clone')->sole();
     expect($activity->status)->toBe('succeeded')
@@ -229,10 +239,35 @@ it('returns the ordinary created Instance and records the target without SQLite 
             'node_id' => $this->destinationNode->id,
             'name' => 'target',
             'preview_name' => 'shop.com',
-            'sqlite_selected' => false,
+            'sqlite_selected' => $withSqlite,
         ])
         ->and(json_encode($activity->toArray(), JSON_THROW_ON_ERROR))->not->toContain('sqlite_source_path');
-});
+
+    expect($writer->contents)->not->toContain('dev-db', '/dev/database.sqlite');
+    if ($withSqlite) {
+        $connection = DatabaseConnection::query()->sole();
+        expect($connection->owner_instance_id)->toBe($target->id)
+            ->and($connection->node_id)->toBe($this->destinationNode->id)
+            ->and($connection->path)->toBe("{$target->production_home}/database.sqlite")
+            ->and(DatabaseConnectionTarget::query()->sole()->prefix)->toBe('DB')
+            ->and($writer->contents)->toContain('DB_CONNECTION="sqlite"', "DB_DATABASE=\"{$target->production_home}/database.sqlite\"");
+    } else {
+        expect(DatabaseConnection::query()->count())->toBe(0)
+            ->and(DatabaseConnectionTarget::query()->count())->toBe(0)
+            ->and($writer->contents)->not->toContain('DB_');
+    }
+
+    $target->environmentValues()->where('env_key', 'REDIS_URL')->sole()->update(['env_value' => 'redis://redis.production.example']);
+    $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->postJson($this->cloneUrl, [
+            'node_id' => $this->destinationNode->id,
+            'name' => 'target',
+            'preview_name' => 'shop.com',
+            ...($withSqlite ? ['sqlite_source_path' => $this->candidate->checkout_path.'/database.sqlite'] : []),
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.warnings', []);
+})->with(['without SQLite' => false, 'with SQLite' => true]);
 
 it('returns an active Cluster-scoped clone with the production Node TLD', function (): void {
     $this->destinationNode->update(['tld' => 'prod.orbit']);
@@ -373,8 +408,12 @@ final class Orb198ApiEnvironmentPreflight implements InstanceOperationPreflight
 
 final class Orb198ApiEnvironmentWriter implements InstanceEnvironmentWriter
 {
+    public string $contents = '';
+
     public function write(InstanceEnvironmentContext $context, string $contents): InstanceEnvironmentWriteResult
     {
+        $this->contents = $contents;
+
         return InstanceEnvironmentWriteResult::changed();
     }
 }

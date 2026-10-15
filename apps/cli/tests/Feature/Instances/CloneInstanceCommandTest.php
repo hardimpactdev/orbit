@@ -197,12 +197,31 @@ describe('instance:clone output', function (): void {
                 'configured_branch' => 'release',
                 'preview_domain' => 'shop.com.prod.orbit',
                 'selected_release' => null,
+                'warnings' => [],
                 'request_ids' => [
                     'clone' => clone_cli_request_id(),
                     'releases' => clone_cli_release_request_id(),
                 ],
             ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
     });
+
+    it('shows clone warnings in human and JSON output', function (bool $json): void {
+        $warning = 'REDIS_HOST: Copied host points at the candidate Node or its development TLD. Review with env:update, then env:sync.';
+        $responses = clone_cli_responses();
+        $responses[CloneInstanceRequest::class] = MockResponse::make([
+            'data' => [...clone_cli_payload(), 'warnings' => [$warning]],
+            'meta' => ['request_id' => clone_cli_request_id()],
+        ], 201);
+        MockClient::global($responses);
+        expect(Artisan::call('instance:clone', [
+            'candidate' => '11', 'node' => '7', 'name' => 'production', '--preview-name' => 'shop.com', '--json' => $json,
+        ]))->toBe(0);
+        if ($json) {
+            expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['warnings'])->toBe([$warning]);
+        } else {
+            expect(instance_source_text(Artisan::output()))->toContain('Warning: '.$warning);
+        }
+    })->with([false, true]);
 
     it('refuses a clone response without its sole preview Route', function (): void {
         $payload = clone_cli_payload();

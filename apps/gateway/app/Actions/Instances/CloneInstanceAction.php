@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Instances;
 
+use App\Actions\DatabaseConnections\AttachDatabaseConnectionAction;
 use App\Actions\Routes\PublishPublicRouteAction;
 use App\Data\Instances\CloneInstanceData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
@@ -50,10 +51,13 @@ final readonly class CloneInstanceAction
         private ProductionRouteProjector $projection,
         private ProductionCloneRouteProjector $cloneProjection,
         private DevelopmentProjectionOperationLock $projectionOwner,
+        private AttachDatabaseConnectionAction $attachDatabase,
+        private SynchronizeInstanceEnvironmentAction $synchronizeEnvironment,
+        private CloneInstanceDatabaseAction $cloneDatabase,
         private ?MetricsFleetReconciler $metrics = null,
     ) {}
 
-    /** @return array{instance: Instance, created: bool} */
+    /** @return array{instance: Instance, created: bool, warnings: list<string>} */
     public function execute(Instance $candidate, CloneInstanceData $data): array
     {
         $candidate->loadMissing(['project', 'node']);
@@ -65,6 +69,7 @@ final readonly class CloneInstanceAction
             return [
                 'instance' => $existing->load('routes.targets'),
                 'created' => false,
+                'warnings' => $this->environment->warnings($candidate, $existing),
             ];
         }
 
@@ -104,7 +109,7 @@ final readonly class CloneInstanceAction
 
         $this->metrics?->reconcile();
 
-        return ['instance' => $result, 'created' => $created];
+        return ['instance' => $result, 'created' => $created, 'warnings' => $this->environment->warnings($candidate, $result)];
     }
 
     private function existingTarget(Instance $candidate, CloneInstanceData $data): ?Instance
@@ -368,6 +373,19 @@ final readonly class CloneInstanceAction
         }
 
         if ($target->provisioning_step === 'clone-sqlite-prepared') {
+            if ($data->sqliteSourcePath !== null) {
+                $connection = $this->cloneDatabase->recordSqlite(
+                    $target,
+                    rtrim((string) $target->production_home, '/').'/database.sqlite',
+                );
+                $this->attachDatabase->execute($target, $connection, 'DB', forClone: true);
+                $this->synchronizeEnvironment->execute($target, forClone: true);
+            }
+
+            $this->checkpoint($target, 'clone-sqlite-attached');
+        }
+
+        if ($target->provisioning_step === 'clone-sqlite-attached') {
             $this->definitions->captureForClone($target);
             $this->checkpoint($target, 'clone-definitions-instantiated');
         }

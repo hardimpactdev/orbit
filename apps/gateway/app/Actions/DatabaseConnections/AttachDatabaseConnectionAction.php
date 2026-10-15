@@ -32,6 +32,7 @@ final readonly class AttachDatabaseConnectionAction
         DatabaseConnection $connection,
         #[SensitiveParameter]
         ?string $prefix,
+        bool $forClone = false,
     ): DatabaseConnectionAttachmentData {
         $normalizedPrefix = DatabaseConnectionPrefix::normalize($prefix);
 
@@ -39,6 +40,7 @@ final readonly class AttachDatabaseConnectionAction
             $instance,
             $connection,
             $normalizedPrefix,
+            $forClone,
         ): DatabaseConnectionAttachmentData {
             $instance->refresh();
 
@@ -50,7 +52,9 @@ final readonly class AttachDatabaseConnectionAction
                 );
             }
 
-            $context = $this->contexts->resolve($instance, requireActiveNode: false);
+            $context = $forClone
+                ? $this->contexts->resolveForClone($instance, requireActiveNode: false)
+                : $this->contexts->resolve($instance, requireActiveNode: false);
             $projected = $this->projection->project($connection, $normalizedPrefix);
 
             return DB::transaction(function () use (

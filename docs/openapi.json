@@ -8073,7 +8073,26 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/Instance"
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/Instance"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "warnings": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              },
+                              "description": "Key-only review hints for copied development hosts, filesystem paths, and service drivers. Values are never included; settings are not rewritten. Empty when no hints apply."
+                            }
+                          },
+                          "required": [
+                            "warnings"
+                          ]
+                        }
+                      ]
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -8095,7 +8114,26 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/Instance"
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/Instance"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "warnings": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              },
+                              "description": "Key-only review hints for copied development hosts, filesystem paths, and service drivers. Values are never included; settings are not rewritten. Empty when no hints apply."
+                            }
+                          },
+                          "required": [
+                            "warnings"
+                          ]
+                        }
+                      ]
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"

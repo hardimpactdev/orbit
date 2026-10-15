@@ -30,7 +30,7 @@ Each production Instance has a home, `/home/<production-user>`, with these paths
 | `database.sqlite` | An optional SQLite database. Orbit keeps the path but does not create the file. |
 | `current` | A link to the selected release. It is absent until the first deployment. |
 
-A clone leaves the home prepared, with no `current` link. The application must point its SQLite configuration at `<home>/database.sqlite` itself. Orbit has no placeholder for that path. [Cloning](/reference/instance-cloning) describes how to seed the file.
+A clone leaves the home prepared, with no `current` link. When a clone seeds SQLite, Orbit registers an owned SQLite connection, attaches it under `DB`, and syncs `DB_DATABASE=<home>/database.sqlite` into the production `.env`. Later releases use the same database. [Cloning](/reference/instance-cloning) describes how to seed the file.
 
 The Gateway lists retained releases as the production user from a directory that user can access. A private SSH home does not prevent reading the first clone's empty selection. Failed scans and invalid release receipts still stop the operation.
 
