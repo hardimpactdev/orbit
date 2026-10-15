@@ -12,8 +12,11 @@ import sys
 import tarfile
 import tempfile
 import zipfile
+from urllib.parse import urlsplit
 
 POLICY = Path('/usr/sbin/policy-rc.d')
+APT_ETC = Path('/etc/apt')
+UBUNTU_KEYRING = '/usr/share/keyrings/ubuntu-archive-keyring.gpg'
 
 
 class RecipeFailure(Exception):
@@ -82,11 +85,64 @@ def ubuntu_origin(package, version, options=None):
     return policy_origin(package, version, []) or (options is not None and policy_origin(package, version, options))
 
 
+def ubuntu_signed_sources(options):
+    """Match the source URI, suite and component to an explicitly scoped Ubuntu keyring."""
+    source = next((option.split('=', 1)[1] for option in options if option.startswith('Dir::Etc::sourcelist=')), None)
+    paths = [Path(source)] if source else [APT_ETC / 'sources.list',
+        *sorted((APT_ETC / 'sources.list.d').glob('*.sources')),
+        *sorted((APT_ETC / 'sources.list.d').glob('*.list'))]
+    trusted = set()
+    for path in paths:
+        if not path.is_file():
+            continue
+        document = path.read_text()
+        entries = []
+        if path.suffix == '.sources':
+            for paragraph in re.split(r'\n\s*\n', document):
+                fields = {}
+                key = None
+                for line in paragraph.splitlines():
+                    if line.startswith('#'):
+                        continue
+                    if line[:1].isspace() and key:
+                        fields[key] += ' ' + line.strip()
+                    else:
+                        key, separator, value = line.partition(':')
+                        key = key.lower()
+                        if separator:
+                            fields[key] = value.strip()
+                if (fields.get('signed-by') == UBUNTU_KEYRING and 'deb' in fields.get('types', '').split()
+                        and fields.get('enabled', 'yes').lower() != 'no'):
+                    entries.append((fields.get('uris', '').split(), fields.get('suites', '').split(), fields.get('components', '').split()))
+        else:
+            for line in document.splitlines():
+                entry = re.fullmatch(r'\s*deb\s+\[([^]]+)\]\s+(\S+)\s+(\S+)\s+([^#]+)(?:#.*)?', line)
+                if entry and ('signed-by=' + UBUNTU_KEYRING) in entry.group(1).split():
+                    entries.append(([entry.group(2)], [entry.group(3)], entry.group(4).split()))
+        for uris, suites, components in entries:
+            trusted.update((uri.rstrip('/'), suite + '/' + component)
+                           for uri in uris for suite in suites for component in components)
+    return trusted
+
+
+def ubuntu_index(index, signed_sources):
+    uri, suite, architecture, kind = index.split()
+    url = urlsplit(uri)
+    host = url.hostname or ''
+    ubuntu_host = host in ('archive.ubuntu.com', 'security.ubuntu.com', 'ports.ubuntu.com', 'snapshot.ubuntu.com') or host.endswith('.archive.ubuntu.com')
+    return url.scheme in ('http', 'https') and (ubuntu_host or (uri.rstrip('/'), suite) in signed_sources)
+
+
 def policy_origin(package, version, options):
-    """Match this version's index to Ubuntu Release metadata, not a version suffix or URL hostname."""
+    """Require Ubuntu Release metadata plus an Ubuntu host or the scoped Ubuntu keyring.
+
+    A newer trusted pocket build also satisfies the floor: rolling indexes drop superseded
+    builds, and preserving the installed version needs no install-date guess or downgrade.
+    """
     environment = dict(os.environ, LC_ALL='C')
     policy = run(['apt-cache', 'policy', *options], env=environment).stdout
     trusted = set()
+    signed_sources = ubuntu_signed_sources(options)
     index = None
     for line in policy.splitlines():
         entry = re.fullmatch(r'\s*-?\d+\s+(.+ Packages)\s*', line)
@@ -94,20 +150,33 @@ def policy_origin(package, version, options):
             index = ' '.join(entry.group(1).split())
         elif line.strip().startswith('release '):
             fields = dict(item.split('=', 1) for item in line.strip()[8:].split(',') if '=' in item)
-            if (index and fields.get('o') == 'Ubuntu' and fields.get('n') == 'resolute'
+            if (index and ubuntu_index(index, signed_sources) and fields.get('o') == 'Ubuntu' and fields.get('n') == 'resolute'
                     and fields.get('a') in ('resolute', 'resolute-updates', 'resolute-security')):
                 trusted.add(index)
             index = None
     architecture = run(['dpkg', '--print-architecture']).stdout.strip()
     policy = run(['apt-cache', 'policy', package + ':' + architecture, *options], env=environment).stdout
-    selected = False
+    candidate = re.search(r'^\s*Candidate:\s+(\S+)\s*$', policy, re.MULTILINE)
+    candidate = candidate.group(1) if candidate else None
+    selected = None
     for line in policy.splitlines():
-        entry = re.fullmatch(r'\s*(?:\*\*\*\s+)?(\S+)\s+-?\d+\s*', line)
+        entry = re.fullmatch(r'\s*(?:\*\*\*\s+)?(\S+)\s+-?\d+(?:\s+\([^)]*\))?\s*', line)
         if entry:
-            selected = entry.group(1) == version
+            selected = entry.group(1)
+            continue
         entry = re.fullmatch(r'\s*-?\d+\s+(.+ Packages)\s*', line)
         if selected and entry and ' '.join(entry.group(1).split()) in trusted:
-            return True
+            if selected == version:
+                return True
+            if selected != candidate:
+                continue
+            comparison = run(['dpkg', '--compare-versions', selected, 'gt', version], required=False)
+            if comparison.returncode == 0:
+                return True
+            if comparison.returncode != 1:
+                raise RecipeFailure('origin:' + package)
+        if not entry:
+            selected = None
     return False
 
 
@@ -128,6 +197,8 @@ def assess(tools, versions=None, options=None):
                 raise RecipeFailure('inventory:' + name)
         report[name] = {'source': pin['source'], 'version': pin['version'], 'installed': installed,
                         'changed': status not in ('current', 'newer_than_recipe', 'unsupported_newer'), 'status': status}
+        if status == 'unsupported_newer':
+            report[name]['refusal'] = 'origin:' + name
     return report
 
 
@@ -142,10 +213,32 @@ def newer_packages(report):
             for name, tool in report.items() if tool['status'] == 'newer_than_recipe'}
 
 
-def snapshot_options(payload, work):
-    source = (f"Types: deb\nURIs: https://snapshot.ubuntu.com/ubuntu/{payload['snapshot']}/\n"
+def snapshot_source(snapshot):
+    return (f"Types: deb\nURIs: https://snapshot.ubuntu.com/ubuntu/{snapshot}/\n"
               'Suites: resolute resolute-updates resolute-security\nComponents: main universe restricted multiverse\n'
               'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\nCheck-Valid-Until: no\n')
+
+
+def repair_ubuntu_sources(architecture):
+    path = APT_ETC / 'sources.list.d/ubuntu.sources'
+    if not path.is_file() or path.is_symlink():
+        return False
+    content = path.read_bytes()
+    match = re.fullmatch(rb'Types: deb\nURIs: https://snapshot\.ubuntu\.com/ubuntu/(\d{8}T\d{6}Z)/\n.*', content, re.DOTALL)
+    if not match or content != snapshot_source(match.group(1).decode()).encode():
+        return False
+    archive = 'http://ports.ubuntu.com/ubuntu-ports' if architecture == 'arm64' else 'http://archive.ubuntu.com/ubuntu'
+    security = 'http://ports.ubuntu.com/ubuntu-ports' if architecture == 'arm64' else 'http://security.ubuntu.com/ubuntu'
+    source = (f'Types: deb\nURIs: {archive}\nSuites: resolute resolute-updates resolute-backports\n'
+              f'Components: main universe restricted multiverse\nSigned-By: {UBUNTU_KEYRING}\n\n'
+              f'Types: deb\nURIs: {security}\nSuites: resolute-security\n'
+              f'Components: main universe restricted multiverse\nSigned-By: {UBUNTU_KEYRING}\n')
+    publish(path, source.encode())
+    return True
+
+
+def snapshot_options(payload, work):
+    source = snapshot_source(payload['snapshot'])
     path = work / 'ubuntu.sources'
     publish(path, source.encode())
     # Keep normal sources and their cached origin metadata for unattended-upgrades and read-only plans.
@@ -159,6 +252,31 @@ def package_command(argv, packages, **kwargs):
     except RecipeFailure as error:
         error.packages = packages
         raise
+
+
+def install_exact_debs(debs, tools, installed, options, environment):
+    """APT's downgrade switch is global. Check its plan and hold every Ubuntu floor in place."""
+    artifacts = {Path(deb).stem for deb in debs}
+    retained = [pin['package'] + '=' + installed[pin['package']] for pin in tools.values()
+                if pin['source'] == 'ubuntu' and pin['package'] in installed]
+    argv = ['apt-get', 'install', '--yes', '--no-install-recommends', '--no-remove', '--allow-downgrades',
+            '-o', 'Dpkg::Options::=--force-confold', *options, '--', *debs, *retained]
+    environment = dict(environment, LC_ALL='C')
+    plan = package_command([*argv[:2], '--simulate', *argv[2:]], sorted(artifacts), env=environment)
+    for line in plan.stdout.splitlines():
+        if not line.startswith('Inst '):
+            continue
+        entry = re.match(r'Inst (\S+)(?: \[([^]]+)\])? \((\S+)', line)
+        if not entry:
+            raise RecipeFailure(packages=sorted(artifacts))
+        name, old, new = entry.groups()
+        name = name.split(':', 1)[0]
+        old = old or installed.get(name)
+        if old is not None and name not in artifacts:
+            comparison = run(['dpkg', '--compare-versions', new, 'lt', old], required=False)
+            if comparison.returncode != 1:
+                raise RecipeFailure(packages=[name])
+    package_command(argv, sorted(artifacts), env=environment)
 
 
 def failure_output(value):
@@ -455,15 +573,20 @@ def apply(payload):
     stage = 'preflight'
     try:
         tools = payload['tools']
+        policy = POLICY
+        if policy.exists() or policy.is_symlink():
+            raise RecipeFailure()
+        stage = 'apt-source'
+        repair_ubuntu_sources(payload['architecture'])
+        # Refresh the rolling pockets before assessing even an already-converged Node.
+        package_command(['apt-get', 'update', '-o', 'APT::Update::Error-Mode=any'], [])
+        stage = 'preflight'
         account = pwd.getpwnam(os.environ.get('SUDO_USER', 'orbit'))
         before = packages()
         versions = inspect(tools)
         assessment = assess(tools, versions)
         supported(assessment)
         active = active_services()
-        policy = POLICY
-        if policy.exists() or policy.is_symlink():
-            raise RecipeFailure()
         js = set(tools) & {'node', 'vp', 'vp-cli', 'pnpm', 'bun'}
         if js:
             vite_scope(account)
@@ -495,10 +618,9 @@ def apply(payload):
                     package_command(['apt-get', 'install', '--yes', '--no-install-recommends', '--no-remove',
                                      '-o', 'Dpkg::Options::=--force-confold', *apt_options, '--', *ubuntu], ubuntu, env=environment)
                 if debs:
-                    # Exact artifacts can change version, but their Ubuntu dependencies must never downgrade.
-                    package_command(['apt-get', 'install', '--yes', '--no-install-recommends', '--no-remove',
-                                     '-o', 'Dpkg::Options::=--force-confold', *apt_options, '--', *debs],
-                                    [Path(deb).stem for deb in debs], env=environment)
+                    install_exact_debs(debs, tools, packages(), apt_options, environment)
+                if ubuntu or debs:
+                    package_command(['apt-get', 'check'], ubuntu + [Path(deb).stem for deb in debs], env=environment)
             finally:
                 policy.unlink()
             stage = 'tools'

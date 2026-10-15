@@ -84,7 +84,7 @@ final readonly class NodeRecipeProgram
 
     /**
      * @param  array<string, ToolPin>  $tools
-     * @return array<string, array{source: string, version: string, installed: ?string, changed: bool, status: string}>
+     * @return array<string, array{source: string, version: string, installed: ?string, changed: bool, status: string, refusal?: string}>
      */
     public function inspect(Node $node, MachineRecipe $recipe, array $tools): array
     {
@@ -98,6 +98,9 @@ final readonly class NodeRecipeProgram
                 throw new RuntimeException('Recipe inspection returned an invalid assessment.');
             }
             $assessment[$name] = ['source' => $pin->source, 'version' => $pin->version, 'installed' => $value['installed'], 'changed' => $value['changed'], 'status' => $value['status']];
+            if ($value['status'] === 'unsupported_newer') {
+                $assessment[$name]['refusal'] = 'origin:'.$name;
+            }
         }
 
         return $assessment;

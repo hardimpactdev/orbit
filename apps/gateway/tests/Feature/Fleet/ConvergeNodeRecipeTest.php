@@ -408,3 +408,26 @@ it('retains redacted package command output in the failed convergence result', f
     expect($result['message'])->not->toContain('private-token');
     expect($node->refresh()->settings)->toBe([]);
 });
+
+it('shows an unsupported newer Ubuntu build as a planned refusal without applying it', function (): void {
+    $node = FleetFixtures::node('recipe-refused');
+    $node->update(['settings' => ['machine_recipe' => ['version' => 'previous']]]);
+    $ssh = recipeSsh(inspection: static function (RemoteCommand $command): CommandResult {
+        $payload = json_decode($command->arguments[3], true, flags: JSON_THROW_ON_ERROR);
+        $tools = [];
+        foreach ($payload['tools'] as $name => $pin) {
+            $tools[$name] = ['source' => $pin['source'], 'version' => $pin['version'], 'installed' => $name === 'curl' ? '99.0-foreign' : $pin['version'], 'changed' => false, 'status' => $name === 'curl' ? 'unsupported_newer' : 'current'];
+        }
+
+        return ScriptedSshExecutor::ok(json_encode($tools, JSON_THROW_ON_ERROR));
+    });
+
+    $exit = Artisan::call('node:converge-recipe', ['node' => $node->name, '--dry-run' => true]);
+    $result = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exit)->toBe(0)
+        ->and($result['applied'])->toBeFalse()
+        ->and($result['plan']['tools']['curl'])->toMatchArray(['status' => 'unsupported_newer', 'changed' => false, 'refusal' => 'origin:curl'])
+        ->and($node->refresh()->settings['machine_recipe']['version'])->toBe('previous');
+    expect(array_filter($ssh->lines(), static fn (string $line): bool => str_contains($line, ' apply ')))->toBe([]);
+});

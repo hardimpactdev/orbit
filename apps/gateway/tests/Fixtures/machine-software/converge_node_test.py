@@ -118,6 +118,18 @@ class ConvergenceTest(unittest.TestCase):
         self.assertTrue(all(c[:2] == ['dpkg', '--compare-versions'] for c in self.commands))
         self.assertFalse(self.published)
 
+    def test_dependency_check_failure_stops_before_restarts_and_cleans_the_restart_policy(self):
+        def command(argv, **kwargs):
+            result = self.command(argv, **kwargs)
+            if argv[:2] == ['apt-get', 'check']:
+                raise recipe.RecipeFailure(result=subprocess.CompletedProcess(argv, 100, '', 'broken dependencies'))
+            return result
+        with self.assertRaisesRegex(recipe.RecipeFailure, '^packages$') as failed:
+            self.apply(command)
+        self.assertEqual(failed.exception.result.stderr, 'broken dependencies')
+        self.assertFalse(self.policy.exists())
+        self.assertFalse(any(c[:2] == ['systemctl', 'restart'] for c in self.commands))
+
     def test_no_package_changes_produce_no_restarts_or_install(self):
         self.before = self.after
         # Tool versions are supplied separately to test the post-install package diff.
