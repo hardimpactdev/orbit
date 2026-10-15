@@ -215,6 +215,7 @@ def install(recipe, version, ci, coverage, composer, purge):
         hint = ' Rerun with --purge-extras on a CI machine to remove them.' if outcome in ('extra_packages', 'unowned_extensions', 'conflicting_source') else ''
         raise BuildError(f'php.install-build ended with {outcome} ({details}).{hint}\n{log[-4000:]}')
     print(f'php.install-build: {outcome}; changed {", ".join(data.get("changed", [])) or "nothing"}, '
+          f'repaired {", ".join(data.get("repaired", [])) or "nothing"}, '
           f'purged {", ".join(data.get("purged", [])) or "nothing"}, '
           f'disabled {", ".join(data.get("disabled", [])) or "nothing"}.')
     conf = Path(f'/etc/php/{version}/cli/conf.d')

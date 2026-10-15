@@ -19,7 +19,9 @@ FAKES = {
                   '"$(basename "$f")" "$(cat "$f")"; done; exit 0',
     # A path is owned by a package when $STATE/owned/<file name> exists.
     'dpkg': 'case "$1" in --print-architecture) echo amd64;; -S) [ "$2" = -- ] && shift; '
-            '[ -f "$STATE/owned/$(basename "$2")" ] && echo "php8.5-common: $2" || exit 1;; --purge|--remove) op="${1#--}"; shift; [ "$1" = -- ] && shift; '
+            '[ -f "$STATE/owned/$(basename "$2")" ] && echo "php8.5-common: $2" || exit 1;; '
+            # dpkg --verify prints $STATE/verify-<package>, the lines of files that differ from the package.
+            '--verify) shift; [ "$1" = -- ] && shift; for p in "$@"; do cat "$STATE/verify-$p" 2>/dev/null; done;; --purge|--remove) op="${1#--}"; shift; [ "$1" = -- ] && shift; '
             'echo "$op $*" >> "$STATE/calls"; [ -f "$STATE/fail-$op" ] && exit 1; '
             'for p in "$@"; do rm -f "$STATE/installed/$p"; done;; esac',
     # A fake .deb is a text file: "<name> <version> <architecture>".
@@ -30,7 +32,7 @@ FAKES = {
     'apt-get': 'echo "apt-get $*" >> "$STATE/calls"; [ -f "$STATE/fail-every-install" ] && exit 100; '
                '[ -f "$STATE/fail-install" ] && { rm "$STATE/fail-install"; exit 100; }; '
                'for a in "$@"; do case "$a" in *.deb) read -r n v x < "$a"; '
-               '[ -f "$STATE/mismatch-$n" ] && v=9.9; echo "$v" > "$STATE/installed/$n"; '
+               '[ -f "$STATE/mismatch-$n" ] && v=9.9; echo "$v" > "$STATE/installed/$n"; rm -f "$STATE/verify-$n"; '
                # A rollback reinstall that brings an added package back as a dependency.
                '[ -f "$STATE/revives-$v" ] && echo 8.5.12-1 > "$STATE/installed/$(cat "$STATE/revives-$v")"; '
                'if [ -f "$STATE/partial-install" ]; then rm "$STATE/partial-install"; touch "$STATE/fail-every-install"; exit 100; fi; '
@@ -167,7 +169,7 @@ class InstallBuildTest(unittest.TestCase):
 
         outcome, data = self.run_program(mode='plan')
 
-        self.assertEqual((outcome, data), ('planned', {'pending': ['php-common', 'php8.5-cli', 'php8.5-pcov'], 'extras': [], 'unowned': []}))
+        self.assertEqual((outcome, data), ('planned', {'pending': ['php-common', 'php8.5-cli', 'php8.5-pcov'], 'repair': [], 'extras': [], 'unowned': []}))
         self.assertEqual(self.calls(), [])
 
     def test_refuses_another_php_source_and_deletes_the_retired_orbit_source(self):
@@ -304,6 +306,37 @@ class InstallBuildTest(unittest.TestCase):
         self.assertEqual(data.get('restored'), True, (outcome, data))
         self.assert_previous_build()
         self.assertEqual(2, sum(call.startswith('remove ') and 'php8.5-pcov' in call for call in self.calls()))
+
+    def test_reinstalls_a_package_at_its_pinned_version_whose_files_changed(self):
+        for name in self.pins:
+            self.install(name, '8.5.12-1')
+        self.install('dpkg-repack', '1.54build1')
+        # setup-php overwrote a file that php8.5-cli owns; php-common only has a changed conffile, which stays.
+        (self.state / 'verify-php8.5-cli').write_text('??5??????   /usr/lib/php/20250925/redis.so\n')
+        (self.state / 'verify-php-common').write_text('??5?????? c /etc/php/8.5/mods-available/redis.ini\n')
+
+        planned = self.run_program(mode='plan')
+        outcome, data = self.run_program(fpm='none')
+
+        self.assertEqual(planned, ('planned', {'pending': [], 'repair': ['php8.5-cli'], 'extras': [], 'unowned': []}))
+        self.assertEqual((outcome, data['changed'], data['repaired']), ('applied', [], ['php8.5-cli']), data)
+        install = [call for call in self.calls() if call.startswith('apt-get') and '.deb' in call][-1]
+        self.assertIn('--reinstall', install)
+        self.assertIn('php8.5-cli_', install)
+        self.assertNotIn('php-common_', install)
+        self.assertFalse((self.state / 'verify-php8.5-cli').exists())
+
+    def test_a_package_with_only_a_changed_conffile_or_no_change_is_current(self):
+        for name in self.pins:
+            self.install(name, '8.5.12-1')
+        self.run_program(fpm='none')
+        (self.state / 'calls').unlink(missing_ok=True)
+        (self.state / 'verify-php-common').write_text('??5?????? c /etc/php/8.5/mods-available/redis.ini\n')
+
+        outcome, data = self.run_program(fpm='none')
+
+        self.assertEqual((outcome, data['repaired']), ('current', []), data)
+        self.assertFalse([call for call in self.calls() if call.startswith(('apt-get', 'curl'))])
 
     def test_a_package_that_stays_at_another_version_ends_with_rollback_failed(self):
         self.previous_build()

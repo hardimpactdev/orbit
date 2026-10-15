@@ -6,7 +6,8 @@
 #   "sha256"}], "extensions": [...]}}, "mirror": base URL or "", "pcov": bool, "extras": "refuse", "keep", or "purge",
 #   "fpm": "none", "shared", or "all", "repack": {"package", "version"}, "release": {"id", "codenames"} or
 #   null, "root": "/" (tests only)}
-# Result: planned: {"pending": [...], "extras": [...], "unowned": [...]}. current or applied: {"changed": [...],
+# Result: planned: {"pending": [...], "repair": [...], "extras": [...], "unowned": [...]}. current or applied:
+#   {"changed": [...], "repaired": [...],
 #   "purged": [...], "disabled": [...],
 #   "restarted": [...], "deferred": [...], "stale_masters": [...]}. A refusal names what it found: {"packages": [...]}, {"sources": [...]},
 #   {"package": ...}, {"missing": [...], "extra": [...]}, {"id", "codename"}, or {"unit", "reason"}. A failure after the
@@ -202,7 +203,24 @@ def previous_files(host, names, packages, repack, work):
     return files
 
 
-def apt_install(host, files):
+def damaged(host, names):
+    """Recipe packages at their pinned version whose files differ from the package, such as a .so that setup-php
+    overwrote. `dpkg --verify` reports a changed checksum or a missing file. Changed conffiles stay: they may hold an
+    operator's settings."""
+    found = []
+    for name in names:
+        output = host.run(['dpkg', '--verify', '--', name], check=False).stdout
+        for line in output.splitlines():
+            fields = line.split()
+            if len(fields) < 2 or (len(fields) == 3 and fields[1] == 'c'):
+                continue
+            if fields[0] == 'missing' or (len(fields[0]) >= 3 and fields[0][2] == '5'):
+                found.append(name)
+                break
+    return found
+
+
+def apt_install(host, files, reinstall=False):
     """Install .deb files without removing any package, and keep package hooks from starting services."""
     policy = host.path(POLICY)
     owned = not (policy.exists() or policy.is_symlink())
@@ -212,7 +230,8 @@ def apt_install(host, files):
     try:
         return host.ok(['env', 'DEBIAN_FRONTEND=noninteractive', 'NEEDRESTART_SUSPEND=1', 'apt-get', '-o',
                         'DPkg::Lock::Timeout=300', '-o', 'Dpkg::Options::=--force-confold', 'install', '--yes',
-                        '--no-install-recommends', '--no-remove', '--allow-downgrades', '--', *map(str, files)],
+                        '--no-install-recommends', '--no-remove', '--allow-downgrades',
+                        *(['--reinstall'] if reinstall else []), '--', *map(str, files)],
                        privileged=True)
     finally:
         if owned:
@@ -401,8 +420,10 @@ def main(payload):
         raise Outcome('unowned_extensions', {'extensions': unowned_names})
     pins = {name: pin for build in versions.values() for name, pin in build['pins'].items()}
     pending = sorted(name for name, pin in pins.items() if packages.get(name) != pin['version'])
+    # A package at its pinned version can still hold other files; it is installed again from the pinned file.
+    repair = damaged(host, sorted(name for name in pins if name in packages and name not in pending))
     if payload['mode'] == 'plan':
-        return 'planned', {'pending': pending, 'extras': extras, 'unowned': unowned_names}
+        return 'planned', {'pending': pending, 'repair': repair, 'extras': extras, 'unowned': unowned_names}
 
     # Orbit installs PHP from the recipe's files. These sources would let apt move PHP to another build.
     for path in [host.path(RETIRED_SOURCE), host.path(RETIRED_KEYRING), *map(Path, sources)]:
@@ -412,8 +433,9 @@ def main(payload):
     before = {version: links(host, version) for version in versions}
     with tempfile.TemporaryDirectory(prefix='orbit-php-build-') as directory:
         work = Path(directory)
-        files = [download(host, pins[name], payload.get('mirror', ''), work, architecture) for name in pending]
-        replaced = [name for name in pending if name in packages] + purge
+        files = [download(host, pins[name], payload.get('mirror', ''), work, architecture)
+                 for name in pending + repair]
+        replaced = [name for name in pending + repair if name in packages] + purge
         previous = previous_files(host, replaced, packages, payload['repack'], work)
 
     # Packages that the change adds: a rollback removes them first, because the core Sury extensions of the previous
@@ -429,7 +451,7 @@ def main(payload):
         if present:
             ok = host.ok(['dpkg', '--remove', '--', *present], privileged=True) and ok
         if previous:
-            ok = apt_install(host, list(previous.values())) and ok
+            ok = apt_install(host, list(previous.values()), reinstall=bool(repair)) and ok
             # The reinstall can bring an added package back as a dependency; remove what is left once more.
             left = [name for name in added if name in installed(host)]
             if left:
@@ -464,8 +486,8 @@ def main(payload):
             fail('install_failed', {'reason': str(error)}, 'disabling unowned extensions failed', [])
     if purge and not host.ok(['dpkg', '--purge', '--', *purge], privileged=True):
         fail('install_failed', {'package': purge[0]}, 'dpkg --purge failed', [])
-    if files and not apt_install(host, files):
-        fail('install_failed', {'package': pending[0]}, 'apt-get install failed', [])
+    if files and not apt_install(host, files, reinstall=bool(repair)):
+        fail('install_failed', {'package': (pending + repair)[0]}, 'apt-get install failed', [])
     current = installed(host)
     wrong = sorted(name for name, pin in pins.items() if current.get(name) != pin['version'])
     if wrong:
@@ -478,7 +500,7 @@ def main(payload):
     except Outcome as refused:
         fail(refused.outcome, refused.data, refused.outcome, [])
     restarted, stale, deferred = [], [], []
-    changed = bool(pending or purge or moved) or any(links(host, version) != before[version] for version in versions)
+    changed = bool(pending or repair or purge or moved) or any(links(host, version) != before[version] for version in versions)
     if changed and payload['fpm'] != 'none':
         for version in versions:
             units, skipped = fpm_units(host, version, payload['fpm'])
@@ -496,7 +518,7 @@ def main(payload):
                     continue
                 fail('fpm_invalid' if reason == 'fpm_invalid' else 'rolled_back', {'unit': unit, 'reason': reason},
                      f'{unit}: {reason}', restarted)
-    result = {'changed': pending, 'purged': purge, 'disabled': unowned_names if moved else [], 'restarted': restarted, 'deferred': deferred,
+    result = {'changed': pending, 'repaired': repair, 'purged': purge, 'disabled': unowned_names if moved else [], 'restarted': restarted, 'deferred': deferred,
               'stale_masters': sorted(stale)}
     return ('applied' if changed else 'current'), result
 
