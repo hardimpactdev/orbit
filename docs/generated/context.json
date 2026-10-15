@@ -917,6 +917,38 @@
             ]
         },
         {
+            "path": "docs/decisions/0212-turn-proxycli-into-the-ai-router-extension.md",
+            "title": "ADR 0212: Turn ProxyCli into the AI router extension",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Database server",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Node",
+                "Pi server",
+                "Placement",
+                "Process",
+                "Role",
+                "Route",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0200",
+                "0210",
+                "0212",
+                "0214"
+            ]
+        },
+        {
             "path": "docs/decisions/0213-run-ci-runners-through-a-ci-runner-role.md",
             "title": "ADR 0213: Run CI runners through a ci-runner role",
             "kind": "decision",
@@ -941,6 +973,33 @@
             ],
             "governing_adrs": [
                 "0213"
+            ]
+        },
+        {
+            "path": "docs/decisions/0214-pin-the-ai-router-version-and-flag-upgrades.md",
+            "title": "ADR 0214: Pin the AI router version and flag upgrades",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Node",
+                "Process",
+                "Role",
+                "Schedule",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0210",
+                "0212",
+                "0214"
             ]
         },
         {
@@ -997,7 +1056,9 @@
                 "0200",
                 "0206",
                 "0210",
-                "0213"
+                "0212",
+                "0213",
+                "0214"
             ]
         },
         {
