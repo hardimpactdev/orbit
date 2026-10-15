@@ -55,7 +55,7 @@ A job, `RunOperation`, runs the operation on a fourth Horizon queue, `operations
 
 One process is enough, and more would cost memory the Gateway needs. The lock per target already serializes the operations of one Instance, and a single operator rarely deploys two targets at the same time. Each Horizon worker is a PHP CLI process of about 40 to 50 MB. On 14 Oct 2026 the Gateway, then 2 GB with no swap, was OOM-killed with about 18 PHP CLI processes (about 790 MB) beside 8 PHP-FPM workers (about 715 MB). It now has 4 GB, but three idle deploy workers would add about 150 MB for a case that rarely happens. With one process, an operation on a second target waits in the queue until the first one ends, at most 1,600 seconds. Raising the count is a change to `config/horizon.php` alone, once fleets deploy several targets at once.
 
-Operations need the queue. Without `ORBIT_GATEWAY_QUEUE_CONNECTION`, a start request answers `503` with `operation.queue_unavailable` and records nothing. This is the same rule as task VMs.
+Operations need the queue. Without `ORBIT_GATEWAY_QUEUE_CONNECTION`, a start request answers `503` with `operation.queue_unavailable` and records nothing. This is the same rule as task VMs. The maintainer decided on 15 Oct 2026 that deploys keep this rule: a Gateway without the queue cannot deploy, and there is no inline fallback.
 
 ### Idempotent, resumable steps
 
@@ -111,7 +111,7 @@ This pull request moves the API, MCP, CLI, and web deploy of an Instance onto op
 1. **Rollback.** `instance:rollback` keeps its NDJSON stream until it moves. The stream code goes with it.
 2. **Instance create and remove.** Their operations replace `InstanceCreationRecovery` and `InstanceRemovalMember`.
 3. **Route convergence.** Its operation replaces `RouteRemovalResidue`.
-4. **The scheduled development deploy.** `orbit:deploy-development-defaults` already runs on the queue and creates no record for an unchanged commit, so it keeps calling the deploy directly. Whether each changed commit becomes an operation is an open question.
+4. **The scheduled development deploy.** `orbit:deploy-development-defaults` becomes an operation in a pull request of its own, as the maintainer decided on 15 Oct 2026. Until then it keeps calling the deploy directly from its scheduled job on the queue, and an unchanged commit still creates no record.
 5. **The PHP-FPM limit.** It stays at 600 seconds until no long operation runs in a request.
 
 `orbit:activity-finalize-interrupted` stays: it ends Activity rows of requests that PHP-FPM killed, which operations do not replace.
@@ -135,7 +135,7 @@ This pull request moves the API, MCP, CLI, and web deploy of an Instance onto op
 - One operation runs at a time in the fleet. A deploy of a second Instance waits until the first ends; its record stays `queued` meanwhile.
 - A Gateway without the queue cannot deploy an Instance until it sets `ORBIT_GATEWAY_QUEUE_CONNECTION`.
 - The API contract of `POST /api/v1/instances/{instance}/deploy` changes from an NDJSON stream to `202` with an operation. The CLI, SDK, MCP, and web app change in the same pull request.
-- Output of an attempt that a lost worker interrupted is kept only up to the last flush.
+- Output of an attempt that a lost worker interrupted is kept only up to the last flush, at most one second of output. The maintainer accepted this loss on 15 Oct 2026, so the runner writes no extra flushes.
 
 ## Affects
 
