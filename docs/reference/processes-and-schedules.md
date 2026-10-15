@@ -1,6 +1,6 @@
 ---
 title: "Processes and schedules"
-description: "How Orbit runs Processes for an Instance or a Node, and how a Project declares Process and Schedule definitions that production Instances copy."
+description: "How Orbit runs Processes for an Instance or a Node, and how a Project declares Process and Schedule definitions that Instances copy."
 covers:
   - apps/gateway/app/Actions/{Processes,ProjectDefinitions}/**
   - apps/gateway/app/{Domain,Data}/Processes/**
@@ -14,7 +14,7 @@ covers:
 
 # Processes and schedules
 
-A Process is one long-running systemd service or Docker container that Orbit manages. It belongs to exactly one owner: an Instance or a managed Node. A Project can also hold Process and Schedule definitions. Production preparation copies them into each new production Instance. [`process`](/cli/process) lists the commands. [Schedules](/reference/schedules) describes Schedules themselves.
+A Process is one long-running systemd service or Docker container that Orbit manages. It belongs to exactly one owner: an Instance or a managed Node. A Project can also hold Process and Schedule definitions. Production preparation copies them into each new production Instance, and development setup copies Process definitions into each development Instance. [`process`](/cli/process) lists the commands. [Schedules](/reference/schedules) describes Schedules themselves.
 
 ## Owners
 
@@ -97,7 +97,7 @@ A development Process also receives `VITE_DEV_SERVER_CERT` and `VITE_DEV_SERVER_
 
 ## Presets
 
-A preset configures a development Instance Process. It sets the command, the runtime, the working directory, and the environment, and it refuses those options from the caller.
+A preset configures a development Instance Process. It sets the command, the runtime, the working directory, and the environment, and it refuses those options from the caller. A [development definition](#development-copies) can name a preset, so that every development Instance of the Project gets it.
 
 | Preset | Result |
 | --- | --- |
@@ -200,8 +200,18 @@ A Project holds Process definitions and Schedule definitions. A definition has a
 | Field | Contract |
 | --- | --- |
 | `name` | 1 through 63 lowercase letters, digits, or hyphens. It starts and ends with a letter or digit. A Schedule definition name also allows no two hyphens in a row. |
-| `environments` | Must include `production` for the definition to have an effect. Production preparation copies only definitions that include it. |
-| `spec` | For a Process: the runtime fields above, without owner, start, user, or environment file. For a Schedule: `command`, `calendar`, and `timeout_seconds`, with the limits of a Schedule. |
+| `environments` | `development`, `production`, or both. A Schedule definition accepts only `production`. |
+| `spec` | For a Process: the runtime fields above, without owner, start, user, or environment file, or a [preset spec](#preset-definitions). For a Schedule: `command`, `calendar`, and `timeout_seconds`, with the limits of a Schedule. |
+
+Production preparation copies the definitions that list `production`. [Development setup](#development-copies) copies the Process definitions that list `development`.
+
+### Preset definitions
+
+A Process definition that lists only `development` can hold a preset spec: `preset`, with `restart_policy` and `keep_alive` where the preset allows them. A preset spec refuses `runtime`, `command`, `image`, `working_directory`, `environment`, `ports`, and `volumes`, as [`process:create --preset`](/cli/process#orbit-processcreate) does. A preset definition that lists `production` is refused with HTTP 422. A Project has at most one definition for each preset, because an Instance has at most one Process for each preset. An `antigravity-watch` definition needs an `agentation-mcp` definition in the Project, and that definition cannot be removed while the watcher definition exists. Both return HTTP 422. For example, this definition gives every development Instance its Vite server:
+
+```bash
+orbit process:create vite --project=19 --for=development --preset=vp-dev
+```
 
 A Schedule definition has no host Node, so the Gateway does not run `systemd-analyze calendar` when it stores one. The host Node checks the calendar when production preparation installs the copy.
 
@@ -223,6 +233,24 @@ Each Process definition becomes a new Instance Process with its own ID, installe
 A copy that the Instance already has by name stops preparation with `process.name_taken` or `schedule.retry_conflict`. The Gateway does not adopt the existing record. A retry installs only the unfinished copies from the captured set. It does not read the definitions again, rewrite a finished copy, or stop a copy that an operator started.
 
 A copy is independent. Changing or removing a copy does not change the definition. Changing a definition does not change existing copies.
+
+## Development copies
+
+At the end of each successful [setup run](/reference/instance-setup#development-processes) of a development Instance, Orbit copies the Project's Process definitions that list `development`. That covers `instance:create`, `instance:register --setup`, `instance:setup`, and a routed [task workspace](/reference/tasks#task-workspace) after its baseline setup passes and its Route is complete. An unrouted task workspace gets no copies. `instance:register` without `--setup` gets none until `instance:setup` runs. [Transfer](/reference/instance-transfer) keeps the existing Processes and makes no copies. Cloning makes only production copies.
+
+The stage reads the definitions at that moment. It handles them in preset dependency order, `agentation-mcp` before `antigravity-watch`, and otherwise by name. Each definition has one outcome:
+
+| Outcome | When | What Orbit does |
+| --- | --- | --- |
+| `created` | The Instance has no Process with the name and none with the preset. | Creates the copy through the [create path](#create-a-process) with `start`. The Vite port, Route domain, working directory, and environment file resolve on this Instance. |
+| `skipped` | A Process with the name exists, or another Process already uses the preset. | Leaves that Process unchanged and reports its ID and the reason. |
+| `failed` | The copy fails to install or start. | Keeps the copy with `status: failed`, `failed_step`, and `error_code`. `process:start ID` retries it. |
+
+A copy is linked to its definition, and Process JSON names that definition in `source_definition`. A Process made by hand has `source_definition: null`. Each setup run skips each definition that already has a linked copy. So a rerun of `instance:setup` adds the missing copies and never rewrites or restarts an existing one. Orbit never changes or removes a Process that this stage did not create.
+
+`skipped` and `failed` do not fail setup, and the Instance stays. The setup result lists each outcome under `processes`. A failed setup step still fails setup, and then no copies are made.
+
+A development copy is an ordinary Instance Process with desired state `running`. It sleeps and wakes with its Instance under [hibernation](/reference/app-dev-runtime-hibernation) and takes `keep_alive` from its definition. `process:update`, `process:stop`, and `process:destroy` change only that copy. A destroyed copy comes back on the next setup run while its definition exists. To keep one Instance without it, stop it with `process:stop`: the stopped copy stays linked, so setup skips it. To remove it everywhere, remove the definition. [Instance removal](/reference/instance-removal) removes every Process of the Instance, copies included. A definition change does not change existing development copies, as for production copies.
 
 ## Inspect with Doctor
 
@@ -248,8 +276,14 @@ A copied worker or Schedule can run before the new Instance's data is ready, for
 
 A Node Process has no Instance `.env` file, but Gateway-owned Processes need secrets. Values on `ExecStart`, for example through `/usr/bin/env`, would put secrets in the process list. So the unit carries the stored map as `Environment=` directives. The cost is that the values sit in the mode-`0644` unit file. A separate mode-`0600` environment file is a possible later change and is not built.
 
-The `vp-dev`, `agentation-mcp`, and `antigravity-watch` presets apply only to development Instance Processes. Runtime definitions are copied only to production Instances.
+The `vp-dev`, `agentation-mcp`, and `antigravity-watch` presets apply only to development Instance Processes. So a preset definition can list only `development`.
 
 ### A Node Process can name its account
 
 The systemd `User=` of a Node Process can be an account other than the managed user. Use it for a service that must not run as the managed user. The owner stays the Node. An Instance Process keeps the account derived from the Instance, because a chosen account would leave the production home and the development checkout. Docker rejects `user` because the image has its own user. The Gateway does not create the account. The Gateway checks the account with `getent passwd` over SSH before create and fails with `process.user_unavailable` when the account or its home is unavailable.
+
+### Development copies at the end of setup
+
+A Vite server needs the dependencies that setup installs, so Orbit copies development definitions after setup and not at activation. A copy that fails does not fail setup, because on `instance:create` a failed setup removes the new Instance, and one broken Vite must not do that. A hand-made Process with the same name is skipped and left unchanged, so an old Process never blocks `instance:setup`.
+
+Setup steps that call `orbit process:create` were rejected. A step receives no Instance ID or domain, needs the CLI and a Gateway grant on the Node or task VM, and hides the intent from the Gateway. A separate development Process list was rejected because it would duplicate the definition surface. Live inheritance was rejected for development too: one definition edit would restart Vite on every Instance.

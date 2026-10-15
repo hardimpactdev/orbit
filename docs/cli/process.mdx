@@ -21,7 +21,7 @@ A Process is one systemd service or Docker container that the Gateway manages fo
 | --- | --- | --- |
 | `--instance=ID` | Instance | The Gateway derives the Node and the runtime user from the Instance. |
 | `--node=ID-or-name` | Managed Node | The Process runs as the Node's managed user. A systemd Process can set `--user`. Shared services such as a Docker database use this owner. |
-| `--project=ID --for=production` | Project definition | The Gateway records a definition. Production preparation copies it into a stopped Instance Process. |
+| `--project=ID --for=ENVIRONMENTS` | Project definition | The Gateway records a definition. Production preparation copies a `production` definition into a stopped Instance Process. Development setup copies a `development` definition into a started Instance Process. |
 
 `process:show`, `process:update`, and `process:destroy` with `--project` select a definition by name. `process:update`, `process:start`, `process:stop`, `process:restart`, `process:logs`, and `process:destroy` without `--project` take the numeric Process ID from `process:list`. An installed Process update uses that record's owner; it takes no `--instance` or `--node` selector.
 
@@ -46,7 +46,7 @@ Every command accepts `--json`, and every result includes the request ID. Lists 
 Install one systemd service or Docker container, stopped or started, or record a Project definition.
 
 ```bash
-orbit process:create <name> (--instance=ID-or-domain | --node=ID-or-name | --project=ID --for=production) [options]
+orbit process:create <name> (--instance=ID-or-domain | --node=ID-or-name | --project=ID --for=ENVIRONMENTS) [options]
 ```
 
 | Argument | Required | Meaning |
@@ -59,8 +59,8 @@ orbit process:create <name> (--instance=ID-or-domain | --node=ID-or-name | --pro
 | `--node=ID-or-name` | none | Node ID or registered Node name. The CLI resolves a name through the Node list. |
 | `--user=NAME` | managed user | Systemd account for a Node Process. One letter or underscore, then at most 31 letters, digits, underscores, or hyphens. |
 | `--project=ID` | none | Numeric Project ID for a definition. |
-| `--for=production` | none | Definition environments. Required with `--project`. Only definitions for `production` are copied. |
-| `--preset=PRESET` | none | Configure a development Instance Process. Supported values are `vp-dev`, `annotator`, `agentation-mcp`, and `antigravity-watch`. Refused with `--project`. |
+| `--for=ENVIRONMENTS` | none | Comma-separated definition environments: `development`, `production`, or `development,production`. Required with `--project`. See [Development copies](/reference/processes-and-schedules#development-copies). |
+| `--preset=PRESET` | none | Configure a development Instance Process. Supported values are `vp-dev`, `annotator`, `agentation-mcp`, and `antigravity-watch`. With `--project`, it needs `--for=development` and records a preset definition. |
 | `--runtime=RUNTIME` | `systemd` | `systemd` or `docker`. |
 | `--command=ARG` | none | One argument. Repeat it for each argument, at most 64 of 4,096 bytes each. A systemd command starts with an absolute executable. |
 | `--image=IMAGE` | none | Docker image. |
@@ -124,7 +124,7 @@ A production Process can be installed only after `instance:deploy` selects a rel
 
 ## orbit process:list
 
-List the Processes of one Instance or Node with their desired and observed states and `keep_alive`, or the definitions of one Project.
+List the Processes of one Instance or Node with their desired and observed states, `keep_alive`, and `source_definition`, or the definitions of one Project. `source_definition` names the development definition of a copy and is empty for a Process made by hand.
 
 ```bash
 orbit process:list (--instance=ID | --node=ID-or-name | --project=ID) [--json]
@@ -151,7 +151,7 @@ orbit process:update <process> [--runtime=systemd|docker] [--command=ARG ...] [-
 | `process` | required | Numeric Process ID for an installed Process. |
 | `name` | required with `--project` | Definition name in the Project form. |
 | `--project=ID` | none | Select the Project-definition form instead of an installed Process. |
-| `--for=production` | none | Required only with `--project`; refused for an installed Process. |
+| `--for=ENVIRONMENTS` | none | Required only with `--project`; refused for an installed Process. |
 | Runtime options | same as create | A complete specification, not a field-by-field merge. `--runtime` defaults to `systemd`, `--restart` to `never`, and `--keep-alive` to off. Supply every setting to retain. |
 | `--working-directory=PATH` | owner-derived for systemd; image default for Docker | Omit to remove a prior explicit override. |
 | `--environment=NAME=VALUE` | empty map | Repeat for each Docker variable. Replaces the whole map; omit to clear it. Values can contain `=`. |
@@ -182,7 +182,7 @@ After the Gateway accepts an update, the new specification remains stored even i
 With `--project`, the existing form replaces one Project definition with a complete specification. It requires `--for` and takes the same definition runtime options as create. It keeps the definition UUID and affects later copies only; it does not restart existing Instance copies. Progress labels remain `Update Process definition`, `Updating Process definition`, and `Updated Process definition`, and the response remains the Project definition response.
 
 ```bash
-orbit process:update <name> --project=ID --for=production [--runtime=systemd|docker] [--command=ARG ...] [--image=IMAGE] [--working-directory=PATH] [--environment=NAME=VALUE ...] [--port=HOST:CONTAINER ...] [--volume=SOURCE:TARGET ...] [--restart=POLICY] [--keep-alive] [--json]
+orbit process:update <name> --project=ID --for=ENVIRONMENTS [--preset=PRESET] [--runtime=systemd|docker] [--command=ARG ...] [--image=IMAGE] [--working-directory=PATH] [--environment=NAME=VALUE ...] [--port=HOST:CONTAINER ...] [--volume=SOURCE:TARGET ...] [--restart=POLICY] [--keep-alive] [--json]
 orbit process:update queue --project=1 --for=production --command=/usr/bin/php --command=artisan --command=queue:work --restart=on-failure
 ```
 

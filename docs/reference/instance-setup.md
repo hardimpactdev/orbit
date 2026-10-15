@@ -151,6 +151,24 @@ orbit instance:setup <instance>
 
 `instance:clone` runs neither list.
 
+## Development Processes
+
+After a setup run succeeds, Orbit creates and starts the Instance's [development copies](/reference/processes-and-schedules#development-copies) of the Project's Process definitions. This happens after `instance:create`, `instance:register --setup`, and `instance:setup`, and for a routed task workspace after its baseline setup passes and its Route is complete. Setup has installed the dependencies by then, so a `vp-dev` copy can start.
+
+A copy that is skipped or fails does not fail setup, and the Instance stays. The result lists every development definition under `processes`, each with `name`, `outcome` (`created`, `skipped`, or `failed`), and `process_id`. A skipped item adds `reason`, and a failed item adds `error_code`. The CLI prints each skipped or failed item as a warning. A copy that has no request time left to start is `failed` with `command.deadline_exceeded`; run `process:start` or `instance:setup` to finish it.
+
+## Prepare a Laravel database
+
+Orbit runs no application command that a setup step does not name. A new Laravel Instance that uses SQLite needs its database file and migrations before it can serve a page. Record them as a setup step after the dependency installs:
+
+```bash
+orbit instance:setup-step:create prepare-database --project=19 \
+  --command='touch database/database.sqlite && php artisan migrate --seed --force' \
+  --after=install-js
+```
+
+For a nested [application directory](/reference/projects#application-directory), start the command with `cd apps/site &&`. Without this step, the first request returns a Laravel 500 error, because the database file does not exist.
+
 ## Deadlines
 
 One API request runs a whole list. The request's remote work ends after 570 seconds, and its forward work stops 20 seconds earlier to leave time for cleanup. Each step's timeout is cut to the time that remains.
@@ -329,3 +347,7 @@ Create-time setup runs as the managed user, before an agent uses the Instance. A
 ### Gateway-owned baseline delivery
 
 CI artifacts are repository data. The Gateway already owns the GitHub App, so it downloads and validates the files before Node delivery. Personal tokens on disposable machines were rejected because they duplicate credentials and complicate revocation. A fixed setup identifier keeps the existing ordered step contract and prevents Projects from selecting arbitrary artifact URLs or granting a Node App access. Both instance setup and task baseline setup interpret it before any shell execution.
+
+### Development Processes follow setup
+
+A Vite server needs the dependencies that setup installs, so Orbit creates development copies only after a setup run succeeds. A copy failure does not fail setup, because a failed setup on `instance:create` removes the new Instance. [Development copies at the end of setup](/reference/processes-and-schedules#development-copies-at-the-end-of-setup) records the rejected alternatives.

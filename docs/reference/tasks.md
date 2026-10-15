@@ -551,6 +551,8 @@ The VM's managed user `orbit` owns the checkout and runs the agents, the setup s
 | `task_workspace_routed: false` | Not visitable. The checkout has no Route and stays in the lifecycle state `source_resolved`. |
 | `task_workspace_routed: true` | Visitable. The usual development provisioner gives it an inspect subdomain, and it becomes `active`. |
 
+A visitable workspace gets the Project's [development copies](/reference/processes-and-schedules#development-copies), such as its Vite server, after its baseline setup passes and its Route is complete. A copy failure does not fail the baseline check. A workspace that is not visitable gets no copies, because nothing can reach them. Removing the workspace removes the copies.
+
 The setting defaults to true and does not depend on the Project slug. Provisioning records the selected mode on the workspace. Changing the Project setting affects future workspaces; it neither creates nor removes Routes on an existing workspace. Doctor uses the recorded mode when it checks that workspace. See [Task workspace routing](/reference/projects#task-workspace-routing).
 
 [Doctor](/cli/doctor) treats `source_resolved` as the healthy state of a workspace that is not visitable, and `active` for a visitable one. An ordinary development Instance, including a monorepo `default` without a Route, settles at `active` instead. It runs the Project's create-time setup list and can supply dependencies to task workspaces without serving an endpoint. See [Provision the application endpoint](/domains/applications#provision-the-application-endpoint).
