@@ -33,7 +33,6 @@ use App\Infrastructure\Gateway\GatewayQueueRedis;
 use App\Infrastructure\Logging\GatewayExceptionStatus;
 use App\Jobs\MaintainMachineRecipe;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
-use App\Jobs\TaskVms\RefreshUpCloudTaskVmBaseImage;
 use App\Jobs\TaskVms\SweepTaskVmHosts;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -87,10 +86,6 @@ return Application::configure(basePath: dirname(__DIR__))
             ->when(static fn (): bool => TaskVmSettings::scheduled()->enabled);
         GatewaySchedule::job($schedule, new MaintainMachineRecipe)->everyMinute()
             ->when(static fn (): bool => TaskVmSettings::scheduled()->enabled);
-        // The nightly UpCloud base image refresh, on the builds queue too. It runs while the UpCloud token file is set,
-        // also with the overflow off.
-        GatewaySchedule::job($schedule, new RefreshUpCloudTaskVmBaseImage)->dailyAt('02:00')
-            ->when(static fn (): bool => TaskVmSettings::scheduled()->upcloudConfigured);
         // The task VM host sweep: orphaned VMs and clones, and live rows whose VM is gone. It also runs while only the
         // UpCloud token file is set, so no UpCloud server that Orbit created keeps costing money.
         GatewaySchedule::job($schedule, new SweepTaskVmHosts)->everyTenMinutes()
