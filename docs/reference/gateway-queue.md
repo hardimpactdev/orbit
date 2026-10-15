@@ -32,14 +32,14 @@ Laravel Horizon runs four queues on the connection. Each has its own supervisor,
 | --- | --- | --- |
 | `tasks` | 3 | The scheduled commands below and the publish of an approved commit. The Git mirror's lock keeps one push per Project at a time |
 | `task-vms` | 1 | Task VM provision, enroll, prepare, park, resume, and destroy, the host sweep |
-| `builds` | 1 | The [base image step chains and refreshes](/reference/compute-drivers#build-the-base-image), the [UpCloud template refresh](/reference/compute-drivers#refresh-the-upcloud-template-every-night), and trusted [package cache fills](/reference/compute-drivers#shared-package-cache) |
-| `operations` | 3 | [Operations](/reference/operations), such as an Instance deploy. One job runs one operation |
+| `builds` | 2 | The [base image step chains and refreshes](/reference/compute-drivers#build-the-base-image), the [UpCloud template refresh](/reference/compute-drivers#refresh-the-upcloud-template-every-night), and trusted [package cache fills](/reference/compute-drivers#shared-package-cache) |
+| `operations` | 1 | [Operations](/reference/operations), such as an Instance deploy. One job runs one operation, one at a time |
 
 The `task-vms` jobs run one at a time and in order, so no two jobs change the same VM at once.
 
 A `task-vms` job runs at most 1500 seconds, and any other job at most 1700 seconds. An operation therefore has a deadline of 1600 seconds. A job that a worker lost, for example when its process was killed, runs again after 1800 seconds. An idle worker waits on the queue with a blocking read, so a job starts within about a second when a process is free.
 
-One `builds` process runs one job at a time in the fleet. Recipe base and role image steps and UpCloud template builds take turns. The deployed recipe is checked each minute; unchanged identities dispatch no builds. The image build row allows one `running` base image build per host.
+Two `builds` workers let hosts build in parallel; `Bus::chain` orders each build, the database permits one running build per host, and pruning stays on that host and protects running builds.
 
 ## Scheduled work
 

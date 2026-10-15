@@ -74,8 +74,8 @@ return [
             'connection' => 'gateway',
             'queue' => ['builds'],
             'balance' => false,
-            'minProcesses' => 1,
-            'maxProcesses' => 1,
+            'minProcesses' => 2,
+            'maxProcesses' => 2,
             'maxTime' => 0,
             'maxJobs' => 0,
             'memory' => 256,
@@ -83,15 +83,15 @@ return [
             'timeout' => 1700,
             'nice' => 0,
         ],
-        // Operations, such as an Instance deploy (docs/reference/operations.md). Three run side by side; one operation
-        // holds its target, so two jobs never change one Instance at once. The timeout stays above the operation
-        // deadline of 1600 seconds.
+        // Operations, such as an Instance deploy (docs/reference/operations.md). One worker: an operation holds its target
+        // anyway, a single operator rarely deploys two targets at once, and the Gateway's memory is better spent on PHP-FPM.
+        // A second operation waits in the queue until the first ends. The timeout stays above the deadline of 1600 seconds.
         'operations' => [
             'connection' => 'gateway',
             'queue' => ['operations'],
             'balance' => false,
-            'minProcesses' => 3,
-            'maxProcesses' => 3,
+            'minProcesses' => 1,
+            'maxProcesses' => 1,
             'maxTime' => 0,
             'maxJobs' => 0,
             'memory' => 256,

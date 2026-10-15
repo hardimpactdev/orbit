@@ -122,7 +122,7 @@ A cancelled deploy records its deployment as `failed` with `deployment.cancelled
 
 ## How an operation runs
 
-The job `RunOperation` runs on the `operations` queue. It claims the operation with one conditional update from `queued` to `running`, so a second copy of the job does nothing. It records the worker's host, process ID, and process start time.
+The job `RunOperation` runs on the `operations` queue, which has one worker. One operation runs at a time in the fleet: an operation on another target stays `queued` until the running one ends. The job claims the operation with one conditional update from `queued` to `running`, so a second copy of the job does nothing. It records the worker's host, process ID, and process start time.
 
 The operation's kind plans its steps, then runs them in order. The runner skips a step that already succeeded, so a resumed operation continues where it stopped. It checks for a cancel request before each step. While a step runs, the runner writes its output tail at most once a second. A step that throws ends `failed`, and the operation ends `failed` with the kind's error code.
 
@@ -189,6 +189,10 @@ Orbit can prepare a release, sync the environment, switch `current`, refresh PHP
 ### A process check instead of a heartbeat
 
 A step that waits on a silent remote command writes nothing for minutes. A heartbeat would need a timer inside the worker. Horizon kills a worker that passes its timeout, and a fatal error ends it, so the worker's process ID and start time tell the sweeper what it needs.
+
+### One worker for every operation
+
+The lock per target already keeps two operations off one Instance, and a single operator rarely deploys two Instances at once. Each Horizon worker is a PHP process of about 40 to 50 MB, and the Gateway once ran out of memory with about 18 PHP CLI processes beside its PHP-FPM workers. So the queue has one worker, and a second deploy waits in the queue instead of costing memory while idle.
 
 ### Operations need the queue
 

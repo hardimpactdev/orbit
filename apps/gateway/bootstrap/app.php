@@ -31,6 +31,7 @@ use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
 use App\Infrastructure\Logging\GatewayExceptionStatus;
+use App\Jobs\MaintainMachineRecipe;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
 use App\Jobs\TaskVms\RefreshUpCloudTaskVmBaseImage;
 use App\Jobs\TaskVms\SweepTaskVmHosts;
@@ -84,6 +85,10 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('project-documents:cleanup:work')->everyFiveMinutes()->withoutOverlapping(60);
         // Reconcile the deployed recipe each minute; only an identity change queues image builds.
         GatewaySchedule::job($schedule, new RefreshTaskVmBaseImages)->everyMinute()
+            ->when(static fn (): bool => TaskVmSettings::scheduled()->enabled);
+        GatewaySchedule::job($schedule, new MaintainMachineRecipe(snapshot: true))->dailyAt('03:00')->timezone('Europe/Amsterdam')
+            ->when(static fn (): bool => TaskVmSettings::scheduled()->enabled);
+        GatewaySchedule::job($schedule, new MaintainMachineRecipe)->everyMinute()
             ->when(static fn (): bool => TaskVmSettings::scheduled()->enabled);
         // The nightly UpCloud base image refresh, on the builds queue too. It runs while the UpCloud token file is set,
         // also with the overflow off.
