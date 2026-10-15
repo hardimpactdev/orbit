@@ -837,6 +837,11 @@ function tick_running_agents(bool $fetchFails = false, bool $fastForwardFails = 
             return str_repeat('c', 40);
         }
 
+        public function mergeDefault(Task $group): ?string
+        {
+            return str_repeat('a', 40);
+        }
+
         public function moveTo(Task $group, string $sha): void {}
 
         public function fetchForTurn(Task $group): void
@@ -7095,3 +7100,27 @@ it('scopes every Orbit handoff test run to the subtask start', function (int $po
     'intermediate non-Orbit subtask' => [1, true, false],
     'single-subtask non-Orbit group' => [1, false, false],
 ]);
+
+it('advances rework tests only to the latest passed handoff tree of the same subtask', function (bool $fixup): void {
+    [$group, $task, $checks] = tick_checking([TaskCheckReading::running()]);
+    $group->project->update(['slug' => 'orbit']);
+    $task->update(['subtask_start_commit' => str_repeat('a', 40), 'completion_attempt' => 2,
+        'fixup_problem' => $fixup ? 'final-review' : null]);
+    foreach ([TaskCheckStatus::Passed, TaskCheckStatus::Failed, TaskCheckStatus::Changed, TaskCheckStatus::Lost, TaskCheckStatus::Cancelled] as $index => $status) {
+        TaskCheck::query()->create([
+            'task_id' => $task->id, 'kind' => TaskCheckKind::Handoff, 'status' => $status,
+            'pid' => 1, 'process_started' => 'earlier', 'head_before' => str_repeat('a', 40),
+            'tree_before' => str_repeat('b', 40), 'tree_after' => str_repeat((string) ($index + 1), 40),
+            'started_at' => now(),
+        ]);
+    }
+    $other = Task::query()->create(['parent_id' => $group->id, 'position' => 2, 'title' => 'Other', 'brief' => 'Done.', 'status' => TaskStatus::Completed]);
+    TaskCheck::query()->create(['task_id' => $other->id, 'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Passed,
+        'pid' => 1, 'process_started' => 'other', 'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('f', 40), 'started_at' => now()]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($checks->starts)->toBe(1)
+        ->and($checks->deliverables[0]['test_base'])->toBe(str_repeat('1', 40))
+        ->and($checks->deliverables[0]['start'])->toBe(str_repeat('a', 40));
+})->with(['requested changes' => false, 'final-review fixup' => true]);

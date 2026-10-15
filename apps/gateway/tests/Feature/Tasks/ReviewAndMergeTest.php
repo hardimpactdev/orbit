@@ -17,6 +17,7 @@ use App\Domain\Tasks\TaskBaseBranchFetcher;
 use App\Domain\Tasks\TaskBranchUpdate;
 use App\Domain\Tasks\TaskBriefCoverage;
 use App\Domain\Tasks\TaskCheckKind;
+use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExtensionState;
@@ -33,6 +34,7 @@ use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Domain\Tasks\TaskRemoteBranch;
 use App\Domain\Tasks\TaskReviewedCommitSource;
 use App\Domain\Tasks\TaskReviewObservation;
+use App\Domain\Tasks\TaskReviewPacketBuilder;
 use App\Domain\Tasks\TaskReviewReadStatus;
 use App\Domain\Tasks\TaskReviewSelection;
 use App\Domain\Tasks\TaskReviewTrust;
@@ -219,6 +221,31 @@ function rm_runtime(array $receipts = []): object
         public function mergeBase(Task $group): string
         {
             return RM_BASE;
+        }
+
+        public ?string $baseMergeHead = null;
+
+        public bool $baseMergeConflict = false;
+
+        public int $baseMerges = 0;
+
+        public function mergeDefault(Task $group): ?string
+        {
+            $this->baseMerges++;
+            $checks = app(TaskCheckRunner::class);
+            if ($this->baseMergeConflict) {
+                return null;
+            }
+            if ($checks instanceof FakeTaskCheckRunner) {
+                if ($this->baseMergeHead !== null && $checks->head !== $this->baseMergeHead) {
+                    $checks->parent = $checks->head;
+                    $checks->head = $this->baseMergeHead;
+                }
+
+                return $checks->head;
+            }
+
+            return RM_HEAD;
         }
 
         public function moveTo(Task $group, string $sha): void
@@ -766,10 +793,11 @@ describe('merge on green', function (): void {
             ->and($group->fresh()?->merge_reason)->toContain('base is production');
     });
 
-    it('merges the base through a final-review fixup when GitHub refuses a behind branch', function (): void {
+    it('creates an agent fixup only when the direct base merge conflicts', function (): void {
         $group = rm_settled();
         $runtime = rm_runtime();
         $runtime->mergeAccepted = false;
+        $runtime->baseMergeConflict = true;
         rm_watch(rm_open(RM_HEAD, behind: true));
 
         app(TaskScheduler::class)->tick();
@@ -1083,4 +1111,178 @@ describe('park failure recovery', function (): void {
         expect($group->fresh())->assistance_requested->toBeFalse()->merge_status->toBe(TaskMergeStatus::Merged);
         expect($vm->fresh())->state->toBe(TaskVmState::Parked)->error_code->toBe('task_vm.job_failed');
     });
+});
+
+it('scopes a final re-review to the prior final tree and findings until an operator adds work', function (): void {
+    $group = rm_group([
+        ['Final review', TaskStatus::Completed, TaskType::FinalReview],
+        ['Address final review', TaskStatus::Completed],
+        ['Final review', TaskStatus::Reviewing, TaskType::FinalReview],
+    ]);
+    [$previous, $fixup, $current] = $group->tasks->all();
+    $previous->update(['review_workspace_tree' => str_repeat('b', 40)]);
+    $fixup->update(['fixup_problem' => TaskFinalReview::FixupProblem]);
+    $current->update(['subtask_start_commit' => RM_BASE]);
+    TaskComment::query()->create(['task_group_id' => $group->id, 'task_id' => $previous->id,
+        'type' => 'changes_requested', 'body' => 'Fix the ordinary failure path.', 'author' => 'reviewer', 'posted_at' => now()]);
+    $builder = app(TaskReviewPacketBuilder::class);
+
+    $packet = $builder->build($current, false);
+
+    expect($packet)->toContain('git diff --cached '.str_repeat('b', 40), 'This is a delta re-review', 'Fix the ordinary failure path.')
+        ->and($builder->reviewContext($current))->toContain('Fix the ordinary failure path.');
+
+    $fixup->update(['fixup_problem' => null]);
+    $packet = $builder->build($current, false);
+    expect($packet)->toContain('git diff '.RM_BASE)->not->toContain('This is a delta re-review');
+});
+
+describe('mechanical main merges', function (): void {
+    it('merges main and gates the merge before the final reviewer or PR starts', function (): void {
+        $group = rm_group([['Feature', TaskStatus::Completed]], TaskGroupStatus::Settling);
+        $feature = $group->tasks->sole();
+        TaskComment::query()->create(['task_id' => $feature->id, 'task_group_id' => $group->id, 'type' => 'approved', 'body' => 'Feature checked.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => RM_HEAD]);
+        $runtime = rm_runtime();
+        $runtime->baseMergeHead = RM_COMMIT;
+        $checks = new FakeTaskCheckRunner([
+            TaskCheckReading::running(),
+            TaskCheckReading::finished(0, RM_COMMIT, str_repeat('b', 40), [], 'gate passed'),
+        ]);
+        app()->instance(TaskCheckRunner::class, $checks);
+
+        app(TaskScheduler::class)->tick();
+        expect($runtime->implementers)->toBe([])
+            ->and($runtime->reviewers)->toBe([])
+            ->and($runtime->pushes)->toBe([])
+            ->and($checks->starts)->toBe(1)
+            ->and($checks->setups)->toBe([[]])
+            ->and($checks->deliverables)->toBe([null]);
+
+        app(TaskScheduler::class)->tick();
+        app(TaskScheduler::class)->tick();
+        expect($runtime->reviewers)->toHaveCount(1)
+            ->and($runtime->implementers)->toBe([]);
+    });
+
+    it('pushes a gated clean main merge of a reviewed head without an agent or re-review', function (bool $passes, bool $capped): void {
+        $group = rm_settled();
+        if ($capped) {
+            foreach ([2, 3] as $position) {
+                Task::query()->create(['parent_id' => $group->id, 'position' => $position, 'title' => 'Earlier fixup', 'brief' => 'Done.', 'status' => TaskStatus::Completed, 'fixup_problem' => TaskFinalReview::FixupProblem]);
+            }
+        }
+        $runtime = rm_runtime();
+        $runtime->mergeAccepted = false;
+        $runtime->baseMergeHead = RM_COMMIT;
+        $checks = new FakeTaskCheckRunner([
+            TaskCheckReading::finished($passes ? 0 : 1, RM_COMMIT, str_repeat('b', 40), [], 'gate result'),
+        ]);
+        app()->instance(TaskCheckRunner::class, $checks);
+        rm_watch(rm_open(RM_HEAD, behind: true));
+
+        app(TaskScheduler::class)->tick();
+        app(TaskScheduler::class)->tick();
+
+        expect($checks->starts)->toBe(1)
+            ->and($checks->commands)->toBe(['composer check'])
+            ->and($checks->deliverables)->toBe([null])
+            ->and($runtime->reviewers)->toBe([]);
+        if ($passes) {
+            expect($runtime->implementers)->toBe([])
+                ->and($runtime->pushes)->toBe([RM_COMMIT])
+                ->and($group->tasks()->count())->toBe($capped ? 3 : 1);
+            $reviewed = TaskReviewedCommit::query()->where('task_id', $group->id)->where('sha', RM_COMMIT)->sole();
+            expect($reviewed->source)->toBe(TaskReviewedCommitSource::BaseMerge)
+                ->and($reviewed->pushed_at)->not->toBeNull();
+        } else {
+            expect($runtime->pushes)->toBe([])
+                ->and($runtime->implementers)->toHaveCount(1)
+                ->and($group->tasks()->where('title', 'Merge origin/main')->count())->toBe(1);
+        }
+    })->with(['passed gate' => [true, false], 'passed gate at fixup cap' => [true, true], 'failed gate' => [false, false]]);
+});
+
+it('creates a repair subtask instead of starting final review when the pre-review merge gate fails', function (): void {
+    $group = rm_group([['Final review', TaskStatus::Running, TaskType::FinalReview]], TaskGroupStatus::Running);
+    $final = $group->tasks->sole();
+    TaskCheck::query()->create(['task_id' => $final->id, 'kind' => TaskCheckKind::Baseline, 'status' => TaskCheckStatus::Passed,
+        'pid' => 1, 'process_started' => 'baseline', 'head_before' => RM_HEAD, 'tree_before' => str_repeat('b', 40), 'started_at' => now(), 'finished_at' => now()]);
+    $runtime = rm_runtime();
+    $runtime->baseMergeHead = RM_COMMIT;
+    app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner([
+        TaskCheckReading::finished(1, RM_COMMIT, str_repeat('b', 40), [], 'gate failed'),
+    ]));
+
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    expect($runtime->reviewers)->toBe([])
+        ->and($runtime->pushes)->toBe([])
+        ->and($runtime->implementers)->toHaveCount(1)
+        ->and($group->tasks()->where('title', 'Merge origin/main')->count())->toBe(1);
+});
+
+it('recognizes the original approval in a merged mechanical head but still holds newer missed work', function (bool $newer): void {
+    $group = rm_group([['Final review', TaskStatus::Completed, TaskType::FinalReview]], TaskGroupStatus::Settling, prUrl: RM_PR_URL);
+    $final = $group->tasks->sole();
+    $group->update(['settled_at' => now()]);
+    TaskComment::query()->create(['task_id' => $final->id, 'task_group_id' => $group->id, 'type' => 'approved', 'body' => 'Reviewed.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => RM_HEAD]);
+    TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => RM_HEAD, 'source' => TaskReviewedCommitSource::OrbitPush, 'review_task_id' => $final->id, 'pushed_at' => now()]);
+    TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => RM_COMMIT, 'source' => TaskReviewedCommitSource::BaseMerge, 'review_task_id' => $final->id, 'pushed_at' => now()]);
+    if ($newer) {
+        TaskComment::query()->create(['task_id' => $final->id, 'task_group_id' => $group->id, 'type' => 'approved', 'body' => 'New work.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => RM_PR_HEAD]);
+    }
+    rm_runtime();
+    rm_watch(new TaskPullRequestHealth('merged', headSha: RM_COMMIT));
+
+    app(TaskScheduler::class)->settle($group);
+
+    expect($group->fresh()?->assistance_requested)->toBe($newer);
+})->with(['inherited approval' => false, 'newer missed approval' => true]);
+
+it('retries publication of the gated merge before considering another main tip', function (): void {
+    $group = rm_settled();
+    $runtime = rm_runtime();
+    $runtime->mergeAccepted = false;
+    $runtime->baseMergeHead = RM_COMMIT;
+    $runtime->pushFailures = 1;
+    app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner([
+        TaskCheckReading::finished(0, RM_COMMIT, str_repeat('b', 40), [], 'gate passed'),
+    ]));
+    rm_watch(rm_open(RM_HEAD, behind: true));
+
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+    $runtime->baseMergeHead = RM_PR_HEAD;
+    app(TaskScheduler::class)->tick();
+
+    expect($runtime->baseMerges)->toBe(1)
+        ->and($runtime->pushes)->toBe([RM_COMMIT])
+        ->and($runtime->implementers)->toBe([])
+        ->and($runtime->reviewers)->toBe([]);
+});
+
+it('preserves an incoming main merge while its gate runs instead of resetting to the old PR head', function (): void {
+    $group = rm_group([['Final review', TaskStatus::Running, TaskType::FinalReview]], TaskGroupStatus::Running, prUrl: RM_PR_URL, prBranch: 'feature/login');
+    $final = $group->tasks->sole();
+    TaskCheck::query()->create(['task_id' => $final->id, 'kind' => TaskCheckKind::Baseline, 'status' => TaskCheckStatus::Passed,
+        'pid' => 1, 'process_started' => 'baseline', 'head_before' => RM_HEAD, 'tree_before' => str_repeat('b', 40), 'started_at' => now(), 'finished_at' => now()]);
+    $runtime = rm_runtime();
+    $runtime->baseMergeHead = RM_COMMIT;
+    rm_watch(rm_open(RM_PR_HEAD));
+    $checks = new FakeTaskCheckRunner([
+        TaskCheckReading::running(),
+        TaskCheckReading::finished(0, RM_COMMIT, str_repeat('b', 40), [], 'gate passed'),
+    ]);
+    app()->instance(TaskCheckRunner::class, $checks);
+
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    expect($runtime->moves)->toBe([RM_PR_HEAD])
+        ->and($checks->starts)->toBe(1)
+        ->and($runtime->reviewers)->toHaveCount(1)
+        ->and($final->fresh()?->review_workspace_head)->toBe(RM_COMMIT);
 });

@@ -58,6 +58,12 @@ final readonly class TaskFinalReview
 
     public static function brief(Task $group): string
     {
+        $previous = $group->tasks()->reorder('position', 'desc')->first();
+        if ($previous instanceof Task && $previous->fixup_problem === self::FixupProblem) {
+            return 'Re-review only the delta since the last final review and its earlier findings. '
+                .'Confirm that those findings are resolved and check for new rule-(a)–(d) defects in the delta. '
+                .'Do not re-review the whole branch. Orbit applies unresolved findings in a new subtask.';
+        }
         $default = $group->project->default_branch ?? 'the default branch';
         if ($group->reviewsIncomingPullRequest()) {
             return 'Review pull request '.$group->pr_url.' as a whole before Orbit approves it on GitHub and merges it. '

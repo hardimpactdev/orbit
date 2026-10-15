@@ -38,7 +38,7 @@ final readonly class RemoteTaskReviewDiff implements TaskReviewDiff
                     set -o pipefail
                     cd -- "$1"
                     start=$2
-                    if ! git rev-parse --verify --quiet "$start^{commit}" >/dev/null; then
+                    if ! git rev-parse --verify --quiet "$start^{tree}" >/dev/null; then
                         exit 2
                     fi
                     work=$(mktemp -d)

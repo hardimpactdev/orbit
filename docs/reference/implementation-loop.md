@@ -290,7 +290,9 @@ Root `bin/test` runs all five project suites in parallel and splits the availabl
 
 ### The candidate gate
 
-Every Orbit task handoff selects affected tests from the subtask's start commit, including the last subtask and a group with only one subtask. The Gateway supplies `ORBIT_TASK_CHECK_BASE` whenever the subtask has a valid start commit. CI ignores that base when `CI` or `GITHUB_ACTIONS` is set and selects the full branch. The gate validates that the supplied commit is an ancestor of the candidate, records the test base, and keeps documentation checks on the full branch. It reuses dependency graphs from a prior passing handoff only when that handoff's tree matches the start commit. Missing graphs or changed dependencies still trigger Pest's full-suite fallback.
+Every Orbit task handoff selects affected tests from the subtask's latest passed handoff tree, or its start commit when none passed. This includes rework, final-review fixups, the last subtask, and a group with only one subtask. The Gateway supplies `ORBIT_TASK_CHECK_BASE`.
+
+CI ignores that base when `CI` or `GITHUB_ACTIONS` is set and selects the full branch. The gate accepts a stored tree or an ancestor commit, records the test base, and keeps documentation checks on the full branch. It reuses dependency graphs from a prior passing handoff only when that handoff's tree matches the test base. Missing graphs or changed dependencies still trigger Pest's full-suite fallback.
 
 Root `composer check` runs `bin/review-check`. It checks the working tree as it is, including uncommitted and untracked files. The Orbit Project uses it as its task check, so it also runs at every subtask handoff. It runs these checks.
 
