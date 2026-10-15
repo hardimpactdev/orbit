@@ -491,6 +491,8 @@ Each tick runs these steps in order:
 
 Steps 1 and 2 run each task on its own. A failure in one task does not stop the other tasks, and the tick does not fail. Orbit reports the error with the task id, and the next tick tries that task again.
 
+`TaskScheduler` coordinates the phases. `TaskClaimAdmission` owns reservations and provisioning, and `TaskSubtaskRunner` owns implementer starts, baseline checks, and handoff checks. The container wires these final services. The subtask phase takes the group's execution hold in `tick()`, before advancing its subtasks, rather than taking separate holds for implementer completion, reviewer outcomes, and baseline results. Other entry points keep their admission holds. This split does not change the state machine, events, database writes, or tick interval.
+
 When the task fails on two ticks in a row, the task and its open subtasks ask for assistance with a reason that starts with `The tick failed on this group.` and names the error. Every tick failure is reported, including failures while the task already asks for assistance. The assistance reason contains at most 2,000 characters; the report keeps the full exception. A failure to save a row that breaks the task model asks at once, because the row cannot heal by itself. Fix the cause, then post a `resolution` on the subtask. A tick in which the task succeeds resets the count.
 
 ### Claim and provision
