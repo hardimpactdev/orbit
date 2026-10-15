@@ -27,6 +27,12 @@ loader.exec_module(cache)
 # Publication registers stores under XDG_STATE_HOME; keep that out of the developer's own state.
 STATE_HOME = tempfile.TemporaryDirectory(prefix='orbit-tia-state-')
 os.environ['XDG_STATE_HOME'] = STATE_HOME.name
+# Git's automatic maintenance must finish before these disposable repositories are removed.
+# A template covers clones and bare remotes too: local push receivers clear command-level Git configuration.
+GIT_TEMPLATE = Path(STATE_HOME.name) / 'git-template'
+GIT_TEMPLATE.mkdir()
+(GIT_TEMPLATE / 'config').write_text('[maintenance]\n\tautoDetach = false\n[gc]\n\tautoDetach = false\n')
+os.environ['GIT_TEMPLATE_DIR'] = str(GIT_TEMPLATE)
 REPOSITORY = 'nckrtl/orbit'
 # Answers the gh calls of the worker from files in $GH_FIXTURE and records every call.
 FAKE_GH = r'''#!/usr/bin/env python3
@@ -589,14 +595,17 @@ class MainCacheTest(CacheFixture):
         cache.git(clone, 'checkout', '-q', '-b', 'unmerged-change')
         # The clone's branch carries another copy of the tool, as an unmerged pull request does.
         shutil.copyfile(cache.__file__, clone / 'bin/tia-cache')
-        result = subprocess.run([sys.executable, str(clone / 'bin/tia-cache'), 'seed', '--repository', str(clone),
-                                 '--project', self.project], capture_output=True, text=True,
-                                env={**os.environ, 'ORBIT_MAIN_CACHE_STORE': ''})
+        try:
+            result = subprocess.run([sys.executable, str(clone / 'bin/tia-cache'), 'seed', '--repository', str(clone),
+                                     '--project', self.project], capture_output=True, text=True,
+                                    env={**os.environ, 'ORBIT_MAIN_CACHE_STORE': ''})
+        finally:
+            # The launcher acquires this lock before spawning the worker, which inherits it until exit.
+            # Wait even when the command fails, before assertions or repository cleanup can race the worker.
+            with cache.acquire_worker(self.store, blocking=True):
+                pass
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertIn('Seeding from the main cache store registered for this origin', result.stdout)
-        deadline = time.monotonic() + 10
-        while not marker.exists() and time.monotonic() < deadline:
-            time.sleep(0.05)
         self.assertTrue(marker.exists(), result.stdout + result.stderr)
         self.assertTrue(marker.read_text().startswith('work --repository ' + str(self.common)))
         self.assertEqual([main_worker], [runner.read_text() for runner in (self.store / 'runners').iterdir()])
