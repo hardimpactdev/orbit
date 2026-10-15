@@ -460,11 +460,14 @@ it('refuses to move a workspace to a value that is not a commit SHA', function (
         ->and($transport->commands)->toBe([]);
 });
 
-it('merges main with repository drivers, without hooks, and aborts unresolved conflicts', function (bool $conflict, bool $driver): void {
+it('merges main with repository drivers, without hooks, and aborts unresolved conflicts', function (string $mode): void {
+    $driver = $mode === 'generated-only conflict';
+    $conflict = $mode === 'conflict' || $driver;
+    $overlap = $mode === 'overlap';
     $checkout = TestOrbitHome::scratch('mechanical-main-merge');
     mkdir($checkout, 0755, true);
     fetcher_git($checkout, ['init', '--quiet']);
-    file_put_contents($checkout.'/shared.txt', "base\n");
+    file_put_contents($checkout.'/shared.txt', "base\n".str_repeat("unchanged\n", 20)."end\n");
     if ($driver) {
         // A Project setup step installs its repository-local driver. Only the
         // generated snapshot conflicts; no agent should have to resolve it.
@@ -474,13 +477,14 @@ it('merges main with repository drivers, without hooks, and aborts unresolved co
     fetcher_git($checkout, ['add', '.']);
     fetcher_git($checkout, ['commit', '--quiet', '-m', 'base']);
     $base = fetcher_git($checkout, ['rev-parse', 'HEAD']);
-    file_put_contents($checkout.'/shared.txt', "main\n");
+    file_put_contents($checkout.'/shared.txt', "main\n".str_repeat("unchanged\n", 20)."end\n");
     fetcher_git($checkout, ['commit', '--quiet', '-am', 'main advances']);
     $main = fetcher_git($checkout, ['rev-parse', 'HEAD']);
     fetcher_git($checkout, ['update-ref', 'refs/remotes/origin/main', $main]);
     $group = fetcher_group($checkout);
     fetcher_git($checkout, ['checkout', '--quiet', '-b', 'task-'.$group->id, $base]);
-    file_put_contents($checkout.($conflict ? '/shared.txt' : '/feature.txt'), "feature\n");
+    file_put_contents($checkout.(($conflict || $overlap) ? '/shared.txt' : '/feature.txt'),
+        $overlap ? "base\n".str_repeat("unchanged\n", 20)."feature\n" : "feature\n");
     fetcher_git($checkout, ['add', '.']);
     fetcher_git($checkout, ['commit', '--quiet', '-m', 'feature']);
     $head = fetcher_git($checkout, ['rev-parse', 'HEAD']);
@@ -492,16 +496,19 @@ it('merges main with repository drivers, without hooks, and aborts unresolved co
 
     expect(fetcher_git($checkout, ['status', '--porcelain']))->toBe('');
     if ($conflict && ! $driver) {
-        expect($merged)->toBeNull()
+        expect($merged->head)->toBeNull()
+            ->and($merged->conflictingPaths)->toBe(['shared.txt'])
             ->and(fetcher_git($checkout, ['rev-parse', 'HEAD']))->toBe($head)
             ->and(file_get_contents($checkout.'/shared.txt'))->toBe("feature\n");
     } else {
-        expect($merged)->not->toBe($head)
+        expect($merged->head)->not->toBe($head)
+            ->and($merged->conflictingPaths)->toBe([])
+            ->and(fetcher(new LocalShellSshExecutor)->overlappingPaths($group, $head, $merged->head))->toBe(($overlap || $driver) ? ['shared.txt'] : [])
             ->and(fetcher_git($checkout, ['rev-parse', 'HEAD^1']))->toBe($head)
             ->and(fetcher_git($checkout, ['rev-parse', 'HEAD^2']))->toBe($main)
-            ->and(fetcher(new LocalShellSshExecutor)->mergeDefault($group))->toBe($merged);
+            ->and(fetcher(new LocalShellSshExecutor)->mergeDefault($group)->head)->toBe($merged->head);
         if ($driver) {
             expect(file_get_contents($checkout.'/shared.txt'))->toBe("regenerated\n");
         }
     }
-})->with(['clean' => [false, false], 'conflict' => [true, false], 'generated-only conflict' => [true, true]]);
+})->with(['clean' => 'clean', 'conflict' => 'conflict', 'overlap' => 'overlap', 'generated-only conflict' => 'generated-only conflict']);

@@ -5,26 +5,29 @@ declare(strict_types=1);
 namespace App\Infrastructure\TaskVms;
 
 use App\Domain\TaskVms\TaskVmException;
-use App\Domain\TaskVms\TaskVmSettings;
+use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmUpCloud;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
+use App\Infrastructure\MachineSoftware\MachineRecipe;
 use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
+use App\Models\TaskVm;
+use App\Models\UpCloudTaskVmImageBuild;
 use Closure;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Throwable;
 
 /**
- * Builds the UpCloud task VM template with the same recipe as the Incus base image ({@see TaskVmImageRecipe}). A
- * builder server boots the stock Ubuntu template with the builder user-data, runs the enrollment programs, the agent
- * binary, the Pi executable, the masks over SSH as `orbit`, turns ufw on, and `base-image-clean.sh`
+ * Builds the UpCloud template with the same base-profile installer as Incus ({@see RecipeImagePrograms}). A
+ * builder server boots stock Ubuntu without package upgrades, installs and verifies the deployed recipe over SSH,
+ * records its identity in the guest and the template's orbit.recipe label, turns ufw on, and `base-image-clean.sh`
  * removes its identity. A server from the template boots with ufw on and only public SSH open, the exact rule that
  * enrollment's base firewall opens and its role closes, so no baked service is public before enrollment. Its stopped disk becomes the template `orbit-task-base-<time>-unverified`. A smoke server boots it with
  * the task VM user-data; only then does the title lose `-unverified`, so task VMs clone it. The two newest verified
- * templates stay, older ones go: a cloned server does not need its template. A failed build deletes its servers and
+ * templates and any template pinned by a live VM awaiting server creation stay; older unreferenced ones go. A failed build deletes its servers and
  * its unverified template; the next build sweeps what a killed one left. A build marks its time stamp as running for
  * two hours, and no sweep touches the servers or template of a marked build.
  */
@@ -37,7 +40,7 @@ final readonly class UpCloudTaskVmImageBuilder
     /** A build's running mark, followed by its time stamp. It outlasts the lock, so a build past its lock stays marked. */
     private const string Running = 'task-vms:upcloud-image-build:running:';
 
-    private const int RunningSeconds = 2 * 3600;
+    private const int RunningSeconds = UpCloudTaskVmImageBuild::RunningSeconds;
 
     private const int StartSeconds = 300;
 
@@ -50,8 +53,9 @@ final readonly class UpCloudTaskVmImageBuilder
         private UpCloudGuest $guest,
         private TaskVmCloudInit $cloudInit,
         private SshKeyProvider $keys,
-        private TaskVmSettings $settings,
         private TaskVmImageRecipe $recipe,
+        private RecipeImagePrograms $programs,
+        private RecipeImageBuilds $builds,
     ) {}
 
     /**
@@ -61,8 +65,9 @@ final readonly class UpCloudTaskVmImageBuilder
      *
      * @throws TaskVmException `task_vm.image_build_running` while another UpCloud build runs, else `task_vm.image_build_failed`
      */
-    public function build(?Closure $progress = null): string
+    public function build(?Closure $progress = null, ?MachineRecipe $machineRecipe = null, ?int $afterAttemptId = null): string
     {
+        $machineRecipe ??= $this->builds->currentRecipe();
         $lock = Cache::lock(self::Lock, self::LockSeconds);
         if (! $lock->get()) {
             throw new TaskVmException('task_vm.image_build_running', 'An UpCloud task VM template build is already running.');
@@ -74,46 +79,66 @@ final readonly class UpCloudTaskVmImageBuilder
         $title = TaskVmUpCloud::TemplatePrefix.$stamp;
         $template = null;
 
+        $attempt = null;
         try {
-            $programs = $this->stage($progress, 'render', fn (): array => $this->recipe->programs());
+            if ($afterAttemptId !== null && self::lastAttempt($machineRecipe->identity) !== $afterAttemptId) {
+                throw new TaskVmException('task_vm.image_build_superseded', 'This UpCloud recipe was already attempted. Request an explicit retry.');
+            }
+            $attempt = DB::table('upcloud_task_vm_image_builds')->insertGetId([
+                'recipe_identity' => $machineRecipe->identity, 'state' => 'running', 'started_at' => now(),
+            ]);
             $this->stage($progress, 'sweep', fn () => $this->sweep());
             [$address, $hostKey] = $this->stage($progress, 'launch', fn (): array => $this->launch($builder, $stamp, $this->upcloud()->sourceTemplate, $this->cloudInit->renderImageBuilder($this->keys->publicKey())));
             $shell = new UpCloudGuestShell($this->guest, $address, $hostKey);
             $this->stage($progress, 'cloud-init', fn () => $this->awaitCloudInit($builder, $shell));
             $this->stage($progress, 'orbit-user', fn () => $this->checked($builder, $shell->asUser(TaskVmImageRecipe::ownerCheck())));
-            foreach ($programs as $name => $program) {
-                $this->stage($progress, $name, fn () => $this->checked($builder, $shell->asUser($program->arguments, $program->protectedInput ?? $program->input)));
+            foreach (['packages', 'javascript', 'rust', 'agent', 'pi'] as $phase) {
+                $this->stage($progress, $phase, fn () => $this->programs->apply($shell, $machineRecipe, 'base', $phase));
             }
-            $this->stage($progress, 'agent-binary', fn () => $this->checked($builder, $shell->asRoot($this->recipe->installAgent(
-                $this->checked($builder, $shell->asUser(['uname', '-m']))->stdout,
-                "the UpCloud builder [{$builder}]",
-            ))));
-            if ($this->settings->piArtifactPath !== null && $this->settings->piArtifactSha256 !== null) {
-                $this->stage($progress, 'pi-artifact', fn () => $this->checked($builder, $shell->asUser(
-                    ['bash', '-ceu', TaskVmRuntime::InstallPi, '--', (string) $this->settings->piArtifactSha256],
-                    ProtectedInput::fromFile((string) $this->settings->piArtifactPath, '', TaskVmRuntime::ArtifactMaxBytes),
-                )));
-            }
+            $this->stage($progress, 'recipe-marker', fn () => $this->checked($builder, $shell->asRoot(
+                ['install', '-D', '-m', '0644', '/dev/stdin', '/etc/orbit-machine-recipe.json'],
+                json_encode(['identity' => $machineRecipe->identity, 'profile' => 'base'], JSON_THROW_ON_ERROR),
+            )));
+            $this->stage($progress, 'verify', fn () => $this->programs->verify($shell, $machineRecipe, 'base'));
             $this->stage($progress, 'masks', fn () => $this->checked($builder, $shell->asRoot(['sh', '-c', TaskVmImageRecipe::Masks])));
             $this->stage($progress, 'firewall', fn () => $this->firewall($builder, $shell));
             $this->stage($progress, 'clean', fn () => $this->clean($builder, $shell));
             $template = $this->stage($progress, 'templatize', fn (): string => $this->templatize($builder, $stamp, $title.TaskVmUpCloud::Unverified));
             $this->stage($progress, 'delete-builder', fn () => $this->servers->delete($builder, UpCloudServers::ImageLabel, $stamp, null));
-            $this->stage($progress, 'smoke', fn () => $this->smoke($smoke, $stamp, $template));
-            $this->stage($progress, 'promote', fn () => $this->servers->renameTemplate($template, $title));
+            $this->stage($progress, 'smoke', fn () => $this->smoke($smoke, $stamp, $template, $machineRecipe));
+            $this->stage($progress, 'promote', fn () => $this->servers->renameTemplate($template, $title, $machineRecipe->identity));
             $published = $template;
             $template = null;
             $this->stage($progress, 'prune', fn () => $this->prune());
 
+            DB::table('upcloud_task_vm_image_builds')->where('id', $attempt)->update([
+                'state' => 'succeeded', 'finished_at' => now(), 'template_uuid' => $published,
+            ]);
+
             return $published;
         } catch (Throwable $exception) {
-            $this->discard([$builder, $smoke], $stamp, $template);
+            if ($attempt !== null) {
+                DB::table('upcloud_task_vm_image_builds')->where('id', $attempt)->update(['state' => 'failed', 'finished_at' => now()]);
+                try {
+                    $this->discard([$builder, $smoke], $stamp, $template);
+                } catch (Throwable $cleanupError) {
+                    report($cleanupError);
+                }
+            }
 
             throw $exception;
         } finally {
             Cache::forget(self::Running.$stamp);
             $lock->release();
         }
+    }
+
+    /** The last admitted attempt, including a worker that died before recording its result. */
+    public static function lastAttempt(string $identity): int
+    {
+        $attempt = DB::table('upcloud_task_vm_image_builds')->where('recipe_identity', $identity)->max('id');
+
+        return is_numeric($attempt) ? (int) $attempt : 0;
     }
 
     /** Whether a build is marked as running with the time stamp `$stamp`. */
@@ -211,11 +236,12 @@ final readonly class UpCloudTaskVmImageBuilder
      * Boots a server from the new template with the task VM user-data. Cloud-init must finish, `orbit` must have the
      * Gateway's key and the pinned uid and gid, and ufw must be on.
      */
-    private function smoke(string $name, string $stamp, string $template): void
+    private function smoke(string $name, string $stamp, string $template, MachineRecipe $machineRecipe): void
     {
         [$address, $hostKey] = $this->launch($name, $stamp, $template, $this->cloudInit->render($this->keys->publicKey()));
         $shell = new UpCloudGuestShell($this->guest, $address, $hostKey);
         $this->awaitCloudInit($name, $shell);
+        $this->programs->verify($shell, $machineRecipe, 'base');
         $this->checked($name, $shell->asUser(TaskVmImageRecipe::imageCheck(['--ufw']), timeout: 60));
         $this->servers->delete($name, UpCloudServers::ImageLabel, $stamp, null);
     }
@@ -225,8 +251,11 @@ final readonly class UpCloudTaskVmImageBuilder
     {
         $verified = array_filter($this->servers->templates(), static fn (string $title): bool => ! str_ends_with($title, TaskVmUpCloud::Unverified));
         arsort($verified, SORT_STRING);
+        $pinned = TaskVm::query()->live()->where('provider', TaskVmProviderKind::UpCloud)->whereNull('provider_id')->pluck('image_fingerprint')->all();
         foreach (array_slice(array_keys($verified), self::KeepTemplates) as $uuid) {
-            $this->servers->deleteTemplate($uuid);
+            if (! in_array($uuid, $pinned, true)) {
+                $this->servers->deleteTemplate($uuid);
+            }
         }
     }
 
