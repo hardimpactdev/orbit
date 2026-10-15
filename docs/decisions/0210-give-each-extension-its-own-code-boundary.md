@@ -65,9 +65,9 @@ The Conn move adds a third point:
 
 | Interface | Core caller | What an extension does |
 | --- | --- | --- |
-| `App\Domain\Activity\ActivityInputRedaction` | `RecordCommandActivity` | Names the commands whose input it decides. `input()` receives the request input as a lazy closure and returns the part that Activity may keep. A redaction that keeps nothing never calls the closure, so the body is never parsed. |
+| `App\Domain\Activity\ActivityInputRedaction` | `RecordCommandActivity` | Names the commands whose input it decides, and returns the part of the input that Activity may keep. |
 
-Core sanitizes what the redaction returns like any other input. The redaction runs whether or not the switch is on, because Activity records a refused request too.
+`input()` receives the request input as a lazy closure. A redaction that keeps nothing never calls it, so the body is never parsed. Core sanitizes what the redaction returns like any other input. The redaction runs whether or not the switch is on, because Activity records a refused request too.
 
 Each extension that moves after Documents adds points the same way: Caddy site sources, private DNS records, reserved hostnames, footprint artifacts, firewall rules, ownership guards, Activity redaction, and schedule entries. Each point is a narrow typed interface. A generic event bus or hook registry is not part of the design.
 
