@@ -56,6 +56,7 @@ final class InstanceData extends Data
         public array $routes = [],
         /** @var list<string> */
         public array $sharedPaths = [],
+        public ?InstanceAutoDeployData $autoDeploy = null,
     ) {}
 
     public static function fromModel(Instance $instance): self
@@ -106,6 +107,7 @@ final class InstanceData extends Data
                 ? InstanceRemovalData::fromModel($removal)
                 : null,
             transfer: self::transfer($instance),
+            autoDeploy: InstanceAutoDeployData::fromModel($instance),
             deploySteps: array_map(
                 DeploymentStepData::fromDomain(...),
                 app(InstanceDeployStepStore::class)->ordered($instance),

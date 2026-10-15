@@ -25,10 +25,11 @@ final readonly class InstanceDeploymentRecorder
         private ?RecordEventBroadcaster $broadcaster = null,
     ) {}
 
-    public function start(Instance $instance, string $triggeredBy): InstanceDeployment
+    public function start(Instance $instance, string $triggeredBy, string $kind = 'deploy'): InstanceDeployment
     {
         $deployment = InstanceDeployment::query()->create([
             'instance_id' => $instance->id,
+            'kind' => $kind,
             'branch' => $instance->placedOnAppDev() && $instance->name === 'default'
                 ? $instance->project->default_branch
                 : ($instance->deployment_branch ?? $instance->branch),

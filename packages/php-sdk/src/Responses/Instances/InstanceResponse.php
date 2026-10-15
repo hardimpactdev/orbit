@@ -11,6 +11,8 @@ use Orbit\Sdk\Responses\Routes\RouteResponse;
 use SensitiveParameter;
 
 /**
+ * @phpstan-import-type AutoDeployRecord from InstanceAutoDeployResponse
+ *
  * @phpstan-type InstanceRecordFields array{
  *     shared_paths?: list<string>,
  *     annotator_port: int|null,
@@ -42,7 +44,8 @@ use SensitiveParameter;
  *     url: string|null,
  *     removal: array<string, bool|int|string|null>|null,
  *     transfer: array<string, mixed>|null,
- *     deploy_steps: list<array{name: string, phase: string, command: string, timeout_seconds: int}>
+ *     deploy_steps: list<array{name: string, phase: string, command: string, timeout_seconds: int}>,
+ *     auto_deploy: AutoDeployRecord|null
  * }
  * @phpstan-type InstanceRecord array{
  *     shared_paths?: list<string>,
@@ -76,6 +79,7 @@ use SensitiveParameter;
  *     removal: array<string, bool|int|string|null>|null,
  *     transfer: array<string, mixed>|null,
  *     deploy_steps: list<array{name: string, phase: string, command: string, timeout_seconds: int}>,
+ *     auto_deploy: AutoDeployRecord|null,
  *     request_id: string
  * }
  */
@@ -117,6 +121,7 @@ final readonly class InstanceResponse
         public array $routes = [],
         /** @var list<string>|null */
         public ?array $sharedPaths = null,
+        public ?InstanceAutoDeployResponse $autoDeploy = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -159,6 +164,7 @@ final readonly class InstanceResponse
             deploySteps: self::parseDeploySteps($data['deploy_steps'] ?? []),
             sharedPaths: self::sharedPaths($data['shared_paths'] ?? null),
             requestId: $requestId,
+            autoDeploy: InstanceAutoDeployResponse::tryFromGatewayData($data['auto_deploy'] ?? null),
         );
     }
 
@@ -200,6 +206,7 @@ final readonly class InstanceResponse
                 $this->deploySteps,
             ),
             ...($this->sharedPaths === null ? [] : ['shared_paths' => $this->sharedPaths]),
+            'auto_deploy' => $this->autoDeploy?->toArray(),
             'request_id' => $this->requestId,
         ];
     }

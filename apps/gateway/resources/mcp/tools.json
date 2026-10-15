@@ -4835,6 +4835,10 @@
               "maxLength": 255
             },
             "description": "JSON list of shared directories; [] disables sharing and null restores the default"
+          },
+          "auto_deploy": {
+            "type": "boolean",
+            "description": "Deploy each new green commit of the branch automatically (true or false)"
           }
         },
         "additionalProperties": false,

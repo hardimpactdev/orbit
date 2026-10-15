@@ -8395,6 +8395,10 @@
                       "maxLength": 255
                     },
                     "description": "JSON list of shared directories; [] disables sharing and null restores the default"
+                  },
+                  "auto_deploy": {
+                    "type": "boolean",
+                    "description": "Deploy each new green commit of the branch automatically (true or false)"
                   }
                 },
                 "minProperties": 1,
@@ -8471,7 +8475,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/instances/12\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"branch\": \"main\", \"shared_paths\": [\"example\"]}'\n"
+            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/instances/12\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"branch\": \"main\", \"shared_paths\": [\"example\"], \"auto_deploy\": true}'\n"
           },
           {
             "lang": "php",
@@ -31757,6 +31761,16 @@
             "items": {
               "type": "string"
             }
+          },
+          "auto_deploy": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/InstanceAutoDeploy"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -32053,6 +32067,92 @@
           },
           "timeout_seconds": {
             "type": "integer"
+          }
+        }
+      },
+      "InstanceAutoDeploy": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "gate": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "warning": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "result": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "commit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "head": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "since": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pause": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/InstanceAutoDeployPause"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "InstanceAutoDeployPause": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "deployment_id": {
+            "type": "integer"
+          },
+          "commit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "paused_at": {
+            "type": "string"
           }
         }
       },

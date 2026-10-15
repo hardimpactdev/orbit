@@ -13,6 +13,7 @@ use App\Domain\Instances\Deployment\DeploymentRequest;
 use App\Domain\Instances\Deployment\DeploymentResult;
 use App\Domain\Instances\Deployment\InstanceDeploymentRecorder;
 use App\Models\Instance;
+use App\Models\InstanceDeployment;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -34,7 +35,8 @@ final readonly class DeploymentStreamResponse
             $previousIgnoreUserAbort = ignore_user_abort(true);
 
             try {
-                $deployment = $this->recorder->start($instance, $triggeredBy);
+                // Only rollbacks stream; a deployment runs as an operation.
+                $deployment = $this->recorder->start($instance, $triggeredBy, InstanceDeployment::Rollback);
                 $collector = new DeploymentEventCollector;
                 $stream = new DeploymentNdjsonStream($requestId, $this->connection);
                 $deploymentRequest = new DeploymentRequest(

@@ -19,6 +19,7 @@ final class UpdateInstanceCommand extends GatewayCommand
         {instance : Numeric instance ID}
         {--branch= : Deployment branch}
         {--shared-paths= : JSON list of shared directories; [] disables sharing and null restores the default}
+        {--auto-deploy= : Deploy each new green commit of the branch automatically (true or false)}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -49,11 +50,20 @@ final class UpdateInstanceCommand extends GatewayCommand
             }
         }
 
+        $autoDeployOption = $this->option('auto-deploy');
+        $autoDeployProvided = $this->input->hasParameterOption('--auto-deploy');
+
+        if ($autoDeployProvided && $autoDeployOption !== 'true' && $autoDeployOption !== 'false') {
+            return $this->renderGatewayFailure('instance.auto_deploy_invalid', 'Auto deploy must be true or false.');
+        }
+
+        $autoDeploy = $autoDeployProvided ? $autoDeployOption === 'true' : null;
+
         if ($this->option('branch') === '') {
             return $this->renderGatewayFailure('instance.branch_required', 'Deployment branch must be nonempty.');
         }
-        if ($branch === null && ! $sharedPathsProvided) {
-            return $this->renderGatewayFailure('instance.update_required', 'Provide --branch or --shared-paths to update deployment settings.');
+        if ($branch === null && ! $sharedPathsProvided && $autoDeploy === null) {
+            return $this->renderGatewayFailure('instance.update_required', 'Provide --branch, --shared-paths, or --auto-deploy to update deployment settings.');
         }
 
         $connector = $this->gatewayConnector($repository, $connectors);
@@ -64,7 +74,7 @@ final class UpdateInstanceCommand extends GatewayCommand
 
         $instance = $this->sendWithProgress(
             $connector,
-            new UpdateInstanceRequest($instanceId, $branch, $sharedPaths, $sharedPathsProvided),
+            new UpdateInstanceRequest($instanceId, $branch, $sharedPaths, $sharedPathsProvided, $autoDeploy),
             InstanceResponse::class,
             ['Update Instance', 'Updating Instance', 'Updated Instance'],
         );
@@ -85,8 +95,15 @@ final class UpdateInstanceCommand extends GatewayCommand
             ...($branch === null ? [] : ['Deployment branch' => $branch]),
             ...($sharedPathsProvided ? ['Shared paths' => $instance->sharedPaths === null ? null : ($instance->sharedPaths === [] ? 'None' : implode(', ', $instance->sharedPaths))] : []),
             'Selected branch' => $instance->selectedBranch,
+            ...($autoDeploy === null ? [] : InstanceAutoDeployFields::of($instance)),
             'Request ID' => $instance->requestId,
         ]));
+
+        $warning = $instance->autoDeploy?->warning;
+
+        if ($autoDeploy === true && $warning !== null) {
+            $this->warn($warning);
+        }
 
         return self::SUCCESS;
     }
