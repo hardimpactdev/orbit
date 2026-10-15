@@ -8,6 +8,8 @@ covers:
 
 The Gateway publishes its MySQL and PostgreSQL credentials into one Vaultwarden collection and keeps them current. See [Vaultwarden](/reference/vaultwarden).
 
+These commands belong to the `vault` [extension](/cli/extension). `list` and `help` hide them while the Gateway reports `vault` off. A direct call reaches the Gateway, which refuses it with `extension.disabled`.
+
 ## Commands
 
 | Command | Result |
@@ -83,6 +85,7 @@ In a terminal the command asks a default-No question. Without `--yes`, a noninte
 
 | Code | Meaning |
 | --- | --- |
+| `extension.disabled` | The `vault` extension is off on the Gateway. |
 | `input.confirmation_required` | `vault:teardown` ran without `--yes` where it cannot ask. |
 | `input.cancelled` | The operator declined the `vault:teardown` question. |
 | `input.invalid` | `vault:setup` has no `--client-id`, `--organization`, or `--collection`. |

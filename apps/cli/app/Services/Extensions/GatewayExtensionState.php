@@ -20,7 +20,7 @@ final class GatewayExtensionState
     private const int DISCOVERY_TIMEOUT_SECONDS = 2;
 
     /** @var list<string> */
-    public const array EXTENSIONS = ['tasks', 'proxycli', 'documents'];
+    public const array EXTENSIONS = ['tasks', 'proxycli', 'documents', 'vault', 'conn'];
 
     private static ?ExtensionDiscoveryResult $result = null;
 

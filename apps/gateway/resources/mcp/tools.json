@@ -736,7 +736,7 @@
     },
     {
       "name": "conn-environment-list",
-      "extension": null,
+      "extension": "conn",
       "title": "List T3 servers",
       "description": "Lists registered T3 servers with their URL, server version, registration time, and admin session expiry. `status` is `session_expired` when the server must register again.",
       "method": "GET",
@@ -752,7 +752,7 @@
     },
     {
       "name": "conn-environment-register",
-      "extension": null,
+      "extension": "conn",
       "title": "Register a T3 server",
       "description": "Called from a T3 server's host on startup with an admin session from `t3 auth session issue --label \"Orbit Gateway\"`. The Gateway checks that `url` serves `environment_id` and that T3 accepts `admin_session` with admin scopes, stores the session encrypted, and revokes its earlier sessions on that server. Returns `conn.environment_mismatch` or `conn.admin_scope_missing` (422), and `conn.server_unreachable`, `conn.session_rejected`, `conn.request_refused`, or `conn.response_invalid` (502).",
       "method": "POST",
@@ -794,7 +794,7 @@
     },
     {
       "name": "conn-me",
-      "extension": null,
+      "extension": "conn",
       "title": "Show the calling Node",
       "description": "Returns the calling Node and the profile it is bound to, or `null`. Every active Node, a phone included, may use the Conn endpoints without a node access grant.",
       "method": "GET",
@@ -810,7 +810,7 @@
     },
     {
       "name": "conn-me-profile",
-      "extension": null,
+      "extension": "conn",
       "title": "Bind the calling Node to a profile",
       "description": "Binds the calling Node to one profile, replacing an earlier binding. Returns the Node and its profile.",
       "method": "PUT",
@@ -833,7 +833,7 @@
     },
     {
       "name": "conn-pairing-create",
-      "extension": null,
+      "extension": "conn",
       "title": "Mint a pairing link",
       "description": "Mints a one-time pairing link on the T3 server for the calling Node and records it. Open `pairing_url` in Conn to pair. An expired admin session returns `conn.session_expired` (409).",
       "method": "POST",
@@ -858,7 +858,7 @@
     },
     {
       "name": "conn-pairing-list",
-      "extension": null,
+      "extension": "conn",
       "title": "List pairings on a T3 server",
       "description": "Lists the pairing links the Gateway minted on one T3 server, newest first, with the Node and revocation time of each.",
       "method": "GET",
@@ -883,7 +883,7 @@
     },
     {
       "name": "conn-pairing-revoke",
-      "extension": null,
+      "extension": "conn",
       "title": "Revoke a Node's sessions on a T3 server",
       "description": "Revokes the sessions a Node paired from its links on one T3 server, and its unused links. Without `node_id` it revokes the calling Node. WireGuard access does not change.",
       "method": "POST",
@@ -911,7 +911,7 @@
     },
     {
       "name": "conn-profile-create",
-      "extension": null,
+      "extension": "conn",
       "title": "Create a Conn profile",
       "description": "Creates a profile with an empty settings document at version 1. A taken name returns `validation.failed` (422).",
       "method": "POST",
@@ -935,7 +935,7 @@
     },
     {
       "name": "conn-profile-list",
-      "extension": null,
+      "extension": "conn",
       "title": "List Conn profiles",
       "description": "Lists every Conn profile. Every Node sees every profile.",
       "method": "GET",
@@ -951,7 +951,7 @@
     },
     {
       "name": "conn-profile-settings-patch",
-      "extension": null,
+      "extension": "conn",
       "title": "Patch profile settings sections",
       "description": "Changes sections of the settings document, each with the version the client last read: `{\"sections\": {\"appearance\": {\"version\": 3, \"value\": {...}}, \"devices.iphone\": {\"version\": 0, \"value\": null}}}`. A section is `workspaces`, `appearance`, or `devices.<type>`; an unknown name returns `validation.failed` (422). A section with no recorded version reads as 0, including one written before sections had versions. A null value removes `appearance` or a device section; an empty string returns `validation.failed` (422). The request is all or nothing: if any section is at another version it returns `conn.settings_version_conflict` (409) with `details.current_version` and `details.sections`, the current version of each section sent, and writes nothing. A write adds 1 to each section version and to the document version.",
       "method": "PATCH",
@@ -1364,7 +1364,7 @@
     },
     {
       "name": "conn-profile-settings-show",
-      "extension": null,
+      "extension": "conn",
       "title": "Show profile settings",
       "description": "Returns the profile settings document, its version, and when it last changed. `sections` lists the sections that were written (`workspaces`, `appearance`, `devices.<type>`) with their version, the time of the last write, and the name of the Node that wrote it. A section that is not listed is at version 0.",
       "method": "GET",
@@ -1389,7 +1389,7 @@
     },
     {
       "name": "conn-profile-settings-update",
-      "extension": null,
+      "extension": "conn",
       "title": "Replace profile settings sections",
       "description": "Replaces the sections of the settings document that the body holds (`workspaces`, `appearance`, `devices`; at least one) and keeps the others. `devices` replaces every device type and must hold at least one; a patch removes one type. Send the document version you last read; a stale version returns `conn.settings_version_conflict` (409) with `details.current_version`. Prefer `conn:profile:settings:patch`, which versions each section. An empty object is refused, a document over 4 MB returns `validation.failed` (422), and the document keys keep Conn camelCase.",
       "method": "PUT",
@@ -2568,7 +2568,7 @@
       "name": "extension-disable",
       "extension": null,
       "title": "Disable an extension",
-      "description": "Disables one Gateway-wide extension without removing its setup data, then runs its disable hook. Use `tasks`, `proxycli`, or `documents`; an unknown slug returns `validation.failed` (422), and an enabled extension that depends on it returns `extension.required` (409). Returns the extension name and `enabled: false`.",
+      "description": "Disables one Gateway-wide extension without removing its setup data, then runs its disable hook. Use `tasks`, `proxycli`, `documents`, `vault`, or `conn`; an unknown slug returns `validation.failed` (422), and an enabled extension that depends on it returns `extension.required` (409). Returns the extension name and `enabled: false`.",
       "method": "POST",
       "path": "/api/v1/extensions/{extension}/disable",
       "path_inputs": [
@@ -2584,9 +2584,11 @@
             "enum": [
               "tasks",
               "proxycli",
-              "documents"
+              "documents",
+              "vault",
+              "conn"
             ],
-            "description": "Extension slug: `tasks`, `proxycli`, or `documents`."
+            "description": "Extension slug: `tasks`, `proxycli`, `documents`, `vault`, or `conn`."
           }
         },
         "additionalProperties": false,
@@ -2599,7 +2601,7 @@
       "name": "extension-enable",
       "extension": null,
       "title": "Enable an extension",
-      "description": "Enable a Gateway extension for every client. The Gateway runs the extension's enable hook first and turns the switch on only after it succeeds; a failed hook leaves the switch off and returns the hook's error. Use `tasks`, `proxycli`, or `documents`; an unknown slug returns `validation.failed` (422), and a disabled dependency returns `extension.dependency_disabled` (409). Returns the extension name and `enabled: true`.",
+      "description": "Enable a Gateway extension for every client. The Gateway runs the extension's enable hook first and turns the switch on only after it succeeds; a failed hook leaves the switch off and returns the hook's error. Use `tasks`, `proxycli`, `documents`, `vault`, or `conn`; an unknown slug returns `validation.failed` (422), and a disabled dependency returns `extension.dependency_disabled` (409). Returns the extension name and `enabled: true`.",
       "method": "POST",
       "path": "/api/v1/extensions/{extension}/enable",
       "path_inputs": [
@@ -2615,9 +2617,11 @@
             "enum": [
               "tasks",
               "proxycli",
-              "documents"
+              "documents",
+              "vault",
+              "conn"
             ],
-            "description": "Extension slug: `tasks`, `proxycli`, or `documents`."
+            "description": "Extension slug: `tasks`, `proxycli`, `documents`, `vault`, or `conn`."
           }
         },
         "additionalProperties": false,
@@ -2630,7 +2634,7 @@
       "name": "extension-list",
       "extension": null,
       "title": "List extensions",
-      "description": "Returns the Gateway-wide extension switch state as an object keyed by extension slug. The slugs come from the registered extension providers: `tasks`, `proxycli`, and `documents`.",
+      "description": "Returns the Gateway-wide extension switch state as an object keyed by extension slug. The slugs come from the registered extension providers: `tasks`, `proxycli`, `documents`, `vault`, and `conn`.",
       "method": "GET",
       "path": "/api/v1/extensions",
       "path_inputs": [],
@@ -9916,7 +9920,7 @@
     },
     {
       "name": "vault-setup",
-      "extension": null,
+      "extension": "vault",
       "title": "Set up Vaultwarden",
       "description": "Logs in to Vaultwarden with the account API key, unlocks it with the master password, finds the organization and collection by name or ID, and checks that the account can write to the collection. Only then stores the values, encrypted. `url` must be an HTTPS origin on a `.orbit` host, and the Gateway trusts only the Orbit root CA; another origin returns `validation.failed` (422). Returns `vault.login_failed`, `vault.kdf_unsupported`, `vault.organization_missing`, `vault.collection_missing`, or `vault.collection_read_only` (422), and `vault.items_published` (409) for another organization or collection while items are published. No response or Activity entry returns the client secret or the master password, but this tool takes them as arguments, so they reach the caller transcript; the CLI reads them from files.",
       "method": "PUT",
@@ -9970,7 +9974,7 @@
     },
     {
       "name": "vault-status",
-      "extension": null,
+      "extension": "vault",
       "title": "Show the Vaultwarden status",
       "description": "Returns the Vaultwarden setup and the state of the published Database items from the Gateway records. It never contacts Vaultwarden and never returns a secret.",
       "method": "GET",
@@ -9986,7 +9990,7 @@
     },
     {
       "name": "vault-sync",
-      "extension": null,
+      "extension": "vault",
       "title": "Sync database credentials to Vaultwarden",
       "description": "Runs the Vaultwarden sync now: creates, rewrites, or permanently deletes Database items; adopts Orbit items with no ledger row; deletes duplicates, trashed copies, and items whose source is gone; and rewrites items changed in Vaultwarden. Returns the status when every change succeeded, and `vault.sync_failed` (502) with `failed` and `first_error` details when any change failed; the next run retries. Returns `vault.not_configured` or `vault.sync_busy` (409), and `vault.unreachable` (502) when Vaultwarden cannot be reached.",
       "method": "POST",
@@ -10002,7 +10006,7 @@
     },
     {
       "name": "vault-teardown",
-      "extension": null,
+      "extension": "vault",
       "title": "Tear down Vaultwarden",
       "description": "Permanently deletes every Orbit item in the collection, recorded or not, unless `keep_items` is true, then the stored setup. A failed deletion keeps the setup, so the teardown can run again. Returns `vault.not_configured` (409).",
       "method": "DELETE",

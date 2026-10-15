@@ -42,7 +42,9 @@
     "autoload": {
         "psr-4": {
             "App\\": "app/",
+            "Orbit\\Extensions\\Conn\\": "extensions/conn/src/",
             "Orbit\\Extensions\\Documents\\": "extensions/documents/src/",
+            "Orbit\\Extensions\\Vault\\": "extensions/vault/src/",
             "Database\\Factories\\": "database/factories/",
             "Database\\Seeders\\": "database/seeders/"
         }

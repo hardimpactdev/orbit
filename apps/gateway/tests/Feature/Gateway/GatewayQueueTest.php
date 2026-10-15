@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Console\Scheduling\GatewaySchedule;
 use App\Domain\DatabaseConnections\DatabaseDriver;
+use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Gateway\GatewayQueue;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessOperationException;
@@ -66,6 +67,14 @@ describe('the schedule', function (): void {
             ->and($tick->withoutOverlapping)->toBeFalse()
             ->and([$vault->withoutOverlapping, $vault->expiresAt])->toBe([true, 15])
             ->and(collect(gateway_queue_schedule())->filter(static fn (Event $event): bool => str_contains((string) $event->description, 'TaskVm') && $event->filtersPass(app())))->toBeEmpty();
+    });
+
+    it('runs the Vaultwarden sync only while the vault extension is on', function (): void {
+        expect(gateway_queue_event('orbit:vault-sync')->filtersPass(app()))->toBeFalse();
+
+        app(ExtensionStore::class)->set('vault', true);
+
+        expect(gateway_queue_event('orbit:vault-sync')->filtersPass(app()))->toBeTrue();
     });
 
     it('only dispatches while the Gateway queue is set, one unique job per command, and starts no queue worker', function (): void {

@@ -33,8 +33,10 @@ Each command accepts `--json`. Enable and disable need Gateway access.
 | `tasks` | The [`tasks`](/cli/tasks) family, its MCP tools and API operations, and the Tasks pages. See [Tasks](/reference/tasks). |
 | `proxycli` | The [`proxycli`](/cli/proxycli) family, its MCP tools and API operations, and the Quota pages. See [proxycli](/reference/proxycli). |
 | `documents` | The [`project:document`](/cli/project#project-documents) and `project:document-storage` commands, their MCP tools and API operations, and the Project Documents page. See [Project Documents](/reference/project-documents). |
+| `vault` | The [`vault`](/cli/vault) family, its MCP tools and API operations, and the scheduled Vaultwarden sync. See [Vaultwarden](/reference/vaultwarden). |
+| `conn` | The Conn API under `/api/v1/conn` and its MCP tools, which Conn devices and T3 servers call. It has no CLI commands. See [Conn layer](/reference/conn). |
 
-The Gateway lists the extensions that its registered extension providers declare. A new install starts with every extension off. An install that already used Project Documents keeps `documents` on after it updates.
+The Gateway lists the extensions that its registered extension providers declare. A new install starts with every extension off. An install that already used Project Documents, Vaultwarden publishing, or Conn keeps that extension on after it updates. [Defaults](/reference/extensions#defaults) lists the rule for each one.
 ## What a disabled extension does
 
 | Client | Behavior |
@@ -44,7 +46,7 @@ The Gateway lists the extensions that its registered extension providers declare
 | CLI | `list`, `help`, and completion hide the family. A direct call reaches the Gateway, which refuses it with `extension.disabled`. |
 | Web app | Navigation hides the extension's pages. The app reads the switches every 30 seconds. |
 
-`tasks:status` is a core view. It stays available while `tasks` is disabled. Disabling an extension keeps its data, such as tasks, documents, or the proxycli collector. Background work that finishes recorded work keeps running, such as the cleanup of deleted document bytes.
+`tasks:status` is a core view. It stays available while `tasks` is disabled. Disabling an extension keeps its data, such as tasks, documents, or the proxycli collector. Background work that finishes recorded work keeps running, such as the cleanup of deleted document bytes. The Vaultwarden sync stops while `vault` is off and catches up when it is on again.
 
 A nested empty object in a tool argument stays an object through a direct `tools/call` and through `execute_tools`. [MCP](/reference/mcp) describes that shape.
 
@@ -58,7 +60,7 @@ When the CLI cannot read the switches, the state is unknown, not disabled. This 
 - `list` and `help` hide the extension commands.
 - A Tasks or ProxyCLI extension command fails with `extension.state_unknown` and sends no request.
 
-Direct `project:document:*` and `project:document-storage:*` calls do not require switch discovery. They send the document request even when discovery is denied or times out. The Gateway enforces the switch and returns `extension.disabled` while Documents is off.
+Direct `project:document:*`, `project:document-storage:*`, and `vault:*` calls do not require switch discovery. They send the request even when discovery is denied or times out. The Gateway enforces the switch and returns `extension.disabled` while the extension is off.
 
 The `gateway:*` commands need no extension state, so you can add, select, trust, or remove a profile and try again.
 

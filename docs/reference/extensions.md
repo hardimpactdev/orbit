@@ -4,29 +4,31 @@ description: "How an optional Gateway feature lives in its own directory, contri
 covers:
   - apps/gateway/app/{Domain,Actions}/Extensions/**
   - apps/gateway/app/Providers/{ExtensionServiceProvider,ProxyCliServiceProvider,TasksServiceProvider}.php
-  - apps/gateway/app/Domain/{Projects/ProjectRemovalHook,GatewayReleases/GatewayReleaseCleanup}.php
+  - apps/gateway/app/Domain/{Projects/ProjectRemovalHook,GatewayReleases/GatewayReleaseCleanup,Activity/ActivityInputRedaction}.php
   - apps/gateway/app/{Infrastructure/GatewayReleases/GatewayCleanupHandoff,Http/Middleware/RequireEnabledExtension}.php
   - apps/gateway/bootstrap/providers.php
   - apps/gateway/extensions/*/src/*ServiceProvider.php
   - apps/gateway/extensions/*/database/migrations/*_enable_*_extension_*.php
-  - apps/gateway/tests/{Unit/Architecture/ExtensionBoundaryTest,Feature/Api/ExtensionsTest,Feature/Domain/Projects/ProjectRemovalHookTest}.php
+  - apps/gateway/tests/{Unit/Architecture/ExtensionBoundaryTest,Feature/Api/ExtensionsTest,Feature/Domain/Projects/ProjectRemovalHookTest,Feature/Domain/Activity/ActivityInputRedactionTest}.php
 ---
 
 # Extensions
 
 An extension is an optional Gateway feature with one switch. [`extension`](/cli/extension) describes the switch, the commands, and what each client does while an extension is off. This page describes how an extension is built: where its code lives, how it adds behavior to core, and the rule that keeps core independent of it.
 
-ADR [0210](/decisions/0210-give-each-extension-its-own-code-boundary) is moving the extensions behind this boundary one at a time. Documents has moved. Tasks and ProxyCli have switches and providers, but their code is still in core.
+ADR [0210](/decisions/0210-give-each-extension-its-own-code-boundary) is moving the extensions behind this boundary one at a time. Documents, Vault, and Conn have moved. Tasks and ProxyCli have switches and providers, but their code is still in core.
 
 ## The extensions
 
-The Gateway has three extensions. This table shows where each one's code lives today.
+The Gateway has five extensions. This table shows where each one's code lives today.
 
 | Extension | Code | Depends on |
 | --- | --- | --- |
 | `documents` | `apps/gateway/extensions/documents`. See [Project Documents](/reference/project-documents). | nothing |
 | `tasks` | Core, in the `Tasks` and `TaskVms` namespaces. See [Tasks](/reference/tasks). | nothing |
 | `proxycli` | Core, in the `ProxyCli` namespaces. See [proxycli](/reference/proxycli). | nothing |
+| `vault` | `apps/gateway/extensions/vault`. See [Vaultwarden](/reference/vaultwarden). | nothing |
+| `conn` | `apps/gateway/extensions/conn`. See [Conn layer](/reference/conn). | nothing |
 
 ## Layout
 
@@ -70,12 +72,15 @@ Core resolves every tagged implementation and calls each one.
 | --- | --- | --- |
 | `App\Domain\Projects\ProjectRemovalHook` | `project:destroy` | `lock()` and `remove()` |
 | `App\Domain\GatewayReleases\GatewayReleaseCleanup` | The [release handoff](/reference/gateway-recovery) | `configured()`, `status()`, `reconcile()`, and `resume()` |
+| `App\Domain\Activity\ActivityInputRedaction` | The [Activity](/cli/activity) recorder | `commands()` and `input()` |
 
 `ProjectRemovalHook::lock()` runs first in the removal transaction, before the guards, so the extension's writers wait for the removal. `remove()` runs after every guard passed and before the Project row is deleted. It may refuse with a `ResourceOperationException`, which rolls back the whole removal.
 
 After the release handoff restarts the scheduler, it waits for each configured `GatewayReleaseCleanup` to report a new generation. Then it reconciles and resumes that cleanup. The release records one cleanup outcome: `paused` when any cleanup stays paused, otherwise `resumed`, `running`, or `skipped`.
 
-A plug-in contribution runs whether or not the switch is on. Removing a Project must also remove its documents, and a scheduled deletion must finish.
+`ActivityInputRedaction::commands()` names the route names whose input the extension decides. For those commands, Activity stores only what `input()` returns from the request input, then sanitizes it like any other input. Conn uses it so that a T3 admin session and the content of a settings document never enter Activity.
+
+A plug-in contribution runs whether or not the switch is on. Removing a Project must also remove its documents, a scheduled deletion must finish, and a request to a disabled extension still records Activity, so its secrets must still stay out.
 
 ## The boundary
 
@@ -87,17 +92,25 @@ The boundary decides who owns code, not what loads. Routes, migrations, console 
 
 An extension's route group adds the middleware `RequireEnabledExtension:<name>`. While the switch is off, each of its operations refuses with HTTP 409 `extension.disabled` and changes nothing. `bin/docs-openapi` marks those operations with `x-orbit-extension`. The MCP server leaves them out of its tool list while the switch is off.
 
-Background work that finishes recorded work keeps running while the switch is off.
+Background work that finishes recorded work keeps running while the switch is off. Work that is the feature itself stops: the Vaultwarden sync, `orbit:vault-sync`, runs only while `vault` is on. Its first run after the switch turns on again publishes, rewrites, and deletes whatever changed meanwhile.
 
 ### Enable and disable
 
 `extension:enable` refuses with HTTP 409 `extension.dependency_disabled` while a dependency is off. `extension:disable` refuses with HTTP 409 `extension.required` while an enabled extension depends on the one being disabled. Both name the other extension in `error.details`.
 
-`extension:enable` runs the extension's `enable()` hook first and turns the switch on only after the hook returns. A failed enable leaves the switch off: when the hook throws, the switch keeps its earlier state and the API returns the hook's error code, message, and details. The hook runs while the switch is still off, so it must not rely on the switch. `extension:disable` turns the switch off, then runs `disable()`. Both run in the same request. Enabling an enabled extension runs `enable()` again, so a hook must be safe to repeat. Tasks uses its hooks to broadcast the [`tasks.updated`](/reference/events#tasks) event. Documents uses neither.
+`extension:enable` runs the extension's `enable()` hook first and turns the switch on only after the hook returns. A failed enable leaves the switch off: when the hook throws, the switch keeps its earlier state and the API returns the hook's error code, message, and details. The hook runs while the switch is still off, so it must not rely on the switch. `extension:disable` turns the switch off, then runs `disable()`. Both run in the same request. Enabling an enabled extension runs `enable()` again, so a hook must be safe to repeat. Tasks uses its hooks to broadcast the [`tasks.updated`](/reference/events#tasks) event. Documents, Vault, and Conn use neither.
 
 ### Defaults
 
-A new install starts with every extension off. When an install that already had Project Documents updates, a migration turns `documents` on if it has a document storage configuration or at least one document entry.
+A new install starts with every extension off. When an existing install updates, a migration turns an extension on if the install already uses it:
+
+| Extension | Turned on when the install has |
+| --- | --- |
+| `documents` | A document storage configuration, or at least one document entry. |
+| `vault` | A stored Vaultwarden setup, or at least one published item in `vault_items`. |
+| `conn` | At least one registered T3 server or one profile. |
+
+A current user keeps the feature without action, and a new install does not carry a feature it has not asked for.
 
 ## Why it works this way
 
