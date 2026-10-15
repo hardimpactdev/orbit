@@ -29,7 +29,7 @@ final class LogsCommand extends E2ECommand
     public function handle(TopologyAcquirer $acquirer): int
     {
         try {
-            $process = new GuestProcess((string) $this->argument('name'));
+            $process = new GuestProcess($this->stringArgument('name'));
             $label = $this->evidenceLabel();
             $since = $this->option('since');
             $lines = $this->option('lines');
@@ -41,7 +41,7 @@ final class LogsCommand extends E2ECommand
                 is_string($lines) ? (int) $lines : null,
             );
             $request = $this->request();
-            $role = (string) $this->argument('node');
+            $role = $this->stringArgument('node');
             $startedAt = $this->evidenceClock();
             $result = $acquirer->execute($request, $role, $argv);
             $this->recordEvidence($label, $request, $role, $argv, $result, $startedAt, $this->evidenceClock());

@@ -136,7 +136,7 @@ final readonly class NativeMetricsCadvisorLifecycle implements MetricsCadvisorLi
             MetricsReconcileComponent::Cadvisor,
             $node->id,
             $structured->errorCode ?? 'metrics.cadvisor_reconcile_failed',
-            $structured === null ? 'Metrics cAdvisor reconciliation failed.' : $structured->getMessage(),
+            $structured?->getMessage() ?? 'Metrics cAdvisor reconciliation failed.',
             $structured->status ?? 502,
             $exception,
             $structured->details ?? [],

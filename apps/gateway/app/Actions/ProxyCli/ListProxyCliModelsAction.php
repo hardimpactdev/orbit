@@ -23,6 +23,6 @@ final readonly class ListProxyCliModelsAction
         $this->state->assertEnabled();
         $snapshot = $this->snapshots->snapshot();
 
-        return $snapshot === null ? [] : $snapshot->models;
+        return $snapshot->models ?? [];
     }
 }

@@ -16,6 +16,6 @@ final class RollbackGatewayReleaseCommand extends GatewayReleaseCommand
 
     public function handle(RollbackGatewayReleaseAction $action): int
     {
-        return $this->report(fn (): array => $action->execute((string) $this->argument('release'))->toArray());
+        return $this->report(fn (): array => $action->execute($this->stringArgument('release'))->toArray());
     }
 }

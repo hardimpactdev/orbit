@@ -20,6 +20,6 @@ final class RunGatewayReleaseCommand extends GatewayReleaseCommand
 
     public function handle(RunRequestedGatewayReleaseAction $action): int
     {
-        return $this->report(fn (): array => $action->execute((string) $this->argument('record'))->payload());
+        return $this->report(fn (): array => $action->execute($this->stringArgument('record'))->payload());
     }
 }

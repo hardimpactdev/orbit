@@ -86,7 +86,7 @@ final class RealtimeSubscriber
             transport: $transport ?? new StreamWebSocketTransport,
             config: $config,
             authorizer: new GatewayChannelAuthorizer(
-                $config === null ? '' : $config->gatewayUrl,
+                $config->gatewayUrl ?? '',
                 $config?->caPath,
             ),
         );

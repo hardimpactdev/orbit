@@ -14,6 +14,8 @@ use Throwable;
 
 final class ConvergeNodeRecipeCommand extends Command
 {
+    use ReadsStringInput;
+
     #[\Override]
     protected $signature = 'node:converge-recipe {node? : Node name or ID} {--recipe= : Require this full recipe identity} {--status : List the recorded recipe of every Node without SSH} {--dry-run : Read versions and show the plan without changing the Node}';
 
@@ -39,7 +41,7 @@ final class ConvergeNodeRecipeCommand extends Command
             if ($expected !== null && $expected !== $recipe->identity) {
                 throw new InvalidArgumentException('The requested recipe identity does not match the checked-out recipe. Nothing was changed.');
             }
-            $target = (string) $this->argument('node');
+            $target = $this->stringArgument('node');
             $node = ctype_digit($target) ? Node::query()->findOrFail((int) $target) : Node::query()->where('name', $target)->firstOrFail();
             $result = $converge->execute($node, $recipe, (bool) $this->option('dry-run'));
             $this->output->writeln(json_encode($result, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);

@@ -9,6 +9,8 @@ use Illuminate\Console\Command;
 
 final class PackageCacheUsageCommand extends Command
 {
+    use ReadsStringInput;
+
     #[\Override]
     protected $signature = 'task-vms:package-cache-usage {package} {version}';
 
@@ -17,8 +19,8 @@ final class PackageCacheUsageCommand extends Command
 
     public function handle(): int
     {
-        $package = $this->argument('package');
-        $version = $this->argument('version');
+        $package = $this->stringArgument('package');
+        $version = $this->stringArgument('version');
         $this->line(json_encode(app(ReadPackageCacheUsageAction::class)->execute($package, $version), JSON_THROW_ON_ERROR));
 
         return self::SUCCESS;
