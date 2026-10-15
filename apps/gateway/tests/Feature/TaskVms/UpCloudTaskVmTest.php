@@ -39,11 +39,13 @@ use App\Models\Task;
 use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
 use GuzzleHttp\Promise\PromiseInterface;
+use Illuminate\Bus\UniqueLock;
 use Illuminate\Console\Scheduling\CallbackEvent;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
@@ -77,6 +79,10 @@ final class FakeUpCloud
     public bool $listWithoutLabels = false;
 
     public bool $authenticationFails = false;
+
+    public bool $templateListWithoutLabels = false;
+
+    public ?Closure $beforeTemplateList = null;
 
     private int $addresses = 10;
 
@@ -188,7 +194,12 @@ final class FakeUpCloud
             ]]]);
         }
         if ($method === 'GET' && $path === 'storage/template') {
-            return Http::response(['storages' => ['storage' => array_values($this->storages)]]);
+            ($this->beforeTemplateList ?? static function (): void {})();
+            $storages = $this->templateListWithoutLabels
+                ? array_map(static fn (array $storage): array => array_diff_key($storage, ['labels' => true]), $this->storages)
+                : $this->storages;
+
+            return Http::response(['storages' => ['storage' => array_values($storages)]]);
         }
         if (preg_match('#\Astorage/([0-9a-f-]{36})(/templatize)?\z#', $path, $match) === 1) {
             if (($match[2] ?? '') === '/templatize') {
@@ -408,8 +419,63 @@ describe('placement', function (): void {
             ->and($vm->name)->toBe('tvm-'.$vm->id)
             ->and($vm->state)->toBe(TaskVmState::Provisioning)
             ->and($vm->recipe_identity)->toBe(app(RecipeImageBuilds::class)->currentRecipe()->identity)
-            ->and($vm->image_fingerprint)->toBeNull();
+            ->and($vm->image_fingerprint)->toBe(array_key_first($this->upcloud->storages));
         Queue::assertPushed(ProvisionTaskVm::class, fn (ProvisionTaskVm $job): bool => $job->taskVmId === $vm->id);
+    });
+
+    it('resolves the template outside admission and uses list labels without per-template reads', function (): void {
+        $level = DB::transactionLevel();
+        $this->upcloud->beforeTemplateList = static function () use ($level): void {
+            expect(DB::transactionLevel())->toBe($level);
+        };
+        $this->upcloud->template('orbit-task-base-20261012000000', 'sha256:'.str_repeat('a', 64));
+
+        $vm = app(AllocateTaskVmAction::class)->execute(tvm_up_group());
+
+        expect($vm->image_fingerprint)->toBe(array_key_first($this->upcloud->storages));
+        expect(array_values(array_filter($this->upcloud->requests, static fn (string $request): bool => str_starts_with($request, 'GET storage/'))))->toBe(['GET storage/template']);
+    });
+
+    it('reads individual template labels only when the list omits them', function (): void {
+        $this->upcloud->templateListWithoutLabels = true;
+
+        $vm = app(AllocateTaskVmAction::class)->execute(tvm_up_group());
+
+        expect($vm->image_fingerprint)->toBe(array_key_first($this->upcloud->storages));
+        expect($this->upcloud->count('GET storage/'))->toBe(2);
+    });
+
+    it('rejects a template resolved before the deployed recipe changes during admission', function (): void {
+        $directory = sys_get_temp_dir().'/upcloud-admission-'.Str::uuid();
+        $resources = $directory.'/releases/current/apps/gateway/resources/machine-software';
+        mkdir($resources, 0700, true);
+        symlink('releases/current', $directory.'/orbit');
+        $path = $resources.'/recipe.json';
+        $document = json_decode(file_get_contents(resource_path('machine-software/recipe.json')), true, flags: JSON_THROW_ON_ERROR);
+        file_put_contents($path, json_encode($document, JSON_THROW_ON_ERROR));
+        config(['orbit.gateway_checkout' => $directory.'/orbit/apps/gateway']);
+        $document['ubuntu']['snapshot'] = '20261015T000000Z';
+        $hostId = $this->host->id;
+        $this->upcloud->beforeTemplateList = static function () use ($path, $document, $hostId): void {
+            file_put_contents($path, json_encode($document, JSON_THROW_ON_ERROR));
+            TaskVmImageBuild::query()->where('host_node_id', $hostId)->update(['recipe_identity' => app(RecipeImageBuilds::class)->currentRecipe()->identity]);
+        };
+        $group = tvm_up_group();
+        try {
+            expect(fn () => app(AllocateTaskVmAction::class)->execute($group))->toThrow(TaskCapacityException::class, 'template on UpCloud.');
+            expect(TaskVm::forGroup($group))->toBeNull();
+            Queue::assertNotPushed(ProvisionTaskVm::class);
+        } finally {
+            File::deleteDirectory($directory);
+        }
+    });
+
+    it('does not let an UpCloud outage block a free Incus slot', function (): void {
+        tvm_up_settings(maxVms: 2);
+        $this->upcloud->authenticationFails = true;
+
+        expect(app(AllocateTaskVmAction::class)->execute(tvm_up_group())->provider)->toBe(TaskVmProviderKind::Incus);
+        expect($this->upcloud->requests)->toBe([]);
     });
 
     it('never places a large VM at UpCloud', function (): void {
@@ -492,11 +558,12 @@ describe('placement', function (): void {
         expect($listed)->toContain(app(UpCloudTaskVmProvider::class)->sshHostFingerprint($vm).' ');
     });
 
-    it('launches an existing allocation from its recorded recipe rather than a newer template', function (): void {
+    it('launches an existing allocation from its recorded UUID even when a newer template has the same recipe', function (): void {
         $identity = 'sha256:'.str_repeat('a', 64);
         $template = $this->upcloud->template('orbit-task-base-20261010000000', $identity);
         $vm = tvm_up_vm();
-        $vm->update(['recipe_identity' => $identity]);
+        $vm->update(['recipe_identity' => $identity, 'image_fingerprint' => $template]);
+        $this->upcloud->template('orbit-task-base-20261012000000', $identity);
 
         app(UpCloudTaskVmProvider::class)->create($vm, "#cloud-config\n{}\n");
 
@@ -749,6 +816,22 @@ describe('image build', function (): void {
             ->and(Cache::lock('task-vms:upcloud-image-build', 10)->get())->toBeTrue();
     });
 
+    it('keeps templates pinned by live allocations and prunes them after destroy', function (): void {
+        $this->travelTo(now()->startOfSecond());
+        $old = $this->upcloud->template('orbit-task-base-20261001000000');
+        $this->upcloud->template('orbit-task-base-20261002000000');
+        $vm = tvm_up_vm();
+        $vm->update(['image_fingerprint' => $old]);
+
+        app(UpCloudTaskVmImageBuilder::class)->build();
+
+        expect($this->upcloud->storages)->toHaveKey($old)->toHaveCount(3);
+        $vm->update(['state' => TaskVmState::Destroyed]);
+        $this->travel(1)->seconds();
+        app(UpCloudTaskVmImageBuilder::class)->build();
+        expect($this->upcloud->storages)->not->toHaveKey($old)->toHaveCount(2);
+    });
+
     it('does not publish when recipe installation or verification fails', function (string $phase, bool $truncated): void {
         $this->ssh = new class($phase, $truncated) extends FakeUpCloudSsh
         {
@@ -805,6 +888,18 @@ describe('recipe-driven UpCloud base image refresh', function (): void {
             ->and([new RefreshUpCloudTaskVmBaseImage()->connection, new RefreshUpCloudTaskVmBaseImage()->queue])->toBe(['gateway', 'builds']);
     });
 
+    it('handles a serialized refresh job queued before the recipe fence', function (): void {
+        $job = new RefreshUpCloudTaskVmBaseImage;
+        unset($job->recipeIdentity, $job->afterAttemptId);
+        $job = unserialize(serialize($job));
+
+        app()->call([$job, 'handle']);
+        app()->call([$job, 'handle']);
+
+        expect($this->upcloud->created)->toHaveCount(2);
+        $this->assertDatabaseCount('upcloud_task_vm_image_builds', 1);
+    });
+
     it('builds nothing when the recipe already matches or UpCloud is unconfigured', function (?array $upcloud): void {
         tvm_up_settings($upcloud);
         $this->upcloud->template('orbit-task-base-20261011000000', app(RecipeImageBuilds::class)->currentRecipe()->identity);
@@ -835,6 +930,51 @@ describe('recipe-driven UpCloud base image refresh', function (): void {
         $this->upcloud->template('orbit-task-base-20261012000000', 'sha256:'.str_repeat('a', 64));
         app(RecipeImageBuilds::class)->reconcile();
         Queue::assertPushed(RefreshUpCloudTaskVmBaseImage::class);
+        expect($this->upcloud->created)->toBe([]);
+    });
+
+    it('does not re-dispatch a failed recipe on the next tick and only retries explicitly', function (): void {
+        Queue::fake();
+        $this->ssh->cloudInit = '{"status":"error","errors":["deterministic failure"]}';
+        $builds = app(RecipeImageBuilds::class);
+        $builds->reconcile();
+        $job = Queue::pushed(RefreshUpCloudTaskVmBaseImage::class)->sole();
+
+        expect(fn () => app()->call([$job, 'handle']))->toThrow(TaskVmException::class);
+        app(UniqueLock::class)->release($job);
+        $created = count($this->upcloud->created);
+        $builds->reconcile();
+        Queue::assertPushed(RefreshUpCloudTaskVmBaseImage::class, 1);
+        $this->assertDatabaseHas('upcloud_task_vm_image_builds', ['recipe_identity' => $builds->currentRecipe()->identity, 'state' => 'failed']);
+        app()->call([$job, 'handle']);
+        expect($this->upcloud->created)->toHaveCount($created);
+
+        $this->ssh->cloudInit = '{"status":"done","errors":[]}';
+        $this->artisan('task-vms:build-recipe', ['--retry' => true])->assertSuccessful();
+        Queue::assertPushed(RefreshUpCloudTaskVmBaseImage::class, 2);
+        app()->call([Queue::pushed(RefreshUpCloudTaskVmBaseImage::class)->last(), 'handle']);
+        $this->assertDatabaseCount('upcloud_task_vm_image_builds', 2);
+        $this->assertDatabaseHas('upcloud_task_vm_image_builds', ['recipe_identity' => $builds->currentRecipe()->identity, 'state' => 'succeeded']);
+    });
+
+    it('rechecks attempt admission after taking the builder lock', function (): void {
+        $identity = app(RecipeImageBuilds::class)->currentRecipe()->identity;
+        DB::table('upcloud_task_vm_image_builds')->insert(['recipe_identity' => $identity, 'state' => 'failed', 'started_at' => now()]);
+
+        expect(fn () => app(UpCloudTaskVmImageBuilder::class)->build(afterAttemptId: 0))->toThrow(TaskVmException::class, 'explicit retry');
+
+        expect($this->upcloud->requests)->toBe([]);
+        $this->assertDatabaseCount('upcloud_task_vm_image_builds', 1);
+    });
+
+    it('keeps an interrupted attempt fenced after the unique job lock expires', function (): void {
+        Queue::fake();
+        $identity = app(RecipeImageBuilds::class)->currentRecipe()->identity;
+        DB::table('upcloud_task_vm_image_builds')->insert(['recipe_identity' => $identity, 'state' => 'running', 'started_at' => now()->subHours(3)]);
+
+        app(RecipeImageBuilds::class)->reconcile();
+
+        Queue::assertNotPushed(RefreshUpCloudTaskVmBaseImage::class);
         expect($this->upcloud->created)->toBe([]);
     });
 
@@ -877,12 +1017,21 @@ describe('recipe-driven UpCloud base image refresh', function (): void {
             app(RecipeImageBuilds::class)->reconcile();
             Queue::assertNotPushed(RefreshUpCloudTaskVmBaseImage::class);
 
+            $this->upcloud->storages = [];
+            app(RecipeImageBuilds::class)->reconcile();
+            $oldJob = Queue::pushed(RefreshUpCloudTaskVmBaseImage::class)->sole();
+            $this->ssh->cloudInit = '{"status":"error","errors":["failure"]}';
+            expect(fn () => app()->call([$oldJob, 'handle']))->toThrow(TaskVmException::class);
+            app(UniqueLock::class)->release($oldJob);
+            $created = count($this->upcloud->created);
             $document['ubuntu']['snapshot'] = '20261015T000000Z';
             file_put_contents($path, json_encode($document, JSON_THROW_ON_ERROR));
+            app()->call([$oldJob, 'handle']);
+            expect($this->upcloud->created)->toHaveCount($created);
             app(RecipeImageBuilds::class)->reconcile();
-            Queue::assertPushed(RefreshUpCloudTaskVmBaseImage::class);
+            Queue::assertPushed(RefreshUpCloudTaskVmBaseImage::class, 2);
             expect(app(RecipeImageBuilds::class)->currentRecipe()->identity)->not->toBe($identity)
-                ->and($this->upcloud->created)->toBe([]);
+                ->and($this->upcloud->created)->toHaveCount($created);
         } finally {
             File::deleteDirectory($directory);
         }

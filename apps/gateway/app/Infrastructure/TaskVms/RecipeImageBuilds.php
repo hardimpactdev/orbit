@@ -27,8 +27,10 @@ final readonly class RecipeImageBuilds
         $recipe = $this->currentRecipe();
         $generation = $this->desire($recipe);
         try {
-            if ($this->settings->upcloud !== null && app(UpCloudServers::class)->currentTemplate($recipe->identity) === null) {
-                RefreshUpCloudTaskVmBaseImage::dispatch();
+            $attempt = UpCloudTaskVmImageBuilder::lastAttempt($recipe->identity);
+            if ($this->settings->upcloud !== null && ($attempt === 0 || $retry)
+                && app(UpCloudServers::class)->currentTemplate($recipe->identity) === null) {
+                RefreshUpCloudTaskVmBaseImage::dispatch($recipe->identity, $attempt);
             }
         } catch (Throwable $error) {
             // Optional UpCloud refresh must not block Incus recovery or recipe builds.
