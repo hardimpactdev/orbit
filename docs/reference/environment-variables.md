@@ -82,6 +82,8 @@ Import, update, and synchronization use the Instance's recorded owning Node. A R
 
 ## Where the file lives
 
+The Instance's recorded [vp runtime and package-manager environment](/reference/tools#project-environments-in-the-vite-store) is separate from its environment variables. The nullable `vp_environment` record holds store versions and prerequisite status, not `.env` keys or values. Preparing or adopting those tools does not import, synchronize, or rewrite the Instance's `.env` file.
+
 The Gateway derives the file location and the user from the Instance's placement. The caller cannot choose the Node, the user, the directory, or the file name.
 
 | Placement | File | User |

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Instances;
 
+use App\Actions\Tools\PrepareVpEnvironmentAction;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Instances\Deployment\DeploymentEvent;
@@ -34,6 +35,7 @@ final readonly class RemoteDevelopmentDeployment implements DevelopmentDeploymen
         private ManagedUserAccountResolver $accounts,
         private CheckoutRemovalBoundary $removal,
         private RepositoryReadAccess $access,
+        private ?PrepareVpEnvironmentAction $environments = null,
     ) {}
 
     public function target(Instance $instance): DevelopmentTarget
@@ -66,11 +68,14 @@ final readonly class RemoteDevelopmentDeployment implements DevelopmentDeploymen
 
     public function executeStep(Instance $instance, DevelopmentDeployStep $step, DeploymentRequest $request): CommandResult
     {
+        $arguments = $this->arguments($instance);
+        $command = ($this->environments ?? app(PrepareVpEnvironmentAction::class))->command($instance, $instance->checkout_path, $step->name, $step->command);
+
         return $this->ssh->execute(
             $instance->node,
             new RemoteCommand(
-                arguments: [...$this->arguments($instance), (string) $step->timeoutSeconds],
-                protectedInput: ProtectedInput::fromString(str_replace('__COMMAND__', base64_encode($step->command), DevelopmentCheckoutProgram::step())),
+                arguments: [...$arguments, (string) $step->timeoutSeconds],
+                protectedInput: ProtectedInput::fromString(str_replace('__COMMAND__', base64_encode($command), DevelopmentCheckoutProgram::step())),
                 output: self::stream($step->name, $request),
                 cancelled: $request->cancellation->requested(...),
                 // Leave time for the remote timer to terminate the step's children.

@@ -443,7 +443,8 @@ it('eager loads inspector relationships in the bounded tool query', function ():
     };
     tool_doctor_probe($inspector)
         ->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'amd64', true)));
-    expect($queries)->toBe(3);
+    // Tools, managers, Nodes, and recorded Instance vp environments.
+    expect($queries)->toBe(4);
 });
 
 it('inspects multiple Composer tools with one installed-package command and keeps tool order', function (): void {

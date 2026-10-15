@@ -119,6 +119,14 @@ The branch lives on the Instance. `PATCH /api/v1/instances/{instance}` with `bra
 
 Deploy-step and branch changes need an access grant to the Instance's Node. The Gateway refuses them for an Instance that is not a production Instance with `deployment_config.unavailable` (409). Activity and errors never contain a step command.
 
+### Vite store prerequisite
+
+Before a JavaScript step (`npm-build`, or a command using `vp`, Node, npm/npx, pnpm, Yarn, Bun, Vite, or Corepack), Orbit prepares the [Project environment in the vp store](/reference/tools#project-environments-in-the-vite-store) when the Project declares `vite-plus`. The prerequisite runs before the application command, as the store owner. It records desired versions before installing missing content and verifies the result before allowing the step to start. It does not run package install scripts as the store owner.
+
+JavaScript steps run their stored command through `vp env exec` with the recorded Node and package-manager versions, as the Instance user. Customized commands keep their flags, shell operators, and additional build scripts, including SSR builds. Only an unmodified `npm run build` or the legacy bare `node /path/to/npm-cli.js run build` form (with `node` optionally an absolute path) becomes the selected package manager's `run build`. A legacy command with extra flags or shell operations is custom and stays unchanged.
+
+A missing runtime or package manager that cannot be installed fails with `deployment.vp_store_failed`, before the build command runs. Invalid or incompatible Project requirements fail with `deployment.vp_requirements_invalid`. The current production release stays selected. Fix connectivity, store ownership, or Project requirements and retry the deploy; no manual runtime installation is required. Doctor reports recorded store drift without repairing it.
+
 ## Use the deployment API
 
 A deployment and a rollback run synchronously and stream their progress.

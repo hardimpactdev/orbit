@@ -19,6 +19,10 @@ use App\Domain\Tools\ToolInventoryScan;
 use App\Domain\Tools\ToolInventoryScanState;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\VersionConstraint;
+use App\Domain\Tools\VpEnvironment;
+use App\Infrastructure\Tools\VpToolManager;
+use App\Models\Instance;
+use App\Models\Node;
 use App\Models\Tool;
 use Illuminate\Database\Eloquent\Collection;
 use LogicException;
@@ -32,6 +36,7 @@ final readonly class ToolDoctorProbe implements DoctorFamilyProbe
         private ToolInspector $inspector,
         private VersionConstraint $constraints,
         private InstalledPackageInventory $inventory,
+        private ?VpToolManager $vp = null,
     ) {}
 
     public function family(): DoctorFamily
@@ -47,12 +52,15 @@ final readonly class ToolDoctorProbe implements DoctorFamilyProbe
             ->orderBy('id')
             ->get();
 
+        $environments = Instance::query()->where('node_id', $context->node->id)->whereNotNull('vp_environment')->orderBy('id')->get();
+        $count = $tools->count() + $environments->count();
+
         if (! $context->inspection->reachable) {
-            if ($tools->isEmpty()) {
+            if ($count === 0) {
                 return DoctorFamilyReportData::fromIssues(DoctorFamily::Tool, 0, []);
             }
 
-            return DoctorFamilyReportData::fromIssues(DoctorFamily::Tool, $tools->count(), [
+            return DoctorFamilyReportData::fromIssues(DoctorFamily::Tool, $count, [
                 new DoctorIssueData(
                     ToolDoctorIssueCode::NodeUnreachable,
                     DoctorIssueKind::Unverifiable,
@@ -68,9 +76,37 @@ final readonly class ToolDoctorProbe implements DoctorFamilyProbe
 
         return DoctorFamilyReportData::fromIssues(
             DoctorFamily::Tool,
-            $tools->count(),
-            [...$this->registeredIssues($tools), ...$this->discoveryIssues($context, $tools)],
+            $count,
+            [...$this->registeredIssues($tools), ...$this->environmentIssues($environments, $context->node), ...$this->discoveryIssues($context, $tools)],
         );
+    }
+
+    /**
+     * @param  Collection<int, Instance>  $instances
+     * @return list<DoctorIssueData>
+     */
+    private function environmentIssues(Collection $instances, Node $node): array
+    {
+        $issues = [];
+        foreach ($instances as $instance) {
+            try {
+                $record = $instance->getAttribute('vp_environment');
+                $ready = is_array($record) && ($record['status'] ?? null) === 'active';
+                if ($ready) {
+                    $environment = VpEnvironment::fromArray($record);
+                    $vp = $this->vp ?? app(VpToolManager::class);
+                    $ready = $vp->versionSatisfies($vp->managerVersion($node), $environment->vpVersion)
+                        && $vp->environmentInstalled($node, $environment);
+                }
+                if (! $ready) {
+                    $issues[] = new DoctorIssueData(ToolDoctorIssueCode::VpStoreMissing, DoctorIssueKind::Drift, 'tool', null, 'Instance '.$instance->id.' vp environment', 'The Instance vp environment is missing, drifted, or its prerequisite failed.', 'ready', 'not_ready');
+                }
+            } catch (Throwable) {
+                $issues[] = new DoctorIssueData(ToolDoctorIssueCode::VpStoreInspectionFailed, DoctorIssueKind::Unverifiable, 'tool', null, 'Instance '.$instance->id.' vp environment', 'The Instance vp environment could not be inspected.', 'verifiable', 'unverifiable');
+            }
+        }
+
+        return $issues;
     }
 
     /**

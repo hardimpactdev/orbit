@@ -5,8 +5,8 @@ covers:
   - apps/gateway/app/{Actions,Domain}/Tools/**
   - apps/gateway/app/Providers/ApplicationServiceProvider.php
   - apps/gateway/app/Infrastructure/{Tools/**,Nodes/Roles/NodeRolePrerequisiteCommandFactory.php}
-  - apps/gateway/app/Models/{Tool,ToolManagerRecord}.php
-  - apps/gateway/app/Data/Tools/**
+  - apps/gateway/{app/Models/{Tool,ToolManagerRecord}.php,database/migrations/*_add_vp_environment_to_instances.php}
+  - apps/gateway/{app/Data/Tools,resources/remote/tools}/**
   - apps/gateway/app/Http/Controllers/Api/{ToolsController,ToolManagersController,ToolInventoryController}.php
   - apps/gateway/app/Http/Requests/Tools/**
   - apps/gateway/app/Actions/Doctor/ToolDoctorProbe.php
@@ -95,6 +95,22 @@ Either failure on `tool:install` returns `tool.manager_provision_failed` (HTTP 5
 A `composer` prerequisite failure during `app-dev` or `app-prod` convergence leaves the manager `failed` at the same step and error code. The role or `node:add` reports `node.tool_manager_materialization_failed` in `details.error_code`. [Role operations on one Node](/reference/node-provisioning#role-operations-on-one-node) describes how a failed role reports its step.
 
 An `apt` install, update, or remove returns `tool.install_failed`, `tool.update_failed`, or `tool.remove_failed` (HTTP 502). The Tool stays `failed`. Update and removal keep the recorded version. Retry the same command.
+
+## Project environments in the Vite+ store
+
+Before a JavaScript deploy step, Orbit reads the release's `package.json` and Node version files without running Project code. For Projects that declare `vite-plus`, it resolves that package's version and Node engine requirement, then asks vp to resolve the Project's Node runtime and package manager. Orbit preserves vp's Project selection order: `.node-version`, then `engines.node`, then `.nvmrc`. A selected pin must satisfy the selected vite-plus release; Orbit does not insert a higher-priority engine above a file pin. With no Project Node setting, the vite-plus engine supplies the default requirement.
+
+`packageManager` selects the package manager; an `engines` package-manager constraint is also supported. Without either, Orbit uses the Project's package-manager lockfile signal, or pnpm when there is no signal.
+
+The prerequisite uses the existing vp Tool Manager and its scope lock. It upgrades vp to at least the version the Project needs, using `vp upgrade`, and records the observed manager version. It never downgrades a newer shared manager.
+
+All store reads and installs run as the enrolled account that owns the selected store, not the application user. Orbit checks existing exact versions first: a matching manual installation, including Node 24.22.0 and npm 11.12.0, is adopted without downloading it again. Missing versions are installed with `vp env install` and checked before the build starts. Orbit preserves package-manager integrity pins for installation and execution. It passes only sanitized version settings to vp; Project install scripts and package-manager hooks do not run as the store owner.
+
+The `tools.read-vp-project` [remote program](/reference/remote-programs) reads manifests and version files as data, with production reads running as the Instance account.
+
+Each Instance records its resolved store path, vp version, Node version, package manager, package-manager version, and prerequisite status. Doctor checks those records against the store without installing anything. Missing content, an unexpected store, or a failed prerequisite is drift; an unreadable store is unverifiable. Old versions are not removed automatically because other Instances may still need them.
+
+See [Deploy prerequisites](/reference/deployments#vite-store-prerequisite) for build execution and early failures.
 
 ## Discover installed packages
 

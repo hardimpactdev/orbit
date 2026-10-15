@@ -171,7 +171,7 @@ describe('prepare node guest script', function () {
         mkdir("{$root}/home/orbit/.ssh", 0o700, true);
         file_put_contents("{$root}/home/orbit/.ssh/known_hosts", "builder host key\n");
         $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/prepare-node.sh');
-        file_put_contents("{$root}/prepare-node.sh", str_replace(['/etc/', '/root/', '/home/'], ["{$root}/etc/", "{$root}/root/", "{$root}/home/"], $source));
+        file_put_contents("{$root}/prepare-node.sh", str_replace(['/etc/', '/root/', '/home/', '/usr/local/bin/'], ["{$root}/etc/", "{$root}/root/", "{$root}/home/", "{$root}/usr/local/bin/"], $source));
 
         for ($attempt = 0; $attempt < 2; $attempt++) {
             $process = new Process(['bash', "{$root}/prepare-node.sh", 'configure-runtime'], env: ['PATH' => "{$root}/bin:".getenv('PATH')]);

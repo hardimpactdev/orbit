@@ -132,6 +132,7 @@ final class Instance extends Model
     protected $fillable = [
         'project_id',
         'node_id',
+        'vp_environment',
         'vite_port',
         'ssr_port',
         'agentation_port',
@@ -437,6 +438,7 @@ final class Instance extends Model
     protected function casts(): array
     {
         return [
+            'vp_environment' => 'array',
             'vite_port' => 'integer',
             'ssr_port' => 'integer',
             'agentation_port' => 'integer',

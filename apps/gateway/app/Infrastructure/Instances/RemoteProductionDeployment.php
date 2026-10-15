@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Instances;
 
+use App\Actions\Tools\PrepareVpEnvironmentAction;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Instances\Deployment\DeploymentEvent;
@@ -38,6 +39,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
         private RepositoryReadAccess $access,
         ?Closure $releaseName = null,
         private ?ProductionRepositoryBinding $repositories = null,
+        private ?PrepareVpEnvironmentAction $environments = null,
     ) {
         $this->releaseName = $releaseName ?? static fn (): string => gmdate('YmdHis').'-'.bin2hex(random_bytes(8));
     }
@@ -151,9 +153,10 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
         [, $user, $home] = $this->identity($instance);
         $this->assertRelease($release, $home);
         $stepName = $step->name;
+        $command = ($this->environments ?? app(PrepareVpEnvironmentAction::class))->command($instance, $release->path, $stepName, $step->command);
         $protectedInput = ProtectedInput::fromString(str_replace(
             '__COMMAND__',
-            base64_encode($step->command),
+            base64_encode($command),
             <<<'BASH'
                 user=$1
                 home=$2

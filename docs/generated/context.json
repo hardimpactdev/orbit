@@ -2469,6 +2469,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Project",
                 "Task",
                 "Tool"
             ],

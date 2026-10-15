@@ -8,7 +8,7 @@ covers:
   - bin/{bootstrap,gateway-app-key,test,pest-plain,review-check,bug-repro,task-group-check,pr-head-check,deploy-verify,docs-merge-check,dependency-audit}
   - "{apps/*,packages/php-sdk}/{composer,vet}.json"
   - "{apps/*,packages/php-sdk}/phpstan.neon"
-  - apps/gateway/tests/Support/{LinuxHost,TestToolchain}.php
+  - apps/gateway/tests/Support/{LinuxHost,TestToolchain,LocalShellSshExecutor}.php
   - apps/docs/**
   - .github/{dependabot,workflows/ci,workflows/dependency-audit}.yml
 ---
@@ -85,6 +85,8 @@ The [CI reference](/reference/implementation-loop#ci) lists the rules. Orbit's t
 The `test` and `test:affected` scripts in each PHP project, and root `bin/test`, pass `--colors=never` to Pest. `bin/pest-plain` strips any ANSI control sequences that remain. The output has no ANSI escape codes and still ends with the `Tests:` summary. The scripts do not pass `--no-progress`, because parallel Pest then omits that summary. Keep the flag on the scripts. `phpunit.xml` is a TIA input, and a change to it rebuilds the test impact graph.
 
 The Gateway's package-cache integration tests run real npm and Bun installs. Keep Node/npm and Bun available locally. CI supplies Bun 1.4.2 in the Gateway project and shard jobs, including the subprocess job.
+
+Local SSH fixtures give task-runner login shells a disposable `HOME`, not the contributor's shell profiles. Guest-script fixtures redirect host paths, including `/usr/local/bin`, into their temporary root. Keep these boundaries when adding tests: a check must not depend on personal profile output or write host tool launchers.
 
 Run these commands in each changed project, such as `apps/cli`:
 

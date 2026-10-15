@@ -100,7 +100,7 @@ final readonly class SshProgramRunner implements RemoteProgramRunner
         $payload = $program->source."\0".json_encode($input, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 
         return new RemoteCommand(
-            arguments: ['python3', '-I', '-c', $this->catalog->bootstrap(), $program->name],
+            arguments: [...$this->userArguments($program), 'python3', '-I', '-c', $this->catalog->bootstrap(), $program->name],
             input: $variables === [] ? $payload : null,
             protectedInput: $variables === [] ? null : ProtectedInput::gitCredential($payload),
             maxOutputBytes: self::OutputLimitBytes,
@@ -126,12 +126,18 @@ final readonly class SshProgramRunner implements RemoteProgramRunner
         }
 
         return new RemoteCommand(
-            arguments: ['bash', '-seu', '--', ...$input],
+            arguments: [...$this->userArguments($program), 'bash', '-seu', '--', ...$input],
             input: $program->source,
             maxOutputBytes: self::OutputLimitBytes,
             cancelled: $cancelled,
             timeout: $timeout,
         );
+    }
+
+    /** @return list<string> */
+    private function userArguments(RemoteProgram $program): array
+    {
+        return $program->user === null ? [] : ['sudo', '-n', '-u', $program->user, '-H'];
     }
 
     private function pythonResult(RemoteProgram $program, CommandResult $result): ProgramResult

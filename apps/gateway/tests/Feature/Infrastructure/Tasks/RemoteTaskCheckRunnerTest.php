@@ -68,6 +68,9 @@ function check_runner_instance(string $checkout): Instance
 
 function check_runner(SshExecutor $transport, string $vpHome = '/opt/orbit/vite-plus', ?SshExecutor $probe = null): RemoteTaskCheckRunner
 {
+    if ($transport instanceof LocalShellSshExecutor) {
+        $transport->environment['HOME'] = test()->directory.'/home';
+    }
     $vp = new VpToolManager(
         new RemoteToolCommandRunner(
             $probe ?? new class($vpHome) implements SshExecutor
@@ -327,11 +330,23 @@ describe('TaskGitHardening', function (): void {
 beforeEach(function (): void {
     // Each test owns one directory, so a concurrent run on the same machine keeps its checkouts.
     $this->directory = sys_get_temp_dir().'/orbit-task-check-'.bin2hex(random_bytes(6));
-    File::ensureDirectoryExists($this->directory);
+    File::ensureDirectoryExists($this->directory.'/home');
 });
 
 afterEach(function (): void {
     File::deleteDirectory($this->directory);
+});
+
+it('runs login shells with the fixture account home and profile', function (): void {
+    $checkout = check_runner_checkout('true');
+    $instance = check_runner_instance($checkout);
+    File::put($this->directory.'/home/.profile', "export ORBIT_TEST_LOGIN_HOME=fixture-user-home\n");
+    $runner = check_runner(new LocalShellSshExecutor);
+
+    $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'printf "%s" "$ORBIT_TEST_LOGIN_HOME"'));
+
+    expect($reading->exitCode)->toBe(0)
+        ->and($reading->output)->toEndWith('fixture-user-home');
 });
 
 it('runs composer check detached and reports running, then the exit code and output', function (string $check, int $exitCode, string $output): void {
