@@ -106,7 +106,7 @@ Core named Vault only in a container binding, its routes, and its schedule entry
 
 The migration that creates `vault_items` stays in core. The same file adds the `database_users.password` column, which core writes when it creates a Database user, and a migration cannot be split without running again.
 
-`orbit:vault-sync` runs only while `vault` is on. Publishing is the feature itself, not the end of recorded work like the Documents cleanup. The first run after the switch turns on again creates, rewrites, and deletes whatever changed meanwhile.
+`orbit:vault-sync` runs only while `vault` is on; the maintainer decided this on the pull request that moved Vault. Publishing is the feature itself, not the end of recorded work like the Documents cleanup. The first run after the switch turns on again creates, rewrites, and deletes whatever changed meanwhile.
 
 A migration turns `vault` on for an install with a stored Vaultwarden setup or a published item, and `conn` on for an install with a registered T3 server or a profile. Every other install starts with them off. The CLI hides the `vault:*` commands while `vault` is off and sends a direct call without discovery, as for Documents. Conn has no CLI commands and neither has web pages.
 
@@ -141,6 +141,7 @@ Runtime install, a Composer package for each extension, separate processes, and 
 - An extension can be found, reviewed, and deleted as one directory plus its tests and one provider line.
 - Core states what an extension may change through plug-in interfaces, and the architecture test keeps core from reaching back.
 - Two Documents footprints stay in core until their plug-in points exist: the PHP-FPM startup hook that runs `project-documents:cleanup:invalidate`, and `ValidateDocumentPostSize`, which keeps document request bodies exact. They name an artisan command and a URL path, not an extension class.
+- A third Documents footprint stays in `RecordCommandActivity`: it matches `project:document:*` by route name, so Activity never parses a document body. A separate small pull request after the Vault and Conn move puts this rule behind `ActivityInputRedaction`.
 - `bin/docs-openapi` also reads controllers, form requests, and data classes under `apps/gateway/extensions/*/src`.
 - The CLI and `bin/docs-openapi` keep their own slug lists. The CLI shows every slug as `UNKNOWN` when the Gateway cannot answer, and the OpenAPI document is generated without a database. A new extension updates both lists.
 - While `documents` is off, its background cleanup still runs and still needs its storage credentials.
