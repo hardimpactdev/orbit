@@ -35,6 +35,12 @@ final class CleanupImageBuild implements ShouldQueue
         $node = $build->hostNode;
         $name = (string) $build->builder_vm_name;
         $host = $settings->host($node->id);
+        if ($build->recipe_identity !== null) {
+            $image->delete($host, $node, $name);
+            $image->delete($host, $node, $name.'-smoke');
+
+            return;
+        }
         $alias = $host->imageAlias.'-'.$build->created_at?->format('YmdHis').'-'.$build->id;
         $fingerprint = $build->image_fingerprint;
         try {

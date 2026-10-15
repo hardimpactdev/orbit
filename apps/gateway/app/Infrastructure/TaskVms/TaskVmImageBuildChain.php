@@ -8,7 +8,9 @@ use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmImageBuildStep;
 use App\Domain\TaskVms\TaskVmSettings;
+use App\Infrastructure\MachineSoftware\MachineRecipe;
 use App\Jobs\TaskVms\ImageBuild\AwaitImageBuilderBoot;
+use App\Jobs\TaskVms\ImageBuild\BuildRecipeImageStep;
 use App\Jobs\TaskVms\ImageBuild\CleanImageBuilder;
 use App\Jobs\TaskVms\ImageBuild\ImageBuildJob;
 use App\Jobs\TaskVms\ImageBuild\LaunchImageBuilder;
@@ -29,11 +31,34 @@ final readonly class TaskVmImageBuildChain
 {
     public function __construct(private TaskVmSettings $settings, private IncusTaskVmBaseImage $image, private TaskVmImageRecipe $recipe, private IncusTaskVmImageSync $sync, private IncusHost $incus) {}
 
-    public function start(Node $node, bool $fromStock = false): TaskVmImageBuild
+    public function start(Node $node, bool $fromStock = false, ?MachineRecipe $recipe = null, ?int $generation = null): TaskVmImageBuild
     {
         $this->recoverSubmissions();
-        $build = $this->sync->admitBuild($node, fn (): TaskVmImageBuild => TaskVmImageBuild::query()->create(['host_node_id' => $node->id, 'from_stock' => $fromStock, 'submission_pending_at' => now()->toISOString()]));
+        $build = $this->sync->admitBuild($node, fn (): TaskVmImageBuild => TaskVmImageBuild::query()->create(['host_node_id' => $node->id, 'from_stock' => $fromStock, 'recipe_identity' => $recipe?->identity, 'recipe_json' => $recipe?->json, 'recipe_generation' => $generation, 'submission_pending_at' => now()->toISOString()]));
         $this->submit($build);
+
+        return $build;
+    }
+
+    /** Retry from stock or reactivate a previously verified immutable set after an explicit recipe revert. */
+    public function requeueRecipe(Node $node, TaskVmImageBuild $build, int $generation, bool $restart): TaskVmImageBuild
+    {
+        $build = $this->sync->admitBuild($node, fn (): TaskVmImageBuild => DB::transaction(function () use ($build, $generation, $restart): TaskVmImageBuild {
+            $changed = TaskVmImageBuild::query()->whereKey($build->id)->where('state', $build->state)
+                ->where('attempt', $build->attempt)->update(['attempt' => $build->attempt + 1]);
+            if ($changed !== 1) {
+                throw new TaskVmException('task_vm.image_build_running', 'Another command has claimed this recipe build.');
+            }
+            $steps = $restart ? [] : array_values(array_filter($build->steps, static fn (array $entry): bool => $entry['step'] !== TaskVmImageBuildStep::Promote->value));
+            $build->refresh();
+            $builder = $restart ? 'tvm-image-'.$build->id.'-attempt-'.$build->attempt : $build->builder_vm_name;
+            $build->forceFill(['builder_vm_name' => $builder, 'state' => TaskVmImageBuildState::Running, 'recipe_generation' => $generation,
+                'steps' => $steps, 'current_step' => $restart ? null : TaskVmImageBuildStep::Promote,
+                'current_program' => null, 'cleanup_started_at' => null, 'submission_pending_at' => now()->toISOString()])->save();
+
+            return $build;
+        }));
+        $this->submit($build, ! $restart);
 
         return $build;
     }
@@ -95,6 +120,9 @@ final readonly class TaskVmImageBuildChain
 
     private function resumabilityError(Node $node, TaskVmImageBuild $build): ?string
     {
+        if ($build->recipe_identity !== null) {
+            return app(RecipeImageBuildSteps::class)->resumabilityError($build);
+        }
         $host = $this->settings->host($node->id);
         $needsBuilder = true;
         if (in_array($build->current_step, [TaskVmImageBuildStep::Publish, TaskVmImageBuildStep::Smoke, TaskVmImageBuildStep::Promote], true)) {
@@ -165,6 +193,23 @@ final readonly class TaskVmImageBuildChain
     public function jobs(TaskVmImageBuild $build): array
     {
         $id = $build->id;
+        if ($build->recipe_identity !== null) {
+            $jobs = [];
+            foreach (['base', ...RecipeImageBuilds::Roles] as $profile) {
+                $phases = $profile === 'base'
+                    ? ['reset', 'launch', 'boot', 'packages', 'javascript', 'rust', 'agent', 'pi', 'prepare', 'clean', 'publish', 'smoke']
+                    : ['launch', 'boot', 'packages', 'javascript', 'rust', 'agent', 'pi', 'clean', 'publish', 'smoke'];
+                foreach ($phases as $phase) {
+                    $jobs[] = new BuildRecipeImageStep($id, $profile, $phase);
+                }
+            }
+            $jobs[] = new PromoteImage($id);
+            foreach ($jobs as $job) {
+                $job->buildAttempt = $build->attempt;
+            }
+
+            return $jobs;
+        }
         $programs = array_keys($this->recipe->programs());
         $programs[] = 'agent-binary';
         if ($this->settings->piArtifactPath !== null && $this->settings->piArtifactSha256 !== null) {

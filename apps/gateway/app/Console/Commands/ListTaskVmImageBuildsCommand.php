@@ -27,13 +27,19 @@ final class ListTaskVmImageBuildsCommand extends Command
         }
 
         foreach ($builds as $build) {
-            $step = $build->current_step === TaskVmImageBuildStep::Program ? 'program:'.$build->current_program : ($build->current_step->value ?? '-');
+            $step = in_array($build->current_step, [TaskVmImageBuildStep::Program, TaskVmImageBuildStep::Recipe], true) ? $build->current_step->value.':'.$build->current_program : ($build->current_step->value ?? '-');
             $this->line(sprintf('Build %d | %s | %s | %s | source: %s (%s)%s',
                 $build->id, $build->hostNode->name, $build->state->value, $step,
                 $build->source_alias ?? '-', $build->source_fingerprint ?? '-', $build->from_stock ? ' [stock]' : '',
             ));
+            if ($build->recipe_identity !== null) {
+                $this->line('  Recipe: '.$build->recipe_identity.' | generation: '.$build->recipe_generation);
+                foreach ($build->images as $profile => $image) {
+                    $this->line("  {$profile} | {$image['project']}/{$image['alias']} | {$image['fingerprint']} | {$image['type']}");
+                }
+            }
             foreach ($build->steps as $record) {
-                $name = $record['step'] === TaskVmImageBuildStep::Program->value ? 'program:'.$record['program'] : $record['step'];
+                $name = in_array($record['step'], [TaskVmImageBuildStep::Program->value, TaskVmImageBuildStep::Recipe->value], true) ? $record['step'].':'.$record['program'] : $record['step'];
                 $seconds = $record['seconds'] === null ? '-' : sprintf('%.1fs', $record['seconds']);
                 $this->line(sprintf('  %s | %s | error: %s', $name, $seconds, $record['error'] ?? '-'));
             }

@@ -13,6 +13,7 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Jobs\TaskVms\ImageBuild\SyncBuiltImage;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Sleep;
 
 /** Executes one durable step. No rendered programs or infrastructure objects enter the queue payload. */
@@ -22,6 +23,9 @@ final readonly class TaskVmImageBuildSteps
 
     public function run(TaskVmImageBuild $build, TaskVmImageBuildStep $step, ?string $program): bool
     {
+        if ($build->recipe_identity !== null) {
+            return app(RecipeImageBuildSteps::class)->run($build, $step, $program);
+        }
         $node = $build->hostNode;
         $host = $this->settings->host($node->id);
         $name = (string) $build->builder_vm_name;
@@ -87,7 +91,13 @@ final readonly class TaskVmImageBuildSteps
                 break;
             case TaskVmImageBuildStep::Promote:
                 $fingerprint = (string) $build->image_fingerprint;
-                $this->image->promote($host, $node, $fingerprint);
+                DB::transaction(function () use ($host, $node, $fingerprint): void {
+                    $legacy = DB::table('task_vm_image_recipe')->where('id', 1)->whereNull('identity')->update(['generation' => DB::raw('generation')]);
+                    if ($legacy !== 1) {
+                        throw new TaskVmException('task_vm.image_recipe_superseded', 'Legacy builds cannot replace a recipe image. Build the current recipe instead.');
+                    }
+                    $this->image->promote($host, $node, $fingerprint);
+                });
                 $this->image->delete($host, $node, $name.'-smoke');
                 $this->image->prune($host, $node, $fingerprint);
                 $sync = [];

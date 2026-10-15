@@ -1,0 +1,192 @@
+"""Image-only phases, appended to the shared recipe helpers. Never runs workspace setup or a package cache fill."""
+
+
+def image_packages(payload):
+    snapshot = payload['snapshot']
+    source = (f'Types: deb\nURIs: https://snapshot.ubuntu.com/ubuntu/{snapshot}/\n'
+              'Suites: resolute resolute-updates resolute-security\nComponents: main universe restricted multiverse\n'
+              'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\nCheck-Valid-Until: no\n')
+    publish('/etc/apt/sources.list.d/ubuntu.sources', source.encode())
+    options = ['-o', 'Dir::Etc::sourcelist=sources.list.d/ubuntu.sources', '-o', 'Dir::Etc::sourceparts=-',
+               '-o', 'DPkg::Lock::Timeout=300']
+    run(['apt-get', 'update', *options])
+    environment = dict(os.environ, DEBIAN_FRONTEND='noninteractive', NEEDRESTART_SUSPEND='1')
+    installed = packages()
+    ubuntu = [name + '=' + pin['version'] for name, pin in payload['tools'].items()
+              if pin['source'] == 'ubuntu' and installed.get(name) != pin['version']]
+    if POLICY.exists() or POLICY.is_symlink():
+        raise RecipeFailure()
+    publish(POLICY, b'#!/bin/sh\nexit 101\n', 0o755)
+    try:
+        if payload['profile'] == 'base':
+            run(['apt-get', 'full-upgrade', '--yes', *options], env=environment)
+        # Install the recipe's curl and CA packages before fetching third-party artifacts on a stock image.
+        if ubuntu:
+            run(['apt-get', 'install', '--yes', '--no-install-recommends', '--allow-downgrades',
+                 *options, '--', *ubuntu], env=environment)
+        with tempfile.TemporaryDirectory(prefix='orbit-image-packages-') as directory:
+            work = Path(directory)
+            debs = []
+            for name, pin in payload['tools'].items():
+                if pin['source'] != 'artifact' or not pin['artifacts'][payload['architecture']]['url'].endswith('.deb'):
+                    continue
+                if installed.get(name) == pin['version']:
+                    continue
+                deb = download(pin, payload['architecture'], work / (name + '.deb'))
+                fields = run(['dpkg-deb', '-f', str(deb), 'Package', 'Version', 'Architecture']).stdout.splitlines()
+                if [line.split(': ', 1)[-1] for line in fields] != [name, pin['version'], payload['architecture']]:
+                    raise RecipeFailure()
+                debs.append(str(deb))
+            if debs:
+                run(['apt-get', 'install', '--yes', '--no-install-recommends', '--allow-downgrades',
+                     *options, '--', *debs], env=environment)
+    finally:
+        POLICY.unlink()
+    # dnsmasq and Caddy are configured at enrollment, not while baking the disk.
+    for service in ('ssh', 'docker', 'containerd'):
+        if run(['systemctl', 'show', '-p', 'LoadState', '--value', service], required=False).stdout.strip() == 'loaded':
+            run(['systemctl', 'enable', service])
+
+
+def image_javascript(payload):
+    tools = payload['tools']
+    names = ['node', 'vp-cli', 'vp', 'pnpm', 'bun']
+    if not set(names) & set(tools):
+        return
+    os.environ['SUDO_USER'] = 'orbit'
+    selected = {name: tools[name] for name in names if name in tools}
+    observed = inspect(selected)
+    if all(observed[name] == pin['version'] for name, pin in selected.items()):
+        return
+    account = pwd.getpwnam('orbit')
+    scope = Path(account.pw_dir) / '.local/share/vite-plus'
+    for directory in (Path(account.pw_dir) / '.local', Path(account.pw_dir) / '.local/share', scope):
+        safe_directory(directory, account.pw_uid, account.pw_gid)
+    with tempfile.TemporaryDirectory(prefix='orbit-image-js-') as directory:
+        work = Path(directory)
+        downloads = {name: download(tools[name], payload['architecture'], work / (name + '.archive')) for name in names if name in tools}
+        # The standalone, pinned vp dispatcher needs no first-run installer. The recipe's JS distribution
+        # is kept beside it; no package-manager dependency resolution or Project package install runs here.
+        if 'vp' in downloads and not (scope / 'current/node_modules/vite-plus').exists():
+            unpacked = extract(downloads['vp'], work / 'seed-vp')
+            current = scope / 'current/node_modules'
+            current.mkdir(parents=True)
+            shutil.copytree(unpacked / 'package', current / 'vite-plus')
+            for parent, directories, files in os.walk(scope):
+                os.chown(parent, account.pw_uid, account.pw_gid)
+                for entry in directories + files:
+                    os.chown(Path(parent) / entry, account.pw_uid, account.pw_gid, follow_symlinks=False)
+            # A fresh image runs the standalone dispatcher; production's existing JS dependency closure
+            # is not a prerequisite for installing its exact JS distribution in this image.
+            active = current / 'vite-plus'
+            moved = scope / 'seed-vite-plus'
+            active.rename(moved)
+            active.symlink_to(moved, target_is_directory=True)
+            os.chown(active, account.pw_uid, account.pw_gid, follow_symlinks=False)
+        # Avoid the production helper's dependency-closure migration for a fresh standalone image.
+        javascript_tools = {name: pin for name, pin in tools.items() if name in names and name != 'vp'}
+        install_javascript(javascript_tools, {name: path for name, path in downloads.items() if name != 'vp'}, work, account)
+        runtime = safe_directory(scope / 'recipe', account.pw_uid, account.pw_gid)
+        if 'vp' in downloads:
+            target = runtime / ('vp-' + hashlib.sha256(downloads['vp'].read_bytes()).hexdigest())
+            if not target.exists():
+                shutil.copytree(scope / 'current/node_modules/vite-plus', target)
+                for parent, directories, files in os.walk(target):
+                    os.chown(parent, account.pw_uid, account.pw_gid)
+                    for entry in directories + files:
+                        os.chown(Path(parent) / entry, account.pw_uid, account.pw_gid, follow_symlinks=False)
+            package_link(runtime, 'vp', target, account.pw_uid, account.pw_gid)
+
+
+def image_rust(payload):
+    names = ('rust', 'cargo', 'rust-std', 'clippy', 'rustfmt')
+    if not set(names) & set(payload['tools']):
+        return
+    pins = {name: payload['tools'][name]['artifacts'][payload['architecture']] for name in names if name in payload['tools']}
+    receipt = Path('/opt/orbit/rust/.recipe-artifacts.json')
+    if json_file(receipt) == pins:
+        return
+    with tempfile.TemporaryDirectory(prefix='orbit-image-rust-') as directory:
+        work = Path(directory)
+        for name in ('rust', 'cargo', 'rust-std', 'clippy', 'rustfmt'):
+            if name not in payload['tools']:
+                continue
+            archive = download(payload['tools'][name], payload['architecture'], work / (name + '.archive'))
+            unpacked = extract(archive, work / name)
+            installer = next(unpacked.glob('*/install.sh'))
+            run(['bash', str(installer), '--prefix=/opt/orbit/rust', '--disable-ldconfig'])
+    publish(receipt, json.dumps(pins, sort_keys=True).encode())
+    cargo = Path('/home/orbit/.cargo/bin')
+    cargo.mkdir(parents=True, exist_ok=True)
+    account = pwd.getpwnam('orbit')
+    os.chown(cargo.parent, account.pw_uid, account.pw_gid)
+    os.chown(cargo, account.pw_uid, account.pw_gid)
+    for binary in Path('/opt/orbit/rust/bin').iterdir():
+        for target in (cargo / binary.name, Path('/usr/local/bin') / binary.name):
+            target.unlink(missing_ok=True)
+            target.symlink_to(binary)
+
+
+def image_agent(payload):
+    pin = payload['tools'].get('orbit-agent')
+    if pin is None:
+        return
+    artifact = pin['artifacts'][payload['architecture']]
+    destination = Path('/usr/local/bin/orbit-agent')
+    if destination.is_file():
+        algorithm = 'sha256' if 'sha256' in artifact else 'sha512'
+        with destination.open('rb') as stream:
+            if hashlib.file_digest(stream, algorithm).hexdigest() == artifact[algorithm]:
+                return
+    with tempfile.TemporaryDirectory(prefix='orbit-image-agent-') as directory:
+        artifact = download(pin, payload['architecture'], Path(directory) / 'orbit-agent')
+        publish('/usr/local/bin/orbit-agent', artifact.read_bytes(), 0o755)
+
+
+def image_verify(payload):
+    marker = json.loads(Path('/etc/orbit-machine-recipe.json').read_text())
+    if marker != {'identity': payload['identity'], 'profile': payload['profile']}:
+        raise RecipeFailure()
+    selected = {name: pin for name, pin in payload['tools'].items()
+                if name not in ('rust', 'cargo', 'rust-std', 'clippy', 'rustfmt', 'orbit-agent', 'pi')}
+    os.environ['SUDO_USER'] = 'orbit'
+    observed = inspect(selected)
+    if any(observed[name] != pin['version'] for name, pin in selected.items()):
+        raise RecipeFailure()
+    for name, path in [('pi', '/home/orbit/.local/bin/pi-server'), ('orbit-agent', '/usr/local/bin/orbit-agent')]:
+        if name in payload['tools']:
+            artifact = payload['tools'][name]['artifacts'][payload['architecture']]
+            algorithm = 'sha256' if 'sha256' in artifact else 'sha512'
+            with open(path, 'rb') as stream:
+                if hashlib.file_digest(stream, algorithm).hexdigest() != artifact[algorithm]:
+                    raise RecipeFailure()
+    rust_pins = {name: payload['tools'][name]['artifacts'][payload['architecture']]
+                 for name in ('rust', 'cargo', 'rust-std', 'clippy', 'rustfmt') if name in payload['tools']}
+    if rust_pins and json_file(Path('/opt/orbit/rust/.recipe-artifacts.json')) != rust_pins:
+        raise RecipeFailure()
+    for name, binary in [('rust', 'rustc'), ('cargo', 'cargo')]:
+        if name in payload['tools'] and binary_version('/opt/orbit/rust/bin/' + binary) != payload['tools'][name]['version']:
+            raise RecipeFailure()
+    for path in ('/var/lib/orbit/package-cache', '/opt/orbit/package-cache', '/home/orbit/orbit', '/home/orbit/.orbit/gateway.sqlite'):
+        if Path(path).exists():
+            raise RecipeFailure()
+
+
+def image_main():
+    signal.signal(signal.SIGTERM, interrupted)
+    signal.signal(signal.SIGINT, interrupted)
+    phase, document = sys.argv[1:]
+    try:
+        payload = json.loads(document)
+        platform_check(payload['architecture'])
+        {'packages': image_packages, 'javascript': image_javascript, 'rust': image_rust,
+         'agent': image_agent, 'verify': image_verify}[phase](payload)
+        print('{"ok":true}')
+        return 0
+    except Exception:
+        print('recipe-image-stage:' + phase)
+        return 1
+
+
+if __name__ == '__main__':
+    sys.exit(image_main())

@@ -54,6 +54,8 @@ When a Project's default branch moves in the Gateway mirror, the Gateway cheaply
 
 ### 6. Role images are built once per recipe change per host
 
+Step 3 implements the [host-local build and publication contract](/reference/compute-drivers#build-the-base-image). Step 4 supplies nested imports.
+
 Each task VM host builds the gateway, app-dev, app-prod, and operator role images once per recipe change. Topology groups import those images into their nested Incus instead of building them inside every group's VM. This saves each group about 7 to 9 minutes of building role images.
 
 ### 7. One recipe, one rule

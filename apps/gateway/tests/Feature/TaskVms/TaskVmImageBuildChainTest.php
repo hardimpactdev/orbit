@@ -16,6 +16,7 @@ use App\Infrastructure\TaskVms\IncusTaskVmBaseImage;
 use App\Infrastructure\TaskVms\TaskVmImageBuildChain;
 use App\Infrastructure\TaskVms\TaskVmImageBuildSteps;
 use App\Jobs\TaskVms\ImageBuild\AwaitImageBuilderBoot;
+use App\Jobs\TaskVms\ImageBuild\BuildRecipeImageStep;
 use App\Jobs\TaskVms\ImageBuild\CleanupImageBuild;
 use App\Jobs\TaskVms\ImageBuild\ImageBuildJob;
 use App\Jobs\TaskVms\ImageBuild\LaunchImageBuilder;
@@ -203,13 +204,13 @@ it('refuses a Node that is not a task VM host before queuing a build', function 
     Bus::assertNothingDispatched();
 });
 
-it('queues the nightly chain dispatcher on builds at 03:00 only while task VMs are enabled', function (): void {
+it('checks recipe changes each minute on builds only while task VMs are enabled', function (): void {
     Artisan::call('schedule:list');
     $refresh = collect(app(Schedule::class)->events())->first(static fn ($event): bool => $event instanceof CallbackEvent && $event->description === RefreshTaskVmBaseImages::class);
 
     config(['task_vms.enabled' => false]);
     expect($refresh)->not->toBeNull()
-        ->and($refresh->expression)->toBe('0 3 * * *')
+        ->and($refresh->expression)->toBe('* * * * *')
         ->and($refresh->filtersPass(app()))->toBeFalse()
         ->and([new RefreshTaskVmBaseImages()->connection, new RefreshTaskVmBaseImages()->queue])->toBe(['gateway', 'builds']);
 
@@ -446,39 +447,45 @@ it('refuses a second running build on the host', function (): void {
     expect(fn () => $this->chain->start($this->host))->toThrow(TaskVmException::class, 'already running');
 });
 
-it('dispatches the nightly source and resets to stock on Sunday', function (string $date, bool $stock): void {
+it('dispatches every recipe from stock on weekdays and Sundays', function (string $date): void {
     $this->travelTo($date);
     app()->call([new RefreshTaskVmBaseImages, 'handle']);
     $build = TaskVmImageBuild::query()->sole();
-    expect($build->from_stock)->toBe($stock);
-    (new LaunchImageBuilder($build->id))->handle(app(TaskVmImageBuildSteps::class));
-    expect($build->refresh()->source_fingerprint)->toBe($stock ? IMAGE_STOCK : IMAGE_OLD);
-})->with([['2026-10-11 03:00:00', true], ['2026-10-12 03:00:00', false]]);
+    expect($build->from_stock)->toBeTrue();
+    (new BuildRecipeImageStep($build->id, 'base', 'launch'))->handle(app(TaskVmImageBuildSteps::class));
+    expect($build->refresh()->source_fingerprint)->toBe(IMAGE_STOCK);
+})->with(['2026-10-11 03:00:00', '2026-10-12 03:00:00']);
 
-it('does nothing nightly until the first host has a base image', function (): void {
+it('queues the first recipe even when a host has no base image', function (): void {
     unset($this->incus->images[IMAGE_OLD]);
     app()->call([new RefreshTaskVmBaseImages, 'handle']);
-    expect(TaskVmImageBuild::query()->count())->toBe(0);
+    expect(TaskVmImageBuild::query()->sole()->recipe_identity)->not->toBeNull();
 });
 
-it('watches command progress and supports from-stock and resume', function (): void {
+it('watches command progress when resuming a retained legacy build', function (): void {
+    $build = $this->chain->start($this->host, true);
+    $this->incus->fail = 'program';
+    expect(fn () => ($this->runBuild)($build))->toThrow(TaskVmException::class);
+    $this->incus->fail = null;
     Sleep::whenFakingSleep(function (): void {
         $build = TaskVmImageBuild::query()->sole();
-        ($this->runBuild)($build);
+        ($this->runBuild)($build, true);
     });
-    $this->artisan('task-vms:build-image', ['node' => 'beast', '--from-stock' => true])->expectsOutputToContain('succeeded')->assertSuccessful();
+    $this->artisan('task-vms:build-image', ['node' => 'beast', '--resume' => (string) $build->id])->expectsOutputToContain('succeeded')->assertSuccessful();
     expect(TaskVmImageBuild::query()->sole()->source_fingerprint)->toBe(IMAGE_STOCK);
 });
 
 it('prints the failed step and error and exits nonzero', function (): void {
+    $build = $this->chain->start($this->host);
     $this->incus->fail = 'clean';
+    expect(fn () => ($this->runBuild)($build))->toThrow(TaskVmException::class);
     Sleep::whenFakingSleep(function (): void {
         try {
-            ($this->runBuild)(TaskVmImageBuild::query()->sole());
+            ($this->runBuild)(TaskVmImageBuild::query()->sole(), true);
         } catch (TaskVmException) {
         }
     });
-    $this->artisan('task-vms:build-image', ['node' => 'beast'])->expectsOutputToContain('Build failed at clean:')->assertFailed();
+    $this->artisan('task-vms:build-image', ['node' => 'beast', '--resume' => (string) $build->id])->expectsOutputToContain('Build failed at clean:')->assertFailed();
 });
 
 it('cleans failed publish, smoke and promote steps without moving the old alias', function (string $operation, string $step): void {
@@ -1009,4 +1016,18 @@ it('keeps the running-host domain error when a failed build resumes beside a new
     expect($failed->refresh()->state)->toBe(TaskVmImageBuildState::Failed)
         ->and($failed->submission_pending_at)->toBeNull()
         ->and($running->refresh()->state)->toBe(TaskVmImageBuildState::Running);
+});
+
+it('keeps a retained legacy build from promoting after recipe builds are enabled', function (): void {
+    $build = $this->chain->start($this->host);
+    foreach ($this->chain->jobs($build) as $job) {
+        if ($job instanceof PromoteImage) {
+            break;
+        }
+        $job->handle(app(TaskVmImageBuildSteps::class));
+    }
+    DB::table('task_vm_image_recipe')->where('id', 1)->update(['identity' => 'sha256:new-recipe', 'generation' => 1]);
+    expect(fn () => new PromoteImage($build->id)->handle(app(TaskVmImageBuildSteps::class)))
+        ->toThrow(TaskVmException::class, 'Legacy builds cannot replace a recipe image');
+    expect($this->incus->images[IMAGE_OLD])->toContain(TaskVmHost::BaseImage);
 });

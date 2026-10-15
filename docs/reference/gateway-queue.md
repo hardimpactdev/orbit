@@ -38,7 +38,7 @@ The `task-vms` jobs run one at a time and in order, so no two jobs change the sa
 
 A `task-vms` job runs at most 1500 seconds, and any other job at most 1700 seconds. A job that a worker lost, for example when its process was killed, runs again after 1800 seconds. An idle worker waits on the queue with a blocking read, so a job starts within about a second when a process is free.
 
-One `builds` process runs one job at a time in the fleet. Base image steps and template builds take turns. The image build row allows one `running` base image build per host. Syncs and template builds keep their own host locks until they have their own chains.
+One `builds` process runs one job at a time in the fleet. Recipe base and role image steps and UpCloud template builds take turns. The deployed recipe is checked each minute; unchanged identities dispatch no builds. The image build row allows one `running` base image build per host. Syncs and template builds keep their own host locks until they have their own chains.
 
 ## Scheduled work
 

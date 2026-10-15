@@ -154,12 +154,12 @@ final readonly class TaskVmHostAudit
     /** Recorded image builders have running ownership or failed-build retention, rather than timestamp names. */
     private static function isChainBuilder(string $name): bool
     {
-        return preg_match('/\Atvm-image-([0-9]+)(?:-smoke)?\z/D', $name) === 1;
+        return preg_match('/\Atvm-image-([0-9]+)(?:-attempt-[0-9]+)?(?:-smoke)?\z/D', $name) === 1;
     }
 
     public static function runningBuildOwns(Node $node, string $name): bool
     {
-        if (preg_match('/\Atvm-image-([0-9]+)(?:-smoke)?\z/D', $name, $match) !== 1) {
+        if (preg_match('/\Atvm-image-([0-9]+)(?:-attempt-[0-9]+)?(?:-smoke)?\z/D', $name, $match) !== 1) {
             return false;
         }
 
@@ -176,7 +176,7 @@ final readonly class TaskVmHostAudit
      */
     public static function claimBuildCleanup(Node $node, string $name, bool $discardFailed = false): bool
     {
-        if (preg_match('/\Atvm-image-([0-9]+)(?:-smoke)?\z/D', $name, $match) !== 1) {
+        if (preg_match('/\Atvm-image-([0-9]+)(?:-attempt-[0-9]+)?(?:-smoke)?\z/D', $name, $match) !== 1) {
             return true;
         }
         $build = TaskVmImageBuild::query()->whereKey((int) $match[1])->where('host_node_id', $node->id);

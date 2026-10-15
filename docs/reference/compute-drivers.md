@@ -3,11 +3,11 @@ title: "Compute drivers"
 description: "Task VMs for every Project and their UpCloud overflow."
 covers:
   - apps/gateway/app/{Domain/TaskVms,Infrastructure/TaskVms,Jobs/TaskVms,Actions/TaskVms,Domain/Compute}/**
-  - apps/gateway/app/{Models/TaskVm.php,Models/TaskVmImageBuild.php,Console/Commands/*ImageBuildsCommand.php,Console/Commands/PrepareTaskVmHostCommand.php,Console/Commands/PrepareTaskVmHubCommand.php,Console/Commands/BuildTaskVmImageCommand.php,Console/Commands/BuildUpCloudTaskVmImageCommand.php,Console/Commands/BuildTaskVmWorkspaceTemplateCommand.php,Console/Commands/SyncTaskVmImageCommand.php,Console/Commands/RetireTaskVmHostCommand.php,Console/Commands/ResolvesTaskVmHostNode.php}
+  - apps/gateway/app/{Models/TaskVm.php,Models/TaskVmImageBuild.php,Console/Commands/*ImageBuildsCommand.php,Console/Commands/PrepareTaskVmHostCommand.php,Console/Commands/PrepareTaskVmHubCommand.php,Console/Commands/BuildTaskVmImageCommand.php,Console/Commands/BuildTaskVmRecipeCommand.php,Console/Commands/BuildUpCloudTaskVmImageCommand.php,Console/Commands/BuildTaskVmWorkspaceTemplateCommand.php,Console/Commands/SyncTaskVmImageCommand.php,Console/Commands/RetireTaskVmHostCommand.php,Console/Commands/ResolvesTaskVmHostNode.php}
   - apps/gateway/{app/Infrastructure/MachineSoftware/**,app/Console/Commands/MachineRecipeCommand.php,resources/machine-software/**}
   - apps/gateway/{app/Models/PackageCache*.php,app/Console/Commands/PackageCacheUsageCommand.php,database/migrations/*create_package_cache_tables.php,config/package_cache.php,config/task_vms.php}
   - apps/gateway/resources/task-vms/**
-  - apps/gateway/database/migrations/*{create_task_vm_image_builds_table,fence_task_vm_image_build_attempts,create_task_vms_table,add_model_proxy_origin_to_task_vms,add_warm_pool_to_task_vms,add_upcloud_to_task_vms,add_size_to_task_vms,add_topology_to_task_vms,create_jobs_table,create_failed_jobs_table,create_task_sandboxes_table,add_fleet_enrollment_to_task_sandboxes,add_pi_ready_at_to_task_sandboxes,close_checks_of_destroyed_task_sandboxes,drop_task_sandboxes}.php
+  - apps/gateway/database/migrations/*{create_task_vm_image_builds_table,add_recipe_to_task_vm_image_builds,fence_task_vm_image_build_attempts,create_task_vms_table,add_model_proxy_origin_to_task_vms,add_warm_pool_to_task_vms,add_upcloud_to_task_vms,add_size_to_task_vms,add_topology_to_task_vms,create_jobs_table,create_failed_jobs_table,create_task_sandboxes_table,add_fleet_enrollment_to_task_sandboxes,add_pi_ready_at_to_task_sandboxes,close_checks_of_destroyed_task_sandboxes,drop_task_sandboxes}.php
 ---
 
 # Compute drivers
@@ -20,7 +20,7 @@ Task VMs are off until you [configure them](#configure-task-vms). Until then no 
 
 The repository's machine software recipe is [`apps/gateway/resources/machine-software/recipe.json`](https://github.com/nckrtl/orbit/blob/main/apps/gateway/resources/machine-software/recipe.json). It declares one Ubuntu snapshot, exact tool versions, and the tool sets for `gateway`, `app-dev`, `app-prod`, `operator`, and the task VM base image. Project dependencies, workspace setup, credentials, Node identity, and service configuration are not recipe inputs.
 
-This is the contract for [ADR 0207, step 1](/decisions/0207-one-image-recipe-shared-package-cache-no-workspace-templates#implementation-plan). The recipe loader and validator do not install software. Today's [image build](#build-the-base-image), enrollment, claims, and nightly jobs still use their existing programs; adding or validating a recipe does not change them. Recording recipe identity on images and Nodes, recipe-driven builds, and production convergence belong to later steps.
+The loader and validator define the recipe contract. [Recipe image builds](#build-the-base-image) use that document for host-local base and role images. [Node convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) applies its role tools to production Nodes. Claim gating and topology imports remain later ADR 0207 steps.
 
 ### Recipe schema
 
@@ -179,7 +179,7 @@ Task VM enrollment trusts the [base image](#build-the-base-image) that the same 
 
 Enrollment still renders and applies everything that is specific to the VM: the host key, WireGuard, the firewall, Caddy, DNS, the agent and its secret, and Pi.
 
-The apt packages, Bun, Vite+ and its Node, and Composer are the versions that the last image build fetched. A change to a software program reaches task VMs with the next nightly build. Run `task-vms:build-image` after a program change to apply it at once. Until then, a task VM can have software up to a day older than the Gateway's programs. A missing tool shows when a setup step or check needs it, not at enrollment.
+The base image uses the recipe's snapshot and pinned tools. A changed recipe triggers the next build. Enrollment trusts the image; the future current-recipe claim gate will wait for that recipe's completed images.
 
 The image also runs `app-dev-php-source` and one `app-dev-php-<version>` program for each PHP version an Instance can select, now `8.5` and `8.4`. They add the pinned Sury source and install the `app-dev` PHP packages, with the same code that installs them for an Instance. Enrollment never runs these programs. The Instance's own PHP step on the VM finds the source current and every package installed, and skips the source refresh, as [PHP runtimes](/reference/php-runtime#development-runtime) describes.
 
@@ -570,7 +570,7 @@ The task VM jobs run on the [Gateway queue](/reference/gateway-queue), which Lar
 | --- | --- |
 | `task-vms` | Provision, enroll, prepare, park, resume, and destroy a VM, the host sweep, and the pool refill |
 | `tasks` | The [publish](#publish-from-the-vm) of an approved commit (`PublishTaskVmCommit`), beside the scheduled commands |
-| `builds` | The [base image step chains](#build-the-base-image) and their cleanup, and the nightly refreshes, `RefreshTaskVmBaseImages` and [`RefreshUpCloudTaskVmBaseImage`](#refresh-the-upcloud-template-every-night) |
+| `builds` | The [base image step chains](#build-the-base-image) and their cleanup, and the recipe checks, `RefreshTaskVmBaseImages` and [`RefreshUpCloudTaskVmBaseImage`](#refresh-the-upcloud-template-every-night) |
 
 One worker runs the `task-vms` jobs one at a time and in order, so no two jobs change the same VM at once.
 
@@ -700,97 +700,27 @@ No peer reaches a host's Incus API. The task VM project keeps its restrictions a
 
 ### Build the base image
 
-Run `task-vms:build-image {node} [--from-stock] [--resume[=<build id>]]` on the Gateway to build the base image on one host. It prints each step from the build row as the step finishes. `task-vms:image-builds` lists recent builds with their steps and errors. After a successful build, Orbit [syncs](#sync-the-base-image) the image to every other configured host.
+Run `php artisan task-vms:build-recipe` on the Gateway to queue the current recipe on every active host in `settings.task_vms`. It returns build IDs without waiting for remote work. Repeating it for an unchanged recipe reuses the same rows, including failed rows; resume a failure with `task-vms:build-image NODE --resume=ID`, or restart failed builds with `task-vms:build-recipe --retry` after cleanup. A recipe revert reactivates its verified images without rebuilding them. `task-vms:image-builds` shows the recipe identity, host, steps, fingerprints, and immutable aliases. `task-vms:build-image NODE` builds the current recipe on that host; `--from-stock` is redundant because every recipe starts from stock.
 
-At enrollment, Orbit records the VM's actual `volatile.base_image` fingerprint in `task_vms.image_fingerprint`, not the image that the base alias happens to name at that time.
+Release handoff queues builds immediately when the deployed recipe identity changes. The scheduler checks each minute to recover missed submissions and pick up new hosts. There is no fixed nightly Incus rebuild. [ADR 0207 step 9](/decisions/0207-one-image-recipe-shared-package-cache-no-workspace-templates#implementation-plan) will add the nightly snapshot-date PR. Unchanged releases do not build images. A host added later builds the current recipe on its next check. UpCloud's separate template flow is unchanged.
 
-The Gateway queues one Laravel job chain (`Bus::chain`) on `builds`, with one job for each step. The jobs reach the host over SSH with `sudo -n incus --project <project> …`:
+Each host uses [ADR 0206's chain model](/decisions/0206-build-task-vm-images-as-chains-of-small-jobs) with `Bus::chain` on `builds` and one `task_vm_image_builds` row for the complete set. The row stores the full recipe document, identity, desired generation, and all five image locations. Steps launch and boot a stock base builder, install snapshot packages and pinned artifacts, prepare boot, clean, publish, and smoke it. Each role then launches from that exact base fingerprint, applies its recipe tools, cleans, publishes, and smoke-boots.
 
-| Step | What it does |
-| --- | --- |
-| `LaunchImageBuilder` | Records the source image on the row and launches `tvm-image-<build id>` from it, with the host's VM size and bridge |
-| `AwaitImageBuilderBoot` | Reads cloud-init status first, then polls for up to 600 seconds of this job's run, excluding queue time |
-| `UpgradeImagePackages` | Runs `apt-get update` and `apt-get full-upgrade`, and installs the image's apt packages |
-| One job for each program | Runs `bootstrap`, `caddy-package`, `app-dev-prerequisites`, `vp-manager`, `composer-manager`, the PHP source and each selectable PHP version, `rust-toolchain`, the agent binary, and Pi |
-| `PrepareImageBoot` | Applies the single boot and the lean boot, as described below |
-| `CleanImageBuilder` | Runs `resources/task-vms/base-image-clean.sh`, which removes the VM's identity. The [E2E role image](/reference/incus-topologies#role-images) build uses the same script |
-| `PublishImage` | Stops the builder, publishes it without compression as `orbit-task-base-<time>`, and deletes the builder |
-| `SmokeImage` | Boots a VM from the new image with the task VM user-data, polls cloud-init with the same 600-second run limit, and runs `image-check.sh` |
-| `PromoteImage` | Points `orbit-task-base` at the new image and deletes older images that no VM uses |
+The role images inherit the base tool set; their own profile can add tools. Each phase is a separate queued job. No workspace or Project setup runs and neither package caches nor CI cache refs enter an image.
 
-The programs use the same rendering code as enrollment. A new tool or package adds one program and one step, not an edit to a shared provisioning script.
+Images live in each host's configured Incus project. All five are VM images. Their immutable aliases are `<image_alias>-recipe-<64-character recipe SHA-256>-base` and `<image_alias>-recipe-<SHA-256>-<role>` for `gateway`, `app-dev`, `app-prod`, and `operator`. Every image records `orbit.recipe` and `orbit.profile` properties and `/etc/orbit-machine-recipe.json`. The build row's `images` field exposes project, alias, fingerprint, and instance type for step 4's importer.
 
-Each step is idempotent, so it can retry or run after a release without harm. A waiting step checks once, then releases itself to the queue with a delay. All image build jobs use `tries = 0` so polling releases and crash redelivery do not exhaust an attempt count. A completed step returns without repeating host work, allowing Laravel to dispatch its successor after a crash before continuation. Each poll checks a durable deadline measured from the step's recorded `started_at`, which survives serialization and worker restarts.
+This step does not change nested topology composition; the existing harness still builds its own images, including its operator container.
 
-Horizon shows individual jobs, not the whole chain. The build row and `task-vms:image-builds` report the whole build. The chain stops at the first failed step.
+Only a fully built and smoke-tested set can promote the host's base alias. Role aliases stay immutable; consumers select them through the succeeded build row. A database write fence serializes promotion with desired-recipe changes, so an older build cannot move the base alias after a newer recipe is desired. A failed build leaves the previous images in place. The previous recipe does not satisfy the future current-recipe claim gate.
 
-Failure writes identify the originating step and build attempt. Callbacks from before a resume cannot fail the current attempt. Completed steps reject late failure callbacks unless the worker times out while that step is still current. Laravel deletes a timed-out delivery even after the host work completed. The row becomes `failed` and can resume that idempotent step instead of remaining stuck in `running`. A timeout from an older step cannot regress a later step, and a successful build stays successful.
+A running older build stops at its next step before that host admits the newest desired recipe. Failed resources retain ADR 0206's cleanup and resume rules. A restart gives the builder a name for that attempt, so delayed cleanup of an older attempt cannot delete the new builder or smoke VM.
 
-The originating job writes its fenced failure before invoking chain catch callbacks, so a rejected template refresh enqueue cannot lose the failure row.
-
-One `task_vm_image_builds` row records each build. It holds the host, source image, builder VM name, new image fingerprint, current step, and state: `running`, `succeeded`, or `failed`. It also holds each step's start, seconds, and error. A partial unique index allows only one `running` build per host.
-
-By default, the builder starts from the host's current `orbit-task-base` and changes only what changed. The host's first build, a build with `--from-stock`, and the build each Sunday night start from `ubuntu-26.04-vm`. The weekly stock build limits drift and removes leftovers of removed packages or programs within a week. The source is always a cleaned, published base image. It never ran an agent or Project script.
-
-[ADR 0206](/decisions/0206-build-task-vm-images-as-chains-of-small-jobs) keeps sync chains and UpCloud step reuse open. [ADR 0207](/decisions/0207-one-image-recipe-shared-package-cache-no-workspace-templates) supersedes its workspace-template next step: workspaces clone and run setup, so no template chain or refresh remains. The base image chains and build records remain.
-
-The smoke VM must finish cloud-init without errors. It must have an ed25519 SSH host key and the Gateway's key for `orbit`. Its journal must list one boot only. After a build, `resources/task-vms/image-check.sh --lean-boot` also requires that it kept the lean boot through its first boot and has `orbit` with uid and gid 1000. The [UpCloud smoke](#build-the-upcloud-template) runs the same script with `--ufw`. A [sync](#sync-the-base-image) does not check those two, so it can still copy an image built before them.
-
-A VM from the stock image boots twice. Its Incus templates write the NoCloud seed, but cloud-init starts before the Incus agent writes it, so the agent reboots the VM. That costs about 10 seconds. `PrepareImageBoot` drops the templates under `/var/lib/cloud/seed/` from the image metadata, and keeps the others, such as `/etc/hostname`. It also orders `cloud-init-main.service` after `incus-agent.service`. Cloud-init then reads the user-data from the Incus agent through its `LXD` data source, and each VM gets its own instance ID from Incus.
-
-`PrepareImageBoot` also runs `resources/task-vms/lean-boot.sh` and masks units, which keeps work off the boot. A VM from the image reaches cloud-init's end about a second sooner:
-
-- The Ethernet link takes DHCPv4 only. The file `/etc/systemd/network/00-orbit-task-vm.network` sorts before the netplan file and otherwise matches it.
-- The task bridge has no IPv6. The wait for an IPv6 link-local address cost about a second of each boot.
-- `systemd-networkd-wait-online` waits for one routable IPv4 link with DNS, through a drop-in that replaces netplan's command.
-- It masks `systemd-firstboot.service`, `apt-daily.timer`, `apt-daily-upgrade.timer`, `motd-news.timer`, and `unattended-upgrades.service`.
-- The apt jobs could hold the dpkg lock during a task.
-- So a task VM gets no unattended security updates. Its packages are those of the last nightly build. A parked VM can live for days at that state.
-- Systemd applies its preset policy on a first boot. The policy enables a disabled unit again, but it keeps a masked unit masked.
-
-Docker stays enabled at boot. Doctor expects it active on an `app-dev` Node. It also starts the containers with a restart policy again after a [resume](#park-and-resume). The smoke check requires Docker active.
-
-The agent binary and the Pi executable are the Gateway's pins at build time. The nightly refresh picks up new pins. Enrollment still checks both digests and installs the pinned build when the image has another one.
-
-The builder's user-data creates `orbit` without the `incus-admin` group, and adds these requirements to the task VM user-data: `orbit` with uid and gid 1000, `openssh-server`, Chromium's system libraries, and the workspace tools. `UpgradeImagePackages` upgrades and installs the apt packages. The workspace tools are `rsync` and `dig` from `bind9-dnsutils`, which Orbit's own test suites call, and `gcc` with `libc6-dev`, which Rust crates such as `ring` build with. The `rust-toolchain` program installs the stable Rust toolchain for `orbit` and links each of its tools, such as `cargo` and `rustup`, into `/usr/local/bin`. So shells that are not login shells, such as an agent's commands, find them too.
-
-A `bootcmd` creates the group `orbit` with gid 1000 before cloud-init creates the user, and the user gets uid 1000 with that group. The stable ids preserve ownership on existing workspace disks across boots. Before, a stock image or package that added a user first moved `orbit` to uid 1001. A uid or gid that is taken makes cloud-init fail, and with it the build.
-
-Enrollment on other Nodes runs the same software programs over SSH, rendered by the same code, so the image holds what they install. Task VM enrollment trusts the image and runs only the VM-specific parts. The clean script fails while part of the identity remains. The smoke boot also creates the image volume on the pool, so the first task VM is a clone too. New task VMs launch from the new image, and running VMs keep theirs. An image that a task VM still uses stays until a later build finds it unused.
-
-The Chromium libraries are Playwright's `chromium` dependency list for Ubuntu 26.04, which covers `chromium` and `chromium-headless-shell`: `libasound2t64`, `libatk-bridge2.0-0t64`, `libatk1.0-0t64`, `libatspi2.0-0t64`, `libcairo2`, `libcups2t64`, `libdbus-1-3`, `libdrm2`, `libgbm1`, `libglib2.0-0t64`, `libnspr4`, `libnss3`, `libpango-1.0-0`, `libx11-6`, `libxcb1`, `libxcomposite1`, `libxdamage1`, `libxext6`, `libxfixes3`, `libxkbcommon0`, and `libxrandr2`. Playwright's xvfb and font list for headed runs is left out. The `app-dev` role prerequisites install PHP, Composer, Caddy, Docker, Vite+ with Node and pnpm, and Bun.
-
-The clean script removes the SSH host keys, the machine ID, every authorized key, the cloud-init state and its generated configuration, the logs, the APT package cache, temporary files, and shell history.
-
-It also stops Docker, containerd, and Caddy, and removes the IDs they write on their first start: Docker's engine ID, containerd's UUID, and Caddy's instance UUID, storage clean record, and saved config. So every VM from the image gets its own host keys, machine ID, and DHCP address, and cloud-init runs again on its first boot. The package lists stay, so the next build from this image fetches only changes.
-
-The builder never enrolls, so the image has no WireGuard key, agent secret, Caddy site, firewall rule, or Gateway record. Each VM gets those from its own enrollment.
-
-When a step fails, the row becomes `failed` with that step and its error. No workspace setup or template refresh follows a failure. A failed build keeps the current base image and retains its builder and smoke VMs for 24 hours after failure, so `task-vms:build-image {node} --resume=<build id>` can continue its failed step without racing immediate cleanup.
-
-A bare `--resume` selects the newest resumable failed build on that host, or errors if none exists; it never starts a new build. `--resume` cannot be combined with `--from-stock`. A new build on that host discards the previous failed build's VMs. The host sweep discards them after the retention window. Explicit cleanup discards them immediately.
-
-Resume uses the builder for steps before publication and the published image for smoke and promote. Publish itself resumes with either its builder or its already published image: if builder deletion succeeded but its reply or the completion write was lost, replay uses the retained image without republishing.
-
-Boot and smoke polling deadlines count 600 seconds from that step's first execution, not time spent waiting in the queue. Package commands wait up to 300 seconds for each apt lock, including on stock builders before the image masks apt timers. Update retries lists-lock contention explicitly because `DPkg::Lock::Timeout` covers only dpkg locks. Other update errors fail immediately. The package job has a 1500-second timeout; its remote calls total at most 1440 seconds, allowing lock waits and package work.
-
-The host sweep also queues a template refresh while any host's latest build is failed. This recovers a crash between the failed write and the catch's enqueue, or a rejected enqueue. Laravel's existing refresh uniqueness absorbs repeats; a lost dispatch's unique lease expires within one hour. Recovery needs no extra marker or lock. Once a newer build exists or that failed build resumes, this recovery stops. Refresh remains idempotent and reads current aliases.
-
-The cleanup job, the host sweep, and the base image sweep claim cleanup with atomic database updates before deleting a recorded build's builder or smoke VM. They share the durable fence against resume: if resume wins, deletion skips the VM; if deletion wins, resume refuses even while the builder still exists. Once cleanup claims the build, start a new build instead.
-
-Start and resume record a pending queue submission before enqueueing. A successful enqueue or a worker claiming the build clears it. An enqueue error fails a still-pending submission; it leaves a build already claimed by a worker alone. If the submitting process crashes before acknowledgement, the host sweep or the next start or resume fails the pending submission after ten minutes, freeing the host for another build. This deadline applies only to an incomplete submission, not to a running build. Prune preserves running and retained failed builds' images, including a published image waiting for its smoke VM.
-
-Every night at 03:00, while task VMs are enabled, the Gateway scheduler queues the job `RefreshTaskVmBaseImages` on the `builds` queue. It builds the base image once, on the first configured host in stable Node order, and syncs it to every other host with `settings.task_vms`, one after another. While the first host has no base image, the job only reads its image list, so the first build is always `task-vms:build-image`. The job fails with `task_vm.unknown_host` when the first host's Node is not active.
-
-A failed build changes no host. A host whose sync fails keeps its image. Its sync job records the original failure through Laravel's failure provider in `failed_jobs` with `task_vm.image_sync_failed` and logs the host before continuing to the other hosts and template refresh.
-
-Recording the failure does not delete the queued delivery. Sync jobs also use `tries = 0`: a rejected successor enqueue or lost acknowledgement leaves the delivery retryable. Redelivery checks the failure record by delivery UUID and retries only continuation, preserving the original error instead of recording an exhausted-attempt error. As with Laravel chains generally, a crash after enqueue but before acknowledgement can dispatch the idempotent successor again.
-
-The refresh has its own [worker](#jobs), so it delays no other task VM job. So the build runs beside provisioning: while it runs, the first host holds two extra VMs, the builder and then the smoke VM, next to its task VMs.
+Images are retained for explicit future retention policy rather than pruning another recipe's immutable aliases.
 
 ### Sync the base image
 
-Run `task-vms:sync-image {node}` to copy the current base image to one host. By default it copies from the first configured host. `--from` names another host. It prints each stage with its time. `task-vms:build-image` and the nightly refresh run the same sync on every other host after a build.
+Run `task-vms:sync-image {node}` to copy the current base image to one host. By default it copies from the first configured host. `--from` names another host. It prints each stage with its time. Recipe builds run locally on every host and never dispatch this legacy sync. Once a recipe is desired, queued sync jobs from older builds stop.
 
 The source exports the image, and streams it with ssh and its [transfer key](#let-hosts-copy-the-image) to the receiver of the target, which imports it. The Gateway only starts the commands, and the image never passes through it. The source is only read. The target gives the image a dated alias under its own configured `image_alias`, preserving the source's timestamp and any build suffix. For example, `beast-base-20261010030000` becomes `shark-base-20261010030000` on a host whose alias is `shark-base`. This lets the receiver serve as a later sync source and lets its normal prune recognize obsolete received images.
 
@@ -832,7 +762,7 @@ A second host needs Incus, ZFS, and ufw, and its managed user needs passwordless
 2. Run `task-vms:prepare-host {node}`. It creates the pool from the new dataset and sets up the host. Then it lets all hosts [copy the image](#let-hosts-copy-the-image) to each other, and probes each pair.
 3. Run `task-vms:sync-image {node}`. It copies the base image of the first host. On the first host of a fleet, run `task-vms:build-image {node}` instead.
 
-The new host takes VMs on the next claim. Its bridge network must not overlap another host's. The hub filter and the Caddy guard depend only on the reserved WireGuard range, so `task-vms:prepare-hub` and the Caddy builds need no new run. The nightly refresh syncs every configured host, so a host that you prepare and do not sync gets the image the next night.
+The new host takes VMs on the next claim. Its bridge network must not overlap another host's. The hub filter and the Caddy guard depend only on the reserved WireGuard range, so `task-vms:prepare-hub` and the Caddy builds need no new run. The next recipe check queues a local build on a newly configured host.
 
 To retire a host:
 
@@ -953,7 +883,7 @@ The reserved range must always be a private network. As soon as task VMs are ena
 Task VMs have these known limits.
 
 - Incus accepts DNS before the ACL, so a task VM can query port 53 on any host address. It can read instance names from the DNS of other bridges. This risk is accepted.
-- A base image is only as fresh as its last build. The nightly refresh keeps packages and the `app-dev` software at most a day old. A host without a base image cannot start task VMs.
+- A base image is only as fresh as its last build. Recipe changes trigger base and role image builds on every host. A host without a base image cannot start task VMs.
 - Each sync copies the whole image, about 3 GiB. ZFS send and receive can copy only the changes. That is a possible optimisation for slow copies.
 - Root on one host can send any image to a peer's task VM project, up to 32 GiB each time. It can fill the peer's disk. See [Peer keys](#peer-keys).
 - Copies over WireGuard may run through the VPN hub.

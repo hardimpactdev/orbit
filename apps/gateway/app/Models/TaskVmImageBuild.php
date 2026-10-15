@@ -18,6 +18,11 @@ use Illuminate\Support\Carbon;
  *
  * @property int $id
  * @property int $host_node_id
+ * @property string|null $recipe_identity
+ * @property string|null $recipe_json
+ * @property int|null $recipe_generation
+ * @property array<string, array{project: string, alias: string, fingerprint: string, type: string}> $images
+ * @property Carbon|null $promoted_at
  * @property int $attempt
  * @property string|null $source_alias
  * @property string|null $source_fingerprint
@@ -39,6 +44,7 @@ final class TaskVmImageBuild extends Model
     /** @var list<string> */
     #[\Override]
     protected $fillable = [
+        'recipe_identity', 'recipe_json', 'recipe_generation', 'images', 'promoted_at',
         'host_node_id', 'source_alias', 'source_fingerprint', 'from_stock', 'image_fingerprint',
         'current_step', 'current_program', 'state', 'steps', 'submission_pending_at', 'attempt',
     ];
@@ -54,6 +60,9 @@ final class TaskVmImageBuild extends Model
         return [
             'state' => TaskVmImageBuildState::class,
             'attempt' => 'integer',
+            'recipe_generation' => 'integer',
+            'images' => 'array',
+            'promoted_at' => 'datetime',
             'current_step' => TaskVmImageBuildStep::class,
             'from_stock' => 'boolean',
             'steps' => 'array',

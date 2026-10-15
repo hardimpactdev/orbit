@@ -134,7 +134,7 @@ final readonly class IncusTaskVmBaseImage
         $pendingAliases = $running->map(static fn (TaskVmImageBuild $build): string => $host->imageAlias.'-'.$build->created_at?->format('YmdHis').'-'.$build->id)->all();
         $deleted = [];
         foreach ($images as $fingerprint => $aliases) {
-            $dated = array_filter($aliases, static fn (string $alias): bool => str_starts_with($alias, $host->imageAlias.'-'));
+            $dated = array_filter($aliases, static fn (string $alias): bool => str_starts_with($alias, $host->imageAlias.'-') && ! str_starts_with($alias, $host->imageAlias.'-recipe-'));
             if ($fingerprint === $keep || $dated === [] || in_array($fingerprint, $used, true)
                 || in_array($fingerprint, $protected, true) || array_intersect($aliases, $pendingAliases) !== []) {
                 continue;

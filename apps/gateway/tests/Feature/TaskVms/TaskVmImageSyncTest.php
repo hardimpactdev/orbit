@@ -18,7 +18,7 @@ use App\Infrastructure\TaskVms\IncusTaskVmImageSync;
 use App\Infrastructure\TaskVms\TaskVmImageBuildChain;
 use App\Infrastructure\TaskVms\TaskVmImageBuildSteps;
 use App\Infrastructure\TaskVms\TaskVmImagePeers;
-use App\Jobs\TaskVms\ImageBuild\LaunchImageBuilder;
+use App\Jobs\TaskVms\ImageBuild\BuildRecipeImageStep;
 use App\Jobs\TaskVms\ImageBuild\SyncBuiltImage;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
 use App\Models\Cluster;
@@ -655,30 +655,31 @@ describe('task-vms:retire-host', function (): void {
     });
 });
 
-describe('the nightly refresh', function (): void {
-    it('queues the build on the first host without changing any alias yet', function (): void {
+describe('the recipe refresh', function (): void {
+    it('queues a host-local build on every host without changing any alias yet', function (): void {
         Queue::fake();
         app()->call([new RefreshTaskVmBaseImages, 'handle']);
-        Queue::assertPushed(LaunchImageBuilder::class, 1);
-        Queue::assertCount(1);
-        expect(TaskVmImageBuild::query()->sole()->host_node_id)->toBe($this->beast->id)
+        Queue::assertPushed(BuildRecipeImageStep::class, 2);
+        Queue::assertCount(2);
+        expect(TaskVmImageBuild::query()->pluck('host_node_id')->all())->toBe([$this->beast->id, $this->shark->id])
             ->and($this->fleet->host('10.44.0.11')->images[SYNC_SHARK])->toContain(TaskVmHost::BaseImage);
     });
 
-    it('does not run the launch or sync in the nightly dispatch job', function (): void {
+    it('does not run the launch or sync in the recipe dispatch job', function (): void {
         Queue::fake();
         $this->fleet->host('10.44.0.7')->fail = 'launch';
         app()->call([new RefreshTaskVmBaseImages, 'handle']);
         expect($this->fleet->host('10.44.0.11')->images)->toBe([SYNC_SHARK => ['orbit-task-base-20261010030500', TaskVmHost::BaseImage]])
-            ->and(TaskVmImageBuild::query()->sole()->state)->toBe(TaskVmImageBuildState::Running);
-        Queue::assertCount(1);
+            ->and(TaskVmImageBuild::query()->where('state', TaskVmImageBuildState::Running)->count())->toBe(2);
+        Queue::assertCount(2);
     });
 
-    it('changes nothing while the first host has no base image', function (): void {
+    it('queues first builds without reading hosts when no base image exists', function (): void {
+        Queue::fake();
         $this->fleet->host('10.44.0.7')->images = [SYNC_STOCK => [TaskVmHost::SourceImage]];
         $commands = count($this->fleet->commands);
         app()->call([new RefreshTaskVmBaseImages, 'handle']);
-        expect(array_slice($this->fleet->argv('10.44.0.7'), -1))->toBe(['incus --project orbit-tasks image list --format json'])
-            ->and(count($this->fleet->commands))->toBe($commands + 1);
+        expect(count($this->fleet->commands))->toBe($commands);
+        Queue::assertCount(2);
     });
 });
