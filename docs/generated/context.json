@@ -1550,6 +1550,7 @@
             "title": "Compute drivers",
             "kind": "reference",
             "components": [
+                "apps/cli",
                 "apps/e2e",
                 "apps/gateway"
             ],

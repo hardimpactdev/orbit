@@ -6,7 +6,9 @@ import runpy
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 import zipfile
+import urllib.request
 import subprocess
 
 cache = runpy.run_path(sys.argv[1])
@@ -19,6 +21,21 @@ class ComposerCacheTest(unittest.TestCase):
         return dict(manager='composer', package='acme/demo', version='1.0.0', url=url,
                     integrity='sha1-' + hashlib.sha1(data).hexdigest() if checksum else None,
                     key='composer/acme/demo/' + hashlib.sha1(url.encode()).hexdigest() + '.zip')
+
+    def test_github_downloads_are_authenticated_and_credentials_never_reach_npm(self):
+        with patch('urllib.request.build_opener') as opener:
+            github = 'https://codeload.github.com/phpstan/phpstan/legacy.zip/' + 'a' * 40
+            cache['download'](github, 'ghs_cache_sentinel')
+            request = opener.return_value.open.call_args.args[0]
+            self.assertEqual(request.get_header('Authorization'), 'Bearer ghs_cache_sentinel')
+            cache['download']('https://registry.npmjs.org/demo/-/demo-1.0.0.tgz', 'ghs_cache_sentinel')
+            request = opener.return_value.open.call_args.args[0]
+            self.assertIsNone(request.get_header('Authorization'))
+        with self.assertRaises(ValueError):
+            cache['download'](github)
+        redirect = cache['PublicRedirect']()
+        with self.assertRaises(ValueError):
+            redirect.redirect_request(urllib.request.Request(github), None, 302, '', {}, 'https://registry.npmjs.org/demo/-/demo-1.0.0.tgz')
 
     def test_additive_integrity_and_private_copy(self):
         with tempfile.TemporaryDirectory() as temporary:

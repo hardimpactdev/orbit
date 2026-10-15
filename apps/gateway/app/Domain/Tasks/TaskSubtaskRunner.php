@@ -606,6 +606,18 @@ final readonly class TaskSubtaskRunner
             ? TaskCheck::query()->where('task_id', $task->id)->where('kind', TaskCheckKind::Baseline->value)->where('status', $check->status->value)->count()
             : 0;
         $branch = 'task-'.$group->id;
+        if ($check instanceof TaskCheck && TaskSetupFailure::rateLimited($check)) {
+            $attempts = TaskCheck::query()->where('task_id', $task->id)->where('kind', TaskCheckKind::Baseline->value)
+                ->where('task_comment_id', $check->task_comment_id)->get()->filter(TaskSetupFailure::rateLimited(...))->count();
+            if ($attempts <= 4) {
+                if ($check->finished_at === null || now()->lt($check->finished_at->copy()->addMinutes(2 ** ($attempts - 1)))) {
+                    return;
+                }
+                $this->startBaseline($scheduler, $group, $task);
+
+                return;
+            }
+        }
         $reason = match (true) {
             $check instanceof TaskCheck && $status === TaskCheckStatus::Failed && $check->failed_step !== null && $check->failed_step !== self::CHECK_ERROR_STEP => "The Project setup step \"{$check->failed_step}\" failed with exit code {$check->exit_code} on a fresh checkout of {$branch}, before any agent started. Fix the setup or the branch, then post a resolution on this subtask to retry the baseline. The task's check shows the output.",
             $check instanceof TaskCheck && $status === TaskCheckStatus::Failed => "The Project baseline check failed with exit code {$check->exit_code} on a fresh checkout of {$branch}, before any agent started. Fix the configured check or the branch, then post a resolution on this subtask to retry the baseline. The task's check shows the output.",

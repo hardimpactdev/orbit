@@ -75,13 +75,18 @@ jobs:
           echo "value=${VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Install CLI dependencies
+        env:
+          COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ github.token }}"},"bearer":{"codeload.github.com":"${{ github.token }}"}}'
         run: composer install --working-dir=apps/cli --no-interaction --prefer-dist --optimize-autoloader
 
       - name: Install isolated PHPacker
+        env:
+          COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ github.token }}"},"bearer":{"codeload.github.com":"${{ github.token }}"}}'
         run: composer install --working-dir=apps/cli/phpacker --no-interaction --prefer-dist
 
       - name: Build binary
         env:
+          COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ github.token }}"},"bearer":{"codeload.github.com":"${{ github.token }}"}}'
           GITHUB_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.value }}
         run: bin/orbit-build-cli-binary "${{ matrix.platform }}" "${{ matrix.architecture }}" "$VERSION"

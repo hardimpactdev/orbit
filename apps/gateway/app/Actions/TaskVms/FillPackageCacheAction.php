@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace App\Actions\TaskVms;
 
+use App\Domain\GitHub\GitHubApiException;
+use App\Domain\GitHub\GitHubAppStore;
+use App\Domain\GitHub\GitHubRepository;
+use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmSettings;
@@ -11,6 +15,7 @@ use App\Infrastructure\TaskVms\TaskVmPackageCache;
 use App\Models\Node;
 use App\Models\PackageCacheEntry;
 use App\Models\PackageCacheSnapshot;
+use App\Models\Project;
 use Illuminate\Support\Facades\DB;
 
 final readonly class FillPackageCacheAction
@@ -34,7 +39,21 @@ final readonly class FillPackageCacheAction
                 }
             }
         }
-        $hashes = $this->cache->fill($host, $node, array_values($artifacts));
+        $token = null;
+        if (array_any($artifacts, static fn (array $artifact): bool => $artifact['manager'] === 'composer') && app(GitHubAppStore::class)->credentials() !== null) {
+            foreach (Project::query()->whereIn('id', $snapshots->modelKeys())->orderBy('id')->get() as $project) {
+                $repository = GitHubRepository::fromOrigin($project->repository_url);
+                if ($repository instanceof GitHubRepository) {
+                    try {
+                        $token = app(RepositoryPullRequestAccess::class)->readToken($repository);
+                        break;
+                    } catch (GitHubApiException) {
+                        continue;
+                    }
+                }
+            }
+        }
+        $hashes = $this->cache->fill($host, $node, array_values($artifacts), $token);
         DB::transaction(function () use ($snapshots, $hostNodeId, $hashes): void {
             foreach ($snapshots as $snapshot) {
                 $current = PackageCacheSnapshot::query()->find($snapshot->project_id);

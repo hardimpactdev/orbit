@@ -24,16 +24,25 @@ def allowed_url(url):
 
 class PublicRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, request, fp, code, msg, headers, newurl):
-        if not allowed_url(newurl):
+        if not allowed_url(newurl) or github_url(request.full_url) != github_url(newurl):
             raise ValueError('Cache download redirect is outside the public archive service')
         return super().redirect_request(request, fp, code, msg, headers, newurl)
 
 
-def download(url):
+def github_url(url):
+    return urllib.parse.urlparse(url).hostname in ('api.github.com', 'codeload.github.com')
+
+
+def download(url, github_token=None):
     if not allowed_url(url):
         raise ValueError('Cache download URL is outside the public archive service')
+    headers = {'User-Agent': 'Orbit-package-cache'}
+    if github_url(url):
+        if not github_token:
+            raise ValueError('GitHub cache misses require a short-lived installation token')
+        headers['Authorization'] = 'Bearer ' + github_token
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), PublicRedirect())
-    return opener.open(urllib.request.Request(url, headers={'User-Agent': 'Orbit-package-cache'}), timeout=60)
+    return opener.open(urllib.request.Request(url, headers=headers), timeout=60)
 
 
 def atomic_json(path, value):
@@ -152,7 +161,7 @@ if __name__ == '__main__':
             initialize(ROOT)
             print('{}')
         elif request['operation'] == 'fill':
-            print(json.dumps(fill(ROOT, request['artifacts'], request['max_bytes'])))
+            print(json.dumps(fill(ROOT, request['artifacts'], request['max_bytes'], lambda url: download(url, request.get('github_token')))))
         else:
             raise ValueError('Unknown cache operation')
     except Exception:

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\AppDev\SsrPortAllocator;
 use App\Domain\AppDev\VitePortRuntime;
+use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\Projects\GatewaySetupSteps;
 use App\Domain\Projects\LifecycleStep;
 use App\Domain\Projects\TiaBaselineSource;
@@ -36,9 +37,13 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
+use App\Models\TaskVm;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Http;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
+use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\FakeVitePortRuntime;
 use Tests\Support\LocalShellSshExecutor;
@@ -108,7 +113,7 @@ function check_runner(SshExecutor $transport, string $vpHome = '/opt/orbit/vite-
 
             public function put(string $host, int $port, HostKey $key): void {}
         },
-    )), $vp, app(GatewaySetupSteps::class));
+    )), $vp, app(GatewaySetupSteps::class), app(RepositoryPullRequestAccess::class));
 }
 
 function check_runner_wait(RemoteTaskCheckRunner $runner, Instance $instance, TaskCheckProcess $process): TaskCheckReading
@@ -1273,4 +1278,73 @@ describe('ssr port', function (): void {
             ->and(file_get_contents($checkout.'/check-ssr'))->toBe('13722 http://127.0.0.1:13722')
             ->and($reading->deliverables['commands']['ssr']['output'] ?? null)->toBe('13722');
     });
+});
+
+it('authenticates task VM setup through protected input and redacts tokens before writing logs', function (string $ending, int $exitCode): void {
+    Http::preventStrayRequests();
+    GitHubTestSupport::storeApp();
+    Http::fake([
+        'https://api.github.com/repos/acme/shop/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_setup_sentinel'], 201),
+    ]);
+    $checkout = check_runner_checkout('true');
+    $instance = check_runner_instance($checkout);
+    TaskVm::query()->create(['node_id' => $instance->node_id, 'provider' => 'upcloud', 'name' => 'tvm-setup', 'state' => 'ready', 'wireguard_ip' => $instance->node->wireguard_ip, 'pi_token' => 'private']);
+    $transport = new class implements SshExecutor
+    {
+        public array $commands = [];
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            $this->commands[] = $command;
+
+            return new LocalShellSshExecutor()->execute($connection, $command);
+        }
+    };
+    $runner = check_runner($transport);
+    $setup = <<<'BASH'
+        python3 - <<'PY'
+        import base64, json, os
+        auth = json.loads(os.environ['COMPOSER_AUTH'])
+        assert auth['github-oauth']['github.com'] == auth['bearer']['codeload.github.com']
+        assert os.environ['COMPOSER_CACHE_DIR'] == os.path.expanduser('~/.cache/composer')
+        assert os.environ['ORBIT_SEED_PATH'] == ''
+        assert os.environ['ORBIT_SEED_COMMIT'] == ''
+        token = auth['github-oauth']['github.com']
+        print(os.environ['COMPOSER_AUTH'])
+        print(token)
+        print(base64.b64encode((token + ':x-oauth-basic').encode()).decode())
+        PY
+        BASH;
+
+    $process = $runner->start($instance, 'test -z "${COMPOSER_AUTH:-}" && test -z "${ORBIT_SETUP_COMPOSER_AUTH:-}" && echo checked', [
+        ['name' => 'install-apps-cli', 'command' => $setup."\n".$ending, 'timeout_seconds' => $exitCode === 124 ? 1 : 10],
+    ]);
+    $reading = check_runner_wait($runner, $instance, $process);
+
+    expect($reading->exitCode)->toBe($exitCode);
+    if ($exitCode === 0) {
+        expect($reading->output)->toContain('checked');
+    }
+    expect($reading->output)->toContain('[REDACTED]')->not->toContain('ghs_setup_sentinel', base64_encode('ghs_setup_sentinel:x-oauth-basic'));
+    $git = trim((new Process(['git', '-C', $checkout, 'rev-parse', '--absolute-git-dir']))->mustRun()->getOutput());
+    expect(file_get_contents($git.'/orbit/check.log'))->not->toContain('ghs_setup_sentinel');
+    expect(file_get_contents($git.'/orbit/setup.json'))->not->toContain('ghs_setup_sentinel');
+    foreach ($transport->commands as $command) {
+        expect(implode(' ', $command->arguments).($command->input ?? ''))->not->toContain('ghs_setup_sentinel');
+    }
+    expect($transport->commands[0]->protectedInput)->not->toBeNull();
+    Http::assertSent(static fn (Request $request): bool => $request->method() === 'POST'
+        && $request->data() === ['repositories' => ['shop'], 'permissions' => ['contents' => 'read']]);
+})->with(['success' => [':', 0], 'failure' => ['exit 7', 7], 'timeout' => ['sleep 20', 124]]);
+
+it('does not start task VM setup anonymously when an installation token is unavailable', function (): void {
+    $instance = check_runner_instance('/fast/apps/shop/workspace');
+    TaskVm::query()->create(['node_id' => $instance->node_id, 'provider' => 'upcloud', 'name' => 'tvm-setup', 'state' => 'ready', 'wireguard_ip' => $instance->node->wireguard_ip, 'pi_token' => 'private']);
+    $transport = new AppDevFakeSshExecutor;
+    $runner = check_runner($transport);
+
+    expect(fn () => $runner->start($instance, 'true', [['name' => 'install', 'command' => 'composer install', 'timeout_seconds' => 10]]))
+        ->toThrow(TaskCheckException::class, 'A short-lived GitHub token for Project setup could not be created.');
+    expect($transport->commands)->toBeEmpty();
 });

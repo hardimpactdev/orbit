@@ -141,6 +141,8 @@ The `Orbit CLI Binary` workflow, `.github/workflows/orbit-cli-binary.yml`, build
 | Linux arm64 | `ubuntu-26.04-arm` | The same | `bin/orbit-build-cli-binary linux arm <version>` | `orbit-linux-arm64` | `apps/cli/builds/dist/linux/linux-arm` |
 | macOS Apple silicon | `ubuntu-26.04` | `macos-26` | `bin/orbit-build-cli-binary mac arm <version>` | `orbit-macos-arm64` | `apps/cli/builds/dist/mac/mac-arm` |
 
+Composer installs in the build workflow receive the read-only job token through `COMPOSER_AUTH`, including the production install inside the binary builder. The release verifier downloads `SHA256SUMS` through the authenticated GitHub CLI.
+
 The `Build` jobs build every target on Linux. Each Linux job then runs its own binary. The `Run macos-arm64` job downloads the macOS artifact on a hosted Mac and runs it. It needs no PHP, Composer, or checkout. Every run uses an empty environment and requires `orbit --version` to print the build version. A binary that does not start fails the workflow, and the release workflow publishes only when every job passes.
 
 ## Build locally

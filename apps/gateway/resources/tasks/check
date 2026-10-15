@@ -29,6 +29,7 @@ import atexit
 import json
 import os
 import re
+import shlex
 import shutil
 import signal
 import stat
@@ -211,8 +212,9 @@ def start(checkout, setup=None, deliverables=None, command=None):
     print(json.dumps({'pid': pid, 'started': started, 'head': head, 'tree': tree}))
 
 
-def run_setup(checkout, setup, log):
+def run_setup(checkout, setup, log, composer_auth=None):
     """Run each setup step in order. Return the name and exit code of the first step that fails."""
+    global CHILD_PROCESS
     with open(setup) as steps:
         for step in json.load(steps):
             command = step['command']
@@ -222,17 +224,47 @@ def run_setup(checkout, setup, log):
             log.flush()
             try:
                 with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', suffix='.sh') as script:
+                    if 'COMPOSER_CACHE_DIR' in os.environ:
+                        script.write('export COMPOSER_CACHE_DIR=' + shlex.quote(os.environ['COMPOSER_CACHE_DIR']) + '\n')
                     script.write(step['command'])
                     script.flush()
-                    exit_code = subprocess.run(['bash', '-l', script.name], cwd=checkout, stdin=subprocess.DEVNULL,
-                                               stdout=log, stderr=subprocess.STDOUT,
-                                               timeout=step.get('timeout_seconds') or None).returncode
+                    if composer_auth:
+                        environment = dict(os.environ, COMPOSER_AUTH=composer_auth)
+                        with subprocess.Popen(['bash', '-l', script.name], cwd=checkout, stdin=subprocess.DEVNULL,
+                                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=environment, start_new_session=True) as process:
+                            CHILD_PROCESS = process
+                            try:
+                                output, _ = process.communicate(timeout=step.get('timeout_seconds') or None)
+                            except subprocess.TimeoutExpired:
+                                stop_child_process()
+                                output, _ = process.communicate()
+                                log.write(redact_composer_auth(output, composer_auth))
+                                raise
+                            log.write(redact_composer_auth(output, composer_auth))
+                            exit_code = process.returncode
+                            CHILD_PROCESS = None
+                    else:
+                        exit_code = subprocess.run(['bash', '-l', script.name], cwd=checkout, stdin=subprocess.DEVNULL,
+                                                   stdout=log, stderr=subprocess.STDOUT,
+                                                   timeout=step.get('timeout_seconds') or None).returncode
             except subprocess.TimeoutExpired:
                 log.write(f"Setup step {step['name']} timed out after {step['timeout_seconds']} seconds.\n".encode())
                 exit_code = 124
             if exit_code != 0:
                 return step['name'], exit_code
     return None, 0
+
+
+def redact_composer_auth(output, auth):
+    """Never persist credentials printed by an install script, including encoded HTTP auth."""
+    import base64
+    secrets = [auth]
+    for group in json.loads(auth).values():
+        for token in group.values():
+            secrets.extend([token, base64.b64encode((token + ':x-oauth-basic').encode()).decode()])
+    for secret in sorted(secrets, key=len, reverse=True):
+        output = output.replace(secret.encode(), b'[REDACTED]')
+    return output
 
 
 def inside(checkout, relative):
@@ -256,7 +288,7 @@ def run_logged(arguments, cwd, log, capture=None):
 
 FAILURE_TAIL = 4096
 BASE_RUN_TIMEOUT = 600
-BASE_PROCESS = None
+CHILD_PROCESS = None
 
 
 def deliverable_path(checkout, relative):
@@ -302,11 +334,11 @@ def process_group_exists(process_group):
         return True
 
 
-def stop_base_process():
-    global BASE_PROCESS
-    if BASE_PROCESS is None:
+def stop_child_process():
+    global CHILD_PROCESS
+    if CHILD_PROCESS is None:
         return
-    process = BASE_PROCESS
+    process = CHILD_PROCESS
     try:
         os.killpg(process.pid, signal.SIGTERM)
     except ProcessLookupError:
@@ -320,11 +352,11 @@ def stop_base_process():
         except ProcessLookupError:
             pass
     process.wait()
-    BASE_PROCESS = None
+    CHILD_PROCESS = None
 
 
 def cancelled(signum, _frame):
-    stop_base_process()
+    stop_child_process()
     raise SystemExit(128 + signum)
 
 
@@ -339,18 +371,18 @@ def extract_archive(checkout, start, scratch):
 
 def run_base(command, cwd, log, timeout):
     """Run an overlaid command in a separate process group; timeout kills the whole command tree."""
-    global BASE_PROCESS
-    BASE_PROCESS = subprocess.Popen(['bash', '-lc', command], cwd=cwd, stdin=subprocess.DEVNULL,
+    global CHILD_PROCESS
+    CHILD_PROCESS = subprocess.Popen(['bash', '-lc', command], cwd=cwd, stdin=subprocess.DEVNULL,
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
-    process = BASE_PROCESS
+    process = CHILD_PROCESS
     try:
         output, _ = process.communicate(timeout=timeout)
         code = process.returncode
-        BASE_PROCESS = None
+        CHILD_PROCESS = None
         log.write(output)
         return code, output[-COMMAND_OUTPUT_TAIL:].decode('utf-8', errors='replace'), False
     except subprocess.TimeoutExpired as timeout_error:
-        stop_base_process()
+        stop_child_process()
         try:
             output, _ = process.communicate()
         except (OSError, subprocess.SubprocessError):
@@ -523,6 +555,7 @@ def verify_deliverables(checkout, head, tree, deliverables, log, task_check=None
 
 def perform(checkout, head, tree, setup, deliverables, command, started_at):
     """Run setup and the Project check once, then verify deliverables, reusing its matching result."""
+    composer_auth = os.environ.pop('ORBIT_SETUP_COMPOSER_AUTH', None)
     evidence = None
     task_check = None
     failed_step = None
@@ -534,7 +567,7 @@ def perform(checkout, head, tree, setup, deliverables, command, started_at):
             exit_code = 1
             log.write(('\n'.join(messages) + '\n').encode())
         if failed_step is None and setup:
-            failed_step, exit_code = run_setup(checkout, setup, log)
+            failed_step, exit_code = run_setup(checkout, setup, log, composer_auth)
             # Setup steps install dependencies, so the tree after setup is the tree the check sees.
             tree = working_tree(checkout)
         if failed_step is None and command:

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Fleet\CliReleaseName;
+use Symfony\Component\Yaml\Yaml;
 
 /** The fallback trusts that equal build inputs build the same CLI, so every input the build reads must be listed. */
 it('lists every repository path the CLI build reads', function (): void {
@@ -25,5 +26,26 @@ it('lists every repository path the CLI build reads', function (): void {
 
     foreach (CliReleaseName::BuildInputs as $input) {
         expect(file_exists($root.'/'.$input))->toBeTrue("{$input} does not exist.");
+    }
+});
+
+it('authenticates every workflow Composer install and binary build against GitHub', function (): void {
+    $workflows = glob(dirname(base_path(), 2).'/.github/workflows/*.yml');
+    expect($workflows)->not->toBeEmpty();
+    foreach ($workflows as $path) {
+        $workflow = Yaml::parseFile($path);
+        foreach ($workflow['jobs'] as $job) {
+            foreach ($job['steps'] ?? [] as $step) {
+                if (preg_match('/composer\s+install|bin\/(?:bootstrap|orbit-build-cli-binary)\b/', $step['run'] ?? '') !== 1) {
+                    continue;
+                }
+                $auth = $step['env']['COMPOSER_AUTH'] ?? null;
+                expect($auth)->toBeString($path.': '.$step['name']);
+                expect(json_decode($auth, true, flags: JSON_THROW_ON_ERROR))->toBe([
+                    'github-oauth' => ['github.com' => '${{ github.token }}'],
+                    'bearer' => ['codeload.github.com' => '${{ github.token }}'],
+                ]);
+            }
+        }
     }
 });
