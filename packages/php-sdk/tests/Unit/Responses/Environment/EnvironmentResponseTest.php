@@ -46,6 +46,20 @@ describe('Instance environment response', function (): void {
             ->toEqual($response);
     });
 
+    it('preserves a bounded production runtime refresh outcome', function (string $outcome): void {
+        $response = EnvironmentOperationResponse::fromGatewayData([
+            'instance_id' => 17, 'operation' => 'sync', 'changed' => true, 'key_count' => 1,
+            'runtime_refresh' => $outcome,
+        ], 'sync', '11111111-1111-4111-8111-111111111111');
+        expect($response->runtimeRefresh)->toBe($outcome)->and($response->toArray()['runtime_refresh'])->toBe($outcome);
+    })->with(['skipped_unchanged', 'skipped_no_php_version', 'skipped_no_current_release', 'config_cache_and_opcache_refreshed', 'opcache_refreshed_config_uncached']);
+
+    it('rejects unknown runtime results and results on store-only operations', function (string $operation, mixed $outcome): void {
+        expect(fn () => EnvironmentOperationResponse::fromGatewayData([
+            'instance_id' => 17, 'operation' => $operation, 'changed' => true, 'key_count' => 1, 'runtime_refresh' => $outcome,
+        ], $operation, '11111111-1111-4111-8111-111111111111'))->toThrow(GatewayApiException::class);
+    })->with([['sync', 'SECRET'], ['sync', null], ['sync', []], ['update', 'skipped_unchanged'], ['import', 'skipped_unchanged']]);
+
     it('rejects missing wrongly typed contradictory extra and out-of-bound data safely', function (array $data): void {
         $sentinel = 'malformed-environment-value-8c2d';
         $mock = new MockClient([

@@ -75,6 +75,7 @@ describe('node:wireguard-key', function (): void {
         $configuration = [
             'home' => $directory.'/home', 'trace' => $directory.'/requests.jsonl', 'arguments' => ['node:wireguard-key'],
             'prompt' => 'laptop', 'keys' => array_map(base64_encode(...), $keys), 'columns' => 100,
+            'key_prompts' => [1 => 'WireGuard public key'],
             'replies' => [
                 ['class' => ListNodesRequest::class, 'body' => ['data' => [$this->payload], 'meta' => ['request_id' => $this->requestId]]],
                 ['class' => SetNodeWireGuardKeyRequest::class, 'body' => ['data' => $this->payload, 'meta' => ['request_id' => $this->requestId]]],

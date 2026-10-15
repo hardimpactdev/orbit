@@ -4,7 +4,7 @@ description: "How the Gateway ships a program to a Node: one file per program, a
 covers:
   - apps/gateway/app/Domain/RemotePrograms/**
   - apps/gateway/app/Infrastructure/RemotePrograms/**
-  - apps/gateway/resources/remote/{bootstrap.py,lib/program.py}
+  - apps/gateway/resources/remote/{bootstrap.py,lib/program.py,instances/refresh-environment-config.py}
   - apps/gateway/ruff.toml
   - apps/gateway/tests/Programs/{harness,test_program}.py
   - apps/gateway/tests/Unit/Architecture/InlineRemoteScriptTest.php
@@ -108,6 +108,7 @@ These programs run on Nodes now. Each one replaced an inline script.
 | --- | --- |
 | `instances.inspect-source` | Reads a development checkout's Git evidence for [Instance removal](/reference/instance-removal#checks-before-removal). |
 | `instances.check-publication` | Checks whether an origin branch or tag contains a commit. |
+| `instances.refresh-environment-config` | Rebuilds an existing current release config cache as the production Instance user before env-sync resets FPM opcache. |
 | `instances.remove-source` | Checks and deletes an active checkout in one run. |
 | `instances.prepare-source-removal` | Records the removal journal before finalization. |
 | `instances.read-source-removal-state` | Reports whether a recorded source is present, quarantined, or removed. |

@@ -18,6 +18,7 @@ final readonly class EnvironmentOperationResponse
         public bool $changed,
         public int $keyCount,
         public string $requestId,
+        public ?string $runtimeRefresh = null,
     ) {}
 
     /** @param array<array-key, mixed> $data */
@@ -32,6 +33,13 @@ final readonly class EnvironmentOperationResponse
 
         if (
             ! self::hasExactFields($data)
+            || (array_key_exists('runtime_refresh', $data) && ($expectedOperation !== 'sync' || ! in_array($data['runtime_refresh'], [
+                'skipped_unchanged',
+                'skipped_no_php_version',
+                'skipped_no_current_release',
+                'config_cache_and_opcache_refreshed',
+                'opcache_refreshed_config_uncached',
+            ], true)))
             || ! is_int($data['instance_id'])
             || $data['instance_id'] < 1
             || ! is_string($data['operation'])
@@ -55,10 +63,11 @@ final readonly class EnvironmentOperationResponse
             changed: $data['changed'],
             keyCount: $data['key_count'],
             requestId: $validRequestId,
+            runtimeRefresh: $data['runtime_refresh'] ?? null,
         );
     }
 
-    /** @return array{instance_id: int, operation: string, changed: bool, key_count: int, request_id: string} */
+    /** @return array{instance_id: int, operation: string, changed: bool, key_count: int, request_id: string, runtime_refresh?: string} */
     public function toArray(): array
     {
         return [
@@ -67,6 +76,7 @@ final readonly class EnvironmentOperationResponse
             'changed' => $this->changed,
             'key_count' => $this->keyCount,
             'request_id' => $this->requestId,
+            ...($this->runtimeRefresh === null ? [] : ['runtime_refresh' => $this->runtimeRefresh]),
         ];
     }
 
@@ -74,6 +84,10 @@ final readonly class EnvironmentOperationResponse
     private static function hasExactFields(#[SensitiveParameter] array $data): bool
     {
         $expected = ['instance_id', 'operation', 'changed', 'key_count'];
+
+        if (array_key_exists('runtime_refresh', $data)) {
+            $expected[] = 'runtime_refresh';
+        }
 
         if (count($data) !== count($expected)) {
             return false;

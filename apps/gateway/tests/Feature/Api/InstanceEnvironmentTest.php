@@ -6,6 +6,7 @@ use App\Domain\Clusters\ClusterState;
 use App\Domain\Instances\Environment\InstanceEnvironmentContext;
 use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
 use App\Domain\Instances\Environment\InstanceEnvironmentReader;
+use App\Domain\Instances\Environment\InstanceEnvironmentRuntimeRefresher;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriteResult;
@@ -499,6 +500,61 @@ it('keeps a release-layout production environment at the persistent home', funct
         ->toBe([$home])
         ->and($this->access->writes)
         ->toBe(["DB_DATABASE=\"/srv/orb216/literal.sqlite\"\n"]);
+});
+
+it('refreshes only changed production environments and reports the outcome', function (bool $production, bool $changed): void {
+    $this->access->contents = '';
+    $this->instance->environmentValues()->create(['env_key' => 'QUEUE_CONNECTION', 'env_value' => 'redis']);
+    $this->access->writeResult = $changed ? InstanceEnvironmentWriteResult::changed() : InstanceEnvironmentWriteResult::unchanged();
+    if ($production) {
+        $this->instance->node->roles()->where('role', RoleName::AppDev)->delete();
+        $this->instance->node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
+        $this->instance->update([
+            'environment' => 'production',
+            'checkout_path' => '/home/orbit-env-test/releases/initial',
+            'production_user' => 'orbit-env-test',
+            'production_home' => '/home/orbit-env-test',
+            'selected_php_version' => '8.5',
+        ]);
+    }
+    $refresh = Mockery::mock(InstanceEnvironmentRuntimeRefresher::class);
+    if ($production && $changed) {
+        $refresh->shouldReceive('refresh')->once()->withArgs(fn (InstanceEnvironmentContext $context): bool => $context->instanceId === $this->instance->id)
+            ->andReturn('config_cache_and_opcache_refreshed');
+    } else {
+        $refresh->shouldNotReceive('refresh');
+    }
+    app()->instance(InstanceEnvironmentRuntimeRefresher::class, $refresh);
+
+    $response = $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->call('POST', "/api/v1/instances/{$this->instance->id}/environment/sync", server: ['CONTENT_TYPE' => 'application/json'], content: '{}')
+        ->assertOk()->assertJsonPath('data.changed', $changed);
+    if ($production) {
+        $response->assertJsonPath('data.runtime_refresh', $changed ? 'config_cache_and_opcache_refreshed' : 'skipped_unchanged');
+    } else {
+        $response->assertJsonMissingPath('data.runtime_refresh');
+    }
+})->with([[true, true], [true, false], [false, true], [false, false]]);
+
+it('returns a safe refresh failure after the production environment was written', function (): void {
+    $this->access->contents = '';
+    $this->instance->environmentValues()->create(['env_key' => 'QUEUE_CONNECTION', 'env_value' => 'redis']);
+    $this->instance->node->roles()->where('role', RoleName::AppDev)->delete();
+    $this->instance->node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
+    $this->instance->update(['environment' => 'production', 'checkout_path' => '/home/orbit-env-test/releases/initial', 'production_user' => 'orbit-env-test', 'production_home' => '/home/orbit-env-test']);
+    $refresh = Mockery::mock(InstanceEnvironmentRuntimeRefresher::class);
+    $refresh->shouldReceive('refresh')->once()->andThrow(new ResourceOperationException(
+        errorCode: 'env.php_runtime_refresh_failed',
+        message: 'The environment file changed, but the production FPM opcache refresh failed.',
+        status: 502,
+    ));
+    app()->instance(InstanceEnvironmentRuntimeRefresher::class, $refresh);
+
+    $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->call('POST', "/api/v1/instances/{$this->instance->id}/environment/sync", server: ['CONTENT_TYPE' => 'application/json'], content: '{}')
+        ->assertStatus(502)->assertJsonPath('error.code', 'env.php_runtime_refresh_failed')
+        ->assertJsonPath('error.message', 'The environment file changed, but the production FPM opcache refresh failed.');
+    expect($this->access->writes)->toHaveCount(1);
 });
 
 it('requires exactly an empty JSON object before synchronization work', function (string $body): void {

@@ -10771,6 +10771,7 @@ export interface operations {
                             operation?: string;
                             changed?: boolean;
                             key_count?: number;
+                            runtime_refresh?: string | null;
                         };
                         meta: components["schemas"]["Meta"];
                     };
@@ -10842,6 +10843,7 @@ export interface operations {
                             operation?: string;
                             changed?: boolean;
                             key_count?: number;
+                            runtime_refresh?: string | null;
                         };
                         meta: components["schemas"]["Meta"];
                     };
@@ -10918,6 +10920,7 @@ export interface operations {
                             operation?: string;
                             changed?: boolean;
                             key_count?: number;
+                            runtime_refresh?: string | null;
                         };
                         meta: components["schemas"]["Meta"];
                     };

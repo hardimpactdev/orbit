@@ -11,6 +11,7 @@ use App\Domain\Instances\Environment\InstanceEnvironmentReader;
 use App\Domain\Instances\Environment\InstanceEnvironmentRenderer;
 use App\Domain\Instances\Environment\InstanceEnvironmentResult;
 use App\Domain\Instances\Environment\InstanceEnvironmentRouteDomain;
+use App\Domain\Instances\Environment\InstanceEnvironmentRuntimeRefresher;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\Environment\InstanceEnvironmentSynchronizationSnapshot;
 use App\Domain\Instances\Environment\InstanceEnvironmentSynchronizer;
@@ -110,6 +111,9 @@ final readonly class SynchronizeInstanceEnvironmentAction implements InstanceEnv
             changed: $changed,
             keyCount: $snapshot->keyCount(),
             testing: $outcome,
+            runtimeRefresh: $context->environment === 'production'
+                ? ($changed ? app(InstanceEnvironmentRuntimeRefresher::class)->refresh($context) : 'skipped_unchanged')
+                : null,
         );
     }
 

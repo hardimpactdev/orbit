@@ -245,7 +245,6 @@
                 "Doctor",
                 "Gateway",
                 "Instance",
-                "Process",
                 "Route"
             ],
             "governing_adrs": []

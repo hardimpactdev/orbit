@@ -20,11 +20,15 @@ process = subprocess.Popen(sys.argv[1:4], stdin=slave, stdout=slave, stderr=slav
                            env={**os.environ, 'TERM': 'xterm-256color', 'PAO_DISABLE': '1'})
 output = bytearray()
 keys = [base64.b64decode(key) for key in configuration['keys']]
+key_prompts = configuration.get('key_prompts', {})
+keys_sent = 0
+# Include time for startup, prompt transitions, and the deliberate per-key delay.
+timeout = max(30, len(keys) * 0.15 + 20)
 ready = False
 last_key = 0
 started = time.monotonic()
 while process.poll() is None:
-    if time.monotonic() - started > 10:
+    if time.monotonic() - started > timeout:
         process.kill()
         process.wait()
         raise RuntimeError('Command fixture timed out: ' + output.decode(errors='replace'))
@@ -35,8 +39,12 @@ while process.poll() is None:
             if error.errno != errno.EIO:
                 raise
     ready = ready or configuration['prompt'].encode() in output
-    if ready and keys and time.monotonic() - last_key > 0.15:
+    # Multi-prompt commands must finish the transition before the next key is sent.
+    key_prompt = key_prompts.get(str(keys_sent))
+    prompt_ready = key_prompt is None or key_prompt.encode() in output
+    if ready and keys and prompt_ready and time.monotonic() - last_key > 0.15:
         os.write(master, keys.pop(0))
+        keys_sent += 1
         last_key = time.monotonic()
 while select.select([master], [], [], 0.02)[0]:
     try:

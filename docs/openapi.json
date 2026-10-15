@@ -11113,6 +11113,12 @@
                         },
                         "key_count": {
                           "type": "integer"
+                        },
+                        "runtime_refresh": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
                         }
                       }
                     },
@@ -11235,6 +11241,12 @@
                         },
                         "key_count": {
                           "type": "integer"
+                        },
+                        "runtime_refresh": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
                         }
                       }
                     },
@@ -11376,6 +11388,12 @@
                         },
                         "key_count": {
                           "type": "integer"
+                        },
+                        "runtime_refresh": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
                         }
                       }
                     },

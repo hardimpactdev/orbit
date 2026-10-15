@@ -12,9 +12,10 @@ final readonly class InstanceEnvironmentResult
         public bool $changed,
         public int $keyCount,
         public ?InstanceTestEnvironmentOutcome $testing = null,
+        public ?string $runtimeRefresh = null,
     ) {}
 
-    /** @return array{instance_id: int, operation: string, changed: bool, key_count: int} */
+    /** @return array{instance_id: int, operation: string, changed: bool, key_count: int, runtime_refresh?: string} */
     public function toArray(): array
     {
         return [
@@ -22,6 +23,7 @@ final readonly class InstanceEnvironmentResult
             'operation' => $this->operation,
             'changed' => $this->changed,
             'key_count' => $this->keyCount,
+            ...($this->runtimeRefresh === null ? [] : ['runtime_refresh' => $this->runtimeRefresh]),
         ];
     }
 }

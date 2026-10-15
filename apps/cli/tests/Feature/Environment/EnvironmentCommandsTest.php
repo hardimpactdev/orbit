@@ -423,6 +423,29 @@ describe('environment failures', function (): void {
     });
 });
 
+it('renders production PHP refresh outcomes in human and JSON sync output', function (string $outcome, string $message): void {
+    foreach ([false, true] as $json) {
+        MockClient::global([SynchronizeInstanceEnvironmentRequest::class => MockResponse::make([
+            'data' => ['instance_id' => 17, 'operation' => 'sync', 'changed' => true, 'key_count' => 1, 'runtime_refresh' => $outcome],
+            'meta' => ['request_id' => environment_cli_request_id()],
+        ])]);
+        [$exit, $output] = environment_cli_display('env:sync', ['--instance' => '17', '--json' => $json]);
+        expect($exit)->toBe(0);
+        if ($json) {
+            expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['runtime_refresh'])->toBe($outcome);
+        } else {
+            expect($output)->toContain($message);
+        }
+        MockClient::destroyGlobal();
+    }
+})->with([
+    ['config_cache_and_opcache_refreshed', 'config cache rebuilt; FPM opcache reset'],
+    ['opcache_refreshed_config_uncached', 'FPM opcache reset; config remains uncached'],
+    ['skipped_unchanged', 'refresh skipped: environment file unchanged'],
+    ['skipped_no_php_version', 'refresh skipped: no PHP version selected'],
+    ['skipped_no_current_release', 'refresh skipped: no current release'],
+]);
+
 /**
  * @param  array<string, mixed>  $arguments
  * @return array{0: int, 1: string}
