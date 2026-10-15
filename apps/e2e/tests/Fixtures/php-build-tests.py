@@ -28,6 +28,7 @@ def pin(name, version, arch_url=None):
 
 def recipe():
     return {
+        'artifact_mirror': 'https://mirror.example/php',
         'ubuntu': {'release': '26.04'},
         'architectures': ['amd64'],
         'tools': {
@@ -39,7 +40,7 @@ def recipe():
             'dpkg-repack': {'source': 'ubuntu', 'package': 'dpkg-repack', 'version': '1.54build1'},
         },
         'php': {'ci': '8.5', 'shared': ['libgd3', 'php-common'], 'rollback': 'dpkg-repack', 'pcov': ['app-dev'],
-                'purge_extras': ['ci-runner'], 'mirror': 'https://mirror.example/php', 'versions': {
+                'purge_extras': ['ci-runner'], 'versions': {
             '8.5': {'packages': ['php8.5-cli', 'php8.5-common', 'php8.5-pcov'], 'extensions': ['core', 'pcov', 'zend opcache']},
         }},
     }

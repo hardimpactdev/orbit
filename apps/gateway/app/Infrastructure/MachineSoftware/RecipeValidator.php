@@ -23,9 +23,22 @@ final readonly class RecipeValidator
                 $temporary = $tool->source !== 'internal';
                 $file = null;
                 try {
-                    $file = $temporary
-                        ? $this->downloads->file($artifact->location, redirects: true)
-                        : rtrim($artifactDirectory, '/').'/'.$artifact->location;
+                    if ($temporary) {
+                        $lastFailure = null;
+                        foreach ($artifact->candidateUrls($name, $recipe->artifactMirror) as $url) {
+                            try {
+                                $file = $this->downloads->file($url, redirects: true);
+                                break;
+                            } catch (RuntimeException $exception) {
+                                $lastFailure = $exception;
+                            }
+                        }
+                        if ($file === null) {
+                            throw $lastFailure ?? new RuntimeException('No artifact URL is available.');
+                        }
+                    } else {
+                        $file = rtrim($artifactDirectory, '/').'/'.$artifact->location;
+                    }
                     if (! is_file($file) || ! is_readable($file)) {
                         throw new RuntimeException("Missing or unreadable artifact file [{$file}].");
                     }
