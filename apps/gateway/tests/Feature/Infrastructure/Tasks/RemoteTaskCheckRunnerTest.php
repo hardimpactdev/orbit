@@ -1328,7 +1328,10 @@ it('authenticates task VM setup through protected input and redacts tokens befor
     file_put_contents($checkout.'/composer.json', json_encode([
         'repositories' => ['packagist.org' => false],
         'autoload' => ['classmap' => ['AuthProbe.php']],
-        'scripts' => ['post-autoload-dump' => ['AuthProbe::check']],
+        'scripts' => [
+            'post-autoload-dump' => ['AuthProbe::check', '@composer run-script nested-probe --no-interaction'],
+            'nested-probe' => '@php -r "echo \'nested-composer-ok\'.PHP_EOL;"',
+        ],
     ], JSON_THROW_ON_ERROR));
     $setup = <<<'BASH'
         python3 - <<'PY'
@@ -1340,6 +1343,7 @@ it('authenticates task VM setup through protected input and redacts tokens befor
         assert os.environ['ORBIT_SEED_PATH'] == ''
         assert os.environ['ORBIT_SEED_COMMIT'] == ''
         PY
+        unset COMPOSER_BINARY
         composer install --no-interaction --no-plugins --no-progress
         BASH;
 
@@ -1353,6 +1357,7 @@ it('authenticates task VM setup through protected input and redacts tokens befor
         expect($reading->output)->toContain('checked');
     }
     expect($reading->output)->toContain('[REDACTED]')->not->toContain('ghs_setup_sentinel', base64_encode('ghs_setup_sentinel:x-oauth-basic'));
+    expect($reading->output)->toContain('nested-composer-ok');
     $git = trim((new Process(['git', '-C', $checkout, 'rev-parse', '--absolute-git-dir']))->mustRun()->getOutput());
     expect(file_get_contents($git.'/orbit/check.log'))->not->toContain('ghs_setup_sentinel');
     expect(file_get_contents($git.'/orbit/setup.json'))->not->toContain('ghs_setup_sentinel');
@@ -1459,3 +1464,37 @@ it('streams setup output and stops its descendants on timeout or cancellation', 
     'authenticated timeout' => [true, false],
     'authenticated cancellation' => [true, true],
 ]);
+
+it('bounds output draining after an escaped grandchild outlives the setup shell', function (?int $timeout): void {
+    $checkout = check_runner_checkout('touch check-ran');
+    $instance = check_runner_instance($checkout);
+    $runner = check_runner(new LocalShellSshExecutor);
+    $command = <<<'BASH'
+        mkdir -p ignored
+        python3 - <<'PY'
+        import pathlib, subprocess, sys
+        child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'], start_new_session=True)
+        pathlib.Path('ignored/escaped-child').write_text(str(child.pid))
+        PY
+        BASH;
+    $started = microtime(true);
+    $process = $runner->start($instance, 'touch check-ran', [
+        ['name' => 'escaped', 'command' => $command, 'timeout_seconds' => $timeout],
+        ['name' => 'never', 'command' => 'touch never-ran', 'timeout_seconds' => 10],
+    ]);
+    try {
+        $reading = check_runner_wait($runner, $instance, $process);
+
+        expect($reading->exitCode)->toBe(124)
+            ->and($reading->failedStep)->toBe('escaped')
+            ->and($reading->output)->toContain('output did not close')
+            ->and(microtime(true) - $started)->toBeLessThan(10)
+            ->and(file_exists($checkout.'/never-ran'))->toBeFalse()
+            ->and(file_exists($checkout.'/check-ran'))->toBeFalse();
+    } finally {
+        $runner->cancel($instance, $process);
+        if (is_file($checkout.'/ignored/escaped-child')) {
+            (new Process(['kill', '-TERM', trim(file_get_contents($checkout.'/ignored/escaped-child'))]))->run();
+        }
+    }
+})->with(['configured timeout' => [30], 'no configured timeout' => [null]]);

@@ -272,7 +272,9 @@ After source resolution has observed the default-branch lockfiles, the Gateway a
 
 A task VM has no default checkout and no dependency trees in its recipe image, so `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT` are empty. The Project's `seed-dependencies` step therefore skips its reflink copy by design. Fresh task VMs reuse verified Composer archives to build `vendor/`, including `apps/cli/vendor`, without downloading those packages again.
 
-For remaining GitHub downloads, trusted setup receives a fresh GitHub App installation token with only `metadata: read`. Incoming pull-request baselines receive no setup token. GitHub installation tokens expire after one hour. Orbit carries the token on a pipe into setup, then into Composer’s in-memory authentication store for API and codeload requests. It never exports the token into a process environment. Composer plugins can use it while the install runs; ordinary setup daemons and later checks do not inherit it.
+For remaining GitHub downloads, trusted setup receives a fresh GitHub App installation token with only `metadata: read`. Incoming pull-request baselines receive no setup token. GitHub installation tokens expire after one hour. Orbit carries the token on a pipe into setup, then into Composer’s in-memory authentication store for API and codeload requests. It never exports the token into a process environment. Composer plugins can use it while the install runs; child commands and later checks do not inherit it.
+
+The check stops each setup step's process group when its shell exits, times out, or is cancelled. Setup steps must finish their work before returning. Long-lived services belong in [Processes](/reference/processes-and-schedules), not setup background jobs. See the [baseline check](/reference/tasks#baseline-check) for output cleanup and timeout behavior.
 
 Orbit writes no auth file. Setup output redacts the token before writing the check log. The Project check and deliverable commands receive no setup token.
 
