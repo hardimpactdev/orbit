@@ -5,12 +5,8 @@ set -euo pipefail
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repository_root"
 projects=("apps/cli" "apps/docs" "apps/gateway" "apps/e2e" "packages/php-sdk")
-available_processes="${ORBIT_TEST_PROCESSES:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || printf '3')}"
-
-if [[ ! "$available_processes" =~ ^[1-9][0-9]*$ ]]; then
-    printf 'ORBIT_TEST_PROCESSES must be a positive integer.\n' >&2
-    exit 2
-fi
+# ORBIT_CHECK_PROCESSES, or the core count, split between the suites.
+available_processes="$("$repository_root/bin/check-processes")"
 
 suite_processes=$((available_processes / ${#projects[@]}))
 if ((suite_processes < 1)); then

@@ -322,7 +322,7 @@ it('keeps Boost setup and repository-owned skills reproducible', function (): vo
         ->and($composer['scripts']['guidance:check'] ?? null)
         ->toBe('../../bin/guidance-check')
         ->and($composer['scripts']['test'] ?? null)
-        ->toBe('../../bin/pest-plain vendor/bin/pest --parallel --tia --compact --colors=never')
+        ->toBe('../../bin/pest-plain vendor/bin/pest --parallel --processes=$(../../bin/check-processes) --tia --compact --colors=never')
         ->and($composer['scripts']['test:full'] ?? null)
         ->toBeNull()
         ->and($composer['scripts']['check'] ?? null)

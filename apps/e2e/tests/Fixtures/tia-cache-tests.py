@@ -74,6 +74,36 @@ def php_minor():
                           check=True, capture_output=True, text=True).stdout
 
 
+def pint_cache(php=None):
+    """A Pint cache as Pint writes it, for this PHP version unless another is named."""
+    php = php or subprocess.run(['php', '-r', 'echo PHP_VERSION;'], check=True, capture_output=True, text=True).stdout
+    return json.dumps({'php': php, 'version': '3.95.25', 'rules': {}, 'hashes': {}}).encode()
+
+
+def phpstan_cache(**meta):
+    """A framed PHPStan result cache whose metadata fit this PHP runtime, with the given entries replaced."""
+    script = r'''
+$extensions = array_values(array_filter(get_loaded_extensions(),
+    static fn (string $extension): bool => ! in_array($extension, ['xdebug', 'blackfire', 'phpstan_turbo'], true)));
+sort($extensions);
+$meta = serialize(array_replace(['cacheVersion' => 'fixture', 'phpVersion' => PHP_VERSION_ID,
+    'phpExtensions' => $extensions, 'extensionVersions' => []], json_decode($argv[1], true)));
+echo "<?php return; ?>\nlastFullAnalysisTime 13\n", serialize(1791289105), 'meta ', strlen($meta), "\n", $meta;
+'''
+    return subprocess.run(['php', '-r', script, json.dumps(meta)], check=True, capture_output=True).stdout
+
+
+# PHPStan derives the extension versions with its own class. The fixture projects stand in for it.
+EXTENSION_VERSIONS = '''<?php
+namespace PHPStan\\Reflection\\BetterReflection\\SourceStubber;
+final class ExtensionVersionProvider
+{
+    public function __construct(private array $paths) {}
+    public function getExtensionVersions(): array { return []; }
+}
+'''
+
+
 @contextmanager
 def launched_workers(failure=None):
     """Record background worker launches and let every other command run."""
@@ -111,6 +141,8 @@ def repository(test, project_files=True):
         (project / 'tests/Pest.php').write_text('<?php\n')
         (project / 'pint.json').write_text('{"cache-file":"vendor/pint.cache"}')
         (project / 'phpstan.neon').write_text('parameters:\n    level: 6\n')
+        (project / 'vendor').mkdir()
+        (project / 'vendor/autoload.php').write_text(EXTENSION_VERSIONS)
         # The background worker runs the tool as main holds it.
         (test.root / 'bin').mkdir()
         shutil.copyfile(cache.__file__, test.root / 'bin/tia-cache')
@@ -236,14 +268,14 @@ class MainCacheTest(CacheFixture):
                 self.assertIn('kept existing private graph: ', output.getvalue())
 
     def test_ci_baseline_import_writes_absent_quality_caches_that_fit_the_checkout(self):
-        artifact = self.artifact(self.commit, quality={'pint': b'pint result', 'phpstan': b'phpstan result'})
+        phpstan = phpstan_cache()
+        artifact = self.artifact(self.commit, quality={'pint': pint_cache(), 'phpstan': phpstan})
         project = self.root / self.project
-        (project / 'vendor').mkdir()
         (project / 'vendor/pint.cache').write_text('local pint')
         with patch.object(cache, 'metadata', return_value=self.info):
             self.assertTrue(cache.import_ci(self.root, self.project, artifact, self.commit))
         self.assertEqual((project / 'vendor/pint.cache').read_text(), 'local pint')
-        self.assertEqual((project / 'vendor/phpstan/cache/resultCache.php').read_bytes(), b'phpstan result')
+        self.assertEqual((project / 'vendor/phpstan/cache/resultCache.php').read_bytes(), phpstan)
         self.assertFalse(self.store.exists())
 
     def test_ci_quality_caches_that_do_not_fit_run_cold_and_corrupt_ones_fail(self):
@@ -255,7 +287,7 @@ class MainCacheTest(CacheFixture):
             cache.import_ci(self.root, self.project, artifact, self.commit)
         self.assertFalse(cached.exists())
         cache.git(self.root, 'checkout', '--', '.')
-        artifact = self.artifact(self.commit, quality={'phpstan': b'phpstan result'}, php='7.4')
+        artifact = self.artifact(self.commit, quality={'phpstan': phpstan_cache(phpVersion=70400)}, php='7.4')
         with patch.object(cache, 'metadata', return_value=self.info):
             cache.import_ci(self.root, self.project, artifact, self.commit)
         self.assertFalse(cached.exists())
@@ -264,6 +296,40 @@ class MainCacheTest(CacheFixture):
         with patch.object(cache, 'metadata', return_value=self.info), self.assertRaises(ValueError):
             cache.import_ci(self.root, self.project, artifact, self.commit)
         self.assertFalse(cached.exists())
+
+    def test_ci_quality_caches_import_only_when_the_tool_would_use_them(self):
+        project = self.root / self.project
+        pint, phpstan = project / 'vendor/pint.cache', project / 'vendor/phpstan/cache/resultCache.php'
+        extensions = json.loads(subprocess.run(['php', '-r', 'echo json_encode(get_loaded_extensions());'],
+                                               check=True, capture_output=True, text=True).stdout)
+        cases = [
+            ('pint', pint_cache(php='8.5.0-fixture'), 'differs from CI PHP 8.5.0-fixture'),
+            ('pint', b'{"version":"3.95.25"}', 'the cache records no PHP version'),
+            ('pint', b'not json', 'the cache records no PHP version'),
+            ('phpstan', phpstan_cache(phpVersion=80000), 'differs from CI PHP 8.0.0'),
+            ('phpstan', phpstan_cache(phpExtensions=[*extensions, 'fixture_extension']),
+             'the PHP extensions differ from CI (missing here: fixture_extension)'),
+            ('phpstan', phpstan_cache(extensionVersions={'fixture': 2}), 'the PHP extension versions differ from CI'),
+            ('phpstan', b'<?php return [];', 'it is not a framed PHPStan result cache'),
+            ('phpstan', b'<?php return; ?>\nlastFullAnalysisTime 13\ni:1;', 'it records no metadata'),
+        ]
+        for tool, data, reason in cases:
+            with self.subTest(tool=tool, reason=reason):
+                output = io.StringIO()
+                with redirect_stdout(output), patch.object(cache, 'metadata', return_value=self.info):
+                    cache.import_ci(self.root, self.project, self.artifact(self.commit, quality={tool: data}), self.commit)
+                self.assertIn(f'[{self.project}] {tool} cache not imported, it runs cold: ', output.getvalue())
+                self.assertIn(reason, output.getvalue())
+                self.assertFalse(pint.exists() or phpstan.exists())
+                (project / '.orbit-tia/graph.json').unlink()
+        (project / 'vendor/autoload.php').unlink()
+        output = io.StringIO()
+        with redirect_stdout(output), patch.object(cache, 'metadata', return_value=self.info):
+            cache.import_ci(self.root, self.project, self.artifact(self.commit, quality={'phpstan': phpstan_cache()}),
+                            self.commit)
+        self.assertIn('phpstan cache not imported, it runs cold: PHPStan cannot report the extension versions here',
+                      output.getvalue())
+        self.assertFalse(phpstan.exists())
 
     def test_ci_baseline_that_does_not_fit_the_checkout_exits_stale_without_writing(self):
         artifact = self.artifact(self.commit)
@@ -1266,6 +1332,9 @@ class ReviewGateTest(unittest.TestCase):
         runner = self.root / 'bin/review-check'
         runner.write_bytes(Path(cache.__file__).with_name('review-check').read_bytes())
         runner.chmod(0o755)
+        processes = self.root / 'bin/check-processes'
+        processes.write_bytes(Path(cache.__file__).with_name('check-processes').read_bytes())
+        processes.chmod(0o755)
         for name in ('tia-cache', 'worktree-cache'):
             seed = self.root / 'bin' / name
             seed.write_text(f'#!/bin/sh\nprintf "{name} %s\\n" "$*" >> "$GATE_TEST_SEEDS"\n')
@@ -1300,6 +1369,25 @@ if [ "$1" = test:affected ]; then
     mkdir -p "$tia_directory"
     printf '[]\n' > "$tia_directory/affected.json"
 fi
+if [ "$1" = check ]; then
+    printf '%s|%s|%s\\n' "${PWD##*/}" "${ORBIT_CHECK_SCOPE:-}" "${ORBIT_CHECK_BASE:-}" >> "$GATE_TEST_SCOPES"
+fi
+if [ "$1" = check ] && [ -n "${GATE_TEST_BARRIER:-}" ]; then
+    case "${PWD##*/}" in
+        cli) mine=cli; other=docs ;;
+        docs) mine=docs; other=cli ;;
+        *) mine= ;;
+    esac
+    if [ -n "$mine" ]; then
+        touch "$GATE_TEST_BARRIER/$mine"
+        waited=0
+        while [ ! -e "$GATE_TEST_BARRIER/$other" ]; do
+            waited=$((waited + 1))
+            [ "$waited" -gt 30 ] && exit 8
+            sleep 0.1
+        done
+    fi
+fi
 if [ "$1" = check ] && [ "${PWD##*/}" = e2e ]; then
     case "$GATE_TEST_MODE" in
         fail) exit 7 ;;
@@ -1310,7 +1398,10 @@ fi
         composer.chmod(0o755)
         self.gate_env = {**os.environ, 'PATH': str(fake_bin) + os.pathsep + os.environ['PATH'],
                          'GATE_TEST_CALLS': str(self.common / 'calls'), 'GATE_TEST_ROOT': str(self.root),
-                         'GATE_TEST_SEEDS': str(self.common / 'seeds'), 'GATE_TEST_DOCS': str(self.common / 'docs')}
+                         'GATE_TEST_SEEDS': str(self.common / 'seeds'), 'GATE_TEST_DOCS': str(self.common / 'docs'),
+                         'GATE_TEST_SCOPES': str(self.common / 'scopes')}
+        for name in ('ORBIT_CHECK_PROCESSES', 'ORBIT_CHECK_SCOPE', 'ORBIT_CHECK_BASE'):
+            self.gate_env.pop(name, None)
         return runner
 
     def test_gate_seeds_quality_and_test_caches_before_checks(self):
@@ -1363,6 +1454,38 @@ fi
         self.assertEqual([f'{self.root.resolve()}|--gate --base {self.commit}'],
                          (self.common / 'docs').read_text().splitlines())
         self.assertEqual(15, len((self.common / 'calls').read_text().splitlines()))
+
+    def test_gate_scopes_pint_and_rector_to_the_merge_base_in_composer_check_only(self):
+        runner = self.gate_fixture()
+        result = subprocess.run([str(runner)], env=self.gate_env, capture_output=True, text=True)
+        self.assertEqual(0, result.returncode, result.stderr + result.stdout)
+        scopes = sorted((self.common / 'scopes').read_text().splitlines())
+        self.assertEqual(sorted(f'{Path(project).name}|changed|{self.commit}' for project in cache.PROJECTS), scopes)
+        (self.common / 'scopes').unlink()
+        result = subprocess.run([str(runner)], env={**self.gate_env, 'ORBIT_CHECK_SCOPE': 'full'},
+                                capture_output=True, text=True)
+        self.assertEqual(0, result.returncode, result.stderr + result.stdout)
+        self.assertEqual(sorted(f'{Path(project).name}|full|' for project in cache.PROJECTS),
+                         sorted((self.common / 'scopes').read_text().splitlines()))
+
+    def test_gate_runs_projects_at_the_same_time_up_to_the_process_setting(self):
+        runner = self.gate_fixture()
+        barrier = Path(self.temporary.name) / 'barrier'
+        barrier.mkdir()
+        environment = {**self.gate_env, 'GATE_TEST_BARRIER': str(barrier), 'ORBIT_CHECK_PROCESSES': '2'}
+        result = subprocess.run([str(runner)], env=environment, capture_output=True, text=True)
+        self.assertEqual(0, result.returncode, result.stderr + result.stdout)
+        for name in ('cli', 'docs'):
+            (barrier / name).unlink()
+        # One project at a time: the CLI check waits for the Docs check, which has not started, and gives up.
+        result = subprocess.run([str(runner)], env={**environment, 'ORBIT_CHECK_PROCESSES': '1'},
+                                capture_output=True, text=True)
+        self.assertEqual(1, result.returncode, result.stderr + result.stdout)
+        self.assertIn('[apps/cli] composer check: FAILED', result.stdout)
+        result = subprocess.run([str(runner)], env={**environment, 'ORBIT_CHECK_PROCESSES': 'many'},
+                                capture_output=True, text=True)
+        self.assertEqual(1, result.returncode, result.stderr + result.stdout)
+        self.assertIn("ORBIT_CHECK_PROCESSES must be a positive integer, not 'many'.", result.stderr)
 
     def test_gate_rejects_failed_checks_and_candidate_mutation(self):
         runner = self.gate_fixture()
@@ -1564,7 +1687,7 @@ class CiCacheRefTest(CacheFixture):
         self.exports.mkdir()
         for project in cache.PROJECTS:
             self.project = project
-            artifact = self.artifact(self.commit, quality={'pint': b'pint bytes', 'phpstan': b'<?php // trusted CI'},
+            artifact = self.artifact(self.commit, quality={'pint': pint_cache(), 'phpstan': phpstan_cache()},
                                      manifest={'schema': 2, 'run_attempt': '1', 'configurations': {
                                          tool: cache.digest((self.root / project / configuration).read_bytes())
                                          for tool, (configuration, _) in cache.QUALITY.items()}})
@@ -1600,7 +1723,8 @@ class CiCacheRefTest(CacheFixture):
         self.assertIn('imported CI baseline', self.import_ref())
         for project in cache.PROJECTS:
             self.assertEqual(json.loads((self.root / project / '.orbit-tia/graph.json').read_text())['baselines']['main']['sha'], self.commit)
-            self.assertEqual((self.root / project / 'vendor/phpstan/cache/resultCache.php').read_bytes(), b'<?php // trusted CI')
+            self.assertEqual((self.root / project / 'vendor/phpstan/cache/resultCache.php').read_bytes(), phpstan_cache())
+            self.assertEqual((self.root / project / 'vendor/pint.cache').read_bytes(), pint_cache())
         self.assertIn('kept existing', self.import_ref())
 
     def test_fresh_clone_setup_uses_ci_ref_and_private_package_cache_with_cold_fallback(self):

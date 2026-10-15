@@ -1,0 +1,31 @@
+#!/usr/bin/env python3
+"""Print how many processes a check may start: ORBIT_CHECK_PROCESSES, or the machine's core count.
+
+Pest and Pint read this value in the Composer scripts, and bin/review-check reads it for the projects it runs at
+once. tools/check-processes.php reads the same setting for PHPStan and Rector.
+"""
+import os
+import re
+import sys
+
+SETTING = 'ORBIT_CHECK_PROCESSES'
+
+
+def processes(environment=os.environ):
+    value = environment.get(SETTING, '')
+    if value != '':
+        if not re.fullmatch(r'[1-9][0-9]*', value):
+            raise ValueError(f'{SETTING} must be a positive integer, not {value!r}.')
+        return int(value)
+    try:
+        return max(1, len(os.sched_getaffinity(0)))
+    except AttributeError:
+        return max(1, os.cpu_count() or 1)
+
+
+if __name__ == '__main__':
+    try:
+        print(processes())
+    except ValueError as error:
+        print(error, file=sys.stderr)
+        sys.exit(2)

@@ -37,10 +37,10 @@ Prefer datasets for cases sharing setup and assertions. Move duplicate validatio
 
 Use `composer test:affected` and `composer check` in changed PHP projects. Follow project rules on filtered runs; Gateway guidance requires TIA development runs and forbids ad hoc path/filter selection. Required architecture gates and explicit fresh full runs have different purposes. Check `.github/workflows/ci.yml` and `bin/review-check` for those invocations rather than silently changing test scripts.
 
-For a fresh baseline or final full run, confirm the installed runner supports the CI flags. Orbit CI uses `--tia --fresh` to discard the selection graph and execute every test in the selected configuration. Preserve plain output through `bin/pest-plain` and use the project's process limit. From a PHP project, a typical two-process run is:
+For a fresh baseline or final full run, confirm the installed runner supports the CI flags. Orbit CI uses `--tia --fresh` to discard the selection graph and execute every test in the selected configuration. Preserve plain output through `bin/pest-plain` and use the shared process setting, `ORBIT_CHECK_PROCESSES`. From a PHP project, a typical run is:
 
 ```bash
-../../bin/pest-plain vendor/bin/pest --parallel --processes=2 --tia --fresh --compact --colors=never
+../../bin/pest-plain vendor/bin/pest --parallel --processes=$(../../bin/check-processes) --tia --fresh --compact --colors=never
 ```
 
 Run every relevant configuration and separately gated group; a default full run does not imply privileged or Incus scenarios executed. Record counts, failures, skips, duration, coverage-driver availability, configuration, and whether TIA selected or actually executed tests. PCOV or Xdebug is needed for TIA; do not follow generic performance advice to disable the driver while relying on TIA.

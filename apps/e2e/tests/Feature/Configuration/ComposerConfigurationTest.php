@@ -147,7 +147,7 @@ describe('Composer configuration', function (): void {
             ->not
             ->toHaveKey('test:live-incus')
             ->and($composer['scripts']['test'])
-            ->toBe('../../bin/pest-plain vendor/bin/pest --parallel --tia --compact --colors=never')
+            ->toBe('../../bin/pest-plain vendor/bin/pest --parallel --processes=$(../../bin/check-processes) --tia --compact --colors=never')
             ->and($composer['scripts']['test:fresh'])
             ->toBe('vendor/bin/pest --parallel --tia --fresh --compact')
             ->and($composer['scripts']['guidance:check'])
