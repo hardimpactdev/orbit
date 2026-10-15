@@ -72,7 +72,7 @@ A step that a person writes, such as a deploy step that migrates a database, is 
 `orbit:operations-sweep` runs every minute on the Gateway queue. It requeues:
 
 - a `running` operation whose attempt lease is free, because its worker died or its code ended without recording the outcome, and
-- a `queued` operation whose job was dispatched more than 10 minutes ago and has not started, because Redis can lose a job.
+- a `queued` operation whose job was dispatched more than 10 minutes ago and has not started, but only while the `operations` queue holds no job at all, because Redis can lose a job. With one worker, an operation that waits behind a long one still has its job in the queue, so the sweep never adds a second one.
 
 The runner then decides what the interrupted step means. A resumable step runs again. A step that is not resumable fails with `operation.worker_lost`, and the operation fails at that step. An operation that has started three times fails the same way, so a step that kills its worker cannot loop. The kind finishes its domain record either way, so a lost deploy still ends its deployment row as failed.
 

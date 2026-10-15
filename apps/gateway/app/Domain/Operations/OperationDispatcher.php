@@ -19,6 +19,15 @@ final readonly class OperationDispatcher
         return GatewayQueueRedis::configured();
     }
 
+    /**
+     * The jobs on the `operations` queue that wait or run, as the queue driver counts them: Redis counts its waiting,
+     * delayed, and reserved jobs, and the database driver every row of the queue.
+     */
+    public function jobs(): int
+    {
+        return Queue::connection(GatewayQueue::Connection)->size(GatewayQueue::Operations->value);
+    }
+
     public function dispatch(Operation $operation): void
     {
         Queue::connection(GatewayQueue::Connection)->pushOn(GatewayQueue::Operations->value, new RunOperation($operation->id));

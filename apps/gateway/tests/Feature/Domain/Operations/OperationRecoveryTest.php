@@ -7,6 +7,7 @@ use App\Domain\Gateway\GatewayQueue;
 use App\Domain\Instances\Deployment\DeploymentStepName;
 use App\Domain\Instances\Deployment\InstanceDeploymentRecorder;
 use App\Domain\Operations\OperationAttemptLease;
+use App\Domain\Operations\OperationDispatcher;
 use App\Domain\Operations\OperationPoll;
 use App\Domain\Operations\OperationRun;
 use App\Domain\Operations\OperationStatus;
@@ -188,6 +189,17 @@ describe('the sweep', function (): void {
             // The worker process still lives, but no attempt holds the lease any more.
             ->and(app(OperationSweeper::class)->sweep())->toBe(1)
             ->and($operation->refresh()->status)->toBe(OperationStatus::Queued);
+    });
+
+    it('adds no second job for an operation that waits in the queue longer than the lost-job time', function (): void {
+        // One worker runs a long deploy; this one waits behind it with its job still in the queue.
+        $waiting = app(OperationStore::class)->create('instance.deploy', 'instance', $this->fixture->instance->id, null, [], 'test', null);
+        app(OperationDispatcher::class)->dispatch($waiting);
+        $waiting->update(['dispatched_at' => Carbon::now()->subSeconds(OperationSweeper::QueuedJobLostSeconds * 3)]);
+
+        expect(app(OperationSweeper::class)->sweep())->toBe(0)
+            ->and(app(OperationSweeper::class)->sweep())->toBe(0)
+            ->and(DB::table('jobs')->where('queue', GatewayQueue::Operations->value)->count())->toBe(1);
     });
 
     it('queues a job again only for a queued operation whose job was lost', function (): void {

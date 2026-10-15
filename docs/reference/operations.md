@@ -143,6 +143,8 @@ An operation holds its target from the start request to its terminal status. A s
 - each `running` operation whose attempt lease is free, because its worker died or its attempt ended without recording the outcome, and
 - each `queued` operation whose job was queued more than 10 minutes ago and has not started.
 
+The sweep queues a `queued` operation again only while the `operations` queue holds no waiting or running job. With one worker, an operation that waits behind a long one still has its job in the queue, so it never gets a second one.
+
 The next worker then looks at the step that was running:
 
 | The interrupted step | What happens |

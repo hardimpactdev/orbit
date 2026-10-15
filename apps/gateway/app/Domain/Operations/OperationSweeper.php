@@ -16,7 +16,7 @@ use Throwable;
  */
 final readonly class OperationSweeper
 {
-    /** A queued job that has not started after this long counts as lost. */
+    /** A queued operation whose job has not started after this long counts as lost once the queue holds no job. */
     public const int QueuedJobLostSeconds = 600;
 
     public function __construct(
@@ -29,6 +29,9 @@ final readonly class OperationSweeper
     public function sweep(): int
     {
         $count = 0;
+        // Count before this sweep queues anything. An operation that waits has its job in the queue, so the queue is
+        // empty only when every waiting operation's job is gone.
+        $jobsGone = $this->dispatcher->jobs() === 0;
 
         foreach (Operation::query()->where('status', OperationStatus::Running->value)->orderBy('id')->get() as $operation) {
             $requeued = false;
@@ -47,7 +50,7 @@ final readonly class OperationSweeper
         $lostBefore = Carbon::now()->subSeconds(self::QueuedJobLostSeconds);
 
         foreach (Operation::query()->where('status', OperationStatus::Queued->value)->orderBy('id')->get() as $operation) {
-            if ($operation->dispatched_at !== null && $operation->dispatched_at->greaterThan($lostBefore)) {
+            if (! $jobsGone || ($operation->dispatched_at !== null && $operation->dispatched_at->greaterThan($lostBefore))) {
                 continue;
             }
 
