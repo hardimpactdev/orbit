@@ -76,7 +76,11 @@ The new Instance gets its own copy of each part below.
 
 Database attachments own the production `DB_*` values; the candidate's database settings do not copy.
 
-Before the clone completes, Orbit renders the new Instance's stored values and writes its `.env` in the production home. The first deployment links that file from the release's application directory, including a nested path such as `apps/site/.env`. It copies no `.env` file from the candidate, and no cached configuration, dependencies, logs, caches, or PHP-FPM tuning. Stored values such as `APP_KEY` copy as they are. References such as `{{instance.domain}}` resolve against the new Instance.
+Before the clone completes, Orbit renders the new Instance's stored values and writes its `.env` in the production home. The first deployment links that file from the release's application directory, including a nested path such as `apps/site/.env`. It copies no `.env` file from the candidate, and no cached configuration, dependencies, logs, caches, or PHP-FPM tuning. Stored values such as `APP_KEY` copy as they are.
+
+The clone response includes `data.warnings`, also shown by `instance:clone` (and its JSON output). Warnings name keys, never values: they flag candidate-Node hosts and dev-TLD hosts, absolute paths outside the production home, and copied local/test service choices (`QUEUE_CONNECTION=database`, `sync`, or `null`; array cache/session drivers; log/array mailers). These are review hints, not proof that a service is unreachable. Orbit does not rewrite these settings.
+
+Review Redis, cache, queue, session, and mail settings and use `env:update` followed by `env:sync` to correct them. Warnings are recalculated from the target's stored values on retry, so corrected settings stop appearing. References such as `{{instance.domain}}` resolve against the new Instance.
 
 ## Preview domain
 

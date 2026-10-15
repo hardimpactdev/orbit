@@ -64,6 +64,15 @@ describe(InstanceResponse::class, function (): void {
         ]);
     });
 
+    it('carries clone warnings through typed transport and serialization', function (): void {
+        $warning = 'QUEUE_CONNECTION: Copied service driver needs production review; it was not changed. Review with env:update, then env:sync.';
+        $response = InstanceResponse::fromGatewayData(['warnings' => [$warning]], 'request-id');
+
+        expect($response->warnings)->toBe([$warning])
+            ->and($response->toArray()['warnings'])->toBe([$warning])
+            ->and(InstanceResponse::fromGatewayData([], 'request-id')->warnings)->toBe([]);
+    });
+
     it('uses safe values for invalid gateway fields', function (): void {
         $response = InstanceResponse::fromGatewayData([
             'id' => 'invalid',

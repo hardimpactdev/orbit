@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Instances;
 
+use App\Domain\Instances\Environment\CloneEnvironmentWarnings;
 use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\Environment\InstanceEnvironmentRenderer;
@@ -23,7 +24,24 @@ final readonly class CloneInstanceEnvironmentAction
         private InstanceOperationPreflight $preflight,
         private InstanceEnvironmentRenderer $renderer,
         private InstanceEnvironmentWriter $writer,
+        private CloneEnvironmentWarnings $warningDetector = new CloneEnvironmentWarnings,
     ) {}
+
+    /** @return list<string> */
+    public function warnings(Instance $source, Instance $target): array
+    {
+        $source->loadMissing('node');
+        $values = [];
+        foreach ($target->environmentValues()->get() as $row) {
+            $values[$row->env_key] = $row->env_value;
+        }
+
+        return $this->warningDetector->detect(
+            $values,
+            $source->node,
+            $target->production_home ?? $target->checkout_path,
+        );
+    }
 
     public function execute(Instance $source, Instance $target): InstanceEnvironmentResult
     {
@@ -64,6 +82,7 @@ final readonly class CloneInstanceEnvironmentAction
                     operation: 'clone',
                     changed: $result->changed,
                     keyCount: $snapshot->keyCount(),
+                    warnings: $this->warningDetector->detect($snapshot->values(), $sourceContext->node, $targetContext->path),
                 );
             },
         );

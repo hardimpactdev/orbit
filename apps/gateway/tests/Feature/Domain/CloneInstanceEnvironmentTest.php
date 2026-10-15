@@ -81,6 +81,7 @@ it('copies independent encrypted values and resolves placeholders through the ex
             'operation' => 'clone',
             'changed' => true,
             'key_count' => 4,
+            'warnings' => [],
         ])
         ->and($targetValues)
         ->toBe([
@@ -267,6 +268,35 @@ it('refuses a Route placeholder without a route before writing', function (): vo
     expect($writer->contents)->toBeNull();
 });
 
+it('reports key-only warnings without rewriting copied settings and refreshes them on retry', function (): void {
+    [$source, $target] = clone_environment_fixture();
+    $source->node->update(['tld' => 'dev.orbit']);
+    $values = [
+        'REDIS_URL' => 'redis://user:SECRET_SENTINEL@redis.dev.orbit:6379/0',
+        'CACHE_PATH' => '/outside/SECRET_SENTINEL/cache',
+        'QUEUE_CONNECTION' => 'database',
+        'SESSION_DOMAIN' => 'session.dev.orbit',
+        'MAIL_HOST' => $source->node->public_ssh_host,
+        'APP_KEY' => 'SECRET_SENTINEL',
+    ];
+    foreach ($values as $key => $value) {
+        $source->environmentValues()->create(['env_key' => $key, 'env_value' => $value]);
+    }
+    bind_clone_environment_fakes();
+    $action = app(CloneInstanceEnvironmentAction::class);
+    $result = $action->execute($source, $target);
+
+    expect($result->warnings)->toHaveCount(5)
+        ->and(implode(' ', $result->warnings))->toContain('REDIS_URL:', 'CACHE_PATH:', 'QUEUE_CONNECTION:', 'SESSION_DOMAIN:', 'MAIL_HOST:')
+        ->not->toContain('SECRET_SENTINEL', 'APP_KEY:', 'redis.dev.orbit', '/outside/')
+        ->and($action->warnings($source, $target))->toBe($result->warnings);
+    foreach ($values as $key => $value) {
+        expect($target->environmentValues()->where('env_key', $key)->sole()->env_value)->toBe($value);
+    }
+    $target->environmentValues()->where('env_key', 'QUEUE_CONNECTION')->sole()->update(['env_value' => 'redis']);
+    expect(implode(' ', $action->execute($source, $target)->warnings))->not->toContain('QUEUE_CONNECTION:');
+});
+
 it('supports a clone with no stored environment rows', function (): void {
     [$source, $target] = clone_environment_fixture();
     [, $preflight, $writer] = bind_clone_environment_fakes(changed: false);
@@ -279,6 +309,7 @@ it('supports a clone with no stored environment rows', function (): void {
             'operation' => 'clone',
             'changed' => false,
             'key_count' => 2,
+            'warnings' => [],
         ])
         ->and($target->environmentValues()->pluck('env_value', 'env_key')->all())
         ->toBe([

@@ -74,6 +74,7 @@ use SensitiveParameter;
  *     removal: array<string, bool|int|string|null>|null,
  *     transfer: array<string, mixed>|null,
  *     deploy_steps: list<array{name: string, phase: string, command: string, timeout_seconds: int}>,
+ *     warnings?: list<string>,
  *     request_id: string
  * }
  */
@@ -113,6 +114,8 @@ final readonly class InstanceResponse
         public ?string $annotatorUrl = null,
         /** @var list<RouteResponse> Every Route of the Instance, including Routes with a web root. */
         public array $routes = [],
+        /** @var list<string> */
+        public array $warnings = [],
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -123,6 +126,7 @@ final readonly class InstanceResponse
         string $requestId,
     ): self {
         return new self(
+            warnings: is_array($data['warnings'] ?? null) ? array_values(array_filter($data['warnings'], is_string(...))) : [],
             id: is_int($data['id'] ?? null) ? $data['id'] : 0,
             projectId: is_int($data['project_id'] ?? null) ? $data['project_id'] : 0,
             nodeId: is_int($data['node_id'] ?? null) ? $data['node_id'] : 0,
@@ -194,6 +198,7 @@ final readonly class InstanceResponse
                 static fn (DeploymentStepResponse $step): array => $step->toArray(),
                 $this->deploySteps,
             ),
+            ...($this->warnings === [] ? [] : ['warnings' => $this->warnings]),
             'request_id' => $this->requestId,
         ];
     }

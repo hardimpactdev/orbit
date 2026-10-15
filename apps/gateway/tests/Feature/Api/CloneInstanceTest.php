@@ -178,6 +178,7 @@ it('returns the ordinary created Instance and records the target without SQLite 
     $writer = new Orb198ApiEnvironmentWriter;
     $this->candidate->environmentValues()->create(['env_key' => 'DB_HOST', 'env_value' => 'dev-db']);
     $this->candidate->environmentValues()->create(['env_key' => 'DB_DATABASE', 'env_value' => '/dev/database.sqlite']);
+    $this->candidate->environmentValues()->create(['env_key' => 'REDIS_URL', 'env_value' => 'redis://user:SECRET_SENTINEL@'.$this->candidateNode->public_ssh_host.':6379']);
     $this->destinationNode->update(['tld' => 'prod.orbit']);
     $this->destinationNode->roles()->create([
         'role' => RoleName::AppProd,
@@ -223,8 +224,11 @@ it('returns the ordinary created Instance and records the target without SQLite 
         ->assertCreated()
         ->assertJsonPath('data.id', $target->id)
         ->assertJsonPath('data.name', 'target')
+        ->assertJsonPath('data.warnings', ['REDIS_URL: Copied host points at the candidate Node or its development TLD. Review with env:update, then env:sync.'])
         ->assertJsonPath('data.status', 'active')
         ->assertJsonMissingPath('data.environment');
+
+    expect($response->getContent())->not->toContain('SECRET_SENTINEL', 'redis://');
 
     $activity = Activity::query()->where('command', 'instance:clone')->sole();
     expect($activity->status)->toBe('succeeded')
@@ -252,6 +256,17 @@ it('returns the ordinary created Instance and records the target without SQLite 
             ->and(DatabaseConnectionTarget::query()->count())->toBe(0)
             ->and($writer->contents)->not->toContain('DB_');
     }
+
+    $target->environmentValues()->where('env_key', 'REDIS_URL')->sole()->update(['env_value' => 'redis://redis.production.example']);
+    $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->postJson($this->cloneUrl, [
+            'node_id' => $this->destinationNode->id,
+            'name' => 'target',
+            'preview_name' => 'shop.com',
+            ...($withSqlite ? ['sqlite_source_path' => $this->candidate->checkout_path.'/database.sqlite'] : []),
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.warnings', []);
 })->with(['without SQLite' => false, 'with SQLite' => true]);
 
 it('returns an active Cluster-scoped clone with the production Node TLD', function (): void {

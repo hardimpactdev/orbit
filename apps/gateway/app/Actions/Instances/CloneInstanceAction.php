@@ -58,7 +58,7 @@ final readonly class CloneInstanceAction
         private ?MetricsFleetReconciler $metrics = null,
     ) {}
 
-    /** @return array{instance: Instance, created: bool} */
+    /** @return array{instance: Instance, created: bool, warnings: list<string>} */
     public function execute(Instance $candidate, CloneInstanceData $data): array
     {
         $candidate->loadMissing(['project', 'node']);
@@ -70,6 +70,7 @@ final readonly class CloneInstanceAction
             return [
                 'instance' => $existing->load('routes.targets'),
                 'created' => false,
+                'warnings' => $this->environment->warnings($candidate, $existing),
             ];
         }
 
@@ -109,7 +110,7 @@ final readonly class CloneInstanceAction
 
         $this->metrics?->reconcile();
 
-        return ['instance' => $result, 'created' => $created];
+        return ['instance' => $result, 'created' => $created, 'warnings' => $this->environment->warnings($candidate, $result)];
     }
 
     private function existingTarget(Instance $candidate, CloneInstanceData $data): ?Instance
