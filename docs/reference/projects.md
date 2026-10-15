@@ -18,7 +18,7 @@ A Project records one Git repository and the defaults for running it. New Instan
 
 ## Project Documents
 
-[Project Documents](/reference/project-documents) are a native folder tree of notes and versioned attachments owned by the Project, independent of its Instances and Git branches. Orbit keeps their metadata in the Gateway database and their bodies in a dedicated private UpCloud bucket. The shared contract covers editing, upload/download, archive, permanent removal, and recovery across API, CLI, SDK, MCP, and web.
+[Project Documents](/reference/project-documents), the `documents` extension, are a native folder tree of notes and versioned attachments owned by the Project, independent of its Instances and Git branches. Orbit keeps their metadata in the Gateway database and their bodies in a dedicated private UpCloud bucket. The shared contract covers editing, upload/download, archive, permanent removal, and recovery across API, CLI, SDK, MCP, and web.
 
 ## Fields
 
@@ -229,6 +229,8 @@ orbit project:update 3 --repository=https://github.com/acme/site.git
 `project:destroy` removes a Project that has no Instances and no Routes. It deletes the Project's process and Schedule definitions, setup and teardown steps, Node exclusions, and update records.
 
 A Project with tasks cannot be removed. The Gateway refuses the request with HTTP 409 and `project.has_task_groups`.
+
+Extensions take part in the removal through the `ProjectRemovalHook` [plug-in point](/reference/extensions#plug-in-points), in the same transaction. The documents extension removes the Project's documents and records their stored bytes for cleanup, whether or not its switch is on.
 
 ## Errors
 

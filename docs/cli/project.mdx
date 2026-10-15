@@ -47,7 +47,7 @@ Every command accepts `--json`.
 
 ## Project Documents
 
-The `project:document` commands browse, change, and version the documents of a Project. The `project:document-storage` commands configure the Gateway's private storage for them. Each command has its own section below, and [Project Documents](/reference/project-documents#cli-contract) owns the full contract.
+The `project:document` commands browse, change, and version the documents of a Project. The `project:document-storage` commands configure the Gateway's private storage for them. They belong to the `documents` [extension](/cli/extension): `list`, `help`, and completion hide them while it is off, and a direct call fails with `extension.disabled`. Each command has its own section below, and [Project Documents](/reference/project-documents#cli-contract) owns the full contract.
 
 Mutations require an observed `--expected-revision`; permanent removal also requires `--yes` without a terminal. JSON mode preserves the API envelope. Local validation uses `input.invalid` and exit 2. Local download integrity or filesystem failures use `project_documents.local_io_failed` and exit 1. On `project_documents.revision_conflict`, preserve the draft and reread metadata rather than retrying automatically.
 

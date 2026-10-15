@@ -7,18 +7,15 @@ namespace App\Domain\Extensions;
 use App\Domain\Settings\SettingRepository;
 use App\Domain\Settings\SettingScope;
 use App\Domain\Settings\SettingScopeType;
-use InvalidArgumentException;
 
+/** The Gateway-owned extension switches, one Gateway setting per known extension. */
 final readonly class ExtensionStore
 {
-    /** @var list<string> */
-    public const array Extensions = ['tasks', 'proxycli'];
-
-    public function __construct(private SettingRepository $settings) {}
+    public function __construct(private SettingRepository $settings, private ExtensionRegistry $registry) {}
 
     public function enabled(string $extension): bool
     {
-        $this->assertKnown($extension);
+        $this->registry->find($extension);
 
         return $this->settings->get($this->scope(), "extension.{$extension}.enabled") === '1';
     }
@@ -26,24 +23,19 @@ final readonly class ExtensionStore
     /** @return array<string, bool> */
     public function all(): array
     {
-        return array_combine(self::Extensions, array_map($this->enabled(...), self::Extensions));
+        $names = $this->registry->names();
+
+        return array_combine($names, array_map($this->enabled(...), $names));
     }
 
     public function set(string $extension, bool $enabled): void
     {
-        $this->assertKnown($extension);
+        $this->registry->find($extension);
         $key = "extension.{$extension}.enabled";
         if ($enabled) {
             $this->settings->put($this->scope(), $key, '1');
         } else {
             $this->settings->delete($this->scope(), $key);
-        }
-    }
-
-    private function assertKnown(string $extension): void
-    {
-        if (! in_array($extension, self::Extensions, true)) {
-            throw new InvalidArgumentException("Unknown extension [{$extension}].");
         }
     }
 

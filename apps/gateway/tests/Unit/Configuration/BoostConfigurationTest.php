@@ -190,7 +190,7 @@ it('keeps generated scoped guidance complete and de-duplicated', function (): vo
     $index = $readProjectFile('.ai/rules/index.md');
 
     expect($index)->toContain(
-        '| app/Actions/**, app/Data/**, app/Domain/**, app/Exceptions/**, app/Infrastructure/**, app/Rules/** | .ai/rules/app.md |',
+        '| app/Actions/**, app/Data/**, app/Domain/**, app/Exceptions/**, app/Infrastructure/**, app/Rules/**, extensions/** | .ai/rules/app.md |',
         '| app/Http/**, routes/** | .ai/rules/boost/http-routes.md |',
         '| app/Models/** | .ai/rules/boost/models.md |',
         '| tests/** | .ai/rules/boost/tests.md |',
