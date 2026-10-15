@@ -29,8 +29,10 @@ import atexit
 import json
 import os
 import re
+import shlex
 import shutil
 import signal
+import selectors
 import stat
 import subprocess
 import sys
@@ -196,6 +198,10 @@ def start(checkout, setup=None, deliverables=None, command=None):
     for path in (RESULT, LOG):
         if os.path.exists(path):
             os.remove(path)
+    try:
+        os.set_inheritable(3, True)
+    except OSError:
+        pass
     pid = os.fork()
     if pid == 0:
         os.setsid()
@@ -203,6 +209,10 @@ def start(checkout, setup=None, deliverables=None, command=None):
         for descriptor in (0, 1, 2):
             os.dup2(null, descriptor)
         os.execv(sys.executable, [sys.executable, os.path.abspath(__file__), 'run', checkout, head, tree, setup or '-', deliverables or '-', command])
+    try:
+        os.close(3)
+    except OSError:
+        pass
     for _ in range(50):
         started = process_started(pid)
         if started:
@@ -211,8 +221,9 @@ def start(checkout, setup=None, deliverables=None, command=None):
     print(json.dumps({'pid': pid, 'started': started, 'head': head, 'tree': tree}))
 
 
-def run_setup(checkout, setup, log):
-    """Run each setup step in order. Return the name and exit code of the first step that fails."""
+def run_setup(checkout, setup, log, composer_auth=None):
+    """Stream each step through one process path; retain the failed step's output boundary."""
+    global CHILD_PROCESS
     with open(setup) as steps:
         for step in json.load(steps):
             command = step['command']
@@ -220,19 +231,89 @@ def run_setup(checkout, setup, log):
                 command = command[:SETUP_COMMAND_LOG] + f'\n[{len(command) - SETUP_COMMAND_LOG} more characters of the command are not shown]'
             log.write(f"$ {command}\n".encode())
             log.flush()
-            try:
-                with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', suffix='.sh') as script:
-                    script.write(step['command'])
-                    script.flush()
-                    exit_code = subprocess.run(['bash', '-l', script.name], cwd=checkout, stdin=subprocess.DEVNULL,
-                                               stdout=log, stderr=subprocess.STDOUT,
-                                               timeout=step.get('timeout_seconds') or None).returncode
-            except subprocess.TimeoutExpired:
-                log.write(f"Setup step {step['name']} timed out after {step['timeout_seconds']} seconds.\n".encode())
-                exit_code = 124
-            if exit_code != 0:
-                return step['name'], exit_code
-    return None, 0
+            output_start = log.tell()
+            with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', suffix='.sh') as script:
+                if 'COMPOSER_CACHE_DIR' in os.environ:
+                    script.write('export COMPOSER_CACHE_DIR=' + shlex.quote(os.environ['COMPOSER_CACHE_DIR']) + '\n')
+                script.write('orbit_auth_fd=$1\nIFS= read -r -u "$orbit_auth_fd" orbit_composer_auth\nexec {orbit_auth_fd}<&-\nexport -n orbit_composer_auth\nshift\n')
+                if composer_auth:
+                    script.write('orbit_composer_binary=$(type -P composer)\n')
+                    script.write('orbit_composer_helper=' + shlex.quote(os.path.join(DIRECTORY, 'composer.php')) + '\n')
+                    script.write('''composer() { printf '%s' "$orbit_composer_auth" | command php "$orbit_composer_helper" "$orbit_composer_binary" "$@"; }\n''')
+                script.write(step['command'])
+                script.flush()
+                read_fd, write_fd = os.pipe()
+                try:
+                    os.write(write_fd, ((composer_auth or '') + '\n').encode())
+                finally:
+                    os.close(write_fd)
+                try:
+                    CHILD_PROCESS = subprocess.Popen(['bash', '-l', script.name, str(read_fd)], cwd=checkout, stdin=subprocess.DEVNULL,
+                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True,
+                        pass_fds=(read_fd,))
+                finally:
+                    os.close(read_fd)
+                process = CHILD_PROCESS
+                deadline = time.monotonic() + step['timeout_seconds'] if step.get('timeout_seconds') else None
+                pending = b''
+                keep = max([len(secret) for secret in composer_secrets(composer_auth)] or [1]) - 1
+                timed_out = False
+                drain_deadline = None
+                output_stalled = False
+                try:
+                    with selectors.DefaultSelector() as selector:
+                        selector.register(process.stdout, selectors.EVENT_READ)
+                        while selector.get_map() or process.poll() is None:
+                            if process.poll() is None and deadline is not None and time.monotonic() >= deadline:
+                                timed_out = True
+                                stop_child_process()
+                            if process.poll() is not None and drain_deadline is None:
+                                stop_child_process()
+                                drain_deadline = time.monotonic() + 1
+                            if drain_deadline is not None and time.monotonic() >= drain_deadline:
+                                output_stalled = True
+                                break
+                            for key, _ in selector.select(0.1):
+                                chunk = os.read(key.fd, 8192)
+                                if not chunk:
+                                    selector.unregister(key.fileobj)
+                                    continue
+                                pending = redact_composer_auth(pending + chunk, composer_auth)
+                                length = max(0, len(pending) - keep)
+                                log.write(pending[:length])
+                                log.flush()
+                                pending = pending[length:]
+                        log.write(redact_composer_auth(pending, composer_auth))
+                        log.flush()
+                    process.wait()
+                finally:
+                    stop_child_process()
+                    process.stdout.close()
+                exit_code = 124 if timed_out or output_stalled else process.returncode
+                if output_stalled:
+                    log.write(f"Setup step {step['name']} output did not close after its process exited.\n".encode())
+                elif timed_out:
+                    log.write(f"Setup step {step['name']} timed out after {step['timeout_seconds']} seconds.\n".encode())
+                if exit_code != 0:
+                    return step['name'], exit_code, output_start
+    return None, 0, None
+
+
+def composer_secrets(auth):
+    if not auth:
+        return []
+    import base64
+    secrets = [auth]
+    for group in json.loads(auth).values():
+        for token in group.values():
+            secrets.extend([token, base64.b64encode((token + ':x-oauth-basic').encode()).decode()])
+    return [secret.encode() for secret in sorted(set(secrets), key=len, reverse=True)]
+
+
+def redact_composer_auth(output, auth):
+    for secret in composer_secrets(auth):
+        output = output.replace(secret, b'[REDACTED]')
+    return output
 
 
 def inside(checkout, relative):
@@ -256,7 +337,7 @@ def run_logged(arguments, cwd, log, capture=None):
 
 FAILURE_TAIL = 4096
 BASE_RUN_TIMEOUT = 600
-BASE_PROCESS = None
+CHILD_PROCESS = None
 
 
 def deliverable_path(checkout, relative):
@@ -302,11 +383,11 @@ def process_group_exists(process_group):
         return True
 
 
-def stop_base_process():
-    global BASE_PROCESS
-    if BASE_PROCESS is None:
+def stop_child_process():
+    global CHILD_PROCESS
+    if CHILD_PROCESS is None:
         return
-    process = BASE_PROCESS
+    process = CHILD_PROCESS
     try:
         os.killpg(process.pid, signal.SIGTERM)
     except ProcessLookupError:
@@ -320,11 +401,11 @@ def stop_base_process():
         except ProcessLookupError:
             pass
     process.wait()
-    BASE_PROCESS = None
+    CHILD_PROCESS = None
 
 
 def cancelled(signum, _frame):
-    stop_base_process()
+    stop_child_process()
     raise SystemExit(128 + signum)
 
 
@@ -339,18 +420,18 @@ def extract_archive(checkout, start, scratch):
 
 def run_base(command, cwd, log, timeout):
     """Run an overlaid command in a separate process group; timeout kills the whole command tree."""
-    global BASE_PROCESS
-    BASE_PROCESS = subprocess.Popen(['bash', '-lc', command], cwd=cwd, stdin=subprocess.DEVNULL,
+    global CHILD_PROCESS
+    CHILD_PROCESS = subprocess.Popen(['bash', '-lc', command], cwd=cwd, stdin=subprocess.DEVNULL,
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
-    process = BASE_PROCESS
+    process = CHILD_PROCESS
     try:
         output, _ = process.communicate(timeout=timeout)
         code = process.returncode
-        BASE_PROCESS = None
+        CHILD_PROCESS = None
         log.write(output)
         return code, output[-COMMAND_OUTPUT_TAIL:].decode('utf-8', errors='replace'), False
     except subprocess.TimeoutExpired as timeout_error:
-        stop_base_process()
+        stop_child_process()
         try:
             output, _ = process.communicate()
         except (OSError, subprocess.SubprocessError):
@@ -523,6 +604,12 @@ def verify_deliverables(checkout, head, tree, deliverables, log, task_check=None
 
 def perform(checkout, head, tree, setup, deliverables, command, started_at):
     """Run setup and the Project check once, then verify deliverables, reusing its matching result."""
+    try:
+        with os.fdopen(3) as source:
+            composer_auth = source.read().strip() or None
+    except OSError:
+        composer_auth = None
+    setup_output_start = None
     evidence = None
     task_check = None
     failed_step = None
@@ -534,7 +621,7 @@ def perform(checkout, head, tree, setup, deliverables, command, started_at):
             exit_code = 1
             log.write(('\n'.join(messages) + '\n').encode())
         if failed_step is None and setup:
-            failed_step, exit_code = run_setup(checkout, setup, log)
+            failed_step, exit_code, setup_output_start = run_setup(checkout, setup, log, composer_auth)
             # Setup steps install dependencies, so the tree after setup is the tree the check sees.
             tree = working_tree(checkout)
         if failed_step is None and command:
@@ -567,7 +654,7 @@ def perform(checkout, head, tree, setup, deliverables, command, started_at):
     tree_after = working_tree(checkout)
     result = check_result(
         head, tree, head_after, tree_after, changed_paths(checkout, tree, tree_after),
-        exit_code, failed_step, evidence, started_at,
+        exit_code, failed_step, evidence, started_at, setup_output_start,
     )
     write_check_result(result)
 
@@ -611,10 +698,11 @@ def fail_check(checkout, head, tree, started_at):
         pass
 
 
-def check_result(head, tree, head_after, tree_after, paths, exit_code, failed_step, evidence, started_at):
+def check_result(head, tree, head_after, tree_after, paths, exit_code, failed_step, evidence, started_at, setup_output_start=None):
     return {
         'exit_code': exit_code,
         'failed_step': failed_step,
+        'setup_output_start': setup_output_start,
         'head_before': head,
         'tree_before': tree,
         'head_after': head_after,
@@ -633,12 +721,12 @@ def write_check_result(result):
     os.replace(temporary, RESULT)
 
 
-def output_tail():
+def output_tail(start=0):
     if not os.path.exists(LOG):
         return ''
     with open(LOG, 'rb') as log:
         log.seek(0, os.SEEK_END)
-        log.seek(max(0, log.tell() - OUTPUT_TAIL))
+        log.seek(max(start, log.tell() - OUTPUT_TAIL))
         return log.read().decode('utf-8', errors='replace')
 
 
@@ -648,7 +736,8 @@ def status(pid, started):
     alive = process_started(pid) == started
     if os.path.exists(RESULT):
         with open(RESULT) as result:
-            print(json.dumps({'state': 'finished', 'result': json.load(result), 'output': output_tail()}))
+            data = json.load(result)
+            print(json.dumps({'state': 'finished', 'result': data, 'output': output_tail(data.get('setup_output_start') or 0)}))
     elif alive:
         print(json.dumps({'state': 'running'}))
     else:

@@ -36,23 +36,38 @@ final readonly class RemoteDevelopmentDeployment implements DevelopmentDeploymen
         private RepositoryReadAccess $access,
     ) {}
 
-    public function target(Instance $instance): DevelopmentTarget
+    public function target(Instance $instance, ?string $commit = null): DevelopmentTarget
     {
+        if ($commit !== null) {
+            $this->commit($commit);
+        }
         $repository = GitRepositoryOrigin::validate($instance->project->repository_url);
         $script = GitReadScript::for($this->access->for($repository, $instance->project->source_access), DevelopmentCheckoutProgram::target());
-        $result = $this->ssh->execute(
-            $instance->node,
-            new RemoteCommand(
-                arguments: [...$this->arguments($instance), $this->branch($instance)],
-                input: $script->input,
-                protectedInput: $script->protectedInput,
-                maxOutputBytes: 4096,
-            ),
-            'development-deployment-target',
-            'deployment.prepare_failed',
-        );
+        try {
+            $result = $this->ssh->execute(
+                $instance->node,
+                new RemoteCommand(
+                    arguments: [...$this->arguments($instance), $this->branch($instance), ...($commit === null ? [] : [$commit])],
+                    input: $script->input,
+                    protectedInput: $script->protectedInput,
+                    maxOutputBytes: 4096,
+                ),
+                'development-deployment-target',
+                'deployment.prepare_failed',
+            );
+        } catch (RuntimeConvergenceException $exception) {
+            if ($commit !== null && $exception->result?->exitCode === DevelopmentCheckoutProgram::NotOnBranch) {
+                throw new ResourceOperationException('deployment.commit_not_on_branch', "The default branch does not contain the commit [{$commit}].", 409, $exception);
+            }
 
-        return new DevelopmentTarget($this->commit(trim($result->stdout)));
+            throw $exception;
+        }
+        $target = $this->commit(trim($result->stdout));
+        if ($commit !== null && $target !== $commit) {
+            throw $this->invalidOutput();
+        }
+
+        return new DevelopmentTarget($target);
     }
 
     public function checkout(Instance $instance, string $commit, DeploymentRequest $request): void

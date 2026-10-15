@@ -1,4 +1,5 @@
 import hashlib
+import base64
 import io
 import json
 from pathlib import Path
@@ -6,7 +7,9 @@ import runpy
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 import zipfile
+import urllib.request
 import subprocess
 
 cache = runpy.run_path(sys.argv[1])
@@ -19,6 +22,41 @@ class ComposerCacheTest(unittest.TestCase):
         return dict(manager='composer', package='acme/demo', version='1.0.0', url=url,
                     integrity='sha1-' + hashlib.sha1(data).hexdigest() if checksum else None,
                     key='composer/acme/demo/' + hashlib.sha1(url.encode()).hexdigest() + '.zip')
+
+    def test_github_downloads_are_authenticated_and_credentials_never_reach_npm(self):
+        with patch('urllib.request.build_opener') as opener:
+            github = 'https://codeload.github.com/phpstan/phpstan/legacy.zip/' + 'a' * 40
+            cache['download'](github, 'ghs_cache_sentinel')
+            request = opener.return_value.open.call_args.args[0]
+            self.assertEqual(request.get_header('Authorization'), 'Bearer ghs_cache_sentinel')
+            cache['download']('https://registry.npmjs.org/demo/-/demo-1.0.0.tgz', 'ghs_cache_sentinel')
+            request = opener.return_value.open.call_args.args[0]
+            self.assertIsNone(request.get_header('Authorization'))
+        with self.assertRaises(ValueError):
+            cache['download'](github)
+        redirect = cache['PublicRedirect']()
+        with self.assertRaises(ValueError):
+            redirect.redirect_request(urllib.request.Request(github), None, 302, '', {}, 'https://registry.npmjs.org/demo/-/demo-1.0.0.tgz')
+
+    def test_missing_auth_skips_only_github_misses_and_retains_verified_hits(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / 'shared'
+            hit = self.artifact()
+            cache['fill'](root, [hit], 100000, lambda url: io.BytesIO(b'archive'))
+            url = hit['url'].replace('a' * 40, 'b' * 40)
+            miss = {**hit, 'url': url, 'key': 'composer/acme/demo/' + hashlib.sha1(url.encode()).hexdigest() + '.zip'}
+            npm_url = 'https://registry.npmjs.org/demo/-/demo-1.0.0.tgz'
+            integrity = 'sha512-' + base64.b64encode(hashlib.sha512(b'archive').digest()).decode()
+            npm = dict(manager='npm', package='demo', version='1.0.0', url=npm_url, integrity=integrity,
+                       key='npm/' + hashlib.sha256((npm_url + ' ' + integrity).encode()).hexdigest() + '.tgz')
+            def fetch(url):
+                if cache['github_url'](url):
+                    raise cache['GitHubAuthenticationUnavailable']('no installation')
+                return io.BytesIO(b'archive')
+            hashes = cache['fill'](root, [hit, miss, npm], 100000, fetch)
+            self.assertEqual(set(hashes), {hit['key'], npm['key']})
+            self.assertFalse((root / miss['key']).exists())
+            self.assertEqual((root / hit['key']).read_bytes(), b'archive')
 
     def test_additive_integrity_and_private_copy(self):
         with tempfile.TemporaryDirectory() as temporary:

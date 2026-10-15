@@ -1261,8 +1261,8 @@ export interface paths {
         options?: never;
         head?: never;
         /**
-         * Update the deployment branch
-         * @description Update a production Instance deployment branch.
+         * Update production deployment settings
+         * @description Update a production Instance deployment branch or shared paths. shared_paths replaces the list; null restores the Project-type default and an empty list disables sharing. Applies to the next deployment.
          */
         patch: operations["instance-update"];
         trace?: never;
@@ -4275,6 +4275,8 @@ export interface components {
             annotator_port?: number | null;
             annotator_url?: string | null;
             routes?: components["schemas"]["Route"][];
+            shared_paths?: string[];
+            auto_deploy?: components["schemas"]["InstanceAutoDeploy"] | null;
         };
         ProjectIdentity: {
             id?: number;
@@ -4353,6 +4355,24 @@ export interface components {
             phase?: string;
             command?: string;
             timeout_seconds?: number;
+        };
+        InstanceAutoDeploy: {
+            enabled?: boolean;
+            gate?: string | null;
+            warning?: string | null;
+            result?: string | null;
+            commit?: string | null;
+            head?: string | null;
+            since?: string | null;
+            error_code?: string | null;
+            message?: string | null;
+            pause?: components["schemas"]["InstanceAutoDeployPause"] | null;
+        };
+        InstanceAutoDeployPause: {
+            reason?: string;
+            deployment_id?: number;
+            commit?: string | null;
+            paused_at?: string;
         };
         InstanceRegistration: {
             project?: components["schemas"]["Project"];
@@ -4636,6 +4656,7 @@ export interface components {
             cpu?: number | null;
             memory_bytes?: number | null;
             user?: string | null;
+            restart_on_deploy?: boolean;
         };
         DocumentStorage: {
             configured?: boolean;
@@ -9323,7 +9344,11 @@ export interface operations {
             content: {
                 "application/json": {
                     /** @description Deployment branch */
-                    branch: string;
+                    branch?: string;
+                    /** @description JSON list of shared directories; [] disables sharing and null restores the default */
+                    shared_paths?: string[] | null;
+                    /** @description Deploy each new green commit of the branch automatically (true or false) */
+                    auto_deploy?: boolean;
                 };
             };
         };
@@ -11464,7 +11489,7 @@ export interface operations {
                         /** Format: uuid */
                         request_id: string;
                         /** @enum {string} */
-                        phase: "source_preparation" | "environment_sync" | "before_activation" | "activation" | "php_refresh" | "after_activation" | "rollback";
+                        phase: "source_preparation" | "environment_sync" | "before_activation" | "activation" | "php_refresh" | "process_restart" | "after_activation" | "rollback";
                         step_name?: string | null;
                     } | {
                         /** @enum {string} */
@@ -13914,6 +13939,7 @@ export interface operations {
                     start?: boolean;
                     /** @description Keep running through app-dev idle hibernation */
                     keep_alive?: boolean;
+                    restart_on_deploy?: boolean;
                 };
             };
         };
@@ -14064,6 +14090,7 @@ export interface operations {
                     restart_policy?: "never" | "on-failure" | "always" | "unless-stopped";
                     /** @description Keep running through app-dev idle hibernation */
                     keep_alive?: boolean;
+                    restart_on_deploy?: boolean;
                 };
             };
         };

@@ -88,6 +88,7 @@ class StoreProcessRequest extends FormRequest
             ],
             'start' => ['sometimes', 'boolean'],
             'keep_alive' => ['sometimes', 'boolean'],
+            'restart_on_deploy' => ['sometimes', 'boolean'],
         ];
     }
 
@@ -173,6 +174,7 @@ class StoreProcessRequest extends FormRequest
                 : (isset($validated['preset']) ? ProcessPresets::restartPolicy($this->string('preset')->toString()) : 'never'),
             start: ($validated['start'] ?? false) === true,
             keepAlive: ($validated['keep_alive'] ?? false) === true,
+            restartOnDeploy: ($validated['restart_on_deploy'] ?? true) === true,
             preset: isset($validated['preset']) ? $this->string('preset')->toString() : null,
             user: is_string($validated['user'] ?? null) ? $validated['user'] : null,
         );

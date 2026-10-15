@@ -246,6 +246,7 @@ it('restores sqlite path keys and clears leftover host keys on prefix reuse', fu
     $sqlite = DatabaseConnection::query()->create([
         'slug' => 'local',
         'driver' => DatabaseDriver::Sqlite,
+        'node_id' => $node->id,
         'path' => '/var/lib/app/database.sqlite',
     ]);
     app(AttachDatabaseConnectionAction::class)->execute($instance, $sqlite, 'DB');

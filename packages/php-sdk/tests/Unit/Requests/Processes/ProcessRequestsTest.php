@@ -88,6 +88,7 @@ it('adds a process with the explicit minimal runtime contract', function (): voi
             'restart_policy' => 'unless-stopped',
             'start' => true,
             'keep_alive' => false,
+            'restart_on_deploy' => true,
         ])
         ->and($response)
         ->toBeInstanceOf(ProcessResponse::class)
@@ -119,6 +120,7 @@ it('forwards every explicit process field without applying runtime policy', func
         'restart_policy' => 'always',
         'start' => true,
         'keep_alive' => false,
+        'restart_on_deploy' => true,
         'environment' => ['APP_MODE' => 'production'],
         'ports' => ['127.0.0.1:9080:8080/tcp'],
         'volumes' => [['source' => 'orbit-data', 'target' => '/data', 'read_only' => true]],
@@ -144,6 +146,7 @@ it('omits every absent optional process field without applying runtime policy', 
         'restart_policy' => 'never',
         'start' => false,
         'keep_alive' => false,
+        'restart_on_deploy' => true,
     ]);
 });
 
@@ -167,6 +170,7 @@ it('preserves explicitly supplied empty process collections', function (): void 
         'restart_policy' => 'never',
         'start' => false,
         'keep_alive' => false,
+        'restart_on_deploy' => true,
         'environment' => (object) [],
         'ports' => [],
         'volumes' => [],
@@ -234,6 +238,7 @@ it('adds a node-targeted process with the explicit node selector', function (): 
         'restart_policy' => 'never',
         'start' => false,
         'keep_alive' => false,
+        'restart_on_deploy' => true,
     ]);
 });
 
@@ -409,6 +414,7 @@ function process_gateway_data(): array
         ],
         'restart_policy' => 'unless-stopped',
         'keep_alive' => false,
+        'restart_on_deploy' => true,
         'desired_state' => 'running',
         'status' => 'active',
         'runtime_status' => 'running',
@@ -427,5 +433,19 @@ it('transports a preset and domain selector without synthesizing runtime configu
     $request = new CreateProcessRequest(target: new InstanceProcessTarget('commander.test'), name: 'assets', preset: 'vp-dev', start: true);
     process_connector($mock)->send($request);
 
-    expect($request->body()->all())->toBe(['target_type' => 'instance', 'target_id' => 'commander.test', 'name' => 'assets', 'preset' => 'vp-dev', 'start' => true, 'keep_alive' => false]);
+    expect($request->body()->all())->toBe(['target_type' => 'instance', 'target_id' => 'commander.test', 'name' => 'assets', 'preset' => 'vp-dev', 'start' => true, 'keep_alive' => false, 'restart_on_deploy' => true]);
+});
+
+it('transports the deploy restart setting and preserves false in the Process response', function (): void {
+    $create = new CreateProcessRequest(target: new InstanceProcessTarget(7), name: 'horizon', restartOnDeploy: false);
+    $update = new UpdateProcessRequest(41, 'systemd', ['/usr/bin/php', 'artisan', 'horizon'], restartOnDeploy: false);
+    expect($create->body()->all()['restart_on_deploy'])->toBeFalse()
+        ->and($update->body()->all()['restart_on_deploy'])->toBeFalse()
+        ->and(new CreateProcessRequest(target: new InstanceProcessTarget(7), name: 'horizon')->body()->all()['restart_on_deploy'])->toBeTrue()
+        ->and(new UpdateProcessRequest(41, 'systemd', ['/usr/bin/php', 'artisan', 'horizon'])->body()->all()['restart_on_deploy'])->toBeTrue();
+    $envelope = process_envelope();
+    $envelope['data']['restart_on_deploy'] = false;
+    $mock = new MockClient([CreateProcessRequest::class => MockResponse::make($envelope, 201)]);
+    $response = process_connector($mock)->send($create)->dto();
+    expect($response->restartOnDeploy)->toBeFalse()->and($response->toArray()['restart_on_deploy'])->toBeFalse();
 });

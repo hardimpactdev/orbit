@@ -11,39 +11,10 @@ use Orbit\Sdk\Responses\Routes\RouteResponse;
 use SensitiveParameter;
 
 /**
+ * @phpstan-import-type AutoDeployRecord from InstanceAutoDeployResponse
+ *
  * @phpstan-type InstanceRecordFields array{
- *     annotator_port: int|null,
- *     annotator_url: string|null,
- *     id: int,
- *     project_id: int,
- *     node_id: int,
- *     project: array{id: int, name: string, slug: string}|null,
- *     node: array{id: int, name: string}|null,
- *     vite_port: int|null,
- *     ssr_port: int|null,
- *     name: string,
- *     source_layout: string,
- *     checkout_path: string,
- *     production_user: string|null,
- *     production_home: string|null,
- *     root: string|null,
- *     effective_root: string|null,
- *     selected_branch: string|null,
- *     branch_override: string|null,
- *     starting_commit: string|null,
- *     seed_path: string|null,
- *     seed_commit: string|null,
- *     detached: bool,
- *     status: string,
- *     route: array<string, int|string|null|array{id: int, instance_id: int, position: int}|list<array{id: int, instance_id: int, position: int}>>|null,
- *     routes: list<array<string, int|string|null|array{id: int, instance_id: int, position: int}|list<array{id: int, instance_id: int, position: int}>>>,
- *     domain: string|null,
- *     url: string|null,
- *     removal: array<string, bool|int|string|null>|null,
- *     transfer: array<string, mixed>|null,
- *     deploy_steps: list<array{name: string, phase: string, command: string, timeout_seconds: int}>
- * }
- * @phpstan-type InstanceRecord array{
+ *     shared_paths?: list<string>,
  *     annotator_port: int|null,
  *     annotator_url: string|null,
  *     id: int,
@@ -74,6 +45,42 @@ use SensitiveParameter;
  *     removal: array<string, bool|int|string|null>|null,
  *     transfer: array<string, mixed>|null,
  *     deploy_steps: list<array{name: string, phase: string, command: string, timeout_seconds: int}>,
+ *     warnings?: list<string>,
+ *     auto_deploy: AutoDeployRecord|null
+ * }
+ * @phpstan-type InstanceRecord array{
+ *     shared_paths?: list<string>,
+ *     annotator_port: int|null,
+ *     annotator_url: string|null,
+ *     id: int,
+ *     project_id: int,
+ *     node_id: int,
+ *     project: array{id: int, name: string, slug: string}|null,
+ *     node: array{id: int, name: string}|null,
+ *     vite_port: int|null,
+ *     ssr_port: int|null,
+ *     name: string,
+ *     source_layout: string,
+ *     checkout_path: string,
+ *     production_user: string|null,
+ *     production_home: string|null,
+ *     root: string|null,
+ *     effective_root: string|null,
+ *     selected_branch: string|null,
+ *     branch_override: string|null,
+ *     starting_commit: string|null,
+ *     seed_path: string|null,
+ *     seed_commit: string|null,
+ *     detached: bool,
+ *     status: string,
+ *     route: array<string, int|string|null|array{id: int, instance_id: int, position: int}|list<array{id: int, instance_id: int, position: int}>>|null,
+ *     routes: list<array<string, int|string|null|array{id: int, instance_id: int, position: int}|list<array{id: int, instance_id: int, position: int}>>>,
+ *     domain: string|null,
+ *     url: string|null,
+ *     removal: array<string, bool|int|string|null>|null,
+ *     transfer: array<string, mixed>|null,
+ *     deploy_steps: list<array{name: string, phase: string, command: string, timeout_seconds: int}>,
+ *     auto_deploy: AutoDeployRecord|null,
  *     warnings?: list<string>,
  *     request_id: string
  * }
@@ -114,6 +121,9 @@ final readonly class InstanceResponse
         public ?string $annotatorUrl = null,
         /** @var list<RouteResponse> Every Route of the Instance, including Routes with a web root. */
         public array $routes = [],
+        /** @var list<string>|null */
+        public ?array $sharedPaths = null,
+        public ?InstanceAutoDeployResponse $autoDeploy = null,
         /** @var list<string> */
         public array $warnings = [],
     ) {}
@@ -157,7 +167,9 @@ final readonly class InstanceResponse
             removal: self::removal($data['removal'] ?? null),
             transfer: self::transfer($data['transfer'] ?? null),
             deploySteps: self::parseDeploySteps($data['deploy_steps'] ?? []),
+            sharedPaths: self::sharedPaths($data['shared_paths'] ?? null),
             requestId: $requestId,
+            autoDeploy: InstanceAutoDeployResponse::tryFromGatewayData($data['auto_deploy'] ?? null),
         );
     }
 
@@ -199,8 +211,20 @@ final readonly class InstanceResponse
                 $this->deploySteps,
             ),
             ...($this->warnings === [] ? [] : ['warnings' => $this->warnings]),
+            ...($this->sharedPaths === null ? [] : ['shared_paths' => $this->sharedPaths]),
+            'auto_deploy' => $this->autoDeploy?->toArray(),
             'request_id' => $this->requestId,
         ];
+    }
+
+    /** @return list<string>|null */
+    private static function sharedPaths(#[SensitiveParameter] mixed $value): ?array
+    {
+        if (! is_array($value) || ! array_is_list($value) || ! array_all($value, static fn (mixed $path): bool => is_string($path))) {
+            return null;
+        }
+
+        return $value;
     }
 
     /** @return list<RouteResponse> */

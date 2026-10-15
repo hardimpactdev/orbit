@@ -57,9 +57,11 @@ if (($argv[1] ?? '') === 'schedule:work') {
             Date::setTestNow($clock);
         }
     });
-    Event::listen(CommandStarting::class, static function (CommandStarting $event) use ($home): void {
+    Event::listen(CommandStarting::class, static function (CommandStarting $event): void {
         if ($event->command === 'schedule:work') {
-            file_put_contents($home.'/scheduler-ready', json_encode(app(CleanupGate::class)->status()->toArray(), JSON_THROW_ON_ERROR));
+            app(CleanupGate::class)->status();
+            echo "scheduler-ready\n";
+            fflush(STDOUT);
         }
     });
 }

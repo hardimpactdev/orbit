@@ -35,6 +35,7 @@ final class CreateProcessCommand extends TargetedProcessCommand
         {--volume=* : Docker SOURCE:TARGET[:ro]; repeat as needed}
         {--restart=never : never, on-failure, always, or unless-stopped}
         {--keep-alive : Keep running through app-dev idle hibernation}
+        {--no-restart-on-deploy : Skip automatic restart after production activation}
         {--start : Start after adding}
         {--json : Return machine-readable JSON}';
 
@@ -239,6 +240,7 @@ final class CreateProcessCommand extends TargetedProcessCommand
                 restartPolicy: $preset === null || $this->input->hasParameterOption('--restart') ? $restartPolicy : null,
                 start: $this->option('start') === true,
                 keepAlive: $this->option('keep-alive') === true,
+                restartOnDeploy: $this->option('no-restart-on-deploy') !== true,
                 preset: $preset,
                 user: $user,
             ),
@@ -273,6 +275,10 @@ final class CreateProcessCommand extends TargetedProcessCommand
         string $restartPolicy,
         bool $keepAlive,
     ): int {
+        if ($this->option('no-restart-on-deploy') === true) {
+            return $this->renderGatewayFailure('process.option_invalid', 'Project definitions do not accept --no-restart-on-deploy.');
+        }
+
         if ($this->option('start') === true) {
             return $this->renderGatewayFailure(
                 'process.option_invalid',

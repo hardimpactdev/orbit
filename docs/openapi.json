@@ -8356,7 +8356,7 @@
       },
       "patch": {
         "operationId": "instance-update",
-        "summary": "Update the deployment branch",
+        "summary": "Update production deployment settings",
         "tags": [
           "Instances"
         ],
@@ -8372,7 +8372,7 @@
             "description": "Numeric Instance ID."
           }
         ],
-        "description": "Update a production Instance deployment branch.",
+        "description": "Update a production Instance deployment branch or shared paths. shared_paths replaces the list; null restores the Project-type default and an empty list disables sharing. Applies to the next deployment.",
         "requestBody": {
           "required": true,
           "content": {
@@ -8383,11 +8383,25 @@
                   "branch": {
                     "type": "string",
                     "description": "Deployment branch"
+                  },
+                  "shared_paths": {
+                    "type": [
+                      "array",
+                      "null"
+                    ],
+                    "maxItems": 32,
+                    "items": {
+                      "type": "string",
+                      "maxLength": 255
+                    },
+                    "description": "JSON list of shared directories; [] disables sharing and null restores the default"
+                  },
+                  "auto_deploy": {
+                    "type": "boolean",
+                    "description": "Deploy each new green commit of the branch automatically (true or false)"
                   }
                 },
-                "required": [
-                  "branch"
-                ],
+                "minProperties": 1,
                 "additionalProperties": false
               }
             }
@@ -8461,12 +8475,12 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/instances/12\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"branch\": \"main\"}'\n"
+            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/instances/12\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"branch\": \"main\", \"shared_paths\": [\"example\"], \"auto_deploy\": true}'\n"
           },
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Instances\\UpdateInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new UpdateInstanceRequest(instanceId: 4, branch: 'main'))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Instances\\UpdateInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new UpdateInstanceRequest(\n    instanceId: 4,\n    sharedPaths: ['storage'],\n    sharedPathsProvided: true,\n))->dto();\n"
           }
         ]
       }
@@ -12448,6 +12462,7 @@
                             "before_activation",
                             "activation",
                             "php_refresh",
+                            "process_restart",
                             "after_activation",
                             "rollback"
                           ]
@@ -17075,6 +17090,9 @@
                   "keep_alive": {
                     "type": "boolean",
                     "description": "Keep running through app-dev idle hibernation"
+                  },
+                  "restart_on_deploy": {
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -17394,6 +17412,9 @@
                   "keep_alive": {
                     "type": "boolean",
                     "description": "Keep running through app-dev idle hibernation"
+                  },
+                  "restart_on_deploy": {
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -31734,6 +31755,22 @@
             "items": {
               "$ref": "#/components/schemas/Route"
             }
+          },
+          "shared_paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "auto_deploy": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/InstanceAutoDeploy"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -32030,6 +32067,92 @@
           },
           "timeout_seconds": {
             "type": "integer"
+          }
+        }
+      },
+      "InstanceAutoDeploy": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "gate": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "warning": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "result": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "commit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "head": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "since": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pause": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/InstanceAutoDeployPause"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "InstanceAutoDeployPause": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "deployment_id": {
+            "type": "integer"
+          },
+          "commit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "paused_at": {
+            "type": "string"
           }
         }
       },
@@ -33111,6 +33234,9 @@
               "string",
               "null"
             ]
+          },
+          "restart_on_deploy": {
+            "type": "boolean"
           }
         }
       },

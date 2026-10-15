@@ -114,7 +114,7 @@ Create installs the unit or container. With `start`, it also starts it. An ident
 
 On a Node with the active `app-dev` role, a systemd Instance Process installs without a boot start. A Docker Instance Process there maps restart policy `always` to Docker `unless-stopped`, so an idle stop survives a Docker daemon restart. Node Processes on the same Node keep the normal behavior. The Gateway starts it with `systemctl start` and does not enable the unit. After a reboot the Process stays down until `process:start` or the next HTTP wake. [Hibernation](/reference/app-dev-runtime-hibernation) describes idle stop, `keep_alive`, and wake.
 
-An Instance on `app-prod` with no selected release accepts a stopped Process. A start fails with `process.release_unavailable` until [a deployment](/reference/deployments) selects a release. A later start uses the release that `current` selects then. A new release does not restart a running Process.
+An Instance on `app-prod` with no selected release accepts a stopped Process. A start fails with `process.release_unavailable` until [a deployment](/reference/deployments) selects a release. A later start uses the release that `current` selects then. After production activation and PHP refresh, a deployment or rollback restarts active Processes desired `running` before after-activation steps. `restart_on_deploy` defaults to `true`; set it to `false` in a complete create or update specification to opt out. Stopped Processes stay stopped. Restart results appear in deployment events, and a failure fails the deploy or rollback with its selected release still active. See [Deploy](/reference/deployments#deploy) to remove a hand-made step that terminates Horizon.
 
 ## Operate a Process
 
@@ -122,7 +122,7 @@ The Gateway exposes these Process endpoints.
 
 | Request | Result |
 | --- | --- |
-| `GET /api/v1/processes` | The Processes with desired state, runtime status, `keep_alive`, `cpu`, and `memory_bytes`. `target_type` and `target_id` limit the list to one owner. |
+| `GET /api/v1/processes` | The Processes with desired state, runtime status, `keep_alive`, `restart_on_deploy`, `cpu`, and `memory_bytes`. `target_type` and `target_id` limit the list to one owner. |
 | `POST /api/v1/processes` | Creates one Process. |
 | `PATCH /api/v1/processes/{process}` | Replaces the specification and reconverges the runtime of the same Process. |
 | `POST /api/v1/processes/{process}/start`, `/stop`, `/restart` | Changes the runtime and stores the desired state: `running` after start and restart, `stopped` after stop. |
@@ -137,7 +137,7 @@ Removing a systemd Process disables and stops the unit, deletes the unit file, r
 
 ### Update in place
 
-[`process:update`](/cli/process#orbit-processupdate) replaces an installed Process specification without deleting its record. `PATCH /api/v1/processes/{process}` accepts a complete specification with the same runtime fields and defaults as create: `runtime`, `command`, `image`, `working_directory`, `environment`, `ports`, `volumes`, `restart_policy`, `keep_alive`, and `user` where allowed. It does not accept a new name, owner, preset, or initial-start flag. The Process ID, name, owner, and desired state stay the same. For Docker, omitted or null `working_directory` restores the image default; omitted environment, ports, and volumes are empty. This is replacement, not a merge of individual environment keys.
+[`process:update`](/cli/process#orbit-processupdate) replaces an installed Process specification without deleting its record. `PATCH /api/v1/processes/{process}` accepts a complete specification with the same runtime fields and defaults as create: `runtime`, `command`, `image`, `working_directory`, `environment`, `ports`, `volumes`, `restart_policy`, `keep_alive`, `restart_on_deploy`, and `user` where allowed. It does not accept a new name, owner, preset, or initial-start flag. The Process ID, name, owner, and desired state stay the same. For Docker, omitted or null `working_directory` restores the image default; omitted environment, ports, and volumes are empty. This is replacement, not a merge of individual environment keys.
 
 The Gateway validates the new specification before changing the runtime, holds the same admission and runtime locks as other Process operations, and verifies the exact ownership marker before replacing the unit or container. A Process desired `running` restarts with the new specification; one desired `stopped` is installed but stays stopped. Docker may need a replacement container, but its Orbit Process ID and managed container name stay the same.
 

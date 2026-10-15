@@ -77,6 +77,8 @@ The hidden command checks only that the token is 64 hexadecimal characters. It c
 
 A read-only request opens the file read-only. The Node must be active, with a WireGuard address and an `orbit` binary on its `PATH`. A record without a Node returns `database.sqlite_node_required`.
 
+SQLite inspection runs as the owning production Instance user, or as the production Instance user whose home contains the registered path on that Node. The Gateway uses `sudo -n -u <production_user> -H orbit internal:database-local`; it does not change home or file permissions. Development inspection still runs as the Node user. The Node baseline already grants the managed Node user passwordless sudo, and the CLI installer publishes the root-owned binary with mode `0755`, so Instance users can execute it. Inaccessible files and denied sudo return `database.sqlite_unreadable` with a safe reason rather than the generic query error.
+
 An unknown table returns `database.table_missing` (404). A failed query on the database or the Node returns `database.query_failed` (502).
 
 ## Create a database on a server
@@ -119,6 +121,8 @@ For an Instance that owns its `DB` database, [synchronization](/reference/enviro
 | `mysql`, `pgsql` | `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` |
 | `redis` | `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, and `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` when stored |
 | `sqlite` | `DB_CONNECTION`, `DB_DATABASE` as the file path, and `DB_USERNAME`, `DB_PASSWORD` when stored |
+
+A SQLite connection can only be attached to an Instance on the connection's registered Node. A different or absent Node returns `database.node_mismatch` before any environment values or attachment mappings change.
 
 The Gateway removes the other keys of the prefix, for example `DB_HOST` when a sqlite connection replaces a mysql one. A second add with the same prefix replaces the earlier mapping.
 

@@ -25,12 +25,28 @@ final readonly class LocalDatabaseQueryAction
         $path = $this->path($request->path);
         $sql = $this->sql($request->sql);
 
+        if (! is_file($path) || ! is_readable($path) || ($request->write && ! is_writable($path))) {
+            throw new LocalDatabaseQueryException(
+                'database.sqlite_unreadable',
+                'The SQLite file must exist and be accessible to the inspection user.',
+            );
+        }
+
         try {
             $statement = $this->connections->connect([
                 'driver' => 'sqlite',
                 'path' => $path,
             ], $request->write)->query($sql);
-        } catch (PDOException) {
+        } catch (PDOException $exception) {
+            $sqliteCode = (int) ($exception->errorInfo[1] ?? 0);
+
+            if (in_array($sqliteCode, [3, 14], true) || ($request->write && $sqliteCode === 8)) {
+                throw new LocalDatabaseQueryException(
+                    'database.sqlite_unreadable',
+                    'The inspection user cannot open the SQLite file or write to its directory.',
+                );
+            }
+
             throw new LocalDatabaseQueryException(
                 'database.query_failed',
                 'Database query failed.',

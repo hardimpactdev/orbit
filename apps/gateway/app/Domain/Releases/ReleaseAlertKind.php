@@ -16,6 +16,9 @@ enum ReleaseAlertKind: string
     case RolloutStalled = 'rollout_stalled';
     case RolloutCaddySkipped = 'rollout_caddy_skipped';
     case RolloutCliFallback = 'rollout_cli_fallback';
+    case InstanceDeployFailed = 'instance_deploy_failed';
+    case InstanceDeployStalled = 'instance_deploy_stalled';
+    case InstanceDeployPaused = 'instance_deploy_paused';
 
     public function label(): string
     {
@@ -30,6 +33,9 @@ enum ReleaseAlertKind: string
             self::RolloutStalled => 'Rollout stalled',
             self::RolloutCaddySkipped => 'Rollout kept a live Caddyfile',
             self::RolloutCliFallback => 'Rollout used an older CLI release',
+            self::InstanceDeployFailed => 'Automatic deployment failed',
+            self::InstanceDeployStalled => 'Automatic deployment stalled',
+            self::InstanceDeployPaused => 'Automatic deployment paused',
         };
     }
 }

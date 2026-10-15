@@ -431,6 +431,7 @@ function instance_gateway_data(): array
         'removal' => null,
         'transfer' => null,
         'deploy_steps' => [],
+        'auto_deploy' => null,
     ];
 }
 

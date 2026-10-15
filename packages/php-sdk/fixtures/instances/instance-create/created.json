@@ -110,7 +110,20 @@
                     "analytics_instance_id": null,
                     "web_root": null
                 }
-            ]
+            ],
+            "shared_paths": [],
+            "auto_deploy": {
+                "enabled": false,
+                "gate": null,
+                "warning": null,
+                "result": null,
+                "commit": null,
+                "head": null,
+                "since": null,
+                "error_code": null,
+                "message": null,
+                "pause": null
+            }
         },
         "meta": {
             "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
