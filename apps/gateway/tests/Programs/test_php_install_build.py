@@ -3,6 +3,7 @@ import hashlib
 import os
 import socket
 import struct
+import subprocess
 import tempfile
 import threading
 import unittest
@@ -46,6 +47,9 @@ FAKES = {
                '[ -f "$STATE/fail-install" ] && { rm "$STATE/fail-install"; exit 100; }; '
                'for a in "$@"; do case "$a" in *.deb) read -r n v x < "$a"; '
                '[ -f "$STATE/mismatch-$n" ] && v=9.9; echo "$v" > "$STATE/installed/$n"; rm -f "$STATE/verify-$n"; '
+               # Sury's OpenTelemetry postinst enables every SAPI, including the CLI.
+               'if [ "$n" = php8.5-opentelemetry ]; then for sapi in cli fpm; do '
+               'ln -sfn /mods/opentelemetry.ini "$ROOT/etc/php/8.5/$sapi/conf.d/20-opentelemetry.ini"; done; fi; '
                # A rollback reinstall that brings an added package back as a dependency.
                '[ -f "$STATE/revives-$v" ] && echo 8.5.12-1 > "$STATE/installed/$(cat "$STATE/revives-$v")"; '
                'if [ -f "$STATE/partial-install" ]; then rm "$STATE/partial-install"; touch "$STATE/fail-every-install"; exit 100; fi; '
@@ -163,28 +167,28 @@ class InstallBuildTest(unittest.TestCase):
         self.assertFalse([call for call in self.calls() if call.startswith(('curl', 'apt-get'))])
 
     def test_refuses_installed_packages_outside_the_recipe_before_any_change(self):
-        self.install('php8.5-opentelemetry', '1.2.1')
+        self.install('php8.5-soap', '1.2.1')
         (self.root / 'etc/apt/sources.list.d/orbit-php.sources').write_text('URIs: https://packages.sury.org/php/\n')
 
         for mode in ('plan', 'apply'):
             outcome, data = self.run_program(mode=mode)
-            self.assertEqual((outcome, data), ('extra_packages', {'packages': ['php8.5-opentelemetry']}))
+            self.assertEqual((outcome, data), ('extra_packages', {'packages': ['php8.5-soap']}))
         self.assertEqual(self.calls(), [])
         self.assertTrue((self.root / 'etc/apt/sources.list.d/orbit-php.sources').exists())
 
     def test_keeps_extra_packages_for_an_instance_step_and_purges_them_only_when_asked(self):
-        self.install('php8.5-opentelemetry', '1.2.1')
-        (self.state / 'extra-modules').write_text('opentelemetry\n')
+        self.install('php8.5-soap', '1.2.1')
+        (self.state / 'extra-modules').write_text('soap\n')
 
         outcome, data = self.run_program(extras='keep')
         self.assertEqual((outcome, data['purged']), ('applied', []))
-        self.assertTrue((self.state / 'installed/php8.5-opentelemetry').exists())
+        self.assertTrue((self.state / 'installed/php8.5-soap').exists())
 
         (self.state / 'extra-modules').unlink()
         outcome, data = self.run_program(extras='purge')
-        self.assertEqual((outcome, data['purged']), ('applied', ['php8.5-opentelemetry']))
-        self.assertIn('purge php8.5-opentelemetry', self.calls())
-        self.assertIn('repack php8.5-opentelemetry', self.calls())
+        self.assertEqual((outcome, data['purged']), ('applied', ['php8.5-soap']))
+        self.assertIn('purge php8.5-soap', self.calls())
+        self.assertIn('repack php8.5-soap', self.calls())
 
     def test_plan_lists_pending_packages_and_changes_nothing(self):
         self.install('php8.5-cli', '8.5.11-1')
@@ -610,12 +614,12 @@ class InstallBuildTest(unittest.TestCase):
 
     def test_a_failed_purge_rolls_back(self):
         self.previous_build()
-        self.install('php8.5-opentelemetry', '1.2.1')
+        self.install('php8.5-soap', '1.2.1')
         (self.state / 'fail-purge').touch()
 
         outcome, data = self.run_program(extras='purge')
 
-        self.assertEqual((outcome, data['restored'], data['package']), ('install_failed', True, 'php8.5-opentelemetry'))
+        self.assertEqual((outcome, data['restored'], data['package']), ('install_failed', True, 'php8.5-soap'))
         self.assertEqual((self.state / 'installed/php8.5-cli').read_text().strip(), '8.5.11-1')
 
     def test_an_install_that_fails_midway_with_a_failing_rollback_ends_with_rollback_failed(self):
@@ -663,6 +667,94 @@ class InstallBuildTest(unittest.TestCase):
         self.assertEqual(self.run_program(pcov=True)[0], 'applied')
         self.assertTrue((self.root / 'etc/php/8.5/cli/conf.d/20-pcov.ini').is_symlink())
         self.assertFalse((self.root / 'etc/php/8.5/fpm/conf.d/20-pcov.ini').is_symlink())
+
+    def telemetry_build(self):
+        self.pin('php8.5-opentelemetry', '1.2.1-2+0~20260623.18+ubuntu26.04~1.gbpdbb97a')
+        return self.payload(opentelemetry=True)
+
+    def test_app_dev_overrides_postinst_to_load_opentelemetry_only_in_fpm(self):
+        payload = self.telemetry_build()
+        (self.state / 'active-php8.5-fpm.service').touch()
+
+        outcome, data = result('php.install-build', payload, environment=self.environment)
+
+        self.assertEqual(outcome, 'applied', data)
+        self.assertIn('php8.5-opentelemetry', data['changed'])
+        self.assertEqual(data['restarted'], ['php8.5-fpm.service'])
+        self.assertFalse((self.root / 'etc/php/8.5/cli/conf.d/20-opentelemetry.ini').is_symlink())
+        self.assertTrue((self.root / 'etc/php/8.5/fpm/conf.d/20-opentelemetry.ini').is_symlink())
+        self.assertIn('phpdismod -v 8.5 -s cli opentelemetry', self.calls())
+        outcome, data = result('php.install-build', payload, environment=self.environment)
+        self.assertEqual((outcome, data['restarted']), ('current', []))
+
+    def test_app_dev_cli_module_set_equals_ci(self):
+        self.assertEqual(self.run_program(opentelemetry=False)[0], 'applied')
+        binary = str(self.root / 'usr/bin/php8.5')
+        environment = {**os.environ, **self.environment}
+        ci_modules = subprocess.check_output([binary, '-m'], env=environment)
+
+        outcome, data = result('php.install-build', self.telemetry_build(), environment=self.environment)
+
+        self.assertEqual(outcome, 'applied', data)
+        self.assertEqual(subprocess.check_output([binary, '-m'], env=environment), ci_modules)
+        self.assertNotIn(b'opentelemetry', ci_modules)
+
+    def test_losing_app_dev_keeps_opentelemetry_disabled_and_converges_without_refusal(self):
+        payload = self.telemetry_build()
+        (self.state / 'active-php8.5-fpm.service').touch()
+        self.assertEqual(result('php.install-build', payload, environment=self.environment)[0], 'applied')
+        del self.pins['php8.5-opentelemetry']
+
+        outcome, data = self.run_program(mode='plan', opentelemetry=False, pcov=False)
+        self.assertEqual((outcome, data), ('planned', {'pending': [], 'repair': [], 'extras': [], 'unowned': []}))
+        outcome, data = self.run_program(opentelemetry=False, pcov=False)
+
+        self.assertEqual((outcome, data['purged'], data['restarted']), ('applied', [], ['php8.5-fpm.service']))
+        self.assertTrue((self.state / 'installed/php8.5-opentelemetry').is_file())
+        for sapi in ('cli', 'fpm'):
+            self.assertFalse((self.root / f'etc/php/8.5/{sapi}/conf.d/20-opentelemetry.ini').is_symlink())
+        outcome, data = self.run_program(opentelemetry=False, pcov=False)
+        self.assertEqual((outcome, data['restarted']), ('current', []))
+
+    def test_beast_plan_accepts_its_pinned_opentelemetry_package_without_changes(self):
+        payload = self.telemetry_build()
+        for name, pin in self.pins.items():
+            self.install(name, pin['version'])
+        for sapi in ('cli', 'fpm'):
+            (self.root / f'etc/php/8.5/{sapi}/conf.d/20-opentelemetry.ini').symlink_to('/mods/opentelemetry.ini')
+        pin = self.pins['php8.5-opentelemetry']
+        older = {**pin, 'name': 'php8.4-opentelemetry'}
+        payload['versions']['8.4'] = {'packages': [older], 'extensions': ['core']}
+        self.install(older['name'], older['version'])
+        payload['mode'] = 'plan'
+
+        outcome, data = result('php.install-build', payload, environment=self.environment)
+
+        self.assertEqual((outcome, data), ('planned', {'pending': [], 'repair': [], 'extras': [], 'unowned': []}))
+        self.assertEqual(self.calls(), [])
+
+    def test_rolls_back_when_fpm_does_not_load_the_app_dev_opentelemetry_module(self):
+        payload = self.telemetry_build()
+        binary = self.root / 'usr/sbin/php-fpm8.5'
+        binary.write_text(binary.read_text().replace('echo "${n%.ini}"', '[ "$n" = opentelemetry.ini ] || echo "${n%.ini}"'))
+        (self.state / 'active-php8.5-fpm.service').touch()
+
+        outcome, data = result('php.install-build', payload, environment=self.environment)
+
+        self.assertEqual((outcome, data.get('restored')), ('rolled_back', True), data)
+        self.assertIn('OpenTelemetry module does not match', data['reason'])
+        self.assertFalse((self.state / 'installed/php8.5-opentelemetry').exists())
+
+    def test_other_profiles_disable_opentelemetry_in_both_sapis(self):
+        for sapi in ('cli', 'fpm'):
+            (self.root / f'etc/php/8.5/{sapi}/conf.d/20-opentelemetry.ini').symlink_to('/mods/opentelemetry.ini')
+
+        outcome, data = self.run_program(opentelemetry=False)
+
+        self.assertEqual(outcome, 'applied', data)
+        for sapi in ('cli', 'fpm'):
+            self.assertFalse((self.root / f'etc/php/8.5/{sapi}/conf.d/20-opentelemetry.ini').is_symlink())
+        self.assertFalse((self.state / 'installed/php8.5-opentelemetry').exists())
 
     def test_a_repeated_run_with_the_same_pcov_placement_changes_and_restarts_nothing(self):
         (self.state / 'active-php8.5-fpm.service').touch()

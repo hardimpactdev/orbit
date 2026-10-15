@@ -96,22 +96,23 @@ The base also includes the existing image builder's 26 explicit Ubuntu packages:
 
 ### PHP build
 
-The recipe is the single source of truth for Orbit's PHP build. Every machine that runs Orbit's PHP installs this build and checks it: development and production Nodes, the Gateway, task VMs, and [CI](/reference/implementation-loop#one-php-build-in-ci). A PHP build is the exact Sury package versions and the extensions that the PHP CLI loads.
+The recipe is the single source of truth for Orbit's PHP build. Every machine that runs Orbit's PHP installs this build and checks it: development and production Nodes, the Gateway, task VMs, and [CI](/reference/implementation-loop#one-php-build-in-ci). A PHP build is the exact Sury package versions and the modules available to CLI and PHP-FPM.
 
 | Field | Contract |
 | --- | --- |
 | `php.versions.<version>.packages` | The `php<version>-*` pins of that version. Every such pin in `tools` must be in this list |
-| `php.versions.<version>.extensions` | The modules that `php<version> -m` prints for the CLI, in lower case, sorted, without section headers. `Zend OPcache` is `zend opcache`. The list includes `core` and `pcov` |
+| `php.versions.<version>.extensions` | The build's modules, in lower case, sorted, without section headers. `Zend OPcache` is `zend opcache`. The list includes `core`, CLI-only `pcov`, and FPM-only `opentelemetry` |
 | `php.shared` | Pins that every version needs: `php-common` and `libgd3` |
 | `php.ci` | The version that CI installs |
 | `php.rollback` | The Ubuntu tool that repacks an installed build for a rollback, `dpkg-repack`. Every profile with a PHP set gets it |
 | `php.pcov` | The profiles whose PHP CLI loads PCOV: `app-dev`, `base`, and `ci-runner` |
+| `php.opentelemetry` | The profiles that install OpenTelemetry and load it in PHP-FPM only: `app-dev` only |
 | `php.purge_extras` | The profiles that purge PHP packages outside the recipe. Only `ci-runner` may be listed |
 | `php.mirror` | The HTTPS base URL of Orbit's copy of the pinned files, tried before each pin's own URL |
 
-A profile names a PHP set as `php:<version>`. The set is the shared pins, the version's packages, and the rollback tool. A profile cannot name a PHP pin directly, so no profile gets part of a set. A version that no profile names is an error.
+A profile names a PHP set as `php:<version>`. The set is the shared pins, the version's packages, and the rollback tool. OpenTelemetry follows `php.opentelemetry`. A profile cannot name a PHP pin directly to choose individual packages from a set. A version that no profile names is an error.
 
-Extensions with their own release, such as `igbinary`, `imagick`, `pcov`, and `redis`, keep their own versions. The loader also rejects a recipe in which:
+Extensions with their own release, such as `igbinary`, `imagick`, `opentelemetry`, `pcov`, and `redis`, keep their own versions. The loader also rejects a recipe in which:
 
 - the PHP core pins of a version have different versions. A core pin has a version that starts with `<version>.`, and it must equal `php<version>-common`;
 - a Sury pin is built for another Ubuntu release: its version must contain `+ubuntu<ubuntu.release>`;
@@ -120,6 +121,10 @@ Extensions with their own release, such as `igbinary`, `imagick`, `pcov`, and `r
 
 PCOV loads in the CLI of the `php.pcov` profiles only, and never in PHP-FPM. Those are the machines that run checks and share CI caches, so their loaded extension set matches CI's. Production Nodes and the Gateway keep PCOV installed but not loaded.
 
+OpenTelemetry is installed for the `php.opentelemetry` profiles and enabled in PHP-FPM only. The `app-dev` profile needs its `OpenTelemetry\Instrumentation\hook()` API for php-data-bridge, an FPM-only bridge that instruments web requests. The installer always disables OpenTelemetry in the CLI, including links enabled by Sury's package hooks. This preserves the CLI extension parity with CI that PHPStan's shared result cache needs.
+
+On a Node with both app-dev and app-prod, dedicated production FPM masters also load OpenTelemetry because they share the Node's FPM extension configuration. Production, CI-runner, base, and Gateway profiles do not install its packages. If a Node loses app-dev, convergence keeps an installed OpenTelemetry package as a known disabled package and disables it in both CLI and FPM. The recipe lists OpenTelemetry among the build's packages and modules; the CLI module check always excludes it.
+
 #### Install the PHP build
 
 `php.install-build`, a [remote program](/reference/remote-programs), is the one installer of the PHP build. Recipe convergence and the PHP step of an Instance send it to the Node. The image build runs it in the guest, and `bin/php-build install` runs it on a CI machine.
@@ -127,7 +132,7 @@ PCOV loads in the CLI of the `php.pcov` profiles only, and never in PHP-FPM. Tho
 Before it changes anything, the installer checks the machine:
 
 1. It refuses another PHP apt source, such as `ppa:ondrej/php`, and names it.
-2. It refuses each installed PHP package of a handled version that the recipe set does not hold, and names it.
+2. It refuses installed PHP packages outside the handled recipe sets, except OpenTelemetry packages kept disabled after app-dev removal.
 3. A plan run, such as a dry run, stops here and lists the packages it would change.
 
 Then it gets the files:
@@ -160,14 +165,16 @@ Then it swaps the build:
 1. It installs the files with `--no-remove` and `--allow-downgrades`. A newer or an older build becomes the recipe build, and no other package is removed.
 2. Package hooks cannot start or restart a service during the install.
 3. It loads PCOV in the CLI on the `php.pcov` profiles only, and never in PHP-FPM.
-4. It checks that `php<version> -m` prints the recipe's extensions.
+4. It enables OpenTelemetry in PHP-FPM only on the `php.opentelemetry` profiles and disables it in the CLI on every profile.
+5. It checks that `php<version> -m` prints the recipe's extensions for the selected profile.
 
 After a change, it restarts PHP-FPM:
 
 1. It validates each master with `php-fpm<version> -t`. A dedicated production master uses its own `--fpm-config`.
 2. It restarts the master and checks that the service is active.
-3. It checks that `php-fpm<version> -m` loads the required extensions and not PCOV.
-4. It sends a FastCGI request to each pool socket in the master's configuration and waits for the answer.
+3. It checks that `php-fpm<version> -m` loads the required extensions and excludes PCOV.
+4. It checks that OpenTelemetry loading matches the selected profile.
+5. It sends a FastCGI request to each pool socket in the master's configuration and waits for the answer.
 
 When a check after the swap fails, the installer rolls back. It reinstalls the previous build with `--allow-downgrades`, restores the module links, and restarts the masters again. It ends with `rolled_back`, or with `rollback_failed` when that fails too.
 

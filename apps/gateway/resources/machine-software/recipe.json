@@ -489,6 +489,20 @@
                 }
             }
         },
+        "php8.4-opentelemetry": {
+            "source": "artifact",
+            "version": "1.2.1-2+0~20260623.18+ubuntu26.04~1.gbpdbb97a",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php-opentelemetry/php8.4-opentelemetry_1.2.1-2+0~20260623.18+ubuntu26.04~1.gbpdbb97a_amd64.deb",
+                    "sha256": "65df01ca810e42426d76b1246d1eba2ef38612f1e9d17045f90fb09edd51c8c7"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php-opentelemetry/php8.4-opentelemetry_1.2.1-2+0~20260623.18+ubuntu26.04~1.gbpdbb97a_arm64.deb",
+                    "sha256": "683129e7c1325b0ed62ba8bc514e3a4744ce6f74153ace91be1ef4f05b6c90e2"
+                }
+            }
+        },
         "php8.4-pcov": {
             "source": "artifact",
             "version": "1.0.12-2+0~20260622.34+ubuntu26.04~1.gbp5b3479",
@@ -738,6 +752,20 @@
                 "arm64": {
                     "url": "https://packages.sury.org/php/pool/main/p/php8.5/php8.5-mysql_8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504_arm64.deb",
                     "sha256": "b6d2995c43484c692135c280649723b72b2cb49dbf57d446fb1bde841afdbaf8"
+                }
+            }
+        },
+        "php8.5-opentelemetry": {
+            "source": "artifact",
+            "version": "1.2.1-2+0~20260623.18+ubuntu26.04~1.gbpdbb97a",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php-opentelemetry/php8.5-opentelemetry_1.2.1-2+0~20260623.18+ubuntu26.04~1.gbpdbb97a_amd64.deb",
+                    "sha256": "270710a65f67791a901c4c26eac62f5f7bb73f9fa812f57a4f9a6fabdf4c7f72"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php-opentelemetry/php8.5-opentelemetry_1.2.1-2+0~20260623.18+ubuntu26.04~1.gbpdbb97a_arm64.deb",
+                    "sha256": "3b6ccb8b480e1548bdbdcbc7b093db7b92832078b55e1645d36b2de9cee8b2b3"
                 }
             }
         },
@@ -1000,6 +1028,7 @@
                     "php8.5-intl",
                     "php8.5-mbstring",
                     "php8.5-mysql",
+                    "php8.5-opentelemetry",
                     "php8.5-pcov",
                     "php8.5-pgsql",
                     "php8.5-readline",
@@ -1035,6 +1064,7 @@
                     "mysqli",
                     "mysqlnd",
                     "openssl",
+                    "opentelemetry",
                     "pcntl",
                     "pcov",
                     "pcre",
@@ -1085,6 +1115,7 @@
                     "php8.4-mbstring",
                     "php8.4-mysql",
                     "php8.4-opcache",
+                    "php8.4-opentelemetry",
                     "php8.4-pcov",
                     "php8.4-pgsql",
                     "php8.4-readline",
@@ -1119,6 +1150,7 @@
                     "mysqli",
                     "mysqlnd",
                     "openssl",
+                    "opentelemetry",
                     "pcntl",
                     "pcov",
                     "pcre",
@@ -1154,7 +1186,10 @@
                     "zlib"
                 ]
             }
-        }
+        },
+        "opentelemetry": [
+            "app-dev"
+        ]
     },
     "roles": {
         "vpn": [

@@ -17,6 +17,7 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\IncusTaskVmBaseImage;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Infrastructure\TaskVms\RecipeImageBuildSteps;
+use App\Infrastructure\TaskVms\RecipeImagePrograms;
 use App\Infrastructure\TaskVms\RecipeImagePruning;
 use App\Infrastructure\TaskVms\TaskVmImageBuildChain;
 use App\Jobs\TaskVms\ImageBuild\BuildRecipeImageStep;
@@ -121,6 +122,25 @@ it('keeps aliases for base and every role within the Incus name limit', function
     }
     expect(array_unique($aliases))->toHaveCount(5);
 })->with([TaskVmHost::BaseImage, 'shark-task-base', str_repeat('a', 254)]);
+
+it('installs OpenTelemetry only in app-dev image profiles', function (string $profile, bool $enabled): void {
+    $node = recipeImageHost();
+    $incus = recipeImageTransport($node);
+    $host = app(TaskVmSettings::class)->hosts[0];
+    $shell = app(IncusTaskVmBaseImage::class)->shell($host, $node, 'recipe-builder');
+
+    app(RecipeImagePrograms::class)->apply($shell, new RecipeLoader()->load(), $profile, 'packages');
+
+    $calls = array_values(array_filter($incus->guest, static fn ($call): bool => $call->argv[0] === 'python3'));
+    expect($calls)->toHaveCount(1);
+    $payload = json_decode($calls[0]->argv[3], true, flags: JSON_THROW_ON_ERROR);
+    expect($payload['php']['input']['opentelemetry'])->toBe($enabled);
+    foreach (['8.4', '8.5'] as $version) {
+        expect(isset($payload['tools']["php{$version}-opentelemetry"]))->toBe($enabled);
+        expect(in_array("php{$version}-opentelemetry", array_column($payload['php']['input']['versions'][$version]['packages'], 'name'), true))->toBe($enabled);
+        expect($payload['php']['input']['versions'][$version]['extensions'])->not->toContain('opentelemetry');
+    }
+})->with(['app-dev' => ['app-dev', true], 'app-prod' => ['app-prod', false], 'base' => ['base', false], 'ci-runner' => ['ci-runner', false]]);
 
 it('identifies publish failures as host commands without requesting a guest log', function (): void {
     $host = recipeImageHost();

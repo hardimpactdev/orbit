@@ -34,9 +34,9 @@ final readonly class PhpBuildInstaller
      * @param  'none'|'shared'|'all'  $fpm  Which active PHP-FPM masters restart after a change. `shared` defers a
      *                                      service whose pools fail `php-fpm -t`; `all` rolls back instead.
      */
-    public function run(Node $node, MachineRecipe $recipe, array $versions, string $mode, bool $pcov, string $extras, string $fpm): ProgramResult
+    public function run(Node $node, MachineRecipe $recipe, array $versions, string $mode, bool $pcov, string $extras, string $fpm, bool $opentelemetry): ProgramResult
     {
-        return $this->runner->run($node, $this->catalog->program(self::Program), self::input($recipe, $versions, $mode, $pcov, $extras, $fpm));
+        return $this->runner->run($node, $this->catalog->program(self::Program), self::input($recipe, $versions, $mode, $pcov, $extras, $fpm, opentelemetry: $opentelemetry));
     }
 
     /**
@@ -44,7 +44,7 @@ final readonly class PhpBuildInstaller
      * @param  array{id: string, codenames: list<string>}|null  $release  The operating systems the caller supports.
      * @return array<string, mixed>
      */
-    public static function input(MachineRecipe $recipe, array $versions, string $mode, bool $pcov, string $extras, string $fpm, ?array $release = null): array
+    public static function input(MachineRecipe $recipe, array $versions, string $mode, bool $pcov, string $extras, string $fpm, bool $opentelemetry, ?array $release = null): array
     {
         if (! in_array($mode, ['plan', 'apply'], true) || ! in_array($extras, ['refuse', 'keep', 'purge'], true) || ! in_array($fpm, ['none', 'shared', 'all'], true)) {
             throw new InvalidArgumentException('Invalid PHP build installer options.');
@@ -53,13 +53,13 @@ final readonly class PhpBuildInstaller
         foreach (array_values(array_unique($versions)) as $version) {
             $build = $recipe->php($version);
             $packages = [];
-            foreach ($build->packages as $name) {
+            foreach ($build->packagesFor($opentelemetry) as $name) {
                 $pin = $recipe->tools[$name];
                 foreach ($pin->artifacts as $architecture => $artifact) {
                     $packages[] = ['name' => $name, 'version' => $pin->version, 'architecture' => $architecture, 'url' => $artifact->location, 'sha256' => $artifact->digest];
                 }
             }
-            $sets[$version] = ['packages' => $packages, 'extensions' => $build->extensions];
+            $sets[$version] = ['packages' => $packages, 'extensions' => $build->cliExtensions()];
         }
         $rollback = $recipe->tools[$recipe->phpPolicy->rollbackTool] ?? null;
 
@@ -68,6 +68,7 @@ final readonly class PhpBuildInstaller
             'versions' => $sets,
             'mirror' => $recipe->phpPolicy->mirror,
             'pcov' => $pcov,
+            'opentelemetry' => $opentelemetry,
             'extras' => $extras,
             'fpm' => $fpm,
             'repack' => ['package' => $recipe->phpPolicy->rollbackTool, 'version' => $rollback->version ?? ''],
