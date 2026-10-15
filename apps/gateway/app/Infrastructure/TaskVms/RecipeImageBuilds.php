@@ -83,6 +83,8 @@ final readonly class RecipeImageBuilds
 
     public static function alias(string $prefix, string $identity, string $profile): string
     {
-        return $prefix.'-recipe-'.substr($identity, 7).'-'.$profile;
+        $suffix = '-recipe-'.substr($identity, 7, 12).'-'.$profile;
+
+        return substr($prefix, 0, 64 - strlen($suffix)).$suffix;
     }
 }

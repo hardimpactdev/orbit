@@ -108,6 +108,32 @@ beforeEach(function (): void {
     Sleep::fake(syncWithCarbon: true);
 });
 
+it('keeps aliases for base and every role within the Incus name limit', function (string $prefix): void {
+    $identity = 'sha256:0bd780fc6472'.str_repeat('a', 52);
+    $aliases = [];
+    foreach (['base', ...RecipeImageBuilds::Roles] as $profile) {
+        $alias = RecipeImageBuilds::alias($prefix, $identity, $profile);
+        expect(strlen($alias))->toBeLessThanOrEqual(64);
+        expect($alias)->toEndWith('-recipe-0bd780fc6472-'.$profile);
+        $aliases[] = $alias;
+    }
+    expect(array_unique($aliases))->toHaveCount(5);
+})->with([TaskVmHost::BaseImage, 'shark-task-base', str_repeat('a', 254)]);
+
+it('identifies publish failures as host commands without requesting a guest log', function (): void {
+    $host = recipeImageHost();
+    $incus = recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    $build = app(RecipeImageBuilds::class)->reconcile()[0];
+    $incus->fail = 'publish';
+
+    expect(fn () => runRecipeImageBuild($build))->toThrow(TaskVmException::class);
+
+    $failed = array_find($build->refresh()->steps, fn (array $step): bool => $step['program'] === 'base:publish');
+    expect($failed['error'])->toContain('`incus publish`', 'Error: publish failed', 'Publishing runs on Incus host [recipe-beast].')
+        ->not->toContain('Builder log unavailable', '/var/log/orbit/recipe-images/base-publish.log');
+});
+
 describe('recipe image triggers', function (): void {
     it('starts a deployed recipe immediately and reuses unchanged running and succeeded builds', function (): void {
         $host = recipeImageHost();
@@ -140,6 +166,7 @@ describe('recipe image triggers', function (): void {
             foreach ($build->images as $profile => $image) {
                 expect($incus->imageProperties[$image['fingerprint']])->toBe(['orbit.recipe' => $build->recipe_identity, 'orbit.profile' => $profile]);
                 expect($image)->toMatchArray(['project' => 'orbit-tasks', 'type' => 'virtual-machine']);
+                expect(strlen($image['alias']))->toBeLessThanOrEqual(64);
             }
         }
         $launches = array_values(array_filter($incus->commands, static fn ($command): bool => ($command->arguments[5] ?? '') === 'launch'));
