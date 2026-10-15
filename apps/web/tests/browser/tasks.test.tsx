@@ -617,6 +617,7 @@ it("hides the Instance Tasks tab and skips task queries when the extension start
         .toEqual({
             tasks: false,
             proxycli: false,
+            documents: true,
         });
 
     await expect
@@ -662,6 +663,7 @@ it("returns an Instance to Overview when tasks are disabled with task data cache
         .toEqual({
             tasks: false,
             proxycli: false,
+            documents: true,
         });
 
     await expect.element(page.getByRole("tab", { name: /^Tasks/ })).not.toBeInTheDocument();
@@ -681,6 +683,7 @@ it("does not load cached Tasks data on a direct route when the extension is disa
         .toEqual({
             tasks: false,
             proxycli: false,
+            documents: true,
         });
 
     await expect

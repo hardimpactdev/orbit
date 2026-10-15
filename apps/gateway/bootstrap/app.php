@@ -77,9 +77,6 @@ return Application::configure(basePath: dirname(__DIR__))
         // Horizon's metrics for its dashboard, only while Horizon runs.
         GatewaySchedule::command($schedule, 'horizon:snapshot', uniqueFor: 300)->everyFiveMinutes()
             ->when(static fn (): bool => GatewayQueueRedis::configured());
-        // Document cleanup stays in the scheduler: its permit belongs to the scheduler's start.
-        $schedule->command('project-documents:probes:reconcile')->everyMinute()->withoutOverlapping(10);
-        $schedule->command('project-documents:cleanup:work')->everyFiveMinutes()->withoutOverlapping(60);
         // Reconcile the deployed recipe each minute; only an identity change queues image builds.
         GatewaySchedule::job($schedule, new RefreshTaskVmBaseImages)->everyMinute()
             ->when(static fn (): bool => TaskVmSettings::scheduled()->enabled);
@@ -109,7 +106,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->convertEmptyStringsToNull(except: [ValidateDocumentPostSize::preservesExactJson(...)]);
         $middleware->prepend(GuardBrowserOrigins::class);
         $middleware->prepend(EnsureRequestId::class);
-        $middleware->api(prepend: [NormalizeErrorDetails::class, RecordCommandActivity::class, RequireEnabledExtension::class], append: [AnnounceDesiredCliVersion::class]);
+        $middleware->api(prepend: [NormalizeErrorDetails::class, RecordCommandActivity::class], append: [AnnounceDesiredCliVersion::class]);
         $middleware->prependToPriorityList(SubstituteBindings::class, RequireActiveWireGuardPeer::class);
         $middleware->appendToPriorityList(SubstituteBindings::class, RequireNodeAccess::class);
         $middleware->appendToPriorityList(RequireNodeAccess::class, RequireEnabledExtension::class);

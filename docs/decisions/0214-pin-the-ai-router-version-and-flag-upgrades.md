@@ -59,7 +59,7 @@ A daily extension schedule asks the driver for the latest release and stores it 
 
 Doctor's `role` family reports `role.update_available` on the `ai-router` assignment when the latest release is newer than the pin. Its expected value is the latest version, and its observed value is the pin. The kind is `informational`, so `orbit doctor` stays healthy and exits 0 while a newer release exists. A failed release check is not a finding.
 
-The finding reaches Doctor through a new plug-in point, the role version report. ADR 0210 does not list it, and it replaces no hard-coded call. The extension tags it, as it tags the points in [ADR 0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension#plug-in-points).
+The finding reaches Doctor through a new plug-in point, the role version report. [ADR 0210](/decisions/0210-give-each-extension-its-own-code-boundary) does not list it, and it replaces no hard-coded call. The extension tags it, as it tags the points in [ADR 0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension#plug-in-points).
 
 ### The collector exception
 

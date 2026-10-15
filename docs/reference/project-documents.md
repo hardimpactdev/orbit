@@ -2,19 +2,19 @@
 title: "Project Documents"
 description: "Native Project folders, versioned files, editing, private S3 storage, and the shared API, CLI, SDK, MCP, and web contract."
 covers:
-  - apps/gateway/app/{Actions,Jobs}/ProjectDocuments/**
-  - apps/gateway/app/{Data/ProjectDocuments/**,Infrastructure/{ProjectDocuments/**,Gateway/{GatewayCleanupStartupRenderer,NativeGatewayFpmConverger}.php},Providers/DocumentsServiceProvider.php}
-  - apps/gateway/app/Http/Requests/ProjectDocuments/**
+  - apps/gateway/extensions/documents/**
+  - apps/gateway/app/Infrastructure/Gateway/{GatewayCleanupStartupRenderer,NativeGatewayFpmConverger}.php
   - apps/gateway/artisan
-  - apps/gateway/app/Models/ProjectDocument*.php
-  - apps/gateway/app/Console/Commands/*Document{Probe,Cleanup}*.php
-  - apps/gateway/database/migrations/*_create_project_document*_table*.php
-  - apps/web/src/{api/documents.ts,pages/ProjectDocuments.tsx}
+  - apps/gateway/tests/Feature/Extensions/Documents/**
+  - apps/cli/app/Commands/ProjectDocuments/Concerns/GatesDocumentsExtension.php
+  - apps/web/src/{api/documents.ts,extensions/documents/**,pages/ProjectMenu.tsx}
 ---
 
 # Project Documents
 
 Project Documents are folders and versioned files owned by one [Project](/reference/projects). They hold notes, specifications, and attachments outside Git. They belong to the Project, not an Instance, branch, task, checkout, or Node. Orbit owns their metadata, history, authorization, and client operations; External document services are not backends. The [storage and editing rationale](/reference/project-documents#why-it-works-this-way) explains this boundary.
+
+Project Documents is the `documents` [extension](/reference/extensions). Its code lives in `apps/gateway/extensions/documents`. While the switch is off, every document and storage operation refuses with HTTP 409 `extension.disabled`, the MCP tools, CLI commands, and web page are hidden, and the stored documents and bucket stay as they are. The cleanup worker, the probe reconciliation, and the removal of a Project's documents keep running, because they only finish work that is already recorded. A new install starts with the switch off. An install that already had a document storage configuration or a document entry when it updated keeps the switch on. Turn it on with [`extension:enable documents`](/cli/extension#orbit-extensionenable).
 
 Every supported action is available to agents. The web app is another client of the same API, not a separate source of truth. Documents do not replace maintained repository documentation or automatically enter an agent's context. An agent explicitly lists, searches, and reads them. This feature has no collaboration cursor, rich-text editor, public sharing, external URL import, OCR, embeddings, or document-to-task automation.
 
@@ -284,7 +284,7 @@ Startup or pause invalidation always wins over stale queued work. A worker's gat
 
 ## API contract
 
-All routes are core operations under `/api/v1`, not an optional extension. `project`, `entry`, and `version` path parameters are numeric IDs. Every entry and version lookup is constrained to its enclosing Project and file; a cross-Project or cross-file ID is 404. Authorization runs before body parsing, S3 access, or existence disclosure. Document operations use the existing `ServingNode::ProjectOwning` grant check, including reads; storage configuration and status use `ServingNode::Gateway`. Being the author of a version conveys no extra authority. Browser calls use the web app's existing trusted peer proxy; there are no public or signed download links.
+All routes are under `/api/v1` and belong to the `documents` extension. While the extension is off, each one refuses with HTTP 409 `extension.disabled`. `project`, `entry`, and `version` path parameters are numeric IDs. Every entry and version lookup is constrained to its enclosing Project and file; a cross-Project or cross-file ID is 404. Authorization runs before body parsing, S3 access, or existence disclosure. Document operations use the existing `ServingNode::ProjectOwning` grant check, including reads; storage configuration and status use `ServingNode::Gateway`. Being the author of a version conveys no extra authority. Browser calls use the web app's existing trusted peer proxy; there are no public or signed download links.
 
 Paths below are relative to `/api/v1/projects/{project}/documents`, except the storage paths. Operation IDs are also MCP tool names. All successes use `data` plus `meta.request_id`; create returns 201, every other success returns 200, including removal (`data: {id, removed: true, cleanup_pending: boolean}`). Errors use the normal `error.code`, `message`, `details`, and request correlation envelope. No success uses 204.
 
@@ -382,7 +382,7 @@ The `/mcp/search` 65,536-byte result cap still applies: large content downloads 
 
 ### Browsing and actions
 
-Open a Project and choose Documents from its section menu. The workspace URL is `/projects/{id}/documents`; its query stores the current folder, search, and archive state so browser Back returns to that view. Search / filters opens one sheet on a phone. New opens the folder, text-file, and upload choices. Row menus hold secondary actions, and move uses a navigable folder picker rather than a flat list of paths. A safe preview shows escaped text, including Markdown and JSON; it does not render user markup.
+Open a Project and choose Documents from its section menu. The section and its route appear only while the Gateway reports the `documents` extension enabled; the page lives in `apps/web/src/extensions/documents`. The workspace URL is `/projects/{id}/documents`; its query stores the current folder, search, and archive state so browser Back returns to that view. Search / filters opens one sheet on a phone. New opens the folder, text-file, and upload choices. Row menus hold secondary actions, and move uses a navigable folder picker rather than a flat list of paths. A safe preview shows escaped text, including Markdown and JSON; it does not render user markup.
 
 The Project detail page has a Documents section with root browsing, folder navigation, breadcrumbs, name/path search, active/archive filters, create-folder, new text file, and upload. Rows show kind, name, version, size, and archive state, with reachable rename, move, archive/restore, history, download, and remove actions.
 
@@ -410,7 +410,7 @@ The Gateway settings page configures storage with write-only credential fields a
 
 The database provides atomic hierarchy and revision checks, while a dedicated private bucket holds bounded immutable bytes without expanding database backups into a blob store. Database body columns would grow backups with attachments. Git commits would couple drafts to repository history; local Node files would tie Project data to an Instance's lifetime. An external document service would leave authorization, history, and agent access outside Orbit's contract.
 
-The Gateway proxies every body operation so authorization, redaction, limits, and errors stay the same across API, CLI, SDK, MCP, and web. Documents are core operations using existing peer identity and serving-Node grants, not an extension or a separate login. Presigned URLs and direct browser uploads would create a second authorization and publication protocol. Only the Gateway needs bucket credentials, and the dedicated destination keeps document cleanup separate from application backups.
+The Gateway proxies every body operation so authorization, redaction, limits, and errors stay the same across API, CLI, SDK, MCP, and web. Documents use the existing peer identity and serving-Node grants, not a separate login. They are an [extension](/reference/extensions): an optional feature that a Gateway turns on, with its code behind the extension boundary, so a Gateway that does not use documents carries none of their operations. Presigned URLs and direct browser uploads would create a second authorization and publication protocol. Only the Gateway needs bucket credentials, and the dedicated destination keeps document cleanup separate from application backups.
 
 Orbit versions name exact immutable bytes in committed metadata. Mutable object keys or provider bucket versioning cannot atomically identify that history alongside the entry revision. Rename and move therefore change metadata, not object keys. History consumes bucket capacity until permanent file or Project removal; automatic age-based purging would weaken the promised recovery boundary.
 

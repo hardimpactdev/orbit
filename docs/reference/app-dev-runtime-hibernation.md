@@ -24,7 +24,7 @@ Hibernation applies to a Process that meets every condition:
 
 Restart policy does not matter. Hibernation never touches Node Processes, production Instances, Schedules, PHP-FPM services or pools, or Caddy socket paths.
 
-The Gateway's [Project Document cleanup gate](/reference/project-documents#local-state-and-startup-ordering) is separate from Instance hibernation. Its local runtime directory, `orbit.document_cleanup_runtime`, changes no hibernation threshold or wake behavior. Restarting a Gateway consumer invalidates document-body cleanup authorization; waking an Instance does not grant it.
+The Gateway's [Project Document cleanup gate](/reference/project-documents#local-state-and-startup-ordering) is separate from Instance hibernation. Its local runtime directory, `documents.cleanup_runtime`, changes no hibernation threshold or wake behavior. Restarting a Gateway consumer invalidates document-body cleanup authorization; waking an Instance does not grant it.
 
 ## Keep a Process running
 

@@ -4,23 +4,28 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\GatewayReleases;
 
-use App\Domain\GatewayReleases\GatewayDocumentCleanup;
+use App\Domain\GatewayReleases\GatewayReleaseCleanup;
 use Closure;
 
 /**
- * Resumes Project Document cleanup after the runtime handoff. A scheduler start or an FPM reload rotates the cleanup
- * generation and pauses cleanup, so after a scheduler restart the handoff waits for the new generation, reconciles,
- * and resumes with that report. A report that cannot authorize resume leaves cleanup paused; the release reports
- * that and alerts instead of failing, because the release itself is healthy.
+ * Resumes each extension's release cleanup after the runtime handoff ({@see GatewayReleaseCleanup}). A scheduler start
+ * or an FPM reload rotates a cleanup's generation and pauses it, so after a scheduler restart the handoff waits for the
+ * new generation, reconciles, and resumes with that report. A report that cannot authorize resume leaves the cleanup
+ * paused; the release reports that and alerts instead of failing, because the release itself is healthy.
+ *
+ * @phpstan-type CleanupResult array{outcome: string, paused: bool, error_code?: string, report_id?: string, difference_count?: int}
  */
 final readonly class GatewayCleanupHandoff
 {
     /** @var Closure(int): void */
     private Closure $sleep;
 
-    /** @param (Closure(int): void)|null $sleep microseconds */
+    /**
+     * @param  list<GatewayReleaseCleanup>  $cleanups
+     * @param  (Closure(int): void)|null  $sleep  microseconds
+     */
     public function __construct(
-        private GatewayDocumentCleanup $cleanup,
+        private array $cleanups,
         private int $generationWaitSeconds = 30,
         ?Closure $sleep = null,
     ) {
@@ -29,22 +34,56 @@ final readonly class GatewayCleanupHandoff
         };
     }
 
-    /** The generation before the scheduler stops, so the handoff can tell when the new scheduler has started. */
-    public function generation(): ?string
+    /**
+     * Each cleanup's generation before the scheduler stops, so the handoff can tell when the new scheduler has started.
+     *
+     * @return list<string|null>
+     */
+    public function generation(): array
     {
-        return $this->cleanup->configured() ? $this->cleanup->status()['cleanup_generation'] : null;
+        return array_map(
+            static fn (GatewayReleaseCleanup $cleanup): ?string => $cleanup->configured() ? $cleanup->status()['cleanup_generation'] : null,
+            $this->cleanups,
+        );
     }
 
     /**
-     * @return array{outcome: string, paused: bool, error_code?: string, report_id?: string, difference_count?: int}
+     * One outcome for every cleanup: the first paused cleanup, otherwise `resumed`, `running`, or `skipped`.
+     *
+     * @param  list<string|null>  $generationsBefore
+     * @return CleanupResult
      */
-    public function resume(?string $generationBefore, bool $schedulerRestarted): array
+    public function resume(array $generationsBefore, bool $schedulerRestarted): array
     {
-        if (! $this->cleanup->configured()) {
+        $results = [];
+        foreach ($this->cleanups as $index => $cleanup) {
+            $results[] = $this->resumeOne($cleanup, $generationsBefore[$index] ?? null, $schedulerRestarted);
+        }
+
+        foreach ($results as $result) {
+            if ($result['paused']) {
+                return $result;
+            }
+        }
+        foreach (['resumed', 'running'] as $outcome) {
+            foreach ($results as $result) {
+                if ($result['outcome'] === $outcome) {
+                    return $result;
+                }
+            }
+        }
+
+        return ['outcome' => 'skipped', 'paused' => false];
+    }
+
+    /** @return CleanupResult */
+    private function resumeOne(GatewayReleaseCleanup $cleanup, ?string $generationBefore, bool $schedulerRestarted): array
+    {
+        if (! $cleanup->configured()) {
             return ['outcome' => 'skipped', 'paused' => false];
         }
 
-        $status = $schedulerRestarted ? $this->awaitNewGeneration($generationBefore) : $this->cleanup->status();
+        $status = $schedulerRestarted ? $this->awaitNewGeneration($cleanup, $generationBefore) : $cleanup->status();
 
         if ($status === null) {
             return ['outcome' => 'paused', 'paused' => true, 'error_code' => 'gateway.release_cleanup_generation_unchanged'];
@@ -54,7 +93,7 @@ final readonly class GatewayCleanupHandoff
             return ['outcome' => 'running', 'paused' => false];
         }
 
-        $report = $this->cleanup->reconcile();
+        $report = $cleanup->reconcile();
         $reportId = $report['report_id'] ?? null;
 
         if (isset($report['error_code']) || $reportId === null || ($report['report_state'] ?? null) !== 'complete' || ($report['difference_count'] ?? 1) !== 0) {
@@ -67,7 +106,7 @@ final readonly class GatewayCleanupHandoff
             ], static fn (mixed $value): bool => $value !== null);
         }
 
-        $resumed = $this->cleanup->resume($reportId);
+        $resumed = $cleanup->resume($reportId);
 
         if (isset($resumed['error_code']) || ($resumed['cleanup_state'] ?? null) !== 'running') {
             return ['outcome' => 'paused', 'paused' => true, 'error_code' => $resumed['error_code'] ?? 'gateway.release_cleanup_unresolved', 'report_id' => $reportId];
@@ -77,12 +116,12 @@ final readonly class GatewayCleanupHandoff
     }
 
     /** @return array{cleanup_state: string, cleanup_generation: string|null}|null */
-    private function awaitNewGeneration(?string $before): ?array
+    private function awaitNewGeneration(GatewayReleaseCleanup $cleanup, ?string $before): ?array
     {
         $deadline = hrtime(true) + $this->generationWaitSeconds * 1_000_000_000;
 
         do {
-            $status = $this->cleanup->status();
+            $status = $cleanup->status();
 
             if ($status['cleanup_generation'] !== null && $status['cleanup_generation'] !== $before) {
                 return $status;

@@ -27,7 +27,7 @@ The [proxycli extension](/reference/proxycli) collects CLIProxyAPI quota into Va
 
 Core code names ProxyCli in many places: `DevelopmentDnsConfigRenderer` (private DNS), `ProxyCliCaddySiteSource` and the `proxycli` slug in `CaddySiteCertificates` (Caddy), `ReservedPrivateHostname`, `ProxyCliFootprintArtifact` (Node footprint), `DestroyProcessAction` through `ProxyCliProcessOwnership`, `UpdateDatabaseConnectionAction` (cache connection rules; `DestroyDatabaseConnectionAction` has no guard), the `processes` columns `proxycli_source_revision` and `proxycli_source_activation_pending`, `TaskVmRuntime`, and the wiring in `ApplicationServiceProvider`. Its surfaces are seven `proxycli-*` MCP tools, the CLI commands in `apps/cli/app/Commands/ProxyCli`, the SDK classes in `packages/php-sdk/src/{Requests,Responses}/ProxyCli`, and the web page `src/pages/Quota.tsx`.
 
-[ADR 0210](https://github.com/nckrtl/orbit/pull/1247), in review, gives each extension its own directory, provider, and namespace. Core offers typed plug-in points through container tags, and an architecture test forbids `App\` from importing extension code. An extension declares `dependencies()`. Enabling refuses with `extension.dependency_disabled` while a dependency is off, and disabling refuses with `extension.required` while an enabled extension depends on it. ADR 0210 moves ProxyCli only after a separate plan, because Tasks depends on it. This record is that plan.
+[ADR 0210](/decisions/0210-give-each-extension-its-own-code-boundary) gives each extension its own directory, provider, and namespace. Core offers typed plug-in points through container tags, and an architecture test forbids `App\` from importing extension code. An extension declares `dependencies()`. Enabling refuses with `extension.dependency_disabled` while a dependency is off, and disabling refuses with `extension.required` while an enabled extension depends on it. ADR 0210 moves ProxyCli only after a separate plan, because Tasks depends on it. This record is that plan.
 
 ## Decision
 
@@ -169,7 +169,7 @@ The Caddy guard that aborts task VM clients still covers the collector site, bec
 3. The collector's Orbit CA leaf, its Caddy site, and the private DNS record `collector.ai-router.orbit`.
 4. The role's firewall rules.
 
-ADR 0210 runs `enable()` first and turns the switch on only after the hook succeeds ([amendment A2](#required-amendments-to-adr-0210)). When a step fails, the switch stays off and the Gateway returns the step's error. Placed parts stay, and the next `extension:enable ai-router` reuses them. Tasks never sees a switch that is on without a router.
+With [amendment A2](#required-amendments-to-adr-0210), ADR 0210 runs `enable()` first and turns the switch on only after the hook succeeds. When a step fails, the switch stays off and the Gateway returns the step's error. Placed parts stay, and the next `extension:enable ai-router` reuses them. Tasks never sees a switch that is on without a router.
 
 So the hook runs while the switch is still off, and nothing it calls reads the switch:
 
@@ -258,15 +258,15 @@ Every pull request in [Build order](#build-order) passes these checks on the liv
 
 ### Required amendments to ADR 0210
 
-[#1247](https://github.com/nckrtl/orbit/pull/1247) merges ADR 0210 as reviewed, with A2. A1 and A3 are not added to #1247. The pull request of build step 4 is the first that uses them, so it adds them to ADR 0210 and to the code, with their tests. If ADR 0210 is retired by then, it adds them to the page that absorbed it.
+[ADR 0210](/decisions/0210-give-each-extension-its-own-code-boundary) is on main without these amendments. Its code turns the switch on and then calls `enable()`. A1 and A3 are not added to ADR 0210 yet. The pull request of build step 4 is the first that uses them, so it adds them to ADR 0210 and to the code, with their tests. If ADR 0210 is retired by then, it adds them to the page that absorbed it. The maintainer decided A2 for every extension, and it was planned for #1247, but #1247 merged without it.
 
 | ID | Amendment | Added by | Why the AI router needs it |
 | --- | --- | --- | --- |
 | A1 | An extension can refuse to be disabled. A pre-disable guard runs after the `extension.required` check and before the switch changes. It may refuse with a `ResourceOperationException`. | Build step 4 | `ai_router.keys_outstanding` must refuse before the switch turns off. ADR 0210 turns the switch off and then calls `disable()`. |
-| A2 | The Gateway runs `enable()` first and turns the switch on only after the hook succeeds. A failed hook leaves the switch off and returns its error. | #1247 | The maintainer decided this rule for every extension. Tasks must never see the router switch on without a router. |
+| A2 | The Gateway runs `enable()` first and turns the switch on only after the hook succeeds. A failed hook leaves the switch off and returns its error. | Not in ADR 0210 yet. It must be there before build step 4 | The maintainer decided this rule for every extension. Tasks must never see the router switch on without a router. |
 | A3 | An `enable()` or `disable()` hook may do fleet work over SSH, within the request's command deadline. It replaces the rule that fleet work belongs in a separate setup command. | Build step 4 | The router has one switch and no setup command. |
 
-The new plug-in points in [Plug-in points](#plug-in-points) need no amendment, because ADR 0210 lets each extension add its points. The links to ADR 0210 in this record point at #1247 until it merges. This record merges after #1247, and its links then move to the `/decisions` path.
+The new plug-in points in [Plug-in points](#plug-in-points) need no amendment, because ADR 0210 lets each extension add its points.
 
 ## Rejected alternatives
 
@@ -295,6 +295,6 @@ The new plug-in points in [Plug-in points](#plug-in-points) need no amendment, b
 ## Affects
 
 - Components: apps/gateway, apps/cli, apps/web, packages/php-sdk, apps/docs
-- ADRs: builds on [ADR 0210](https://github.com/nckrtl/orbit/pull/1247), and step 4 adds its [amendments A1 and A3](#required-amendments-to-adr-0210). [ADR 0214](/decisions/0214-pin-the-ai-router-version-and-flag-upgrades) builds on this record and adds router upgrades. Changes the model proxy origin of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm): the hub filter and Pi read it from the `ai-router` role.
+- ADRs: builds on [ADR 0210](/decisions/0210-give-each-extension-its-own-code-boundary) and needs its [amendments A1 to A3](#required-amendments-to-adr-0210). [ADR 0214](/decisions/0214-pin-the-ai-router-version-and-flag-upgrades) builds on this record and adds router upgrades. Changes the model proxy origin of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm): the hub filter and Pi read it from the `ai-router` role.
 - Detail: a new AI router reference page and `ai-router` CLI page that replace [proxycli](/reference/proxycli) and [proxycli commands](/cli/proxycli); [Compute drivers: Configure task VMs](/reference/compute-drivers#configure-task-vms) and its hub filter; [Pi server: Run Pi on a task VM](/reference/pi-server#run-pi-on-a-task-vm); [doctor](/cli/doctor); [extension](/cli/extension); [CLI command vocabulary](/reference/cli-command-vocabulary); [Private DNS](/reference/private-dns); [Node provisioning](/reference/node-provisioning#converge-the-orbit-footprint).
 - Verify: the [Acceptance test](#acceptance-test) after each step; the extension dependency and refusal tests; a `ModelKeyIssuer` contract test; a migration test that keeps the management key, each anchor, and each task VM key and origin; the role conflict and adoption tests; and the architecture test that keeps `App\` free of `Orbit\Extensions\AiRouter\`.

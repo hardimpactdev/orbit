@@ -21,9 +21,9 @@ final class KillCommand extends E2ECommand
     public function handle(TopologyAcquirer $acquirer): int
     {
         try {
-            $process = new GuestProcess((string) $this->argument('name'));
+            $process = new GuestProcess($this->stringArgument('name'));
             $request = $this->request();
-            $role = (string) $this->argument('node');
+            $role = $this->stringArgument('node');
             $result = $acquirer->execute($request, $role, $process->killArgv());
             $this->log($request, "role={$role} kill={$process->name} exit={$result->exitCode}");
             if (! $result->successful()) {

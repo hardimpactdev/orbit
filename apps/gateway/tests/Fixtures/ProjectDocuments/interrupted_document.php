@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-use App\Actions\ProjectDocuments\WriteDocumentAction;
-use App\Data\ProjectDocuments\DocumentBody;
 use Aws\CommandInterface;
 use Aws\Result;
 use GuzzleHttp\Promise\Create;
 use GuzzleHttp\Promise\PromiseInterface;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\DB;
+use Orbit\Extensions\Documents\Actions\WriteDocumentAction;
+use Orbit\Extensions\Documents\Data\DocumentBody;
 
 $database = $argv[1];
 $projectId = (int) $argv[2];

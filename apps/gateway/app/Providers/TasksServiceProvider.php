@@ -61,9 +61,9 @@ use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Route;
-use Illuminate\Support\ServiceProvider;
 
-final class TasksServiceProvider extends ServiceProvider
+/** The tasks extension. Its code is still in core ([Extensions](/reference/extensions#the-extensions)). */
+final class TasksServiceProvider extends ExtensionServiceProvider
 {
     /** @var array<class-string, class-string> */
     public array $bindings = [
@@ -94,6 +94,26 @@ final class TasksServiceProvider extends ServiceProvider
     ];
 
     #[\Override]
+    public function name(): string
+    {
+        return 'tasks';
+    }
+
+    public function description(): string
+    {
+        return 'Runs planned work with coding agents and delivers it as a pull request.';
+    }
+
+    public function enable(): void
+    {
+        $this->app->make(TaskBroadcasts::class)->extensionChanged(true);
+    }
+
+    public function disable(): void
+    {
+        $this->app->make(TaskBroadcasts::class)->extensionChanged(false);
+    }
+
     public function register(): void
     {
         parent::register();

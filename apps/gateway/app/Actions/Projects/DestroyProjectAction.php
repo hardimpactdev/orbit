@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 namespace App\Actions\Projects;
 
-use App\Actions\ProjectDocuments\DocumentTreeAction;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Extensions\Contributions;
+use App\Domain\Projects\ProjectRemovalHook;
 use App\Domain\Routes\RouteRemovalGuard;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Project;
@@ -21,8 +22,12 @@ final readonly class DestroyProjectAction
 
     public function execute(Project $project): Project
     {
-        DB::transaction(function () use ($project): void {
-            app(DocumentTreeAction::class)->lock();
+        $hooks = app(Contributions::class)->of(ProjectRemovalHook::class);
+
+        DB::transaction(function () use ($project, $hooks): void {
+            foreach ($hooks as $hook) {
+                $hook->lock($project);
+            }
             if ($project->instances()->exists()) {
                 throw new ResourceOperationException(
                     errorCode: 'project.has_instances',
@@ -41,7 +46,9 @@ final readonly class DestroyProjectAction
                 );
             }
 
-            app(DocumentTreeAction::class)->removeProject($project->id);
+            foreach ($hooks as $hook) {
+                $hook->remove($project);
+            }
             $project->delete();
         });
 

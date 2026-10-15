@@ -2,8 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Domain\Extensions\ExtensionRegistry;
+use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
+use App\Models\Project;
+use App\Providers\ExtensionServiceProvider;
 use Illuminate\Testing\TestResponse;
 
 function extensions_mcp(mixed $test, string $endpoint, string $method, array $params = []): TestResponse
@@ -133,4 +137,88 @@ it('disabled extension is invisible for proxycli API and MCP tools', function ()
     expect(extensions_mcp($this, '/mcp/search', 'tools/call', [
         'name' => 'search_tools', 'arguments' => ['query' => 'proxycli status'],
     ])->json('result.content.0.text'))->toContain('proxycli-status');
+});
+
+final class DependentTestExtension extends ExtensionServiceProvider
+{
+    /** @var list<string> */
+    public static array $hooks = [];
+
+    public function name(): string
+    {
+        return 'dependent';
+    }
+
+    public function description(): string
+    {
+        return 'A test extension that needs documents.';
+    }
+
+    public function dependencies(): array
+    {
+        return ['documents'];
+    }
+
+    public function enable(): void
+    {
+        self::$hooks[] = 'enable';
+    }
+
+    public function disable(): void
+    {
+        self::$hooks[] = 'disable';
+    }
+}
+
+it('lists the extensions from the registered extension providers', function (): void {
+    expect(array_keys($this->getJson('/api/v1/extensions')->assertOk()->json('data')))->toBe(['tasks', 'proxycli', 'documents'])
+        ->and(app(ExtensionRegistry::class)->names())->toBe(['tasks', 'proxycli', 'documents']);
+
+    $this->app->register(new DependentTestExtension($this->app));
+
+    expect(array_keys($this->getJson('/api/v1/extensions')->assertOk()->json('data')))->toBe(['tasks', 'proxycli', 'documents', 'dependent']);
+});
+
+it('disabled extension is invisible for documents API and MCP tools', function (): void {
+    $this->getJson('/api/v1/project-document-storage')->assertStatus(409)
+        ->assertJsonPath('error.code', 'extension.disabled')
+        ->assertJsonPath('error.message', 'The documents extension is disabled.');
+    $project = Project::query()->create(['name' => 'Notes', 'slug' => 'notes', 'repository_url' => 'https://example.test/notes.git']);
+    $this->getJson("/api/v1/projects/{$project->id}/documents")->assertStatus(409)->assertJsonPath('error.code', 'extension.disabled');
+    expect(array_column(extensions_mcp($this, '/mcp', 'tools/list')->assertOk()->json('result.tools'), 'name'))
+        ->not->toContain('project-document-list', 'project-document-storage-show');
+    $staleCall = extensions_mcp($this, '/mcp', 'tools/call', ['name' => 'project-document-list', 'arguments' => ['project' => 1]])
+        ->assertOk()->json('result');
+    expect($staleCall['isError'])->toBeTrue()
+        ->and(json_decode($staleCall['content'][0]['text'], true)['error']['code'])->toBe('extension.disabled');
+
+    $this->postJson('/api/v1/extensions/documents/enable')->assertOk()->assertJsonPath('data.enabled', true);
+    $this->getJson('/api/v1/project-document-storage')->assertOk();
+    expect(array_column(extensions_mcp($this, '/mcp', 'tools/list')->json('result.tools'), 'name'))->toContain('project-document-list');
+});
+
+it('enables an extension only after its dependencies and runs its hooks after the switch changes', function (): void {
+    DependentTestExtension::$hooks = [];
+    $this->app->register(new DependentTestExtension($this->app));
+
+    $this->postJson('/api/v1/extensions/dependent/enable')->assertStatus(409)
+        ->assertJsonPath('error.code', 'extension.dependency_disabled')
+        ->assertJsonPath('error.details.dependency', 'documents');
+    expect(app(ExtensionStore::class)->enabled('dependent'))->toBeFalse()
+        ->and(DependentTestExtension::$hooks)->toBe([]);
+
+    $this->postJson('/api/v1/extensions/documents/enable')->assertOk();
+    $this->postJson('/api/v1/extensions/dependent/enable')->assertOk()->assertJsonPath('data.enabled', true);
+    $this->postJson('/api/v1/extensions/dependent/enable')->assertOk();
+    expect(DependentTestExtension::$hooks)->toBe(['enable', 'enable']);
+
+    $this->postJson('/api/v1/extensions/documents/disable')->assertStatus(409)
+        ->assertJsonPath('error.code', 'extension.required')
+        ->assertJsonPath('error.details.required_by', 'dependent');
+    expect(app(ExtensionStore::class)->enabled('documents'))->toBeTrue();
+
+    $this->postJson('/api/v1/extensions/dependent/disable')->assertOk()->assertJsonPath('data.enabled', false);
+    $this->postJson('/api/v1/extensions/documents/disable')->assertOk();
+    expect(DependentTestExtension::$hooks)->toBe(['enable', 'enable', 'disable'])
+        ->and(app(ExtensionStore::class)->all())->toBe(['tasks' => false, 'proxycli' => false, 'documents' => false, 'dependent' => false]);
 });

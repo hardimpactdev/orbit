@@ -16,6 +16,6 @@ final class ShowGatewayReleaseCommand extends GatewayReleaseCommand
 
     public function handle(ShowGatewayReleaseAction $action): int
     {
-        return $this->report(fn (): array => ['release' => $action->execute((string) $this->argument('release'))]);
+        return $this->report(fn (): array => ['release' => $action->execute($this->stringArgument('release'))]);
     }
 }

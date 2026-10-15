@@ -77,7 +77,7 @@ final readonly class ProxyCliSnapshotStore
     {
         if ($models === null) {
             $stored = $this->snapshot();
-            $models = $stored === null ? [] : $stored->models;
+            $models = $stored->models ?? [];
         }
 
         $snapshot = $this->compiler->compile($accounts, $collectedAt, $models);

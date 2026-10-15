@@ -6,9 +6,10 @@ namespace App\Providers;
 
 use App\Actions\GatewayReleases\DeployGatewayReleaseAction;
 use App\Domain\AgentView\AgentViewConverger;
+use App\Domain\Extensions\Contributions;
 use App\Domain\Fleet\FleetConvergeUnits;
-use App\Domain\GatewayReleases\GatewayDocumentCleanup;
 use App\Domain\GatewayReleases\GatewayReleaseAutomation;
+use App\Domain\GatewayReleases\GatewayReleaseCleanup;
 use App\Domain\GatewayReleases\GatewayReleaseDatabase;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\GatewayReleases\GatewayReleaseRuntime;
@@ -31,7 +32,6 @@ use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
 use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
-use App\Infrastructure\GatewayReleases\ActionGatewayDocumentCleanup;
 use App\Infrastructure\GatewayReleases\ArtisanGatewayReleaseRuntime;
 use App\Infrastructure\GatewayReleases\GatewayCleanupHandoff;
 use App\Infrastructure\GatewayReleases\GatewayNodeAgentUpdate;
@@ -113,7 +113,6 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 fallback: new LocalGatewayReleaseRuntime($app->make(GatewayRuntimeHandoff::class)),
             ),
         );
-        $this->app->bind(GatewayDocumentCleanup::class, ActionGatewayDocumentCleanup::class);
         $this->app->bind(
             GatewayRuntimeHandoff::class,
             static fn (Application $app): GatewayRuntimeHandoff => new GatewayRuntimeHandoff(
@@ -129,7 +128,7 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                     applicationPath: GatewayApplicationPath::resolve(),
                     drainSeconds: self::drainSeconds(),
                 ),
-                cleanup: new GatewayCleanupHandoff($app->make(GatewayDocumentCleanup::class)),
+                cleanup: new GatewayCleanupHandoff($app->make(Contributions::class)->of(GatewayReleaseCleanup::class)),
                 applicationPath: GatewayApplicationPath::resolve(),
                 orbitHome: rtrim(Config::string('orbit.home'), '/'),
                 fleet: $app->make(FleetConvergeUnits::class),
