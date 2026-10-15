@@ -6,9 +6,12 @@ namespace App\Console\Commands;
 
 use App\Actions\Nodes\ProvisionNodeAction;
 use App\Data\Nodes\ProvisionNodeData;
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\RoleName;
+use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use Illuminate\Console\Command;
+use Symfony\Component\Console\Output\OutputInterface;
 
 final class ProvisionNodeCommand extends Command
 {
@@ -27,7 +30,8 @@ final class ProvisionNodeCommand extends Command
         {--lan-ip= : Cluster-local LAN IP}
         {--wireguard-endpoint= : Per-node WireGuard endpoint override}
         {--dns-server= : Per-node DNS server override}
-        {--host-key-fingerprint= : Expected first-contact SSH SHA256 fingerprint}';
+        {--host-key-fingerprint= : Expected first-contact SSH SHA256 fingerprint}
+        {--diagnostics : Include a bounded, redacted command-output tail on failure}';
 
     #[\Override]
     protected $description = 'Provision the first node directly from the gateway.';
@@ -84,12 +88,39 @@ final class ProvisionNodeCommand extends Command
                 "Node provisioning failed at step [{$exception->step}] with error [{$exception->errorCode}].",
             );
 
+            if ($this->option('diagnostics')) {
+                $tail = $this->commandFailureTail($exception);
+                if ($tail !== '') {
+                    $this->output->getErrorStyle()->writeln($tail, OutputInterface::OUTPUT_RAW);
+                }
+            }
+
             return self::FAILURE;
         }
 
         $this->info("Node [{$node->name}] is {$node->status->value}.");
 
         return self::SUCCESS;
+    }
+
+    private function commandFailureTail(NodeProvisioningException $exception): string
+    {
+        for ($cause = $exception; $cause !== null; $cause = $cause->getPrevious()) {
+            if (! $cause instanceof NodeProvisioningException && ! $cause instanceof RuntimeConvergenceException) {
+                continue;
+            }
+            $result = $cause->result;
+            if ($result === null || trim($result->stdout.$result->stderr) === '') {
+                continue;
+            }
+            // Role-operation wrappers intentionally strip output; diagnostics uses the underlying failure only.
+            $redacted = new CommandActivityInputSanitizer()->redactText($result->stdout."\n".$result->stderr);
+            $lines = preg_split('/\R/u', mb_scrub(trim($redacted))) ?: [];
+
+            return mb_substr(implode("\n", array_slice($lines, -40)), -4000);
+        }
+
+        return '';
     }
 
     private function stringArgument(string $name): ?string

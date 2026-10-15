@@ -37,7 +37,7 @@ it('sizes newly created guests by their catalog Node, with the uniform override'
     'development' => [null, 'app-dev', '2GiB', 11],
     'production' => [null, 'app-prod', '1GiB', 12],
     'second production' => [null, 'app-prod-2', '1GiB', 13],
-    'roleless operator VM' => [null, 'operator', '512MiB', 14],
+    'roleless operator VM' => [null, 'operator', '1GiB', 14],
     'uniform Gateway override' => ['3GiB', 'gateway', '3GiB', 10],
     'uniform production override' => ['3GiB', 'app-prod', '3GiB', 12],
 ]);

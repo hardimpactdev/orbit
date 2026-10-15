@@ -85,6 +85,7 @@ final readonly class RecipeImageBuildSteps
                     $this->programs->apply($shell, $recipe, $profile, $phase);
                     break;
                 case 'prepare':
+                    $this->image->checked($name, 'public DNS', $shell->asRoot(['bash', '-ceu', TaskVmScripts::read('public-dns.sh')]));
                     $this->builder->singleBoot($host, $node, $shell);
                     $this->image->checked($name, 'lean boot', $shell->asRoot(['bash', '-ceu', TaskVmScripts::read('lean-boot.sh').TaskVmImageRecipe::Masks]));
                     break;

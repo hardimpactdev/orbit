@@ -104,7 +104,6 @@ describe('topology commands', function () {
         sort($harness);
 
         expect($harness)->toBe([
-            'topology-images:build',
             'topology-images:ensure',
             'topology-images:status',
             'topology:acquire',

@@ -44,6 +44,11 @@ final readonly class RoleImages
     {
         $guests = array_values($target->instances());
         $probe = 'case "$(cloud-init status 2>/dev/null)" in *done*|*disabled*) ;; *) exit 1 ;; esac; cat /proc/sys/kernel/random/boot_id';
+        $publicDns = file_get_contents(dirname(__DIR__, 4).'/apps/gateway/resources/task-vms/public-dns.sh');
+        if ($publicDns === false || $publicDns === '') {
+            throw new RuntimeException('The image public DNS program is missing.');
+        }
+        $configured = false;
         $previous = null;
         $deadline = microtime(true) + 900;
         do {
@@ -52,11 +57,23 @@ final readonly class RoleImages
                 $commands[$guest] = ['instance' => $guest, 'command' => new GuestCommand(['sh', '-c', $probe], 15)];
             }
             try {
+                if (! $configured) {
+                    $dns = [];
+                    foreach ($guests as $guest) {
+                        $dns[$guest] = ['instance' => $guest, 'command' => new GuestCommand(['bash', '-ceu', $publicDns], 30)];
+                    }
+                    $configured = array_all($this->host->execAll($dns), static fn (GuestCommandResult $result): bool => $result->successful());
+                    if (! $configured) {
+                        throw new RuntimeException('Guest public DNS is not ready.');
+                    }
+                }
                 $boots = array_map(static fn (GuestCommandResult $result): ?string => $result->successful() && trim($result->stdout) !== '' ? trim($result->stdout) : null, $this->host->execAll($commands));
             } catch (RuntimeException) {
                 $boots = [];
             }
             if ($boots !== [] && ! in_array(null, $boots, true) && $boots === $previous) {
+                $this->preparePnpm($guests);
+
                 return;
             }
             $previous = $boots;
@@ -64,6 +81,32 @@ final readonly class RoleImages
         } while (microtime(true) < $deadline);
 
         throw new RuntimeException('The imported recipe guests did not finish their first boot.');
+    }
+
+    /** @param list<string> $guests */
+    private function preparePnpm(array $guests): void
+    {
+        $root = dirname(__DIR__, 4);
+        $recipe = json_decode((string) file_get_contents($root.'/apps/gateway/resources/machine-software/recipe.json'), true, flags: JSON_THROW_ON_ERROR);
+        $pin = is_array($recipe) && is_array($recipe['tools'] ?? null) ? $recipe['tools']['pnpm'] ?? null : null;
+        if (! is_array($pin)) {
+            throw new RuntimeException('The recipe pnpm pin is missing.');
+        }
+        $shared = file_get_contents($root.'/apps/gateway/resources/machine-software/converge-node.py');
+        $prepare = file_get_contents($root.'/apps/e2e/resources/guest/prepare-pnpm.py');
+        if ($shared === false || $prepare === false) {
+            throw new RuntimeException('The recipe pnpm program is missing.');
+        }
+        $script = str_replace("if __name__ == '__main__':\n    sys.exit(main())", '', $shared)."\n".$prepare;
+        $commands = [];
+        foreach ($guests as $guest) {
+            $commands[$guest] = ['instance' => $guest, 'command' => new GuestCommand(['python3', '-', json_encode($pin, JSON_THROW_ON_ERROR)], 120, $script)];
+        }
+        foreach ($this->host->execAll($commands) as $guest => $result) {
+            if (! $result->successful()) {
+                throw new RuntimeException(new GuestFailureDetail()->append("Recipe pnpm preparation failed on {$guest}.", $result->stderr));
+            }
+        }
     }
 
     /** @return list<array{role:string,alias:string,state:string,fingerprint:?string,created_at:?string,recipe_identity:?string,error:?string}> */

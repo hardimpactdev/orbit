@@ -370,7 +370,7 @@ final readonly class WorktreeSynchronizer
         $failed = [];
         foreach ($results as $label => $result) {
             if (! $result->successful()) {
-                $failed[] = $label;
+                $failed[] = new GuestFailureDetail()->append($label.' exited '.$result->exitCode, $result->stderr);
             }
         }
         if ($failed !== []) {

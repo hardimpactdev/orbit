@@ -205,7 +205,7 @@ describe('Node convergence', function () {
             ->and(commandLog($fixture))->toBe([
                 'ssh-keyscan -T 5 -t ed25519 -- 192.0.2.12',
                 "php artisan orbit:node-provision {$node} 192.0.2.12 --role={$role} --tld={$node} --architecture=aarch64 --user=orbit "
-                    ."--wireguard-ip={$address} --host-key-fingerprint=SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA --no-interaction",
+                    ."--wireguard-ip={$address} --host-key-fingerprint=SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA --diagnostics --no-interaction",
             ]);
     })->with([
         'development' => ['app-dev', 'app-dev', '10.44.0.2'],
@@ -219,7 +219,7 @@ describe('Node convergence', function () {
         expect(runGuestScript($fixture, ['provision', 'operator', '192.0.2.14', 'x86_64', '10.44.0.5'])->getExitCode())->toBe(0)
             ->and(commandLog($fixture)[1])->toBe(
                 'php artisan orbit:node-provision operator 192.0.2.14 --architecture=x86_64 --user=orbit --wireguard-ip=10.44.0.5 '
-                    .'--host-key-fingerprint=SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA --no-interaction',
+                    .'--host-key-fingerprint=SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA --diagnostics --no-interaction',
             );
     });
 

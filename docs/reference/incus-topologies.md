@@ -55,13 +55,19 @@ The operator is separate from the host's network namespace. A host such as beast
 
 ## One recipe base image
 
-Every topology Node launches the same host-built recipe base fingerprint, including the operator VM. The task VM receives one archive and a manifest; `bin/e2e-topology-images ensure --recipe-images=PATH` imports and validates its recipe identity, base profile, fingerprint, and VM type. Imports are repeatable and remove the archive after verification. The harness does not build images. Standalone hosts must import an approved base archive through the same manifest contract.
+Every topology Node launches the same base fingerprint built on its task VM host, including the operator VM. The task VM receives one archive and a manifest; `bin/e2e-topology-images ensure --recipe-images=PATH` imports and validates its recipe identity, base profile, fingerprint, and VM type. Imports are repeatable and remove the archive after verification. The harness does not build images. Standalone hosts must import an approved base archive through the same manifest contract.
 
 Before deployment, drain or cancel all pre-recipe task groups and release their topologies. They cannot use the new harness. There is no fallback to local role builds or an operator container. No automatic cancellation or host cleanup runs during deployment.
 
-The base already provides pinned software, `orbit` with uid/gid 1000 and passwordless sudo, masked apt timers, and identity cleanup before publication. Convergence sets public DNS upstreams, clears known hosts, verifies the account, and keeps apt timers masked. Cloud-init creates fresh SSH keys; the harness waits through its seed reboot before configuration. The shared base stays usable as a task VM image, so convergence does not disable cloud-init in the published image.
+The base already provides pinned software, `orbit` with uid/gid 1000 and passwordless sudo, masked apt timers, and identity cleanup before publication. Recipe image preparation sets persistent public DNS upstreams. As soon as the guest agent responds, the harness applies the same program before waiting for cloud-init to finish. This also supports bases published before DNS setup.
 
-The Gateway runs its rendered `gateway vpn` enrollment programs except bootstrap during composition. This supplies VPN prerequisites and the Gateway's Caddy program, which a software-only recipe role does not replace. Workload and operator enrollment still use the normal product paths. All Nodes keep the source image's minimum disk size.
+Convergence clears known hosts, verifies the account, and keeps apt timers masked. It converts the exact root-owned Bun launcher from the recipe into the symlink required by app-role enrollment. Other executables remain subject to the normal conflict checks.
+
+Before enrollment, the harness checks pnpm as `orbit` and repairs a broken launcher from the recipe's integrity-pinned native archive, at the same version. This supports existing bases whose wrapper still names `pnpm.cjs`; it uses the recipe installer without building an image.
+
+Cloud-init creates fresh SSH keys; the harness waits through its seed reboot before configuration. The shared base stays usable as a task VM image, so convergence does not disable cloud-init in the published image.
+
+The Gateway runs its rendered `gateway vpn` enrollment programs except bootstrap during composition. This supplies VPN prerequisites and the Gateway's Caddy program, which a software-only recipe role does not replace. Workload and operator enrollment still use the normal product paths. All Nodes keep the source image's minimum disk size. Guest ownership repair stays on the guest filesystem and does not scan the mounted checkout. The operator needs 1 GiB of memory for the shared base; 512 MiB can kill cloud-init during boot.
 
 | Command | What it does |
 | --- | --- |
@@ -89,7 +95,7 @@ For each workload Node, `enroll.<node>` authorizes the Gateway SSH key and reads
 
 An `ingress` entry needs Cluster membership, and a Cluster holds one ingress Node. So the operator creates the Cluster `e2e-<node>` for that Node and adds the Node to it before it adds the role.
 
-The harness changes guests only through Orbit commands and its own guest scripts. It never edits the Gateway database. A failed acquisition removes every resource it created, drops the lease, and exits nonzero with the step and the redacted error. When cleanup itself fails, the lease stays so `release` can finish it.
+The harness changes guests only through Orbit commands and its own guest scripts. It never edits the Gateway database. A failed acquisition removes every resource it created, drops the lease, and exits nonzero with the step and the redacted error. Node provisioning requests `--diagnostics`, which includes the last 40 lines of command output, limited to 4,000 characters and redacted before truncation. When cleanup itself fails, the lease stays so `release` can finish it.
 
 ### Readiness
 
@@ -154,7 +160,7 @@ The harness counts capacity from `incus list`, never from a ledger. It counts th
 | Network slots | 1 to 200 |
 | Incus scope | `e2e.incus.remote`, `e2e.incus.project`, and `e2e.incus.storage_pool`, from `ORBIT_E2E_INCUS_REMOTE`, `ORBIT_E2E_INCUS_PROJECT`, and `ORBIT_E2E_INCUS_STORAGE_POOL`. The defaults are `local`, `default`, and `orbit-e2e`. The remote must be `local`, because network creation and deletion also change host firewall rules. |
 
-The catalog gives 1.5 GiB of memory to `gateway`, 2 GiB to `app-dev`, 1 GiB each to `app-prod` and `app-prod-2`, and 512 MiB to the operator VM. `ORBIT_E2E_INCUS_MEMORY=2GiB` (`e2e.incus.memory`) sets every guest for one run.
+The catalog gives 1.5 GiB of memory to `gateway`, 2 GiB to `app-dev`, 1 GiB each to `app-prod` and `app-prod-2`, and 1 GiB to the operator VM. `ORBIT_E2E_INCUS_MEMORY=2GiB` (`e2e.incus.memory`) sets every guest for one run.
 
 Every `incus` call carries the configured project. The harness reserves the declared VMs before it creates a network or a guest, and refuses `acquire` when the budget cannot hold them, naming the count and the limit. The operator VM counts against the budget.
 

@@ -155,6 +155,10 @@ describe('TopologyAcquirer', function () {
             $timings[] = $step;
         });
 
+        $dns = array_values(array_filter($incus->execs, static fn (array $exec): bool => $exec['argv'][0] === 'bash' && str_contains($exec['argv'][2] ?? '', 'orbit-public-upstream.conf')));
+        expect($dns)->toHaveCount(3);
+        expect(array_search($dns[0], $incus->execs, true))->toBeLessThan(array_find_key($incus->execs, static fn (array $exec): bool => str_contains($exec['argv'][2] ?? '', 'boot_id')));
+        expect($dns[0]['argv'])->toBe(['bash', '-ceu', file_get_contents(dirname(__DIR__, 5).'/apps/gateway/resources/task-vms/public-dns.sh')]);
         $programs = array_values(array_filter($incus->execs, static fn (array $exec): bool => in_array('true', $exec['argv'], true)));
         expect(array_map(static fn (array $exec): array => array_slice($exec['argv'], 10), $programs))->toBe([['true', 'caddy-package'], ['true', 'vpn-prerequisites']]);
 
@@ -220,6 +224,14 @@ describe('TopologyAcquirer', function () {
             ->toThrow(RuntimeException::class, 'Gateway convergence program [vpn-prerequisites] failed.');
         expect($incus->instances)->toBe([]);
         expect($incus->callsOf('publish'))->toBe([]);
+    });
+
+    it('reports recipe pnpm repair failure before enrollment and cleans its guests', function (): void {
+        extract(acquirerFixture(static fn (string $instance, array $argv, ?string $stdin): ?array => $argv[0] === 'python3' && str_contains($stdin ?? '', 'orbit-topology-pnpm-') ? ['', 'pinned artifact digest mismatch', 1] : null));
+
+        expect(fn () => $acquirer->acquire($request, TopologyRecipe::compose(['app-dev'])))
+            ->toThrow(RuntimeException::class, 'pinned artifact digest mismatch');
+        expect($incus->instances)->toBe([]);
     });
 
     it('enrolls every declared Node with its catalog role, TLD, and WireGuard address', function () {
