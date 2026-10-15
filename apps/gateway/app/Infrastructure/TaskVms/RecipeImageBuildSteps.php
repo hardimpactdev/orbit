@@ -120,6 +120,9 @@ final readonly class RecipeImageBuildSteps
         } catch (Throwable $error) {
             $path = IncusGuestShell::recipeLog($profile, $phase);
             $detail = mb_substr(new CommandActivityInputSanitizer()->redactText($error->getMessage()), 0, 500);
+            if ($phase === 'publish') {
+                throw new TaskVmException('task_vm.image_build_failed', $detail."\nPublishing runs on Incus host [{$node->name}].", previous: $error);
+            }
             try {
                 $logShell = $this->image->shell($host, $node, $phase === 'smoke' ? $name.'-smoke' : $name);
                 $logShell->forRecipePhase($profile, $phase)->recordRecipeFailure($detail);
