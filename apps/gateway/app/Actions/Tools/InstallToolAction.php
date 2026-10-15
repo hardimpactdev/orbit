@@ -8,6 +8,7 @@ use App\Data\Tools\InstallToolData;
 use App\Domain\Nodes\NodeLockLoss;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tools\ReservesRolePackages;
 use App\Domain\Tools\ToolActionResult;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
@@ -61,6 +62,17 @@ final readonly class InstallToolAction
                 data: $data,
                 manager: $managerName,
                 message: 'The package coordinate is invalid.',
+            );
+        }
+
+        if ($manager instanceof ReservesRolePackages && $manager->roleOwns($data->package)) {
+            throw $this->failure(
+                errorCode: ReservesRolePackages::ERROR_CODE,
+                outcome: ToolOutcome::ManagerFailed,
+                status: 409,
+                data: $data,
+                manager: $managerName,
+                message: 'A Node role owns this package, so a Tool cannot install it.',
             );
         }
 

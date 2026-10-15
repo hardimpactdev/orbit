@@ -441,6 +441,7 @@ abstract class DeploymentCommand extends GatewayCommand
             'environment_sync' => ['environment_sync', 'Sync environment', 'Syncing environment', 'Synced environment'],
             'activation' => ['activation', 'Activate release', 'Activating release', 'Activated release'],
             'php_refresh' => ['php_refresh', 'Refresh PHP cache', 'Refreshing PHP cache', 'Refreshed PHP cache'],
+            'process_restart' => ['process_restart', 'Restart Processes', 'Restarting Processes', 'Restarted Processes'],
             'rollback' => ['rollback', 'Select release', 'Selecting release', 'Selected release'],
             'before_activation', 'after_activation' => $this->deploymentNamedStepLabels($phase, $stepName),
             default => throw new LogicException("Unsupported deployment phase [{$phase}]."),
@@ -474,7 +475,9 @@ abstract class DeploymentCommand extends GatewayCommand
             'environment_sync' => 1,
             'before_activation' => 1.5,
             'activation' => 2,
-            'php_refresh', 'after_activation' => 2.5,
+            'php_refresh' => 2.5,
+            'process_restart' => 2.6,
+            'after_activation' => 2.7,
             default => 99,
         };
     }

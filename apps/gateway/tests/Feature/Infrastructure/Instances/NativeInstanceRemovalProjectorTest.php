@@ -50,6 +50,7 @@ use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
+use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\FakePublicRouteEdgeProjector;
 use Tests\Support\SshNodeCaddyBuilds;
 
@@ -877,6 +878,10 @@ final class Orb181RemovalSshExecutor implements SshExecutor
 
         if ($this->failCall === count($this->commands)) {
             return new CommandResult(1, '', 'injected failure', 1, false);
+        }
+
+        if (($command->arguments[4] ?? null) === 'php.install-build') {
+            return new CommandResult(0, AppDevFakeSshExecutor::InstallerApplied, '', 1, false);
         }
 
         if (

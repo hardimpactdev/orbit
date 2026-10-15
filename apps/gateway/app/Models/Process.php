@@ -30,6 +30,7 @@ use Illuminate\Support\Carbon;
  * @property ?string $working_directory
  * @property array<string, mixed> $runtime_config
  * @property string $restart_policy
+ * @property bool $restart_on_deploy
  * @property bool $keep_alive
  * @property DesiredProcessState $desired_state
  * @property LifecycleStatus $status
@@ -53,6 +54,7 @@ final class Process extends Model
         'runtime_config',
         'restart_policy',
         'keep_alive',
+        'restart_on_deploy',
         'desired_state',
         'status',
         'failed_step',
@@ -111,6 +113,7 @@ final class Process extends Model
             'retired_runtime' => ProcessRuntime::class,
             'runtime_config' => 'array',
             'keep_alive' => 'boolean',
+            'restart_on_deploy' => 'boolean',
             'systemd_activation_pending' => 'boolean',
             'proxycli_source_activation_pending' => 'boolean',
             'desired_state' => DesiredProcessState::class,

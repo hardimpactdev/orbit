@@ -6,7 +6,9 @@ namespace App\Infrastructure\TaskVms;
 
 use App\Domain\TaskVms\TaskVmException;
 use App\Infrastructure\MachineSoftware\MachineRecipe;
+use App\Infrastructure\MachineSoftware\PhpBuildInstaller;
 use App\Infrastructure\Processes\ProtectedInput;
+use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
 use RuntimeException;
 
 /** Runs only code-owned installers; the persisted recipe supplies package names and integrity pins. */
@@ -45,7 +47,7 @@ final readonly class RecipeImagePrograms
         }
     }
 
-    /** @return array{identity: string, snapshot: string, architecture: string, profile: string, tools: array<string, mixed>} */
+    /** @return array{identity: string, snapshot: string, architecture: string, profile: string, tools: array<string, mixed>, php: array<string, mixed>|null} */
     private function payload(TaskVmGuestShell $shell, MachineRecipe $recipe, string $profile): array
     {
         $arch = $shell->asRoot(['dpkg', '--print-architecture']);
@@ -67,8 +69,17 @@ final readonly class RecipeImagePrograms
             $tools[$name] = $data['tools'][$name];
         }
 
+        $versions = array_map(strval(...), array_keys($recipe->phpExtensions(array_keys($tools))));
+        $catalog = new RemoteProgramCatalog;
+        // The image installs its PHP build with php.install-build, the one installer (ADR 0216). Images run no PHP-FPM.
+        $php = $versions === [] ? null : [
+            'program' => $catalog->program(PhpBuildInstaller::Program)->source,
+            'bootstrap' => $catalog->bootstrap(),
+            'input' => PhpBuildInstaller::input($recipe, $versions, 'apply', in_array($profile, $recipe->phpPolicy->pcovProfiles, true), 'refuse', 'none'),
+        ];
+
         return ['identity' => $recipe->identity, 'snapshot' => $recipe->snapshot, 'architecture' => $architecture,
-            'profile' => $profile, 'tools' => $tools];
+            'profile' => $profile, 'tools' => $tools, 'php' => $php];
     }
 
     private function script(): string

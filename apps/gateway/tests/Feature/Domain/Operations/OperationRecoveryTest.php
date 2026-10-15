@@ -16,9 +16,11 @@ use App\Domain\Operations\OperationStepStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Operations\OperationSweeper;
 use App\Domain\Operations\OperationWorker;
+use App\Domain\Processes\ProcessRuntimeManager;
 use App\Models\InstanceDeployment;
 use App\Models\Operation;
 use App\Models\OperationStep;
+use App\Models\Process;
 use Illuminate\Database\DeadlockException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -85,6 +87,32 @@ describe('a lost worker', function (): void {
             ->and($this->fixture->deployment->activations)->toBe(1)
             ->and(InstanceDeployment::query()->sole()->status)->toBe('succeeded');
     });
+
+    it('resumes a stored deploy plan without Process restart and still rejects other plan changes', function (bool $changed): void {
+        $operation = lost_deploy($this, 'environment_sync');
+        $operation->steps()->where('name', 'process_restart')->delete();
+        if ($changed) {
+            store_deploy_steps($this->fixture->instance, [
+                ['name' => 'prepare', 'phase' => 'before_activation', 'command' => 'prepare-command', 'timeout_seconds' => 30],
+            ]);
+        }
+        $runtime = Mockery::mock(ProcessRuntimeManager::class);
+        $runtime->shouldNotReceive('restart');
+        app()->instance(ProcessRuntimeManager::class, $runtime);
+        Process::query()->create([
+            'owner_type' => $this->fixture->instance->getMorphClass(), 'owner_id' => $this->fixture->instance->id, 'name' => 'horizon',
+            'runtime' => 'systemd', 'runtime_config' => ['command' => ['/usr/bin/php', 'artisan', 'horizon']],
+            'restart_policy' => 'always', 'desired_state' => 'running', 'status' => 'active',
+        ]);
+
+        app(OperationSweeper::class)->sweep();
+        run_operation_jobs();
+
+        expect($operation->refresh()->status)->toBe($changed ? OperationStatus::Failed : OperationStatus::Succeeded)
+            ->and($operation->error_code)->toBe($changed ? 'operation.plan_changed' : null)
+            ->and($operation->steps()->where('name', 'process_restart')->exists())->toBeFalse()
+            ->and(collect(InstanceDeployment::query()->sole()->events)->where('phase', 'process_restart'))->toBeEmpty();
+    })->with([false, true]);
 
     it('fails a step that runs a person command with operation.worker_lost', function (): void {
         $operation = lost_deploy($this, 'before_activation.prepare');

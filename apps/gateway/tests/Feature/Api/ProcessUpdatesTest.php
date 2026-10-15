@@ -109,3 +109,28 @@ it('accepts the documented environment map through MCP and preserves literal str
     ])->assertOk()->assertJsonPath('result.isError', false);
     expect($process->refresh()->runtime_config['environment'])->toBe(['CACHE_HOST' => '10.44.0.21']);
 });
+
+it('defaults Process restarts on deploy and accepts an explicit opt-out in create and replacement', function (): void {
+    $this->postJson('/api/v1/processes', $this->payload)->assertCreated()->assertJsonPath('data.restart_on_deploy', true);
+    $process = Process::query()->sole();
+    $specification = ['runtime' => 'docker', 'image' => 'valkey/valkey:8', 'command' => ['valkey-server']];
+    $this->patchJson('/api/v1/processes/'.$process->id, [...$specification, 'restart_on_deploy' => false])
+        ->assertOk()->assertJsonPath('data.restart_on_deploy', false);
+    expect($process->refresh()->restart_on_deploy)->toBeFalse();
+    $this->getJson('/api/v1/processes')->assertOk()->assertJsonPath('data.0.restart_on_deploy', false);
+    $this->patchJson('/api/v1/processes/'.$process->id, $specification)
+        ->assertOk()->assertJsonPath('data.restart_on_deploy', true);
+    $this->postJson('/api/v1/processes', [...$this->payload, 'name' => 'opt-out', 'restart_on_deploy' => false])
+        ->assertCreated()->assertJsonPath('data.restart_on_deploy', false);
+});
+
+it('rejects invalid restart-on-deploy input before changing a Process', function (): void {
+    $this->postJson('/api/v1/processes', [...$this->payload, 'restart_on_deploy' => 'sometimes'])->assertUnprocessable();
+    expect(Process::query()->count())->toBe(0);
+    $this->postJson('/api/v1/processes', $this->payload)->assertCreated();
+    $process = Process::query()->sole();
+    $this->patchJson('/api/v1/processes/'.$process->id, [
+        'runtime' => 'docker', 'image' => 'valkey/valkey:8', 'command' => ['valkey-server'], 'restart_on_deploy' => null,
+    ])->assertUnprocessable();
+    expect($process->refresh()->restart_on_deploy)->toBeTrue();
+});

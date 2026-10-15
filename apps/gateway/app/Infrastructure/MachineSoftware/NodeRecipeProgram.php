@@ -14,10 +14,46 @@ use RuntimeException;
 /** Fixed recipe operations over the same pinned SSH transport as fleet convergence. */
 final readonly class NodeRecipeProgram
 {
-    public function __construct(private NodeShell $shell) {}
+    /** The recipe profile of a roleless Node that runs CI, such as Sabre. It replaces `operator`. */
+    public const string CiRunnerProfile = 'ci-runner';
+
+    public function __construct(private NodeShell $shell, private PhpBuildInstaller $php) {}
+
+    /**
+     * The Node record names the profile of a roleless Node: `settings.machine_recipe.profile`, or the one requested now.
+     */
+    public function profile(Node $node, ?string $requested = null): ?string
+    {
+        $node->load('roles');
+        if ($node->roles->isNotEmpty() && $requested === null) {
+            return null;
+        }
+        $recorded = self::recordedProfile($node);
+        $profile = $requested ?? $recorded;
+        if ($profile === null) {
+            return null;
+        }
+        if ($profile !== self::CiRunnerProfile) {
+            throw new ResourceOperationException('node.recipe_profile_invalid', 'The only recipe profile a Node can select is ci-runner.', 422);
+        }
+        if ($node->roles->isNotEmpty() || $node->platform !== 'linux') {
+            throw new ResourceOperationException('node.recipe_profile_invalid', 'Only a Node without roles can use the ci-runner profile; its roles select its profiles.', 422);
+        }
+
+        return $profile;
+    }
+
+    /** The profile that an earlier convergence recorded in `settings.machine_recipe.profile`. */
+    public static function recordedProfile(Node $node): ?string
+    {
+        $recipe = $node->settings['machine_recipe'] ?? null;
+        $profile = is_array($recipe) ? $recipe['profile'] ?? null : null;
+
+        return is_string($profile) ? $profile : null;
+    }
 
     /** @return array<string, ToolPin> */
-    public function tools(Node $node, MachineRecipe $recipe): array
+    public function tools(Node $node, MachineRecipe $recipe, ?string $profile = null): array
     {
         $architecture = match ($node->architecture) {
             'x86_64', 'amd64' => 'amd64',
@@ -25,7 +61,7 @@ final readonly class NodeRecipeProgram
             default => throw new ResourceOperationException('node.recipe_architecture', 'The Node architecture is not supported by the recipe.', 422),
         };
         $node->load('roles');
-        $names = $node->roles->isEmpty() ? $recipe->profile('operator', $architecture) : [];
+        $names = $node->roles->isEmpty() ? $recipe->profile($profile ?? 'operator', $architecture) : [];
         foreach ($node->roles as $role) {
             if ($role->status !== LifecycleStatus::Active) {
                 throw new ResourceOperationException('node.recipe_role_inactive', 'Every assigned role must be active before recipe convergence.', 409);
@@ -68,17 +104,104 @@ final readonly class NodeRecipeProgram
     }
 
     /**
+     * Checks the PHP build before any change: another PHP apt source, or PHP packages outside the recipe that this
+     * profile does not purge, refuse the convergence before a download. Dry runs call it too.
+     *
+     * @param  array<string, ToolPin>  $tools
+     * @return array<string, mixed> The installer's plan, or [] without a PHP set.
+     */
+    public function phpPreflight(Node $node, MachineRecipe $recipe, array $tools, ?string $profile = null): array
+    {
+        $versions = self::phpVersions($recipe, $tools);
+        if ($versions === []) {
+            return [];
+        }
+        $result = $this->php->run($node, $recipe, $versions, 'plan', $this->pcov($node, $recipe, $profile), $this->extras($recipe, $profile), 'all');
+        if ($result->outcome !== 'planned') {
+            throw new ResourceOperationException('node.recipe_php_refused', PhpBuildInstaller::describe($result).' Nothing was changed.', 409);
+        }
+
+        return $result->data;
+    }
+
+    /**
      * @param  array<string, ToolPin>  $tools
      * @return array<string, mixed>
      */
-    public function apply(Node $node, MachineRecipe $recipe, array $tools): array
+    public function apply(Node $node, MachineRecipe $recipe, array $tools, ?string $profile = null): array
     {
-        $report = $this->run($node, $recipe, $tools, 'apply');
+        $this->phpPreflight($node, $recipe, $tools, $profile);
+        $versions = self::phpVersions($recipe, $tools);
+        // The PHP build has one installer, php.install-build (ADR 0216); the recipe program installs the rest.
+        $others = array_diff_key($tools, array_flip(self::phpPackages($recipe, $versions)));
+        $report = $this->run($node, $recipe, $others, 'apply');
         if (($report['healthy'] ?? false) !== true) {
             throw new ResourceOperationException('node.recipe_health_failed', 'Recipe convergence did not return a successful health check. No automatic rollback was attempted.', 502);
         }
+        if ($versions === []) {
+            return $report;
+        }
+        $result = $this->php->run($node, $recipe, $versions, 'apply', $this->pcov($node, $recipe, $profile), $this->extras($recipe, $profile), 'all');
+        if (! in_array($result->outcome, PhpBuildInstaller::Succeeded, true)) {
+            // Only the installer's own check of the old versions proves a restore (ADR 0216).
+            $restored = match (true) {
+                ($result->data['restored'] ?? false) === true => 'The installer restored the previous PHP build and checked it.',
+                $result->outcome === 'rollback_failed' => 'The rollback of the previous PHP build failed too. The Node may run a mixed PHP build; inspect its PHP packages and PHP-FPM now.',
+                default => 'The PHP packages were not changed.',
+            };
+            throw new ResourceOperationException('node.recipe_php_failed', 'Recipe convergence stopped at the PHP build: '.PhpBuildInstaller::describe($result).' '.$restored, 502);
+        }
+        $names = static fn (mixed $list): array => is_array($list) ? array_values(array_filter($list, is_string(...))) : [];
+        $report['changed_packages'] = array_values(array_unique([...$names($report['changed_packages'] ?? null), ...$names($result->data['changed'] ?? null)]));
+        $report['php'] = $result->data;
 
         return $report;
+    }
+
+    /**
+     * The PHP versions whose whole set the tools hold.
+     *
+     * @param  array<string, ToolPin>  $tools
+     * @return list<string>
+     */
+    public static function phpVersions(MachineRecipe $recipe, array $tools): array
+    {
+        return array_map(strval(...), array_keys($recipe->phpExtensions(array_keys($tools))));
+    }
+
+    /**
+     * @param  list<string>  $versions
+     * @return list<string>
+     */
+    private static function phpPackages(MachineRecipe $recipe, array $versions): array
+    {
+        $names = [];
+        foreach ($versions as $version) {
+            $names = [...$names, ...$recipe->php($version)->packages];
+        }
+
+        return array_values(array_unique($names));
+    }
+
+    /** PCOV loads only for the recipe's PCOV profiles, such as app-dev and ci-runner. */
+    private function pcov(Node $node, MachineRecipe $recipe, ?string $profile): bool
+    {
+        $profiles = $node->roles->map(fn ($role): string => $role->role->value)->all();
+        if ($profile !== null) {
+            $profiles[] = $profile;
+        }
+
+        return array_intersect($profiles, $recipe->phpPolicy->pcovProfiles) !== [];
+    }
+
+    /**
+     * Only the profiles that the recipe lets purge, the ci-runner profile, remove PHP packages outside the recipe.
+     *
+     * @return 'purge'|'refuse'
+     */
+    private function extras(MachineRecipe $recipe, ?string $profile): string
+    {
+        return $profile !== null && in_array($profile, $recipe->phpPolicy->purgeProfiles, true) ? 'purge' : 'refuse';
     }
 
     /**

@@ -36,6 +36,7 @@ final class UpdateProcessRequest extends GatewayRequest implements HasBody
         private readonly string $restartPolicy = 'never',
         private readonly bool $keepAlive = false,
         private readonly ?string $user = null,
+        private readonly bool $restartOnDeploy = true,
     ) {}
 
     public function resolveEndpoint(): string
@@ -57,6 +58,7 @@ final class UpdateProcessRequest extends GatewayRequest implements HasBody
             'working_directory' => $this->workingDirectory,
             'restart_policy' => $this->restartPolicy,
             'keep_alive' => $this->keepAlive,
+            'restart_on_deploy' => $this->restartOnDeploy,
             ...($this->runtime === 'docker' ? [
                 'image' => $this->image,
                 'environment' => (object) $this->environment,

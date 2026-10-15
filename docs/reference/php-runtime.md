@@ -12,7 +12,7 @@ covers:
 
 # PHP runtimes
 
-Orbit installs PHP from the pinned Sury apt source and serves each site through PHP-FPM over a Unix socket. Development Instances on a Node share one PHP-FPM service per PHP version. Each production Instance that serves PHP gets its own PHP-FPM service, with its own OPcache.
+Orbit installs the exact PHP build that the [machine software recipe](/reference/compute-drivers#php-build) pins, from Sury packages, and serves each site through PHP-FPM over a Unix socket. Development Instances on a Node share one PHP-FPM service per PHP version. Each production Instance that serves PHP gets its own PHP-FPM service, with its own OPcache.
 
 ## Select the PHP version
 
@@ -38,9 +38,27 @@ Doctor accepts the application's directory in the initial release only while `cu
 | `composer.json` without `require.php` | PHP 8.5. |
 | A constraint that 8.5 or 8.4 meets | The first match, 8.5 before 8.4. |
 | An invalid constraint, or one that neither version meets | `app-dev.php_version_unsupported` or `app-prod.php_version_unsupported`. |
-| The version is missing from the Sury source | `app-dev.php_package_source_unavailable` or `app-prod.php_package_source_unavailable`. |
+| The recipe has no build for the version, or a pinned package cannot be downloaded or fails its digest | `app-dev.php_package_source_unavailable` or `app-prod.php_package_source_unavailable`. |
 
 The Instance records the selected version in its [source profile](/domains/applications#provision-the-application-endpoint). There is no input or output field to choose a version. The Node role installs, configures, and removes every selected version.
+
+## PHP build
+
+The PHP step of the `app-dev` and `app-prod` roles installs the recipe's [PHP set](/reference/compute-drivers#php-build) of each selected version with `php.install-build`, the one [PHP build installer](/reference/compute-drivers#install-the-php-build). Recipe convergence, the task VM image build, and CI run the same program. The step reads the set from the recipe; it keeps no list of its own.
+
+The PHP step of an Instance uses these options:
+
+- It keeps PHP packages outside the recipe and installs with `--no-remove`, so a deploy never removes an extension that a site uses. Recipe convergence refuses such packages instead.
+- It loads PCOV in the CLI only on an `app-dev` Node.
+- It restarts only the shared `php<version>-fpm` service. It restarts a running service whose pools pass `php-fpm<version> -t`.
+- A service whose pools fail validation keeps running. The pool publication that follows removes a stale pool and reloads the service.
+- A stopped service stays stopped until pool publication starts it.
+
+The step restarts no dedicated production master. It logs the masters that still run the previous build. Their next restart, such as the next deployment, loads the new build.
+
+When every package is at its recipe version, the installer downloads nothing, and the step logs `PHP packages match the recipe; skipped the package download.` A refusal or a failed install fails the step with `app-dev.php_install_failed` or `app-prod.php_install_failed`. Another PHP apt source, a missing file, or an unsupported system fails it with `app-dev.php_package_source_unavailable` or `app-prod.php_package_source_unavailable`. The error carries the installer's log.
+
+The [Tools](/reference/tools#protected-packages) apt manager cannot install, update, adopt, or remove the role's PHP packages.
 
 Orbit does not recover missing source profiles on older Instances. [Projects: One public name without compatibility](/reference/projects#one-public-name-without-compatibility) explains the no-legacy-support rule.
 
@@ -52,14 +70,14 @@ One PHP-FPM convergence runs these steps:
 
 1. It reads each `orbit-scopes.conf`. As root, it checks the working directory (`chdir`) of every installed pool and of every pool that stored state renders.
 2. It skips a pool whose working directory is missing. [Doctor](#doctor) reports that pool.
-3. It installs the PHP packages and enables `php<version>-fpm`. It does not start the service. A stale pool can keep PHP-FPM from starting, but it cannot block the step that removes it.
+3. It installs the [PHP build](#php-build) and enables `php<version>-fpm`. It does not start the service. A stale pool can keep PHP-FPM from starting, but it cannot block the step that removes it.
 4. For each version, it renders the candidate file, copies the other pool files beside it, and validates the whole set with `php-fpm<version> -t`.
 5. It moves a changed candidate into place and reloads the service. The reload also starts a stopped or failed service.
 6. It starts a stopped or failed service whose file is already current.
 7. If the service fails with the new file, it restores the previous file and reloads again. A version that changed earlier in the same convergence also gets its previous file back.
 8. A convergence that skipped a pool fails with `app-dev.php_pool_directory_missing` after it publishes every version. The error names the pool.
 
-Step 3 skips the refresh of the [Sury source](/reference/node-provisioning#package-sources) when every package is already installed and the source is current.
+Step 3 downloads nothing when every package is already at its recipe version.
 
 A restored file leaves out a pool whose working directory is gone, because that file could never pass `php-fpm -t` again. The final error makes Instance creation, deployment, transfer, and a Project root change report the missing directory. Without it, they would succeed and leave a site that answers `502`.
 
@@ -163,9 +181,21 @@ Another production user must show a different service, socket, master, and cache
 
 These reasons explain the design. Check them before you propose a change.
 
+### PCOV only where checks run
+
+PCOV is part of PHPStan's cache key, so the machines that share CI caches must load it: `app-dev` Nodes, task VMs, and CI. Production Nodes and the Gateway run no checks, so their CLI does not pay its overhead.
+
 ### Sury packages, not a custom PHP build
 
 A static-php build is 10 to 15 percent slower on Orbit's Nodes, lacks `pdo_sqlite` and `pdo_pgsql`, and its glibc variant crashes on some CPUs. A custom build would also make Orbit own PHP security updates. So Orbit uses the pinned Sury packages.
+
+### One installer with a rollback
+
+Each caller once had its own install code, and their safety checks differed. One program gives every machine the same extras check, rollback, and health checks. The installer keeps the previous build as files, so a PHP-FPM that fails to start after a change gets its previous build back at once instead of waiting for an operator.
+
+### The recipe's files, not the Sury apt source
+
+Sury's apt index carries only its newest build. Installing from it gave each Node the build of the day it was set up, and an exact `package=version` disappears from the index when Sury moves on. The recipe's `.deb` files are checked by digest, and the same files build task VM images and converge Nodes. So every machine runs one build, and the caches that depend on it fit everywhere. [Compute drivers: Why one PHP build](/reference/compute-drivers#why-one-php-build) gives the reasons.
 
 ### OPcache sizing per role
 

@@ -44,7 +44,7 @@ final readonly class DeploymentStepName
             DeploymentProgressPhase::BeforeActivation => DeploymentFailureBoundary::BeforeActivation,
             DeploymentProgressPhase::Activation => DeploymentFailureBoundary::Activation,
             DeploymentProgressPhase::PhpRefresh => DeploymentFailureBoundary::CacheRefresh,
-            DeploymentProgressPhase::AfterActivation, DeploymentProgressPhase::Cleanup => DeploymentFailureBoundary::AfterActivation,
+            DeploymentProgressPhase::ProcessRestart, DeploymentProgressPhase::AfterActivation, DeploymentProgressPhase::Cleanup => DeploymentFailureBoundary::AfterActivation,
             DeploymentProgressPhase::Rollback => DeploymentFailureBoundary::RollbackSelection,
         };
     }

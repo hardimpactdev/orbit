@@ -38,6 +38,7 @@ final class UpdateProcessCommand extends ProcessCommand
         {--volume=* : Docker SOURCE:TARGET[:ro]; repeat as needed}
         {--restart=never : never, on-failure, always, or unless-stopped}
         {--keep-alive : Keep running through app-dev idle hibernation}
+        {--no-restart-on-deploy : Skip automatic restart after production activation}
         {--user= : Existing non-root account for a Node systemd Process}
         {--json : Return machine-readable JSON}';
 
@@ -210,12 +211,15 @@ final class UpdateProcessCommand extends ProcessCommand
                 return self::FAILURE;
             }
             $response = $this->sendWithProgress($connector,
-                new UpdateProcessRequest($id, $runtime, $command, $image, $workingDirectory, $environment, $ports, $volumes, $restartPolicy, $this->option('keep-alive') === true, $user),
+                new UpdateProcessRequest($id, $runtime, $command, $image, $workingDirectory, $environment, $ports, $volumes, $restartPolicy, $this->option('keep-alive') === true, $user, restartOnDeploy: $this->option('no-restart-on-deploy') !== true),
                 ProcessResponse::class,
                 ['Update Process', 'Updating Process', 'Updated Process']);
 
             return $response instanceof ProcessResponse
                 ? $this->renderProcess($response, 'Updated Process') : self::FAILURE;
+        }
+        if ($this->option('no-restart-on-deploy') === true) {
+            return $this->renderGatewayFailure('process.option_invalid', 'Project definitions do not accept --no-restart-on-deploy.');
         }
         if ($this->providedOption('user')) {
             return $this->renderGatewayFailure('process.option_invalid', 'Project definitions do not accept --user.');
