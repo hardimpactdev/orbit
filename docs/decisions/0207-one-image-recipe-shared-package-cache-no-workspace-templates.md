@@ -64,11 +64,11 @@ Nick approved this simplification for PR #1240 after an audit found all four rol
 
 A versioned recipe in the repository holds the Ubuntu snapshot date from `snapshot.ubuntu.com`, pinned tool versions, and which tools each role gets. A recipe change rebuilds the base image and converges production Nodes to that same recipe. There are no input-fingerprint partial builds.
 
-The recipe changes nightly through an automated snapshot-date bump, or at any time through a task group PR, such as a new Caddy version. A merged recipe change starts the image build immediately; production follows nightly. Images are immutable: one image is exactly one recipe version, identical for development and production. Role-specific tool sets do not imply separate version recipes. Experiments happen on hosts, never in images.
+The recipe changes nightly through an automated snapshot-date bump, or at any time through a task group PR, such as a new Caddy version. A merged recipe change starts the image build immediately; the fleet follows after every configured host promotes the recipe. Images are immutable: one image is exactly one recipe version, identical for development and production. Role-specific tool sets do not imply separate version recipes. Experiments happen on hosts, never in images.
 
-### 8. Production follows the recipe nightly
+### 8. Production follows the recipe
 
-Production Nodes follow the recipe nightly. Each Node gets only the tools of its roles, checked against Orbit's per-Node tool inventory. An image build is not permission to install all development tools on every production Node.
+Production Nodes follow the promoted recipe. Each Node gets only the tools of its roles, checked against Orbit's per-Node tool inventory. An image build is not permission to install all development tools on every production Node.
 
 ### 9. Claims require the current recipe's image
 
@@ -80,16 +80,13 @@ A fresh VM from the current image is ready in about 30 to 60 seconds. Orbit remo
 
 ### 11. One nightly run at 03:00 Europe/Amsterdam
 
-The nightly run follows this order:
+At 03:00 Europe/Amsterdam, the Gateway opens a small snapshot-date PR against main through its existing GitHub App. It reads main, advances `ubuntu.snapshot` to that day's UTC midnight, and leaves exact tool versions and Sury artifact pins unchanged. An unchanged or newer pin is a no-op. The date branch makes retries idempotent. The PR follows normal Required checks and review; maintenance waits for merge and deployment.
 
-1. Bump the recipe's Ubuntu snapshot date. Stop if nothing changed.
-2. Build the base image on the task VM hosts. Stop on failure and keep the previous images.
-3. Smoke-test a topology composed from the new base image before touching production.
-4. Converge production one Node at a time: app-dev Nodes, then services, then production Nodes (app-prod, then vpn), and the Gateway last. Use apt from the snapshot and only the tools of the Node's roles. Restart only services whose packages changed. Run a health check and Doctor after each Node.
-5. Stop at the first failure and notify the operator. There is no automatic rollback. Manual rollback is pinning the previous snapshot date.
-6. Report what changed.
+The existing release handoff and per-minute image reconcile build and smoke-test the base on each configured task VM host. Step 9 adds no build trigger or composed-topology smoke run. After every host promotes the deployed recipe, a per-minute job converges one Node per visit: app-dev, services, app-prod, vpn, Gateway last. Multi-role Nodes use their latest tier; Node ID breaks ties. Active managed Linux Nodes with roles participate, excluding task VMs. macOS and roleless operator machines do not participate.
 
-The local time zone is part of the schedule, not a fixed UTC offset. A build or smoke failure prevents production convergence. A Node failure stops the sequence at that Node, leaving Nodes after the failure untouched; it does not undo earlier Nodes.
+Each visit reuses step 8's role tool selection, inventory verification, health check, and Doctor. It records progress and package/service changes on an existing image build row. Build failures, Node failures, and interrupted visits halt advancement and use Orbit's release alerts: Activity, assistance problem, and the configured signed webhook. There is no automatic retry after a halt and no automatic rollback. After investigation, the operator can converge a Node manually or merge a recipe correction, including a previous snapshot pin. A changed recipe starts a new sequence. New deployments supersede old work before the next Node.
+
+The timezone belongs to the schedule, so the PR starts at 01:00 UTC in summer and 02:00 UTC in winter. Merge, deployment, build completion, and fleet completion have no fixed clock time. The first convergence visit runs on the next available minute after all promotions, then each remaining Node runs on a separate tick after its predecessor passes.
 
 ### Worked examples
 
@@ -99,15 +96,15 @@ A task group's PR adds a Composer package and updates `composer.lock`. When the 
 
 #### A task group bumps Caddy
 
-A task group changes the pinned Caddy version in the recipe. Its PR merges, making that recipe current and immediately starting base image builds on the task VM hosts. New claims wait with a clear status until the current recipe's image is available; running groups keep their VM. The base rebuilds as one unit, including when only one role uses the changed tool. Production converges to the recipe that night, with only each Node's role tools and the ordered checks and service restarts of the nightly run.
+A task group changes the pinned Caddy version in the recipe. Its PR merges, making that recipe current and immediately starting base image builds on the task VM hosts. New claims wait with a clear status until the current recipe's image is available; running groups keep their VM. The base rebuilds as one unit, including when only one role uses the changed tool. The fleet then converges to the promoted recipe, with only each Node's role tools and the ordered checks and service restarts of the nightly run.
 
 #### A normal night
 
-At 03:00 Europe/Amsterdam the automated run bumps the snapshot date. The task VM hosts rebuild the base image, and a smoke topology composed from the new base image passes. Production convergence then visits app-dev Nodes, services, app-prod Nodes, vpn Nodes, and the Gateway last, one Node at a time. Each uses apt from the new snapshot and its role tools; only services whose packages changed restart. Health checks and Doctor pass after every Node, and the run reports the changes.
+At 03:00 Europe/Amsterdam the Gateway opens the snapshot-date PR. After normal checks, review, merge, and deployment, the task VM hosts build, smoke-test, and promote the base image. Fleet convergence then visits app-dev Nodes, services, app-prod Nodes, vpn Nodes, and the Gateway last, one Node at a time. Each uses apt from the new snapshot and its role tools; only services whose packages changed restart. Health checks and Doctor pass after every Node, and the run reports the changes.
 
 #### A Node fails during the night
 
-The snapshot bump, image builds, and smoke topology pass. The run converges the app-dev Nodes and then a services Node fails its health check or Doctor. The run stops at that Node and notifies the operator. Earlier Nodes remain on the new recipe; the failing Node may be partly changed. Services and production Nodes after the failed Node, including the Gateway, stay on yesterday's recipe. There is no automatic rollback. The operator can pin the previous snapshot date for manual rollback and investigate before continuing.
+The snapshot-date PR merges and deploys, and both image builds pass smoke and promote. The run converges the app-dev Nodes and then a services Node fails its health check or Doctor. The run stops at that Node and notifies the operator. Earlier Nodes remain on the new recipe; the failing Node may be partly changed. Services and production Nodes after the failed Node, including the Gateway, stay on yesterday's recipe. There is no automatic rollback. The operator can pin the previous snapshot date for manual rollback and investigate before continuing.
 
 ## Rejected alternatives
 
@@ -134,12 +131,12 @@ The snapshot bump, image builds, and smoke topology pass. The run converges the 
 These questions concern implementation details, not alternatives to the eleven decisions. Step 5 settles the package-cache parts in [Shared package cache](/reference/compute-drivers#shared-package-cache): read-only consumption, private-registry scope, integrity, inventory removal, and storage limits. CI cache refs and image retention remain separate work:
 
 - **Settled for step 1:** [Machine software recipe](/reference/compute-drivers#machine-software-recipe) defines schema version 1, a canonical JSON SHA-256 identity shared by all profiles, explicit role tool membership, and structural plus online availability/integrity validation. Third-party non-snapshot tools use exact HTTPS release artifacts and recorded digests, not moving installer channels. Orbit-built binaries may instead use a content-addressed Gateway-local pin with source commit and digest; the operator approved this exception for Pi at `e5933d4c8696` on amd64 only and does not select a new agent baseline. A local directory resolves bytes, not identity. Validation rejects missing files, digest mismatches, and profiles requesting unsupported architectures; installers retain pre-install hash verification. Steps 3 and 8 add image/Node identity recording; step 3 fences build publication.
-- How does the trusted nightly snapshot bump enter repository history, and how are concurrent nightly and task group recipe changes serialized so that an older build cannot publish as current?
+- **Settled for step 9:** the Gateway GitHub App opens the date branch from main through a normal PR. Existing recipe generations fence stale image publication; convergence checks the deployed identity before each Node.
 - How are builds and readiness tracked across multiple task VM hosts, including a host added during a build? Claims expose `Task VM: waiting for recipe <12-character digest> images on <host>.` Failed builds stay blocked until a successful retry; running groups keep their recorded recipe.
 - How do Composer and npm/bun consume a read-only shared cache while keeping writable temporary state private to the workspace? What is the cache-miss behavior before a fill completes, especially for dependency changes still on a task branch?
 - How does trusted filling support private registries without exposing credentials or executing untrusted Project setup? How are integrity failures and suspect cached packages quarantined, and how does inventory usage change when a Project removes a package?
 - What storage limits and retention rules apply to package caches and previous images without violating additive fills or running-group stability? CI cache refs use the [step 6a retention policy](/reference/implementation-loop#cache-ref-retention).
-- Which health checks and Doctor results gate each Node, how is Node order chosen within each tier, and how does a multi-role Node fit the agreed tier order? What gates the smoke topology and handles an interrupted run?
+- **Settled for steps 8 and 9:** each Node passes step 8 health, inventory, and Doctor checks. Node ID orders a tier; multi-role Nodes use the latest tier. Each host smoke-tests its image before promotion. An interrupted visit halts and alerts rather than retrying a partly changed Node.
 - How is a previous snapshot pin applied during manual recovery, including a tool-version change or partly converged Node that snapshot pinning alone may not repair? What evidence does the final or stopped-run report retain?
 
 ### Implementation plan
@@ -154,7 +151,7 @@ The owner must review this ADR on its pull request before any implementation gro
 6. **CI cache refs and template-free workspaces.** First deliver CI publication and mirror/workspace fetching of SHA-bound test-cache refs, replacing base64 artifact delivery. Then, with group 5 available, deliver clone-plus-setup workspaces and remove per-Project templates. The template-free implementation is documented in [Clone and set up every workspace](/reference/compute-drivers#clone-and-set-up-every-workspace), including manual legacy cleanup and preservation of existing groups. Keep these as separate reviewable groups so cache transport and template removal each have complete tests.
 7. **Fresh claims and warm-pool removal.** Require both group 4 and the merge of task group 1505's warm-claim rework as a restore point. Remove the pool only after fresh current-image claims are proved; verify latency, capacity accounting, and running-group preservation.
 8. **Recipe-based Node convergence.** Build on group 1. Converge apt from the snapshot and only each Node's role tools, check the per-Node tool inventory, restart only services with changed packages, and gate each Node on health checks and Doctor. Prove failure stops advancement and does not roll back automatically.
-9. **Nightly orchestration and operator reporting.** Build on groups 3, 4, and 8. At 03:00 Europe/Amsterdam, bump the snapshot date, stop on no change, build images, smoke-test the composed topology, and converge the fleet in the agreed order with the Gateway last. Verify build, smoke, and Node failures, notifications, reports, and manual previous-snapshot pinning. Include the four worked examples as end-to-end acceptance scenarios.
+9. **Nightly snapshot-date PR and fleet convergence.** At 03:00 Europe/Amsterdam, reuse the Gateway GitHub App to open a date-only PR on main. Normal checks, review, merge, and deployment lead into the existing image builds; add no build trigger. After all configured hosts promote, reuse step 8 for serial convergence by tier, with the Gateway last. Store progress and change reports on an existing build row, halt and alert on the first failure or interrupted visit, and check the deployed identity before each Node. No new orchestrator, ledger table, or composed-topology smoke run is needed.
 10. **Complete the migration and absorb the decision.** After the preceding groups are verified, remove remaining superseded triggers and paths, record operational recovery instructions, and absorb the implemented contract and lasting reasons into the owning reference pages. Retire this ADR and update ADR 0206's overlapping text only as its implementation contract allows.
 
 ## Affects
