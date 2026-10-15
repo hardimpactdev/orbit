@@ -4,16 +4,18 @@ declare(strict_types=1);
 
 namespace App\Actions\Tools;
 
-use App\Domain\Instances\Dependencies\NpmVersionRange;
 use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerScopeLock;
+use App\Domain\Tools\ToolManagerScopeLockException;
 use App\Domain\Tools\VpEnvironment;
+use App\Domain\Tools\VpProjectRequirements;
 use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
 use App\Infrastructure\Tools\VpToolManager;
 use App\Models\Instance;
-use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\DB;
+use InvalidArgumentException;
 use Throwable;
 
 final readonly class PrepareVpEnvironmentAction
@@ -30,190 +32,179 @@ final readonly class PrepareVpEnvironmentAction
         if ($name !== 'npm-build' && preg_match('/(?:^|[\s;&|\/])(vp|node|npm|npx|pnpm|yarn|bun|vite|corepack)(?:\s|$)/', $command) !== 1) {
             return $command;
         }
+        $previous = $this->checkoutReferences($instance->getAttribute('vp_environment'), $instance->checkout_path);
         try {
-            $configuration = $this->readProject($instance, $path);
-            $package = $configuration['package'] ?? null;
-            if (! is_array($package)) {
-                throw $this->invalid();
+            $user = $instance->placedOnAppProd() ? $instance->production_user : null;
+            if ($instance->placedOnAppProd() && (! is_string($user) || preg_match('/\Aorbit-app-[0-9]+\z/D', $user) !== 1)) {
+                throw new InvalidArgumentException('Invalid Instance account.');
             }
-            $dependencies = $package['devDependencies'] ?? [];
-            $production = $package['dependencies'] ?? [];
-            $spec = (is_array($dependencies) ? $dependencies['vite-plus'] ?? null : null)
-                ?? (is_array($production) ? $production['vite-plus'] ?? null : null);
-            if ($spec === null) {
-                // A Project which drops vite-plus no longer owns a store requirement.
-                $instance->update(['vp_environment' => null]);
+            $result = $this->programs->run($instance->node, $this->catalog->program('tools.read-vp-project', user: $user), ['path' => $path]);
+            if ($result->outcome !== 'read') {
+                throw new InvalidArgumentException('Cannot read Project requirements.');
+            }
+            $environment = (new VpProjectRequirements)->resolve($result->data, '/unresolved');
+            if ($environment === null) {
+                // Removing vp from a candidate does not retire the selected or retained releases.
+                if ($previous !== null) {
+                    $this->referenceTransaction($instance, fn (): bool => $instance->update(['vp_environment' => $previous]));
+                }
 
                 return $command;
             }
-            if (! is_string($spec)) {
-                throw $this->invalid();
-            }
-            $metadata = $this->packageVersion('vite-plus', $spec);
-            $engine = $metadata['engines']['node'] ?? null;
-            if (! is_string($engine)) {
-                throw $this->invalid();
-            }
-            $engines = $package['engines'] ?? [];
-            if (! is_array($engines)) {
-                throw $this->invalid();
-            }
-            $selectedEngines = [];
-            foreach (['node', 'npm', 'pnpm', 'yarn', 'bun'] as $family) {
-                if (isset($engines[$family])) {
-                    if (! is_string($engines[$family]) || ! $this->safeSelector($engines[$family])) {
-                        throw $this->invalid();
-                    }
-                    $selectedEngines[$family] = $engines[$family];
-                }
-            }
-            $engines = $selectedEngines;
-            $nodeConstraint = $engine;
-            if (isset($engines['node'])) {
-                $intersections = [];
-                foreach (explode('||', $engines['node']) as $projectRange) {
-                    foreach (explode('||', $engine) as $viteRange) {
-                        $intersections[] = trim($projectRange).' '.trim($viteRange);
+            $store = dirname($this->vp->existingBinary($instance->node), 2);
+            $environment = VpEnvironment::fromArray([...$environment->record('checking'), 'store' => $store]);
+            $this->vp->ensureVersion($instance->node, $environment->vpVersion);
+            $identity = $environment->record('checking');
+            unset($identity['status']);
+            $previous = $this->filterReferences($previous, static function (array $record) use ($path, $identity): bool {
+                foreach ($identity as $key => $value) {
+                    if (($record[$key] ?? null) !== $value) {
+                        return true;
                     }
                 }
-                $nodeConstraint = implode(' || ', $intersections);
-            }
-            $safe = [];
-            // engines.node outranks .nvmrc in vp. Only supply a default when it cannot shadow a Project pin.
-            if (isset($engines['node']) || ($configuration['.node-version'] ?? $configuration['.nvmrc'] ?? null) === null) {
-                $safe['engines'] = ['node' => $nodeConstraint];
-            }
-            $manager = $package['packageManager'] ?? null;
-            if ($manager === null) {
-                $hint = $configuration['package_manager_hint'] ?? null;
-                $family = is_string($hint) && in_array($hint, ['npm', 'pnpm', 'yarn', 'bun'], true) ? $hint : 'pnpm';
-                $constraint = 'latest';
-                foreach (['npm', 'pnpm', 'yarn', 'bun'] as $candidate) {
-                    if (isset($engines[$candidate])) {
-                        $family = $candidate;
-                        $constraint = $engines[$candidate];
-                        break;
-                    }
-                }
-                $manager = $family.'@'.$constraint;
-            }
-            if (! is_string($manager) || preg_match('/\A(npm|pnpm|yarn|bun)@(.+)\z/D', $manager, $match) !== 1 || ! $this->safeSelector($match[2])) {
-                throw $this->invalid();
-            }
-            $safe['packageManager'] = $manager;
-            $configuration['package'] = $safe;
-            $version = $metadata['version'];
 
-            return $this->lock->run($instance->node_id, ToolManagerName::Vp, function () use ($instance, $configuration, $version, $engine, $engines, $name, $command): string {
-                $this->vp->ensureVersion($instance->node, $version);
-                $resolved = $this->vp->resolveEnvironment($instance->node, $configuration);
-                $node = $resolved['node'];
-                $pm = $resolved['package_manager'];
-                if (! is_array($node) || ! is_array($pm) || ! is_string($node['version'] ?? null) || ! is_string($pm['name'] ?? null) || ! is_string($pm['version'] ?? null)) {
-                    throw $this->invalid();
-                }
-                if (! (NpmVersionRange::parse($engine)?->satisfies($node['version']) ?? false)) {
-                    throw $this->invalid();
-                }
-                if (isset($engines['node']) && ! (NpmVersionRange::parse($engines['node'])?->satisfies($node['version']) ?? false)) {
-                    throw $this->invalid();
-                }
-                $pin = $configuration['.node-version'] ?? (isset($engines['node']) ? null : ($configuration['.nvmrc'] ?? null));
-                $pinRange = is_string($pin) ? NpmVersionRange::parse($pin) : null;
-                if ($pinRange !== null && ! $pinRange->satisfies($node['version'])) {
-                    throw $this->invalid();
-                }
-                if (isset($engines[$pm['name']]) && ! (NpmVersionRange::parse($engines[$pm['name']])?->satisfies($pm['version']) ?? false)) {
-                    throw $this->invalid();
-                }
-                $selector = $configuration['package']['packageManager'];
-                $hash = preg_match('/\+(sha(?:224|256|384|512)\.[a-f0-9]+)$/i', $selector, $hashMatch) === 1 ? $hashMatch[1] : null;
-                $environment = new VpEnvironment(dirname($this->vp->existingBinary($instance->node), 2), $version, $node['version'], $pm['name'], $pm['version'], $hash);
-                $instance->update(['vp_environment' => $environment->record('installing')]);
-                if ($hash !== null || ! $this->vp->environmentInstalled($instance->node, $environment)) {
-                    $this->vp->installEnvironment($instance->node, $environment);
-                    if (! $this->vp->environmentInstalled($instance->node, $environment)) {
-                        throw new ResourceOperationException('deployment.vp_store_failed', 'The required Node runtime and package manager are still missing after installing the vp environment.', 502);
-                    }
-                }
-                $instance->update(['vp_environment' => $environment->record('active')]);
+                return ($record['checkout_path'] ?? null) !== $path;
+            });
+            // Register intent before observing, retaining every checkout until release cleanup retires it.
+            $intent = [...$environment->record('checking'), 'checkout_path' => $path, 'previous' => $previous];
+            $this->referenceTransaction($instance, fn (): bool => $instance->update(['vp_environment' => $intent]));
+            if ($this->vp->environmentInstalled($instance->node, $environment)) {
+                $instance->update(['vp_environment' => [...$intent, 'status' => 'active']]);
 
                 return $environment->command($name, $command);
+            }
+            $this->blocking($instance, function () use ($instance, $environment, $result, $intent): void {
+                $instance->update(['vp_environment' => [...$intent, 'status' => 'installing']]);
+                if (! $this->vp->environmentInstalled($instance->node, $environment)) {
+                    $npmrc = $result->data['npmrc'] ?? '';
+                    $this->vp->installEnvironment($instance->node, $environment, is_string($npmrc) ? $npmrc : '');
+                }
+                if (! $this->vp->environmentInstalled($instance->node, $environment)) {
+                    throw new ResourceOperationException('deployment.vp_store_failed', 'The required vp runtime is missing after owner-only installation.', 502);
+                }
+                $instance->update(['vp_environment' => [...$intent, 'status' => 'active']]);
+                $this->prune($instance, $environment->store);
             });
+
+            return $environment->command($name, $command);
         } catch (Throwable $exception) {
+            $code = $exception instanceof InvalidArgumentException ? 'deployment.vp_requirements_invalid' : 'deployment.vp_store_failed';
             $record = $instance->getAttribute('vp_environment');
-            $instance->update(['vp_environment' => [...(is_array($record) ? $record : []), 'status' => 'failed', 'error_code' => $exception instanceof ResourceOperationException ? $exception->errorCode : 'deployment.vp_store_failed']]);
+            $instance->update(['vp_environment' => [...(is_array($record) ? $record : []), 'status' => 'failed', 'error_code' => $code]]);
             if ($exception instanceof ResourceOperationException) {
                 throw $exception;
             }
-            throw new ResourceOperationException('deployment.vp_store_failed', 'Could not prepare the vp store as its owner. The required Node runtime and package manager must be available before the build can run.', 502, $exception);
+            throw new ResourceOperationException($code, $code === 'deployment.vp_requirements_invalid'
+                ? 'Pin exact Node and package-manager versions and commit a compatible vite-plus lockfile before deploying.'
+                : 'The vp prerequisite failed before build. Check the machine recipe version, store ownership, lock timeout, checksum, and Project registry access.', 502, $exception);
         }
     }
 
-    /** @return array<string, mixed> */
-    private function readProject(Instance $instance, string $path): array
+    /** Drop references only for releases actually retired by production release cleanup.
+     *
+     * @param  list<string>  $paths
+     */
+    public function releaseRemoved(Instance $instance, array $paths): void
     {
-        $user = null;
-        if ($instance->placedOnAppProd()) {
-            $user = $instance->production_user;
-            if (! is_string($user) || preg_match('/\Aorbit-app-[0-9]+\z/D', $user) !== 1) {
-                throw $this->invalid();
+        if ($paths === [] || $instance->getAttribute('vp_environment') === null) {
+            return;
+        }
+        $this->blocking($instance, function () use ($instance, $paths): void {
+            $record = $this->checkoutReferences($instance->refresh()->getAttribute('vp_environment'), $instance->checkout_path);
+            $stores = [];
+            for ($reference = $record; is_array($reference); $reference = $reference['previous'] ?? null) {
+                if (is_string($reference['store'] ?? null)) {
+                    $stores[] = $reference['store'];
+                }
             }
-        }
-        $result = $this->programs->run($instance->node, $this->catalog->program('tools.read-vp-project', user: $user), ['path' => $path]);
-        if ($result->outcome !== 'read') {
-            throw $this->invalid();
-        }
-        $value = $result->data;
-        if (! is_array($value['package'] ?? null)) {
-            throw $this->invalid();
-        }
-        foreach (['.node-version', '.nvmrc'] as $file) {
-            if (isset($value[$file]) && (! is_string($value[$file]) || ! $this->safeSelector(trim($value[$file])))) {
-                throw $this->invalid();
+            $retained = $this->filterReferences($record, static fn (array $reference): bool => ($reference['checkout_path'] ?? null) === $instance->checkout_path
+                || ! in_array($reference['checkout_path'] ?? null, $paths, true));
+            $instance->update(['vp_environment' => $retained]);
+            foreach (array_unique($stores) as $store) {
+                $this->prune($instance, $store);
             }
-        }
-
-        return $value;
+        });
     }
 
-    /** @return array{version: string, engines: array<array-key, mixed>} */
-    private function packageVersion(string $package, string $spec): array
+    /** @return array<string, mixed>|null */
+    private function checkoutReferences(mixed $record, string $selectedPath): ?array
     {
-        if (! $this->safeSelector($spec)) {
-            throw $this->invalid();
+        if (! is_array($record)) {
+            return null;
         }
-        $response = Http::accept('application/vnd.npm.install-v1+json')->connectTimeout(5)->timeout(30)->get('https://registry.npmjs.org/'.$package)->throw()->json();
-        if (! is_array($response) || ! is_array($response['versions'] ?? null)) {
-            throw $this->invalid();
+
+        return [...$record, 'checkout_path' => $record['checkout_path'] ?? $selectedPath,
+            'previous' => $this->checkoutReferences($record['previous'] ?? null, $selectedPath)];
+    }
+
+    /**
+     * @param  \Closure(array<string, mixed>): bool  $keep
+     * @return array<string, mixed>|null
+     */
+    private function filterReferences(mixed $record, \Closure $keep): ?array
+    {
+        if (! is_array($record)) {
+            return null;
         }
-        $tags = $response['dist-tags'] ?? [];
-        $tag = is_array($tags) ? ($tags[$spec] ?? null) : null;
-        $range = NpmVersionRange::parse(is_string($tag) ? $tag : $spec);
-        $candidates = [];
-        foreach ($response['versions'] as $version => $metadata) {
-            if (is_string($version) && is_array($metadata) && preg_match('/\A\d+\.\d+\.\d+\z/D', $version) === 1 && ($range?->satisfies($version) ?? false)) {
-                $candidates[$version] = $metadata;
+        $previous = $this->filterReferences($record['previous'] ?? null, $keep);
+
+        return $keep($record) ? [...$record, 'previous' => $previous] : $previous;
+    }
+
+    /** @param \Closure(): void $callback */
+    private function blocking(Instance $instance, \Closure $callback): void
+    {
+        $deadline = microtime(true) + 120;
+        do {
+            try {
+                $this->lock->run($instance->node_id, ToolManagerName::Vp, $callback);
+
+                return;
+            } catch (ToolManagerScopeLockException $exception) {
+                if (microtime(true) >= $deadline) {
+                    throw $exception;
+                }
+                usleep(100_000);
             }
-        }
-        $versions = array_keys($candidates);
-        usort($versions, static fn (string $a, string $b): int => version_compare($b, $a));
-        $version = $versions[0] ?? null;
-        $engines = $version === null ? null : ($candidates[$version]['engines'] ?? []);
-        if ($version === null || ! is_array($engines)) {
-            throw $this->invalid();
-        }
-
-        return ['version' => $version, 'engines' => $engines];
+        } while (true);
     }
 
-    private function safeSelector(string $value): bool
+    private function prune(Instance $instance, string $store): void
     {
-        return strlen($value) <= 255 && preg_match('/\A(?:[A-Za-z0-9.^~*+|<>= _-]+|lts\/[A-Za-z0-9*._-]+)\z/D', $value) === 1;
+        $this->referenceTransaction($instance, function () use ($instance, $store): void {
+            $references = [];
+            foreach (Instance::query()->where('node_id', $instance->node_id)->whereNotNull('vp_environment')->pluck('vp_environment') as $record) {
+                $this->references($record, $store, $references);
+            }
+            $this->vp->pruneEnvironments($instance->node, $store, $references);
+        });
     }
 
-    private function invalid(): ResourceOperationException
+    /** Serialize reference additions with collection, not store inspection or ordinary execution.
+     * A no-op write also acquires SQLite's write reservation (SELECT FOR UPDATE does not).
+     *
+     * @param  \Closure(): mixed  $callback
+     */
+    private function referenceTransaction(Instance $instance, \Closure $callback): void
     {
-        return new ResourceOperationException('deployment.vp_requirements_invalid', 'The Project vite-plus, Node, or package-manager requirements are invalid or incompatible.', 422);
+        DB::transaction(function () use ($instance, $callback): void {
+            DB::table('nodes')->where('id', $instance->node_id)->update(['id' => $instance->node_id]);
+            $callback();
+        });
+    }
+
+    /** @param list<array<string, mixed>> $references */
+    private function references(mixed $record, string $store, array &$references): void
+    {
+        if (is_string($record)) {
+            $record = json_decode($record, true);
+        }
+        if (! is_array($record)) {
+            return;
+        }
+        if (($record['store'] ?? null) === $store) {
+            $references[] = VpEnvironment::fromArray($record)->record('retained');
+        }
+        $this->references($record['previous'] ?? null, $store, $references);
     }
 }

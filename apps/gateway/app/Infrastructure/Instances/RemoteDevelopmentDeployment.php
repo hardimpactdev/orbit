@@ -35,7 +35,7 @@ final readonly class RemoteDevelopmentDeployment implements DevelopmentDeploymen
         private ManagedUserAccountResolver $accounts,
         private CheckoutRemovalBoundary $removal,
         private RepositoryReadAccess $access,
-        private ?PrepareVpEnvironmentAction $environments = null,
+        private PrepareVpEnvironmentAction $environments,
     ) {}
 
     public function target(Instance $instance, ?string $commit = null): DevelopmentTarget
@@ -84,7 +84,7 @@ final readonly class RemoteDevelopmentDeployment implements DevelopmentDeploymen
     public function executeStep(Instance $instance, DevelopmentDeployStep $step, DeploymentRequest $request): CommandResult
     {
         $arguments = $this->arguments($instance);
-        $command = ($this->environments ?? app(PrepareVpEnvironmentAction::class))->command($instance, $instance->checkout_path, $step->name, $step->command);
+        $command = $this->environments->command($instance, $instance->checkout_path, $step->name, $step->command);
 
         return $this->ssh->execute(
             $instance->node,

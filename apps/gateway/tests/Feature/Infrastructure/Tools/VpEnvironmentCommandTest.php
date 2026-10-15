@@ -7,15 +7,15 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 
-it('only replaces the uncustomized npm-build forms', function (string $name, string $command, string $expected): void {
+it('never rewrites stored deploy commands at execution time', function (string $name, string $command, string $expected): void {
     $environment = new VpEnvironment('/tmp/orbit-vp-command', '0.3.3', '24.22.0', 'pnpm', '10.17.0');
 
     expect($environment->command($name, $command))->toEndWith('bash -eu -c '.escapeshellarg($expected));
 })->with([
-    ['npm-build', 'npm run build', 'pnpm run build'],
-    ['npm-build', '/old/node /old/npm-cli.js run build', 'pnpm run build'],
-    ['npm-build', 'node /old/npm-cli.js run build', 'pnpm run build'],
-    ['npm-build', '/opt/node-v24/bin/node /opt/node-v24/lib/node_modules/npm/bin/npm-cli.js run build', 'pnpm run build'],
+    ['npm-build', 'npm run build', 'npm run build'],
+    ['npm-build', '/old/node /old/npm-cli.js run build', '/old/node /old/npm-cli.js run build'],
+    ['npm-build', 'node /old/npm-cli.js run build', 'node /old/npm-cli.js run build'],
+    ['npm-build', '/opt/node-v24/bin/node /opt/node-v24/lib/node_modules/npm/bin/npm-cli.js run build', '/opt/node-v24/bin/node /opt/node-v24/lib/node_modules/npm/bin/npm-cli.js run build'],
     ['frontend', '/old/node /old/npm-cli.js run build', '/old/node /old/npm-cli.js run build'],
     ['npm-build', 'node build.js', 'node build.js'],
     ['npm-build', 'npm run build -- --base=/customer/ && npm run build:ssr', 'npm run build -- --base=/customer/ && npm run build:ssr'],

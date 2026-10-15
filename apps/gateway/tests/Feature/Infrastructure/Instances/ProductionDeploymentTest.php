@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tools\PrepareVpEnvironmentAction;
 use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Instances\Deployment\DeploymentEvent;
 use App\Domain\Instances\Deployment\DeploymentOutputStream;
@@ -943,7 +944,7 @@ function orb219_remote_deployment(array $results): array
     ]);
 
     return [
-        new RemoteProductionDeployment($executor, app(RepositoryReadAccess::class), static fn (): string => '20260911-a1'),
+        new RemoteProductionDeployment($executor, app(RepositoryReadAccess::class), app(PrepareVpEnvironmentAction::class), static fn (): string => '20260911-a1'),
         $ssh,
         $instance,
     ];

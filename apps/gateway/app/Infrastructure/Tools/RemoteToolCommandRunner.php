@@ -28,6 +28,7 @@ final readonly class RemoteToolCommandRunner
         array $arguments,
         ?string $input = null,
         ?int $maxOutputBytes = null,
+        ?float $timeoutSeconds = null,
     ): CommandResult {
         $host = $node->wireguard_ip;
 
@@ -38,6 +39,7 @@ final readonly class RemoteToolCommandRunner
             );
         }
 
+        $timeout = min($this->budget?->seconds() ?? 900.0, $timeoutSeconds ?? 900.0);
         $result = $this->ssh->execute(
             new SshConnection(
                 host: $host,
@@ -45,9 +47,9 @@ final readonly class RemoteToolCommandRunner
                 port: 22,
                 identityFile: $this->keys->privateKeyPath(),
                 knownHostsFile: $this->knownHosts->path(),
-                commandTimeout: $this->budget?->seconds() ?? 900.0,
+                commandTimeout: $timeout,
             ),
-            new RemoteCommand($arguments, $input, maxOutputBytes: $maxOutputBytes),
+            new RemoteCommand($arguments, $input, maxOutputBytes: $maxOutputBytes, timeout: $timeout),
         );
 
         if ($result->truncated) {

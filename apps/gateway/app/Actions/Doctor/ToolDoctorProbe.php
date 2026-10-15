@@ -20,6 +20,7 @@ use App\Domain\Tools\ToolInventoryScanState;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\VersionConstraint;
 use App\Domain\Tools\VpEnvironment;
+use App\Infrastructure\Tools\ToolCommandBudget;
 use App\Infrastructure\Tools\VpToolManager;
 use App\Models\Instance;
 use App\Models\Node;
@@ -36,7 +37,8 @@ final readonly class ToolDoctorProbe implements DoctorFamilyProbe
         private ToolInspector $inspector,
         private VersionConstraint $constraints,
         private InstalledPackageInventory $inventory,
-        private ?VpToolManager $vp = null,
+        private VpToolManager $vp,
+        private ToolCommandBudget $budget,
     ) {}
 
     public function family(): DoctorFamily
@@ -88,25 +90,45 @@ final readonly class ToolDoctorProbe implements DoctorFamilyProbe
     private function environmentIssues(Collection $instances, Node $node): array
     {
         $issues = [];
+        $active = [];
+        $owners = [];
         foreach ($instances as $instance) {
             try {
                 $record = $instance->getAttribute('vp_environment');
-                $ready = is_array($record) && ($record['status'] ?? null) === 'active';
-                if ($ready) {
-                    $environment = VpEnvironment::fromArray($record);
-                    $vp = $this->vp ?? app(VpToolManager::class);
-                    $ready = $vp->versionSatisfies($vp->managerVersion($node), $environment->vpVersion)
-                        && $vp->environmentInstalled($node, $environment);
+                if (! is_array($record) || ($record['status'] ?? null) !== 'active') {
+                    throw new LogicException('Prerequisite did not complete; not evidence of store drift.');
                 }
-                if (! $ready) {
-                    $issues[] = new DoctorIssueData(ToolDoctorIssueCode::VpStoreMissing, DoctorIssueKind::Drift, 'tool', null, 'Instance '.$instance->id.' vp environment', 'The Instance vp environment is missing, drifted, or its prerequisite failed.', 'ready', 'not_ready');
-                }
+                $active[] = VpEnvironment::fromArray($record);
+                $owners[] = $instance;
             } catch (Throwable) {
-                $issues[] = new DoctorIssueData(ToolDoctorIssueCode::VpStoreInspectionFailed, DoctorIssueKind::Unverifiable, 'tool', null, 'Instance '.$instance->id.' vp environment', 'The Instance vp environment could not be inspected.', 'verifiable', 'unverifiable');
+                $issues[] = $this->environmentUnverifiable($instance);
+            }
+        }
+        if ($active === []) {
+            return $issues;
+        }
+        try {
+            // One version probe and one batch read, independent of Instance count; every SSH call is bounded.
+            [$version, $installed] = $this->budget->limit(15, fn (): array => [$this->vp->managerVersion($node), $this->vp->environmentsInstalled($node, $active)]);
+            foreach ($active as $index => $environment) {
+                if (! $this->vp->versionSatisfies($version, $environment->vpVersion)) {
+                    $issues[] = $this->environmentUnverifiable($owners[$index]);
+                } elseif (! $installed[$index]) {
+                    $issues[] = new DoctorIssueData(ToolDoctorIssueCode::VpStoreMissing, DoctorIssueKind::Drift, 'tool', null, 'Instance '.$owners[$index]->id.' vp environment', 'Recorded active vp store content is missing.', 'ready', 'not_ready');
+                }
+            }
+        } catch (Throwable) {
+            foreach ($owners as $instance) {
+                $issues[] = $this->environmentUnverifiable($instance);
             }
         }
 
         return $issues;
+    }
+
+    private function environmentUnverifiable(Instance $instance): DoctorIssueData
+    {
+        return new DoctorIssueData(ToolDoctorIssueCode::VpStoreInspectionFailed, DoctorIssueKind::Unverifiable, 'tool', null, 'Instance '.$instance->id.' vp environment', 'The vp prerequisite or inspection did not complete. This is not evidence of store drift.', 'verifiable', 'unverifiable');
     }
 
     /**

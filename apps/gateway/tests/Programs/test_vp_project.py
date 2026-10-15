@@ -42,13 +42,14 @@ class VpProjectTest(unittest.TestCase):
         self.assertEqual(outcome, 'read')
         self.assertEqual(data, {
             'package': self.manifest, '.node-version': '24.22.0\n', '.nvmrc': 'lts/*\n',
-            'package_manager_hint': 'npm',
+            'package_manager_hint': 'npm', 'locks': {'package-lock.json': '{}'}, 'workspaces': {}, 'npmrc': '\n',
         })
 
     def test_missing_manifest_is_an_unrelated_project(self):
         (self.root / 'package.json').unlink()
         self.assertEqual(self.inspect(), ('read', {
             'package': {}, '.node-version': None, '.nvmrc': None, 'package_manager_hint': None,
+            'locks': {}, 'workspaces': {}, 'npmrc': '',
         }))
 
     def test_does_not_read_node_pins_for_unrelated_projects(self):

@@ -13,23 +13,26 @@ use LogicException;
 
 final class VpStoreSshExecutor implements SshExecutor
 {
-    public string $vpVersion = '0.3.0';
+    public string $vpVersion = '0.3.3';
 
     public bool $installed = false;
 
     public bool $installFails = false;
 
-    public bool $updateFails = false;
-
     public bool $inspectionFails = false;
 
     public bool $installIncomplete = false;
 
-    public string $nodeVersion = '24.22.0';
+    public bool $buildFails = false;
 
-    public string $packageManager = 'npm';
+    /** @var list<string>|null */
+    public ?array $managedRuntimes = null;
 
-    public string $packageManagerVersion = '11.12.0';
+    /** @var list<string> */
+    public array $removedReleases = [];
+
+    /** @var list<string> */
+    public array $busyReleases = [];
 
     /** @var list<RemoteCommand> */
     public array $commands = [];
@@ -40,16 +43,14 @@ final class VpStoreSshExecutor implements SshExecutor
     /** @var list<string> */
     public array $operations = [];
 
+    /** @var list<array<string, mixed>> */
+    public array $inputs = [];
+
     /** @var array<string, mixed> */
     public array $configuration = [
-        'package' => [
-            'devDependencies' => ['vite-plus' => '0.3.3'],
-            'packageManager' => 'npm@11.12.0',
-            'engines' => ['node' => '24.22.0'],
-            'scripts' => ['preinstall' => 'must-not-run-as-owner'],
-        ],
-        '.node-version' => '24.22.0',
-        '.nvmrc' => null,
+        'package' => ['devDependencies' => ['vite-plus' => '^0.3.0'], 'packageManager' => 'npm@11.12.0', 'engines' => ['node' => '24.22.0']],
+        'locks' => ['package-lock.json' => '{"lockfileVersion":3,"packages":{"node_modules/vite-plus":{"version":"0.3.3"}}}'],
+        '.node-version' => '24.22.0', '.nvmrc' => null, 'npmrc' => '',
     ];
 
     public ?Closure $onInstall = null;
@@ -71,36 +72,64 @@ final class VpStoreSshExecutor implements SshExecutor
         } elseif (in_array('--version', $arguments, true)) {
             $operation = 'vp-version';
             $output = 'vp v'.$this->vpVersion."\n";
-        } elseif (in_array('upgrade', $arguments, true)) {
-            $operation = 'vp-upgrade';
-            $exit = $this->updateFails ? 1 : 0;
-            if (! $this->updateFails) {
-                $this->vpVersion = $arguments[array_search('upgrade', $arguments, true) + 1];
-            }
-        } elseif (str_contains($text, 'TemporaryDirectory')) {
-            $operation = 'resolve';
-            $output = json_encode([
-                'node' => ['version' => $this->nodeVersion, 'mode' => 'managed', 'installed' => $this->installed],
-                'package_manager' => ['name' => $this->packageManager, 'version' => $this->packageManagerVersion, 'mode' => 'managed', 'installed' => $this->installed],
-            ], JSON_THROW_ON_ERROR);
-        } elseif (str_contains($text, 'inventory = json.loads')) {
+        } elseif (in_array('tools.inspect-vp-store', $arguments, true)) {
             $operation = 'inspect';
+            $input = json_decode(explode("\0", $command->input)[1], true, flags: JSON_THROW_ON_ERROR);
+            $this->inputs[] = $input;
             $exit = $this->inspectionFails ? 1 : 0;
-            $output = json_encode($this->installed);
-        } elseif (in_array('install', $arguments, true)) {
+            $output = json_encode(['outcome' => 'inspected', 'data' => ['installed' => array_map(fn (array $environment): bool => $this->managedRuntimes === null ? $this->installed
+                : array_diff($this->runtimePaths($environment), $this->managedRuntimes) === [], $input['environments'])]], JSON_THROW_ON_ERROR);
+        } elseif (in_array('tools.install-vp-environment', $arguments, true)) {
             $operation = 'install';
             ($this->onInstall ?? static function (): void {})();
+            $this->inputs[] = json_decode(explode("\0", $command->input)[1], true, flags: JSON_THROW_ON_ERROR);
             $exit = $this->installFails ? 1 : 0;
             if (! $this->installFails && ! $this->installIncomplete) {
                 $this->installed = true;
+                if ($this->managedRuntimes !== null) {
+                    $this->managedRuntimes = array_values(array_unique([...$this->managedRuntimes, ...$this->runtimePaths($this->inputs[array_key_last($this->inputs)])]));
+                }
+            }
+            $output = '{"outcome":"installed","data":{"verified":{}}}';
+        } elseif (in_array('tools.prune-vp-store', $arguments, true)) {
+            $operation = 'prune';
+            $input = json_decode(explode("\0", $command->input)[1], true, flags: JSON_THROW_ON_ERROR);
+            $this->inputs[] = $input;
+            $removed = [];
+            if ($this->managedRuntimes !== null) {
+                $keep = [];
+                foreach ($input['references'] as $reference) {
+                    $keep = [...$keep, ...$this->runtimePaths($reference)];
+                }
+                $removed = array_values(array_diff($this->managedRuntimes, $keep));
+                $this->managedRuntimes = array_values(array_intersect($this->managedRuntimes, $keep));
+            }
+            $output = json_encode(['outcome' => 'pruned', 'data' => ['removed' => $removed]], JSON_THROW_ON_ERROR);
+        } elseif (str_contains($command->input ?? '', 'expected_selected=$7')) {
+            $operation = 'release-prune';
+            foreach ($this->removedReleases as $name) {
+                $output .= "PRUNED\t{$name}\n";
+            }
+            foreach ($this->busyReleases as $name) {
+                $output .= "IN_USE\t{$name}\n";
             }
         } elseif ($command->protectedInput !== null) {
             $operation = 'build';
+            $exit = $this->buildFails ? 1 : 0;
         } else {
             throw new LogicException('Unexpected vp store SSH command: '.$text);
         }
         $this->operations[] = $operation;
 
-        return new CommandResult($exit, $output, $exit === 0 ? '' : 'fixture download denied', 1, false);
+        return new CommandResult($exit, $output, $exit === 0 ? '' : 'fixture command failed', 1, false);
+    }
+
+    /** @param array<string, mixed> $environment
+     * @return list<string>
+     */
+    private function runtimePaths(array $environment): array
+    {
+        return ['js_runtime/node/'.$environment['node_version'],
+            'package_manager/'.$environment['package_manager'].'/'.$environment['package_manager_version']];
     }
 }

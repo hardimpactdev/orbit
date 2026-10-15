@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tools\PrepareVpEnvironmentAction;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Instances\Deployment\DeploymentRelease;
@@ -351,7 +352,7 @@ function rebind_instance(ProductionSshExecutor $executor, string $repository, st
 
     return [
         $instance,
-        new RemoteProductionDeployment($executor, app(RepositoryReadAccess::class), null, $binding),
+        new RemoteProductionDeployment($executor, app(RepositoryReadAccess::class), app(PrepareVpEnvironmentAction::class), null, $binding),
         $binding,
     ];
 }

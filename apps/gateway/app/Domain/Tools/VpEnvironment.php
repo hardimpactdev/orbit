@@ -74,10 +74,7 @@ final readonly class VpEnvironment
             'env', 'exec', '--node', $this->nodeVersion,
             '--package-manager', $this->packageManagerSelector(),
         ]));
-        $defaultBuild = $name === 'npm-build' && ($command === 'npm run build'
-            || preg_match('~\A(?:node|/(?:[A-Za-z0-9._-]+/)*node)[ \t]+/(?:[A-Za-z0-9._-]+/)*npm-cli\.js[ \t]+run[ \t]+build\z~D', $command) === 1);
-        $build = $defaultBuild ? $this->packageManager.' run build' : $command;
 
-        return $prefix.' bash -eu -c '.escapeshellarg($build);
+        return $prefix.' bash -eu -c '.escapeshellarg($command);
     }
 }

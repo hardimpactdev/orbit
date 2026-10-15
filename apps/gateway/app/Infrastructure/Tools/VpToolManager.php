@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Tools;
 
-use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\SemverVersionNormalizer;
 use App\Domain\Tools\SupportsToolAdoption;
 use App\Domain\Tools\ToolAdoptionFact;
@@ -16,9 +15,10 @@ use App\Domain\Tools\ToolOperation;
 use App\Domain\Tools\ToolRemovalPlan;
 use App\Domain\Tools\VpEnvironment;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
+use App\Infrastructure\RemotePrograms\SshProgramRunner;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
-use App\Models\ToolManagerRecord;
 
 final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
 {
@@ -420,27 +420,11 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
         return $version;
     }
 
-    /** Caller holds the existing vp manager scope lock. Never downgrade a shared manager. */
+    /** vp itself is recipe-owned; deploy prerequisites only inspect it. */
     public function ensureVersion(Node $node, string $required): void
     {
-        if ($this->versions->normalize($required) === null) {
-            throw new ToolManagerException('manager-version', 'Invalid required vp version.');
-        }
-        $record = ToolManagerRecord::query()->firstOrCreate(['node_id' => $node->id, 'name' => 'vp'], ['status' => LifecycleStatus::Provisioning]);
-        try {
-            $before = $this->managerVersion($node);
-            if (! $this->versionSatisfies($before, $required)) {
-                $result = $this->commands->execute($node, $this->vpArguments($node, 'upgrade', $required));
-                $this->guardSuccessfulResult($result, 'manager-update', 'The VP manager update failed.');
-            }
-            $after = $this->managerVersion($node);
-            if (! $this->versionSatisfies($after, $required)) {
-                throw new ToolManagerException('manager-update', 'The VP manager update did not install the required version.');
-            }
-            $record->update(['status' => LifecycleStatus::Active, 'installed_version' => $after, 'failed_step' => null, 'error_code' => null]);
-        } catch (ToolManagerException $exception) {
-            $record->update(['status' => LifecycleStatus::Failed, 'failed_step' => $exception->step, 'error_code' => 'tool.manager_update_failed']);
-            throw $exception;
+        if (! $this->versionSatisfies($this->managerVersion($node), $required)) {
+            throw new ToolManagerException('manager-version', 'Update the machine recipe: vp is older than the locked Project version.');
         }
     }
 
@@ -451,86 +435,53 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
         return $normalized !== null && version_compare($normalized, $required, '>=');
     }
 
-    /**
-     * Resolve only data copied from the Project, never execute its code as the store owner.
-     *
-     * @param  array<string, mixed>  $configuration
-     * @return array<string, mixed>
-     */
-    public function resolveEnvironment(Node $node, array $configuration): array
-    {
-        $binary = $this->existingBinary($node);
-        $program = <<<'PY'
-            import json, os, pathlib, subprocess, sys, tempfile
-            config = json.load(sys.stdin)
-            with tempfile.TemporaryDirectory(prefix='orbit-vp-') as directory:
-                root = pathlib.Path(directory)
-                (root / 'package.json').write_text(json.dumps(config['package']))
-                for name in ('.node-version', '.nvmrc'):
-                    if config.get(name):
-                        (root / name).write_text(config[name])
-                # Ignore shared system-first modes and inherited shim selections while resolving Project pins.
-                environment = {key: value for key, value in os.environ.items() if not key.startswith('VP_')}
-                environment['VP_HOME'] = str(root / '.vp')
-                result = subprocess.run([sys.argv[1], 'env', 'current', '--json'], cwd=directory, env=environment, capture_output=True, text=True)
-                sys.stdout.write(result.stdout)
-                sys.stderr.write(result.stderr)
-                sys.exit(result.returncode)
-            PY;
-        $result = $this->commands->execute($node, ['python3', '-c', $program, $binary], json_encode($configuration, JSON_THROW_ON_ERROR), maxOutputBytes: 16384);
-        $this->guardSuccessfulResult($result, 'environment-resolve', 'The VP Project environment could not be resolved.');
-        $value = json_decode($result->stdout, true, flags: JSON_THROW_ON_ERROR);
-        if (! is_array($value) || ! is_array($value['node'] ?? null) || ! is_array($value['package_manager'] ?? null)) {
-            throw new ToolManagerException('environment-resolve', 'The VP Project environment was incomplete.');
-        }
-
-        return $value;
-    }
-
-    /** Read-only inspection; does not run env exec, which could download missing components. */
+    /** Read-only inspection; no registry requests, commands, locks, or store writes. */
     public function environmentInstalled(Node $node, VpEnvironment $environment): bool
     {
-        $binary = $this->existingBinary($node);
-        if (dirname($binary, 2) !== $environment->store) {
-            return false;
-        }
-        $program = <<<'PY'
-            import json, os, pathlib, subprocess, sys
-            binary, home, node, manager, version = sys.argv[1:]
-            env = {**os.environ, 'VP_HOME': home}
-            result = subprocess.run([binary, 'env', 'list', '--json'], cwd=home, env=env, capture_output=True, text=True)
-            if result.returncode:
-                sys.stderr.write(result.stderr)
-                sys.exit(result.returncode)
-            inventory = json.loads(result.stdout)
-            found_node = any(item['version'] == node for item in inventory['node'])
-            found_pm = any(item['version'] == version for item in inventory['package_managers'][manager])
-            executable = pathlib.Path(home) / 'js_runtime' / 'node' / node / 'bin' / 'node'
-            valid_node = False
-            if found_node and executable.is_file() and os.access(executable, os.X_OK):
-                probe = subprocess.run([str(executable), '--version'], capture_output=True, text=True)
-                valid_node = probe.returncode == 0 and probe.stdout.strip() == 'v' + node
-            valid_pm = False
-            pm = pathlib.Path(home) / 'package_manager' / manager / version / manager / 'bin' / manager
-            if valid_node and found_pm and pm.is_file() and os.access(pm, os.X_OK):
-                probe = subprocess.run([str(pm), '--version'], cwd=home, env={**env, 'PATH': str(executable.parent) + os.pathsep + env.get('PATH', '')}, capture_output=True, text=True)
-                valid_pm = probe.returncode == 0 and probe.stdout.strip() == version
-            print(json.dumps(valid_node and valid_pm))
-            PY;
-        $result = $this->commands->execute($node, ['python3', '-c', $program, $binary, $environment->store, $environment->nodeVersion, $environment->packageManager, $environment->packageManagerVersion], maxOutputBytes: 4096);
-        $this->guardSuccessfulResult($result, 'environment-inspect', 'The VP store could not be inspected.');
-        $value = json_decode($result->stdout, true, flags: JSON_THROW_ON_ERROR);
-        if (! is_bool($value)) {
-            throw new ToolManagerException('environment-inspect', 'The VP store inspection was malformed.');
-        }
-
-        return $value;
+        return $this->environmentsInstalled($node, [$environment])[0];
     }
 
-    public function installEnvironment(Node $node, VpEnvironment $environment): void
+    /** @param list<VpEnvironment> $environments
+     * @return list<bool>
+     */
+    public function environmentsInstalled(Node $node, array $environments): array
     {
-        $result = $this->commands->execute($node, $this->vpArguments($node, 'env', 'install', $environment->nodeVersion, $environment->packageManagerSelector()));
-        $this->guardSuccessfulResult($result, 'environment-install', 'The VP store environment installation failed.');
+        $store = dirname($this->existingBinary($node), 2);
+        $data = $this->storeProgram($node, 'tools.inspect-vp-store', ['environments' => array_map(fn (VpEnvironment $environment): array => $environment->record('active'), $environments)], 'inspected');
+        $installed = $data['installed'] ?? null;
+        if (! is_array($installed) || ! array_is_list($installed) || count($installed) !== count($environments) || array_filter($installed, is_bool(...)) !== $installed) {
+            throw new ToolManagerException('environment-inspect', 'Malformed vp store inventory.');
+        }
+
+        return array_map(fn (bool $present, int $index): bool => $present && $environments[$index]->store === $store, $installed, array_keys($installed));
+    }
+
+    public function installEnvironment(Node $node, VpEnvironment $environment, string $npmrc = ''): void
+    {
+        $this->storeProgram($node, 'tools.install-vp-environment', [...$environment->record('installing'), 'npmrc' => $npmrc], 'installed');
+    }
+
+    /** @param list<array<string, mixed>> $references */
+    public function pruneEnvironments(Node $node, string $store, array $references): void
+    {
+        $this->storeProgram($node, 'tools.prune-vp-store', ['store' => $store, 'references' => $references], 'pruned');
+    }
+
+    /** @param array<string, mixed> $input
+     * @return array<array-key, mixed>
+     */
+    private function storeProgram(Node $node, string $name, array $input, string $outcome): array
+    {
+        $catalog = new RemoteProgramCatalog;
+        $command = SshProgramRunner::pythonCommand($catalog->program($name), $catalog->bootstrap(), $input);
+        $result = $this->commands->execute($node, $command->arguments, $command->input, timeoutSeconds: $command->timeout, maxOutputBytes: 65536);
+        $this->guardSuccessfulResult($result, 'environment', 'The owner-only vp store operation failed.');
+        $value = json_decode($result->stdout, true, flags: JSON_THROW_ON_ERROR);
+        if (! is_array($value) || ($value['outcome'] ?? null) !== $outcome || ! is_array($value['data'] ?? null)) {
+            throw new ToolManagerException('environment', 'The vp store prerequisite failed before build; check store ownership, checksums, registry access, and lock contention.');
+        }
+
+        return $value['data'];
     }
 
     public function candidateVersion(Node $node, string $package, ToolOperation $operation): string
