@@ -6,6 +6,7 @@ namespace App\Infrastructure\MachineSoftware;
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Infrastructure\Fleet\NodeShell;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
@@ -83,24 +84,23 @@ final readonly class NodeRecipeProgram
 
     /**
      * @param  array<string, ToolPin>  $tools
-     * @return array<string, ?string>
+     * @return array<string, array{source: string, version: string, installed: ?string, changed: bool, status: string}>
      */
     public function inspect(Node $node, MachineRecipe $recipe, array $tools): array
     {
         $report = $this->run($node, $recipe, $tools, 'inspect');
-        $versions = [];
+        $assessment = [];
         foreach ($tools as $name => $pin) {
-            if (! array_key_exists($name, $report)) {
-                throw new RuntimeException('Recipe inspection omitted a selected tool.');
+            $value = $report[$name] ?? null;
+            if (! is_array($value) || ($value['source'] ?? null) !== $pin->source || ($value['version'] ?? null) !== $pin->version
+                || ! array_key_exists('installed', $value) || ($value['installed'] !== null && ! is_string($value['installed']))
+                || ! is_bool($value['changed'] ?? null) || ! is_string($value['status'] ?? null)) {
+                throw new RuntimeException('Recipe inspection returned an invalid assessment.');
             }
-            $value = $report[$name];
-            if ($value !== null && ! is_string($value)) {
-                throw new RuntimeException('Recipe inspection returned an invalid version.');
-            }
-            $versions[$name] = $value;
+            $assessment[$name] = ['source' => $pin->source, 'version' => $pin->version, 'installed' => $value['installed'], 'changed' => $value['changed'], 'status' => $value['status']];
         }
 
-        return $versions;
+        return $assessment;
     }
 
     /**
@@ -230,7 +230,13 @@ final readonly class NodeRecipeProgram
             timeout: $mode === 'inspect' ? 60 : 900,
         ));
         if (! $result->succeeded() || $result->truncated) {
-            // Manager output is never exposed. The fixed program emits only a stage identifier on failure.
+            // Only the fixed packages-stage envelope can expose output, after redaction and bounding.
+            $diagnostic = json_decode($result->stdout, true);
+            $failure = is_array($diagnostic) ? $diagnostic['failure'] ?? null : null;
+            if (is_array($failure) && ($failure['stage'] ?? null) === 'recipe-stage:packages') {
+                $detail = new CommandActivityInputSanitizer()->redactText(json_encode($failure, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE));
+                throw new ResourceOperationException('node.recipe_failed', 'Recipe convergence stopped at recipe-stage:packages. '.mb_substr($detail, 0, 30000).' The Node may be partly changed. No automatic rollback was attempted; inspect the Node before retrying.', 502);
+            }
             $stage = trim($result->stdout);
             if (preg_match('/^recipe-stage:[a-z-]+(?::[A-Za-z0-9@_.:-]+)?$/D', $stage) !== 1) {
                 $stage = 'recipe-stage:remote';

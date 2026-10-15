@@ -14,27 +14,30 @@ def command_output(result):
 
 
 def image_packages(payload):
-    snapshot = payload['snapshot']
-    source = (f'Types: deb\nURIs: https://snapshot.ubuntu.com/ubuntu/{snapshot}/\n'
-              'Suites: resolute resolute-updates resolute-security\nComponents: main universe restricted multiverse\n'
-              'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\nCheck-Valid-Until: no\n')
-    publish('/etc/apt/sources.list.d/ubuntu.sources', source.encode())
-    options = ['-o', 'Dir::Etc::sourcelist=sources.list.d/ubuntu.sources', '-o', 'Dir::Etc::sourceparts=-',
-               '-o', 'DPkg::Lock::Timeout=300']
+    with tempfile.TemporaryDirectory(prefix='orbit-image-source-') as directory:
+        options = snapshot_options(payload, Path(directory))
+        image_install_packages(payload, options)
+
+
+def image_install_packages(payload, options):
+    options = [*options, '-o', 'DPkg::Lock::Timeout=300']
     run(['apt-get', 'update', *options])
     environment = dict(os.environ, DEBIAN_FRONTEND='noninteractive', NEEDRESTART_SUSPEND='1')
-    installed = packages()
-    ubuntu = [name + '=' + pin['version'] for name, pin in payload['tools'].items()
-              if pin['source'] == 'ubuntu' and installed.get(name) != pin['version']]
     if POLICY.exists() or POLICY.is_symlink():
         raise RecipeFailure()
     publish(POLICY, b'#!/bin/sh\nexit 101\n', 0o755)
     try:
         if payload['profile'] == 'base':
             run(['apt-get', 'full-upgrade', '--yes', *options], env=environment)
+        # full-upgrade may have installed a newer same-release version; inspect after it.
+        installed = packages()
+        tools = {name: pin for name, pin in payload['tools'].items() if pin['source'] == 'ubuntu'}
+        assessment = assess(tools, {name: installed.get(pin['package']) for name, pin in tools.items()}, options)
+        supported(assessment)
+        ubuntu = [pin['package'] + '=' + pin['version'] for name, pin in tools.items() if assessment[name]['changed']]
         # Install the recipe's curl and CA packages before fetching third-party artifacts on a stock image.
         if ubuntu:
-            run(['apt-get', 'install', '--yes', '--no-install-recommends', '--allow-downgrades',
+            run(['apt-get', 'install', '--yes', '--no-install-recommends', '--no-remove',
                  *options, '--', *ubuntu], env=environment)
         with tempfile.TemporaryDirectory(prefix='orbit-image-packages-') as directory:
             work = Path(directory)
@@ -54,7 +57,7 @@ def image_packages(payload):
                     raise RecipeFailure()
                 debs.append(str(deb))
             if debs:
-                run(['apt-get', 'install', '--yes', '--no-install-recommends', '--allow-downgrades',
+                run(['apt-get', 'install', '--yes', '--no-install-recommends', '--no-remove',
                      *options, '--', *debs], env=environment)
     finally:
         POLICY.unlink()
@@ -188,7 +191,14 @@ def image_verify(payload):
                 if name not in ('rust', 'cargo', 'rust-std', 'clippy', 'rustfmt', 'orbit-agent', 'pi') and name not in php_packages(payload)}
     os.environ['SUDO_USER'] = 'orbit'
     observed = inspect(selected)
-    if any(observed[name] != pin['version'] for name, pin in selected.items()):
+    # Snapshot-only versions may no longer appear in the normal rolling indexes. Reuse the cached
+    # authenticated snapshot metadata too, without refreshing any index during verification.
+    if any(pin['source'] == 'ubuntu' for pin in selected.values()):
+        with tempfile.TemporaryDirectory(prefix='orbit-image-verify-') as directory:
+            assessment = assess(selected, observed, snapshot_options(payload, Path(directory)))
+    else:
+        assessment = assess(selected, observed)
+    if any(tool['status'] not in ('current', 'newer_than_recipe') for tool in assessment.values()):
         raise RecipeFailure()
     if 'pnpm' in selected:
         result = run(['sudo', '-u', 'orbit', '-H', 'env', '-C', '/home/orbit',

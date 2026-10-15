@@ -1,4 +1,4 @@
-"""Fixed, synchronous recipe operations. No manager output or caller-supplied programs escape this boundary."""
+"""Fixed, synchronous recipe operations. Only bounded package failure diagnostics escape this boundary."""
 import hashlib
 import json
 import os
@@ -17,7 +17,10 @@ POLICY = Path('/usr/sbin/policy-rc.d')
 
 
 class RecipeFailure(Exception):
-    pass
+    def __init__(self, stage='', *, result=None, packages=None):
+        super().__init__(stage)
+        self.result = result
+        self.packages = packages or []
 
 
 def command_output(result):
@@ -31,21 +34,22 @@ def run(argv, *, required=True, env=None):
                               start_new_session=True, env=env) as process:
             try:
                 stdout, stderr = process.communicate(timeout=600)
-            except BaseException:
+            except BaseException as error:
                 os.killpg(process.pid, signal.SIGTERM)
                 try:
                     stdout, stderr = process.communicate(timeout=3)
                 except subprocess.TimeoutExpired:
                     os.killpg(process.pid, signal.SIGKILL)
                     stdout, stderr = process.communicate()
-                command_output(subprocess.CompletedProcess(argv, process.returncode, stdout, stderr))
-                raise
+                result = subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
+                command_output(result)
+                raise RecipeFailure(result=result) from error
             result = subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
     except FileNotFoundError:
         result = subprocess.CompletedProcess(argv, 127, '', 'Executable not found: ' + argv[0] + '\n')
     command_output(result)
     if required and result.returncode:
-        raise RecipeFailure()
+        raise RecipeFailure(result=result)
     return result
 
 
@@ -67,9 +71,105 @@ def platform_check(architecture):
 
 
 def packages():
-    result = run(['dpkg-query', '-W', '-f=${Package}\t${Version}\t${Status}\n'])
-    return {name: version for name, version, status in
-            (line.split('\t', 2) for line in result.stdout.splitlines()) if status == 'install ok installed'}
+    architecture = run(['dpkg', '--print-architecture']).stdout.strip()
+    result = run(['dpkg-query', '-W', '-f=${Package}\t${Architecture}\t${Version}\t${Status}\n'])
+    return {name: version for name, arch, version, status in
+            (line.split('\t', 3) for line in result.stdout.splitlines())
+            if status == 'install ok installed' and arch in (architecture, 'all')}
+
+
+def ubuntu_origin(package, version, options=None):
+    return policy_origin(package, version, []) or (options is not None and policy_origin(package, version, options))
+
+
+def policy_origin(package, version, options):
+    """Match this version's index to Ubuntu Release metadata, not a version suffix or URL hostname."""
+    environment = dict(os.environ, LC_ALL='C')
+    policy = run(['apt-cache', 'policy', *options], env=environment).stdout
+    trusted = set()
+    index = None
+    for line in policy.splitlines():
+        entry = re.fullmatch(r'\s*-?\d+\s+(.+ Packages)\s*', line)
+        if entry:
+            index = ' '.join(entry.group(1).split())
+        elif line.strip().startswith('release '):
+            fields = dict(item.split('=', 1) for item in line.strip()[8:].split(',') if '=' in item)
+            if (index and fields.get('o') == 'Ubuntu' and fields.get('n') == 'resolute'
+                    and fields.get('a') in ('resolute', 'resolute-updates', 'resolute-security')):
+                trusted.add(index)
+            index = None
+    architecture = run(['dpkg', '--print-architecture']).stdout.strip()
+    policy = run(['apt-cache', 'policy', package + ':' + architecture, *options], env=environment).stdout
+    selected = False
+    for line in policy.splitlines():
+        entry = re.fullmatch(r'\s*(?:\*\*\*\s+)?(\S+)\s+-?\d+\s*', line)
+        if entry:
+            selected = entry.group(1) == version
+        entry = re.fullmatch(r'\s*-?\d+\s+(.+ Packages)\s*', line)
+        if selected and entry and ' '.join(entry.group(1).split()) in trusted:
+            return True
+    return False
+
+
+def assess(tools, versions=None, options=None):
+    """Ubuntu packages have floors. Artifacts, including the Sury PHP build, stay exact."""
+    versions = inspect(tools) if versions is None else versions
+    report = {}
+    for name, pin in tools.items():
+        installed = versions[name]
+        status = 'current' if installed == pin['version'] else 'missing' if installed is None else 'different'
+        if pin['source'] == 'ubuntu' and installed is not None and installed != pin['version']:
+            comparison = run(['dpkg', '--compare-versions', installed, 'gt', pin['version']], required=False)
+            if comparison.returncode == 0:
+                status = 'newer_than_recipe' if ubuntu_origin(pin['package'], installed, options) else 'unsupported_newer'
+            elif comparison.returncode == 1:
+                status = 'older_than_recipe'
+            else:
+                raise RecipeFailure('inventory:' + name)
+        report[name] = {'source': pin['source'], 'version': pin['version'], 'installed': installed,
+                        'changed': status not in ('current', 'newer_than_recipe', 'unsupported_newer'), 'status': status}
+    return report
+
+
+def supported(report):
+    for name, tool in report.items():
+        if tool['status'] == 'unsupported_newer':
+            raise RecipeFailure('origin:' + name)
+
+
+def newer_packages(report):
+    return {name: {'installed': tool['installed'], 'version': tool['version']}
+            for name, tool in report.items() if tool['status'] == 'newer_than_recipe'}
+
+
+def snapshot_options(payload, work):
+    source = (f"Types: deb\nURIs: https://snapshot.ubuntu.com/ubuntu/{payload['snapshot']}/\n"
+              'Suites: resolute resolute-updates resolute-security\nComponents: main universe restricted multiverse\n'
+              'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\nCheck-Valid-Until: no\n')
+    path = work / 'ubuntu.sources'
+    publish(path, source.encode())
+    # Keep normal sources and their cached origin metadata for unattended-upgrades and read-only plans.
+    return ['-o', 'Dir::Etc::sourcelist=' + str(path), '-o', 'Dir::Etc::sourceparts=-',
+            '-o', 'APT::Get::List-Cleanup=false']
+
+
+def package_command(argv, packages, **kwargs):
+    try:
+        return run(argv, **kwargs)
+    except RecipeFailure as error:
+        error.packages = packages
+        raise
+
+
+def failure_output(value):
+    """Redact before bounding output; the Gateway also applies its shared activity sanitizer."""
+    value = re.sub(r'-----BEGIN [A-Z0-9 ]+-----[\s\S]*?-----END [A-Z0-9 ]+-----', '[REDACTED]', value)
+    value = re.sub(r'(?i)\b([a-z][a-z0-9+.-]*://)[^/@\s]+@', r'\1[REDACTED]@', value)
+    value = re.sub(r'(?i)\b((?:proxy-)?authorization)\s*:[^\r\n]*', r'\1: [REDACTED]', value)
+    value = re.sub(r"(?i)\b([\w-]*(?:token|secret|password|passwd|passphrase|credential|key|cookie|authorization)[\w-]*)\s*[:=]\s*(?:\"[^\"]*\"|'[^']*'|[^\s&#]+)", r'\1=[REDACTED]', value)
+    value = re.sub(r'(?i)\bBearer\s+\S+', 'Bearer [REDACTED]', value)
+    value = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', value)
+    return value.encode('utf-8', errors='replace')[-8000:].decode('utf-8', errors='replace')
 
 
 def binary_version(binary, env=None):
@@ -96,7 +196,7 @@ def inspect(tools):
         scope = vite_scope(account)
     for name, pin in tools.items():
         if pin['source'] == 'ubuntu' or name == 'caddy' or name.startswith('php') or name == 'libgd3':
-            versions[name] = installed.get(name)
+            versions[name] = installed.get(pin['package'] if pin['source'] == 'ubuntu' else name)
         elif name == 'bun':
             versions[name] = binary_version('/opt/orbit/bun/bin/bun')
         elif name == 'vp-cli':
@@ -358,6 +458,8 @@ def apply(payload):
         account = pwd.getpwnam(os.environ.get('SUDO_USER', 'orbit'))
         before = packages()
         versions = inspect(tools)
+        assessment = assess(tools, versions)
+        supported(assessment)
         active = active_services()
         policy = POLICY
         if policy.exists() or policy.is_symlink():
@@ -380,32 +482,31 @@ def apply(payload):
                 if actual[:2] != expected[:2] or actual[2:] not in ([payload['architecture']], ['all']):
                     raise RecipeFailure()
             stage = 'apt-source'
-            snapshot = payload['snapshot']
-            source = (f'Types: deb\nURIs: https://snapshot.ubuntu.com/ubuntu/{snapshot}/\n'
-                      'Suites: resolute resolute-updates resolute-security\nComponents: main universe restricted multiverse\n'
-                      'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\nCheck-Valid-Until: no\n')
-            publish('/etc/apt/sources.list.d/ubuntu.sources', source.encode())
-            # Freeze Ubuntu's normal source; keep other repositories available to existing role operations.
-            # Recipe installs resolve against only the snapshot, never a third-party candidate.
-            apt_options = ['-o', 'Dir::Etc::sourcelist=sources.list.d/ubuntu.sources', '-o', 'Dir::Etc::sourceparts=-']
+            apt_options = snapshot_options(payload, work)
             stage = 'packages'
-            run(['apt-get', 'update', *apt_options])
-            ubuntu = [name + '=' + pin['version'] for name, pin in tools.items()
-                      if pin['source'] == 'ubuntu' and versions[name] != pin['version']]
+            package_command(['apt-get', 'update', *apt_options], [])
+            ubuntu = [pin['package'] + '=' + pin['version'] for name, pin in tools.items()
+                      if pin['source'] == 'ubuntu' and assessment[name]['changed']]
             environment = dict(os.environ, DEBIAN_FRONTEND='noninteractive', NEEDRESTART_SUSPEND='1')
             # This is temporary restart suppression, not a package/configuration rollback.
             publish(policy, b'#!/bin/sh\nexit 101\n', 0o755)
             try:
-                if ubuntu or debs:
-                    run(['apt-get', 'install', '--yes', '--no-install-recommends', '--no-remove', '--allow-downgrades',
-                         '-o', 'Dpkg::Options::=--force-confold', *apt_options, '--', *ubuntu, *debs], env=environment)
+                if ubuntu:
+                    package_command(['apt-get', 'install', '--yes', '--no-install-recommends', '--no-remove',
+                                     '-o', 'Dpkg::Options::=--force-confold', *apt_options, '--', *ubuntu], ubuntu, env=environment)
+                if debs:
+                    # Exact artifacts can change version, but their Ubuntu dependencies must never downgrade.
+                    package_command(['apt-get', 'install', '--yes', '--no-install-recommends', '--no-remove',
+                                     '-o', 'Dpkg::Options::=--force-confold', *apt_options, '--', *debs],
+                                    [Path(deb).stem for deb in debs], env=environment)
             finally:
                 policy.unlink()
             stage = 'tools'
             install_javascript(tools, downloads, work, account) if js else None
             stage = 'inventory'
             after_versions = inspect(tools)
-            if any(after_versions[name] != pin['version'] for name, pin in tools.items()):
+            after_assessment = assess(tools, after_versions, apt_options)
+            if any(tool['status'] not in ('current', 'newer_than_recipe') for tool in after_assessment.values()):
                 raise RecipeFailure()
             after = packages()
             changed = sorted(name for name in before.keys() | after.keys() if before.get(name) != after.get(name))
@@ -420,8 +521,11 @@ def apply(payload):
                 stage = 'health:' + service
                 run(['systemctl', 'is-active', '--quiet', service])
             return {'changed_packages': changed, 'restarted_services': restarted,
-                    'changed_tools': sorted(name for name in tools if versions[name] != after_versions[name]), 'healthy': True}
+                    'changed_tools': sorted(name for name in tools if versions[name] != after_versions[name]),
+                    'newer_than_recipe': newer_packages(after_assessment), 'healthy': True}
     except Exception as error:
+        if isinstance(error, RecipeFailure):
+            raise RecipeFailure(str(error) or stage, result=error.result, packages=error.packages) from error
         raise RecipeFailure(stage) from error
 
 
@@ -438,13 +542,19 @@ def main():
     try:
         platform_check(payload['architecture'])
         stage = 'inventory'
-        result = inspect(payload['tools']) if mode == 'inspect' else apply(payload)
+        result = assess(payload['tools']) if mode == 'inspect' else apply(payload)
         print(json.dumps(result))
         return 0
     except Exception as error:
         if isinstance(error, RecipeFailure) and str(error):
             stage = str(error)
-        print('recipe-stage:' + stage)
+        if stage == 'packages' and isinstance(error, RecipeFailure) and error.result is not None:
+            result = error.result
+            print(json.dumps({'failure': {'stage': 'recipe-stage:packages', 'packages': error.packages,
+                                         'command': result.args, 'exit_code': result.returncode,
+                                         'stdout': failure_output(result.stdout), 'stderr': failure_output(result.stderr)}}, ensure_ascii=False))
+        else:
+            print('recipe-stage:' + stage)
         return 1
 
 

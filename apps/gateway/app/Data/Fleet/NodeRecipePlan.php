@@ -9,7 +9,7 @@ final readonly class NodeRecipePlan
 {
     /**
      * @param  list<string>  $roles
-     * @param  array<string, array{source: string, version: string, installed: ?string, changed: bool}>  $tools
+     * @param  array<string, array{source: string, version: string, installed: ?string, changed: bool, status: string}>  $tools
      */
     public function __construct(
         public int $nodeId,

@@ -48,14 +48,14 @@ final class RecipeVerification implements FleetNodeVerification
     }
 }
 
-function recipeSsh(?CommandResult $application = null): ScriptedSshExecutor
+function recipeSsh(?CommandResult $application = null, ?Closure $inspection = null): ScriptedSshExecutor
 {
     $ssh = new ScriptedSshExecutor;
-    $ssh->on('/^python3 - inspect /', static function (RemoteCommand $command): CommandResult {
+    $ssh->on('/^python3 - inspect /', $inspection ?? static function (RemoteCommand $command): CommandResult {
         $payload = json_decode($command->arguments[3], true, flags: JSON_THROW_ON_ERROR);
         $versions = [];
         foreach ($payload['tools'] as $name => $pin) {
-            $versions[$name] = $name === 'curl' ? '1.0.0' : $pin['version'];
+            $versions[$name] = ['source' => $pin['source'], 'version' => $pin['version'], 'installed' => $name === 'curl' ? '1.0.0' : $pin['version'], 'changed' => $name === 'curl', 'status' => $name === 'curl' ? 'older_than_recipe' : 'current'];
         }
 
         return ScriptedSshExecutor::ok(json_encode($versions, JSON_THROW_ON_ERROR));
@@ -81,7 +81,7 @@ it('plans only the production role pins and makes no remote or registry writes i
         ->and($result['plan']->snapshot)->toBe('20261014T000000Z')
         ->and($result['plan']->tools)->toHaveKeys(['curl', 'caddy', 'node', 'pnpm', 'vp-cli'])
         ->not->toHaveKeys(['rust', 'pi', 'php8.4-pcov'])
-        ->and($result['plan']->tools['curl'])->toBe(['source' => 'ubuntu', 'version' => $recipe->tools['curl']->version, 'installed' => '1.0.0', 'changed' => true])
+        ->and($result['plan']->tools['curl'])->toBe(['source' => 'ubuntu', 'version' => $recipe->tools['curl']->version, 'installed' => '1.0.0', 'changed' => true, 'status' => 'older_than_recipe'])
         ->and($result['plan']->tools['caddy']['changed'])->toBeFalse()
         ->and($ssh->commands)->toHaveCount(1)
         ->and($ssh->commands[0]->arguments[0])->toBe('python3')
@@ -365,4 +365,46 @@ it('runs the remote program regression tests without host mutations or network a
     $process->run();
 
     expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+});
+
+it('keeps newer Ubuntu versions visible in the plan result and recorded status', function (): void {
+    $node = FleetFixtures::node('recipe-newer');
+    $recipe = new RecipeLoader()->load();
+    $newer = ['curl' => ['installed' => '8.18.0-1ubuntu2.8', 'version' => $recipe->tools['curl']->version]];
+    recipeSsh(ScriptedSshExecutor::ok(json_encode(['changed_packages' => [], 'healthy' => true, 'newer_than_recipe' => $newer], JSON_THROW_ON_ERROR)), static function (RemoteCommand $command): CommandResult {
+        $payload = json_decode($command->arguments[3], true, flags: JSON_THROW_ON_ERROR);
+        $tools = [];
+        foreach ($payload['tools'] as $name => $pin) {
+            $tools[$name] = ['source' => $pin['source'], 'version' => $pin['version'], 'installed' => $name === 'curl' ? '8.18.0-1ubuntu2.8' : $pin['version'], 'changed' => false, 'status' => $name === 'curl' ? 'newer_than_recipe' : 'current'];
+        }
+
+        return ScriptedSshExecutor::ok(json_encode($tools, JSON_THROW_ON_ERROR));
+    });
+    app()->instance(FleetNodeVerification::class, new RecipeVerification);
+
+    $result = app(ConvergeNodeRecipeAction::class)->execute($node, $recipe);
+
+    expect($result['plan']->tools['curl'])->toMatchArray(['changed' => false, 'status' => 'newer_than_recipe', 'installed' => '8.18.0-1ubuntu2.8'])
+        ->and($result['changes']['newer_than_recipe'])->toBe($newer)
+        ->and($node->refresh()->settings['machine_recipe']['newer_than_recipe'])->toBe($newer);
+});
+
+it('retains redacted package command output in the failed convergence result', function (): void {
+    $node = FleetFixtures::node('recipe-package-output');
+    recipeSsh(ScriptedSshExecutor::fail(stdout: json_encode(['failure' => [
+        'stage' => 'recipe-stage:packages', 'packages' => ['curl=8.18.0-1ubuntu2.7'],
+        'command' => ['apt-get', 'install', 'curl=8.18.0-1ubuntu2.7'], 'exit_code' => 100,
+        'stdout' => 'curl: dependency conflict',
+        'stderr' => 'Failed to fetch https://user:secret@example.test/pkg API_TOKEN=private-token',
+    ]], JSON_THROW_ON_ERROR)));
+
+    $exit = Artisan::call('node:converge-recipe', ['node' => $node->name]);
+    $result = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exit)->toBe(1)
+        ->and($result['message'])->toContain('recipe-stage:packages', 'curl=8.18.0-1ubuntu2.7', 'apt-get', 'dependency conflict', '[REDACTED]')
+        ->and($result['automatic_rollback'])->toBeFalse();
+    expect($result['message'])->not->toContain('user:secret');
+    expect($result['message'])->not->toContain('private-token');
+    expect($node->refresh()->settings)->toBe([]);
 });
