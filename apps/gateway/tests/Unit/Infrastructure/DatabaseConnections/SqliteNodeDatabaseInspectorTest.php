@@ -61,8 +61,8 @@ it('keeps development inspection as the Node user', function (): void {
     expect($this->inspector->query($this->connection, 'SELECT 1', false)->rows)->toBe([]);
 });
 
-it('maps inaccessible files and denied execution without returning remote secrets', function (string $stdout, string $stderr, string $code): void {
-    $this->ssh->shouldReceive('execute')->once()->andReturn(new CommandResult(1, $stdout, $stderr, 1, false));
+it('maps inaccessible files and denied execution without returning remote secrets', function (string $stdout, string $stderr, string $code, int $exitCode = 1): void {
+    $this->ssh->shouldReceive('execute')->once()->andReturn(new CommandResult($exitCode, $stdout, $stderr, 1, false));
 
     try {
         $this->inspector->query($this->connection, 'SELECT 1', false);
@@ -76,6 +76,11 @@ it('maps inaccessible files and denied execution without returning remote secret
     'sudo password' => ['', 'sudo: a password is required private-remote-value', 'database.sqlite_unreadable'],
     'sudo policy' => ['', "Sorry, user orbit is not allowed to execute 'private-remote-value' as orbit-app-7 on node.", 'database.sqlite_unreadable'],
     'sudoers missing' => ['', 'orbit is not in the sudoers file. private-remote-value', 'database.sqlite_unreadable'],
-    'binary permissions' => ['', 'Permission denied private-remote-value', 'database.sqlite_unreadable'],
+    'binary permissions' => ['', 'sh: 1: orbit: Permission denied private-remote-value', 'database.sqlite_unreadable'],
+    'bash binary permissions' => ['', 'bash: line 1: /usr/local/bin/orbit: Permission denied private-remote-value', 'database.sqlite_unreadable'],
+    'sudo binary permissions' => ['', 'sudo: unable to execute /usr/local/bin/orbit: Permission denied private-remote-value', 'database.sqlite_unreadable'],
+    'unrelated permission denial' => ['', 'Permission denied private-remote-value', 'database.query_failed'],
+    'SSH authentication failure' => ['', 'orbit@node: Permission denied (publickey). private-remote-value', 'database.query_failed', 255],
+    'SSH transport failure' => ['', 'ssh: connect to host node port 22: Connection refused private-remote-value', 'database.query_failed', 255],
     'ordinary SQL failure' => ['{"error":{"code":"database.query_failed"}}', 'private-remote-value', 'database.query_failed'],
 ]);

@@ -302,6 +302,59 @@ it('rejects sqlite attachments without the same Node before changing stored stat
         ->and(stored_env($this->instance))->toBe(['DB_DATABASE' => 'keep-me']);
 })->with([true, false]);
 
+it('refuses updates that put a SQLite connection on a different Node from any attached Instance', function (string $driver, bool $clearNode): void {
+    $nodeId = $driver === 'sqlite' ? $this->instance->node_id : $this->caller->id;
+    $connection = DatabaseConnection::query()->create([
+        'slug' => 'update-targets', 'driver' => $driver, 'node_id' => $nodeId,
+        ...($driver === 'sqlite'
+            ? ['path' => '/var/lib/app/database.sqlite']
+            : ['host' => 'db.example.test', 'database' => 'app', 'username' => 'app', 'password' => DATABASE_ATTACHMENT_SECRET]),
+    ]);
+
+    if ($driver === 'mysql') {
+        // The first target matches the proposed Node; every target must be checked.
+        $matching = Instance::query()->create([
+            'project_id' => $this->instance->project_id, 'node_id' => $nodeId,
+            'name' => 'matching', 'checkout_path' => '/srv/orbit/matching',
+        ]);
+        $connection->targets()->create(['instance_id' => $matching->id, 'prefix' => 'DB']);
+    }
+
+    $this->putJson("/api/v1/instances/{$this->instance->id}/database-connections/update-targets", ['prefix' => 'DB'])
+        ->assertOk();
+    $original = $connection->refresh()->getRawOriginal();
+    $environment = stored_env($this->instance);
+    $targets = DatabaseConnectionTarget::query()->get()->toArray();
+
+    $this->patchJson('/api/v1/database-connections/update-targets', $driver === 'sqlite'
+        ? ['node_id' => $clearNode ? null : $this->caller->id]
+        : ['driver' => 'sqlite', 'path' => '/var/lib/app/database.sqlite'])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'database.node_mismatch');
+
+    expect($connection->refresh()->getRawOriginal())->toBe($original)
+        ->and(stored_env($this->instance))->toBe($environment)
+        ->and(DatabaseConnectionTarget::query()->get()->toArray())->toBe($targets);
+})->with([
+    'SQLite Node change' => ['sqlite', false],
+    'SQLite Node removal' => ['sqlite', true],
+    'driver change to SQLite' => ['mysql', false],
+]);
+
+it('allows a SQLite update that keeps every target on the registered Node', function (string $driver): void {
+    $connection = DatabaseConnection::query()->create([
+        'slug' => 'same-node', 'driver' => $driver, 'node_id' => $this->instance->node_id,
+        ...($driver === 'sqlite'
+            ? ['path' => '/var/lib/app/database.sqlite']
+            : ['host' => 'db.example.test', 'database' => 'app', 'username' => 'app', 'password' => DATABASE_ATTACHMENT_SECRET]),
+    ]);
+    $connection->targets()->create(['instance_id' => $this->instance->id, 'prefix' => 'DB']);
+
+    $this->patchJson('/api/v1/database-connections/same-node', [
+        'driver' => 'sqlite', 'node_id' => $this->instance->node_id, 'path' => '/var/lib/app/updated.sqlite',
+    ])->assertOk()->assertJsonPath('data.path', '/var/lib/app/updated.sqlite');
+})->with(['sqlite', 'mysql']);
+
 it('refuses an unsupported attach key and an invalid prefix', function (): void {
     $this->postJson('/api/v1/database-connections', [
         'slug' => 'app',

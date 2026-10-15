@@ -194,6 +194,11 @@ final readonly class SqliteNodeDatabaseInspector
         }
 
         if (! $result->succeeded()) {
+            // SSH uses 255 for transport and authentication errors, not remote execution failures.
+            if ($result->exitCode === 255) {
+                $this->fail($connection);
+            }
+
             $error = json_decode($result->stdout, true);
             $details = is_array($error) ? ($error['error'] ?? null) : null;
 
@@ -203,7 +208,10 @@ final readonly class SqliteNodeDatabaseInspector
 
             $stderr = strtolower($result->stderr);
 
-            if (str_contains($stderr, 'permission denied')
+            if ((str_contains($stderr, 'permission denied') && (
+                str_contains($stderr, 'sudo:')
+                || preg_match('/(?:^|\n)(?:[^\n]*\/)?(?:ba|da|z|k)?sh: [^\n]*permission denied/', $stderr) === 1
+            ))
                 || str_contains($stderr, 'is not allowed to execute')
                 || str_contains($stderr, 'is not in the sudoers file')
                 || (str_contains($stderr, 'sudo:') && (
