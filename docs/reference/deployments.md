@@ -46,9 +46,7 @@ A new release without such a directory fails at source preparation. Like any oth
 
 A `default` Instance on an `app-dev` Node is a plain Git checkout that Orbit keeps at the newest commit of the Project's default branch. Other development Instances on the Node start from it. `orbit instance:deploy ID`, the deployment API (`POST /api/v1/instances/{instance}/deploy` with `{}`), and the MCP tool `instance-deploy` can deploy a default by hand. Each starts an [operation](#deploy-through-the-api). The Project's default branch supplies the target commit; production branch overrides do not apply.
 
-The Gateway checks development defaults every minute with `orbit:deploy-development-defaults`, a job on the [Gateway queue](/reference/gateway-queue#scheduled-work). The GitHub App currently has no push webhook, so this schedule is the push fallback. It fetches the default branch inside the Instance operation lock and skips a commit that already deployed. Pushes that arrive during a deployment are picked up on the next tick; intermediate commits coalesce to the newest fetched commit. Only one deployment runs per Instance, including manual requests.
-
-An unchanged tick creates no deployment history row.
+The [automatic deployment tick](#automatic-deployments) deploys a default each time its default branch has a new commit. Only one deployment runs per Instance, including manual requests.
 
 A deployment runs in the checkout itself, in two phases.
 
@@ -65,11 +63,11 @@ The exception is a directory that the old commit has and the new commit removes,
 When every required step passes, Orbit records the commit as the default's `seed_commit`. When a required step fails, the later steps do not run and the deployment fails.
 
 - The checkout stays at the new commit with the files the steps left. Orbit does not roll it back.
-- The seed keeps the last commit that deployed. So the next tick deploys again and reruns the steps.
+- The seed keeps the last commit that deployed. So the automatic deployment tick deploys the commit again after 10 minutes and reruns the steps.
 
 A failed best-effort step (`required: false`) gets a warning that names it and its exit status, and the deployment continues. The output and stored events keep that warning, even when the deployment succeeds or the output reached its storage limit.
 
-A step and Orbit's checkout take the lock that [setup and teardown steps](/reference/instance-setup) hold on the checkout: a `flock` on the checkout directory. While a setup or teardown step runs there, the deployment fails with `instance.lifecycle_busy` and the next tick retries. A step's processes do not inherit the lock, so a process that a step leaves running cannot hold up the next step. Steps must not change tracked files: the next deployment would refuse the checkout as dirty.
+A step and Orbit's checkout take the lock that [setup and teardown steps](/reference/instance-setup) hold on the checkout: a `flock` on the checkout directory. While a setup or teardown step runs there, the deployment fails with `instance.lifecycle_busy` and the tick retries after 10 minutes. A step's processes do not inherit the lock, so a process that a step leaves running cannot hold up the next step. Steps must not change tracked files: the next deployment would refuse the checkout as dirty.
 
 Explicit environment synchronization writes the checkout's `.env` files, so the application sees new values at once. A Route's web root serves files from the checkout, and a deployment does not change the Route.
 
@@ -209,6 +207,21 @@ Rollback and the release list report the same two repository codes.
 
 A rollback selects one retained release through `current`. The Gateway checks that the release is inside `releases/` and that the web root stays inside it. It then switches `current`, reconciles the dedicated FPM runtime, and resets its cache, as a deployment does. A changed resolved release restarts that service with the same brief serving interruption. A rollback fetches nothing, writes no environment, runs no step, and changes no database file.
 
+## Automatic deployments
+
+The Gateway runs `orbit:auto-deploy` every minute, a job on the [Gateway queue](/reference/gateway-queue#scheduled-work). The command `orbit:deploy-development-defaults` is its old name and still works. One tick serves every [development default](#development-defaults).
+
+For each Instance, the tick reads the branch head on the Gateway with `git ls-remote` and the Project's [read credential](/reference/instance-setup#credentialed-git). It keeps the GitHub App installation and its read token for up to 50 minutes, so a quiet minute costs one `ls-remote` and no GitHub API call.
+
+- When the Instance already runs the head, the tick starts nothing and writes nothing. For a development default, the deployed commit is its `seed_commit`.
+- Otherwise it starts an [`instance.deploy` operation](#the-deploy-operation) pinned to the head, with `triggered_by` `schedule`. The deployment checks out exactly that commit, after it proves that the branch contains it. Pushes that arrive meanwhile wait for the next tick, which reads the newest head, so intermediate commits coalesce.
+- While another operation holds the Instance, the tick skips it and reports `busy`. Its own operation that has not ended yet is `deploying`.
+- After a failed automatic deployment, the tick waits 10 minutes before it deploys the same commit again (`backing_off`). A new commit deploys at once.
+
+Operations need the [Gateway queue](/reference/gateway-queue#without-a-queue). Without it, the tick fails with `operation.queue_unavailable` for each Instance that has a commit to deploy, and changes nothing.
+
+A head the Gateway cannot read fails the tick for that Instance with `source.head_unavailable`. The other Instances still deploy.
+
 ## History
 
 The Gateway records one row for each deployment and each rollback. It writes the row when the run starts, which for a deployment is when a worker first starts its operation, and completes it when the run ends. It keeps the last 50 rows for each Instance.
@@ -248,7 +261,7 @@ These reasons explain the design. Check them before you propose a change.
 
 A default serves development, so it updates in place like any working checkout: fetch, check out, and run the steps. Releases, a `current` link, snapshots, and pruning are what make a production switch atomic and reversible. A development default needs neither, and that machinery cost disk space, broke when a release lost its Git link, and served a stale checkout to Processes and Schedules that ran outside the release. Release layouts stay where something is served to users: the Gateway's own releases and production homes.
 
-A failed step leaves the new commit checked out instead of rolling back. A rollback would need the old dependencies too, and the next tick reruns the steps, so a passing retry repairs the checkout. Refusing uncommitted tracked changes keeps someone's edit from being discarded; untracked files carry the dependencies, so the checkout keeps them.
+A failed step leaves the new commit checked out instead of rolling back. A rollback would need the old dependencies too, and the automatic deployment tick reruns the steps, so a passing retry repairs the checkout. Refusing uncommitted tracked changes keeps someone's edit from being discarded; untracked files carry the dependencies, so the checkout keeps them.
 
 Seeds name the checkout, not a frozen copy. Setup always runs locked installs after it copies, so a copy taken during a deployment only costs install time. Leases that kept frozen releases alive for other Instances are a rejected alternative: they grew without bound and blocked cleanup.
 

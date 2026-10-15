@@ -90,10 +90,7 @@ final readonly class DeployInstanceAction
         $request ??= DeploymentRequest::withoutOutput();
         $instance->refresh();
         if ($instance->placedOnAppDev()) {
-            $result = $this->developmentAction()->execute($instance, $request, steps: $steps);
-            assert($result instanceof DeploymentResult);
-
-            return $result;
+            return $this->developmentAction()->execute($instance, $request, $steps, $commit);
         }
 
         try {
