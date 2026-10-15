@@ -238,9 +238,10 @@ The web directory is `/home/orbit/web`. `ORBIT_GATEWAY_WEB` can name another dir
 1. It installs Caddy from the [pinned source](/reference/node-provisioning#package-sources).
 2. It grants Caddy access to the checkout's `public` directory and creates the web directory.
 3. It publishes the Gateway certificate with the public root certificate.
-4. It writes the Gateway PHP-FPM pool and runs `systemctl reload-or-restart php8.5-fpm`, which can restart the workers that serve the API.
-5. It publishes the site.
-6. It converges the runtime hibernator and the [agent view subscriber](/reference/node-agent#subscriber).
+4. It writes the Gateway PHP-FPM pool and installs the contributed [start hooks](/reference/extensions#plug-in-points).
+5. It runs each start hook, then `systemctl reload-or-restart php8.5-fpm`. That can restart the workers that serve the API.
+6. It publishes the site.
+7. It converges the runtime hibernator and the [agent view subscriber](/reference/node-agent#subscriber).
 
 It changes no role, VPN setting, or Node, and it never changes the releases or `current`. A [Gateway release](/reference/gateway-recovery#web-build) installs its own web build in `releases/` and switches `current` after the release verified.
 

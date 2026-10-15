@@ -119,7 +119,11 @@ function start_hook_steps(array $calls): array
     return $steps;
 }
 
-/** A sandbox with stand-ins for the commands that need root. Its `stat` reports the sandbox user's files as root's. */
+/**
+ * A sandbox with stand-ins for the commands that need root. Its `stat` reports the sandbox user's files as root's. Its
+ * `systemctl` logs each daemon-reload with the drop-ins and programs that exist then, fails one reload while the file
+ * `fail-reload` exists, and reports `NeedDaemonReload` from the file `need-reload`.
+ */
 function start_hook_sandbox(): string
 {
     $root = sys_get_temp_dir().'/orbit-start-hooks-'.Str::uuid();
@@ -127,7 +131,22 @@ function start_hook_sandbox(): string
     $files->makeDirectory($root.'/bin', 0700, true);
     $files->put($root.'/bin/install', "#!/bin/bash\nargs=()\nwhile (( $# )); do case \"\$1\" in -o|-g) shift 2;; *) args+=(\"\$1\"); shift;; esac; done\nexec /usr/bin/install \"\${args[@]}\"\n");
     $files->put($root.'/bin/chown', "#!/bin/sh\nexit 0\n");
-    $files->put($root.'/bin/systemctl', "#!/bin/sh\nprintf '%s\\n' \"\$*\" >> '{$root}/systemctl.log'\n[ \"\$1\" = daemon-reload ]\n");
+    $files->put($root.'/bin/systemctl', str_replace('ROOT', $root, <<<'SYSTEMCTL'
+        #!/bin/sh
+        case "$*" in
+        daemon-reload)
+            if [ -e ROOT/fail-reload ]; then
+                rm -f ROOT/fail-reload
+                exit 1
+            fi
+            printf 'daemon-reload drop-ins: %s programs: %s\n' "$(ls ROOT/etc/systemd/system/php8.5-fpm.service.d | tr '\n' ' ')" "$(ls ROOT/etc/orbit | tr '\n' ' ')" >> ROOT/systemctl.log ;;
+        'show --property=NeedDaemonReload --value php8.5-fpm.service')
+            cat ROOT/need-reload 2>/dev/null || echo no ;;
+        *)
+            exit 1 ;;
+        esac
+
+        SYSTEMCTL));
     $files->put($root.'/bin/stat', "#!/bin/bash\nset -o pipefail\n/usr/bin/stat \"\$@\" | sed \"s/^\$(id -un):\$(id -gn):/root:root:/\"\n");
     foreach (['install', 'chown', 'systemctl', 'stat'] as $binary) {
         chmod($root.'/bin/'.$binary, 0700);
@@ -173,9 +192,16 @@ function start_hook_files(string $root): array
     return $files;
 }
 
+function last_start_hook_reload(string $root): string
+{
+    $lines = array_filter(explode("\n", (string) @file_get_contents($root.'/systemctl.log')));
+
+    return (string) end($lines);
+}
+
 function start_hook_reloads(string $root): int
 {
-    return substr_count((string) @file_get_contents($root.'/systemctl.log'), "daemon-reload\n");
+    return substr_count((string) @file_get_contents($root.'/systemctl.log'), 'daemon-reload ');
 }
 
 /** @return array<string, string> the drop-in a hook gets, by its path below the sandbox */
@@ -226,12 +252,12 @@ describe('the start hook contract', function (): void {
             })
             ->and($runner->calls)->toBe([]);
     })->with([
-        'the core directory metrics' => [[start_hook('metrics', 'orbit-test.conf')], 'a program name that is not <name>-start'],
-        'the core directory agent' => [[start_hook('agent', 'orbit-test.conf')], 'a program name that is not <name>-start'],
-        'the core directory service-metrics' => [[start_hook('service-metrics', 'orbit-test.conf')], 'a program name that is not <name>-start'],
-        'a path outside the directory' => [[start_hook('../escape-start', 'orbit-test.conf')], 'a program name that is not <name>-start'],
-        'a drop-in systemd ignores' => [[start_hook('test-start', 'orbit-test.cfg')], 'a drop-in that is not orbit-<name>.conf'],
-        'a drop-in without the orbit prefix' => [[start_hook('test-start', 'test.conf')], 'a drop-in that is not orbit-<name>.conf'],
+        'the core directory metrics' => [[start_hook('metrics', 'orbit-test.conf')], 'a program name that does not end in -start'],
+        'the core directory agent' => [[start_hook('agent', 'orbit-test.conf')], 'a program name that does not end in -start'],
+        'the core directory service-metrics' => [[start_hook('service-metrics', 'orbit-test.conf')], 'a program name that does not end in -start'],
+        'a path outside the directory' => [[start_hook('../escape-start', 'orbit-test.conf')], 'a program name that does not end in -start'],
+        'a drop-in systemd ignores' => [[start_hook('test-start', 'orbit-test.cfg')], 'a drop-in that is not orbit-*.conf'],
+        'a drop-in without the orbit prefix' => [[start_hook('test-start', 'test.conf')], 'a drop-in that is not orbit-*.conf'],
         "core's VPN ordering drop-in" => [[start_hook('test-start', 'orbit-vpn.conf')], 'the drop-in [orbit-vpn.conf] that core writes'],
         'a description that adds a directive' => [[start_hook('test-start', 'orbit-test.conf', "gate\n[Service]\nExecStartPre=+/bin/false")], 'a description that is not one printable line'],
         'an empty description' => [[start_hook('test-start', 'orbit-test.conf', '')], 'a description that is not one printable line'],
@@ -247,9 +273,18 @@ describe('the start hook contract', function (): void {
         expect(fn () => start_hook_converger($runner, [start_hook('first-start', 'orbit-first.conf'), start_hook('second-start', 'orbit-second.conf')])->converge('/tmp/orbit-gateway-pool.conf'))
             ->toThrow(function (NodeProvisioningException $exception): void {
                 expect([$exception->step, $exception->errorCode, $exception->getMessage()])
-                    ->toBe(['gateway-fpm-start-hook-install', 'gateway.fpm_config_install_failed', 'Gateway FPM start hook [second-start] could not be installed.']);
+                    ->toBe(['gateway-fpm-start-hook-install', 'gateway.fpm_config_install_failed', 'Gateway FPM start hook [second-start] could not be installed or removed.']);
             })
             ->and(start_hook_steps($runner->calls))->toBe(['install first-start second-start']);
+    });
+
+    it('names no hook when a step for every hook failed', function (): void {
+        $runner = start_hook_runner(static fn (ProcessInvocation $call): ?CommandResult => ($call->arguments[4] ?? null) === NativeGatewayFpmConverger::START_HOOK_DIRECTORY
+            ? new CommandResult(1, '', "orbit-start-hook=first-start\norbit-start-hook=\nThe start hook manifest holds an invalid line.\n", 2, false)
+            : null);
+
+        expect(fn () => start_hook_converger($runner, [start_hook('first-start', 'orbit-first.conf')])->installStartHooks())
+            ->toThrow(NodeProvisioningException::class, 'The Gateway FPM start hooks could not be installed.');
     });
 
     it('names the hook that failed to run, and does not reload the pool', function (): void {
@@ -271,7 +306,8 @@ describe('the install program', function (): void {
         $root = start_hook_sandbox();
         try {
             $files = new Filesystem;
-            $files->makeDirectory($root.'/etc/orbit', 0755, true);
+            $files->makeDirectory($root.'/etc/orbit', 0711, true);
+            chmod($root.'/etc/orbit', 0711);
             $files->makeDirectory($root.'/etc/systemd/system/php8.5-fpm.service.d', 0755, true);
             $program = $root.'/etc/orbit/first-start';
             $unit = $root.'/etc/systemd/system/php8.5-fpm.service.d/orbit-first.conf';
@@ -289,6 +325,7 @@ describe('the install program', function (): void {
             clearstatcache();
             expect($exitCode)->toBe(0, $errors)
                 ->and([fileinode($program), filemtime($program), fileinode($unit), filemtime($unit)])->toBe($before)
+                ->and(fileperms($root.'/etc/orbit') & 0o777)->toBe(0o711)
                 ->and(start_hook_files($root))->toBe([
                     '/etc/orbit/first-start' => "#!/bin/bash\nexit 0\n",
                     '/etc/orbit/older-start' => "#!/bin/bash\nexit 0\n",
@@ -316,7 +353,9 @@ describe('the install program', function (): void {
                     '/etc/orbit/php-fpm-start-hooks' => "kept-start orbit-kept.conf\n",
                     ...start_hook_unit('kept-start', 'orbit-kept.conf'),
                 ])
-                ->and(start_hook_reloads($root) - $reloads)->toBe(1);
+                ->and(start_hook_reloads($root) - $reloads)->toBe(1)
+                // systemd reloads after the drop-in is gone and before the program goes.
+                ->and(last_start_hook_reload($root))->toBe('daemon-reload drop-ins: orbit-kept.conf  programs: kept-start older-start php-fpm-start-hooks ');
 
             [$exitCode, $errors] = run_start_hook_program($root, []);
 
@@ -371,6 +410,42 @@ describe('the install program', function (): void {
             expect($exitCode)->toBe(0, $errors)
                 ->and(array_map(static fn (string $path): array => [fileinode($path), filemtime($path)], $paths))->toBe($before)
                 ->and(start_hook_reloads($root))->toBe(1);
+        } finally {
+            new Filesystem()->deleteDirectory($root);
+        }
+    });
+
+    it('reloads on a retry after a failed reload, before it removes the program', function (): void {
+        $root = start_hook_sandbox();
+        try {
+            run_start_hook_program($root, [start_hook('older-start', 'orbit-older.conf'), start_hook('kept-start', 'orbit-kept.conf')]);
+            touch($root.'/fail-reload');
+
+            [$failed] = run_start_hook_program($root, [start_hook('kept-start', 'orbit-kept.conf')]);
+            $afterFailure = start_hook_files($root);
+            [$exitCode, $errors] = run_start_hook_program($root, [start_hook('kept-start', 'orbit-kept.conf')]);
+
+            expect($failed)->not->toBe(0)
+                ->and($afterFailure)->toHaveKey('/etc/orbit/older-start')
+                ->and($afterFailure)->not->toHaveKey('/etc/systemd/system/php8.5-fpm.service.d/orbit-older.conf')
+                ->and($exitCode)->toBe(0, $errors)
+                ->and(last_start_hook_reload($root))->toBe('daemon-reload drop-ins: orbit-kept.conf  programs: kept-start older-start php-fpm-start-hooks ')
+                ->and(start_hook_files($root))->not->toHaveKey('/etc/orbit/older-start');
+        } finally {
+            new Filesystem()->deleteDirectory($root);
+        }
+    });
+
+    it('reloads when systemd reports a changed unit, though this run wrote nothing', function (): void {
+        $root = start_hook_sandbox();
+        try {
+            $hooks = [start_hook('first-start', 'orbit-first.conf')];
+            run_start_hook_program($root, $hooks);
+            file_put_contents($root.'/need-reload', "yes\n");
+
+            [$exitCode, $errors] = run_start_hook_program($root, $hooks);
+
+            expect($exitCode)->toBe(0, $errors)->and(start_hook_reloads($root))->toBe(2);
         } finally {
             new Filesystem()->deleteDirectory($root);
         }

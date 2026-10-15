@@ -66,7 +66,8 @@ function documents_start_hook_install(?Closure $before = null): array
     $files->makeDirectory($root.'/bin', 0700, true);
     $files->put($root.'/bin/install', "#!/bin/bash\nargs=()\nwhile (( $# )); do case \"\$1\" in -o|-g) shift 2;; *) args+=(\"\$1\"); shift;; esac; done\nexec /usr/bin/install \"\${args[@]}\"\n");
     $files->put($root.'/bin/chown', "#!/bin/sh\nexit 0\n");
-    $files->put($root.'/bin/systemctl', "#!/bin/sh\nprintf '%s\\n' \"\$*\" >> '{$root}/systemctl.log'\n[ \"\$1\" = daemon-reload ]\n");
+    // Logs each daemon-reload. systemd reports no unit that changed on disk.
+    $files->put($root.'/bin/systemctl', "#!/bin/sh\ncase \"\$1\" in\ndaemon-reload) echo daemon-reload >> '{$root}/systemctl.log' ;;\nshow) echo no ;;\n*) exit 1 ;;\nesac\n");
     $files->put($root.'/bin/stat', "#!/bin/bash\nset -o pipefail\n/usr/bin/stat \"\$@\" | sed \"s/^\$(id -un):\$(id -gn):/root:root:/\"\n");
     foreach (['install', 'chown', 'systemctl', 'stat'] as $binary) {
         chmod($root.'/bin/'.$binary, 0700);
@@ -110,7 +111,9 @@ it('adopts the files the live Gateway has today without changing or deleting the
     $sandboxUnit = static fn (string $root): string => str_replace('/etc/orbit', $root.'/etc/orbit', DocumentsStartUnitBytes);
     [$root, $exitCode, $errors] = documents_start_hook_install(static function (string $root) use ($sandboxUnit): void {
         $files = new Filesystem;
-        $files->makeDirectory($root.'/etc/orbit', 0755, true);
+        // The live Gateway runs a Node Schedule, which keeps /etc/orbit at 0711.
+        $files->makeDirectory($root.'/etc/orbit', 0711, true);
+        chmod($root.'/etc/orbit', 0711);
         $files->makeDirectory($root.'/etc/systemd/system/php8.5-fpm.service.d', 0755, true);
         $files->put($root.'/etc/orbit/project-document-cleanup-start', DocumentsStartHookBytes);
         $files->put($root.'/etc/systemd/system/php8.5-fpm.service.d/orbit-document-cleanup.conf', $sandboxUnit($root));
@@ -125,6 +128,7 @@ it('adopts the files the live Gateway has today without changing or deleting the
         clearstatcache();
         expect($exitCode)->toBe(0, $errors)
             ->and([filemtime($hook), filemtime($unit)])->toBe([1_700_000_000, 1_700_000_000])
+            ->and(fileperms($root.'/etc/orbit') & 0o777)->toBe(0o711)
             ->and(file_get_contents($hook))->toBe(DocumentsStartHookBytes)
             ->and(file_get_contents($unit))->toBe($sandboxUnit($root))
             ->and(file_get_contents($root.'/etc/orbit/php-fpm-start-hooks'))->toBe("project-document-cleanup-start orbit-document-cleanup.conf\n")

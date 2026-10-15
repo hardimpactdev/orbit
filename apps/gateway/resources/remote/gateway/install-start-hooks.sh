@@ -2,12 +2,13 @@
 # shellcheck shell=bash
 # Timeout: 60
 # Input: <hook directory> <drop-in directory> <manifest>, then <name> <drop-in> <description> <program> for each hook.
-# Result: no data. Before it works on a hook, it prints `orbit-start-hook=<name>` on standard error, so the last such
-#   line of a failed run names the hook.
+# Result: no data. Before it works on a hook, it prints `orbit-start-hook=<name>` on standard error, and before a step
+#   for every hook it prints `orbit-start-hook=`. So the last such line of a failed run names the hook, or none.
 # Installs the Gateway PHP-FPM start hooks: each program in the hook directory, and a drop-in that runs it as root in
-# ExecStartPre. It removes the hooks that the manifest lists and the input no longer names, then records the input in
+# ExecStartPre. It removes the hooks that the manifest lists and the input does not name, then records the input in
 # the manifest. Without a manifest, it removes nothing. A file that already holds its bytes, owner, and mode stays as
-# it is, and systemd reloads once, only when a drop-in changed.
+# it is, and an existing directory keeps its mode. systemd reloads once, before a program is removed, when a drop-in
+# changed or went away, or when systemd reports that the unit changed on disk.
 
 # Byte-wise ranges in the patterns below, whatever locale sudo passes on.
 export LC_ALL=C
@@ -15,6 +16,8 @@ hooks=$1
 units=$2
 manifest=$3
 shift 3
+service=$(basename -- "$units")
+service=${service%.d}
 
 name_pattern='^[a-z0-9]+(-[a-z0-9]+)*-start$'
 drop_in_pattern='^orbit-[a-z0-9]+(-[a-z0-9]+)*\.conf$'
@@ -69,6 +72,27 @@ while [ "$#" -gt 0 ]; do
 done
 printf 'orbit-start-hook=\n' >&2
 
+# A missing directory is created; an existing one keeps its mode, such as the 0711 of a shared /etc/orbit.
+for directory in "$hooks" "$units"; do
+    if [ -L "$directory" ] || { [ -e "$directory" ] && [ ! -d "$directory" ]; }; then
+        printf '%s is not a directory.\n' "$directory" >&2
+        exit 1
+    fi
+done
+if [ ! -d "$hooks" ]; then
+    install -d -o root -g root -m 0711 -- "$hooks"
+fi
+if [ ! -d "$units" ]; then
+    install -d -o root -g root -m 0755 -- "$units"
+fi
+
+# One run at a time reads and changes the manifest. The lock is on the hook directory, so it leaves no file.
+exec 9< "$hooks"
+if ! flock -w 50 9; then
+    printf 'Another start hook install holds %s.\n' "$hooks" >&2
+    exit 1
+fi
+
 # The hooks this program installed before. A line that is not a valid name and drop-in stops the run unchanged.
 previous=()
 declare -A recorded=()
@@ -86,8 +110,6 @@ if [ -e "$manifest" ] || [ -L "$manifest" ]; then
         recorded["$name $drop_in"]=1
     done < "$manifest"
 fi
-
-install -d -o root -g root -m 0755 -- "$hooks" "$units"
 
 # Record every hook before it is written, so a run that stops halfway still lists each file it may have left.
 text=''
@@ -114,16 +136,24 @@ for i in "${!names[@]}"; do
     fi
 done
 
-# A drop-in that no hook names any more goes first. After the reload no unit runs a removed program.
+# A listed drop-in that no hook names goes first. It needs a reload even when an earlier run already removed it and
+# stopped before its reload, because the manifest lists it until a run ends. After the reload no unit runs a removed
+# program.
 for entry in "${previous[@]}"; do
     name=${entry% *}
     drop_in=${entry#* }
-    if [ -z "${wanted_drop_ins[$drop_in]+x}" ] && { [ -e "$units/$drop_in" ] || [ -L "$units/$drop_in" ]; }; then
-        printf 'orbit-start-hook=%s\n' "$name" >&2
-        rm -f -- "$units/$drop_in"
+    if [ -z "${wanted_drop_ins[$drop_in]+x}" ]; then
         units_changed=1
+        if [ -e "$units/$drop_in" ] || [ -L "$units/$drop_in" ]; then
+            printf 'orbit-start-hook=%s\n' "$name" >&2
+            rm -f -- "$units/$drop_in"
+        fi
     fi
 done
+printf 'orbit-start-hook=\n' >&2
+if [ "$units_changed" = 0 ] && [ "$(systemctl show --property=NeedDaemonReload --value "$service" 2>/dev/null || true)" = yes ]; then
+    units_changed=1
+fi
 if [ "$units_changed" = 1 ]; then
     systemctl daemon-reload
 fi
@@ -134,6 +164,7 @@ for entry in "${previous[@]}"; do
         rm -f -- "$hooks/$name"
     fi
 done
+printf 'orbit-start-hook=\n' >&2
 
 text=''
 for i in "${!names[@]}"; do

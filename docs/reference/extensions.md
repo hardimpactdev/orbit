@@ -73,7 +73,7 @@ Core resolves every tagged implementation and calls each one. When a tagged clas
 | `App\Domain\Projects\ProjectRemovalHook` | `project:destroy` | `lock()` and `remove()` |
 | `App\Domain\GatewayReleases\GatewayReleaseCleanup` | The [release handoff](/reference/gateway-recovery) | `configured()`, `status()`, `reconcile()`, and `resume()` |
 | `App\Domain\Activity\ActivityInputRedaction` | The [Activity](/cli/activity) recorder | `commands()` and `input()` |
-| `App\Domain\Gateway\GatewayServiceStartHook` | Gateway [web convergence](/reference/web-app) and the [release handoff](/reference/gateway-recovery#runtime-handoff) | `name()`, `dropIn()`, `description()`, and `renderHook()` |
+| `App\Domain\Gateway\GatewayServiceStartHook` | Gateway [web convergence](/reference/web-app#web-directory) and the [release handoff](/reference/gateway-recovery#runtime-handoff) | `name()`, `dropIn()`, `description()`, and `renderHook()` |
 | `App\Domain\Gateway\ExactRequestBody` | The request body size check | `matches()` |
 
 `ProjectRemovalHook::lock()` runs first in the removal transaction, before the guards, so the extension's writers wait for the removal. `remove()` runs after every guard passed and before the Project row is deleted. It may refuse with a `ResourceOperationException`, which rolls back the whole removal.
@@ -87,11 +87,13 @@ After the release handoff restarts the scheduler, it waits for each configured `
 Core checks every hook before it changes anything:
 
 - A name ends in `-start`. No core path in `/etc/orbit` does, so a hook cannot take a core file or directory.
-- A drop-in is `orbit-<name>.conf`, which systemd reads, and not `orbit-vpn.conf`, which core writes.
+- A drop-in is `orbit-*.conf`, which systemd reads, and not `orbit-vpn.conf`, which core writes. Its name need not share the program's stem.
 - A description is one printable line, so it cannot add a directive to the drop-in.
 - No two hooks share a name or a drop-in.
 
-The program replaces a file with `mv -fT`, so it never moves a hook into a directory that holds its name. It records the hooks it installed in `/etc/orbit/php-fpm-start-hooks`. Each run removes a listed hook that no extension contributes: its drop-in first, then one `daemon-reload`, then its program. Core removes only the files its manifest lists. A Gateway without a manifest keeps every file it has, and the first run records the current hooks. So the next convergence after an extension is deleted removes its hooks.
+The program replaces a file with `mv -fT`, so it never moves a hook into a directory that holds its name. It creates a missing directory and leaves the mode of an existing one, such as the 0711 of a shared `/etc/orbit`. It holds a lock on `/etc/orbit` while it reads and writes, so two convergences never interleave.
+
+The program records the hooks it installed in `/etc/orbit/php-fpm-start-hooks`. Each run removes a listed hook that no extension contributes: its drop-in first, then one `daemon-reload`, then its program. A hook stays listed until a run finishes, so a retry after a failed reload still reloads before it removes the program. The program also reloads when systemd reports that the unit changed on disk. Core removes only the files its manifest lists. A Gateway without a manifest keeps every file it has, and the first run records the current hooks. So the next convergence after an extension is deleted removes its hooks.
 
 `ExactRequestBody::matches()` receives the request path, never the body. For a matching path, the Gateway skips PHP's `post_max_size` check and does not trim strings or turn empty strings into null. The body stays exact and is not parsed before authorization, so the route must bound it after authorization. Contribute a matcher only for a route that bounds its body itself after authorization. Core keeps the two MCP envelopes exact itself. Documents matches its document routes, which accept up to 15 MiB of JSON. The Gateway asks the matchers once per request.
 

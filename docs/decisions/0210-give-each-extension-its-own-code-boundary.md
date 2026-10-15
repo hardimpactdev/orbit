@@ -73,7 +73,7 @@ Two more points move the last Documents footprints out of core:
 
 | Interface | Core caller | What an extension does |
 | --- | --- | --- |
-| `App\Domain\Gateway\GatewayServiceStartHook` | `NativeGatewayFpmConverger`, bound once for web convergence and the release handoff | Names a `<name>-start` program, its `orbit-<name>.conf` drop-in, and a one-line description, and renders the program. Core runs the program at each PHP-FPM start and before each pool reload. |
+| `App\Domain\Gateway\GatewayServiceStartHook` | `NativeGatewayFpmConverger`, bound once for web convergence and the release handoff | Names a program that ends in `-start`, an `orbit-*.conf` drop-in, and a one-line description, and renders the program. Core runs the program at each PHP-FPM start and before each pool reload. |
 | `App\Domain\Gateway\ExactRequestBody` | `ValidateRequestBodySize` | Matches request paths whose body stays exact. Core skips PHP's `post_max_size` check, string trimming, and empty-string conversion for them. The route bounds the body after authorization. |
 
 Core checks each start hook before it changes anything, then installs the program and its drop-in. Core keeps the MCP envelopes exact itself. Documents contributes its startup hook and its document routes. The hook and its drop-in keep their paths and bytes. Core records the hooks it installed in a manifest and removes only what the manifest lists. The first run on a Gateway without a manifest adopts the Documents files and removes nothing.

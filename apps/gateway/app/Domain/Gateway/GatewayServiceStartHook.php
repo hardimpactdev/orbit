@@ -14,10 +14,10 @@ namespace App\Domain\Gateway;
  */
 interface GatewayServiceStartHook
 {
-    /** The file name of the program in /etc/orbit, `<name>-start`. Core uses no such name. */
+    /** The file name of the program in /etc/orbit. It ends in `-start`, which no core path there does. */
     public function name(): string;
 
-    /** The file name of the `php8.5-fpm` drop-in that runs the program, `orbit-<name>.conf`. */
+    /** The file name of the `php8.5-fpm` drop-in that runs the program, `orbit-*.conf`. It need not share the program's stem. */
     public function dropIn(): string;
 
     /** One printable line that says what the program does, for the comment at the top of the drop-in. */

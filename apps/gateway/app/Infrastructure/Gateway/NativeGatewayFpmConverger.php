@@ -176,13 +176,14 @@ final readonly class NativeGatewayFpmConverger
         ));
 
         if (! $result->succeeded()) {
-            preg_match_all('/^orbit-start-hook=(\S+)$/m', $result->stderr, $markers);
+            // The program's last marker names the hook it was working on. An empty one means a step for every hook.
+            preg_match_all('/^orbit-start-hook=(\S*)$/m', $result->stderr, $markers);
             $hook = end($markers[1]);
 
             throw new NodeProvisioningException(
                 step: 'gateway-fpm-start-hook-install',
                 errorCode: 'gateway.fpm_config_install_failed',
-                message: is_string($hook) ? "Gateway FPM start hook [{$hook}] could not be installed." : 'The Gateway FPM start hooks could not be installed.',
+                message: is_string($hook) && $hook !== '' ? "Gateway FPM start hook [{$hook}] could not be installed or removed." : 'The Gateway FPM start hooks could not be installed.',
                 result: $result,
             );
         }
@@ -190,7 +191,7 @@ final readonly class NativeGatewayFpmConverger
 
     /**
      * Each hook names a program in /etc/orbit that ends in `-start`, so it cannot take a core path, and an `orbit-*.conf`
-     * drop-in that systemd reads. The description is one printable line, so it cannot add a directive to the drop-in.
+     * drop-in that systemd reads. The two names are independent. The description is one printable line, so it cannot add a directive to the drop-in.
      * No two hooks share a program or a drop-in.
      *
      * @throws NodeProvisioningException
@@ -203,8 +204,8 @@ final readonly class NativeGatewayFpmConverger
             $name = $hook->name();
             $dropIn = $hook->dropIn();
             $problem = match (true) {
-                preg_match(self::START_HOOK_NAME, $name) !== 1 => 'a program name that is not <name>-start',
-                preg_match(self::START_HOOK_DROP_IN, $dropIn) !== 1 => 'a drop-in that is not orbit-<name>.conf',
+                preg_match(self::START_HOOK_NAME, $name) !== 1 => 'a program name that does not end in -start',
+                preg_match(self::START_HOOK_DROP_IN, $dropIn) !== 1 => 'a drop-in that is not orbit-*.conf',
                 $dropIn === SystemdVpnOrderingDropIn::FILE_NAME => "the drop-in [{$dropIn}] that core writes",
                 preg_match(self::START_HOOK_DESCRIPTION, $hook->description()) !== 1 => 'a description that is not one printable line',
                 isset($names[$name]) => "the program name [{$name}] of another hook",
