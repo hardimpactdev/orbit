@@ -30,7 +30,6 @@ use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
-use App\Infrastructure\TaskVms\TaskVmImagePeers;
 use App\Models\DatabaseServer;
 use App\Models\Node;
 use App\Models\Process;
@@ -103,7 +102,6 @@ final readonly class RemoveNodeAction
         ($this->routes ?? app(RouteRemovalGuard::class))->assertNodeRemovable($node);
         $this->guardDatabaseServers($node);
         $this->guardProtected($node, $caller);
-        $this->forgetTaskVmImageKey($node);
         // A task VM Node never hosts a Metrics exporter, so its removal changes nothing in Metrics. Its role removal
         // holds the fleet Metrics reconcile back, and the Metrics retire below is skipped, as its enrollment skips it.
         $taskVm = TaskVm::query()->where('node_id', $node->id)->exists();
@@ -402,7 +400,7 @@ final readonly class RemoveNodeAction
         if ($this->isTaskVmHost($node)) {
             throw $this->conflict(
                 'node.task_vm_host_configured',
-                "Node [{$node->name}] is still a task VM host. Clear its settings.task_vms and run task-vms:retire-host first.",
+                "Node [{$node->name}] is still a task VM host. Drain its task VMs and clear its settings.task_vms first.",
             );
         }
 
@@ -551,38 +549,7 @@ final readonly class RemoveNodeAction
         return new NodeRemovalException($step, $errorCode, $message, $result, $previous);
     }
 
-    /**
-     * Removes the Node's base image transfer key from every task VM host, also when `task-vms:retire-host` did not
-     * run. It changes only the hosts, so it runs before the Node changes, also offline. An invalid task VM config has
-     * no hosts to clean, and the Node of a task VM was never a host.
-     */
-    private function forgetTaskVmImageKey(Node $node): void
-    {
-        if (TaskVm::query()->where('node_id', $node->id)->exists()) {
-            return;
-        }
-        try {
-            $hosts = resolve(TaskVmSettings::class)->hosts;
-        } catch (TaskVmException) {
-            return;
-        }
-        if ($hosts === []) {
-            return;
-        }
-
-        try {
-            resolve(TaskVmImagePeers::class)->forget($node->id);
-        } catch (Throwable $exception) {
-            throw $this->failure(
-                step: 'task-vm-image-keys',
-                errorCode: 'node.task_vm_image_key_cleanup_failed',
-                message: "Could not remove the base image transfer key of node [{$node->name}] from the task VM hosts.",
-                previous: $exception,
-            );
-        }
-    }
-
-    /** Peer hosts accept a configured task VM host's key; `task-vms:retire-host` removes it first. */
+    /** Configured task VM hosts must drain before removal. */
     private function isTaskVmHost(Node $node): bool
     {
         try {

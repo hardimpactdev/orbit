@@ -19,7 +19,6 @@ use App\Infrastructure\Gateway\FpmPoolConnections;
 use App\Infrastructure\Gateway\FpmScriptRequest;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
 use App\Infrastructure\Gateway\GatewayHorizon;
-use App\Infrastructure\Gateway\GatewayQueueMove;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
 use App\Models\Node;
 use App\Models\Process;
@@ -38,8 +37,7 @@ use Throwable;
  * 4. Laravel Horizon moves to the new release ({@see GatewayHorizon}): `horizon:terminate` lets it finish its running
  *    jobs, and its Process starts it again.
  * 5. The scheduler finishes its running commands and starts on the new release ({@see GatewaySchedulerHandoff}).
- * 6. Document cleanup is reconciled and resumed ({@see GatewayCleanupHandoff}), and after the drain the jobs of the
- *    old database queues move to the Gateway queue ({@see GatewayQueueMove}).
+ * 6. Document cleanup is reconciled and resumed ({@see GatewayCleanupHandoff}).
  * 7. The Gateway Node's own `orbit-agent` moves to the release's pin ({@see GatewayNodeAgentUpdate}), which the
  *    fleet rollout never does for the Gateway's machine.
  *
@@ -89,7 +87,6 @@ final readonly class GatewayRuntimeHandoff
         private ?FleetConvergeUnits $fleet = null,
         private ?GatewayNodeAgentUpdate $agent = null,
         private ?GatewayHorizon $horizon = null,
-        private ?GatewayQueueMove $queueMove = null,
         private ?Closure $recipeImages = null,
     ) {
         $this->readLivePool = $readLivePool ?? static fn (string $path): string|false => @file_get_contents($path);
@@ -156,8 +153,6 @@ final readonly class GatewayRuntimeHandoff
         $generation = $this->cleanup->generation();
         $scheduler = $this->scheduler->handoff($gateway);
         $cleanup = $this->cleanup->resume($generation, true);
-        // After the drain, no old scheduler worker takes a database job any more.
-        $moved = $this->step('queue_move', 'gateway.release_units_failed', fn (): int => $this->queueMove?->move() ?? 0);
         $agent = $this->gatewayAgent($gateway);
         try {
             ($this->recipeImages ?? static function (): void {})();
@@ -171,7 +166,6 @@ final readonly class GatewayRuntimeHandoff
             'scheduler_unit' => $scheduler['unit'],
             'scheduler_drain' => $scheduler['drain'],
             'processes_restarted' => $scheduler['restarted'],
-            'queue_moved' => $moved,
             'cleanup' => $cleanup['outcome'],
             'cleanup_error_code' => $cleanup['error_code'] ?? null,
             'cleanup_paused' => $cleanup['paused'],

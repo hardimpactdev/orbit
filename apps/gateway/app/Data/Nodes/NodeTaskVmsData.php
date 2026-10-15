@@ -22,7 +22,6 @@ final class NodeTaskVmsData extends Data
         public int $cpus = 2,
         public string $memory = '4GiB',
         public string $disk = '20GiB',
-        public int $warm_vms = 0,
         public array $operator_owned = [],
     ) {}
 
@@ -36,7 +35,7 @@ final class NodeTaskVmsData extends Data
             cidr: $host->cidr, max_vms: $host->maxVms, project: $host->project,
             network: $host->network, pool: $host->pool, image_alias: $host->imageAlias,
             zfs_dataset: $host->zfsDataset, cpus: $host->cpus, memory: $host->memory,
-            disk: $host->disk, warm_vms: $host->warmVms, operator_owned: $host->operatorOwned,
+            disk: $host->disk, operator_owned: $host->operatorOwned,
         );
     }
 }

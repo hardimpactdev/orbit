@@ -20,8 +20,7 @@ use Illuminate\Support\Carbon;
 use Throwable;
 
 /**
- * One disposable VM that serves one task group as a normal `app-dev` Node. A pool row has no group: it is
- * a warm VM of its host, or one that Orbit is creating, failing, or destroying for the pool. An `incus` row runs on
+ * One disposable VM that serves one task group as a normal `app-dev` Node. An `incus` row runs on
  * its host Node. An `upcloud` row has no host Node: `provider_id` is its server's UUID, and `ssh_host_key` the host
  * key that the Gateway generated for it.
  *
@@ -130,13 +129,6 @@ final class TaskVm extends Model
     {
         $query->where('state', '!=', TaskVmState::Destroyed)->where('provider', $provider)
             ->when(! $provider->countsFailedVms(), static fn (Builder $query) => $query->where('state', '!=', TaskVmState::Failed));
-    }
-
-    /** @param Builder<self> $query */
-    #[Scope]
-    protected function pool(Builder $query): void
-    {
-        $query->whereNull('group_id');
     }
 
     /**

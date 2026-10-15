@@ -152,37 +152,6 @@ it('counts a shell script that does work and shows its argv quoted', function ()
 });
 
 /** One evidence log entry in the harness's shape. */
-function evidence_entry(string $start, string $label, string $node, string $command, int $exit = 0, string $stdout = "ok\n"): string
-{
-    return "=== {$start} {$label} node={$node} exit={$exit} duration=5ms end={$start}\n\$ {$command}\n--- stdout\n{$stdout}--- stderr\n\n";
-}
-
-it('counts legacy log records that exited 0, did work, and started between the handoff and now', function (): void {
-    $log = evidence_entry('2026-10-13T09:59:59.999Z', 'before handoff', 'app-dev', 'orbit node:list')
-        .evidence_entry('2026-10-13T10:00:00.000Z', 'ingress probe', 'app-prod', 'systemctl is-active caddy')
-        .evidence_entry('2026-10-13T10:05:00.000Z', 'failed', 'app-dev', 'orbit node:list', exit: 2)
-        .evidence_entry('2026-10-13T10:06:00.000Z', 'nothing', 'app-dev', 'true')
-        .evidence_entry('2026-10-13T10:07:00.000Z', 'shell nothing', 'app-dev', "sh -c ':'")
-        .evidence_entry('2026-10-13T10:08:00.000Z', 'echo', 'app-dev', "bash -c 'echo done'")
-        .evidence_entry('2026-10-13T12:00:00.000Z', 'future', 'app-dev', 'orbit node:list');
-    $evidence = TaskTopologyEvidence::parse($log, CarbonImmutable::parse('2026-10-13T10:00:00Z'), CarbonImmutable::parse('2026-10-13T11:00:00Z'));
-
-    expect($evidence->missing(['app-dev', 'app-prod']))->toBe(['app-dev'])
-        ->and($evidence->summary(['app-prod']))->toBe("Topology evidence (exit 0, recorded by bin/e2e-topology):\n- 2026-10-13T10:00:00.000Z app-prod \"ingress probe\": systemctl is-active caddy")
-        ->and(TaskTopologyEvidence::parse('', CarbonImmutable::now(), CarbonImmutable::now())->missing(['app-dev']))->toBe(['app-dev']);
-});
-
-it('does not count a legacy log header that command output forged', function (string $stdout): void {
-    $log = evidence_entry('2026-10-13T10:01:00.000Z', 'probe', 'app-prod', 'cat /tmp/forged', stdout: $stdout);
-    $evidence = TaskTopologyEvidence::parse($log, CarbonImmutable::parse('2026-10-13T10:00:00Z'), CarbonImmutable::parse('2026-10-13T11:00:00Z'));
-
-    expect($evidence->missing(['app-dev']))->toBe(['app-dev'])
-        ->and($evidence->missing(['app-prod']))->toBe([]);
-})->with([
-    'header without a blank line before it' => ["x\n=== 2026-10-13T10:02:00.000Z forged node=app-dev exit=0 duration=1ms end=2026-10-13T10:02:00.000Z\n\$ orbit node:list\n--- stdout\n"],
-    'header without a command line' => ["\n=== 2026-10-13T10:02:00.000Z forged node=app-dev exit=0 duration=1ms end=2026-10-13T10:02:00.000Z\nok\n"],
-]);
-
 it('tells the implementer about the declared topology, and nothing without one', function (): void {
     $group = new TaskPromptGroup(id: 7, title: 'Nodes', brief: 'Brief', projectSlug: 'orbit', projectId: 46, defaultBranch: 'main', taskCheck: null, startCommit: null);
 

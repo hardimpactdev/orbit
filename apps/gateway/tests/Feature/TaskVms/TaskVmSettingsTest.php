@@ -288,20 +288,6 @@ describe('enabled', function (): void {
 });
 
 describe('hosts', function (): void {
-    it('defaults warm_vms to 0 and accepts it up to max_vms', function (): void {
-        enable_task_vms();
-        expect(TaskVmSettings::fromConfig()->hosts[0]->warmVms)->toBe(0);
-
-        enable_task_vms(task_vm_hosts(['warm_vms' => 4]));
-        expect(TaskVmSettings::fromConfig()->hosts[0]->warmVms)->toBe(4);
-    });
-
-    it('refuses warm_vms outside 0 to max_vms', function (mixed $value): void {
-        enable_task_vms(task_vm_hosts(['warm_vms' => $value]));
-
-        expect_invalid_task_vm_config("incus.hosts.0.warm_vms must be an integer from 0 to the host's max_vms.");
-    })->with(['above max_vms' => 5, 'negative' => -1, 'a string' => '1']);
-
     it('defaults operator_owned to none and matches a name or a whole project', function (): void {
         enable_task_vms();
         expect(TaskVmSettings::fromConfig()->hosts[0]->operatorOwned)->toBe([]);
@@ -346,20 +332,11 @@ describe('scheduler reader', function (): void {
     it('reads the switches leniently, also from an invalid config', function (): void {
         task_vms_off([
             'enabled' => true, 'dev_cluster_id' => 'not an id',
-            'incus' => ['hosts' => [['node_id' => 7, 'warm_vms' => 1]]],
+            'incus' => ['hosts' => [['node_id' => 7]]],
             'upcloud' => ['token_file' => '/home/orbit/upcloud.yaml'],
         ]);
 
-        expect(TaskVmSettings::scheduled())->toEqual(new TaskVmSchedule(enabled: true, upcloudConfigured: true, warmVmsWanted: true));
+        expect(TaskVmSettings::scheduled())->toEqual(new TaskVmSchedule(enabled: true, upcloudConfigured: true));
     });
 
-    it('wants no warm VMs while task VMs are off or no host sets warm_vms', function (array $values): void {
-        task_vms_off($values);
-
-        expect(TaskVmSettings::scheduled()->warmVmsWanted)->toBeFalse();
-    })->with([
-        'off' => [['incus' => ['hosts' => [['node_id' => 7, 'warm_vms' => 1]]]]],
-        'no warm_vms' => [['enabled' => true, 'incus' => ['hosts' => [['node_id' => 7]]]]],
-        'no host setting' => [['enabled' => true, 'incus' => ['hosts' => []]]],
-    ]);
 });

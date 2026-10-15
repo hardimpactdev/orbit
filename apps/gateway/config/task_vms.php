@@ -40,7 +40,6 @@ return [
             'pool' => 'orbit-tasks',
             'image_alias' => 'orbit-task-base',
             'zfs_dataset' => null,
-            'warm_vms' => 0,
             // Incus instances and custom volumes the operator owns, as <project>/<name> or <project>/*: the stray report skips them.
             'operator_owned' => [],
         ],

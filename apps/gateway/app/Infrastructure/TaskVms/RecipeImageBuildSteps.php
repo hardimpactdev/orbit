@@ -42,6 +42,11 @@ final readonly class RecipeImageBuildSteps
         if ($desired->identity !== $build->recipe_identity || (int) $desired->generation !== $build->recipe_generation) {
             throw new TaskVmException('task_vm.image_recipe_superseded', 'A newer recipe is desired. This build cannot continue.');
         }
+        if ($step === TaskVmImageBuildStep::Prune) {
+            app(RecipeImagePruning::class)->prune($build);
+
+            return true;
+        }
         [$profile, $phase] = explode(':', (string) $program, 2);
         $recipe = new RecipeLoader()->decode((string) $build->recipe_json);
         if ($recipe->identity !== $build->recipe_identity || ! in_array($profile, ['base', ...RecipeImageBuilds::Roles], true)) {
@@ -166,7 +171,7 @@ final readonly class RecipeImageBuildSteps
         if ($desired->identity !== $build->recipe_identity || (int) $desired->generation !== $build->recipe_generation) {
             return 'A newer recipe is desired. Start the current recipe instead.';
         }
-        if ($build->current_step === TaskVmImageBuildStep::Promote) {
+        if (in_array($build->current_step, [TaskVmImageBuildStep::Promote, TaskVmImageBuildStep::Prune], true)) {
             return null;
         }
         [$profile, $phase] = explode(':', (string) $build->current_program, 2) + ['', ''];

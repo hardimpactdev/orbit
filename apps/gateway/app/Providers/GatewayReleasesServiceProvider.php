@@ -29,7 +29,6 @@ use App\Infrastructure\Files\ProtectedFileWriter;
 use App\Infrastructure\Gateway\GatewayApplicationPath;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
 use App\Infrastructure\Gateway\GatewayHorizon;
-use App\Infrastructure\Gateway\GatewayQueueMove;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
 use App\Infrastructure\GatewayReleases\ActionGatewayDocumentCleanup;
@@ -136,7 +135,6 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 fleet: $app->make(FleetConvergeUnits::class),
                 agent: new GatewayNodeAgentUpdate($app->make(ProcessRunner::class)),
                 horizon: $app->make(GatewayHorizon::class),
-                queueMove: new GatewayQueueMove,
                 recipeImages: static function () use ($app): void {
                     $app->make(RecipeImageBuilds::class)->reconcile();
                 },

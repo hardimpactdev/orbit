@@ -6,18 +6,20 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
+use App\Domain\TaskVms\TaskVmImageBuildStep;
+use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\TaskVms\IncusTaskVmBaseImage;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
-use App\Infrastructure\TaskVms\TaskVmHostAudit;
+use App\Infrastructure\TaskVms\RecipeImageBuildSteps;
+use App\Infrastructure\TaskVms\RecipeImagePruning;
 use App\Infrastructure\TaskVms\TaskVmImageBuildChain;
-use App\Infrastructure\TaskVms\TaskVmImageBuildSteps;
 use App\Jobs\TaskVms\ImageBuild\BuildRecipeImageStep;
-use App\Jobs\TaskVms\ImageBuild\CleanupImageBuild;
 use App\Jobs\TaskVms\ImageBuild\PromoteImage;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
 use App\Models\Node;
@@ -98,7 +100,7 @@ function runRecipeImageBuild(TaskVmImageBuild $build, bool $promote = true): voi
         if (! $promote && $job instanceof PromoteImage) {
             break;
         }
-        $job->handle(app(TaskVmImageBuildSteps::class));
+        $job->handle(app(RecipeImageBuildSteps::class));
         $build->refresh();
     }
 }
@@ -193,7 +195,7 @@ describe('recipe image triggers', function (): void {
         foreach ($chain->jobs($build->refresh()) as $job) {
             $remaining = $remaining || $job->program() === 'app-prod:packages';
             if ($remaining) {
-                $job->handle(app(TaskVmImageBuildSteps::class));
+                $job->handle(app(RecipeImageBuildSteps::class));
             }
         }
         expect($build->refresh()->state)->toBe(TaskVmImageBuildState::Succeeded);
@@ -207,7 +209,7 @@ describe('recipe image triggers', function (): void {
         runRecipeImageBuild($old, promote: false);
         recipeImageCurrent(recipeImageDocument('20261015T000000Z'));
         expect(app(RecipeImageBuilds::class)->reconcile())->toBe([]);
-        expect(fn () => new PromoteImage($old->id)->handle(app(TaskVmImageBuildSteps::class)))
+        expect(fn () => new PromoteImage($old->id)->handle(app(RecipeImageBuildSteps::class)))
             ->toThrow(TaskVmException::class, 'newer recipe');
         expect($incus->images[IMAGE_OLD])->toContain(TaskVmHost::BaseImage);
         $new = app(RecipeImageBuilds::class)->reconcile()[0];
@@ -248,7 +250,7 @@ it('retries a discarded failure without replacing already published recipe image
     $incus->fail = 'recipe app-prod:packages';
     expect(fn () => runRecipeImageBuild($build))->toThrow(TaskVmException::class);
     $base = $build->refresh()->image_fingerprint;
-    app()->call([new CleanupImageBuild($build->id), 'handle']);
+    app(IncusTaskVmBaseImage::class)->sweep(app(TaskVmSettings::class)->host($host->id), $host, discardFailed: true);
     $incus->fail = null;
     $this->artisan('task-vms:build-recipe', ['--retry' => true])->assertSuccessful();
     runRecipeImageBuild($build->refresh());
@@ -268,8 +270,9 @@ it('reactivates verified images when the recipe is explicitly reverted without r
     recipeImageCurrent(recipeImageDocument());
     $reactivated = app(RecipeImageBuilds::class)->reconcile()[0];
     $jobs = app(TaskVmImageBuildChain::class)->jobs($reactivated);
-    $promote = $jobs[array_key_last($jobs)];
-    $promote->handle(app(TaskVmImageBuildSteps::class));
+    foreach (array_slice($jobs, -2) as $job) {
+        $job->handle(app(RecipeImageBuildSteps::class));
+    }
     expect($reactivated->refresh()->state)->toBe(TaskVmImageBuildState::Succeeded);
     expect($incus->images[$first->image_fingerprint])->toContain(TaskVmHost::BaseImage);
     expect(TaskVmImageBuild::query()->count())->toBe(2);
@@ -282,7 +285,7 @@ it('lets the first recipe worker acknowledge a submission before the dispatcher 
     $build = app(RecipeImageBuilds::class)->reconcile()[0];
     $build->update(['submission_pending_at' => now()->toISOString()]);
     $job = app(TaskVmImageBuildChain::class)->jobs($build)[0];
-    $job->handle(app(TaskVmImageBuildSteps::class));
+    $job->handle(app(RecipeImageBuildSteps::class));
     expect($build->refresh()->current_program)->toBe('base:reset');
     expect($build->submission_pending_at)->toBeNull();
 });
@@ -298,32 +301,6 @@ it('automatically retries a missed queue submission without retrying a failed im
     app(RecipeImageBuilds::class)->reconcile();
     expect($build->refresh()->state)->toBe(TaskVmImageBuildState::Running);
     expect($build->attempt)->toBe(2);
-});
-
-it('keeps delayed cleanup of a failed attempt away from the restarted attempt resources', function (): void {
-    $host = recipeImageHost();
-    $incus = recipeImageTransport($host);
-    recipeImageCurrent(recipeImageDocument());
-    $build = app(RecipeImageBuilds::class)->reconcile()[0];
-    $incus->fail = 'recipe app-prod:packages';
-    expect(fn () => runRecipeImageBuild($build))->toThrow(TaskVmException::class);
-    $oldName = $build->refresh()->builder_vm_name;
-    $incus->fail = null;
-    $incus->afterExecute = function ($command) use ($build, $incus, $oldName): void {
-        if (! in_array('delete', $command->arguments, true) || ! in_array($oldName, $command->arguments, true)) {
-            return;
-        }
-        $incus->afterExecute = null;
-        app(RecipeImageBuilds::class)->reconcile(retry: true);
-        $build->refresh();
-        // Interleave the new worker after cleanup captured the failed attempt's resource names.
-        $incus->instances[$build->builder_vm_name] = IMAGE_STOCK;
-        $incus->instances[$build->builder_vm_name.'-smoke'] = IMAGE_NEW;
-    };
-    app()->call([new CleanupImageBuild($build->id), 'handle']);
-    expect($build->builder_vm_name)->not->toBe($oldName);
-    expect($incus->instances)->toHaveKeys([$build->builder_vm_name, $build->builder_vm_name.'-smoke']);
-    expect(TaskVmHostAudit::claimBuildCleanup($host, $build->builder_vm_name))->toBeFalse();
 });
 
 it('records a bounded redacted output tail and a real builder log for failed recipe phases', function (string $phase): void {
@@ -349,3 +326,114 @@ it('records a bounded redacted output tail and a real builder log for failed rec
         expect($log->input)->toContain('[REDACTED]')->not->toContain('do-not-store-this', 'do-not-store-that');
     }
 })->with(['packages', 'javascript', 'rust', 'agent', 'verify']);
+
+it('prunes every profile of older identities while keeping the previous recipe and images in use', function (): void {
+    $host = recipeImageHost();
+    $incus = recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    $old = app(RecipeImageBuilds::class)->reconcile()[0];
+    runRecipeImageBuild($old);
+    $used = $old->images['app-dev']['fingerprint'];
+    $shared = $old->images['operator']['fingerprint'];
+    $incus->instances['tvm-running-task'] = $used;
+    $incus->images[$shared][] = 'operator-kept';
+    recipeImageCurrent(recipeImageDocument('20261015T000000Z'));
+    $previous = app(RecipeImageBuilds::class)->reconcile()[0];
+    runRecipeImageBuild($previous);
+    recipeImageCurrent(recipeImageDocument('20261016T000000Z'));
+    $current = app(RecipeImageBuilds::class)->reconcile()[0];
+
+    runRecipeImageBuild($current);
+
+    expect($current->state)->toBe(TaskVmImageBuildState::Succeeded);
+    foreach ([$current, $previous] as $kept) {
+        foreach ($kept->images as $image) {
+            expect($incus->images)->toHaveKey($image['fingerprint']);
+        }
+    }
+    expect($incus->images)->toHaveKeys([$used, $shared, IMAGE_STOCK]);
+    foreach (['base', 'gateway', 'app-prod'] as $profile) {
+        expect($incus->images)->not->toHaveKey($old->images[$profile]['fingerprint']);
+    }
+    unset($incus->instances['tvm-running-task']);
+    app(RecipeImagePruning::class)->prune($current);
+    expect($incus->images)->not->toHaveKey($used);
+});
+
+it('resumes a failed final prune without rebuilding or moving the base alias again', function (): void {
+    $host = recipeImageHost();
+    $incus = recipeImageTransport($host);
+    foreach (['20261014T000000Z', '20261015T000000Z'] as $snapshot) {
+        recipeImageCurrent(recipeImageDocument($snapshot));
+        runRecipeImageBuild(app(RecipeImageBuilds::class)->reconcile()[0]);
+    }
+    recipeImageCurrent(recipeImageDocument('20261016T000000Z'));
+    $current = app(RecipeImageBuilds::class)->reconcile()[0];
+    $incus->fail = 'image delete';
+
+    expect(fn () => runRecipeImageBuild($current))->toThrow(TaskVmException::class);
+    expect($current->refresh()->current_step)->toBe(TaskVmImageBuildStep::Prune)
+        ->and($current->state)->toBe(TaskVmImageBuildState::Failed)
+        ->and($current->promoted_at)->not->toBeNull();
+    $incus->fail = null;
+    $incus->commands = [];
+    app(TaskVmImageBuildChain::class)->resume($host, $current->id);
+    runRecipeImageBuild($current->refresh());
+
+    expect($current->state)->toBe(TaskVmImageBuildState::Succeeded);
+    foreach ($incus->commands as $command) {
+        expect(array_slice($command->arguments, 5, 2))->not->toBe(['image', 'alias']);
+        expect($command->arguments)->not->toContain('publish', 'launch', 'PATCH');
+    }
+});
+
+it('keeps old build rows readable but refuses to resume the removed build path', function (): void {
+    $host = recipeImageHost();
+    recipeImageTransport($host);
+    $legacy = TaskVmImageBuild::query()->create(['host_node_id' => $host->id, 'state' => 'failed',
+        'current_step' => 'upgrade-packages', 'source_alias' => TaskVmHost::SourceImage, 'from_stock' => true]);
+
+    $this->artisan('task-vms:image-builds')->expectsOutputToContain(TaskVmHost::SourceImage)->assertSuccessful();
+    expect(fn () => app(TaskVmImageBuildChain::class)->resume($host, $legacy->id))->toThrow(TaskVmException::class, 'Legacy image builds cannot resume');
+});
+
+it('rebuilds a reverted identity after its images were pruned', function (): void {
+    $host = recipeImageHost();
+    $incus = recipeImageTransport($host);
+    $first = null;
+    foreach (['20261014T000000Z', '20261015T000000Z', '20261016T000000Z'] as $snapshot) {
+        recipeImageCurrent(recipeImageDocument($snapshot));
+        $build = app(RecipeImageBuilds::class)->reconcile()[0];
+        $first ??= $build;
+        runRecipeImageBuild($build);
+    }
+    expect($incus->images)->not->toHaveKey($first->image_fingerprint);
+    recipeImageCurrent(recipeImageDocument());
+
+    $reverted = app(RecipeImageBuilds::class)->reconcile()[0];
+    expect($reverted->images)->toBe([])->and($reverted->current_step)->toBeNull();
+    runRecipeImageBuild($reverted);
+
+    expect($reverted->id)->toBe($first->id)->and($reverted->state)->toBe(TaskVmImageBuildState::Succeeded);
+    expect($incus->images[$reverted->image_fingerprint])->toContain(TaskVmHost::BaseImage);
+});
+
+it('prunes superseded failed recipes but keeps images without host-local ownership records', function (): void {
+    $host = recipeImageHost();
+    $incus = recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    $old = app(RecipeImageBuilds::class)->reconcile()[0];
+    runRecipeImageBuild($old);
+    $old->update(['state' => TaskVmImageBuildState::Failed]);
+    $foreign = Node::query()->create(['name' => 'recipe-shark', 'status' => 'active', 'public_ssh_host' => '192.0.2.8']);
+    $identity = 'sha256:'.str_repeat('f', 64);
+    TaskVmImageBuild::query()->create(['host_node_id' => $foreign->id, 'recipe_identity' => $identity, 'state' => 'succeeded']);
+    $incus->images[IMAGE_USED] = [RecipeImageBuilds::alias(TaskVmHost::BaseImage, $identity, 'base')];
+    foreach (['20261015T000000Z', '20261016T000000Z'] as $snapshot) {
+        recipeImageCurrent(recipeImageDocument($snapshot));
+        $current = app(RecipeImageBuilds::class)->reconcile($host->id)[0];
+        runRecipeImageBuild($current);
+    }
+
+    expect($incus->images)->not->toHaveKey($old->image_fingerprint)->toHaveKey(IMAGE_USED);
+});

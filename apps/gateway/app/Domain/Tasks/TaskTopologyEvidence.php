@@ -13,8 +13,7 @@ use Throwable;
  * The records of a topology's evidence that count for an approval. `bin/e2e-topology exec --record` and
  * `logs --record` append one JSON line per command to `.e2e/evidence.jsonl`:
  * `{"v":1,"start":…,"end":…,"label":…,"node":…,"exit":…,"argv":[…]}`, with UTC times in milliseconds and the redacted
- * argv as a list ({@see self::fromJsonLines()}). A harness from before that file wrote only the text log
- * `.e2e/evidence.log`, which {@see self::parse()} still reads until those VMs are gone.
+ * argv as a list ({@see self::fromJsonLines()}).
  *
  * A record counts when its command exited 0, started at or after the last handoff and not after now, and did work on
  * its node: a command that only exits, such as `true` or `:`, proves nothing.
@@ -26,10 +25,6 @@ final readonly class TaskTopologyEvidence
 {
     public const string File = '.e2e/evidence.jsonl';
 
-    public const string LegacyFile = '.e2e/evidence.log';
-
-    private const string Header = '/\A=== (\S+) (.+) node=([a-z0-9-]+) exit=(-?\d+) duration=\d+ms end=\S+\z/D';
-
     private const string Node = '/\A[a-z0-9-]+\z/D';
 
     /** Programs that do no work on the node. */
@@ -38,7 +33,7 @@ final readonly class TaskTopologyEvidence
     private const int SummaryLimit = 20;
 
     /** @param list<array{start: string, label: string, node: string, command: string}> $records */
-    private function __construct(public array $records, private string $file = self::File) {}
+    private function __construct(public array $records) {}
 
     public static function none(): self
     {
@@ -74,32 +69,6 @@ final readonly class TaskTopologyEvidence
     }
 
     /**
-     * The records of the text log `.e2e/evidence.log` that a harness from before `.e2e/evidence.jsonl` wrote: a blank
-     * line or the start of the file, then `=== <start> <label> node=<node> exit=<code> duration=<ms>ms end=<end>`, the
-     * argv as `$ <shell words>`, and `--- stdout`.
-     */
-    public static function parse(string $log, CarbonInterface $since, CarbonInterface $now): self
-    {
-        $lines = preg_split('/\R/', $log) ?: [];
-        $records = [];
-        foreach ($lines as $i => $line) {
-            if (preg_match(self::Header, $line, $match) !== 1 || $match[4] !== '0') {
-                continue;
-            }
-            $command = $lines[$i + 1] ?? '';
-            if (($i > 0 && $lines[$i - 1] !== '') || ! str_starts_with($command, '$ ') || ($lines[$i + 2] ?? '') !== '--- stdout') {
-                continue;
-            }
-            $command = substr($command, 2);
-            if (self::counts($match[1], self::words($command), $since, $now)) {
-                $records[] = ['start' => $match[1], 'label' => $match[2], 'node' => $match[3], 'command' => $command];
-            }
-        }
-
-        return new self($records, self::LegacyFile);
-    }
-
-    /**
      * The declared nodes without a counted record, in declaration order.
      *
      * @param  list<string>  $nodes
@@ -125,7 +94,7 @@ final readonly class TaskTopologyEvidence
             array_slice($records, 0, self::SummaryLimit),
         );
         if (count($records) > self::SummaryLimit) {
-            $lines[] = '- and '.(count($records) - self::SummaryLimit).' more in '.$this->file;
+            $lines[] = '- and '.(count($records) - self::SummaryLimit).' more in '.self::File;
         }
 
         return "Topology evidence (exit 0, recorded by bin/e2e-topology):\n".implode("\n", $lines);

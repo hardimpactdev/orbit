@@ -70,9 +70,7 @@ Package update retries lists-lock contention for up to 300 seconds because APT d
 
 ### Each build starts from the current image
 
-By default a build launches its builder from the host's current `orbit-task-base`. `UpgradeImagePackages` and the program steps then change only what changed since the last build. The first build of a host, a build with `--from-stock`, and the build each Sunday night launch from the stock image `ubuntu-26.04-vm` instead. So the image never holds leftovers of removed packages or programs for more than a week.
-
-The source image of a build never ran an agent or a Project script: it is a published base image, cleaned by `base-image-clean.sh`. This keeps the reason for the rejected "copy of a finished task VM as the next image" in [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) intact.
+Superseded by [ADR 0207](/decisions/0207-one-image-recipe-shared-package-cache-no-workspace-templates). Each recipe build starts from stock. Current-image builds and the weekly full build are removed.
 
 ### Enrollment trusts the image
 
@@ -86,7 +84,7 @@ A change to one of those programs reaches task VMs with the next nightly image b
 
 Each of these gets its own pull request after the base image chain is built, as its own chain with its own row:
 
-1. **Sync.** The copy to each other host becomes a chain for that host: export, transfer, verify, smoke, and promote. A failed host names its step, and the other hosts go on.
+1. **Sync (superseded).** ADR 0207 builds each recipe locally on every host. Inter-host image sync is removed.
 2. **Workspace templates (superseded).** ADR 0207 decision 2 replaces this next step with clone-plus-setup workspaces; no template chain will be built.
 3. **UpCloud.** The UpCloud template runs the same steps through its SSH guest shell, so both providers run one list of steps.
 
@@ -104,8 +102,7 @@ Each of these gets its own pull request after the base image chain is built, as 
 - A release waits at most for one short step instead of a whole build.
 - A failed build names its step on its row, and it can be continued from that step.
 - A new package or tool is one program and one step, not an edit to a shared script.
-- A nightly build that starts from the current image does less work. Its time depends on what changed.
-- A build is no longer byte-for-byte reproducible from the stock image each night. The weekly full build limits the drift to a week.
+- **Superseded by ADR 0207:** current-image incremental builds and weekly full builds. Recipe builds start from stock with pinned inputs.
 - A task VM can run software that is up to a day older than the Gateway's programs. A tool that the image lacks shows only when a setup step or a check that needs it fails. Run `task-vms:build-image` after a change to a program.
 - The `builds` queue runs one job at a time in the fleet, so base image and sync jobs take turns. A build takes longer from start to end. Each job holds the worker only for its step, including at most 600 seconds of cloud-init polling.
 - This change removes the image manifest, the image host lock with its expiry time, the build's signal trap and `failed()` cleanup, and the stage runner of the base image build.
@@ -117,7 +114,7 @@ Each of these gets its own pull request after the base image chain is built, as 
 - Detail: [Compute drivers: Build the base image](/reference/compute-drivers#build-the-base-image), [Compute drivers: Jobs](/reference/compute-drivers#jobs), [Gateway queue](/reference/gateway-queue)
 - Verify: The proofs on beast check these outcomes.
   - A build on beast runs each step as its own job on the `builds` queue, and the row lists each step with its seconds.
-  - A build launched from the current `orbit-task-base` and a `--from-stock` build both pass the smoke check.
+  - **Superseded by ADR 0207:** current-image and `--from-stock` comparison. Recipe images pass smoke checks on each host.
   - A step made to fail leaves the row `failed` with that step, retains its resources, and keeps the current image. `--resume` then continues from that step, using an already published image for replay of publish, smoke, and promote, without republishing.
   - A release during a build starts the new Horizon after the running step, and the next step runs on the new release.
   - A task VM from the new image enrolls without running the `app-dev` software programs, and a Project's baseline check passes on it.

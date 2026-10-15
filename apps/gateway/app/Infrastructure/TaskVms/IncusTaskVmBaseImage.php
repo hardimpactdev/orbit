@@ -4,20 +4,11 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\TaskVms;
 
-use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
-use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
-use App\Models\TaskVmImageBuild;
-use Closure;
 
-/**
- * The Incus steps that the base image build and the base image sync share on one host: the smoke boot,
- * the alias move, and the prune. Builder and smoke VMs are named `tvm-image-<time>…`
- * ({@see TaskVmImageRecipe::WorkPrefix}), so a later build or sync of the host deletes what an interrupted one left.
- */
+/** Host-local builder lifecycle, smoke checks, and base alias promotion for recipe builds. */
 final readonly class IncusTaskVmBaseImage
 {
     private const string FingerprintPattern = '/\A256 SHA256:[A-Za-z0-9+\/]{43} .* \(ED25519\)\n?\z/D';
@@ -26,12 +17,9 @@ final readonly class IncusTaskVmBaseImage
 
     public function __construct(
         private IncusHost $incus,
-        private TaskVmCloudInit $cloudInit,
-        private SshKeyProvider $keys,
-        private TaskVmBaseImageCache $claimImages,
     ) {}
 
-    /** Deletes builder and smoke VMs that an interrupted build or sync left. */
+    /** Deletes builder and smoke VMs that an interrupted recipe build left. */
     public function sweep(TaskVmHost $host, Node $node, bool $discardFailed = false): void
     {
         foreach (array_keys($this->instances($host, $node)) as $name) {
@@ -62,26 +50,6 @@ final readonly class IncusTaskVmBaseImage
         TaskVmGuest::awaitCloudInit("VM [{$name}]", self::BootSeconds, static fn (array $command, float $timeout): CommandResult => $shell->asRoot($command, timeout: $timeout));
     }
 
-    /**
-     * Boots a smoke VM `$name` from `$image` with the task VM user-data. It must have a host key, which proves
-     * `openssh-server` and a clean first boot, the Gateway's key from its user-data, and one boot only. The boot
-     * also creates the image volume on the host's pool, so the first task VM is a clone too. `$check` runs on the
-     * booted smoke VM before it goes, for checks only a new build can pass.
-     *
-     * @param  (Closure(IncusGuestShell): void)|null  $check
-     */
-    public function smoke(TaskVmHost $host, Node $node, string $name, string $image, ?Closure $check = null): void
-    {
-        $this->launch($host, $node, $name, $image, $this->cloudInit->render($this->keys->publicKey()));
-        $this->awaitCloudInit($host, $node, $name);
-        $shell = $this->shell($host, $node, $name);
-        $this->checkSmoke($shell);
-        if ($check instanceof Closure) {
-            $check($shell);
-        }
-        $this->delete($host, $node, $name);
-    }
-
     public function checkSmoke(IncusGuestShell $shell): void
     {
         $name = $shell->vm;
@@ -102,51 +70,12 @@ final readonly class IncusTaskVmBaseImage
     /** Points `orbit-task-base` at the fingerprint, or creates the alias on the first image. */
     public function promote(TaskVmHost $host, Node $node, string $fingerprint): void
     {
-        try {
-            $result = $this->incus->aliasTarget($host, $node, $host->imageAlias) === null
+        $result = $this->incus->aliasTarget($host, $node, $host->imageAlias) === null
             ? $this->incus->run($host, $node, ['image', 'alias', 'create', '--', $host->imageAlias, $fingerprint])
             : $this->incus->query($host, $node, 'PATCH', '/1.0/images/aliases/'.rawurlencode($host->imageAlias), json_encode(['target' => $fingerprint], JSON_THROW_ON_ERROR));
-            if (! $result->succeeded()) {
-                throw IncusHost::failed("the base image of Node [{$node->name}]", 'image alias', $result);
-            }
-        } finally {
-            // A claim reads the alias again, also when the reply to the move was lost.
-            $this->claimImages->forget($node->id);
+        if (! $result->succeeded()) {
+            throw IncusHost::failed("the base image of Node [{$node->name}]", 'image alias', $result);
         }
-    }
-
-    /**
-     * Deletes dated base images other than `$keep` that neither an instance nor a running build owns.
-     *
-     * @return list<string> the deleted fingerprints
-     */
-    public function prune(TaskVmHost $host, Node $node, string $keep): array
-    {
-        $used = array_values($this->instances($host, $node));
-        $images = $this->incus->images($host, $node);
-        // Read after the remote inventory. Every published image already has a running row, even
-        // if publish's fingerprint write was interrupted or its builder has since been deleted.
-        $running = TaskVmImageBuild::query()->where('host_node_id', $node->id)
-            ->where(fn ($query) => $query->where('state', TaskVmImageBuildState::Running)
-                ->orWhere(fn ($failed) => $failed->where('state', TaskVmImageBuildState::Failed)
-                    ->whereNull('cleanup_started_at')->where('updated_at', '>', now()->subHours(TaskVmHostAudit::FailedBuildHours))))->get();
-        $protected = $running->pluck('image_fingerprint')->all();
-        $pendingAliases = $running->map(static fn (TaskVmImageBuild $build): string => $host->imageAlias.'-'.$build->created_at?->format('YmdHis').'-'.$build->id)->all();
-        $deleted = [];
-        foreach ($images as $fingerprint => $aliases) {
-            $dated = array_filter($aliases, static fn (string $alias): bool => str_starts_with($alias, $host->imageAlias.'-') && ! str_starts_with($alias, $host->imageAlias.'-recipe-'));
-            if ($fingerprint === $keep || $dated === [] || in_array($fingerprint, $used, true)
-                || in_array($fingerprint, $protected, true) || array_intersect($aliases, $pendingAliases) !== []) {
-                continue;
-            }
-            $result = $this->incus->run($host, $node, ['image', 'delete', '--', $fingerprint]);
-            if (! $result->succeeded()) {
-                throw IncusHost::failed("the base image [{$fingerprint}]", 'image delete', $result);
-            }
-            $deleted[] = $fingerprint;
-        }
-
-        return $deleted;
     }
 
     /** Deletes a VM; an absent VM counts as deleted. */
@@ -155,32 +84,6 @@ final readonly class IncusTaskVmBaseImage
         $result = $this->incus->run($host, $node, ['delete', '--force', '--', $name]);
         if (! $result->succeeded() && array_key_exists($name, $this->instances($host, $node))) {
             throw IncusHost::failed("the base image VM [{$name}]", 'delete', $result);
-        }
-    }
-
-    /**
-     * After a failure: deletes its VMs, and the new image when it never became the base image. Best effort, so
-     * the failure's own error stays the reported one; the next build or sync sweeps what remains.
-     *
-     * @param  list<string>  $names
-     */
-    public function discard(TaskVmHost $host, Node $node, array $names, ?string $image): void
-    {
-        foreach ($names as $name) {
-            $this->incus->run($host, $node, ['delete', '--force', '--', $name]);
-        }
-        if ($image === null) {
-            return;
-        }
-        // A promote whose reply was lost may have moved the alias already: the image it names stays, and so does
-        // an image whose alias cannot be read.
-        try {
-            $base = $this->incus->aliasTarget($host, $node, $host->imageAlias);
-        } catch (TaskVmException) {
-            return;
-        }
-        if ($base !== $image) {
-            $this->incus->run($host, $node, ['image', 'delete', '--', $image]);
         }
     }
 

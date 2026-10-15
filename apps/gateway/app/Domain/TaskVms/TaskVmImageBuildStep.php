@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\TaskVms;
 
-/** A program step also carries the name from TaskVmImageRecipe::programs(). */
+/** Legacy step values remain readable in historical build rows. */
 enum TaskVmImageBuildStep: string
 {
     case Recipe = 'recipe';
@@ -17,4 +17,5 @@ enum TaskVmImageBuildStep: string
     case Publish = 'publish';
     case Smoke = 'smoke';
     case Promote = 'promote';
+    case Prune = 'prune';
 }

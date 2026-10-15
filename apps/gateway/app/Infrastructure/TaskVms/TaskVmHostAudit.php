@@ -20,7 +20,7 @@ use Illuminate\Support\Carbon;
  *
  * - An orphaned VM is a `tvm-<number>` instance with no live row of that name on the host. Other names,
  *   Build VMs `tvm-image-<build id>` without a running row on this host are orphaned too.
- * - A missing VM is a `warm`, `ready`, or `parked` row whose instance is gone. Other states have jobs that check the VM.
+ * - A missing VM is a `ready`, or `parked` row whose instance is gone. Other states have jobs that check the VM.
  *
  * It also finds strays, which the sweep and Doctor only report ({@see self::strays()}, {@see self::strayNodes()}).
  */
@@ -28,14 +28,8 @@ final readonly class TaskVmHostAudit
 {
     private const string TaskVmName = '/\Atvm-[0-9]+\z/D';
 
-    /** Sync smoke and workspace template builders still use the `YmdHis` time in their names. */
-    private const string BuilderName = '/\A(?:'.TaskVmImageRecipe::WorkPrefix.'([0-9]{14})-sync-smoke|tvm-template-([0-9]{14})(?:-[a-z0-9-]+)?)\z/D';
-
-    /** A workspace template `tvm-template-<project id>-<time>` or a claim clone `tvm-<number>-workspace`. */
-    private const string VolumeName = '/\A(?:tvm-template-[0-9]+-[0-9]{14}|tvm-[0-9]+-workspace)\z/D';
-
-    /** A build holds its lock for less than 30 minutes; a builder VM older than this is a stray. */
-    public const int BuilderMinutes = 60;
+    /** A legacy claim clone still attached to its VM. */
+    private const string VolumeName = '/\Atvm-[0-9]+-workspace\z/D';
 
     public const int FailedBuildHours = 24;
 
@@ -60,7 +54,7 @@ final readonly class TaskVmHostAudit
                 static fn (string $name): bool => (preg_match(self::TaskVmName, $name) === 1 && ! in_array($name, $recorded, true)) || (self::isChainBuilder($name) && ! self::runningBuildOwns($node, $name)),
             )),
             'missing' => array_values($live->filter(
-                static fn (TaskVm $vm): bool => in_array($vm->state, [TaskVmState::Warm, TaskVmState::Ready, TaskVmState::Parked], true) && ! in_array($vm->name, $names, true),
+                static fn (TaskVm $vm): bool => in_array($vm->state, [TaskVmState::Ready, TaskVmState::Parked], true) && ! in_array($vm->name, $names, true),
             )->all()),
         ];
     }
@@ -68,8 +62,8 @@ final readonly class TaskVmHostAudit
     /**
      * What Orbit does not own on the host, in every Incus project and storage pool, and the host's `ready` or `parked`
      * rows without an open group. Orbit owns, in the host's project, the task VMs `tvm-<number>` (the audit checks them
-     * against their rows), running and retained failed build VMs, sync smoke and template builders for {@see self::BuilderMinutes} after their time, and,
-     * in the host's pool, the workspace templates and claim clones. The host's `operator_owned` entries are the
+     * against their rows), running and retained failed build VMs and,
+     * in the host's pool, legacy claim clones. The host's `operator_owned` entries are the
      * operator's. Everything else is a stray. Nothing here deletes or changes anything.
      *
      * @return array{instances: list<string>, volumes: list<string>, records: list<TaskVm>} instances as `project/name`,
@@ -97,8 +91,7 @@ final readonly class TaskVmHostAudit
 
     /**
      * The host's `ready` or `parked` rows with no group, or with a `completed` or `cancelled` group, unchanged for
-     * {@see self::RecordMinutes}, counted from the later change of the row and its group. A `warm` row has no group by
-     * design. A `failed` group is still open: its VM stays for the operator.
+     * {@see self::RecordMinutes}, counted from the later change of the row and its group. A `failed` group is still open: its VM stays for the operator.
      *
      * @return list<TaskVm>
      */
@@ -172,7 +165,7 @@ final readonly class TaskVmHostAudit
     /**
      * Fence resume before deleting a recorded builder or smoke VM. The conditional write either
      * wins against resume or skips a running build; an absent host-local row needs no fence.
-     * Non-chain names retain the legacy sync/template cleanup rules.
+     * Non-chain names have no recorded owner.
      */
     public static function claimBuildCleanup(Node $node, string $name, bool $discardFailed = false): bool
     {
@@ -198,11 +191,7 @@ final readonly class TaskVmHostAudit
         if (self::isChainBuilder($name)) {
             return self::runningBuildOwns($node, $name);
         }
-        if (preg_match(self::BuilderName, $name, $match) !== 1) {
-            return false;
-        }
-        $started = Carbon::createFromFormat('YmdHis', $match[1] !== '' ? $match[1] : $match[2]);
 
-        return $started instanceof Carbon && $started->greaterThanOrEqualTo(now()->subMinutes(self::BuilderMinutes));
+        return false;
     }
 }

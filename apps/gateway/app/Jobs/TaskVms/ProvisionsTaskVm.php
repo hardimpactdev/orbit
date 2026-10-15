@@ -6,7 +6,6 @@ namespace App\Jobs\TaskVms;
 
 use App\Actions\TaskVms\FailTaskVmAction;
 use App\Domain\TaskVms\TaskVmFailedException;
-use App\Domain\TaskVms\TaskVmPoolBackoff;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\TaskVm;
 use Throwable;
@@ -34,11 +33,7 @@ trait ProvisionsTaskVm
             return;
         }
         ['error_code' => $code, 'error_message' => $message] = TaskVm::errorFrom($exception);
-        $failed = app(FailTaskVmAction::class)->execute($vm, [TaskVmState::Provisioning], $code, $message, TaskVmFailedException::reason($vm->name, $code, $message));
-        if ($failed && $vm->group_id === null) {
-            // A pool VM has no group to ask: its host waits before the next one, and the refill destroys it.
-            app(TaskVmPoolBackoff::class)->failed($vm, $code, $message);
-        }
+        app(FailTaskVmAction::class)->execute($vm, [TaskVmState::Provisioning], $code, $message, TaskVmFailedException::reason($vm->name, $code, $message));
     }
 
     /** The row while it is still `provisioning`, else null. */

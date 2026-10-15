@@ -92,7 +92,7 @@ it('transports typed host configuration and clearing without changing apps', fun
     $this->artisan('node:settings', ['node' => '9', '--setting' => ['task_vms:'.json_encode($host)], '--json' => true])->assertExitCode(0);
     expect($mockClient->getLastRequest()?->body()->all())->toBe(['task_vms' => $host]);
 })->with([
-    'configured host' => [['cidr' => '10.251.77.0/24', 'max_vms' => 4, 'image_alias' => 'custom-base', 'warm_vms' => 0]],
+    'configured host' => [['cidr' => '10.251.77.0/24', 'max_vms' => 4, 'image_alias' => 'custom-base']],
     'host with operator-owned resources' => [['cidr' => '10.251.77.0/24', 'max_vms' => 4, 'operator_owned' => ['orbit-ci/*', 'orbit-tasks/retained']]],
     'cleared host' => [null],
 ]);

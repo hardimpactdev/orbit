@@ -25,7 +25,7 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\IncusTaskVmBaseImage;
 use App\Infrastructure\TaskVms\TaskVmHostAudit;
 use App\Infrastructure\TaskVms\TaskVmImageBuildChain;
-use App\Jobs\TaskVms\ImageBuild\LaunchImageBuilder;
+use App\Jobs\TaskVms\ImageBuild\BuildRecipeImageStep;
 use App\Jobs\TaskVms\SweepTaskVmHosts;
 use App\Models\Node;
 use App\Models\Project;
@@ -36,6 +36,7 @@ use Illuminate\Console\Scheduling\CallbackEvent;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Tests\Support\TaskVmSettingsBuilder;
 
@@ -100,6 +101,9 @@ final class TaskVmSweepIncus implements SshExecutor
         }
         if ($arguments === ['list', '--format', 'json']) {
             return new CommandResult(0, json_encode(array_map(static fn (string $name): array => ['name' => $name, 'config' => []], $this->instances[$connection->host] ?? []), JSON_THROW_ON_ERROR), '', 1, false);
+        }
+        if ($arguments === ['image', 'list', '--format', 'json']) {
+            return new CommandResult(0, '[]', '', 1, false);
         }
         if (array_slice($arguments, 0, 3) === ['storage', 'volume', 'list']) {
             return new CommandResult(0, '[]', '', 1, false);
@@ -443,11 +447,13 @@ describe('strays', function (): void {
         app()->call([new SweepTaskVmHosts, 'handle']);
 
         $expected = [
+            ['node.task_vm_stray_instance', 'orbit-tasks/tvm-image-20261013133000-sync-smoke'],
             ['node.task_vm_stray_instance', 'orbit-tasks/tvm-template-20261013120000'],
             ['node.task_vm_stray_instance', 'orbit-tasks/dev-box'],
             ['node.task_vm_stray_instance', 'default/renewed-ghost'],
             ['node.task_vm_stray_instance', 'orbit-templates/orbit-template-agent-base'],
             ['node.task_vm_stray_volume', 'orbit-tasks/default/tvm-template-46-20261013083819'],
+            ['node.task_vm_stray_volume', 'orbit-tasks/orbit-tasks/tvm-template-46-20261013083819'],
             ['node.task_vm_stray_volume', 'orbit-tasks/orbit-tasks/scratch'],
         ];
         foreach ($expected as [$code, $stray]) {
@@ -461,13 +467,12 @@ describe('strays', function (): void {
             ->and(tvm_stray_doctor($this->beast))->toBe($expected);
     });
 
-    it('reports ready and parked rows without an open group after an hour, but never warm rows or failed groups', function (): void {
+    it('reports ready and parked rows without an open group after an hour, but never failed groups', function (): void {
         $noGroup = tvm_stray_vm($this->beast, TaskVmState::Ready, null, 61, '10.44.0.129');
         $completed = tvm_stray_vm($this->beast, TaskVmState::Parked, TaskGroupStatus::Completed, 90, '10.44.0.130');
         tvm_stray_vm($this->beast, TaskVmState::Ready, TaskGroupStatus::Cancelled, 30, '10.44.0.131');
         tvm_stray_vm($this->beast, TaskVmState::Ready, TaskGroupStatus::Failed, 600, '10.44.0.132');
         tvm_stray_vm($this->beast, TaskVmState::Parked, TaskGroupStatus::WaitingForReview, 600, '10.44.0.133');
-        tvm_stray_vm($this->beast, TaskVmState::Warm, null, 600, '10.44.0.134');
         $this->incus->instances = ['10.44.0.7' => TaskVm::query()->pluck('name')->all()];
         Log::spy();
 
@@ -518,7 +523,10 @@ describe('strays', function (): void {
 it('fences resume when sweep deletion wins while the builder still exists', function (string $path, string $suffix): void {
     Bus::fake();
     $this->travel(-25)->hours();
-    $build = TaskVmImageBuild::query()->create(['host_node_id' => $this->beast->id, 'state' => 'failed', 'current_step' => TaskVmImageBuildStep::Launch]);
+    DB::table('task_vm_image_recipe')->where('id', 1)->update(['identity' => 'sha256:'.str_repeat('a', 64), 'generation' => 1]);
+    $build = TaskVmImageBuild::query()->create(['host_node_id' => $this->beast->id, 'state' => 'failed',
+        'recipe_identity' => 'sha256:'.str_repeat('a', 64), 'recipe_generation' => 1,
+        'current_step' => TaskVmImageBuildStep::Recipe, 'current_program' => 'base:packages']);
     $name = $build->builder_vm_name.$suffix;
     $this->travel(25)->hours();
     // Smoke first, so the builder is still present when a smoke deletion races resume.
@@ -549,7 +557,10 @@ it('fences resume when sweep deletion wins while the builder still exists', func
 it('skips a stale sweep candidate when resume wins before deletion claims cleanup', function (string $path, string $suffix): void {
     Bus::fake();
     $this->travel(-25)->hours();
-    $build = TaskVmImageBuild::query()->create(['host_node_id' => $this->beast->id, 'state' => 'failed', 'current_step' => TaskVmImageBuildStep::Launch]);
+    DB::table('task_vm_image_recipe')->where('id', 1)->update(['identity' => 'sha256:'.str_repeat('a', 64), 'generation' => 1]);
+    $build = TaskVmImageBuild::query()->create(['host_node_id' => $this->beast->id, 'state' => 'failed',
+        'recipe_identity' => 'sha256:'.str_repeat('a', 64), 'recipe_generation' => 1,
+        'current_step' => TaskVmImageBuildStep::Recipe, 'current_program' => 'base:packages']);
     $name = $build->builder_vm_name.$suffix;
     $this->incus->instances['10.44.0.7'] = array_values(array_unique([$name, $build->builder_vm_name]));
     $host = app(TaskVmSettings::class)->host($this->beast->id);
@@ -580,13 +591,16 @@ it('skips a stale sweep candidate when resume wins before deletion claims cleanu
         ->and($build->cleanup_started_at)->toBeNull()
         ->and($this->incus->instances['10.44.0.7'])->toContain($name, $build->builder_vm_name)
         ->and(array_any($this->incus->calls, static fn (array $call): bool => ($call[1][5] ?? null) === 'delete'))->toBeFalse();
-    Bus::assertDispatched(LaunchImageBuilder::class, fn (LaunchImageBuilder $job): bool => $job->buildId === $build->id);
+    Bus::assertDispatched(BuildRecipeImageStep::class, fn (BuildRecipeImageStep $job): bool => $job->buildId === $build->id);
 })->with(['base-image', 'host-audit'])->with(['builder' => '', 'smoke' => '-smoke']);
 
 it('rejects a stale resume when a sweep wins after the builder existence result is captured', function (string $path, string $suffix): void {
     Bus::fake();
     $this->travel(-25)->hours();
-    $build = TaskVmImageBuild::query()->create(['host_node_id' => $this->beast->id, 'state' => 'failed', 'current_step' => TaskVmImageBuildStep::Launch]);
+    DB::table('task_vm_image_recipe')->where('id', 1)->update(['identity' => 'sha256:'.str_repeat('a', 64), 'generation' => 1]);
+    $build = TaskVmImageBuild::query()->create(['host_node_id' => $this->beast->id, 'state' => 'failed',
+        'recipe_identity' => 'sha256:'.str_repeat('a', 64), 'recipe_generation' => 1,
+        'current_step' => TaskVmImageBuildStep::Recipe, 'current_program' => 'base:packages']);
     $name = $build->builder_vm_name.$suffix;
     $this->incus->instances['10.44.0.7'] = array_values(array_unique([$name, $build->builder_vm_name]));
     $host = app(TaskVmSettings::class)->host($this->beast->id);

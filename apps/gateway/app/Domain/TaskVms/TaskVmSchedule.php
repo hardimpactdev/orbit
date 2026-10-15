@@ -12,7 +12,5 @@ final readonly class TaskVmSchedule
         public bool $enabled,
         /** The UpCloud token file is set, also while the overflow is off. */
         public bool $upcloudConfigured,
-        /** Task VMs are enabled and a host sets `warm_vms`. */
-        public bool $warmVmsWanted,
     ) {}
 }

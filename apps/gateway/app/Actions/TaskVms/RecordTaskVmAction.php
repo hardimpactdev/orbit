@@ -47,7 +47,7 @@ final readonly class RecordTaskVmAction
         return $vm;
     }
 
-    /** A new random Pi token, for a new group VM and for a warm VM that a claim takes. */
+    /** A new random Pi token, for a new group VM. */
     public static function piToken(): string
     {
         return bin2hex(random_bytes(32));

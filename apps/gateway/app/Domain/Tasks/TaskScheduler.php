@@ -488,9 +488,6 @@ final readonly class TaskScheduler
         if ($task->completion_handoff_attempt !== null && ! $this->newerTurnHasStopped($task->completion_handoff_turn_id, $implementer)) {
             return true;
         }
-        if ($this->reissueLegacyTurn($group, $task, $implementer)) {
-            return true;
-        }
 
         try {
             $read = $this->collectReceipt($group, $task, TaskThreadRole::Implementer);
@@ -696,9 +693,6 @@ final readonly class TaskScheduler
             return false;
         }
         if (! $this->newerTurnHasStopped($task->review_notified_turn_id, $reviewer)) {
-            return true;
-        }
-        if ($this->reissueLegacyTurn($group, $task, $reviewer)) {
             return true;
         }
 
@@ -1897,49 +1891,6 @@ final readonly class TaskScheduler
     private function receiptMatchesActingThread(TaskTurnReceipt $receipt, ?int $actingThreadId): bool
     {
         return $actingThreadId === null || $receipt->threadId === $actingThreadId;
-    }
-
-    /**
-     * Rewrites a legacy turn file for the acting thread and sends the bound turn command.
-     * The unidentified receipt is not applied.
-     */
-    private function reissueLegacyTurn(Task $group, Task $task, TaskThreadObservation $thread): bool
-    {
-        $actingThreadId = $this->actingThreadId($group, $task, $thread->role);
-        $instance = $group->taskable;
-        if ($actingThreadId === null || $thread->threadId !== $actingThreadId || ! $instance instanceof Instance) {
-            return false;
-        }
-        try {
-            if (! $this->receipts->hasLegacyTurn($instance)) {
-                return false;
-            }
-            if (! $this->prepareTurn($group, $task, $thread->role, $actingThreadId)) {
-                return true;
-            }
-            $instructions = $this->actingInstructions($group, $task, $thread->role, $actingThreadId);
-            $this->actor->remindRubric($group, $thread, 'Orbit bound this turn to its thread. '.$instructions);
-        } catch (AgentDriverException|TaskTurnReceiptException $exception) {
-            $this->recordCommunicationFailure($task, $group, $exception->getMessage());
-        }
-
-        return true;
-    }
-
-    /** The instructions for the turn that is active now, not for a later review or relay. */
-    private function actingInstructions(Task $group, Task $task, TaskThreadRole $role, ?int $threadId): string
-    {
-        if ($role === TaskThreadRole::Implementer) {
-            return TaskTurnInstructions::implementer($task->deliverableList(), $group->project->taskCheckCommand(), $threadId);
-        }
-        if ($task->consult_comment_id !== null) {
-            return TaskTurnInstructions::consult($threadId);
-        }
-        if ($task->direction_relay_comment_id !== null) {
-            return TaskTurnInstructions::relay($threadId);
-        }
-
-        return TaskTurnInstructions::reviewer($task->opensPullRequest(), $task->deliverableList(), $threadId, TaskTurnMode::forTask($task, $role));
     }
 
     /**

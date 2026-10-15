@@ -432,7 +432,7 @@ When the `vpn` and `gateway` roles share a machine, or no `gateway` role is acti
 
 `orbit node:remove <node> [--offline] [--force]` removes the Node record and its Gateway configuration. It does not clean the machine. [macOS removal](#removal) also skips the Linux agent and firewall steps and reports the retained user, package managers, and host tunnel.
 
-Task VM host intent is an explicit [Node setting](/reference/node-settings#configure-a-task-vm-host), separate from its roles. Enrollment accepts it inside `settings.task_vms`; it does not infer host approval from `app-dev`. Before removing a host, destroy its task VMs, unset its host configuration, and retire its image-transfer access. Removing a role alone does not clear host intent.
+Task VM host intent is an explicit [Node setting](/reference/node-settings#configure-a-task-vm-host), separate from its roles. Enrollment accepts it inside `settings.task_vms`; it does not infer host approval from `app-dev`. Before removing a host, destroy its task VMs, unset its host configuration,. Removing a role alone does not clear host intent.
 
 The Gateway refuses the removal until the Node is empty. Remove its Instances, Routes, Schedules, roles, Processes, [Database servers](/reference/database-servers#remove-a-server), and Orbit firewall rules first. Orbit never removes the caller's Node, the `gateway` Node, or the `vpn` Node.
 
@@ -444,8 +444,6 @@ The Gateway refuses the removal until the Node is empty. Remove its Instances, R
 | `route.reconciliation_required` | An active Route depends on the Node. |
 | `node.self_removal_forbidden`, `node.gateway_removal_forbidden`, `node.vpn_removal_forbidden` | The Node is protected. |
 | `node.provisioning_busy` | Another lifecycle operation holds the Node name. |
-
-When task VM hosts are configured, the Gateway then removes the Node's base image [transfer key](/reference/compute-drivers#let-hosts-copy-the-image) from each of them, also for an offline removal, and also when `task-vms:retire-host` did not run. It skips the Node of a task VM. This changes only the hosts, and a repeat finds nothing to remove. When it fails, the removal fails with the step `task-vm-image-keys` and the code `node.task_vm_image_key_cleanup_failed`, and nothing else has changed.
 
 Online removal runs these steps in order.
 

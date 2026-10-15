@@ -18,7 +18,6 @@ final readonly class TaskVmsSettings
         public ?int $cpus = null,
         public ?string $memory = null,
         public ?string $disk = null,
-        public ?int $warm_vms = null,
         public ?array $operator_owned = null,
     ) {}
 
@@ -33,7 +32,6 @@ final readonly class TaskVmsSettings
             project: $string('project'), network: $string('network'), pool: $string('pool'),
             image_alias: $string('image_alias'), zfs_dataset: $string('zfs_dataset'),
             cpus: $integer('cpus'), memory: $string('memory'), disk: $string('disk'),
-            warm_vms: $integer('warm_vms'),
             operator_owned: is_array($data['operator_owned'] ?? null) ? array_values(array_filter($data['operator_owned'], is_string(...))) : null,
         );
     }

@@ -15,7 +15,7 @@ use Throwable;
 
 /**
  * Prepares Pi on the enrolled VM of a group, then marks the task VM `ready` for the next claim
- * ({@see PrepareTaskVmRuntimeAction}). A pool VM has no group yet: it becomes `warm` with nothing of a group on it.
+ * ({@see PrepareTaskVmRuntimeAction}).
  */
 final class PrepareTaskVmRuntime implements ShouldBeUnique, ShouldQueue
 {

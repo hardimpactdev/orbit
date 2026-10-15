@@ -2637,7 +2637,6 @@ it('records an unreachable workspace as a communication failure without aborting
         }
     });
     $receipts = mock(TaskTurnReceipts::class);
-    $receipts->shouldReceive('hasLegacyTurn')->andReturn(false);
     $receipts->shouldReceive('read')->andThrow(new TaskTurnReceiptException('The task workspace could not be reached for the turn receipt.'));
 
     app(TaskScheduler::class)->tick();
@@ -2649,7 +2648,7 @@ it('records an unreachable workspace as a communication failure without aborting
     Classification::assertNothingClassified();
 });
 
-it('records a legacy turn read failure without skipping the other group', function (): void {
+it('records a turn receipt read failure without skipping the other group', function (): void {
     $running = tick_group();
     $implementer = $running->tasks->sole();
     $project = Project::query()->create([
@@ -2690,7 +2689,7 @@ it('records a legacy turn read failure without skipping the other group', functi
         }
     });
     $receipts = mock(TaskTurnReceipts::class);
-    $receipts->shouldReceive('hasLegacyTurn')->andThrow(new TaskTurnReceiptException('The task workspace could not be reached for the turn receipt.'));
+    $receipts->shouldReceive('read')->andThrow(new TaskTurnReceiptException('The task workspace could not be reached for the turn receipt.'));
 
     app(TaskScheduler::class)->tick();
 
@@ -4704,7 +4703,7 @@ it('does not apply a receipt from the thread named by a stale turn file', functi
         ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing);
 });
 
-it('does not apply an unbound legacy receipt and reissues the bound turn command', function (): void {
+it('does not apply an unbound receipt and uses the normal missing-receipt reminder', function (): void {
     [$group, $task] = tick_review([null]);
     $acting = (int) $group->reviewer_agent_thread_id;
     $receipts = new class implements TaskTurnReceipts
@@ -4743,7 +4742,7 @@ it('does not apply an unbound legacy receipt and reissues the bound turn command
     expect($task->comments()->count())->toBe(0)
         ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
         ->and($receipts->preparedThreads)->toBe([$acting])
-        ->and($text)->toContain('Orbit bound this turn to its thread.')
+        ->and($text)->toContain('No turn receipt was found.')
         ->and($text)->toContain('"$(git rev-parse --git-path orbit)/turn" --thread='.$acting.' --outcome=');
 });
 

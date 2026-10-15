@@ -114,23 +114,6 @@ final readonly class TaskFinalReview
     }
 
     /**
-     * The commit of the latest approved subtask that is not a final review, or null when none was committed.
-     * A final review commits nothing, so its approval names the HEAD it reviewed instead.
-     */
-    public static function latestApprovedCommit(Task $group): ?string
-    {
-        $commit = TaskComment::query()
-            ->where('task_group_id', $group->id)
-            ->where('type', TaskCommentType::Approved)
-            ->whereNotNull('commit_sha')
-            ->whereHas('task', static fn ($query) => $query->withoutFinalReviews())
-            ->latest('id')
-            ->value('commit_sha');
-
-        return is_string($commit) && $commit !== '' ? $commit : null;
-    }
-
-    /**
      * The approved commit that cancel pushes before it removes the workspace, or null. A review-and-merge task
      * pushes only a commit a final review approved, so unreviewed approved work is not pushed.
      */

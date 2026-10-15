@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Console\Scheduling\GatewaySchedule;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Gateway\GatewayQueue;
-use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntime;
@@ -13,16 +12,13 @@ use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Infrastructure\Gateway\GatewayHorizon;
-use App\Infrastructure\Gateway\GatewayQueueMove;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
 use App\Jobs\RunScheduledCommand;
 use App\Jobs\TaskVms\DestroyTaskVm;
 use App\Jobs\TaskVms\EnrollTaskVm;
-use App\Jobs\TaskVms\EnsureWarmClaimReady;
 use App\Jobs\TaskVms\ParkTaskVm;
 use App\Jobs\TaskVms\PrepareTaskVmRuntime;
 use App\Jobs\TaskVms\ProvisionTaskVm;
-use App\Jobs\TaskVms\RefillTaskVmPool;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
 use App\Jobs\TaskVms\ResumeTaskVm;
 use App\Jobs\TaskVms\SweepTaskVmHosts;
@@ -53,18 +49,6 @@ function gateway_queue_event(string $name): Event
 {
     return collect(gateway_queue_schedule())->first(static fn (Event $event): bool => $event->description === $name || str_ends_with((string) $event->command, $name))
         ?? throw new RuntimeException("No scheduled event [{$name}].");
-}
-
-function gateway_queue_legacy_row(string $queue, object $job, int $availableAt, ?int $reservedAt = null): int
-{
-    return DB::table('jobs')->insertGetId([
-        'queue' => $queue,
-        'payload' => json_encode(['data' => ['command' => serialize($job)]], JSON_THROW_ON_ERROR),
-        'attempts' => $reservedAt === null ? 0 : 1,
-        'reserved_at' => $reservedAt,
-        'available_at' => $availableAt,
-        'created_at' => now()->getTimestamp(),
-    ]);
 }
 
 beforeEach(function (): void {
@@ -180,7 +164,7 @@ describe('Horizon', function (): void {
     });
 
     it('gives the task-vms worker a timeout no task VM job exceeds, so no job is killed early', function (): void {
-        $jobs = [ProvisionTaskVm::class, EnrollTaskVm::class, PrepareTaskVmRuntime::class, ParkTaskVm::class, ResumeTaskVm::class, DestroyTaskVm::class, EnsureWarmClaimReady::class, RefillTaskVmPool::class, SweepTaskVmHosts::class];
+        $jobs = [ProvisionTaskVm::class, EnrollTaskVm::class, PrepareTaskVmRuntime::class, ParkTaskVm::class, ResumeTaskVm::class, DestroyTaskVm::class, SweepTaskVmHosts::class];
         $supervisor = config('horizon.defaults.task-vms.timeout');
         // A job without its own timeout runs under the supervisor's.
         $timeouts = array_map(static fn (string $class): int => (int) ((new ReflectionClass($class))->getDefaultProperties()['timeout'] ?? $supervisor), $jobs);
@@ -304,44 +288,5 @@ describe(GatewayHorizon::class, function (): void {
         expect(app(GatewayHorizon::class)->converge($this->gateway, fn (): Process => $this->scheduler))->toBe('none')
             ->and(Process::query()->where('name', 'horizon')->exists())->toBeFalse()
             ->and((int) Cache::get('gateway-horizon-terminated'))->toBe(0);
-    });
-});
-
-describe(GatewayQueueMove::class, function (): void {
-    it('moves every job of the old database queues, keeps a delayed job delayed, and moves nothing else', function (): void {
-        config(['orbit.gateway_queue.connection' => 'services-valkey']);
-        $this->freezeSecond();
-        gateway_queue_legacy_row('task-vms', new DestroyTaskVm(3), now()->getTimestamp());
-        gateway_queue_legacy_row('task-vm-git', new DestroyTaskVm(4), now()->getTimestamp() + 60);
-        gateway_queue_legacy_row('task-vm-templates', new RefreshTaskVmBaseImages, now()->getTimestamp(), reservedAt: now()->getTimestamp() - 30);
-        gateway_queue_legacy_row('task-vm-images', new RefreshTaskVmBaseImages, now()->getTimestamp());
-        gateway_queue_legacy_row('default', new DestroyTaskVm(5), now()->getTimestamp());
-
-        expect(new GatewayQueueMove()->move())->toBe(4);
-
-        $rows = DB::table('jobs')->orderBy('id')->get(['queue', 'available_at', 'reserved_at']);
-        expect($rows->pluck('queue')->all())->toBe(['default', 'task-vms', 'tasks', 'builds', 'builds'])
-            ->and($rows->pluck('reserved_at')->filter()->all())->toBe([])
-            ->and($rows[2]->available_at)->toBe(now()->getTimestamp() + 60);
-    });
-
-    it('fails without the Gateway queue while old jobs wait, and keeps them; without old jobs it does nothing', function (): void {
-        config(['orbit.gateway_queue.connection' => '']);
-        expect(new GatewayQueueMove()->move())->toBe(0);
-
-        gateway_queue_legacy_row('task-vms', new DestroyTaskVm(3), now()->getTimestamp());
-
-        expect(fn () => new GatewayQueueMove()->move())
-            ->toThrow(fn (NodeProvisioningException $exception) => expect($exception->errorCode)->toBe('gateway.queue_move_failed'))
-            ->and(DB::table('jobs')->sole()->queue)->toBe('task-vms');
-    });
-
-    it('fails loudly on a job it cannot read and keeps it', function (): void {
-        config(['orbit.gateway_queue.connection' => 'services-valkey']);
-        DB::table('jobs')->insert(['queue' => 'task-vms', 'payload' => '{"data":{"command":"broken"}}', 'attempts' => 0, 'reserved_at' => null, 'available_at' => now()->getTimestamp(), 'created_at' => now()->getTimestamp()]);
-
-        expect(fn () => new GatewayQueueMove()->move())
-            ->toThrow(fn (NodeProvisioningException $exception) => expect($exception->errorCode)->toBe('gateway.queue_move_failed'))
-            ->and(DB::table('jobs')->sole()->queue)->toBe('task-vms');
     });
 });

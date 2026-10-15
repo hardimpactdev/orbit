@@ -10,7 +10,7 @@ use App\Models\TaskVm;
 
 /**
  * The slots of the task VM hosts. Placement transactions serialize writers, so two
- * claims never take the same warm VM or both take a host's last slot. The pool refill uses the same transaction boundary.
+ * claims never both take a host's last slot.
  */
 final readonly class TaskVmCapacity
 {
@@ -38,8 +38,8 @@ final readonly class TaskVmCapacity
 
     /**
      * The free slots of each of `$hosts`, in their order: `max_vms` minus the slots of every task VM on the host that
-     * is not destroyed or failed, warm and parked ones too. A failed VM holds no slot, so it never blocks placement:
-     * its group asks for assistance, and the pool refill destroys a failed pool VM. A VM takes the slots of its size
+     * is not destroyed or failed, parked ones too. A failed VM holds no slot, so it never blocks placement:
+     * its group asks for assistance. A VM takes the slots of its size
      * ({@see TaskVmSize::slots()}). A host over its budget has 0.
      *
      * @param  list<array{TaskVmHost, Node}>  $hosts  from {@see self::activeHosts()}
