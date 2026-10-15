@@ -923,6 +923,26 @@
             ]
         },
         {
+            "path": "docs/decisions/0211-ship-node-changes-as-remote-programs.md",
+            "title": "ADR 0211: Ship Node changes as remote programs",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Process",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0211"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -974,7 +994,8 @@
                 "0196",
                 "0198",
                 "0200",
-                "0206"
+                "0206",
+                "0211"
             ]
         },
         {
@@ -2319,6 +2340,24 @@
                 "Task"
             ],
             "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/remote-programs.md",
+            "title": "Remote programs",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0211"
+            ]
         },
         {
             "path": "docs/reference/routes.md",

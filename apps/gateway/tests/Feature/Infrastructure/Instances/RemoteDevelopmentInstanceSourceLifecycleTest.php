@@ -47,6 +47,8 @@ use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
+use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
+use App\Infrastructure\RemotePrograms\SshProgramRunner;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -106,30 +108,29 @@ beforeEach(function (): void {
     $this->accounts = $accounts;
     $this->transport = new Orb76LocalSourceSshExecutor($this->remoteOrigin, $this->repository);
     $this->sourceLock = new NativeAppDevSourceOperationLock($this->sandbox.'/locks');
-    $ssh = new DevelopmentSshExecutor(
-        $this->transport,
-        new class implements SshKeyProvider
+    $keys = new class implements SshKeyProvider
+    {
+        public function privateKeyPath(): string
         {
-            public function privateKeyPath(): string
-            {
-                return '/tmp/orbit-test-key';
-            }
+            return '/tmp/orbit-test-key';
+        }
 
-            public function publicKey(): string
-            {
-                return 'ssh-ed25519 test';
-            }
-        },
-        new class implements KnownHostsStore
+        public function publicKey(): string
         {
-            public function path(): string
-            {
-                return '/tmp/orbit-test-known-hosts';
-            }
+            return 'ssh-ed25519 test';
+        }
+    };
+    $knownHosts = new class implements KnownHostsStore
+    {
+        public function path(): string
+        {
+            return '/tmp/orbit-test-known-hosts';
+        }
 
-            public function put(string $host, int $port, HostKey $key): void {}
-        },
-    );
+        public function put(string $host, int $port, HostKey $key): void {}
+    };
+    $ssh = new DevelopmentSshExecutor($this->transport, $keys, $knownHosts);
+    $catalog = new RemoteProgramCatalog;
     $this->ssh = $ssh;
     $this->boundary = new CheckoutRemovalBoundary(new ProtectedPathCatalog);
     $this->source = new RemoteDevelopmentInstanceSourceLifecycle(
@@ -139,8 +140,10 @@ beforeEach(function (): void {
         app(RepositoryReadAccess::class),
         app(TaskVmGit::class),
     );
+    $this->programs = new SshProgramRunner($this->transport, $keys, $knownHosts, $catalog);
     $this->removal = new RemoteDevelopmentInstanceSourceRemoval(
-        $ssh,
+        $this->programs,
+        $catalog,
         $accounts,
         $this->boundary,
         $this->sourceLock,
@@ -362,22 +365,16 @@ it('refuses to move a checkout across a mount before any copy, and keeps it in p
     $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-cross-device');
     $member = orb180_record_source($this->removal, $instance, true);
     $checkout = (string) $instance->checkout_path;
-    $bin = $this->sandbox.'/cross-device-bin';
-    $this->files->makeDirectory($bin);
-    // The stat that the guard runs reports the checkout on another device; every other stat is the real one.
-    file_put_contents($bin.'/stat', "#!/bin/bash\nif [ \"\$*\" = ".escapeshellarg("-c %d -- {$checkout}")." ]; then echo 64999; exit 0; fi\nexec /usr/bin/stat \"\$@\"\n");
-    chmod($bin.'/stat', 0755);
-    $this->transport->environment = ['PATH' => $bin.':'.getenv('PATH')];
+    // The guard reports the checkout on another device; every other identity check reads the real one.
+    $this->transport->crossDeviceOnce = true;
 
     expect(fn () => $this->removal->finalize($member))->toThrow(RuntimeConvergenceException::class);
 
-    $finalization = collect($this->transport->commands)->last(fn (RemoteCommand $command): bool => str_contains((string) $command->input, 'expected_origin=$6'));
-    expect($finalization)->not->toBeNull()
+    expect($this->transport->outcomes['instances.finalize-source-removal'] ?? null)->toBe('cross_device')
         ->and(is_dir($checkout.'/.git'))->toBeTrue()
         ->and(file_exists(orb180_quarantine_path($member)))->toBeFalse()
         ->and($member->refresh()->source_finalized_at)->toBeNull();
 
-    $this->transport->environment = [];
     expect($this->removal->finalize($member))->not->toBeNull()
         ->and(file_exists($checkout))->toBeFalse();
 });
@@ -2829,7 +2826,8 @@ it('reports foreign App ownership drift as a removal conflict before path valida
 it('holds the per-Node source lock for every recorded adapter call', function (): void {
     $lock = new Orb180RecordingSourceLock;
     $removal = new RemoteDevelopmentInstanceSourceRemoval(
-        $this->ssh,
+        $this->programs,
+        new RemoteProgramCatalog,
         $this->accounts,
         $this->boundary,
         $lock,
@@ -3539,14 +3537,17 @@ final class Orb76LocalSourceSshExecutor implements SshExecutor
 
     public ?string $prepareFailure = null;
 
-    public bool $interruptDuringSourceDeletion = false;
-
     public bool $interruptAfterSourceMove = false;
+
+    public bool $crossDeviceOnce = false;
 
     /** @var array<string, string> */
     public array $environment = [];
 
     public bool $failGroupingDirectoryCleanupOnce = false;
+
+    /** @var array<string, string> The last outcome of each remote program. */
+    public array $outcomes = [];
 
     public function __construct(
         public string $remoteOrigin,
@@ -3559,55 +3560,12 @@ final class Orb76LocalSourceSshExecutor implements SshExecutor
     ): CommandResult {
         $this->commands[] = $command;
         $input = $command->input;
-        if (is_string($input) && $this->interruptDuringSourceDeletion && str_contains($input, 'expected_origin=$6')) {
-            $this->interruptDuringSourceDeletion = false;
-            $input = str_replace(
-                ['checkout) rm -rf -- "$quarantine" ;;', 'checkout) remove_source_tree "$quarantine" ;;'],
-                'checkout) find -P "$quarantine/.git" -mindepth 1 -delete; exit 74 ;;',
-                $input,
-            );
+        $program = ($command->arguments[0] ?? null) === 'python3' ? ($command->arguments[4] ?? null) : null;
+
+        if (is_string($program) && is_string($input)) {
+            $input = $this->programInput($program, $input);
         }
 
-        if (is_string($input) && $this->interruptAfterSourceMove && str_contains($input, 'expected_origin=$6')) {
-            $this->interruptAfterSourceMove = false;
-            $input = str_replace('physical=$quarantine', 'physical=$quarantine; exit 74', $input);
-        }
-
-        if (is_string($input) && str_contains($input, 'expected_origin=$6')) {
-            $callback = $this->beforeFinalization;
-            $this->beforeFinalization = null;
-            $callback?->__invoke();
-
-            if ($this->failGroupingDirectoryCleanupOnce) {
-                $this->failGroupingDirectoryCleanupOnce = false;
-                $input = str_replace('rmdir -- "$grouping_directory"', 'exit 97', $input);
-            }
-        }
-
-        if (is_string($input) && str_contains($input, 'expected_repository_identity=$1')) {
-            $checkout = $command->arguments[3] ?? null;
-
-            if (is_string($checkout) && is_dir($checkout)) {
-                $configuredOrigin = trim(orb76_run([
-                    'git',
-                    '-C',
-                    $checkout,
-                    'config',
-                    '--get',
-                    'remote.origin.url',
-                ])->stdout);
-
-                if ($configuredOrigin === $this->localOrigin) {
-                    orb76_run(['git', '-C', $checkout, 'remote', 'set-url', 'origin', $this->remoteOrigin]);
-                }
-            }
-
-            $input = str_replace(
-                'git --git-dir="$scratch/repository.git" remote add origin "$origin"',
-                "git --git-dir=\"\$scratch/repository.git\" remote add origin '{$this->localOrigin}'",
-                $input,
-            );
-        }
         $preparing = is_string($input) && str_contains($input, 'allow_existing=$6');
         if ($preparing && $this->prepareFailure === 'before directory') {
             $input = str_replace('mkdir -m 0755 -- "$checkout"', 'exit 75', $input);
@@ -3628,6 +3586,11 @@ final class Orb76LocalSourceSshExecutor implements SshExecutor
             environment: $this->environment,
         ));
 
+        if (is_string($program) && $result->succeeded()) {
+            $outcome = json_decode($result->stdout, true);
+            $this->outcomes[$program] = is_array($outcome) && is_string($outcome['outcome'] ?? null) ? $outcome['outcome'] : '';
+        }
+
         return new CommandResult(
             exitCode: $preparing && $this->prepareFailure === 'lost response' && $result->succeeded() ? 255 : $result->exitCode,
             stdout: str_replace(
@@ -3639,5 +3602,68 @@ final class Orb76LocalSourceSshExecutor implements SshExecutor
             durationMs: $result->durationMs,
             truncated: $result->truncated,
         );
+    }
+
+    /**
+     * Point a remote program at the local origin, and inject the fault a test asked for into its source, as an
+     * interruption at a given step would leave the Node.
+     */
+    private function programInput(string $program, string $input): string
+    {
+        [$source, $payload] = explode("\0", $input, 2);
+        $values = json_decode($payload, true, flags: JSON_THROW_ON_ERROR);
+        array_walk_recursive($values, function (mixed &$value): void {
+            $value = $value === $this->remoteOrigin ? $this->localOrigin : $value;
+        });
+
+        if ($program === 'instances.finalize-source-removal') {
+            $callback = $this->beforeFinalization;
+            $this->beforeFinalization = null;
+            $callback?->__invoke();
+
+            if ($this->interruptAfterSourceMove) {
+                $this->interruptAfterSourceMove = false;
+                $source = self::inject($source, 'physical = quarantine', 'physical = quarantine; raise SystemExit(74)');
+            }
+
+            if ($this->crossDeviceOnce) {
+                $this->crossDeviceOnce = false;
+                $source = self::inject($source, 'return os.lstat(first).st_dev == os.lstat(second).st_dev', 'return False');
+            }
+
+            if ($this->failGroupingDirectoryCleanupOnce) {
+                $this->failGroupingDirectoryCleanupOnce = false;
+                $source = self::inject($source, 'os.rmdir(grouping_directory)', 'raise SystemExit(97)');
+            }
+        }
+
+        if ($program === 'instances.remove-source') {
+            $checkout = $values['checkout'] ?? null;
+
+            if (is_string($checkout) && is_dir($checkout)) {
+                $configuredOrigin = trim(orb76_run(['git', '-C', $checkout, 'config', '--get', 'remote.origin.url'])->stdout);
+
+                if ($configuredOrigin === $this->localOrigin) {
+                    orb76_run(['git', '-C', $checkout, 'remote', 'set-url', 'origin', $this->remoteOrigin]);
+                }
+            }
+
+            $source = self::inject(
+                $source,
+                "'remote', 'add', 'origin', origin)",
+                "'remote', 'add', 'origin', ".var_export($this->localOrigin, true).')',
+            );
+        }
+
+        return $source."\0".json_encode($values, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    }
+
+    private static function inject(string $source, string $search, string $replace): string
+    {
+        if (! str_contains($source, $search)) {
+            throw new LogicException("The program no longer contains [{$search}].");
+        }
+
+        return str_replace($search, $replace, $source);
     }
 }

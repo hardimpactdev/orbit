@@ -55,6 +55,9 @@ API_ARTIFACT_COMMANDS = (('bin/docs-openapi', '--check'), ('bin/mcp-tools', '--c
 API_FIXTURE_TRIGGERS = ('docs/openapi.json', 'packages/php-sdk/fixtures/', 'apps/web/fixtures/',
                         'bin/api-fixtures', 'bin/review-check')
 RUST_FORMAT = ('cargo', 'fmt', '--all', '--', '--check')
+# The lint and direct tests of the programs that the Gateway runs on Nodes (docs/reference/remote-programs.md).
+REMOTE_PROGRAM_TRIGGERS = ('apps/gateway/resources/', 'apps/gateway/tests/Programs/', 'apps/gateway/ruff.toml',
+                           'bin/remote-programs-check', 'bin/review-check')
 BASES = ('origin/main', 'main')
 # Reports older than this are removed by the next run of the user that wrote them.
 REPORT_RETENTION_SECONDS = 24 * 60 * 60
@@ -152,6 +155,8 @@ def selected_projects(paths, root):
         selected.append(('apps/web', (WEB_INSTALL, WEB_TYPES)))
     if any(path.startswith('apps/pi-server/') for path in paths):
         selected.append(('apps/pi-server', PI_SERVER_COMMANDS))
+    if any(path.startswith(REMOTE_PROGRAM_TRIGGERS) for path in paths):
+        selected.append(('repository', (('bin/remote-programs-check',),)))
     for project, _commands in list(selected):
         if project not in PHP_PROJECTS:
             continue

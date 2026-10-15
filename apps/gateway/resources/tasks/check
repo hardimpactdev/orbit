@@ -37,7 +37,6 @@ import sys
 import tempfile
 import time
 import traceback
-import xml.etree.ElementTree as ElementTree
 
 DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 RESULT = os.path.join(DIRECTORY, 'check.json')

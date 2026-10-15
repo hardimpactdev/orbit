@@ -1,0 +1,178 @@
+#!/usr/bin/env python3
+"""Lint and test the programs that the Gateway runs on Nodes.
+
+Run from any directory:
+
+    bin/remote-programs-check
+
+shellcheck checks every Bash program under apps/gateway/resources, and ruff 0.17.0 checks every Python program and
+the direct tests with apps/gateway/ruff.toml. A remote program with libraries, and a fragment that the Gateway appends to another program,
+is checked as the Node receives it; each finding names the file and line where it occurs. Then the direct program
+tests in apps/gateway/tests/Programs run with unittest. A missing tool fails the check.
+See docs/reference/remote-programs.md.
+"""
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+GATEWAY = ROOT / 'apps/gateway'
+RESOURCES = GATEWAY / 'resources'
+REMOTE = RESOURCES / 'remote'
+RUFF_VERSION = '0.17.0'
+
+# Fragments that the Gateway appends to another program before it sends them, so they are checked after it.
+# RecipeImagePrograms appends build-image.py to converge-node.py.
+FRAGMENTS = {
+    'machine-software/build-image.py': ['machine-software/converge-node.py'],
+}
+
+
+def require_tool(name):
+    if shutil.which(name) is None:
+        sys.exit(f'{name}: required tool not found')
+
+
+def language(path):
+    if path.suffix in ('.py', '.sh'):
+        return path.suffix[1:]
+    if path.suffix:
+        return None
+    try:
+        first = path.read_bytes().split(b'\n', 1)[0]
+    except OSError:
+        return None
+    if first.startswith(b'#!') and b'python' in first:
+        return 'py'
+    if first.startswith(b'#!') and b'bash' in first:
+        return 'sh'
+    return None
+
+
+def header_uses(text):
+    for line in text.split('\n'):
+        if not line.startswith('#'):
+            break
+        match = re.fullmatch(r'# Uses: (.+)', line)
+        if match:
+            return match[1].split()
+    return []
+
+
+def parts(path):
+    """The files that make up what the Node receives for this program, in order."""
+    relative = path.relative_to(RESOURCES).as_posix()
+    if relative in FRAGMENTS:
+        return [RESOURCES / name for name in FRAGMENTS[relative]] + [path]
+    if path.is_relative_to(REMOTE) and path.parent != REMOTE and path.parent.name != 'lib':
+        return [REMOTE / name for name in header_uses(path.read_text())] + [path]
+    return [path]
+
+
+def assemble(files):
+    """The assembled text and, for each part, its file and first line in the assembly."""
+    text = ''
+    offsets = []
+    for file in files:
+        content = file.read_text()
+        content = content if content.endswith('\n') else content + '\n'
+        offsets.append((text.count('\n') + 1, file))
+        text += content
+    return text, offsets
+
+
+def locate(offsets, line):
+    start, file = offsets[0]
+    for candidate_start, candidate in offsets:
+        if candidate_start <= line:
+            start, file = candidate_start, candidate
+    return file.relative_to(ROOT).as_posix(), line - start + 1
+
+
+def ruff(path, files, options):
+    text, offsets = assemble(files)
+    completed = subprocess.run(
+        ['ruff', 'check', '--no-cache', '--config', str(GATEWAY / 'ruff.toml'), '--output-format', 'json',
+         *options, '--stdin-filename', str(path), '-'],
+        input=text, capture_output=True, text=True, check=False,
+    )
+    if completed.returncode not in (0, 1):
+        return [f'{path.relative_to(ROOT)}: ruff failed: {completed.stderr.strip()}']
+    findings = []
+    for finding in json.loads(completed.stdout or '[]'):
+        file, line = locate(offsets, finding['location']['row'])
+        findings.append(f"{file}:{line}:{finding['location']['column']}: {finding['code']} {finding['message']}")
+    return findings
+
+
+def shellcheck(path, files):
+    text, offsets = assemble(files)
+    completed = subprocess.run(
+        ['shellcheck', '--shell=bash', '--format=json1', '-'],
+        input=text, capture_output=True, text=True, check=False,
+    )
+    if completed.returncode not in (0, 1):
+        return [f'{path.relative_to(ROOT)}: shellcheck failed: {completed.stderr.strip()}']
+    findings = []
+    for finding in json.loads(completed.stdout or '{}').get('comments', []):
+        file, line = locate(offsets, finding['line'])
+        findings.append(f"{file}:{line}:{finding['column']}: SC{finding['code']} {finding['message']}")
+    return findings
+
+
+def programs():
+    """Every Bash and Python file under the resources, libraries and fragments included."""
+    found = []
+    for path in sorted(RESOURCES.rglob('*')):
+        kind = language(path) if path.is_file() and 'node_modules' not in path.parts else None
+        if kind is not None:
+            found.append((path, kind))
+    return found
+
+
+def main():
+    for tool in ('shellcheck', 'ruff', 'python3'):
+        require_tool(tool)
+    version = subprocess.run(['ruff', '--version'], capture_output=True, text=True, check=False).stdout.split()
+    if version[-1:] != [RUFF_VERSION]:
+        sys.exit(f'ruff: version {RUFF_VERSION} required, found {" ".join(version) or "none"}')
+
+    findings = []
+    found = programs()
+    assembled = {path: parts(path) for path, _ in found}
+    used = {file for files in assembled.values() for file in files[:-1]}
+    partial = used | {path for path, files in assembled.items() if len(files) > 1}
+    for path, kind in found:
+        if kind == 'sh':
+            findings += shellcheck(path, assembled[path])
+            continue
+        # Each file alone, then each assembly for names that one file uses and another defines. A file that is only
+        # one part of an assembly may use names it does not define.
+        findings += ruff(path, [path], ['--extend-ignore', 'F821'] if path in partial else [])
+        if len(assembled[path]) > 1:
+            findings += ruff(path, assembled[path], ['--select', 'E9,F821'])
+    tests = sorted((GATEWAY / 'tests/Programs').glob('*.py'))
+    for path in tests:
+        findings += ruff(path, [path], [])
+    for finding in dict.fromkeys(findings):
+        print(finding)
+    if findings:
+        sys.exit(f'{len(set(findings))} finding(s) in the remote programs.')
+    print(f'Linted {len(found) + len(tests)} files.', flush=True)
+
+    tests = GATEWAY / 'tests/Programs'
+    completed = subprocess.run(
+        [sys.executable, '-m', 'unittest', 'discover', '--start-directory', str(tests), '--top-level-directory',
+         str(tests), '--pattern', 'test_*.py'],
+        env={**os.environ, 'PYTHONDONTWRITEBYTECODE': '1'},
+        check=False,
+    )
+    sys.exit(completed.returncode)
+
+
+if __name__ == '__main__':
+    main()
