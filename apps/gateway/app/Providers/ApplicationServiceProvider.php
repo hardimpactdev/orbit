@@ -74,7 +74,6 @@ use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubCliToken;
 use App\Domain\GitHub\GreenCommitResolver;
-use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\GitHub\RequiredCheckReader;
 use App\Domain\Hibernation\DevelopmentHibernationPolicy;
 use App\Domain\Hibernation\HibernationMarkerStore;
@@ -629,9 +628,11 @@ final class ApplicationServiceProvider extends ServiceProvider
         // The automatic deployment tick reads branch heads every minute, so its reads keep their GitHub credentials.
         $this->app->bind(
             RemoteBranchHeads::class,
-            static fn ($app): RemoteBranchHeads => new GitRemoteBranchHeads(
+            static fn ($app): RemoteBranchHeads => GitRemoteBranchHeads::withCachedCredentials(
                 $app->make(ProcessRunner::class),
-                new RepositoryReadAccess($app->make(GitHubAppStore::class), $app->make(CachedGitHubApi::class), $app->make(GitHubCliToken::class)),
+                $app->make(GitHubAppStore::class),
+                $app->make(CachedGitHubApi::class),
+                $app->make(GitHubCliToken::class),
                 $app->make(GitHubTokenCache::class),
             ),
         );

@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\SourceControl;
 
+use App\Domain\GitHub\GitHubAppStore;
+use App\Domain\GitHub\GitHubCliToken;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\RemoteBranchHeads;
+use App\Infrastructure\GitHub\CachedGitHubApi;
 use App\Infrastructure\GitHub\GitHubTokenCache;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -27,6 +30,12 @@ final readonly class GitRemoteBranchHeads implements RemoteBranchHeads
         private RepositoryReadAccess $access,
         private ?GitHubTokenCache $tokens = null,
     ) {}
+
+    /** A reader whose GitHub App reads keep the repository's installation and read token in {@see GitHubTokenCache}. */
+    public static function withCachedCredentials(ProcessRunner $processes, GitHubAppStore $store, CachedGitHubApi $github, GitHubCliToken $cli, GitHubTokenCache $tokens): self
+    {
+        return new self($processes, new RepositoryReadAccess($store, $github, $cli), $tokens);
+    }
 
     public function head(Project $project, string $branch): string
     {

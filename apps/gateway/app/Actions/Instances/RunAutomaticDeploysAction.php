@@ -33,6 +33,7 @@ use App\Models\Activity;
 use App\Models\Instance;
 use App\Models\InstanceDeployment;
 use App\Models\Operation;
+use Closure;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -102,9 +103,9 @@ final readonly class RunAutomaticDeploysAction
     /**
      * Runs one Instance's check, records its result, and, for a production Instance, watches for a stall.
      *
-     * @param  \Closure(AutomaticDeployState): AutomaticDeployOutcome  $check
+     * @param  Closure(AutomaticDeployState): AutomaticDeployOutcome  $check
      */
-    private function tick(Instance $instance, \Closure $check, bool $alerts = false): AutomaticDeployOutcome
+    private function tick(Instance $instance, Closure $check, bool $alerts = false): AutomaticDeployOutcome
     {
         $state = AutomaticDeployState::of($instance);
 
