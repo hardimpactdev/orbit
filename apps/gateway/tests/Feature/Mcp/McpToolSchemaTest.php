@@ -6,6 +6,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
 use Illuminate\Testing\TestResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Tests\Support\TaskModelRouter;
 
 beforeEach(function (): void {
     $this->gateway = $this->markAsGateway(Node::query()->create([
@@ -16,8 +17,8 @@ beforeEach(function (): void {
         'wireguard_ip' => '10.44.0.71',
     ]));
     $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
+    TaskModelRouter::ready();
     $this->postJson('/api/v1/extensions/tasks/enable')->assertOk();
-    $this->postJson('/api/v1/extensions/proxycli/enable')->assertOk();
     $this->postJson('/api/v1/extensions/documents/enable')->assertOk();
     $this->postJson('/api/v1/extensions/vault/enable')->assertOk();
     $this->postJson('/api/v1/extensions/conn/enable')->assertOk();

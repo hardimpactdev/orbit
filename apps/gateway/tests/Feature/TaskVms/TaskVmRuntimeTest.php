@@ -3,10 +3,12 @@
 declare(strict_types=1);
 
 use App\Actions\TaskVms\PrepareTaskVmRuntimeAction;
+use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\ProxyCli\ProxyCliState;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\TaskVms\ModelKeyIssuer;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Processes\CommandResult;
@@ -21,6 +23,7 @@ use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Http\Client\Events\RequestSending;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Tests\Support\AppDevFakeSshExecutor;
@@ -216,6 +219,23 @@ describe('prepare', function (): void {
             ->toThrow(fn (TaskVmException $exception) => expect($exception->errorCode)->toBe('task_vm.model_key_failed'));
         expect($this->transport->commands)->toBe([])
             ->and($vm->fresh()?->model_key)->toMatch('/\A[a-f0-9]{64}\z/');
+    });
+});
+
+describe('model router readiness', function (): void {
+    it('stores no model key while the router holds no management key, under the lock its teardown takes', function (): void {
+        Http::fake();
+        app(ExtensionStore::class)->set('tasks', true);
+        app(ProxyCliState::class)->disable();
+        $vm = tvm_runtime_vm();
+
+        expect(fn () => app(TaskVmRuntime::class)->prepare($vm))
+            ->toThrow(fn (TaskVmException $exception) => expect([$exception->errorCode, $exception->status])->toBe(['task_vm.model_key_failed', 409]));
+        expect($vm->fresh()?->model_key)->toBeNull()
+            ->and($vm->fresh()?->model_proxy_origin)->toBeNull()
+            ->and($this->transport->commands)->toBe([])
+            ->and(Cache::lock(ModelKeyIssuer::Lock, 10)->get())->toBeTrue();
+        Http::assertNothingSent();
     });
 });
 

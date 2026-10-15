@@ -17,6 +17,7 @@ use Illuminate\Testing\TestResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Tests\Support\FakeRouteRemovalProjector;
 use Tests\Support\Orb220DeploymentApiFixture;
+use Tests\Support\TaskModelRouter;
 
 /** @param array<string, mixed> $params */
 function mcp_call(mixed $test, string $method, array $params = [], string $endpoint = '/mcp'): TestResponse
@@ -98,8 +99,8 @@ describe('POST /mcp', function (): void {
     });
 
     it('lists one tool for every manifest entry', function (): void {
+        TaskModelRouter::ready();
         $this->postJson('/api/v1/extensions/tasks/enable')->assertOk();
-        $this->postJson('/api/v1/extensions/proxycli/enable')->assertOk();
         $this->postJson('/api/v1/extensions/documents/enable')->assertOk();
         $this->postJson('/api/v1/extensions/vault/enable')->assertOk();
         $this->postJson('/api/v1/extensions/conn/enable')->assertOk();
@@ -275,6 +276,7 @@ describe('/mcp tool list changes', function (): void {
         expect($initialized->json('result.capabilities.tools.listChanged'))->toBeFalse();
 
         // The tool list changes after the client connected. The client still sends the session id it holds.
+        TaskModelRouter::ready();
         $this->postJson('/api/v1/extensions/tasks/enable')->assertOk();
         $this->withHeader('Mcp-Session-Id', '0123456789abcdef.0123456789abcdef0123456789abcdef');
     });

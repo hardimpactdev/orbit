@@ -30,6 +30,7 @@ use Illuminate\Routing\Route as RoutingRoute;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Route as RouteRegistry;
 use Illuminate\Testing\TestResponse;
+use Tests\Support\TaskModelRouter;
 
 beforeEach(function (): void {
     $this->gateway = $this->markAsGateway(Node::query()->create([
@@ -63,8 +64,8 @@ describe('MCP tool input schemas', function (): void {
     });
 
     it('serves a valid input schema for every tool', function (): void {
+        TaskModelRouter::ready();
         $this->postJson('/api/v1/extensions/tasks/enable')->assertOk();
-        $this->postJson('/api/v1/extensions/proxycli/enable')->assertOk();
 
         $schemas = [];
         $cursor = null;
