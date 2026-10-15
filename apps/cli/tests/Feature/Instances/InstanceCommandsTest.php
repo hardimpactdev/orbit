@@ -622,6 +622,63 @@ describe('instance:update', function (): void {
     });
 });
 
+describe('instance:update --auto-deploy', function (): void {
+    it('turns automatic deployment on, shows the gate, and sends only that field', function (): void {
+        $payload = [...instance_payload(), 'production_user' => 'orbit-app-3', 'auto_deploy' => instance_auto_deploy_payload(['enabled' => true, 'gate' => 'Required checks', 'result' => 'up_to_date', 'commit' => str_repeat('c', 40)])];
+        $mock = MockClient::global([UpdateInstanceRequest::class => instance_mock_response(payload: $payload)]);
+
+        expect(Artisan::call('instance:update', ['instance' => '5', '--auto-deploy' => 'true']))->toBe(0);
+
+        expect(instance_source_text(Artisan::output()))->toContain('Auto deploy on, after Required checks passes', 'Auto deploy state up_to_date cccccccccccc')
+            ->not->toContain('Deployment branch')
+            ->and($mock->getLastRequest()?->body()->all())->toBe(['auto_deploy' => true]);
+    });
+
+    it('warns when every commit deploys without a merge check', function (): void {
+        $warning = 'The Project has no merge_check, so every new commit on the branch deploys without a check.';
+        $payload = [...instance_payload(), 'production_user' => 'orbit-app-3', 'auto_deploy' => instance_auto_deploy_payload(['enabled' => true, 'warning' => $warning])];
+        MockClient::global([UpdateInstanceRequest::class => instance_mock_response(payload: $payload)]);
+
+        expect(Artisan::call('instance:update', ['instance' => '5', '--auto-deploy' => 'true']))->toBe(0);
+
+        expect(instance_source_text(Artisan::output()))->toContain('Auto deploy on, without a merge check', $warning);
+    });
+
+    it('turns automatic deployment off together with the branch', function (): void {
+        $mock = MockClient::global([UpdateInstanceRequest::class => instance_mock_response()]);
+
+        expect(Artisan::call('instance:update', ['instance' => '5', '--branch' => 'release', '--auto-deploy' => 'false']))->toBe(0);
+
+        expect(instance_source_text(Artisan::output()))->toContain('Deployment branch release', 'Auto deploy off')
+            ->and($mock->getLastRequest()?->body()->all())->toBe(['branch' => 'release', 'auto_deploy' => false]);
+    });
+
+    it('refuses a value other than true or false, and an update without a field, before it sends anything', function (array $options, string $code): void {
+        $mock = MockClient::global([UpdateInstanceRequest::class => instance_mock_response()]);
+
+        $this->artisan('instance:update', ['instance' => '5', '--json' => true, ...$options])
+            ->expectsOutputToContain($code)
+            ->assertExitCode(1);
+
+        expect($mock->getLastRequest())->toBeNull();
+    })->with([
+        'yes' => [['--auto-deploy' => 'yes'], 'instance.auto_deploy_invalid'],
+        'nothing' => [[], 'instance.update_required'],
+    ]);
+
+    it('shows a paused production Instance and how to resume it', function (): void {
+        $payload = [...instance_payload(), 'production_user' => 'orbit-app-3', 'production_home' => '/home/orbit-app-3', 'auto_deploy' => instance_auto_deploy_payload([
+            'enabled' => true, 'gate' => 'Required checks', 'result' => 'paused', 'commit' => str_repeat('a', 40),
+            'pause' => ['reason' => 'rollback', 'deployment_id' => 41, 'commit' => str_repeat('a', 40), 'paused_at' => '2026-10-15T10:00:00+00:00'],
+        ])];
+        MockClient::global([ShowInstanceRequest::class => instance_mock_response(payload: $payload), ListProcessesRequest::class => no_processes_response()]);
+
+        expect(Artisan::call('instance:show', ['instance' => '5']))->toBe(0);
+
+        expect(instance_source_text(Artisan::output()))->toContain('Auto deploy paused rollback (deployment 41); run instance:update 5 --auto-deploy=true to resume');
+    });
+});
+
 describe('instance:show', function (): void {
     it('shows an Instance as JSON', function (): void {
         MockClient::global([ShowInstanceRequest::class => instance_mock_response(), ListProcessesRequest::class => no_processes_response()]);

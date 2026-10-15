@@ -10,6 +10,8 @@ use App\Data\DatabaseConnections\UpdateDatabaseConnectionData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\DatabaseConnections\DatabaseConnectionProfile;
+use App\Domain\DatabaseConnections\DatabaseDriver;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
 use Illuminate\Support\Facades\DB;
 
@@ -30,6 +32,19 @@ final readonly class UpdateDatabaseConnectionAction
 
             $proposed = clone $locked;
             $proposed->fill($attributes);
+
+            if ($proposed->driver === DatabaseDriver::Sqlite) {
+                foreach ($locked->targets()->with('instance')->get() as $target) {
+                    if ($target->instance->node_id !== $proposed->node_id) {
+                        throw new ResourceOperationException(
+                            errorCode: 'database.node_mismatch',
+                            message: 'A SQLite connection must be on the same Node as every attached Instance.',
+                            status: 422,
+                        );
+                    }
+                }
+            }
+
             app(ReconvergeProxyCliConnectionAction::class)->validate($proposed);
             $locked->update($attributes);
 

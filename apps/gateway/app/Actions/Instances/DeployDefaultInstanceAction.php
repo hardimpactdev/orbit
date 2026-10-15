@@ -19,7 +19,6 @@ use App\Domain\Instances\Deployment\DeploymentStepName;
 use App\Domain\Instances\Deployment\DeploymentSteps;
 use App\Domain\Instances\Deployment\DevelopmentDeployment;
 use App\Domain\Instances\Deployment\InlineDeploymentSteps;
-use App\Domain\Instances\Deployment\InstanceDeploymentRecorder;
 use App\Domain\Instances\DevelopmentRouteProjector;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\InstanceSourceLayout;
@@ -46,7 +45,6 @@ final readonly class DeployDefaultInstanceAction
         private ProjectDevelopmentDeployStepStore $steps,
         private InstanceEnvironmentOperationLock $operations,
         private CommandDeadline $deadline,
-        private InstanceDeploymentRecorder $recorder,
         private DevelopmentRouteProjector $routes,
         private DevelopmentProjectionOperationLock $projections,
     ) {}
@@ -70,21 +68,23 @@ final readonly class DeployDefaultInstanceAction
         ];
     }
 
-    /** Scheduled runs return null for an unchanged commit, without a history row. */
-    public function execute(Instance $instance, ?DeploymentRequest $request = null, bool $onlyChanged = false, ?string $triggeredBy = null, ?DeploymentSteps $steps = null): ?DeploymentResult
+    /**
+     * Deploys the branch's newest commit, or `$commit` when the branch contains it. The `instance.deploy` operation
+     * records its history row; the automatic deployment tick starts that operation only for a changed commit.
+     */
+    public function execute(Instance $instance, ?DeploymentRequest $request = null, ?DeploymentSteps $steps = null, ?string $commit = null): DeploymentResult
     {
         $request ??= DeploymentRequest::withoutOutput();
         $steps ??= new InlineDeploymentSteps;
         try {
-            return $this->operations->run([$instance->id], function () use ($instance, $request, $onlyChanged, $triggeredBy, $steps): ?DeploymentResult {
+            return $this->operations->run([$instance->id], function () use ($instance, $request, $steps, $commit): DeploymentResult {
                 $instance->refresh()->loadMissing(['project', 'node']);
                 $this->assertAvailable($instance);
                 $deploySteps = $this->steps->ordered($instance->project);
                 $seconds = DeploymentDeadline::InfrastructureSeconds + array_sum(array_map(static fn ($step): int => $step->timeoutSeconds, $deploySteps));
 
-                return $this->deadline->within($seconds, function () use ($instance, $request, $onlyChanged, $triggeredBy, $deploySteps, $steps): ?DeploymentResult {
+                return $this->deadline->within($seconds, function () use ($instance, $request, $deploySteps, $steps, $commit): DeploymentResult {
                     $collector = new DeploymentEventCollector;
-                    $record = null;
                     $output = new DeploymentRequest(
                         output: static function (DeploymentEvent $event) use ($request, $collector): void {
                             $collector->output($event);
@@ -96,36 +96,27 @@ final readonly class DeployDefaultInstanceAction
                             $request->emitPhase($phase, $stepName);
                         },
                     );
-                    $commit = null;
+                    // A failed deployment reports the commit it was asked for, or the one it tried.
+                    $attempted = $commit;
                     $commands = [];
                     $boundary = DeploymentFailureBoundary::Preparation;
                     try {
-                        $prepared = $steps->run(new DeploymentStepName(DeploymentProgressPhase::SourcePreparation), $output, function () use ($instance, $output, $onlyChanged, $triggeredBy, &$record, &$commit): array {
-                            // The pending mark is the receipt of route convergence. Repair before the unchanged
-                            // fast path so a lost process cannot strand it; a completed projection skips the lock.
+                        $prepared = $steps->run(new DeploymentStepName(DeploymentProgressPhase::SourcePreparation), $output, function () use ($instance, $output, $commit, &$attempted): array {
+                            // The pending mark is the receipt of route convergence; a lost process cannot strand it.
                             if ($instance->development_projection_pending) {
                                 $this->projectRoute($instance);
                             }
-                            $target = $this->deployment->target($instance);
-                            if ($onlyChanged && $instance->seed_commit === $target->commit) {
-                                return ['commit' => $target->commit, 'unchanged' => true];
-                            }
-                            if ($triggeredBy !== null) {
-                                $record = $this->recorder->start($instance, $triggeredBy);
-                            }
-                            // A failed checkout reports the commit it tried.
-                            $commit = $target->commit;
+                            $target = $this->deployment->target($instance, $commit);
+                            $attempted = $target->commit;
                             $this->deployment->checkout($instance, $target->commit, $output);
 
-                            return ['commit' => $target->commit, 'unchanged' => false];
+                            return ['commit' => $target->commit];
                         });
-                        if (is_array($prepared) && ($prepared['unchanged'] ?? false) === true) {
-                            return null;
-                        }
-                        $commit = is_array($prepared) && is_string($prepared['commit'] ?? null) ? $prepared['commit'] : null;
-                        if ($commit === null) {
+                        $prepared = is_array($prepared) && is_string($prepared['commit'] ?? null) ? $prepared['commit'] : null;
+                        if ($prepared === null) {
                             throw new ResourceOperationException('deployment.interrupted', 'The prepared commit is missing.', 500);
                         }
+                        $attempted = $prepared;
                         $boundary = DeploymentFailureBoundary::BeforeActivation;
                         foreach ($deploySteps as $step) {
                             $steps->run(new DeploymentStepName(DeploymentProgressPhase::BeforeActivation, $step->name), $output, function () use ($instance, $step, $output, &$commands): null {
@@ -146,26 +137,36 @@ final readonly class DeployDefaultInstanceAction
                                 return null;
                             });
                         }
-                        $instance->update(['seed_path' => $instance->checkout_path, 'seed_commit' => $commit, 'seed_repository' => $instance->checkout_path]);
-                        $result = DeploymentResult::checkedOut($commit, $commands);
+                        $instance->update(['seed_path' => $instance->checkout_path, 'seed_commit' => $prepared, 'seed_repository' => $instance->checkout_path]);
+
+                        return DeploymentResult::checkedOut($prepared, $commands);
                     } catch (Throwable $exception) {
                         // The checkout stays at the new commit. The seed keeps the last commit that deployed,
-                        // so the next tick retries the steps.
-                        $result = DeploymentResult::failed(null, null, $boundary, $this->errorCode($exception), $commands, $commit);
-                        if ($record === null && $triggeredBy !== null) {
-                            $record = $this->recorder->start($instance, $triggeredBy);
-                        }
+                        // so the automatic deployment tick tries the commit again after its backoff.
+                        return DeploymentResult::failed(null, null, $boundary, $this->errorCode($exception), $commands, $attempted);
                     }
-                    if ($record !== null) {
-                        $this->recorder->finish($record, $result, $collector->events());
-                    }
-
-                    return $result;
                 });
             });
         } catch (Throwable $exception) {
-            return DeploymentResult::failed(null, null, DeploymentFailureBoundary::Operation, $this->errorCode($exception));
+            return DeploymentResult::failed(null, null, DeploymentFailureBoundary::Operation, $this->errorCode($exception), commit: $commit);
         }
+    }
+
+    /**
+     * Converges the default's Route while its projection is marked pending, so a crash or a failed converge is repaired
+     * without a deployment. A completed projection takes no lock.
+     */
+    public function repairProjection(Instance $instance): void
+    {
+        if (! $instance->development_projection_pending) {
+            return;
+        }
+        $this->operations->run([$instance->id], function () use ($instance): void {
+            $instance->refresh();
+            if ($instance->development_projection_pending) {
+                $this->projectRoute($instance);
+            }
+        });
     }
 
     public function assertAvailable(Instance $instance): void

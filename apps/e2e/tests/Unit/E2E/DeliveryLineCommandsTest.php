@@ -3,6 +3,9 @@
 declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
+use Tests\Support\SubprocessFixture;
+
+require_once dirname(__DIR__, 4).'/gateway/tests/Support/SubprocessFixture.php';
 
 /**
  * @param  list<string>  $arguments
@@ -678,6 +681,7 @@ describe('delivery-line proof commands', function (): void {
             '-subj', '/CN=127.0.0.1',
         ]))->mustRun();
 
+        // Allow 60 seconds for the Python TLS server to print its readiness line.
         $server = new Process([
             'python3', '-c',
             <<<'PY'
@@ -703,18 +707,10 @@ print(httpd.server_port, flush=True)
 httpd.handle_request()
 PY
             , $cert, $key,
-        ]);
+        ], timeout: 60);
         $server->start();
-        $port = null;
-        $deadline = microtime(true) + 5;
-        while ($port === null && microtime(true) < $deadline) {
-            $output = trim($server->getOutput());
-            if ($output !== '') {
-                $port = $output;
-            }
-            usleep(20_000);
-        }
-        expect($port)->not->toBeNull();
+        $port = SubprocessFixture::line($server);
+        expect($port)->toBeNumeric();
 
         $url = 'https://127.0.0.1:'.$port.'/up';
         $process = new Process([

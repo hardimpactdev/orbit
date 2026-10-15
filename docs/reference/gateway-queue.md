@@ -49,7 +49,7 @@ The scheduler dispatches each of these as a unique job. While the job waits or r
 | --- | --- | --- | --- |
 | `tasks:tick` | 10 seconds | `tasks` | 330 seconds |
 | `annotations:dispatch` | 10 seconds | `tasks` | 600 seconds |
-| `orbit:deploy-development-defaults` | minute | `tasks` | 1800 seconds |
+| `orbit:auto-deploy` | minute | `tasks` | 600 seconds |
 | `orbit:vault-sync` | minute | `tasks` | 900 seconds |
 | `orbit:desired-fleet-state` | 5 minutes | `tasks` | 600 seconds |
 | `orbit:activity-finalize-interrupted` | 5 minutes | `tasks` | 600 seconds |

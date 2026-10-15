@@ -16,6 +16,7 @@ use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Process\Process;
+use Tests\Support\SubprocessFixture;
 
 pest()->group('subprocess');
 
@@ -682,7 +683,7 @@ function doctor_cli_pty_fixture(string $root, bool $healthy): array
     ], timeout: 10);
     $server->start();
     $deadline = $server->getStartTime() + $server->getTimeout();
-    $address = subprocess_fixture_address($server);
+    $address = SubprocessFixture::line($server);
 
     $home = "{$directory}/home";
     mkdir($home, 0o700);

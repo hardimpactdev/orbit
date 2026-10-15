@@ -51,7 +51,7 @@ final class NightlyRecipeDoctor implements FleetNodeVerification
 }
 
 /** @return array{TaskVmImageBuild, TaskVmImageBuild, NightlyRecipeDoctor, RecordingReleaseAlertNotifier} */
-function nightlyRecipeFleet(): array
+function nightlyRecipeFleet(bool $newerUbuntu = false): array
 {
     test()->travelTo(new DateTimeImmutable('2026-10-15 01:00:00 UTC'));
     FleetFixtures::inPlace();
@@ -72,12 +72,21 @@ function nightlyRecipeFleet(): array
             'images' => ['base' => ['project' => 'orbit-tasks', 'alias' => 'base', 'fingerprint' => str_repeat('a', 64), 'type' => 'virtual-machine']]]);
     }
     $ssh = new ScriptedSshExecutor;
-    $ssh->on('/^python3 - inspect /', static function (RemoteCommand $command): CommandResult {
+    $ssh->on('/^python3 - inspect /', static function (RemoteCommand $command) use ($newerUbuntu): CommandResult {
         $data = json_decode($command->arguments[3], true, flags: JSON_THROW_ON_ERROR);
 
-        return ScriptedSshExecutor::ok(json_encode(array_map(static fn (array $pin): string => $pin['version'], $data['tools']), JSON_THROW_ON_ERROR));
+        $tools = [];
+        foreach ($data['tools'] as $name => $pin) {
+            $newer = $newerUbuntu && $name === 'curl';
+            $tools[$name] = ['source' => $pin['source'], 'version' => $pin['version'], 'installed' => $newer ? '8.18.0-1ubuntu2.8' : $pin['version'], 'changed' => false, 'status' => $newer ? 'newer_than_recipe' : 'current'];
+        }
+
+        return ScriptedSshExecutor::ok(json_encode($tools, JSON_THROW_ON_ERROR));
     });
-    $ssh->on('/^sudo timeout .* python3 - apply /', ScriptedSshExecutor::ok('{"changed_packages":["curl"],"restarted_services":[],"changed_tools":["curl"],"healthy":true}'));
+    $ssh->on('/^sudo timeout .* python3 - apply /', ScriptedSshExecutor::ok(json_encode([
+        'changed_packages' => $newerUbuntu ? [] : ['curl'], 'restarted_services' => [], 'changed_tools' => $newerUbuntu ? [] : ['curl'], 'healthy' => true,
+        'newer_than_recipe' => $newerUbuntu ? ['curl' => ['installed' => '8.18.0-1ubuntu2.8', 'version' => $recipe->tools['curl']->version]] : [],
+    ], JSON_THROW_ON_ERROR)));
     app()->instance(NodeShell::class, FleetTestSsh::shell($ssh));
     app()->instance(RemoteProgramRunner::class, new FakePhpBuildRunner);
     app()->instance(NodeUpdateLock::class, new NodeUpdateLock(FleetTestSsh::shell($ssh)));
@@ -314,4 +323,15 @@ it('visits a roleless CI runner with its recorded ci-runner profile in the overn
     expect($doctor->visited)->toBe([$record->host_node_id, $other->host_node_id, $sabre->id, $prod->id])
         ->and($sabre->refresh()->settings['machine_recipe']['profile'])->toBe('ci-runner')
         ->and($record->refresh()->fleet_convergence['status'])->toBe('succeeded');
+});
+
+it('records accepted newer Ubuntu security builds in nightly convergence without package changes', function (): void {
+    [$record, $other, $doctor, $alerts] = nightlyRecipeFleet(newerUbuntu: true);
+
+    app(ConvergeFleetRecipeAction::class)->execute();
+
+    $changes = $record->refresh()->fleet_convergence['nodes'][$record->host_node_id]['changes'];
+    expect($changes['changed_packages'])->toBe([])
+        ->and($changes['newer_than_recipe']['curl'])->toBe(['installed' => '8.18.0-1ubuntu2.8', 'version' => '8.18.0-1ubuntu2.7'])
+        ->and($alerts->alerts)->toBe([]);
 });

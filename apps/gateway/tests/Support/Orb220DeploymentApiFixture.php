@@ -146,9 +146,13 @@ final class Orb220ProductionDeployment implements ProductionDeployment
     /** How many 16 KiB stdout chunks the `prepare` step emits. */
     public int $prepareOutputChunks = 1;
 
-    public function prepare(Instance $instance, string $branch): DeploymentRelease
+    /** @var list<string|null> The commit each preparation was pinned to, or null for the branch's newest commit. */
+    public array $preparedCommits = [];
+
+    public function prepare(Instance $instance, string $branch, ?string $commit = null): DeploymentRelease
     {
         $this->invocations++;
+        $this->preparedCommits[] = $commit;
 
         if ($this->duringPrepare !== null) {
             ($this->duringPrepare)();
@@ -158,7 +162,7 @@ final class Orb220ProductionDeployment implements ProductionDeployment
             throw new ResourceOperationException('deployment.prepare_failed', 'Injected preparation failure.', 409);
         }
 
-        return $this->release('fresh');
+        return $this->release('fresh', $commit);
     }
 
     public function executeStep(
@@ -236,12 +240,12 @@ final class Orb220ProductionDeployment implements ProductionDeployment
         return ['removed' => [], 'in_use' => []];
     }
 
-    private function release(string $name): DeploymentRelease
+    private function release(string $name, ?string $commit = null): DeploymentRelease
     {
         return new DeploymentRelease(
             $name,
             "/home/deployment-stream/releases/{$name}",
-            str_repeat('a', 40),
+            $commit ?? str_repeat('a', 40),
         );
     }
 }
