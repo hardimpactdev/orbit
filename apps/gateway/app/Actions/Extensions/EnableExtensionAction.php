@@ -8,7 +8,10 @@ use App\Domain\Extensions\ExtensionRegistry;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Shared\ResourceOperationException;
 
-/** Turns one extension on after its dependencies, then runs its enable hook. */
+/**
+ * Runs one extension's enable hook after its dependencies, then turns its switch on. The switch is written only after
+ * the hook returns, so a hook that throws leaves the switch as it was and its error reaches the caller.
+ */
 final readonly class EnableExtensionAction
 {
     public function __construct(private ExtensionRegistry $registry, private ExtensionStore $store) {}
@@ -27,7 +30,7 @@ final readonly class EnableExtensionAction
             }
         }
 
-        $this->store->set($name, true);
         $extension->enable();
+        $this->store->set($name, true);
     }
 }

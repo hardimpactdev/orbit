@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Extensions\ExtensionRegistry;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\Project;
 use App\Providers\ExtensionServiceProvider;
@@ -170,6 +171,28 @@ final class DependentTestExtension extends ExtensionServiceProvider
     }
 }
 
+final class FailingTestExtension extends ExtensionServiceProvider
+{
+    public static bool $switchSeenByHook = true;
+
+    public function name(): string
+    {
+        return 'failing';
+    }
+
+    public function description(): string
+    {
+        return 'A test extension whose setup fails.';
+    }
+
+    public function enable(): void
+    {
+        self::$switchSeenByHook = app(ExtensionStore::class)->enabled('failing');
+
+        throw new ResourceOperationException('failing.setup_failed', 'The failing extension could not be set up.', 409, details: ['step' => 'setup']);
+    }
+}
+
 it('lists the extensions from the registered extension providers', function (): void {
     expect(array_keys($this->getJson('/api/v1/extensions')->assertOk()->json('data')))->toBe(['tasks', 'proxycli', 'documents'])
         ->and(app(ExtensionRegistry::class)->names())->toBe(['tasks', 'proxycli', 'documents']);
@@ -221,4 +244,17 @@ it('enables an extension only after its dependencies and runs its hooks after th
     $this->postJson('/api/v1/extensions/documents/disable')->assertOk();
     expect(DependentTestExtension::$hooks)->toBe(['enable', 'enable', 'disable'])
         ->and(app(ExtensionStore::class)->all())->toBe(['tasks' => false, 'proxycli' => false, 'documents' => false, 'dependent' => false]);
+});
+
+it('leaves the switch off and returns the hook error when an enable hook fails', function (): void {
+    $this->app->register(new FailingTestExtension($this->app));
+
+    $this->postJson('/api/v1/extensions/failing/enable')->assertStatus(409)
+        ->assertJsonPath('error.code', 'failing.setup_failed')
+        ->assertJsonPath('error.message', 'The failing extension could not be set up.')
+        ->assertJsonPath('error.details.step', 'setup');
+
+    expect(FailingTestExtension::$switchSeenByHook)->toBeFalse()
+        ->and(app(ExtensionStore::class)->enabled('failing'))->toBeFalse();
+    $this->getJson('/api/v1/extensions')->assertOk()->assertJsonPath('data.failing', false);
 });

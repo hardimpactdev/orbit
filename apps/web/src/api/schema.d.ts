@@ -783,7 +783,7 @@ export interface paths {
         put?: never;
         /**
          * Enable an extension
-         * @description Enable a Gateway extension for every client, then run its enable hook. Use `tasks`, `proxycli`, or `documents`; an unknown slug returns `validation.failed` (422), and a disabled dependency returns `extension.dependency_disabled` (409). Returns the extension name and `enabled: true`.
+         * @description Enable a Gateway extension for every client. The Gateway runs the extension's enable hook first and turns the switch on only after it succeeds; a failed hook leaves the switch off and returns the hook's error. Use `tasks`, `proxycli`, or `documents`; an unknown slug returns `validation.failed` (422), and a disabled dependency returns `extension.dependency_disabled` (409). Returns the extension name and `enabled: true`.
          */
         post: operations["extension-enable"];
         delete?: never;

@@ -49,7 +49,7 @@ Each extension has one service provider. It extends `App\Providers\ExtensionServ
 | `name()` | The switch slug. |
 | `description()` | One sentence that describes the extension. |
 | `dependencies()` | The slugs that must be enabled before this extension. The default is none. |
-| `enable()` | Runs after the switch turns on. The default does nothing. |
+| `enable()` | Runs before the switch turns on. The default does nothing. |
 | `disable()` | Runs after the switch turns off. The default does nothing. |
 
 The provider registers what the extension owns: its routes with `loadRoutesFrom()`, its migrations with `loadMigrationsFrom()`, its console commands, its schedule entries, and its plug-in contributions.
@@ -93,7 +93,7 @@ Background work that finishes recorded work keeps running while the switch is of
 
 `extension:enable` refuses with HTTP 409 `extension.dependency_disabled` while a dependency is off. `extension:disable` refuses with HTTP 409 `extension.required` while an enabled extension depends on the one being disabled. Both name the other extension in `error.details`.
 
-After the switch changes, the Gateway runs the extension's `enable()` or `disable()` hook in the same request. Enabling an enabled extension runs `enable()` again, so a hook must be safe to repeat. Tasks uses its hooks to broadcast the [`tasks.updated`](/reference/events#tasks) event. Documents uses neither.
+`extension:enable` runs the extension's `enable()` hook first and turns the switch on only after the hook returns. A failed enable leaves the switch off: when the hook throws, the switch keeps its earlier state and the API returns the hook's error code, message, and details. The hook runs while the switch is still off, so it must not rely on the switch. `extension:disable` turns the switch off, then runs `disable()`. Both run in the same request. Enabling an enabled extension runs `enable()` again, so a hook must be safe to repeat. Tasks uses its hooks to broadcast the [`tasks.updated`](/reference/events#tasks) event. Documents uses neither.
 
 ### Defaults
 

@@ -84,7 +84,7 @@ orbit extension:enable <extension> [--json]
 | --- | --- | --- |
 | `extension` | yes | `tasks`, `proxycli`, or `documents`. |
 
-JSON returns `name` and `enabled`. Enabling an enabled extension succeeds and changes nothing. An extension can depend on another one; enabling it while a dependency is off fails with `extension.dependency_disabled`. Enabling flips the switch and runs the extension's enable hook, which only does quick, repeatable setup. An extension that needs fleet resources has its own setup command, such as [`proxycli:setup`](/cli/proxycli#orbit-proxyclisetup).
+JSON returns `name` and `enabled`. Enabling an enabled extension succeeds and leaves it enabled. An extension can depend on another one; enabling it while a dependency is off fails with `extension.dependency_disabled`. Enabling runs the extension's enable hook, which only does quick, repeatable setup, and then turns the switch on. When the hook fails, the switch stays off and the command reports the hook's error. An extension that needs fleet resources has its own setup command, such as [`proxycli:setup`](/cli/proxycli#orbit-proxyclisetup).
 
 ## orbit extension:disable
 
