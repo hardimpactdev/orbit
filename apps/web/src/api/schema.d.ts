@@ -4003,7 +4003,7 @@ export interface components {
                 kind: string;
                 details: unknown;
             }[];
-            /** @description The normalized transcript, oldest first. Merge entries by `id`. */
+            /** @description The normalized transcript, oldest first. Merge entries by `id` and `kind`. */
             entries?: {
                 id: string;
                 /** @description `message` or `activity`. */
@@ -19432,7 +19432,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description Orbit could not read the thread from its Node (`tasks.agent_read_failed`). */
+            /** @description The thread's Pi server is unavailable or refused the read (`tasks.agent_read_failed`). */
             502: {
                 headers: {
                     [name: string]: unknown;

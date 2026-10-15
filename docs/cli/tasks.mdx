@@ -362,9 +362,9 @@ orbit tasks:agent:show [group] [session] [--json]
 
 In a terminal the command prompts for each omitted input. The thread list shows the ID, role, subtask ID, driver, and state. A noninteractive call fails before the request with `tasks.group_required` or `tasks.agent_thread_required`, and an invalid ID fails with `tasks.group_invalid` or `tasks.agent_thread_invalid`. The command needs Gateway access.
 
-Human output shows the state, the source, the cursor, the token metrics, the line diff, the number of input requests, and the errors. The source is `live` for a read from the thread's Node, or `saved transcript` when the Node is gone. Each transcript entry follows, oldest first, under a heading with its time, kind, and label. JSON output returns the snapshot with `request_id`. [Read a thread](/reference/tasks#read-a-thread) defines the fields and the cursor. Run the command again to see newer entries.
+Human output shows the state, the source, the cursor, the token metrics, the line diff, the number of input requests, and the errors. The source is `live` for a read from the thread's Node, or `saved transcript` when the Node is gone. Each transcript entry follows, oldest first, under a heading with its time, kind, and label. Entry times are the driver's UTC times, to the minute. JSON output returns the snapshot with `request_id`. [Read a thread](/reference/tasks#read-a-thread) defines the fields and the cursor. Run the command again to see newer entries.
 
-A `t3` thread fails with `tasks.agent_transcript_unavailable`. A thread whose Node is gone fails with `tasks.agent_unavailable` when Orbit saved no transcript. A thread whose Pi server does not answer fails with `tasks.agent_read_failed`.
+A `t3` thread fails with `tasks.agent_transcript_unavailable`. A thread whose Node is gone fails with `tasks.agent_unavailable` when Orbit saved no transcript. A thread whose Pi server is unavailable or refuses the read fails with `tasks.agent_read_failed`.
 
 
 ## Related

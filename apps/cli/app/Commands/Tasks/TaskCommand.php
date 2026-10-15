@@ -808,7 +808,8 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
             return null;
         }
 
-        $time = DateTimeImmutable::createFromFormat(DATE_ATOM, $value);
+        // Agent transcript times carry milliseconds, such as 2026-09-23T09:50:00.000Z.
+        $time = DateTimeImmutable::createFromFormat(DATE_ATOM, $value) ?: DateTimeImmutable::createFromFormat('Y-m-d\TH:i:s.vP', $value);
 
         return $time === false ? $value : $time->format('Y-m-d H:i');
     }

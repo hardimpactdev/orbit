@@ -178,7 +178,7 @@ The task and subtask operations return these errors.
 | `tasks.agent_driver_unavailable` | 409 | The configured agent driver is unknown. No task is stored |
 | `tasks.agent_transcript_unavailable` | 409 | A transcript request for a stored `t3` task thread. The row stays, and no stream opens |
 | `tasks.agent_unavailable` | 409 | A transcript request for a thread whose Node is gone, when Orbit saved no transcript |
-| `tasks.agent_read_failed` | 502 | A [thread read](#read-a-thread) that the thread's Pi server did not answer or refused |
+| `tasks.agent_read_failed` | 502 | A [thread read](#read-a-thread) while the thread's Pi server is unavailable or refuses the read |
 | `tasks.github_app_required` | 422 | Create for a Project with `source_access: gh_cli`. No task is stored |
 | `tasks.external_execution` | 409 | A lifecycle operation on an annotation task |
 | `validation.failed` | 422 | An invalid field, such as a deliverable or a position outside the `todo` subtasks |
@@ -1400,7 +1400,7 @@ The cursor has the form `{run}.{sequence}`. Pass it to the stream as `after_sequ
 
 When the thread's Node is gone, the read returns the [saved transcript](#archive-finished-threads) with `archived` true and `cursor` null. A saved transcript does not change, so a reader can stop polling it.
 
-The read writes no thread state. Activity samples it like any other [read](/cli/activity#what-the-gateway-records). A read that the Pi server does not answer returns HTTP 502 `tasks.agent_read_failed`, and its message holds no server detail. The other errors match the stream: 404 for a thread of another task, 409 `tasks.agent_transcript_unavailable` for a `t3` thread, and 409 `tasks.agent_unavailable` when the Node is gone and Orbit saved no transcript.
+The read writes no thread state. Activity samples it like any other [read](/cli/activity#what-the-gateway-records). While the thread's Pi server is unavailable or refuses the read, the read returns HTTP 502 `tasks.agent_read_failed`. Its message holds no server detail. The other errors match the stream: 404 for a thread of another task, 409 `tasks.agent_transcript_unavailable` for a `t3` thread, and 409 `tasks.agent_unavailable` when the Node is gone and Orbit saved no transcript.
 
 ## Coder settle webhook
 

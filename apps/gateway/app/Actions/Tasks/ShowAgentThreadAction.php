@@ -35,8 +35,9 @@ final readonly class ShowAgentThreadAction
         }
         try {
             $observation = $this->drivers->get($session->driver)->observe($session);
-        } catch (AgentDriverException) {
-            throw new ResourceOperationException('tasks.agent_read_failed', 'Orbit could not read the agent thread from its Node.', 502);
+        } catch (AgentDriverException $exception) {
+            // The response names no driver detail; the report keeps it.
+            throw new ResourceOperationException('tasks.agent_read_failed', 'Orbit could not read the agent thread from its Node.', 502, $exception);
         }
 
         return [...$this->event(new AgentThreadEvent($session->id, 'snapshot', $observation->toArray(), $observation->cursor)), 'archived' => false];

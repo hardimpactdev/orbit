@@ -1549,7 +1549,7 @@ components['TaskAgentSnapshot'] = {'type': 'object', 'required': ['thread_id', '
     'kind': {'type': 'string', 'enum': ['snapshot']},
     'state': {'type': ['string', 'null'], 'enum': ['idle', 'working', 'asking_for_input', 'done', 'failed', None]},
     'input_requests': {'type': 'array', 'items': {'type': 'object', 'properties': {'id': {'type': 'string'}, 'kind': {'type': 'string'}, 'details': {}}, 'required': ['id', 'kind', 'details']}},
-    'entries': {'type': 'array', 'description': 'The normalized transcript, oldest first. Merge entries by `id`.', 'items': {'type': 'object', 'properties': {
+    'entries': {'type': 'array', 'description': 'The normalized transcript, oldest first. Merge entries by `id` and `kind`.', 'items': {'type': 'object', 'properties': {
         'id': {'type': 'string'}, 'kind': {'type': 'string', 'description': '`message` or `activity`.'}, 'label': {'type': 'string', 'description': 'The role of a message, or the tool of an activity.'},
         'text': {'type': 'string'}, 'at': {'type': 'string'},
     }, 'required': ['id', 'kind', 'label', 'text', 'at']}},
@@ -1981,7 +1981,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         responses['502'] = error_response('The approved commits of a settling group could not be pushed to its task branch (`tasks.push_failed`). The group and its Instance stay.')
     if route['name'] == 'tasks:agent:show':
         responses['409'] = error_response('The thread is a stored `t3` thread (`tasks.agent_transcript_unavailable`), or its Node is gone and Orbit saved no transcript (`tasks.agent_unavailable`).')
-        responses['502'] = error_response('Orbit could not read the thread from its Node (`tasks.agent_read_failed`).')
+        responses['502'] = error_response('The thread\'s Pi server is unavailable or refused the read (`tasks.agent_read_failed`).')
     if route['name'] == 'tasks:question:close':
         responses['409'] = error_response('The tasks extension is disabled (`extension.disabled`), or the question is already answered or superseded (`tasks.question_closed`).')
     if route['name'] == 'tasks:subtask:cancel':
