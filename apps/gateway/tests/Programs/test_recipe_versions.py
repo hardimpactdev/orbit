@@ -322,7 +322,7 @@ class RecipeVersionsTest(unittest.TestCase):
         with patch.object(recipe, 'run', side_effect=command), recipe.SnapshotLookups() as snapshots:
             for day in (14, 15, 16, 17, 14):
                 self.install_log(timestamp=f'2026-10-{day} 12:30:00')
-                for repeated in range(2):
+                for _ in range(2):
                     tool = recipe.assess(self.tools, {'curl': NEWER}, snapshots=snapshots)['curl']
                     reason = 'snapshot-lookup-limit' if day == 17 else 'snapshot-unavailable'
                     self.assertEqual(tool['refusal'], 'origin:curl:' + reason)

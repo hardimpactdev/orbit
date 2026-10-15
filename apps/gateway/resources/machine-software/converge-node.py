@@ -337,7 +337,7 @@ def audit_packages(environment):
 
 
 def supported(report):
-    for name, tool in report.items():
+    for tool in report.values():
         if tool['status'] == 'unsupported_newer':
             raise RecipeFailure(tool['refusal'])
 
