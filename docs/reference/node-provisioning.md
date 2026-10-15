@@ -297,17 +297,16 @@ Some roles never share a Node. The Gateway refuses a conflicting role before it 
 
 | Role | Never shares a Node with |
 | --- | --- |
-| `gateway` | `ingress`, `app-dev`, `app-prod`, `database`, `analytics` |
+| `gateway` | `ingress`, `app-dev`, `app-prod`, `database`, `analytics`, `ci-runner` |
 | `ingress` | `gateway`, `app-dev`, `database` |
-| `vpn` | `database` |
+| `vpn` | `database`, `ci-runner` |
 | `app-dev` | `gateway`, `ingress`, `app-prod` |
 | `app-prod` | `gateway`, `app-dev`, `database` |
 | `database` | `gateway`, `vpn`, `ingress`, `app-prod` |
 | `analytics` | `gateway` |
-| `ci-runner` in `host` mode | Every other role |
-| `ci-runner` in `container` mode | `gateway`, `vpn` |
+| `ci-runner` | `gateway`, `vpn` |
 
-`router`, `metrics`, and `websocket` share a Node with any role except `ci-runner` in `host` mode. The [CI runner role](/reference/ci-runner-role#add-the-role) explains why its conflicts depend on its mode. `node:role:add` and `node:role:relocate` answer `validation.failed` with `Role [ROLE] conflicts with assigned role [OTHER].` `node:add` answers `node.role_conflict` (HTTP 422), with `Role [ROLE] conflicts with requested role [OTHER].` when one request names both roles. [Doctor](/cli/doctor) reports each assignment of a conflicting pair as `role.assignment_conflict`.
+`router`, `metrics`, and `websocket` share a Node with any role. `node:role:add` and `node:role:relocate` answer `validation.failed` with `Role [ROLE] conflicts with assigned role [OTHER].` `node:add` answers `node.role_conflict` (HTTP 422), with `Role [ROLE] conflicts with requested role [OTHER].` when one request names both roles. [Doctor](/cli/doctor) reports each assignment of a conflicting pair as `role.assignment_conflict`.
 
 Not every role can be added the same way.
 

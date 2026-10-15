@@ -1,61 +1,52 @@
 ---
 title: "CI runner role"
-description: "How the ci-runner role hosts self-hosted CI runners on a Node, how CI runners are created and removed, and why the role has two modes."
+description: "How the ci-runner role hosts self-hosted runners for GitHub Actions in Incus containers on a Node, and how CI runners are created and removed."
 covers:
   - apps/gateway/app/Domain/Nodes/RoleRegistry.php
 ---
 
 # CI runner role
 
-The `ci-runner` role prepares a Node to host self-hosted CI runners. Each runner is a CI runner record: the Gateway registers it with GitHub through its [GitHub App](/reference/github-app), runs it on the Node, and deregisters it when you destroy it. [ADR 0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role) holds the decision while it is built.
+The `ci-runner` role prepares a Node to host self-hosted runners for GitHub Actions. Every runner runs in an unprivileged Incus container on that Node. Each runner is a CI runner record: the Gateway registers it with one repository through its [GitHub App](/reference/github-app), runs it, and deregisters it when you destroy it. [ADR 0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role) holds the decision while it is built.
 
 ## Add the role
 
-Add the role to an active Linux Node and choose its mode:
+Add the role to an active Linux Node:
 
 ```bash
-orbit node:role:add sabre ci-runner --mode=host
-orbit node:role:add beast ci-runner --mode=container
+orbit node:role:add sabre ci-runner
 ```
 
-| Mode | Where jobs run | Shares a Node with |
-| --- | --- | --- |
-| `host` | On the Node, as the `orbit-ci` user | No other role |
-| `container` | In unprivileged Incus containers in the project `orbit-ci` | Every role except `gateway` and `vpn` |
+The role shares a Node with every role except `gateway` and `vpn`. It cannot be assigned through `node:add --role`, and Cluster membership does not affect it.
 
-The mode is stored in the Node setting `ci_runners`. To change it, destroy the Node's CI runners, remove the role, and add it again. The role cannot be assigned through `node:add --role`. Cluster membership does not affect it.
-
-Both modes install the tools of the `ci-runner` recipe profile. A job gets passwordless `sudo` in both modes, so setup actions that install packages work.
-
-### Host mode
-
-The role creates the `orbit-ci` user, with passwordless `sudo` and no access to the managed user's home. An nftables rule that the role owns rejects traffic from `orbit-ci` to `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`, `fc00::/7`, and `fe80::/10`. So a job reaches the public internet and the local resolver, but not the Gateway, WireGuard, or the LAN. A command that a job runs with `sudo` runs as root, which the rule does not cover. So a runner in `host` mode accepts only trusted code, such as pushes and pull requests from branches in the same repository. Each runner is one `orbit-ci-runner@<name>` service with its own work directory mounted at `/home/runner/work`.
-
-### Container mode
-
-The role creates the Incus project `orbit-ci`, the bridge `orbitci0`, the network ACL `orbit-ci-egress`, the project's restricted default profile, and a `ufw route allow in on orbitci0` rule. The ACL rejects every private, CGNAT, loopback, link-local, multicast, and reserved IPv4 range, and all IPv6. Each runner is one container with a `runner` user that has passwordless `sudo`. Root in the container is still unprivileged on the host, so the ACL holds.
+The role installs Incus when it is missing. It creates the Incus project `orbit-ci`, the bridge `orbitci0`, the network ACL `orbit-ci-egress`, the project's restricted default profile, and a `ufw route allow in on orbitci0` rule. The ACL rejects every private, CGNAT, loopback, link-local, multicast, and reserved IPv4 range, and all IPv6. So a job reaches the public internet, but not the Node, the Gateway, WireGuard, or the LAN. The task VM stray report and Doctor treat the `orbit-ci` project as owned by the role.
 
 ## Create a runner
 
-Create a runner on a Node that has the role. The Gateway records it, registers it, and starts it.
+Create a runner on a Node that has the role. The Gateway records it, creates its container, registers it, and starts it.
 
 ```bash
-orbit ci-runner:create sabre sabre-1 --target=repo:nckrtl/orbit --label=sabre
-orbit ci-runner:create beast ci-beast-1 --target=repo:nckrtl/orbit --label=orbit-shard
+orbit ci-runner:create sabre sabre-1 --repository=nckrtl/orbit --label=sabre --label=orbit-shard
 ```
 
-`--target` is `repo:<owner>/<repository>` or `org:<organization>`. A personal account has no organization runners, so its repositories use `repo:`. Every runner carries the labels `self-hosted`, `Linux`, and its architecture label, such as `X64`, plus each `--label`.
+Every runner carries the labels `self-hosted`, `Linux`, and its architecture label, such as `X64`, plus each `--label`.
 
-The Gateway mints a registration token for the target through the GitHub App and passes it to the Node without storing or printing it. A repository target needs the App permission `Administration: write`. An organization target needs `Self-hosted runners: write`. When the installation has not accepted the permission, the command fails with `ci_runner.permission_missing` and names it.
+Each container has a `runner` user with no `sudo`. Every tool a job needs comes from the `ci-runner` profile of the machine software recipe. A CI step that needs `sudo`, such as the `privileged` test group, runs on a GitHub-hosted runner instead.
 
-Runners are persistent. One runner takes job after job and keeps its work directory, so caches stay warm and a job can leave files for the next job.
+Runners are persistent. One runner takes job after job in the same container, so caches stay warm and a job can leave files for the next job.
 
 | Command | Effect |
 | --- | --- |
-| `ci-runner:create <node> <name> --target=… [--label=…]` | Records, converges, registers, and starts a runner. |
+| `ci-runner:create <node> <name> --repository=<owner>/<repository> [--label=…]` | Records, creates, registers, and starts a runner. |
 | `ci-runner:list [--node=…]` | Lists CI runners and their status. |
 | `ci-runner:show <runner>` | Shows one runner and the status GitHub reports. |
-| `ci-runner:destroy <runner>` | Stops the runner, deregisters it, and removes its service or container and work directory. |
+| `ci-runner:destroy <runner>` | Stops the runner, deregisters it, and deletes its container. |
+
+## Registration tokens
+
+The Gateway mints each registration and removal token through the GitHub App, with only `Administration: write` for the runner's repository. When the installation has not accepted that permission, the command fails with `ci_runner.permission_missing`.
+
+The Gateway sends the token on standard input and never stores, logs, or returns it. The runner's `config.sh` takes the token as an argument, so it shows in the container's process list for a few seconds. After registration, the runner keeps its own long-lived credentials in its container. Destroying the runner deletes them and deregisters it.
 
 ## Failure codes
 
@@ -63,9 +54,9 @@ The role and runner commands fail with these codes.
 
 | Code | Meaning |
 | --- | --- |
-| `validation.failed` | The mode, target, provider, or labels are invalid, or the role conflicts with another role on the Node. |
+| `validation.failed` | The repository or labels are invalid, or the role conflicts with another role on the Node. |
 | `ci_runner.role_missing` | The Node does not have the `ci-runner` role. |
-| `ci_runner.permission_missing` | The GitHub App installation has not accepted the permission that the target needs. |
+| `ci_runner.permission_missing` | The GitHub App installation has not accepted `Administration: write`. |
 
 ## Remove the role
 
@@ -75,19 +66,19 @@ Remove the role when the Node stops hosting runners.
 orbit node:role:remove sabre ci-runner --force
 ```
 
-Removal refuses while the Node has CI runners, unless you pass `--force`; the Gateway then destroys each runner first. `--purge-data` also deletes the Incus images and the runner software cache. `--offline` removes only Gateway state, so the runners stay registered with GitHub until you remove them there.
+Removal refuses while the Node has CI runners, unless you pass `--force`; the Gateway then destroys each runner first. `--purge-data` also deletes the `orbit-ci` project, its images, the bridge, the ACL, and the ufw rule. `--offline` removes only Gateway state, so the runners stay registered with GitHub until you remove them there.
 
-[Doctor](/cli/doctor) compares each CI runner with its service or container and reports a missing, stopped, or unexpected runner. It does not call GitHub.
+[Doctor](/cli/doctor) compares each CI runner with its container and reports a missing, stopped, or unexpected runner. It does not call GitHub.
 
 ## Why it works this way
 
-### Two modes
+### Every runner runs in a container
 
-A dedicated Node, such as Sabre, gains nothing from a container boundary: a job shares the Node with nothing it could reach. A shared Node, such as an `app-dev` Node with live Instances, cannot run jobs safely without one. So the role has a mode, and each mode refuses the combinations it cannot make safe. Role conflicts usually depend only on the role. These depend on the mode, so the Gateway checks them against the stored mode.
+A job on the host that gains root can act as the Node toward the Gateway, which trusts WireGuard source addresses. A container with an egress ACL keeps every job away from the Node, so one model fits both a dedicated Node and a shared `app-dev` Node.
 
-### Jobs have sudo
+### Jobs have no sudo
 
-Common setup actions install packages, and a runner without `sudo` makes every such tool a recipe change. Runners accept only trusted code, so the role trades the extra boundary for runners that behave like GitHub-hosted ones. In `host` mode, a job that runs as root can bypass the egress rule and use the Node's WireGuard identity, which the Gateway trusts. That is why a host-mode Node has no other role.
+No CI step on a self-hosted runner needs `sudo`, because the recipe profile installs the tools in advance. Without it, a job cannot change its container's network or packages.
 
 ### The App mints every token
 

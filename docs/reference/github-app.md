@@ -14,7 +14,7 @@ A Gateway reads private `github.com` repositories through its own GitHub App. Th
 
 ## What the App is
 
-Each Gateway owns at most one GitHub App. The App is a registration on GitHub with a private key that only this Gateway holds. It has seven repository permissions: `Actions: read`, `Administration: write`, `Checks: read`, `Contents: write`, `Metadata: read`, `Pull requests: write`, and `Workflows: write`, and one organization permission: `Self-hosted runners: write`. It receives no webhooks. Only the [CI runner](/reference/ci-runner-role#create-a-runner) registration token carries `Administration: write`, which also covers repository settings; no other operation asks for it. Each operation asks GitHub for a token with only the permissions it needs, so a read never carries write access.
+Each Gateway owns at most one GitHub App. The App is a registration on GitHub with a private key that only this Gateway holds. It has seven permissions: `Actions: read`, `Administration: write`, `Checks: read`, `Contents: write`, `Metadata: read`, `Pull requests: write`, and `Workflows: write`. It receives no webhooks. Only the [CI runner](/reference/ci-runner-role#create-a-runner) registration token carries `Administration: write`, which also covers repository settings; no other operation asks for it. Each operation asks GitHub for a token with only the permissions it needs, so a read never carries write access.
 
 A task push token carries `Workflows: write`, so a task can change `.github/workflows/`. An installation that has not accepted that permission refuses such a push, and the task reason names `Workflows` as the permission to grant. [Tasks](/reference/tasks#pull-request-and-settle-metrics) describes that failure.
 
