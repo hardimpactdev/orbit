@@ -7,13 +7,11 @@ namespace App\Console\Commands;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmSettings;
-use App\Infrastructure\TaskVms\TaskVmImagePeers;
 use App\Infrastructure\TaskVms\TaskVmSetupScript;
 use Illuminate\Console\Command;
 
 /**
- * Runs `incus-host.sh` on one host with the values that `TaskVmSettings` validated, then lets every configured
- * host send base images to every other one over SSH, and removes what the earlier Incus API copy left.
+ * Runs `incus-host.sh` on one host with the values that `TaskVmSettings` validated, preparing its local project, storage, and network.
  */
 final class PrepareTaskVmHostCommand extends Command
 {
@@ -23,7 +21,7 @@ final class PrepareTaskVmHostCommand extends Command
     protected $signature = 'task-vms:prepare-host {node : Id or name of the Incus host Node}';
 
     #[\Override]
-    protected $description = 'Prepare an Incus host for task VMs: ZFS pool, project, stock image, bridge, egress ACL, profile, the ufw route rule, and base image transfer between the hosts.';
+    protected $description = 'Prepare an Incus host for task VMs: ZFS pool, project, stock image, bridge, egress ACL, profile, the ufw route rule.';
 
     public function handle(TaskVmSetupScript $script): int
     {
@@ -34,16 +32,13 @@ final class PrepareTaskVmHostCommand extends Command
                 $host->project, $host->network, $host->cidr, $host->pool, TaskVmHost::SourceImage,
                 ...($host->zfsDataset === null ? [] : [$host->zfsDataset]),
             ]);
-            resolve(TaskVmImagePeers::class)->converge(function (string $line): void {
-                $this->line($line);
-            });
         } catch (ResourceOperationException $exception) {
             $this->error("[{$exception->errorCode}] {$exception->getMessage()}");
 
             return self::FAILURE;
         }
 
-        $this->info("Node [{$node->name}] is ready for task VMs on bridge [{$host->network}]. Sync its base image with task-vms:sync-image, or build one with task-vms:build-image.");
+        $this->info("Node [{$node->name}] is ready for task VMs on bridge [{$host->network}]. Build its images with task-vms:build-image.");
 
         return self::SUCCESS;
     }

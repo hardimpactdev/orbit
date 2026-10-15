@@ -6,10 +6,10 @@ namespace App\Jobs\TaskVms\ImageBuild;
 
 use App\Domain\TaskVms\TaskVmImageBuildStep;
 
-final class CleanImageBuilder extends ImageBuildJob
+final class PruneRecipeImages extends ImageBuildJob
 {
     public function step(): TaskVmImageBuildStep
     {
-        return TaskVmImageBuildStep::Clean;
+        return TaskVmImageBuildStep::Prune;
     }
 }

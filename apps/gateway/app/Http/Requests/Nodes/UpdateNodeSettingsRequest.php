@@ -23,7 +23,7 @@ final class UpdateNodeSettingsRequest extends FormRequest
         return [
             'apps' => ['sometimes', 'nullable', 'array:path'],
             'apps.path' => ['sometimes', 'nullable', 'string'],
-            'task_vms' => ['sometimes', 'nullable', 'array:cidr,max_vms,project,network,pool,image_alias,zfs_dataset,cpus,memory,disk,warm_vms,operator_owned'],
+            'task_vms' => ['sometimes', 'nullable', 'array:cidr,max_vms,project,network,pool,image_alias,zfs_dataset,cpus,memory,disk,operator_owned'],
             'task_vms.cidr' => ['required_with:task_vms', 'string'],
             'task_vms.max_vms' => ['required_with:task_vms', 'integer:strict', 'between:1,64'],
             'task_vms.project' => ['sometimes', 'string'],
@@ -34,7 +34,6 @@ final class UpdateNodeSettingsRequest extends FormRequest
             'task_vms.cpus' => ['sometimes', 'integer:strict', 'between:1,64'],
             'task_vms.memory' => ['sometimes', 'string'],
             'task_vms.disk' => ['sometimes', 'string'],
-            'task_vms.warm_vms' => ['sometimes', 'integer:strict', 'min:0'],
             'task_vms.operator_owned' => ['sometimes', 'list'],
             'task_vms.operator_owned.*' => ['string'],
         ];

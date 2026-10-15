@@ -48,7 +48,7 @@ A patch changes only the members it names. Other stored keys stay, such as the [
 Set `task_vms` on the host Node, not on the disposable task VM Nodes that it runs. The object replaces `ORBIT_TASK_VMS_INCUS_HOSTS` as the source of Incus host configuration. It has no `node_id`: the Node that stores the setting supplies the identity.
 
 ```bash
-orbit node:settings beast --setting='task_vms:{"cidr":"10.251.77.0/24","max_vms":4,"warm_vms":1,"pool":"orbit-tasks","image_alias":"orbit-task-base"}'
+orbit node:settings beast --setting='task_vms:{"cidr":"10.251.77.0/24","max_vms":4,"pool":"orbit-tasks","image_alias":"orbit-task-base"}'
 ```
 
 This is an example, not the live configuration of beast. Preserve a host's current values when changing its configuration. The API patch takes the object directly:
@@ -58,7 +58,6 @@ This is an example, not the live configuration of beast. Preserve a host's curre
   "task_vms": {
     "cidr": "10.251.77.0/24",
     "max_vms": 4,
-    "warm_vms": 1,
     "pool": "orbit-tasks",
     "image_alias": "orbit-task-base"
   }
@@ -78,23 +77,22 @@ Use these fields to describe a host's network, storage, resources, and capacity.
 | `project` | No | `orbit-tasks` | Incus project name |
 | `network` | No | `orbittask0` | Bridge name: `orbittask` followed by 1 to 6 lowercase letters or digits |
 | `pool` | No | `orbit-tasks` | Incus ZFS storage pool for images, root disks, and workspace volumes |
-| `image_alias` | No | `orbit-task-base` | Local base image alias used for task VM launches and image sync; a non-empty valid Incus alias |
+| `image_alias` | No | `orbit-task-base` | Local base image alias used for task VM launches; a non-empty valid Incus alias |
 | `zfs_dataset` | No | `null` | New dataset below a ZFS pool, such as `fast/orbit-tasks`, used when preparing a missing pool; never the whole ZFS pool or an existing dataset |
 | `cpus` | No | `2` | vCPUs per normal VM, integer from 1 to 64 |
 | `memory` | No | `4GiB` | Positive size in `MiB` or `GiB` for a normal VM |
-| `disk` | No | `20GiB` | Positive size in `MiB` or `GiB` for root disks and workspace templates |
-| `warm_vms` | No | `0` | Integer from 0 to `max_vms`; warm VMs consume slots too. Retained while the warm pool exists |
+| `disk` | No | `20GiB` | Positive size in `MiB` or `GiB` for root disks |
 | `operator_owned` | No | `[]` | List of Incus instances and custom volumes excluded from stray reports, as `<project>/<name>` or `<project>/*` |
 
 Unknown fields, invalid names, wrong types, and out-of-range values are rejected before storage. Integer fields are integers in JSON, not strings. Invalid configuration leaves the stored setting unchanged. The apps-root filesystem checks below apply only to `apps.path`, not to this object.
 
-Placement selects active Nodes with a valid, non-null `settings.task_vms`. Requests and queued jobs take a fresh host-settings snapshot at the start of their lifecycle, so later jobs see changes without a worker restart. Capacity reads their `max_vms`; host preparation, image sync, and the host sweep read the same configuration. Later package-cache targeting uses this host intent too; setting it does not install a cache. See [Compute drivers](/reference/compute-drivers#configure-task-vms) for runtime behavior. Being `app-dev` grants no host intent: `services` keeps that role for Recall and gets no task VMs.
+Placement selects active Nodes with a valid, non-null `settings.task_vms`. Requests and queued jobs take a fresh host-settings snapshot at the start of their lifecycle, so later jobs see changes without a worker restart. Capacity reads their `max_vms`; host preparation and the host sweep read the same configuration. Later package-cache targeting uses this host intent too; setting it does not install a cache. See [Compute drivers](/reference/compute-drivers#configure-task-vms) for runtime behavior. Being `app-dev` grants no host intent: `services` keeps that role for Recall and gets no task VMs.
 
 ### Migrate the environment host list
 
-Deployment copies the current `ORBIT_TASK_VMS_INCUS_HOSTS` entries into the settings of Node 9 (`beast`) and Node 13 (`shark`). It preserves each host's explicit values, including `pool`, `max_vms`, `warm_vms`, `operator_owned`, and resource and network fields, with the former defaults for omitted fields and `orbit-task-base` for the image alias. `node_id` selects the destination Node and is not stored inside `task_vms`. Other Node settings stay unchanged; the migration does not enroll other `app-dev` Nodes as hosts or replace existing explicit host settings.
+Deployment copies the current `ORBIT_TASK_VMS_INCUS_HOSTS` entries into the settings of Node 9 (`beast`) and Node 13 (`shark`). It preserves each host's explicit values, including `pool`, `max_vms`, `operator_owned`, and resource and network fields, with the former defaults for omitted fields and `orbit-task-base` for the image alias. `node_id` selects the destination Node and is not stored inside `task_vms`. Other Node settings stay unchanged; the migration does not enroll other `app-dev` Nodes as hosts or replace existing explicit host settings.
 
-After migration, placement, sync, and capacity read Node settings only. There is no runtime fallback to the environment list. Verify beast and shark's settings before removing `ORBIT_TASK_VMS_INCUS_HOSTS` from `gateway.env`; use [`gateway:release:configure`](/reference/gateway-recovery#apply-an-env-change) to apply that removal. Keep the live values through deployment so the migration can copy operator intent rather than inventing host configuration.
+After migration, placement and capacity read Node settings only. There is no runtime fallback to the environment list. Verify beast and shark's settings before removing `ORBIT_TASK_VMS_INCUS_HOSTS` from `gateway.env`; use [`gateway:release:configure`](/reference/gateway-recovery#apply-an-env-change) to apply that removal. Keep the live values through deployment so the migration can copy operator intent rather than inventing host configuration.
 
 ## Derive the effective root
 

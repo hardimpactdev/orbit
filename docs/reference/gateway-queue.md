@@ -31,14 +31,14 @@ Laravel Horizon runs three queues on the connection. Each has its own supervisor
 | Queue | Processes | Jobs |
 | --- | --- | --- |
 | `tasks` | 3 | The scheduled commands below and the publish of an approved commit. The Git mirror's lock keeps one push per Project at a time |
-| `task-vms` | 1 | Task VM provision, enroll, prepare, park, resume, and destroy, the guard of a warm claim, the host sweep, and the pool refill |
+| `task-vms` | 1 | Task VM provision, enroll, prepare, park, resume, and destroy, the host sweep |
 | `builds` | 1 | The [base image step chains and refreshes](/reference/compute-drivers#build-the-base-image), the [UpCloud template refresh](/reference/compute-drivers#refresh-the-upcloud-template-every-night), and trusted [package cache fills](/reference/compute-drivers#shared-package-cache) |
 
 The `task-vms` jobs run one at a time and in order, so no two jobs change the same VM at once.
 
 A `task-vms` job runs at most 1500 seconds, and any other job at most 1700 seconds. A job that a worker lost, for example when its process was killed, runs again after 1800 seconds. An idle worker waits on the queue with a blocking read, so a job starts within about a second when a process is free.
 
-One `builds` process runs one job at a time in the fleet. Recipe base and role image steps and UpCloud template builds take turns. The deployed recipe is checked each minute; unchanged identities dispatch no builds. The image build row allows one `running` base image build per host. Syncs and template builds keep their own host locks until they have their own chains.
+One `builds` process runs one job at a time in the fleet. Recipe base and role image steps and UpCloud template builds take turns. The deployed recipe is checked each minute; unchanged identities dispatch no builds. The image build row allows one `running` base image build per host.
 
 ## Scheduled work
 
@@ -97,15 +97,13 @@ A release moves Horizon in the serving phase, right after the switch, and the ol
 
 `horizon:terminate` sends SIGTERM to the Horizon master. Horizon does not use fast termination: the master waits until each worker has finished its running job, on the release that job started on, and then exits. The Process's restart policy then starts Horizon again, on the new release. A new `task-vms` worker therefore never starts while an old one runs, and task VM jobs stay in order.
 
-The cost is the wait. A release during a base image build waits for one short step, not the whole build. The build is a [chain of jobs](/reference/compute-drivers#build-the-base-image), and the next step runs on the new release. Until the running jobs end, no new job starts on any queue, and `tasks:tick` waits too. Syncs still run as whole jobs until they have their own chains. Workspace template builds and refreshes are removed. The master waits at most the longest supervisor timeout, 1700 seconds, and then exits.
+The cost is the wait. A release during a base image build waits for one short step, not the whole build. The build is a [chain of jobs](/reference/compute-drivers#build-the-base-image), and the next step runs on the new release. Until the running jobs end, no new job starts on any queue, and `tasks:tick` waits too. Workspace template builds and refreshes are removed. The master waits at most the longest supervisor timeout, 1700 seconds, and then exits.
 
 The release does not wait for the new master. A failure of the step fails the handoff with `gateway.release_units_failed`, and the release switches back.
 
 The scheduler phase restarts every other Gateway Process in the Gateway application with systemd, but never the `horizon` Process.
 
 Do not restart Horizon with `orbit process:restart`, and do not stop it with `orbit process:stop` while a job runs. Both stop its unit, and systemd kills a job that still runs 90 seconds after the stop, such as a build. To restart Horizon, run `php artisan horizon:terminate`.
-
-The old database queues are `task-vms`, whose jobs move to `task-vms`, `task-vm-git`, whose jobs move to `tasks`, and `task-vm-templates` and `task-vm-images`, whose jobs move to `builds`. A delayed job keeps its time, and a job keeps its unique lock. Its attempts count from zero again. No job is lost. The handoff records the count as `queue_moved`. When jobs wait there and `ORBIT_GATEWAY_QUEUE_CONNECTION` is empty, the move fails with `gateway.queue_move_failed` and keeps them.
 
 ### Switch back to an older release
 

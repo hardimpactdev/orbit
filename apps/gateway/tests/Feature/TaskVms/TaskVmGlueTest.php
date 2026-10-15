@@ -322,7 +322,6 @@ describe('task group data', function (): void {
             ->and($data->toCompactArray()['vm_power'])->toBe($power?->value);
     })->with([
         [TaskVmState::Provisioning, null],
-        [TaskVmState::Warm, null],
         [TaskVmState::Ready, VmPower::Running],
         [TaskVmState::Parked, VmPower::Stopped],
         [TaskVmState::Failed, null],

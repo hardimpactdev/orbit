@@ -25,14 +25,14 @@ describe(NodeSettings::class, function (): void {
 
     it('maps typed task VM settings without inventing role intent', function (): void {
         $settings = NodeSettings::fromGatewayData(['task_vms' => [
-            'cidr' => '10.251.77.0/24', 'max_vms' => 4, 'warm_vms' => 0,
+            'cidr' => '10.251.77.0/24', 'max_vms' => 4,
             'image_alias' => 'custom-base', 'operator_owned' => [],
         ]]);
         expect($settings->isEmpty())->toBeFalse()
             ->and($settings->task_vms?->max_vms)->toBe(4)
             ->and($settings->toArray()['task_vms'])->toBe([
                 'cidr' => '10.251.77.0/24', 'max_vms' => 4,
-                'image_alias' => 'custom-base', 'warm_vms' => 0, 'operator_owned' => [],
+                'image_alias' => 'custom-base', 'operator_owned' => [],
             ]);
     });
 

@@ -56,7 +56,7 @@ final readonly class RecipeImageBuilds
                 $recipe->profile($profile, $architecture);
             }
             try {
-                $builds[] = $this->chain->start($node, true, $recipe, $generation);
+                $builds[] = $this->chain->start($node, $recipe, $generation);
             } catch (TaskVmException $error) {
                 // Another scheduler or manual command may have won admission since the read above.
                 if ($error->errorCode !== 'task_vm.image_build_running') {

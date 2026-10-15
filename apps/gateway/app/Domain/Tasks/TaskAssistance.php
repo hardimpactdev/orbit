@@ -89,11 +89,6 @@ final class TaskAssistance
         return $updated > 0;
     }
 
-    public static function isBlockedReason(?string $reason): bool
-    {
-        return is_string($reason) && (str_starts_with($reason, self::ImplementerBlockedPrefix) || str_starts_with($reason, self::ReviewerBlockedPrefix));
-    }
-
     /**
      * The question stored in a blocked reason: the text after the last `Question: `,
      * or the text after the blocked prefix when that marker is absent.

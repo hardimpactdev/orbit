@@ -3187,7 +3187,7 @@ it('refuses the approval of a subtask with a topology until each declared node h
     $admission->shouldReceive('evidence')->andReturnUsing(function (Task $actualGroup, CarbonInterface $from) use (&$since): TaskTopologyEvidence {
         $since[] = $from;
 
-        return TaskTopologyEvidence::parse(topology_evidence_entry(now()->subSecond(), 'node list', 'app-dev', 'orbit node:list'), $from->subYear(), now());
+        return TaskTopologyEvidence::fromJsonLines(topology_evidence_entry(now()->subSecond(), 'node list', 'app-dev', 'orbit node:list'), $from->subYear(), now());
     });
 
     app(TaskScheduler::class)->tick();
@@ -3205,7 +3205,7 @@ it('adds the counted topology evidence to the approval and its commit', function
     $task->update(['topology' => ['app-prod+ingress']]);
     $admission = mock(TaskTopologyAdmission::class);
     $admission->shouldReceive('prepare');
-    $admission->shouldReceive('evidence')->andReturnUsing(fn (Task $group, CarbonInterface $from): TaskTopologyEvidence => TaskTopologyEvidence::parse(
+    $admission->shouldReceive('evidence')->andReturnUsing(fn (Task $group, CarbonInterface $from): TaskTopologyEvidence => TaskTopologyEvidence::fromJsonLines(
         topology_evidence_entry(now()->subSecond(), 'ingress caddy', 'app-prod', 'systemctl is-active caddy'),
         $from->subYear(),
         now(),
@@ -3224,7 +3224,7 @@ function topology_evidence_entry(CarbonInterface $start, string $label, string $
 {
     $time = $start->utc()->format('Y-m-d\\TH:i:s.v\\Z');
 
-    return "=== {$time} {$label} node={$node} exit={$exit} duration=5ms end={$time}\n\$ {$command}\n--- stdout\nok\n--- stderr\n\n";
+    return json_encode(['v' => 1, 'start' => $time, 'end' => $time, 'label' => $label, 'node' => $node, 'exit' => $exit, 'argv' => explode(' ', $command)], JSON_THROW_ON_ERROR)."\n";
 }
 
 it('polls a running baseline without mutating topology and rechecks readiness after it finishes', function (): void {

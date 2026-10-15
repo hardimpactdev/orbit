@@ -47,7 +47,7 @@ final readonly class TaskVmPackageCache implements TaskVmPackageCacheMount
         return array_filter($hashes, is_string(...));
     }
 
-    /** Attach at workspace creation, including a warm claim, and keep all writes on the workspace disk. */
+    /** Attach at workspace creation, and keep all writes on the workspace disk. */
     public function prepare(TaskVm $vm, Project $project): void
     {
         if ($vm->provider->value !== 'incus') {

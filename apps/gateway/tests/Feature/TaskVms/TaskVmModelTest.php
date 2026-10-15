@@ -77,13 +77,13 @@ it('knows what each provider can do', function (TaskVmProviderKind $provider, bo
 it('defines what each size takes in one place', function (): void {
     $host = new TaskVmHost($this->host->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 4, 2, '4GiB', '20GiB');
     $takes = static fn (TaskVmSize $size): array => [
-        $size->slots(), $size->resources()->warmEligible, $size->resources()->cpusOn($host), $size->resources()->memoryOn($host), $size->resources()->diskOn($host), $size->resources()->qemuConfig !== null,
+        $size->slots(), $size->resources()->cpusOn($host), $size->resources()->memoryOn($host), $size->resources()->diskOn($host), $size->resources()->qemuConfig !== null,
     ];
 
     expect(array_map($takes, TaskVmSize::cases()))->toBe([
-        [1, true, 2, '4GiB', '20GiB', false],
-        [2, false, 4, '8GiB', '40GiB', true],
-        [3, false, 6, '12GiB', '60GiB', true],
+        [1, 2, '4GiB', '20GiB', false],
+        [2, 4, '8GiB', '40GiB', true],
+        [3, 6, '12GiB', '60GiB', true],
     ])
         ->and(TaskVmPlacementPolicy::noCapacityFor(TaskVmSize::Medium))->toBe('Task VM: no host has 2 free slots for a medium VM.')
         ->and(TaskVmPlacementPolicy::noCapacityFor(TaskVmSize::Large))->toBe('Task VM: no host has 3 free slots for a large VM.');

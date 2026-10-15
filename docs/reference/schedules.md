@@ -21,8 +21,6 @@ While task VMs are enabled, the Gateway checks the deployed recipe each minute a
 
 Release handoff immediately queues [base and role image builds](/reference/compute-drivers#build-the-base-image) on each task VM host when the deployed recipe changes. The minute check recovers missed dispatches; an unchanged recipe starts no build. This replaces the fixed nightly Incus image refresh. ADR 0207 step 9 adds the nightly snapshot-date bump.
 
-It queues the [warm VM pool refill](/reference/compute-drivers#fill-the-pool) every minute while a host also sets `warm_vms`. While task VMs are off, the refill still runs until the pool is empty. It runs none of its work itself while the [Gateway queue](/reference/gateway-queue) is set: it dispatches each command as a queued job, and Laravel Horizon runs it.
-
 The Gateway also attempts `project-documents:probes:reconcile` once per minute without overlap. It processes a finite batch from the private probe journal and permanently retains each cleanup record for late PUT recovery. This is an internal attempt schedule, not a promise of object lifetime or a Schedule on a Node. [Reserved probe recovery](/reference/project-documents#recover-reserved-probes) defines its bounds, backoff, repair, and separation from the gate for document-body cleanup.
 
 The Gateway runs `orbit:vault-sync` every minute without overlap. It does nothing until [Vaultwarden](/reference/vaultwarden#sync) is set up, and it contacts Vaultwarden only when a credential changed or the hourly check is due.

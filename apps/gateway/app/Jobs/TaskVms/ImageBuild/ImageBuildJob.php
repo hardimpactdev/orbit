@@ -7,7 +7,7 @@ namespace App\Jobs\TaskVms\ImageBuild;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmImageBuildStep;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
-use App\Infrastructure\TaskVms\TaskVmImageBuildSteps;
+use App\Infrastructure\TaskVms\RecipeImageBuildSteps;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Eloquent\Builder;
@@ -40,7 +40,7 @@ abstract class ImageBuildJob implements ShouldQueue
         return null;
     }
 
-    public function handle(TaskVmImageBuildSteps $work): void
+    public function handle(RecipeImageBuildSteps $work): void
     {
         // Serialize the submission acknowledgement with recovery's conditional failure write.
         $build = DB::transaction(function (): ?TaskVmImageBuild {
@@ -49,7 +49,7 @@ abstract class ImageBuildJob implements ShouldQueue
                     // Redelivery of an older completed step is not acknowledgement of a new resume.
                     $query->whereNull('submission_pending_at')->orWhere(fn (Builder $entry): Builder => $entry
                         ->where('current_step', $this->step())->where('current_program', $this->program()));
-                    if ($this->step() === TaskVmImageBuildStep::Launch || ($this instanceof BuildRecipeImageStep && $this->profile === 'base' && $this->phase === 'reset')) {
+                    if ($this instanceof BuildRecipeImageStep && $this->profile === 'base' && $this->phase === 'reset') {
                         $query->orWhereNull('current_step');
                     }
                 })->update(['submission_pending_at' => null]);
@@ -87,7 +87,7 @@ abstract class ImageBuildJob implements ShouldQueue
         }
         $steps[$index]['seconds'] = max(0.0, now()->getTimestampMs() / 1000 - Carbon::parse($steps[$index]['started_at'])->getTimestampMs() / 1000);
         $build->steps = $steps;
-        if ($this->step() === TaskVmImageBuildStep::Promote) {
+        if ($this->step() === TaskVmImageBuildStep::Prune) {
             $build->state = TaskVmImageBuildState::Succeeded;
         }
         $build->save();

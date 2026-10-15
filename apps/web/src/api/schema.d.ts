@@ -4521,7 +4521,6 @@ export interface components {
             cpus?: number;
             memory?: string;
             disk?: string;
-            warm_vms?: number;
             operator_owned?: string[];
         };
         NodeUpdating: {
@@ -13440,7 +13439,6 @@ export interface operations {
                         cpus?: number;
                         memory?: string;
                         disk?: string;
-                        warm_vms?: number;
                         operator_owned?: string[];
                     } | null;
                 };

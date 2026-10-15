@@ -147,12 +147,10 @@ final readonly class TaskVmSettings
     public static function scheduled(): TaskVmSchedule
     {
         $enabled = Config::get('task_vms.enabled') === true;
-        $hosts = self::hostEntries();
 
         return new TaskVmSchedule(
             enabled: $enabled,
             upcloudConfigured: filled(Config::get('task_vms.upcloud.token_file')),
-            warmVmsWanted: $enabled && array_any($hosts, static fn (array $host): bool => is_int($host['warm_vms'] ?? null) && $host['warm_vms'] > 0),
         );
     }
 
@@ -183,12 +181,6 @@ final readonly class TaskVmSettings
     public function hasHost(int $nodeId): bool
     {
         return array_any($this->hosts, static fn (TaskVmHost $host): bool => $host->nodeId === $nodeId);
-    }
-
-    /** The host that the nightly refresh builds on and syncs from: the first configured host, or null without hosts. */
-    public function sourceHost(): ?TaskVmHost
-    {
-        return $this->hosts[0] ?? null;
     }
 
     /** @return array<string, mixed> the raw `task_vms` config */

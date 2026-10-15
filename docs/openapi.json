@@ -16113,10 +16113,6 @@
                       "disk": {
                         "type": "string"
                       },
-                      "warm_vms": {
-                        "type": "integer",
-                        "minimum": 0
-                      },
                       "operator_owned": {
                         "type": "array",
                         "items": {
@@ -33346,9 +33342,6 @@
           },
           "disk": {
             "type": "string"
-          },
-          "warm_vms": {
-            "type": "integer"
           },
           "operator_owned": {
             "type": "array",

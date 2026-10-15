@@ -9,7 +9,7 @@ use App\Infrastructure\TaskVms\TaskVmScripts;
 /** Names the `resources/task-vms` script whose content a fake host received, so fakes match scripts by name. */
 final class TaskVmScriptNames
 {
-    /** The file name of the script with exactly the content `$script`, such as `peer-send.sh`, or null for none. */
+    /** The file name of the script with exactly the content `$script`, such as `topology.sh`, or null for none. */
     public static function of(string $script): ?string
     {
         foreach (glob(TaskVmScripts::path('*.sh')) ?: [] as $path) {

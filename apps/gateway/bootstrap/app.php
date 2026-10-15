@@ -33,8 +33,6 @@ use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
 use App\Infrastructure\Logging\GatewayExceptionStatus;
-use App\Jobs\TaskVms\RecoverLegacyWarmClaim;
-use App\Jobs\TaskVms\RefillTaskVmPool;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
 use App\Jobs\TaskVms\RefreshUpCloudTaskVmBaseImage;
 use App\Jobs\TaskVms\SweepTaskVmHosts;
@@ -59,11 +57,6 @@ if (
     || ini_get('zend.exception_ignore_args') !== '1')
 ) {
     throw new RuntimeException('PHP must omit arguments from exception traces.');
-}
-
-// Keep old delayed claim payloads readable for one release, without creating any new guard jobs.
-if (! class_exists('App\\Jobs\\TaskVms\\EnsureWarmClaimReady', false)) {
-    class_alias(RecoverLegacyWarmClaim::class, 'App\\Jobs\\TaskVms\\EnsureWarmClaimReady');
 }
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -103,10 +96,6 @@ return Application::configure(basePath: dirname(__DIR__))
 
                 return $taskVms->enabled || $taskVms->upcloudConfigured;
             });
-        // The task VM pool: warm VMs up to each host's warm_vms, and a drain while task VMs are off. Inert while no
-        // host has warm_vms and no pool VM exists.
-        GatewaySchedule::job($schedule, new RefillTaskVmPool)->everyMinute()
-            ->when(static fn (): bool => RefillTaskVmPool::due());
     })
     ->withCommands()
     ->withMiddleware(function (Middleware $middleware): void {
@@ -142,7 +131,7 @@ return Application::configure(basePath: dirname(__DIR__))
                     $requestId = $request->header('X-Orbit-Request-Id', '');
                 }
 
-                return is_string($requestId) ? $requestId : '';
+                return $requestId;
             };
 
             $exceptions->render(function (InstanceRemovalException $exception, Request $request) use ($requestIdFor): JsonResponse {

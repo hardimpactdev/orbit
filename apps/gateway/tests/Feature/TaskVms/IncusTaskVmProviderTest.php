@@ -217,7 +217,7 @@ it('names a missing base image instead of the launch error, and never launches t
     expect(fn () => $this->provider->create($this->vm, '#cloud-config'))
         ->toThrow(fn (TaskVmException $e) => expect([$e->errorCode, $e->getMessage()])->toBe([
             'task_vm.base_image_missing',
-            'The Incus project [orbit-tasks] on the host of task VM [tvm-1] has no base image [orbit-task-base]. Sync it with task-vms:sync-image, or build it with task-vms:build-image.',
+            'The Incus project [orbit-tasks] on the host of task VM [tvm-1] has no base image [orbit-task-base]. Build it with task-vms:build-image.',
         ]));
     expect(($this->argv)()[1])->toContain('orbit-task-base')->not->toContain('ubuntu-26.04-vm')
         ->and(($this->argv)()[3])->toBe([...INCUS_PREFIX, 'image', 'list', '--format', 'json']);

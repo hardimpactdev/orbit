@@ -18,25 +18,7 @@ final readonly class TaskVmPlacementPolicy
 {
     public const string NoCapacity = 'Task VM: no capacity.';
 
-    /** Every slot is taken, and at least one of them is a warm VM that is still starting. */
-    public const string WarmStarting = 'Task VM: waiting for a warm VM.';
-
     public function __construct(private TaskVmSettings $settings) {}
-
-    /**
-     * The hosts in the order a claim looks for a warm VM: most free slots first.
-     *
-     * @param  array<int, int>  $free  host Node id => free slots, in config order
-     * @return list<int>
-     */
-    public function warmHostOrder(array $free): array
-    {
-        $order = array_keys($free);
-        // usort is stable, so hosts with as many free slots keep their config order.
-        usort($order, static fn (int $a, int $b): int => $free[$b] <=> $free[$a]);
-
-        return $order;
-    }
 
     /**
      * The active host with the most free slots, when it has room for the size. Hosts with as many free slots keep
@@ -69,9 +51,7 @@ final readonly class TaskVmPlacementPolicy
             && TaskVm::query()->countedAgainstCap(TaskVmProviderKind::UpCloud)->count() < $upcloud->maxVms) {
             return TaskVmPlacementTarget::upCloud();
         }
-        $starting = TaskVm::query()->pool()->where('state', TaskVmState::Provisioning)->whereIn('host_node_id', array_keys($free))->exists();
-
-        throw new TaskCapacityException(TaskWait::Capacity, $starting ? self::WarmStarting : self::NoCapacity);
+        throw new TaskCapacityException(TaskWait::Capacity, self::NoCapacity);
     }
 
     /**

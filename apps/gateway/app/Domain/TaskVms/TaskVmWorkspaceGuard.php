@@ -70,7 +70,7 @@ final class TaskVmWorkspaceGuard
 
         $group = $vm->group;
         if (! $group instanceof Task) {
-            throw new TaskVmException(TaskVmError::ForeignInstance, "Node [{$instance->node_id}] is a warm task VM. It serves no Instance until a task group claims it.");
+            throw new TaskVmException(TaskVmError::ForeignInstance, "Node [{$instance->node_id}] is an unassigned task VM. It serves no Instance.");
         }
         if ($instance->project_id !== $group->project_id || $instance->name !== TaskWorkspaceName::for($group)) {
             throw new TaskVmException(TaskVmError::ForeignInstance, "Node [{$instance->node_id}] is a task VM and serves only the workspace of task group [{$group->id}].");

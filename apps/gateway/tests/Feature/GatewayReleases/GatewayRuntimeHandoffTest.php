@@ -16,7 +16,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Files\ProtectedFileWriter;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
 use App\Infrastructure\Gateway\GatewayHorizon;
-use App\Infrastructure\Gateway\GatewayQueueMove;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
 use App\Infrastructure\GatewayReleases\GatewayCleanupHandoff;
 use App\Infrastructure\GatewayReleases\GatewayNodeAgentUpdate;
@@ -26,7 +25,6 @@ use App\Infrastructure\Nodes\NodeAgentFootprint;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
-use App\Jobs\TaskVms\PublishTaskVmCommit;
 use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Support\Facades\Artisan;
@@ -248,7 +246,6 @@ function runtime_handoff(?string $livePool = null, int $drainSeconds = 5, ?Fleet
             fleet: $fleet,
             agent: $agent ? new GatewayNodeAgentUpdate($processes) : null,
             horizon: $horizon,
-            queueMove: new GatewayQueueMove,
         ),
         $processes,
         $cleanup,
@@ -459,7 +456,7 @@ describe('gateway:release:handoff', function (): void {
             ->and($schedule['opcache']['outcome'])->toBe('reset');
     });
 
-    it('moves Horizon in the serving phase, right after the switch, and the old database jobs after the scheduler drain', function (): void {
+    it('moves Horizon in the serving phase, right after the switch', function (): void {
         config(['orbit.gateway_queue.connection' => 'services-valkey']);
         $gateway = handoff_gateway();
         handoff_scheduler($gateway);
@@ -468,7 +465,6 @@ describe('gateway:release:handoff', function (): void {
         $runtime = new ProcessesApiFakeRuntimeManager;
         $runtime->statusOverride = 'active';
         app()->instance(ProcessRuntimeManager::class, $runtime);
-        DB::table('jobs')->insert(['queue' => 'task-vm-git', 'payload' => json_encode(['data' => ['command' => serialize(new PublishTaskVmCommit(7, str_repeat('a', 40), 'task-7'))]]), 'attempts' => 0, 'reserved_at' => null, 'available_at' => now()->getTimestamp(), 'created_at' => now()->getTimestamp()]);
         Artisan::command('horizon:terminate', function (): void {
             Cache::increment('handoff-horizon-terminated');
         });
@@ -476,18 +472,16 @@ describe('gateway:release:handoff', function (): void {
         $processes->mainPids = ['4242', '0'];
 
         $serve = $handoff->serve();
-        $jobsBeforeDrain = DB::table('jobs')->pluck('queue')->all();
         $schedule = $handoff->schedule();
 
         expect($serve['horizon'])->toBe('terminated')
             ->and(Cache::get('handoff-horizon-terminated'))->toBe(1)
-            ->and($jobsBeforeDrain)->toBe(['task-vm-git'])
             ->and($schedule)->not->toHaveKey('horizon')
-            ->and($schedule)->toMatchArray(['queue_moved' => 1, 'scheduler' => 'restarted'])
+            ->and($schedule)->toMatchArray(['scheduler' => 'restarted'])
             ->and($schedule['processes_restarted'])->toBe([])
             ->and($runtime->convergedProcessIds)->toBe([])
             ->and(implode("\n", $processes->systemctl()))->not->toContain("orbit-process-{$horizon->id}-horizon")
-            ->and(DB::table('jobs')->pluck('queue')->all())->toBe(['tasks']);
+            ->and(DB::table('jobs')->pluck('queue')->all())->toBe([]);
     });
 
     it('fails the serving phase when Horizon cannot move, so the release switches back', function (): void {

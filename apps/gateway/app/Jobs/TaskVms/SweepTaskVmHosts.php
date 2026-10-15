@@ -30,8 +30,7 @@ use Throwable;
 /**
  * Every 10 minutes, while task VMs are enabled: deletes orphaned `tvm-<number>` VMs in each configured host's Incus project, then the workspace
  * clones `tvm-<number>-workspace` that no live row owns, and fails the
- * `warm`, `ready`, or `parked` rows whose VM is gone on two sweeps in a row, so their groups ask for assistance. A
- * failed warm VM has no group: the pool refill destroys it. The
+ * `ready`, or `parked` rows whose VM is gone on two sweeps in a row, so their groups ask for assistance. The
  * first sweep that misses a VM only marks it in the cache; a sweep that finds the VM clears the mark. It changes only the
  * host's configured project. While UpCloud is configured, also with task VMs or the overflow off, it does the same for
  * the servers with the task VM label there, and deletes base image build servers and unverified templates older than
@@ -58,6 +57,9 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
     public function handle(TaskVmSettings $settings, TaskVmCapacity $capacity, TaskVmHostAudit $audit, TaskVmWorkspaceVolumes $volumes, UpCloudServers $servers, UpCloudTaskVmImageBuilder $images, TaskVmImageBuildChain $builds): void
     {
         $builds->recoverSubmissions();
+        foreach (TaskVm::query()->whereNull('group_id')->where('state', TaskVmState::Destroying)->get() as $retired) {
+            DestroyTaskVm::dispatch($retired->id);
+        }
         $failures = [];
         foreach ($settings->enabled ? $capacity->activeHosts() : [] as [$host, $node]) {
             try {
@@ -131,7 +133,7 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
         $names = array_column($labelled, 'title');
         $rows = TaskVm::query()->live()->where('provider', TaskVmProviderKind::UpCloud);
         $this->misses($rows, array_values((clone $rows)->get()->filter(
-            static fn (TaskVm $vm): bool => in_array($vm->state, [TaskVmState::Warm, TaskVmState::Ready, TaskVmState::Parked], true) && ! in_array($vm->name, $names, true),
+            static fn (TaskVm $vm): bool => in_array($vm->state, [TaskVmState::Ready, TaskVmState::Parked], true) && ! in_array($vm->name, $names, true),
         )->all()));
     }
 
@@ -163,11 +165,11 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
         return 'task-vms:sweep-missing:'.$taskVmId;
     }
 
-    /** Only a row that is still `warm`, `ready`, or `parked` fails, so a destroy or a claim that started meanwhile wins. */
+    /** Only a row that is still `ready`, or `parked` fails, so a destroy or a claim that started meanwhile wins. */
     private function fail(TaskVm $vm): void
     {
         $message = "Task VM [{$vm->name}] is gone from its host.";
-        if (app(FailTaskVmAction::class)->execute($vm, [TaskVmState::Warm, TaskVmState::Ready, TaskVmState::Parked], TaskVmError::VmMissing->value, $message, TaskVmFailedException::stoppedReason(TaskVmError::VmMissing->value, $message))) {
+        if (app(FailTaskVmAction::class)->execute($vm, [TaskVmState::Ready, TaskVmState::Parked], TaskVmError::VmMissing->value, $message, TaskVmFailedException::stoppedReason(TaskVmError::VmMissing->value, $message))) {
             Log::warning('A task VM is gone from its host.', ['task_vm_id' => $vm->id, 'name' => $vm->name]);
         }
     }

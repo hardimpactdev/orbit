@@ -178,21 +178,8 @@ it('reads the newest MiB of the JSON evidence and counts its records since the h
     $evidence = app(TaskTopologyAdmission::class)->evidence($this->group, CarbonImmutable::now()->subMinutes(30));
 
     expect($evidence->missing(['app-dev', 'app-prod']))->toBe(['app-prod'])
-        ->and(array_slice($ssh->commands[0]->arguments, 3))->toBe(['evidence', '/home/orbit/apps/orbit/workspace', '.e2e/evidence.jsonl', '.e2e/evidence.log'])
+        ->and(array_slice($ssh->commands[0]->arguments, 3))->toBe(['evidence', '/home/orbit/apps/orbit/workspace', '.e2e/evidence.jsonl'])
         ->and($ssh->commands[0]->arguments[2])->toContain('tail -c 1048576');
-});
-
-it('reads the text evidence log of a harness without JSON evidence, and counts nothing without either', function (): void {
-    $entry = static fn (string $start, string $label, string $node, int $exit): string => "=== {$start} {$label} node={$node} exit={$exit} duration=10ms end={$start}\n\$ orbit node:list\n--- stdout\nok\n--- stderr\n\n";
-    $at = static fn (int $minutes): string => CarbonImmutable::now()->utc()->subMinutes($minutes)->format('Y-m-d\\TH:i:s.v\\Z');
-    topology_admission_ssh([
-        topology_admission_result(".e2e/evidence.log\n".$entry($at(60), 'before handoff', 'app-dev', 0).$entry($at(10), 'ingress check', 'app-prod', 1).$entry($at(5), 'node list', 'app-dev', 0)),
-        topology_admission_result(''),
-    ]);
-    $admission = app(TaskTopologyAdmission::class);
-
-    expect($admission->evidence($this->group, CarbonImmutable::now()->subMinutes(30))->missing(['app-dev', 'app-prod']))->toBe(['app-prod'])
-        ->and($admission->evidence($this->group, CarbonImmutable::now()->subMinutes(30))->missing(['app-dev']))->toBe(['app-dev']);
 });
 
 it('keeps a run whose unit started although the start call failed, and fails one without a unit', function (): void {
@@ -217,4 +204,12 @@ it('prepares the topology again when the VM restarted since it was ready', funct
         ->and($ssh->commands[1]->arguments[4])->toBe('start')
         ->and($this->vm->fresh()?->topology_state)->toBe(TaskVmTopologyState::Preparing)
         ->and($this->vm->fresh()?->topology_run)->not->toBe('abcdef0123456789');
+});
+
+it('counts no topology evidence without the JSON record file', function (): void {
+    topology_admission_ssh([topology_admission_result('')]);
+
+    $evidence = app(TaskTopologyAdmission::class)->evidence($this->group, CarbonImmutable::now()->subMinutes(30));
+
+    expect($evidence->missing(['app-dev', 'app-prod']))->toBe(['app-dev', 'app-prod']);
 });

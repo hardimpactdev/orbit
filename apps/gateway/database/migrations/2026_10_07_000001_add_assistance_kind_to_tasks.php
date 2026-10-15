@@ -2,8 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Domain\Tasks\AssistanceKind;
-use App\Domain\Tasks\TaskAssistance;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -16,6 +14,10 @@ use Illuminate\Support\Facades\Schema;
  */
 return new class extends Migration
 {
+    private const string ImplementerBlockedPrefix = 'The implementer is blocked: ';
+
+    private const string ReviewerBlockedPrefix = 'The reviewer is blocked: ';
+
     public function up(): void
     {
         // The merged tasks table is the one these columns belong to. A historical migrate that
@@ -55,10 +57,10 @@ return new class extends Migration
 
         foreach ($subtasks as $subtask) {
             $reason = is_string($subtask->assistance_reason) ? $subtask->assistance_reason : '';
-            $direction = TaskAssistance::isBlockedReason($reason);
+            $direction = $this->isBlockedReason($reason);
             DB::table('tasks')->where('id', $subtask->id)->update([
-                'assistance_kind' => $direction ? AssistanceKind::Direction->value : AssistanceKind::Failure->value,
-                'assistance_question' => $direction ? TaskAssistance::questionFromBlockedReason($reason) : null,
+                'assistance_kind' => $direction ? 'direction' : 'failure',
+                'assistance_question' => $direction ? $this->questionFromBlockedReason($reason) : null,
             ]);
         }
 
@@ -66,7 +68,7 @@ return new class extends Migration
         $directions = DB::table('tasks')
             ->whereNotNull('parent_id')
             ->where('assistance_requested', true)
-            ->where('assistance_kind', AssistanceKind::Direction->value)
+            ->where('assistance_kind', 'direction')
             ->orderBy('position')
             ->orderBy('id')
             ->get(['parent_id', 'assistance_question']);
@@ -88,11 +90,11 @@ return new class extends Migration
             $taskId = (int) $task->id;
             $current = is_string($task->assistance_kind) ? $task->assistance_kind : null;
             if (array_key_exists($taskId, $directionByTask)) {
-                if ($current === AssistanceKind::Direction->value) {
+                if ($current === 'direction') {
                     continue;
                 }
                 DB::table('tasks')->where('id', $taskId)->update([
-                    'assistance_kind' => AssistanceKind::Direction->value,
+                    'assistance_kind' => 'direction',
                     'assistance_question' => $directionByTask[$taskId],
                 ]);
 
@@ -102,12 +104,34 @@ return new class extends Migration
                 continue;
             }
             DB::table('tasks')->where('id', $taskId)->update([
-                'assistance_kind' => AssistanceKind::Failure->value,
+                'assistance_kind' => 'failure',
                 'assistance_question' => null,
             ]);
         }
 
         $this->recordDirectionQuestions();
+    }
+
+    private function isBlockedReason(string $reason): bool
+    {
+        return str_starts_with($reason, self::ImplementerBlockedPrefix)
+            || str_starts_with($reason, self::ReviewerBlockedPrefix);
+    }
+
+    private function questionFromBlockedReason(string $reason): string
+    {
+        $marker = 'Question: ';
+        $position = strrpos($reason, $marker);
+        if ($position !== false) {
+            return substr($reason, $position + strlen($marker));
+        }
+        foreach ([self::ImplementerBlockedPrefix, self::ReviewerBlockedPrefix] as $prefix) {
+            if (str_starts_with($reason, $prefix)) {
+                return substr($reason, strlen($prefix));
+            }
+        }
+
+        return $reason;
     }
 
     /**
@@ -124,7 +148,7 @@ return new class extends Migration
         $subtasks = DB::table('tasks')
             ->whereNotNull('parent_id')
             ->where('assistance_requested', true)
-            ->where('assistance_kind', AssistanceKind::Direction->value)
+            ->where('assistance_kind', 'direction')
             ->orderBy('id')
             ->get(['id', 'parent_id', 'assistance_reason', 'assistance_question', 'completion_attempt', 'review_attempt']);
 
@@ -135,7 +159,7 @@ return new class extends Migration
             }
 
             $reason = is_string($subtask->assistance_reason) ? $subtask->assistance_reason : '';
-            $reviewer = str_starts_with($reason, TaskAssistance::ReviewerBlockedPrefix);
+            $reviewer = str_starts_with($reason, self::ReviewerBlockedPrefix);
             DB::table('task_questions')->insert([
                 'task_id' => (int) $subtask->parent_id,
                 'subtask_id' => (int) $subtask->id,

@@ -18,7 +18,7 @@ describe('Node task VM settings', function (): void {
     it('selects only active configured Nodes and ignores app-dev and the former env config', function (): void {
         config(['task_vms' => task_vm_config()]);
         task_vm_node_hosts([
-            ['node_id' => 9, 'cidr' => '10.251.77.0/24', 'max_vms' => 4, 'warm_vms' => 1, 'image_alias' => 'custom-base'],
+            ['node_id' => 9, 'cidr' => '10.251.77.0/24', 'max_vms' => 4, 'image_alias' => 'custom-base'],
             ['node_id' => 13, 'cidr' => '10.251.78.0/24', 'max_vms' => 8],
         ]);
         $services = Node::query()->create(['name' => 'services', 'status' => 'active', 'public_ssh_host' => '192.0.2.20']);
@@ -29,7 +29,6 @@ describe('Node task VM settings', function (): void {
         expect(array_column($settings->hosts, 'nodeId'))->toBe([9, 13])
             ->and($settings->hasHost($services->id))->toBeFalse()
             ->and($settings->host(9)->maxVms)->toBe(4)
-            ->and($settings->host(9)->warmVms)->toBe(1)
             ->and($settings->host(9)->imageAlias)->toBe('custom-base');
         Node::query()->findOrFail(13)->update(['status' => 'failed']);
         expect(array_column(TaskVmSettings::fromConfig()->hosts, 'nodeId'))->toBe([9]);
@@ -52,12 +51,12 @@ describe('Node task VM settings', function (): void {
         $this->markAsGateway($operator);
         $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.2']);
         $host = Node::query()->create(['name' => 'beast', 'status' => 'active', 'public_ssh_host' => '192.0.2.9', 'settings' => ['t3' => ['id' => 'retained']]]);
-        $this->patchJson("/api/v1/nodes/{$host->id}/settings", ['task_vms' => ['cidr' => '10.251.77.0/24', 'max_vms' => 4, 'warm_vms' => 1]])
+        $this->patchJson("/api/v1/nodes/{$host->id}/settings", ['task_vms' => ['cidr' => '10.251.77.0/24', 'max_vms' => 4]])
             ->assertOk()->assertJsonPath('data.settings.task_vms.pool', 'orbit-tasks')
             ->assertJsonPath('data.settings.task_vms.image_alias', 'orbit-task-base');
         expect($host->refresh()->settings['t3'])->toBe(['id' => 'retained']);
         $stored = $host->settings;
-        $this->patchJson("/api/v1/nodes/{$host->id}/settings", ['task_vms' => ['cidr' => '10.251.77.0/24', 'max_vms' => 4, 'warm_vms' => 5]])
+        $this->patchJson("/api/v1/nodes/{$host->id}/settings", ['task_vms' => ['cidr' => '10.251.77.0/24', 'max_vms' => 4, 'warm_vms' => 0]])
             ->assertStatus(422)->assertJsonPath('error.code', 'node.settings_invalid');
         expect($host->refresh()->settings)->toBe($stored);
         $this->patchJson("/api/v1/nodes/{$host->id}/settings", ['task_vms' => null])->assertOk();
@@ -109,8 +108,8 @@ describe('Node task VM settings', function (): void {
 
     it('copies deployment values unchanged to beast and shark without replacing existing intent', function (): void {
         $entries = [
-            ['node_id' => 9, 'cidr' => '10.251.77.0/24', 'max_vms' => 8, 'warm_vms' => 2, 'pool' => 'fast', 'zfs_dataset' => 'fast/tasks', 'operator_owned' => ['orbit-ci/*'], 'memory' => '8GiB'],
-            ['node_id' => 13, 'cidr' => '10.251.78.0/24', 'max_vms' => 4, 'warm_vms' => 1, 'cpus' => 4, 'disk' => '40GiB'],
+            ['node_id' => 9, 'cidr' => '10.251.77.0/24', 'max_vms' => 8, 'pool' => 'fast', 'zfs_dataset' => 'fast/tasks', 'operator_owned' => ['orbit-ci/*'], 'memory' => '8GiB'],
+            ['node_id' => 13, 'cidr' => '10.251.78.0/24', 'max_vms' => 4, 'cpus' => 4, 'disk' => '40GiB'],
         ];
         foreach ([9, 13] as $id) {
             Node::query()->forceCreate(['id' => $id, 'public_ssh_host' => '192.0.2.'.$id, 'name' => $id === 9 ? 'beast' : 'shark', 'status' => 'active', 'settings' => ['apps' => ['path' => '/srv/apps'], 't3' => ['id' => 'retained']]]);

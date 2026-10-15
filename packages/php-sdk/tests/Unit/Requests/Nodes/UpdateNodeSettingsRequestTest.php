@@ -60,10 +60,10 @@ it('keeps apps-only fromSettings callers from removing host intent', function ()
 });
 
 it('sends task host intent and explicit clearing without touching apps', function (): void {
-    $host = new TaskVmsSettings(cidr: '10.251.77.0/24', max_vms: 4, warm_vms: 0, operator_owned: []);
+    $host = new TaskVmsSettings(cidr: '10.251.77.0/24', max_vms: 4, operator_owned: []);
     $request = new UpdateNodeSettingsRequest(nodeId: 9, hasTaskVms: true, taskVms: $host);
     expect($request->body()->all())->toBe(['task_vms' => [
-        'cidr' => '10.251.77.0/24', 'max_vms' => 4, 'warm_vms' => 0, 'operator_owned' => [],
+        'cidr' => '10.251.77.0/24', 'max_vms' => 4, 'operator_owned' => [],
     ]]);
     $clear = new UpdateNodeSettingsRequest(nodeId: 9, hasTaskVms: true);
     expect($clear->body()->all())->toBe(['task_vms' => null]);

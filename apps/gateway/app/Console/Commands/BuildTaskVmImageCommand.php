@@ -18,7 +18,7 @@ final class BuildTaskVmImageCommand extends Command
     use ResolvesTaskVmHostNode;
 
     #[\Override]
-    protected $signature = 'task-vms:build-image {node : Id or name of the Incus host Node} {--from-stock : Start from the stock Ubuntu image} {--resume= : Resume a build id, or the newest resumable failed build when no id is given}';
+    protected $signature = 'task-vms:build-image {node : Id or name of the Incus host Node} {--resume= : Resume a build id, or the newest resumable failed build when no id is given}';
 
     #[\Override]
     protected $description = 'Queue the task VM base image build and watch its steps.';
@@ -30,8 +30,8 @@ final class BuildTaskVmImageCommand extends Command
             $settings->host($node->id);
             $resume = $this->option('resume');
             $resuming = $this->input->hasParameterOption('--resume');
-            if ($resuming && (($resume !== null && ! ctype_digit((string) $resume)) || $this->option('from-stock'))) {
-                $this->error('--resume accepts a build id or no value and cannot be combined with --from-stock.');
+            if ($resuming && $resume !== null && ! ctype_digit((string) $resume)) {
+                $this->error('--resume accepts a build id or no value.');
 
                 return self::FAILURE;
             }
