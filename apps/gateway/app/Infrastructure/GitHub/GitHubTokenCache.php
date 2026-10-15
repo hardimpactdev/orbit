@@ -8,7 +8,7 @@ use App\Domain\GitHub\GitHubRepository;
 use Closure;
 use Illuminate\Contracts\Cache\Factory;
 use Illuminate\Contracts\Cache\Repository;
-use Illuminate\Contracts\Encryption\Encrypter;
+use Illuminate\Contracts\Encryption\StringEncrypter;
 use SensitiveParameter;
 use Throwable;
 
@@ -26,7 +26,7 @@ final readonly class GitHubTokenCache
     public const int InstallationSeconds = 3600;
 
     /** The cache store is resolved when it is used, so building a reader never touches the cache. */
-    public function __construct(private Factory $caches, private Encrypter $encrypter) {}
+    public function __construct(private Factory $caches, private StringEncrypter $encrypter) {}
 
     /** @param Closure(): ?int $resolve */
     public function installation(int $appId, GitHubRepository $repository, Closure $resolve): ?int
