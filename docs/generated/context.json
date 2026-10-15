@@ -35,7 +35,6 @@
             "concepts": [
                 "Activity",
                 "Cluster",
-                "Deployment",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -114,7 +113,6 @@
             "concepts": [
                 "Access grant",
                 "Activity",
-                "Deployment",
                 "Doctor",
                 "Extension",
                 "Gateway",
@@ -401,6 +399,19 @@
                 "Role",
                 "Route",
                 "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/operation.mdx",
+            "title": "operation",
+            "kind": "product",
+            "components": [
+                "apps/cli"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance"
             ],
             "governing_adrs": []
         },
@@ -895,6 +906,33 @@
             ]
         },
         {
+            "path": "docs/decisions/0209-run-long-operations-as-durable-queued-operations.md",
+            "title": "ADR 0209: Run long operations as durable queued operations",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Activity",
+                "Deployment",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Route",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0206",
+                "0209"
+            ]
+        },
+        {
             "path": "docs/decisions/0210-give-each-extension-its-own-code-boundary.md",
             "title": "ADR 0210: Give each extension its own code boundary",
             "kind": "decision",
@@ -1111,6 +1149,7 @@
                 "0198",
                 "0200",
                 "0206",
+                "0209",
                 "0210",
                 "0211",
                 "0212",
@@ -1666,7 +1705,8 @@
                 "Project",
                 "Role",
                 "Route",
-                "Schedule"
+                "Schedule",
+                "Tool"
             ],
             "governing_adrs": []
         },
@@ -1814,6 +1854,7 @@
                 "Doctor",
                 "Extension",
                 "Gateway",
+                "Instance",
                 "Node",
                 "Process",
                 "Project",
@@ -2323,6 +2364,32 @@
                 "Task"
             ],
             "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/operations.md",
+            "title": "Operations",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Access grant",
+                "Deployment",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Role",
+                "Route",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0209"
+            ]
         },
         {
             "path": "docs/reference/php-runtime.md",

@@ -3,7 +3,7 @@ title: "Instance releases"
 description: "How production Instances build releases and select current code, and how development defaults deploy in their checkout."
 covers:
   - apps/gateway/app/Domain/{Instances/Deployment/**,Instances/ProductionWebRootManager.php,Projects/*DeployStep*.php}
-  - apps/gateway/app/Actions/Instances/{DeployInstanceAction,DeployDefaultInstanceAction,RollbackInstanceAction,InstanceDeploymentConfigResolver,UpdateInstanceAction,ListInstanceReleasesAction,ListInstanceDeploymentsAction,*InstanceDeployStep*Action}.php
+  - apps/gateway/app/Actions/Instances/{DeployInstanceAction,DeployDefaultInstanceAction,StartInstanceDeployAction,RollbackInstanceAction,InstanceDeploymentConfigResolver,UpdateInstanceAction,ListInstanceReleasesAction,ListInstanceDeploymentsAction,*InstanceDeployStep*Action}.php
   - apps/gateway/app/Infrastructure/Instances/{RemoteProductionDeployment,RemoteDevelopmentDeployment,DevelopmentCheckoutProgram,ProductionApplicationPaths,ProductionWebRootProgram,RemoteProductionWebRootManager}.php
   - apps/gateway/app/Console/Commands/DeployDevelopmentDefaultsCommand.php
   - apps/gateway/app/Http/Streaming/**
@@ -44,7 +44,7 @@ A new release without such a directory fails at source preparation. Like any oth
 
 ## Development defaults
 
-A `default` Instance on an `app-dev` Node is a plain Git checkout that Orbit keeps at the newest commit of the Project's default branch. Other development Instances on the Node start from it. `orbit instance:deploy ID`, the existing deployment API (`POST /api/v1/instances/{instance}/deploy` with `{}`), and MCP's Instance deploy operation can deploy a default by hand. The Project's default branch supplies the target commit; production branch overrides do not apply.
+A `default` Instance on an `app-dev` Node is a plain Git checkout that Orbit keeps at the newest commit of the Project's default branch. Other development Instances on the Node start from it. `orbit instance:deploy ID`, the deployment API (`POST /api/v1/instances/{instance}/deploy` with `{}`), and the MCP tool `instance-deploy` can deploy a default by hand. Each starts an [operation](#deploy-through-the-api). The Project's default branch supplies the target commit; production branch overrides do not apply.
 
 The Gateway checks development defaults every minute with `orbit:deploy-development-defaults`, a job on the [Gateway queue](/reference/gateway-queue#scheduled-work). The GitHub App currently has no push webhook, so this schedule is the push fallback. It fetches the default branch inside the Instance operation lock and skips a commit that already deployed. Pushes that arrive during a deployment are picked up on the next tick; intermediate commits coalesce to the newest fetched commit. Only one deployment runs per Instance, including manual requests.
 
@@ -119,25 +119,49 @@ The branch lives on the Instance. `PATCH /api/v1/instances/{instance}` with `bra
 
 Deploy-step and branch changes need an access grant to the Instance's Node. The Gateway refuses them for an Instance that is not a production Instance with `deployment_config.unavailable` (409). Activity and errors never contain a step command.
 
-## Use the deployment API
+## Deploy through the API
 
-A deployment and a rollback run synchronously and stream their progress.
+A deployment runs as an [operation](/reference/operations) on the Gateway queue. A rollback still runs inside its request and streams its progress.
 
 | Request | Body | Result |
 | --- | --- | --- |
-| `POST /api/v1/instances/{instance}/deploy` | `{}` | Deploys the Instance's branch. |
-| `POST /api/v1/instances/{instance}/rollback` | `{"release": "<name>"}` | Selects one retained release. |
+| `POST /api/v1/instances/{instance}/deploy` | `{}` | `202` with an `instance.deploy` operation. Follow it with `GET /api/v1/operations/{operation}`. |
+| `POST /api/v1/instances/{instance}/rollback` | `{"release": "<name>"}` | Selects one retained release and streams its progress. |
 | `GET /api/v1/instances/{instance}/releases` | none | `releases`, the retained release names, and `selected_release`, which can be null. A development default has none. |
 
-The Gateway validates the request and the access grant before it opens the stream. A refusal there uses the normal JSON error envelope. After that, the response is `application/x-ndjson`. Each line is one event of at most 32 KiB with `type`, an increasing `sequence`, and the `request_id`.
+### The deploy operation
+
+The Gateway validates the request and the access grant, checks that the Instance can be deployed, and answers `202`. A refusal uses the normal JSON error envelope: `deployment_config.unavailable` (409) for an Instance that is neither a production Instance nor an active development default, `operation.target_busy` (409) while another operation holds the Instance, and `operation.queue_unavailable` (503) without the Gateway queue.
+
+The operation's steps follow the phases below. Each name is a phase, or a phase and a deploy step's name:
+
+| Step | Resumable | Failed boundary |
+| --- | --- | --- |
+| `source_preparation` | yes | `preparation` |
+| `environment_sync` | yes | `environment` |
+| `before_activation.<step>` | no | `before_activation` |
+| `activation` | yes | `activation` |
+| `php_refresh` | yes | `cache_refresh` |
+| `after_activation.<step>` | no | `after_activation` |
+| `cleanup` | yes | none: a failed cleanup is a warning |
+
+A development default has `source_preparation` and one `before_activation.<step>` for each [development deploy step](#development-deploy-steps). `php_refresh` appears only for an Instance that serves PHP.
+
+When the operation ends, `result` holds `deployment_id`, `release`, `selected_release`, and `commit`. A failed operation names the step in `failed_step` and the deployment's error code in `error_code`, such as `deployment.step_failed`. Read the full log of the run from its [history row](#history).
+
+A lost worker resumes a resumable step and fails any other step with `operation.worker_lost`, as [Recover a lost worker](/reference/operations#recover-a-lost-worker) describes. The failed boundary decides the selected release, as for any failure.
+
+### The rollback stream
+
+After it validates the request and the access grant, the rollback answers `application/x-ndjson`. A refusal before that uses the normal JSON error envelope. Each line is one event of at most 32 KiB with `type`, an increasing `sequence`, and the `request_id`.
 
 | Event type | Fields |
 | --- | --- |
-| `phase` | `phase` is `source_preparation`, `environment_sync`, `before_activation`, `activation`, `php_refresh`, `after_activation`, or `rollback`. `step_name` names a deploy step. |
+| `phase` | `phase` is `rollback`. |
 | `output` | `stream` is `stdout` or `stderr`. `data_base64` holds at most 16 KiB of output. |
 | `result` | `status` is `succeeded` or `failed`, with `failed_step`, `error_code`, and `selected_release`, each nullable. This is always the last line. |
 
-`failed_step` names the boundary that failed: `preparation`, `environment`, `before_activation`, `activation`, `cache_refresh`, `after_activation`, `rollback_selection`, or `operation`. An error after the stream opens, such as a non-production Instance, ends the stream with a failed `result` and no second HTTP error.
+`failed_step` names the boundary that failed: `activation`, `cache_refresh`, `rollback_selection`, or `operation`. An error after the stream opens ends the stream with a failed `result` and no second HTTP error.
 
 The Gateway flushes output while a command runs. Before each phase event, it writes one whitespace byte every 10 milliseconds for 250 milliseconds. That lets it notice a closed connection through Caddy and PHP-FPM. It notices a disconnect only when it writes, so a silent command can run until it writes, exits, or times out. Then the Gateway starts no further step and sends no result. It never replays events or rolls back by itself.
 
@@ -157,7 +181,7 @@ Orbit skips this phase for an Instance that does not serve PHP. A changed resolv
 
 Orbit runs no migration, Laravel cache clear, dependency install, asset build, or application health check of its own. With no steps, a deployment runs no application command. The `current` switch is atomic, but the dedicated FPM restart is not zero-downtime: requests can fail briefly while its socket and workers are unavailable, and in-flight requests can be interrupted. Other Instances keep their own PHP services. A confirmed no-op reconciliation does not restart FPM.
 
-Each step has its own timeout. A timeout stops the step's process group and every later step. The whole deployment has a deadline of the step timeouts plus 900 seconds. It never exceeds the request's 570-second command deadline. When a deadline stops the run, the error code is `deployment.deadline_exceeded`.
+Each step has its own timeout. A timeout stops the step's process group and every later step. The whole deployment has a deadline of the step timeouts plus 900 seconds, at most 1,600 seconds, the [deadline of an operation](/reference/operations#how-an-operation-runs). A rollback never exceeds its request's 570-second command deadline. When a deadline stops the run, the error code is `deployment.deadline_exceeded`.
 
 ## Failures
 
@@ -187,9 +211,9 @@ A rollback selects one retained release through `current`. The Gateway checks th
 
 ## History
 
-The Gateway records one row for each deployment and each rollback. It writes the row when the run starts and completes it when the run ends. It keeps the last 50 rows for each Instance.
+The Gateway records one row for each deployment and each rollback. It writes the row when the run starts, which for a deployment is when a worker first starts its operation, and completes it when the run ends. It keeps the last 50 rows for each Instance.
 
-Each row holds `release`, `branch`, `commit`, `started_at`, `finished_at`, `duration_seconds`, `status` (`running`, `succeeded`, or `failed`), `failed_step`, `error_code`, `selected_release`, `triggered_by` (the calling Node's name, or `schedule` for an automatic development deployment), and `events`. `events` holds the phase and output events of the run, with at most 128 KiB of output. A development deployment records `commit` and leaves `release` and `selected_release` null.
+Each row holds `release`, `branch`, `commit`, `started_at`, `finished_at`, `duration_seconds`, `status` (`running`, `succeeded`, or `failed`), `failed_step`, `error_code`, `selected_release`, `triggered_by` (the calling Node's name, or `schedule` for an automatic development deployment), and `events`. `events` holds the phase and output events of the run, with at most 128 KiB of output. A deployment saves them after each step, so a resumed deployment keeps the events up to the last step that ended. The `cleanup` phase marks release cleanup. A development deployment records `commit` and leaves `release` and `selected_release` null.
 
 | Request | Result |
 | --- | --- |
@@ -198,7 +222,9 @@ Each row holds `release`, `branch`, `commit`, `started_at`, `finished_at`, `dura
 
 ## One operation at a time
 
-Deployment, rollback, deploy-step changes, and branch changes share the Instance's operation lock with environment operations, Instance removal, and Route changes. A competing request waits or receives a busy error. An interrupted deployment releases the lock after its running command stops.
+Deployment, rollback, deploy-step changes, and branch changes share the Instance's operation lock with environment operations, Instance removal, and Route changes. A competing request waits or receives a busy error. A deployment holds the lock while its job runs; an interrupted job releases it after its running command stops.
+
+A deploy operation also holds the Instance from its start request to its end, so a second deploy request answers `operation.target_busy` with the first operation's ID, also while the first one waits in the queue.
 
 ## Inspect release placement with Doctor
 

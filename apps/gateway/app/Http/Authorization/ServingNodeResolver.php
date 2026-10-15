@@ -11,6 +11,7 @@ use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\InstanceDeployment;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Process;
 use App\Models\Project;
 use App\Models\Route;
@@ -32,6 +33,7 @@ final readonly class ServingNodeResolver
             ServingNode::InstanceOwning => $this->instanceOwning($request),
             ServingNode::InstanceCreation => $this->instanceCreation($request),
             ServingNode::DeploymentOwning => $this->deploymentOwning($request),
+            ServingNode::OperationOwning => $this->operationOwning($request),
             ServingNode::CandidateClone => $this->candidateClone($request),
             ServingNode::InstanceTransfer => $this->instanceTransfer($request),
             ServingNode::EnvironmentInstanceOwning => $this->environmentInstanceOwning($request),
@@ -195,6 +197,25 @@ final readonly class ServingNodeResolver
         }
 
         return [Node::query()->findOrFail($deployment->instance->node_id)];
+    }
+
+    /**
+     * An operation is served by its target's Node, recorded when it started. An operation whose Node was removed is
+     * served by the Gateway.
+     *
+     * @return list<Node>
+     */
+    private function operationOwning(Request $request): array
+    {
+        $operation = $request->route('operation');
+
+        if (! $operation instanceof Operation) {
+            return [];
+        }
+
+        $node = $operation->node_id === null ? null : Node::query()->find($operation->node_id);
+
+        return $node instanceof Node ? [$node] : $this->gateway();
     }
 
     /** @return list<Node> */

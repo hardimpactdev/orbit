@@ -12,6 +12,7 @@ enum ServingNode
     case InstanceOwning;
     case InstanceCreation;
     case DeploymentOwning;
+    case OperationOwning;
     case CandidateClone;
     case InstanceTransfer;
     case EnvironmentInstanceOwning;

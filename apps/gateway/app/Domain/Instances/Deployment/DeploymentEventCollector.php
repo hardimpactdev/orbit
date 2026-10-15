@@ -26,6 +26,55 @@ final class DeploymentEventCollector
 
     private bool $truncated = false;
 
+    /**
+     * Continues the events a resumed deployment saved, with the same output budget.
+     *
+     * @param  list<array<string, mixed>>  $events
+     */
+    public static function resume(array $events): self
+    {
+        $collector = new self;
+
+        foreach ($events as $event) {
+            $type = $event['type'] ?? null;
+
+            if ($type === 'output_truncated') {
+                $collector->events[] = ['type' => 'output_truncated'];
+                $collector->truncated = true;
+
+                continue;
+            }
+
+            if ($type === 'phase' && is_string($event['phase'] ?? null)) {
+                $phase = DeploymentProgressPhase::tryFrom($event['phase']);
+                $stepName = $event['step_name'] ?? null;
+
+                if ($phase instanceof DeploymentProgressPhase) {
+                    $collector->phase($phase, is_string($stepName) ? $stepName : null);
+                }
+
+                continue;
+            }
+
+            $encoded = $event['value_base64'] ?? null;
+            $decoded = is_string($encoded) ? base64_decode($encoded, strict: true) : false;
+            $stream = DeploymentOutputStream::tryFrom(is_string($event['stream'] ?? null) ? $event['stream'] : '');
+
+            if ($type === 'output' && is_string($decoded) && $stream instanceof DeploymentOutputStream) {
+                $step = $event['step'] ?? null;
+                $collector->outputBytes += strlen($decoded);
+                $collector->events[] = [
+                    'type' => 'output',
+                    'step' => is_string($step) ? $step : '',
+                    'stream' => $stream->value,
+                    'value_base64' => $encoded,
+                ];
+            }
+        }
+
+        return $collector;
+    }
+
     public function output(DeploymentEvent $event): void
     {
         if ($event->important) {

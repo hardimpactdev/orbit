@@ -1,6 +1,6 @@
 ---
 title: "Gateway queue"
-description: "The Gateway's Redis connection, three queues, Laravel Horizon, and how a release moves them."
+description: "The Gateway's Redis connection, four queues, Laravel Horizon, and how a release moves them."
 covers:
   - apps/gateway/app/Domain/Gateway/GatewayQueue.php
   - apps/gateway/app/{Infrastructure/Gateway/GatewayQueue*,Infrastructure/Gateway/GatewayHorizon.php,Console/Scheduling/**,Jobs/RunScheduledCommand.php,Providers/GatewayQueueServiceProvider.php}
@@ -26,17 +26,18 @@ The Gateway reads the host, port, and password of that connection from its recor
 
 ## Queues
 
-Laravel Horizon runs three queues on the connection. Each has its own supervisor, so a long build never holds up a short job:
+Laravel Horizon runs four queues on the connection. Each has its own supervisor, so a long build or deploy never holds up a short job:
 
 | Queue | Processes | Jobs |
 | --- | --- | --- |
 | `tasks` | 3 | The scheduled commands below and the publish of an approved commit. The Git mirror's lock keeps one push per Project at a time |
 | `task-vms` | 1 | Task VM provision, enroll, prepare, park, resume, and destroy, the host sweep |
 | `builds` | 2 | The [base image step chains and refreshes](/reference/compute-drivers#build-the-base-image), the [UpCloud template refresh](/reference/compute-drivers#refresh-the-upcloud-template-every-night), trusted [package cache fills](/reference/compute-drivers#shared-package-cache), and [recipe maintenance](/reference/compute-drivers#nightly-recipe-maintenance) |
+| `operations` | 1 | [Operations](/reference/operations), such as an Instance deploy. One job runs one operation, one at a time |
 
 The `task-vms` jobs run one at a time and in order, so no two jobs change the same VM at once.
 
-A `task-vms` job runs at most 1500 seconds, and any other job at most 1700 seconds. A job that a worker lost, for example when its process was killed, runs again after 1800 seconds. An idle worker waits on the queue with a blocking read, so a job starts within about a second when a process is free.
+A `task-vms` job runs at most 1500 seconds, and any other job at most 1700 seconds. An operation therefore has a deadline of 1600 seconds. A job that a worker lost, for example when its process was killed, runs again after 1800 seconds. An idle worker waits on the queue with a blocking read, so a job starts within about a second when a process is free.
 
 Two `builds` workers let hosts build in parallel; `Bus::chain` orders each build, the database permits one running build per host, and pruning stays on that host and protects running builds.
 
@@ -52,6 +53,7 @@ The scheduler dispatches each of these as a unique job. While the job waits or r
 | `orbit:vault-sync` | minute | `tasks` | 900 seconds |
 | `orbit:desired-fleet-state` | 5 minutes | `tasks` | 600 seconds |
 | `orbit:activity-finalize-interrupted` | 5 minutes | `tasks` | 600 seconds |
+| `orbit:operations-sweep` | minute | `tasks` | 300 seconds |
 | `horizon:snapshot` | 5 minutes | `tasks` | 300 seconds |
 
 The job runs the command in its own PHP process, as the scheduler did, so a command keeps no state from an earlier run. A command that exits nonzero is logged as an error. `tasks:tick` keeps its own lock of 300 seconds. The "unique for" time only matters when a worker is lost: the lock then frees itself after that time.
@@ -72,6 +74,8 @@ These commands stay in the scheduler and never go to the queue, also while it is
 ### Without a queue
 
 While `ORBIT_GATEWAY_QUEUE_CONNECTION` is empty, the scheduler runs the commands above itself, with their overlap locks, as before, and the Gateway creates no `horizon` Process. Task VMs need the queue. While task VMs are enabled, or the UpCloud token file is set, each due run of the host sweep, image reconciliation, or recipe maintenance fails with an error that names the key, instead of being skipped. A task VM claim fails the same way.
+
+Operations need the queue too. An Instance deploy request answers `503` with `operation.queue_unavailable` and records nothing ([Operations](/reference/operations#start-an-operation)).
 
 ## Horizon
 
@@ -150,7 +154,7 @@ These commands inspect and control Horizon on the Gateway.
 | See Horizon | `orbit process:list --node=<gateway>` and `orbit process:logs <id>` |
 | Restart on the current release | `php artisan horizon:terminate` |
 | Pause and continue every queue | `php artisan horizon:pause` and `php artisan horizon:continue` |
-| Count waiting jobs | `php artisan queue:monitor gateway:tasks,gateway:builds` |
+| Count waiting jobs | `php artisan queue:monitor gateway:tasks,gateway:builds,gateway:operations` |
 | Retry failed jobs | `php artisan queue:retry all` |
 
 Run each `php artisan` command as `orbit` in `/home/orbit/orbit/apps/gateway`.

@@ -33,7 +33,7 @@ Both endpoints speak MCP over streamable HTTP and offer the same catalogue. Thei
 
 `search_tools` returns exact tool names with their input schemas. An empty query browses the catalogue. `execute_tools` takes `{"calls": [{"name": "...", "arguments": {...}}]}`, runs up to 25 calls in order, and stops at the first error. A nested empty object in a tool argument, such as `{"options":{}}`, stays an object through a direct `tools/call` and through `execute_tools`, and an empty list stays a list. The tool result text keeps that shape. `/mcp/search` limits the output of one call to 65,536 bytes. `execute_tools` stops when the combined results pass that limit, so a large list result can fail through `/mcp/search` and still work through `/mcp`.
 
-One MCP request has one 570-second command deadline, the same deadline as one API request. PHP-FPM ends a Gateway request after 600 seconds. All tool calls in one `execute_tools` batch share that deadline. A tool call cannot extend or reset it. Forward work stops 20 seconds before the deadline, which leaves that time for cleanup. A call that starts after the batch has used up its forward time returns the tool error `command.deadline_exceeded` (status 504) and does not run. The batch then stops at that call. Send long tools, such as `gateway-release-smoke` or `instance-deploy`, as separate requests.
+One MCP request has one 570-second command deadline, the same deadline as one API request. PHP-FPM ends a Gateway request after 600 seconds. All tool calls in one `execute_tools` batch share that deadline. A tool call cannot extend or reset it. Forward work stops 20 seconds before the deadline, which leaves that time for cleanup. A call that starts after the batch has used up its forward time returns the tool error `command.deadline_exceeded` (status 504) and does not run. The batch then stops at that call. Send long tools, such as `gateway-release-smoke`, as separate requests. `instance-deploy` returns at once, as [Operations](#operations) describes.
 
 ## Tool list changes
 
@@ -76,7 +76,23 @@ For a disabled extension, a direct `tools/call` returns `isError: true` and cont
 
 `instance-rename` records an externally renamed development branch and can move the Instance's own Route, including a generated Route. Send `instance` and at least one of `branch` or `domain`. The Gateway checks the local checkout before changing its records; the tool never runs `git branch -m`. See [Instance rename](/cli/instance#orbit-instancerename).
 
-`instance-deploy` and `instance-rollback` stream progress over HTTP. As tools they run to completion and return their progress events in order under `events`. The last event carries the result: a `result` event whose `status` is `succeeded` or `failed`. Step output arrives as `output` events with base64 `data_base64`. Through both endpoints, these events may use half of the 65,536-byte `/mcp/search` output limit. When they would use more, the reply keeps the first 16,384 and the last 16,384 bytes of them. One `{"type": "output_truncated", "dropped_bytes": N}` event replaces the middle and gives the number of output bytes it dropped. Phase events and the result are never dropped, so a long deploy fits in an `execute_tools` reply. To read more of the output, call `instance-deployment-show`, which returns the [stored deployment log](/cli/instance#orbit-instancedeploymentshow).
+### Operations
+
+`instance-deploy` starts an [operation](/reference/operations) and returns at once. It never holds the request open and never streams:
+
+```json
+{
+  "operation": { "id": 42, "kind": "instance.deploy", "status": "queued", "sequence": 1, "poll_after_seconds": 2, "...": "..." },
+  "poll": { "tool": "operation-show", "after_seconds": 2 },
+  "meta": { "request_id": "..." }
+}
+```
+
+Call `operation-show` with `operation` and `after_sequence` set to the last `sequence` you have, after `poll.after_seconds`. Each reply returns the record, only the steps that changed, the new `sequence`, and `poll_after_seconds`: about 2 seconds at first and at most 15. Wait that long and call again, until `status` is `succeeded`, `failed`, or `cancelled`; `poll_after_seconds` is then null. A finished operation carries `result`, or `failed_step` and `error_code`. Each call is one database read.
+
+After a lost context, `operation-list` with `status` set to `running` or `queued` finds the operations still at work. `operation-cancel` asks one to stop. The record maps onto the experimental MCP Tasks primitive: the operation ID is the task ID, `queued` and `running` are `working`, and `poll_after_seconds` is the poll interval. `laravel/mcp` does not support Tasks yet, so the tools carry the contract.
+
+`instance-rollback` still streams progress over HTTP. As a tool it runs to completion and returns its progress events in order under `events`. The last event carries the result: a `result` event whose `status` is `succeeded` or `failed`. Step output arrives as `output` events with base64 `data_base64`. Through both endpoints, these events may use half of the 65,536-byte `/mcp/search` output limit. When they would use more, the reply keeps the first 16,384 and the last 16,384 bytes of them. One `{"type": "output_truncated", "dropped_bytes": N}` event replaces the middle and gives the number of output bytes it dropped. Phase events and the result are never dropped, so a long deploy fits in an `execute_tools` reply. To read more of the output, call `instance-deployment-show`, which returns the [stored deployment log](/cli/instance#orbit-instancedeploymentshow).
 
 Machine callbacks and browser pages have no tool: channel signatures, the Node agent endpoints, live log streams, the Grafana access check, the Instance wake page, the Schedule completion report, the annotation event stream, the task agent stream, and the two GitHub App registration pages. `bin/mcp-tools` lists them.
 

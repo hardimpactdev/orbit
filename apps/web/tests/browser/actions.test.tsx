@@ -75,6 +75,27 @@ it("profiles an instance and shows what the command printed in a modal", async (
     fetched.mockRestore();
 });
 
+it("deploys an instance and follows its operation step by step until it ends", async () => {
+    const app = await openApp("/instances/1");
+    await page.getByRole("button", { name: "Actions", exact: true }).click();
+    await page.getByRole("menuitem", { name: "deploy", exact: true }).click();
+
+    await expect.element(footer()).toHaveTextContent("started as operation 1.");
+    await expect.element(pane("Deploy")).toHaveTextContent("Operation 1 · succeeded");
+    await expect.element(pane("Deploy")).toHaveTextContent("source_preparation");
+    await expect.element(pane("Deploy")).toHaveTextContent("cleanup");
+    expect(app.gateway.requests).toContainEqual(
+        expect.objectContaining({ method: "POST", path: "/api/v1/instances/1/deploy" }),
+    );
+    expect(
+        app.gateway.requests.some(
+            (request) =>
+                request.method === "GET" &&
+                request.path.startsWith("/api/v1/operations/1?after_sequence="),
+        ),
+    ).toBe(true);
+});
+
 it("shows an instance's Horizon queue by job state and opens a job in Horizon", async () => {
     // A job opens through a real link with a target, so a new tab is the browser's own behaviour.
     const opened: { href: string; target: string }[] = [];

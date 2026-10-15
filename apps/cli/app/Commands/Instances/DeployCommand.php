@@ -4,17 +4,22 @@ declare(strict_types=1);
 
 namespace App\Commands\Instances;
 
+use App\Commands\Concerns\FollowsOperations;
+use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Deployments\DeployInstanceRequest;
-use Orbit\Sdk\Responses\Deployments\DeploymentStream;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
-final class DeployCommand extends DeploymentCommand
+/** Starts an `instance.deploy` operation and follows it until it ends. Ctrl-C stops following, not the deploy. */
+final class DeployCommand extends GatewayCommand
 {
+    use FollowsOperations;
+
     #[\Override]
     protected $signature = 'instance:deploy
         {instance : Numeric instance ID}
-        {--json : Return machine-readable NDJSON}';
+        {--json : Return the final operation as machine-readable JSON}';
 
     #[\Override]
     protected $description = 'Deploy a production Instance or an app-dev default Instance.';
@@ -27,20 +32,17 @@ final class DeployCommand extends DeploymentCommand
             return self::FAILURE;
         }
 
-        $connector = $this->gatewayConnector($repository, $connectors);
+        $profile = $this->activeGatewayProfile($repository);
 
-        if ($connector === null) {
+        if ($profile === null) {
             return self::FAILURE;
         }
 
-        $stream = $this->send(
-            $connector,
-            new DeployInstanceRequest($instanceId),
-            DeploymentStream::class,
-        );
+        $connector = $connectors->make($profile);
+        $operation = $this->send($connector, new DeployInstanceRequest($instanceId), OperationResponse::class);
 
-        return $stream instanceof DeploymentStream
-            ? $this->renderDeploymentStream($stream, "Deploy Instance [{$instanceId}]", 'source_preparation', 'Deployment')
+        return $operation instanceof OperationResponse
+            ? $this->followOperation($connector, $profile, $operation, "Deploy Instance [{$instanceId}]", 'Deployment')
             : self::FAILURE;
     }
 }
