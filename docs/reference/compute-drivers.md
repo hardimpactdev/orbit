@@ -4,7 +4,8 @@ description: "Task VMs for every Project and their UpCloud overflow."
 covers:
   - apps/gateway/app/{Domain/TaskVms,Infrastructure/TaskVms,Jobs/TaskVms,Actions/TaskVms,Domain/Compute}/**
   - apps/gateway/app/{Models/TaskVm.php,Models/TaskVmImageBuild.php,Console/Commands/*ImageBuildsCommand.php,Console/Commands/PrepareTaskVmHostCommand.php,Console/Commands/PrepareTaskVmHubCommand.php,Console/Commands/BuildTaskVmImageCommand.php,Console/Commands/BuildTaskVmRecipeCommand.php,Console/Commands/BuildUpCloudTaskVmImageCommand.php,Console/Commands/ResolvesTaskVmHostNode.php}
-  - apps/gateway/{app/Infrastructure/MachineSoftware/**,app/Console/Commands/MachineRecipeCommand.php,resources/machine-software/**}
+  - apps/gateway/{app/Infrastructure/MachineSoftware/**,app/Console/Commands/MachineRecipeCommand.php,resources/machine-software/**,resources/remote/php/**}
+  - .github/workflows/php-build-mirror.yml
   - apps/gateway/{app/Models/PackageCache*.php,app/Console/Commands/PackageCacheUsageCommand.php,database/migrations/*create_package_cache_tables.php,config/package_cache.php,config/task_vms.php}
   - apps/gateway/resources/task-vms/**
   - apps/gateway/database/migrations/*{create_task_vm_image_builds_table,add_recipe_to_task_vm_image_builds,add_recipe_identity_to_task_vms,fence_task_vm_image_build_attempts,create_task_vms_table,add_model_proxy_origin_to_task_vms,add_warm_pool_to_task_vms,retire_task_vm_warm_pool,add_upcloud_to_task_vms,add_size_to_task_vms,add_topology_to_task_vms,create_jobs_table,create_failed_jobs_table,create_task_sandboxes_table,add_fleet_enrollment_to_task_sandboxes,add_pi_ready_at_to_task_sandboxes,close_checks_of_destroyed_task_sandboxes,drop_task_sandboxes}.php
@@ -18,7 +19,7 @@ Task VMs are off until you [configure them](#configure-task-vms). Until then no 
 
 ## Machine software recipe
 
-The repository's machine software recipe is [`apps/gateway/resources/machine-software/recipe.json`](https://github.com/nckrtl/orbit/blob/main/apps/gateway/resources/machine-software/recipe.json). It declares one Ubuntu snapshot, exact tool versions, and the tool sets for `gateway`, `app-dev`, `app-prod`, `operator`, and the task VM base image. Project dependencies, workspace setup, credentials, Node identity, and service configuration are not recipe inputs.
+The repository's machine software recipe is [`apps/gateway/resources/machine-software/recipe.json`](https://github.com/nckrtl/orbit/blob/main/apps/gateway/resources/machine-software/recipe.json). It declares one Ubuntu snapshot, exact tool versions, the [PHP build](#php-build), and the tool sets for `gateway`, `app-dev`, `app-prod`, `operator`, and the task VM base image. Project dependencies, workspace setup, credentials, Node identity, and service configuration are not recipe inputs.
 
 The loader and validator define the recipe contract. [Recipe image builds](#build-the-base-image) use that document for a host-local base image. [Node convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) applies its role tools to production Nodes. Claims require the [current recipe](#claims-require-the-current-recipe), and topologies [import its base image](#prepare-the-topology).
 
@@ -34,16 +35,17 @@ The recipe is UTF-8 JSON, not executable PHP or a list of shell commands. The lo
 | `architectures` | Non-empty list drawn from `amd64` and `arm64`, using Debian architecture names |
 | `tools` | Object keyed by the loader's known tool identifiers; each value has an exact `version` and a `source` of `ubuntu`, `artifact`, or `internal` |
 | `common` | Tool identifiers included in every role and the base image |
-| `roles` | Object requiring `gateway`, `app-dev`, `app-prod`, and `operator`; optional profiles use known Node role names. Each value lists additional tool identifiers |
-| `base` | List of additional tool identifiers for the task VM base image; this is an image profile, not a Node role |
+| `php` | The [PHP build](#php-build): `ci`, `shared`, and `versions` |
+| `roles` | Object requiring `gateway`, `app-dev`, `app-prod`, and `operator`; optional profiles use known Node role names or `ci-runner`. Each value lists additional tool identifiers and PHP sets |
+| `base` | List of additional tool identifiers and PHP sets for the task VM base image; this is an image profile, not a Node role |
 
 An `ubuntu` tool names its Debian `package`. Its `version` is the complete Debian version, including epoch and distribution revision when present, not just an upstream release or a constraint. It resolves only from the selected Ubuntu snapshot's signed package indexes for the declared release and architectures. The release's archive, updates, and security pockets are checked; a package available only from today's rolling archive does not satisfy the recipe.
 
 An `artifact` tool has an `artifacts` object keyed by every declared architecture. Each entry contains an HTTPS `url` and exactly one digest field, `sha256` or `sha512`, with a full lowercase hexadecimal digest. A URL must identify the pinned release, not a moving installer or a `latest` alias. Architecture-independent archives repeat the same URL and digest for each architecture. Artifact contents, not the spelling of the URL or a successful HTTP response, are the integrity check. The validator downloads and hashes the bytes without executing or installing them.
 
-The Sury PHP pins include `php-common` and each PHP version’s `igbinary` extension. They keep PHP 8.4 and 8.5 installable together without resolving those dependencies from a rolling third-party repository. Debian artifact filenames omit a version epoch; the pin and package metadata retain it. Architecture-independent `.deb` packages declare `all` in their metadata.
+Debian artifact filenames omit a version epoch; the pin and package metadata retain it. Architecture-independent `.deb` packages declare `all` in their metadata.
 
-The loader has a closed catalog of supported tool identifiers and their source kinds. A new tool needs a catalog change and validation tests as well as a recipe entry. Every profile reference must resolve to a catalogued entry in `tools`; an unused entry, a missing tool, or an incompatible source is an error. Tool versions must be exact: `latest`, `stable`, `lts`, version ranges, and unversioned installer URLs are not pins.
+The loader has a closed catalog of supported tool identifiers and their source kinds. Each `php<version>-<name>` pin of a declared PHP version is an `artifact` tool; the [PHP build](#php-build) decides which of them exist. A new tool needs a catalog change and validation tests as well as a recipe entry. Every profile reference must resolve to a catalogued entry in `tools`; an unused entry, a missing tool, or an incompatible source is an error. Tool versions must be exact: `latest`, `stable`, `lts`, version ranges, and unversioned installer URLs are not pins.
 
 An `internal` tool is an Orbit-built binary pinned by `source_commit` (12 to 40 lowercase Git hexadecimal characters), an exact `version`, and architecture-specific entries in `artifacts`. Each entry has a simple `filename` and a full lowercase `sha256`; filenames resolve under the Gateway's sandbox-artifacts directory (or the command's `--artifact-directory` override). Source commit and digest identify the software; the directory and filename are only byte locations and are not part of the identity. The default directory is `$ORBIT_HOME/sandbox-artifacts`, using the Gateway's configured Orbit home.
 
@@ -51,7 +53,7 @@ Internal pins do not require publishing HTTPS releases. Third-party tools still 
 
 The initial Pi pin comes from `apps/pi-server` at source commit `e5933d4c8696`, file `pi-server-e5933d4c8696-linux-x64`, SHA-256 `286620c586b13b60fce4ce71f286d282da185fd95f7971c4109fb52bc8f0a78c`. It supports `amd64` only. The base profile therefore supports only `amd64`; `--architecture=arm64 --role=base` fails rather than inventing a Pi artifact. Other profiles support the intersection of their tools' architectures. Validation checks all artifacts actually declared, including Pi, without requiring nonexistent Pi arm64 bytes.
 
-A profile's effective set is the union of `common` and its own list, sorted by tool identifier. Profiles cannot refer to other profiles, so role inheritance cannot hide software or form cycles. A multi-role Node's set is the union of its roles, not the base image set.
+A profile's effective set is the union of `common` and its own list, sorted by tool identifier. A `php:<version>` entry expands to that version's PHP set. Profiles cannot refer to other profiles, so role inheritance cannot hide software or form cycles. A multi-role Node's set is the union of its roles, not the base image set.
 
 ### Role and base tool sets
 
@@ -60,15 +62,124 @@ The recipe pins the OS packages and tool distributions for every profile. Exact 
 | Profile | Tools in addition to `common` |
 | --- | --- |
 | `common` | Bootstrap packages: `ca-certificates`, `curl`, `gnupg`, `libnss-resolve`, `openssh-client`, `sudo`, `ufw`, and `wireguard` |
-| `gateway` | Caddy from the Caddy project's release, not Ubuntu's Caddy package |
-| `app-dev` | `acl`, `attr`, Caddy, Composer, `docker.io`, Git, OpenSSL, `php-curl`, `php-xml`, `unzip`, Vite+ (`vp`), Node, pnpm, npm/npx, and Bun; PHP 8.5 and 8.4 with the current app-dev extension/package profiles |
-| `app-prod` | The current application prerequisites and JavaScript/Composer managers, as for `app-dev`, but without preinstalling every selectable PHP version's app-dev packages |
+| `gateway` | Caddy from the Caddy project's release, not Ubuntu's Caddy package, and `php:8.5` |
+| `app-dev` | `acl`, `attr`, Caddy, Composer, `docker.io`, Git, OpenSSL, `php-curl`, `php-xml`, `unzip`, Vite+ (`vp`), Node, pnpm, npm/npx, and Bun; `php:8.5` and `php:8.4` |
+| `app-prod` | The application prerequisites and JavaScript/Composer managers, as for `app-dev`, and `php:8.5` only. The PHP step installs `php:8.4` when an Instance selects it |
+| `websocket` | Caddy, Composer, Git, OpenSSL, `php-curl`, `php-xml`, and `php:8.5` |
+| `ci-runner` | `acl`, `attr`, Git, `unzip`, and `php:8.5`. A roleless Node that runs CI jobs, such as Sabre, selects it with [`node:converge-recipe --profile=ci-runner`](/reference/node-provisioning#converge-a-node-to-a-recipe). It is not a Node role |
 | `operator` | No additional role prerequisite tools; this is the recipe profile for a roleless operator Node, not a new Node role |
 | `base` | The full `app-dev` set, explicit image-build packages described below, Rust with Cargo/clippy/rustfmt, the Node agent, and Pi |
 
 The base list explicitly contains the app-dev tools. It does not inherit a role. One pinned distribution can supply several binaries, such as npm and npx, or Rust and Cargo. Every fetched input must have a recorded digest. Production Nodes receive only their role tools.
 
 The base also includes the existing image builder's 26 explicit Ubuntu packages: `openssh-server`; workspace tools `rsync`, `bind9-dnsutils`, `gcc`, and `libc6-dev`; and all 21 libraries in `TaskVmCloudInit::ChromiumLibraries` for Playwright's headless Chromium. These are base-only tools, not common or role inputs. Each uses an exact package version from the same authenticated snapshot on both architectures.
+
+### PHP build
+
+The recipe is the single source of truth for Orbit's PHP build. Every machine that runs Orbit's PHP installs this build and checks it: development and production Nodes, the Gateway, task VMs, and [CI](/reference/implementation-loop#one-php-build-in-ci). A PHP build is the exact Sury package versions and the extensions that the PHP CLI loads.
+
+| Field | Contract |
+| --- | --- |
+| `php.versions.<version>.packages` | The `php<version>-*` pins of that version. Every such pin in `tools` must be in this list |
+| `php.versions.<version>.extensions` | The modules that `php<version> -m` prints for the CLI, in lower case, sorted, without section headers. `Zend OPcache` is `zend opcache`. The list includes `core` and `pcov` |
+| `php.shared` | Pins that every version needs: `php-common` and `libgd3` |
+| `php.ci` | The version that CI installs |
+| `php.rollback` | The Ubuntu tool that repacks an installed build for a rollback, `dpkg-repack`. Every profile with a PHP set gets it |
+| `php.pcov` | The profiles whose PHP CLI loads PCOV: `app-dev`, `base`, and `ci-runner` |
+| `php.purge_extras` | The profiles that purge PHP packages outside the recipe. Only `ci-runner` may be listed |
+| `php.mirror` | The HTTPS base URL of Orbit's copy of the pinned files, tried before each pin's own URL |
+
+A profile names a PHP set as `php:<version>`. The set is the shared pins, the version's packages, and the rollback tool. A profile cannot name a PHP pin directly, so no profile gets part of a set. A version that no profile names is an error.
+
+Extensions with their own release, such as `igbinary`, `imagick`, `pcov`, and `redis`, keep their own versions. The loader also rejects a recipe in which:
+
+- the PHP core pins of a version have different versions. A core pin has a version that starts with `<version>.`, and it must equal `php<version>-common`;
+- a Sury pin is built for another Ubuntu release: its version must contain `+ubuntu<ubuntu.release>`;
+- `php.ci` names an undeclared version;
+- `php.purge_extras` names another profile than `ci-runner`, or `php.mirror` is not an HTTPS URL.
+
+PCOV loads in the CLI of the `php.pcov` profiles only, and never in PHP-FPM. Those are the machines that run checks and share CI caches, so their loaded extension set matches CI's. Production Nodes and the Gateway keep PCOV installed but not loaded.
+
+#### Install the PHP build
+
+`php.install-build`, a [remote program](/reference/remote-programs), is the one installer of the PHP build. Recipe convergence and the PHP step of an Instance send it to the Node. The image build runs it in the guest, and `bin/php-build install` runs it on a CI machine.
+
+Before it changes anything, the installer checks the machine:
+
+1. It refuses another PHP apt source, such as `ppa:ondrej/php`, and names it.
+2. It refuses each installed PHP package of a handled version that the recipe set does not hold, and names it.
+3. A plan run, such as a dry run, stops here and lists the packages it would change.
+
+Then it gets the files:
+
+1. It deletes the Sury apt source of earlier Orbit releases, so `apt upgrade` cannot move PHP.
+2. It downloads each pinned file that is not installed at its version. It tries `php.mirror` first, then the pin's URL.
+3. It refuses a file whose SHA-256 digest, package name, version, or architecture differs from the pin.
+4. It keeps every file in `/var/cache/orbit/php-packages` and never deletes one.
+
+Then it keeps the installed build for a rollback:
+
+1. For each package that the change replaces or purges, it looks for a cached `.deb` of the installed version.
+2. Otherwise `dpkg-repack` writes one. A missing `dpkg-repack` is first installed at its recipe version.
+3. Without a rollback file, it refuses with `rollback_unavailable` before any change.
+
+Then it swaps the build:
+
+1. It installs the files with `--no-remove` and `--allow-downgrades`. A newer or an older build becomes the recipe build, and no other package is removed.
+2. Package hooks cannot start or restart a service during the install.
+3. It loads PCOV in the CLI on the `php.pcov` profiles only, and never in PHP-FPM.
+4. It checks that `php<version> -m` prints the recipe's extensions.
+
+After a change, it restarts PHP-FPM:
+
+1. It validates each master with `php-fpm<version> -t`. A dedicated production master uses its own `--fpm-config`.
+2. It restarts the master and checks that the service is active.
+3. It checks that `php-fpm<version> -m` loads the required extensions and not PCOV.
+4. It sends a FastCGI request to each pool socket in the master's configuration and waits for the answer.
+
+When a check after the swap fails, the installer rolls back. It reinstalls the previous build with `--allow-downgrades`, restores the module links, and restarts the masters again. It ends with `rolled_back`, or with `rollback_failed` when that fails too.
+
+Each caller sets two options:
+
+| Caller | Extra packages | PHP-FPM |
+| --- | --- | --- |
+| Recipe convergence | `refuse`, or `purge` on a `php.purge_extras` profile | `all`: the shared service and each active dedicated master; a failure rolls back |
+| PHP step of an Instance | `keep`, so a deploy never removes a site's extension | `shared`: the shared service, left running when its pools fail `php-fpm -t` |
+| Image build | `refuse` | `none` |
+| `bin/php-build install` | `refuse`, or `purge` with `--purge-extras` | `shared` |
+
+The outcomes are `planned`, `current`, `applied`, `platform_unsupported`, `conflicting_source`, `extra_packages`, `unowned_extensions`, `download_failed`, `rollback_unavailable`, `install_failed`, `modules_mismatch`, `fpm_invalid`, `rolled_back`, and `rollback_failed`. After a refusal or a failure, the previous build stays installed.
+
+Some extensions have no package: setup-php, for example, copies `.ini` and `.so` files in directly. An installer run that refuses extras refuses these too, with `unowned_extensions`. With `--purge-extras`, it removes their `conf.d` links and moves their files to `/var/cache/orbit/php-unowned-extensions/`. A rollback moves them back.
+
+A package at its pinned version can still hold other files, for example a `.so` that setup-php overwrote. In apply mode, the installer runs `dpkg --verify` on every recipe package. It installs a package again from its pinned file when a file's checksum changed or a file is missing. A changed conffile stays, because it may hold an operator's settings. The result lists these packages under `repaired`.
+
+#### The PHP build mirror
+
+The `PHP build mirror` workflow, `.github/workflows/php-build-mirror.yml`, keeps Orbit's copy of the pinned files. It runs on each push to `main` that changes the recipe or `bin/php-build`, and on manual dispatch.
+
+`bin/php-build mirror` downloads every pinned PHP file of every version and architecture, and checks its digest. The workflow uploads each missing file to the `php-build-mirror` release, named `<package>_<sha256>.deb`. That release is a prerelease and never the latest release.
+
+Sury deletes a build from its pool when it publishes the next one. The mirror keeps rollbacks, new Nodes, and CI on the exact build after that.
+
+#### Bump the PHP build
+
+Sury keeps only its newest build in its pool, so keep the recipe on Sury's newest patch. One pull request changes every pin of a version together, with each URL, SHA-256 digest, and version. A partial change fails the loader.
+
+`bin/php-build bump` makes that change. It downloads Sury's signing key and refuses it unless it matches the pinned SHA-256 digest. It verifies the signed `InRelease` file of the recipe's Ubuntu release with `gpgv`, and checks each package index against it. For every architecture, it then moves each pin of every PHP set, `php-common` and `libgd3` included, to the newest version in the index, with its URL and digest. It stops without writing when Sury is between builds, so that two core pins of one version differ. `--dry-run` prints the changes and writes nothing.
+
+[Nightly recipe maintenance](#nightly-recipe-maintenance) runs it every night, in the same job that opens the snapshot pull request. When the pins change, the Gateway opens one pull request through its GitHub App on the branch `nightly/php-build-<digest>`, named after the new pins and titled with the new PHP releases. It opens no second pull request for the same pins, and never reopens a closed one. The nightly auto-merge takes only date branches, so a maintainer reviews and merges the PHP build pull request. The Gateway needs `python3` and `gpgv` for the bump. Run `php artisan orbit:machine-recipe --validate` to check a bump by hand. After merge:
+
+1. The [mirror](#the-php-build-mirror) workflow publishes the new files.
+1. Each task VM host [builds a new base image](#build-the-base-image).
+2. [Nightly recipe maintenance](#nightly-recipe-maintenance) converges each Node, or you run `php artisan node:converge-recipe <node>`. The next [PHP step](/reference/php-runtime#php-build) of an Instance also brings its versions to the recipe.
+3. Hosted CI installs the new build in its next run. The self-hosted runners fail until an operator [updates them](/reference/implementation-loop#one-php-build-in-ci).
+
+#### Why one PHP build
+
+PHPStan writes `PHP_VERSION_ID` and the sorted `get_loaded_extensions()` into its result cache metadata, and Pint keys its cache on the full PHP version. [CI cache refs](/reference/implementation-loop#ci-cache-refs) only help where the PHP build matches exactly. One build also gives every machine the same behavior and the same security patches.
+
+`setup-php` with a floating version was rejected: it cannot pin a patch, and it loads extensions that Orbit does not use. A separate pin for each environment was rejected because copies drift. Installing `package=version` from the Sury apt source was rejected because Sury removes a version from its index when it publishes the next one. The recipe's files are checked by digest, and the same files build images and converge Nodes. [ADR 0216](/decisions/0216-run-one-exact-php-build-everywhere) records this decision.
 
 ### Recipe identity
 
@@ -517,7 +628,7 @@ After promotion, the final chain step prunes old recipe images on that host. It 
 
 ### Nightly recipe maintenance
 
-At 03:00 Europe/Amsterdam (01:00 UTC in summer, 02:00 UTC in winter), the Gateway opens a PR against main through its existing GitHub App. It reads main and advances only `ubuntu.snapshot` to the current date at UTC midnight. Exact package versions and Sury artifact URLs and hashes stay pinned; there is no separate Sury snapshot field. An unchanged or newer date creates no PR. A date branch makes repeated submissions reuse the same PR.
+At 03:00 Europe/Amsterdam (01:00 UTC in summer, 02:00 UTC in winter), the Gateway opens a PR against main through its existing GitHub App. It reads main and advances only `ubuntu.snapshot` to the current date at UTC midnight. Exact package versions and Sury artifact URLs and hashes stay pinned; there is no separate Sury snapshot field. An unchanged or newer date creates no PR. A date branch makes repeated submissions reuse the same PR. The same job also opens the [PHP build](#bump-the-php-build) pull request when Sury publishes a newer PHP build.
 
 Each minute the Gateway merges its date PRs after Required checks pass on the exact head. It re-reads the PR files and patch at merge time and requires one App-authored commit, its App as PR author, and only the single `ubuntu.snapshot` line change. Any extra change, commit, or different author blocks the merge and raises the existing alert; the merge uses the expected head SHA. This reuses the existing App and PR API without Actions secrets or a second publisher.
 
@@ -527,7 +638,7 @@ On the next available minute, the maintenance job visits one Node. Later ticks v
 
 Only Nodes whose roles are all app-dev start as soon as every configured host promotes, at any hour. Shared services, app-prod, vpn, and Gateway start only from 03:00 inclusive to 06:00 exclusive Europe/Amsterdam, in strict tier order after every app-dev-only Node is done. Outside the window, the sequence stays ready until the next night. A running visit may finish past 06:00. The serving Gateway also goes last.
 
-Only active managed Linux Nodes with roles participate; task VMs, macOS, and roleless operator Nodes are excluded. Each visit uses [Node recipe convergence](/reference/node-provisioning#converge-a-node-to-a-recipe), including inventory, health, and Doctor checks. Nodes already verified on that identity need no repeat installation.
+Only active managed Linux Nodes with roles participate, and a roleless Node that recorded the `ci-runner` profile, such as Sabre, which joins the service tier. Task VMs, macOS, and other roleless Nodes are excluded. Each visit uses [Node recipe convergence](/reference/node-provisioning#converge-a-node-to-a-recipe), including inventory, health, and Doctor checks. Nodes already verified on that identity need no repeat installation.
 
 The first build row for the current recipe carries `fleet_convergence`, shown by `task-vms:image-builds`: generation, progress, stopping point, per-Node changes, and the alert receipt. This adds no ledger table.
 

@@ -106,6 +106,30 @@ function cli_deploy_gateway(array $reads, array &$seen): MockClient
 }
 
 describe('instance:deploy', function (): void {
+    it('renders the Process restart step and its deployment outcome', function (bool $fails): void {
+        $seen = [];
+        cli_deploy_gateway([
+            cli_operation([
+                'status' => $fails ? 'failed' : 'succeeded', 'sequence' => 5,
+                'failed_step' => $fails ? 'process_restart' : null,
+                'error_code' => $fails ? 'process.restart_failed' : null,
+                'started_at' => '2026-10-15T10:00:01+00:00', 'poll_after_seconds' => null,
+                'result' => ['deployment_id' => 5, 'release' => 'r2', 'selected_release' => 'r2', 'commit' => null],
+            ], [cli_step('process_restart', 1, $fails ? 'failed' : 'succeeded', 5,
+                $fails ? "Failed to restart Process 12.\n" : "Restarted Process 12.\n", $fails ? 'process.restart_failed' : null)]),
+        ], $seen);
+
+        $exitCode = Artisan::call('instance:deploy', ['instance' => '17', '--no-interaction' => true]);
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe($fails ? 1 : 0)
+            ->and($output)->toContain($fails ? 'Restarting Processes' : 'Restarted Processes')
+            ->and($output)->toContain($fails ? 'Deployment failed.' : 'Deployment succeeded.');
+        if ($fails) {
+            expect($output)->toContain('process.restart_failed')->not->toContain('Deployment succeeded.');
+        }
+    })->with([false, true]);
+
     it('starts the operation and follows it by polling until it ends, printing new step output once', function (): void {
         $seen = [];
         $done = cli_operation(['status' => 'succeeded', 'sequence' => 9, 'started_at' => '2026-10-15T10:00:01+00:00', 'poll_after_seconds' => null,

@@ -411,7 +411,8 @@
             ],
             "concepts": [
                 "Gateway",
-                "Instance"
+                "Instance",
+                "Process"
             ],
             "governing_adrs": []
         },
@@ -626,6 +627,7 @@
                 "Doctor",
                 "Gateway",
                 "Node",
+                "Role",
                 "Tool"
             ],
             "governing_adrs": []
@@ -1097,6 +1099,30 @@
             ]
         },
         {
+            "path": "docs/decisions/0216-run-one-exact-php-build-everywhere.md",
+            "title": "ADR 0216: Run one exact PHP build everywhere",
+            "kind": "decision",
+            "components": [
+                "apps/e2e",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Role",
+                "Roleless Node",
+                "Schedule",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0213",
+                "0216"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -1155,7 +1181,8 @@
                 "0212",
                 "0213",
                 "0214",
-                "0215"
+                "0215",
+                "0216"
             ]
         },
         {
@@ -1569,6 +1596,7 @@
                 "Process",
                 "Project",
                 "Role",
+                "Roleless Node",
                 "Route",
                 "Schedule",
                 "Subtask",
@@ -1579,7 +1607,8 @@
             ],
             "governing_adrs": [
                 "0200",
-                "0206"
+                "0206",
+                "0216"
             ]
         },
         {
@@ -2313,7 +2342,6 @@
                 "Activity",
                 "Cluster",
                 "Doctor",
-                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -2321,6 +2349,7 @@
                 "Process",
                 "Project",
                 "Role",
+                "Roleless Node",
                 "Route",
                 "Schedule",
                 "Task",
@@ -2402,6 +2431,7 @@
                 "Activity",
                 "Deployment",
                 "Doctor",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",

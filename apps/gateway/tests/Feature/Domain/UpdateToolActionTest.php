@@ -730,3 +730,18 @@ function update_action_exception(Closure $callback): ToolOperationException
 
     throw new RuntimeException('Expected a ToolOperationException.');
 }
+
+it('refuses to update a role-owned PHP package before the lock or any manager call', function (): void {
+    $node = update_action_node();
+    $tool = update_action_tool($node, update_action_manager($node), package: 'php8.5-sqlite3');
+    [$action, $manager, $lock] = update_action_fixture_for_node($node);
+    $manager->roleOwned = ['php8.5-sqlite3'];
+
+    $exception = update_action_exception(fn () => $action->execute($tool));
+
+    expect($exception->errorCode)->toBe('tool.package_role_owned')
+        ->and($exception->status)->toBe(409)
+        ->and($manager->calls)->toBe([])
+        ->and($lock->runs)->toBe(0)
+        ->and($tool->refresh()->status)->toBe(ToolStatus::Installed);
+});

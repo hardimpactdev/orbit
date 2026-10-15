@@ -159,6 +159,12 @@ function prod_equivalence_command(RemoteCommand $command): array
 {
     $protected = $command->protectedInput?->stream();
 
+    // The PHP build installer carries the recipe's pins and its own source, which a PHP bump changes. Web roots do not
+    // reach it, so the fixture records only that the step ran.
+    if (($command->arguments[4] ?? null) === 'php.install-build') {
+        return ['arguments' => ['php.install-build'], 'input' => null, 'protected_input' => null];
+    }
+
     return [
         'arguments' => $command->arguments,
         'input' => $command->input,

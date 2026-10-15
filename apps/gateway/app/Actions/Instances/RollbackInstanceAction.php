@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Instances;
 
-use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Instances\Deployment\DeploymentErrorCode;
 use App\Domain\Instances\Deployment\DeploymentFailureBoundary;
 use App\Domain\Instances\Deployment\DeploymentProgressPhase;
 use App\Domain\Instances\Deployment\DeploymentRelease;
@@ -13,11 +13,9 @@ use App\Domain\Instances\Deployment\DeploymentResult;
 use App\Domain\Instances\Deployment\ProductionDeployment;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\ProductionPhpRuntimeManager;
-use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\ProcessCancelledException;
 use App\Models\Instance;
-use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Throwable;
 
 final readonly class RollbackInstanceAction
@@ -28,6 +26,7 @@ final readonly class RollbackInstanceAction
         private ProductionDeployment $deployment,
         private ProductionPhpRuntimeManager $runtime,
         private CommandDeadline $deadline,
+        private ?RestartInstanceProcessesAction $processes = null,
     ) {}
 
     public function execute(
@@ -49,7 +48,7 @@ final readonly class RollbackInstanceAction
                 null,
                 null,
                 DeploymentFailureBoundary::Operation,
-                $this->errorCode($exception),
+                DeploymentErrorCode::fromException($exception),
             );
         }
     }
@@ -75,10 +74,13 @@ final readonly class RollbackInstanceAction
 
             if (is_string($instance->selected_php_version)) {
                 $boundary = DeploymentFailureBoundary::CacheRefresh;
-                $this->assertNotCancelled($request);
                 $this->runtime->converge($instance);
                 $this->runtime->refreshCache($instance);
             }
+
+            $boundary = DeploymentFailureBoundary::AfterActivation;
+            $request->emitPhase(DeploymentProgressPhase::ProcessRestart);
+            ($this->processes ?? app(RestartInstanceProcessesAction::class))->execute($instance, $request);
 
             return DeploymentResult::succeeded($release);
         } catch (Throwable $exception) {
@@ -90,7 +92,7 @@ final readonly class RollbackInstanceAction
                 $release,
                 $selected,
                 $boundary,
-                $this->errorCode($exception),
+                DeploymentErrorCode::fromException($exception),
             );
         }
     }
@@ -121,26 +123,5 @@ final readonly class RollbackInstanceAction
         if ($request->cancellation->requested()) {
             throw new ProcessCancelledException;
         }
-    }
-
-    private function errorCode(Throwable $exception): string
-    {
-        if ($exception instanceof ResourceOperationException && $exception->errorCode === 'command.deadline_exceeded') {
-            return 'deployment.deadline_exceeded';
-        }
-
-        if ($exception instanceof ResourceOperationException || $exception instanceof RuntimeConvergenceException) {
-            return $exception->errorCode;
-        }
-
-        if ($exception instanceof ProcessCancelledException) {
-            return 'deployment.cancelled';
-        }
-
-        if ($exception instanceof ProcessTimedOutException) {
-            return 'deployment.command_timed_out';
-        }
-
-        return 'deployment.interrupted';
     }
 }

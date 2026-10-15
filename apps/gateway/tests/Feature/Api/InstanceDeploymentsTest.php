@@ -2,11 +2,17 @@
 
 declare(strict_types=1);
 
+use App\Domain\Processes\ProcessOperationException;
+use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Activity;
+use App\Models\Instance;
+use App\Models\InstanceDeployment;
 use App\Models\Node;
+use App\Models\Process;
 use Illuminate\Support\Facades\Schema;
 use Tests\Support\Orb220DeploymentApiFixture;
+use Tests\Support\ProcessesApiFakeRuntimeManager;
 
 beforeEach(function (): void {
     $this->fixture = Orb220DeploymentApiFixture::create();
@@ -122,3 +128,37 @@ it('returns only retained names and the nullable current selection', function ()
         ->and(Activity::query()->sole()->properties?->toArray())
         ->not->toHaveKeys(['history', 'output', 'commit']);
 });
+
+it('stores Process restart outcomes in deployment history and operation steps', function (bool $fails): void {
+    enable_operation_queue();
+    $runtime = new ProcessesApiFakeRuntimeManager;
+    if ($fails) {
+        $runtime->restartFailure = new ProcessOperationException('restart', 'process.restart_failed', 'private runtime output');
+    }
+    app()->instance(ProcessRuntimeManager::class, $runtime);
+    $process = Process::query()->create([
+        'owner_type' => (new Instance)->getMorphClass(), 'owner_id' => $this->fixture->instance->id, 'name' => 'horizon',
+        'runtime' => 'systemd', 'runtime_config' => ['command' => ['/usr/bin/php', 'artisan', 'horizon']],
+        'restart_policy' => 'always', 'desired_state' => 'running', 'status' => 'active',
+    ]);
+
+    $response = $this->withServerVariables(['REMOTE_ADDR' => $this->fixture->caller->wireguard_ip])
+        ->call('POST', $this->deployUrl, server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}');
+    $response->assertAccepted();
+    run_operation_jobs();
+    $deployment = InstanceDeployment::query()->sole();
+    $this->getJson('/api/v1/deployments/'.$deployment->id)->assertOk()
+        ->assertJsonPath('data.status', $fails ? 'failed' : 'succeeded')
+        ->assertJsonPath('data.failed_step', $fails ? 'after_activation' : null)
+        ->assertJsonPath('data.error_code', $fails ? 'process.restart_failed' : null);
+    $events = collect($deployment->events)->where('type', 'output')->where('step', 'process_restart')->values();
+    expect($runtime->restarted)->toBe([$process->id])
+        ->and($this->fixture->deployment->current)->toBe('fresh')
+        ->and($events)->toHaveCount(1)
+        ->and(base64_decode($events[0]['value_base64'], strict: true))->toBe($fails
+            ? "Failed to restart Process {$process->id}: process.restart_failed.\n"
+            : "Restarted Process {$process->id}.\n");
+    $this->getJson('/api/v1/operations/'.$response->json('data.id'))->assertOk()
+        ->assertJsonFragment(['name' => 'process_restart', 'status' => $fails ? 'failed' : 'succeeded']);
+    expect(in_array('finish', $this->fixture->deployment->steps, true))->toBe(! $fails);
+})->with([false, true]);
