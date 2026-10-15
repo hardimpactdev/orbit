@@ -1,0 +1,76 @@
+---
+title: "operation"
+description: "List, show, and cancel the long operations that the Gateway runs on its queue, such as an Instance deploy."
+covers:
+  - apps/cli/app/Commands/Operations/**
+  - apps/cli/app/Support/Operations/**
+---
+
+An [operation](/reference/operations) is a long piece of work, such as an Instance deploy, that the Gateway runs on its queue. The command that starts it, such as [`instance:deploy`](/cli/instance#orbit-instancedeploy), returns or stops following without stopping the operation. These commands find it again.
+
+## Commands
+
+| Command | Result |
+| --- | --- |
+| [`operation:list`](#orbit-operationlist) | List the newest operations. |
+| [`operation:show`](#orbit-operationshow) | Show one operation with its steps and their output. |
+| [`operation:cancel`](#orbit-operationcancel) | Ask one operation to stop. |
+
+Every command accepts `--json`.
+
+## orbit operation:list
+
+List the 50 newest operations on Nodes you can access, newest first.
+
+```bash
+orbit operation:list [--status=STATUS] [--kind=KIND] [--instance=ID] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--status=STATUS` | `queued`, `running`, `succeeded`, `failed`, or `cancelled`. |
+| `--kind=KIND` | An operation kind, such as `instance.deploy`. |
+| `--instance=ID` | Only operations on this Instance. |
+
+The table shows ID, Kind, Target, Status, Step, By, and Started. JSON returns the list of records without steps.
+
+```bash
+orbit operation:list --status=running
+```
+
+## orbit operation:show
+
+Show one operation: a detail tree of its kind, target, status, current step, failed step, error code, result, and times, then its steps as a table with each step's status and duration, then the output tail of each step that has output.
+
+```bash
+orbit operation:show <operation> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `operation` | yes | Numeric operation ID. |
+
+JSON returns the record with every step, as `GET /api/v1/operations/{operation}` does. The command exits `0` for any status; read `status` for the outcome.
+
+```bash
+orbit operation:show 42
+```
+
+## orbit operation:cancel
+
+Ask an operation to stop. A queued operation ends `cancelled` at once. A running one finishes its running step and ends `cancelled`. Orbit never undoes the steps that ran.
+
+```bash
+orbit operation:cancel <operation> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `operation` | yes | Numeric operation ID. |
+
+The command returns the record at once and does not wait for the operation to stop. A cancel of an operation that already ended changes nothing.
+
+```bash
+orbit operation:cancel 42
+orbit operation:show 42
+```
