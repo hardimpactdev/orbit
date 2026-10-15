@@ -59,7 +59,7 @@ export function OperationPanel({ instance }: { instance: Instance }) {
         >
             <Pane
                 name="operation"
-                order={4}
+                order={0.5}
                 title="Deploy"
                 testId="operation-steps"
                 className="w-full min-h-[120px] max-h-[30vh] md:max-h-none"

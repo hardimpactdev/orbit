@@ -3,7 +3,13 @@ import { mergeOperation, type Operation, type OperationStep } from "../api/opera
 import { LIVE_READ_SECONDS, OperationFollow, operationChannel } from "./operation";
 import type { RealtimeSocket } from "./socket";
 
-const step = (name: string, position: number, status: string, sequence: number, output: string | null = null): OperationStep => ({
+const step = (
+    name: string,
+    position: number,
+    status: string,
+    sequence: number,
+    output: string | null = null,
+): OperationStep => ({
     name,
     position,
     status,
@@ -78,14 +84,24 @@ it("subscribes before it reads, reads again for a newer event, drops an older on
     const reads: Array<number | null> = [];
     const answers = [
         operation({ sequence: 3, steps: [step("a", 1, "running", 3)] }),
-        operation({ sequence: 6, status: "succeeded", poll_after_seconds: null, steps: [step("a", 1, "succeeded", 6)] }),
+        operation({
+            sequence: 6,
+            status: "succeeded",
+            poll_after_seconds: null,
+            steps: [step("a", 1, "succeeded", 6)],
+        }),
     ];
     const seen: Operation[] = [];
-    const follow = new OperationFollow(42, (next) => seen.push(next), socket, async (_id, after) => {
-        reads.push(after);
+    const follow = new OperationFollow(
+        42,
+        (next) => seen.push(next),
+        socket,
+        async (_id, after) => {
+            reads.push(after);
 
-        return answers.shift() ?? operation({ sequence: 6, status: "succeeded" });
-    });
+            return answers.shift() ?? operation({ sequence: 6, status: "succeeded" });
+        },
+    );
 
     follow.start();
     expect(subscribed).toEqual([operationChannel(42)]);

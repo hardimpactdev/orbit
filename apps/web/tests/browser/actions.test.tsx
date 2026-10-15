@@ -89,7 +89,9 @@ it("deploys an instance and follows its operation step by step until it ends", a
     );
     expect(
         app.gateway.requests.some(
-            (request) => request.method === "GET" && request.path.startsWith("/api/v1/operations/1?after_sequence="),
+            (request) =>
+                request.method === "GET" &&
+                request.path.startsWith("/api/v1/operations/1?after_sequence="),
         ),
     ).toBe(true);
 });
