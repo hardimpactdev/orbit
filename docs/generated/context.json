@@ -890,6 +890,36 @@
             ]
         },
         {
+            "path": "docs/decisions/0212-turn-proxycli-into-the-ai-router-extension.md",
+            "title": "ADR 0212: Turn ProxyCli into the AI router extension",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Node",
+                "Pi server",
+                "Placement",
+                "Process",
+                "Role",
+                "Route",
+                "Schedule",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0200",
+                "0212"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -941,7 +971,8 @@
                 "0196",
                 "0198",
                 "0200",
-                "0206"
+                "0206",
+                "0212"
             ]
         },
         {
