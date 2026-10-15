@@ -903,6 +903,7 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Activity",
                 "Deployment",
                 "Doctor",
                 "Gateway",
@@ -1372,6 +1373,7 @@
             ],
             "concepts": [
                 "Access grant",
+                "Activity",
                 "Cluster",
                 "Deliverable",
                 "Deployment",
@@ -1395,8 +1397,7 @@
             ],
             "governing_adrs": [
                 "0200",
-                "0206",
-                "0207"
+                "0206"
             ]
         },
         {
