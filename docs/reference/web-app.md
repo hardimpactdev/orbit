@@ -30,6 +30,8 @@ The generated Instance response includes nullable `annotator_port` and `annotato
 
 The generated Instance rename request exposes optional `branch` and `domain` fields. The Gateway still requires at least one; optional TypeScript properties do not replace API validation. This API operation adds no web UI control.
 
+The generated Instance schema includes effective `shared_paths`. Its update input accepts a directory list or null to restore the default. [Shared paths](/reference/deployments#shared-paths) defines the production storage contract.
+
 The Project schema includes `task_workspace_routed`, which describes routing for new task workspaces; an existing workspace keeps its recorded mode. The Gateway serves it from its own origin.
 
 The generated Process schema includes the installed PATCH update operation, nullable `working_directory`, and Docker environment maps for create and update. A null directory means the image default, not an empty path. These types describe [Process updates](/reference/processes-and-schedules#update-in-place); they add no web editing controls.
