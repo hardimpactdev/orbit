@@ -569,7 +569,9 @@ Each minute the Gateway merges its date PRs after Required checks pass on the ex
 
 The jobs run only from the serving release while task VMs are enabled. Merge and deployment have no fixed time. The existing release handoff and per-minute image reconcile build, smoke-test, and promote the base on each configured host. Maintenance adds no build trigger or composed-topology smoke run. Every host must promote the deployed identity and generation before fleet convergence starts. A failed build halts and alerts the operator.
 
-On the next available minute, the maintenance job visits one Node. Later ticks visit the next Node only after its predecessor passes. Order is app-dev, services, app-prod, vpn, Gateway last, with Node ID inside a tier and the latest tier for a multi-role Node. Dev and services start as soon as both hosts promote, at any hour. App-prod, vpn, and Gateway start only from 03:00 inclusive to 06:00 exclusive Europe/Amsterdam, after every dev/services Node is done; outside the window the sequence stays ready until the next night, and a running visit may finish past 06:00. The serving Gateway also goes last.
+On the next available minute, the maintenance job visits one Node. Later ticks visit the next Node only after its predecessor passes. Order is app-dev, services, app-prod, vpn, Gateway last, with Node ID inside a tier and the latest tier for a multi-role Node.
+
+Only Nodes whose roles are all app-dev start as soon as both hosts promote, at any hour. Shared services, app-prod, vpn, and Gateway start only from 03:00 inclusive to 06:00 exclusive Europe/Amsterdam, in strict tier order after every app-dev-only Node is done. Outside the window, the sequence stays ready until the next night. A running visit may finish past 06:00. The serving Gateway also goes last.
 
 Only active managed Linux Nodes with roles participate; task VMs, macOS, and roleless operator Nodes are excluded. Each visit uses [Node recipe convergence](/reference/node-provisioning#converge-a-node-to-a-recipe), including inventory, health, and Doctor checks. Nodes already verified on that identity need no repeat installation.
 

@@ -211,12 +211,12 @@ it('schedules the date PR at Amsterdam 03:00 across DST and fleet visits each mi
     expect($events[1]->expression)->toBe('* * * * *');
 })->with(['2026-07-15 01:00:00 UTC', '2026-12-15 02:00:00 UTC']);
 
-it('finishes dev and services mid-day then waits ready until 03:00 for prod vpn and Gateway', function (): void {
+it('converges app-dev-only Nodes mid-day but waits until 03:00 for app-dev plus database and production', function (): void {
     [$record, $other, $doctor, $alerts] = nightlyRecipeFleet();
     $gateway = FleetFixtures::node('window-gateway', [RoleName::Gateway]);
     $vpn = FleetFixtures::node('window-vpn', [RoleName::Vpn]);
     $prod = FleetFixtures::node('window-prod', [RoleName::AppProd]);
-    $service = FleetFixtures::node('window-services', [RoleName::Metrics]);
+    $service = FleetFixtures::node('window-services', [RoleName::AppDev, RoleName::Database]);
     $this->travelTo(new DateTimeImmutable('2026-10-15 12:00:00 UTC'));
     $action = app(ConvergeFleetRecipeAction::class);
 
@@ -224,12 +224,14 @@ it('finishes dev and services mid-day then waits ready until 03:00 for prod vpn 
         $action->execute();
     }
 
-    expect($doctor->visited)->toBe([$record->host_node_id, $other->host_node_id, $service->id]);
-    expect($record->refresh()->fleet_convergence)->toMatchArray(['status' => 'ready', 'node_id' => $prod->id]);
+    expect($doctor->visited)->toBe([$record->host_node_id, $other->host_node_id]);
+    expect($record->refresh()->fleet_convergence)->toMatchArray(['status' => 'ready', 'node_id' => $service->id]);
+    expect($service->refresh()->settings['machine_recipe'] ?? null)->toBeNull();
     expect($prod->refresh()->settings['machine_recipe'] ?? null)->toBeNull();
     expect($alerts->alerts)->toBe([]);
 
     $this->travelTo(new DateTimeImmutable('2026-10-16 01:00:00 UTC'));
+    $action->execute();
     $action->execute();
     $action->execute();
     $action->execute();
@@ -239,12 +241,12 @@ it('finishes dev and services mid-day then waits ready until 03:00 for prod vpn 
     expect($record->refresh()->fleet_convergence['status'])->toBe('succeeded');
 });
 
-it('starts prod only inside the Amsterdam window including DST boundaries', function (string $utc, bool $allowed): void {
+it('starts shared services and production only inside the Amsterdam window including DST boundaries', function (string $utc, bool $allowed, RoleName $role): void {
     [$record, $other, $doctor, $alerts] = nightlyRecipeFleet();
     foreach ([$record->hostNode, $other->hostNode] as $node) {
         $node->update(['settings' => ['machine_recipe' => ['version' => $record->recipe_identity]]]);
     }
-    $prod = FleetFixtures::node('window-boundary', [RoleName::AppProd]);
+    $prod = FleetFixtures::node('window-boundary', [$role]);
     $this->travelTo(new DateTimeImmutable($utc));
 
     app(ConvergeFleetRecipeAction::class)->execute();
@@ -265,7 +267,7 @@ it('starts prod only inside the Amsterdam window including DST boundaries', func
     'spring transition at 06' => ['2026-03-29 04:00:00 UTC', false],
     'autumn repeated 02' => ['2026-10-25 01:30:00 UTC', false],
     'autumn transition at 03' => ['2026-10-25 02:00:00 UTC', true],
-]);
+])->with([RoleName::Database, RoleName::AppProd]);
 
 it('allows a running prod visit to finish past 06 but starts no next visit', function (): void {
     [$record, $other, $doctor] = nightlyRecipeFleet();

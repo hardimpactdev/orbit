@@ -91,7 +91,7 @@ final readonly class ConvergeFleetRecipeAction
                     return;
                 }
                 $hour = now('Europe/Amsterdam')->hour;
-                if ($this->tier($node) >= 3 && ($hour < 3 || $hour >= 6)) {
+                if ($this->tier($node) >= 2 && ($hour < 3 || $hour >= 6)) {
                     $record->forceFill(['fleet_convergence' => [...$progress, 'status' => 'ready', 'node_id' => $node->id]])->save();
 
                     return;
