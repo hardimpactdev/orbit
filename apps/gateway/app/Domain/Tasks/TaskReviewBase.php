@@ -64,7 +64,9 @@ final class TaskReviewBase
         if ($task->fixup_problem === TaskFinalReview::BaseMergeReview) {
             $review = $task->parent->tasks()->where('position', '<', $task->position)
                 ->where('type', TaskType::FinalReview)
-                ->whereHas('comments', static fn ($query) => $query->where('type', TaskCommentType::Approved))
+                ->whereHas('comments', static fn ($query) => $query->where('type', TaskCommentType::Approved)
+                    ->where('author', TaskThreadRole::Reviewer->value)->whereColumn('task_comments.review_attempt', 'tasks.review_attempt')
+                    ->whereNotNull('receipt_hash')->whereNotNull('commit_sha'))
                 ->whereNotNull('review_workspace_tree')->reorder('position', 'desc')->first();
 
             return $review instanceof Task && self::isTree($review->review_workspace_tree) ? $review : null;

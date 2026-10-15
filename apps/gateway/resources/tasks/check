@@ -614,14 +614,17 @@ def missing_tool(code, output):
     return code == 127 or re.search(diagnostic, output, re.IGNORECASE | re.MULTILINE) is not None
 
 
-def classify_merge_gate(checkout, head, command, code, output, log):
+def classify_merge_gate(checkout, head, command, code, output, log, passed_tree=None):
     """Only blame the merge when the same check passes on both parents, with the same tools."""
     if missing_tool(code, output):
         return 'environment'
     parents = git(checkout, 'rev-list', '--parents', '-n', '1', head).split()[1:]
     if len(parents) != 2:
         return 'environment'
-    for parent in parents:
+    for index, parent in enumerate(parents):
+        if index == 0 and passed_tree and git(checkout, 'rev-parse', parent + '^{tree}') == passed_tree:
+            log.write(f'# main merge gate parent {parent}: reused passing handoff tree {passed_tree}\n'.encode())
+            continue
         os.makedirs(base_directories(), exist_ok=True)
         scratch = tempfile.mkdtemp(prefix='orbit-base-', dir=base_directories())
         try:
@@ -630,7 +633,8 @@ def classify_merge_gate(checkout, head, command, code, output, log):
             copy_dependencies(checkout, scratch)
             log.write(f'# main merge gate parent {parent}\n'.encode())
             log.flush()
-            parent_code, parent_output, timed_out = run_base(command, scratch, log, BASE_RUN_TIMEOUT)
+            # The Project gate itself has no helper deadline. Do not impose the command-deliverable limit.
+            parent_code, parent_output, timed_out = run_base(command, scratch, log, None)
             if timed_out or parent_code != 0 or missing_tool(parent_code, parent_output):
                 return 'environment'
         except (OSError, subprocess.SubprocessError):
@@ -652,6 +656,7 @@ def perform(checkout, head, tree, setup, deliverables, command, started_at):
     setup_output_start = None
     evidence = None
     task_check = None
+    failure_output = None
     failed_step = None
     exit_code = 0
     with open(LOG, 'wb') as log:
@@ -690,9 +695,11 @@ def perform(checkout, head, tree, setup, deliverables, command, started_at):
                           'exit_code': exit_code, 'output': tail}
         if exit_code != 0 and failed_step is None and deliverables:
             with open(deliverables) as source:
-                merge_gate = json.load(source).get('base_merge', False)
-            if merge_gate:
-                failed_step = classify_merge_gate(checkout, head, command, exit_code, tail, log)
+                merge_spec = json.load(source)
+            if merge_spec.get('base_merge', False):
+                failure_output = tail
+                failed_step = classify_merge_gate(checkout, head, command, exit_code, tail, log,
+                                                 merge_spec.get('base_merge_passed_tree'))
         if failed_step is None and deliverables and (exit_code == 0 or task_check is not None):
             evidence = verify_deliverables(checkout, head, tree, deliverables, log, task_check)
     head_after = git(checkout, 'rev-parse', 'HEAD')
@@ -701,6 +708,8 @@ def perform(checkout, head, tree, setup, deliverables, command, started_at):
         head, tree, head_after, tree_after, changed_paths(checkout, tree, tree_after),
         exit_code, failed_step, evidence, started_at, setup_output_start,
     )
+    if failure_output is not None:
+        result['failure_output'] = failure_output
     write_check_result(result)
 
 
@@ -782,7 +791,7 @@ def status(pid, started):
     if os.path.exists(RESULT):
         with open(RESULT) as result:
             data = json.load(result)
-            print(json.dumps({'state': 'finished', 'result': data, 'output': output_tail(data.get('setup_output_start') or 0)}))
+            print(json.dumps({'state': 'finished', 'result': data, 'output': data.get('failure_output', output_tail(data.get('setup_output_start') or 0))}))
     elif alive:
         print(json.dumps({'state': 'running'}))
     else:

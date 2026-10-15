@@ -1262,7 +1262,11 @@ The flow needs `source_access: github_app`. It is off by default. Each task stil
 
 A final review is a subtask with `type` `final_review` and the title `Final review`. Orbit appends one when a review-and-merge task has no open subtask and its latest approved commit has no final review. Before the final review starts, Orbit fetches and merges `origin/{default branch}` into the group branch with Git. A conflict-free merge runs only the Project gate on that merge commit, without setup, deliverable commands, or an agent turn. No merge means no extra gate.
 
-Only a real Git conflict creates the `Merge origin/{base}` agent fixup; its brief lists the conflicting files. A failed Project gate records `failed_step` as `gate` or `environment`, with its check ID and output, rather than claiming that Git conflicted (`merge_conflict`). Orbit checks a failed merged tree against both merge parents. If both parents pass, the merge caused the failure and Orbit appends an agent fixup, subject to the final-review fixup cap. A failure on either parent, or a missing tool (including exit 127), asks for assistance instead. The final review starts only after this preparation succeeds.
+Only a real Git conflict creates the `Merge origin/{base}` agent fixup; its brief lists the conflicting files. A failed Project gate records `failed_step` as `gate` or `environment`, with its check ID and output, rather than claiming that Git conflicted (`merge_conflict`). The final review starts only after this preparation succeeds.
+
+Orbit checks a failed merged tree against both merge parents, reusing a stored passing handoff result when its tree matches the approved first parent. Only the main parent needs another run in that case. Parent runs have the same timeout as the Project gate, not the shorter command-deliverable base-run limit. Orbit keeps the merged run's failure tail in the check output even when parent runs produce long logs.
+
+If both parents pass, the merge caused the failure and Orbit appends an agent fixup, subject to the final-review fixup cap. A failure on either parent, or a missing tool (including exit 127), asks for assistance instead.
 
 It has no implementer and starts in `reviewing` with a fresh reviewer.
 

@@ -472,7 +472,7 @@ final readonly class TaskPublication
             $this->runner->recordReading($check, $reading);
             if ($check->status === TaskCheckStatus::Failed) {
                 // The helper distinguishes missing executables from source failures before comparing both parents.
-                // Its output also contains parent logs, so do not reinterpret that combined text here.
+                // Keep its classification: a missing source resource is not a missing executable.
                 $check->update(['failed_step' => $check->exit_code !== 127 && $reading->failedStep === 'gate' ? 'gate' : 'environment']);
             }
             $snapshot = $scheduler->workspaceSnapshot($group);
@@ -545,7 +545,14 @@ final readonly class TaskPublication
 
             return 'passed';
         }
-        $process = $this->checks->start($instance, $group->project->taskCheckCommand(), deliverables: ['start' => null, 'commands' => [], 'base_merge' => true]);
+        $deliverables = ['start' => null, 'commands' => [], 'base_merge' => true];
+        $handoff = TaskCheck::query()->whereHas('task', static fn ($query) => $query->where('parent_id', $group->id)->where('status', TaskStatus::Completed))
+            ->where('kind', TaskCheckKind::Handoff)->where('status', TaskCheckStatus::Passed)->where('exit_code', 0)->latest('id')->first();
+        if ($handoff instanceof TaskCheck && $handoff->tree_after !== null) {
+            // Approval commits the handoff tree. The helper verifies it against the first parent's tree before reuse.
+            $deliverables['base_merge_passed_tree'] = $handoff->tree_after;
+        }
+        $process = $this->checks->start($instance, $group->project->taskCheckCommand(), deliverables: $deliverables);
         $check->update(['pid' => $process->pid, 'process_started' => $process->started,
             'head_before' => $process->head, 'tree_before' => $process->tree]);
 

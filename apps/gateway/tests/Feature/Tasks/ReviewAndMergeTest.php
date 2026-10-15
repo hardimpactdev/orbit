@@ -1346,7 +1346,7 @@ it('preserves an incoming main merge while its gate runs instead of resetting to
         ->and($final->fresh()?->review_workspace_head)->toBe(RM_COMMIT);
 });
 
-it('TaskReviewBase uses the last approved final review tree, not a newer cancelled review or its own tree', function (): void {
+it('TaskReviewBase uses only a reviewer approval for the matching attempt with receipt and commit evidence', function (string $invalid): void {
     $group = rm_group([
         [TaskFinalReview::Title, TaskStatus::Completed, TaskType::FinalReview],
         [TaskFinalReview::Title, TaskStatus::Cancelled, TaskType::FinalReview],
@@ -1354,11 +1354,43 @@ it('TaskReviewBase uses the last approved final review tree, not a newer cancell
     ]);
     [$approved, $cancelled, $delta] = $group->tasks->all();
     $approved->update(['review_workspace_tree' => str_repeat('b', 40)]);
-    $cancelled->update(['review_workspace_tree' => str_repeat('c', 40)]);
+    $cancelled->update(['review_workspace_tree' => str_repeat('c', 40), 'review_attempt' => 2]);
     $delta->update(['review_workspace_tree' => str_repeat('d', 40), 'fixup_problem' => TaskFinalReview::BaseMergeReview]);
-    TaskComment::query()->create(['task_id' => $approved->id, 'task_group_id' => $group->id, 'type' => 'approved', 'body' => 'Reviewed.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => RM_HEAD]);
-    expect(TaskReviewBase::reviewBase($delta->fresh()))->toBe(str_repeat('b', 40));
-});
+    TaskComment::query()->create(['task_id' => $approved->id, 'task_group_id' => $group->id, 'type' => 'approved', 'body' => 'Reviewed.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => RM_HEAD,
+        'receipt_hash' => str_repeat('a', 64), 'review_attempt' => $approved->review_attempt]);
+    if ($invalid !== 'no approval') {
+        TaskComment::query()->create(['task_id' => $cancelled->id, 'task_group_id' => $group->id, 'type' => 'approved', 'body' => 'Not usable.',
+            'author' => $invalid === 'operator' ? 'operator' : 'reviewer', 'posted_at' => now(),
+            'commit_sha' => $invalid === 'no commit' ? null : RM_COMMIT, 'receipt_hash' => $invalid === 'no receipt' ? null : str_repeat('c', 64),
+            'review_attempt' => $invalid === 'old attempt' ? 1 : $cancelled->review_attempt]);
+    }
+    expect(TaskReviewBase::previousReview($delta->fresh())?->id)->toBe($approved->id)
+        ->and(TaskReviewBase::reviewBase($delta->fresh()))->toBe(str_repeat('b', 40));
+})->with(['no approval', 'operator', 'old attempt', 'no receipt', 'no commit']);
+
+it('TaskPublication passes stored passing handoff evidence to the main merge gate', function (string $evidence): void {
+    $group = rm_group([['Feature', TaskStatus::Completed], [TaskFinalReview::Title, TaskStatus::Reviewing, TaskType::FinalReview]]);
+    [$feature, $final] = $group->tasks->all();
+    $runtime = rm_runtime([rm_receipt('approved', deliverables: ['final-review' => 'Reviewed the feature.'], pullRequest: true)]);
+    rm_reviewing($final);
+    $runtime->baseMergeHead = RM_COMMIT;
+    TaskCheck::query()->create(['task_id' => $feature->id, 'kind' => TaskCheckKind::Handoff,
+        'status' => $evidence === 'failed' ? TaskCheckStatus::Failed : TaskCheckStatus::Passed,
+        'exit_code' => $evidence === 'failed' ? 1 : 0, 'pid' => 1, 'process_started' => 'handoff',
+        'head_before' => RM_PR_HEAD, 'head_after' => RM_PR_HEAD, 'tree_before' => str_repeat('b', 40),
+        'tree_after' => $evidence === 'missing tree' ? null : str_repeat('b', 40), 'started_at' => now(), 'finished_at' => now()]);
+    $checks = app(TaskCheckRunner::class);
+
+    app(TaskScheduler::class)->tick();
+
+    $expected = ['start' => null, 'commands' => [], 'base_merge' => true];
+    if ($evidence === 'passed') {
+        $expected['base_merge_passed_tree'] = str_repeat('b', 40);
+    }
+    expect($checks->deliverables)->toBe([$expected])
+        ->and($checks->starts)->toBe(1)
+        ->and($runtime->implementers)->toBe([]);
+})->with(['passed', 'failed', 'missing tree']);
 
 describe('main moving during final review', function (): void {
     it('keeps approval for a non-overlapping merge and retries the same gated head before opening the PR', function (): void {
@@ -1447,7 +1479,8 @@ describe('main moving during final review', function (): void {
         $group = rm_group([[TaskFinalReview::Title, TaskStatus::Completed, TaskType::FinalReview]], TaskGroupStatus::Settling, prUrl: RM_PR_URL);
         $final = $group->tasks->sole();
         $final->update(['review_workspace_head' => RM_HEAD, 'review_workspace_tree' => str_repeat('b', 40)]);
-        TaskComment::query()->create(['task_id' => $final->id, 'task_group_id' => $group->id, 'type' => 'approved', 'body' => 'Reviewed.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => RM_HEAD]);
+        TaskComment::query()->create(['task_id' => $final->id, 'task_group_id' => $group->id, 'type' => 'approved', 'body' => 'Reviewed.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => RM_HEAD,
+            'receipt_hash' => str_repeat('a', 64), 'review_attempt' => $final->review_attempt]);
         TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => RM_HEAD,
             'source' => TaskReviewedCommitSource::OrbitPush, 'review_task_id' => $final->id, 'pushed_at' => now()]);
         $runtime = rm_runtime();
