@@ -33,13 +33,17 @@ def github_url(url):
     return urllib.parse.urlparse(url).hostname in ('api.github.com', 'codeload.github.com')
 
 
+class GitHubAuthenticationUnavailable(ValueError):
+    pass
+
+
 def download(url, github_token=None):
     if not allowed_url(url):
         raise ValueError('Cache download URL is outside the public archive service')
     headers = {'User-Agent': 'Orbit-package-cache'}
     if github_url(url):
         if not github_token:
-            raise ValueError('GitHub cache misses require a short-lived installation token')
+            raise GitHubAuthenticationUnavailable('GitHub cache misses require a short-lived installation token')
         headers['Authorization'] = 'Bearer ' + github_token
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), PublicRedirect())
     return opener.open(urllib.request.Request(url, headers=headers), timeout=60)
@@ -148,6 +152,8 @@ def fill(root, artifacts, max_bytes, fetch=download):
                 inventory[key] = digest
                 atomic_json(inventory_file, inventory)
                 hashes[key] = 'sha256-' + digest
+            except GitHubAuthenticationUnavailable:
+                continue
             finally:
                 if temporary is not None:
                     temporary.unlink(missing_ok=True)

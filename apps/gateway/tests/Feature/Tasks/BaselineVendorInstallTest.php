@@ -214,7 +214,7 @@ it('keeps a baseline check error failed when the tree changed during the run', f
         ->and($check->output)->toBe($output);
 });
 
-it('retries GitHub setup rate limits with bounded backoff before asking for assistance', function (bool $recovers): void {
+it('retries GitHub setup rate limits with bounded backoff before asking for assistance', function (bool $recovers, bool $missingFinishedAt): void {
     $this->freezeTime();
     test_bind_snapshot_driver();
     app()->instance(AgentSpawner::class, new class implements AgentSpawner
@@ -246,6 +246,9 @@ it('retries GitHub setup rate limits with bounded backoff before asking for assi
     app(TaskScheduler::class)->tick();
     foreach ($recovers ? [60] : [60, 120, 240, 480] as $index => $seconds) {
         app(TaskScheduler::class)->tick();
+        if ($missingFinishedAt) {
+            TaskCheck::query()->latest('id')->firstOrFail()->update(['finished_at' => null]);
+        }
         expect($group->fresh()->assistance_requested)->toBeFalse();
         expect($task->fresh()->implementer_agent_thread_id)->toBeNull();
         $this->travel($seconds - 1)->seconds();
@@ -265,9 +268,9 @@ it('retries GitHub setup rate limits with bounded backoff before asking for assi
         expect(TaskCheck::query()->latest('id')->firstOrFail()->status)->toBe(TaskCheckStatus::Passed);
         expect($task->fresh()->implementer_agent_thread_id)->not->toBeNull();
     }
-})->with(['recovers' => true, 'exhausted' => false]);
+})->with(['recovers' => [true, false], 'exhausted' => [false, false], 'missing completion time' => [false, true]]);
 
-it('classifies only GitHub rate limits in failed setup steps as transient', function (?string $step, string $output, bool $retry): void {
+it('classifies HTTP 429 and GitHub rate limits in failed setup steps as transient', function (?string $step, string $output, bool $retry): void {
     $check = new TaskCheck(['status' => TaskCheckStatus::Failed, 'failed_step' => $step, 'output' => $output]);
 
     expect(TaskSetupFailure::rateLimited($check))->toBe($retry);
@@ -280,7 +283,7 @@ it('classifies only GitHub rate limits in failed setup steps as transient', func
     'composer api limit' => ['install', 'GitHub API limit (60 calls/hr) is exhausted, could not fetch https://api.github.com/repos/acme/shop.', true],
     'forbidden' => ['install', 'https://api.github.com: HTTP 403 Forbidden', false],
     'credentials' => ['install', 'https://api.github.com: HTTP 401 Bad credentials', false],
-    'other host' => ['install', 'https://example.test: HTTP 429', false],
+    'other rate limit' => ['install', 'https://example.test: HTTP 429', true],
     'check failure' => [null, 'https://codeload.github.com: HTTP 429', false],
     'check error' => ['check_error', 'https://codeload.github.com: HTTP 429', false],
 ]);

@@ -20,6 +20,7 @@ use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Tools\VpToolManager;
 use App\Models\Instance;
+use App\Models\Task;
 use App\Models\TaskVm;
 use App\Support\ValidatedData;
 use JsonException;
@@ -63,20 +64,21 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
         $steps = json_encode($setup, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
         $verify = $deliverables === null ? null : json_encode($deliverables, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         $install = TaskWorkspaceMetadata::operation('check', [
-            'script' => base64_encode($script), 'setup' => $steps, 'command' => $command ?? '', 'deliverables' => $verify,
+            'script' => base64_encode($script), 'composer' => base64_encode(file_get_contents(resource_path('tasks/composer')) ?: ''), 'setup' => $steps, 'command' => $command ?? '', 'deliverables' => $verify,
         ]);
         $stepsArgument = $setup === [] ? '-' : '"$dir/setup.json"';
         $deliverablesArgument = $deliverables === null ? '-' : '"$dir/deliverables.json"';
         $auth = null;
-        if ($setup !== [] && TaskVm::forNode($instance->node_id) instanceof TaskVm) {
+        $incoming = $instance->tasks()->get()->contains(static fn (Task $group): bool => $group->reviewsIncomingPullRequest());
+        if ($setup !== [] && ! $incoming && TaskVm::forNode($instance->node_id) instanceof TaskVm) {
             $repository = GitHubRepository::fromOrigin($instance->project->repository_url);
             if ($repository instanceof GitHubRepository) {
                 try {
-                    $token = $this->github->readToken($repository);
+                    $token = $this->github->metadataToken($repository);
+                    $auth = json_encode(['github-oauth' => ['github.com' => $token], 'bearer' => ['codeload.github.com' => $token]], JSON_THROW_ON_ERROR);
                 } catch (GitHubApiException) {
-                    throw new TaskCheckException('A short-lived GitHub token for Project setup could not be created.');
+                    $auth = null;
                 }
-                $auth = json_encode(['github-oauth' => ['github.com' => $token], 'bearer' => ['codeload.github.com' => $token]], JSON_THROW_ON_ERROR);
             }
         }
         $data = $this->run($instance, [], $install.'check_python "$dir/check" start "$checkout" '.$stepsArgument.' '.$deliverablesArgument.' "$dir/check-command"', withVpHome: true, allocateTemporary: true, composerAuth: $auth);
@@ -179,7 +181,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
         }
         $environment = '';
         if ($composerAuth !== null) {
-            $environment .= 'export ORBIT_SETUP_COMPOSER_AUTH='.escapeshellarg($composerAuth)."\n";
+            $environment .= 'orbit_setup_composer_auth='.escapeshellarg($composerAuth)."\nexport -n orbit_setup_composer_auth\n";
         }
         if ($withVpHome && TaskVm::forNode($instance->node_id) instanceof TaskVm) {
             $environment .= 'export COMPOSER_CACHE_DIR="$HOME/.cache/composer"'."\n";
@@ -204,7 +206,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
             $prefix = $environment."checkout=\$1\nseed_path=".escapeshellarg($seed->seed_path ?? '')."\nseed_commit=".escapeshellarg($seed->seed_commit ?? '')."\n".<<<'BASH'
                 dir="$(git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" rev-parse --absolute-git-dir)/orbit"
                 check_python() {
-                    ORBIT_SEED_PATH="$seed_path" ORBIT_SEED_COMMIT="$seed_commit" python3 "$@"
+                    ORBIT_SEED_PATH="$seed_path" ORBIT_SEED_COMMIT="$seed_commit" python3 "$@" 3<<<"${orbit_setup_composer_auth:-}"
                 }
 
                 BASH;

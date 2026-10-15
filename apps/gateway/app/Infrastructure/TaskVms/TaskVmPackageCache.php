@@ -40,7 +40,10 @@ final readonly class TaskVmPackageCache implements TaskVmPackageCacheMount
         $result = $this->host($node, ['operation' => 'fill', 'artifacts' => $artifacts, 'max_bytes' => $maxBytes, 'github_token' => $githubToken]);
         $hashes = IncusHost::json('package cache', $result);
         foreach ($artifacts as $artifact) {
-            if (! is_string($hashes[$artifact['key']] ?? null) || preg_match('/\Asha256-[a-f0-9]{64}\z/D', $hashes[$artifact['key']]) !== 1) {
+            if (! array_key_exists($artifact['key'], $hashes) && ($githubToken !== null || $artifact['manager'] !== 'composer')) {
+                throw new TaskVmException('task_vm.package_cache_invalid_result', 'The trusted fill returned no verified archive hash.');
+            }
+            if (array_key_exists($artifact['key'], $hashes) && (! is_string($hashes[$artifact['key']]) || preg_match('/\Asha256-[a-f0-9]{64}\z/D', $hashes[$artifact['key']]) !== 1)) {
                 throw new TaskVmException('task_vm.package_cache_invalid_result', 'The trusted fill returned no verified archive hash.');
             }
         }

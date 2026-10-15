@@ -45,7 +45,7 @@ final readonly class FillPackageCacheAction
                 $repository = GitHubRepository::fromOrigin($project->repository_url);
                 if ($repository instanceof GitHubRepository) {
                     try {
-                        $token = app(RepositoryPullRequestAccess::class)->readToken($repository);
+                        $token = app(RepositoryPullRequestAccess::class)->metadataToken($repository);
                         break;
                     } catch (GitHubApiException) {
                         continue;
@@ -62,6 +62,9 @@ final readonly class FillPackageCacheAction
                 }
                 PackageCacheEntry::query()->where('project_id', $snapshot->project_id)->where('host_node_id', $hostNodeId)->delete();
                 foreach ($snapshot->artifacts as $artifact) {
+                    if (! isset($hashes[$artifact['key']])) {
+                        continue;
+                    }
                     PackageCacheEntry::query()->create([
                         'project_id' => $snapshot->project_id, 'host_node_id' => $hostNodeId,
                         'manager' => $artifact['manager'], 'package' => $artifact['package'], 'version' => $artifact['version'],

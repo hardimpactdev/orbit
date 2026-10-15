@@ -258,7 +258,7 @@ Run `php artisan task-vms:package-cache-usage <package> <version>` on the Gatewa
 
 The command returns one JSON object with `projects` (current Project IDs and names) and `cached` (verified Project, host, manager, and SHA-256 rows). An unknown package or version returns empty lists. Retry a failed fill through the Gateway's normal failed-job retry command; fills are safe to repeat.
 
-Private registries and credentialed URLs are out of scope. Trusted fills accept only public GitHub commit archives for Composer and the public npm registry for JavaScript. Workspaces can use their own private registry credentials with normal downloads. The fill never reads a Project's registry credentials. GitHub cache misses use a fresh, read-only GitHub App installation token from a covered Project. The token travels through protected stdin and stays out of cache files, command arguments, and logs. The downloader sends it only to the allowed GitHub API and codeload archive hosts; npm receives no token.
+Private registries and credentialed URLs are out of scope. Trusted fills accept only public GitHub commit archives for Composer and the public npm registry for JavaScript. Workspaces can use their own private registry credentials with normal downloads. The fill never reads a Project's registry credentials. GitHub cache misses use a fresh GitHub App installation token with only `metadata: read` from a covered Project. The token travels through protected stdin and stays out of cache files, command arguments, and logs. The downloader sends it only to the allowed GitHub API and codeload archive hosts; npm receives no token.
 
 Lockfile checksums are verified when supplied; npm integrity is required. Composer archives without a checksum use HTTPS from the allowed commit archive service and record a SHA-256 digest on first fill. This is a transport trust limit, not a lockfile-supplied content guarantee. Each reuse checks the recorded digest. Suspect bytes move into a quarantine directory and are downloaded again; they are not seeded into new workspaces.
 
@@ -272,7 +272,11 @@ After source resolution has observed the default-branch lockfiles, the Gateway a
 
 A task VM has no default checkout and no dependency trees in its recipe image, so `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT` are empty. The Project's `seed-dependencies` step therefore skips its reflink copy by design. Fresh task VMs reuse verified Composer archives to build `vendor/`, including `apps/cli/vendor`, without downloading those packages again.
 
-For remaining GitHub downloads, setup receives a fresh GitHub App installation token with `contents: read` on the Project repository. GitHub installation tokens expire after one hour. Orbit passes `COMPOSER_AUTH` through protected stdin into the setup process environment, with `github-oauth` for API requests and bearer authentication for `codeload.github.com`. It writes no auth file. Setup output redacts the token before writing the check log. The Project check and deliverable commands receive no setup token. If token creation fails, setup does not start anonymously. Source Git fetches and pushes still run only in the Gateway mirror.
+For remaining GitHub downloads, trusted setup receives a fresh GitHub App installation token with only `metadata: read`. Incoming pull-request baselines receive no setup token. GitHub installation tokens expire after one hour. Orbit carries the token on a pipe into setup, then into Composer’s in-memory authentication store for API and codeload requests. It never exports the token into a process environment. Composer plugins can use it while the install runs; ordinary setup daemons and later checks do not inherit it.
+
+Orbit writes no auth file. Setup output redacts the token before writing the check log. The Project check and deliverable commands receive no setup token.
+
+If the App cannot supply a token, setup continues without one. Shared fills retain existing verified GitHub archives and skip uncached GitHub artifacts without authentication, while other packages still fill. Source Git fetches and pushes still run only in the Gateway mirror.
 
 An interrupted claim resumes only its own checkout after the existing source identity checks.
 

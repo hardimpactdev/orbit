@@ -155,7 +155,9 @@ composer install --working-dir=apps/cli/phpacker --no-interaction --prefer-dist
 bin/orbit-build-cli-binary linux x64
 ```
 
-The builder needs PHP with zlib, Composer, rsync, and `apps/cli/phpacker/vendor/bin/phpacker`. It copies `apps/cli` and `packages/php-sdk` to a temporary directory and installs the production dependencies with `--no-dev`. It builds `apps/cli/builds/orbit.phar` with GZ compression from `apps/cli/box.json`. PHPacker then downloads a prebuilt static PHP 8.5 for the target and appends the PHAR to it. PHPacker reads the `php-bin` release list from GitHub. The builder passes `GITHUB_TOKEN` or `GH_TOKEN` to it and tries the build up to four times.
+The builder needs PHP with zlib, Composer, rsync, and `apps/cli/phpacker/vendor/bin/phpacker`. It copies `apps/cli` and `packages/php-sdk` to a temporary directory and installs the production dependencies with `--no-dev`. It builds `apps/cli/builds/orbit.phar` with GZ compression from `apps/cli/box.json`. PHPacker then downloads a prebuilt static PHP 8.5 for the target and appends the PHAR to it.
+
+PHPacker reads the `php-bin` release list from GitHub. The builder requires `GITHUB_TOKEN` or `GH_TOKEN` and tries the build up to four times. Its adapter authenticates both release metadata and the archive download. It downloads directly from `codeload.github.com` with redirects disabled, so the token cannot follow a redirect to another host. PHPacker still unpacks and caches the binaries in its normal private cache.
 
 `bin/orbit-cli-release-assets <version> <artifact-dir> <out-dir>` turns the three downloaded artifacts into the release assets and `SHA256SUMS`. It refuses a version that is not `0.N.0`, a missing or empty binary, and a binary built for another platform.
 

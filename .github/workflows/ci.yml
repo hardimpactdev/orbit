@@ -20,6 +20,9 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.event_name == 'push' && 'main-push' || format('{0}-{1}', github.event_name, github.sha) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+env:
+  COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ github.token }}"},"bearer":{"codeload.github.com":"${{ github.token }}"}}'
+
 jobs:
   project:
     name: ${{ matrix.name }}
@@ -130,14 +133,10 @@ jobs:
         run: cp .env.example .env
 
       - name: Install dependencies
-        env:
-          COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ github.token }}"},"bearer":{"codeload.github.com":"${{ github.token }}"}}'
         if: matrix.directory != 'apps/e2e'
         run: composer install --no-interaction --prefer-dist
 
       - name: Install all project dependencies for E2E integration tests
-        env:
-          COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ github.token }}"},"bearer":{"codeload.github.com":"${{ github.token }}"}}'
         if: matrix.directory == 'apps/e2e'
         working-directory: .
         run: bin/bootstrap --skip-checks
@@ -444,8 +443,6 @@ jobs:
           ini-values: zend.exception_ignore_args=0
 
       - name: Install dependencies
-        env:
-          COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ github.token }}"},"bearer":{"codeload.github.com":"${{ github.token }}"}}'
         run: |
           cp .env.example .env
           composer install --no-interaction --prefer-dist
@@ -550,8 +547,6 @@ jobs:
           echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
 
       - name: Install dependencies
-        env:
-          COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ github.token }}"},"bearer":{"codeload.github.com":"${{ github.token }}"}}'
         run: |
           cp .env.example .env
           composer install --no-interaction --prefer-dist
@@ -607,8 +602,6 @@ jobs:
           id -u caddy >/dev/null 2>&1 || sudo useradd --system --user-group --no-create-home --shell /usr/sbin/nologin caddy
           echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
       - name: Install Gateway dependencies
-        env:
-          COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ github.token }}"},"bearer":{"codeload.github.com":"${{ github.token }}"}}'
         run: |
           cp .env.example .env
           composer install --no-interaction --prefer-dist
@@ -682,8 +675,6 @@ jobs:
         run: cp .env.example .env
 
       - name: Install dependencies
-        env:
-          COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ github.token }}"},"bearer":{"codeload.github.com":"${{ github.token }}"}}'
         run: composer install --no-interaction --prefer-dist
 
       - name: Run Docs quality checks
@@ -719,8 +710,6 @@ jobs:
         run: php bin/docs-nav
 
       - name: Install Gateway and CLI dependencies
-        env:
-          COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ github.token }}"},"bearer":{"codeload.github.com":"${{ github.token }}"}}'
         run: |
           for project in apps/gateway apps/cli; do
             (cd "$project" && { [ -e .env ] || [ ! -f .env.example ] || cp .env.example .env; } && composer install --no-interaction --prefer-dist)

@@ -610,7 +610,8 @@ final readonly class TaskSubtaskRunner
             $attempts = TaskCheck::query()->where('task_id', $task->id)->where('kind', TaskCheckKind::Baseline->value)
                 ->where('task_comment_id', $check->task_comment_id)->get()->filter(TaskSetupFailure::rateLimited(...))->count();
             if ($attempts <= 4) {
-                if ($check->finished_at === null || now()->lt($check->finished_at->copy()->addMinutes(2 ** ($attempts - 1)))) {
+                $finished = $check->finished_at ?? $check->updated_at ?? $check->started_at;
+                if (now()->lt($finished->copy()->addMinutes(2 ** ($attempts - 1)))) {
                     return;
                 }
                 $this->startBaseline($scheduler, $group, $task);

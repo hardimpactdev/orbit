@@ -39,7 +39,8 @@ it('authenticates every workflow Composer install and binary build against GitHu
                 if (preg_match('/composer\s+install|bin\/(?:bootstrap|orbit-build-cli-binary)\b/', $step['run'] ?? '') !== 1) {
                     continue;
                 }
-                $auth = $step['env']['COMPOSER_AUTH'] ?? null;
+                $auth = $workflow['env']['COMPOSER_AUTH'] ?? null;
+                expect($step['env'] ?? [])->not->toHaveKey('COMPOSER_AUTH');
                 expect($auth)->toBeString($path.': '.$step['name']);
                 expect(json_decode($auth, true, flags: JSON_THROW_ON_ERROR))->toBe([
                     'github-oauth' => ['github.com' => '${{ github.token }}'],
