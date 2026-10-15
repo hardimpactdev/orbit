@@ -34,6 +34,13 @@ final readonly class RepositoryPullRequestAccess
         return $this->github->repositoryReadToken($credentials, $installation, $repository);
     }
 
+    public function metadataToken(GitHubRepository $repository): string
+    {
+        [$credentials, $installation] = $this->installation($repository);
+
+        return $this->github->repositoryMetadataToken($credentials, $installation, $repository);
+    }
+
     /** A separate read-only review token. Missing access is an error, never anonymous or empty success. */
     public function reviewsToken(GitHubRepository $repository): string
     {

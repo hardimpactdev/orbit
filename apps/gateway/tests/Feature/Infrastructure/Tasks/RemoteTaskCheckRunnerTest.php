@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\AppDev\SsrPortAllocator;
 use App\Domain\AppDev\VitePortRuntime;
+use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\Projects\GatewaySetupSteps;
 use App\Domain\Projects\LifecycleStep;
 use App\Domain\Projects\TiaBaselineSource;
@@ -36,9 +37,13 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
+use App\Models\TaskVm;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Http;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
+use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\FakeVitePortRuntime;
 use Tests\Support\LocalShellSshExecutor;
@@ -108,7 +113,7 @@ function check_runner(SshExecutor $transport, string $vpHome = '/opt/orbit/vite-
 
             public function put(string $host, int $port, HostKey $key): void {}
         },
-    )), $vp, app(GatewaySetupSteps::class));
+    )), $vp, app(GatewaySetupSteps::class), app(RepositoryPullRequestAccess::class));
 }
 
 function check_runner_wait(RemoteTaskCheckRunner $runner, Instance $instance, TaskCheckProcess $process): TaskCheckReading
@@ -605,7 +610,11 @@ it('removes setup scripts after failure or timeout and skips later work', functi
         ->and(file_exists(file_get_contents($checkout.'/ignored/setup-script')))->toBeFalse()
         ->and(file_exists($checkout.'/never-ran'))->toBeFalse()
         ->and(file_exists($checkout.'/check-ran'))->toBeFalse();
-})->with(['failure' => ['exit 5', 5], 'timeout' => ['sleep 10', 124]]);
+})->with([
+    'failure' => ['exit 5', 5],
+    'timeout' => ['sleep 10', 124],
+    'timeout with closed output' => ['exec >/dev/null 2>&1; sleep 10', 124],
+]);
 
 it('stops at the first failing setup step without running composer check', function (): void {
     $checkout = check_runner_checkout('echo checked');
@@ -1274,3 +1283,218 @@ describe('ssr port', function (): void {
             ->and($reading->deliverables['commands']['ssr']['output'] ?? null)->toBe('13722');
     });
 });
+
+it('authenticates task VM setup through protected input and redacts tokens before writing logs', function (string $ending, int $exitCode): void {
+    Http::preventStrayRequests();
+    GitHubTestSupport::storeApp();
+    Http::fake([
+        'https://api.github.com/repos/acme/shop/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_setup_sentinel'], 201),
+    ]);
+    $checkout = check_runner_checkout('true');
+    $instance = check_runner_instance($checkout);
+    TaskVm::query()->create(['node_id' => $instance->node_id, 'provider' => 'upcloud', 'name' => 'tvm-setup', 'state' => 'ready', 'wireguard_ip' => $instance->node->wireguard_ip, 'pi_token' => 'private']);
+    $transport = new class implements SshExecutor
+    {
+        public array $commands = [];
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            $this->commands[] = $command;
+
+            return new LocalShellSshExecutor()->execute($connection, $command);
+        }
+    };
+    $runner = check_runner($transport);
+    file_put_contents($checkout.'/AuthProbe.php', <<<'PHP_PROBE'
+        <?php
+        class AuthProbe {
+            public static function check(\Composer\Script\Event $event): void {
+                $token = $event->getIO()->getAuthentication('github.com')['username'];
+                if (getenv('COMPOSER_AUTH') !== false || str_contains(file_get_contents('/proc/'.getmypid().'/environ'), $token)
+                    || str_contains(file_get_contents('/proc/'.posix_getppid().'/environ'), $token)) {
+                    throw new \RuntimeException('Composer inherited the secret in its environment.');
+                }
+                echo substr($token, 0, 7);
+                flush();
+                usleep(150000);
+                echo substr($token, 7)."\n";
+                echo base64_encode($token.':x-oauth-basic')."\n";
+                passthru('php -r \'exit(getenv("COMPOSER_AUTH") === false ? 0 : 1);\'', $exit);
+                if ($exit !== 0) { throw new \RuntimeException('A script child inherited authentication.'); }
+            }
+        }
+        PHP_PROBE);
+    file_put_contents($checkout.'/composer.json', json_encode([
+        'repositories' => ['packagist.org' => false],
+        'autoload' => ['classmap' => ['AuthProbe.php']],
+        'scripts' => [
+            'post-autoload-dump' => ['AuthProbe::check', '@composer run-script nested-probe --no-interaction'],
+            'nested-probe' => '@php -r "echo \'nested-composer-ok\'.PHP_EOL;"',
+        ],
+    ], JSON_THROW_ON_ERROR));
+    $setup = <<<'BASH'
+        python3 - <<'PY'
+        import os
+        assert 'COMPOSER_AUTH' not in os.environ
+        assert 'ORBIT_SETUP_COMPOSER_AUTH' not in os.environ
+        assert b'ORBIT_SETUP_COMPOSER_AUTH=' not in open('/proc/%s/environ' % os.getppid(), 'rb').read()
+        assert os.environ['COMPOSER_CACHE_DIR'] == os.path.expanduser('~/.cache/composer')
+        assert os.environ['ORBIT_SEED_PATH'] == ''
+        assert os.environ['ORBIT_SEED_COMMIT'] == ''
+        PY
+        unset COMPOSER_BINARY
+        composer install --no-interaction --no-plugins --no-progress
+        BASH;
+
+    $process = $runner->start($instance, 'test -z "${COMPOSER_AUTH:-}" && test -z "${ORBIT_SETUP_COMPOSER_AUTH:-}" && echo checked', [
+        ['name' => 'install-apps-cli', 'command' => $setup."\n".$ending, 'timeout_seconds' => $exitCode === 124 ? 5 : 10],
+    ]);
+    $reading = check_runner_wait($runner, $instance, $process);
+
+    expect($reading->exitCode)->toBe($exitCode);
+    if ($exitCode === 0) {
+        expect($reading->output)->toContain('checked');
+    }
+    expect($reading->output)->toContain('[REDACTED]')->not->toContain('ghs_setup_sentinel', base64_encode('ghs_setup_sentinel:x-oauth-basic'));
+    expect($reading->output)->toContain('nested-composer-ok');
+    $git = trim((new Process(['git', '-C', $checkout, 'rev-parse', '--absolute-git-dir']))->mustRun()->getOutput());
+    expect(file_get_contents($git.'/orbit/check.log'))->not->toContain('ghs_setup_sentinel');
+    expect(file_get_contents($git.'/orbit/setup.json'))->not->toContain('ghs_setup_sentinel');
+    foreach ($transport->commands as $command) {
+        expect(implode(' ', $command->arguments).($command->input ?? ''))->not->toContain('ghs_setup_sentinel');
+    }
+    expect($transport->commands[0]->protectedInput)->not->toBeNull();
+    Http::assertSent(static fn (Request $request): bool => $request->method() === 'POST'
+        && $request->data() === ['repositories' => ['shop'], 'permissions' => ['metadata' => 'read']]);
+})->with(['success' => [':', 0], 'failure' => ['exit 7', 7], 'timeout' => ['sleep 20', 124]]);
+
+it('continues task VM setup without authentication when the App does not cover the repository', function (): void {
+    Http::preventStrayRequests();
+    GitHubTestSupport::storeApp();
+    Http::fake(['https://api.github.com/repos/acme/shop/installation' => Http::response([], 404)]);
+    $instance = check_runner_instance(check_runner_checkout('true'));
+    TaskVm::query()->create(['node_id' => $instance->node_id, 'provider' => 'upcloud', 'name' => 'tvm-setup', 'state' => 'ready', 'wireguard_ip' => $instance->node->wireguard_ip, 'pi_token' => 'private']);
+    $runner = check_runner(new LocalShellSshExecutor);
+
+    $process = $runner->start($instance, 'true', [['name' => 'install', 'command' => 'test -z "${COMPOSER_AUTH:-}" && echo uncovered', 'timeout_seconds' => 10]]);
+
+    expect(check_runner_wait($runner, $instance, $process)->exitCode)->toBe(0);
+    Http::assertSentCount(1);
+});
+
+it('mints no setup token for an incoming pull request baseline', function (): void {
+    Http::preventStrayRequests();
+    GitHubTestSupport::storeApp();
+    $instance = check_runner_instance(check_runner_checkout('true'));
+    $group = Task::topLevel()->create(['project_id' => $instance->project_id, 'title' => 'Incoming', 'brief' => 'Review', 'status' => 'running', 'pr_branch' => 'external/contribution']);
+    $group->taskable()->associate($instance)->save();
+    test_vm_workspace($group, $instance);
+    $runner = check_runner(new LocalShellSshExecutor);
+
+    $process = $runner->start($instance, 'true', [['name' => 'install', 'command' => 'test -z "${COMPOSER_AUTH:-}"', 'timeout_seconds' => 10]]);
+
+    expect(check_runner_wait($runner, $instance, $process)->exitCode)->toBe(0);
+    Http::assertNothingSent();
+});
+
+it('returns only the failed setup step output after an earlier rate limit recovered', function (): void {
+    $instance = check_runner_instance(check_runner_checkout('true'));
+    $runner = check_runner(new LocalShellSshExecutor);
+
+    $process = $runner->start($instance, 'true', [
+        ['name' => 'recovered', 'command' => 'echo "https://codeload.github.com/archive HTTP 429"; true', 'timeout_seconds' => 10],
+        ['name' => 'broken', 'command' => 'echo "invalid configuration"; exit 2', 'timeout_seconds' => 10],
+    ]);
+    $reading = check_runner_wait($runner, $instance, $process);
+
+    expect($reading->failedStep)->toBe('broken');
+    expect($reading->output)->toContain('invalid configuration')->not->toContain('429');
+});
+
+it('streams setup output and stops its descendants on timeout or cancellation', function (bool $authenticated, bool $cancel): void {
+    Http::preventStrayRequests();
+    if ($authenticated) {
+        GitHubTestSupport::storeApp();
+        Http::fake([
+            'https://api.github.com/repos/acme/shop/installation' => Http::response(['id' => 9]),
+            'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_setup_sentinel'], 201),
+        ]);
+    }
+    $checkout = check_runner_checkout('true');
+    $instance = check_runner_instance($checkout);
+    if ($authenticated) {
+        TaskVm::query()->create(['node_id' => $instance->node_id, 'provider' => 'upcloud', 'name' => 'tvm-setup', 'state' => 'ready', 'wireguard_ip' => $instance->node->wireguard_ip, 'pi_token' => 'private']);
+    }
+    $runner = check_runner(new LocalShellSshExecutor);
+    $process = $runner->start($instance, 'true', [[
+        'name' => 'waiting',
+        'command' => 'mkdir -p ignored; sleep 30 & echo $! > ignored/setup-child; printf "streamed-output:%08000d" 0; wait',
+        'timeout_seconds' => $cancel ? 20 : 2,
+    ]]);
+    try {
+        $log = $checkout.'/.git/orbit/check.log';
+        $deadline = microtime(true) + 10;
+        do {
+            usleep(50000);
+            $output = is_file($log) ? file_get_contents($log) : '';
+        } while (! str_contains($output, 'streamed-output:000') && microtime(true) < $deadline);
+
+        expect($output)->toContain('streamed-output:000');
+        expect($runner->read($instance, $process)->state)->toBe('running');
+        $child = (int) file_get_contents($checkout.'/ignored/setup-child');
+        if ($cancel) {
+            $runner->cancel($instance, $process);
+            expect(check_runner_wait($runner, $instance, $process)->state)->toBe('lost');
+        } else {
+            expect(check_runner_wait($runner, $instance, $process)->exitCode)->toBe(124);
+        }
+        $probe = new Process(['python3', '-c', <<<'PYTHON'
+            import pathlib, sys
+            stat = pathlib.Path('/proc/' + sys.argv[1] + '/stat')
+            assert not stat.exists() or stat.read_text().rsplit(')', 1)[1].split()[0] == 'Z'
+            PYTHON, (string) $child]);
+        expect($probe->run())->toBe(0, $probe->getErrorOutput());
+    } finally {
+        $runner->cancel($instance, $process);
+    }
+})->with([
+    'plain timeout' => [false, false],
+    'plain cancellation' => [false, true],
+    'authenticated timeout' => [true, false],
+    'authenticated cancellation' => [true, true],
+]);
+
+it('bounds output draining after an escaped grandchild outlives the setup shell', function (?int $timeout): void {
+    $checkout = check_runner_checkout('touch check-ran');
+    $instance = check_runner_instance($checkout);
+    $runner = check_runner(new LocalShellSshExecutor);
+    $command = <<<'BASH'
+        mkdir -p ignored
+        python3 - <<'PY'
+        import pathlib, subprocess, sys
+        child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'], start_new_session=True)
+        pathlib.Path('ignored/escaped-child').write_text(str(child.pid))
+        PY
+        BASH;
+    $started = microtime(true);
+    $process = $runner->start($instance, 'touch check-ran', [
+        ['name' => 'escaped', 'command' => $command, 'timeout_seconds' => $timeout],
+        ['name' => 'never', 'command' => 'touch never-ran', 'timeout_seconds' => 10],
+    ]);
+    try {
+        $reading = check_runner_wait($runner, $instance, $process);
+
+        expect($reading->exitCode)->toBe(124)
+            ->and($reading->failedStep)->toBe('escaped')
+            ->and($reading->output)->toContain('output did not close')
+            ->and(microtime(true) - $started)->toBeLessThan(10)
+            ->and(file_exists($checkout.'/never-ran'))->toBeFalse()
+            ->and(file_exists($checkout.'/check-ran'))->toBeFalse();
+    } finally {
+        $runner->cancel($instance, $process);
+        if (is_file($checkout.'/ignored/escaped-child')) {
+            (new Process(['kill', '-TERM', trim(file_get_contents($checkout.'/ignored/escaped-child'))]))->run();
+        }
+    }
+})->with(['configured timeout' => [30], 'no configured timeout' => [null]]);

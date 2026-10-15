@@ -143,7 +143,7 @@ fi
 phpacker_build() {
     (
         cd "$cli_dir"
-        php -d variables_order=EGPCS "$phpacker_bin" build "$platform" "$architecture" \
+        php -d variables_order=EGPCS "$cli_dir/phpacker/run.php" build "$platform" "$architecture" \
             --src=./builds/orbit.phar \
             --dest=./builds/dist \
             --php=8.5 \

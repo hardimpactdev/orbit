@@ -13,9 +13,9 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Models\TaskVm;
 
 /**
- * Refuses an SSH command that carries a GitHub credential when it would reach a task VM: a live task VM row with the
- * target's WireGuard or bridge address. Every SSH command of the Gateway passes here, so no path can hand a token to
- * a VM, where the agent has sudo ([Git on a task VM](/reference/compute-drivers#git-on-a-task-vm)).
+ * Refuses an SSH command that carries a source Git credential when it would reach a task VM: a live task VM row with the
+ * target's WireGuard or bridge address. Every SSH command of the Gateway passes here, so source Git
+ * credentials stay on the Gateway. Composer setup uses a separate short-lived read-only token ([Git on a task VM](/reference/compute-drivers#git-on-a-task-vm)).
  */
 final readonly class TaskVmCredentialGuard implements SshExecutor
 {
