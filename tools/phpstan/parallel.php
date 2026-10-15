@@ -3,9 +3,9 @@
 declare(strict_types=1);
 
 /*
- * PHPStan starts as many workers as the machine has cores. ORBIT_CHECK_PROCESSES lowers that number.
+ * PHPStan starts as many workers as tools/check-processes.php allows: ORBIT_CHECK_PROCESSES, or the core count up to 4.
  */
 
 $processes = require __DIR__.'/../check-processes.php';
 
-return is_int($processes) ? ['parameters' => ['parallel' => ['maximumNumberOfProcesses' => $processes]]] : [];
+return ['parameters' => ['parallel' => ['maximumNumberOfProcesses' => $processes]]];

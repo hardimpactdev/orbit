@@ -289,11 +289,11 @@ TIA needs PCOV or Xdebug. The first run, or a run without a usable graph, runs t
 
 Each project requires the `nckrtl/pestphp-monorepo` Pest fork from its lock file. The fork adds the monorepo and test-impact fixes. To adopt a new release, update the dependency and the lock file in every project, then run the project checks. A runner change invalidates the published graphs, so the first run after it records a fresh graph.
 
-Root `bin/test` runs all five project suites in parallel and splits the processes that [`ORBIT_CHECK_PROCESSES`](#parallel-processes) allows between them.
+Root `bin/test` runs all five project suites in parallel and splits the processes that [`ORBIT_CHECK_PROCESSES`](#parallel-processes) allows between them. It still reads the older `ORBIT_TEST_PROCESSES` when `ORBIT_CHECK_PROCESSES` is unset.
 
 ### Parallel processes
 
-Pest, PHPStan, Rector, and Pint run in parallel processes. One setting sets how many: `ORBIT_CHECK_PROCESSES`. When it is unset, each tool uses the machine's core count. `bin/check-processes` prints the value that the checks use and fails when the setting is not a positive integer.
+Pest, PHPStan, Rector, and Pint run in parallel processes. One setting sets how many: `ORBIT_CHECK_PROCESSES`. When it is unset, each tool uses the machine's core count, up to 4. An explicit value is used as it is, also above 4. `bin/check-processes` prints the value that the checks use and fails when the setting is not a positive integer.
 
 | Tool | How it reads the setting |
 | --- | --- |
@@ -302,9 +302,9 @@ Pest, PHPStan, Rector, and Pint run in parallel processes. One setting sets how 
 | PHPStan | `tools/phpstan/parallel.php`, which every `phpstan.neon` includes |
 | Rector | `->withParallel()` in `rector.php`, with the value from `tools/check-processes.php` |
 
-Each parallel Rector worker keeps its cache in its own temporary directory, which `tools/rector-cache.php` names and removes when the worker exits. Rector writes a cache file with a plain copy, and every worker rewrites the same configuration entry when it starts. Workers that share a directory can read a half-written file and fail with a syntax error.
+Each parallel Rector worker keeps its cache in its own directory under `vendor/rector/cache/workers/`. `tools/rector-cache.php` names the directory and removes it when the worker exits. The next run's `--clear-cache` removes a directory that a killed worker left. Rector writes a cache file with a plain copy, and every worker rewrites the same configuration entry when it starts. Workers that share a directory can read a half-written file and fail with a syntax error.
 
-Lower the setting on a Node, a task VM, or a CI job with little memory. Each PHPStan worker may use up to 1 GB, the `--memory-limit` of `composer analyse`. The candidate gate runs several projects at once, and each of them may start that many workers. CI sets its own Pest process counts, as [Gateway shards](#gateway-shards) describes.
+Each PHPStan worker may use up to 1 GB, the `--memory-limit` of `composer analyse`, and a task VM may have 2 GB. That is why the default stops at 4. Lower the setting on a Node, a task VM, or a CI job with little memory, and raise it on a large machine. The candidate gate splits the setting between the projects it runs at once, as [Projects run at the same time](#projects-run-at-the-same-time) describes. CI sets its own Pest process counts, as [Gateway shards](#gateway-shards) describes.
 
 ### The candidate gate
 
@@ -337,9 +337,14 @@ When that project has changed and `test:affected` selects no tests, the gate run
 
 #### Projects run at the same time
 
-The gate groups its project checks by project and runs the groups at the same time. Each group runs its own commands in order. At most `ORBIT_CHECK_PROCESSES` groups run at once, and the machine's core count is the default. Set it to `1` to check one project at a time. The gate prints each result when the command ends, and the receipt lists the checks in the gate's own order.
+The gate groups its project checks by project and runs the groups at the same time. Each group runs its own commands in order. `ORBIT_CHECK_PROCESSES` is the budget of the whole gate:
 
-The web checks run in the Gateway's group, after the Gateway's checks. The Gateway's `composer check` reads `apps/web/node_modules` for the annotator check, and the web group runs `bun install` there. The other groups share no files that a check writes.
+- At most that many groups run at once.
+- The budget is split between them. Each group's tools get the budget divided by the number of groups that run at once, and at least 1.
+
+With the default of 4, four groups run at once with one process each. With `ORBIT_CHECK_PROCESSES=10`, five groups run with two processes each. Set it to `1` to check one project at a time. The gate prints each result when the command ends. The receipt lists the checks and warnings in the gate's own order.
+
+The web checks and the repository checks run in the Gateway's group, after the Gateway's checks. The Gateway's `composer check` reads `apps/web/node_modules` for the annotator check, and the web group runs `bun install` there. `bin/docs-openapi --check` boots the Gateway application. The other groups share no files that a check writes.
 
 #### Changed-file quality checks
 
@@ -348,12 +353,14 @@ The gate's `composer check` sets `ORBIT_CHECK_SCOPE=changed` and `ORBIT_CHECK_BA
 | Tool | Files it checks in the gate |
 | --- | --- |
 | Pint | The changed PHP files that `pint.json` formats. With none, it logs `Pint: no changed PHP files to check` and passes. |
-| Rector | The changed files in its paths, the files that PHPStan records as depending on a changed or deleted file, and the files in its paths that PHPStan does not analyse |
+| Rector | The changed files in its paths, the files that PHPStan records as depending on a changed file, and the files in its paths that PHPStan does not analyse |
 
 Rector reads the dependents from PHPStan's result cache, `vendor/phpstan/cache/resultCache.php`. It still runs with `--clear-cache`. The tool runs on all its files, and logs why, in these cases:
 
 - The result cache is missing or cannot be read.
+- Another PHPStan than the installed one wrote the result cache, or its format is not one that `bin/quality-scope` reads. The script lists the formats it knows.
 - The result cache does not describe the files as they are now: a file it records has another hash, or a file in PHPStan's paths is not in it.
+- The candidate deletes a PHP file that PHPStan analyses or records. After PHPStan runs again, nothing records the files that used it.
 - The candidate changes the tool's configuration, `composer.json`, or `composer.lock`.
 - The gate has no merge base.
 
@@ -664,7 +671,9 @@ The gate now checks with Pint only the files the candidate changes, because Pint
 
 CI checks every file. It tests the merge result of a pull request, and its result decides the merge. The gate gives fast feedback at each handoff.
 
-All four tools run in parallel processes. The old limits of two PHPStan and Pest processes had no recorded reason. Rector ran in one process, and parallel workers that share its cache directory can fail on a half-written cache file, so each worker now has its own directory. On a 16-core machine, a full parallel Rector run in the Gateway takes about 32 seconds with the same findings, and a cold parallel Pint run about 37 seconds. Memory is the real limit, so `ORBIT_CHECK_PROCESSES` lowers every tool at once.
+All four tools run in parallel processes. The old limits of two PHPStan and Pest processes had no recorded reason. Rector ran in one process, and parallel workers that share its cache directory can fail on a half-written cache file, so each worker now has its own directory. With 16 processes on a 16-core machine, a full Rector run in the Gateway takes about 32 seconds with the same findings, and a cold Pint run about 37 seconds.
+
+Memory is the real limit. A task VM with 2 GB cannot run 16 PHPStan workers, so the default stops at 4, and the gate splits that budget between the projects it runs at once instead of giving each project the whole budget. `ORBIT_CHECK_PROCESSES` changes every tool at once.
 
 ### Findings are fixed, not silenced
 

@@ -17,9 +17,13 @@ function qualityScopeFixture(): array
     $root = temporaryPath('orbit-quality-scope-', 6);
     $project = $root.'/apps/demo';
     $files = new Filesystem;
-    foreach (['bin', 'apps/demo/app', 'apps/demo/config', 'apps/demo/tests', 'apps/demo/vendor/phpstan/phpstan', 'apps/demo/vendor/phpstan/cache'] as $directory) {
+    foreach (['bin', 'apps/demo/app', 'apps/demo/config', 'apps/demo/tests', 'apps/demo/vendor/phpstan/phpstan', 'apps/demo/vendor/phpstan/cache', 'apps/demo/vendor/composer'] as $directory) {
         $files->makeDirectory($root.'/'.$directory, 0o700, true, true);
     }
+    file_put_contents($project.'/vendor/composer/installed.json', json_encode(
+        ['packages' => [['name' => 'phpstan/phpstan', 'version' => '2.3.1']]],
+        JSON_THROW_ON_ERROR,
+    ));
     copy(dirname(__DIR__, 5).'/bin/quality-scope', $root.'/bin/quality-scope');
     chmod($root.'/bin/quality-scope', 0o700);
     file_put_contents($root.'/.gitignore', "vendor/\n");
@@ -73,7 +77,7 @@ PHP);
  *
  * @param  array<string, list<string>>  $dependents  project-relative file => files that depend on it
  */
-function qualityScopeCache(string $project, array $dependents, ?string $frames = null): void
+function qualityScopeCache(string $project, array $dependents, ?string $frames = null, array $meta = []): void
 {
     $paths = [];
     $id = static function (string $file) use (&$paths): int {
@@ -94,7 +98,7 @@ function qualityScopeCache(string $project, array $dependents, ?string $frames =
         $entries[] = [$id($file), $hash, null, array_map($id, $users), null];
     }
     $graph = serialize(['paths' => $paths, 'entries' => $entries]);
-    $meta = serialize(['phpVersion' => PHP_VERSION_ID]);
+    $meta = serialize([...['cacheVersion' => 'v22-valueDependencies', 'phpstanVersion' => '2.3.1', 'phpVersion' => PHP_VERSION_ID], ...$meta]);
     $frames ??= 'meta '.strlen($meta)."\n".$meta."errors* 1\n".strlen(serialize(['a' => 1]))."\n".serialize(['a' => 1])
         .'dependencyGraph '.strlen($graph)."\n".$graph;
     file_put_contents($project.'/vendor/phpstan/cache/resultCache.php', "<?php return; ?>\n".$frames);
@@ -197,16 +201,21 @@ it('checks with Rector the changed files, their dependents, and the files PHPSta
         ->toContain('Rector: checking 3 files: 1 changed, 1 dependent, 1 not analysed by PHPStan');
 });
 
-it('checks the dependents of a deleted file with Rector', function (): void {
+it('runs Rector on every file when the change deletes an analysed PHP file', function (array $recorded): void {
     $fixture = qualityScopeFixture();
     unlink($fixture['project'].'/app/ParentClass.php');
-    qualityScopeCache($fixture['project'], ['app/ParentClass.php' => ['app/Child.php'], 'app/Child.php' => [], 'app/Other.php' => []]);
+    // After PHPStan runs again, the deleted file may no longer be in the graph at all.
+    qualityScopeCache($fixture['project'], [...$recorded, 'app/Child.php' => [], 'app/Other.php' => []]);
 
     $run = qualityScopeRun($fixture, 'rector');
 
     expect($run['process']->getExitCode())->toBe(0, $run['process']->getErrorOutput())
-        ->and($run['arguments'])->toBe(['--test', 'app/Child.php', 'config/settings.php']);
-});
+        ->and($run['arguments'])->toBe(['--test'])
+        ->and($run['process']->getErrorOutput())->toContain('Rector: checking every file: the change deletes app/ParentClass.php');
+})->with([
+    'recorded with its dependents' => [['app/ParentClass.php' => ['app/Child.php']]],
+    'no longer recorded' => [[]],
+]);
 
 it('checks with Rector the dependents of a changed file outside the project', function (): void {
     $fixture = qualityScopeFixture();
@@ -243,9 +252,21 @@ it('runs Rector on every file when it cannot prove which files a change affects'
     'unreadable result cache' => [function (array $fixture): void {
         file_put_contents($fixture['project'].'/vendor/phpstan/cache/resultCache.php', "<?php return [];\n");
     }, 'the PHPStan result cache has an unknown format'],
-    'result cache without a graph' => [function (array $fixture): void {
+    'result cache without metadata' => [function (array $fixture): void {
         qualityScopeCache($fixture['project'], [], "meta 4\nb:0;");
+    }, 'the PHPStan result cache metadata cannot be read'],
+    'result cache without a graph' => [function (array $fixture): void {
+        $meta = serialize(['cacheVersion' => 'v22-valueDependencies', 'phpstanVersion' => '2.3.1']);
+        qualityScopeCache($fixture['project'], [], 'meta '.strlen($meta)."\n".$meta);
     }, 'the PHPStan result cache records no dependencies'],
+    'unknown cache format' => [function (array $fixture): void {
+        qualityScopeCache($fixture['project'], ['app/ParentClass.php' => ['app/Child.php'], 'app/Child.php' => [], 'app/Other.php' => []],
+            meta: ['cacheVersion' => 'v99-future']);
+    }, "the PHPStan result cache format 'v99-future' is not one this script reads"],
+    'cache from another PHPStan' => [function (array $fixture): void {
+        qualityScopeCache($fixture['project'], ['app/ParentClass.php' => ['app/Child.php'], 'app/Child.php' => [], 'app/Other.php' => []],
+            meta: ['phpstanVersion' => '2.2.0']);
+    }, "the PHPStan result cache was written by PHPStan '2.2.0', not the installed '2.3.1'"],
     'stale result cache' => [function (array $fixture): void {
         file_put_contents($fixture['project'].'/app/Other.php', "<?php\n\nfinal class Other { }\n");
     }, 'the PHPStan result cache is older than app/Other.php'],

@@ -265,14 +265,14 @@ The Gateway records the task baseline in `refs/worktree/orbit/ci-baseline`, a pe
 
 The importer checks each project's identity, manifest schema, file checksums, dependency and test configuration, tool configuration, and PHP minor version before writing private caches. `bin/ci-cache-ref import` validates the whole cache tree before passing projects to `bin/tia-cache import-ci`. It imports the Pest TIA graph into `.orbit-tia/graph.json` and compatible Pint and PHPStan caches into their tool cache paths under `vendor/`. Rector exports no cache because its checks use `--clear-cache`. An absent optional tool cache leaves that tool cold.
 
-The importer also checks each quality cache the way its tool does, so it imports only a cache that the tool will use:
+The importer also checks the PHP version that each quality cache records, because each tool discards a cache from another PHP version:
 
 | Cache | Must match the workspace |
 | --- | --- |
 | Pint | The full PHP version that the cache records under `php`, such as `8.5.11` |
-| PHPStan | The metadata of the result cache: the PHP version, the loaded PHP extensions, and the extension versions that PHPStan derives |
+| PHPStan | The PHP version that the result cache metadata records, such as `80511` for 8.5.11 |
 
-The PHPStan check runs `php` in the project after `composer install`, because PHPStan's own code derives the extension versions. When a cache does not match, or the importer cannot read it, the log says `[<project>] <tool> cache not imported, it runs cold: <reason>`, and the tool runs cold.
+PHPStan also compares the loaded PHP extensions and their versions. The importer does not check those, so after a PHPStan import the log says `[<project>] imported CI phpstan cache; PHPStan may still run cold if the PHP build differs`. When a cache does not match, or records no PHP version, the log says `[<project>] <tool> cache not imported, it runs cold: <reason>`, and the tool runs cold.
 
 Cache files must be regular files at allowed relative paths, with no symlinks or path traversal. The payload is limited to 1,024 files and 64 MiB of expanded data; temporary import files are removed when the step exits.
 

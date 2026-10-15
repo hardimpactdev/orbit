@@ -17,18 +17,26 @@ declare(strict_types=1);
  *
  * - Pint checks the changed PHP files that pint.json formats. With none, it does not run.
  * - Rector checks the changed files in its paths, the files that PHPStan's result cache records as depending on a
- *   changed or deleted file, and the files in its paths that PHPStan does not analyse.
+ *   changed file, and the files in its paths that PHPStan does not analyse.
  *
  * The tool checks every file, and the log says why, when CI or GITHUB_ACTIONS is set, when the base or the changes
  * cannot be read, when the tool's configuration, composer.json, or composer.lock changes, or, for Rector, when the
- * PHPStan result cache is missing, unreadable, or does not describe the files as they are now. The candidate gate
- * runs PHPStan before Rector, so the result cache describes the current files.
+ * change deletes a PHP file, or when the PHPStan result cache is missing, unreadable, written by a PHPStan or in a
+ * cache format this script does not know, or does not describe the files as they are now. The candidate gate runs
+ * PHPStan before Rector, so the result cache describes the current files.
  */
 
 const QUALITY_SCOPE_CONFIGURATION = [
     'pint' => ['pint.json', 'composer.json', 'composer.lock'],
     'rector' => ['rector.php', 'composer.json', 'composer.lock'],
 ];
+
+/**
+ * The result cache versions whose dependency graph this script reads. Each one stores the graph as a table of paths
+ * and entries of [file, hash, stat, dependents, trait dependents]. A newer PHPStan may change that, so its cache
+ * makes Rector check every file until its version is added here.
+ */
+const QUALITY_SCOPE_CACHE_VERSIONS = ['v18-missingFileDependencies', 'v22-valueDependencies'];
 
 /** PHPStan writes this line first in its framed result cache. */
 const QUALITY_SCOPE_RESULT_CACHE_PREFIX = '<?php return; ?>';
@@ -253,7 +261,17 @@ function quality_scope_dependency_graph(string $project): array
                 throw new QualityScopeFull('the PHPStan result cache has a malformed frame');
             }
             [$name, $size] = [$parts[0], (int) $parts[1]];
+            if ($name === 'meta') {
+                $meta = $size > 0 ? @unserialize((string) fread($handle, $size), ['allowed_classes' => false]) : false;
+                quality_scope_require_known_cache($project, $meta);
+                $knownCache = true;
+
+                continue;
+            }
             if ($name === 'dependencyGraph') {
+                if (! isset($knownCache)) {
+                    throw new QualityScopeFull('the PHPStan result cache records no metadata');
+                }
                 $graph = $size > 0 ? @unserialize((string) fread($handle, $size), ['allowed_classes' => false]) : false;
 
                 return quality_scope_decode_graph($graph, $anchor);
@@ -277,6 +295,30 @@ function quality_scope_dependency_graph(string $project): array
     }
 
     throw new QualityScopeFull('the PHPStan result cache records no dependencies');
+}
+
+/** Fail unless the installed PHPStan wrote the result cache in a format this script knows. */
+function quality_scope_require_known_cache(string $project, mixed $meta): void
+{
+    if (! is_array($meta)) {
+        throw new QualityScopeFull('the PHPStan result cache metadata cannot be read');
+    }
+    $format = $meta['cacheVersion'] ?? null;
+    if (! is_string($format) || ! in_array($format, QUALITY_SCOPE_CACHE_VERSIONS, true)) {
+        throw new QualityScopeFull('the PHPStan result cache format '.var_export($format, true).' is not one this script reads');
+    }
+    $installed = null;
+    $packages = json_decode((string) @file_get_contents($project.'/vendor/composer/installed.json'), true);
+    foreach ((is_array($packages) ? ($packages['packages'] ?? $packages) : []) as $package) {
+        if (is_array($package) && ($package['name'] ?? null) === 'phpstan/phpstan') {
+            $installed = $package['version'] ?? null;
+        }
+    }
+    $writer = $meta['phpstanVersion'] ?? null;
+    if (! is_string($writer) || ! is_string($installed) || ltrim($installed, 'v') !== $writer) {
+        throw new QualityScopeFull('the PHPStan result cache was written by PHPStan '.var_export($writer, true)
+            .', not the installed '.var_export($installed, true));
+    }
 }
 
 /**
@@ -406,10 +448,25 @@ function quality_scope_pint_files(string $project, array $changed): array
  */
 function quality_scope_rector_files(string $project, array $changed): array
 {
-    $targets = quality_scope_php_files($project, quality_scope_rector_paths($project));
+    $rectorPaths = quality_scope_rector_paths($project);
+    $phpstanPaths = quality_scope_phpstan_paths($project);
     $graph = quality_scope_dependency_graph($project);
-    quality_scope_require_current($graph, quality_scope_php_files($project, quality_scope_phpstan_paths($project)), $project);
-
+    // A deleted file leaves no record of the files that used it once PHPStan has run again.
+    $roots = array_map(static fn (string $path): string => quality_scope_normalize($project.'/'.$path), [...$rectorPaths, ...$phpstanPaths]);
+    foreach ($changed as $file) {
+        if (! quality_scope_is_php($file) || file_exists($file)) {
+            continue;
+        }
+        $analysed = isset($graph[$file]);
+        foreach ($roots as $root) {
+            $analysed = $analysed || $file === $root || str_starts_with($file, $root.'/');
+        }
+        if ($analysed) {
+            throw new QualityScopeFull('the change deletes '.quality_scope_relative($project, $file));
+        }
+    }
+    $targets = quality_scope_php_files($project, $rectorPaths);
+    quality_scope_require_current($graph, quality_scope_php_files($project, $phpstanPaths), $project);
     $targetSet = array_fill_keys($targets, true);
     $direct = [];
     $dependents = [];

@@ -8,7 +8,8 @@ declare(strict_types=1);
  * Rector writes a cache entry with copy() and reads it with require. Every process rewrites the same configuration
  * entry when it starts, so parallel workers that share a directory can read a half-written file and fail with a
  * syntax error. The main process keeps the project's directory, which `composer rector` clears with --clear-cache.
- * Each worker uses its own temporary directory and removes it when it exits, so no worker cache outlives the run.
+ * Each worker uses its own directory under it, in workers/, and removes it when it exits. A worker that is killed
+ * leaves its directory there, and the next run's --clear-cache removes it with the rest of the cache.
  */
 
 return static function (string $project): string {
@@ -28,7 +29,7 @@ return static function (string $project): string {
         return $project.'/vendor/rector/cache';
     }
 
-    $directory = sys_get_temp_dir().'/orbit-rector-worker-'.getmypid().'-'.bin2hex(random_bytes(4));
+    $directory = $project.'/vendor/rector/cache/workers/'.getmypid().'-'.bin2hex(random_bytes(4));
     register_shutdown_function(static function () use ($directory): void {
         if (! is_dir($directory)) {
             return;

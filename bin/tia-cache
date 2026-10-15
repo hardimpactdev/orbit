@@ -47,71 +47,6 @@ echo json_encode([
     'fingerprint' => Pest\Plugins\Tia\Fingerprint::compute($argv[1]),
 ], JSON_THROW_ON_ERROR);
 '''
-# Read the metadata of a framed PHPStan result cache and the runtime facts that PHPStan compares with it.
-# PHPStan leaves these extensions out of its metadata. Its own ExtensionVersionProvider derives the extension versions.
-PHPSTAN_PROBE = r'''
-$fail = static function (string $reason): never {
-    echo json_encode(['error' => $reason], JSON_THROW_ON_ERROR);
-    exit(0);
-};
-$handle = @fopen($argv[2], 'rb');
-if ($handle === false || rtrim((string) fgets($handle), "\n") !== '<?php return; ?>') {
-    $fail('it is not a framed PHPStan result cache');
-}
-$meta = null;
-while (($header = fgets($handle)) !== false) {
-    $header = rtrim($header, "\n");
-    if ($header === '') {
-        continue;
-    }
-    $parts = explode(' ', $header, 2);
-    if (count($parts) !== 2) {
-        break;
-    }
-    [$name, $size] = [$parts[0], (int) $parts[1]];
-    if ($name === 'meta') {
-        $meta = $size > 0 ? @unserialize((string) fread($handle, $size), ['allowed_classes' => false]) : null;
-        break;
-    }
-    if (str_ends_with($name, '*')) {
-        for ($entry = 0; $entry < $size; $entry++) {
-            $length = fgets($handle);
-            if ($length === false) {
-                break 2;
-            }
-            fseek($handle, (int) $length, SEEK_CUR);
-        }
-        continue;
-    }
-    fseek($handle, $size, SEEK_CUR);
-}
-if (! is_array($meta)) {
-    $fail('it records no metadata');
-}
-$extensions = array_values(array_filter(get_loaded_extensions(),
-    static fn (string $extension): bool => ! in_array($extension, ['xdebug', 'blackfire', 'phpstan_turbo'], true)));
-sort($extensions);
-$versions = null;
-if (is_file($argv[1].'/vendor/autoload.php')) {
-    ob_start();
-    require $argv[1].'/vendor/autoload.php';
-    ob_end_clean();
-    $provider = 'PHPStan\\Reflection\\BetterReflection\\SourceStubber\\ExtensionVersionProvider';
-    if (class_exists($provider)) {
-        $versions = (new $provider([$argv[1]]))->getExtensionVersions();
-    }
-}
-echo json_encode([
-    'cached' => [
-        'phpVersion' => $meta['phpVersion'] ?? null,
-        'phpExtensions' => $meta['phpExtensions'] ?? null,
-        'extensionVersions' => $meta['extensionVersions'] ?? null,
-    ],
-    'local' => ['phpVersion' => PHP_VERSION_ID, 'phpExtensions' => $extensions, 'extensionVersions' => $versions],
-], JSON_THROW_ON_ERROR);
-'''
-
-
 # import-ci exits with this code when an artifact does not fit the checkout. The project's tests then run cold.
 STALE_EXIT = 3
 
@@ -421,33 +356,15 @@ def pint_mismatch(root, project, data):
     return [] if recorded == runtime else [f'PHP {runtime} differs from CI PHP {recorded}']
 
 
-def php_version(version_id):
-    return f'{version_id // 10000}.{version_id // 100 % 100}.{version_id % 100}' if isinstance(version_id, int) else '?'
-
-
 def phpstan_mismatch(root, project, data):
-    """PHPStan discards a result cache whose metadata differ from the runtime's, so compare what it compares."""
-    with tempfile.TemporaryDirectory(prefix='orbit-phpstan-cache-') as scratch:
-        cache = Path(scratch) / 'resultCache.php'
-        cache.write_bytes(data)
-        probe = json.loads(run(root / project, 'php', '-r', PHPSTAN_PROBE, str(root / project), str(cache)))
-    if probe.get('error'):
-        return [probe['error']]
-    cached, local = probe['cached'], probe['local']
-    reasons = []
-    if cached.get('phpVersion') != local['phpVersion']:
-        reasons.append(f'PHP {php_version(local["phpVersion"])} differs from CI PHP {php_version(cached.get("phpVersion"))}')
-    if cached.get('phpExtensions') != local['phpExtensions']:
-        theirs = set(cached.get('phpExtensions') or [])
-        ours = set(local['phpExtensions'])
-        parts = [f'{label}: {", ".join(sorted(names))}' for label, names in
-                 (('missing here', theirs - ours), ('only here', ours - theirs)) if names]
-        reasons.append('the PHP extensions differ from CI' + (f' ({"; ".join(parts)})' if parts else ''))
-    if local['extensionVersions'] is None:
-        reasons.append('PHPStan cannot report the extension versions here')
-    elif (cached.get('extensionVersions') or {}) != (local['extensionVersions'] or {}):
-        reasons.append('the PHP extension versions differ from CI')
-    return reasons
+    """PHPStan discards a result cache written on another PHP build. Compare the PHP version that its metadata records;
+    the extensions it also compares stay unchecked, so the import note says the cache may still run cold."""
+    recorded = re.search(rb's:10:"phpVersion";i:(\d+);', data[:262144])
+    if recorded is None:
+        return ['the cache records no PHP version']
+    cached, runtime = int(recorded.group(1)), int(run(root / project, 'php', '-r', 'echo PHP_VERSION_ID;'))
+    version = lambda value: f'{value // 10000}.{value // 100 % 100}.{value % 100}'
+    return [] if cached == runtime else [f'PHP {version(runtime)} differs from CI PHP {version(cached)}']
 
 
 QUALITY_MISMATCH = {'pint': pint_mismatch, 'phpstan': phpstan_mismatch}
@@ -491,7 +408,8 @@ def import_quality(root, project, artifact, manifest, commit):
             atomic_write(destination, data, replace=False)
         except FileExistsError:
             continue
-        print(f'[{project}] imported CI {tool} cache', flush=True)
+        note = '; PHPStan may still run cold if the PHP build differs' if tool == 'phpstan' else ''
+        print(f'[{project}] imported CI {tool} cache{note}', flush=True)
 
 
 def read_publication(store, project):

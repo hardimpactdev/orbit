@@ -214,8 +214,8 @@ function orb277_run_gate(
         'ORBIT_TASK_CHECK_BASE' => $testBase ?? false,
         'CI' => $ci ? 'true' : false,
         'GITHUB_ACTIONS' => false,
-        // The full-suite fallback runs this many Pest processes; the lanes run at most this many projects at once.
-        'ORBIT_CHECK_PROCESSES' => '4',
+        // Five project lanes share this budget, so each lane's full-suite fallback runs four Pest processes.
+        'ORBIT_CHECK_PROCESSES' => '20',
         'ORBIT_CHECK_SCOPE' => false,
     ]);
     $process->setTimeout(60);

@@ -40,8 +40,8 @@ it('gives the main Rector process the project cache and each worker a private on
         $first = (require $repository.'/tools/rector-cache.php')('/project');
         $second = (require $repository.'/tools/rector-cache.php')('/project');
 
-        expect($first)->toStartWith(sys_get_temp_dir().'/orbit-rector-worker-')
-            ->and($second)->toStartWith(sys_get_temp_dir().'/orbit-rector-worker-')
+        expect($first)->toStartWith('/project/vendor/rector/cache/workers/')
+            ->and($second)->toStartWith('/project/vendor/rector/cache/workers/')
             ->and($first)->not->toBe($second);
     } finally {
         $_SERVER['argv'] = $original;
@@ -54,8 +54,13 @@ it('reads the shared process setting for PHPStan and Rector', function (): void 
 
     try {
         putenv('ORBIT_CHECK_PROCESSES');
-        expect(require $repository.'/tools/check-processes.php')->toBeNull()
-            ->and(require $repository.'/tools/phpstan/parallel.php')->toBe([]);
+        $default = min(4, max(1, (int) trim((string) shell_exec('nproc'))));
+        expect(require $repository.'/tools/check-processes.php')->toBe($default)
+            ->and(require $repository.'/tools/phpstan/parallel.php')
+            ->toBe(['parameters' => ['parallel' => ['maximumNumberOfProcesses' => $default]]]);
+
+        putenv('ORBIT_CHECK_PROCESSES=12');
+        expect(require $repository.'/tools/check-processes.php')->toBe(12);
 
         putenv('ORBIT_CHECK_PROCESSES=3');
         expect(require $repository.'/tools/check-processes.php')->toBe(3)

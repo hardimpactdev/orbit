@@ -93,15 +93,6 @@ echo "<?php return; ?>\nlastFullAnalysisTime 13\n", serialize(1791289105), 'meta
     return subprocess.run(['php', '-r', script, json.dumps(meta)], check=True, capture_output=True).stdout
 
 
-# PHPStan derives the extension versions with its own class. The fixture projects stand in for it.
-EXTENSION_VERSIONS = '''<?php
-namespace PHPStan\\Reflection\\BetterReflection\\SourceStubber;
-final class ExtensionVersionProvider
-{
-    public function __construct(private array $paths) {}
-    public function getExtensionVersions(): array { return []; }
-}
-'''
 
 
 @contextmanager
@@ -141,8 +132,6 @@ def repository(test, project_files=True):
         (project / 'tests/Pest.php').write_text('<?php\n')
         (project / 'pint.json').write_text('{"cache-file":"vendor/pint.cache"}')
         (project / 'phpstan.neon').write_text('parameters:\n    level: 6\n')
-        (project / 'vendor').mkdir()
-        (project / 'vendor/autoload.php').write_text(EXTENSION_VERSIONS)
         # The background worker runs the tool as main holds it.
         (test.root / 'bin').mkdir()
         shutil.copyfile(cache.__file__, test.root / 'bin/tia-cache')
@@ -271,9 +260,13 @@ class MainCacheTest(CacheFixture):
         phpstan = phpstan_cache()
         artifact = self.artifact(self.commit, quality={'pint': pint_cache(), 'phpstan': phpstan})
         project = self.root / self.project
+        (project / 'vendor').mkdir()
         (project / 'vendor/pint.cache').write_text('local pint')
-        with patch.object(cache, 'metadata', return_value=self.info):
+        output = io.StringIO()
+        with redirect_stdout(output), patch.object(cache, 'metadata', return_value=self.info):
             self.assertTrue(cache.import_ci(self.root, self.project, artifact, self.commit))
+        self.assertIn(f'[{self.project}] imported CI phpstan cache; PHPStan may still run cold if the PHP build differs',
+                      output.getvalue())
         self.assertEqual((project / 'vendor/pint.cache').read_text(), 'local pint')
         self.assertEqual((project / 'vendor/phpstan/cache/resultCache.php').read_bytes(), phpstan)
         self.assertFalse(self.store.exists())
@@ -300,18 +293,12 @@ class MainCacheTest(CacheFixture):
     def test_ci_quality_caches_import_only_when_the_tool_would_use_them(self):
         project = self.root / self.project
         pint, phpstan = project / 'vendor/pint.cache', project / 'vendor/phpstan/cache/resultCache.php'
-        extensions = json.loads(subprocess.run(['php', '-r', 'echo json_encode(get_loaded_extensions());'],
-                                               check=True, capture_output=True, text=True).stdout)
         cases = [
             ('pint', pint_cache(php='8.5.0-fixture'), 'differs from CI PHP 8.5.0-fixture'),
             ('pint', b'{"version":"3.95.25"}', 'the cache records no PHP version'),
             ('pint', b'not json', 'the cache records no PHP version'),
             ('phpstan', phpstan_cache(phpVersion=80000), 'differs from CI PHP 8.0.0'),
-            ('phpstan', phpstan_cache(phpExtensions=[*extensions, 'fixture_extension']),
-             'the PHP extensions differ from CI (missing here: fixture_extension)'),
-            ('phpstan', phpstan_cache(extensionVersions={'fixture': 2}), 'the PHP extension versions differ from CI'),
-            ('phpstan', b'<?php return [];', 'it is not a framed PHPStan result cache'),
-            ('phpstan', b'<?php return; ?>\nlastFullAnalysisTime 13\ni:1;', 'it records no metadata'),
+            ('phpstan', b'<?php return; ?>\nlastFullAnalysisTime 13\ni:1;', 'the cache records no PHP version'),
         ]
         for tool, data, reason in cases:
             with self.subTest(tool=tool, reason=reason):
@@ -322,14 +309,6 @@ class MainCacheTest(CacheFixture):
                 self.assertIn(reason, output.getvalue())
                 self.assertFalse(pint.exists() or phpstan.exists())
                 (project / '.orbit-tia/graph.json').unlink()
-        (project / 'vendor/autoload.php').unlink()
-        output = io.StringIO()
-        with redirect_stdout(output), patch.object(cache, 'metadata', return_value=self.info):
-            cache.import_ci(self.root, self.project, self.artifact(self.commit, quality={'phpstan': phpstan_cache()}),
-                            self.commit)
-        self.assertIn('phpstan cache not imported, it runs cold: PHPStan cannot report the extension versions here',
-                      output.getvalue())
-        self.assertFalse(phpstan.exists())
 
     def test_ci_baseline_that_does_not_fit_the_checkout_exits_stale_without_writing(self):
         artifact = self.artifact(self.commit)
@@ -1371,6 +1350,7 @@ if [ "$1" = test:affected ]; then
 fi
 if [ "$1" = check ]; then
     printf '%s|%s|%s\\n' "${PWD##*/}" "${ORBIT_CHECK_SCOPE:-}" "${ORBIT_CHECK_BASE:-}" >> "$GATE_TEST_SCOPES"
+    printf '%s|%s\\n' "${PWD##*/}" "${ORBIT_CHECK_PROCESSES:-}" >> "$GATE_TEST_PROCESSES"
 fi
 if [ "$1" = check ] && [ -n "${GATE_TEST_BARRIER:-}" ]; then
     case "${PWD##*/}" in
@@ -1399,7 +1379,8 @@ fi
         self.gate_env = {**os.environ, 'PATH': str(fake_bin) + os.pathsep + os.environ['PATH'],
                          'GATE_TEST_CALLS': str(self.common / 'calls'), 'GATE_TEST_ROOT': str(self.root),
                          'GATE_TEST_SEEDS': str(self.common / 'seeds'), 'GATE_TEST_DOCS': str(self.common / 'docs'),
-                         'GATE_TEST_SCOPES': str(self.common / 'scopes')}
+                         'GATE_TEST_SCOPES': str(self.common / 'scopes'),
+                         'GATE_TEST_PROCESSES': str(self.common / 'processes')}
         for name in ('ORBIT_CHECK_PROCESSES', 'ORBIT_CHECK_SCOPE', 'ORBIT_CHECK_BASE'):
             self.gate_env.pop(name, None)
         return runner
@@ -1467,6 +1448,26 @@ fi
         self.assertEqual(0, result.returncode, result.stderr + result.stdout)
         self.assertEqual(sorted(f'{Path(project).name}|full|' for project in cache.PROJECTS),
                          sorted((self.common / 'scopes').read_text().splitlines()))
+
+    def test_gate_splits_the_process_budget_between_the_lanes(self):
+        runner = self.gate_fixture()
+        for budget, expected in (('10', '2'), ('3', '1'), ('64', '12')):
+            with self.subTest(budget=budget):
+                (self.common / 'processes').unlink(missing_ok=True)
+                result = subprocess.run([str(runner)], env={**self.gate_env, 'ORBIT_CHECK_PROCESSES': budget},
+                                        capture_output=True, text=True)
+                self.assertEqual(0, result.returncode, result.stderr + result.stdout)
+                # Five lanes: the repository checks share the Gateway lane, because docs-openapi boots the Gateway.
+                self.assertEqual(sorted(f'{Path(project).name}|{expected}' for project in cache.PROJECTS),
+                                 sorted((self.common / 'processes').read_text().splitlines()))
+        loader = importlib.machinery.SourceFileLoader('review_check_lanes', str(runner))
+        gate = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
+        loader.exec_module(gate)
+        groups = gate.lanes([('apps/gateway', ()), ('apps/cli', ()), ('repository', ()), ('apps/web', ())])
+        self.assertEqual([['apps/gateway', 'repository', 'apps/web'], ['apps/cli']],
+                         [[project for _order, project, _commands in group] for group in groups])
+        self.assertEqual((2, 3), gate.lane_budget(groups, 6))
+        self.assertEqual((1, 1), gate.lane_budget(groups, 1))
 
     def test_gate_runs_projects_at_the_same_time_up_to_the_process_setting(self):
         runner = self.gate_fixture()
