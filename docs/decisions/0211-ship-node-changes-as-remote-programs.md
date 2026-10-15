@@ -41,7 +41,7 @@ A header comment opens each file. It names the program, the libraries it uses, i
 
 A short pass/fail script, roughly under 50 lines with a few arguments, stays Bash with positional arguments. Its outcome is `succeeded` or `failed`.
 
-A program with branching or a structured result is Python 3, which every Ubuntu Node has. It reads one JSON object on standard input and prints one JSON result on standard output:
+A program with branching or a structured result is Python 3.10 or newer, which every Ubuntu Node has. The bootstrap refuses an older Python with a message that names the minimum. It reads one JSON object on standard input and prints one JSON result on standard output:
 
 ```json
 {"outcome": "path_mismatch", "data": {}}

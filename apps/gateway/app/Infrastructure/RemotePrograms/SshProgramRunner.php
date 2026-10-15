@@ -137,7 +137,7 @@ final readonly class SshProgramRunner implements RemoteProgramRunner
     private function pythonResult(RemoteProgram $program, CommandResult $result): ProgramResult
     {
         if (! $result->succeeded()) {
-            throw new RemoteProgramFailed($program->name, RemoteProgramFailure::NoResult, $result->stderr);
+            throw new RemoteProgramFailed($program->name, RemoteProgramFailure::NoResult, $result->stderr, exitCode: $result->exitCode);
         }
 
         $line = str_ends_with($result->stdout, "\n") ? substr($result->stdout, 0, -1) : null;

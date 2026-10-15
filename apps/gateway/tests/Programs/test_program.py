@@ -52,6 +52,20 @@ class ProgramRuntimeTest(unittest.TestCase):
 
         self.assertNotIn(str(REMOTE), json.loads(completed.stdout)['data']['json'])
 
+    def test_an_older_python_ends_with_a_clear_message_and_no_result(self):
+        # The bootstrap reads sys.version_info, so an older interpreter is simulated by replacing it.
+        bootstrap = (REMOTE / 'bootstrap.py').read_text()
+        completed = subprocess.run(
+            ['python3', '-I', '-c', f'import sys\nsys.version_info = (3, 9, 18, "final", 0)\n{bootstrap}', 'tests.program'],
+            input=(RUNTIME + "run_program(lambda payload: ('done', {}))\n").encode() + b'\0{}',
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 1)
+        self.assertEqual(completed.stdout, b'')
+        self.assertIn(b'tests.program: Orbit remote programs need Python 3.10 or newer', completed.stderr)
+
     def test_sigterm_ends_the_program_without_a_result(self):
         process = subprocess.Popen(
             ['python3', '-I', '-c', (REMOTE / 'bootstrap.py').read_text(), 'tests.program'],

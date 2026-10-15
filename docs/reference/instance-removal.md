@@ -209,7 +209,7 @@ Two things otherwise block that removal. On Ubuntu 26.04, uutils `mkdir` 0.8.0 c
 
 Source finalization checks dirty and unpublished content before moving the tree into quarantine. A normal refusal leaves the source at its original path and does not change Git's worktree entry. It then moves the validated tree into quarantine and writes an authenticated receipt before deletion.
 
-The quarantine is `.orbit-removals` below the Node's apps directory. The move must keep the checkout's recorded device and inode, so it works only within one filesystem. When the checkout is on another filesystem, for example a volume mounted below the apps directory, finalization fails before it stops a process or moves a file. The step's error output then starts with `cross-device:`, and the checkout stays at its path.
+The quarantine is `.orbit-removals` below the Node's apps directory. The move must keep the checkout's recorded device and inode, so it works only within one filesystem. When the checkout is on another filesystem, for example a volume mounted below the apps directory, finalization fails before it stops a process or moves a file. The step's error output, which the `instance:destroy` Activity keeps in `stderr`, then starts with `cross-device:`, and the checkout stays at its path.
 
 Before this check, `mv` copied such a checkout into quarantine and deleted the original, and every retry then failed the identity check. A task VM workspace avoids the move: its removal deletes the VM with its workspace volume. See [Destroy a task VM](/reference/compute-drivers#destroy-a-task-vm).
 

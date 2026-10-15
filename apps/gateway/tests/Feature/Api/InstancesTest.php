@@ -311,6 +311,8 @@ beforeEach(function (): void {
 
         public ?string $fail = null;
 
+        public ?RuntimeConvergenceException $finalizeFailure = null;
+
         /** @var array<int, list<string>> */
         public array $linkedPaths = [];
 
@@ -433,6 +435,11 @@ beforeEach(function (): void {
             ?InstanceSourceRevalidationExpectation $expectation = null,
         ): string {
             $this->record('finalize', $member->instance_id);
+
+            if ($this->finalizeFailure instanceof RuntimeConvergenceException) {
+                throw $this->finalizeFailure;
+            }
+
             $this->states[$member->instance_id] = InstanceSourceRevalidationState::Completed;
 
             if ($this->livePaths !== null) {
@@ -2921,6 +2928,31 @@ it('refuses removal while transfer history is incomplete', function (): void {
 
     expect(Instance::query()->whereKey($instanceId)->firstOrFail()->status)
         ->toBe(InstanceState::Active);
+});
+
+it('keeps the Node output of a failed source finalization in the removal Activity', function (): void {
+    $id = $this->postJson('/api/v1/instances', [
+        'project_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'name' => 'dev',
+    ])->assertCreated()->json('data.id');
+    $this->removalSource->finalizeFailure = new RuntimeConvergenceException(
+        step: 'app-instance-source-finalization',
+        errorCode: 'instance.removal_incomplete',
+        message: 'App development step [app-instance-source-finalization] failed on node [app-dev].',
+        result: new CommandResult(1, "{\"outcome\":\"cross_device\",\"data\":{}}\n", "cross-device: the checkout [/srv/orbit/apps/acme/dev] and [/srv/orbit/apps/.orbit-removals] are on different filesystems; Orbit does not move a checkout across a mount.\n", 0, false),
+    );
+
+    $this->deleteJson("/api/v1/instances/{$id}")
+        ->assertStatus(502)
+        ->assertJsonPath('error.code', 'instance.removal_incomplete')
+        ->assertJsonPath('error.details.removal.failed_step', 'source_finalization');
+
+    $activity = Activity::query()->where('command', 'instance:destroy')->latest('id')->firstOrFail();
+    expect($activity->exit_code)->toBe(1)
+        ->and($activity->properties?->get('stderr'))->toStartWith('cross-device: the checkout [/srv/orbit/apps/acme/dev]')
+        ->and($activity->properties?->get('stdout'))->toContain('"outcome":"cross_device"')
+        ->and($activity->properties?->get('removal'))->toMatchArray(['id' => $id, 'failed_step' => 'source_finalization', 'error_code' => 'instance.removal_incomplete']);
 });
 
 it('retains bounded failed progress and resumes without recreating a deleted Route', function (): void {

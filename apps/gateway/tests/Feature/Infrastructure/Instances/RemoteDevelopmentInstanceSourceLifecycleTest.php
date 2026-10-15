@@ -368,7 +368,13 @@ it('refuses to move a checkout across a mount before any copy, and keeps it in p
     // The guard reports the checkout on another device; every other identity check reads the real one.
     $this->transport->crossDeviceOnce = true;
 
-    expect(fn () => $this->removal->finalize($member))->toThrow(RuntimeConvergenceException::class);
+    // The program's log reaches the step failure, so the command's Activity keeps the `cross-device:` line.
+    expect(fn () => $this->removal->finalize($member))->toThrow(function (RuntimeConvergenceException $exception) use ($checkout): void {
+        expect($exception->errorCode)->toBe('instance.removal_incomplete')
+            ->and($exception->result?->exitCode)->toBe(1)
+            ->and($exception->result?->stdout)->toBe("{\"outcome\":\"cross_device\",\"data\":{}}\n")
+            ->and($exception->result?->stderr)->toStartWith("cross-device: the checkout [{$checkout}]");
+    });
 
     expect($this->transport->outcomes['instances.finalize-source-removal'] ?? null)->toBe('cross_device')
         ->and(is_dir($checkout.'/.git'))->toBeTrue()

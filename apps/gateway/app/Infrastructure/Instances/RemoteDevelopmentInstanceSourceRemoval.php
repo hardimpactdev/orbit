@@ -28,6 +28,7 @@ use App\Domain\RemotePrograms\RemoteProgramFailure;
 use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\Schedules\ScheduleRenderer;
 use App\Domain\SourceControl\GitRepositoryIdentity;
+use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
 use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
 use App\Models\Instance;
@@ -38,6 +39,7 @@ use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
+use stdClass;
 
 final readonly class RemoteDevelopmentInstanceSourceRemoval implements DevelopmentInstanceSourceFinalizer, DevelopmentInstanceSourceRemoval
 {
@@ -1087,15 +1089,16 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
         $mismatch = self::ProgramMismatches[$result->outcome] ?? null;
 
         if ($mismatch instanceof InstanceSourceMismatch) {
-            $this->mismatch($instance, $mismatch, $step);
+            $this->mismatch($instance, $mismatch, $step, self::output($result));
         }
 
         return match ($result->outcome) {
-            'unsafe_content' => $this->unsafeContent($instance, $step),
+            'unsafe_content' => $this->unsafeContent($instance, $step, self::output($result)),
             'source_changed' => throw new RuntimeConvergenceException(
                 step: $step,
                 errorCode: 'instance.removal_conflict',
                 message: "Instance [{$instance->name}] source changed after inspection.",
+                result: self::output($result),
             ),
             default => $result,
         };
@@ -1131,23 +1134,48 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                 throw $exception;
             }
 
-            $this->stepFailed($node, $step, $errorCode, $exception);
+            $this->stepFailed($node, $step, $errorCode, new CommandResult($exception->exitCode ?? 1, '', $exception->log, 0, false), $exception);
         }
 
         if (in_array($result->outcome, self::FailedOutcomes, true)) {
-            $this->stepFailed($node, $step, $errorCode);
+            $this->stepFailed($node, $step, $errorCode, self::output($result));
         }
 
         return $result;
     }
 
-    private function stepFailed(Node $node, string $step, string $errorCode, ?RemoteProgramFailed $previous = null): never
-    {
+    /**
+     * The step's failure with the program's output, so the Activity of the command keeps it, such as a line that starts
+     * with `cross-device:`.
+     */
+    private function stepFailed(
+        Node $node,
+        string $step,
+        string $errorCode,
+        CommandResult $output,
+        ?RemoteProgramFailed $previous = null,
+    ): never {
         throw new RuntimeConvergenceException(
             step: $step,
             errorCode: $errorCode,
             message: "App development step [{$step}] failed on node [{$node->name}].",
             previous: $previous,
+            result: $output,
+        );
+    }
+
+    /**
+     * A refusing outcome as command output: the result line on standard output and the program's log on standard error.
+     * The exit status is 1, because the step failed although the program ended normally.
+     */
+    private static function output(ProgramResult $result): CommandResult
+    {
+        return new CommandResult(
+            exitCode: 1,
+            stdout: json_encode(['outcome' => $result->outcome, 'data' => $result->data === [] ? new stdClass : $result->data], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n",
+            stderr: $result->log,
+            durationMs: 0,
+            truncated: false,
         );
     }
 
@@ -1155,22 +1183,26 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
         Instance $instance,
         InstanceSourceMismatch $mismatch,
         string $step = 'app-instance-source-removal-inspect',
+        ?CommandResult $output = null,
     ): never {
         throw new RuntimeConvergenceException(
             step: $step,
             errorCode: $mismatch->value,
             message: $mismatch->describe($instance->name),
+            result: $output,
         );
     }
 
     private function unsafeContent(
         Instance $instance,
         string $step = 'app-instance-source-removal-inspect',
+        ?CommandResult $output = null,
     ): never {
         throw new RuntimeConvergenceException(
             step: $step,
             errorCode: 'instance.remove_refused',
             message: "Instance [{$instance->name}] has dirty or unpublished source.",
+            result: $output,
         );
     }
 

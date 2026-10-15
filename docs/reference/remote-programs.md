@@ -43,7 +43,7 @@ The loader, `RemoteProgramCatalog`, reads the header and puts the listed librari
 
 ## Python programs
 
-A program with branching or a structured result is Python 3. It reads one JSON object from standard input. It prints one JSON result on one line of standard output:
+A program with branching or a structured result is Python. Programs need Python 3.10 or newer, because they use `os.path.realpath(strict=True)`. Every supported Ubuntu Node has it. It reads one JSON object from standard input. It prints one JSON result on one line of standard output:
 
 ```json
 {"outcome": "path_mismatch", "data": {}}
@@ -53,7 +53,7 @@ A program with branching or a structured result is Python 3. It reads one JSON o
 
 `lib/program.py` holds this runtime. A program defines `main(payload)`, which returns an outcome and its data or raises `Outcome`, and ends with `run_program(main)`. `SIGTERM`, `SIGHUP`, and `SIGINT` end the program at once, so a cancelled call stops on the Node too.
 
-The Gateway starts a Python program as `python3 -I -c <bootstrap> <name>`. The bootstrap, `resources/remote/bootstrap.py`, reads the assembled source, one NUL byte, and the JSON input from standard input. It compiles the source under the program's name, so a traceback names the program. `-I` keeps environment variables, user site packages, and the current directory out of the interpreter.
+The Gateway starts a Python program as `python3 -I -c <bootstrap> <name>`. The bootstrap, `resources/remote/bootstrap.py`, reads the assembled source, one NUL byte, and the JSON input from standard input. It compiles the source under the program's name, so a traceback names the program. `-I` keeps environment variables, user site packages, and the current directory out of the interpreter. On an older Python, the bootstrap exits 1 before it runs the program and prints `<name>: Orbit remote programs need Python 3.10 or newer`, so the call fails with `no_result` and that log.
 
 ## Bash programs
 
@@ -78,7 +78,7 @@ It returns a `ProgramResult` with `outcome`, `data`, and `log`, the program's st
 | `timed_out` | The program ran past its timeout. |
 | `cancelled` | The caller's cancellation check returned true. |
 
-A caller matches the outcome and maps it to its own error codes. It never sees the transport.
+A caller matches the outcome and maps it to its own error codes. It never sees the transport. When an outcome or a failure fails the caller's step, the caller keeps the program's log as the step's command output, so the command's Activity shows it in `stderr`.
 
 `SshProgramRunner` implements the runner over SSH. It connects to the Node's WireGuard address as the Node's user, with the Gateway's key and pinned host keys, and sends the program on standard input. A call can pass a shorter timeout than the program's and a cancellation check.
 

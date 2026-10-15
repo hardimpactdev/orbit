@@ -155,6 +155,14 @@ describe('SshProgramRunner', function (): void {
         'a cancellation' => [new ProcessCancelledException, RemoteProgramFailure::Cancelled],
     ]);
 
+    it('keeps the exit status and log of a run without a result', function (): void {
+        $runner = remote_program_runner(new RemoteProgramTransport(new CommandResult(3, '', "tests.program: Orbit remote programs need Python 3.10 or newer\n", 5, false)));
+
+        expect(fn () => $runner->run(remote_program_node(), remote_program_python(''), []))
+            ->toThrow(fn (RemoteProgramFailed $exception) => expect($exception->exitCode)->toBe(3)
+                ->and($exception->log)->toContain('need Python 3.10 or newer'));
+    });
+
     it('fails before SSH for a Node without a WireGuard address', function (): void {
         $transport = new RemoteProgramTransport;
 
