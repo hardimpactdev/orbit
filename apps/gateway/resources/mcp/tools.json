@@ -4833,7 +4833,8 @@
             "items": {
               "type": "string",
               "maxLength": 255
-            }
+            },
+            "description": "JSON list of shared directories; [] disables sharing and null restores the default"
           }
         },
         "additionalProperties": false,

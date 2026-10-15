@@ -1346,6 +1346,10 @@ def php_sample(sdkreq, stream, tag):
         if has_default:
             if sdkreq['class'] == 'RenameInstanceRequest' and name == 'branch':
                 args.append("branch: 't3code/login-redirect'")
+            if sdkreq['class'] == 'UpdateInstanceRequest' and name == 'sharedPaths':
+                args.append("sharedPaths: ['storage']")
+            if sdkreq['class'] == 'UpdateInstanceRequest' and name == 'sharedPathsProvided':
+                args.append('sharedPathsProvided: true')
             continue
         if 'Target' in t:
             first = t.split('|')[0]

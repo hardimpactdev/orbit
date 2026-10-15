@@ -4,7 +4,7 @@ description: "How the Gateway ships a program to a Node: one file per program, a
 covers:
   - apps/gateway/app/Domain/RemotePrograms/**
   - apps/gateway/app/Infrastructure/RemotePrograms/**
-  - apps/gateway/resources/remote/{bootstrap.py,lib/program.py}
+  - apps/gateway/resources/remote/{bootstrap.py,lib/program.py,lib/production-shared-paths.sh}
   - apps/gateway/ruff.toml
   - apps/gateway/tests/Programs/{harness,test_program}.py
   - apps/gateway/tests/Unit/Architecture/InlineRemoteScriptTest.php
@@ -99,6 +99,8 @@ A finding is fixed, or suppressed on its line with a comment that gives the reas
 ## Inline scripts
 
 `tests/Unit/Architecture/InlineRemoteScriptTest.php` lists every file under `apps/gateway/app` and `apps/gateway/extensions` that still holds a nowdoc or heredoc labelled `BASH`, `PY`, `PYTHON`, `SH`, `SHELL`, or `AWK`. A file outside the list fails the test. A listed file without such a script fails too, so a migration removes its file from the list. The list only shrinks. Caddy, configuration, and text templates are configuration, not programs, and are out of scope.
+
+The existing production deployment program loads `lib/production-shared-paths.sh` to prepare [shared directories](/reference/deployments#shared-paths). This Bash library takes explicit arguments and runs within the existing deployment command while that command awaits migration. Shellcheck and the deployment filesystem tests check it.
 
 ## Programs
 

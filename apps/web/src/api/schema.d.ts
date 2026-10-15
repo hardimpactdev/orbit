@@ -9325,6 +9325,7 @@ export interface operations {
                 "application/json": {
                     /** @description Deployment branch */
                     branch?: string;
+                    /** @description JSON list of shared directories; [] disables sharing and null restores the default */
                     shared_paths?: string[] | null;
                 };
             };

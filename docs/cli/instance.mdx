@@ -48,7 +48,7 @@ Release commands prepare and operate a production Instance.
 | Command | Result |
 | --- | --- |
 | [`instance:clone`](#orbit-instanceclone) | Clone a candidate into a prepared production Instance. |
-| [`instance:update`](#orbit-instanceupdate) | Change the deployment branch of a production Instance. |
+| [`instance:update`](#orbit-instanceupdate) | Change the deployment branch or shared paths of a production Instance. |
 | [`instance:deploy-step:create`](#orbit-instancedeploy-stepcreate) | Record one named deploy step. |
 | [`instance:deploy-step:list`](#orbit-instancedeploy-steplist) | List deploy steps in phase and placement order. |
 | [`instance:deploy-step:update`](#orbit-instancedeploy-stepupdate) | Change one named deploy step. |
@@ -471,12 +471,15 @@ Cloning ends with an active Instance and no release. Update its environment, rec
 
 ## orbit instance:update
 
-Change the deployment branch of a production Instance. The Gateway stores the branch and does not change deploy steps or start a deployment.
+Change the deployment branch or shared paths of a production Instance. The Gateway stores these settings for the next deployment. It does not change deploy steps or start a deployment. Supply at least one option.
 
-The human result shows the accepted deployment branch and the currently selected source branch. JSON returns the existing Instance response; its `selected_branch` describes the source, not the newly stored deployment setting.
+The human result shows the supplied deployment branch, the effective shared paths when changed, and the currently selected source branch. JSON includes effective `shared_paths` when the Gateway returns them; its `selected_branch` describes the source, not the newly stored deployment setting.
 
 ```bash
-orbit instance:update <instance> --branch=BRANCH [--json]
+orbit instance:update <instance> [--branch=BRANCH] [--shared-paths=JSON] [--json]
+orbit instance:update 71 --shared-paths='["storage","var/uploads"]'
+orbit instance:update 71 --shared-paths='[]'
+orbit instance:update 71 --shared-paths=null
 ```
 
 | Argument | Required | Meaning |
@@ -486,8 +489,9 @@ orbit instance:update <instance> --branch=BRANCH [--json]
 | Option | Meaning |
 | --- | --- |
 | `--branch=BRANCH` | Deployment branch. A later Project default change does not replace it. |
+| `--shared-paths=JSON` | Replace the shared directory list. Use `[]` to disable sharing, or `null` to restore the Project-type default. Omit it to leave the setting unchanged. |
 
-The Gateway refuses a development Instance with a bounded conflict before it stores a branch.
+The Gateway refuses a development Instance with a bounded conflict before storing either setting. [Shared paths](/reference/deployments#shared-paths) describes defaults, seeding, public storage, and path rules.
 
 ## orbit instance:deploy-step:create
 

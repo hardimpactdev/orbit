@@ -569,6 +569,57 @@ describe('instance:update', function (): void {
             ->toBeInstanceOf(UpdateInstanceRequest::class)
             ->and($mock->getLastRequest()?->body()->all())->toBe(['branch' => 'release/next']);
     });
+    it('updates shared paths without changing the branch and renders the accepted paths', function (string $raw, ?array $paths, array $effective, bool $json): void {
+        $payload = instance_payload();
+        $payload['shared_paths'] = $effective;
+        $mock = MockClient::global([UpdateInstanceRequest::class => instance_mock_response(payload: $payload)]);
+        $arguments = ['instance' => '5', '--shared-paths' => $raw, '--json' => $json];
+
+        expect(Artisan::call('instance:update', $arguments))->toBe(0);
+        expect($mock->getLastRequest()?->body()->all())->toBe(['shared_paths' => $paths]);
+        if ($json) {
+            expect(json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR)['shared_paths'])->toBe($effective);
+        } else {
+            expect(instance_source_text(Artisan::output()))->toContain('Shared paths '.($effective === [] ? 'None' : implode(', ', $effective)))
+                ->not->toContain('Deployment branch');
+        }
+    })->with([
+        'replace' => ['["storage","var/uploads"]', ['storage', 'var/uploads'], ['storage', 'var/uploads']],
+        'disable' => ['[]', [], []],
+        'default' => ['null', null, ['storage']],
+    ])->with([false, true]);
+
+    it('updates the branch and shared paths in one request', function (): void {
+        $mock = MockClient::global([UpdateInstanceRequest::class => instance_mock_response()]);
+
+        expect(Artisan::call('instance:update', ['instance' => '5', '--branch' => 'release', '--shared-paths' => '[]', '--json' => true]))->toBe(0);
+        expect($mock->getLastRequest()?->body()->all())->toBe(['branch' => 'release', 'shared_paths' => []]);
+    });
+
+    it('refuses malformed shared path input before sending a request', function (?string $raw): void {
+        $mock = MockClient::global([UpdateInstanceRequest::class => instance_mock_response()]);
+
+        expect(Artisan::call('instance:update', ['instance' => '5', '--shared-paths' => $raw, '--json' => true]))->toBe(1);
+        expect(json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR))
+            ->toMatchArray(['error' => ['code' => 'instance.shared_paths_invalid', 'message' => 'Shared paths must be a JSON list of directory paths or null.', 'request_id' => null]]);
+        $mock->assertNothingSent();
+    })->with(['', 'storage', '{}', '{"0":"storage"}', '[false]', '[null]', '["storage",]', 'no value' => [null]]);
+
+    it('refuses an empty branch even when shared paths are supplied', function (): void {
+        $mock = MockClient::global([UpdateInstanceRequest::class => instance_mock_response()]);
+
+        expect(Artisan::call('instance:update', ['instance' => '5', '--branch' => '', '--shared-paths' => '[]', '--json' => true]))->toBe(1);
+        expect(json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('instance.branch_required');
+        $mock->assertNothingSent();
+    });
+
+    it('requires a branch or shared paths before sending a request', function (): void {
+        $mock = MockClient::global([UpdateInstanceRequest::class => instance_mock_response()]);
+
+        expect(Artisan::call('instance:update', ['instance' => '5', '--json' => true]))->toBe(1);
+        expect(json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('instance.update_required');
+        $mock->assertNothingSent();
+    });
 });
 
 describe('instance:show', function (): void {

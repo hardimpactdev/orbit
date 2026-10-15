@@ -8393,7 +8393,8 @@
                     "items": {
                       "type": "string",
                       "maxLength": 255
-                    }
+                    },
+                    "description": "JSON list of shared directories; [] disables sharing and null restores the default"
                   }
                 },
                 "minProperties": 1,
@@ -8475,7 +8476,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Instances\\UpdateInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new UpdateInstanceRequest(instanceId: 4, branch: 'main'))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Instances\\UpdateInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new UpdateInstanceRequest(\n    instanceId: 4,\n    sharedPaths: ['storage'],\n    sharedPathsProvided: true,\n))->dto();\n"
           }
         ]
       }
