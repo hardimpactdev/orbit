@@ -10,6 +10,8 @@ namespace App\Domain\TaskVms;
  */
 enum TaskVmError: string
 {
+    case ImageRecipeSuperseded = 'task_vm.image_recipe_superseded';
+
     // Configuration and hosts.
     case InvalidConfig = 'task_vm.invalid_config';
     case UnknownHost = 'task_vm.unknown_host';

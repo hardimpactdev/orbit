@@ -195,7 +195,7 @@ final class SchedulerDrainProbe
 /**
  * @return array{GatewayRuntimeHandoff, HandoffProcessRunner, FakeDocumentCleanup, FakeNodeCaddyBuilds, RecordingHandoffUnits, SchedulerDrainProbe}
  */
-function runtime_handoff(?string $livePool = null, int $drainSeconds = 5, ?FleetConvergeUnits $fleet = null, bool $agent = false, ?GatewayHorizon $horizon = null): array
+function runtime_handoff(?string $livePool = null, int $drainSeconds = 5, ?FleetConvergeUnits $fleet = null, bool $agent = false, ?GatewayHorizon $horizon = null, ?Closure $recipeImages = null): array
 {
     $processes = new HandoffProcessRunner;
     $probe = new SchedulerDrainProbe;
@@ -207,6 +207,7 @@ function runtime_handoff(?string $livePool = null, int $drainSeconds = 5, ?Fleet
 
     return [
         new GatewayRuntimeHandoff(
+            recipeImages: $recipeImages,
             builds: $builds,
             fpmRenderer: new GatewayFpmConfigRenderer,
             fpm: new NativeGatewayFpmConverger($processes),
@@ -647,4 +648,15 @@ describe(GatewayCleanupHandoff::class, function (): void {
         expect(new GatewayCleanupHandoff($cleanup)->resume('g1', false))
             ->toBe(['outcome' => 'paused', 'paused' => true, 'error_code' => 'project_documents.cleanup_inventory_changed', 'report_id' => 'r1']);
     });
+});
+
+it('queues recipe images during release handoff and leaves dispatch recovery to the scheduler on failure', function (): void {
+    handoff_scheduler(handoff_gateway());
+    $calls = 0;
+    [$handoff] = runtime_handoff(recipeImages: function () use (&$calls): void {
+        $calls++;
+        throw new RuntimeException('queue unavailable');
+    });
+    $handoff->schedule();
+    expect($calls)->toBe(1);
 });

@@ -13,6 +13,7 @@ use App\Models\TaskVmImageBuild;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\Failed\FailedJobProviderInterface;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -30,6 +31,9 @@ final class SyncBuiltImage implements ShouldQueue
 
     public function handle(TaskVmSettings $settings, IncusTaskVmImageSync $sync): void
     {
+        if (DB::table('task_vm_image_recipe')->whereNotNull('identity')->exists()) {
+            return;
+        }
         $failures = app(FailedJobProviderInterface::class);
         if ($this->job !== null && $failures->find($this->job->uuid()) !== null) {
             // The original failure is durable. Redelivery only retries Laravel's chain continuation.

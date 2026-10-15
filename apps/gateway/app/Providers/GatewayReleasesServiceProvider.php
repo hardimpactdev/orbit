@@ -59,6 +59,7 @@ use App\Infrastructure\GatewayReleases\SqliteGatewayReleaseDatabase;
 use App\Infrastructure\GatewayReleases\SystemdGatewayReleaseUnitStarter;
 use App\Infrastructure\GitHub\GitHubActionsReader;
 use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\ServiceProvider;
@@ -136,6 +137,9 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 agent: new GatewayNodeAgentUpdate($app->make(ProcessRunner::class)),
                 horizon: $app->make(GatewayHorizon::class),
                 queueMove: new GatewayQueueMove,
+                recipeImages: static function () use ($app): void {
+                    $app->make(RecipeImageBuilds::class)->reconcile();
+                },
             ),
         );
         $this->app->singleton(

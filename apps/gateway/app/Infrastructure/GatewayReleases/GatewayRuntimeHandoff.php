@@ -66,6 +66,7 @@ final readonly class GatewayRuntimeHandoff
      * @param  (Closure(string, string): string)|null  $resetOpcache  runs the reset script inside the pool with a query and returns its JSON
      * @param  (Closure(): int)|null  $fpmConnections  requests in flight in every pool of the PHP-FPM master, which share one OPcache
      * @param  (Closure(int): void)|null  $sleep  microseconds
+     * @param  (Closure(): void)|null  $recipeImages  reconcile the newly deployed recipe without running builds inline
      */
     public function __construct(
         private NodeCaddyBuilds $builds,
@@ -89,6 +90,7 @@ final readonly class GatewayRuntimeHandoff
         private ?GatewayNodeAgentUpdate $agent = null,
         private ?GatewayHorizon $horizon = null,
         private ?GatewayQueueMove $queueMove = null,
+        private ?Closure $recipeImages = null,
     ) {
         $this->readLivePool = $readLivePool ?? static fn (string $path): string|false => @file_get_contents($path);
         $this->resetOpcache = $resetOpcache ?? static fn (string $script, string $query): string => new FpmScriptRequest()->request($script, $query);
@@ -157,6 +159,12 @@ final readonly class GatewayRuntimeHandoff
         // After the drain, no old scheduler worker takes a database job any more.
         $moved = $this->step('queue_move', 'gateway.release_units_failed', fn (): int => $this->queueMove?->move() ?? 0);
         $agent = $this->gatewayAgent($gateway);
+        try {
+            ($this->recipeImages ?? static function (): void {})();
+        } catch (Throwable $error) {
+            // Image failure never rolls back a healthy Gateway. The minute check recovers dispatch failures.
+            Log::error('The deployed recipe image builds could not be queued.', ['error' => $error->getMessage()]);
+        }
 
         return [
             'scheduler' => $scheduler['outcome'],

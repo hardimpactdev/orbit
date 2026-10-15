@@ -7,6 +7,7 @@ namespace App\Console\Commands;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmSettings;
+use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Infrastructure\TaskVms\TaskVmImageBuildChain;
 use Illuminate\Console\Command;
 use Illuminate\Support\Sleep;
@@ -35,7 +36,7 @@ final class BuildTaskVmImageCommand extends Command
                 return self::FAILURE;
             }
             $build = ! $resuming
-                ? $chain->start($node, (bool) $this->option('from-stock'))
+                ? (app(RecipeImageBuilds::class)->reconcile($node->id)[0] ?? throw new ResourceOperationException('task_vm.image_build_running', 'This host is finishing another recipe. The scheduler will queue the current recipe next.', 409))
                 : ($resume === null ? $chain->resumeLatest($node) : $chain->resume($node, (int) $resume));
         } catch (ResourceOperationException $error) {
             $this->error("[{$error->errorCode}] {$error->getMessage()}");

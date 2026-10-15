@@ -73,6 +73,11 @@ final class FakeIncusImageHost implements SshExecutor
 
     public ?string $fail = null;
 
+    public bool $recipeImages = false;
+
+    /** @var array<string, array<string, string>> */
+    public array $imageProperties = [];
+
     /** The image metadata that `config metadata edit` wrote, by instance. */
     public array $metadata = [];
 
@@ -123,7 +128,14 @@ final class FakeIncusImageHost implements SshExecutor
                 $this->metadata[end($operation)] = $command->input;
             }),
             $operation[0] === 'stop' => $this->answer('stop'),
-            $operation[0] === 'publish' => $this->answer('publish', fn () => $this->images[IMAGE_NEW] = [$operation[4]]),
+            $operation[0] === 'publish' => $this->answer('publish', function () use ($operation): void {
+                $fingerprint = $this->recipeImages ? hash('sha256', $operation[4]) : IMAGE_NEW;
+                $this->images[$fingerprint] = [$operation[4]];
+                foreach (array_slice($operation, 7) as $property) {
+                    [$key, $value] = explode('=', $property, 2);
+                    $this->imageProperties[$fingerprint][$key] = $value;
+                }
+            }),
             $operation[0] === 'delete' => $this->answer('delete '.end($operation), function () use ($operation): void {
                 unset($this->instances[end($operation)]);
             }),
@@ -152,6 +164,8 @@ final class FakeIncusImageHost implements SshExecutor
                 $this->cloudInitPolls % 3 === 2 => new CommandResult(0, '{"status":"running","errors":[]}', '', 1, false),
                 default => new CommandResult(0, '{"status":"done","errors":[]}', '', 1, false),
             },
+            'dpkg' => new CommandResult(0, "amd64\n", '', 1, false),
+            'python3' => $this->answer('recipe '.json_decode($command[3], true)['profile'].':'.$command[2], static fn (): string => '{"ok":true}'),
             'uname' => new CommandResult(0, "x86_64\n", '', 1, false),
             'journalctl' => new CommandResult(0, implode('', array_map(static fn (int $boot): string => "{$boot} 0f1e2d3c4b5a69788796a5b4c3d2e1f0 Sat 2026-10-10 03:01:00 UTC\n", range(1 - $this->boots, 0))), '', 1, false),
             'test' => $this->answer('authorized key'),

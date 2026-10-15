@@ -111,6 +111,10 @@ final readonly class IncusTaskVmImageSync
      */
     public function sync(TaskVmHost $sourceHost, Node $source, TaskVmHost $host, Node $node, string $fingerprint, ?Closure $progress = null, ?string $owner = null): bool
     {
+        if (DB::table('task_vm_image_recipe')->whereNotNull('identity')->exists()) {
+            throw new TaskVmException('task_vm.image_recipe_superseded', 'Recipe images build on each host. Use task-vms:build-recipe instead of legacy sync.');
+        }
+
         if ($source->id === $node->id) {
             throw new TaskVmException('task_vm.image_sync_failed', "Node [{$node->name}] is the source of the base image sync.");
         }

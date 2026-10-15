@@ -55,6 +55,8 @@ The operator is separate from the host's network namespace. A host such as beast
 
 ## Role images
 
+The Gateway also builds a [host-local recipe image set](/reference/compute-drivers#build-the-base-image) once per recipe on each task VM host. Its build row exposes each immutable alias, fingerprint, Incus project, and VM type. These images include the base plus the role's recipe tools. Importing them into a task VM's nested Incus and adapting composition, including the operator image type, is ADR 0207 step 4. Until that lands, the harness below continues to build and use its own role images.
+
 A role image is an identity-free Incus image with the packages and tools of one Node kind installed. There are four: `orbit-e2e-gateway`, `orbit-e2e-app-dev`, and `orbit-e2e-app-prod` are VM images, and `orbit-e2e-operator` is a container image. They live in the harness's Incus project. `bin/e2e-topology-images build` builds them the way Orbit builds the [task VM base image](/reference/compute-drivers#task-vms): it runs the role's programs in a builder, records them, and removes the identity.
 
 | Step | What happens |

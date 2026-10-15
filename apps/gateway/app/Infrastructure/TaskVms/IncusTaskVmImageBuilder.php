@@ -76,7 +76,8 @@ final readonly class IncusTaskVmImageBuilder
     }
 
     /** Stops the builder and publishes its disk under `$alias`. Returns the new fingerprint. */
-    public function publish(TaskVmHost $host, Node $node, string $name, string $alias): string
+    /** @param array<string, string> $properties */
+    public function publish(TaskVmHost $host, Node $node, string $name, string $alias, array $properties = []): string
     {
         $stopped = $this->incus->run($host, $node, ['stop', '--', $name]);
         if (! $stopped->succeeded()) {
@@ -88,7 +89,7 @@ final readonly class IncusTaskVmImageBuilder
                 $this->image->checked($name, 'stop', $stopped);
             }
         }
-        $this->image->checked($name, 'publish', $this->incus->run($host, $node, ['publish', '--compression', 'none', '--alias', $alias, '--', $name]));
+        $this->image->checked($name, 'publish', $this->incus->run($host, $node, ['publish', '--compression', 'none', '--alias', $alias, '--', $name, ...array_map(static fn (string $key, string $value): string => $key.'='.$value, array_keys($properties), array_values($properties))]));
 
         return $this->incus->aliasTarget($host, $node, $alias)
             ?? throw IncusHost::invalid("the base image build VM [{$name}]", "the published image has no alias [{$alias}]");

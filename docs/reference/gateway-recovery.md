@@ -260,7 +260,7 @@ The drain waits at most `ORBIT_GATEWAY_RELEASE_SCHEDULER_DRAIN_SECONDS` (default
 
 The new scheduler pauses document cleanup when it starts. The handoff waits for the new cleanup generation, runs `project-documents:cleanup:reconcile`, and resumes with that report. Without configured document storage it reports `skipped`. When the report has differences or resume is refused, cleanup stays paused. The release record then has `cleanup_paused: true` and the handoff's `cleanup_error_code`, and the release continues.
 
-The handoff also installs the [fleet rollout units](#units). A failure there only logs a warning.
+The handoff also installs the [fleet rollout units](#units). A failure there only logs a warning. It queues [host-local recipe image builds](/reference/compute-drivers#build-the-base-image) when the deployed recipe changes. This only records and dispatches work; it never builds on the release process. A dispatch failure logs an error and the minute recipe check retries it without rolling back a healthy Gateway.
 
 When any step fails, the handoff still starts the scheduler unit, so the scheduler never stays down. The handoff prints one JSON object with `caddy`, `fpm`, `opcache`, `scheduler`, `scheduler_unit`, `scheduler_drain`, `processes_restarted`, `horizon`, `queue_moved`, `cleanup`, `cleanup_error_code`, `agent_view`, `cleanup_paused`, and `gateway_agent`. Run it again by hand after fixing a handoff failure. It takes no release lock, so run it only when no release step is running.
 

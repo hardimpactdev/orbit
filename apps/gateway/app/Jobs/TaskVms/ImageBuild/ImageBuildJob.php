@@ -48,7 +48,7 @@ abstract class ImageBuildJob implements ShouldQueue
                     // Redelivery of an older completed step is not acknowledgement of a new resume.
                     $query->whereNull('submission_pending_at')->orWhere(fn (Builder $entry): Builder => $entry
                         ->where('current_step', $this->step())->where('current_program', $this->program()));
-                    if ($this->step() === TaskVmImageBuildStep::Launch) {
+                    if ($this->step() === TaskVmImageBuildStep::Launch || ($this instanceof BuildRecipeImageStep && $this->profile === 'base' && $this->phase === 'reset')) {
                         $query->orWhereNull('current_step');
                     }
                 })->update(['submission_pending_at' => null]);

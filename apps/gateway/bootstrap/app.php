@@ -88,9 +88,8 @@ return Application::configure(basePath: dirname(__DIR__))
         // Document cleanup stays in the scheduler: its permit belongs to the scheduler's start.
         $schedule->command('project-documents:probes:reconcile')->everyMinute()->withoutOverlapping(10);
         $schedule->command('project-documents:cleanup:work')->everyFiveMinutes()->withoutOverlapping(60);
-        // The nightly task VM base image refresh, on the builds queue. When it ends, it queues one workspace template
-        // refresh for every host.
-        GatewaySchedule::job($schedule, new RefreshTaskVmBaseImages)->dailyAt('03:00')
+        // Reconcile the deployed recipe each minute; only an identity change queues image builds.
+        GatewaySchedule::job($schedule, new RefreshTaskVmBaseImages)->everyMinute()
             ->when(static fn (): bool => TaskVmSettings::scheduled()->enabled);
         // The nightly UpCloud base image refresh, on the builds queue too. It runs while the UpCloud token file is set,
         // also with the overflow off.
