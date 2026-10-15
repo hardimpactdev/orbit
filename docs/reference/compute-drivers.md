@@ -8,7 +8,7 @@ covers:
   - .github/workflows/php-build-mirror.yml
   - apps/gateway/{app/Models/PackageCache*.php,app/Console/Commands/PackageCacheUsageCommand.php,database/migrations/*create_package_cache_tables.php,config/package_cache.php,config/task_vms.php}
   - apps/gateway/resources/task-vms/**
-  - apps/gateway/database/migrations/*{create_task_vm_image_builds_table,add_recipe_to_task_vm_image_builds,add_recipe_identity_to_task_vms,fence_task_vm_image_build_attempts,create_task_vms_table,add_model_proxy_origin_to_task_vms,add_warm_pool_to_task_vms,retire_task_vm_warm_pool,add_upcloud_to_task_vms,add_size_to_task_vms,add_topology_to_task_vms,create_jobs_table,create_failed_jobs_table,create_task_sandboxes_table,add_fleet_enrollment_to_task_sandboxes,add_pi_ready_at_to_task_sandboxes,close_checks_of_destroyed_task_sandboxes,drop_task_sandboxes}.php
+  - apps/gateway/database/migrations/*{create_task_vm_image_builds_table,create_upcloud_task_vm_image_builds_table,add_recipe_to_task_vm_image_builds,add_recipe_identity_to_task_vms,fence_task_vm_image_build_attempts,create_task_vms_table,add_model_proxy_origin_to_task_vms,add_warm_pool_to_task_vms,retire_task_vm_warm_pool,add_upcloud_to_task_vms,add_size_to_task_vms,add_topology_to_task_vms,create_jobs_table,create_failed_jobs_table,create_task_sandboxes_table,add_fleet_enrollment_to_task_sandboxes,add_pi_ready_at_to_task_sandboxes,close_checks_of_destroyed_task_sandboxes,drop_task_sandboxes}.php
 ---
 
 # Compute drivers
@@ -603,7 +603,7 @@ The task VM jobs run on the [Gateway queue](/reference/gateway-queue), which Lar
 | `SweepTaskVmHosts` | Never. It runs again 10 minutes later |
 | `RefreshTaskVmBaseImages` | Never. The next minute checks again |
 | Base image step jobs | Poll until the step's deadline. Failure stops the chain. Failed builders stay available for resume |
-| `RefreshUpCloudTaskVmBaseImage` | Never. Recipe reconcile requests it again while the current template is missing |
+| `RefreshUpCloudTaskVmBaseImage` | Never. An attempted identity needs an explicit `task-vms:build-recipe --retry`; a new recipe identity can build automatically |
 
 The jobs log each step with its seconds as `Task VM step done.`. The wait for the worker is a step of its own, apart from the work: `queue` before `create` in `ProvisionTaskVm`, and `enroll-queue` before `boot` in `EnrollTaskVm`. The guest boots during `enroll-queue`. A `boot` after a released try counts from the launch.
 
@@ -654,7 +654,9 @@ The dropped egress ranges are `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `
 
 ### Build the base image
 
-Run `php artisan task-vms:build-recipe` on the Gateway to queue the current recipe on every active host in `settings.task_vms`. It returns build IDs without waiting for remote work. Repeating it for an unchanged recipe reuses the same rows, including failed rows; resume a failure with `task-vms:build-image NODE --resume=ID`, or restart failed builds with `task-vms:build-recipe --retry` after cleanup. A recipe revert reuses a retained verified base. If pruning removed it, the chain rebuilds that identity from stock. `task-vms:image-builds` shows the recipe identity, host, steps, fingerprints, and immutable aliases. `task-vms:build-image NODE` builds the current recipe on that host; every recipe starts from stock.
+Run `php artisan task-vms:build-recipe` on the Gateway to queue the current recipe on every active host in `settings.task_vms`. It returns build IDs without waiting for remote work. Repeating it for an unchanged recipe reuses the same rows, including failed rows; resume a failure with `task-vms:build-image NODE --resume=ID`, or restart failed builds with `task-vms:build-recipe --retry` after cleanup. `--retry` applies to both Incus builds and UpCloud template attempts.
+
+A recipe revert reuses a retained verified base. If pruning removed it, the chain rebuilds that identity from stock. `task-vms:image-builds` (also `task-vms:list-image-builds`) shows Incus recipe identities, hosts, steps, fingerprints, and immutable aliases, plus recent UpCloud attempt IDs, identities, states, times, and template UUIDs. `task-vms:build-recipe` prints the current UpCloud attempt and whether a refresh was requested or a verified template already exists. `task-vms:build-image NODE` builds the current recipe on that host; every recipe starts from stock.
 
 Release handoff queues builds immediately when the deployed recipe identity changes. The scheduler checks each minute to recover missed submissions and pick up new hosts. There is no fixed nightly Incus rebuild. The [nightly snapshot-date PR](#nightly-recipe-maintenance) supplies the daily recipe change. Unchanged releases do not build images. A host added later builds the current recipe on its next check. The same reconcile path refreshes configured UpCloud templates when their recipe identity differs.
 
@@ -842,7 +844,9 @@ When beast and shark have no free slot, a group of an opted-in Project may get i
 
 An UpCloud task VM follows the same path as an Incus one. It is a `task_vms` row with the provider `upcloud` and no host Node. The same jobs create, enroll, park, resume, and destroy it.
 
-It gets the same task VM user-data, enrolls as the `app-dev` Node `tvm-<id>` of the dev Cluster with an address from the reserved WireGuard range, and starts from a verified [UpCloud template](#build-the-upcloud-template). UpCloud uses the same `recipe.json` base-profile installer as Incus. Its template's `orbit.recipe` storage label records the full recipe identity, and each new claim pins a verified template for that identity. So the hub filter, the Caddy guard, the rollout exclusion, and the placement invariant apply unchanged. Each claim [clones and sets up its workspace](#clone-and-set-up-every-workspace), as on Incus, without a shared host package cache on UpCloud.
+It gets the same task VM user-data, enrolls as the `app-dev` Node `tvm-<id>` of the dev Cluster with an address from the reserved WireGuard range, and starts from a verified [UpCloud template](#build-the-upcloud-template). UpCloud uses the same `recipe.json` base-profile installer as Incus.
+
+Its template's `orbit.recipe` storage label records the full recipe identity, and each new claim records the verified template UUID for that identity. Template lookup runs before the admission transaction; admission rechecks the deployed identity and capacity. Provisioning clones the recorded UUID, including after a recipe change. So the hub filter, the Caddy guard, the rollout exclusion, and the placement invariant apply unchanged. Each claim [clones and sets up its workspace](#clone-and-set-up-every-workspace), as on Incus, without a shared host package cache on UpCloud.
 
 ### Place a VM at UpCloud
 
@@ -875,7 +879,7 @@ A park stops the server cleanly, and a hard stop follows after 150 seconds. UpCl
 | `clean` | Runs `base-image-clean.sh` |
 | `templatize`, `delete-builder` | Stops the builder, turns its disk into the template `orbit-task-base-<time>-unverified`, and deletes the builder |
 | `smoke` | Boots a server from the template with the task VM user-data, and checks cloud-init, ufw, and the key, uid, and gid of `orbit` |
-| `promote`, `prune` | Records the `orbit.recipe` storage label, renames the template to `orbit-task-base-<time>`, and deletes all but the two newest verified templates |
+| `promote`, `prune` | Records the `orbit.recipe` storage label, renames the template to `orbit-task-base-<time>`, and deletes older verified templates except those pinned by live VMs awaiting server creation |
 
 A failed build deletes its servers and its unverified template, and keeps the previous template. Without a verified template for the claim's recipe, a create fails with `task_vm.base_image_missing`.
 
@@ -883,7 +887,11 @@ One build runs at a time. A build marks its time stamp as running for two hours,
 
 ### Refresh the UpCloud template on recipe changes
 
-The per-minute recipe reconcile and release handoff queue `RefreshUpCloudTaskVmBaseImage` on the `builds` queue when UpCloud is configured and no verified template matches the deployed recipe. There is no separate nightly schedule. The job checks the identity again before building and keeps the two newest verified templates. It also runs with overflow off without enabling claims. A failed build keeps the previous template, but a stale template cannot serve a new claim. Reconcile reports UpCloud token, API, or refresh-dispatch errors and continues Incus submission recovery and image scheduling.
+The per-minute recipe reconcile and release handoff queue `RefreshUpCloudTaskVmBaseImage` on the `builds` queue when UpCloud is configured and no verified template matches the deployed recipe. There is no separate nightly schedule. The job checks the identity again before building. A database ledger records each attempt before remote work, including failed and interrupted builds. Reconcile does not dispatch that identity again unless `task-vms:build-recipe --retry` explicitly requests it. A new identity can build automatically. The manual `task-vms:build-upcloud-image` command also starts an explicit attempt.
+
+Reconcile raises a recipe-maintenance alert when the current identity has a failed attempt, or a running attempt at least two hours old, and no verified template. The alert names the identity and attempt and includes `php artisan task-vms:build-recipe --retry`. Repeated alerts for an attempt are limited to one per hour. The build command also reports this fenced state. Reconcile reports only the latest attempt and stops alerting once a verified template exists. `--retry` also retries failed Incus builds.
+
+The build keeps the two newest verified templates and any template pinned by a live VM awaiting server creation. Pruning ignores the source template reference once the VM has a server UUID. It also runs with overflow off without enabling claims. A failed build keeps the previous template, but a stale template cannot serve a new claim. Reconcile reports UpCloud token, API, or refresh-dispatch errors and continues Incus submission recovery and image scheduling.
 
 The build takes about 20 minutes and occupies one `builds` worker. When it runs past its 1700 seconds, the worker stops it, and the sweep deletes its servers two hours after its start.
 

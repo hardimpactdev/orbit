@@ -15,7 +15,7 @@ final readonly class RecipeMaintenanceAlerts
     public function __construct(private ReleaseAlertNotifier $notifier, private FleetServingRelease $serving) {}
 
     /** @return array<string, mixed> */
-    public function halted(string $summary, ?int $buildId = null): array
+    public function halted(string $summary, ?int $buildId = null, string $target = 'machine-recipe'): array
     {
         Log::error($summary, ['recipe_build_id' => $buildId]);
         $commit = $this->serving->read()['commit'];
@@ -25,7 +25,7 @@ final readonly class RecipeMaintenanceAlerts
 
         return $this->notifier->alert(new ReleaseAlert(
             ReleaseAlertKind::RolloutHalted,
-            new ReleaseAlertSubject('machine-recipe', FleetRolloutAlerts::repository(), $commit, $buildId === null ? null : 'recipe-build-'.$buildId),
+            new ReleaseAlertSubject($target, FleetRolloutAlerts::repository(), $commit, $buildId === null ? null : 'recipe-build-'.$buildId),
             $summary,
         ))->toArray();
     }

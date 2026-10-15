@@ -15,7 +15,7 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\TaskVm;
 
 /**
- * Runs task VMs as UpCloud servers, the overflow of beast and shark. Each server clones the newest verified
+ * Runs task VMs as UpCloud servers, the overflow of beast and shark. Each server clones its recorded verified
  * `orbit-task-base-<time>` template ({@see UpCloudTaskVmImageBuilder}), so it boots the same base image contract
  * as an Incus VM. It has no host Node: the Gateway reaches it over SSH at its public IPv4 address with the host key
  * that the Gateway generated for it ({@see UpCloudGuest}), and enrollment needs no jump Node.
@@ -42,11 +42,11 @@ final readonly class UpCloudTaskVmProvider implements TaskVmProvider
             if ($servers >= $upcloud->maxVms) {
                 throw new TaskVmException('task_vm.upcloud_budget_full', "UpCloud already runs {$servers} task VM servers, the limit of {$upcloud->maxVms}.", 409);
             }
-            $template = $this->servers->currentTemplate($vm->recipe_identity ?? app(RecipeImageBuilds::class)->currentRecipe()->identity)
+            $template = $vm->image_fingerprint ?? $this->servers->currentTemplate($vm->recipe_identity ?? app(RecipeImageBuilds::class)->currentRecipe()->identity)
                 ?? throw new TaskVmException('task_vm.base_image_missing', 'UpCloud has no verified task VM template [orbit-task-base-<time>]. Build it with task-vms:build-upcloud-image.');
             $hostKey = $this->guest->generateHostKey($vm->name);
             // The key is stored before the request, so a server whose answer is lost still has its pinned key.
-            $vm->update(['ssh_host_key' => $hostKey['public'], 'provider_id' => null]);
+            $vm->update(['image_fingerprint' => $template, 'ssh_host_key' => $hostKey['public'], 'provider_id' => null]);
             $uuid = $this->servers->create($vm->name, TaskVmUpCloud::Label, (string) $vm->id, $template, TaskVmCloudInit::withHostKey($userData, $hostKey), $this->keys->publicKey());
             $vm->update(['provider_id' => $uuid]);
             $server = $this->servers->await($vm->name, TaskVmUpCloud::Label, (string) $vm->id, $uuid, 'started', self::StartSeconds);
