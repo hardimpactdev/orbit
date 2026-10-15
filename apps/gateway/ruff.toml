@@ -1,0 +1,11 @@
+# Rules for the Python programs that the Gateway runs on Nodes, under resources/. bin/remote-programs-check runs
+# ruff 0.17.0 with this file. See docs/reference/remote-programs.md.
+target-version = "py312"
+line-length = 120
+
+[lint]
+# Syntax errors, undefined and unused names, and likely bugs. Each program keeps its own style.
+select = ["E4", "E7", "E9", "F", "B", "PLE"]
+# B904 asks a `raise` inside `except` to chain the caught exception. The programs raise SystemExit there to end with
+# a status, which prints no traceback, so chaining changes nothing.
+ignore = ["B904"]

@@ -31,6 +31,7 @@ use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
 use App\Infrastructure\Logging\GatewayExceptionStatus;
+use App\Infrastructure\Processes\CommandResult;
 use App\Jobs\MaintainMachineRecipe;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
 use App\Jobs\TaskVms\RefreshUpCloudTaskVmBaseImage;
@@ -139,6 +140,16 @@ return Application::configure(basePath: dirname(__DIR__))
 
             $exceptions->render(function (InstanceRemovalException $exception, Request $request) use ($requestIdFor): JsonResponse {
                 $request->attributes->set('orbit.error_code', $exception->errorCode);
+
+                // The Node output of the step that failed, such as a source finalization that refused with `cross-device:`.
+                for ($cause = $exception->getPrevious(); $cause instanceof Throwable; $cause = $cause->getPrevious()) {
+                    if ($cause instanceof RuntimeConvergenceException && $cause->result instanceof CommandResult) {
+                        $request->attributes->set('orbit.command_result', $cause->result);
+
+                        break;
+                    }
+                }
+
                 $removal = InstanceRemovalData::fromModel($exception->removal)->toArray();
                 $request->attributes->set('orbit.instance_removal', $removal);
 

@@ -520,6 +520,7 @@ describe('Composer configuration', function (): void {
                 'EVENT' => 'pull_request', 'DOCS_MERGE_REF_RESULT' => 'success', 'PROJECT_RESULT' => 'success',
                 'PRIVILEGED_RESULT' => 'success', 'API_REFERENCE_RESULT' => 'success', 'WEB_RESULT' => 'success',
                 'PI_SERVER_RESULT' => 'success', 'AGENT_RESULT' => 'success', 'DESKTOP_RESULT' => 'success',
+                'REMOTE_PROGRAMS_RESULT' => 'success',
             ]);
 
             return $process->run() === 0;
@@ -620,6 +621,16 @@ describe('Composer configuration', function (): void {
             ->toContain('repository-root `docs/`')
             ->not->toContain('TIA does not apply to partial runs');
     });
+});
+
+it('requires the lint and direct tests of the Gateway remote programs in CI', function (): void {
+    $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
+    $job = $workflow['jobs']['remote-programs'];
+    $commands = array_column($job['steps'], 'run');
+
+    expect(implode("\n", $commands))->toContain('shellcheck', 'ruff==0.17.0', 'bin/remote-programs-check')
+        ->and($workflow['jobs']['required']['needs'])->toContain('remote-programs')
+        ->and($workflow['jobs']['required']['steps'][0]['run'])->toContain('test "$REMOTE_PROGRAMS_RESULT" = success');
 });
 
 it('keeps privileged tests required in CI on a hosted runner', function (): void {
