@@ -334,6 +334,60 @@ afterEach(function (): void {
     File::deleteDirectory($this->directory);
 });
 
+it('BaseMerge distinguishes merged-only source failures from missing executables without changing the checkout', function (string $failure): void {
+    $checkout = check_runner_checkout('true');
+    $git = static fn (array $arguments): string => trim((new Process(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', ...$arguments], $checkout))->mustRun()->getOutput());
+    File::ensureDirectoryExists($checkout.'/docs');
+    file_put_contents($checkout.'/format', 'v1');
+    file_put_contents($checkout.'/docs/original.txt', 'v1');
+    $git(['add', '.']);
+    $git(['commit', '-qm', 'initial generated docs']);
+    $git(['branch', 'main-fixture']);
+    file_put_contents($checkout.'/format', 'v2');
+    file_put_contents($checkout.'/docs/original.txt', 'v2');
+    $git(['commit', '-qam', 'new generator format']);
+    $feature = $git(['rev-parse', 'HEAD']);
+    $git(['checkout', '-q', 'main-fixture']);
+    file_put_contents($checkout.'/docs/new.txt', 'v1');
+    $git(['add', '.']);
+    $git(['commit', '-qm', 'main adds generated docs']);
+    $main = $git(['rev-parse', 'HEAD']);
+    $git(['checkout', '-q', '--detach', $feature]);
+    $git(['merge', '--no-ff', '-qm', 'mechanical main merge', $main]);
+    $merged = $git(['rev-parse', 'HEAD']);
+    $command = match ($failure) {
+        'merged docs' => 'for file in docs/*.txt; do grep -q "$(cat format)" "$file" || { echo "$file is stale"; exit 1; }; done',
+        'merged class' => 'php -r \'if (is_file("docs/new.txt") && file_get_contents("format") === "v2") { new AddedFeature; }\'',
+        'merged resource' => 'php -r \'if (is_file("docs/new.txt") && file_get_contents("format") === "v2") { require "missing-resource.php"; }\'',
+        'pre-existing' => 'echo baseline check failed; exit 1',
+        'missing shellcheck' => 'PATH=/nonexistent shellcheck',
+        'wrapped missing shellcheck' => 'PATH=/nonexistent shellcheck; exit 1',
+        'required shellcheck' => 'echo "shellcheck: required tool not found"; exit 1',
+    };
+    $instance = check_runner_instance($checkout);
+    $runner = check_runner(new LocalShellSshExecutor);
+    $reading = check_runner_wait($runner, $instance, $runner->start($instance, $command, deliverables: ['start' => null, 'commands' => [], 'base_merge' => true]));
+
+    expect($reading->failedStep)->toBe(str_starts_with($failure, 'merged ') ? 'gate' : 'environment')
+        ->and($reading->exitCode)->not->toBe(0)
+        ->and($reading->headAfter)->toBe($merged)
+        ->and($reading->treeAfter)->toBe($reading->treeBefore)
+        ->and($git(['status', '--porcelain']))->toBe('')
+        ->and($git(['worktree', 'list', '--porcelain']))->not->toContain('orbit-base-');
+    $diagnostic = match ($failure) {
+        'merged docs' => 'docs/new.txt is stale',
+        'merged class' => 'Class "AddedFeature" not found',
+        'merged resource' => 'No such file or directory',
+        'pre-existing' => 'baseline check failed',
+        'required shellcheck' => 'shellcheck: required tool not found',
+        default => 'shellcheck: command not found',
+    };
+    expect($reading->output)->toContain($diagnostic);
+    if (str_starts_with($failure, 'merged ')) {
+        expect($reading->output)->toContain($feature, $main);
+    }
+})->with(['merged docs', 'merged class', 'merged resource', 'pre-existing', 'missing shellcheck', 'wrapped missing shellcheck', 'required shellcheck']);
+
 it('runs composer check detached and reports running, then the exit code and output', function (string $check, int $exitCode, string $output): void {
     $checkout = check_runner_checkout($check);
     $instance = check_runner_instance($checkout);

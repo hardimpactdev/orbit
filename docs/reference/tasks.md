@@ -1258,7 +1258,7 @@ The flow needs `source_access: github_app`. It is off by default. Each task stil
 
 A final review is a subtask with `type` `final_review` and the title `Final review`. Orbit appends one when a review-and-merge task has no open subtask and its latest approved commit has no final review. Before the final review starts, Orbit fetches and merges `origin/{default branch}` into the group branch with Git. A conflict-free merge runs only the Project gate on that merge commit, without setup, deliverable commands, or an agent turn. No merge means no extra gate.
 
-Only a real Git conflict creates the `Merge origin/{base}` agent fixup; its brief lists the conflicting files. A failed Project gate blocks progress separately, with its check ID and output, rather than claiming that Git conflicted. The final review starts only after this preparation succeeds.
+Only a real Git conflict creates the `Merge origin/{base}` agent fixup; its brief lists the conflicting files. A failed Project gate records `failed_step` as `gate` or `environment`, with its check ID and output, rather than claiming that Git conflicted (`merge_conflict`). Orbit checks a failed merged tree against both merge parents. If both parents pass, the merge caused the failure and Orbit appends an agent fixup, subject to the final-review fixup cap. A failure on either parent, or a missing tool (including exit 127), asks for assistance instead. The final review starts only after this preparation succeeds.
 
 It has no implementer and starts in `reviewing` with a fresh reviewer.
 
@@ -1278,7 +1278,9 @@ Orbit does not merge each new main tip while the reviewer works. After approval,
 
 An overlap starts a delta-only final review from the approved tree, with no implementer. Publication retries keep the gated head instead of chasing another main tip. A failed push or pull request open keeps the final review in `reviewing` and retries on the [publication backoff](#pull-request-and-settle-metrics).
 
-When a main merge's Project gate fails, repair the prerequisite and post a normal `resolution` on the blocked final-review subtask. Orbit retains the approval and merged head, records a new gate attempt, and resumes on the next tick without another merge or agent turn. This also retries a gate that failed before the reviewer started. The earlier failed check remains evidence. The retry requires the same head and tree: source changes cannot inherit the retained approval. A failed retry stays blocked until another repair and resolution.
+When a main merge's Project gate fails for an environment reason, repair the prerequisite and post a normal `resolution` on the blocked final-review subtask, including a completed final review after the PR opened. Orbit retains the approval and merged head, records a new gate attempt, and resumes on the next tick without another merge or agent turn. This also retries a gate that failed before the reviewer started. The earlier failed check remains evidence.
+
+The retry requires the same head and tree: source changes cannot inherit the retained approval. A failed retry stays blocked until another repair and resolution. After the PR opens, the retry may merge newer main before checking again; before publication, it keeps the same merged tree.
 
 The fixup addresses each blocking finding with the smallest change, or explains in its handoff why the finding does not apply within the task brief. It lists follow-ups in the handoff instead of implementing them.
 
@@ -1292,7 +1294,7 @@ In a review-and-merge task, an approved subtask is committed and not pushed. Con
 
 Orbit never asks GitHub to update the branch of such a task. If main moves after the pull request opens and GitHub refuses a behind branch, Orbit merges main locally and runs only the Project gate on the merge commit. A passing conflict-free merge that changes none of the group's paths inherits the prior head's review and is pushed without an agent or another review. Its recorded source is `base_merge`. An overlapping merge receives only a delta re-review against the earlier approved tree. CI must still pass on that exact head.
 
-Only a Git conflict creates an agent merge fixup and another final review. A failed gate remains blocking and is surfaced as a Project check failure, not a merge conflict. Mechanical merges and delta-only final reviews do not consume the fixup cap. Topology checks still count only the group's own changes against the current merge base, including merge resolutions.
+Only a Git conflict creates an agent merge fixup and another final review. A failed gate remains blocking and is surfaced as a Project check failure, not a merge conflict. Mechanical merges and delta-only final reviews do not consume the agent fixup cap. Delta-only final reviews have their own cap of three per window, after which Orbit asks for assistance. Both windows reset after completed operator-added implementation work. Topology checks still count only the group's own changes against the current merge base, including merge resolutions.
 
 Cancel and the cancelled-task sweep push the latest approved commit only when a final review approved it. Approved work that no final review saw is removed with the workspace.
 

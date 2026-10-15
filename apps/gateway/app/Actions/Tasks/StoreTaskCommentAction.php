@@ -78,6 +78,13 @@ final readonly class StoreTaskCommentAction
                 TaskQuestions::recordOperator($task, $comment);
                 $this->log($task, $comment, 'assistance requested');
             }
+            if ($type === TaskCommentType::Resolution && trim($comment->body) !== '' && ! $endedPullRequest
+                && ($task->assistance_requested || ($task->status === TaskStatus::Completed && $group->assistance_requested))
+                && $this->publication->queueBaseMergeRetry($group, $task, $comment)) {
+                $this->log($task, $comment, 'resolution queued main merge gate retry');
+
+                return $comment;
+            }
             if ($type === TaskCommentType::Resolution && trim($comment->body) !== '' && $task->assistance_requested && ! $endedPullRequest) {
                 if ($task->assistance_kind !== AssistanceKind::Direction && TaskTopologyFailedException::caused($task->assistance_reason)) {
                     // A failed topology preparation has no agent to tell: the admission forgot the run, so clearing
@@ -98,11 +105,6 @@ final readonly class StoreTaskCommentAction
                         $group->update(TaskAssistance::cleared());
                     }
                     $this->log($task, $comment, 'resolution queued deliverable gate retry');
-
-                    return $comment;
-                }
-                if ($this->publication->queueBaseMergeRetry($group, $task, $comment)) {
-                    $this->log($task, $comment, 'resolution queued main merge gate retry');
 
                     return $comment;
                 }
