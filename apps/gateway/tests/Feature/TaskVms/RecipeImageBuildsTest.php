@@ -328,12 +328,26 @@ it('records a bounded redacted output tail and a real builder log for failed rec
     }
 })->with(['packages', 'javascript', 'rust', 'agent', 'verify']);
 
+/** Simulate the four role images published before the base-only chain. */
+function recipeImageLegacyRoles(TaskVmImageBuild $build, FakeIncusImageHost $incus): void
+{
+    $images = $build->images;
+    foreach (['gateway', 'app-dev', 'app-prod', 'operator'] as $profile) {
+        $alias = RecipeImageBuilds::alias(TaskVmHost::BaseImage, $build->recipe_identity, $profile);
+        $fingerprint = hash('sha256', $alias);
+        $incus->images[$fingerprint] = [$alias];
+        $images[$profile] = ['alias' => $alias, 'fingerprint' => $fingerprint, 'project' => 'orbit-tasks', 'type' => 'virtual-machine'];
+    }
+    $build->update(['images' => $images]);
+}
+
 it('prunes every profile of older identities while keeping the previous recipe and images in use', function (): void {
     $host = recipeImageHost();
     $incus = recipeImageTransport($host);
     recipeImageCurrent(recipeImageDocument());
     $old = app(RecipeImageBuilds::class)->reconcile()[0];
     runRecipeImageBuild($old);
+    recipeImageLegacyRoles($old, $incus);
     $used = $old->images['app-dev']['fingerprint'];
     $shared = $old->images['operator']['fingerprint'];
     $incus->instances['tvm-running-task'] = $used;
@@ -341,6 +355,7 @@ it('prunes every profile of older identities while keeping the previous recipe a
     recipeImageCurrent(recipeImageDocument('20261015T000000Z'));
     $previous = app(RecipeImageBuilds::class)->reconcile()[0];
     runRecipeImageBuild($previous);
+    recipeImageLegacyRoles($previous, $incus);
     recipeImageCurrent(recipeImageDocument('20261016T000000Z'));
     $current = app(RecipeImageBuilds::class)->reconcile()[0];
 
@@ -348,10 +363,13 @@ it('prunes every profile of older identities while keeping the previous recipe a
 
     expect($current->state)->toBe(TaskVmImageBuildState::Succeeded);
     foreach ([$current, $previous] as $kept) {
-        foreach ($kept->images as $image) {
-            expect($incus->images)->toHaveKey($image['fingerprint']);
-        }
+        expect($incus->images)->toHaveKey($kept->images['base']['fingerprint']);
     }
+    foreach (['gateway', 'app-dev', 'app-prod', 'operator'] as $profile) {
+        expect($incus->images)->not->toHaveKey($previous->images[$profile]['fingerprint']);
+    }
+    expect($incus->images[$used])->toBe([$old->images['app-dev']['alias']]);
+    expect($incus->images[$shared])->toBe(['operator-kept']);
     expect($incus->images)->toHaveKeys([$used, $shared, IMAGE_STOCK]);
     foreach (['base', 'gateway', 'app-prod'] as $profile) {
         expect($incus->images)->not->toHaveKey($old->images[$profile]['fingerprint']);
@@ -437,4 +455,39 @@ it('prunes superseded failed recipes but keeps images without host-local ownersh
     }
 
     expect($incus->images)->not->toHaveKey($old->image_fingerprint)->toHaveKey(IMAGE_USED);
+});
+
+it('retires current recipe role aliases without deleting its base or another running build', function (): void {
+    $host = recipeImageHost();
+    $incus = recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    $current = app(RecipeImageBuilds::class)->reconcile()[0];
+    runRecipeImageBuild($current);
+    recipeImageLegacyRoles($current, $incus);
+    $roles = $current->images;
+    $sharedAlias = $roles['gateway']['alias'];
+    unset($incus->images[$roles['gateway']['fingerprint']]);
+    $incus->images[$current->image_fingerprint][] = $sharedAlias;
+    $roles['gateway']['fingerprint'] = $current->image_fingerprint;
+    $current->update(['images' => $roles]);
+    $running = TaskVmImageBuild::query()->create(['host_node_id' => $host->id,
+        'recipe_identity' => 'sha256:'.str_repeat('e', 64), 'state' => 'running']);
+    recipeImageLegacyRoles($running, $incus);
+
+    app(RecipeImagePruning::class)->prune($current);
+
+    expect($incus->images[$current->image_fingerprint])->toBe([$roles['base']['alias'], TaskVmHost::BaseImage]);
+    foreach (['app-dev', 'app-prod', 'operator'] as $profile) {
+        expect($incus->images)->not->toHaveKey($roles[$profile]['fingerprint']);
+    }
+    foreach ($running->images as $image) {
+        expect($incus->images[$image['fingerprint']])->toBe([$image['alias']]);
+    }
+    $running->delete();
+    recipeImageCurrent(recipeImageDocument('20261015T000000Z'));
+    runRecipeImageBuild(app(RecipeImageBuilds::class)->reconcile()[0]);
+    recipeImageCurrent(recipeImageDocument());
+    $reactivated = app(RecipeImageBuilds::class)->reconcile()[0];
+    expect($reactivated->current_step)->toBe(TaskVmImageBuildStep::Promote)
+        ->and($reactivated->image_fingerprint)->toBe($current->image_fingerprint);
 });

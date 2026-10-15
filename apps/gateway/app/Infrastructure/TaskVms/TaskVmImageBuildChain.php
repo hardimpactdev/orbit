@@ -45,7 +45,8 @@ final readonly class TaskVmImageBuildChain
             $pruned = false;
             if (! $restart) {
                 $images = $this->incus->images($this->settings->host($node->id), $node);
-                $pruned = array_any($build->images, static fn (array $image): bool => ! in_array($image['alias'], $images[$image['fingerprint']] ?? [], true));
+                $base = $build->images['base'] ?? null;
+                $pruned = $base === null || ! in_array($base['alias'], $images[$base['fingerprint']] ?? [], true);
                 $restart = $pruned;
             }
             $steps = $restart ? [] : array_values(array_filter($build->steps, static fn (array $entry): bool => ! in_array($entry['step'], [TaskVmImageBuildStep::Promote->value, TaskVmImageBuildStep::Prune->value], true)));

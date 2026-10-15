@@ -20,7 +20,7 @@ Task VMs are off until you [configure them](#configure-task-vms). Until then no 
 
 The repository's machine software recipe is [`apps/gateway/resources/machine-software/recipe.json`](https://github.com/nckrtl/orbit/blob/main/apps/gateway/resources/machine-software/recipe.json). It declares one Ubuntu snapshot, exact tool versions, and the tool sets for `gateway`, `app-dev`, `app-prod`, `operator`, and the task VM base image. Project dependencies, workspace setup, credentials, Node identity, and service configuration are not recipe inputs.
 
-The loader and validator define the recipe contract. [Recipe image builds](#build-the-base-image) use that document for a host-local base image. [Node convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) applies its role tools to production Nodes. Claim gating and topology imports remain later ADR 0207 steps.
+The loader and validator define the recipe contract. [Recipe image builds](#build-the-base-image) use that document for a host-local base image. [Node convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) applies its role tools to production Nodes. Claims require the [current recipe](#claims-require-the-current-recipe), and topologies [import its base image](#prepare-the-topology).
 
 ### Recipe schema
 
@@ -539,11 +539,9 @@ The restrictions forbid privileged and nested containers, disks outside a storag
 
 The dropped egress ranges are `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, `100.64.0.0/10`, `224.0.0.0/4`, and `240.0.0.0/4`. Port isolation blocks traffic between VMs on the same bridge. Both are needed. The ufw rule lets bridge traffic pass the host's forward policy, and replies use the existing rule for established connections.
 
-After the script, the command [lets the hosts copy the image](#let-hosts-copy-the-image) to each other. It prints one line for each host that it set up and one for each probe.
-
 ### Build the base image
 
-Run `php artisan task-vms:build-recipe` on the Gateway to queue the current recipe on every active host in `settings.task_vms`. It returns build IDs without waiting for remote work. Repeating it for an unchanged recipe reuses the same rows, including failed rows; resume a failure with `task-vms:build-image NODE --resume=ID`, or restart failed builds with `task-vms:build-recipe --retry` after cleanup. A recipe revert reactivates its verified images without rebuilding them. `task-vms:image-builds` shows the recipe identity, host, steps, fingerprints, and immutable aliases. `task-vms:build-image NODE` builds the current recipe on that host; `--from-stock` is redundant because every recipe starts from stock.
+Run `php artisan task-vms:build-recipe` on the Gateway to queue the current recipe on every active host in `settings.task_vms`. It returns build IDs without waiting for remote work. Repeating it for an unchanged recipe reuses the same rows, including failed rows; resume a failure with `task-vms:build-image NODE --resume=ID`, or restart failed builds with `task-vms:build-recipe --retry` after cleanup. A recipe revert reuses a retained verified base. If pruning removed it, the chain rebuilds that identity from stock. `task-vms:image-builds` shows the recipe identity, host, steps, fingerprints, and immutable aliases. `task-vms:build-image NODE` builds the current recipe on that host; every recipe starts from stock.
 
 Release handoff queues builds immediately when the deployed recipe identity changes. The scheduler checks each minute to recover missed submissions and pick up new hosts. There is no fixed nightly Incus rebuild. [ADR 0207 step 9](/decisions/0207-one-image-recipe-shared-package-cache-no-workspace-templates#implementation-plan) will add the nightly snapshot-date PR. Unchanged releases do not build images. A host added later builds the current recipe on its next check. UpCloud's separate template flow is unchanged.
 
@@ -561,7 +559,7 @@ Failed recipe phases record the last 40 lines of command output in the build ste
 
 A running older build stops at its next step before that host admits the newest desired recipe. Failed resources retain ADR 0206's cleanup and resume rules. A restart gives the builder a name for that attempt, so delayed cleanup of an older attempt cannot delete the new builder or smoke VM.
 
-
+After promotion, the final chain step prunes old recipe images on that host. It keeps the current and previous promoted base images, images used by existing VMs, and images of other running builds. It also removes the retired gateway, app-dev, app-prod, and operator aliases for host-local build records, including current and previous recipes. Images and aliases used by existing VMs stay until unused. Otherwise aliased or retained base images stay; only their retired role aliases are removed. Pruning failures resume without rebuilding. The base-only chain has 14 jobs, including promotion and pruning.
 
 ### Claims require the current recipe
 
@@ -574,7 +572,7 @@ A host still building, missing, or failing the current recipe cannot serve a new
 A second host needs Incus, ZFS, and ufw, and its managed user needs passwordless `sudo`. Then:
 
 1. Set the host Node's [`settings.task_vms`](/reference/node-settings#configure-a-task-vm-host) with `node:settings` or the Node settings API. Use a unique `cidr` and a new `zfs_dataset`, such as `data/orbit-tasks`.
-2. Run `task-vms:prepare-host {node}`. It creates the pool from the new dataset and sets up the host. Then it lets all hosts [copy the image](#let-hosts-copy-the-image) to each other, and probes each pair.
+2. Run `task-vms:prepare-host {node}`. It creates the pool from the new dataset and sets up the host.
 3. Run `task-vms:build-image {node}` to build the current recipe locally.
 
 To remove a host, lower its capacity to stop new placements, wait until all its task VMs are destroyed, then clear `settings.task_vms`. Its Incus project, images, bridge, ACL, pool, and any unused legacy workspace volumes remain for manual removal.

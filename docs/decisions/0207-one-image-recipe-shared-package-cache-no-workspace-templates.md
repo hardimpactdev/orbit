@@ -58,7 +58,7 @@ Step 3 implements the [host-local build and publication contract](/reference/com
 
 Each task VM host builds and smoke-tests only the base image once per recipe change. Topology groups import that single image into nested Incus and launch gateway, app-dev, app-prod, and operator VMs from the same fingerprint. This removes about 7 to 9 minutes of repeated image building per group; transfer and convergence still take time.
 
-Nick approved this simplification for PR #1240 after an audit found all four role tool sets were subsets of base. The chain drops from 53 to 13 jobs per host, and each topology VM receives one archive instead of four. Add separate role images only when a role needs software absent from base. Gateway and VPN programs run during topology convergence so they follow the checkout's product enrollment path. Before deployment, drain or cancel pre-recipe groups and release their topologies; the harness builder and operator-container fallback are removed.
+Nick approved this simplification for PR #1240 after an audit found all four role tool sets were subsets of base. The chain drops from 54 to 14 jobs per host, including the final pruning step, and each topology VM receives one archive instead of four. Add separate role images only when a role needs software absent from base. Gateway and VPN programs run during topology convergence so they follow the checkout's product enrollment path. Before deployment, drain or cancel pre-recipe groups and release their topologies; the harness builder and operator-container fallback are removed.
 
 ### 7. One recipe, one rule
 
