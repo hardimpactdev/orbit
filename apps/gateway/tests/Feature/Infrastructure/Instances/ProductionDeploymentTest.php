@@ -72,6 +72,68 @@ it('prepares a fresh branch-pinned release without changing current', function (
         ->not->toContain('mv -Tf -- "$temporary" "$current"');
 })->with(['root public' => ['public', '../../.env'], 'nested Laravel' => ['server/web/public', '../../../../.env']]);
 
+describe('a release pinned to a commit', function (): void {
+    it('checks out the commit only after proving the branch contains it, with the same arguments', function (): void {
+        $commit = str_repeat('c', 40);
+        [$deployment, $ssh, $instance] = orb219_remote_deployment([
+            new CommandResult(0, "20260911-a1\t{$commit}\n", '', 1, false),
+        ]);
+
+        $release = $deployment->prepare($instance, 'release', $commit);
+        $script = $ssh->commands[0]->input;
+
+        expect($release->commit)->toBe($commit)
+            ->and($ssh->commands[0]->arguments)->toBe([
+                'bash', '-seu', '--', 'https://example.test/deployment.git', 'orbit-app-1', '/home/orbit-app-1',
+                (string) $instance->id, 'release', '20260911-a1', 'public',
+            ])
+            ->and($script)->toContain(
+                "pinned_commit={$commit}\n",
+                'merge-base --is-ancestor "$pinned_commit" "$source_ref" >/dev/null 2>&1 || exit 5',
+                'checkout --detach "$pinned_commit"',
+            )
+            ->not->toContain('checkout --detach "$source_ref"', '__CHECKOUT__')
+            ->and(strpos($script, 'merge-base --is-ancestor'))->toBeLessThan(strpos($script, 'checkout --detach "$pinned_commit"'));
+    });
+
+    it('keeps the program of an unpinned release unchanged', function (): void {
+        [$deployment, $ssh, $instance] = orb219_remote_deployment([
+            new CommandResult(0, "20260911-a1\t".str_repeat('a', 40)."\n", '', 1, false),
+        ]);
+
+        $deployment->prepare($instance, 'release');
+
+        expect($ssh->commands[0]->input)
+            ->toContain("show-ref --verify --quiet \"\$source_ref\"\nsudo -u \"\$user\" -H git -C \"\$release\" checkout --detach \"\$source_ref\" >/dev/null 2>&1\n")
+            ->not->toContain('pinned_commit', '__CHECKOUT__');
+    });
+
+    it('refuses a commit the branch does not contain', function (): void {
+        [$deployment, , $instance] = orb219_remote_deployment([
+            new CommandResult(5, '', '', 1, false),
+        ]);
+
+        expect(fn () => $deployment->prepare($instance, 'release', str_repeat('d', 40)))
+            ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('deployment.commit_not_on_branch'));
+    });
+
+    it('rejects a receipt that names another commit', function (): void {
+        [$deployment, , $instance] = orb219_remote_deployment([
+            new CommandResult(0, "20260911-a1\t".str_repeat('a', 40)."\n", '', 1, false),
+        ]);
+
+        expect(fn () => $deployment->prepare($instance, 'release', str_repeat('c', 40)))
+            ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('deployment.receipt_invalid'));
+    });
+
+    it('rejects a malformed commit before it runs anything', function (string $commit): void {
+        [$deployment, $ssh, $instance] = orb219_remote_deployment([]);
+
+        expect(fn () => $deployment->prepare($instance, 'release', $commit))->toThrow(InvalidArgumentException::class)
+            ->and($ssh->commands)->toBe([]);
+    })->with(['branch name' => 'main', 'short SHA' => 'abc1234', 'injection' => str_repeat('a', 39).';']);
+});
+
 it('carries a GitHub App token only in protected input for a covered repository', function (): void {
     [$deployment, $ssh, $instance] = orb219_remote_deployment([
         new CommandResult(0, "20260911-a1\t".str_repeat('a', 40)."\n", '', 1, false),

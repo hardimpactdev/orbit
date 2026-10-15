@@ -17,6 +17,7 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\ProductionRepositoryBinding;
 use App\Domain\Routes\RouteWebRoot;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\SourceControl\GitCommitSha;
 use App\Infrastructure\AppProd\ProductionSshExecutor;
 use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Processes\CommandResult;
@@ -29,6 +30,9 @@ use Closure;
 
 final readonly class RemoteProductionDeployment implements ProductionDeployment
 {
+    /** Exit status of release preparation when the branch does not contain the requested commit. */
+    private const int CommitNotOnBranch = 5;
+
     /** @var Closure(): string */
     private Closure $releaseName;
 
@@ -42,14 +46,17 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
         $this->releaseName = $releaseName ?? static fn (): string => gmdate('YmdHis').'-'.bin2hex(random_bytes(8));
     }
 
-    public function prepare(Instance $instance, string $branch): DeploymentRelease
+    public function prepare(Instance $instance, string $branch, ?string $commit = null): DeploymentRelease
     {
+        if ($commit !== null) {
+            GitCommitSha::validate($commit);
+        }
         [$repository, $user, $home, $root] = $this->identity($instance);
         $name = ($this->releaseName)();
         $this->assertReleaseName($name);
         $served = $this->servedWebRoots($instance);
 
-        $script = GitReadScript::for($this->access->for($repository, $instance->loadMissing('project')->project->source_access), ProductionApplicationPaths::render(self::withServedWebRoots(<<<'BASH'
+        $script = GitReadScript::for($this->access->for($repository, $instance->loadMissing('project')->project->source_access), ProductionApplicationPaths::render(self::withServedWebRoots(str_replace('__CHECKOUT__', self::checkout($commit), <<<'BASH'
                     repository=$1
                     user=$2
                     home=$3
@@ -92,7 +99,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                     source_ref="refs/remotes/origin/$branch"
                     git_read sudo $git_read_sudo -u "$user" -H git -C "$release" fetch --prune -- origin >/dev/null 2>&1
                     sudo -u "$user" -H git -C "$release" show-ref --verify --quiet "$source_ref"
-                    sudo -u "$user" -H git -C "$release" checkout --detach "$source_ref" >/dev/null 2>&1
+                    __CHECKOUT__
                     test "$(sudo -u "$user" -H realpath -e -- "$release__APPLICATION_SUFFIX__")" = "$release__APPLICATION_SUFFIX__"
                     sudo -u "$user" -H ln -s __ENVIRONMENT_TARGET__ "$release_environment"
                     test "$(sudo -u "$user" -H realpath -e -- "$release_environment")" = "$environment"
@@ -108,38 +115,65 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                     test -z "$unexpected_group"
                     commit=$(sudo -u "$user" -H git -C "$release" rev-parse --verify HEAD)
                     printf '%s\t%s\n' "$name" "$commit"
-                    BASH, $served, ['__SERVED_LINKS__' => 'link_served_environments "$release"']), $root));
-        $result = $this->executeBound(
-            $instance,
-            new RemoteCommand(
-                arguments: [
-                    'bash',
-                    '-seu',
-                    '--',
-                    $repository,
-                    $user,
-                    $home,
-                    (string) $instance->id,
-                    $branch,
-                    $name,
-                    $root,
-                    ...$served,
-                ],
-                input: $script->input,
-                protectedInput: $script->protectedInput,
-                maxOutputBytes: 4096,
-            ),
-            'deployment-prepare',
-            'deployment.prepare_failed',
+                    BASH), $served, ['__SERVED_LINKS__' => 'link_served_environments "$release"']), $root));
+        $command = new RemoteCommand(
+            arguments: [
+                'bash',
+                '-seu',
+                '--',
+                $repository,
+                $user,
+                $home,
+                (string) $instance->id,
+                $branch,
+                $name,
+                $root,
+                ...$served,
+            ],
+            input: $script->input,
+            protectedInput: $script->protectedInput,
+            maxOutputBytes: 4096,
         );
 
-        [$reportedName, $commit] = $this->parseReleaseResult($result);
+        try {
+            $result = $this->execute($instance, $command, 'deployment-prepare', 'deployment.prepare_failed');
+        } catch (RuntimeConvergenceException $exception) {
+            if ($commit !== null && $exception->result?->exitCode === self::CommitNotOnBranch) {
+                throw new ResourceOperationException(
+                    'deployment.commit_not_on_branch',
+                    "The branch [{$branch}] does not contain the commit [{$commit}].",
+                    409,
+                    $exception,
+                );
+            }
 
-        if ($reportedName !== $name) {
+            throw $this->bindingFailure($instance, $exception) ?? $exception;
+        }
+
+        [$reportedName, $reportedCommit] = $this->parseReleaseResult($result);
+
+        if ($reportedName !== $name || ($commit !== null && $reportedCommit !== $commit)) {
             throw $this->invalidReceipt();
         }
 
-        return new DeploymentRelease($name, "{$home}/releases/{$name}", $commit);
+        return new DeploymentRelease($name, "{$home}/releases/{$name}", $reportedCommit);
+    }
+
+    /**
+     * The checkout of a new release: the branch's newest commit, or a given commit that the branch contains. The
+     * commit is validated hexadecimal before it enters the program.
+     */
+    private static function checkout(?string $commit): string
+    {
+        if ($commit === null) {
+            return 'sudo -u "$user" -H git -C "$release" checkout --detach "$source_ref" >/dev/null 2>&1';
+        }
+
+        return implode("\n", [
+            'pinned_commit='.GitCommitSha::validate($commit),
+            'sudo -u "$user" -H git -C "$release" merge-base --is-ancestor "$pinned_commit" "$source_ref" >/dev/null 2>&1 || exit '.self::CommitNotOnBranch,
+            'sudo -u "$user" -H git -C "$release" checkout --detach "$pinned_commit" >/dev/null 2>&1',
+        ]);
     }
 
     public function executeStep(

@@ -11,6 +11,7 @@ use App\Domain\Operations\OperationRun;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStepPlan;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\SourceControl\GitCommitSha;
 use App\Models\Instance;
 use App\Models\InstanceDeployment;
 use App\Models\Operation;
@@ -19,7 +20,8 @@ use InvalidArgumentException;
 /**
  * The `instance.deploy` operation (docs/reference/deployments.md#the-deploy-operation). It records one deployment
  * history row on its first attempt, runs the deployment's steps as the operation's steps, and saves the row's events
- * after each step, so a resumed attempt continues the same row.
+ * after each step, so a resumed attempt continues the same row. An input `commit` pins the deployment to that commit;
+ * a failed deployment then records it too.
  */
 final readonly class InstanceDeployOperation implements OperationKind
 {
@@ -37,11 +39,12 @@ final readonly class InstanceDeployOperation implements OperationKind
         }
 
         $deployment = $this->deployment($operation, $run, $instance);
+        $commit = self::commit($operation);
 
         try {
             $plan = $this->deploy->plan($instance);
         } catch (ResourceOperationException $exception) {
-            $result = DeploymentResult::failed(null, null, DeploymentFailureBoundary::Operation, $exception->errorCode);
+            $result = DeploymentResult::failed(null, null, DeploymentFailureBoundary::Operation, $exception->errorCode, commit: $commit);
             $this->recorder->finish($deployment, $result, $deployment->events ?? []);
 
             return $this->outcome($deployment, $result);
@@ -66,7 +69,7 @@ final readonly class InstanceDeployOperation implements OperationKind
             $deployment->update(['events' => $collector->events()]);
         });
 
-        $result = $this->deploy->execute($instance, $steps, $request);
+        $result = $this->deploy->execute($instance, $steps, $request, $commit);
         $this->recorder->finish($deployment, $result, $collector->events());
 
         return $this->outcome($deployment, $result);
@@ -91,6 +94,7 @@ final readonly class InstanceDeployOperation implements OperationKind
             $selected,
             $this->boundary($failedStep),
             $failure->status === OperationStatus::Cancelled ? 'deployment.cancelled' : ($failure->errorCode ?? 'deployment.interrupted'),
+            commit: self::commit($operation),
         );
 
         if ($deployment->status === 'running') {
@@ -100,6 +104,14 @@ final readonly class InstanceDeployOperation implements OperationKind
         return $failure->status === OperationStatus::Cancelled
             ? OperationOutcome::cancelled($this->result($deployment, $result))
             : OperationOutcome::failed($failure->errorCode ?? 'operation.failed', $this->result($deployment, $result));
+    }
+
+    /** The commit the operation deploys, or null for the branch's newest commit. */
+    public static function commit(Operation $operation): ?string
+    {
+        $commit = $operation->input['commit'] ?? null;
+
+        return is_string($commit) && GitCommitSha::isValid($commit) ? $commit : null;
     }
 
     /** The deployment row of this operation: created on the first attempt and kept in the operation's state. */
