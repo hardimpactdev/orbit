@@ -190,7 +190,7 @@ describe('Gateway convergence', function () {
         $resources = dirname(__DIR__, 3).'/resources';
         $scripts = glob($resources.'/guest/*.sh');
 
-        expect($scripts)->toHaveCount(5);
+        expect($scripts)->toHaveCount(6);
         foreach ($scripts as $script) {
             expect(new Process(['bash', '-n', $script], timeout: 5)->run())->toBe(0, $script);
         }
@@ -448,4 +448,18 @@ describe('topology verifier', function () {
         'other hash expected' => ['other hash expected', 1],
         'not mounted' => ['not mounted', 1],
     ]);
+});
+
+it('sets topology guest public DNS before cloud-init and restarts the resolver only when configuration changes', function (): void {
+    $work = temporaryPath('orbit-topology-dns-', 6);
+    mkdir($work.'/bin', 0755, true);
+    file_put_contents($work.'/bin/systemctl', '#!/bin/sh'."\n".'printf "%s\n" "$*" >> "$WORK/calls"');
+    chmod($work.'/bin/systemctl', 0755);
+    $source = str_replace('/etc/systemd/resolved.conf.d', $work.'/resolved', guestScriptSource('public-dns.sh'));
+    foreach ([1, 2] as $attempt) {
+        $process = new Process(['bash', '-ceu', $source], env: ['PATH' => $work.'/bin:'.getenv('PATH'), 'WORK' => $work]);
+        expect($process->run())->toBe(0, $process->getErrorOutput());
+    }
+    expect(file_get_contents($work.'/resolved/orbit-public-upstream.conf'))->toBe("[Resolve]\nDNS=1.1.1.1 8.8.8.8\n");
+    expect(file($work.'/calls', FILE_IGNORE_NEW_LINES))->toBe(['is-active --quiet systemd-resolved', 'restart systemd-resolved']);
 });

@@ -158,7 +158,7 @@ describe('TopologyAcquirer', function () {
         $dns = array_values(array_filter($incus->execs, static fn (array $exec): bool => $exec['argv'][0] === 'bash' && str_contains($exec['argv'][2] ?? '', 'orbit-public-upstream.conf')));
         expect($dns)->toHaveCount(3);
         expect(array_search($dns[0], $incus->execs, true))->toBeLessThan(array_find_key($incus->execs, static fn (array $exec): bool => str_contains($exec['argv'][2] ?? '', 'boot_id')));
-        expect($dns[0]['argv'])->toBe(['bash', '-ceu', file_get_contents(dirname(__DIR__, 5).'/apps/gateway/resources/task-vms/public-dns.sh')]);
+        expect($dns[0]['argv'])->toBe(['bash', '-ceu', file_get_contents(dirname(__DIR__, 3).'/resources/guest/public-dns.sh')]);
         $programs = array_values(array_filter($incus->execs, static fn (array $exec): bool => in_array('true', $exec['argv'], true)));
         expect(array_map(static fn (array $exec): array => array_slice($exec['argv'], 10), $programs))->toBe([['true', 'caddy-package'], ['true', 'vpn-prerequisites']]);
 

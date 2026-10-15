@@ -153,7 +153,7 @@ describe('recipe image triggers', function (): void {
         Bus::assertDispatchedTimes(BuildRecipeImageStep::class, 1);
     });
 
-    it('builds and smoke-tests only one base on each configured host without syncing images', function (): void {
+    it('builds and smoke-tests only one base on each host while preserving guest DNS', function (): void {
         $first = recipeImageHost();
         $incus = recipeImageTransport($first);
         $second = Node::query()->create(['name' => 'recipe-shark', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64', 'public_ssh_host' => '192.0.2.8', 'wireguard_ip' => '10.44.0.8', 'user' => 'orbit']);
@@ -171,6 +171,9 @@ describe('recipe image triggers', function (): void {
                 expect($image)->toMatchArray(['project' => 'orbit-tasks', 'type' => 'virtual-machine']);
                 expect(strlen($image['alias']))->toBeLessThanOrEqual(64);
             }
+        }
+        foreach ($incus->guest as $call) {
+            expect(json_encode([$call->argv, $call->input], JSON_THROW_ON_ERROR))->not->toContain('resolved.conf', 'resolvectl');
         }
         $launches = array_values(array_filter($incus->commands, static fn ($command): bool => ($command->arguments[5] ?? '') === 'launch'));
         expect($launches)->toHaveCount(4);

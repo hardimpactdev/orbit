@@ -59,7 +59,7 @@ Every topology Node launches the same base fingerprint built on its task VM host
 
 Before deployment, drain or cancel all pre-recipe task groups and release their topologies. They cannot use the new harness. There is no fallback to local role builds or an operator container. No automatic cancellation or host cleanup runs during deployment.
 
-The base already provides pinned software, `orbit` with uid/gid 1000 and passwordless sudo, masked apt timers, and identity cleanup before publication. Recipe image preparation sets persistent public DNS upstreams. As soon as the guest agent responds, the harness applies the same program before waiting for cloud-init to finish. This also supports bases published before DNS setup.
+The base already provides pinned software, `orbit` with uid/gid 1000 and passwordless sudo, masked apt timers, and identity cleanup before publication. The shared base preserves DNS configuration for normal task VMs. Only nested topology guests receive persistent public DNS upstreams: as soon as their guest agents respond, the harness sets them before waiting for cloud-init. This avoids the two-minute network-online timeout on topology bridges without usable DNS, while normal task VMs keep their link DNS for internal names.
 
 Convergence clears known hosts, verifies the account, and keeps apt timers masked. It converts the exact root-owned Bun launcher from the recipe into the symlink required by app-role enrollment. Other executables remain subject to the normal conflict checks.
 

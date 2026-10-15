@@ -44,9 +44,9 @@ final readonly class RoleImages
     {
         $guests = array_values($target->instances());
         $probe = 'case "$(cloud-init status 2>/dev/null)" in *done*|*disabled*) ;; *) exit 1 ;; esac; cat /proc/sys/kernel/random/boot_id';
-        $publicDns = file_get_contents(dirname(__DIR__, 4).'/apps/gateway/resources/task-vms/public-dns.sh');
+        $publicDns = file_get_contents(dirname(__DIR__, 2).'/resources/guest/public-dns.sh');
         if ($publicDns === false || $publicDns === '') {
-            throw new RuntimeException('The image public DNS program is missing.');
+            throw new RuntimeException('The topology guest public DNS program is missing.');
         }
         $configured = false;
         $previous = null;

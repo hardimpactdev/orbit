@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Public upstreams are needed before cloud-init waits for network-online on DNS-less topology bridges.
+# Only nested topology guests need these upstreams before cloud-init waits for network-online.
 set -euo pipefail
 install -d -m 0755 /etc/systemd/resolved.conf.d
 candidate=$(mktemp)
