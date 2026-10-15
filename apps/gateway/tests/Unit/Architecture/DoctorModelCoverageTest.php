@@ -63,6 +63,7 @@ use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
+use App\Models\UpCloudTaskVmImageBuild;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnPairing;
 use Orbit\Extensions\Conn\Models\ConnProfile;
@@ -108,6 +109,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
     $excluded = [
         TaskVm::class,
         TaskVmImageBuild::class, // Build history, not a resource that doctor converges.
+        UpCloudTaskVmImageBuild::class, // Attempt ledger, not a converged resource; RecipeImageBuilds alerts on fenced recipes.
         PackageCacheSnapshot::class, // Desired dependency inventory, not a converged fleet resource.
         PackageCacheEntry::class, // Verified cache inventory, not a converged fleet resource.
         GatewayRelease::class,
