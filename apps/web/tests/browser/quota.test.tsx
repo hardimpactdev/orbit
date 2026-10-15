@@ -35,6 +35,8 @@ it("shows Quota as unconfigured while the proxycli extension is enabled without 
             tasks: true,
             proxycli: true,
             documents: true,
+            vault: false,
+            conn: false,
         });
 
     await expect.element(page.getByTestId("nav-quota")).toBeVisible();
@@ -65,6 +67,8 @@ it("keeps Quota visible after the collector is torn down until the extension is 
             tasks: true,
             proxycli: false,
             documents: true,
+            vault: false,
+            conn: false,
         });
     await expect.poll(() => document.querySelector('[data-testid="nav-quota"]')).toBeNull();
 });

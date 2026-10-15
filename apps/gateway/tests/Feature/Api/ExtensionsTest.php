@@ -77,7 +77,7 @@ it('disabled extension is invisible for tasks API and MCP tools', function (): v
         ->and($mixedPayload['results'][1]['content'][0]['text'])->toContain('409', 'extension.disabled');
 
     $originalOutputLimit = config('mcp.tool_search.max_output_bytes');
-    config()->set('mcp.tool_search.max_output_bytes', 256);
+    config()->set('mcp.tool_search.max_output_bytes', 300);
     $limitedBatch = extensions_mcp_message(extensions_mcp($this, '/mcp/search', 'tools/call', [
         'name' => 'execute_tools',
         'arguments' => ['calls' => [
@@ -194,12 +194,12 @@ final class FailingTestExtension extends ExtensionServiceProvider
 }
 
 it('lists the extensions from the registered extension providers', function (): void {
-    expect(array_keys($this->getJson('/api/v1/extensions')->assertOk()->json('data')))->toBe(['tasks', 'proxycli', 'documents'])
-        ->and(app(ExtensionRegistry::class)->names())->toBe(['tasks', 'proxycli', 'documents']);
+    expect(array_keys($this->getJson('/api/v1/extensions')->assertOk()->json('data')))->toBe(['tasks', 'proxycli', 'documents', 'vault', 'conn'])
+        ->and(app(ExtensionRegistry::class)->names())->toBe(['tasks', 'proxycli', 'documents', 'vault', 'conn']);
 
     $this->app->register(new DependentTestExtension($this->app));
 
-    expect(array_keys($this->getJson('/api/v1/extensions')->assertOk()->json('data')))->toBe(['tasks', 'proxycli', 'documents', 'dependent']);
+    expect(array_keys($this->getJson('/api/v1/extensions')->assertOk()->json('data')))->toBe(['tasks', 'proxycli', 'documents', 'vault', 'conn', 'dependent']);
 });
 
 it('disabled extension is invisible for documents API and MCP tools', function (): void {
@@ -219,6 +219,20 @@ it('disabled extension is invisible for documents API and MCP tools', function (
     $this->getJson('/api/v1/project-document-storage')->assertOk();
     expect(array_column(extensions_mcp($this, '/mcp', 'tools/list')->json('result.tools'), 'name'))->toContain('project-document-list');
 });
+
+it('disabled extension is invisible for vault and conn API and MCP tools', function (string $extension, string $path, string $tool): void {
+    $this->getJson($path)->assertStatus(409)
+        ->assertJsonPath('error.code', 'extension.disabled')
+        ->assertJsonPath('error.message', "The {$extension} extension is disabled.");
+    expect(array_column(extensions_mcp($this, '/mcp', 'tools/list')->assertOk()->json('result.tools'), 'name'))->not->toContain($tool);
+
+    $this->postJson("/api/v1/extensions/{$extension}/enable")->assertOk()->assertJsonPath('data.enabled', true);
+    $this->getJson($path)->assertOk();
+    expect(array_column(extensions_mcp($this, '/mcp', 'tools/list')->json('result.tools'), 'name'))->toContain($tool);
+})->with([
+    'vault' => ['vault', '/api/v1/vault', 'vault-status'],
+    'conn' => ['conn', '/api/v1/conn/profiles', 'conn-profile-list'],
+]);
 
 it('enables an extension only after its dependencies and runs its hooks after the switch changes', function (): void {
     DependentTestExtension::$hooks = [];
@@ -243,7 +257,7 @@ it('enables an extension only after its dependencies and runs its hooks after th
     $this->postJson('/api/v1/extensions/dependent/disable')->assertOk()->assertJsonPath('data.enabled', false);
     $this->postJson('/api/v1/extensions/documents/disable')->assertOk();
     expect(DependentTestExtension::$hooks)->toBe(['enable', 'enable', 'disable'])
-        ->and(app(ExtensionStore::class)->all())->toBe(['tasks' => false, 'proxycli' => false, 'documents' => false, 'dependent' => false]);
+        ->and(app(ExtensionStore::class)->all())->toBe(['tasks' => false, 'proxycli' => false, 'documents' => false, 'vault' => false, 'conn' => false, 'dependent' => false]);
 });
 
 it('leaves the switch off and returns the hook error when an enable hook fails', function (): void {

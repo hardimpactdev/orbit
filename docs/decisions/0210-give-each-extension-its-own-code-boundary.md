@@ -1,12 +1,12 @@
 ---
 title: "ADR 0210: Give each extension its own code boundary"
 sidebarTitle: "0210 Extension boundaries"
-description: "In progress. Each Gateway extension lives in its own directory with one service provider, contributes to core through tagged plug-in points, and core never names it. Project Documents is the first extension to move."
+description: "In progress. Each Gateway extension lives in its own directory with one service provider, contributes to core through tagged plug-in points, and core never names it. Project Documents moved first; Vault and Conn moved next."
 ---
 
 # ADR 0210: Give each extension its own code boundary
 
-Each Gateway extension lives in `apps/gateway/extensions/<name>/` with its own namespace and one service provider. Core offers small plug-in interfaces, and an extension contributes to them through container tags. Core code never names an extension. A Pest architecture test enforces that rule. Project Documents is the first extension to move; Vault and Conn follow.
+Each Gateway extension lives in `apps/gateway/extensions/<name>/` with its own namespace and one service provider. Core offers small plug-in interfaces, and an extension contributes to them through container tags. Core code never names an extension. A Pest architecture test enforces that rule. Project Documents moved first; Vault and Conn moved next.
 
 ## Status
 
@@ -18,7 +18,7 @@ Principle: [lean](/mission#principles). An optional feature costs core nothing w
 
 Today an [extension](/cli/extension) is only a switch. `ExtensionStore` holds a fixed list, `['tasks', 'proxycli']`, and the request middleware, the MCP server, the CLI, and the web app each repeat that list or a route name prefix. The code of an optional feature lives in the core namespaces next to everything else.
 
-Project Documents shows the cost. Its models, actions, controllers, requests, data classes, console commands, migrations, and schedule entries sit in `App\Models`, `App\Actions\ProjectDocuments`, `App\Console\Commands`, and the other core folders. Core calls it directly: `DestroyProjectAction` locks and removes a Project's documents, and the Gateway release handoff binds `ActionGatewayDocumentCleanup`. The same pattern holds for Conn, Vault, and ProxyCli. Core names them in its Caddy site sources, private DNS records, reserved hostnames, and firewall rules. Nobody can tell which code belongs to an optional feature, and nobody can remove one without a search through core.
+Project Documents shows the cost. Its models, actions, controllers, requests, data classes, console commands, migrations, and schedule entries sit in `App\Models`, `App\Actions\ProjectDocuments`, `App\Console\Commands`, and the other core folders. Core calls it directly: `DestroyProjectAction` locks and removes a Project's documents, and the Gateway release handoff binds `ActionGatewayDocumentCleanup`. The same pattern holds for Conn, Vault, and ProxyCli. Core also names ProxyCli in its Caddy site sources, private DNS records, reserved hostnames, and firewall rules. Nobody can tell which code belongs to an optional feature, and nobody can remove one without a search through core.
 
 The Gateway caches its routes, and migrations must give the same schema on every install. So an extension cannot be loaded or skipped based on a database switch.
 
@@ -61,6 +61,14 @@ Core defines an interface for each place where an extension adds behavior. The e
 | `App\Domain\Projects\ProjectRemovalHook` | `DestroyProjectAction` | `lock()` runs first in the removal transaction, before the guards. `remove()` runs after every guard passed, before the Project row is deleted. It may refuse with a `ResourceOperationException`. |
 | `App\Domain\GatewayReleases\GatewayReleaseCleanup` | `GatewayCleanupHandoff` | Reports its cleanup state and generation, reconciles, and resumes after the release handoff restarts the scheduler. With no contributions, the handoff reports `skipped`. |
 
+The Conn move adds a third point:
+
+| Interface | Core caller | What an extension does |
+| --- | --- | --- |
+| `App\Domain\Activity\ActivityInputRedaction` | `RecordCommandActivity` | Names the commands whose input it decides, and returns the part of the input that Activity may keep. |
+
+Core sanitizes what the redaction returns like any other input. The redaction runs whether or not the switch is on, because Activity records a refused request too.
+
 Each extension that moves after Documents adds points the same way: Caddy site sources, private DNS records, reserved hostnames, footprint artifacts, firewall rules, ownership guards, Activity redaction, and schedule entries. Each point is a narrow typed interface. A generic event bus or hook registry is not part of the design.
 
 ### The boundary is enforced
@@ -90,10 +98,22 @@ A migration turns `documents` on for an install that already has Documents state
 
 The CLI hides the `project:document:*` and `project:document-storage:*` commands while `documents` is off, as it does for the other extensions. The web app keeps the Documents page in `apps/web/src/extensions/documents/` and hides the Project Documents section and route while the switch is off.
 
+### Vault and Conn move next
+
+All Vault code moves to `extensions/vault` under `Orbit\Extensions\Vault\`, with the switch `vault`. All Conn code and its three migrations move to `extensions/conn` under `Orbit\Extensions\Conn\`, with the switch `conn`. Table names, API paths, route names, MCP tool names, CLI command names, artisan command names, and error codes stay the same. No data moves. Neither declares a dependency or needs a hook.
+
+Core named Vault only in a container binding, its routes, and its schedule entry, and Conn only in a container binding, its routes, and Activity. The bindings, routes, and schedule entry move into each provider. The Conn redaction moves behind `ActivityInputRedaction`. Core named neither in its Caddy sites, private DNS, or reserved hostnames, so those points are not needed yet. No other feature calls Vault or Conn: the Vaultwarden sync reads the Database records itself, and Node removal reaches the Conn tables through foreign keys.
+
+The migration that creates `vault_items` stays in core. The same file adds the `database_users.password` column, which core writes when it creates a Database user, and a migration cannot be split without running again.
+
+`orbit:vault-sync` runs only while `vault` is on. Publishing is the feature itself, not the end of recorded work like the Documents cleanup. The first run after the switch turns on again creates, rewrites, and deletes whatever changed meanwhile.
+
+A migration turns `vault` on for an install with a stored Vaultwarden setup or a published item, and `conn` on for an install with a registered T3 server or a profile. Every other install starts with them off. The CLI hides the `vault:*` commands while `vault` is off and sends a direct call without discovery, as for Documents. Conn has no CLI commands and neither has web pages.
+
 ### Planned order
 
 1. Documents, in this pull request.
-2. Vault and Conn, next. They need the Caddy site, private DNS, and reserved hostname points.
+2. Vault and Conn, in the next pull request. They needed only the Activity redaction point.
 3. ProxyCli, only after a separate plan. Tasks depends on it: `TaskVmRuntime` imports ProxyCli, and Tasks must keep working through the move.
 4. Analytics stays core while `RoleName` is a core enum.
 5. Tasks gets a boundary only after its scheduler is simplified. Tasks is an essential feature and stays.
@@ -113,6 +133,8 @@ Runtime install, a Composer package for each extension, separate processes, and 
 - Tests inside each extension directory: Pest, test-impact analysis, and CI select tests from one tree. A second tree would need its own configuration in each tool.
 - Turn `documents` on for every install, new ones included: a new install would carry an optional feature by default, unlike every other extension.
 - Turn `documents` off for every install: a current user would lose the Documents pages and commands with no warning.
+- Keep `orbit:vault-sync` running while `vault` is off: the Gateway would keep sending credentials to Vaultwarden after the operator turned the feature off.
+- Move the `vault_items` migration into the extension: the same file adds a core column, and deleting the extension would remove it.
 
 ## Consequences
 
@@ -122,10 +144,12 @@ Runtime install, a Composer package for each extension, separate processes, and 
 - `bin/docs-openapi` also reads controllers, form requests, and data classes under `apps/gateway/extensions/*/src`.
 - The CLI and `bin/docs-openapi` keep their own slug lists. The CLI shows every slug as `UNKNOWN` when the Gateway cannot answer, and the OpenAPI document is generated without a database. A new extension updates both lists.
 - While `documents` is off, its background cleanup still runs and still needs its storage credentials.
+- While `vault` is off, a published item stays as it was. A credential that changed or a Database user that was removed meanwhile is fixed on the first sync after the switch turns on.
+- While `conn` is off, a T3 server cannot register and a device cannot read its profile. The records stay.
 
 ## Affects
 
 - Components: apps/gateway, apps/cli, apps/web, apps/docs
 - ADRs: none
 - Detail: [Extensions](/reference/extensions)
-- Verify: `tests/Unit/Architecture/ExtensionBoundaryTest.php`, `tests/Feature/Api/ExtensionsTest.php`, the Documents tests under `tests/Feature/Extensions/Documents`, and `composer test:affected` in apps/gateway and apps/cli
+- Verify: `tests/Unit/Architecture/ExtensionBoundaryTest.php`, `tests/Feature/Api/ExtensionsTest.php`, `tests/Feature/Domain/Activity/ActivityInputRedactionTest.php`, the tests under `tests/Feature/Extensions/{Documents,Vault,Conn}`, and `composer test:affected` in apps/gateway and apps/cli

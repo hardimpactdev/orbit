@@ -5,9 +5,10 @@ declare(strict_types=1);
 namespace App\Http\Middleware;
 
 use App\Data\Instances\InstanceRemovalData;
+use App\Domain\Activity\ActivityInputRedaction;
 use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\Conn\ConnProfileSections;
 use App\Domain\Doctor\DoctorFamily;
+use App\Domain\Extensions\Contributions;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Instances\Deployment\DeploymentRelease;
 use App\Domain\Instances\Deployment\DeploymentResult;
@@ -71,6 +72,7 @@ final readonly class RecordCommandActivity
         private CommandActivityTargetResolver $targetResolver,
         private TopLevelJsonObjectInspector $jsonInspector,
         private RemoveNodeRoleInputParser $removeNodeRoleInputParser,
+        private Contributions $contributions,
     ) {}
 
     public function handle(Request $request, Closure $next): Response
@@ -579,6 +581,12 @@ final readonly class RecordCommandActivity
             return [];
         }
 
+        foreach ($this->contributions->of(ActivityInputRedaction::class) as $redaction) {
+            if (in_array($command, $redaction->commands(), true)) {
+                return $this->inputSanitizer->sanitizeProperties($redaction->input((string) $command, $request->all()));
+            }
+        }
+
         if ($command === 'doctor') {
             return $this->doctorInput($request);
         }
@@ -613,15 +621,6 @@ final readonly class RecordCommandActivity
 
         if ($command === 'env:update') {
             return [];
-        }
-
-        if ($command === 'conn:environment:register') {
-            // The admin session never enters Activity.
-            return $this->inputSanitizer->sanitizeProperties($request->only(['environment_id', 'label', 'url']));
-        }
-
-        if ($command === 'conn:profile:settings:update' || $command === 'conn:profile:settings:patch') {
-            return $this->inputSanitizer->sanitizeProperties($this->connSettingsInput($request, $command));
         }
 
         if (
@@ -1202,34 +1201,5 @@ final readonly class RecordCommandActivity
         usort($values, static fn (string $first, string $second): int => strlen($second) <=> strlen($first));
 
         return $values;
-    }
-
-    /**
-     * A settings document holds workspace pictures, themes, and device values. Activity keeps the section
-     * names and the versions the client sent, and nothing of the sections themselves.
-     *
-     * @return array<string, mixed>
-     */
-    private function connSettingsInput(Request $request, string $command): array
-    {
-        if ($command === 'conn:profile:settings:update') {
-            $settings = $request->input('settings');
-
-            return [
-                ...$request->only(['version']),
-                'sections' => is_array($settings) ? array_values(array_intersect(array_keys($settings), ['workspaces', 'appearance', 'devices'])) : [],
-            ];
-        }
-
-        $sections = $request->input('sections');
-        $versions = [];
-
-        foreach (is_array($sections) ? $sections : [] as $name => $change) {
-            if (is_string($name) && ConnProfileSections::isKnown($name) && is_array($change) && is_int($change['version'] ?? null)) {
-                $versions[$name] = $change['version'];
-            }
-        }
-
-        return ['sections' => $versions];
     }
 }

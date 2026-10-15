@@ -8,10 +8,6 @@ use App\Http\Controllers\Api\AgentThreadsController;
 use App\Http\Controllers\Api\AnalyticsController;
 use App\Http\Controllers\Api\AnnotationsController;
 use App\Http\Controllers\Api\ClustersController;
-use App\Http\Controllers\Api\ConnEnvironmentsController;
-use App\Http\Controllers\Api\ConnNodesController;
-use App\Http\Controllers\Api\ConnPairingsController;
-use App\Http\Controllers\Api\ConnProfilesController;
 use App\Http\Controllers\Api\DatabaseConnectionAttachmentsController;
 use App\Http\Controllers\Api\DatabaseConnectionsController;
 use App\Http\Controllers\Api\DatabaseServersController;
@@ -71,7 +67,6 @@ use App\Http\Controllers\Api\TasksController;
 use App\Http\Controllers\Api\ToolInventoryController;
 use App\Http\Controllers\Api\ToolManagersController;
 use App\Http\Controllers\Api\ToolsController;
-use App\Http\Controllers\Api\VaultController;
 use App\Http\Middleware\RecordCommandActivity;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireEnabledExtension;
@@ -88,28 +83,6 @@ Route::prefix('v1')->group(function (): void {
             Route::post('{annotation}/status', [AnnotationsController::class, 'update'])->name('annotation:update');
             Route::post('{annotation}/retry', [AnnotationsController::class, 'retry'])->name('annotation:retry');
         });
-
-    // Conn: every active Node, phones and operator machines included, may use every endpoint; there are no grants yet.
-    Route::middleware([RequireActiveWireGuardPeer::class])->prefix('conn')->group(function (): void {
-        Route::get('me', [ConnNodesController::class, 'show'])->name('conn:me');
-        Route::put('me/profile', [ConnNodesController::class, 'bindProfile'])->name('conn:me:profile');
-        Route::get('profiles', [ConnProfilesController::class, 'index'])->name('conn:profile:list');
-        Route::post('profiles', [ConnProfilesController::class, 'store'])->name('conn:profile:create');
-        Route::get('profiles/{profile}/settings', [ConnProfilesController::class, 'settings'])
-            ->whereNumber('profile')
-            ->name('conn:profile:settings:show');
-        Route::put('profiles/{profile}/settings', [ConnProfilesController::class, 'replaceSettings'])
-            ->whereNumber('profile')
-            ->name('conn:profile:settings:update');
-        Route::patch('profiles/{profile}/settings', [ConnProfilesController::class, 'patchSettings'])
-            ->whereNumber('profile')
-            ->name('conn:profile:settings:patch');
-        Route::get('environments', [ConnEnvironmentsController::class, 'index'])->name('conn:environment:list');
-        Route::post('environments', [ConnEnvironmentsController::class, 'store'])->name('conn:environment:register');
-        Route::get('environments/{environment}/pairings', [ConnPairingsController::class, 'index'])->name('conn:pairing:list');
-        Route::post('environments/{environment}/pairings', [ConnPairingsController::class, 'store'])->name('conn:pairing:create');
-        Route::post('environments/{environment}/pairings/revoke', [ConnPairingsController::class, 'revoke'])->name('conn:pairing:revoke');
-    });
 
     Route::middleware([RequireActiveWireGuardPeer::class, RequireNodeAccess::class])->group(function (): void {
         Route::get('extensions', [ExtensionsController::class, 'index'])->name('extension:list');
@@ -623,10 +596,6 @@ Route::prefix('v1')->group(function (): void {
                 ->where('account', '[A-Za-z0-9._-]+')
                 ->name('proxycli:update');
         });
-        Route::get('vault', [VaultController::class, 'status'])->name('vault:status');
-        Route::put('vault', [VaultController::class, 'setup'])->name('vault:setup');
-        Route::post('vault/sync', [VaultController::class, 'sync'])->name('vault:sync');
-        Route::delete('vault', [VaultController::class, 'teardown'])->name('vault:teardown');
         Route::post('metrics', [MetricsController::class, 'store'])->name('metrics:enable');
         Route::delete('metrics', [MetricsController::class, 'destroy'])->name('metrics:disable');
         Route::post('analytics/update', [AnalyticsController::class, 'update'])->name('analytics:update');
