@@ -166,7 +166,9 @@ After it validates the request and the access grant, the rollback answers `appli
 
 `failed_step` names the boundary that failed: `activation`, `cache_refresh`, `after_activation`, `rollback_selection`, or `operation`. An error after the stream opens ends the stream with a failed `result` and no second HTTP error.
 
-The Gateway flushes output while a command runs. Before each phase event, it writes one whitespace byte every 10 milliseconds for 250 milliseconds. That lets it notice a closed connection through Caddy and PHP-FPM. It notices a disconnect only when it writes, so a silent command can run until it writes, exits, or times out. Then the Gateway starts no further step and sends no result. It never replays events or rolls back by itself.
+The Gateway flushes output while a command runs. Before each phase event, it writes one whitespace byte every 10 milliseconds for 250 milliseconds. That lets it notice a closed connection through Caddy and PHP-FPM. It notices a disconnect only when it writes, so a silent command can run until it writes, exits, or times out.
+
+Before activation, a disconnect stops the rollback and sends no result. Once the release is selected, the Gateway finishes PHP refresh and Process restarts even after a disconnect. Read the deployment history for the final outcome. The Gateway never replays events or rolls back by itself.
 
 ## Deploy
 

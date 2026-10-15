@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Instances\ProductionPhpRuntimeManager;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Models\Activity;
@@ -149,3 +150,33 @@ it('streams and records rollback Process restart results on the rollback release
         ->and($deployment->error_code)->toBe($fails ? 'process.restart_failed' : null)
         ->and(collect($deployment->events)->where('step', 'process_restart'))->toHaveCount(1);
 })->with([false, true]);
+
+it('finishes rollback PHP refresh and Process restart after the client disconnects during activation', function (): void {
+    $runtime = new ProcessesApiFakeRuntimeManager;
+    app()->instance(ProcessRuntimeManager::class, $runtime);
+    $php = Mockery::mock(ProductionPhpRuntimeManager::class);
+    $php->shouldReceive('converge')->once();
+    $php->shouldReceive('refreshCache')->once();
+    app()->instance(ProductionPhpRuntimeManager::class, $php);
+    $process = Process::query()->create([
+        'owner_type' => $this->fixture->instance->getMorphClass(), 'owner_id' => $this->fixture->instance->id, 'name' => 'horizon',
+        'runtime' => 'systemd', 'runtime_config' => ['command' => ['/usr/bin/php', 'artisan', 'horizon']],
+        'restart_policy' => 'always', 'desired_state' => 'running', 'status' => 'active',
+    ]);
+    $this->fixture->deployment->current = 'fresh';
+    $this->fixture->deployment->duringActivation = function (): void {
+        $this->fixture->connection->disconnected = true;
+    };
+
+    $response = $this->withServerVariables(['REMOTE_ADDR' => $this->fixture->caller->wireguard_ip])
+        ->call('POST', $this->url, server: ['CONTENT_TYPE' => 'application/json'], content: '{"release":"initial"}');
+    $content = $response->streamedContent();
+    $deployment = InstanceDeployment::query()->sole();
+
+    expect($runtime->restarted)->toBe([$process->id])
+        ->and($this->fixture->deployment->current)->toBe('initial')
+        ->and($content)->not->toContain('"type":"result"')
+        ->and($deployment->status)->toBe('succeeded')
+        ->and($deployment->error_code)->toBeNull()
+        ->and(collect($deployment->events)->where('step', 'process_restart'))->toHaveCount(1);
+});

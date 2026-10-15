@@ -623,7 +623,7 @@ orbit instance:rollback <instance> --release=NAME [--json]
 | --- | --- |
 | `--release=NAME` | Retained release name from `instance:release:list`. |
 
-The command streams newline-delimited JSON events while the Gateway works. Human output shows a progress tree, and output from commands prints above it, labeled and escaped. `--json` writes the events as NDJSON, one event per line. Pressing Ctrl-C closes the connection at once, and the CLI submits no second request.
+The command streams newline-delimited JSON events while the Gateway works. Human output shows a progress tree, and output from commands prints above it, labeled and escaped. `--json` writes the events as NDJSON, one event per line. Pressing Ctrl-C closes the connection at once, and the CLI submits no second request. Once the Gateway switches the release, it finishes PHP refresh and Process restarts even if the client disconnects.
 
 | Event type | Fields |
 | --- | --- |

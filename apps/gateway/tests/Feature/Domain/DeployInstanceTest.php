@@ -6,6 +6,7 @@ use App\Actions\Instances\DeployInstanceAction;
 use App\Actions\Instances\InstanceDeploymentConfigResolver;
 use App\Actions\Instances\InstantiateProjectRuntimeDefinitionsAction;
 use App\Actions\Instances\RollbackInstanceAction;
+use App\Domain\Instances\Deployment\DeploymentCancellation;
 use App\Domain\Instances\Deployment\DeploymentEvent;
 use App\Domain\Instances\Deployment\DeploymentFailureBoundary;
 use App\Domain\Instances\Deployment\DeploymentOutputStream;
@@ -130,6 +131,44 @@ it('fails after activation and reports a Process restart failure without running
         ->and($events[0]->stream)->toBe(DeploymentOutputStream::Stderr)
         ->and($events[0]->important)->toBeTrue();
 })->with([false, true]);
+
+it('honours rollback cancellation only before activation', function (string $cancelAt, bool $finishes): void {
+    $instance = orb219_deployment_instance([], php: true);
+    $process = Process::query()->create([
+        'owner_type' => $instance->getMorphClass(), 'owner_id' => $instance->id, 'name' => 'horizon',
+        'runtime' => 'systemd', 'runtime_config' => ['command' => ['/usr/bin/php', 'artisan', 'horizon']],
+        'restart_policy' => 'always', 'desired_state' => 'running', 'status' => 'active',
+    ]);
+    $trace = new Orb219DeploymentTrace;
+    $runtime = Mockery::mock(ProcessRuntimeManager::class);
+    if ($finishes) {
+        $runtime->shouldReceive('restart')->once()->andReturnUsing(function (Process $fresh) use ($trace): void {
+            $trace->entries[] = 'restart:'.$fresh->id;
+        });
+        $runtime->shouldReceive('status')->once()->andReturn('running');
+    } else {
+        $runtime->shouldNotReceive('restart');
+    }
+    app()->instance(ProcessRuntimeManager::class, $runtime);
+    [, $rollback] = orb219_actions($trace);
+    $cancellation = new DeploymentCancellation(fn (): bool => in_array($cancelAt, $trace->entries, true));
+
+    $result = $rollback->execute($instance, 'retained', new DeploymentRequest(cancellation: $cancellation));
+
+    expect($cancellation->requested())->toBeTrue()
+        ->and($result->succeeded)->toBe($finishes)
+        ->and($result->failure?->errorCode)->toBe($finishes ? null : 'deployment.cancelled')
+        ->and($result->selectedRelease?->name)->toBe($finishes ? 'retained' : 'initial')
+        ->and($trace->entries)->toBe([
+            'lock:1', 'selected:initial', 'retained:retained',
+            ...($finishes ? ['activate:retained', 'cache:retained', 'restart:'.$process->id] : ['selected:initial']),
+        ])
+        ->and($trace->runtimeEvents)->toBe($finishes ? ['converge:retained', 'cache:retained'] : []);
+})->with([
+    'before activation' => ['retained:retained', false],
+    'after activation' => ['activate:retained', true],
+    'after PHP refresh' => ['cache:retained', true],
+]);
 
 it('does not restart a Process stopped before the deployment acquires its runtime lease', function (): void {
     $instance = orb219_deployment_instance([]);
