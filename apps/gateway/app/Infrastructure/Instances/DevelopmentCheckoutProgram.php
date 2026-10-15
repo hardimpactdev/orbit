@@ -22,6 +22,9 @@ final class DevelopmentCheckoutProgram
     /** Exit status when the local branch has commits that the target commit does not contain. */
     public const int Diverged = 4;
 
+    /** Exit status when the fetched branch does not contain the requested commit. */
+    public const int NotOnBranch = 5;
+
     /** Exit status when a setup or teardown step holds a lifecycle lock that the program needs. */
     public const int Busy = 75;
 
@@ -88,15 +91,25 @@ final class DevelopmentCheckoutProgram
             BASH;
     }
 
-    /** Fetches the branch and prints its commit. */
+    /**
+     * Fetches the branch and prints its commit. With a second argument, it prints that commit instead, after it
+     * proved that the fetched branch contains it; otherwise it exits with {@see self::NotOnBranch}.
+     */
     public static function target(): string
     {
         return self::guard().WorkspaceGit::fetchPreamble().<<<'BASH'
 
             branch=$1
+            commit=${2-}
             checkout_fetch -C "$home" fetch --quiet --no-tags -- "$repository" \
                 "+refs/heads/$branch:refs/remotes/origin/$branch" >/dev/null
-            git -C "$home" rev-parse --verify "refs/remotes/origin/$branch^{commit}"
+            if [ -z "$commit" ]; then
+                git -C "$home" rev-parse --verify "refs/remotes/origin/$branch^{commit}"
+                exit 0
+            fi
+            printf '%s' "$commit" | grep -Eq '^([0-9a-f]{40}|[0-9a-f]{64})$'
+            git -C "$home" merge-base --is-ancestor "$commit" "refs/remotes/origin/$branch" >/dev/null 2>&1 || exit 5
+            printf '%s\n' "$commit"
             BASH;
     }
 

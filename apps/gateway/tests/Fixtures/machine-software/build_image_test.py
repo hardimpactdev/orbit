@@ -31,7 +31,7 @@ class ImageRecipeTest(unittest.TestCase):
 
     def run_command(self, argv, **kwargs):
         self.commands.append(argv)
-        return subprocess.CompletedProcess(argv, 0, '', '')
+        return subprocess.CompletedProcess(argv, 1 if argv[:2] == ['dpkg', '--compare-versions'] else 0, '', '')
 
     def publish(self, path, content, *args):
         self.files[str(path)] = content
@@ -48,7 +48,7 @@ class ImageRecipeTest(unittest.TestCase):
     def test_installs_exact_pins_only_from_snapshot_and_upgrades_base_from_stock(self):
         self.packages()
         self.assertIn(b'https://snapshot.ubuntu.com/ubuntu/20261014T000000Z/',
-                      self.files['/etc/apt/sources.list.d/ubuntu.sources'])
+                      next(content for path, content in self.files.items() if path.endswith('/ubuntu.sources')))
         install = next(c for c in self.commands if c[:2] == ['apt-get', 'install'])
         self.assertIn('curl=2.0', install)
         self.assertIn('Dir::Etc::sourceparts=-', install)
@@ -165,7 +165,7 @@ class ImageRecipeTest(unittest.TestCase):
         download.assert_not_called()
 
     def test_smoke_rejects_broken_pnpm_even_when_its_package_metadata_matches(self):
-        self.payload.update({'identity': 'sha256:current', 'tools': {'pnpm': {'version': '12.11.2'}}})
+        self.payload.update({'identity': 'sha256:current', 'tools': {'pnpm': {'source': 'artifact', 'version': '12.11.2'}}})
         marker = json.dumps({'identity': self.payload['identity'], 'profile': 'base'})
         with patch.object(recipe.Path, 'read_text', return_value=marker), \
              patch.object(recipe, 'inspect', return_value={'pnpm': '12.11.2'}), \

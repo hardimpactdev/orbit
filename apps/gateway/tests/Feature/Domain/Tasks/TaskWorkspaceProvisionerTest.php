@@ -755,3 +755,29 @@ describe('task VMs', function (): void {
         }
     });
 });
+
+it('seeds task VM package caches after source resolution has observed the lockfiles', function (): void {
+    $project = provisioner_app('cache-order');
+    $node = provisioner_node('tvm-cache', '10.44.0.129');
+    $group = provisioner_group($project, vmNode: $node);
+    $fakes = bind_task_workspace_fakes();
+    $mount = new class($fakes) implements TaskVmPackageCacheMount
+    {
+        public bool $seeded = false;
+
+        public function __construct(private object $fakes) {}
+
+        public function prepare(TaskVm $vm, Project $project): void
+        {
+            expect($this->fakes->source->calls)->toContain('resolve');
+            expect($this->fakes->development->prepares)->toBe(0);
+            $this->seeded = true;
+        }
+    };
+    app()->instance(TaskVmPackageCacheMount::class, $mount);
+
+    $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, true));
+
+    expect($instance)->toBeInstanceOf(Instance::class);
+    expect($mount->seeded)->toBeTrue();
+});

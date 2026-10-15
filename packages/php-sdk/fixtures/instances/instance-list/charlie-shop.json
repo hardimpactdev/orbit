@@ -112,7 +112,19 @@
                         "web_root": null
                     }
                 ],
-                "shared_paths": []
+                "shared_paths": [],
+                "auto_deploy": {
+                    "enabled": false,
+                    "gate": null,
+                    "warning": null,
+                    "result": null,
+                    "commit": null,
+                    "head": null,
+                    "since": null,
+                    "error_code": null,
+                    "message": null,
+                    "pause": null
+                }
             },
             {
                 "id": 4,
@@ -221,7 +233,19 @@
                         "web_root": null
                     }
                 ],
-                "shared_paths": []
+                "shared_paths": [],
+                "auto_deploy": {
+                    "enabled": false,
+                    "gate": null,
+                    "warning": null,
+                    "result": null,
+                    "commit": null,
+                    "head": null,
+                    "since": null,
+                    "error_code": null,
+                    "message": null,
+                    "pause": null
+                }
             },
             {
                 "id": 3,
@@ -330,7 +354,19 @@
                         "web_root": null
                     }
                 ],
-                "shared_paths": []
+                "shared_paths": [],
+                "auto_deploy": {
+                    "enabled": false,
+                    "gate": null,
+                    "warning": null,
+                    "result": null,
+                    "commit": null,
+                    "head": null,
+                    "since": null,
+                    "error_code": null,
+                    "message": null,
+                    "pause": null
+                }
             },
             {
                 "id": 2,
@@ -439,7 +475,19 @@
                         "web_root": null
                     }
                 ],
-                "shared_paths": []
+                "shared_paths": [],
+                "auto_deploy": {
+                    "enabled": false,
+                    "gate": null,
+                    "warning": null,
+                    "result": null,
+                    "commit": null,
+                    "head": null,
+                    "since": null,
+                    "error_code": null,
+                    "message": null,
+                    "pause": null
+                }
             }
         ],
         "meta": {

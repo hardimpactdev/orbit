@@ -8,7 +8,7 @@ import threading
 import unittest
 from pathlib import Path
 
-from harness import result
+from harness import execute, result
 
 FAKES = {
     'sudo': '[ "$1" = -n ] && shift; exec "$@"',
@@ -18,14 +18,27 @@ FAKES = {
     'dpkg-query': 'for f in "$STATE"/installed/*; do [ -f "$f" ] && printf "%s\\tinstall ok installed\\t%s\\n" '
                   '"$(basename "$f")" "$(cat "$f")"; done; exit 0',
     # A path is owned by a package when $STATE/owned/<file name> exists.
-    'dpkg': 'case "$1" in --print-architecture) echo amd64;; -S) [ "$2" = -- ] && shift; '
-            '[ -f "$STATE/owned/$(basename "$2")" ] && echo "php8.5-common: $2" || exit 1;; '
+    'dpkg': 'case "$1" in --print-architecture) echo amd64;; -S) shift; [ "$1" = -- ] && shift; rc=0; '
+            '[ -f "$STATE/dpkg-S-fails" ] && { echo "dpkg-query: error: database is locked" >&2; exit 2; }; '
+            'echo "dpkg -S $#" >> "$STATE/calls"; for p in "$@"; do if [ -f "$STATE/owned/$(basename "$p")" ]; then '
+            'echo "php8.5-common: $p"; else echo "dpkg-query: no path found matching pattern $p" >&2; rc=1; fi; done; '
+            'exit $rc;; '
             # dpkg --verify prints $STATE/verify-<package>, the lines of files that differ from the package.
             '--verify) shift; [ "$1" = -- ] && shift; for p in "$@"; do cat "$STATE/verify-$p" 2>/dev/null; done;; --purge|--remove) op="${1#--}"; shift; [ "$1" = -- ] && shift; '
             'echo "$op $*" >> "$STATE/calls"; [ -f "$STATE/fail-$op" ] && exit 1; '
             'for p in "$@"; do rm -f "$STATE/installed/$p"; done;; esac',
     # A fake .deb is a text file: "<name> <version> <architecture>".
-    'dpkg-deb': 'read -r n v a < "$2"; printf "Package: %s\\nVersion: %s\\nArchitecture: %s\\n" "$n" "$v" "$a"',
+    # dpkg-deb --build refuses a tree whose DEBIAN/conffiles names a file that is not in it, as the real one does.
+    # $STATE/build-writes-nothing makes it exit 0 without a file, so the program must not trust the exit code.
+    # dpkg-deb --extract writes the payload kept in $STATE/payload/<name>_<version>/.
+    'dpkg-deb': 'case "$1" in --extract) shift; [ "$1" = -- ] && shift; read -r n v a < "$1"; '
+                '[ -d "$STATE/payload/${n}_$v" ] && cp -r "$STATE/payload/${n}_$v/." "$2/"; exit 0;; --build) shift; [ "$1" = -- ] && shift; tree="$1"; out="$2"; '
+                '[ -f "$STATE/build-writes-nothing" ] && exit 0; '
+                'if [ -f "$tree/DEBIAN/conffiles" ]; then while read -r c; do [ -e "$tree$c" ] || exit 2; done '
+                '< "$tree/DEBIAN/conffiles"; fi; n=$(sed -n "s/^Package: //p" "$tree/DEBIAN/control"); '
+                'v=$(sed -n "s/^Version: //p" "$tree/DEBIAN/control"); printf "%s %s amd64\\n" "$n" "$v" > "$out"; '
+                'cp "$tree/DEBIAN/conffiles" "$STATE/built-conffiles-$n" 2>/dev/null; exit 0;; esac; '
+                'read -r n v a < "$2"; printf "Package: %s\\nVersion: %s\\nArchitecture: %s\\n" "$n" "$v" "$a"',
     'curl': 'out=""; for a in "$@"; do [ "$prev" = --output ] && out="$a"; prev="$a"; done; url="${@: -1}"; '
             'echo "curl $url" >> "$STATE/calls"; src="$STATE/served/$(echo "$url" | sed "s|^https://||; s|/|_|g")"; '
             '[ -f "$src" ] || exit 22; cp "$src" "$out"',
@@ -36,10 +49,19 @@ FAKES = {
                # A rollback reinstall that brings an added package back as a dependency.
                '[ -f "$STATE/revives-$v" ] && echo 8.5.12-1 > "$STATE/installed/$(cat "$STATE/revives-$v")"; '
                'if [ -f "$STATE/partial-install" ]; then rm "$STATE/partial-install"; touch "$STATE/fail-every-install"; exit 100; fi; '
+               # A package that brings the default pool back, as a package with a recreated conffile would.
+               '[ -f "$STATE/recreates-www" ] && echo "[www]" > "$ROOT/etc/php/8.5/fpm/pool.d/www.conf"; '
                'if [ -f "$STATE/breaks-$v" ]; then touch "$STATE/broken"; else rm -f "$STATE/broken"; fi;; '
                'dpkg-repack=*) echo "${a#*=}" > "$STATE/installed/dpkg-repack";; esac; done; exit 0',
-    'dpkg-repack': 'shift; echo "repack $1" >> "$STATE/calls"; printf "%s %s amd64\\n" "$1" "$(cat "$STATE/installed/$1")" '
-                   '> "$1_$(cat "$STATE/installed/$1")_amd64.deb"',
+    # dpkg-repack --generate writes the build tree. A package's conffiles are listed in $STATE/conffiles-<name>; a
+    # conffile is in the tree only when it is on disk under $ROOT.
+    'dpkg-repack': '[ "$1" = --generate ] || exit 9; shift; [ "$1" = -- ] && shift; echo "repack $1" >> "$STATE/calls"; '
+                   '[ -f "$STATE/repack-no-tree" ] && exit 0; d=$(mktemp -d "$PWD/dpkg-repack.$1.XXXX"); '
+                   'mkdir "$d/DEBIAN"; printf "Package: %s\\nVersion: %s\\nArchitecture: amd64\\n" "$1" '
+                   '"$(cat "$STATE/installed/$1")" > "$d/DEBIAN/control"; '
+                   'if [ -f "$STATE/conffiles-$1" ]; then cp "$STATE/conffiles-$1" "$d/DEBIAN/conffiles"; '
+                   'while read -r c; do [ -e "$ROOT$c" ] && { mkdir -p "$d$(dirname "$c")"; cp "$ROOT$c" "$d$c"; }; '
+                   'done < "$STATE/conffiles-$1"; fi; exit 0',
     'phpenmod': 'echo "phpenmod $*" >> "$STATE/calls"; ln -sfn /mods/$5.ini "$ROOT/etc/php/$2/$4/conf.d/20-$5.ini"',
     'phpdismod': 'echo "phpdismod $*" >> "$STATE/calls"; rm -f "$ROOT/etc/php/$2/$4/conf.d/20-$5.ini"',
     'systemctl': 'echo "systemctl $*" >> "$STATE/calls"; case "$1" in '
@@ -419,6 +441,162 @@ class InstallBuildTest(unittest.TestCase):
 
         self.assertEqual((outcome, data['repaired']), ('current', []), data)
         self.assertFalse([call for call in self.calls() if call.startswith(('apt-get', 'curl'))])
+
+    def disabled_pool_build(self):
+        """php8.5-cli at 8.5.11 lists the default pool as a conffile, which Orbit disabled: it is not on disk."""
+        self.previous_build()
+        (self.state / 'conffiles-php8.5-cli').write_text('/etc/php/8.5/fpm/pool.d/www.conf\n/etc/php/8.5/fpm/php-fpm.conf\n')
+        (self.root / 'etc/php/8.5/fpm/php-fpm.conf').write_text('[global]\n')
+        (self.root / 'etc/php/8.5/fpm/pool.d/www.conf.disabled').write_text('[www]\n')
+
+    def test_repacks_a_package_whose_default_pool_conffile_was_removed_on_purpose(self):
+        self.disabled_pool_build()
+        (self.state / 'fail-install').touch()
+
+        outcome, data = self.run_program(fpm='none')
+
+        self.assertEqual((outcome, data.get('restored')), ('install_failed', True), data)
+        self.assert_previous_build()
+        # The rollback copy leaves out the removed conffile and keeps the one on disk.
+        self.assertEqual((self.state / 'built-conffiles-php8.5-cli').read_text(), '/etc/php/8.5/fpm/php-fpm.conf\n')
+        self.assertFalse((self.root / 'etc/php/8.5/fpm/pool.d/www.conf').exists())
+
+    def test_takes_the_rollback_copy_from_the_apt_archive_before_repacking(self):
+        self.previous_build()
+        archives = self.root / 'var/cache/apt/archives'
+        archives.mkdir(parents=True)
+        for name in ('php8.5-cli', 'php-common'):
+            (archives / f'{name}_8.5.11-1_amd64.deb').write_bytes(deb(name, '8.5.11-1'))
+            self.installed_payload(name, '8.5.11-1', {f'usr/share/doc/{name}/copyright': name})
+        # Another version of the same package in the archive is never taken.
+        (archives / 'php8.5-cli_8.5.10-1_amd64.deb').write_bytes(deb('php8.5-cli', '8.5.10-1'))
+        (self.state / 'fail-install').touch()
+
+        outcome, data = self.run_program(fpm='none')
+
+        self.assertEqual((outcome, data.get('restored')), ('install_failed', True), data)
+        self.assertFalse([call for call in self.calls() if call.startswith('repack')])
+        self.assert_previous_build()
+
+    def test_refuses_before_any_change_when_the_repack_writes_no_file_despite_exit_zero(self):
+        for marker in ('build-writes-nothing', 'repack-no-tree'):
+            with self.subTest(marker=marker):
+                self.setUp()
+                self.previous_build()
+                (self.state / marker).touch()
+
+                outcome, data = self.run_program()
+
+                self.assertEqual((outcome, data['package']), ('rollback_unavailable', 'php-common'), data)
+                self.assertFalse([call for call in self.calls() if call.startswith('apt-get') and '.deb' in call])
+                self.assertEqual((self.state / 'installed/php8.5-cli').read_text().strip(), '8.5.11-1')
+
+    def test_an_install_never_brings_back_a_disabled_default_pool(self):
+        self.disabled_pool_build()
+        self.pin('php8.5-fpm', '8.5.12-1')
+        self.install('php8.5-fpm', '8.5.11-1')
+        (self.state / 'recreates-www').touch()
+
+        outcome, data = self.run_program(fpm='none')
+
+        self.assertEqual(outcome, 'applied', data)
+        self.assertFalse((self.root / 'etc/php/8.5/fpm/pool.d/www.conf').exists())
+        self.assertTrue((self.root / 'etc/php/8.5/fpm/pool.d/www.conf.disabled').exists())
+
+    def test_an_enabled_default_pool_stays_enabled(self):
+        self.previous_build()
+        (self.root / 'etc/php/8.5/fpm/pool.d/www.conf').write_text('[www]\n')
+        (self.state / 'recreates-www').touch()
+
+        outcome, data = self.run_program(fpm='none')
+
+        self.assertEqual(outcome, 'applied', data)
+        self.assertTrue((self.root / 'etc/php/8.5/fpm/pool.d/www.conf').exists())
+
+    def installed_payload(self, name, version, files, archived=None):
+        """dpkg's MD5 sums of the installed package, and the payload of its .deb (or `archived`, when it differs)."""
+        import hashlib as digests
+        info = self.root / 'var/lib/dpkg/info'
+        info.mkdir(parents=True, exist_ok=True)
+        (info / f'{name}.md5sums').write_text(''.join(
+            f'{digests.md5(content.encode()).hexdigest()}  {path}\n' for path, content in files.items()))
+        for path, content in (archived or files).items():
+            target = self.state / 'payload' / f'{name}_{version}' / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content)
+
+    def test_a_first_install_of_php_fpm_keeps_the_pool_it_brings(self):
+        self.previous_build()
+        (self.state / 'recreates-www').touch()
+
+        outcome, data = self.run_program(fpm='none')
+
+        self.assertEqual(outcome, 'applied', data)
+        self.assertTrue((self.root / 'etc/php/8.5/fpm/pool.d/www.conf').exists())
+
+    def test_an_archive_copy_that_differs_from_the_installed_files_is_not_used(self):
+        self.previous_build()
+        archives = self.root / 'var/cache/apt/archives'
+        archives.mkdir(parents=True)
+        (archives / 'php8.5-cli_8.5.11-1_amd64.deb').write_bytes(deb('php8.5-cli', '8.5.11-1'))
+        self.installed_payload('php8.5-cli', '8.5.11-1', {'usr/bin/php8.5': 'installed'},
+                               archived={'usr/bin/php8.5': 'tampered'})
+
+        outcome, data = self.run_program(mode='apply', fpm='none')
+
+        self.assertEqual(outcome, 'applied', data)
+        self.assertIn('repack php8.5-cli', self.calls())
+
+    def test_a_cached_copy_that_does_not_match_its_digest_or_architecture_is_not_used(self):
+        self.previous_build()
+        cache = self.root / 'var/cache/orbit/php-packages'
+        cache.mkdir(parents=True)
+        # Named after another digest, so its bytes changed after it was cached.
+        (cache / f'php8.5-cli_{"0" * 64}.deb').write_bytes(deb('php8.5-cli', '8.5.11-1'))
+        other = 'php-common 8.5.11-1 arm64\n'.encode()
+        (cache / f'php-common_{hashlib.sha256(other).hexdigest()}.deb').write_bytes(other)
+
+        outcome, data = self.run_program(fpm='none')
+
+        self.assertEqual(outcome, 'applied', data)
+        self.assertIn('repack php8.5-cli', self.calls())
+        self.assertIn('repack php-common', self.calls())
+
+    def test_a_dpkg_ownership_lookup_that_fails_stops_the_program(self):
+        self.previous_build()
+        (self.root / 'etc/php/8.5/mods-available').mkdir(parents=True, exist_ok=True)
+        (self.root / 'etc/php/8.5/mods-available/apcu.ini').write_text('extension=apcu.so\n')
+        (self.state / 'dpkg-S-fails').touch()
+
+        completed = execute('php.install-build', self.payload(), environment=self.environment)
+
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn(b'database is locked', completed.stderr)
+        self.assertFalse([call for call in self.calls() if call.startswith(('apt-get', 'curl'))])
+
+    def test_reads_an_owned_path_that_holds_a_comma(self):
+        self.previous_build()
+        (self.root / 'etc/php/8.5/mods-available').mkdir(parents=True, exist_ok=True)
+        (self.root / 'etc/php/8.5/mods-available/apcu,extra.ini').write_text('extension=/opt/none/apcu.so\n')
+        (self.state / 'owned').mkdir()
+        (self.state / 'owned' / 'apcu,extra.ini').touch()
+
+        outcome, data = self.run_program(mode='plan')
+
+        self.assertEqual((outcome, data['unowned']), ('planned', []), data)
+
+    def test_asks_dpkg_for_ownership_once_and_logs_no_unowned_path_noise(self):
+        self.previous_build()
+        (self.root / 'etc/php/8.5/mods-available').mkdir(parents=True, exist_ok=True)
+        for module in ('gd', 'intl', 'pcov'):
+            (self.root / f'etc/php/8.5/mods-available/{module}.ini').write_text(f'extension={module}.so\n')
+        (self.root / 'etc/php/8.5/mods-available/orbit-runtime.ini').write_text('opcache.enable=1\n')
+
+        completed = execute('php.install-build', self.payload(mode='plan'), environment=self.environment)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual([call for call in self.calls() if call.startswith('dpkg -S')], ['dpkg -S 3'])
+        self.assertNotIn(b'no path found', completed.stderr)
 
     def test_a_package_that_stays_at_another_version_ends_with_rollback_failed(self):
         self.previous_build()

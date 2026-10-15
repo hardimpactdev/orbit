@@ -112,7 +112,19 @@
                         "web_root": null
                     }
                 ],
-                "shared_paths": []
+                "shared_paths": [],
+                "auto_deploy": {
+                    "enabled": false,
+                    "gate": null,
+                    "warning": null,
+                    "result": null,
+                    "commit": null,
+                    "head": null,
+                    "since": null,
+                    "error_code": null,
+                    "message": null,
+                    "pause": null
+                }
             }
         ],
         "meta": {

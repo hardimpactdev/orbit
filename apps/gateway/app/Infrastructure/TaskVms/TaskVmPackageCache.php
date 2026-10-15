@@ -9,6 +9,7 @@ use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmPackageCacheMount;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\ProtectedInput;
 use App\Models\Node;
 use App\Models\PackageCacheSnapshot;
 use App\Models\Project;
@@ -30,16 +31,19 @@ final readonly class TaskVmPackageCache implements TaskVmPackageCacheMount
      * @param  list<array{manager: string, package: string, version: string, url: string, integrity: string|null, key: string}>  $artifacts
      * @return array<string, string>
      */
-    public function fill(TaskVmHost $host, Node $node, array $artifacts): array
+    public function fill(TaskVmHost $host, Node $node, array $artifacts, #[\SensitiveParameter] ?string $githubToken = null): array
     {
         $maxBytes = Config::integer('package_cache.max_bytes');
         if ($maxBytes < 1) {
             throw new TaskVmException('task_vm.package_cache_invalid_limit', 'The package cache byte budget must be positive.');
         }
-        $result = $this->host($node, ['operation' => 'fill', 'artifacts' => $artifacts, 'max_bytes' => $maxBytes]);
+        $result = $this->host($node, ['operation' => 'fill', 'artifacts' => $artifacts, 'max_bytes' => $maxBytes, 'github_token' => $githubToken]);
         $hashes = IncusHost::json('package cache', $result);
         foreach ($artifacts as $artifact) {
-            if (! is_string($hashes[$artifact['key']] ?? null) || preg_match('/\Asha256-[a-f0-9]{64}\z/D', $hashes[$artifact['key']]) !== 1) {
+            if (! array_key_exists($artifact['key'], $hashes) && ($githubToken !== null || $artifact['manager'] !== 'composer')) {
+                throw new TaskVmException('task_vm.package_cache_invalid_result', 'The trusted fill returned no verified archive hash.');
+            }
+            if (array_key_exists($artifact['key'], $hashes) && (! is_string($hashes[$artifact['key']]) || preg_match('/\Asha256-[a-f0-9]{64}\z/D', $hashes[$artifact['key']]) !== 1)) {
                 throw new TaskVmException('task_vm.package_cache_invalid_result', 'The trusted fill returned no verified archive hash.');
             }
         }
@@ -75,9 +79,9 @@ final readonly class TaskVmPackageCache implements TaskVmPackageCacheMount
     }
 
     /** @param array<string, mixed> $request */
-    private function host(Node $node, array $request): CommandResult
+    private function host(Node $node, #[\SensitiveParameter] array $request): CommandResult
     {
-        return $this->checked($this->incus->root($node, ['python3', '-c', File::get(resource_path('task-vms/package-cache.py'))], json_encode($request, JSON_THROW_ON_ERROR), 1600.0));
+        return $this->checked($this->incus->root($node, ['python3', '-c', File::get(resource_path('task-vms/package-cache.py'))], ProtectedInput::fromString(json_encode($request, JSON_THROW_ON_ERROR)), 1600.0));
     }
 
     private function checked(CommandResult $result): CommandResult

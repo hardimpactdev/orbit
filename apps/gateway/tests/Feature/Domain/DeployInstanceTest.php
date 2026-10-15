@@ -6,6 +6,7 @@ use App\Actions\Instances\DeployInstanceAction;
 use App\Actions\Instances\InstanceDeploymentConfigResolver;
 use App\Actions\Instances\InstantiateProjectRuntimeDefinitionsAction;
 use App\Actions\Instances\RollbackInstanceAction;
+use App\Actions\Instances\StartInstanceDeployAction;
 use App\Domain\Instances\Deployment\DeploymentCancellation;
 use App\Domain\Instances\Deployment\DeploymentEvent;
 use App\Domain\Instances\Deployment\DeploymentFailureBoundary;
@@ -35,13 +36,16 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Instance;
+use App\Models\InstanceDeployment;
 use App\Models\InstanceEnvironmentValue;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Operation;
 use App\Models\Process;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\Orb220DeploymentApiFixture;
 
 it('resolves shared paths from the production Instance and Laravel application directory', function (string $type, string $root, ?array $declared, array $expected): void {
     $instance = orb219_deployment_instance([]);
@@ -538,6 +542,89 @@ it('reports each infrastructure failure boundary with its observed selection', f
     'PHP cache refresh' => ['cache:fresh', DeploymentFailureBoundary::CacheRefresh, 'fresh'],
 ]);
 
+describe('a deployment pinned to a commit', function (): void {
+    it('prepares exactly the given commit and reports it', function (): void {
+        $instance = orb219_deployment_instance([]);
+        $trace = new Orb219DeploymentTrace;
+        [$deploy] = orb219_actions($trace);
+        $commit = str_repeat('c', 40);
+
+        $result = $deploy->execute($instance, new InlineDeploymentSteps, commit: $commit);
+
+        expect($result->succeeded)->toBeTrue()
+            ->and($result->commit)->toBe($commit)
+            ->and($result->release?->commit)->toBe($commit)
+            ->and($trace->entries)->toContain("prepare:main@{$commit}")
+            ->and($trace->entries)->not->toContain('prepare:main');
+    });
+
+    it('refuses a commit the branch does not contain and records that commit', function (): void {
+        $instance = orb219_deployment_instance([]);
+        $commit = str_repeat('d', 40);
+        $trace = new Orb219DeploymentTrace;
+        $trace->notOnBranch = $commit;
+        [$deploy] = orb219_actions($trace);
+
+        $result = $deploy->execute($instance, new InlineDeploymentSteps, commit: $commit);
+
+        expect($result->succeeded)->toBeFalse()
+            ->and($result->failure?->boundary)->toBe(DeploymentFailureBoundary::Preparation)
+            ->and($result->failure?->errorCode)->toBe('deployment.commit_not_on_branch')
+            ->and($result->commit)->toBe($commit)
+            ->and($result->selectedRelease?->name)->toBe('initial')
+            ->and($trace->entries)->not->toContain('environment');
+    });
+
+    it('records the commit on a deployment that fails before preparation', function (): void {
+        $instance = orb219_deployment_instance([]);
+        $instance->update(['deployment_branch' => 'bad..branch']);
+        [$deploy] = orb219_actions(new Orb219DeploymentTrace);
+
+        $result = $deploy->execute($instance, new InlineDeploymentSteps, commit: str_repeat('e', 40));
+
+        expect($result->failure?->errorCode)->toBe('deployment_config.unavailable')
+            ->and($result->commit)->toBe(str_repeat('e', 40));
+    });
+
+    it('carries the commit from the operation input to the history row, also when the deployment fails', function (bool $fails): void {
+        enable_operation_queue();
+        $fixture = Orb220DeploymentApiFixture::create();
+        $fixture->deployment->failPreparation = $fails;
+        $commit = str_repeat('f', 40);
+
+        $operation = app(StartInstanceDeployAction::class)->execute($fixture->instance, 'schedule', null, $commit);
+        run_operation_jobs();
+        $row = InstanceDeployment::query()->sole();
+
+        expect($operation->input)->toBe(['commit' => $commit])
+            ->and($fixture->deployment->preparedCommits)->toBe([$commit])
+            ->and($row->status)->toBe($fails ? 'failed' : 'succeeded')
+            ->and($row->commit)->toBe($commit)
+            ->and($row->triggered_by)->toBe('schedule')
+            ->and($operation->refresh()->result['commit'] ?? null)->toBe($commit);
+    })->with(['succeeded' => [false], 'failed' => [true]]);
+
+    it('keeps an unpinned deployment on the branch head', function (): void {
+        enable_operation_queue();
+        $fixture = Orb220DeploymentApiFixture::create();
+
+        $operation = app(StartInstanceDeployAction::class)->execute($fixture->instance, 'node', null);
+        run_operation_jobs();
+
+        expect($operation->input)->toBe([])
+            ->and($fixture->deployment->preparedCommits)->toBe([null]);
+    });
+
+    it('refuses a malformed commit before it records anything', function (): void {
+        enable_operation_queue();
+        $fixture = Orb220DeploymentApiFixture::create();
+
+        expect(fn () => app(StartInstanceDeployAction::class)->execute($fixture->instance, 'schedule', null, 'main'))
+            ->toThrow(InvalidArgumentException::class)
+            ->and(Operation::query()->count())->toBe(0);
+    });
+});
+
 it('reports a deployment or rollback that ran out of time as deployment.deadline_exceeded', function (bool $rollback, string $failAt): void {
     $instance = orb219_deployment_instance([]);
     [$deploy, $rollbackAction] = orb219_actions(new Orb219DeploymentTrace(failAt: $failAt));
@@ -693,6 +780,9 @@ final class Orb219DeploymentTrace
 
     public ?string $remoteSelection = null;
 
+    /** A commit that the branch does not contain: preparing it is refused. */
+    public ?string $notOnBranch = null;
+
     public bool $activationFailed = false;
 
     public function __construct(
@@ -742,11 +832,15 @@ final readonly class Orb219ProductionDeployment implements ProductionDeployment
 {
     public function __construct(private Orb219DeploymentTrace $trace) {}
 
-    public function prepare(Instance $instance, string $branch): DeploymentRelease
+    public function prepare(Instance $instance, string $branch, ?string $commit = null): DeploymentRelease
     {
-        $this->record("prepare:{$branch}");
+        $this->record($commit === null ? "prepare:{$branch}" : "prepare:{$branch}@{$commit}", "prepare:{$branch}");
 
-        return $this->release('fresh');
+        if ($commit !== null && $commit === $this->trace->notOnBranch) {
+            throw new ResourceOperationException('deployment.commit_not_on_branch', 'Injected commit refusal.', 409);
+        }
+
+        return $this->release('fresh', $commit);
     }
 
     public function executeStep(
@@ -830,9 +924,9 @@ final readonly class Orb219ProductionDeployment implements ProductionDeployment
         }
     }
 
-    private function release(string $name): DeploymentRelease
+    private function release(string $name, ?string $commit = null): DeploymentRelease
     {
-        return new DeploymentRelease($name, "/home/orbit-app-1/releases/{$name}", str_repeat('a', 40));
+        return new DeploymentRelease($name, "/home/orbit-app-1/releases/{$name}", $commit ?? str_repeat('a', 40));
     }
 }
 

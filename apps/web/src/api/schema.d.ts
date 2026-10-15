@@ -4276,6 +4276,7 @@ export interface components {
             annotator_url?: string | null;
             routes?: components["schemas"]["Route"][];
             shared_paths?: string[];
+            auto_deploy?: components["schemas"]["InstanceAutoDeploy"] | null;
         };
         ProjectIdentity: {
             id?: number;
@@ -4354,6 +4355,24 @@ export interface components {
             phase?: string;
             command?: string;
             timeout_seconds?: number;
+        };
+        InstanceAutoDeploy: {
+            enabled?: boolean;
+            gate?: string | null;
+            warning?: string | null;
+            result?: string | null;
+            commit?: string | null;
+            head?: string | null;
+            since?: string | null;
+            error_code?: string | null;
+            message?: string | null;
+            pause?: components["schemas"]["InstanceAutoDeployPause"] | null;
+        };
+        InstanceAutoDeployPause: {
+            reason?: string;
+            deployment_id?: number;
+            commit?: string | null;
+            paused_at?: string;
         };
         InstanceRegistration: {
             project?: components["schemas"]["Project"];
@@ -9328,6 +9347,8 @@ export interface operations {
                     branch?: string;
                     /** @description JSON list of shared directories; [] disables sharing and null restores the default */
                     shared_paths?: string[] | null;
+                    /** @description Deploy each new green commit of the branch automatically (true or false) */
+                    auto_deploy?: boolean;
                 };
             };
         };

@@ -38,6 +38,28 @@ function instance_payload(?array $removal = null): array
         'removal' => $removal,
         'transfer' => null,
         'deploy_steps' => [],
+        'auto_deploy' => instance_auto_deploy_payload(),
+    ];
+}
+
+/**
+ * @param  array<string, mixed>  $overrides
+ * @return array<string, mixed>
+ */
+function instance_auto_deploy_payload(array $overrides = []): array
+{
+    return [
+        'enabled' => false,
+        'gate' => null,
+        'warning' => null,
+        'result' => null,
+        'commit' => null,
+        'head' => null,
+        'since' => null,
+        'error_code' => null,
+        'message' => null,
+        'pause' => null,
+        ...$overrides,
     ];
 }
 
