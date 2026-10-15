@@ -7,6 +7,7 @@ use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
+use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshExecutor;
@@ -297,3 +298,27 @@ it('keeps delayed cleanup of a failed attempt away from the restarted attempt re
     expect($incus->instances)->toHaveKeys([$build->builder_vm_name, $build->builder_vm_name.'-smoke']);
     expect(TaskVmHostAudit::claimBuildCleanup($host, $build->builder_vm_name))->toBeFalse();
 });
+
+it('records a bounded redacted output tail and a real builder log for failed recipe phases', function (string $phase): void {
+    $host = recipeImageHost();
+    $incus = recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    $build = app(RecipeImageBuilds::class)->reconcile()[0];
+    $incus->fail = 'recipe base:'.$phase;
+    $incus->recipeFailure = new CommandResult(1, "stdout diagnostic\n".implode("\n", array_map(fn (int $n): string => "line {$n}", range(1, 60))),
+        "API_TOKEN=do-not-store-this\nAuthorization: Bearer do-not-store-that\napt dependency conflict", 1, false);
+
+    expect(fn () => runRecipeImageBuild($build))->toThrow(TaskVmException::class);
+
+    $logPhase = $phase === 'verify' ? 'smoke' : $phase;
+    $failed = array_find($build->refresh()->steps, fn (array $step): bool => $step['program'] === 'base:'.$logPhase);
+    expect($failed['error'])->toContain('apt dependency conflict', 'line 60', '[REDACTED]',
+        '/var/log/orbit/recipe-images/base-'.$logPhase.'.log', $build->builder_vm_name)
+        ->not->toContain('stdout diagnostic', 'line 1'."\n", 'do-not-store-this', 'do-not-store-that');
+    expect(mb_strlen($failed['error']))->toBeLessThanOrEqual(4000);
+    $logs = array_filter($incus->commands, static fn ($command): bool => str_contains((string) $command->input, 'apt dependency conflict'));
+    expect($logs)->not->toBeEmpty();
+    foreach ($logs as $log) {
+        expect($log->input)->toContain('[REDACTED]')->not->toContain('do-not-store-this', 'do-not-store-that');
+    }
+})->with(['packages', 'javascript', 'rust', 'agent', 'verify']);

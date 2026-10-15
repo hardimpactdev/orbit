@@ -1,5 +1,17 @@
 """Image-only phases, appended to the shared recipe helpers. Never runs workspace setup or a package cache fill."""
 
+import traceback
+
+IMAGE_LOG = None
+
+
+def command_output(result):
+    if IMAGE_LOG is not None:
+        print('Command: ' + str(result.args[0]) + '; exit code: ' + str(result.returncode), file=IMAGE_LOG)
+        print(result.stdout, end='', file=IMAGE_LOG)
+        print(result.stderr, end='', file=IMAGE_LOG)
+        IMAGE_LOG.flush()
+
 
 def image_packages(payload):
     snapshot = payload['snapshot']
@@ -34,7 +46,8 @@ def image_packages(payload):
                     continue
                 deb = download(pin, payload['architecture'], work / (name + '.deb'))
                 fields = run(['dpkg-deb', '-f', str(deb), 'Package', 'Version', 'Architecture']).stdout.splitlines()
-                if [line.split(': ', 1)[-1] for line in fields] != [name, pin['version'], payload['architecture']]:
+                metadata = [line.split(': ', 1)[-1] for line in fields]
+                if metadata[:2] != [name, pin['version']] or metadata[2:] not in ([payload['architecture']], ['all']):
                     raise RecipeFailure()
                 debs.append(str(deb))
             if debs:
@@ -175,17 +188,39 @@ def image_verify(payload):
 def image_main():
     signal.signal(signal.SIGTERM, interrupted)
     signal.signal(signal.SIGINT, interrupted)
+    global IMAGE_LOG
     phase, document = sys.argv[1:]
+    path = None
     try:
         payload = json.loads(document)
+        profile = payload['profile']
+        if not re.fullmatch(r'[a-z-]+', profile) or phase not in ('packages', 'javascript', 'rust', 'agent', 'verify'):
+            raise RecipeFailure('Invalid image phase')
+        directory = Path('/var/log/orbit/recipe-images')
+        directory.mkdir(parents=True, mode=0o700, exist_ok=True)
+        directory.chmod(0o700)
+        path = directory / (profile + '-' + phase + '.log')
+        IMAGE_LOG = os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600), 'w')
+        os.chmod(path, 0o600)
+        print('Recipe image phase: ' + profile + ':' + phase, file=IMAGE_LOG, flush=True)
         platform_check(payload['architecture'])
         {'packages': image_packages, 'javascript': image_javascript, 'rust': image_rust,
          'agent': image_agent, 'verify': image_verify}[phase](payload)
         print('{"ok":true}')
         return 0
     except Exception:
+        if IMAGE_LOG is not None:
+            traceback.print_exc(file=IMAGE_LOG)
+            IMAGE_LOG.flush()
+            print('\n'.join(path.read_text(errors='replace').splitlines()[-40:]), file=sys.stderr)
+        else:
+            traceback.print_exc(file=sys.stderr)
         print('recipe-image-stage:' + phase)
         return 1
+    finally:
+        if IMAGE_LOG is not None:
+            IMAGE_LOG.close()
+            IMAGE_LOG = None
 
 
 if __name__ == '__main__':

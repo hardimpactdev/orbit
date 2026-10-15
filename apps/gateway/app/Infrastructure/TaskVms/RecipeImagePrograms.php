@@ -33,7 +33,7 @@ final readonly class RecipeImagePrograms
             $result = $shell->asRoot(['python3', '-', $phase, json_encode($payload, JSON_THROW_ON_ERROR)], $this->script(), timeout: 1440);
         }
         if (! $result->succeeded() || $result->truncated) {
-            throw new TaskVmException('task_vm.image_build_failed', "Recipe image phase [{$profile}:{$phase}] failed. Inspect the retained builder.");
+            throw new TaskVmException('task_vm.image_build_failed', "Recipe image phase [{$profile}:{$phase}] failed.");
         }
     }
 

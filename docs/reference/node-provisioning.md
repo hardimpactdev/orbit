@@ -92,6 +92,8 @@ The command requires an active managed Ubuntu Node and a supported architecture.
 
 Application shares the role-converge and self-update locks with Node convergence and fleet rollout. It holds the existing Tool Manager scope locks while applying and checking the recipe. It updates the standard `ubuntu.sources` file to the snapshot and preserves third-party repositories used by existing role operations. Recipe package resolution uses only the snapshot source. It downloads and verifies pinned release artifacts, installs only the selected exact pins and their dependencies with package removal disabled, and verifies installed versions.
 
+Before installation, Orbit checks the name, complete version (including any epoch), and architecture in each Debian artifact. The architecture must match the Node or be `all`. The recipe for `app-dev` includes `php-common`, `php8.4-igbinary`, and `php8.5-igbinary` from Sury. See the [recipe schema](/reference/compute-drivers#recipe-schema).
+
 Package hooks are prevented from restarting services during installation. Only active services belonging to changed packages restart; PHP package changes also restart active FPM units for that PHP version.
 
 Vite+ keeps its existing global store. The pinned CLI receives its initialization marker before it runs, so it cannot launch an unpinned installer. A Vite+ package change requires its existing dependencies to match the new distribution’s exact versions. A missing or changed dependency stops at the tools stage instead of fetching inputs absent from the recipe.

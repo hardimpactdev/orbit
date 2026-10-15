@@ -9,11 +9,6 @@
         "arm64"
     ],
     "tools": {
-        "dnsmasq": {
-            "source": "ubuntu",
-            "version": "2.92-1ubuntu0.5",
-            "package": "dnsmasq"
-        },
         "acl": {
             "source": "ubuntu",
             "package": "acl",
@@ -99,6 +94,11 @@
             "source": "ubuntu",
             "package": "curl",
             "version": "8.18.0-1ubuntu2.7"
+        },
+        "dnsmasq": {
+            "source": "ubuntu",
+            "version": "2.92-1ubuntu0.5",
+            "package": "dnsmasq"
         },
         "docker.io": {
             "source": "ubuntu",
@@ -292,6 +292,20 @@
                 }
             }
         },
+        "php-common": {
+            "source": "artifact",
+            "version": "2:101~+0~20260503.72+ubuntu26.04~1.gbp7da167",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php-defaults/php-common_101~+0~20260503.72+ubuntu26.04~1.gbp7da167_all.deb",
+                    "sha256": "9a3cab41528355af8d2d15301deea5fa55fb9630d6bd652ac844c7533d46ee2c"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php-defaults/php-common_101~+0~20260503.72+ubuntu26.04~1.gbp7da167_all.deb",
+                    "sha256": "9a3cab41528355af8d2d15301deea5fa55fb9630d6bd652ac844c7533d46ee2c"
+                }
+            }
+        },
         "php-curl": {
             "source": "ubuntu",
             "package": "php-curl",
@@ -383,6 +397,20 @@
                 "arm64": {
                     "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-gd_8.4.26-1+0~20260925.56+ubuntu26.04~1.gbp80d95d_arm64.deb",
                     "sha256": "179e6d2cbe85930cf45ee3665d8e5b17c38d75c3512db582afcd73de7af8fd8a"
+                }
+            }
+        },
+        "php8.4-igbinary": {
+            "source": "artifact",
+            "version": "3.2.16-6+0~20260709.60+ubuntu26.04~1.gbp1eff65",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php-igbinary/php8.4-igbinary_3.2.16-6+0~20260709.60+ubuntu26.04~1.gbp1eff65_amd64.deb",
+                    "sha256": "890c0de4d642f6bce18a8bb85b4d7aa3803f7af3fc0792599f50c5e51f07614e"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php-igbinary/php8.4-igbinary_3.2.16-6+0~20260709.60+ubuntu26.04~1.gbp1eff65_arm64.deb",
+                    "sha256": "facde02812f19db0c4f8e6e3e4b7748bce7ad478bd2d1b1b7975647da73536c4"
                 }
             }
         },
@@ -635,6 +663,20 @@
                 "arm64": {
                     "url": "https://packages.sury.org/php/pool/main/p/php8.5/php8.5-gd_8.5.11-1+0~20260924.26+ubuntu26.04~1.gbpbcb504_arm64.deb",
                     "sha256": "5d9d7011bf40bf10551b90e7de508ecb7639724cdeb81b04d474d38872aac122"
+                }
+            }
+        },
+        "php8.5-igbinary": {
+            "source": "artifact",
+            "version": "3.2.16-6+0~20260709.60+ubuntu26.04~1.gbp1eff65",
+            "artifacts": {
+                "amd64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php-igbinary/php8.5-igbinary_3.2.16-6+0~20260709.60+ubuntu26.04~1.gbp1eff65_amd64.deb",
+                    "sha256": "0c43369fbe30ea9a8ed9a2c3ceb523a88b7fb4076a60a5569e76a07b42e14c77"
+                },
+                "arm64": {
+                    "url": "https://packages.sury.org/php/pool/main/p/php-igbinary/php8.5-igbinary_3.2.16-6+0~20260709.60+ubuntu26.04~1.gbp1eff65_arm64.deb",
+                    "sha256": "0db189b4d64a6392710dced41bf11b0c4254c6919a9e214b9303b7c569a9e87a"
                 }
             }
         },
@@ -1009,7 +1051,10 @@
             "php8.4-pcov",
             "php8.4-readline",
             "php8.4-opcache",
-            "libgd3"
+            "libgd3",
+            "php-common",
+            "php8.4-igbinary",
+            "php8.5-igbinary"
         ],
         "app-prod": [
             "acl",
@@ -1114,6 +1159,9 @@
         "libxext6",
         "libxfixes3",
         "libxkbcommon0",
-        "libxrandr2"
+        "libxrandr2",
+        "php-common",
+        "php8.4-igbinary",
+        "php8.5-igbinary"
     ]
 }

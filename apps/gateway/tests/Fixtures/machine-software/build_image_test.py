@@ -1,5 +1,9 @@
 """Image program regressions. No network, package manager, service, or live path is used."""
 import importlib.util
+import contextlib
+import io
+import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -75,6 +79,47 @@ class ImageRecipeTest(unittest.TestCase):
             with self.assertRaises(recipe.RecipeFailure):
                 self.packages(metadata)
         self.assertFalse(any(c[:2] == ['apt-get', 'install'] for c in self.commands))
+
+    def test_installs_architecture_independent_debs_with_exact_name_and_epoch_version(self):
+        self.payload['tools'] = {'php-common': {'source': 'artifact', 'version': '2:101',
+                                 'artifacts': {'amd64': {'url': 'https://example.test/php-common_101_all.deb'}}}}
+        def metadata(argv, **kwargs):
+            self.commands.append(argv)
+            output = 'Package: php-common\nVersion: 2:101\nArchitecture: all\n' if argv[0] == 'dpkg-deb' else ''
+            return subprocess.CompletedProcess(argv, 0, output, '')
+        with patch.object(recipe, 'download', side_effect=lambda pin, arch, path: path):
+            self.packages(metadata)
+        self.assertTrue(any(c[:2] == ['apt-get', 'install'] for c in self.commands))
+
+    def test_rejects_a_deb_for_another_architecture(self):
+        self.payload['tools'] = {'caddy': {'source': 'artifact', 'version': '1.2.3',
+                                'artifacts': {'amd64': {'url': 'https://example.test/caddy-1.2.3.deb'}}}}
+        def metadata(argv, **kwargs):
+            return subprocess.CompletedProcess(argv, 0, 'Package: caddy\nVersion: 1.2.3\nArchitecture: arm64\n', '')
+        with patch.object(recipe, 'download', side_effect=lambda pin, arch, path: path):
+            with self.assertRaises(recipe.RecipeFailure):
+                self.packages(metadata)
+
+    def test_failed_subprocess_keeps_both_streams_and_exception_in_private_phase_log(self):
+        original_path = recipe.Path
+        directory = original_path(self.work.name) / 'logs'
+        def path(value):
+            return directory if value == '/var/log/orbit/recipe-images' else original_path(value)
+        def fail(payload):
+            recipe.run([sys.executable, '-c', "import sys; print('package stdout'); print('dependency conflict', file=sys.stderr); sys.exit(17)"])
+        with patch.object(recipe, 'Path', side_effect=path), \
+             patch.object(recipe, 'platform_check'), \
+             patch.object(recipe, 'image_packages', side_effect=fail), \
+             patch.object(sys, 'argv', ['installer', 'packages', json.dumps(self.payload)]), \
+             contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()) as errors:
+            self.assertEqual(recipe.image_main(), 1)
+        log = directory / 'base-packages.log'
+        self.assertEqual(log.stat().st_mode & 0o777, 0o600)
+        self.assertIn('package stdout', log.read_text())
+        self.assertIn('dependency conflict', log.read_text())
+        self.assertIn('exit code: 17', log.read_text())
+        self.assertIn('RecipeFailure', log.read_text())
+        self.assertIn('dependency conflict', errors.getvalue())
 
     def test_skips_matching_javascript_without_fetching_packages(self):
         self.payload['tools'] = {'node': {'version': '24.1.0'}}

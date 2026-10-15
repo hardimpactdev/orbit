@@ -20,6 +20,11 @@ class RecipeFailure(Exception):
     pass
 
 
+def command_output(result):
+    """Node convergence keeps manager output private; image builds override this hook for root-only logs."""
+    pass
+
+
 def run(argv, *, required=True, env=None):
     try:
         with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
@@ -29,16 +34,16 @@ def run(argv, *, required=True, env=None):
             except BaseException:
                 os.killpg(process.pid, signal.SIGTERM)
                 try:
-                    process.communicate(timeout=3)
+                    stdout, stderr = process.communicate(timeout=3)
                 except subprocess.TimeoutExpired:
                     os.killpg(process.pid, signal.SIGKILL)
-                    process.communicate()
+                    stdout, stderr = process.communicate()
+                command_output(subprocess.CompletedProcess(argv, process.returncode, stdout, stderr))
                 raise
             result = subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
     except FileNotFoundError:
-        if required:
-            raise RecipeFailure()
-        return subprocess.CompletedProcess(argv, 127, '', '')
+        result = subprocess.CompletedProcess(argv, 127, '', 'Executable not found: ' + argv[0] + '\n')
+    command_output(result)
     if required and result.returncode:
         raise RecipeFailure()
     return result
@@ -364,7 +369,7 @@ def apply(payload):
                 metadata = run(['dpkg-deb', '-f', deb, 'Package', 'Version', 'Architecture']).stdout.splitlines()
                 expected = [name, tools[name]['version'], payload['architecture']]
                 actual = [line.split(': ', 1)[-1] for line in metadata]
-                if actual != expected:
+                if actual[:2] != expected[:2] or actual[2:] not in ([payload['architecture']], ['all']):
                     raise RecipeFailure()
             stage = 'apt-source'
             snapshot = payload['snapshot']

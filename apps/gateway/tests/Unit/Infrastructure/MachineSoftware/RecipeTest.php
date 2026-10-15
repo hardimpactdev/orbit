@@ -69,6 +69,27 @@ describe('machine recipe structure and identity', function (): void {
         Http::assertNothingSent();
     });
 
+    it('pins the Sury dependencies needed to install both PHP versions on a stock image', function (): void {
+        $recipe = new RecipeLoader()->load();
+
+        expect($recipe->profile('base'))->toContain('php-common', 'php8.4-igbinary', 'php8.5-igbinary');
+        expect($recipe->profile('app-dev'))->toContain('php-common', 'php8.4-igbinary', 'php8.5-igbinary');
+        foreach (['php-common', 'php8.4-igbinary', 'php8.5-igbinary'] as $name) {
+            expect($recipe->tools[$name]->source)->toBe('artifact');
+            foreach (['amd64', 'arm64'] as $architecture) {
+                expect($recipe->tools[$name]->artifacts[$architecture]->location)->toStartWith('https://packages.sury.org/php/');
+            }
+        }
+        expect($recipe->tools['php-common']->version)->toStartWith('2:');
+    });
+
+    it('rejects a wrong Debian release version even when the epoch is omitted in the filename', function (): void {
+        $data = machine_recipe_document();
+        $data['tools']['php-common']['version'] = '2:999';
+
+        expect(fn () => machine_recipe_decode($data))->toThrow(InvalidArgumentException::class, 'immutable release URL');
+    });
+
     it('seeds the existing enrollment and image-build packages without adding base-only software to roles', function (): void {
         $recipe = new RecipeLoader()->load();
         $node = new Node;
@@ -78,7 +99,7 @@ describe('machine recipe structure and identity', function (): void {
         $php = array_values(array_filter($programs['source']->arguments, fn (string $argument): bool => str_starts_with($argument, 'php8.')));
         $javascript = ['vp', 'vp-cli', 'node', 'pnpm', 'bun'];
         $production = array_values(array_unique([...$common, ...$packages->forRole($node, RoleName::AppProd), ...$javascript]));
-        $development = [...$production, ...$php, 'php8.4-readline', 'php8.5-readline', 'libgd3'];
+        $development = [...$production, ...$php, 'php8.4-readline', 'php8.5-readline', 'libgd3', 'php-common', 'php8.4-igbinary', 'php8.5-igbinary'];
         $imagePackages = ['openssh-server', ...TaskVmCloudInit::WorkspaceTools, ...TaskVmCloudInit::ChromiumLibraries];
         $base = [...$development, ...$imagePackages, 'rust', 'rust-std', 'cargo', 'clippy', 'rustfmt', 'orbit-agent', 'pi'];
         foreach (['operator' => $common, 'gateway' => [...$common, 'caddy'], 'app-prod' => $production, 'app-dev' => $development, 'base' => $base] as $role => $expected) {
