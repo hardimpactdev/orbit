@@ -43,7 +43,7 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0002 | Keep proof resources task-owned and production separate | [Incus topologies: Exact ownership](/reference/incus-topologies#exact-ownership) |
 | 0003 | Adopt the singleton Metrics role contract | [Metrics role](/reference/metrics) |
 | 0004 | Define the verify-only Doctor boundary | [doctor: Why it works this way](/cli/doctor#why-it-works-this-way) |
-| 0005 | Adopt a rolling Incus development topology (superseded) | [Incus topologies: Composed from role images](/reference/incus-topologies#composed-from-role-images) |
+| 0005 | Adopt a rolling Incus development topology (superseded) | [Incus topologies: Composed from one recipe base](/reference/incus-topologies#composed-from-one-recipe-base) |
 | 0006 | Separate disposable discovery from immutable proof (superseded in part) | [Incus topologies: A live mount](/reference/incus-topologies#a-live-mount) |
 | 0008 | Define typed app-dev node storage settings | [Node settings](/reference/node-settings) |
 | 0009 | Adopt clustered Instance routing | [Routes: Set up private traffic](/reference/routes#set-up-private-traffic) |
@@ -56,7 +56,7 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0016 | Reconcile App identity and source-default updates | [Projects: Update a Project](/reference/projects#update-a-project) |
 | 0017 | Make Cluster placement optional | [cluster: Placement and TLDs](/cli/cluster#placement-and-tlds) |
 | 0018 | Register caller-local development worktrees as Instances | [Applications: Registration takes ownership (superseded by 0027)](/domains/applications#registration-takes-ownership) |
-| 0019 | Run disposable Incus scenario lanes (superseded) | [Incus topologies: Composed from role images](/reference/incus-topologies#composed-from-role-images) |
+| 0019 | Run disposable Incus scenario lanes (superseded) | [Incus topologies: Composed from one recipe base](/reference/incus-topologies#composed-from-one-recipe-base) |
 | 0021 | Pin Sury PHP-FPM with OPcache profiles per role | [PHP runtimes: Why it works this way](/reference/php-runtime#why-it-works-this-way) |
 | 0022 | Track the issue workspace and delete it before merge (superseded) | [Contributor guide: Review reproduces on a discovery topology](/contributor-guide#review-reproduces-on-a-discovery-topology) |
 | 0023 | Separate hostname selection from Cluster routing | [Routes: Why it works this way](/reference/routes#routes-own-domains-and-cluster-membership-owns-scope) |
@@ -71,9 +71,9 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0032 | Preserve explicit Instance branch selection | [Applications: An explicit branch stays explicit](/domains/applications#an-explicit-branch-stays-explicit) |
 | 0033 | Trust WireGuard members for private Node traffic | [Routes: Private network trust](/reference/routes#private-network-trust) |
 | 0034 | Select Instance PHP from Composer constraints | [PHP runtimes: Select the PHP version](/reference/php-runtime#select-the-php-version) |
-| 0035 | Close out mutating proofs by refreshing the topology snapshot (superseded) | [Incus topologies: Composed from role images](/reference/incus-topologies#composed-from-role-images) |
+| 0035 | Close out mutating proofs by refreshing the topology snapshot (superseded) | [Incus topologies: Composed from one recipe base](/reference/incus-topologies#composed-from-one-recipe-base) |
 | 0036 | Support only Instances | [Applications: One application model](/domains/applications#one-application-model) |
-| 0037 | Promote fresh three-node topology snapshots (superseded) | [Incus topologies: Composed from role images](/reference/incus-topologies#composed-from-role-images) |
+| 0037 | Promote fresh three-node topology snapshots (superseded) | [Incus topologies: Composed from one recipe base](/reference/incus-topologies#composed-from-one-recipe-base) |
 | 0038 | Cascade Instance removal through processes and schedules | [Instance removal: Processes and Schedules](/reference/instance-removal#processes-and-schedules) |
 | 0039 | Use round-robin for production Route pools | [Routes: Serve a production pool](/reference/routes#serve-a-production-pool) |
 | 0040 | Extend issue proof with one app-prod Node (superseded) | [Incus topologies: Declared Nodes](/reference/incus-topologies#declared-nodes) |
@@ -236,5 +236,6 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0201 | Release the Gateway automatically from green main | [Update and recover a Gateway: Automatic releases](/reference/gateway-recovery#automatic-releases); [Update and recover a Gateway: Why it works this way](/reference/gateway-recovery#why-it-works-this-way) |
 | 0202 | The fleet follows the Gateway through orbit self-update | [Update and recover a Gateway: Fleet rollout](/reference/gateway-recovery#fleet-rollout); [Orbit self-update](/reference/self-update); [Node agent: The agent only observes](/reference/node-agent#the-agent-only-observes) |
 | 0203 | Review and merge pull requests inside Orbit | [Tasks: Review and merge](/reference/tasks#review-and-merge); [Tasks: Orbit reviews before it pushes](/reference/tasks#orbit-reviews-before-it-pushes); [GitHub App: How Orbit reviews and merges a pull request](/reference/github-app#how-orbit-reviews-and-merges-a-pull-request) |
+| 0207 | One image recipe, shared package cache, no workspace templates | [Compute drivers: Machine software recipe](/reference/compute-drivers#machine-software-recipe); [Incus topologies: One recipe base image](/reference/incus-topologies#one-recipe-base-image); [Node provisioning: Converge a Node to a recipe](/reference/node-provisioning#converge-a-node-to-a-recipe) |
 | 0208 | Scan monorepo dependencies per sub-project | [Dependency contracts: Separate monorepo dependency sources](/reference/instance-dependency-contracts#separate-monorepo-dependency-sources) |
 | 0208 | Deploy the Gateway with Laravel migrations and explicit database recovery | [Update and recover a Gateway: Laravel owns migrations](/reference/gateway-recovery#laravel-owns-migrations) |

@@ -37,7 +37,7 @@ The Gateway's `pi` driver refuses every Claude model, also through CLIProxyAPI. 
 
 ## Run Pi on a task VM
 
-On a [task VM](/reference/compute-drivers#task-vms), the Gateway installs and starts Pi itself, in the `PrepareTaskVmRuntime` job. There is no manual install. Pi runs as the VM's managed user `orbit`, which has passwordless sudo. A [warm VM](/reference/compute-drivers#keep-warm-vms) gets none of the steps below until a group claims it. The claim creates the VM's Pi token, and the job then runs every step.
+On a [task VM](/reference/compute-drivers#task-vms), the Gateway installs and starts Pi itself, in the `PrepareTaskVmRuntime` job. There is no manual install. Pi runs as the VM's managed user `orbit`, which has passwordless sudo. The claim creates the fresh VM's Pi token, and the job runs every step below.
 
 The proxycli CLIProxyAPI URL must be `task_vms.model_proxy_origin`. Otherwise the job fails with `task_vm.invalid_config` before it creates a key.
 
