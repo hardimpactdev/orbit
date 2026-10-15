@@ -44,6 +44,8 @@ final class ProxyCliServiceProvider extends ExtensionServiceProvider
 
     public function register(): void
     {
+        parent::register();
+
         $this->app->singleton(ArrayProxyCliCache::class);
         $this->app->singleton(ProxyCliCache::class, function ($app): ProxyCliCache {
             if ($app->environment('testing')) {
