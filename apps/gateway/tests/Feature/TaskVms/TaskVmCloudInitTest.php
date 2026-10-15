@@ -35,7 +35,7 @@ it('renders only the orbit user in incus-admin and the Gateway key for a task VM
         YAML);
 });
 
-it('pins orbit to uid and gid 1000 and adds a package upgrade, openssh-server, Chromium\'s libraries, and the workspace tools for the base image builder', function (): void {
+it('pins orbit to uid and gid 1000 without installing packages in builder cloud-init', function (): void {
     expect(new TaskVmCloudInit()->renderImageBuilder(CLOUD_INIT_KEY))->toBe(<<<'YAML'
         #cloud-config
         {
@@ -59,36 +59,6 @@ it('pins orbit to uid and gid 1000 and adds a package upgrade, openssh-server, C
                     "primary_group": "orbit",
                     "no_user_group": true
                 }
-            ],
-            "package_update": true,
-            "package_upgrade": true,
-            "packages": [
-                "openssh-server",
-                "libasound2t64",
-                "libatk-bridge2.0-0t64",
-                "libatk1.0-0t64",
-                "libatspi2.0-0t64",
-                "libcairo2",
-                "libcups2t64",
-                "libdbus-1-3",
-                "libdrm2",
-                "libgbm1",
-                "libglib2.0-0t64",
-                "libnspr4",
-                "libnss3",
-                "libpango-1.0-0",
-                "libx11-6",
-                "libxcb1",
-                "libxcomposite1",
-                "libxdamage1",
-                "libxext6",
-                "libxfixes3",
-                "libxkbcommon0",
-                "libxrandr2",
-                "rsync",
-                "bind9-dnsutils",
-                "gcc",
-                "libc6-dev"
             ]
         }
 

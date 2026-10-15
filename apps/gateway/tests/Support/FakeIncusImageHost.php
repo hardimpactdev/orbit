@@ -196,7 +196,6 @@ final class FakeIncusImageHost implements SshExecutor
                 ? ($this->fail === 'clean' ? new CommandResult(1, '', "base-image-clean: an SSH host key remains\n", 1, false) : new CommandResult(0, "{\"ok\":true}\n", '', 1, false))
                 : $this->answer(match ($call->script) {
                     'image-check.sh' => 'lean boot',
-                    'install-agent.sh' => 'agent',
                     default => 'exec',
                 }),
             default => $this->answer('exec'),
