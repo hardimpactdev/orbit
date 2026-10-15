@@ -23,9 +23,19 @@ final readonly class RecipeValidator
                 $temporary = $tool->source !== 'internal';
                 $file = null;
                 try {
-                    $file = $temporary
-                        ? $this->downloads->file($artifact->location, redirects: true)
-                        : rtrim($artifactDirectory, '/').'/'.$artifact->location;
+                    if ($temporary) {
+                        $mirror = in_array($name, ['git', 'git-man'], true) ? $recipe->phpPolicy->mirror : '';
+                        try {
+                            $file = $this->downloads->file($mirror === '' ? $artifact->location : $mirror.'/'.$name.'_'.$artifact->digest.'.deb', redirects: true);
+                        } catch (RuntimeException $exception) {
+                            if ($mirror === '') {
+                                throw $exception;
+                            }
+                            $file = $this->downloads->file($artifact->location, redirects: true);
+                        }
+                    } else {
+                        $file = rtrim($artifactDirectory, '/').'/'.$artifact->location;
+                    }
                     if (! is_file($file) || ! is_readable($file)) {
                         throw new RuntimeException("Missing or unreadable artifact file [{$file}].");
                     }

@@ -308,6 +308,15 @@ def assess(tools, versions=None, options=None, snapshots=None):
         installed = versions[name]
         status = 'current' if installed == pin['version'] else 'missing' if installed is None else 'different'
         reason = ''
+        if name in ('git', 'git-man') and pin['source'] == 'artifact' and installed is not None and installed != pin['version']:
+            try:
+                if not git_owned(name, installed) and not ubuntu_origin(name, installed, options, snapshots):
+                    status = 'unsupported_newer'
+            except RecipeInterrupted:
+                raise
+            except RecipeFailure as error:
+                status = 'unsupported_newer'
+                reason = ':' + str(error)
         if pin['source'] == 'ubuntu' and installed is not None and installed != pin['version']:
             comparison = run(['dpkg', '--compare-versions', installed, 'gt', pin['version']], required=False)
             if comparison.returncode == 0:
@@ -390,12 +399,133 @@ def repair_ubuntu_sources(architecture):
     return True
 
 
+def git_owned(name, version):
+    """Only root's receipt of a verified recipe install can carry ownership across a later pin bump."""
+    path = APT_ETC / 'orbit-git.json'
+    if path.is_symlink() or not path.is_file() or path.stat().st_uid != 0 or path.stat().st_mode & 0o022:
+        return False
+    try:
+        receipt = json_file(path)
+    except (OSError, ValueError):
+        return False
+    if set(receipt) != {'git', 'git-man'}:
+        return False
+    for pin in receipt.values():
+        if (not isinstance(pin, dict) or set(pin) != {'version', 'sha256'}
+                or not isinstance(pin['version'], str) or not isinstance(pin['sha256'], str)
+                or not re.fullmatch(r'[0-9][0-9A-Za-z.+:~_-]*', pin['version'])
+                or not re.fullmatch(r'[0-9a-f]{64}', pin['sha256'])):
+            return False
+    return receipt[name]['version'] == version and receipt['git']['version'] == receipt['git-man']['version']
+
+
+def record_git(payload, versions):
+    tools = payload['tools']
+    if 'git' not in tools:
+        return
+    if any(versions.get(name) != tools[name]['version'] for name in ('git', 'git-man')):
+        raise RecipeFailure('inventory:git')
+    receipt = {name: {'version': tools[name]['version'],
+                     'sha256': tools[name]['artifacts'][payload['architecture']]['sha256']} for name in ('git', 'git-man')}
+    publish(APT_ETC / 'orbit-git.json', json.dumps(receipt, sort_keys=True).encode())
+
+
+def git_sources():
+    """Retire only git-core's resolute/main entries; preserve unrelated source paragraphs and inline keys."""
+    changes = []
+    paths = [APT_ETC / 'sources.list', *sorted((APT_ETC / 'sources.list.d').glob('*.sources')),
+             *sorted((APT_ETC / 'sources.list.d').glob('*.list'))]
+    for path in paths:
+        if not path.is_file():
+            continue
+        content = path.read_text()
+        if not re.search(r'(?:ppa\.launchpadcontent\.net|ppa\.launchpad\.net)/git-core/ppa', content):
+            continue
+        if path.is_symlink():
+            raise RecipeFailure('apt-source')
+        blocks = re.split(r'(\n\s*\n)', content) if path.suffix == '.sources' else content.splitlines(keepends=True)
+        result = []
+        for block in blocks:
+            active = '\n'.join(line for line in block.splitlines() if not line.lstrip().startswith('#'))
+            if not re.search(r'(?:ppa\.launchpadcontent\.net|ppa\.launchpad\.net)/git-core/ppa', active):
+                result.append(block)
+                continue
+            if path.suffix == '.sources':
+                fields = {}
+                key = None
+                for line in block.splitlines():
+                    if line.startswith('#'):
+                        continue
+                    if line[:1].isspace():
+                        if key:
+                            fields[key] += ' ' + line.strip()
+                        continue
+                    key, separator, value = line.partition(':')
+                    if separator:
+                        key = key.lower()
+                        if key in fields:
+                            raise RecipeFailure('apt-source')
+                        fields[key] = value.strip()
+                uris = fields.get('uris', '').split()
+                suites = fields.get('suites', '').split()
+                components = fields.get('components', '').split()
+                types = fields.get('types', '').split()
+            else:
+                entry = re.fullmatch(r'\s*(deb(?:-src)?)\s+(?:\[[^]]+\]\s+)?(\S+)\s+(\S+)\s+([^#]+?)(?:\s*#.*)?\s*', block)
+                if not entry:
+                    raise RecipeFailure('apt-source')
+                types, uris, suites, components = [entry[1]], [entry[2]], [entry[3]], entry[4].split()
+            allowed = {scheme + '://' + host + '/git-core/ppa/ubuntu'
+                       for scheme in ('http', 'https') for host in ('ppa.launchpad.net', 'ppa.launchpadcontent.net')}
+            if (not uris or any(uri.rstrip('/') not in allowed for uri in uris)
+                    or suites != ['resolute'] or components != ['main'] or not types
+                    or set(types) - {'deb', 'deb-src'}):
+                raise RecipeFailure('apt-source')
+        replacement = ''.join(result)
+        if replacement != content:
+            changes.append((path, content.encode(), replacement.encode()))
+    return changes
+
+
+def git_preferences(tools):
+    return ''.join(f'Package: {name}\nPin: version {tools[name]["version"]}\nPin-Priority: 1001\n\n'
+                   f'Package: {name}\nPin: version *\nPin-Priority: -1\n\n' for name in ('git', 'git-man')).encode()
+
+
+def configure_git(payload, *, apply=False):
+    if 'git' not in payload['tools']:
+        return []
+    changes = git_sources()
+    preference = APT_ETC / 'preferences.d/orbit-git'
+    if preference.is_symlink():
+        raise RecipeFailure('apt-source')
+    expected = git_preferences(payload['tools'])
+    pin_changed = not preference.is_file() or preference.read_bytes() != expected
+    actions = (['retire_git_source'] if changes else []) + (['pin_git'] if pin_changed else [])
+    if apply:
+        for path, before, _after in changes:
+            backup = path.with_name(path.name + '.orbit-git-backup')
+            if backup.is_symlink() or (backup.exists() and backup.read_bytes() != before):
+                raise RecipeFailure('apt-source')
+        for path, before, after in changes:
+            backup = path.with_name(path.name + '.orbit-git-backup')
+            if not backup.exists():
+                publish(backup, before)
+            publish(path, after)
+        if pin_changed:
+            publish(preference, expected)
+    return actions
+
+
 def plan(payload):
+    actions = configure_git(payload)
     if ubuntu_sources_repair() is None:
-        return assess(payload['tools'])
-    with temporary_indexes(rolling_source(payload['architecture'])) as options:
-        report = assess(payload['tools'], options=options)
-    return {**report, '_actions': ['repair_ubuntu_sources']}
+        report = assess(payload['tools'])
+    else:
+        with temporary_indexes(rolling_source(payload['architecture'])) as options:
+            report = assess(payload['tools'], options=options)
+        actions.insert(0, 'repair_ubuntu_sources')
+    return {**report, **({'_actions': actions} if actions else {})}
 
 
 def snapshot_options(payload, work):
@@ -474,7 +604,7 @@ def inspect(tools):
         account = pwd.getpwnam(os.environ['SUDO_USER']) if os.environ.get('SUDO_USER') else pwd.getpwuid(os.getuid())
         scope = vite_scope(account)
     for name, pin in tools.items():
-        if pin['source'] == 'ubuntu' or name == 'caddy' or name.startswith('php') or name == 'libgd3':
+        if pin['source'] == 'ubuntu' or name in ('caddy', 'git', 'git-man', 'libgd3') or name.startswith('php'):
             versions[name] = installed.get(pin['package'] if pin['source'] == 'ubuntu' else name)
         elif name == 'bun':
             versions[name] = binary_version('/opt/orbit/bun/bin/bun')
@@ -542,6 +672,21 @@ def download(pin, architecture, destination):
     if digest != artifact[algorithm]:
         raise RecipeFailure()
     return destination
+
+
+def download_deb(name, pin, payload, destination):
+    mirror = payload.get('deb_mirror')
+    if name in ('git', 'git-man') and mirror:
+        artifact = pin['artifacts'][payload['architecture']]
+        mirrored = {**pin, 'artifacts': {payload['architecture']: {
+            **artifact, 'url': mirror + '/' + name + '_' + artifact['sha256'] + '.deb'}}}
+        try:
+            return download(mirrored, payload['architecture'], destination)
+        except RecipeInterrupted:
+            raise
+        except RecipeFailure:
+            pass
+    return download(pin, payload['architecture'], destination)
 
 
 def extract(archive, destination):
@@ -739,6 +884,7 @@ def apply_recipe(payload, snapshots):
     stage = 'preflight'
     try:
         tools = payload['tools']
+        configure_git(payload)
         policy = POLICY
         if policy.exists() or policy.is_symlink():
             raise RecipeFailure()
@@ -761,7 +907,7 @@ def apply_recipe(payload, snapshots):
         with tempfile.TemporaryDirectory(prefix='orbit-recipe-') as directory:
             work = Path(directory)
             stage = 'download'
-            downloads = {name: download(pin, payload['architecture'], work / (name + ('.deb' if pin['artifacts'][payload['architecture']]['url'].endswith('.deb') else '.archive')))
+            downloads = {name: download_deb(name, pin, payload, work / (name + ('.deb' if pin['artifacts'][payload['architecture']]['url'].endswith('.deb') else '.archive')))
                          for name, pin in tools.items() if pin['source'] != 'ubuntu' and versions[name] != pin['version']}
             debs = [str(path) for name, path in downloads.items() if tools[name]['artifacts'][payload['architecture']]['url'].endswith('.deb')]
             # Validate Debian package identity before allowing maintainer scripts to run.
@@ -773,6 +919,7 @@ def apply_recipe(payload, snapshots):
                 if actual[:2] != expected[:2] or actual[2:] not in ([payload['architecture']], ['all']):
                     raise RecipeFailure()
             stage = 'apt-source'
+            configure_git(payload, apply=True)
             apt_options = snapshot_options(payload, work)
             stage = 'packages'
             package_command(['apt-get', 'update', *apt_options], [])
@@ -812,6 +959,7 @@ def apply_recipe(payload, snapshots):
             for service in sorted(active):
                 stage = 'health:' + service
                 run(['systemctl', 'is-active', '--quiet', service])
+            record_git(payload, after_versions)
             return {'changed_packages': changed, 'restarted_services': restarted,
                     'changed_tools': sorted(name for name in tools if versions[name] != after_versions[name]),
                     'newer_than_recipe': newer_packages(after_assessment), 'healthy': True}

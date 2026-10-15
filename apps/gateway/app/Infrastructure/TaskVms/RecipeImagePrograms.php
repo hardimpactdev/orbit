@@ -47,7 +47,7 @@ final readonly class RecipeImagePrograms
         }
     }
 
-    /** @return array{identity: string, snapshot: string, architecture: string, profile: string, tools: array<string, mixed>, php: array<string, mixed>|null} */
+    /** @return array{identity: string, snapshot: string, deb_mirror: string, architecture: string, profile: string, tools: array<string, mixed>, php: array<string, mixed>|null} */
     private function payload(TaskVmGuestShell $shell, MachineRecipe $recipe, string $profile): array
     {
         $arch = $shell->asRoot(['dpkg', '--print-architecture']);
@@ -79,7 +79,7 @@ final readonly class RecipeImagePrograms
         ];
 
         return ['identity' => $recipe->identity, 'snapshot' => $recipe->snapshot, 'architecture' => $architecture,
-            'profile' => $profile, 'tools' => $tools, 'php' => $php];
+            'profile' => $profile, 'tools' => $tools, 'php' => $php, 'deb_mirror' => $recipe->phpPolicy->mirror];
     }
 
     private function script(): string

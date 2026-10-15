@@ -6,6 +6,7 @@ use App\Domain\Instances\InstancePhpVersionCatalog;
 use App\Domain\Nodes\RoleName;
 use App\Infrastructure\MachineSoftware\ArtifactPin;
 use App\Infrastructure\MachineSoftware\MachineRecipe;
+use App\Infrastructure\MachineSoftware\PhpPolicy;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\MachineSoftware\RecipeValidator;
 use App\Infrastructure\MachineSoftware\SnapshotAvailability;
@@ -56,6 +57,43 @@ function artifact_only_recipe(ToolPin $pin): MachineRecipe
 }
 
 describe('machine recipe structure and identity', function (): void {
+    it('owns one git-core Git build in every profile and architecture', function (): void {
+        $recipe = new RecipeLoader()->load();
+
+        foreach (array_keys($recipe->profiles) as $profile) {
+            expect($recipe->profile($profile))->toContain('git', 'git-man');
+        }
+        foreach (['git', 'git-man'] as $name) {
+            expect($recipe->tools[$name]->source)->toBe('artifact')
+                ->and($recipe->tools[$name]->version)->toBe('1:2.55.0-0ppa1~ubuntu26.04.2')
+                ->and(array_keys($recipe->tools[$name]->artifacts))->toBe(['amd64', 'arm64']);
+        }
+    });
+
+    it('refuses an incomplete or foreign Git build', function (Closure $change, string $error): void {
+        $document = machine_recipe_document();
+        $change($document);
+
+        expect(fn () => machine_recipe_decode($document))->toThrow(InvalidArgumentException::class, $error);
+    })->with([
+        'split versions' => [function (&$document): void {
+            $document['tools']['git-man']['version'] = str_replace('2.55.0', '2.54.0', $document['tools']['git-man']['version']);
+            foreach ($document['tools']['git-man']['artifacts'] as &$artifact) {
+                $artifact['url'] = str_replace('2.55.0', '2.54.0', $artifact['url']);
+            }
+        }, 'git and git-man must pin the same build'],
+        'another origin' => [function (&$document): void {
+            $document['tools']['git']['artifacts']['amd64']['url'] = str_replace('ppa.launchpadcontent.net', 'example.org', $document['tools']['git']['artifacts']['amd64']['url']);
+        }, 'expected a SHA-256-pinned git-core PPA Debian artifact'],
+        'not common' => [function (&$document): void {
+            $document['common'] = array_values(array_diff($document['common'], ['git-man']));
+            $document['roles']['app-dev'][] = 'git-man';
+        }, 'common: missing git-man'],
+        'different all bytes' => [function (&$document): void {
+            $document['tools']['git-man']['artifacts']['arm64']['sha256'] = str_repeat('a', 64);
+        }, 'architecture-independent artifacts must have the same digest'],
+    ]);
+
     it('loads the repository seed and exposes explicit profile membership', function (): void {
         Http::preventStrayRequests();
         $recipe = new RecipeLoader()->load();
@@ -119,7 +157,7 @@ describe('machine recipe structure and identity', function (): void {
         $recipe = new RecipeLoader()->load();
         $node = new Node;
         $packages = new NodeBootstrapPackageCatalog;
-        $common = $packages->forNode($node);
+        $common = [...$packages->forNode($node), 'git', 'git-man'];
         $programs = new RemotePhpPackageManager()->appDevPrograms(new InstancePhpVersionCatalog()->versions());
         [, $json] = explode("\0", $programs['install']->input ?? '', 2);
         $input = json_decode($json, true, flags: JSON_THROW_ON_ERROR);
@@ -371,6 +409,19 @@ describe('recipe availability and artifact integrity', function (): void {
     beforeEach(function (): void {
         Http::preventStrayRequests();
     });
+
+    it('verifies Git from the durable mirror and falls back to the PPA when absent', function (bool $present): void {
+        $url = 'https://ppa.example/git_2.55.0_amd64.deb';
+        $digest = hash('sha256', 'exact Git bytes');
+        $mirror = 'https://mirror.example/git_'.$digest.'.deb';
+        Http::fake([$mirror => Http::response($present ? 'exact Git bytes' : '', $present ? 200 : 404), $url => Http::response('exact Git bytes')]);
+        $pin = new ToolPin('artifact', '2.55.0', artifacts: ['amd64' => new ArtifactPin($url, 'sha256', $digest)]);
+        $recipe = new MachineRecipe('fixture', '20261014T000000Z', ['amd64'], ['git' => $pin], [], '{}', phpPolicy: new PhpPolicy(mirror: 'https://mirror.example'));
+
+        new RecipeValidator(machine_recipe_snapshot_probe())->validate($recipe, '/unused');
+
+        Http::assertSentCount($present ? 1 : 2);
+    })->with([true, false]);
 
     it('fails an unavailable snapshot with a fake availability probe before artifact downloads', function (): void {
         $probe = machine_recipe_snapshot_probe('metadata URL returned 404');

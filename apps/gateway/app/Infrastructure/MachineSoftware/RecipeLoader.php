@@ -17,14 +17,14 @@ final readonly class RecipeLoader
     {
         $catalog = array_fill_keys([
             'dnsmasq', 'ca-certificates', 'curl', 'gnupg', 'libnss-resolve', 'openssh-client', 'sudo', 'ufw', 'wireguard',
-            'acl', 'attr', 'composer', 'docker.io', 'git', 'openssl', 'php-curl', 'php-xml', 'unzip', 'dpkg-repack',
+            'acl', 'attr', 'composer', 'docker.io', 'openssl', 'php-curl', 'php-xml', 'unzip', 'dpkg-repack',
             'openssh-server', 'rsync', 'bind9-dnsutils', 'gcc', 'libc6-dev',
             'libasound2t64', 'libatk-bridge2.0-0t64', 'libatk1.0-0t64', 'libatspi2.0-0t64', 'libcairo2',
             'libcups2t64', 'libdbus-1-3', 'libdrm2', 'libgbm1', 'libglib2.0-0t64', 'libnspr4', 'libnss3',
             'libpango-1.0-0', 'libx11-6', 'libxcb1', 'libxcomposite1', 'libxdamage1', 'libxext6',
             'libxfixes3', 'libxkbcommon0', 'libxrandr2',
         ], 'ubuntu');
-        foreach (['caddy', 'vp', 'vp-cli', 'node', 'pnpm', 'bun', 'rust', 'cargo', 'rust-std', 'clippy', 'rustfmt', 'orbit-agent', 'libgd3', 'php-common'] as $name) {
+        foreach (['git', 'git-man', 'caddy', 'vp', 'vp-cli', 'node', 'pnpm', 'bun', 'rust', 'cargo', 'rust-std', 'clippy', 'rustfmt', 'orbit-agent', 'libgd3', 'php-common'] as $name) {
             $catalog[$name] = 'artifact';
         }
         // The `php<version>-*` pins are artifacts too. The recipe's `php` object lists them, so they have no copy here.
@@ -124,6 +124,7 @@ final readonly class RecipeLoader
         $php = $this->phpBuilds($phpSets, $tools, $ubuntu->release);
         $this->require(($tools[$phpSets['rollback']] ?? null)?->source === 'ubuntu', 'php.rollback: expected an Ubuntu tool that repacks installed packages, such as dpkg-repack.');
         $common = $this->references($root->common, 'common', $tools, $php, $phpSets['rollback']);
+        $this->gitBuild($tools, $common, $ubuntu->release);
         $roles = $this->object($root->roles, 'roles');
         $roleNames = array_keys(get_object_vars($roles));
         $required = ['gateway', 'app-dev', 'app-prod', 'operator'];
@@ -253,6 +254,28 @@ final readonly class RecipeLoader
         }
 
         return $builds;
+    }
+
+    /**
+     * @param  array<string, ToolPin>  $tools
+     * @param  list<string>  $common
+     */
+    private function gitBuild(array $tools, array $common, string $release): void
+    {
+        $version = $tools['git']->version;
+        $this->require($version === $tools['git-man']->version, 'git: git and git-man must pin the same build.');
+        $this->require(str_contains($version, '~ubuntu'.$release.'.'), "git: expected a git-core build for Ubuntu {$release}.");
+        $filenameVersion = preg_replace('/^[0-9]+:/', '', $version) ?? $version;
+        foreach (['git', 'git-man'] as $name) {
+            $this->require(in_array($name, $common, true), "common: missing {$name}.");
+            foreach ($tools[$name]->artifacts as $architecture => $artifact) {
+                $debArchitecture = $name === 'git-man' ? 'all' : $architecture;
+                $expected = 'https://ppa.launchpadcontent.net/git-core/ppa/ubuntu/pool/main/g/git/'.$name.'_'.$filenameVersion.'_'.$debArchitecture.'.deb';
+                $this->require($artifact->algorithm === 'sha256' && $artifact->location === $expected, "tools.{$name}: expected a SHA-256-pinned git-core PPA Debian artifact.");
+            }
+        }
+        $digests = array_map(static fn (ArtifactPin $pin): string => $pin->digest, $tools['git-man']->artifacts);
+        $this->require(count(array_unique($digests)) === 1, 'git-man: architecture-independent artifacts must have the same digest.');
     }
 
     private function require(bool $condition, string $message): void

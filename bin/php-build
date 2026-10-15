@@ -3,7 +3,7 @@
 
   bin/php-build verify [--recipe PATH] [--version X.Y]
   sudo bin/php-build install [--ci] [--purge-extras] [--coverage pcov|none] [--no-composer] [--recipe PATH] [--version X.Y]
-  bin/php-build mirror --directory DIR # download every pinned file for the php-build-mirror release
+  bin/php-build mirror --directory DIR # download pinned PHP and Git files for the php-build-mirror release
   bin/php-build key [--all]            # digest of the pins, for a download cache key
   bin/php-build describe               # the upstream PHP releases the recipe pins
   bin/php-build bump [--dry-run]       # move every Sury PHP pin to Sury's newest build
@@ -237,13 +237,20 @@ def install(recipe, version, ci, coverage, composer, purge):
 
 
 def mirror(recipe, directory):
-    """Download every pinned PHP file of every version and architecture into `directory`, named as the mirror serves
+    """Download every pinned PHP and Git file into `directory`, named as the mirror serves
     them, `<package>_<sha256>.deb`. CI publishes the directory as the php-build-mirror release."""
     directory.mkdir(parents=True, exist_ok=True)
     names = set(recipe['php']['shared']).union(*(set(v['packages']) for v in recipe['php']['versions'].values()))
+    names.update(name for name in ('git', 'git-man') if name in recipe['tools'])
     for name in sorted(names):
         for artifact in recipe['tools'][name]['artifacts'].values():
-            download(artifact['url'], directory / f'{name}_{artifact["sha256"]}.deb', artifact['sha256'])
+            filename = f'{name}_{artifact["sha256"]}.deb'
+            try:
+                download(recipe['php']['mirror'] + '/' + filename, directory / filename, artifact['sha256'])
+                continue
+            except BuildError:
+                pass
+            download(artifact['url'], directory / filename, artifact['sha256'])
     print(f'{len(list(directory.glob("*.deb")))} files in {directory}')
 
 

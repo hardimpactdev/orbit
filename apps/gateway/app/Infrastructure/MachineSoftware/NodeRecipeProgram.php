@@ -111,7 +111,7 @@ final readonly class NodeRecipeProgram
         }
 
         $actions = $report['_actions'] ?? [];
-        if (! is_array($actions) || ! array_is_list($actions) || array_diff($actions, ['repair_ubuntu_sources']) !== []) {
+        if (! is_array($actions) || ! array_is_list($actions) || array_diff($actions, ['repair_ubuntu_sources', 'retire_git_source', 'pin_git']) !== []) {
             throw new RuntimeException('Recipe inspection returned invalid planned actions.');
         }
 
@@ -245,6 +245,7 @@ final readonly class NodeRecipeProgram
         }
         $payload = json_encode([
             'snapshot' => $recipe->snapshot,
+            'deb_mirror' => $recipe->phpPolicy->mirror,
             'architecture' => in_array($node->architecture, ['x86_64', 'amd64'], true) ? 'amd64' : 'arm64',
             'tools' => array_intersect_key($data['tools'], $tools),
         ], JSON_THROW_ON_ERROR);

@@ -14,6 +14,10 @@ def command_output(result):
 
 
 def image_packages(payload):
+    git = {name: pin for name, pin in payload['tools'].items() if name in ('git', 'git-man')}
+    if git:
+        supported(assess(git))
+        configure_git(payload, apply=True)
     with tempfile.TemporaryDirectory(prefix='orbit-image-source-') as directory:
         options = snapshot_options(payload, Path(directory))
         image_install_packages(payload, options)
@@ -50,7 +54,7 @@ def image_install_packages(payload, options):
                     continue
                 if installed.get(name) == pin['version']:
                     continue
-                deb = download(pin, payload['architecture'], work / (name + '.deb'))
+                deb = download_deb(name, pin, payload, work / (name + '.deb'))
                 fields = run(['dpkg-deb', '-f', str(deb), 'Package', 'Version', 'Architecture']).stdout.splitlines()
                 metadata = [line.split(': ', 1)[-1] for line in fields]
                 if metadata[:2] != [name, pin['version']] or metadata[2:] not in ([payload['architecture']], ['all']):
@@ -60,6 +64,7 @@ def image_install_packages(payload, options):
                 install_exact_debs(debs, payload['tools'], packages(), options, environment)
         run(['apt-get', 'check'], env=environment)
         audit_packages(environment)
+        record_git(payload, packages())
     finally:
         POLICY.unlink()
     if payload.get('php') and php_install(payload) not in ('applied', 'current'):
