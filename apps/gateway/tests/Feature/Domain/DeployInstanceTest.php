@@ -17,6 +17,7 @@ use App\Domain\Instances\Deployment\DeploymentRequest;
 use App\Domain\Instances\Deployment\DeploymentStep;
 use App\Domain\Instances\Deployment\InlineDeploymentSteps;
 use App\Domain\Instances\Deployment\ProductionDeployment;
+use App\Domain\Instances\Deployment\SharedPaths;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\Environment\InstanceEnvironmentResult;
 use App\Domain\Instances\Environment\InstanceEnvironmentSynchronizer;
@@ -45,6 +46,20 @@ use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\Orb220DeploymentApiFixture;
+
+it('resolves shared paths from the production Instance and Laravel application directory', function (string $type, string $root, ?array $declared, array $expected): void {
+    $instance = orb219_deployment_instance([]);
+    $instance->project->update(['type' => $type]);
+    $instance->update(['root' => $root, 'shared_paths' => $declared]);
+
+    expect(SharedPaths::forInstance($instance->refresh()))->toBe($expected);
+})->with([
+    'Laravel default' => ['laravel-app', 'public', null, ['storage']],
+    'nested Laravel' => ['laravel-app', 'apps/site/public', null, ['apps/site/storage']],
+    'Symfony default' => ['symfony-app', 'public', null, []],
+    'explicit directories' => ['symfony-app', 'public', ['var/uploads'], ['var/uploads']],
+    'disabled' => ['laravel-app', 'public', [], []],
+]);
 
 it('restarts only active opted-in Instance Processes on the selected release after PHP refresh', function (bool $php, bool $rollback): void {
     $instance = orb219_deployment_instance([

@@ -97,7 +97,7 @@ final class InstancesController extends Controller
         UpdateInstanceAction $action,
     ): JsonResponse {
         return response()->json([
-            'data' => InstanceData::fromModel($action->execute($instance, $request->branch(), $request->autoDeploy()))->toArray(),
+            'data' => InstanceData::fromModel($action->execute($instance, $request->branch(), $request->sharedPaths(), array_key_exists('shared_paths', $request->validated()), $request->autoDeploy()))->toArray(),
             'meta' => $this->meta($request),
         ]);
     }

@@ -11,6 +11,8 @@ use App\Domain\Instances\Deployment\DeploymentRequest;
 use App\Domain\Instances\Deployment\DeploymentStep;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppProd\ProductionSshExecutor;
+use App\Infrastructure\Instances\ProductionApplicationPaths;
+use App\Infrastructure\Instances\ProductionWebRootProgram;
 use App\Infrastructure\Instances\RemoteProductionDeployment;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessOutput;
@@ -67,7 +69,7 @@ it('prepares a fresh branch-pinned release without changing current', function (
             'checkout --detach "$source_ref"',
             'ln -s '.$target.' "$release_environment"',
             'test ! -e "$release"',
-            'unexpected_symlink=$(sudo find -P "$selected_root" -type l -print -quit)',
+            'check_web_root_links "$release" "$selected_root"',
         )
         ->not->toContain('mv -Tf -- "$temporary" "$current"');
 })->with(['root public' => ['public', '../../.env'], 'nested Laravel' => ['server/web/public', '../../../../.env']]);
@@ -133,6 +135,202 @@ describe('a release pinned to a commit', function (): void {
             ->and($ssh->commands)->toBe([]);
     })->with(['branch name' => 'main', 'short SHA' => 'abc1234', 'injection' => str_repeat('a', 39).';']);
 });
+it('seeds shared storage before steps and keeps existing files through later releases', function (string $root, string $directory, bool $existing, ?array $declared = null): void {
+    if (LinuxHost::delegate($this)) {
+        return;
+    }
+
+    [$deployment, $ssh, $instance] = orb219_remote_deployment([
+        new CommandResult(0, "20260911-a1\t".str_repeat('a', 40)."\n", '', 1, false),
+        new CommandResult(0, "20260911-a1\t".str_repeat('a', 40)."\n", '', 1, false),
+    ]);
+    $instance->update(['root' => $root, 'shared_paths' => $declared]);
+    $prepared = $deployment->prepare($instance, 'main');
+    $deployment->activate($instance, $prepared);
+    $filesystem = new Filesystem;
+    $sandbox = sys_get_temp_dir().'/orbit-shared-paths-'.bin2hex(random_bytes(6));
+    $home = $sandbox.'/home';
+    $repository = $sandbox.'/repository';
+    $user = trim(new Process(['id', '-un'])->mustRun()->getOutput());
+    $group = trim(new Process(['id', '-gn'])->mustRun()->getOutput());
+    $storage = $directory.'storage';
+
+    try {
+        $filesystem->ensureDirectoryExists($repository.'/'.$root);
+        $filesystem->ensureDirectoryExists($repository.'/'.$storage.'/app/public');
+        file_put_contents($repository.'/'.$root.'/index.php', '<?php');
+        file_put_contents($repository.'/'.$storage.'/app/public/seed.txt', 'seed');
+        foreach ([['git', 'init', '-q', '-b', 'main', $repository], ['git', '-C', $repository, 'add', '.'], ['git', '-C', $repository, '-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'seed']] as $arguments) {
+            new Process($arguments)->mustRun();
+        }
+        $filesystem->ensureDirectoryExists($home.'/releases');
+        $filesystem->ensureDirectoryExists($home.'/state', 0700);
+        $filesystem->ensureDirectoryExists($sandbox.'/bin');
+        file_put_contents($home.'/.env', 'APP_ENV=production');
+        file_put_contents($home.'/state/release-layout', $repository."\0$user\0$home\0initial\0");
+        chmod($home.'/state/release-layout', 0600);
+        file_put_contents($sandbox.'/bin/sudo', "#!/usr/bin/env bash\nif [ \"\${1:-}\" = -u ]; then shift 2; fi\nif [ \"\${1:-}\" = -H ]; then shift; fi\nexec \"\$@\"\n");
+        chmod($sandbox.'/bin/sudo', 0755);
+        if ($existing) {
+            $filesystem->ensureDirectoryExists($home.'/'.$storage.'/app/public');
+            file_put_contents($home.'/'.$storage.'/app/public/upload.txt', 'uploaded');
+        }
+        $script = str_replace(
+            ['state_directory="/var/lib/orbit/app-instance-sources/$instance"', 'test "$home" = "/home/$user"', 'root:root:700', 'root:root:600'],
+            ['state_directory="$home/state"', 'test -d "$home"', "$user:$group:700", "$user:$group:600"],
+            $ssh->commands[0]->input ?? '',
+        );
+        $arguments = $ssh->commands[0]->arguments;
+        array_splice($arguments, 3, 3, [$repository, $user, $home]);
+
+        foreach (['20260911-a1', '20260912-a2'] as $name) {
+            $arguments[8] = $name;
+            new Process($arguments, env: ['PATH' => $sandbox.'/bin:'.getenv('PATH')], input: $script)->mustRun();
+            $release = $home.'/releases/'.$name;
+            expect(is_link($release.'/'.$storage))->toBeTrue()
+                ->and(realpath($release.'/'.$storage))->toBe($home.'/'.$storage)
+                ->and(realpath($release.'/'.$root.'/storage'))->toBe($home.'/'.$storage.'/app/public');
+            expect(file_get_contents($home.'/'.$storage.'/app/public/'.($existing ? 'upload.txt' : 'seed.txt')))->toBe($existing ? 'uploaded' : 'seed');
+            // A before-activation command writes through the prepared link, as application steps do.
+            file_put_contents($release.'/'.$storage.'/app/public/seed.txt', 'runtime');
+            $existing = true;
+            file_put_contents($home.'/'.$storage.'/app/public/upload.txt', 'uploaded');
+        }
+        expect(file_get_contents($home.'/'.$storage.'/app/public/seed.txt'))->toBe('runtime');
+        $activation = str_replace(
+            ['state_directory="/var/lib/orbit/app-instance-sources/$instance"', 'root:root:600'],
+            ['state_directory="$home/state"', "$user:$group:600"],
+            $ssh->commands[1]->input ?? '',
+        );
+        $arguments = $ssh->commands[1]->arguments;
+        array_splice($arguments, 3, 3, [$repository, $user, $home]);
+        $arguments[7] = '20260912-a2';
+        $arguments[8] = trim(new Process(['git', '-C', $repository, 'rev-parse', 'HEAD'])->mustRun()->getOutput());
+        new Process($arguments, env: ['PATH' => $sandbox.'/bin:'.getenv('PATH')], input: $activation)->mustRun();
+
+        if ($declared !== null) {
+            expect(is_dir($home.'/var/uploads'))->toBeTrue()
+                ->and(realpath($home.'/releases/20260912-a2/var/uploads'))->toBe($home.'/var/uploads');
+        }
+        expect(readlink($home.'/current'))->toBe('releases/20260912-a2');
+        expect(new Process(['getfacl', '-cp', $home.'/'.$storage.'/app/public'])->mustRun()->getOutput())
+            ->toContain('user:caddy:r-x', 'default:user:caddy:r-x');
+    } finally {
+        $filesystem->deleteDirectory($sandbox);
+    }
+})->with([
+    'first Laravel deployment' => ['public', '', false],
+    'existing hand-made storage' => ['public', '', true],
+    'nested Laravel first deployment' => ['apps/site/public', 'apps/site/', false],
+    'custom directories absent from source' => ['public', '', false, ['storage', 'var/uploads']],
+]);
+
+it('refuses unsafe shared directory placement before removing source files', function (string $variant): void {
+    if (LinuxHost::delegate($this)) {
+        return;
+    }
+
+    $filesystem = new Filesystem;
+    $sandbox = sys_get_temp_dir().'/orbit-unsafe-shared-'.bin2hex(random_bytes(6));
+    $home = $sandbox.'/home';
+    $release = $home.'/releases/fresh';
+    $path = $variant === 'web root' ? 'public' : 'storage';
+
+    try {
+        foreach ([$release.'/public', $release.'/storage', $sandbox.'/outside', $sandbox.'/bin'] as $directory) {
+            $filesystem->ensureDirectoryExists($directory);
+        }
+        file_put_contents($sandbox.'/outside/keep.txt', 'untouched');
+        if ($variant === 'source link') {
+            rmdir($release.'/storage');
+            symlink($sandbox.'/outside', $release.'/storage');
+        } elseif ($variant === 'destination link') {
+            symlink($sandbox.'/outside', $home.'/storage');
+        } elseif ($variant === 'source file') {
+            rmdir($release.'/storage');
+            file_put_contents($release.'/storage', 'untouched');
+        } elseif ($variant === 'destination ancestor') {
+            symlink($sandbox.'/outside', $home.'/var');
+            $path = 'var/uploads';
+        } elseif ($variant === 'source ancestor') {
+            symlink($sandbox.'/outside', $release.'/var');
+            $path = 'var/uploads';
+        } elseif ($variant === 'seed link') {
+            symlink($sandbox.'/outside', $release.'/storage/foreign');
+        }
+        file_put_contents($sandbox.'/bin/sudo', "#!/usr/bin/env bash\nif [ \"\${1:-}\" = -u ]; then shift 2; fi\nif [ \"\${1:-}\" = -H ]; then shift; fi\nexec \"\$@\"\n");
+        chmod($sandbox.'/bin/sudo', 0755);
+        $script = ProductionApplicationPaths::render(<<<'BASH'
+            home=$1
+            release=$2
+            user=$(id -un)
+            relative_root=public
+            __SHARED_PATHS__
+            BASH, 'public', [$path]);
+        $process = new Process(['bash', '-seu', '--', $home, $release], env: ['PATH' => $sandbox.'/bin:'.getenv('PATH')], input: $script);
+
+        expect($process->run())->not->toBe(0)
+            ->and(file_get_contents($sandbox.'/outside/keep.txt'))->toBe('untouched')
+            ->and(is_link($release.'/'.$path))->toBe(in_array($variant, ['source link'], true));
+    } finally {
+        $filesystem->deleteDirectory($sandbox);
+    }
+})->with(['source link', 'destination link', 'source file', 'destination ancestor', 'source ancestor', 'seed link', 'web root']);
+
+it('allows only the exact public storage target and refuses nested or unrelated links', function (string $variant, bool $allowed): void {
+    if (LinuxHost::delegate($this)) {
+        return;
+    }
+
+    $filesystem = new Filesystem;
+    $sandbox = sys_get_temp_dir().'/orbit-public-storage-'.bin2hex(random_bytes(6));
+    $home = $sandbox.'/home';
+    $release = $home.'/releases/fresh';
+
+    try {
+        $filesystem->ensureDirectoryExists($release.'/public');
+        $filesystem->ensureDirectoryExists($home.'/storage/app/public');
+        $filesystem->ensureDirectoryExists($sandbox.'/bin');
+        file_put_contents($home.'/storage/app/public/upload.txt', 'public');
+        file_put_contents($home.'/.env', 'private');
+        symlink($home.'/storage', $release.'/storage');
+        symlink($variant === 'wrong target' ? $home : '../storage/app/public', $release.'/public/storage');
+        if ($variant === 'unrelated link') {
+            symlink($home.'/.env', $release.'/public/secret');
+        }
+        if ($variant === 'nested link') {
+            symlink($home.'/.env', $home.'/storage/app/public/secret');
+        }
+        if ($variant === 'broken link') {
+            unlink($release.'/public/storage');
+            symlink('../missing', $release.'/public/storage');
+        }
+        if ($variant === 'target ancestor link') {
+            rename($home.'/storage/app/public', $home.'/uploads');
+            symlink($home.'/uploads', $home.'/storage/app/public');
+        }
+        file_put_contents($sandbox.'/bin/sudo', "#!/usr/bin/env bash\nif [ \"\${1:-}\" = -u ]; then shift 2; fi\nif [ \"\${1:-}\" = -H ]; then shift; fi\nexec \"\$@\"\n");
+        chmod($sandbox.'/bin/sudo', 0755);
+        $program = ProductionWebRootProgram::functions()."\n".<<<'BASH'
+            home=$1
+            release=$2
+            user=$(id -un)
+            check_web_root_links "$release" "$release/public"
+            BASH;
+        $process = new Process(['bash', '-seu', '--', $home, $release], env: ['PATH' => $sandbox.'/bin:'.getenv('PATH')], input: $program);
+
+        expect($process->run() === 0)->toBe($allowed);
+    } finally {
+        $filesystem->deleteDirectory($sandbox);
+    }
+})->with([
+    'public storage' => ['safe', true],
+    'unrelated link' => ['unrelated link', false],
+    'wrong target' => ['wrong target', false],
+    'nested link' => ['nested link', false],
+    'broken link' => ['broken link', false],
+    'target ancestor link' => ['target ancestor link', false],
+]);
 
 it('carries a GitHub App token only in protected input for a covered repository', function (): void {
     [$deployment, $ssh, $instance] = orb219_remote_deployment([
@@ -249,7 +447,7 @@ it('publishes one validated release with an atomic current replacement', functio
         ->toContain(
             'config --null --get remote.origin.url',
             'realpath -m -- "$release/$relative_root"',
-            'unexpected_symlink=$(sudo find -P "$selected_root" -type l -print -quit)',
+            'check_web_root_links "$release" "$selected_root"',
             'sudo setfacl -m u:caddy:--x "$release"',
             'sudo setfacl -P -R -m u:caddy:r-X "$selected_root"',
             'sudo find -P "$selected_root" -type d -exec setfacl -m d:u:caddy:r-x -- {} +',
@@ -281,7 +479,7 @@ it('inspects current and retained releases through owned source and root boundar
         expect($command->input)->toContain(
             'config --null --get remote.origin.url',
             'realpath -m -- "$release/$relative_root"',
-            'unexpected_symlink=$(sudo find -P "$selected_root" -type l -print -quit)',
+            'check_web_root_links "$release" "$selected_root"',
             'find -P "$release" -xdev ! -user "$user"',
             'realpath -e -- "$release_environment"',
             $environmentPath,
@@ -330,7 +528,7 @@ it('lists only validated retained release names and the current selection', func
             'find -P "$releases" -mindepth 1 -maxdepth 1 -type d',
             'config --null --get remote.origin.url',
             'realpath -m -- "$release/$relative_root"',
-            'unexpected_symlink=$(sudo find -P "$selected_root" -type l -print -quit)',
+            'check_web_root_links "$release" "$selected_root"',
             'find -P "$release" -xdev ! -user "$user"',
             'realpath -e -- "$release_environment"',
         );
@@ -545,6 +743,12 @@ it('prunes a production home to the selected, the previous, and the newest other
                 new Process($arguments)->mustRun();
             }
         }
+        $filesystem->ensureDirectoryExists($home.'/storage/app/public');
+        file_put_contents($home.'/storage/app/public/upload.txt', 'retained upload');
+        foreach (glob($home.'/releases/*') ?: [] as $release) {
+            symlink('../../storage', $release.'/storage');
+            symlink('../storage/app/public', $release.'/public/storage');
+        }
         // A read-only folder must not stop a removal.
         mkdir($home.'/releases/20260101000000-a/cache/locked', 0o755, true);
         file_put_contents($home.'/releases/20260101000000-a/cache/locked/entry', 'cached');
@@ -592,7 +796,8 @@ it('prunes a production home to the selected, the previous, and the newest other
         expect($process->getOutput())->toBe(implode('', array_map(static fn (string $line): string => $line."\n", $output)))
             ->and($process->getErrorOutput())->toBe('')
             ->and(array_map(basename(...), glob($home.'/releases/{,.}[!.]*', GLOB_BRACE) ?: []))->toEqualCanonicalizing([...$kept, 'partial'])
-            ->and(readlink($home.'/current'))->toBe('releases/20260104000000-d');
+            ->and(readlink($home.'/current'))->toBe('releases/20260104000000-d')
+            ->and(file_get_contents($home.'/storage/app/public/upload.txt'))->toBe('retained upload');
     } finally {
         new Process(['chmod', '-R', 'u+w', '--', $sandbox])->run();
         $filesystem->deleteDirectory($sandbox);

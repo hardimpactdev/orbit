@@ -136,6 +136,19 @@ it('exposes a valid assigned SSR port and rejects invalid transport values', fun
     }
 });
 
+it('preserves effective shared paths and omits unavailable or malformed values', function (): void {
+    foreach ([['storage', 'var/uploads'], []] as $paths) {
+        $response = InstanceResponse::fromGatewayData(['shared_paths' => $paths], 'request-id');
+        expect($response->sharedPaths)->toBe($paths)
+            ->and($response->toArray()['shared_paths'])->toBe($paths);
+    }
+    foreach ([null, 'storage', ['storage', false], ['path' => 'storage']] as $invalid) {
+        $response = InstanceResponse::fromGatewayData(['shared_paths' => $invalid], 'request-id');
+        expect($response->sharedPaths)->toBeNull()
+            ->and($response->toArray())->not->toHaveKey('shared_paths');
+    }
+});
+
 it('maps automatic deployment and drops a malformed pause', function (): void {
     $auto = [
         'enabled' => true, 'gate' => 'Required checks', 'warning' => null, 'result' => 'paused', 'commit' => str_repeat('a', 40),

@@ -91,7 +91,7 @@ beforeEach(function (): void {
     app()->instance(RemoteBranchHeads::class, $this->heads);
     [$this->a, $this->b, $this->c, $this->d] = [str_repeat('a', 40), str_repeat('b', 40), str_repeat('c', 40), str_repeat('d', 40)];
     auto_deploy_row($this->instance, ['commit' => $this->a]);
-    app(UpdateInstanceAction::class)->execute($this->instance, null, true);
+    app(UpdateInstanceAction::class)->execute($this->instance, null, autoDeploy: true);
     $this->instance->refresh();
 });
 
@@ -259,7 +259,7 @@ describe('automatic deployment of a production Instance', function (): void {
             ->assertJsonPath('data.auto_deploy.pause.reason', 'rollback')
             ->assertJsonPath('data.auto_deploy.pause.deployment_id', $rollback->id);
 
-        app(UpdateInstanceAction::class)->execute($this->instance, null, true);
+        app(UpdateInstanceAction::class)->execute($this->instance, null, autoDeploy: true);
         $show()->assertJsonPath('data.auto_deploy.pause', null);
         auto_deploy_tick($this);
 
@@ -317,7 +317,7 @@ describe('automatic deployment of a production Instance', function (): void {
     });
 
     it('leaves Instances without auto_deploy alone', function (): void {
-        app(UpdateInstanceAction::class)->execute($this->instance, null, false);
+        app(UpdateInstanceAction::class)->execute($this->instance, null, autoDeploy: false);
         $this->heads->set($this->instance->project, 'main', $this->b);
 
         auto_deploy_tick($this);
@@ -357,7 +357,7 @@ describe('release alerts of automatic deployments', function (): void {
     it('does not alert a failure from before auto_deploy was set', function (): void {
         $this->instance->update(['auto_deploy' => false]);
         auto_deploy_row($this->instance, ['commit' => $this->b, 'triggered_by' => 'schedule', 'status' => 'failed', 'failed_step' => 'before_activation', 'error_code' => 'deployment.step_failed']);
-        app(UpdateInstanceAction::class)->execute($this->instance, null, true);
+        app(UpdateInstanceAction::class)->execute($this->instance, null, autoDeploy: true);
         auto_deploy_github($this, [$this->a => 'success', $this->b => 'success']);
 
         auto_deploy_tick($this);

@@ -111,6 +111,7 @@
                     "web_root": null
                 }
             ],
+            "shared_paths": [],
             "auto_deploy": {
                 "enabled": false,
                 "gate": null,

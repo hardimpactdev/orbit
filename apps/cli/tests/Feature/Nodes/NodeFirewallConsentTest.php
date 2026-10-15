@@ -139,7 +139,7 @@ describe('Node and firewall native consent', function (): void {
             expect($result['output'])->toContain('cancelled.');
         }
     })->with(['node', 'access', 'role', 'firewall'])->with([
-        'default No' => [["\r"], false], 'No' => [['n', "\r"], false],
+        'default No' => [["\r"], false], 'explicit No after Yes' => [['y', 'n', "\r"], false],
         'Yes' => [['y', "\r"], true], 'Ctrl-C' => [["\x03"], false], 'EOF' => [["\x04"], false],
     ]);
 

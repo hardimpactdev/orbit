@@ -8,6 +8,7 @@ use App\Data\Instances\InstanceData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\GitHub\GitHubRepository;
+use App\Domain\Instances\Deployment\SharedPaths;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Shared\ResourceOperationException;
@@ -24,30 +25,35 @@ final readonly class UpdateInstanceAction
     ) {}
 
     /**
-     * Sets the deployment branch, automatic deployment, or both, of a production Instance. Setting `auto_deploy` to
-     * true also resumes automatic deployment after a rollback paused it
+     * Sets the deployment branch, the shared paths, automatic deployment, or several of them, of a production
+     * Instance. Setting `auto_deploy` to true also resumes automatic deployment after a rollback paused it
      * ([Automatic deployments](/reference/deployments#automatic-deployments)).
+     *
+     * @param  list<string>|null  $sharedPaths
      *
      * @throws ResourceOperationException `instance.auto_deploy_gate_unreadable` when the Project has a merge check
      *                                    that the Gateway GitHub App cannot read
      */
-    public function execute(Instance $instance, ?string $branch, ?bool $autoDeploy = null): Instance
+    public function execute(Instance $instance, ?string $branch, ?array $sharedPaths = null, bool $sharedPathsProvided = false, ?bool $autoDeploy = null): Instance
     {
-        $result = $this->operations->run([$instance->id], function () use ($instance, $branch, $autoDeploy): Instance {
+        $result = $this->operations->run([$instance->id], function () use ($instance, $branch, $sharedPaths, $sharedPathsProvided, $autoDeploy): Instance {
             $locked = Instance::query()->lockForUpdate()->findOrFail($instance->id);
             $this->resolver->assertAvailable($locked);
-            $changes = $branch === null ? [] : ['deployment_branch' => $branch];
-
+            if ($branch !== null) {
+                $locked->deployment_branch = $branch;
+            }
+            if ($sharedPathsProvided) {
+                $locked->shared_paths = $sharedPaths === null ? null : SharedPaths::validate($sharedPaths);
+            }
             if ($autoDeploy === true) {
                 $this->assertGateReadable($locked->project);
                 $resumedAfter = InstanceDeployment::query()->where('instance_id', $locked->id)->max('id');
-                $changes['auto_deploy'] = true;
-                $changes['auto_deploy_resumed_after'] = is_int($resumedAfter) ? $resumedAfter : 0;
+                $locked->auto_deploy = true;
+                $locked->auto_deploy_resumed_after = is_int($resumedAfter) ? $resumedAfter : 0;
             } elseif ($autoDeploy === false) {
-                $changes['auto_deploy'] = false;
+                $locked->auto_deploy = false;
             }
-
-            $locked->update($changes);
+            $locked->save();
 
             return $locked->refresh();
         });

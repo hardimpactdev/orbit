@@ -18,10 +18,16 @@ final class UpdateInstanceRequest extends GatewayRequest implements HasBody
     #[\Override]
     protected Method $method = Method::PATCH;
 
-    /** Each null field keeps its value; send at least one. */
+    /**
+     * Each null field keeps its value; send at least one.
+     *
+     * @param  list<string>|null  $sharedPaths
+     */
     public function __construct(
         private readonly int $instanceId,
         private readonly ?string $branch = null,
+        private readonly ?array $sharedPaths = null,
+        private readonly bool $sharedPathsProvided = false,
         private readonly ?bool $autoDeploy = null,
     ) {}
 
@@ -38,19 +44,13 @@ final class UpdateInstanceRequest extends GatewayRequest implements HasBody
         );
     }
 
-    /** @return array{branch?: string, auto_deploy?: bool} */
+    /** @return array{branch?: string, shared_paths?: list<string>|null, auto_deploy?: bool} */
     protected function defaultBody(): array
     {
-        $body = [];
-
-        if ($this->branch !== null) {
-            $body['branch'] = $this->branch;
-        }
-
-        if ($this->autoDeploy !== null) {
-            $body['auto_deploy'] = $this->autoDeploy;
-        }
-
-        return $body;
+        return [
+            ...($this->branch === null ? [] : ['branch' => $this->branch]),
+            ...($this->sharedPathsProvided ? ['shared_paths' => $this->sharedPaths] : []),
+            ...($this->autoDeploy === null ? [] : ['auto_deploy' => $this->autoDeploy]),
+        ];
     }
 }
