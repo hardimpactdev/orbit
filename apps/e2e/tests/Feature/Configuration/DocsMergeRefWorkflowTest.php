@@ -62,7 +62,7 @@ it('installs dependencies and runs Docs quality checks on the checked out merge 
     ]);
     expect(array_search('Install dependencies', array_keys($steps), true))
         ->toBeLessThan(array_search('Run Docs quality checks', array_keys($steps), true));
-    expect($steps['Set up PHP']['with'])->toMatchArray(['php-version' => '8.5', 'tools' => 'composer:v2']);
+    expect($steps['Set up PHP'])->toMatchArray(['uses' => './.github/actions/php', 'with' => ['coverage' => 'none']]);
     expect($steps['Log merge commit']['working-directory'])->toBe('.');
     $projectSteps = array_column($workflow['jobs']['project']['steps'], null, 'name');
     expect($projectSteps['Run architecture tests']['run'])

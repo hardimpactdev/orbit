@@ -54,21 +54,21 @@
         }
     ],
     "scripts": {
-        "test:affected": "../../bin/pest-plain vendor/bin/pest --parallel --processes=2 --tia --compact --colors=never",
+        "test:affected": "../../bin/pest-plain vendor/bin/pest --parallel --processes=$(../../bin/check-processes) --tia --compact --colors=never",
         "analyse": "vendor/bin/phpstan analyse --no-progress --memory-limit=1G",
         "check": [
             "@guidance:check",
+            "@analyse",
             "@rector",
-            "@format:check",
-            "@analyse"
+            "@format:check"
         ],
-        "format": "vendor/bin/pint",
-        "format:check": "vendor/bin/pint --test",
+        "format": "vendor/bin/pint --parallel --max-processes=$(../../bin/check-processes)",
+        "format:check": "../../bin/quality-scope pint vendor/bin/pint --test --parallel --max-processes=$(../../bin/check-processes)",
         "guidance:check": "../../bin/guidance-check",
         "guidance:update": "@php orbit boost:update --no-discover --no-interaction",
         "lint": "@format:check",
-        "rector": "vendor/bin/rector process --dry-run --no-progress-bar --clear-cache",
-        "test": "../../bin/pest-plain vendor/bin/pest --parallel --tia --compact --colors=never"
+        "rector": "../../bin/quality-scope rector vendor/bin/rector process --dry-run --no-progress-bar --clear-cache",
+        "test": "../../bin/pest-plain vendor/bin/pest --parallel --processes=$(../../bin/check-processes) --tia --compact --colors=never"
     },
     "config": {
         "preferred-install": "dist",

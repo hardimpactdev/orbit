@@ -46,6 +46,8 @@ describe('RecordEventType', function (): void {
             'tasks.updated',
             'activity.created',
             'activity.updated',
+            'operation.created',
+            'operation.updated',
         ]);
     });
 

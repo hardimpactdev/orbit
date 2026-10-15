@@ -30,10 +30,11 @@ final readonly class RecordEventBroadcaster
      * the other.
      *
      * @param  array<string, mixed>  $data
+     * @param  string  $channel  the private channel without its `private-` prefix
      */
-    public function broadcast(RecordEventType $type, int|string $id, array $data): void
+    public function broadcast(RecordEventType $type, int|string $id, array $data, string $channel = 'orbit'): void
     {
-        $event = new RecordBroadcast($type, $id, $data);
+        $event = new RecordBroadcast($type, $id, $data, $channel);
 
         try {
             $connections = $this->realtime->all();

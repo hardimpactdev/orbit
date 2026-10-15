@@ -40,30 +40,31 @@ final readonly class ConvergeNodeRecipeAction
     ) {}
 
     /** @return array{plan: NodeRecipePlan, applied: bool, changes: array<string, mixed>} */
-    public function execute(Node $node, MachineRecipe $recipe, bool $dryRun = false): array
+    public function execute(Node $node, MachineRecipe $recipe, bool $dryRun = false, ?string $profile = null): array
     {
         $this->eligible($node);
         if ($dryRun) {
-            return ['plan' => $this->plan($node, $recipe), 'applied' => false, 'changes' => []];
+            return ['plan' => $this->plan($node, $recipe, $this->program->profile($node, $profile)), 'applied' => false, 'changes' => []];
         }
 
-        return $this->lock->run($node, fn (): array => $this->withToolLocks($node, function () use ($node, $recipe): array {
+        return $this->lock->run($node, fn (): array => $this->withToolLocks($node, function () use ($node, $recipe, $profile): array {
             $node->refresh();
             $this->eligible($node);
-            $plan = $this->plan($node, $recipe);
+            $profile = $this->program->profile($node, $profile);
+            $plan = $this->plan($node, $recipe, $profile);
 
-            return $this->updateLock->run($node, function () use ($node, $recipe, $plan): array {
+            return $this->updateLock->run($node, function () use ($node, $recipe, $plan, $profile): array {
                 $settings = $node->settings ?? [];
                 unset($settings['machine_recipe']);
                 $node->update(['settings' => $settings]);
-                $changes = $this->program->apply($node, $recipe, $this->program->tools($node, $recipe));
+                $changes = $this->program->apply($node, $recipe, $this->program->tools($node, $recipe, $profile), $profile);
                 $this->verifyTools($node);
                 $report = $this->verifier->verify($node, [], NodeAgentFootprint::Version);
                 if (! $report['passed']) {
                     throw new ResourceOperationException('node.recipe_doctor_failed', 'Recipe convergence stopped at Doctor. The Node may be partly changed. No automatic rollback was attempted. Run Doctor for this Node before continuing.', 502);
                 }
                 $settings = $node->refresh()->settings ?? [];
-                $settings['machine_recipe'] = ['version' => $recipe->identity, 'snapshot' => $recipe->snapshot, 'converged_at' => now()->toIso8601String()];
+                $settings['machine_recipe'] = ['version' => $recipe->identity, 'snapshot' => $recipe->snapshot, 'converged_at' => now()->toIso8601String(), ...($profile === null ? [] : ['profile' => $profile])];
                 $node->update(['settings' => $settings]);
 
                 return ['plan' => $plan, 'applied' => true, 'changes' => $changes];
@@ -92,10 +93,12 @@ final readonly class ConvergeNodeRecipeAction
         }
     }
 
-    private function plan(Node $node, MachineRecipe $recipe): NodeRecipePlan
+    private function plan(Node $node, MachineRecipe $recipe, ?string $profile): NodeRecipePlan
     {
-        $pins = $this->program->tools($node, $recipe);
+        $pins = $this->program->tools($node, $recipe, $profile);
         $this->checkConstraints($node, $pins);
+        // Another PHP source or a PHP package outside the recipe refuses the plan, also in a dry run.
+        $this->program->phpPreflight($node, $recipe, $pins, $profile);
         $installed = $this->program->inspect($node, $recipe, $pins);
         $tools = [];
         foreach ($pins as $name => $pin) {

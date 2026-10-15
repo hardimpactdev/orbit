@@ -30,6 +30,9 @@ use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Infrastructure\AppDev\RemoteAppDevTldRouteManager;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Caddy\CaddyPublicationLock;
+use App\Infrastructure\MachineSoftware\MachineRecipe;
+use App\Infrastructure\MachineSoftware\PhpBuild;
+use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
@@ -342,7 +345,7 @@ it('retires previous app-dev pools before activating their lower PHP version', f
     $manager->converge($node);
 
     $publishCalls = collect($ssh->commands)
-        ->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf'))
+        ->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf') && ($command->arguments[4] ?? null) !== 'php.install-build')
         ->values();
 
     expect($ssh->commands[0]->input)
@@ -389,7 +392,7 @@ it('restores the previous app-dev pools when lower PHP activation fails', functi
         });
 
     $publishCalls = collect($ssh->commands)
-        ->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf'))
+        ->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf') && ($command->arguments[4] ?? null) !== 'php.install-build')
         ->values();
 
     expect($publishCalls->map(static fn (RemoteCommand $command): string => $command->arguments[4])->all())
@@ -426,7 +429,7 @@ it('removes a newly activated app-dev pool when later PHP activation fails', fun
         renderer: $renderer,
         ssh: app_dev_ssh($ssh),
         accounts: app_dev_account_resolver(),
-        packages: new RemotePhpPackageManager,
+        packages: new RemotePhpPackageManager(app_dev_recipe_with_php_86()),
     );
 
     expect(fn () => $manager->converge($node))
@@ -435,7 +438,7 @@ it('removes a newly activated app-dev pool when later PHP activation fails', fun
         });
 
     $publishCalls = collect($ssh->commands)
-        ->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf'))
+        ->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf') && ($command->arguments[4] ?? null) !== 'php.install-build')
         ->values();
 
     expect($publishCalls->map(static fn (RemoteCommand $command): string => $command->arguments[4])->all())
@@ -454,7 +457,7 @@ it('installs selected PHP versions and validates a complete staged FPM configura
     app_dev_supported_route($php85, 'php85.app-dev.orbit');
     $ssh = new AppDevFakeSshExecutor([
         new CommandResult(0, "8.5\n", '', 1, false),
-        new CommandResult(0, "8.4\n", '', 1, false),
+        new CommandResult(0, '', '', 1, false),
         new CommandResult(0, '', '', 1, false),
     ]);
     $manager = new RemoteAppDevPhpFpmManager(
@@ -468,15 +471,15 @@ it('installs selected PHP versions and validates a complete staged FPM configura
     $manager->converge($node);
 
     $publishCalls = collect($ssh->commands)
-        ->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf'))
+        ->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf') && ($command->arguments[4] ?? null) !== 'php.install-build')
         ->values();
 
     expect($ssh->commands)
         ->toHaveCount(6)
-        ->and($ssh->commands[2]->input)
-        ->toContain('apt-get -o DPkg::Lock::Timeout=300 install')
-        ->and($ssh->commands[2]->arguments)
-        ->toContain('php8.4-fpm', 'php8.4-pcov', 'php8.4-opcache')
+        ->and($ssh->commands[1]->arguments[4])
+        ->toBe('php.install-build')
+        ->and($ssh->commands[1]->input)
+        ->toContain('"name":"php8.4-fpm"', '"name":"php8.4-pcov"', '"name":"php8.4-opcache"', '"extras":"keep"')
         ->and($publishCalls)
         ->toHaveCount(2)
         ->and($publishCalls->first()?->arguments)
@@ -562,7 +565,7 @@ it('renders and publishes AppDev FPM pools with the nondefault managed account',
     $manager->converge($node);
 
     $publishCall = collect($ssh->commands)
-        ->first(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf'));
+        ->first(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf') && ($command->arguments[4] ?? null) !== 'php.install-build');
 
     expect($rendered)
         ->toContain(
@@ -685,7 +688,7 @@ it('publishes the other pools, then fails, when a desired pool names a missing w
         });
 
     $publishCall = collect($ssh->commands)
-        ->first(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf'));
+        ->first(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf') && ($command->arguments[4] ?? null) !== 'php.install-build');
     $kept = $renderer->render($sites->reject(static fn (DevelopmentSite $site): bool => $site === $missingSite)->values(), $account);
 
     expect($ssh->commands[0]->arguments)
@@ -729,7 +732,7 @@ it('rolls back to the previous pools without the pool whose working directory is
         });
 
     $publishCalls = collect($ssh->commands)
-        ->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf'))
+        ->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf') && ($command->arguments[4] ?? null) !== 'php.install-build')
         ->values();
 
     expect($publishCalls->map(static fn (RemoteCommand $command): string => $command->arguments[4])->all())
@@ -1862,4 +1865,20 @@ function app_dev_ssh(SshExecutor $ssh): DevelopmentSshExecutor
     };
 
     return new DevelopmentSshExecutor($ssh, $keys, $knownHosts);
+}
+
+/** The repository recipe plus a PHP 8.6 build, so a test can select a third PHP version. */
+function app_dev_recipe_with_php_86(): MachineRecipe
+{
+    $recipe = new RecipeLoader()->load();
+    $tools = $recipe->tools;
+    $packages = [];
+    foreach ($recipe->php('8.5')->packages as $name) {
+        $renamed = str_starts_with($name, 'php8.5-') ? 'php8.6-'.substr($name, 7) : $name;
+        $tools[$renamed] = $recipe->tools[$name];
+        $packages[] = $renamed;
+    }
+
+    return new MachineRecipe($recipe->identity, $recipe->snapshot, $recipe->architectures, $tools, $recipe->profiles, $recipe->canonicalJson, $recipe->json,
+        [...$recipe->php, '8.6' => new PhpBuild('8.6', '8.6.0', $packages, $recipe->php('8.5')->extensions)], $recipe->ciPhp);
 }

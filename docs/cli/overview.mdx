@@ -97,7 +97,7 @@ Use `--json` where the command supports it. Preserve its documented shape when w
 
 Error codes are namespaced by family, such as `node.not_active`, `schedule.calendar_invalid`, or `env.operation_busy`. The reference pages list each family's codes and what the Gateway leaves in place after a refusal.
 
-`instance:deploy` and `instance:rollback` stream newline-delimited JSON (NDJSON) instead of one document, because they report phases and application output while the Gateway is still working. The [instance family](/cli/instance#orbit-instancedeploy) describes that event stream.
+`instance:rollback` streams newline-delimited JSON (NDJSON) instead of one document, because it reports phases and application output while the Gateway is still working. The [instance family](/cli/instance#orbit-instancerollback) describes that event stream. `instance:deploy` follows an [operation](/reference/operations) instead, and its `--json` output is the final operation document.
 
 ## Follow a request through the Gateway
 

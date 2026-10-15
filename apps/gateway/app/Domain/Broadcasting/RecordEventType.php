@@ -62,4 +62,7 @@ enum RecordEventType: string
 
     case ActivityCreated = 'activity.created';
     case ActivityUpdated = 'activity.updated';
+
+    case OperationCreated = 'operation.created';
+    case OperationUpdated = 'operation.updated';
 }

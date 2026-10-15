@@ -32,6 +32,7 @@ final readonly class ProcessResponse
         /** Resident memory in bytes, null when unavailable — never zero for "not running". */
         public ?int $memoryBytes = null,
         public ?string $user = null,
+        public bool $restartOnDeploy = true,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -55,6 +56,7 @@ final readonly class ProcessResponse
             runtimeConfig: $redactor->redactArray(self::stringKeyedArray($data['runtime_config'] ?? null)),
             restartPolicy: is_string($data['restart_policy'] ?? null) ? $data['restart_policy'] : '',
             keepAlive: ($data['keep_alive'] ?? false) === true,
+            restartOnDeploy: ($data['restart_on_deploy'] ?? true) === true,
             desiredState: is_string($data['desired_state'] ?? null) ? $data['desired_state'] : '',
             status: is_string($data['status'] ?? null) ? $data['status'] : '',
             runtimeStatus: is_string($data['runtime_status'] ?? null) ? $data['runtime_status'] : '',
@@ -80,6 +82,7 @@ final readonly class ProcessResponse
             'runtime_config' => $this->runtimeConfig,
             'restart_policy' => $this->restartPolicy,
             'keep_alive' => $this->keepAlive,
+            'restart_on_deploy' => $this->restartOnDeploy,
             'desired_state' => $this->desiredState,
             'status' => $this->status,
             'runtime_status' => $this->runtimeStatus,

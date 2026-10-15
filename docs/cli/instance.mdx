@@ -19,7 +19,7 @@ An Instance is one copy of a Project on one Node. On an `app-dev` Node it owns a
 
 Instance JSON includes nullable `seed_path` and `seed_commit`. On `default`, these name its checkout and the last commit that deployed there. Read them before creating a linked worktree for `instance:register`; use that commit rather than a newer `origin/main`. Human tables keep their existing columns.
 
-Every command accepts `--json`. Machine output never supplies consent. Human list commands use tables, with labeled records when the terminal is too narrow; detail commands show a tree and slow requests show progress. `instance:deploy` and `instance:rollback` return newline-delimited JSON (NDJSON) instead of one document.
+Every command accepts `--json`. Machine output never supplies consent. Human list commands use tables, with labeled records when the terminal is too narrow; detail commands show a tree and slow requests show progress. `instance:rollback` returns newline-delimited JSON (NDJSON) instead of one document.
 
 Placement commands create, adopt, inspect, and remove an Instance on one Node.
 
@@ -48,7 +48,7 @@ Release commands prepare and operate a production Instance.
 | Command | Result |
 | --- | --- |
 | [`instance:clone`](#orbit-instanceclone) | Clone a candidate into a prepared production Instance. |
-| [`instance:update`](#orbit-instanceupdate) | Change the deployment branch of a production Instance. |
+| [`instance:update`](#orbit-instanceupdate) | Change the deployment branch or shared paths of a production Instance. |
 | [`instance:deploy-step:create`](#orbit-instancedeploy-stepcreate) | Record one named deploy step. |
 | [`instance:deploy-step:list`](#orbit-instancedeploy-steplist) | List deploy steps in phase and placement order. |
 | [`instance:deploy-step:update`](#orbit-instancedeploy-stepupdate) | Change one named deploy step. |
@@ -471,12 +471,15 @@ Cloning ends with an active Instance and no release. Update its environment, rec
 
 ## orbit instance:update
 
-Change the deployment branch of a production Instance. The Gateway stores the branch and does not change deploy steps or start a deployment.
+Change the deployment branch or shared paths of a production Instance. The Gateway stores these settings for the next deployment. It does not change deploy steps or start a deployment. Supply at least one option.
 
-The human result shows the accepted deployment branch and the currently selected source branch. JSON returns the existing Instance response; its `selected_branch` describes the source, not the newly stored deployment setting.
+The human result shows the supplied deployment branch, the effective shared paths when changed, and the currently selected source branch. JSON includes effective `shared_paths` when the Gateway returns them; its `selected_branch` describes the source, not the newly stored deployment setting.
 
 ```bash
-orbit instance:update <instance> --branch=BRANCH [--json]
+orbit instance:update <instance> [--branch=BRANCH] [--shared-paths=JSON] [--json]
+orbit instance:update 71 --shared-paths='["storage","var/uploads"]'
+orbit instance:update 71 --shared-paths='[]'
+orbit instance:update 71 --shared-paths=null
 ```
 
 | Argument | Required | Meaning |
@@ -486,8 +489,9 @@ orbit instance:update <instance> --branch=BRANCH [--json]
 | Option | Meaning |
 | --- | --- |
 | `--branch=BRANCH` | Deployment branch. A later Project default change does not replace it. |
+| `--shared-paths=JSON` | Replace the shared directory list. Use `[]` to disable sharing, or `null` to restore the Project-type default. Omit it to leave the setting unchanged. |
 
-The Gateway refuses a development Instance with a bounded conflict before it stores a branch.
+The Gateway refuses a development Instance with a bounded conflict before storing either setting. [Shared paths](/reference/deployments#shared-paths) describes defaults, seeding, public storage, and path rules.
 
 ## orbit instance:deploy-step:create
 
@@ -571,33 +575,29 @@ orbit instance:deploy <instance> [--json]
 | --- | --- | --- |
 | `instance` | yes | Numeric Instance ID. |
 
-Human output shows a progress tree. The deploy phases the Gateway always sends appear up front; named deploy steps and the PHP cache refresh phase reveal only when their phase starts. Glyphs and color show waiting, running, success, failure, and not-reached states, and active indicators alternate while work is in progress. Standard output and standard error from application commands appear labeled and escaped, and print above the tree without redrawing it, while their step runs.
+The command starts an `instance.deploy` [operation](/reference/operations) and follows it until it ends. It subscribes to the operation's channel over Reverb and reads the operation again at each event. Without an active `websocket` role, or when the socket fails, it reads the operation every `poll_after_seconds` instead.
 
-On failure the tree marks the last reached step as failed, with the error code shown under it, even when the Gateway's failed boundary has no step of its own (an activation or cache-refresh failure during a rollback, for example). Every later step shows orange with a dim "Not reached." label under it, and the footer turns red. The final lines add the failed boundary, the error code, the selected release when available, and the request ID. `--json` writes the same events as NDJSON, one event per line, without prompts or prose.
+Production deploys include a `Restart Processes` step after PHP refresh and before after-activation commands. See [Deploy](/reference/deployments#deploy) for eligible Processes, the opt-out, and restart failures.
 
-Pressing Ctrl-C closes the connection at once, including during a step with no output yet: the CLI does not wait for the Gateway to finish that step first. The tree marks the current step failed and shows a red "Operation interrupted." footer; JSON mode ends the stream with no result line. Either way the CLI submits no second request.
+Human output shows a progress tree of the operation's steps, which the Gateway plans when a worker starts the operation. Glyphs and color show pending, running, succeeded, failed, and cancelled steps. New output of the running step prints above the tree, labeled and escaped. The output is the step's tail, so a fast step can show only its last 8 KiB; [`instance:deployment:show`](#orbit-instancedeploymentshow) prints the full log afterwards.
 
-| Event type | Fields |
+On failure the tree marks the failed step and shows its error code under it. The final lines add the failed step, the error code, the selected release when available, the operation ID, and the request ID. `--json` prints nothing while it follows, then the final operation document with every step.
+
+Pressing Ctrl-C stops following, not the deploy. The CLI prints the command that shows the operation, such as `orbit operation:show 42`, and exits nonzero. It sends no cancel request; [`operation:cancel`](/cli/operation#orbit-operationcancel) stops a deploy.
+
+| Outcome | Exit status |
 | --- | --- |
-| `phase` | `phase` is `source_preparation`, `environment_sync`, `before_activation`, `activation`, `php_refresh`, `after_activation`, or `rollback`. `step_name` is present only for a named step. |
-| `output` | `stream` is `stdout` or `stderr`. `data_base64` carries at most 16 KiB of decoded bytes. |
-| `result` | `status` is `succeeded` or `failed`, with nullable `failed_step`, `error_code`, and `selected_release`. This is the final line. |
-
-Every event carries `type`, a monotonically increasing `sequence`, and the `request_id`. A failed `result` stays a `result` event; the CLI uses the one-line error envelope only when the Gateway refuses the command before the stream opens or when the stream is malformed or truncated.
-
-| Stream outcome | Exit status |
-| --- | --- |
-| The final event is a succeeded result. | `0` |
-| The final event is a failed result. | Nonzero. The command names the failed boundary and the selected release when the result includes one. |
-| The stream is malformed, truncated, or ends without a result. | Nonzero. The CLI never infers success from earlier events. |
-| You press Ctrl-C. | Nonzero. The CLI closes its connection and submits no second request. |
+| The operation succeeded. | `0` |
+| The operation failed or was cancelled. | Nonzero. The command names the failed step and the selected release when the result includes one. |
+| The Gateway refused the request, such as `operation.target_busy` for an Instance that another operation holds. | Nonzero, with the one-line error envelope. |
+| You pressed Ctrl-C. | `130`. The operation keeps running. |
 
 ```bash
 orbit instance:deploy 15
-orbit instance:deploy 15 --json > deploy.ndjson
+orbit instance:deploy 15 --json > deploy.json
 ```
 
-A failure during release fetch, environment synchronization, or a `before_activation` step leaves the prior `current` selected. A failure during the PHP cache refresh or an `after_activation` step leaves the fresh release selected. Deployment, rollback, deploy-step changes, environment changes, and removal share one operation owner per Instance, so a competing request waits or returns a busy refusal.
+A failure during release fetch, environment synchronization, or a `before_activation` step leaves the prior `current` selected. A failure during PHP cache refresh, Process restart, or an `after_activation` step leaves the fresh release selected. Deployment, rollback, deploy-step changes, environment changes, and removal share one operation owner per Instance, so a competing request waits or returns a busy refusal. A second deploy while the first one is queued or running returns `operation.target_busy`.
 
 <Note>
 Only `default` can be deployed on an app-dev Node. Other development Instances still return `deployment_config.unavailable`. Releases, rollback, and per-Instance deploy-step operations remain production-only; `instance:release:list` shows none for a development default.
@@ -613,7 +613,7 @@ orbit instance:release:list <instance> [--json]
 
 ## orbit instance:rollback
 
-Select one retained release through `current`. A successful deployment keeps the previous selection and one other release, so these are the rollback targets. Rollback does not fetch Git, synchronize environment values, run deploy steps, or change database files.
+Select one retained release through `current`. A successful deployment keeps the previous selection and one other release, so these are the rollback targets. Rollback restarts active Instance Processes after PHP refresh, using the same opt-out as deployment. It reports restart failures and leaves the rollback release selected. Rollback does not fetch Git, synchronize environment values, run deploy steps, or change database files.
 
 ```bash
 orbit instance:rollback <instance> --release=NAME [--json]
@@ -627,7 +627,22 @@ orbit instance:rollback <instance> --release=NAME [--json]
 | --- | --- |
 | `--release=NAME` | Retained release name from `instance:release:list`. |
 
-The command streams the same `phase`, `output`, and `result` events as `instance:deploy`, with the `rollback` phase, and uses the same exit status table.
+The command streams newline-delimited JSON events while the Gateway works. Human output shows a progress tree, and output from commands prints above it, labeled and escaped. `--json` writes the events as NDJSON, one event per line. Pressing Ctrl-C closes the connection at once, and the CLI submits no second request. Once the Gateway switches the release, it finishes PHP refresh and Process restarts even if the client disconnects.
+
+| Event type | Fields |
+| --- | --- |
+| `phase` | `phase` is `rollback` or `process_restart`. |
+| `output` | `stream` is `stdout` or `stderr`. `data_base64` carries at most 16 KiB of decoded bytes. |
+| `result` | `status` is `succeeded` or `failed`, with nullable `failed_step`, `error_code`, and `selected_release`. This is the final line. |
+
+Every event carries `type`, a monotonically increasing `sequence`, and the `request_id`.
+
+| Stream outcome | Exit status |
+| --- | --- |
+| The final event is a succeeded result. | `0` |
+| The final event is a failed result. | Nonzero. The command names the failed boundary and the selected release when the result includes one. |
+| The stream is malformed, truncated, or ends without a result. | Nonzero. The CLI never infers success from earlier events. |
+| You press Ctrl-C. | Nonzero. The CLI closes its connection and submits no second request. |
 
 ```bash
 orbit instance:release:list 15
@@ -640,7 +655,7 @@ Orbit selects the older code only. You own any data or application recovery that
 
 ## orbit instance:deployment:list
 
-List the deployment history the Gateway recorded for a production Instance, newest first. The Gateway writes one row when `instance:deploy` or `instance:rollback` starts and fills it in when the run finishes, and keeps the last 50 rows per Instance.
+List the deployment history the Gateway recorded for a production Instance, newest first. The Gateway writes one row when a deploy operation or `instance:rollback` starts and fills it in when the run finishes, and keeps the last 50 rows per Instance.
 
 ```bash
 orbit instance:deployment:list <instance> [--json]

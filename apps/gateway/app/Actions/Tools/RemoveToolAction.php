@@ -6,6 +6,7 @@ namespace App\Actions\Tools;
 
 use App\Domain\Nodes\NodeLockLoss;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tools\ReservesRolePackages;
 use App\Domain\Tools\ToolActionResult;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
@@ -57,6 +58,11 @@ final readonly class RemoveToolAction
 
         if (! in_array($tool->status, [ToolStatus::Installed, ToolStatus::Failed], strict: true)) {
             throw $this->failure($tool, 'tool.state_invalid', 409, 'The tool is not in a removable state.');
+        }
+
+        // The PHP role owns this package (ADR 0216). Drop only the record; the package stays at its recipe version.
+        if ($manager instanceof ReservesRolePackages && $manager->roleOwns($tool->package)) {
+            return $this->removed($tool);
         }
 
         if ($this->isUnprovenFailedTool($tool)) {

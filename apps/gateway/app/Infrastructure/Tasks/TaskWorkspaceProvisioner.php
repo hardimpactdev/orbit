@@ -152,15 +152,14 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning, T
             ]);
         }
 
-        $this->packageCache->prepare($vm, $group->project);
-        $this->clock->step('workspace-package-cache');
-
         return $this->sourceLock->synchronized(
             $instance->node_id,
-            function () use ($instance, $visitable, $existing): Instance {
+            function () use ($instance, $visitable, $existing, $vm, $group): Instance {
                 $resolved = $this->prepareSource($instance, $existing instanceof Instance);
                 $this->source->inspectPrepared($resolved);
                 $this->clock->step('workspace-source');
+                $this->packageCache->prepare($vm, $group->project);
+                $this->clock->step('workspace-package-cache');
 
                 if (! $visitable) {
                     return $resolved;

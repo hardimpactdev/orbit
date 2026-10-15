@@ -1261,8 +1261,8 @@ export interface paths {
         options?: never;
         head?: never;
         /**
-         * Update the deployment branch
-         * @description Update a production Instance deployment branch.
+         * Update production deployment settings
+         * @description Update a production Instance deployment branch or shared paths. shared_paths replaces the list; null restores the Project-type default and an empty list disables sharing. Applies to the next deployment.
          */
         patch: operations["instance-update"];
         trace?: never;
@@ -1476,7 +1476,7 @@ export interface paths {
         put?: never;
         /**
          * Deploy an Instance
-         * @description Deploy a production Instance or an app-dev default Instance.
+         * @description Starts an `instance.deploy` operation and answers 202 with it at once; the deploy runs on the Gateway queue. Follow it with `operation:show` and `after_sequence` after `poll_after_seconds`, until `status` is `succeeded`, `failed`, or `cancelled`. A second deploy while one holds the Instance returns `operation.target_busy` (409) with `details.operation_id`. See /reference/operations.
          */
         post: operations["instance-deploy"];
         delete?: never;
@@ -2320,6 +2320,66 @@ export interface paths {
          * @description Remove one node access edge from the active gateway.
          */
         delete: operations["node-access-remove"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List operations
+         * @description Lists the 50 newest operations on Nodes the caller can access, newest first, without steps. Filter by `status`, `kind`, `target_type`, and `target_id`; `status=running` finds the operations still at work.
+         */
+        get: operations["operation-list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/{operation}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show an operation
+         * @description Returns one operation and its steps from one database read. With `after_sequence`, returns only the steps whose `sequence` is greater. `poll_after_seconds` says when to read again; it is null once `status` is terminal. A finished operation carries `result`, or `failed_step` and `error_code`. See /reference/operations#read-an-operation.
+         */
+        get: operations["operation-show"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operations/{operation}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel an operation
+         * @description Asks an operation to stop. A queued operation ends `cancelled` at once; a running one finishes its running step and ends `cancelled`. A finished operation stays as it is. Returns the operation with its steps.
+         */
+        post: operations["operation-cancel"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -4215,6 +4275,7 @@ export interface components {
             annotator_port?: number | null;
             annotator_url?: string | null;
             routes?: components["schemas"]["Route"][];
+            shared_paths?: string[];
         };
         ProjectIdentity: {
             id?: number;
@@ -4368,6 +4429,30 @@ export interface components {
             changed?: boolean;
             key_count?: number;
         };
+        Operation: {
+            id?: number;
+            kind?: string;
+            target_type?: string;
+            target_id?: number;
+            input?: {
+                [key: string]: unknown;
+            };
+            status?: string;
+            sequence?: number;
+            current_step?: string | null;
+            failed_step?: string | null;
+            error_code?: string | null;
+            result?: {
+                [key: string]: unknown;
+            } | null;
+            cancel_requested?: boolean;
+            attempts?: number;
+            triggered_by?: string | null;
+            created_at?: string | null;
+            started_at?: string | null;
+            finished_at?: string | null;
+            poll_after_seconds?: number | null;
+        };
         DeploymentReleaseState: {
             releases?: string[];
             selected_release?: string | null;
@@ -4520,6 +4605,18 @@ export interface components {
             serving_node?: components["schemas"]["NodeAccessNode"];
             already_exists?: boolean;
         };
+        OperationStep: {
+            name?: string;
+            position?: number;
+            status?: string;
+            resumable?: boolean;
+            sequence?: number;
+            started_at?: string | null;
+            finished_at?: string | null;
+            error_code?: string | null;
+            output?: string | null;
+            output_truncated?: boolean;
+        };
         Process: {
             id?: number;
             target_type?: string;
@@ -4540,6 +4637,7 @@ export interface components {
             cpu?: number | null;
             memory_bytes?: number | null;
             user?: string | null;
+            restart_on_deploy?: boolean;
         };
         DocumentStorage: {
             configured?: boolean;
@@ -9227,7 +9325,9 @@ export interface operations {
             content: {
                 "application/json": {
                     /** @description Deployment branch */
-                    branch: string;
+                    branch?: string;
+                    /** @description JSON list of shared directories; [] disables sharing and null restores the default */
+                    shared_paths?: string[] | null;
                 };
             };
         };
@@ -10268,47 +10368,29 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Newline-delimited JSON events: `phase` and `output` events while the Gateway works, then exactly one final `result` event. A failed operation still ends with a `result` event. */
-            200: {
+            /** @description Accepted. The `instance.deploy` operation is queued; follow it with `operation:show`. */
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/x-ndjson": {
-                        /** @enum {string} */
-                        type: "phase";
-                        sequence: number;
-                        /** Format: uuid */
-                        request_id: string;
-                        /** @enum {string} */
-                        phase: "source_preparation" | "environment_sync" | "before_activation" | "activation" | "php_refresh" | "after_activation" | "rollback";
-                        step_name?: string | null;
-                    } | {
-                        /** @enum {string} */
-                        type: "output";
-                        sequence: number;
-                        /** Format: uuid */
-                        request_id: string;
-                        /** @enum {string} */
-                        stream: "stdout" | "stderr";
-                        /** @description At most 16 KiB of decoded bytes, base64-encoded. */
-                        data_base64: string;
-                    } | {
-                        /** @enum {string} */
-                        type: "result";
-                        sequence: number;
-                        /** Format: uuid */
-                        request_id: string;
-                        /** @enum {string} */
-                        status: "succeeded" | "failed";
-                        failed_step?: string | null;
-                        error_code?: string | null;
-                        selected_release?: string | null;
+                    "application/json": {
+                        data: components["schemas"]["Operation"];
+                        meta: components["schemas"]["Meta"];
                     };
                 };
             };
             /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10327,6 +10409,15 @@ export interface operations {
             };
             /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The Gateway has no queue (`operation.queue_unavailable`) and recorded nothing, or it could not queue the job (`operation.dispatch_failed`) and ended the operation as failed. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11377,7 +11468,7 @@ export interface operations {
                         /** Format: uuid */
                         request_id: string;
                         /** @enum {string} */
-                        phase: "source_preparation" | "environment_sync" | "before_activation" | "activation" | "php_refresh" | "after_activation" | "rollback";
+                        phase: "source_preparation" | "environment_sync" | "before_activation" | "activation" | "php_refresh" | "process_restart" | "after_activation" | "rollback";
                         step_name?: string | null;
                     } | {
                         /** @enum {string} */
@@ -13591,6 +13682,161 @@ export interface operations {
             };
         };
     };
+    "operation-list": {
+        parameters: {
+            query?: {
+                status?: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+                kind?: "instance.deploy";
+                target_type?: "instance";
+                target_id?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Operation"][];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "operation-show": {
+        parameters: {
+            query?: {
+                after_sequence?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Numeric operation ID. */
+                operation: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Operation"] & {
+                            /** @description The steps in order. With `after_sequence`, only the steps whose `sequence` is greater. */
+                            steps: components["schemas"]["OperationStep"][];
+                        };
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "operation-cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric operation ID. */
+                operation: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Operation"] & {
+                            /** @description The steps in order. With `after_sequence`, only the steps whose `sequence` is greater. */
+                            steps: components["schemas"]["OperationStep"][];
+                        };
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "process-list": {
         parameters: {
             query?: {
@@ -13672,6 +13918,7 @@ export interface operations {
                     start?: boolean;
                     /** @description Keep running through app-dev idle hibernation */
                     keep_alive?: boolean;
+                    restart_on_deploy?: boolean;
                 };
             };
         };
@@ -13822,6 +14069,7 @@ export interface operations {
                     restart_policy?: "never" | "on-failure" | "always" | "unless-stopped";
                     /** @description Keep running through app-dev idle hibernation */
                     keep_alive?: boolean;
+                    restart_on_deploy?: boolean;
                 };
             };
         };

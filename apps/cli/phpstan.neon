@@ -2,6 +2,7 @@ includes:
     - vendor/larastan/larastan/extension.neon
     - vendor/spaze/phpstan-disallowed-calls/extension.neon
     - ../../tools/phpstan/orbit-rules.neon
+    - ../../tools/phpstan/parallel.php
 
 parameters:
     level: 9
@@ -10,8 +11,6 @@ parameters:
         - design
         - ../../tools/phpstan
     tmpDir: vendor/phpstan/cache
-    parallel:
-        maximumNumberOfProcesses: 2
 
     # Larastan checks inherited helpers against every registered subclass, even
     # when that subclass never calls the helper. ToolCommand::nodeId() reads

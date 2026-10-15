@@ -6,11 +6,11 @@ use Rector\Config\RectorConfig;
 
 return RectorConfig::configure()
     ->withCache(
-        __DIR__.'/vendor/rector/cache',
+        (require __DIR__.'/../../tools/rector-cache.php')(__DIR__),
         null,
         __DIR__.'/vendor/rector',
     )
-    ->withoutParallel()
+    ->withParallel(maxNumberOfProcess: require __DIR__.'/../../tools/check-processes.php')
     ->withPaths([
         __DIR__.'/app',
         __DIR__.'/bootstrap/app.php',

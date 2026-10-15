@@ -98,6 +98,10 @@
       "description": "The Gateway log of authorized commands."
     },
     {
+      "name": "Operations",
+      "description": "Long operations, such as an Instance deploy, that run on the Gateway queue as named steps."
+    },
+    {
       "name": "proxycli",
       "description": "CLIProxyAPI quota snapshots, provider pools, and account controls."
     },
@@ -8352,7 +8356,7 @@
       },
       "patch": {
         "operationId": "instance-update",
-        "summary": "Update the deployment branch",
+        "summary": "Update production deployment settings",
         "tags": [
           "Instances"
         ],
@@ -8368,7 +8372,7 @@
             "description": "Numeric Instance ID."
           }
         ],
-        "description": "Update a production Instance deployment branch.",
+        "description": "Update a production Instance deployment branch or shared paths. shared_paths replaces the list; null restores the Project-type default and an empty list disables sharing. Applies to the next deployment.",
         "requestBody": {
           "required": true,
           "content": {
@@ -8379,11 +8383,21 @@
                   "branch": {
                     "type": "string",
                     "description": "Deployment branch"
+                  },
+                  "shared_paths": {
+                    "type": [
+                      "array",
+                      "null"
+                    ],
+                    "maxItems": 32,
+                    "items": {
+                      "type": "string",
+                      "maxLength": 255
+                    },
+                    "description": "JSON list of shared directories; [] disables sharing and null restores the default"
                   }
                 },
-                "required": [
-                  "branch"
-                ],
+                "minProperties": 1,
                 "additionalProperties": false
               }
             }
@@ -8457,12 +8471,12 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/instances/12\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"branch\": \"main\"}'\n"
+            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/instances/12\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"branch\": \"main\", \"shared_paths\": [\"example\"]}'\n"
           },
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Instances\\UpdateInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new UpdateInstanceRequest(instanceId: 4, branch: 'main'))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Instances\\UpdateInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new UpdateInstanceRequest(\n    instanceId: 4,\n    sharedPaths: ['storage'],\n    sharedPathsProvided: true,\n))->dto();\n"
           }
         ]
       }
@@ -10384,7 +10398,7 @@
             "description": "Numeric Instance ID."
           }
         ],
-        "description": "Deploy a production Instance or an app-dev default Instance.",
+        "description": "Starts an `instance.deploy` operation and answers 202 with it at once; the deploy runs on the Gateway queue. Follow it with `operation:show` and `after_sequence` after `poll_after_seconds`, until `status` is `succeeded`, `failed`, or `cancelled`. A second deploy while one holds the Instance returns `operation.target_busy` (409) with `details.operation_id`. See /reference/operations.",
         "requestBody": {
           "required": true,
           "content": {
@@ -10396,150 +10410,52 @@
             }
           }
         },
+        "x-orbit-operation": "start",
         "responses": {
-          "200": {
-            "description": "Newline-delimited JSON events: `phase` and `output` events while the Gateway works, then exactly one final `result` event. A failed operation still ends with a `result` event.",
+          "202": {
+            "description": "Accepted. The `instance.deploy` operation is queued; follow it with `operation:show`.",
             "content": {
-              "application/x-ndjson": {
+              "application/json": {
                 "schema": {
-                  "oneOf": [
-                    {
-                      "title": "Phase event",
-                      "type": "object",
-                      "required": [
-                        "type",
-                        "sequence",
-                        "request_id",
-                        "phase"
-                      ],
-                      "properties": {
-                        "type": {
-                          "type": "string",
-                          "enum": [
-                            "phase"
-                          ]
-                        },
-                        "sequence": {
-                          "type": "integer"
-                        },
-                        "request_id": {
-                          "type": "string",
-                          "format": "uuid"
-                        },
-                        "phase": {
-                          "type": "string",
-                          "enum": [
-                            "source_preparation",
-                            "environment_sync",
-                            "before_activation",
-                            "activation",
-                            "php_refresh",
-                            "after_activation",
-                            "rollback"
-                          ]
-                        },
-                        "step_name": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        }
-                      }
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Operation"
                     },
-                    {
-                      "title": "Output event",
-                      "type": "object",
-                      "required": [
-                        "type",
-                        "sequence",
-                        "request_id",
-                        "stream",
-                        "data_base64"
-                      ],
-                      "properties": {
-                        "type": {
-                          "type": "string",
-                          "enum": [
-                            "output"
-                          ]
-                        },
-                        "sequence": {
-                          "type": "integer"
-                        },
-                        "request_id": {
-                          "type": "string",
-                          "format": "uuid"
-                        },
-                        "stream": {
-                          "type": "string",
-                          "enum": [
-                            "stdout",
-                            "stderr"
-                          ]
-                        },
-                        "data_base64": {
-                          "type": "string",
-                          "description": "At most 16 KiB of decoded bytes, base64-encoded."
-                        }
-                      }
-                    },
-                    {
-                      "title": "Result event",
-                      "type": "object",
-                      "required": [
-                        "type",
-                        "sequence",
-                        "request_id",
-                        "status"
-                      ],
-                      "properties": {
-                        "type": {
-                          "type": "string",
-                          "enum": [
-                            "result"
-                          ]
-                        },
-                        "sequence": {
-                          "type": "integer"
-                        },
-                        "request_id": {
-                          "type": "string",
-                          "format": "uuid"
-                        },
-                        "status": {
-                          "type": "string",
-                          "enum": [
-                            "succeeded",
-                            "failed"
-                          ]
-                        },
-                        "failed_step": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "error_code": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "selected_release": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        }
-                      }
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
                     }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
                   ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Gateway has no queue (`operation.queue_unavailable`) and recorded nothing, or it could not queue the job (`operation.dispatch_failed`) and ended the operation as failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
           },
           "403": {
             "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10578,7 +10494,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Deployments\\DeployInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$stream = $connector->send(new DeployInstanceRequest(instanceId: 4))->dto();\n\nforeach ($stream as $event) {\n    // DeploymentPhaseEvent, DeploymentOutputEvent, or the final DeploymentResultEvent\n}\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Deployments\\DeployInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new DeployInstanceRequest(instanceId: 4))->dto();\n"
           }
         ]
       }
@@ -12542,6 +12458,7 @@
                             "before_activation",
                             "activation",
                             "php_refresh",
+                            "process_restart",
                             "after_activation",
                             "rollback"
                           ]
@@ -16600,6 +16517,347 @@
         ]
       }
     },
+    "/api/v1/operations": {
+      "get": {
+        "operationId": "operation-list",
+        "summary": "List operations",
+        "tags": [
+          "Operations"
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "queued",
+                "running",
+                "succeeded",
+                "failed",
+                "cancelled"
+              ]
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "instance.deploy"
+              ]
+            }
+          },
+          {
+            "name": "target_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "instance"
+              ]
+            }
+          },
+          {
+            "name": "target_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "description": "Lists the 50 newest operations on Nodes the caller can access, newest first, without steps. Filter by `status`, `kind`, `target_type`, and `target_id`; `status=running` finds the operations still at work.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Operation"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/operations?status=success&kind=1&target_type=node&target_id=12\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Operations\\ListOperationsRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ListOperationsRequest())->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/operations/{operation}": {
+      "get": {
+        "operationId": "operation-show",
+        "summary": "Show an operation",
+        "tags": [
+          "Operations"
+        ],
+        "parameters": [
+          {
+            "name": "operation",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric operation ID."
+          },
+          {
+            "name": "after_sequence",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "description": "Returns one operation and its steps from one database read. With `after_sequence`, returns only the steps whose `sequence` is greater. `poll_after_seconds` says when to read again; it is null once `status` is terminal. A finished operation carries `result`, or `failed_step` and `error_code`. See /reference/operations#read-an-operation.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/Operation"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "steps": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/OperationStep"
+                              },
+                              "description": "The steps in order. With `after_sequence`, only the steps whose `sequence` is greater."
+                            }
+                          },
+                          "required": [
+                            "steps"
+                          ]
+                        }
+                      ]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/operations/1?after_sequence=1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Operations\\ShowOperationRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ShowOperationRequest(operationId: 1))->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/operations/{operation}/cancel": {
+      "post": {
+        "operationId": "operation-cancel",
+        "summary": "Cancel an operation",
+        "tags": [
+          "Operations"
+        ],
+        "parameters": [
+          {
+            "name": "operation",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric operation ID."
+          }
+        ],
+        "description": "Asks an operation to stop. A queued operation ends `cancelled` at once; a running one finishes its running step and ends `cancelled`. A finished operation stays as it is. Returns the operation with its steps.",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/Operation"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "steps": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/OperationStep"
+                              },
+                              "description": "The steps in order. With `after_sequence`, only the steps whose `sequence` is greater."
+                            }
+                          },
+                          "required": [
+                            "steps"
+                          ]
+                        }
+                      ]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/operations/1/cancel\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Operations\\CancelOperationRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CancelOperationRequest(operationId: 1))->dto();\n"
+          }
+        ]
+      }
+    },
     "/api/v1/processes": {
       "get": {
         "operationId": "process-list",
@@ -16828,6 +17086,9 @@
                   "keep_alive": {
                     "type": "boolean",
                     "description": "Keep running through app-dev idle hibernation"
+                  },
+                  "restart_on_deploy": {
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -17147,6 +17408,9 @@
                   "keep_alive": {
                     "type": "boolean",
                     "description": "Keep running through app-dev idle hibernation"
+                  },
+                  "restart_on_deploy": {
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -31487,6 +31751,12 @@
             "items": {
               "$ref": "#/components/schemas/Route"
             }
+          },
+          "shared_paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -32092,6 +32362,94 @@
           }
         }
       },
+      "Operation": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "target_type": {
+            "type": "string"
+          },
+          "target_id": {
+            "type": "integer"
+          },
+          "input": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "status": {
+            "type": "string"
+          },
+          "sequence": {
+            "type": "integer"
+          },
+          "current_step": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "failed_step": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "result": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": true
+          },
+          "cancel_requested": {
+            "type": "boolean"
+          },
+          "attempts": {
+            "type": "integer"
+          },
+          "triggered_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "started_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "finished_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "poll_after_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        }
+      },
       "DeploymentReleaseState": {
         "type": "object",
         "properties": {
@@ -32657,6 +33015,53 @@
           }
         }
       },
+      "OperationStep": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "position": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "resumable": {
+            "type": "boolean"
+          },
+          "sequence": {
+            "type": "integer"
+          },
+          "started_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "finished_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "output": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "output_truncated": {
+            "type": "boolean"
+          }
+        }
+      },
       "Process": {
         "type": "object",
         "properties": {
@@ -32729,6 +33134,9 @@
               "string",
               "null"
             ]
+          },
+          "restart_on_deploy": {
+            "type": "boolean"
           }
         }
       },

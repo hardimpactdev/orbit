@@ -11,7 +11,7 @@ final readonly class DocsImpact
 {
     private const array CLI_FAMILIES = [
         'activity', 'analytics', 'app', 'cluster', 'database', 'dns', 'doctor', 'env', 'extension', 'firewall', 'fleet',
-        'gateway', 'github', 'instance', 'internal', 'metrics', 'node', 'process', 'profile', 'project', 'proxycli',
+        'gateway', 'github', 'instance', 'internal', 'metrics', 'node', 'operation', 'process', 'profile', 'project', 'proxycli',
         'realtime', 'route', 'schedule', 'self-update', 'tasks', 'tool', 'vault', 'workspace',
     ];
 
@@ -29,6 +29,7 @@ final readonly class DocsImpact
         'orbit:deploy-development-defaults' => 'docs/reference/deployments.md',
         'orbit:desired-fleet-state' => 'docs/reference/self-update.md',
         'orbit:vault-sync' => 'docs/reference/vaultwarden.md',
+        'orbit:operations-sweep' => 'docs/reference/operations.md',
         'orbit:agent-view' => 'docs/reference/node-agent.md',
         'orbit:caddy-build' => 'docs/reference/gateway-trust.md',
         'orbit:tasks:jev-report' => 'docs/reference/tasks.md',

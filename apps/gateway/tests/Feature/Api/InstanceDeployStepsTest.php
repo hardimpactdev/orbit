@@ -213,6 +213,61 @@ it('changes the deployment branch without changing steps and refuses development
         ->assertJsonPath('error.code', 'deployment_config.unavailable');
 });
 
+it('stores shared paths independently and can restore the Laravel default', function (): void {
+    $url = "/api/v1/instances/{$this->instance->id}";
+
+    foreach ([['storage', 'var/uploads'], [], null] as $paths) {
+        $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+            ->patchJson($url, ['shared_paths' => $paths])
+            ->assertOk()
+            ->assertJsonPath('data.shared_paths', $paths ?? ['storage']);
+
+        expect($this->instance->fresh()->shared_paths)->toBe($paths);
+    }
+
+    expect($this->instance->fresh()->deployment_branch)->toBeNull();
+});
+
+it('keeps shared paths nullable and optional in the generated API and MCP contracts', function (): void {
+    $openapi = json_decode(file_get_contents(base_path('../../docs/openapi.json')), true, flags: JSON_THROW_ON_ERROR);
+    $body = $openapi['paths']['/api/v1/instances/{instance}']['patch']['requestBody']['content']['application/json']['schema'];
+    $catalogue = json_decode(file_get_contents(base_path('resources/mcp/tools.json')), true, flags: JSON_THROW_ON_ERROR);
+    $tool = collect($catalogue['tools'])->firstWhere('name', 'instance-update');
+
+    foreach ([$body, $tool['input_schema']] as $schema) {
+        expect($schema['properties']['shared_paths']['type'])->toBe(['array', 'null'])
+            ->and($schema['properties']['shared_paths']['items']['type'])->toBe('string')
+            ->and($schema['required'] ?? [])->not->toContain('branch', 'shared_paths');
+    }
+    expect($body['minProperties'])->toBe(1);
+});
+
+it('refuses invalid shared paths without changing the deployment branch', function (mixed $paths): void {
+    $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->patchJson("/api/v1/instances/{$this->instance->id}", ['branch' => 'other', 'shared_paths' => $paths])
+        ->assertUnprocessable();
+
+    expect($this->instance->fresh()->shared_paths)->toBeNull()
+        ->and($this->instance->fresh()->deployment_branch)->toBeNull();
+})->with([
+    'absolute' => [['/storage']],
+    'traversal' => [['storage/../secret']],
+    'dot' => [['storage/./secret']],
+    'reserved' => [['releases/data']],
+    'environment' => [['env/data']],
+    'git' => [['.git']],
+    'database' => [['database.sqlite']],
+    'current' => [['current/uploads']],
+    'overlap' => [['storage', 'storage/app']],
+    'duplicate' => [['storage', 'storage']],
+    'injection' => [['storage;id']],
+    'empty' => [['']],
+    'too many' => [array_map(static fn (int $index): string => "data$index", range(1, 33))],
+    'too long' => [[str_repeat('x', 256)]],
+    'object' => [(object) []],
+    'string' => ['storage'],
+]);
+
 it('refuses a step mutation while the Instance operation owner is held', function (): void {
     app()->instance(InstanceEnvironmentOperationLock::class, new class implements InstanceEnvironmentOperationLock
     {
