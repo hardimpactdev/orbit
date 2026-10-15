@@ -92,13 +92,13 @@ A driver implements this contract. It is a PHP interface inside the extension, n
 
 | Capability | What the driver does |
 | --- | --- |
-| Install and run | Installs a given version on the role Node, checked against its published digest. Writes the first configuration. Returns the router Process specification: command, user, port, and restart policy. |
+| Install and run | Installs a given version on the role Node, checked against its published digest. Writes the first configuration with the stored management key. Returns the router Process specification. |
 | Adopt | Checks that an existing Process runs this driver's program, and reports its installed version and configuration paths. |
 | Issue and revoke keys | Registers a per-group model key and keeps one anchor key present, so the key list is never empty. Revokes a key and confirms that it no longer works. |
 | Report quota and accounts | Supplies the collector program, which writes the shared snapshot of provider pools, windows, and models, and toggles one account. |
 | Report the installed version | Reports the version that runs on the Node, for adoption and for [ADR 0214](/decisions/0214-pin-the-ai-router-version-and-flag-upgrades). |
 
-Every driver step is idempotent. A driver never overwrites configuration that the router changes at run time, such as its key list and its account files. Today's `TaskVmModelKeys` behavior moves into the `cliproxyapi` driver unchanged. [ADR 0214](/decisions/0214-pin-the-ai-router-version-and-flag-upgrades) adds one capability: report the latest upstream release.
+The Process specification holds the command, user, port, and restart policy. Every driver step is idempotent. A driver never overwrites configuration that the router changes at run time, such as its key list and its account files. Today's `TaskVmModelKeys` behavior moves into the `cliproxyapi` driver unchanged. [ADR 0214](/decisions/0214-pin-the-ai-router-version-and-flag-upgrades) adds one capability: report the latest upstream release.
 
 The `cliproxyapi` driver keeps today's layout: versions under `~orbit/.local/share/cliproxyapi/`, the `current` link, and the configuration in `~orbit/.config/cliproxyapi/config.yaml`. The router listens on port 8317. Adoption therefore moves no file.
 
@@ -164,7 +164,7 @@ The Caddy guard that aborts task VM clients still covers the collector site, bec
 
 `extension:enable ai-router` refuses with `ai_router.role_missing` while no Node holds an active `ai-router` role. Otherwise its `enable()` hook converges, idempotently:
 
-1. The router Process `ai-router` on the role Node, through the driver, at the version in `ORBIT_AI_ROUTER_VERSION`. [ADR 0214](/decisions/0214-pin-the-ai-router-version-and-flag-upgrades) replaces that variable with a stored pin. A new install gets a generated management key. An adopted Process keeps its key.
+1. The router Process `ai-router` on the role Node, through the driver, at the version in `ORBIT_AI_ROUTER_VERSION`. [ADR 0214](/decisions/0214-pin-the-ai-router-version-and-flag-upgrades) replaces that variable with a stored pin. The install uses the stored management key and generates one only when none is stored, so a re-enable after a disable keeps the same key and accounts. An adopted Process keeps its key.
 2. The collector Process `ai-router-collector` on the same Node, with the cache connection of the role.
 3. The collector's Orbit CA leaf, its Caddy site, and the private DNS record `collector.ai-router.orbit`.
 4. The role's firewall rules.
