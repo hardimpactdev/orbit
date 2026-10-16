@@ -10,7 +10,7 @@ use App\Models\Instance;
 use App\Models\Operation;
 
 /**
- * Starts the `instance.rollback` operation (docs/reference/deployments.md#roll-back). It refuses an Instance that cannot
+ * Starts the `instance.rollback` operation (docs/reference/deployments.md#the-rollback-operation). It refuses an Instance that cannot
  * be rolled back before it records anything; the job then runs the rollback on the Gateway queue. A rollback always
  * wins over a deploy that waits in the queue: that deploy ends `cancelled` with `operation.superseded`. A deploy that a
  * worker started keeps the Instance, and the rollback is busy.

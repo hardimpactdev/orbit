@@ -15,7 +15,7 @@ use App\Models\InstanceDeployment;
 use App\Models\Operation;
 
 /**
- * The `instance.rollback` operation (docs/reference/deployments.md#roll-back). It records one rollback history row on
+ * The `instance.rollback` operation (docs/reference/deployments.md#the-rollback-operation). It records one rollback history row on
  * its first attempt, runs the rollback's steps as the operation's steps, and saves the row's events after each step,
  * so a resumed attempt continues the same row. The input `release` names the retained release to select.
  */
