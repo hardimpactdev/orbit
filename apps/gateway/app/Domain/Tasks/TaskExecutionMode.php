@@ -7,5 +7,4 @@ namespace App\Domain\Tasks;
 enum TaskExecutionMode: string
 {
     case Managed = 'managed';
-    case ExistingThread = 'existing_thread';
 }

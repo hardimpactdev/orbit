@@ -22,8 +22,6 @@ Recording a development [Instance branch rename](/cli/instance#orbit-instanceren
 
 [Importing workspace CI caches](/reference/instance-setup#import-ci-main-caches) restores private test and analysis data, not Tools or packages. It does not call a Tool Manager, fill a package download cache, or install a missing dependency. The Project's setup steps must install dependencies before importing these caches.
 
-The [annotator Process preset](/reference/agentation#annotator-process) installs Gateway-owned server files and their verified injection asset, not a package through a Tool Manager. It creates no Tool intent and does not adopt or remove the Node's existing Node.js runtime. Its private file publication and environment projection stay separate from Tool operations.
-
 ## Where Tools run
 
 The Gateway manages Tools only on an active Node that it manages over SSH. That Node runs a supported platform, has a verified WireGuard address, and has a stored SSH host fingerprint. Ubuntu supports the existing managers. [macOS Nodes](/reference/node-provisioning#macos-nodes) support Homebrew formulae, casks, and Vite+ global packages in the enrolled account's existing installations. Any other Node gets `tool.node_inactive` or `tool.node_unmanaged` (HTTP 409) before the Gateway changes anything.

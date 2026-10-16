@@ -248,7 +248,7 @@ final readonly class TaskSettling
 
     private function shouldRemoveWorkspace(Task $group, Instance $instance): bool
     {
-        if ($instance->project_id !== $group->project_id || $this->attachedToUnmanagedGroup($instance)) {
+        if ($instance->project_id !== $group->project_id) {
             return false;
         }
 
@@ -354,16 +354,6 @@ final readonly class TaskSettling
         }
     }
 
-    /** A user Instance that backs a non-managed group is never a task workspace the sweep may delete. */
-    private function attachedToUnmanagedGroup(Instance $instance): bool
-    {
-        return Task::topLevel()
-            ->where('taskable_type', TaskableType::Instance)
-            ->where('taskable_id', $instance->id)
-            ->where('execution_mode', '!=', TaskExecutionMode::Managed->value)
-            ->exists();
-    }
-
     /** @return Collection<int, Instance> */
     private function abandonedWorkspaces(): Collection
     {
@@ -390,14 +380,6 @@ final readonly class TaskSettling
                     });
             })
             ->where('tasks.execution_mode', TaskExecutionMode::Managed->value)
-            ->whereNotExists(function ($userGroup): void {
-                $userGroup->selectRaw('1')
-                    ->from('tasks as user_groups')
-                    ->whereNull('user_groups.parent_id')
-                    ->whereColumn('user_groups.taskable_id', 'instances.id')
-                    ->where('user_groups.taskable_type', TaskableType::Instance)
-                    ->where('user_groups.execution_mode', '!=', TaskExecutionMode::Managed->value);
-            })
             ->where(function ($ended) use ($cutoff, $mergePrefix): void {
                 $ended->where(function ($finished) use ($cutoff): void {
                     $finished->whereIn('tasks.status', [TaskGroupStatus::Cancelled->value, TaskGroupStatus::Completed->value])
@@ -427,7 +409,6 @@ final readonly class TaskSettling
      */
     public function cancelRunningSubtask(TaskScheduler $scheduler, Task $parent, Task $task, Closure $stop): Task
     {
-        $parent->requireManagedExecution();
         $candidate = Task::query()->where('parent_id', $parent->id)->findOrFail($task->id);
 
         if ($candidate->status === TaskStatus::Todo) {
@@ -542,7 +523,6 @@ final readonly class TaskSettling
         bool $requestMissingPullRequest = true,
         bool $checkReturningPullRequest = true,
     ): Task {
-        $group->requireManagedExecution();
         $group->loadMissing(['project', 'tasks', 'taskable']);
 
         if (! in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)) {

@@ -42,9 +42,8 @@ The Gateway owns the definitions, the copies, and the point at which it makes th
 
 - `environments` accepts `development` and `production`, alone or together. The CLI flag is `--for=development`, `--for=production`, or `--for=development,production`.
 - A Process definition `spec` takes either a runtime specification, as today, or `preset`. A preset spec holds `preset` and, where the preset allows them, `restart_policy` and `keep_alive`. It refuses `runtime`, `command`, `image`, `working_directory`, `environment`, `ports`, and `volumes`, as `process:create --preset` does.
-- Every preset is accepted: `vp-dev`, `annotator`, `agentation-mcp`, and `antigravity-watch`. A preset definition must list only `development`; one that lists `production` is refused with HTTP 422.
+- Every preset is accepted; `vp-dev` is the only preset. A preset definition must list only `development`; one that lists `production` is refused with HTTP 422.
 - A Project has at most one definition for each preset, because an Instance has at most one Process for each preset.
-- An `antigravity-watch` definition is refused with HTTP 422 when the Project has no `agentation-mcp` definition. Removing the `agentation-mcp` definition is refused while an `antigravity-watch` definition exists.
 - Schedule definitions keep accepting only `production`. A development Schedule definition is refused with HTTP 422. This record does not rule development Schedules out: a new ADR can add them when a Project needs one.
 - A definition change still touches only the Project. It changes no existing copy, in either environment.
 
@@ -70,7 +69,7 @@ Core exposes the stage as one action. The Tasks extension calls it for a routed 
 
 When Instance create becomes a durable operation under ADR 0209, the stage becomes a named, resumable step of that operation. It is safe to run again, because it skips every definition that already has a linked copy.
 
-The stage reads the Project's development definitions at that moment. It handles them in preset dependency order, `agentation-mcp` before `antigravity-watch`, and otherwise by name. Each definition has one outcome:
+The stage reads the Project's development definitions at that moment. It handles them by name. Each definition has one outcome:
 
 | Situation | Outcome | Result |
 | --- | --- | --- |
@@ -89,8 +88,6 @@ A development copy is an ordinary Instance Process. Its desired state is `runnin
 A destroyed copy comes back on the next setup run while its definition exists. This is accepted: the definition states what every development Instance runs. To keep one Instance without the Process, stop the copy with `process:stop`. The stopped copy stays linked, so setup skips it and does not start it. To remove the Process everywhere, remove the definition.
 
 Instance removal runs teardown and then removes every Process of the Instance, copies included.
-
-`annotator` and `agentation-mcp` definitions reserve their port and publish their Route path on every development Instance that gets a copy, routed task workspaces included. A Project that does not want this declares no such definition.
 
 ### What this replaces
 
@@ -116,7 +113,6 @@ The hand-made development Processes that duplicate a definition are replaced onc
 - Fail on a name conflict, as production preparation does: one old hand-made Process would block every `instance:setup`.
 - An `adopted` outcome for an identical hand-made Process: it exists only to absorb today's hand-made Processes, which the implementation replaces once.
 - Make a copy only once per definition and Instance, so a destroyed copy stays gone: it needs a record of destroyed copies, and `process:stop` already keeps a Process off on one Instance.
-- Annotator and Agentation copies only on the `default` Instance: a rule for two presets only, and annotations would stop working on other Instances.
 - Default setup steps by Project type: Orbit would start to choose application commands, against the generic engine boundary.
 
 ## Consequences
@@ -124,9 +120,8 @@ The hand-made development Processes that duplicate a definition are replaced onc
 - A new development Instance starts with its Vite server and other declared Processes after setup, on every creation path.
 - One action and one column hold the copy rules of both environments.
 - A fixed definition reaches an existing Instance only after its copy is removed and setup runs again.
-- Annotator and Agentation definitions reserve ports and publish Route paths on every new development Instance of the Project.
 - The deploy needs a one-time step that links or removes the hand-made Processes.
-- Implementation adds the enum value, the preset spec, the dependency check, the environment parameter of the copy action, the `source_definition` field, the setup stage, the Tasks call, and the `processes` result.
+- Implementation adds the enum value, the preset spec, the environment parameter of the copy action, the `source_definition` field, the setup stage, the Tasks call, and the `processes` result.
 
 ## Affects
 

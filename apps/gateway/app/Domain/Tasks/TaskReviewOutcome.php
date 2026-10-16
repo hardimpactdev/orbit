@@ -13,7 +13,6 @@ use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Throwable;
 
 final readonly class TaskReviewOutcome
@@ -907,7 +906,6 @@ final readonly class TaskReviewOutcome
 
     public function settleImplementer(TaskScheduler $scheduler, Task $task, ?TaskThreadObservation $reviewer = null): Task
     {
-        $task->parent->requireManagedExecution();
         $group = DB::transaction(function () use ($task): Task {
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
             $group = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
@@ -941,7 +939,6 @@ final readonly class TaskReviewOutcome
 
     public function acceptReview(TaskScheduler $scheduler, Task $task): Task
     {
-        $task->parent->requireManagedExecution();
         $next = null;
         $group = DB::transaction(function () use ($task, &$next): Task {
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);

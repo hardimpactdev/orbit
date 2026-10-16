@@ -28,7 +28,6 @@ The server reads command-line flags first, then the environment. Orbit's systemd
 | `--allow-provider`, repeatable | `PI_SERVER_ALLOW_PROVIDERS`, comma-separated | none | Allow one named provider although Pi sees an API key, such as a CLIProxyAPI endpoint |
 | `--idle-unload-seconds` | `PI_SERVER_IDLE_UNLOAD_SECONDS` | `900` | Unload a session with no turn and no stream after this many seconds |
 
-
 The Gateway reaches the server at `http://{wireguard_ip}:{ORBIT_PI_PORT}` on the task VM, with the VM's own token. `ORBIT_PI_PORT` defaults to `3774`.
 
 By default the server accepts only subscription sign-ins. A provider signed in with an API key, including a key in the server's environment, is not available until `PI_SERVER_ALLOW_API_KEYS=1` is set or `--allow-provider` names it. A task VM names its one provider with `--allow-provider`. The binary also has `pi-server login <provider>` for a subscription sign-in. Task VMs do not use it, because CLIProxyAPI is their only model route. `pi-server login anthropic` is refused.
@@ -232,7 +231,7 @@ These reasons explain the design. Check them before you propose a change.
 
 ### Claude is unavailable for task agents
 
-Anthropic permits Claude subscription credentials only in its own applications, also when a proxy such as CLIProxyAPI relays them. So the `pi` driver refuses a Claude model, `pi-server login anthropic` refuses to sign in, and task agents have no other runtime that runs Claude. [Tasks: Task agents run on Pi](/reference/tasks#task-agents-run-on-pi) explains that choice. Annotations still use the operator's T3 threads. They are not task agents.
+Anthropic permits Claude subscription credentials only in its own applications, also when a proxy such as CLIProxyAPI relays them. So the `pi` driver refuses a Claude model, `pi-server login anthropic` refuses to sign in, and task agents have no other runtime that runs Claude. [Tasks: Task agents run on Pi](/reference/tasks#task-agents-run-on-pi) explains that choice.
 
 ### A long-lived server, not RPC over SSH
 

@@ -80,7 +80,7 @@ final class TaskGroupData extends Data
             capacityWaitReason: $group->capacity_wait_reason,
             vmPower: self::vmPower($group),
             preview: $group->preview ?? false,
-            reviewAndMerge: $group->execution_mode === TaskExecutionMode::Managed ? TaskReviewAndMergeData::fromModel($group) : null,
+            reviewAndMerge: TaskReviewAndMergeData::fromModel($group),
 
             id: $group->id,
             projectId: $group->project_id,

@@ -19,7 +19,6 @@ bin/docs-openapi
 
 The clone response schema extends the Instance schema with required `data.warnings`, an array of key-only review hints. Both a newly created clone (201) and an identical retry (200) include it; an empty array means no hints apply. The generator keeps this operation-specific field out of other Instance responses. See [Instance cloning](/reference/instance-cloning#what-the-clone-gets) for the warning rules.
 
-
 The Gateway rollback operation queues a code switch without a request body. Database restore is an explicit operator step; see [Gateway recovery](/reference/gateway-recovery#roll-back).
 
 ## Same checkout, same file
@@ -46,7 +45,7 @@ One input still reads outside the checkout. `php artisan route:list` loads the G
 
 The generator reads every command class, including commands the CLI hides at runtime. It does not run `orbit list`, and it does not load `apps/cli/vendor`.
 
-`bin/docs-openapi` also contains fixed schema text that it does not parse from the rows above, such as the annotation record and the deployment event stream. It also stores operation summaries and descriptions, including `tool:scan`, `tool:adopt`, `tasks:create`, `tasks:update`, and `tasks:complete`. Those descriptions stay in the script so the API and MCP keep the operation contracts rather than only the short CLI summaries. That text is part of the checkout. Editing the script changes the document in the same way on every machine.
+`bin/docs-openapi` also contains fixed schema text that it does not parse from the rows above, such as the deployment event stream. It also stores operation summaries and descriptions, including `tool:scan`, `tool:adopt`, `tasks:create`, `tasks:update`, and `tasks:complete`. Those descriptions stay in the script so the API and MCP keep the operation contracts rather than only the short CLI summaries. That text is part of the checkout. Editing the script changes the document in the same way on every machine.
 
 The `tasks:create` and `tasks:update` descriptions follow the [Tasks contract](/reference/tasks#tasks-and-subtasks): a task belongs to a Project, and an external ADE plans the work. The descriptions keep the status, subtask, deliverable, and Coder notification requirements. The completion description includes the ended watched pull request path, its durable receipt, and the `tasks.not_settling` and `tasks.subtask_interrupt_failed` errors. The `tasks:question:close` description names the `question_closed` comment and the `tasks.question_closed` refusal, and its `question` path parameter is a positive integer.
 

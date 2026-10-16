@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Data\Instances\InstanceData;
-use App\Domain\AppDev\AgentationPortAllocator;
 use App\Domain\AppDev\SsrPortAllocator;
 use App\Domain\AppDev\VitePortRuntime;
 use App\Models\Instance;
@@ -44,17 +43,15 @@ it('gives two development Instances on one Node distinct SSR ports and skips por
         ->and(InstanceData::fromModel($second)->toArray())->toMatchArray(['ssr_port' => 13721]);
 });
 
-it('skips Vite, annotation, and common service ports assigned on the Node', function (): void {
+it('skips Vite and common service ports assigned on the Node', function (): void {
     $node = ssr_port_node('shared');
     $other = ssr_port_instance($node, 'other');
     DB::table('vite_port_assignments')->insert(['instance_id' => $other->id, 'node_id' => $node->id, 'port' => SsrPortAllocator::FIRST_PORT]);
-    $other->forceFill(['agentation_port' => 13715])->save();
-    app(AgentationPortAllocator::class)->retain($other, 'agentation_port');
     $runtime = Mockery::mock(VitePortRuntime::class);
     $runtime->shouldReceive('selectPort')->withArgs(fn (Node $n, int $preferred, array $excluded): bool => $n->id === $node->id
         && $preferred === SsrPortAllocator::FIRST_PORT
         && in_array(SsrPortAllocator::FIRST_PORT, $excluded, true)
-        && in_array(13715, $excluded, true)
+
         && in_array(6379, $excluded, true))->once()->andReturn(13716);
     app()->instance(VitePortRuntime::class, $runtime);
 

@@ -32,7 +32,6 @@ final readonly class DevelopmentSite
         public ?string $localUnixUpstream = null,
         public ?int $vitePort = null,
         public ?string $localHttpUpstream = null,
-        public ?int $agentationPort = null,
         public ?string $analyticsUpstream = null,
         /** @var list<string> */
         public array $analyticsTrustedProxies = [],
@@ -47,7 +46,6 @@ final readonly class DevelopmentSite
          * system roots, which also hold the Orbit root, and not against the Orbit root alone.
          */
         public bool $upstreamSystemRoots = false,
-        public ?int $annotatorPort = null,
         /** A Route with a web root that serves another application directory gets its own pool. */
         public ?string $poolSuffix = null,
     ) {}

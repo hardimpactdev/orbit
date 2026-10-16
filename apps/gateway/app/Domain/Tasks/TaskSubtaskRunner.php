@@ -427,7 +427,6 @@ final readonly class TaskSubtaskRunner
     public function startTask(TaskScheduler $scheduler, Task $task): Task
     {
         $task->load('parent');
-        $task->parent->requireManagedExecution();
         if (TaskExecutionHold::active($task->parent) || RequestEndedPullRequestAssistanceAction::isReason($task->parent->assistance_reason)) {
             return $task->parent->fresh(['tasks', 'project', 'taskable']) ?? $task->parent;
         }

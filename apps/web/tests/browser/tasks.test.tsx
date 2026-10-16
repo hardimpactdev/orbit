@@ -44,7 +44,6 @@ function group(id: number, status: TaskGroup["status"]): TaskGroup {
                 id: 1,
                 task_group_id: id,
                 type: "implementation",
-                target_thread_id: null,
                 completion_summary: null,
                 check: null,
                 assistance_requested: false,
@@ -254,28 +253,6 @@ it.each(["failure", "direction"] as const)(
         await expect.element(pane("Task")).toHaveTextContent(/Escalations\s*0/);
     },
 );
-
-it("keeps annotation task properties without the retired T3 execution label", async () => {
-    const task = group(1, "running");
-    task.execution_mode = "existing_thread";
-    task.tasks[0]!.type = "annotation";
-    task.tasks[0]!.target_thread_id = "operator-thread";
-    const app = await openTasks(async (_, path) => ({
-        status: 200,
-        payload: { data: path === "/api/v1/task-groups" ? [task] : task },
-    }));
-    await app.router.navigate({ to: "/tasks/$id", params: { id: "1" } });
-    await expect.element(pane("Task")).toHaveTextContent("Annotation");
-    await expect.element(pane("Task")).toHaveTextContent("operator-thread");
-    await expect.element(pane("Task")).not.toHaveTextContent("Existing T3 thread");
-    await expect.element(pane("Task")).not.toHaveTextContent("Execution");
-    await pane("Todo").getByRole("link", { name: "Open subtask: First step" }).click();
-    await expect.element(pane("Task")).toHaveTextContent("First step");
-    await expect.element(pane("Task")).toHaveTextContent("Annotation");
-    await expect.element(pane("Task")).toHaveTextContent("operator-thread");
-    await expect.element(pane("Task")).not.toHaveTextContent("Existing T3 thread");
-    await expect.element(pane("Task")).not.toHaveTextContent("Execution");
-});
 
 it("shows an empty task board without lanes only after a successful response", async () => {
     await openTasks(async () => ({ status: 200, payload: { data: [] } }));
@@ -580,7 +557,6 @@ it("shows Instance overview and an Instance-scoped Tasks board with keyboard tab
         .element(page.getByRole("tab", { name: "Overview", exact: true }))
         .toHaveAttribute("aria-selected", "true");
     await expect.element(pane("Application log")).toBeVisible();
-    await expect.element(pane("Annotations")).not.toBeInTheDocument();
     await expect.element(page.getByRole("tab", { name: /^Tasks/ })).toHaveTextContent(/Tasks\s*1/);
     await page.getByRole("tab", { name: /^Tasks/ }).click();
     await expect

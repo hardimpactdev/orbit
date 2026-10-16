@@ -82,8 +82,6 @@
               "reference/app-dev-runtime-hibernation",
               "reference/assigned-vite-ports",
               "reference/assigned-ssr-ports",
-              "reference/agentation",
-              "reference/agent-annotation",
               "reference/php-runtime",
               "reference/instance-cloning",
               "reference/deployments",
@@ -516,16 +514,6 @@
               "POST /api/v1/schedules/{schedule}/activate",
               "GET /api/v1/schedules/{schedule}/logs",
               "POST /api/v1/schedules/{schedule}/run"
-            ]
-          },
-          {
-            "group": "Annotations",
-            "openapi": "/openapi.json",
-            "pages": [
-              "GET /api/v1/instances/{instance}/annotations",
-              "POST /api/v1/instances/{instance}/annotations",
-              "POST /api/v1/instances/{instance}/annotations/{annotation}/retry",
-              "POST /api/v1/instances/{instance}/annotations/{annotation}/status"
             ]
           },
           {
@@ -1297,11 +1285,11 @@
     },
     {
       "source": "/decisions/0082-wire-agentation-watch-mode-through-appinstance-processes",
-      "destination": "/reference/agentation"
+      "destination": "/reference/processes-and-schedules#presets"
     },
     {
       "source": "/decisions/0120-extract-agent-annotation-package",
-      "destination": "/reference/agent-annotation"
+      "destination": "/reference/web-app#annotation-overlay"
     },
     {
       "source": "/decisions/0127-share-one-ssh-connection-per-node",
@@ -1566,6 +1554,10 @@
     {
       "source": "/decisions/0208-deploy-the-gateway-with-laravel-migrations",
       "destination": "/reference/gateway-recovery#laravel-owns-migrations"
+    },
+    {
+      "source": "/decisions/0219-remove-annotations-from-orbit",
+      "destination": "/reference/web-app#annotations-outside-the-gateway"
     }
   ]
 }

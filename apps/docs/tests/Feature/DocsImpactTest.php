@@ -852,6 +852,19 @@ it('docs impact does not fail on the unowned identifiers of a deleted file outsi
     expect($report['errors'])->toBe([]);
 });
 
+it('docs impact does not fail on the unowned console commands of a deleted file outside the API', function (): void {
+    $root = docsImpactFixture();
+    $path = 'apps/gateway/app/Console/Commands/DeletedCommand.php';
+    file_put_contents($root.'/'.$path, "<?php class DeletedCommand { protected \$signature = 'example:deleted'; }\n");
+    exec('git -C '.escapeshellarg($root).' add .');
+    exec('git -C '.escapeshellarg($root).' -c user.name=Docs -c user.email=docs@example.test commit -qm baseline');
+    unlink($root.'/'.$path);
+
+    $report = new DocsImpact($root)->report('HEAD', [$path]);
+
+    expect($report['errors'])->toBe([]);
+});
+
 it('docs impact reports Laravel console route schedule changes', function (): void {
     $root = docsImpactFixture();
     file_put_contents($root.'/docs/reference/schedules.md', "---\ntitle: Schedules\n---\nSchedules\n");

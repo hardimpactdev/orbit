@@ -75,9 +75,7 @@ const TOOLING_BASELINE_PROJECTS = [
         'scripts' => [
             'guidance:update' => [TOOLING_BASELINE_BOOST_UPDATE, 'The Gateway generates its guidance with Boost.'],
         ],
-        'check' => [
-            '@annotator:check' => 'The Gateway serves the built annotator bundle.',
-        ],
+        'check' => [],
     ],
     'apps/docs' => [
         'phpunit' => 'phpunit.xml',

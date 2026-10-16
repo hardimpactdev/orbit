@@ -51,7 +51,6 @@
                         "lines_deleted": 46,
                         "duration_ms": 2460000,
                         "type": "implementation",
-                        "target_thread_id": null,
                         "completion_summary": null,
                         "check": {
                             "id": 7,
@@ -85,7 +84,6 @@
                         "lines_deleted": null,
                         "duration_ms": null,
                         "type": "implementation",
-                        "target_thread_id": null,
                         "completion_summary": null,
                         "check": null
                     }

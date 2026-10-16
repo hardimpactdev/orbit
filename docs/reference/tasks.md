@@ -69,8 +69,6 @@ A top-level task holds the task workspace, the branch, the reviewed pull request
 
 Clearing the assistance flag can keep the last reason.
 
-An [annotation](/reference/agent-annotation) creates a task with `execution_mode` `existing_thread`. That task sends work to a thread that already exists. The lifecycle operations refuse it with `tasks.external_execution` (HTTP 409): update, cancel, complete, and the subtask create, update, destroy, and cancel operations. List, show, the comment operations, `tasks:check:cancel`, `tasks:agents`, and `tasks:agent:show` accept it. The scheduler never claims it.
-
 Typed comments record the workflow. A stored turn receipt is a comment whose type is its outcome: `ready_for_review`, `blocked`, `changes_requested`, or `approved`. An operator posts `assistance_requested` and `resolution` comments. Each comment keeps its full body, author, time, and attempt. An approval that Orbit committed carries `commit_sha`. The approval of the last subtask also carries `pull_request`: the summary, changes, and breaking changes it proposed.
 
 `GET /api/v1/task-groups/{group}/tasks/{task}/comments` and the MCP tool `tasks-comment-list` accept optional `type` and `limit` query inputs. `type` must be a task comment type, such as `resolution` or `assistance_requested`. `limit` must be an integer from 1 to 100. The endpoint returns comments newest first, filters by type before applying the limit, and preserves each comment's full body and response shape. With neither input, it returns all comments as before. An unknown type or an invalid limit returns HTTP 422 with `validation.failed`. Use `type=resolution` and `limit=1` to read the newest resolution without returning the full comment history; the limit bounds the number of comments, not the byte size of an individual body.
@@ -180,7 +178,6 @@ The task and subtask operations return these errors.
 | `tasks.agent_unavailable` | 409 | A transcript request for a thread whose Node is gone, when Orbit saved no transcript |
 | `tasks.agent_read_failed` | 502 | A [thread read](#read-a-thread) that the thread's Pi server could not serve, when Orbit saved no transcript |
 | `tasks.github_app_required` | 422 | Create for a Project with `source_access: gh_cli`. No task is stored |
-| `tasks.external_execution` | 409 | A lifecycle operation on an annotation task |
 | `validation.failed` | 422 | An invalid field, such as a deliverable or a position outside the `todo` subtasks |
 
 ## Deliverables
@@ -395,7 +392,7 @@ The collector and the filer honor two lists in [`apps/gateway/config/orbit.php`]
 | Key | Match |
 | --- | --- |
 | `suppressed_fingerprints` | The whole fingerprint, exact and case-sensitive. Ships as an empty list |
-| `suppressed_path_prefixes` | The start of a source path. Ships with `app/Infrastructure/Tasks/T3/` |
+| `suppressed_path_prefixes` | The start of a source path. Empty by default |
 
 A log record's source path is the app frame path, the path before the colon in the fingerprint frame. An Activity source path is a path taken from `properties.path`. Doctor and assistance have no source path. A path prefix matches that source path, not the fingerprint string. An empty prefix matches nothing.
 
@@ -582,7 +579,7 @@ Orbit reserves the thread row before it starts the conversation, so the opening 
 
 A driver translates Orbit's thread operations for one agent runtime. Task agents, the implementer and the reviewer, run on the `pi` driver only. `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER` and `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` select the two roles, and both default to `pi`. A new task stores those values. The Gateway registers `pi` and no other task-agent driver. Any other value returns `tasks.agent_driver_unavailable` and stores no task.
 
-A managed task whose recorded driver is not `pi` does not start or resume an agent turn. A caller never supplies a runtime URL. An unsupported operation fails explicitly. [Task agents run on Pi](#task-agents-run-on-pi) explains why. Annotations are not task agents: they stay on the operator's T3 threads, and [Agent annotation](/reference/agent-annotation) owns that behavior.
+A managed task whose recorded driver is not `pi` does not start or resume an agent turn. A caller never supplies a runtime URL. An unsupported operation fails explicitly. [Task agents run on Pi](#task-agents-run-on-pi) explains why.
 
 | Role | Default model | Effort |
 | --- | --- | --- |
@@ -1429,8 +1426,6 @@ The body is `event` `task_group.assistance_requested`, `task_group_id`, `title`,
 
 Settle, escalate, and assistance that is not `direction` stay on the [Coder webhook](#coder-settle-webhook) only. They do not go to OpsBot.
 
-Annotations, not task agents, use a Node's T3 connection. A Node whose settings hold a `t3` object uses its own `t3.token`, and its `t3.url` as the base URL when set. Such a Node never falls back to `ORBIT_T3_TOKEN`, and a missing token fails closed. Without that object, the Gateway calls `http://{wireguard_ip}:{ORBIT_T3_PORT}` with the bearer `ORBIT_T3_TOKEN`. The port default is `3773`.
-
 ## Cancel a stuck task
 
 `tasks:cancel` ends a task in any status except `completed`, and except `settling` with a `pr_url`. Those return HTTP 409 `tasks.not_cancellable`. Complete a settling task instead. `watched_pr_url` does not make the task published, so a `running` or `reviewing` task stays cancellable.
@@ -1503,7 +1498,6 @@ These Gateway environment keys configure the extension.
 | `ORBIT_TASKS_OBSERVATION_GRACE_SECONDS` | The wait before one escalation for an observation outage. Default `120` |
 | `ORBIT_TASKS_PROVISIONING_FAILURE_THRESHOLD` | Consecutive provisioning failures before failure assistance. Default `3`, at least `1`. A successful start resets the count |
 | `ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS` | How long a task may stay `reserved`. Default `3600`, at least `60`. Keep it above the slowest workspace provision |
-| `ORBIT_T3_PORT`, `ORBIT_T3_TOKEN` | The T3 port, default `3773`, and bearer token for [annotations](#coder-settle-webhook). Task agents do not use them |
 | `ORBIT_PI_PORT` | The port of the Pi server on each task VM, default `3774`. Each VM has its own token |
 | `ORBIT_CODER_WEBHOOK_URL`, `ORBIT_CODER_WEBHOOK_SECRET` | The Coder webhook endpoint and its HMAC secret. The Gateway never returns the secret |
 | `ORBIT_OPSBOT_WEBHOOK_URL`, `ORBIT_OPSBOT_WEBHOOK_SECRET` | The OpsBot webhook endpoint and its bearer secret. The Gateway never returns the secret. Unset skips the direction POST |
@@ -1574,7 +1568,7 @@ A page on every server-class row is rejected. One command can fail dozens of tim
 
 Ten occurrences of one Activity, log, or assistance key are enough to file. An occurrence is one 5-minute window, so the many lines of one burst count once and are not enough to file. Ten windows means the same failure came back across separate windows. Three occurrences file only when they fall in two UTC quarter hours or on two UTC dates. Three isolated occurrences do not file.
 
-Known noise stays in Gateway config, beside the Tasks settings, not in a hidden code list. The [suppression lists](#suppression) name exact fingerprints and source-path prefixes. A match is neither counted nor filed. The prefix list ships with `app/Infrastructure/Tasks/T3/`, so a log frame under that directory does not become a task. Keeping the list only in code is rejected, because an operator has to see it and extend it. The 14-day mute after a cancel stays. The list drops noise before a task exists. The mute waits after a person cancelled a draft.
+Known noise stays in Gateway config, beside the Tasks settings, not in a hidden code list. The [suppression lists](#suppression) name exact fingerprints and source-path prefixes. A match is neither counted nor filed. The prefix list is empty by default; configured prefixes exclude matching log frames. Keeping the list only in code is rejected, because an operator has to see it and extend it. The 14-day mute after a cancel stays. The list drops noise before a task exists. The mute waits after a person cancelled a draft.
 
 A shortened log key does not contain the frame path, so the sample keeps that path as `source_path`. Each filer run checks the current lists against the stored path, including a row counted before the prefix was configured. Filing a shortened row that has no stored path is rejected while a prefix is configured, because the filer cannot recover the path. The row stays in place until an accepted signal records it.
 
@@ -1802,11 +1796,11 @@ The thread spent the tokens, so the split lives there. A total alone does not sh
 
 ### Task agents run on Pi
 
-T3 task threads run as the operator's Unix user and have that user's full access. Pi task agents run as a dedicated `orbit-agent` account. The operator approved that split on 2026-10-01. T3 Code stays installed as the operator's own tool. Annotations still use the operator's T3 threads.
+T3 task threads run as the operator's Unix user and have that user's full access. Pi task agents run as a dedicated `orbit-agent` account. The operator approved that split on 2026-10-01. T3 Code stays installed as the operator's own tool.
 
 Anthropic permits Claude subscription credentials only in its own applications, also when a proxy such as CLIProxyAPI relays them. Task agents therefore cannot use Claude, and they do not keep a second runtime to reach it. One driver, Pi, owns implementers and reviewers. This serves [one way, one name](/mission#principles) and [no exceptions and no legacy](/mission#principles).
 
-Keeping T3 as a selectable driver would keep two restart rules, two metric paths, and two archive paths. Pi owns restart recovery and reports usage on its sessions. The scheduler has no T3 metric collector or thread archive. Annotation delivery is a separate operation on the operator's existing T3 thread, not a task-agent runtime.
+Keeping T3 as a selectable driver would keep two restart rules, two metric paths, and two archive paths. Pi owns restart recovery and reports usage on its sessions. The scheduler has no T3 metric collector or thread archive.
 
 Both roles default to `gpt-5.6-luna` at `high` effort. Keeping `claude-opus-5` as the reviewer default would make each new review fail on Pi. Each role keeps its driver setting, with a `pi` default, because deployment selects Pi explicitly. A different configured driver fails before a new task is stored.
 

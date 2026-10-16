@@ -11,7 +11,6 @@ use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskCommentType;
-use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
@@ -741,32 +740,6 @@ describe('the abandoned workspace sweep', function (): void {
         expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(3)
             ->and(Instance::query()->count())->toBe(1)
             ->and(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(1);
-    });
-
-    it('never sweeps a user Instance attached to a non-managed group', function (): void {
-        claim_hol_enable();
-        $project = claim_hol_app();
-        $removed = claim_hol_recording_remover();
-        $managed = claim_hol_group($project, 'Ended');
-        $managed->forceFill(['status' => TaskGroupStatus::Cancelled])->save();
-        $workspace = claim_hol_workspace($project, $managed, 'source_resolved');
-        $managed->taskable()->associate($workspace);
-        $managed->save();
-
-        $lookalike = claim_hol_group($project, 'Name collision');
-        $lookalike->forceFill(['status' => TaskGroupStatus::Cancelled])->save();
-        $userInstance = claim_hol_workspace($project, $lookalike, 'source_resolved');
-        $annotation = claim_hol_group($project, 'Annotation');
-        $annotation->taskable()->associate($userInstance);
-        $annotation->forceFill([
-            'execution_mode' => TaskExecutionMode::ExistingThread,
-            'status' => TaskGroupStatus::Cancelled,
-        ])->save();
-
-        expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(1)
-            ->and($removed->ids)->toBe([$workspace->id])
-            ->and(Instance::query()->find($userInstance->id))->not->toBeNull()
-            ->and($annotation->fresh()?->taskable_id)->toBe($userInstance->id);
     });
 
     it('pushes a stored approval before it deletes a cancelled workspace', function (): void {

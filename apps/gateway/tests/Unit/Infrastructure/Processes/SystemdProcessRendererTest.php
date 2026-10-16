@@ -9,21 +9,6 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 
-it('renders the annotator command and projects its concrete URL and port into every systemd Process', function (): void {
-    $instance = new Instance(['annotator_port' => 4849]);
-    $instance->id = 6;
-    $target = new ProcessTarget(node: new Node, user: 'orbit', checkoutPath: '/home/orbit/apps/site', instance: $instance, routeDomain: 'site.test');
-    $process = new Process(['name' => 'annotator', 'working_directory' => $target->checkoutPath, 'runtime_config' => ['preset' => 'annotator', 'command' => ['/usr/bin/false']], 'restart_policy' => 'on-failure']);
-    $process->id = 18;
-    $unit = new SystemdProcessRenderer()->render($process, $target);
-    expect($unit)->toContain('"/usr/local/bin/node" "/opt/orbit/annotator/current/bin/serve.mjs" "serve" "--port" "4849" "--store" "/var/lib/orbit/annotator/instance-6" "--allow-origin" "https://site.test" "--allow-origin" "t3code://app" "--allow-origin" "t3code-dev://app" "--allow-origin" "conn://app" "--allow-origin" "conn-dev://app"')
-        ->toContain('Environment=ANNOTATOR_URL=https://site.test/__orbit/annotator/annotations')->toContain('Environment=ORBIT_ANNOTATOR_PORT=4849')->toContain('Restart=on-failure');
-    $process->runtime_config = ['command' => ['/usr/bin/true'], 'environment' => ['ANNOTATOR_URL' => 'bad', 'ORBIT_ANNOTATOR_PORT' => '1']];
-    expect(new SystemdProcessRenderer()->render($process, $target))->toContain('"ANNOTATOR_URL=https://site.test/__orbit/annotator/annotations"')->toContain('"ORBIT_ANNOTATOR_PORT=4849"')->not->toContain('ANNOTATOR_URL=bad');
-    $instance->annotator_port = null;
-    expect(new SystemdProcessRenderer()->render($process, $target))->toContain('UnsetEnvironment=ANNOTATOR_URL ORBIT_ANNOTATOR_PORT');
-});
-
 describe('ProcessUser', function (): void {
     it('refuses stored user directive injection and root', function (string $user): void {
         $process = new Process([
@@ -381,66 +366,6 @@ it('expands only the preset port and gives its owned environment file precedence
     $unit = new SystemdProcessRenderer()->render($process, $target);
     expect($unit)->toContain('EnvironmentFile=/etc/orbit/vite/app-instance-64.env')->toContain('"--port=${ORBIT_DEV_SERVER_PORT}"')->toContain('"--strictPort"')->toContain('"--host=127.0.0.1"')->not->toContain('"ORBIT_DEV_SERVER_PORT=5210"');
     expect(strpos($unit, 'EnvironmentFile=-/apps/main/.env'))->toBeLessThan(strpos($unit, 'EnvironmentFile=/etc/orbit/vite/app-instance-64.env'));
-});
-
-it('projects AGENTATION_URL and expands the Agentation HTTP port', function (): void {
-    $instance = new Instance(['agentation_port' => 4749]);
-    $instance->id = 12;
-    $process = new Process([
-        'name' => 'agentation',
-        'runtime_config' => [
-            'preset' => 'agentation-mcp',
-            'command' => ['/usr/local/bin/agentation-mcp', 'server'],
-            'environment_file' => '/apps/commander/.env',
-        ],
-        'working_directory' => '/apps/commander',
-        'restart_policy' => 'on-failure',
-    ]);
-    $process->id = 22;
-    $target = new ProcessTarget(
-        node: new Node(['name' => 'beast']),
-        user: 'orbit',
-        checkoutPath: '/apps/commander',
-        instance: $instance,
-        environmentFile: '/apps/commander/.env',
-        routeDomain: 'commander.test',
-    );
-
-    $unit = new SystemdProcessRenderer()->render($process, $target);
-
-    expect($unit)
-        ->toContain('Environment=AGENTATION_URL=https://commander.test/__orbit/agentation')
-        ->toContain('Environment=ORBIT_AGENTATION_PORT=4749')
-        ->toContain('"/usr/local/bin/agentation-mcp"')
-        ->toContain('"server"')
-        ->toContain('"--port=${ORBIT_AGENTATION_PORT}"');
-});
-
-it('projects AGENTATION_URL onto the Antigravity watcher unit', function (): void {
-    $instance = new Instance(['agentation_port' => 4747]);
-    $process = new Process([
-        'name' => 'watch',
-        'runtime_config' => ['preset' => 'antigravity-watch', 'command' => ['/usr/local/bin/agy']],
-        'working_directory' => '/apps/commander',
-        'restart_policy' => 'always',
-    ]);
-    $process->id = 23;
-    $target = new ProcessTarget(
-        node: new Node(['name' => 'beast']),
-        user: 'orbit',
-        checkoutPath: '/apps/commander',
-        instance: $instance,
-        routeDomain: 'commander.test',
-    );
-
-    expect(new SystemdProcessRenderer()->render($process, $target))
-        ->toContain('Environment=AGENTATION_URL=https://commander.test/__orbit/agentation')
-        ->toContain('"/usr/local/bin/agy"')
-        ->toContain('"--dangerously-skip-permissions"')
-        ->toContain('"--print-timeout"')
-        ->toContain('"60m"')
-        ->toContain('"Call agentation_watch_annotations in a loop. For each annotation: acknowledge it, apply the requested UI/frontend change only (do not run Pest, artisan test, or other test commands), then call agentation_resolve with a summary. Continue watching until this process is stopped."')
-        ->toContain('Restart=always');
 });
 
 it('projects the assigned ssr port as ORBIT_SSR_PORT and INERTIA_SSR_URL and adds nothing without one', function (?string $routeDomain): void {

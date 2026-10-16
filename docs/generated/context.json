@@ -1313,44 +1313,6 @@
             "governing_adrs": []
         },
         {
-            "path": "docs/reference/agent-annotation.md",
-            "title": "Agent annotation",
-            "kind": "reference",
-            "components": [
-                "apps/gateway",
-                "apps/web"
-            ],
-            "concepts": [
-                "Extension",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Route",
-                "Subtask",
-                "Task"
-            ],
-            "governing_adrs": []
-        },
-        {
-            "path": "docs/reference/agentation.md",
-            "title": "Agentation",
-            "kind": "reference",
-            "components": [
-                "apps/gateway",
-                "apps/web"
-            ],
-            "concepts": [
-                "Doctor",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Route"
-            ],
-            "governing_adrs": []
-        },
-        {
             "path": "docs/reference/alpha.md",
             "title": "Source alpha",
             "kind": "reference",
@@ -1484,9 +1446,7 @@
             "concepts": [
                 "Access grant",
                 "Gateway",
-                "Instance",
-                "Node",
-                "Route"
+                "Node"
             ],
             "governing_adrs": []
         },
@@ -2785,7 +2745,6 @@
                 "Gateway",
                 "Instance",
                 "Node",
-                "Process",
                 "Project",
                 "Role",
                 "Task",

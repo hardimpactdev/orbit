@@ -69,7 +69,6 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withSchedule(function (Schedule $schedule): void {
         app(TaskSchedule::class)->register($schedule);
         // Work runs on the Gateway queue; the scheduler only dispatches (docs/reference/gateway-queue.md#scheduled-work).
-        GatewaySchedule::command($schedule, 'annotations:dispatch', uniqueFor: 600, overlapMinutes: 1440)->everyTenSeconds();
         GatewaySchedule::command($schedule, 'orbit:auto-deploy', uniqueFor: 600, overlapMinutes: 10)->everyMinute();
         GatewaySchedule::command($schedule, 'orbit:desired-fleet-state', uniqueFor: 600, overlapMinutes: 10)->everyFiveMinutes();
         GatewaySchedule::command($schedule, 'orbit:activity-finalize-interrupted', uniqueFor: 600, overlapMinutes: 10)->everyFiveMinutes();

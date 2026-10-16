@@ -2,15 +2,12 @@
 
 declare(strict_types=1);
 
-use App\Actions\Annotations\AnnotationStoreAction;
 use App\Actions\Tasks\CancelTaskGroupAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
-use App\Data\Annotations\AnnotationInput;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
-use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
@@ -139,66 +136,6 @@ it('clears assistance in the same update that cancels the remaining subtasks', f
         ->and($open->fresh()?->status)->toBe(TaskStatus::Cancelled)
         ->and($open->fresh()?->assistance_requested)->toBeFalse()
         ->and($open->fresh()?->assistance_reason)->toBe('Still waiting.');
-});
-
-it('clears assistance when resolving an annotation completes its task', function (): void {
-    $node = Node::query()->create([
-        'name' => 'ended-annotation-node',
-        'status' => LifecycleStatus::Active,
-        'platform' => 'linux',
-        'public_ssh_host' => '192.0.2.82',
-        'wireguard_ip' => '10.44.0.82',
-    ]);
-    $this->markAsGateway($node);
-    $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
-    $project = Project::query()->create([
-        'name' => 'Ended annotation',
-        'slug' => 'ended-annotation',
-        'repository_url' => 'https://example.test/ended-annotation.git',
-        'default_branch' => 'main',
-    ]);
-    $instance = Instance::query()->create([
-        'project_id' => $project->id,
-        'node_id' => $node->id,
-        'name' => 'dev',
-        'environment' => 'development',
-        'source_layout' => 'worktree',
-        'checkout_path' => '/worktree',
-        'status' => 'active',
-    ]);
-    $annotation = app(AnnotationStoreAction::class)->create($instance, new AnnotationInput([
-        'id' => 'annotation-ended',
-        'threadId' => 'thread-one',
-        'comment' => 'Make the title smaller',
-    ]));
-    $task = $annotation->task()->firstOrFail();
-    $group = $task->parent()->firstOrFail();
-    $group->update([
-        'status' => TaskGroupStatus::Running,
-        'assistance_requested' => true,
-        'assistance_reason' => 'Hold this annotation.',
-    ]);
-    $task->update([
-        'status' => TaskStatus::Running,
-        'started_at' => now(),
-        'assistance_requested' => true,
-        'assistance_reason' => 'Hold the subtask.',
-    ]);
-
-    app(AnnotationStoreAction::class)->transition($annotation, 'resolved', 'Done');
-
-    $group->refresh();
-    $task->refresh();
-    expect($group->status)->toBe(TaskGroupStatus::Completed)
-        ->and($group->assistance_requested)->toBeFalse()
-        ->and($group->assistance_reason)->toBe('Hold this annotation.')
-        ->and($task->status)->toBe(TaskStatus::Completed)
-        ->and($task->assistance_requested)->toBeFalse()
-        ->and($task->assistance_reason)->toBe('Hold the subtask.');
-
-    $this->getJson('/api/v1/tasks/status')
-        ->assertOk()
-        ->assertJsonPath('data.assistance', []);
 });
 
 it('keeps an assistance comment from putting an ended group back on tasks status', function (string $status): void {

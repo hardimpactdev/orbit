@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Models;
 
-use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskBroadcastObserver;
@@ -36,7 +35,6 @@ use LogicException;
  * @property-read AgentThread|null $implementerThread
  * @property-read Task|null $parent
  * @property TaskType $type
- * @property string|null $target_thread_id
  * @property string|null $completion_summary
  * @property int $id
  * @property int|null $parent_id
@@ -166,7 +164,6 @@ final class Task extends Model
         'position',
         'implementer_agent_thread_id',
         'type',
-        'target_thread_id',
         'completion_summary',
         'subtask_start_commit',
         'completion_attempt',
@@ -212,7 +209,7 @@ final class Task extends Model
         'watched_pr_url',
         'watched_pr_number',
         'watched_pr_state',
-        'type', 'target_thread_id', 'completion_summary',
+        'type', 'completion_summary',
         'parent_id',
         'continuation_of_task_id',
         'position',
@@ -393,18 +390,11 @@ final class Task extends Model
         return $this->belongsTo(AgentThread::class, 'reviewer_agent_thread_id');
     }
 
-    public function requireManagedExecution(): void
-    {
-        if ($this->execution_mode !== TaskExecutionMode::Managed) {
-            throw new ResourceOperationException('tasks.external_execution', 'This task uses an existing thread. Use its annotation controls instead of the managed lifecycle.', 409);
-        }
-    }
-
     /** ADR 0203: whether this top-level task holds every push until a final review approves it, and merges reviewed heads. */
     public function reviewsBeforePush(): bool
     {
         // An incoming pull request keeps these rules until it ends, so its branch never gets an unreviewed push.
-        return $this->parent_id === null && $this->execution_mode === TaskExecutionMode::Managed
+        return $this->parent_id === null
             && ($this->project->reviewsAndMerges() || $this->reviewsIncomingPullRequest());
     }
 

@@ -6,7 +6,6 @@ use App\Domain\Projects\ProjectType;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tasks\TaskExecutionMode;
 use App\Models\Activity;
 use App\Models\Instance;
 use App\Models\Node;
@@ -223,15 +222,6 @@ it('seeds legacy orbit Projects unrouted, preserves task checks, and backfills w
         'publication' => RoutePublication::Private,
     ]);
     $ordinaryRoute->targets()->create(['instance_id' => $ordinary->id, 'position' => 0]);
-    $annotation = Task::topLevel()->create([
-        'project_id' => $shop->id,
-        'title' => 'Existing thread',
-        'brief' => 'An ordinary Instance.',
-        'status' => 'running',
-        'execution_mode' => TaskExecutionMode::ExistingThread,
-    ]);
-    $annotation->taskable()->associate($ordinary);
-    $annotation->save();
 
     $mismatched = Instance::query()->create([
         'project_id' => $shop->id,

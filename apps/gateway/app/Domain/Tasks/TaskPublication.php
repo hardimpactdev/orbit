@@ -415,7 +415,7 @@ final readonly class TaskPublication
     /** Called under the comment transaction's group/task locks. Queue only a gate retry, not a new review. */
     public function queueBaseMergeRetry(Task $group, Task $task, TaskComment $resolution): bool
     {
-        if ($group->execution_mode !== TaskExecutionMode::Managed || ! $task->isFinalReview()
+        if (! $task->isFinalReview()
             || ! in_array($task->status, [TaskStatus::Running, TaskStatus::Reviewing, TaskStatus::Completed], true)
             || $task->assistance_kind !== AssistanceKind::Failure || $group->assistance_kind === AssistanceKind::Direction) {
             return false;
