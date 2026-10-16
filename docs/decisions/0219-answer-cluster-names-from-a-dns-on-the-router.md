@@ -12,6 +12,8 @@ This proposed design picks the Router address by where a query goes, not by who 
 
 In progress.
 
+Principle: [Lean](/mission#principles). Two stock dnsmasq instances replace a custom DNS server, its release, its socket units, and its catalog of requesters. It also serves [Deterministic first](/mission#principles): the configuration, not a lookup of the query's source, decides which server answers first. No principle exception is proposed.
+
 Design proposal only; no implementation or fleet change is authorized by this ADR.
 
 ### Approval boundary
@@ -20,7 +22,6 @@ Nick's decision on 2026-10-16 includes the Cluster TLD **and exact Cluster-scope
 
 All new units, programs, files, digest storage, lifecycle hooks, and Doctor codes below are planned. Existing code names describe integration points, not completed implementation. Fleet observations below were recorded during design on 2026-10-16 and must be checked again before rollout.
 
-Principle: [Lean](/mission#principles). Two stock dnsmasq instances replace a custom DNS server, its release, its socket units, and its catalog of requesters. It also serves [Deterministic first](/mission#principles): the configuration, not a lookup of the query's source, decides which server answers first. No principle exception is proposed.
 
 ## Context
 
