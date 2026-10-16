@@ -660,6 +660,9 @@ final class TaskWorkspaceLease
             }
             $holder->refresh();
             if ($holder->getAttribute('completion_pending')) {
+                if ($holder->getAttribute('orbit_mutation')) {
+                    $holder->update(['causality_uncertain' => true]);
+                }
                 $this->release($holder, $this->snapshot($group));
 
                 return;
@@ -771,6 +774,10 @@ final class TaskWorkspaceLease
             }
             if ($holder->getAttribute('journaled') && $this->localOwnerDead($holder)
                 && app(TaskWorkspaceOperationRecovery::class)->settled($holder)) {
+                if ($holder->getAttribute('orbit_mutation')) {
+                    // Death before finalization leaves the same observation gap as a delayed after-read.
+                    $holder->update(['causality_uncertain' => true]);
+                }
                 $this->release($holder, $this->snapshot($group));
             }
         });

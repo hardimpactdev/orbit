@@ -1013,7 +1013,7 @@ def status(pid, started, run_id=''):
             head_after = git(checkout, 'rev-parse', 'HEAD')
             tree_after = working_tree(checkout)
             if head_after != data['head_after'] or tree_after != data['tree_after']:
-                data.update({'exit_code': 1, 'failed_step': CHECK_ERROR, 'head_after': head_after,
+                data.update({'exit_code': 1, 'failed_step': CHECK_ERROR, 'causality_uncertain': True, 'head_after': head_after,
                              'tree_after': tree_after, 'changed_paths': changed_paths(checkout, data['tree_before'], tree_after),
                              'failure_output': 'The workspace changed after the check result was written.'})
             data['managed_terminal_snapshot'] = True

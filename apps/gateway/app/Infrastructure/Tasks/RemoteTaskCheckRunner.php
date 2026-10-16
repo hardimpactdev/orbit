@@ -213,6 +213,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
             is_string($treeBefore) ? $treeBefore : null,
             is_string($failedStep) ? $failedStep : null,
             is_array($evidence) ? $evidence : null,
+            causalityUncertain: ($result['causality_uncertain'] ?? false) === true,
         );
     }
 

@@ -1680,7 +1680,8 @@ it('recovers an exact managed run and never exposes a result before descendants 
         $reading = check_runner_wait($runner, $instance, $process);
         expect($reading->state)->toBe('finished')->and($reading->exitCode)->toBe(1)
             ->and($reading->treeAfter)->toBe($runner->snapshot($instance)->tree)
-            ->and($reading->changedPaths)->toContain('late.txt');
+            ->and($reading->changedPaths)->toContain('late.txt')
+            ->and($reading->causalityUncertain)->toBeTrue();
     } finally {
         if (is_dir($barrier)) {
             rmdir($barrier);

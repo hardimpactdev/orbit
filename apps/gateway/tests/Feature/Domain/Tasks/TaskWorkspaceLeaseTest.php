@@ -327,9 +327,9 @@ it('preserves merge provenance when the same lease continues into its detached g
         $checks->head = str_repeat('c', 40);
         $checks->tree = str_repeat('d', 40);
         $process = $leases->startCheck($group, $task, 'check');
-        $check = $task->checks()->create(['kind' => TaskCheckKind::BaseMerge, 'status' => TaskCheckStatus::Running,
-            'pid' => $process->pid, 'process_started' => $process->started, 'started_at' => now(),
-            'head_before' => $process->head, 'tree_before' => $process->tree]);
+        $check = $task->checks()->where('pid', $process->pid)->where('process_started', $process->started)->sole();
+        $check->update(['kind' => TaskCheckKind::BaseMerge]);
+        expect(TaskWorkspaceLeaseRecord::query()->where('status', 'held')->sole()->check_id)->toBe($check->id);
         $leases->finishedCheck($check, TaskCheckReading::finished(0, $checks->head, $checks->tree, [], 'done'));
     });
     expect($leases->ownedChange($group, $beforeHead, $beforeTree, new TaskWorkspaceSnapshot($checks->head, $checks->tree), $baseline->id))->toBeTrue();

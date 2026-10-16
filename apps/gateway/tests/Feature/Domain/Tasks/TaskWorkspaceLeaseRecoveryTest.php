@@ -299,3 +299,29 @@ it('recovers a dead Gateway preparation without releasing a dispatched turn', fu
     $leases->reconcile($group);
     expect($holder->fresh()->status)->toBe($dispatched ? 'held' : 'released');
 })->with([false, true]);
+
+it('does not attribute an outside edit after synchronous mutation when Gateway dies before after snapshot', function (): void {
+    $group = $this->leaseGroup;
+    $checks = $this->leaseChecks;
+    $leases = app(TaskWorkspaceLease::class);
+    $baseline = $leases->acquire($group, 'reviewer', 'review-baseline');
+    $leases->release($baseline);
+    $head = $checks->head;
+    $before = $checks->tree;
+    $lease = $leases->acquire($group, 'main_merge', 'interrupted-callback');
+    $lease->update(['head_before' => $head, 'tree_before' => $before]);
+    $leases->within($lease, function () use ($leases, $group, $checks): void {
+        $record = $leases->remoteStarted($group->taskable, changesCheckout: true);
+        $checks->tree = str_repeat('c', 40);
+        $leases->remoteFinished($record);
+    });
+    // The Gateway was killed after a known mutation finished, before run's finally.
+    $lease->update(['gateway_boot' => 'previous-boot']);
+    expect($lease->fresh()->getAttribute('completion_pending'))->toBeFalse();
+    // A distinct outside writer edits while no Gateway process can read the after-tree.
+    $checks->tree = str_repeat('e', 40);
+    $leases->reconcile($group);
+    expect($lease->fresh()->status)->toBe('released');
+    expect($lease->fresh()->tree_after)->toBe(str_repeat('e', 40));
+    expect($leases->ownedChange($group, $head, $before, new TaskWorkspaceSnapshot($head, $checks->tree), $baseline->id))->toBeFalse();
+});

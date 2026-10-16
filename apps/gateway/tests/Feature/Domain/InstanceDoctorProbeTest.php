@@ -1395,6 +1395,7 @@ it('reports the durable lease holder and queue as information even when its node
     expect($issue)->not->toBeNull()
         ->and($issue?->kind->value)->toBe('informational')
         ->and($issue?->resourceName)->toBe($instance->name)
+        ->and($issue?->summary)->toContain('tasks:lease:release LEASE_ID --reason=...')
         ->and($issue?->observed)->toContain('reviewer [reviewer:doctor]', 'check [check:doctor]', 'remote mutation result uncertain; lease retained')
         ->and($holder->fresh()?->status)->toBe('held');
 
