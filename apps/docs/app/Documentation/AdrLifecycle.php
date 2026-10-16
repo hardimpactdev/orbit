@@ -39,9 +39,10 @@ final readonly class AdrLifecycle
         }
 
         [$current, $retired] = explode('## Retired decisions', $overview, 2) + [1 => ''];
-        $records = explode('## Records', $current, 2)[1] ?? '';
-        preg_match_all('/^\| \[\d{4}\]\(\/decisions\/([a-z0-9-]+)\) \|/m', $records, $recordRows);
-        $recorded = array_flip($recordRows[1]);
+        $sections = preg_split('/^## Records[ \t]*$/m', $current, 2);
+        $records = is_array($sections) ? ($sections[1] ?? '') : '';
+        preg_match_all('/^\| \[(\d{4})\]\(\/decisions\/(\1-[a-z0-9-]+)\) \|/m', $records, $recordRows);
+        $recorded = array_flip($recordRows[2]);
         preg_match_all('/^\| (\d{4}) \| ([^|]+) \|/m', $retired, $rows, PREG_SET_ORDER);
         $retiredSlugs = require $this->root.'/apps/docs/config/adr-retired-slugs.php';
         if (! is_array($retiredSlugs)) {
@@ -160,7 +161,7 @@ final readonly class AdrLifecycle
                 $findings[] = $this->error($path, 'ADR 0180+ must include a Principle: line in its Status section.');
             }
             if (! isset($recorded[$slug])) {
-                $findings[] = $this->error('docs/decisions/overview.mdx', "Live decision {$slug} has no row in the Records table.");
+                $findings[] = $this->error('docs/decisions/overview.mdx', "Live decision {$slug} has no row in the Records table. Add a row that links /decisions/{$slug}.");
             }
         }
 

@@ -31,6 +31,8 @@ No response or Activity entry returns the API key or the master password. The MC
 
 Setup, sync, and teardown need access to the Gateway. A caller with that access chooses where the Gateway publishes every MySQL and PostgreSQL password, within the hosts that Orbit routes. Grant Gateway access only to Nodes you trust with those passwords.
 
+The Gateway also holds the master password of its Vaultwarden account. That password unlocks only what the account can reach.
+
 ## Items
 
 The Gateway publishes one item for each of these:
@@ -53,6 +55,8 @@ Each item is a Secure Note in the configured collection. Every write names the G
 | `password` | From the source, as a hidden field |
 | `tls` | `disabled` |
 | `orbit.source` | `database-connection:<id>` or `database-user:<id>` |
+
+`tls` is `disabled`, because Orbit records no TLS mode and its Database servers listen on WireGuard.
 
 The note says that Orbit manages the item. Orbit overwrites changes made in Vaultwarden.
 
@@ -143,7 +147,7 @@ Orbit stays the source of truth. If the secrets lived only in Vaultwarden, the G
 
 ### The API does not return passwords
 
-Returning passwords through the Orbit API was rejected. Every client with Gateway access would read every password, and copies made that way still go stale when Orbit rotates a password.
+Returning passwords through the Orbit API was rejected. Every client with Gateway access would read every password, and copies made that way would still go stale when Orbit rotates a password.
 
 ### Items are matched by their source
 
@@ -156,6 +160,10 @@ The sync runs from the scheduler instead of inside each database write. When Vau
 ### The sync stops while the extension is off
 
 Publishing is the feature itself, not the end of work that was already recorded, as the Documents cleanup is. If the sync kept running while `vault` is off, the Gateway would keep sending credentials to Vaultwarden after the operator turned the feature off. A stale item is the smaller cost, and the first run after the switch turns on fixes it.
+
+### The account keeps PBKDF2
+
+The Gateway derives the account's keys in PHP. PHP cannot derive Bitwarden's Argon2id keys, so the Gateway refuses an account that uses Argon2id.
 
 ### The Gateway encrypts items itself
 
