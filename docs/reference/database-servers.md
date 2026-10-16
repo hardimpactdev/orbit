@@ -77,6 +77,7 @@ The Gateway refuses with `database.server_adoption_refused` and changes nothing 
 - The driver is `redis`, and the Process is a Docker Process of that Node with a `valkey/valkey` image and a volume at `/data`.
 - The Process publishes container port `6379` on the Node's WireGuard address. That host port becomes the server's port.
 - No server owns the Process yet.
+- The live ACL has no user other than `default`. Adoption would remove other users.
 - The connection is a `redis` connection to that address and port.
 - The connection logs in as `default`, with its password or without a password.
 
@@ -149,7 +150,9 @@ Orbit adds every part except the patterns and the rules. So a user never has pub
 
 The connection gets driver `redis`, the server's Node address and port, the `--database` index, the username `<slug>`, the encrypted password, and a link to the server. Orbit also records the user with the rules that Valkey reports, so [Doctor](#check-a-valkey-server-with-doctor) can compare them. `database:user:list` shows those rules.
 
-The slug `default` is refused. A user that the server already has, and that Orbit did not record, returns `database.name_conflict`. A rule that Valkey does not know returns `database.acl_rules_invalid` with Valkey's message. A create that fails removes the user and records nothing.
+The slug `default` is refused. A user that the server already has, and that Orbit did not record, returns `database.name_conflict`. A rule that Valkey does not know returns `database.acl_rules_invalid` with Valkey's message. A create that fails removes the user and records nothing. Concurrent ACL changes return `database.server_in_use`; retry after the other command finishes.
+
+`database:update` can change the database index, but cannot change a managed Valkey connection's driver, Node, address, port, username, or password. Such a change returns `database.server_connection_managed` (409). Create a new connection and move its clients instead.
 
 Key patterns limit keys, not the database index. Valkey 8 has no ACL rule for an index, so a user can select any index, and its patterns apply in each one. `SCAN` and `DBSIZE` show the names and the count of all keys in an index, but no values. A user that can write can also fill the server's memory, because Orbit sets no memory limit.
 
@@ -208,6 +211,7 @@ The server commands return these codes.
 | `database.server_port_in_use` | 409 | Another Process on the Node publishes the port. |
 | `database.server_start_failed` | 502 | The server did not accept the admin login within 120 seconds. |
 | `database.server_in_use` | 409 | A connection still points to the server, or `database:server:close` finds a client that would be locked out. |
+| `database.server_connection_managed` | 409 | A change would replace a managed Valkey connection's identity or credentials. |
 | `database.server_inactive` | 409 | The server is not active yet. Run `database:server:create` again to finish it. |
 | `database.server_adoption_refused` | 409 | The Process or the connection cannot be adopted. The message names the check that failed. |
 | `database.server_required` | 422 | The connection has no server, so Orbit cannot create a user on it. |
@@ -239,7 +243,7 @@ A connection describes one database that an Instance uses. A server holds the ad
 
 ### Valkey starts only from Orbit's ACL file
 
-With an ACL file, Valkey ignores `requirepass`. A file without a `default` line, or a start without `--aclfile`, gives every client full access without a password. So Orbit writes the file before the first start, always with a `default` line and a password, and refuses `process:update` of the Process. A missing or broken file stops Valkey instead of opening it. Doctor checks that a client without a password gets nothing.
+With an ACL file, Valkey ignores `requirepass`. A file without a `default` line, or a start without `--aclfile`, gives every client full access without a password. So Orbit writes the file before the first start, always with a `default` line, and refuses `process:update` of the Process. A missing or broken file stops Valkey instead of opening it. New servers require a password. The [open adoption](#adopt-a-valkey-process) is the temporary exception. Doctor reports that exception until the operator closes it.
 
 ### One Valkey user is one connection
 

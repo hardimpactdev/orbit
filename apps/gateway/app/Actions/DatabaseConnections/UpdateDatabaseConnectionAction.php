@@ -33,6 +33,18 @@ final readonly class UpdateDatabaseConnectionAction
             $proposed = clone $locked;
             $proposed->fill($attributes);
 
+            if ($locked->server?->driver === DatabaseDriver::Redis) {
+                foreach (['driver', 'node_id', 'host', 'port', 'path', 'username', 'password'] as $field) {
+                    if ($proposed->{$field} !== $locked->{$field}) {
+                        throw new ResourceOperationException(
+                            errorCode: 'database.server_connection_managed',
+                            message: 'Create a new Valkey connection and move its clients instead of changing its identity or credentials.',
+                            status: 409,
+                        );
+                    }
+                }
+            }
+
             if ($proposed->driver === DatabaseDriver::Sqlite) {
                 foreach ($locked->targets()->with('instance')->get() as $target) {
                     if ($target->instance->node_id !== $proposed->node_id) {

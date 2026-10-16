@@ -6,7 +6,7 @@ description: "In progress. database:server:create --driver=redis runs Valkey as 
 
 # ADR 0221: Run Valkey Database servers with Orbit-owned ACL users
 
-`orbit database:server:create <slug> --driver=redis` runs Valkey as a [Database server](/reference/database-servers). The Gateway generates the admin password and keeps it encrypted. Valkey starts only from an ACL file that Orbit writes, so no path starts it without a password. `orbit database:create <slug> --server=<server>` adds one ACL user with the key patterns and commands that the caller names, and records a Redis Database connection for it. A one-time `--process` option brings the existing Valkey Processes on `services` and `beast` under Orbit without moving their data.
+`orbit database:server:create <slug> --driver=redis` runs Valkey as a [Database server](/reference/database-servers). The Gateway generates the admin password and keeps it encrypted. Valkey starts only from an ACL file that Orbit writes, so new servers require a password. An open server stays open during adoption until its clients have moved. `orbit database:create <slug> --server=<server>` adds one ACL user with the key patterns and commands that the caller names, and records a Redis Database connection for it. A one-time `--process` option brings the existing Valkey Processes on `services` and `beast` under Orbit without moving their data.
 
 ## Status
 
@@ -75,6 +75,7 @@ A new Doctor family, `database_server`, checks each Valkey server whose Process 
 - The Process is a Docker Process of that Node with a `valkey/valkey` image and a volume at `/data`.
 - It publishes container port 6379 on the Node's WireGuard address.
 - No server owns the Process.
+- The live ACL has no user other than `default`. Adoption would remove other users.
 - The connection is a `redis` connection to that address and port that logs in as `default`. With a password, that password logs in. Without one, Valkey accepts a client without a password.
 
 The adoption never locks out a client that works today:
@@ -95,7 +96,7 @@ A server whose `default` already has the admin password returns at once. A clien
 
 ### The collector gets its own user later
 
-The ProxyCli collector and the Gateway's snapshot reads keep using `services-valkey`, and so `default`, until step 3 of [ADR 0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension#build-order) renames their keys to `orbit:ai-router:*`. Before step 4, the operator creates a connection on the server with the pattern `orbit:ai-router:*`, and step 4 binds it with `--cache-connection`. The admin password then has no client outside the Gateway. A rotation of that password is a follow-up of its own.
+The ProxyCli collector and the Gateway's snapshot reads keep using `services-valkey`, and so `default`, until step 3 of [ADR 0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension#build-order) renames their keys to `orbit:ai-router:*`. Before step 4, Nick creates a connection on the server with the pattern `orbit:ai-router:*`, and step 4 binds it with `--cache-connection`. The admin password then has no client outside the Gateway. A rotation of that password is a follow-up of its own.
 
 ## Rejected alternatives
 
@@ -111,7 +112,7 @@ The ProxyCli collector and the Gateway's snapshot reads keep using `services-val
 ## Consequences
 
 - The Gateway queue gets a user that reaches only its own keys.
-- A Valkey server cannot start without a password, and Doctor reports a server that runs without one.
+- New Valkey servers require a password. Doctor reports an adopted server that stays open until its clients have moved.
 - A Valkey server's image tag cannot change through `process:update`. A command for that is a follow-up.
 - Until the collector has its own user, the admin password of the adopted server is also in the collector's environment.
 - Key patterns do not limit the database index: Valkey 8 has no ACL rule for it.

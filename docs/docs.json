@@ -485,7 +485,8 @@
               "GET /api/v1/database-servers",
               "POST /api/v1/database-servers",
               "DELETE /api/v1/database-servers/{database_server}",
-              "GET /api/v1/database-servers/{database_server}"
+              "GET /api/v1/database-servers/{database_server}",
+              "POST /api/v1/database-servers/{database_server}/close"
             ]
           },
           {
