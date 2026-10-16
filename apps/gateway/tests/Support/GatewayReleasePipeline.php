@@ -11,6 +11,7 @@ use App\Domain\GatewayReleases\GatewayReleaseAutomation;
 use App\Domain\GatewayReleases\GatewayReleaseDatabase;
 use App\Domain\GatewayReleases\GatewayReleaseDrain;
 use App\Domain\GatewayReleases\GatewayReleaseException;
+use App\Domain\GatewayReleases\GatewayReleaseExecutionOwner;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\GatewayReleases\GatewayReleaseRuntime;
 use App\Domain\GatewayReleases\GatewayReleaseSmoke;
@@ -143,7 +144,7 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
         $recorder = $this->recorder();
         $builder = $this->fixture->builder($this);
 
-        return new DeployGatewayReleaseAction($this->lock(), $builder, $this, $this->promoter($recorder), $recorder, $this->guard(), new GatewayReleaseRetry, new GatewayReleaseSupersession($this->source(), $this), $drain);
+        return new DeployGatewayReleaseAction($this->lock(), $builder, $this, $this->promoter($recorder), $recorder, $this->guard(), new GatewayReleaseRetry, new GatewayReleaseSupersession($this->source(), $this), new ReleaseTestOwner, $drain);
     }
 
     public function rollback(): RollbackGatewayReleaseAction
@@ -200,6 +201,7 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
      */
     public function bindLeaves(): void
     {
+        app()->instance(GatewayReleaseExecutionOwner::class, new ReleaseTestOwner);
         app()->instance(GatewayReleaseLayout::class, $this->fixture->layout);
         app()->instance(GatewayReleaseLock::class, $this->lock());
         app()->instance(GatewayReleaseBuilder::class, $this->fixture->builder($this));
@@ -291,6 +293,8 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
 
     public int $snapshots = 0;
 
+    public bool $failMigrate = false;
+
     public function snapshot(string $id): string
     {
         $this->snapshots++;
@@ -304,6 +308,9 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
     public function migrate(string $releasePath): void
     {
         $this->steps[] = 'migrate';
+        if ($this->failMigrate) {
+            throw new GatewayReleaseException('migrate', 'gateway.release_migrate_failed', 'Interrupted schema change.');
+        }
     }
 
     public function snapshotBytes(): int

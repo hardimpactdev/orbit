@@ -9,6 +9,8 @@ use App\Domain\GatewayReleases\GatewayReleaseCommit;
 use App\Domain\GatewayReleases\GatewayReleaseDatabase;
 use App\Domain\GatewayReleases\GatewayReleaseDrain;
 use App\Domain\GatewayReleases\GatewayReleaseException;
+use App\Domain\GatewayReleases\GatewayReleaseExecutionOwner;
+use App\Domain\GatewayReleases\GatewayReleaseHold;
 use App\Infrastructure\GatewayReleases\GatewayReleaseBuilder;
 use App\Infrastructure\GatewayReleases\GatewayReleaseGuard;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
@@ -41,6 +43,7 @@ final readonly class DeployGatewayReleaseAction
         private GatewayReleaseGuard $guard,
         private GatewayReleaseRetry $retry,
         private GatewayReleaseSupersession $supersession,
+        private GatewayReleaseExecutionOwner $owner,
         private ?GatewayReleaseDrain $drain = null,
     ) {}
 
@@ -51,17 +54,24 @@ final readonly class DeployGatewayReleaseAction
      */
     public function execute(string $commit, bool $force = false, string $trigger = 'deploy', ?GatewayRelease $record = null): DeployedGatewayRelease
     {
+        $this->owner->assertAllowed($commit);
+
         return $this->lock->run(fn (): DeployedGatewayRelease => $this->deploy($commit, $force, $trigger, $record));
     }
 
     /** Stage under a maintained operator hold; never start consumers or claim verification. */
     public function stage(string $commit): DeployedGatewayRelease
     {
+        $this->owner->assertAllowed($commit);
         if (! GatewayReleaseCommit::isSha($commit)) {
             throw new GatewayReleaseException(step: 'resolve', errorCode: 'gateway.release_commit_invalid', message: 'Staging requires the full target SHA.', status: 422);
         }
 
         return $this->lock->run(function () use ($commit): DeployedGatewayRelease {
+            GatewayReleaseHold::assertNone();
+            if ($this->guard->source()['source_sha'] === $commit) {
+                throw new GatewayReleaseException('hold', 'gateway.release_stage_current', 'The target is already current; staging requires a different release.', 422);
+            }
             $this->assertDrained($commit);
 
             return $this->deploy($commit, false, 'deploy', null, held: true);
@@ -84,6 +94,8 @@ final readonly class DeployGatewayReleaseAction
      */
     public function deploy(string $commit, bool $force, string $trigger, ?GatewayRelease $record = null, bool $held = false): DeployedGatewayRelease
     {
+        $this->owner->assertAllowed($commit);
+        GatewayReleaseHold::assertNone();
         $startedAt = hrtime(true);
         $record = $this->recorder->begin($trigger, $commit, $record, $force);
 
@@ -139,6 +151,10 @@ final readonly class DeployGatewayReleaseAction
                 $step = 'drain';
                 $this->assertDrained($prepared->sha);
             }
+            if ($held) {
+                $phases['hold'] = ['outcome' => 'held', 'record' => $record?->id, ...$this->guard->source()];
+                $this->recorder->stageIntent($record, $prepared->sha, $snapshot, $phases);
+            }
             $step = 'migrate';
             $this->database->migrate($prepared->path);
             $migrationsRan = true;
@@ -146,11 +162,12 @@ final readonly class DeployGatewayReleaseAction
             $this->recorder->progress($record, $phases);
             if ($held) {
                 // A failed barrier after migration must remain a paused schema change.
+                $step = 'drain';
                 $this->assertDrained($prepared->sha);
             }
         } catch (Throwable $thrown) {
             $exception = GatewayReleaseException::fromThrowable($thrown, $step, $prepared?->sha);
-            $this->recordFailure($exception, $step, $phases, $snapshot, $startedAt, $trigger, $record);
+            $this->recordFailure($exception, $step, $phases, $snapshot, $startedAt, $trigger, $record, $migrationsRan);
 
             throw $exception;
         }
@@ -175,7 +192,7 @@ final readonly class DeployGatewayReleaseAction
      *
      * @param  array<string, mixed>  $phases
      */
-    private function recordFailure(GatewayReleaseException $exception, string $step, array $phases, ?string $snapshot, int $startedAt, string $trigger, ?GatewayRelease $record): void
+    private function recordFailure(GatewayReleaseException $exception, string $step, array $phases, ?string $snapshot, int $startedAt, string $trigger, ?GatewayRelease $record, bool $migrationsRan): void
     {
         $durationMs = intdiv(hrtime(true) - $startedAt, 1_000_000);
 
@@ -186,14 +203,14 @@ final readonly class DeployGatewayReleaseAction
                 return;
             }
 
-            $migrating = $step === 'migrate';
+            $migrating = $migrationsRan || $step === 'migrate';
             $this->recorder->write(new DeployedGatewayRelease(
                 id: substr($exception->sha, 0, 12),
                 sha: $exception->sha,
                 outcome: $migrating ? 'paused' : 'failed',
                 trigger: $trigger,
                 migrationsRan: $migrating,
-                previousId: null,
+                previousId: is_string(data_get($phases, 'hold.source')) ? data_get($phases, 'hold.source') : null,
                 snapshotPath: $snapshot,
                 cleanupPaused: false,
                 retryable: ! $migrating && $this->retry->retryable($exception->errorCode, $exception->sha, $record?->id),

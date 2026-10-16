@@ -22,6 +22,7 @@ final readonly class SystemdGatewayReleaseDrain implements GatewayReleaseDrain
         private string $manifest = '/run/orbit-gateway-drain/hold.json',
         private string $cgroups = '/sys/fs/cgroup',
         private int $ownerUid = 0,
+        private string $procMounts = '/proc/mounts',
     ) {}
 
     public function assertHeld(string $targetSha): void
@@ -117,6 +118,11 @@ final readonly class SystemdGatewayReleaseDrain implements GatewayReleaseDrain
                     $this->refuse("Writer unit [{$unit}] has an unreadable or populated cgroup.");
                 }
             }
+        }
+        $mounts = @file_get_contents($this->procMounts);
+        if ($mounts === false || preg_match('~^\\S+ /proc proc ([^ ]+) ~m', $mounts, $match) !== 1
+            || preg_match('/(?:^|,)hidepid=(?!0(?:,|$))/', $match[1]) === 1) {
+            $this->refuse('The proc filesystem does not prove visibility of all process owners.');
         }
         // Catch old artisan commands outside the managed units without printing their argv or env.
         foreach (explode("\n", trim($this->read(['ps', '-eo', 'pid=,comm=']))) as $line) {

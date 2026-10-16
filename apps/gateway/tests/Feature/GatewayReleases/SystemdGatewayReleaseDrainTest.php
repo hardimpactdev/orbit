@@ -72,6 +72,13 @@ it('refuses reservations on every queue without consuming or clearing work', fun
     expect(fn () => $this->drain->assertHeld($this->target))->toThrow(GatewayReleaseException::class, "Queue [{$queue}]");
 })->with(['tasks', 'task-vms', 'builds', 'operations']);
 
+it('refuses hidden or unobservable process owners', function (string $mount): void {
+    $path = $this->pipeline->home.'/proc-mounts';
+    file_put_contents($path, $mount);
+    $drain = new SystemdGatewayReleaseDrain($this->observer, $this->pipeline->fixture->layout, $this->hold, $this->pipeline->home.'/cgroups', posix_getuid(), $path);
+    expect(fn () => $drain->assertHeld($this->target))->toThrow(GatewayReleaseException::class, 'visibility');
+})->with(['proc /proc proc rw,hidepid=2 0 0', 'proc /proc proc rw,hidepid=invisible 0 0', 'unreadable inventory']);
+
 it('redacts connection errors', function (): void {
     $this->redis->shouldReceive('zcard')->andThrow(new RuntimeException('password=do-not-report'));
 

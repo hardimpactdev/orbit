@@ -8,6 +8,7 @@ use App\Domain\GatewayReleases\DeployedGatewayRelease;
 use App\Domain\GatewayReleases\GatewayReleaseAutomation;
 use App\Domain\GatewayReleases\GatewayReleaseCommit;
 use App\Domain\GatewayReleases\GatewayReleaseException;
+use App\Domain\GatewayReleases\GatewayReleaseHold;
 use App\Domain\GatewayReleases\GatewayReleaseUnitStarter;
 use App\Domain\Nodes\NodeUpdateBroadcaster;
 use App\Models\Activity;
@@ -207,8 +208,27 @@ final readonly class GatewayReleaseRecorder
         }
     }
 
+    /** @param array<string, mixed> $phases */
+    public function stageIntent(?GatewayRelease $record, string $sha, string $snapshot, array $phases): void
+    {
+        if (! $record instanceof GatewayRelease) {
+            throw new GatewayReleaseException('hold', 'gateway.release_hold_unrecorded', 'A durable staged record is required before migration.');
+        }
+        $record->forceFill(['sha' => $sha, 'release_id' => GatewayReleaseCommit::id($sha), 'snapshot_path' => $snapshot,
+            'previous_release_id' => data_get($phases, 'hold.source'), 'phases' => $phases])->saveOrFail();
+        $this->writeMarker(['release' => GatewayReleaseCommit::id($sha), 'sha' => $sha,
+            'error_code' => 'gateway.release_held', 'snapshot' => $snapshot], strict: true);
+    }
+
     public function write(DeployedGatewayRelease $release, ?GatewayRelease $record = null): GatewayRelease
     {
+        if ($release->outcome === 'verified') {
+            if (data_get($release->phases, 'hold.outcome') === 'held' && $record instanceof GatewayRelease) {
+                (new GatewayReleaseRecovery)->verify($record);
+            } else {
+                GatewayReleaseHold::assertNone();
+            }
+        }
         $attributes = [
             'release_id' => $release->id,
             'sha' => $release->sha,
@@ -398,15 +418,27 @@ final readonly class GatewayReleaseRecorder
             return;
         }
 
-        $body = json_encode([
+        $this->writeMarker([
             'release' => $release->id,
             'sha' => $release->sha,
             'error_code' => $release->errorCode,
             'snapshot' => $release->snapshotPath,
-        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+        ], strict: data_get($release->phases, 'hold.outcome') === 'held');
+    }
 
-        @file_put_contents($path, $body."\n");
-        @chmod($path, 0600);
+    /** @param array<string, mixed> $body */
+    private function writeMarker(array $body, bool $strict): void
+    {
+        $path = $this->pauseMarkerPath();
+        $partial = $path.'.'.bin2hex(random_bytes(8));
+        if (@file_put_contents($partial, json_encode($body, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n") !== false
+            && @chmod($partial, 0600) && @rename($partial, $path)) {
+            return;
+        }
+        @unlink($partial);
+        if ($strict) {
+            throw new GatewayReleaseException('hold', 'gateway.release_hold_unrecorded', 'The staged pause marker could not be persisted. Keep consumers held.');
+        }
     }
 
     public function pauseMarkerPath(): string

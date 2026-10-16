@@ -74,8 +74,9 @@ final readonly class GatewayReleasePromoter
         int $startedAt,
         ?GatewayRelease $record = null,
         bool $held = false,
+        bool $finalize = false,
     ): DeployedGatewayRelease {
-        $previous = $this->layout->currentReleaseId();
+        $previous = $finalize ? $record?->previous_release_id : $this->layout->currentReleaseId();
         $scheduled = null;
         $scheduleStarted = false;
         $step = 'configuration';
@@ -88,16 +89,18 @@ final readonly class GatewayReleasePromoter
 
             $this->recorder->progress($record, $phases, $sha);
 
-            $step = 'switch';
-            $previous = $this->switcher->switchTo($id);
-            $phases['switch'] = ['outcome' => 'switched', 'from' => $previous, 'to' => $id];
-            $this->recorder->progress($record, $phases);
+            if (! $finalize) {
+                $step = 'switch';
+                $previous = $this->switcher->switchTo($id);
+                $phases['switch'] = ['outcome' => 'switched', 'from' => $previous, 'to' => $id];
+                $this->recorder->progress($record, $phases);
+            }
             if ($held) {
                 $release = $this->result(
                     id: $id, sha: $sha, outcome: 'paused', trigger: $trigger,
                     migrationsRan: $migrationsRan, previousId: $previous, snapshotPath: $snapshotPath,
                     cleanupPaused: true, startedAt: $startedAt,
-                    phases: [...$phases, 'hold' => ['outcome' => 'held']],
+                    phases: [...$phases, 'hold' => ['outcome' => 'held', 'record' => $record?->id, 'source' => $previous, 'source_sha' => $previous === null ? null : $this->layout->preparedCommit($previous)]],
                     errorCode: 'gateway.release_held',
                     message: 'The release is staged. Consumers remain held; verification and resume are operator actions.',
                 );
@@ -159,7 +162,11 @@ final readonly class GatewayReleasePromoter
             startedAt: $startedAt,
             phases: $phases,
         );
-        $this->record($release, $record);
+        if ($finalize) {
+            $this->recorder->write($release, $record);
+        } else {
+            $this->record($release, $record);
+        }
         $this->prune($id, $previous);
         $this->followFleet($id, $sha, $phases['verify']);
 
