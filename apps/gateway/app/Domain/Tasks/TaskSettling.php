@@ -176,12 +176,27 @@ final readonly class TaskSettling
             }
 
             try {
-                $this->pushCancelledApproval($group, $instance);
-                $this->workspaces->remove($instance);
-                $this->rememberBackoff($backoffKey, null, 'workspace removal');
-                $this->releaseRemovedWorkspace($group, $instance->id);
-                Log::warning('Removed the workspace of an ended task group.', ['task_group_id' => $group->id, 'instance_id' => $instance->id]);
-                $removed++;
+                $didRemove = app(TaskExecutionLock::class)->synchronized($group->id, function () use ($group, $instance, $backoffKey): bool {
+                    $group->refresh();
+                    if (! $this->shouldRemoveWorkspace($group, $instance)) {
+                        return false;
+                    }
+                    $group->setRelation('taskable', $instance);
+                    $leases = app(TaskWorkspaceLease::class);
+                    $leases->cancelQueued($group, 'cancel-push:'.$group->id);
+                    $leases->run($group, 'teardown', 'teardown:'.$instance->id, function () use ($group, $instance): void {
+                        $this->pushCancelledApproval($group, $instance);
+                        $this->workspaces->remove($instance);
+                    });
+                    $this->rememberBackoff($backoffKey, null, 'workspace removal');
+                    $this->releaseRemovedWorkspace($group, $instance->id);
+                    Log::warning('Removed the workspace of an ended task group.', ['task_group_id' => $group->id, 'instance_id' => $instance->id]);
+
+                    return true;
+                });
+                if ($didRemove) {
+                    $removed++;
+                }
             } catch (TaskWorkspaceWaiting) {
                 continue;
             } catch (Throwable $exception) {
@@ -237,11 +252,6 @@ final readonly class TaskSettling
 
     /** Pushes the latest stored approval before a cancelled checkout is deleted. A group with no approval is unchanged. */
     private function pushCancelledApproval(Task $group, Instance $instance): void
-    {
-        app(TaskWorkspaceLease::class)->run($group, 'publication', 'cancel-push:'.$group->id, fn () => $this->pushCancelledApprovalWithLease($group, $instance));
-    }
-
-    private function pushCancelledApprovalWithLease(Task $group, Instance $instance): void
     {
         if ($group->status !== TaskGroupStatus::Cancelled) {
             return;

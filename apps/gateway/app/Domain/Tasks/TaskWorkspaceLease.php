@@ -61,7 +61,9 @@ final class TaskWorkspaceLease
     public function cancelQueued(Task $group, string $owner): void
     {
         $this->synchronized($group, static function () use ($group, $owner): void {
-            TaskWorkspaceLeaseRecord::query()->where('group_id', $group->id)->where('instance_id', $group->taskable_id)
+            $instance = $group->taskable;
+            $instanceId = $instance instanceof Instance ? $instance->id : $group->taskable_id;
+            TaskWorkspaceLeaseRecord::query()->where('group_id', $group->id)->where('instance_id', $instanceId)
                 ->where('owner', $owner)->where('status', 'queued')->update(['status' => 'cancelled', 'released_at' => now()]);
         });
     }
@@ -615,9 +617,14 @@ final class TaskWorkspaceLease
 
     private function adoptExistingOwner(Task $group): void
     {
-        $groups = Task::topLevel()->where('taskable_type', $group->taskable_type)->where('taskable_id', $group->taskable_id)->get()->keyBy('id');
+        $instance = $group->taskable;
+        if (! $instance instanceof Instance) {
+            return;
+        }
+        $groups = Task::topLevel()->where('taskable_type', $instance->getMorphClass())->where('taskable_id', $instance->id)->get()->keyBy('id');
+        $groups->put($group->id, $group);
         $check = TaskCheck::query()->whereIn('task_id', Task::query()->whereIn('parent_id', $groups->keys())->select('id'))->whereIn('status', [TaskCheckStatus::Running, TaskCheckStatus::Lost])
-            ->whereNotIn('id', TaskWorkspaceLeaseRecord::query()->where('instance_id', $group->taskable_id)->where('status', 'released')->whereNotNull('check_id')->select('check_id'))
+            ->whereNotIn('id', TaskWorkspaceLeaseRecord::query()->where('instance_id', $instance->id)->where('status', 'released')->whereNotNull('check_id')->select('check_id'))
             ->orderBy('id')->first();
         if ($check instanceof TaskCheck) {
             $checkTask = $check->task;
@@ -650,7 +657,7 @@ final class TaskWorkspaceLease
                 // Persist authoritative pre-lease completion so a later unreadable runtime
                 // cannot resurrect this historical actor as an unknown workspace owner.
                 TaskWorkspaceLeaseRecord::query()->create([
-                    'instance_id' => $ownerGroup->taskable_id, 'group_id' => $ownerGroup->id,
+                    'instance_id' => $instance->id, 'group_id' => $ownerGroup->id,
                     'kind' => $thread->role, 'owner' => 'thread:'.$thread->id, 'thread_id' => $thread->id,
                     'status' => 'released', 'adopted' => true, 'previous_turn_id' => $observation->turnId,
                     'released_at' => now(),
@@ -748,10 +755,15 @@ final class TaskWorkspaceLease
     /** Existing remote ownership precedes queued requests, even when cancellation ended its task. */
     private function adopt(Task $group, string $kind, string $owner, ?int $threadId = null): TaskWorkspaceLeaseRecord
     {
+        $instance = $group->taskable;
+        if (! $instance instanceof Instance) {
+            throw new TaskCheckException('The task workspace is unavailable.');
+        }
+
         return TaskWorkspaceLeaseRecord::query()->create([
-            'instance_id' => $group->taskable_id, 'active_instance_id' => $group->taskable_id, 'group_id' => $group->id,
+            'instance_id' => $instance->id, 'active_instance_id' => $instance->id, 'group_id' => $group->id,
             'kind' => $kind, 'owner' => $owner, 'thread_id' => $threadId, 'status' => 'held', 'adopted' => true,
-            'acquired_at' => now(), 'acquisition_sequence' => $this->nextSequence((int) $group->taskable_id),
+            'acquired_at' => now(), 'acquisition_sequence' => $this->nextSequence($instance->id),
         ]);
     }
 

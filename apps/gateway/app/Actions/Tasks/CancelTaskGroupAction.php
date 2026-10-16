@@ -9,6 +9,7 @@ use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
+use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\Tasks\TaskFinalReview;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestException;
@@ -30,6 +31,11 @@ final readonly class CancelTaskGroupAction
     ) {}
 
     public function execute(Task $group): Task
+    {
+        return app(TaskExecutionLock::class)->synchronized($group->id, fn (): Task => $this->cancel($group));
+    }
+
+    private function cancel(Task $group): Task
     {
         $group->requireManagedExecution();
         $this->requireExtension->execute();
@@ -54,10 +60,7 @@ final readonly class CancelTaskGroupAction
         $offlineId = $instance instanceof Instance && $this->nodeUnreachable($instance) ? $instance->id : null;
 
         if ($instance instanceof Instance && $offlineId === null) {
-            if ($unpublished) {
-                $this->pushApprovedWork($group);
-            }
-            $this->removeWorkspace($group, $instance);
+            $this->teardownWorkspace($group, $instance, $unpublished);
         }
 
         $removedId = $instance instanceof Instance && $offlineId === null ? $instance->id : null;
@@ -85,7 +88,7 @@ final readonly class CancelTaskGroupAction
 
         if ($attachedByClaim instanceof Instance) {
             try {
-                $this->removeWorkspace($group, $attachedByClaim);
+                $this->teardownWorkspace($group, $attachedByClaim);
             } catch (Throwable $exception) {
                 $locked = Task::topLevel()->findOrFail($group->id);
                 $locked->taskable()->associate($attachedByClaim);
@@ -113,6 +116,34 @@ final readonly class CancelTaskGroupAction
         return $cancelled;
     }
 
+    /** Cancellation owns one lifecycle admission across preservation and removal. */
+    private function teardownWorkspace(Task $group, Instance $instance, bool $pushApproved = false): void
+    {
+        $group->setRelation('taskable', $instance);
+        $leases = app(TaskWorkspaceLease::class);
+        $owner = 'teardown:'.$instance->id;
+        $leases->cancelQueued($group, 'cancel-push:'.$group->id);
+        try {
+            $leases->run($group, 'teardown', $owner, function () use ($group, $instance, $pushApproved): void {
+                if ($pushApproved) {
+                    $this->pushApprovedWork($group);
+                }
+                $this->removeWorkspace($group, $instance);
+            });
+        } catch (Throwable $exception) {
+            $current = Task::topLevel()->findOrFail($group->id);
+            $retryable = in_array($current->status, [TaskGroupStatus::Cancelled, TaskGroupStatus::Completed], true)
+                || (in_array($current->status, TaskGroupStatus::awaitingCompletion(), true)
+                    && is_string($current->assistance_reason) && str_starts_with($current->assistance_reason, RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix));
+            if (! $retryable) {
+                // This synchronous request did not end the group, so no scheduler path owns its waiter.
+                // The group lock prevents another cancellation from consuming or replacing it during cleanup.
+                $leases->cancelQueued($group, $owner);
+            }
+            throw $exception;
+        }
+    }
+
     /** The probe is the one check that separates a Node that is gone from a Node that answered and refused. */
     private function nodeUnreachable(Instance $instance): bool
     {
@@ -138,11 +169,6 @@ final readonly class CancelTaskGroupAction
      * workspace. They reach the task branch on origin before the workspace is removed.
      */
     private function pushApprovedWork(Task $group): void
-    {
-        app(TaskWorkspaceLease::class)->run($group, 'publication', 'cancel-push:'.$group->id, fn () => $this->pushApprovedWorkWithLease($group));
-    }
-
-    private function pushApprovedWorkWithLease(Task $group): void
     {
         if (! $group->tasks->contains(static fn (Task $task): bool => $task->status === TaskStatus::Completed)) {
             return;

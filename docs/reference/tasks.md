@@ -1461,6 +1461,8 @@ Annotations, not task agents, use a Node's T3 connection. A Node whose settings 
 
 `tasks:cancel` ends a task in any status except `completed`, and except `settling` with a `pr_url`. Those return HTTP 409 `tasks.not_cancellable`. Complete a settling task instead. `watched_pr_url` does not make the task published, so a `running` or `reviewing` task stays cancellable.
 
+Cancel waits for exclusive workspace ownership before it pushes approved work or removes the checkout. A busy workspace returns the lease-wait error and leaves the task status unchanged. When no durable cleanup retry exists, the refused request withdraws its queued intent so later scheduler work can proceed after the holder finishes. It never releases an active or uncertain holder.
+
 Cancel removes the task's workspace, then marks the task and its open subtasks `cancelled`. Subtasks, comments, and thread links stay as history. Cancel does not stop the agent conversations. Cancelling again is safe, and it retries a removal that failed. It also finds an unattached leftover by Project, `task-{id}` name, and matching branch; a name alone never permits removal.
 
 Cancel uses forced [Instance removal](/reference/instance-removal), including Project teardown and checkout deletion. A development workspace in `source_resolved` can have no Route or exactly one pending or failed Route targeting only that Instance. The eligible Route and its RouteTarget are removed with the workspace. An active or shared Route still prevents removal, keeps the Instance, and follows the removal-refused rule below.
@@ -1510,7 +1512,7 @@ Each tick sweeps workspaces that still exist:
 - of a `cancelled` or `completed` task, attached or found by the `task-{id}` name and branch. A workspace that a [claim in flight](#claim-and-provision) still owns waits.
 - of a `settling` task whose merged pull request cleanup failed.
 
-For a cancelled task, the sweep first pushes the latest approved commit, under the same review-and-merge rule as cancel. A failed push stops that removal. The task does not ask for assistance, and the reason names the push error.
+The sweep consumes the same teardown request that cancel or complete queued and holds one workspace lease across the ordered push and removal. For a cancelled task, the sweep first pushes the latest approved commit, under the same review-and-merge rule as cancel. A failed push stops that removal. The task does not ask for assistance, and the reason names the push error.
 
 A failed removal waits for that Instance only: 1 minute, then 2, 5, 10, and 30 minutes, and then every 30 minutes. A completed or cancelled task does not ask for assistance and keeps the reason. A settling task asks for assistance. A tick starts no removal after 60 seconds of removals. A success clears only a reason that starts with `Workspace removal failed: ` or `Merged pull request cleanup failed: `. The sweep never removes the workspace of a `reserved`, `running`, or `reviewing` task, nor of a `settling` task that still waits for its merge. When the Gateway cannot read or write a retry delay in its cache, it logs a warning and tries at once.
 
