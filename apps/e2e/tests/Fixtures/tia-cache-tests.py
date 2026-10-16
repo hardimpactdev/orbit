@@ -677,9 +677,10 @@ class MainCacheTest(CacheFixture):
             script.chmod(0o755)
         composer = root / 'bin/composer'
         composer.write_text('''#!/usr/bin/env python3
-import fcntl, hashlib, json, os, sys
+import fcntl, json, os, sys
 from pathlib import Path
 if sys.argv[1] == 'install':
+    assert os.environ['BOOTSTRAP_LAST_ASYNC_PID'] == '', 'Composer installs must run synchronously'
     assert json.loads(os.environ['COMPOSER_AUTH']) == {'github-oauth': {'github.com': 'fixture-token'}}
     cache = Path(os.environ['COMPOSER_CACHE_DIR'])
     assert cache == Path(os.environ['BOOTSTRAP_TEST_CACHE'])
@@ -688,17 +689,20 @@ if sys.argv[1] == 'install':
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             sys.exit('Concurrent Composer cache writers')
-        # Model cache work while holding the writer lock, without sleeps or retries.
-        hashlib.pbkdf2_hmac('sha256', b'cache archive', b'fixture', 300000)
         with (cache / 'installs').open('a') as calls:
             calls.write(os.getcwd() + '\\n')
 ''')
         composer.chmod(0o755)
+        # Observe Bash's async-job state, including jobs that already exited.
+        # The old background loop leaves a prior PID in every install after the
+        # first, so it fails even if the scheduler runs the jobs one at a time.
+        bash_environment = root / 'bash-env'
+        bash_environment.write_text('set -T\ntrap \'export BOOTSTRAP_LAST_ASYNC_PID="${!:-}"\' DEBUG\n')
         downloads = root / 'downloads'
         downloads.mkdir()
         result = subprocess.run(['bash', str(root / 'bin/bootstrap'), '--skip-checks'],
                                 capture_output=True, text=True, env={
-                                    **os.environ, 'PATH': str(root / 'bin') + os.pathsep + os.environ['PATH'],
+                                    **os.environ, 'BASH_ENV': str(bash_environment), 'PATH': str(root / 'bin') + os.pathsep + os.environ['PATH'],
                                     'COMPOSER_CACHE_DIR': str(downloads), 'BOOTSTRAP_TEST_CACHE': str(downloads),
                                     'COMPOSER_AUTH': json.dumps({'github-oauth': {'github.com': 'fixture-token'}}),
                                 })
