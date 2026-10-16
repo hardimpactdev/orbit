@@ -1764,7 +1764,7 @@ The cost is that approved work waits in the workspace. A lost workspace loses it
 
 ### Incoming pull requests become tasks
 
-A pull request from the maintainer's account was not reviewed by Orbit, so Orbit reviews it before it can merge. Making it a task reuses the workspace, the reviewer, the fixups, and the push rules. The local branch stays `task-{id}`, and `pr_branch` names only the branch Orbit fetches and pushes. A second workspace branch name was rejected: provisioning, removal, and the rubric all rely on `task-{id}`.
+A pull request from the maintainer's account was not reviewed by Orbit, so Orbit reviews it before it can merge. Making it a task reuses the workspace, the reviewer, the fixups, and the push rules. The local branch stays `task-{id}`, and `pr_branch` names only the branch Orbit fetches and pushes. A second workspace branch name was rejected: provisioning and the rubric rely on `task-{id}`.
 
 The author list is Gateway configuration, like reviewer trust. A pull request cannot name its own author as trusted. Logins, repository roles, and forks confer nothing, because the account that opened a pull request is the authority Orbit checks. Orbit applies requested changes itself instead of asking the author or a cloud agent, so the head it merges is one it reviewed.
 

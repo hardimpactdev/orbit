@@ -20,6 +20,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Carbon;
+use LogicException;
 
 /**
  * @property int $id
@@ -120,12 +121,16 @@ final class Instance extends Model
     ];
 
     /**
-     * A task VM Node serves only its group's workspace, whichever path places the Instance there.
+     * A task workspace keeps the owner that provisioning recorded. A task VM Node serves only its group's workspace,
+     * whichever path places the Instance there.
      */
     protected static function booted(): void
     {
         self::saving(static function (self $instance): void {
-            if (! $instance->exists || $instance->isDirty(['node_id', 'project_id', 'task_workspace_owner_id'])) {
+            if ($instance->exists && $instance->isDirty('task_workspace_owner_id')) {
+                throw new LogicException('A task workspace owner never changes.');
+            }
+            if (! $instance->exists || $instance->isDirty(['node_id', 'project_id'])) {
                 TaskVmWorkspaceGuard::assertInstance($instance);
             }
         });

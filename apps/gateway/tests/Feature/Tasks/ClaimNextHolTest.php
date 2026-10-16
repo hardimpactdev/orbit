@@ -6,6 +6,7 @@ use App\Actions\Tasks\CancelTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Domain\Instances\InstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
@@ -551,6 +552,34 @@ describe('a group cancelled while its claim runs', function (): void {
             ->and($group->fresh()?->assistance_reason)->toBeNull()
             ->and($removed->ids)->toHaveCount(1)
             ->and(Instance::query()->where('name', 'task-'.$group->id)->exists())->toBeFalse();
+    });
+});
+
+describe('a user Instance named and branched like the workspace', function (): void {
+    it('stays when the claim refuses it and the group is cancelled meanwhile', function (): void {
+        Exceptions::fake();
+        claim_hol_enable();
+        $project = claim_hol_app();
+        $group = claim_hol_group($project, 'Cancelled before its workspace');
+        $removed = claim_hol_recording_remover();
+        $name = 'task-'.$group->id;
+        $user = claim_hol_instance($project, $name);
+        $user->update(['branch_override' => $name]);
+        app()->instance(InstanceProvisioning::class, new class implements InstanceProvisioning
+        {
+            public function provision(InstanceProvisionIntent $intent): ?Instance
+            {
+                app(CancelTaskGroupAction::class)->execute($intent->group);
+
+                throw new ResourceOperationException('instance.name_taken', 'The Instance exists and is not this group\'s workspace.', 409);
+            }
+        });
+        claim_hol_spawner();
+
+        expect(app(TaskScheduler::class)->claimNext())->toBeNull()
+            ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Cancelled)
+            ->and($removed->ids)->toBe([])
+            ->and(Instance::query()->find($user->id))->branch_override->toBe($name);
     });
 });
 

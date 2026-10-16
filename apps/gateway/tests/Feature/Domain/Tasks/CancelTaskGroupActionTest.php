@@ -63,7 +63,7 @@ function cancellable_task_group(TaskGroupStatus $status, ?string $prUrl = null):
         'status' => $status,
         'pr_url' => $prUrl,
     ]);
-    $instance->forceFill(['task_workspace_owner_id' => $group->id])->save();
+    test_own_workspace($instance, $group);
     $group->taskable()->associate($instance);
     $group->save();
 
@@ -439,7 +439,7 @@ describe('a workspace the group never attached', function (): void {
         app(TaskExtensionState::class)->enable();
         $remover = cancel_recording_remover();
         [$group, $workspace] = cancel_unattached_workspace(TaskGroupStatus::Todo);
-        $workspace->update(['task_workspace_owner_id' => null]);
+        test_own_workspace($workspace, null);
 
         $cancelled = app(CancelTaskGroupAction::class)->execute($group);
 

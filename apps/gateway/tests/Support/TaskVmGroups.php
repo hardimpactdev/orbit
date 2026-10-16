@@ -36,13 +36,23 @@ function test_vm_group(Task $group): Task
  */
 function test_vm_workspace(Task $group, Instance $workspace): Instance
 {
+    test_own_workspace($workspace, $group);
     if (TaskVm::query()->live()->where('group_id', $group->id)->exists()) {
-        $workspace->forceFill(['task_workspace_owner_id' => $group->id])->save();
-
         return $workspace;
     }
-    $workspace->forceFill(['task_workspace_owner_id' => $group->id, 'name' => TaskWorkspaceName::for($group), 'source_layout' => $workspace->source_layout ?? 'checkout'])->save();
+    $workspace->forceFill(['name' => TaskWorkspaceName::for($group), 'source_layout' => $workspace->source_layout ?? 'checkout'])->save();
     test_task_vm($group, $workspace->node);
+
+    return $workspace->refresh();
+}
+
+/**
+ * Sets the owner that provisioning records when it creates a workspace, for an Instance a test created first. The
+ * model refuses to change an owner, so this writes the row directly.
+ */
+function test_own_workspace(Instance $workspace, ?Task $group): Instance
+{
+    Instance::query()->whereKey($workspace->id)->update(['task_workspace_owner_id' => $group?->id]);
 
     return $workspace->refresh();
 }

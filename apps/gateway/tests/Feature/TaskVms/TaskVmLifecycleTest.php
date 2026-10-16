@@ -793,7 +793,8 @@ describe(DestroyTaskVm::class, function (): void {
         $node = tvm_life_node('tvm-node', '10.44.0.129', role: RoleName::AppDev);
         $group = tvm_life_group(TaskGroupStatus::Cancelled);
         $vm = tvm_life_vm($group, TaskVmState::Ready, $node);
-        // A row from before owners existed that no explicit record attributes. The guard refuses such a row today.
+        // An Instance its group does not own, such as a row the backfill left without an owner because its group held
+        // two Instances. The guard refuses such a row today.
         $leftover = Instance::withoutEvents(fn (): Instance => Instance::query()->create(['project_id' => $this->project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id, 'branch_override' => 'task-'.$group->id, 'checkout_path' => '/home/orbit/apps/dlf/task-'.$group->id]));
 
         app()->call([new DestroyTaskVm($vm->id), 'handle']);
@@ -1010,8 +1011,7 @@ describe(DestroyEndedTaskVmsAction::class, function (): void {
         expect(app(DestroyEndedTaskVmsAction::class)->execute())->toBe(2);
 
         $queued = Queue::pushed(DestroyTaskVm::class)->map(fn (DestroyTaskVm $job): int => $job->taskVmId)->sort()->values()->all();
-        expect($queued)->toBe([$ended->id, $failed->id])
-            ->and([$running->id, $withWorkspace->id, $claimed->id, $destroyed->id])->not->toContain(...$queued);
+        expect($queued)->toBe([$ended->id, $failed->id]);
     });
 
     it('queues destruction past an Instance on the Node that the ended group does not own', function (): void {

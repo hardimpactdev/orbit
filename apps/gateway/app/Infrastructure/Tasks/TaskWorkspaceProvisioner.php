@@ -62,15 +62,17 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning, T
 
     private function provisionWorkspace(InstanceProvisionIntent $intent): Instance|InstanceProvisionFailure
     {
-        $group = $intent->group->loadMissing(['project', 'taskable']);
+        $group = $intent->group->loadMissing('project');
         $node = $this->taskVms->node($group);
-        $existing = $group->taskable;
+        // A workspace that an interrupted claim created but never attached keeps its owner and Node, so this claim
+        // resumes it there instead of creating a second one.
+        $existing = $group->workspace()->first();
 
-        if ($existing instanceof Instance) {
+        if ($existing instanceof Instance && $group->taskable_id === $existing->id) {
             return $existing;
         }
 
-        $visitable = $this->existingWorkspace($group)->task_workspace_routed ?? $intent->visitable;
+        $visitable = $existing->task_workspace_routed ?? $intent->visitable;
         $sourceFailure = $this->sourceDefaultsFailure($group->project, $visitable);
         if ($sourceFailure instanceof InstanceProvisionFailure) {
             return $sourceFailure;
@@ -81,7 +83,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning, T
         $started = now()->getPreciseTimestamp() / 1_000_000;
         $this->clock->start($vm, $started);
         try {
-            return $this->createWorkspace($group, $node, $visitable, $vm);
+            return $this->createWorkspace($group, $node, $visitable, $vm, $existing);
         } catch (ResourceOperationException|RuntimeConvergenceException $exception) {
             report($exception);
 
@@ -99,10 +101,9 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning, T
      * source profile, `.env`, and PHP packages, which the baseline check needs, and stays `source_resolved`. The
      * scheduler starts the check and then finishes the Route through {@see self::complete()}.
      */
-    private function createWorkspace(Task $group, Node $node, bool $visitable, TaskVm $vm): Instance
+    private function createWorkspace(Task $group, Node $node, bool $visitable, TaskVm $vm, ?Instance $existing): Instance
     {
         $name = TaskWorkspaceName::for($group);
-        $existing = $this->existingWorkspace($group);
 
         if ($existing instanceof Instance) {
             if ($existing->node_id !== $node->id) {
@@ -339,14 +340,5 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning, T
         }
 
         return null;
-    }
-
-    /**
-     * A workspace that an interrupted claim created but never attached keeps its owner and Node, so a later claim
-     * resumes it there instead of creating a second one.
-     */
-    private function existingWorkspace(Task $group): ?Instance
-    {
-        return $group->workspace()->first();
     }
 }

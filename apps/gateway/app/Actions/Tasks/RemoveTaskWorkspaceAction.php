@@ -45,12 +45,6 @@ final readonly class RemoveTaskWorkspaceAction
         private InstanceRemover $remover,
     ) {}
 
-    /** The workspace the group owns, attached or not. */
-    public function find(Task $group): ?Instance
-    {
-        return $group->workspace()->first();
-    }
-
     /**
      * Whether a live claim still owns the group's unattached workspace. A group reserved within
      * `orbit.tasks.reserved_timeout_seconds` has a claim in flight, and that claim removes the workspace
@@ -71,7 +65,7 @@ final readonly class RemoveTaskWorkspaceAction
     /** Removes the group's workspace when it has one. It returns the removed Instance. */
     public function execute(Task $group): ?Instance
     {
-        $instance = $this->find($group);
+        $instance = $group->workspace()->first();
 
         if ($instance instanceof Instance) {
             $this->remove($instance);

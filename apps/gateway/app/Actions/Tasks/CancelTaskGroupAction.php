@@ -46,7 +46,7 @@ final readonly class CancelTaskGroupAction
         // A live claim owns the workspace it is provisioning. It removes that workspace once it finds the group
         // cancelled, so cancel leaves it alone and only removes what the claim attached before the cancel landed.
         $claimInFlight = $this->workspace->claimInFlight($group) && $group->taskable_id === null;
-        $instance = $claimInFlight ? null : $this->workspace->find($group);
+        $instance = $claimInFlight ? null : $group->workspace()->first();
         // An unreachable Node cannot accept a push or a removal. Cancel still ends the group and keeps the Instance,
         // so the sweep can delete the checkout later. A Node that answers keeps the fail-closed path below.
         $offlineId = $instance instanceof Instance && $this->nodeUnreachable($instance) ? $instance->id : null;

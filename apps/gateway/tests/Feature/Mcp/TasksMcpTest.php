@@ -323,7 +323,7 @@ it('cancels a running or queued group through MCP and removes its shared Instanc
         'brief' => 'Cancel a stuck group.',
         'status' => $status,
     ]);
-    $instance->forceFill(['task_workspace_owner_id' => $group->id])->save();
+    test_own_workspace($instance, $group);
     $group->taskable()->associate($instance);
     $group->save();
     app()->instance(InstanceRemover::class, new class implements InstanceRemover

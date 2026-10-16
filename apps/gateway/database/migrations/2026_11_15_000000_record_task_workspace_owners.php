@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Schema;
  *
  * Existing owners come from explicit records only, never from an Instance name or branch:
  * - an Instance on the Node of a task VM that is not destroyed belongs to the VM's group;
- * - any other Instance belongs to the one top-level group that has it as its Instance.
+ * - any other Instance belongs to the one top-level group of its Project that has it as its Instance.
  * An Instance that no record names, that several groups have, or that shares its group with another Instance gets no
  * owner. Task cleanup never removes it. Deleting the group clears the owner.
  */
@@ -36,13 +36,13 @@ return new class extends Migration
             ->whereNotNull('task_vms.group_id')
             ->pluck('task_vms.group_id', 'instances.id');
         $attached = DB::table('tasks')
-            ->whereNull('parent_id')
-            ->where('taskable_type', 'instance')
-            ->whereNotNull('taskable_id')
-            ->groupBy('taskable_id')
+            ->join('instances', static fn ($join) => $join->on('instances.id', '=', 'tasks.taskable_id')->on('instances.project_id', '=', 'tasks.project_id'))
+            ->whereNull('tasks.parent_id')
+            ->where('tasks.taskable_type', 'instance')
+            ->groupBy('tasks.taskable_id')
             ->havingRaw('count(*) = 1')
-            ->selectRaw('taskable_id, min(id) as group_id')
-            ->pluck('group_id', 'taskable_id');
+            ->selectRaw('tasks.taskable_id as instance_id, min(tasks.id) as group_id')
+            ->pluck('group_id', 'instance_id');
 
         $owners = $attached->replace($placed)->map(static fn (mixed $group): int => is_numeric($group) ? (int) $group : throw new RuntimeException('Expected an integer task id.'));
         $shared = $owners->countBy()->filter(static fn (int $instances): bool => $instances > 1)->keys();
@@ -53,13 +53,17 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::table('instances', static fn (Blueprint $table) => $table->dropUnique(['task_workspace_owner_id']));
         if (DB::connection()->getDriverName() === 'sqlite') {
+            Schema::table('instances', static fn (Blueprint $table) => $table->dropUnique(['task_workspace_owner_id']));
             DB::statement('ALTER TABLE instances DROP COLUMN task_workspace_owner_id');
 
             return;
         }
 
-        Schema::table('instances', static fn (Blueprint $table) => $table->dropConstrainedForeignId('task_workspace_owner_id'));
+        Schema::table('instances', static function (Blueprint $table): void {
+            $table->dropForeign(['task_workspace_owner_id']);
+            $table->dropUnique(['task_workspace_owner_id']);
+            $table->dropColumn('task_workspace_owner_id');
+        });
     }
 };

@@ -63,7 +63,7 @@ function complete_group(TaskGroupStatus $status = TaskGroupStatus::Settling): Ta
         'status' => $status,
         'pr_url' => 'https://github.com/nckrtl/orbit/pull/543',
     ]);
-    $instance->forceFill(['task_workspace_owner_id' => $group->id])->save();
+    test_own_workspace($instance, $group);
     $group->taskable()->associate($instance);
     $group->save();
 
@@ -103,7 +103,7 @@ it('never removes a user Instance named and branched like the workspace of the g
     $group = complete_group();
     $name = 'task-'.$group->id;
     $user = $group->taskable;
-    $user->update(['task_workspace_owner_id' => null, 'name' => $name, 'branch_override' => $name]);
+    test_own_workspace($user, null)->update(['name' => $name, 'branch_override' => $name]);
     $group->taskable()->dissociate();
     $group->save();
     $remover = new class implements InstanceRemover

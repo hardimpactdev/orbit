@@ -480,6 +480,7 @@ describe('a workspace an interrupted claim left unattached', function (): void {
         bind_task_workspace_fakes();
 
         expect(app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false)))->toBeInstanceOf(InstanceProvisionFailure::class)
+            ->cause->toContain('[instance.name_taken]')
             ->and($lookalike->fresh()?->task_workspace_owner_id)->toBeNull()
             ->and($lookalike->fresh()?->status)->toBe(InstanceState::SourceResolved);
         $this->assertDatabaseCount('instances', 1);

@@ -202,7 +202,7 @@ final readonly class TaskSettling
     /** Retries merged pull request cleanup at once the first time, then on the same per-Instance backoff as the sweep. */
     private function completeMergedGroup(Task $group): void
     {
-        $instance = $this->workspaces->find($group);
+        $instance = $group->workspace()->first();
         $backoffKey = $instance instanceof Instance ? 'tasks.workspace-removal.'.$instance->id : null;
         $backoff = is_string($backoffKey) ? $this->readBackoff($backoffKey, 'workspace removal') : null;
 
