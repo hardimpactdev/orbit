@@ -21,7 +21,10 @@ use App\Domain\Tasks\QuestionCause;
 use App\Domain\Tasks\QuestionStatus;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskBranchUpdate;
+use App\Domain\Tasks\TaskCheckKind;
+use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
+use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGitHubReviewConsumption;
 use App\Domain\Tasks\TaskGitHubReviewFeedback;
@@ -2194,6 +2197,67 @@ it('starts a consult when the implementer blocks before any reviewer exists', fu
         ->and($group->fresh()?->escalations)->toBe(0)
         ->and($opening['message']['text'] ?? null)->toContain('May the Node user run sudo apt-get install php8.5-intl?')
         ->and($opening['message']['text'] ?? null)->toContain('--outcome=answered');
+});
+
+it('waits for an earlier handoff check before dispatching a blocked implementer consult', function (): void {
+    $group = tick_group();
+    $task = $group->tasks->sole();
+    $handoff = $task->comments()->create([
+        'task_group_id' => $group->id, 'type' => 'ready_for_review', 'body' => 'Earlier handoff.',
+        'author' => 'implementer', 'completion_attempt' => $task->completion_attempt, 'posted_at' => now(),
+    ]);
+    $checks = new FakeTaskCheckRunner([
+        TaskCheckReading::running(), TaskCheckReading::running(), FakeTaskCheckRunner::passed(),
+    ]);
+    app()->instance(TaskCheckRunner::class, $checks);
+    $check = $task->checks()->create([
+        'task_comment_id' => $handoff->id, 'kind' => TaskCheckKind::Handoff,
+        'status' => TaskCheckStatus::Running, 'pid' => 1234, 'process_started' => 'check-start',
+        'head_before' => $checks->head, 'tree_before' => $checks->tree, 'started_at' => now(),
+    ]);
+    $receipts = new FakeTaskTurnReceipts([
+        FakeTaskTurnReceipts::contents('blocked', 'A new implementer turn needs direction.', 'Which contract should I use?'),
+    ]);
+    $dispatcher = tick_dispatcher();
+    $state = (object) ['implementer' => 'done'];
+    tick_relay_runtime($receipts, $dispatcher, $state);
+    $attempt = $task->completion_attempt;
+
+    app(TaskScheduler::class)->tick();
+
+    $blocked = $task->comments()->where('type', 'blocked')->sole();
+    $sendKey = $task->fresh()?->direction_answer_key;
+    expect($check->fresh()?->status)->toBe(TaskCheckStatus::Running)
+        ->and($task->fresh()?->consult_comment_id)->toBe($blocked->id)
+        ->and($sendKey)->not->toBeNull()
+        ->and(TaskQuestion::query()->sole()->status)->toBe(QuestionStatus::Open)
+        ->and(AgentThread::query()->where('task_id', $task->id)->where('role', 'reviewer')->count())->toBe(0)
+        ->and($dispatcher->commands)->toBe([])
+        ->and($receipts->prepared)->toBe([]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($check->fresh()?->status)->toBe(TaskCheckStatus::Running)
+        ->and($task->fresh()?->direction_answer_key)->toBe($sendKey)
+        ->and($dispatcher->commands)->toBe([])
+        ->and($receipts->prepared)->toBe([]);
+
+    $state->reviewer = 'running';
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    $starts = tick_reviewer_starts($dispatcher);
+    expect($check->fresh()?->status)->toBe(TaskCheckStatus::Passed)
+        ->and($starts)->toHaveCount(1)
+        ->and($starts[0]['commandId'])->toBe($sendKey)
+        ->and($starts[0]['message']['text'])->toContain('Which contract should I use?')
+        ->and($receipts->modes)->toBe(['consult', 'consult'])
+        ->and($task->fresh()?->direction_answer_key)->toBeNull()
+        ->and($task->fresh()?->consult_comment_id)->toBe($blocked->id)
+        ->and($task->fresh()?->completion_attempt)->toBe($attempt)
+        ->and($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and($group->fresh()?->assistance_requested)->toBeFalse()
+        ->and(TaskQuestion::query()->count())->toBe(1);
 });
 
 it('does not send a second consult when an accepted send lost its response', function (): void {
