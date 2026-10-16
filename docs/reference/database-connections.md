@@ -29,6 +29,8 @@ Each record has a unique slug: lowercase words joined by hyphens, at most 63 cha
 
 `host` is a hostname or an IP address, without a user or a port. `port` is 1 through 65535. `path` is an absolute Unix path of at most 1,024 characters. A redis `database` is the numeric database index. The Gateway returns `validation.failed` for a field that the driver does not take, such as `path` on mysql or `host` on sqlite.
 
+A redis `username` names an ACL user on the Redis server. Without it, the Gateway and the Processes that use the connection log in as the `default` user. One connection holds one username and one password for every client that uses it. To give one client its own ACL user, register a second connection to the same Redis server with that user. Do not change the shared connection, because the Processes that [follow it](/reference/proxycli#follow-the-cache-connection) move to the new user too. The [Gateway queue](/reference/gateway-queue#acl-users) uses `services-valkey-gateway` this way.
+
 `node_id` links the record to a Node. The Node needs no `database` role. SQLite inspection needs this link, and it lets an Instance on the same Node reach a Docker Process locally.
 
 Responses contain `id`, `slug`, `driver`, `node_id`, `host`, `port`, `database`, `path`, `username`, `has_password`, `server`, `owner_instance_id`, and `test_database`. Show also returns `users_count`. `server` is the slug of the [Database server](/reference/database-servers) that holds the database, or null. `owner_instance_id` names the Instance that owns the database, or null. No response, Activity entry, or error contains a password. To give people the credentials, the Gateway can [publish MySQL and PostgreSQL connections to Vaultwarden](/reference/vaultwarden).

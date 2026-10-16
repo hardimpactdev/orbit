@@ -1,6 +1,6 @@
 ---
 title: "Gateway queue"
-description: "The Gateway's Redis connection, four queues, Laravel Horizon, and how a release moves them."
+description: "The Gateway's Redis connection and ACL user, four queues, Laravel Horizon, and how a release moves them."
 covers:
   - apps/gateway/app/Domain/Gateway/GatewayQueue.php
   - apps/gateway/app/{Infrastructure/Gateway/GatewayQueue*,Infrastructure/Gateway/GatewayHorizon.php,Console/Scheduling/**,Jobs/RunScheduledCommand.php,Providers/GatewayQueueServiceProvider.php}
@@ -13,16 +13,16 @@ The Gateway scheduler dispatches most of its work. Each scheduled command that d
 
 ## Connection
 
-The queue connection `gateway` uses the Redis driver. Its Redis server is a [Redis Database connection](/reference/database-connections) that Orbit already has, such as the Valkey on the `services` Node (`services-valkey`). Set these keys in `/home/orbit/shared/gateway.env`, then run a release. The release caches them and creates the [`horizon` Process](#horizon). Do not only [apply the env change](/reference/gateway-recovery#apply-an-env-change): the scheduler would then dispatch to the queue before Horizon runs.
+The queue connection `gateway` uses the Redis driver. Its Redis server is reached through a [Redis Database connection](/reference/database-connections), such as `services-valkey-gateway` for the Valkey on the `services` Node. Set these keys in `/home/orbit/shared/gateway.env`, then run a release. The release caches them and creates the [`horizon` Process](#horizon). Do not only [apply the env change](/reference/gateway-recovery#apply-an-env-change): the scheduler would then dispatch to the queue before Horizon runs.
 
 | Key | Default | Effect |
 | --- | --- | --- |
 | `ORBIT_GATEWAY_QUEUE_CONNECTION` | empty | The slug of the Redis Database connection. Empty keeps the [inline schedule](#without-a-queue) |
-| `ORBIT_GATEWAY_QUEUE_REDIS_DATABASE` | `1` | The Redis database index of the queue and Horizon. Use an index that no other user of that server uses |
+| `ORBIT_GATEWAY_QUEUE_REDIS_DATABASE` | `1` | The Redis database index of the queue and Horizon. Use an index that no other client of that server uses |
 
-The Gateway reads the host, port, and password of that connection from its records when a process first uses Redis. When the key names no Redis connection, the Gateway logs an error and every dispatch to the queue fails. Every key starts with `orbit-gateway:`, and Horizon's own keys with `orbit-gateway-horizon:`. The Redis client is Predis, so the Gateway needs no PHP Redis extension.
+The Gateway reads the host, port, username, and password of that connection from its records when a process first uses Redis. When the key names no Redis connection, the Gateway logs an error and every dispatch to the queue fails. Every key starts with `orbit-gateway:`, and Horizon's own keys with `orbit-gateway-horizon:`. The Redis client is Predis, so the Gateway needs no PHP Redis extension.
 
-`services-valkey` is the `valkey` Docker Process on `services`. It listens on the WireGuard address of `services`, so only WireGuard peers reach it. It requires a password (`requirepass`), which its Database connection stores, and it writes an append-only file (`--appendonly yes`) to the `services-valkey-data` volume, so queued jobs survive a restart. A separate Valkey ACL user for the Gateway is a follow-up.
+The `valkey` Docker Process on `services` is the Redis server behind `services-valkey` and `services-valkey-gateway`. It listens on the WireGuard address of `services`, so only WireGuard peers reach it. It writes an append-only file (`--appendonly yes`) to the `services-valkey-data` volume, so queued jobs survive a restart. Every client logs in with a password. The queue and Horizon log in as their own [ACL user](#acl-users), `gateway`, through `services-valkey-gateway`. That user reaches only the queue's keys.
 
 ## Queues
 
@@ -145,6 +145,192 @@ systemd starts a failed Horizon again after 2 seconds. After several failed star
 
 A job that Redis lost runs again only when its owner queues it again. For example, the tick queues a publish again after its backoff.
 
+## ACL users
+
+The `valkey` Process on `services` has two [Valkey ACL users](https://valkey.io/topics/acl/). The queue and Horizon log in as `gateway`, which can read and change only the queue's keys.
+
+| User | Keys | Commands | Used by |
+| --- | --- | --- | --- |
+| `default` | All | All | The [ProxyCli collector](/reference/proxycli#collection) and the Gateway's [snapshot reads and account updates](/reference/proxycli#clients), through `services-valkey`. That Database connection has no username, so they log in as `default` |
+| `gateway` | `orbit-gateway:*` and `orbit-gateway-horizon:*` | The rules in the table below | The queue and Horizon, through the Database connection `services-valkey-gateway` |
+
+The users are in the ACL file `/data/users.acl` on the `services-valkey-data` volume. Valkey reads the file when it starts. The file holds SHA-256 hashes of the passwords, never a password. The command of the `valkey` Process holds no password either, because Orbit stores that command and shows it in `orbit process:list --json`.
+
+```text
+user default on #<sha256 of the default password> ~* &* +@all
+user gateway on #<sha256 of the gateway password> resetkeys ~orbit-gateway:* ~orbit-gateway-horizon:* resetchannels -@all +@connection +@transaction +@keyspace +@string +@list +@hash +@set +@sortedset +eval +time -@admin -@dangerous
+```
+
+Valkey applies the rules of a line from left to right:
+
+| Rule | Why |
+| --- | --- |
+| `resetkeys ~orbit-gateway:* ~orbit-gateway-horizon:*` | Allows only the keys of the queue and Horizon. `~orbit-gateway:*` does not match the Horizon prefix `orbit-gateway-horizon:`, so the line names both |
+| `resetchannels` | Allows no pub/sub channel. The Gateway publishes and subscribes to nothing |
+| `-@all` | Starts with no commands |
+| `+@connection` | On each new connection, Predis logs in with `HELLO`, sends `CLIENT SETINFO`, and selects the queue's database with `SELECT` |
+| `+@transaction` | `horizon:snapshot` and the dashboard use `MULTI` and `EXEC` |
+| `+@keyspace` | Horizon sets expiry times on jobs and deletes them. `horizon:clear-metrics` finds metrics with `SCAN` |
+| `+@string`, `+@list`, `+@hash`, `+@set`, `+@sortedset` | The queue keeps jobs in lists and sorted sets, and an idle worker waits with `BLPOP`. Horizon keeps jobs, metrics, and tags in strings, hashes, sets, and sorted sets |
+| `+eval` | The queue's Lua scripts push, pop, and move jobs. Valkey checks each `redis.call` in a script against the same rules. `+@scripting` would also allow `SCRIPT FLUSH` and `FUNCTION FLUSH` |
+| `+time` | The dashboard's Lua scripts for pending jobs call `TIME`. `TIME` is only in `@fast`, and `+@fast` would allow many more commands |
+| `-@admin`, `-@dangerous` | Removes the commands that the categories above add, such as `KEYS`, `SORT`, `FLUSHDB`, `CLIENT LIST`, and `CLIENT KILL`. The Gateway sends none of them |
+
+The key patterns are the boundary, not the database index. Valkey 8 has no ACL rule for a database, so `gateway` can select any database, and its key patterns apply in each one. `SCAN` lists the name of every key in a database, and `DBSIZE` counts them, including keys that the user cannot read. The values stay hidden.
+
+### Set up the ACL users
+
+The steps start from a `valkey` Process that writes `requirepass` from its environment value `VALKEY_PASSWORD` into a config file at each start. They move the users into the ACL file, and then move the queue to `gateway`. `default` keeps its password, so the collector and the Gateway's snapshot reads keep working. Valkey restarts once, in step 3. Its append-only file keeps the queued jobs, and [When Redis is down](#when-redis-is-down) describes the Gateway during the restart.
+
+Run the shell commands on `services`, as `orbit`. In each new shell there, set `ctr` as in step 1. Run each `orbit` command on a machine with Gateway access. `10.44.0.3` is the WireGuard address of `services`, and `10.44.0.2` is the WireGuard address of the Gateway.
+
+#### 1. Create the password files
+
+Find `<id>`, the ID of the `valkey` Process, with `orbit process:list --node=services`. Then, on `services`:
+
+```bash
+umask 077
+set -o noclobber
+ctr=orbit-process-<id>-valkey
+openssl rand -hex 32 | tr -d '\n' > ~/valkey-gateway.password
+sudo docker exec "$ctr" sh -c 'printf %s "$VALKEY_PASSWORD"' > ~/valkey-default.password
+set +o noclobber
+sudo docker exec -i "$ctr" sh -c 'REDISCLI_AUTH=$(cat) valkey-cli PING' < ~/valkey-default.password
+```
+
+The second file copies the current `default` password out of the running container. No command prints a password. The last command must print `PONG`, which proves that the file holds the live password. If it prints anything else, delete both files and run step 1 again. `noclobber` stops a second run from overwriting a file.
+
+Run step 1 only before step 3. After step 3, the container has no `VALKEY_PASSWORD`, so a new copy would be empty. Keep both files: the checks below and [Change a user](#change-a-user) log in with them.
+
+#### 2. Write the ACL file
+
+In the same shell, write the ACL file to `~/valkey-users.acl`. Then copy it into the volume as the `valkey` user, so that Valkey can read it:
+
+```bash
+default_hash=$(sha256sum < ~/valkey-default.password | cut -d' ' -f1)
+gateway_hash=$(sha256sum < ~/valkey-gateway.password | cut -d' ' -f1)
+cat > ~/valkey-users.acl <<ACL
+user default on #$default_hash ~* &* +@all
+user gateway on #$gateway_hash resetkeys ~orbit-gateway:* ~orbit-gateway-horizon:* resetchannels -@all +@connection +@transaction +@keyspace +@string +@list +@hash +@set +@sortedset +eval +time -@admin -@dangerous
+ACL
+sudo docker exec -i -u valkey "$ctr" sh -c 'umask 077 && cat > /data/users.acl' < ~/valkey-users.acl
+sudo docker exec "$ctr" cat /data/users.acl
+```
+
+The last command shows the file in the volume. It has two lines, and each hash has 64 lowercase hexadecimal characters. The file must keep the `default` line. Without it, Valkey makes `default` a user without a password, and every WireGuard peer can use the server. Valkey ignores `requirepass` while it uses an ACL file. The file cannot hold comments. Keep `~/valkey-users.acl`: you edit that copy when a user changes.
+
+#### 3. Start Valkey with the ACL file
+
+Run this step when the [dashboard](#dashboard) shows no running build or operation. A job that ends during the restart runs again after 1800 seconds. [`process:update`](/cli/process#orbit-processupdate) replaces the whole specification, so the command repeats the image, port, volume, working directory, and restart policy:
+
+```bash
+orbit process:update <id> --runtime=docker --image=valkey/valkey:8 \
+  --command=valkey-server --command=--appendonly --command=yes \
+  --command=--dir --command=/data --command=--aclfile --command=/data/users.acl \
+  --working-directory=/data --port=10.44.0.3:6379:6379 \
+  --volume=services-valkey-data:/data --restart=unless-stopped
+```
+
+The update also removes `VALKEY_PASSWORD`, because an update without `--environment` clears the environment. Orbit replaces the container and starts the new one. The image's entrypoint makes `valkey` the owner of the files in `/data` and runs the server as `valkey`. Valkey reads its append-only file again, so the queued jobs stay.
+
+#### 4. Check Valkey
+
+Read the log of the Process:
+
+```bash
+orbit process:logs <id> --lines=50
+```
+
+The log shows `Ready to accept connections`. When it shows `Aborting Valkey startup because of ACL errors`, it names the wrong line; see [Repair the ACL file](#repair-the-acl-file). Then, on `services`, check both users:
+
+```bash
+sudo docker exec -i "$ctr" sh -c 'REDISCLI_AUTH=$(cat) valkey-cli ACL LIST' < ~/valkey-default.password
+sudo docker exec -i "$ctr" sh -c 'REDISCLI_AUTH=$(cat) valkey-cli --user gateway -n 1 LLEN orbit-gateway:queues:tasks' < ~/valkey-gateway.password
+```
+
+The first command lists both users. The second prints the number of waiting `tasks` jobs. The shell in the container reads the password from standard input into `REDISCLI_AUTH`, so the password is never on a command line.
+
+The Gateway still logs in as `default`, and Horizon reconnects by itself. Within a few minutes, check that [`orbit proxycli:status`](/cli/proxycli#orbit-proxyclistatus) shows a new `collected_at`. The collector polls every minute, and the lock of a round that the restart interrupted expires after 120 seconds.
+
+#### 5. Register `services-valkey-gateway`
+
+Create a new Redis Database connection with the user `gateway`. Do not change `services-valkey`. A change to that connection [reconverges the collector](/reference/proxycli#follow-the-cache-connection), which would then log in as `gateway` and lose its own keys. The machine that runs this command needs SSH access to `services` as `orbit`:
+
+```bash
+pw=$(ssh orbit@10.44.0.3 cat valkey-gateway.password) && [ ${#pw} -eq 64 ] && orbit database:create services-valkey-gateway --driver=redis --node=services --host=10.44.0.3 --port=6379 --database=1 --username=gateway --password="$pw"; unset pw
+```
+
+[`database:create`](/cli/database#orbit-databasecreate) takes the password only as `--password`. The password stays out of the shell history, but it is in the arguments of `orbit` while the command runs. The length check stops the command when SSH fails, because the Gateway would store an empty password without an error.
+
+The Gateway stores the password encrypted and never shows it. The queue takes its database index from `ORBIT_GATEWAY_QUEUE_REDIS_DATABASE`, not from `--database`, but `1` keeps the record correct. To correct the stored password, run [`database:update`](/cli/database#orbit-databaseupdate) on `services-valkey-gateway`. That connection moves no other client.
+
+#### 6. Move the queue
+
+Do this step only after steps 1 to 5 work. An [automatic release](/reference/gateway-recovery#automatic-releases) also applies an edit of the env file. As `orbit` on the Gateway, set this key in `/home/orbit/shared/gateway.env`:
+
+```bash
+ORBIT_GATEWAY_QUEUE_CONNECTION=services-valkey-gateway
+```
+
+Then [run a release](/reference/gateway-recovery#deploy-a-release) of the current commit, as [Connection](#connection) requires. Read the commit as `release_sha` from `orbit gateway:status --json`:
+
+```bash
+orbit gateway:release:deploy <SHA>
+```
+
+The command follows the release, which must end `verified`. The release caches the env file again. Its handoff runs `horizon:terminate`, so Horizon starts again as `gateway` after its running jobs end ([Releases](#releases)). Both users reach the queue's keys, so no job is lost.
+
+A newer commit can pass CI in the meantime, or GitHub can fail to answer. This manual deploy then [pauses automatic releases](/reference/gateway-recovery#pause) with `manual_deploy`. When `orbit gateway:release:auto:status` shows that pause, run [`orbit gateway:release:auto:resume`](/cli/gateway#orbit-gatewayreleaseautoresume).
+
+#### 7. Check the queue
+
+On `services`, list the connections of `gateway`:
+
+```bash
+sudo docker exec -i "$ctr" sh -c 'REDISCLI_AUTH=$(cat) valkey-cli CLIENT LIST USER gateway' < ~/valkey-default.password
+```
+
+It lists connections from the Gateway, `10.44.0.2`. The old Horizon master can work a running job for up to 1700 seconds. When it has exited, `CLIENT LIST USER default` shows no connection with `name=predis`. The `tick_confirmation` of `orbit gateway:release:auto:status` shows that ticks run, but not which user Horizon uses.
+
+Open the [dashboard](#dashboard), including its pending jobs. Then read the ACL log:
+
+```bash
+sudo docker exec -i "$ctr" sh -c 'REDISCLI_AUTH=$(cat) valkey-cli ACL LOG' < ~/valkey-default.password
+```
+
+An empty list means that Valkey denied the Gateway nothing. A denied command or key shows as an entry with `username` `gateway`. Check the log even when the dashboard works. A denied command in a dashboard script leaves the page up, and only the ACL log and the Gateway's application log show it.
+
+### Switch the queue back
+
+Set `ORBIT_GATEWAY_QUEUE_CONNECTION=services-valkey` again and run a release of the current commit, as in step 6. Horizon then logs in as `default` and works the same jobs. Do not use `gateway:release:rollback` for this: it switches code only, and every release reads the same env file. The ACL file can stay, because `default` keeps its password and all its rights.
+
+### Repair the ACL file
+
+Valkey does not start when the ACL file is missing or has a wrong line. Docker then starts the container again and again, so `docker exec` fails. Correct `~/valkey-users.acl` on `services`, and copy it into the volume through a short-lived container:
+
+```bash
+sudo docker run --rm -i -v services-valkey-data:/data --entrypoint sh valkey/valkey:8 -c 'umask 077 && cat > /data/users.acl' < ~/valkey-users.acl
+```
+
+Then run [`orbit process:restart <id>`](/cli/process#orbit-processrestart). When `~/valkey-users.acl` is lost, write it again as in step 2. Step 2 takes the hashes from the two password files.
+
+### Change a user
+
+To change a user while Valkey runs, edit `~/valkey-users.acl` on `services`. Then copy it into the volume and load it:
+
+```bash
+sudo docker exec -i -u valkey "$ctr" sh -c 'umask 077 && cat > /data/users.acl' < ~/valkey-users.acl
+sudo docker exec -i "$ctr" sh -c 'REDISCLI_AUTH=$(cat) valkey-cli ACL LOAD' < ~/valkey-default.password
+```
+
+`ACL LOAD` is all or nothing. A wrong line changes no user and returns an error. The wrong file then stays in the volume, and Valkey would not start from it. Write the active users back to the file at once, then correct `~/valkey-users.acl`:
+
+```bash
+sudo docker exec -i "$ctr" sh -c 'REDISCLI_AUTH=$(cat) valkey-cli ACL SAVE' < ~/valkey-default.password
+```
+
+A user that is not in the file loses its connections. A change made only with `ACL SETUSER` is lost at the next `ACL LOAD` or restart.
+
 ## Operations
 
 These commands inspect and control Horizon on the Gateway.
@@ -165,6 +351,8 @@ Doctor does not report an old `last_tick_at` yet. Until it does, check [`orbit t
 
 A Horizon that is down while its Process should run is ordinary Process drift. Doctor reports it as `process.state_mismatch`, or `process.crash_loop` when systemd keeps restarting it. Problem collection runs in the scheduler, so it records that issue within one collection cycle, and `problems:file` files it once two collections 10 minutes apart saw it. A Horizon stopped with `orbit process:stop` is not drift and is not reported.
 
+The ProxyCli collector has no ACL user of its own. It logs in as `default` through `services-valkey`, and so do the Gateway's snapshot reads. Step 3 of the [AI router build](/decisions/0212-turn-proxycli-into-the-ai-router-extension#build-order) renames their keys from `orbit:proxycli:*` to `orbit:ai-router:*`. After that step, a user for them needs only the key pattern `~orbit:ai-router:*`. ADR 0212 does not plan that user yet.
+
 ## Why it works this way
 
 The scheduler used to run its work, and the task VM workers, as foreground commands. A foreground command holds the scheduler's run for that minute, so a slow tick or a VM job could hold a publish for minutes. With dispatch, the scheduler's run takes milliseconds, and each queue's workers decide when a job starts.
@@ -172,3 +360,9 @@ The scheduler used to run its work, and the task VM workers, as foreground comma
 Problem collection is the exception, because it is how a stopped Horizon gets recorded. As a queued job, it would stop with Horizon, and the failure it should report would go unseen. In the scheduler, a collection costs late 10-second dispatches once every 10 minutes, and a release's [scheduler drain](/reference/gateway-recovery#runtime-handoff) waits for a running collection. Both are short and need no extra machinery.
 
 Horizon needs Redis. The fleet already runs Valkey on the `database` role, so the Gateway uses that registered connection instead of a second server on its own host. Orbit's records keep its address, as for every other Database connection.
+
+### An ACL user for the queue
+
+The queue has its own ACL user because Valkey is shared. As `default`, a fault in the queue or Horizon, or a leaked queue password, could read or delete the collector's keys. A second Database connection carries the user, because one connection holds one username and one password for all its clients.
+
+The ACL user `gateway` has its own password. When `HELLO` fails, for example for a wrong username, Predis tries `AUTH` with the password alone, which logs in as `default`. With a shared password, that fallback succeeds, and the queue runs as `default` without an error.
