@@ -93,8 +93,12 @@ A program that reads a private repository receives the [Git read environment](/r
 `bin/remote-programs-check` runs from the repository root. It checks every program under `apps/gateway/resources`, the older files outside `remote/` included:
 
 - shellcheck checks each Bash file.
-- ruff 0.17.0 checks each Python file and the direct tests with the rules in `apps/gateway/ruff.toml`. A program with libraries is checked as assembled, and a finding names the file and line where it occurs.
+- ruff 0.17.0 checks Python files, direct tests and assembled programs with `apps/gateway/ruff.toml`. Findings name the original file and line.
 - `python3 -m unittest` runs the direct tests in `apps/gateway/tests/Programs`. They run programs with the same assembly and bootstrap against temporary directories.
+
+Assembly includes the recipe image builder and Docker migration fragments.
+
+The Docker migration has an opt-in test against a real engine: `sudo env ORBIT_DOCKER_NETWORK_TEST=1 python3 apps/gateway/tests/Programs/test_docker_migration_network.py -v`. Run it only in a disposable task environment with Docker API 1.52, iproute2, ping and util-linux. It creates private network, mount and PID namespaces, sockets and data roots. It checks packet reachability through a surviving custom bridge after fallback and resume. It never uses the host's Docker socket or networks. The normal unprivileged suite skips this test.
 
 A finding is fixed, or suppressed on its line with a comment that gives the reason. The `Remote programs` CI job installs shellcheck and ruff and runs the check. The [candidate gate](/reference/implementation-loop#the-candidate-gate) runs it when a candidate changes `apps/gateway/resources`, `apps/gateway/tests/Programs`, `apps/gateway/ruff.toml`, or the check itself. A missing tool fails the check.
 

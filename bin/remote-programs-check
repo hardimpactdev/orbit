@@ -30,6 +30,7 @@ RUFF_VERSION = '0.17.0'
 FRAGMENTS = {
     'machine-software/build-image.py': ['remote/lib/artifacts.py', 'machine-software/converge-node.py'],
     'machine-software/converge-node.py': ['remote/lib/artifacts.py'],
+    'machine-software/migrate-docker.py': ['remote/lib/artifacts.py', 'machine-software/converge-node.py'],
 }
 
 

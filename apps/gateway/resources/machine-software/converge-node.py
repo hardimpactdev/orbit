@@ -1001,6 +1001,8 @@ def main():
     try:
         platform_check(payload['architecture'])
         stage = 'inventory'
+        if 'docker-ce' in packages():
+            raise RecipeFailure('docker-provider:docker-ce')
         result = plan(payload) if mode == 'inspect' else apply(payload)
         print(json.dumps(result))
         return 0

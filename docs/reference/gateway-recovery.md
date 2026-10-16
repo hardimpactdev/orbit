@@ -985,4 +985,8 @@ An unreachable Node changed nothing, so it does not halt the fleet; the catch-up
 
 Release rollout updates Orbit itself, with a timer to catch up missed Nodes. [Nightly recipe maintenance](/reference/compute-drivers#nightly-recipe-maintenance) waits for every configured host to promote the deployed recipe, then calls Node recipe convergence in fleet order. That page owns the schedule, night window, alerts, and recovery policy.
 
+A Docker CE provider refuses recipe convergence with `docker-provider:docker-ce`. Release rollout and nightly maintenance do not migrate it. Schedule a window for the explicit [Docker provider migration](/reference/docker-provider-migration). It shares the role, apt and self-update locks but stops every container on that Node.
+
+If migration returns `node.docker_migration_failed`, preserve the root-only journal and original data directories. Resolve the named stage and resume the same command with the same recipe. Do not delete the journal to force a new inventory.
+
 Converging the Gateway Node also brings its PHP to the recipe's [PHP build](/reference/compute-drivers#php-build). When that changes a PHP package, [`php.install-build`](/reference/compute-drivers#install-the-php-build) validates PHP-FPM and restarts `php8.5-fpm`, which serves the API, then checks each pool socket, `orbit-gateway` included. A failed check reinstalls the previous PHP build and restarts the service again. Converge the Gateway last and while no long request runs.
