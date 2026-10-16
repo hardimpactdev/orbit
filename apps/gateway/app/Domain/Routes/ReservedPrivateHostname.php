@@ -8,15 +8,23 @@ use App\Domain\Analytics\AnalyticsHostname;
 use App\Domain\Extensions\Contributions;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WebSocket\WebSocketHostname;
+use App\Domain\WireGuard\VpnSettings;
 use LogicException;
 
 final class ReservedPrivateHostname
 {
-    /** @var list<string> */
-    public const array CoreNames = ['gateway.orbit', 'metrics.orbit', WebSocketHostname::Value, AnalyticsHostname::Value];
+    /** The private name space. Every reserved name lies under it, and no Cluster or Node TLD may cover it. */
+    public const string PrivateSpace = 'orbit';
 
-    /** A lowercase DNS name in the reserved private space: one or more labels, then `orbit`. */
-    private const string OrbitName = '/\A(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+orbit\z/';
+    public const string Gateway = 'gateway.'.self::PrivateSpace;
+
+    public const string Metrics = 'metrics.'.self::PrivateSpace;
+
+    /** @var list<string> */
+    public const array CoreNames = [self::Gateway, self::Metrics, WebSocketHostname::Value, AnalyticsHostname::Value];
+
+    /** A lowercase DNS name in the private space: one or more labels, then the private space. */
+    private const string OrbitName = '/\A(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+'.self::PrivateSpace.'\z/';
 
     /**
      * Core's names, then the names that extensions reserve.
@@ -74,7 +82,7 @@ final class ReservedPrivateHostname
         }
 
         if (strlen($hostname) > 253 || preg_match(self::OrbitName, $hostname) !== 1) {
-            return 'is not a DNS name under .orbit';
+            return 'is not a DNS name under .'.self::PrivateSpace;
         }
 
         if (in_array($hostname, self::CoreNames, true) || in_array($hostname, $contributed, true)) {
@@ -82,6 +90,16 @@ final class ReservedPrivateHostname
         }
 
         return null;
+    }
+
+    /**
+     * Whether a normalized Cluster or Node TLD covers private names. Private DNS answers every name under a TLD, so
+     * no TLD may be the private space, where the reserved names live, or the configured private VPN domain, where the
+     * Node names live.
+     */
+    public static function isPrivateTld(string $tld): bool
+    {
+        return $tld === self::PrivateSpace || $tld === strtolower(app(VpnSettings::class)->domain());
     }
 
     public static function assertAvailable(string $domain): void

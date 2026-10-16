@@ -248,35 +248,37 @@ describe('Cluster lifecycle', function (): void {
         expect($cluster->refresh()->state)->toBe(ClusterState::Active);
     });
 
-    it('refuses the private VPN domain as a Cluster TLD on create and update', function (string $tld): void {
+    it('refuses a Cluster TLD that covers private names on create and update', function (?string $vpnDomain, string $tld): void {
+        if ($vpnDomain !== null) {
+            app(VpnSettings::class)->configure(subnet: '10.44.0.0/24', domain: $vpnDomain);
+        }
         $cluster = Cluster::query()->create(['name' => 'lab', 'state' => ClusterState::Inactive]);
 
         $this
             ->postJson('/api/v1/clusters', ['name' => 'private', 'tld' => $tld])
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation.failed')
-            ->assertJsonPath('error.details.tld.0', 'The tld field must not be the private VPN domain.');
+            ->assertJsonPath('error.details.tld', ['The tld field must be one DNS label that covers no private names.']);
         $this
             ->patchJson("/api/v1/clusters/{$cluster->id}", ['tld' => $tld])
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation.failed')
-            ->assertJsonPath('error.details.tld.0', 'The tld field must not be the private VPN domain.');
+            ->assertJsonPath('error.details.tld', ['The tld field must be one DNS label that covers no private names.']);
 
         expect(Cluster::query()->count())->toBe(1)
             ->and($cluster->refresh()->tld)->toBeNull();
-    })->with(['orbit', ' ORBIT ']);
+    })->with([
+        'the private space' => [null, 'orbit'],
+        'the private space, padded and uppercase' => [null, ' ORBIT '],
+        'the private space under VPN domain corp' => ['corp', 'orbit'],
+        'VPN domain corp' => ['corp', 'corp'],
+    ]);
 
-    it('reads the private VPN domain from the VPN settings', function (): void {
-        app(VpnSettings::class)->configure(subnet: '10.44.0.0/24', domain: 'corp');
-
+    it('keeps one message for a malformed Cluster TLD', function (): void {
         $this
-            ->postJson('/api/v1/clusters', ['name' => 'corp', 'tld' => 'corp'])
+            ->postJson('/api/v1/clusters', ['name' => 'malformed', 'tld' => 'dev.lab'])
             ->assertUnprocessable()
-            ->assertJsonPath('error.details.tld.0', 'The tld field must not be the private VPN domain.');
-        $this
-            ->postJson('/api/v1/clusters', ['name' => 'orbit', 'tld' => 'orbit'])
-            ->assertCreated()
-            ->assertJsonPath('data.tld', 'orbit');
+            ->assertJsonPath('error.details.tld', ['The tld field format is invalid.']);
     });
 
     it('requires a Router only for a proposed active TLD-bearing Cluster', function (): void {

@@ -6,8 +6,7 @@ namespace App\Http\Requests\Clusters;
 
 use App\Data\Clusters\CreateClusterData;
 use App\Domain\Clusters\ClusterTld;
-use App\Domain\WireGuard\VpnSettings;
-use Closure;
+use App\Rules\ValidClusterTld;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -28,15 +27,12 @@ final class StoreClusterRequest extends FormRequest
         return [
             'name' => ['required', 'string', 'max:255', Rule::unique('clusters', 'name')],
             'tld' => [
+                'bail',
                 'nullable',
                 'string',
                 'max:63',
-                'regex:/\A[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\z/D',
-                static function (string $attribute, mixed $value, Closure $fail): void {
-                    if (is_string($value) && app(VpnSettings::class)->isDomain($value)) {
-                        $fail("The {$attribute} field must not be the private VPN domain.");
-                    }
-                },
+                'regex:'.ClusterTld::Pattern,
+                new ValidClusterTld,
                 Rule::unique('clusters', 'tld'),
             ],
         ];

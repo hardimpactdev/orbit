@@ -14,14 +14,15 @@ describe(NodeTld::class, function (): void {
         expect(NodeTld::isValid($tld))->toBeFalse();
     })->with(['', 'not valid', 'dev..orbit']);
 
-    it('refuses the private VPN domain', function (string $tld): void {
+    it('refuses the private space', function (string $tld): void {
         expect(NodeTld::isValid($tld))->toBeFalse();
     })->with(['orbit', '.ORBIT', ' orbit ']);
 
-    it('reads the private VPN domain from the VPN settings', function (): void {
+    it('refuses the configured private VPN domain and the private space under it', function (): void {
         app(VpnSettings::class)->configure(subnet: '10.44.0.0/24', domain: 'corp');
 
         expect(NodeTld::isValid('corp'))->toBeFalse()
-            ->and(NodeTld::isValid('orbit'))->toBeTrue();
+            ->and(NodeTld::isValid('orbit'))->toBeFalse()
+            ->and(NodeTld::isValid('test'))->toBeTrue();
     });
 });

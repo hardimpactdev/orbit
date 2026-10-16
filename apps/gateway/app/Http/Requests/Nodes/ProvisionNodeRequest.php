@@ -10,9 +10,9 @@ use App\Domain\Nodes\MachineArchitecture;
 use App\Domain\Nodes\NodeTld;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\NodeSettingsParser;
-use App\Domain\WireGuard\VpnSettings;
 use App\Domain\WireGuard\WireGuardEndpoint;
 use App\Models\Node;
+use App\Rules\ValidNodeTld;
 use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -79,15 +79,12 @@ final class ProvisionNodeRequest extends FormRequest
                 },
             ],
             'tld' => [
+                'bail',
                 'nullable',
                 'string',
                 'max:253',
-                'regex:/\A[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\z/D',
-                static function (string $attribute, mixed $value, Closure $fail): void {
-                    if (is_string($value) && app(VpnSettings::class)->isDomain($value)) {
-                        $fail("The {$attribute} field must not be the private VPN domain.");
-                    }
-                },
+                'regex:'.NodeTld::Pattern,
+                new ValidNodeTld,
             ],
             'public_ssh_port' => ['sometimes', 'integer', 'between:1,65535'],
             'user' => [

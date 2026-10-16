@@ -68,15 +68,6 @@ final readonly class VpnSettings
         return $this->settings->get($this->scope(), self::DOMAIN) ?? 'orbit';
     }
 
-    /**
-     * Whether a normalized TLD is the private VPN domain. Neither a Cluster nor a Node TLD may be: private DNS answers
-     * every name under a TLD, and the platform names, such as `gateway.orbit`, live under the private domain.
-     */
-    public function isDomain(string $tld): bool
-    {
-        return $tld === strtolower($this->domain());
-    }
-
     public function privateInterface(): ?string
     {
         return $this->settings->get($this->scope(), self::PRIVATE_INTERFACE);

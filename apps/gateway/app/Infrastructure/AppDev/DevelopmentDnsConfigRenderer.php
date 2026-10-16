@@ -13,6 +13,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\ClusterRouterTransition;
 use App\Domain\Routes\ReservedPrivateHostname;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\WebSocket\WebSocketHostname;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\WebSocket\WebSocketDnsTarget;
@@ -96,18 +97,18 @@ final readonly class DevelopmentDnsConfigRenderer
                 ->first();
         }
         if ($gateway instanceof Node) {
-            $records->push("host-record=gateway.orbit,{$gateway->wireguard_ip}");
+            $records->push('host-record='.ReservedPrivateHostname::Gateway.",{$gateway->wireguard_ip}");
 
             $metrics = $this->roleNode(RoleName::Metrics, $pendingNode);
             if ($metrics instanceof Node) {
-                $records->push("host-record=metrics.orbit,{$gateway->wireguard_ip}");
+                $records->push('host-record='.ReservedPrivateHostname::Metrics.",{$gateway->wireguard_ip}");
             }
         }
 
         $websocket = $this->websocket->node($this->roleNode(RoleName::WebSocket, $pendingNode));
 
         if ($websocket instanceof Node) {
-            $records->push("host-record=reverb.orbit,{$websocket->wireguard_ip}");
+            $records->push('host-record='.WebSocketHostname::Value.",{$websocket->wireguard_ip}");
         }
 
         $analytics = $this->roleNode(RoleName::Analytics, $pendingNode);

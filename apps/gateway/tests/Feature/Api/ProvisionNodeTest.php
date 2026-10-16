@@ -12,6 +12,7 @@ use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
+use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\SshHostKeyScanException;
 use App\Models\Activity;
@@ -401,7 +402,11 @@ describe('POST /api/v1/nodes', function (): void {
             ->assertJsonPath('error.code', 'node.tld_taken');
     });
 
-    it('refuses the private VPN domain as a Node TLD before anything changes', function (string $tld): void {
+    it('refuses a Node TLD that covers private names before anything changes', function (?string $vpnDomain, string $tld): void {
+        if ($vpnDomain !== null) {
+            app(VpnSettings::class)->configure(subnet: '10.44.0.0/24', domain: $vpnDomain);
+        }
+
         $this
             ->postJson('/api/v1/nodes', [
                 'name' => 'private-tld',
@@ -413,10 +418,15 @@ describe('POST /api/v1/nodes', function (): void {
             ])
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation.failed')
-            ->assertJsonPath('error.details.tld.0', 'The tld field must not be the private VPN domain.');
+            ->assertJsonPath('error.details.tld', ['The tld field must be DNS labels that cover no private names.']);
 
         expect(Node::query()->where('name', 'private-tld')->exists())->toBeFalse();
-    })->with(['orbit', '.ORBIT']);
+    })->with([
+        'the private space' => [null, 'orbit'],
+        'the private space with a leading dot' => [null, '.ORBIT'],
+        'the private space under VPN domain corp' => ['corp', 'orbit'],
+        'VPN domain corp' => ['corp', 'corp'],
+    ]);
 
     it('rejects a non-member Node TLD owned by an active Cluster before convergence', function (): void {
         $converger = new class implements NodeConverger
