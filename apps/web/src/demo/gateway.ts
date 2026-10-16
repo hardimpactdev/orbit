@@ -49,7 +49,10 @@ const recordedFixture = (name: string): Fixture => {
 
 const META = { request_id: "0198e15c-bf97-7c23-8f1f-61b8fe67a844" };
 
-const DEMO_STEPS = ["source_preparation", "environment_sync", "activation", "cleanup"];
+const DEMO_STEPS: Record<string, string[]> = {
+    "instance.deploy": ["source_preparation", "environment_sync", "activation", "cleanup"],
+    "instance.rollback": ["rollback", "activation", "process_restart"],
+};
 const ok = (data: unknown, status = 200): Answer => ({ status, payload: { data, meta: META } });
 const failure = (status: number, code: string, message: string): Answer => ({
     status,
@@ -783,7 +786,15 @@ export function createDemoGateway() {
             [
                 "POST",
                 /^\/api\/v1\/instances\/(\d+)\/deploy$/,
-                ([instance = ""]) => startDemoDeploy(Number(instance)),
+                ([instance = ""]) => startDemoOperation("instance.deploy", Number(instance), {}),
+            ],
+            [
+                "POST",
+                /^\/api\/v1\/instances\/(\d+)\/rollback$/,
+                ([instance = ""], body) =>
+                    startDemoOperation("instance.rollback", Number(instance), {
+                        release: body.release,
+                    }),
             ],
             [
                 "GET",
@@ -1106,8 +1117,12 @@ export function createDemoGateway() {
             ],
         ];
 
-    /** The demo deploy: each read moves it one step on, so the page shows a deploy run without a worker. */
-    function startDemoDeploy(instanceId: number): Answer {
+    /** A demo deploy or rollback: each read moves it one step on, so the page shows a run without a worker. */
+    function startDemoOperation(
+        kind: string,
+        instanceId: number,
+        input: Record<string, unknown>,
+    ): Answer {
         if (
             operations.some(
                 (operation) =>
@@ -1123,10 +1138,10 @@ export function createDemoGateway() {
 
         const operation: Operation = {
             id: operations.length + 1,
-            kind: "instance.deploy",
+            kind,
             target_type: "instance",
             target_id: instanceId,
-            input: {},
+            input,
             status: "queued",
             sequence: 1,
             current_step: null,
@@ -1176,7 +1191,7 @@ export function createDemoGateway() {
 
         if (operation.status === "queued") {
             Object.assign(operation, { status: "running", attempts: 1, started_at: now, sequence });
-            operation.steps = DEMO_STEPS.map((name, index) => ({
+            operation.steps = (DEMO_STEPS[operation.kind] ?? []).map((name, index) => ({
                 name,
                 position: index + 1,
                 status: "pending",

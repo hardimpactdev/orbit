@@ -1,6 +1,6 @@
 ---
 title: "Operations"
-description: "How the Gateway runs a long operation, such as an Instance deploy, as a queued record with named steps, how a client follows it, and how the Gateway recovers one that a lost worker interrupted."
+description: "How the Gateway runs a long operation as a queued record with named steps, how a client follows it, and how the Gateway recovers one that a lost worker interrupted."
 covers:
   - apps/gateway/app/{Domain/Operations/**,Actions/Operations/**,Data/Operations/**,Http/Requests/Operations/**}
   - apps/gateway/app/{Jobs/RunOperation.php,Console/Commands/SweepOperationsCommand.php,Http/Controllers/Api/OperationsController.php,Models/Operation*.php}
@@ -12,9 +12,9 @@ covers:
 
 # Operations
 
-A long operation, such as an [Instance deploy](/reference/deployments#deploy-through-the-api), runs as an operation: a record in the Gateway's database that a job on the [Gateway queue](/reference/gateway-queue) works through as named steps. The request that starts it answers `202 Accepted` with the record and returns at once. A client then follows the record until it ends. Nothing a client does, such as closing its connection, stops the operation. Only [cancel](#cancel-an-operation) does.
+A long operation, such as an [Instance deploy or rollback](/reference/deployments#deploy-through-the-api), runs as an operation: a record in the Gateway's database that a job on the [Gateway queue](/reference/gateway-queue) works through as named steps. The request that starts it answers `202 Accepted` with the record and returns at once. A client then follows the record until it ends. Nothing a client does, such as closing its connection, stops the operation. Only [cancel](#cancel-an-operation) does.
 
-Instance deploy is an operation. Rollback, Instance create and remove, and Route convergence still run inside their request ([ADR 0209](/decisions/0209-run-long-operations-as-durable-queued-operations)).
+Instance deploy and rollback are operations. Instance create and remove, and Route convergence still run inside their request ([ADR 0209](/decisions/0209-run-long-operations-as-durable-queued-operations)).
 
 Production deployments include a resumable `process_restart` step after PHP refresh. It restarts active Instance Processes before after-activation commands. A completed restart step is skipped on recovery. An interrupted restart step can restart a Process again. A stored deploy plan from before this step was introduced keeps its original steps after a Gateway upgrade. See [Deploy](/reference/deployments#deploy) for the opt-out and failure behavior.
 
@@ -27,7 +27,7 @@ Every operation has the same fields, whatever its kind.
 | `id` | The operation ID |
 | `kind` | What runs, `<family>.<verb>`, such as `instance.deploy` |
 | `target_type`, `target_id` | The record the operation changes, such as `instance` and `15` |
-| `input` | The validated request body. `instance.deploy` takes `{}` |
+| `input` | The validated request body. `instance.deploy` takes `{}`, and `instance.rollback` takes `{ release }` |
 | `status` | `queued`, `running`, `succeeded`, `failed`, or `cancelled`. The last three are terminal and never change again |
 | `sequence` | A number that grows with every change of the operation or one of its steps |
 | `current_step` | The name of the running step, or null |
@@ -38,6 +38,8 @@ Every operation has the same fields, whatever its kind.
 | `triggered_by` | The name of the Node that started it |
 | `created_at`, `started_at`, `finished_at` | ISO 8601 times. `started_at` is the first start |
 | `poll_after_seconds` | How long a polling client waits before its next read, or null once terminal. [Follow an operation by polling](#follow-an-operation-by-polling) gives the values |
+
+A cancelled operation has an `error_code` only when a rollback superseded it: `operation.superseded`.
 
 `operation:show` adds `steps`, in order:
 
@@ -57,7 +59,7 @@ The Gateway replaces each byte of output that is not valid UTF-8 with the charac
 
 The steps appear when a worker first starts the operation, all `pending`. A queued operation has none. A best-effort step that fails, such as a development deploy step with `required: false`, ends `failed`, and the operation continues. `failed_step` names only the step that ended the operation.
 
-`result` depends on the kind. For `instance.deploy` it is `{ deployment_id, release, selected_release, commit }`, where `deployment_id` is the [deployment history row](/reference/deployments#history) that holds the full log.
+`result` depends on the kind. For `instance.deploy` and `instance.rollback` it is `{ deployment_id, release, selected_release, commit }`, where `deployment_id` is the [deployment history row](/reference/deployments#history) that holds the full log.
 
 ## Start an operation
 
@@ -75,7 +77,7 @@ A start request validates the input and the caller's access, creates the record 
 | `operation.target_busy` | 409 | Another operation on the same target has not ended. `details.operation_id` names it |
 | `operation.queue_unavailable` | 503 | `ORBIT_GATEWAY_QUEUE_CONNECTION` is empty. The Gateway records nothing |
 
-When the Gateway cannot push the job, it ends the record as `failed` with `operation.dispatch_failed` and answers `503` with that code.
+When the Gateway cannot push the job, it ends the record as `failed` with `operation.dispatch_failed` and answers `503` with that code. A deploy that a rollback superseded stays cancelled.
 
 ## Read an operation
 
@@ -135,9 +137,9 @@ An event never carries output. Reverb can lose an event, for example while the s
 
 `operation:cancel` asks an operation to stop. A queued operation becomes `cancelled` at once. A running operation finishes its running step, starts no further step, and becomes `cancelled`. The steps it did not reach become `cancelled`. A cancel request for a terminal operation changes nothing and returns the record.
 
-A cancelled deploy records its deployment as `failed` with `deployment.cancelled`. Orbit never undoes the steps that ran.
+A cancelled deploy or rollback records its history row as `failed` with `deployment.cancelled`. Orbit never undoes the steps that ran.
 
-A deploy ignores a cancel request once its `activation` step succeeded: the new release is live, so it still refreshes PHP, runs the `after_activation` steps, and cleans up. It then ends `succeeded`, or `failed` when a later step fails, and `cancel_requested` stays true.
+A deploy or rollback ignores a cancel request once its `activation` step succeeded: the selected release is live, so a deploy still refreshes PHP, restarts Processes, runs the `after_activation` steps, and cleans up, and a rollback still refreshes PHP and restarts Processes. It then ends `succeeded`, or `failed` when a later step fails, and `cancel_requested` stays true.
 
 ## How an operation runs
 
@@ -147,11 +149,11 @@ An error that escapes the attempt fails the operation with `operation.failed`. W
 
 The operation's kind plans its steps, then runs them in order. The runner skips a step that already succeeded, so a resumed operation continues where it stopped. It checks for a cancel request before each step. While a step runs, the runner writes its output tail at most once a second. A step that throws ends `failed`, and the operation ends `failed` with the kind's error code.
 
-An operation runs at most 1,600 seconds, and its last 20 seconds are a cleanup reserve. A step that runs out of forward time stops there, and the recovery after it uses the reserve, such as reading which release an interrupted activation selected. Its job may run 1,700 seconds, under the queue's `retry_after` of 1,800, so Redis never gives a running job to a second worker. When the deadline stops a deploy, its error code is `deployment.deadline_exceeded`.
+An operation runs at most 1,600 seconds, and its last 20 seconds are a cleanup reserve. A step that runs out of forward time stops there, and the recovery after it uses the reserve, such as reading which release an interrupted activation selected. Its job may run 1,700 seconds, under the queue's `retry_after` of 1,800, so Redis never gives a running job to a second worker. When the deadline stops a deploy or rollback, its error code is `deployment.deadline_exceeded`.
 
 ### One operation per target
 
-An operation holds its target from the start request to its terminal status. A second start for that target answers `409` with `operation.target_busy`. The hold lasts across a lost worker and a resume. It does not cover work that is not an operation: while it runs, a deploy also takes the [Instance's operation lock](/reference/deployments#one-operation-at-a-time), as before.
+An operation holds its target from the start request to its terminal status. A second start for that target answers `409` with `operation.target_busy`. The hold lasts across a lost worker and a resume. A rollback is the one exception: it supersedes a deploy of the Instance that no worker has started, as [One operation at a time](/reference/deployments#one-operation-at-a-time) describes. The hold does not cover work that is not an operation: while it runs, a deploy or rollback also takes the [Instance's operation lock](/reference/deployments#one-operation-at-a-time), as before.
 
 ### Recover a lost worker
 
@@ -171,7 +173,7 @@ The next worker then looks at the step that was running:
 | Belongs to an operation that started 3 times already | The same as not resumable |
 | Already ended `failed` | It never runs again. The operation fails at that step with `operation.worker_lost` |
 
-The kind finishes its domain record in both failure cases. A lost deploy ends its deployment row as `failed` with the boundary of that step.
+The kind finishes its domain record in both failure cases. A lost deploy or rollback ends its history row as `failed` with the boundary of that step.
 
 A resumed operation plans its steps again. When the plan differs from the first attempt, for example because someone added a deploy step in between, it fails with `operation.plan_changed`.
 
@@ -189,9 +191,10 @@ These codes belong to every operation.
 | `operation.worker_lost` | A worker stopped during a step that cannot run again |
 | `operation.plan_changed` | A resumed operation planned other steps than its first attempt |
 | `operation.target_missing` | The target was removed before the operation started |
+| `operation.superseded` | A rollback of the Instance cancelled this deploy before a worker started it. The status is `cancelled` |
 | `operation.failed` | The kind ended without an error code of its own |
 
-A kind adds its own codes. `instance.deploy` uses the [deployment codes](/reference/deployments#failures), such as `deployment.step_failed`.
+A kind adds its own codes. `instance.deploy` and `instance.rollback` use the [deployment codes](/reference/deployments#failures), such as `deployment.step_failed`.
 
 ## Why it works this way
 
@@ -215,11 +218,11 @@ A step that waits on a silent remote command writes nothing for minutes. A heart
 
 ### A cancel after activation finishes the deploy
 
-Once `current` points at the new release, the release serves traffic. Stopping before the PHP refresh, the `after_activation` steps, and cleanup would leave a half-done deploy. So the cancel arrives too late, and the deploy finishes.
+Once `current` points at the new release, the release serves traffic. Stopping before the PHP refresh, the `after_activation` steps, and cleanup would leave a half-done deploy. So the cancel arrives too late, and the deploy finishes. A rollback follows the same rule after its `activation` step.
 
 ### One worker for every operation
 
-The lock per target already keeps two operations off one Instance, and a single operator rarely deploys two Instances at once. Each Horizon worker is a PHP process of about 40 to 50 MB, and the Gateway once ran out of memory with about 18 PHP CLI processes beside its PHP-FPM workers. So the queue has one worker, and a second deploy waits in the queue instead of costing memory while idle.
+The lock per target already keeps two operations off one Instance, and a single operator rarely deploys two Instances at once. Each Horizon worker is a PHP process of about 40 to 50 MB, and the Gateway once ran out of memory with about 18 PHP CLI processes beside its PHP-FPM workers. So the queue has one worker, and a second deploy or a rollback waits in the queue instead of costing memory while idle.
 
 ### Operations need the queue
 
@@ -231,4 +234,4 @@ The list request accepts any well-formed `kind` and `target_type`. A new kind th
 
 ### Names that map onto MCP Tasks
 
-MCP has an experimental Tasks primitive for long tool calls. An operation already has its parts: the ID, the status, the poll interval, and the get, list, and cancel requests. When `laravel/mcp` supports Tasks, `instance-deploy` can return a task without a new record.
+MCP has an experimental Tasks primitive for long tool calls. An operation already has its parts: the ID, the status, the poll interval, and the get, list, and cancel requests. When `laravel/mcp` supports Tasks, `instance-deploy` and `instance-rollback` can return a task without a new record.

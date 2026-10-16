@@ -193,6 +193,9 @@ final readonly class TaskSubtaskRunner
             return;
         }
 
+        if (app(TaskWorkspaceHead::class)->held($group)) {
+            return;
+        }
         try {
             $process = $this->checks->start($instance, $command, [], $this->handoffCheck($task));
         } catch (TaskCheckException $exception) {
@@ -317,9 +320,34 @@ final readonly class TaskSubtaskRunner
         return ['start' => $start !== '' ? $start : null, 'commands' => $commands];
     }
 
+    /** Poll detached owners before admitting a reviewer, including checks started by an older scheduler. */
+    public function workspaceChecksRunning(Task $group): bool
+    {
+        $instance = $group->taskable;
+        if ($instance instanceof Instance) {
+            $checks = TaskCheck::query()->whereHas('task', static fn ($query) => $query->where('parent_id', $group->id))
+                ->where('status', TaskCheckStatus::Running)->where('pid', '>', 0)->get();
+            foreach ($checks as $check) {
+                $reading = $this->checks->read($instance, $check->process());
+                if ($reading->state === 'running') {
+                    continue;
+                }
+                $this->recordReading($check, $reading);
+                if ($check->kind === TaskCheckKind::BaseMerge && $check->status === TaskCheckStatus::Failed) {
+                    $check->update(['failed_step' => $check->exit_code !== 127 && $reading->failedStep === 'gate' ? 'gate' : 'environment']);
+                }
+            }
+        }
+
+        return app(TaskWorkspaceHead::class)->checksRunning($group);
+    }
+
     /** @throws TaskTurnReceiptException */
     public function prepareTurn(TaskScheduler $scheduler, Task $group, Task $task, TaskThreadRole $role, ?int $threadId = null, bool $alreadyFetched = false): bool
     {
+        if ($role === TaskThreadRole::Reviewer && app(TaskWorkspaceHead::class)->checksRunning($group)) {
+            return false;
+        }
         $instance = $group->taskable;
         if (! $instance instanceof Instance) {
             throw new TaskTurnReceiptException('The task workspace is unavailable.');
@@ -641,6 +669,9 @@ final readonly class TaskSubtaskRunner
 
     private function startBaseline(TaskScheduler $scheduler, Task $group, Task $task): void
     {
+        if (app(TaskWorkspaceHead::class)->held($group)) {
+            return;
+        }
         $instance = $group->taskable;
         if (! $instance instanceof Instance) {
             $scheduler->recordCommunicationFailure($task, $group, 'The task workspace is unavailable.');
@@ -1035,7 +1066,7 @@ final readonly class TaskSubtaskRunner
                     $scheduler->retryCommittedApproval($group, $task);
                 }
                 $resolution = $task->status === TaskStatus::Running ? $scheduler->pendingRelayResolution($task) : null;
-                if ($resolution instanceof TaskComment && $this->spawner instanceof TaskAgentSpawner && $scheduler->subtaskReviewer($task) === null) {
+                if ($resolution instanceof TaskComment && $this->spawner instanceof TaskAgentSpawner) {
                     $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
                     $scheduler->beginDirectionRelay($group, $task, $resolution);
                 }

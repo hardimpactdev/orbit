@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Providers;
 
 use App\Actions\Fleet\ShowFleetRolloutAction;
+use App\Domain\Extensions\Contributions;
 use App\Domain\Fleet\CliReleaseCatalog;
 use App\Domain\Fleet\DesiredFleetState;
 use App\Domain\Fleet\FleetConvergeUnits;
@@ -19,6 +20,7 @@ use App\Domain\Fleet\FleetRolloutPlanner;
 use App\Domain\Fleet\FleetRolloutRunner;
 use App\Domain\Fleet\FleetServingRelease;
 use App\Domain\Fleet\NodeFootprint;
+use App\Domain\Fleet\NodeFootprintArtifact;
 use App\Domain\Fleet\ReleaseHistory;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\ManagedNodeEligibility;
@@ -31,7 +33,6 @@ use App\Infrastructure\Fleet\Footprint\AnnotatorFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\CaddyFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\CaddyPackageFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\PrivateDnsFootprintArtifact;
-use App\Infrastructure\Fleet\Footprint\ProxyCliFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\RouteResidueFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\TmpfilesFootprintArtifact;
 use App\Infrastructure\Fleet\NativeFleetConvergeUnits;
@@ -79,10 +80,10 @@ final class FleetServiceProvider extends ServiceProvider
                 $app->make(CaddyPackageFootprintArtifact::class),
                 $app->make(CaddyFootprintArtifact::class),
                 $app->make(PrivateDnsFootprintArtifact::class),
-                $app->make(ProxyCliFootprintArtifact::class),
                 $app->make(AnnotatorFootprintArtifact::class),
                 $app->make(RouteResidueFootprintArtifact::class),
                 $app->make(TmpfilesFootprintArtifact::class),
+                ...$app->make(Contributions::class)->of(NodeFootprintArtifact::class),
             ]),
         );
         $this->app->bind(

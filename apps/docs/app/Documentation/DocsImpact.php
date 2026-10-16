@@ -138,7 +138,7 @@ final readonly class DocsImpact
                 }
             }
             $unchangedSnapshot = $source !== null && $baseSource !== null && rtrim($source, "\r\n") === rtrim($baseSource, "\r\n");
-            $this->mergeChangedSourceSnapshots($path, $currentSurfaces, $baseSurfaces, $currentErrors, $baseErrors, $surfaces, $impacts, $errors, $unchangedSnapshot);
+            $this->mergeChangedSourceSnapshots($path, $currentSurfaces, $baseSurfaces, $currentErrors, $baseErrors, $surfaces, $impacts, $errors, $unchangedSnapshot, deleted: $source === null);
         }
 
         $handled = [];
@@ -338,7 +338,7 @@ final readonly class DocsImpact
      * @param  array<string, array{reasons: list<string>}>  $impacts
      * @param  list<string>  $errors
      */
-    private function mergeChangedSourceSnapshots(string $path, array $currentSurfaces, array $baseSurfaces, array $currentErrors, array $baseErrors, array &$surfaces, array &$impacts, array &$errors, bool $unchangedSnapshot = false): void
+    private function mergeChangedSourceSnapshots(string $path, array $currentSurfaces, array $baseSurfaces, array $currentErrors, array $baseErrors, array &$surfaces, array &$impacts, array &$errors, bool $unchangedSnapshot = false, bool $deleted = false): void
     {
         $currentByKey = [];
         foreach ($currentSurfaces as $surface) {
@@ -367,6 +367,12 @@ final readonly class DocsImpact
             }
         }
         foreach ($baseErrors as $error) {
+            // A deleted file outside the API needs no owner page, so its removed unowned identifiers are not a docs gap.
+            // The API generators decide for a deleted API source.
+            if ($deleted && ! $this->isApiPath($path) && str_starts_with($error, 'Unowned error identifier [')) {
+                continue;
+            }
+
             if (! isset($currentErrorKeys[$this->errorIdentity($error)])) {
                 $errors[] = 'Removed from current source: '.$error;
             }

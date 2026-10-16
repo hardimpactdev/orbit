@@ -6,7 +6,8 @@ namespace Orbit\Sdk\Requests\Deployments;
 
 use Saloon\Enums\Method;
 
-final class RollbackInstanceRequest extends DeploymentStreamRequest
+/** Starts an `instance.rollback` operation. The Gateway answers 202 with the queued operation at once. */
+final class RollbackInstanceRequest extends StartInstanceOperationRequest
 {
     #[\Override]
     protected Method $method = Method::POST;

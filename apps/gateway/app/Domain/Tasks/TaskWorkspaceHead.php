@@ -9,12 +9,12 @@ use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
 
-/** Admission policy for Orbit's mechanical workspace head changes, under the group execution lock. */
+/** Workspace ownership policy. Admission and process registration require the group execution lock. */
 final readonly class TaskWorkspaceHead
 {
     public function __construct(private AgentThreadObserver $threads) {}
 
-    public function held(Task $group, ?TaskComment $settledApproval = null): bool
+    public function held(Task $group, ?TaskComment $settledApproval = null, ?int $ownCheck = null): bool
     {
         // The approval caller has validated this receipt on the locked scheduler turn.
         // The subtask stays Reviewing until commit/publication finishes, but its review has settled.
@@ -25,10 +25,20 @@ final readonly class TaskWorkspaceHead
             ->when($settledTask !== null, static fn ($query) => $query->where('id', '!=', $settledTask))->exists()) {
             return true;
         }
-        if (TaskCheck::query()->whereHas('task', static fn ($query) => $query->where('parent_id', $group->id))
-            ->where('kind', TaskCheckKind::Handoff)->where('status', TaskCheckStatus::Running)->exists()) {
-            return true;
-        }
+
+        return $this->checksRunning($group, $ownCheck) || $this->reviewerWorking($group);
+    }
+
+    /** Detached processes retain workspace ownership until their result is recorded. */
+    public function checksRunning(Task $group, ?int $except = null): bool
+    {
+        return TaskCheck::query()->whereHas('task', static fn ($query) => $query->where('parent_id', $group->id))
+            ->where('status', TaskCheckStatus::Running)
+            ->when($except !== null, static fn ($query) => $query->whereKeyNot($except))->exists();
+    }
+
+    private function reviewerWorking(Task $group): bool
+    {
         $reviewers = AgentThread::query()->where('task_group_id', $group->id)
             ->where('role', TaskThreadRole::Reviewer->value)
             ->where('external_id', 'not like', TaskAgentSpawner::PendingPrefix.'%')->orderBy('id')->get();
@@ -46,7 +56,7 @@ final readonly class TaskWorkspaceHead
         }
         foreach ($reviewers as $thread) {
             $state = $this->threads->observe($thread)?->state;
-            if ($state === AgentThreadState::Working) {
+            if (in_array($state, [AgentThreadState::Working, AgentThreadState::AskingForInput], true)) {
                 return true;
             }
             if ($state === null && ($current[$thread->task_id ?? 0] ?? null) === $thread->id) {

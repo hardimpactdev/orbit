@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Shared\LifecycleStatus;
-use App\Http\Streaming\DeploymentStreamConnection;
-use App\Http\Streaming\NativeDeploymentStreamConnection;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Models\Activity;
 use App\Models\Node;
@@ -95,7 +93,8 @@ describe('POST /mcp', function (): void {
         expect($response->json('result.serverInfo.name'))->toBe('Orbit Gateway')
             ->and($response->json('result.capabilities.tools'))->not->toBeNull()
             ->and($response->json('result.instructions'))->toContain('WireGuard', 'operation-show', 'after_sequence')
-            ->and($response->json('result.instructions'))->not->toContain('`instance-deploy` and `instance-rollback` run to completion');
+            ->and($response->json('result.instructions'))->toContain('`instance-deploy` and `instance-rollback` start an operation')
+            ->and($response->json('result.instructions'))->not->toContain('`events`');
     });
 
     it('lists one tool for every manifest entry', function (): void {
@@ -191,29 +190,6 @@ describe('POST /mcp', function (): void {
             ->and($error['error']['code'])->toBeString();
     });
 
-    it('returns a streamed rollback as JSON-RPC instead of flushing it onto the MCP reply', function (): void {
-        $fixture = Orb220DeploymentApiFixture::create();
-        // The production connection echoes and flushes each event line, as it does for the CLI.
-        $this->app->instance(DeploymentStreamConnection::class, new NativeDeploymentStreamConnection);
-        $this->withServerVariables(['REMOTE_ADDR' => $fixture->caller->wireguard_ip]);
-
-        ob_start();
-
-        try {
-            $response = mcp_call($this, 'tools/call', ['name' => 'instance-rollback', 'arguments' => ['instance' => $fixture->instance->id, 'release' => 'initial']]);
-        } finally {
-            $leaked = (string) ob_get_clean();
-        }
-
-        $events = json_decode($response->json('result.content.0.text'), true)['events'] ?? [];
-
-        expect($leaked)->toBe('', 'Output sent before the MCP reply makes PHP send text/html headers.')
-            ->and($response->headers->get('Content-Type'))->toBe('application/json')
-            ->and($response->json('result.isError'))->toBeFalse()
-            ->and(array_column($events, 'type'))->toContain('phase')
-            ->and(end($events))->toMatchArray(['type' => 'result', 'status' => 'succeeded']);
-    });
-
     it('starts a deploy at once and lets the agent poll it with operation-show', function (string $endpoint): void {
         enable_operation_queue();
         $fixture = Orb220DeploymentApiFixture::create();
@@ -236,6 +212,29 @@ describe('POST /mcp', function (): void {
             ->and($shown['data']['result']['selected_release'])->toBe('fresh')
             ->and(array_column($shown['data']['steps'], 'name'))->toContain('source_preparation', 'cleanup')
             ->and(array_column($listed['data'], 'id'))->toBe([$started['operation']['id']]);
+    })->with(['/mcp', '/mcp/search']);
+
+    it('starts a rollback at once and lets the agent poll it with operation-show', function (string $endpoint): void {
+        enable_operation_queue();
+        $fixture = Orb220DeploymentApiFixture::create();
+        $fixture->deployment->current = 'fresh';
+        $this->withServerVariables(['REMOTE_ADDR' => $fixture->caller->wireguard_ip]);
+
+        $started = mcp_tool($this, $endpoint, 'instance-rollback', ['instance' => $fixture->instance->id, 'release' => 'initial']);
+
+        expect(array_keys($started))->toBe(['operation', 'poll', 'meta'])
+            ->and($started['operation']['status'])->toBe('queued')
+            ->and($started['operation']['kind'])->toBe('instance.rollback')
+            ->and($started['operation']['input'])->toBe(['release' => 'initial'])
+            ->and($started['poll'])->toBe(['tool' => 'operation-show', 'after_seconds' => 2])
+            ->and($fixture->deployment->invocations)->toBe(0);
+
+        run_operation_jobs();
+        $shown = mcp_tool($this, $endpoint, 'operation-show', ['operation' => $started['operation']['id']]);
+
+        expect($shown['data']['status'])->toBe('succeeded')
+            ->and($shown['data']['result']['selected_release'])->toBe('initial')
+            ->and(array_column($shown['data']['steps'], 'name'))->toBe(['rollback', 'activation', 'php_refresh', 'process_restart']);
     })->with(['/mcp', '/mcp/search']);
 
     it('refuses a caller that is not an active WireGuard peer', function (): void {
