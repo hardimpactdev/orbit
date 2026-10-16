@@ -1002,7 +1002,11 @@ Before a subtask that declares a topology runs its baseline check or its impleme
 | `images` | `bin/e2e-topology-images ensure --nodes=<union> --recipe-images=PATH` imports the claimed recipe's single base image by fingerprint and builds none. |
 | `acquire` | `bin/e2e-topology acquire TASK-<group> <checkout> --nodes=<union> --replace`, which first releases the topology the VM still holds from an earlier subtask. After a failure it runs once more; the log records the retry. |
 
-For medium and large VMs, the preparation job on `task-vms` transfers the single prebuilt base image before the VM becomes ready. This also supports subtasks added later within that VM's size. The manifest records the VM's recipe. The [harness import contract](/reference/incus-topologies#one-recipe-base-image) defines validation and archive cleanup.
+For medium and large VMs, the preparation job on `task-vms` transfers the single prebuilt base image before the VM becomes ready. This also supports subtasks added later within that VM's size. The transfer verifies the archive and manifest checksums in the guest before reporting completion; an empty successful SSH response is not proof of transfer. The manifest records the VM's recipe. The [harness import contract](/reference/incus-topologies#one-recipe-base-image) defines validation and archive cleanup.
+
+If a ready VM is missing its transferred archive or manifest, run `php artisan task-vms:retry-role-images GROUP VM` on the deployed Gateway, using numeric group and VM IDs. This synchronous recovery command takes the group's execution lock and refuses unless the group is active, waiting for assistance, its agents are observed stopped, and its ready Incus VM has no topology run. 
+
+It transfers only that VM's claimed immutable recipe from its promoted host-local build, even if the desired recipe has changed. It does not rebuild images, change VM lifecycle state, clear assistance, or acquire a topology. A failed transfer exits nonzero and leaves assistance in place. After success, resolve the group's assistance through the task workflow; Orbit retries normal topology preparation. Never reset the VM's database state to rerun provisioning.
 
 Every task VM's user `orbit` is in the `incus-admin` group from its first boot, so agents can run `bin/e2e-topology` once Incus is installed. The row stores the union in `topology`, its state in `topology_state` (`preparing` or `ready`), and the run in `topology_run`.
 

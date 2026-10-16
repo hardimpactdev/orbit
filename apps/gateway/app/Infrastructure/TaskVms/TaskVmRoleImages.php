@@ -31,7 +31,8 @@ final readonly class TaskVmRoleImages
         }
         $manifest = json_encode(['recipe_identity' => $vm->recipe_identity, 'images' => ['base' => $image]], JSON_THROW_ON_ERROR);
         $result = $this->incus->root($vm->incusHostNode(), ['bash', '-s', '--', $host->project, $vm->name, $manifest], TaskVmScripts::read('role-images-transfer.sh'), 1200);
-        if (! $result->succeeded() || $result->truncated) {
+        $receipt = 'orbit-role-images-ready:'.$image['fingerprint'].':'.hash('sha256', $manifest."\n");
+        if (! $result->succeeded() || $result->truncated || ! in_array($receipt, explode("\n", trim($result->stdout)), true)) {
             throw new TaskVmException('task_vm.recipe_images_transfer_failed', 'The host could not transfer the claimed recipe base image to the task VM.');
         }
     }
