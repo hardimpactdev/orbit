@@ -4,7 +4,7 @@
 # Timeout: 30
 # Input: {"host": recorded hostname, "boot": original boot UUID, "pid": exact process ID, "started": start ticks}
 # Result: inspected: {"host": observed hostname, "dead": bool}.
-# Proves death only on the recorded original host boot; ambiguity retains ownership.
+# A changed boot on the pinned matching host proves death; the original boot requires exact process identity.
 import os
 import socket
 
@@ -15,8 +15,11 @@ def main(payload):
     if socket.gethostname() == host:
         with open('/proc/sys/kernel/random/boot_id') as source:
             current_boot = source.read().strip()
-        # An equal boot binds this proof to the original host, even with duplicate hostnames.
-        if current_boot == boot:
+        if not current_boot:
+            return 'inspected', {'host': socket.gethostname(), 'dead': False}
+        if current_boot != boot:
+            dead = True
+        else:
             try:
                 with open('/proc/' + str(pid) + '/stat') as source:
                     stat = source.read()

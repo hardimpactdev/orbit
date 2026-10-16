@@ -38,7 +38,23 @@ beforeEach(function (): void {
     // Exact systemctl property names/states match the native supervision protocol.
     file_put_contents($this->receiptHome.'/bin/systemctl', <<<'SH'
 #!/bin/sh
-if test "$1" = list-units; then
+if test -f "$HOME/units.json"; then
+    exec /usr/bin/python3 -c '
+import json, os, sys
+units = json.load(open(os.path.join(os.environ["HOME"], "units.json")))
+if sys.argv[1] == "list-units":
+    print(json.dumps([{"unit": unit["unit"]} for unit in units]))
+elif sys.argv[1] == "show":
+    unit = next(item for item in units if item["unit"] == sys.argv[2])
+    if unit.get("unreadable"):
+        sys.exit(1)
+    for key, value in unit.items():
+        if key != "unit":
+            print(key + "=" + value)
+else:
+    sys.exit(99)
+' "$@"
+elif test "$1" = list-units; then
     if test -f "$HOME/active"; then
         printf '[{"unit":"orbit-workspace-operation-active.service"}]\n'
     elif test -f "$HOME/unreadable"; then
@@ -132,6 +148,66 @@ it('keeps active or unreadable managed supervision sealed and held until positiv
     $this->artisan('tasks:lease:release', ['lease-id' => (string) $lease->id, '--reason' => 'Supervision now proven stopped'])->assertSuccessful();
     expect($lease->fresh()->status)->toBe('released');
 })->with(['active', 'unreadable']);
+
+it('scopes operator quiescence to its lease and fails closed on ambiguous managed unit identity', function (string $condition, bool $released): void {
+    [$lease, $operation] = operator_recovery_holder();
+    $runId = bin2hex(random_bytes(16));
+    $lease->update(['check_run_id' => $runId]);
+    $identity = bin2hex(random_bytes(16));
+    $unit = ['unit' => 'orbit-workspace-operation-'.$identity.'.service',
+        'LoadState' => 'loaded', 'ActiveState' => 'active', 'SubState' => 'running',
+        'ControlGroup' => '', 'Description' => 'Orbit workspace operation '.bin2hex(random_bytes(32))];
+    if ($condition === 'same binding') {
+        $unit['Description'] = 'Orbit workspace operation '.$operation->binding;
+    } elseif ($condition === 'known operation different binding') {
+        $unit['unit'] = 'orbit-workspace-operation-'.$operation->operation.'.service';
+    } elseif ($condition === 'other check' || $condition === 'same check' || $condition === 'check identity mismatch') {
+        $identity = $condition === 'other check' ? $identity : $runId;
+        $unit['unit'] = 'orbit-task-check-'.$identity.'.service';
+        $unit['Description'] = 'Orbit task check '.($condition === 'check identity mismatch' ? bin2hex(random_bytes(16)) : $identity);
+    } elseif ($condition === 'missing description') {
+        unset($unit['Description']);
+    } elseif ($condition === 'unreadable unit') {
+        $unit['unreadable'] = true;
+    }
+    file_put_contents($this->receiptHome.'/units.json', json_encode([$unit], JSON_THROW_ON_ERROR));
+    $parameters = ['lease-id' => (string) $lease->id, '--reason' => 'Shared node scoped proof'];
+
+    if ($released) {
+        $this->artisan('tasks:lease:release', $parameters)->assertSuccessful();
+    } else {
+        $this->artisan('tasks:lease:release', $parameters)->assertFailed();
+    }
+
+    expect($lease->fresh()->status)->toBe($released ? 'released' : 'held')
+        ->and($lease->fresh()->getAttribute('recovery_sealed'))->toBeTrue()
+        ->and($operation->fresh()->status)->toBe($released ? 'finished' : 'pending');
+    expect(json_decode(file_get_contents($this->receiptHome.'/units.json'), true, flags: JSON_THROW_ON_ERROR))->toBe([$unit]);
+})->with([
+    'other operation' => ['other operation', true],
+    'other check' => ['other check', true],
+    'same binding including unlisted operation' => ['same binding', false],
+    'known operation with another binding' => ['known operation different binding', false],
+    'same check run' => ['same check', false],
+    'check identity mismatch' => ['check identity mismatch', false],
+    'missing description' => ['missing description', false],
+    'unreadable unit' => ['unreadable unit', false],
+]);
+
+it('refuses inconsistent persisted lease identities before sealing any endpoint', function (string $condition): void {
+    [$lease, $operation] = operator_recovery_holder();
+    if ($condition === 'operation binding') {
+        $operation->update(['binding' => bin2hex(random_bytes(32))]);
+    } else {
+        $lease->update(['check_run_id' => 'unverifiable-check']);
+    }
+
+    $this->artisan('tasks:lease:release', ['lease-id' => (string) $lease->id, '--reason' => 'Inconsistent journal identity'])->assertFailed();
+
+    expect($lease->fresh()->status)->toBe('held')
+        ->and($operation->fresh()->status)->toBe('pending');
+    expect(glob($this->receiptHome.'/.local/state/orbit/task-workspace-operations/binding-*.sealed'))->toBe([]);
+})->with(['operation binding', 'check run']);
 
 it('refuses live foreign and legacy owners or detached checks without terminal evidence', function (string $condition): void {
     [$lease] = operator_recovery_holder();
@@ -332,11 +408,11 @@ it('does not let a stale historical check completion release a successor with re
         ->and($lease->fresh()->getAttribute('causality_uncertain'))->toBeFalse();
 });
 
-it('requires the original boot and exact dead process when a pinned Node proves foreign Gateway ownership', function (string $identity, bool $released): void {
+it('uses boot changes and exact process death consistently on a pinned foreign Gateway', function (string $identity, bool $released): void {
     [$lease] = operator_recovery_holder();
     $host = 'recorded-foreign-gateway';
     $boot = trim(file_get_contents('/proc/sys/kernel/random/boot_id'));
-    $lease->update(['gateway_host' => $host, 'gateway_boot' => $identity === 'rebooted' ? 'previous-boot' : $boot,
+    $lease->update(['gateway_host' => $identity === 'wrong host' ? 'other-host' : $host, 'gateway_boot' => in_array($identity, ['rebooted', 'wrong host'], true) ? 'previous-boot' : $boot,
         'gateway_pid' => $identity === 'live' ? getmypid() : 2147483647, 'gateway_started' => 'unmatched']);
     if ($identity === 'live') {
         $stat = file_get_contents('/proc/'.getmypid().'/stat');
@@ -373,4 +449,38 @@ it('requires the original boot and exact dead process when a pinned Node proves 
         $this->artisan('tasks:lease:release', $parameters)->assertFailed();
     }
     expect($lease->fresh()->status)->toBe($released ? 'released' : 'held');
-})->with(['dead exact host' => ['dead', true], 'live exact process' => ['live', false], 'duplicate hostname on different boot' => ['rebooted', false]]);
+})->with(['dead exact host' => ['dead', true], 'live exact process' => ['live', false], 'rebooted pinned host' => ['rebooted', true], 'mismatched hostname after reboot' => ['wrong host', false]]);
+
+it('proves native quiescence for only the target binding and check run without stopping another workspace', function (string $kind, bool $relevant): void {
+    $operation = bin2hex(random_bytes(16));
+    $binding = bin2hex(random_bytes(32));
+    $runId = bin2hex(random_bytes(16));
+    $unit = $kind === 'operation' ? 'orbit-workspace-operation-'.$operation.'.service' : 'orbit-task-check-'.$runId.'.service';
+    $description = $kind === 'operation' ? 'Orbit workspace operation '.$binding : 'Orbit task check '.$runId;
+    $fifo = $this->receiptHome.'/native-finish';
+    posix_mkfifo($fifo, 0o600);
+    $process = new Process(['sudo', '-n', 'systemd-run', '--quiet', '--pipe', '--unit='.$unit,
+        '--uid='.(string) posix_geteuid(), '--gid='.(string) posix_getegid(),
+        '--property=Type=exec', '--property=ExitType=cgroup',
+        '--description='.$description, '--', 'bash', '-c',
+        'printf "ready\n"; read -r value < "$1"; printf completed', '--', $fifo]);
+    $process->start();
+    try {
+        expect($process->waitUntil(fn (string $type, string $output): bool => str_contains($output, 'ready')))->toBeTrue();
+        $targetBinding = $relevant ? $binding : bin2hex(random_bytes(32));
+        $checkRuns = $kind === 'check' && $relevant ? [$runId] : [];
+        $probe = new Process(['python3', '-c', file_get_contents(resource_path('tasks/workspace-operation.py')),
+            'seal', str_repeat('0', 32), $targetBinding, '0', '[]', json_encode($checkRuns, JSON_THROW_ON_ERROR)],
+            env: ['HOME' => $this->receiptHome]);
+        $data = json_decode($probe->mustRun()->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+        expect($data['state'])->toBe($relevant ? 'running' : 'sealed')
+            ->and($process->isRunning())->toBeTrue();
+
+        file_put_contents($fifo, "finish\n");
+        $process->wait();
+        expect($process->getExitCode())->toBe(0)->and($process->getOutput())->toContain('completed');
+    } finally {
+        $process->stop(0);
+        (new Process(['sudo', '-n', 'systemctl', 'stop', $unit]))->run();
+    }
+})->with(['operation' => ['operation'], 'check' => ['check']])->with([false, true])->group('privileged');

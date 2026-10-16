@@ -109,41 +109,49 @@ final class RemoteWorkspaceOperationJournal implements TaskWorkspaceOperationRec
     }
 
     /** Seal every known endpoint before proving that managed descendants have stopped.
-     * @return array{binding: string, endpoints: int}
+     * @return array{binding: string, endpoints: int, check_runs: int}
      */
     public function seal(TaskWorkspaceLeaseRecord $lease, ?Instance $instance): array
     {
         $binding = hash('sha256', $lease->id.':'.$lease->instance_id.':'.$lease->acquisition_sequence);
         $operations = TaskWorkspaceOperation::query()->where('lease_id', $lease->id)->get();
+        $runId = $lease->getAttribute('check_run_id');
+        if ($runId !== null && (! is_string($runId) || preg_match('/\A[a-f0-9]{32}\z/D', $runId) !== 1)) {
+            throw new TaskWorkspaceWaiting('The recorded check run identity is unverifiable.');
+        }
+        $checkRuns = $runId === null ? [] : [$runId];
         $endpoints = [];
         foreach ($operations as $operation) {
+            if ($operation->binding !== $binding) {
+                throw new TaskWorkspaceWaiting('The recorded operation binding differs from this lease.');
+            }
             $key = hash('sha256', json_encode($operation->connection, JSON_THROW_ON_ERROR));
             $endpoints[$key]['connection'] = $operation->connection;
             $endpoints[$key]['operations'][] = $operation->operation;
         }
-        $verify = function (CommandResult $result, int $count) use ($binding): void {
+        $verify = function (CommandResult $result, int $count) use ($binding, $checkRuns): void {
             $data = $result->succeeded() ? json_decode($result->stdout, true, 8, JSON_THROW_ON_ERROR) : null;
             if (! is_array($data) || ($data['binding'] ?? null) !== $binding || ($data['state'] ?? null) !== 'sealed'
-                || ($data['operations'] ?? null) !== $count) {
+                || ($data['operations'] ?? null) !== $count || ($data['check_runs'] ?? null) !== count($checkRuns)) {
                 throw new TaskWorkspaceWaiting('Remote quiescence is not proven; the workspace remains sealed and held.');
             }
         };
         foreach ($endpoints as $endpoint) {
             $identities = $endpoint['operations'];
-            $command = new RemoteCommand(['python3', '-c', $this->program(), 'seal', str_repeat('0', 32), $binding, '0', json_encode($identities, JSON_THROW_ON_ERROR)], timeout: 30.0);
+            $command = new RemoteCommand(['python3', '-c', $this->program(), 'seal', str_repeat('0', 32), $binding, '0', json_encode($identities, JSON_THROW_ON_ERROR), json_encode($checkRuns, JSON_THROW_ON_ERROR)], timeout: 30.0);
             $verify(app(SshExecutor::class)->execute(self::connection($endpoint['connection']), $command), count($identities));
         }
         // An unstarted lease has no saved connection, but its current workspace is still a required endpoint.
         if ($instance instanceof Instance) {
             TaskVmWorkspaceGuard::assertOwnedWorkspace($instance);
-            $command = new RemoteCommand(['python3', '-c', $this->program(), 'seal', str_repeat('0', 32), $binding, '0', '[]'], timeout: 30.0);
+            $command = new RemoteCommand(['python3', '-c', $this->program(), 'seal', str_repeat('0', 32), $binding, '0', '[]', json_encode($checkRuns, JSON_THROW_ON_ERROR)], timeout: 30.0);
             $verify(app(DevelopmentSshExecutor::class)->execute($instance->node, $command,
                 'task-workspace-recovery', 'tasks.workspace_recovery_unverifiable', failureLabel: 'Task workspace recovery'), 0);
         } elseif ($endpoints === []) {
             throw new TaskWorkspaceWaiting('No recorded remote endpoint can prove this missing workspace stopped.');
         }
 
-        return ['binding' => $binding, 'endpoints' => count($endpoints) + ($instance instanceof Instance ? 1 : 0)];
+        return ['binding' => $binding, 'endpoints' => count($endpoints) + ($instance instanceof Instance ? 1 : 0), 'check_runs' => count($checkRuns)];
     }
 
     private function program(): string

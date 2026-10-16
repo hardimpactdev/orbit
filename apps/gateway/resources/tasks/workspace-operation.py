@@ -48,13 +48,19 @@ def write(state, exit_code=None, outcome_unknown=False):
     return atomic_write(path, data)
 
 
-def empty_terminal(unit_name, expected_description=None):
+def unit_state(unit_name):
     properties = ['LoadState', 'ActiveState', 'SubState', 'ControlGroup', 'Description', 'ExecMainCode', 'ExecMainStatus']
     result = subprocess.run(['systemctl', 'show', unit_name, '--no-pager',
                              '--property=' + ','.join(properties)], capture_output=True, text=True)
     if result.returncode != 0:
         return None
-    state = dict(line.split('=', 1) for line in result.stdout.splitlines() if '=' in line)
+    return dict(line.split('=', 1) for line in result.stdout.splitlines() if '=' in line)
+
+
+def empty_terminal(unit_name, expected_description=None, state=None):
+    state = unit_state(unit_name) if state is None else state
+    if state is None:
+        return None
     if state.get('LoadState') != 'loaded' or (expected_description is not None and state.get('Description') != expected_description):
         return None
     if not ((state.get('ActiveState') == 'active' and state.get('SubState') == 'exited')
@@ -76,15 +82,43 @@ def empty_terminal(unit_name, expected_description=None):
     return state
 
 
-def all_managed_units_terminal():
+def all_managed_units_terminal(operations, check_runs):
     result = subprocess.run(['systemctl', 'list-units', '--all', '--no-pager', '--output=json',
                              'orbit-workspace-operation-*', 'orbit-task-check-*'], capture_output=True, text=True)
     if result.returncode != 0:
         return False
     try:
         units = json.loads(result.stdout)
-        return isinstance(units, list) and all(isinstance(item, dict) and isinstance(item.get('unit'), str)
-                                               and empty_terminal(item['unit']) is not None for item in units)
+        if not isinstance(units, list):
+            return False
+        for item in units:
+            if not isinstance(item, dict) or not isinstance(item.get('unit'), str):
+                return False
+            name = item['unit']
+            state = unit_state(name)
+            if state is None or state.get('LoadState') != 'loaded':
+                return False
+            operation_match = re.fullmatch(r'orbit-workspace-operation-([a-f0-9]{32})\.service', name)
+            check_match = re.fullmatch(r'orbit-task-check-([a-f0-9]{32})\.service', name)
+            if operation_match:
+                identity = operation_match[1]
+                unit_description = state.get('Description', '')
+                match = re.fullmatch(r'Orbit workspace operation ([a-f0-9]{64})', unit_description)
+                if match is None or (identity in operations and unit_description != description):
+                    return False
+                relevant = match[1] == binding
+                expected_description = description
+            elif check_match:
+                identity = check_match[1]
+                expected_description = 'Orbit task check ' + identity
+                if state.get('Description') != expected_description:
+                    return False
+                relevant = identity in check_runs
+            else:
+                return False
+            if relevant and empty_terminal(name, expected_description, state) is None:
+                return False
+        return True
     except (ValueError, OSError):
         return False
 
@@ -100,8 +134,10 @@ if mode == 'payload':
 
 if mode == 'seal':
     operations = json.loads(sys.argv[5])
-    if not isinstance(operations, list) or not all(isinstance(item, str) and re.fullmatch(r'[a-f0-9]{32}', item) for item in operations):
-        raise ValueError('Invalid recovery operation identities')
+    check_runs = json.loads(sys.argv[6]) if len(sys.argv) > 6 else []
+    for identities in (operations, check_runs):
+        if not isinstance(identities, list) or not all(isinstance(item, str) and re.fullmatch(r'[a-f0-9]{32}', item) for item in identities):
+            raise ValueError('Invalid recovery operation or check identities')
     with os.fdopen(gate) as admission:
         fcntl.flock(admission, fcntl.LOCK_EX)
         atomic_write(sealed, {'binding': binding, 'boot': boot})
@@ -115,7 +151,7 @@ if mode == 'seal':
                 except BlockingIOError:
                     print(json.dumps({'binding': binding, 'state': 'running'}))
                     sys.exit(0)
-            if not all_managed_units_terminal():
+            if not all_managed_units_terminal(operations, check_runs):
                 print(json.dumps({'binding': binding, 'state': 'running'}))
                 sys.exit(0)
             for identity in operations:
@@ -130,7 +166,7 @@ if mode == 'seal':
                 if receipt is None or receipt.get('state') not in ('finished', 'not_started'):
                     atomic_write(destination, {'operation': identity, 'binding': binding, 'state': 'finished',
                                                'boot': boot, 'exit_code': None, 'outcome_unknown': True})
-            print(json.dumps({'binding': binding, 'state': 'sealed', 'boot': boot, 'operations': len(operations)}))
+            print(json.dumps({'binding': binding, 'state': 'sealed', 'boot': boot, 'operations': len(operations), 'check_runs': len(check_runs)}))
         finally:
             for handle in locks:
                 os.close(handle)
