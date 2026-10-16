@@ -13,6 +13,14 @@ import sys
 import termios
 import time
 
+def reader_has_children(pid):
+    if sys.platform == 'linux':
+        with open(f'/proc/{pid}/task/{pid}/children') as children:
+            return bool(children.read().strip())
+    parents = subprocess.check_output(['ps', '-A', '-o', 'ppid='], text=True)
+    return str(pid) in parents.split()
+
+
 configuration = json.loads(open(sys.argv[3]).read())
 master, slave = pty.openpty()
 fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 50, configuration.get('columns', 200), 0, 0))
@@ -54,6 +62,10 @@ while process.poll() is None:
         try:
             # A completed prompt can restore canonical mode before the next
             # prompt configures raw input. Do not type into that transition.
+            # stty runs in a child process. A stopped reader with no children
+            # cannot change terminal mode between this check and the write.
+            if reader_has_children(process.pid):
+                continue
             if termios.tcgetattr(slave)[3] & (termios.ICANON | termios.ISIG | termios.ECHO):
                 continue
             key = keys.pop(0)

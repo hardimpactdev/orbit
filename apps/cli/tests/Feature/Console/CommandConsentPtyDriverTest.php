@@ -8,7 +8,7 @@ use Symfony\Component\Process\Process;
 
 pest()->group('subprocess');
 
-it('waits for real input consumption through stale output and an empty input queue', function (bool $canonicalWindow): void {
+it('waits for real input consumption through stale output and an empty input queue', function (string $transition): void {
     $directory = sys_get_temp_dir().'/orbit-pty-driver-'.Str::uuid();
     new Filesystem()->ensureDirectoryExists($directory);
     $keys = ['a', "\x7f", "\x7f", 'd', "\r"];
@@ -42,7 +42,9 @@ it('waits for real input consumption through stale output and an empty input que
         PYTHON);
 
     file_put_contents($directory.'/delayed-delivery.py', <<<'PYTHON'
+        import builtins
         import fcntl
+        import io
         import os
         import pty
         import runpy
@@ -59,10 +61,12 @@ it('waits for real input consumption through stale output and an empty input que
         real_openpty, real_write = pty.openpty, os.write
         real_select, real_ioctl = select.select, fcntl.ioctl
         real_popen = subprocess.Popen
+        real_check_output = subprocess.check_output
         real_waitpid, real_kill = os.waitpid, os.kill
         real_tcgetattr = termios.tcgetattr
-        canonical_window = sys.argv.pop(1) == 'canonical'
-        unsafe_mode = False
+        transition = sys.argv.pop(1)
+        unsafe_mode, mode_child = False, False
+        real_open = builtins.open
         terminal = None
         held_key = None
         phase = 0
@@ -74,11 +78,23 @@ it('waits for real input consumption through stale output and an empty input que
             return terminal
 
         def waitpid(pid, options):
-            global unsafe_mode, canonical_window
+            global unsafe_mode, mode_child, transition
             result = real_waitpid(pid, options)
-            if canonical_window and options == os.WUNTRACED and os.WIFSTOPPED(result[1]):
-                unsafe_mode, canonical_window = True, False
+            if transition != 'raw' and options == os.WUNTRACED and os.WIFSTOPPED(result[1]):
+                unsafe_mode = transition == 'canonical'
+                mode_child = transition == 'child'
+                transition = 'raw'
             return result
+
+        def check_output(args, **kwargs):
+            if mode_child and args == ['ps', '-A', '-o', 'ppid=']:
+                return str(children[-1].pid) + '\n'
+            return real_check_output(args, **kwargs)
+
+        def open_file(path, *args, **kwargs):
+            if mode_child and str(path).endswith('/children'):
+                return io.StringIO('12345')
+            return real_open(path, *args, **kwargs)
 
         def tcgetattr(fd):
             attributes = real_tcgetattr(fd)
@@ -87,9 +103,9 @@ it('waits for real input consumption through stale output and an empty input que
             return attributes
 
         def kill(pid, sig):
-            global unsafe_mode
+            global unsafe_mode, mode_child
             if sig == signal.SIGCONT:
-                unsafe_mode = False
+                unsafe_mode, mode_child = False, False
             return real_kill(pid, sig)
 
         def write(fd, data):
@@ -97,6 +113,8 @@ it('waits for real input consumption through stale output and an empty input que
             if terminal is not None and fd == terminal[0]:
                 if unsafe_mode:
                     raise RuntimeError('Key sent during canonical mode transition')
+                if mode_child:
+                    raise RuntimeError('Key sent while a terminal-mode child is running')
                 if held_key is not None:
                     raise RuntimeError('Next key sent before prior key consumption')
                 held_key, phase = data, 0
@@ -126,11 +144,13 @@ it('waits for real input consumption through stale output and an empty input que
             children.append(process)
             return process
 
+        builtins.open = open_file
         os.waitpid, os.kill = waitpid, kill
         termios.tcgetattr = tcgetattr
         pty.openpty, os.write = openpty, write
         select.select, fcntl.ioctl = wait, ioctl
         subprocess.Popen = popen
+        subprocess.check_output = check_output
         sys.argv = sys.argv[1:]
         try:
             runpy.run_path(sys.argv[0], run_name='__main__')
@@ -143,7 +163,7 @@ it('waits for real input consumption through stale output and an empty input que
 
     try {
         $process = new Process([
-            'python3', $directory.'/delayed-delivery.py', $canonicalWindow ? 'canonical' : 'raw', dirname(__DIR__, 2).'/Fixtures/Console/command-consent-pty.py',
+            'python3', $directory.'/delayed-delivery.py', $transition, dirname(__DIR__, 2).'/Fixtures/Console/command-consent-pty.py',
             'python3', $directory.'/reader.py', $directory.'/case.json',
         ], timeout: 15);
         $process->mustRun();
@@ -156,4 +176,4 @@ it('waits for real input consumption through stale output and an empty input que
     } finally {
         new Filesystem()->deleteDirectory($directory);
     }
-})->with(['raw input' => false, 'between prompts' => true]);
+})->with(['raw input' => 'raw', 'between prompts' => 'canonical', 'mode-changing child' => 'child']);
