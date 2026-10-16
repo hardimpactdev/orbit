@@ -555,7 +555,7 @@ final class ApplicationServiceProvider extends ServiceProvider
 
     public function register(): void
     {
-        $this->app->tag([AnalyticsProcessOwnership::class, DatabaseServerProcessOwnership::class], ProcessRemovalGuard::class);
+        $this->app->tag([AnalyticsProcessOwnership::class], ProcessRemovalGuard::class);
 
         $this->app->bind(
             SweepIdleAppDevRuntimesAction::class,
@@ -944,6 +944,9 @@ final class ApplicationServiceProvider extends ServiceProvider
 
     public function boot(ActivityPropertiesObserver $activityPropertiesObserver): void
     {
+        // Register after extension guards to preserve Analytics, ProxyCli, Database refusal order.
+        $this->app->tag([DatabaseServerProcessOwnership::class], ProcessRemovalGuard::class);
+
         $cache = config('cache');
         if (! is_array($cache)) {
             throw new \UnexpectedValueException('The Gateway cache configuration is invalid.');

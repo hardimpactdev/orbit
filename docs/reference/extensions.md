@@ -81,9 +81,7 @@ Core resolves every tagged implementation and calls each one. When a tagged clas
 | `App\Domain\Processes\ProcessRemovalGuard` | [`process:destroy`](/cli/process#orbit-processdestroy) | `assertRemovable()` |
 | `App\Domain\Gateway\ExactRequestBody` | The request body size check | `matches()` |
 
-`ProcessRemovalGuard::assertRemovable()` runs under the Process runtime lease before removal changes the record or the runtime. A guard may refuse with a `ResourceOperationException`. Core tags the Analytics and Database server guards; ProxyCli tags its collector guard from its provider. The action reads all guards through strict `Contributions::of()`, then calls them in registration order. The owning feature can still remove its own Process through the existing internal removal path. Guards return no configuration, names, or database values.
-
-The Process source record belongs to ProxyCli in `ai_router_process_sources`; the core Process model has no source fields or extension relation. See [collector activation](/reference/proxycli).
+`ProcessRemovalGuard::assertRemovable()` runs under the Process runtime lease before removal changes the record or the runtime. A guard may refuse with a `ResourceOperationException`. Core tags the Analytics and Database server guards; ProxyCli tags its collector guard from its provider. The action reads all guards through strict `Contributions::of()`, then calls them in registration order: Analytics, ProxyCli, then Database servers. Core registers the Database server guard during boot, after extension providers register their guards, to preserve the existing refusal order. The owning feature can still remove its own Process through the existing internal removal path.
 
 `ProjectRemovalHook::lock()` runs first in the removal transaction, before the guards, so the extension's writers wait for the removal. `remove()` runs after every guard passed and before the Project row is deleted. It may refuse with a `ResourceOperationException`, which rolls back the whole removal.
 

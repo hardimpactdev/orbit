@@ -21,7 +21,7 @@ return new class extends Migration
             DB::table('ai_router_process_sources')->insertUsing(
                 ['process_id', 'source_revision', 'activation_pending'],
                 DB::table('processes')->select('id', 'proxycli_source_revision', 'proxycli_source_activation_pending')
-                    ->whereNotNull('proxycli_source_revision')->orWhereNotNull('proxycli_source_activation_pending'),
+                    ->whereNotNull('proxycli_source_revision')->orWhere('proxycli_source_activation_pending', 1),
             );
 
             // Native drops preserve dependent rows and triggers; Laravel's SQLite rebuild can cascade deletes.

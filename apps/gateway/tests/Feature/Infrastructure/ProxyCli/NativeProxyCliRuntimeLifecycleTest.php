@@ -159,6 +159,7 @@ it('leaves an unchanged migrated collector untouched on upgrade', function (stri
     $migration = require database_path('migrations/2026_10_16_074137_move_proxycli_process_sources_to_extension_table.php');
     $migration->down();
     $migration->up();
+    expect(ProxyCliProcessSource::query()->whereKey($this->process->id)->exists())->toBe(! $legacy);
     $account = new ManagedUserAccount('orbit', 'orbit', '/home/orbit');
     $accounts = Mockery::mock(ManagedUserAccountResolver::class);
     $accounts->shouldReceive('resolve')->andReturn($account);

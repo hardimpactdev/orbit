@@ -101,7 +101,9 @@ The Process runs `/usr/bin/python3 /var/lib/orbit/proxycli/server.py`. systemd d
 
 While setup holds the collector, `process:destroy` refuses to remove the Process with `process.required_by_proxycli`.
 
-The extension stores each Process’s collector source revision and pending activation in `ai_router_process_sources`, keyed by Process ID. The core Process record has no collector source fields. The upgrade copies the existing source state in one SQLite transaction before removing the old columns; rollback restores it. This data move does not install or restart a Process. An unchanged collector with no pending activation stays untouched on its next convergence. Deleting a Process also deletes its source record.
+The extension stores the collector Process’s source revision and pending activation in `ai_router_process_sources`, keyed by Process ID. The core Process record has no collector source fields. The upgrade copies rows with a non-null source revision or pending activation in one SQLite transaction before removing the old columns. A Process without either value has no source row; absence means a null revision and no pending activation. Rollback restores the source state and those defaults.
+
+This data move does not install or restart a Process. An unchanged collector with no pending activation stays untouched on its next convergence. Deleting a Process also deletes its source record.
 
 `collector.cli-proxy-api.orbit` is a reserved platform name, so `route:create` and `route:update` refuse it with `route.domain_conflict`. The apex `cli-proxy-api.orbit` is not reserved. Publish the CLIProxyAPI management UI there as a [custom proxy Route](/reference/routes#custom-proxy-routes) to `http://127.0.0.1:8317`.
 

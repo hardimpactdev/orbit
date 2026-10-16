@@ -36,7 +36,7 @@ function guarded_process(): array
 
 it('resolves the core and extension guards through production provider tags', function (): void {
     expect(array_map(static fn (ProcessRemovalGuard $guard): string => $guard::class, app(Contributions::class)->of(ProcessRemovalGuard::class)))
-        ->toBe([AnalyticsProcessOwnership::class, DatabaseServerProcessOwnership::class, ProxyCliProcessOwnership::class]);
+        ->toBe([AnalyticsProcessOwnership::class, ProxyCliProcessOwnership::class, DatabaseServerProcessOwnership::class]);
 });
 
 it('refuses collector removal before changing stored state or calling the runtime', function (): void {

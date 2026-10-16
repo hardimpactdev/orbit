@@ -46,8 +46,10 @@ it('moves populated source state reversibly without changing Processes or their 
 
     expect(Schema::hasColumn('processes', 'proxycli_source_revision'))->toBeFalse()
         ->and(Schema::hasColumn('processes', 'proxycli_source_activation_pending'))->toBeFalse()
-        ->and(ProxyCliProcessSource::query()->count())->toBe(5);
-    foreach ($sources as $id => [$name, $revision, $pending]) {
+        ->and(ProxyCliProcessSource::query()->count())->toBe(4);
+    $this->assertDatabaseMissing('ai_router_process_sources', ['process_id' => 164]);
+    foreach ([103, 163, 165, 166] as $id) {
+        [, $revision, $pending] = $sources[$id];
         $source = ProxyCliProcessSource::query()->findOrFail($id);
         expect($source->source_revision)->toBe($revision)
             ->and($source->activation_pending)->toBe($pending);
