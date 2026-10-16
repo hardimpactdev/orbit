@@ -27,7 +27,7 @@ final class InstanceClonesController extends Controller
 
         return response()->json(
             [
-                'data' => InstanceData::fromModel($result['instance'])->toArray(),
+                'data' => [...InstanceData::fromModel($result['instance'])->toArray(), 'warnings' => $result['warnings']],
                 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
             ],
             $result['created'] ? 201 : 200,

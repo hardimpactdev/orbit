@@ -1,5 +1,5 @@
 # Program: php.install-build
-# Uses: lib/program.py
+# Uses: lib/program.py lib/artifacts.py
 # Outcomes: planned current applied platform_unsupported conflicting_source extra_packages unowned_extensions download_failed rollback_unavailable install_failed modules_mismatch fpm_invalid rolled_back rollback_failed
 # Timeout: 900
 # Input: {"mode": "plan" or "apply", "versions": {"8.5": {"packages": [{"name", "version", "architecture", "url",
@@ -159,7 +159,7 @@ def download(host, pin, mirror, work, architecture):
     if cached.is_file() and sha256(cached) == pin['sha256']:
         return cached
     candidate = work / 'candidate.deb'
-    sources = ([f'{mirror.rstrip("/")}/{pin["name"]}_{pin["sha256"]}.deb'] if mirror else []) + [pin['url']]
+    sources = artifact_candidates(pin['name'], pin, mirror)
     for url in sources:
         candidate.unlink(missing_ok=True)
         if not url.startswith('https://'):
@@ -169,12 +169,12 @@ def download(host, pin, mirror, work, architecture):
             continue
         if sha256(candidate) != pin['sha256']:
             log(f'{url} does not match its recipe SHA-256 digest')
-            continue
+            raise Outcome('download_failed', {'package': pin['name'], 'reason': 'artifact digest mismatch'})
         fields = deb_fields(host, candidate)
         if fields.get('Package') != pin['name'] or fields.get('Version') != pin['version'] \
                 or fields.get('Architecture') not in (architecture, 'all'):
             log(f'{url} does not carry the name, version, and architecture of its pin')
-            continue
+            raise Outcome('download_failed', {'package': pin['name'], 'reason': 'artifact metadata mismatch'})
         return keep(host, candidate, pin['name'])
     raise Outcome('download_failed', {'package': pin['name'],
                                       'reason': 'no source served the pinned file; Sury may have a newer build'})

@@ -85,12 +85,27 @@ Four requests read and stop operations.
 | --- | --- |
 | `GET /api/v1/operations/{operation}` | The record with every step |
 | `GET /api/v1/operations/{operation}?after_sequence=N` | The record with only the steps whose `sequence` is greater than `N` |
-| `GET /api/v1/operations` | The 50 newest records, without steps. Filter with `status`, `kind`, `target_type`, and `target_id` |
+| `GET /api/v1/operations` | The 50 newest records, without steps. [Filter the list](#filter-the-list) with `status`, `kind`, `target_type`, and `target_id` |
 | `POST /api/v1/operations/{operation}/cancel` | Asks the operation to stop and returns the record |
 
 Each read is one database query and never waits for the operation. A read needs access to the Node that serves the target, such as the Instance's Node. The list returns only operations on Nodes that the caller can access; the Gateway Node and a Node with an access grant to the Gateway see all of them.
 
 The CLI reads with `operation:show`, `operation:list`, and `operation:cancel` ([operation](/cli/operation)). MCP has the tools `operation-show`, `operation-list`, and `operation-cancel` ([MCP: Operations](/reference/mcp#operations)).
+
+### Filter the list
+
+`GET /api/v1/operations` takes four optional query filters. A record must match each filter that the request sends.
+
+| Filter | Contract |
+| --- | --- |
+| `status` | `queued`, `running`, `succeeded`, `failed`, or `cancelled` |
+| `kind` | Two names joined by `.`, `<family>.<verb>`, such as `instance.deploy`. At most 64 characters |
+| `target_type` | One name, such as `instance`. At most 32 characters |
+| `target_id` | A positive integer |
+
+Each name starts with a lower-case letter and holds only lower-case letters, digits, and `_`.
+
+The Gateway checks the form of `kind` and `target_type`, not whether a kind exists. A well-formed value that no operation has returns an empty list. A value in another form answers `422` with `validation.failed`.
 
 ### Follow an operation by polling
 
@@ -209,6 +224,10 @@ The lock per target already keeps two operations off one Instance, and a single 
 ### Operations need the queue
 
 Running an operation without the queue, for example after the response inside PHP-FPM, keeps the 600-second limit and adds a second path that recovery must cover. Task VMs follow the same rule.
+
+### Filters check the form of a kind
+
+The list request accepts any well-formed `kind` and `target_type`. A new kind then changes neither the list request nor its API schema, and a client can filter by a kind before its Gateway runs it.
 
 ### Names that map onto MCP Tasks
 

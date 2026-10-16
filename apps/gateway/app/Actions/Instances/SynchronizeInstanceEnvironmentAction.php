@@ -38,12 +38,15 @@ final readonly class SynchronizeInstanceEnvironmentAction implements InstanceEnv
         private ?InstanceEnvironmentReader $reader = null,
     ) {}
 
-    public function execute(Instance $instance): InstanceEnvironmentResult
+    public function execute(Instance $instance, bool $forClone = false): InstanceEnvironmentResult
     {
         return $this->operations->run(
             [$instance->id],
             fn (): InstanceEnvironmentResult => $this->synchronize(
-                $this->contexts->resolve($instance->refresh(), requireActiveNode: true),
+                $forClone
+                    ? $this->contexts->resolveForClone($instance->refresh(), requireActiveNode: true)
+                    : $this->contexts->resolve($instance->refresh(), requireActiveNode: true),
+                keepWorkloadKeys: ! $forClone,
             ),
         );
     }

@@ -45,6 +45,7 @@ use SensitiveParameter;
  *     removal: array<string, bool|int|string|null>|null,
  *     transfer: array<string, mixed>|null,
  *     deploy_steps: list<array{name: string, phase: string, command: string, timeout_seconds: int}>,
+ *     warnings?: list<string>,
  *     auto_deploy: AutoDeployRecord|null
  * }
  * @phpstan-type InstanceRecord array{
@@ -80,6 +81,7 @@ use SensitiveParameter;
  *     transfer: array<string, mixed>|null,
  *     deploy_steps: list<array{name: string, phase: string, command: string, timeout_seconds: int}>,
  *     auto_deploy: AutoDeployRecord|null,
+ *     warnings?: list<string>,
  *     request_id: string
  * }
  */
@@ -122,6 +124,8 @@ final readonly class InstanceResponse
         /** @var list<string>|null */
         public ?array $sharedPaths = null,
         public ?InstanceAutoDeployResponse $autoDeploy = null,
+        /** @var list<string> */
+        public array $warnings = [],
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -132,6 +136,7 @@ final readonly class InstanceResponse
         string $requestId,
     ): self {
         return new self(
+            warnings: is_array($data['warnings'] ?? null) ? array_values(array_filter($data['warnings'], is_string(...))) : [],
             id: is_int($data['id'] ?? null) ? $data['id'] : 0,
             projectId: is_int($data['project_id'] ?? null) ? $data['project_id'] : 0,
             nodeId: is_int($data['node_id'] ?? null) ? $data['node_id'] : 0,
@@ -205,6 +210,7 @@ final readonly class InstanceResponse
                 static fn (DeploymentStepResponse $step): array => $step->toArray(),
                 $this->deploySteps,
             ),
+            ...($this->warnings === [] ? [] : ['warnings' => $this->warnings]),
             ...($this->sharedPaths === null ? [] : ['shared_paths' => $this->sharedPaths]),
             'auto_deploy' => $this->autoDeploy?->toArray(),
             'request_id' => $this->requestId,

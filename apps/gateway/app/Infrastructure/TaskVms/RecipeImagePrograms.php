@@ -47,7 +47,7 @@ final readonly class RecipeImagePrograms
         }
     }
 
-    /** @return array{identity: string, snapshot: string, architecture: string, profile: string, tools: array<string, mixed>, php: array<string, mixed>|null} */
+    /** @return array{identity: string, snapshot: string, artifact_mirror: string, git_packages: list<string>, architecture: string, profile: string, tools: array<string, mixed>, php: array<string, mixed>|null} */
     private function payload(TaskVmGuestShell $shell, MachineRecipe $recipe, string $profile): array
     {
         $arch = $shell->asRoot(['dpkg', '--print-architecture']);
@@ -79,7 +79,7 @@ final readonly class RecipeImagePrograms
         ];
 
         return ['identity' => $recipe->identity, 'snapshot' => $recipe->snapshot, 'architecture' => $architecture,
-            'profile' => $profile, 'tools' => $tools, 'php' => $php];
+            'profile' => $profile, 'tools' => $tools, 'php' => $php, 'git_packages' => $recipe->gitPackages, 'artifact_mirror' => $recipe->artifactMirror];
     }
 
     private function script(): string
@@ -91,6 +91,8 @@ final readonly class RecipeImagePrograms
         }
 
         // Reuse the checked download, archive extraction and platform helpers without invoking the Node entry point.
+        $shared = file_get_contents(resource_path('remote/lib/artifacts.py'))."\n".$shared;
+
         return str_replace("if __name__ == '__main__':\n    sys.exit(main())", '', $shared)."\n".$image;
     }
 }

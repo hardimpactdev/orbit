@@ -162,6 +162,7 @@ final readonly class InstanceEnvironmentContextResolver
             routeDomain: $route?->domain,
             nodeStatus: $node->status->value,
             node: $node,
+            cloning: true,
         );
     }
 

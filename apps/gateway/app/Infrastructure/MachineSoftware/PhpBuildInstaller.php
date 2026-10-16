@@ -66,7 +66,7 @@ final readonly class PhpBuildInstaller
         return [
             'mode' => $mode,
             'versions' => $sets,
-            'mirror' => $recipe->phpPolicy->mirror,
+            'mirror' => $recipe->artifactMirror,
             'pcov' => $pcov,
             'opentelemetry' => $opentelemetry,
             'extras' => $extras,
