@@ -5,9 +5,7 @@ declare(strict_types=1);
 namespace App\Commands\Tasks;
 
 use App\Commands\GatewayCommand;
-use App\Repositories\GatewayConfigRepository;
 use App\Services\Extensions\GatewayExtensionState;
-use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleWriter;
 use App\Support\Console\TerminalText;
 use App\Support\ExtensionCommandVisibility;
@@ -48,28 +46,6 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
     public function extensionSlug(): ?string
     {
         return 'tasks';
-    }
-
-    protected function gatewayConnector(
-        GatewayConfigRepository $repository,
-        GatewayConnectorFactory $connectors,
-    ): ?GatewayConnector {
-        $state = app(GatewayExtensionState::class)->discover();
-
-        if (! $state->isKnown()) {
-            $this->failUnknownExtensionState('tasks', $state);
-
-            return null;
-        }
-
-        return $this->coreGatewayConnector($repository, $connectors);
-    }
-
-    protected function coreGatewayConnector(
-        GatewayConfigRepository $repository,
-        GatewayConnectorFactory $connectors,
-    ): ?GatewayConnector {
-        return parent::gatewayConnector($repository, $connectors);
     }
 
     public const int TITLE_MAX = 160;
