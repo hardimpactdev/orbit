@@ -73,7 +73,7 @@ A Cluster-scoped Route domain outside the TLD keeps the VPN DNS answer on every 
 
 ### Record boundary
 
-[PR #1299](https://github.com/nckrtl/orbit/pull/1299) proposes `ContributedPrivateDnsRecords` and `ContributedReservedHostnames`; they are not present at this branch's base. The implementation must preserve that contract when it lands, or include it as a prerequisite. Core and extension records pass one validation boundary before either server is rendered:
+[PR #1299](https://github.com/nckrtl/orbit/pull/1299), now merged into main, added `ContributedPrivateDnsRecords` and `ContributedReservedHostnames`. The implementation must preserve that contract. Core and extension records pass one validation boundary before either server is rendered:
 
 - Accept canonical lowercase DNS labels only (1–63 characters per label, at most 253 per name). Reject whitespace, newlines, commas, slashes, wildcards, control characters, and config separators. Validate stored data as well as API input.
 - Accept only IPv4 host addresses. VPN records, including extension records and Node TLD targets, must be usable addresses in the configured VPN subnet, excluding network and broadcast addresses. A Cluster wildcard target must equal the registered Router LAN address and pass the existing LAN-address validation. Never accept raw dnsmasq fragments from a contributor.
@@ -216,7 +216,7 @@ The decision of 2026-10-16 fixes the location rule, the two servers, plain dnsma
 15. **Doctor reports Router LAN rules whose source is not eligible**, for the HTTPS family too. Recommendation: accept.
 16. **Narrow overlapping port 53 rules before enabling Cluster DNS.** Recommendation: include this in rollout, preserving Incus access on bridge interfaces. Without it, Nick's member-only requirement is not met.
 17. **The member steps run inside the request of their action.** Recommendation: accept while a Cluster has few LAN members.
-18. **One validated record boundary, reserved extension names, and removal on disable.** Recommendation: accept the Record boundary contract and #1299 as an implementation prerequisite.
+18. **One validated record boundary, reserved extension names, and removal on disable.** Recommendation: accept the Record boundary contract already introduced by #1299.
 19. **Transition overrides remain authoritative across intermediate publications; partial writes require compensating restore.** Recommendation: accept. A digest alone does not provide distributed consistency.
 
 ## Rejected alternatives
