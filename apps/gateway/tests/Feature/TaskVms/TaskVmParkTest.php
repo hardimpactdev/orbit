@@ -450,12 +450,13 @@ describe('wake', function (): void {
         };
         app()->instance(TaskExecutionLock::class, $lock);
         [$this->group, $vm] = tvm_park_waiting();
-        tvm_park_workspace($this->group, $vm);
+        $workspace = tvm_park_workspace($this->group, $vm);
 
         app(CompleteTaskGroupAction::class)->execute($this->group);
 
         expect($this->group->fresh()?->status)->toBe(TaskGroupStatus::Completed)
-            ->and($this->lockedDuringRemoval)->toBe([$this->group->id]);
+            ->and($this->lockedDuringRemoval)->toBe([$this->group->id, $this->group->id, -$workspace->id])
+            ->and($this->locked)->toBe([]);
     });
 
     it('lets the ended-group sweep wait for a parked VM without a failure', function (): void {
