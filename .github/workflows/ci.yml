@@ -100,8 +100,8 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Set up Bun for package cache tests
-        if: matrix.directory == 'apps/gateway'
+      - name: Set up Bun for package cache and generated merge tests
+        if: matrix.directory == 'apps/gateway' || matrix.directory == 'apps/docs'
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.2
@@ -131,6 +131,14 @@ jobs:
       - name: Install dependencies
         if: matrix.directory != 'apps/e2e'
         run: composer install --no-interaction --prefer-dist
+
+      # The Docs merge proof regenerates Gateway OpenAPI and web types in disposable clones.
+      - name: Install generated merge proof dependencies
+        if: matrix.directory == 'apps/docs'
+        working-directory: .
+        run: |
+          (cd apps/gateway && cp .env.example .env && composer install --no-interaction --prefer-dist)
+          (cd apps/web && bun install --frozen-lockfile)
 
       - name: Install all project dependencies for E2E integration tests
         if: matrix.directory == 'apps/e2e'
