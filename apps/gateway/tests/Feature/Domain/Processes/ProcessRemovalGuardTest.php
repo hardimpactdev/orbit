@@ -42,7 +42,7 @@ it('resolves the core and extension guards through production provider tags', fu
 it('refuses collector removal before changing stored state or calling the runtime', function (): void {
     [$node, $process, $runtime] = guarded_process();
     app(ProxyCliState::class)->enable($node->id, 'cache', 'http://10.44.0.3:8317', 'management', 'read', 'control');
-    $before = $process->getAttributes();
+    $before = $process->refresh()->getAttributes();
 
     expect(fn () => app(DestroyProcessAction::class)->execute($process))
         ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('process.required_by_proxycli')->and($error->status)->toBe(409));
@@ -66,7 +66,7 @@ it('keeps the owning feature removal path and permits removal after setup releas
 
 it('fails closed on invalid and duplicate guard registrations before any mutation', function (string $guard, string $message): void {
     [, $process, $runtime] = guarded_process();
-    $before = $process->getAttributes();
+    $before = $process->refresh()->getAttributes();
     app()->tag([$guard], ProcessRemovalGuard::class);
 
     expect(fn () => app(DestroyProcessAction::class)->execute($process))->toThrow(LogicException::class, $message);
