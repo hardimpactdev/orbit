@@ -1,12 +1,12 @@
 ---
 title: "ADR 0219: Answer Cluster names from a DNS server on the Router"
 sidebarTitle: "0219 Cluster DNS"
-description: "In progress. Each Cluster Router with a LAN address runs dnsmasq that answers the Cluster TLD with that LAN address. LAN members ask it first through a systemd-resolved delegate. The VPN DNS becomes plain dnsmasq with WireGuard answers, and the PHP listener is deleted."
+description: "In progress. Each Cluster Router with a LAN address runs dnsmasq that answers the Cluster TLD and exact Cluster Route domains with that LAN address. LAN members ask it first through a systemd-resolved delegate. The VPN DNS becomes plain dnsmasq with WireGuard answers, and the PHP listener is deleted."
 ---
 
 # ADR 0219: Answer Cluster names from a DNS server on the Router
 
-This proposed design picks the Router address by where a query goes, not by who sends it. Each active Cluster with a TLD and a Router LAN address gets a Cluster DNS: dnsmasq on the Router LAN address that answers names under the Cluster TLD with that address. A LAN member sends those names to the Cluster DNS first and to the VPN DNS second. Every other name, and every other requester, uses the VPN DNS, which becomes plain dnsmasq that gives everyone WireGuard addresses. The PHP listener, its codec, and its catalog of requesters are deleted.
+This proposed design picks the Router address by where a query goes, not by who sends it. Each active Cluster with a Router LAN address gets a Cluster DNS: dnsmasq on the Router LAN address that answers its TLD, when set, and every exact Cluster-scoped Route domain with that address. This includes Route domains outside the TLD. A LAN member uses the Cluster DNS first and the VPN DNS second. The Cluster DNS forwards all remaining names to VPN DNS. Other requesters use VPN DNS directly. VPN DNS becomes plain dnsmasq that gives everyone WireGuard addresses. The PHP listener, its codec, and its catalog of requesters are deleted.
 
 ## Status
 
@@ -16,12 +16,12 @@ Principle: [Lean](/mission#principles). Two stock dnsmasq instances replace a cu
 
 Design proposal only; no implementation or fleet change is authorized by this ADR.
 
-### Approval boundary
-
-Nick's decision on 2026-10-16 includes the Cluster TLD **and exact Cluster-scoped Route domains outside it**, forwarding remaining names to VPN DNS, and Cluster DNS first with VPN DNS fallback for LAN members. The TLD-only, non-forwarding design below is an agent recommendation, not Nick's approval. Decisions 1–3 require explicit maintainer approval before implementation. Keeping the original scope is possible, but forwarded failures can move the resolver to VPN DNS and leave it there; this proposal avoids that coupling by reducing scope. The absence of outside-TLD Routes in the recorded fleet is not approval to remove that feature.
-
 All new units, programs, files, digest storage, lifecycle hooks, and Doctor codes below are planned. Existing code names describe integration points, not completed implementation. Fleet observations below were recorded during design on 2026-10-16 and must be checked again before rollout.
 
+
+### Number allocation
+
+Merge blocker: [PR #1311](https://github.com/nckrtl/orbit/pull/1311) also claims 0219 for `0219-remove-annotations-from-orbit`, absorbed into `/reference/web-app#annotations-outside-the-gateway`. Its `apps/docs/config/adr-retired-slugs.php`, `docs/decisions/overview.mdx`, and redirect in `docs/docs.json` collide with this record's number. Keep both branches unchanged until the maintainer coordinates the allocation. Recommendation: retain the earlier Cluster DNS reservation and assign the annotations decision a confirmed unused number, updating all three references together. Neither PR may merge with this collision unresolved.
 
 ## Context
 
@@ -43,31 +43,33 @@ The Gateway renders the VPN DNS, each Cluster DNS, and each member delegate from
 
 ### Where each answer comes from
 
-| Requester | Names under the Cluster TLD | Other names |
+| Requester | Cluster TLD and exact Cluster Route domains | Other names |
 | --- | --- | --- |
-| A LAN member that holds the delegate | The Cluster DNS gives the Router LAN address, or for an exception the address that the VPN DNS gives. The VPN DNS is the second server. | The VPN DNS |
+| A LAN member that holds the delegate | The Cluster DNS gives the Router LAN address, or for an exception the address that the VPN DNS gives. The VPN DNS is the second server. | Forwarded through Cluster DNS to VPN DNS, or VPN DNS directly after fallback |
 | Any other Node, sabre included | The resolver of the Node, as today. The VPN DNS gives the Router WireGuard address. | The resolver of the Node, as today |
 
-A Cluster-scoped Route domain outside the TLD keeps the VPN DNS answer on every Node. This narrows the decision of 2026-10-16 (decision 1 below).
+An outside-TLD Route is an exact name, not a new wildcard. For example, `app.example.com` gets the Router LAN address, while `child.app.example.com` goes to VPN DNS unless another record covers it.
 
 ### The Cluster DNS
 
-- A Cluster has a Cluster DNS while it is active, has a TLD, and its Router has an IPv4 LAN address.
+- A Cluster has a Cluster DNS while it is active and its Router has an IPv4 LAN address.
 - It runs as `orbit-cluster-dns.service` on the Router: `/usr/sbin/dnsmasq` from `dnsmasq-base`, with its own files in `/etc/orbit/cluster-dns/`. It never reads `/etc/dnsmasq.d` and never uses the stock `dnsmasq.service`.
 - It listens only on the Router LAN address, with `bind-dynamic`, so it starts before the address exists at boot and never binds the wildcard address. The unit orders itself before `nss-lookup.target`, as the stock dnsmasq unit does.
-- It answers every name under the TLD itself and forwards nothing. It has no upstream server, so it refuses every other name. Members never send it other names.
+- It answers the Cluster TLD and exact Cluster Route domains locally. It forwards remaining queries only to the explicit VPN DNS address, never to the Router's resolved stub. This avoids a forwarding loop.
 
 | File | Content | On change |
 | --- | --- | --- |
-| `dnsmasq.conf` | `listen-address`, `bind-dynamic`, `no-resolv`, `no-hosts`, `local-ttl=30`, `local=/<tld>/`, `address=/<tld>/<Router LAN>`, an `address=` line with the owning Node's WireGuard address for each more specific Node TLD below the Cluster TLD, and `addn-hosts=/etc/orbit/cluster-dns/hosts` | Restart |
-| `hosts` | The exceptions: each exact VPN DNS record below the TLD that is not a Route domain of this Cluster, such as a custom proxy Route, with its VPN DNS address | Reload with `SIGHUP` |
+| `dnsmasq.conf` | `listen-address`, `bind-dynamic`, `no-resolv`, `no-hosts`, `server=<VPN DNS address>`, `local-ttl=30`, and, when a TLD is set, `local=/<tld>/`, `address=/<tld>/<Router LAN>`, an `address=` line with the owning Node's WireGuard address for each more specific Node TLD below the Cluster TLD, and `addn-hosts=/etc/orbit/cluster-dns/hosts` | Restart |
+| `hosts` | Exact Cluster Routes with the Router LAN address; other exact VPN records under the TLD with their VPN addresses | Reload with `SIGHUP` |
 
+- `local=/<tld>/` prevents non-A queries from falling through to upstream DNS: an IPv4-only `address=` does not stop forwarding other record types. Pair each more specific Node TLD wildcard with `local=` too. Exact IPv4 hosts entries answer A; AAAA, other record types, and descendants outside the TLD may be forwarded. They can therefore trigger the same resolver failover as other forwarded queries. No outside-TLD `address=/route/` or `local=/route/` rule may turn an exact Route into a suffix.
 - A name in `hosts` wins over the TLD address, and a more specific `address=` wins over a less specific one. A test with a real dnsmasq checks both.
-- `SIGHUP` reads `hosts` again and clears the cache without closing a socket. So a change of an exception never stops the Cluster DNS. A Route under the TLD that is not an exception changes nothing on the Router.
+- `SIGHUP` reads `hosts` again and clears the cache without closing a socket. So a change of an exception never stops the Cluster DNS. Adding or removing an exact Route updates the hosts file, including outside-TLD Routes.
 
 ### The VPN DNS
 
 - The VPN DNS is the stock `dnsmasq.service` on the `vpn` Node, as before the listener. `orbit-vpn.conf` has one `listen-address` line, the VPN DNS address, an `interface=` line for the private interface, and `bind-dynamic`.
+- Before any role assignment, Router activation, address change, or cutover, enumerate the actual VPN bind set: the VPN DNS address, every address on the private interface, and loopback added implicitly by `interface=`. Refuse co-location when the Router LAN address overlaps that set, or either required socket has another owner. Check both UDP and TCP. Do not exclude an address from VPN DNS silently: existing clients may use it. Disjoint bind sets permit both roles on one Node. Repeat this preflight on convergence; address drift leaves the last working configuration intact and raises Doctor drift.
 - Its records are today's WireGuard answers. The TLD wildcards stay in `orbit-records.conf`. The exact names move to an `addn-hosts` file, which that file names. A change only to the hosts file sends `SIGHUP`. A config change, including a TLD wildcard change, restarts dnsmasq because SIGHUP does not read config again. Ordinary exact Route changes therefore do not restart VPN DNS. Test TLD add, change, removal, and rollback with a real daemon, including the restart interruption.
 - `local-ttl=30` keeps the 30-second TTL of today's answers, which the [withdrawal grace period](/reference/routes#withdrawal-grace-period) relies on.
 - It keeps the `server=` lines of the `vpn` Node, which bootstrap wrote from that Node's uplink resolvers. The publication rewrites only the lines that Orbit owns.
@@ -80,13 +82,13 @@ A Cluster-scoped Route domain outside the TLD keeps the VPN DNS answer on every 
 
 - Accept canonical lowercase DNS labels only (1–63 characters per label, at most 253 per name). Reject whitespace, newlines, commas, slashes, wildcards, control characters, and config separators. Validate stored data as well as API input.
 - Accept only IPv4 host addresses. VPN records, including extension records and Node TLD targets, must be usable addresses in the configured VPN subnet, excluding network and broadcast addresses. A Cluster wildcard target must equal the registered Router LAN address and pass the existing LAN-address validation. Never accept raw dnsmasq fragments from a contributor.
-- Refuse duplicate exact names across contributors and core, even with equal addresses, before merging maps. Refuse duplicate suffix owners. An exact Route overriding a TLD wildcard and a more specific Node TLD are intentional precedence, not duplicate owners.
-- Reserve core names and extension names before accepting Routes. As in #1299, extension names must belong to their registered reserved `.orbit` namespace; no Cluster or Node TLD may cover it or the configured private VPN namespace. Reject a conflicting stored Route or TLD before publication; do not silently overwrite it.
-- Validate the full record set before the first remote write. An invalid contribution fails publication with its owner and reason and leaves the previous projections intact. Run `dnsmasq --test` on staged files too; syntax checks do not replace boundary validation or live socket checks.
+- Refuse duplicate exact names across contributors and core, even with equal addresses, before merging contribution maps. Refuse new duplicate suffix owners at the request and migration boundary. An exact Route overriding a TLD wildcard and a more specific Node TLD are intentional precedence, not duplicate owners.
+- Reserve core names and extension names before accepting Routes. As in #1299, extension names must belong to their registered reserved `.orbit` namespace; no Cluster or Node TLD may cover it or the configured private VPN namespace. Refuse new conflicts at the request boundary and in migrations that introduce or rename reserved names. Existing stored Route or TLD conflicts remain published with the current renderer precedence and Doctor findings, including `route.domain_reserved`; they never fail fleet-wide DNS publication. Preserve the existing Node/Cluster TLD skip and core/contributed record precedence. Do not reinterpret a stored reserved-name conflict as a duplicate contribution.
+- Validate the full record set before the first remote write. A malformed or duplicate extension contribution fails publication with its owner and reason and leaves the previous projections intact. Run `dnsmasq --test` on staged files too; syntax checks do not replace boundary validation or live socket checks.
 
-Under that namespace contract, extension records go only to VPN DNS. Cluster DNS derives its exceptions from the validated core records under its TLD, never from an independent extension renderer. If the maintainer changes that contract to permit extensions under a Cluster TLD, the same boundary and exception rules must apply before either render.
+For non-conflicting state, extension records go only to VPN DNS. Cluster DNS derives exceptions from the effective VPN records under its TLD, never from an independent extension renderer. If a legacy stored TLD covers a reserved extension name, preserve that name's effective VPN answer as a Cluster exception too and report the stored conflict. This compatibility path does not permit a new conflicting TLD.
 
-Disabling an extension makes its contribution empty but retains its reserved names. The disable action publishes the resulting full snapshot and sends `SIGHUP` to remove the old hosts entries and flush server caches. It reports publication failure instead of claiming DNS removal; a retry or forced convergence repairs it. Clients may retain the old answer for its 30-second TTL. A Router whose render is unchanged needs no write. Tests cover malicious names and addresses, duplicate owners, reserved-name collisions, disable, failed disable publication, and retry.
+Contributions follow the placement/setup record, never the enabled switch. Reserved names remain reserved. Under [ADR 0210](/decisions/0210-give-each-extension-its-own-code-boundary#enable-and-disable), setup and teardown own fleet work. For AI router, withdrawal belongs to the `disable()` hook in [ADR 0212 build step 4 and amendment A3](/decisions/0212-turn-proxycli-into-the-ai-router-extension#build-order). Until that step is implemented, `extension:disable` leaves the record published. When an authorized teardown or that hook withdraws placement, it republishes the snapshot and clears the server caches with `SIGHUP`; it reports a failed publication and supports retry. Clients may retain an answer for its 30-second TTL. Tests cover switch-off with placement retained, actual placement withdrawal, failed publication and retry, malformed contributions, duplicate owners, and stored reserved-name conflicts that still publish.
 
 ### Publication
 
@@ -108,11 +110,13 @@ Disabling an extension makes its contribution empty but retains its reserved nam
 ```ini
 [Delegate]
 DNS=<Router LAN address> <VPN DNS address>
-Domains=~<cluster tld>
+Domains=~.
 ```
 
 - It then runs `systemctl reload systemd-resolved`, also when the file did not change, so that a repair moves a member back from the second server. It creates the directory when it is missing.
-- The `orbit` link keeps the VPN DNS and `~.`. The tunnel, `orbit.conf`, its `PostUp` line, and `orbit.dns-link` do not change. systemd-resolved sends a name to the scope with the longest matching routing domain, so names under the TLD go to the delegate and every other name goes to the VPN DNS, as today.
+- The delegate is the only catch-all scope for an eligible member. Remove `~.` from the `orbit` link, set that link's `DefaultRoute=no`, and suppress competing routing domains that would select VPN DNS for Cluster names. Refuse unsupported competing resolver scopes before changing anything. Keep the link's VPN DNS address for restoration. Update the persistent DNS policy used by `PostUp` and `orbit.dns-link`, as well as live `resolvectl` state, so a tunnel restart cannot recreate a tie. Keys, peers and `AllowedIPs` never change.
+- Stage and restore the delegate, persistent link policy, and live resolver settings as one member step. Remove all Orbit-owned link routing domains while the delegate is installed; a more specific private suffix would otherwise bypass it. On withdrawal or rollback restore the Node's ordinary DNS policy before deleting the delegate. A reload failure restores all three and reports any failed restore as drift. The default eligible policy is VPN DNS with `~.`; override and Gateway policies restore their own routing domains.
+
 - The step takes the peer lock `/run/lock/orbit-wireguard-peer.lock` on the Node and the Router lock of the Cluster on the Gateway. The Router lock is re-entrant, so the Cluster actions that hold it can run the step.
 - Node provisioning, `php artisan orbit:node-dns-repair <node>`, and the lifecycle steps below run it.
 
@@ -120,9 +124,9 @@ Domains=~<cluster tld>
 
 - When the Cluster DNS times out, refuses, or returns SERVFAIL without EDE after resolved exhausts feature retries, resolved moves the delegate to the VPN DNS. The member then gets the Router WireGuard address, which the Router also serves.
 - The delegate stays on the VPN DNS until a member step, a repair, a reload or restart of systemd-resolved, or a failure of the VPN DNS, which wraps it back to the first server. A member that boots before its Router's Cluster DNS listens can fall back at its first lookup. Doctor reports a member on the second server.
-- The Cluster DNS answers every name under the TLD from its own files and forwards none. So a public failure never reaches it, a VPN DNS outage never moves a member, and a down Router never stops other lookups.
+- A forwarded public or private lookup can time out or return SERVFAIL and move the whole delegate to VPN DNS, even while Cluster DNS is healthy. Subsequent Cluster lookups then get WireGuard answers. A VPN DNS outage can therefore also cause loss of local answers after a forwarded failure. A down Router delays other lookups until fallback; it does not provide a separate healthy path for public queries. This coupling is the cost of preserving the forwarding scope.
 - The two servers answer the same names differently. That breaks the systemd-resolved rule that the servers of one scope be equivalent, on purpose: the design relies on ordered failover that stays on the second server.
-- Recommendation: accept this resolver behavior after testing systemd 259. SERVFAIL with an extended error code, NXDOMAIN, and NODATA need not trigger failover. DNS fallback is not Router high availability: if the whole Router is down, its WireGuard address cannot serve traffic either. It helps when the DNS service or LAN path fails but the Router remains reachable over WireGuard. If both DNS servers are down, uncached names fail.
+- Acceptance must test this resolver behavior on systemd 259; the approval choice is listed below. SERVFAIL with an extended error code, NXDOMAIN, and NODATA need not trigger failover. DNS fallback is not Router high availability: if the whole Router is down, its WireGuard address cannot serve traffic either. It helps when the DNS service or LAN path fails but the Router remains reachable over WireGuard. If both DNS servers are down, uncached names fail.
 
 ### Lifecycle
 
@@ -131,14 +135,13 @@ A change is either up or down for its members:
 - **Up.** The Gateway writes the Cluster DNS and opens port 53 first, then makes the change authoritative. The member steps run after the last publication of the action.
 - **Down.** The member steps run first, with the proposed state of the action. They run a second time after the commit, with the stored state. The Cluster DNS removal and the port 53 prune come last.
 
-An action validates before its first member step. When it fails after a member step ran, its failure path runs the member step again with the stored state. The planned member program stages its file and restores the old file on apply failure. Failed expansion steps leave members on their previous resolver and appear in the new `follow_up` response field, as role responses do. A failed removal or replacement step must block old Router cleanup and DNS removal: a stale delegate can keep returning successful old answers, so timeout fallback cannot make it safe. Retry the action or repair those members before cleanup. An offline destructive operation must explicitly report retained DNS state and affected members; it cannot claim safe convergence. OpenAPI, CLI, and MCP response contracts gain `follow_up`. Doctor reports the remaining drift.
+An action validates before its first member step. When it fails after a member step ran, its failure path runs the member step again with the stored state. The planned member program restores both persisted and live resolver policy on apply failure. Failed expansion steps leave members on their previous resolver and appear in the new `follow_up` response field, as role responses do. A failed removal or replacement step must block old Router cleanup and DNS removal: a stale delegate can keep returning successful old answers, so timeout fallback cannot make it safe. Retry the action or repair those members before cleanup. An offline destructive operation must explicitly report retained DNS state and affected members; it cannot claim safe convergence. OpenAPI, CLI, and MCP response contracts gain `follow_up`. Doctor reports the remaining drift.
 
 | Event | Kind | Members | Cluster DNS and port 53 |
 | --- | --- | --- | --- |
 | Activate a Cluster | Up | Every LAN member | Written by the expand publication; port 53 rules with the LAN ingress expand |
 | Deactivate a Cluster | Down | Every LAN member | Removed after the commit; port 53 rules pruned |
-| Set or change the Cluster TLD | Up | Every LAN member | Written by the expand publication |
-| Remove the Cluster TLD | Down | Every LAN member | Removed after the commit |
+| Set, change, or remove the Cluster TLD | Up | Every LAN member after publication, to reset fallback | Written by the expand publication; exact Routes remain |
 | Attach a member, or a member gains its LAN address | Up | That member | Its port 53 rules with the LAN ingress expand |
 | Detach a member, or a member loses its LAN address | Down | That member | Its port 53 rules pruned |
 | A member gains its first role, or loses its override | Up | That member | None |
@@ -150,17 +153,19 @@ An action validates before its first member step. When it fails after a member s
 | Clear the Router | Down | Every LAN member | Removed by the baseline removal |
 | The Router gains or changes its LAN address | Up | Every LAN member | Written; a change restarts the unit on the new address |
 | The Router loses its LAN address | Down | Every LAN member | Removed after the commit |
-| The VPN DNS address changes | Up | Every LAN member | None |
+| The VPN DNS address changes | Up | Every LAN member | Update upstream before selecting members; retain old VPN address until all projections and members confirm |
+| Add, change, or remove a Cluster Route | None | None | Publish exact hosts records, including outside-TLD names; Route withdrawal retains its existing grace period |
 | Remove a member Node | Down | Remove its delegate while reachable | Its port 53 rules pruned at `router-lan-ingress` |
 | Remove a Router Node or delete its Cluster | Down | Every LAN member before removal | Remove DNS and prune rules; offline residue is reported |
-| An extension disables its record | None | None | Republish VPN DNS; see Record boundary |
+| Extension switch changes | None | None | Placement retains its record; see Record boundary |
+| Extension setup/teardown or AI router step 4 withdraws placement | None | None | Republish VPN DNS; see Record boundary |
 
 - In `node:add`, the member step runs after `activate`, when the Node is active.
 - A Router replacement keeps the Cluster DNS of the old Router. The old Router answers with its own LAN address and serves the Router sites until cleanup. The member steps run after `database` and before the cleanup of the old Router, in the first run, in a resumed run, and in a Cluster without Routes. With Routes, the cleanup grace wait starts after the last member step.
 - A failed candidate gets the Cluster DNS removal and the port 53 prune in its restore. The members never moved.
 - Offline Node removal can leave the delegate on the machine and lists it in `retained_on_node`. Router residue is also listed there. Online removal deletes it before losing access.
 - A LAN address changes only through `node:add` on a Node without Instances. For beast or shark, this ADR does not change that.
-- Each action keeps running inside its request. [ADR 0209](/decisions/0209-run-long-operations-as-durable-queued-operations) moves these actions when it moves the rest of them.
+- Member work follows its owning action: [ADR 0209](/decisions/0209-run-long-operations-as-durable-queued-operations) and [ADR 0218 in PR #1302](https://github.com/nckrtl/orbit/blob/2686037bfbf93f6774c37530b8a0a609e5e1c526/docs/decisions/0218-take-long-commands-off-the-request-path.md) move Node and Cluster changes into operations. Until those conversions land, the existing request deadline bounds the work and a partial failure uses the same cleanup gates. This ADR adds no competing execution mechanism.
 
 ### Firewall
 
@@ -185,7 +190,8 @@ Every finding below is `drift`. A Router finding needs the Router in scope, and 
 | `role.cluster_dns_retained` | role | New: an active Router whose Cluster has no Cluster DNS keeps the unit or its files. |
 | `node.cluster_dns_retained` | node | New: a Node without an active `router` role keeps the unit or its files. |
 | `role.firewall_projection_mismatch` | role | Changed: it also reports a Router LAN rule whose source is not eligible, for the HTTPS and DNS families. |
-| `node.cluster_dns_selection_mismatch` | node | New: the delegate file differs from the render, or exists on a Node that must not hold it. |
+| `role.dns_bind_overlap` | role | New: VPN and Cluster DNS bind sets overlap, or a required socket belongs to another service. Refuse convergence without stopping the working service. |
+| `node.cluster_dns_selection_mismatch` | node | New: the delegate or live/persistent link policy differs from the render, a competing scope exists, or a delegate exists on an ineligible Node. |
 | `node.cluster_dns_fallback` | node | New: the delegate has a current server, and it is not the Cluster DNS. An unset current server is not a fallback. |
 | `instance.private_dns_mismatch` | instance | Changed: it expects the Router LAN address when the workload Node holds the delegate, else the Router WireGuard address. A member on the fallback reports this and `node.cluster_dns_fallback`. |
 
@@ -194,34 +200,34 @@ Every finding below is `drift`. A Router finding needs the Router in scope, and 
 Each step is one pull request. Each step preserves a working resolver path, apart from the stated reload and cutover interruptions, and names its rollback. Roll back in reverse order.
 
 1. **Firewall families.** Generalize the Router LAN families, which are hard-coded to TCP port 443, and add the two DNS families. Live: the next Router LAN reconcile adds four rules on beast, for sabre and shark. That is the next task VM enrollment, attach, detach, or `node:add`. Before enabling DNS, narrow the overlapping rules described under Firewall and verify denied sources too. Check with `orbit firewall:live-list beast` and Doctor. Record the previous operator rules so rollback restores them. Rollback: revert, then delete the four `orbit:router-lan-dns-*` rules on beast with `ufw delete`. The reverted code does not know their names.
-2. **Cluster DNS on Routers.** Add the renderer, the stored digests, `dns.converge-cluster-dns`, the unit, the `cluster-dns` artifact, `dnsmasq-base` for the `router` role, and the `role.cluster_dns_*` and `node.cluster_dns_retained` findings. No member uses it yet. Precondition: beast has `dnsmasq-base`, which it has. Ship the Record boundary checks in this step before either new renderer accepts data. Live: the first DNS publication after the deploy installs it on beast. That is a task VM enrollment, a Route change, or the `private-dns` converge of the `vpn` Node, which the rollout visits before beast. Check with Doctor, and query 192.168.6.20 from shark for a Route domain, `x.test`, and a custom proxy name with a short `python3` query. A query from shark does not test the firewall, because the operator rules admit shark. Rollback: roll back step 3 first. Then revert, and run `systemctl disable --now orbit-cluster-dns` on beast.
-3. **Member step.** Add `dns.select-cluster-dns`, the lifecycle steps, `follow_up`, the repair change, the `node.cluster_dns_*` findings, and the new `instance.private_dns_mismatch` rule. Precondition: Doctor reports no `role.cluster_dns_*` finding on beast. The deploy changes no member. Live: run `orbit:node-dns-repair shark`. Check `resolvectl status`, `getent ahostsv4` for a Route domain, a custom proxy name, and a public name, and Doctor. Then do beast. Inventory every eligible member and record successful selection before step 5; any proposed exclusions, including sabre, require maintainer approval first. Test DNS-service failure and LAN-path failure separately from a whole-Router outage, then repair and confirm return to Cluster DNS. While the listener runs, the VPN DNS also gives members LAN answers, so no answer changes in this step. Rollback: revert, then on each member delete the delegate file and run `systemctl reload systemd-resolved`.
+2. **Cluster DNS on Routers.** Add the renderer, the stored digests, `dns.converge-cluster-dns`, the unit, the `cluster-dns` artifact, `dnsmasq-base` for the `router` role, and the `role.cluster_dns_*`, `role.dns_bind_overlap`, and `node.cluster_dns_retained` findings. No member uses it yet. Precondition: install `dnsmasq-base` and pass the bind-set preflight, including the planned VPN cutover bindings. Ship the Record boundary checks in this step before either new renderer accepts data. Live: the first DNS publication after the deploy installs it on beast. That is a task VM enrollment, a Route change, or the `private-dns` converge of the `vpn` Node, which the rollout visits before beast. Check with Doctor, and query 192.168.6.20 from shark for an inside-TLD Route, an outside-TLD Route and its child name, `x.test`, and a custom proxy name with a short `python3` query. A query from shark does not test the firewall, because the operator rules admit shark. Rollback: roll back step 3 first. Then revert, and run `systemctl disable --now orbit-cluster-dns` on beast.
+3. **Member step.** Add `dns.select-cluster-dns`, the lifecycle steps, `follow_up`, the repair change, the `node.cluster_dns_*` findings, and the new `instance.private_dns_mismatch` rule. Precondition: Doctor reports no `role.cluster_dns_*` finding on beast. The deploy changes no member. Live: run `orbit:node-dns-repair shark`. Check `resolvectl status`, `getent ahostsv4` for a Route domain, a custom proxy name, and a public name, and Doctor. Then do beast. Inventory every eligible member and record successful selection before step 5, using the approved eligibility policy in the single list below. Test an outside-TLD Route (A and AAAA), forwarding failure, sticky fallback and repair, tunnel restart, competing-scope refusal, DNS-service failure and LAN-path failure separately from a whole-Router outage, then repair and confirm return to Cluster DNS. While the listener runs, direct member queries to VPN DNS still get source-selected LAN answers. Forwarded queries arrive with the Router's source address, so rehearsal must check exceptions and other Clusters too. Rollback: revert, then on each member restore its ordinary persistent and live link DNS policy, remove the delegate, and reload systemd-resolved. Verify resolution after a tunnel restart too.
 4. **Rollback bridge.** Change the listener publication so that it moves dnsmasq off the VPN DNS address before it starts the listener socket, whenever that socket is not active. Today the socket start comes first and fails while dnsmasq holds TCP port 53. A test runs this publication on the files that step 5 leaves and starts a real dnsmasq. This is a short-lived edit of an inline script that ADR 0211 still lists, and step 6 deletes it. Live: no change. Rollback: revert.
 5. **VPN DNS cutover.** Add `dns.converge-vpn-dns` and the `role.dns_listener_*` findings. Each publication runs the cutover while listener units exist, under `/run/lock/orbit-dnsmasq.lock`. The cutover installs the files, moves the `bind-interfaces` snippets away, stops the listener service and socket, and restarts dnsmasq at once. It confirms with `ss` that dnsmasq owns UDP and TCP port 53 on both addresses, and then deletes the units, the catalog, and the releases. On a failure it restores the backend files, restarts dnsmasq, and starts the listener again. Precondition: Doctor reports no `node.cluster_dns_*`, `role.cluster_dns_*`, or `role.firewall_projection_mismatch` finding. Live: merge it while someone watches the `vpn` Node, and merge nothing else until it is verified. The first publication after the deploy runs the cutover. Lookups through VPN DNS can fail between stopping the listener and confirming dnsmasq. Measure this interval in rehearsal; it has no proven sub-second bound. Preserve backups until confirmation, and restore all changed snippets and listener assets on failure. A successful cutover rollback must restore the disabled snippets recorded in its manifest too. From here, sabre gets WireGuard answers. Check `getent` from shark, beast, a task VM, the services Node, and app-prod, and run Doctor. Rollback: run `gateway:release:rollback` to the release before step 5, which holds the bridge, or merge a revert. The next publication moves dnsmasq back to `127.0.0.55` and starts the listener. A rollback pauses automatic releases until `gateway:release:auto:resume`.
 6. **Delete and absorb.** Delete the listener, the codec, the catalog, the requester code, the bridge, and their tests. Remove `DnsmasqPrivateDnsManager.php` from the ADR 0211 inline script list when its last script goes. Delete `role.dns_listener_retained` after Doctor reports it clean on the live `vpn` Node. Absorb this ADR into [Private DNS](/reference/private-dns) and [Routes](/reference/routes), and retire it. Live: no change. Rollback: revert.
 
 ### Decisions for the maintainer
 
-The decision of 2026-10-16 fixes the location rule, the two servers, plain dnsmasq on the `vpn` Node, the port 53 rule, and the member step on join and leave. The points below are additional proposals, not approved decisions. Each has a recommendation.
+The decision of 2026-10-16 fixes the location rule, the Cluster TLD and exact Cluster Route scope, forwarding to VPN DNS, the two servers, plain dnsmasq on the `vpn` Node, the port 53 rule, and the member step on join and leave. This is the single approval list. Entries marked required compatibility restate existing contracts; all other entries are recommendations requiring maintainer approval before implementation.
 
-1. **The Cluster DNS covers only names under the Cluster TLD.** This narrows the decision of 2026-10-16, which also named Cluster Route domains outside the TLD. Recommendation: accept. No such domain exists in the live fleet. Each one would need a routing domain on every member, a member step on every Route change, and local answers for its subdomains and other record types. Without those, a public failure below it moves members to the second server.
-2. **Members send only names under the TLD to the Cluster DNS, through a delegate.** The `orbit` link keeps `~.` for the VPN DNS. Recommendation: accept. The Cluster DNS cannot be a server on the `orbit` link. In one ordered list for every name, one public SERVFAIL or timeout moves a member to the VPN DNS until a reset.
-3. **The Cluster DNS forwards nothing and refuses names outside the TLD.** This narrows "forwards every other name to the VPN DNS". Recommendation: accept. Members never send it those names, and the wide port 53 rules on beast would make a forwarder an open resolver for the LAN.
+1. **One catch-all delegate, with persistent link policy changes.** Recommendation: accept. It preserves the required TLD, exact outside-TLD Routes, and forwarding scope without per-Route member updates. The delegate must be the sole catch-all scope; unsupported competing scopes refuse selection.
+2. **Ordered servers with different answers and coupled upstream failures.** Recommendation: accept only after the systemd 259 acceptance tests. LAN-first means first after selection/reset, not preferred on every query. A public failure can switch subsequent lookups to VPN DNS. NXDOMAIN, NODATA and EDE failures described above do not switch servers. Strict automatic preference would need another design decision.
+3. **Keep Cluster DNS without a TLD.** Recommendation: accept, so exact Cluster Routes still receive LAN answers. Removing a TLD removes its wildcard, not the service.
 4. **No automatic return after a fallback.** A member returns at the next member step, repair, or reload, and Doctor reports it as drift. Recommendation: accept. If Router reboots make this drift frequent, revisit the policy with the maintainer; removing fallback would change Nick's requirement.
-5. **Router, TLD, and Cluster changes run the member step on every LAN member.** The decision named only join and leave on one machine. Recommendation: accept, because the delegate holds the Router LAN address and the TLD.
+5. **Router, TLD, and Cluster changes run the member step on every LAN member.** The decision named only join and leave on one machine. Recommendation: accept, because the delegate holds the Router address and a reload restores its initial server.
 6. **Failed expansion steps produce `follow_up`; failed withdrawal or replacement steps hold cleanup.** Recommendation: accept. Successful stale answers do not trigger fallback, so cleanup must wait for members to move.
 7. **Members without roles and members with a `--dns-server` override get no delegate.** sabre gets WireGuard answers from step 5. The firewall still admits sabre, so an operator can add the delegate by hand. Recommendation: accept.
-8. **The Router resolves its own names under the TLD through its own Cluster DNS**, unless it holds `vpn` or `gateway`. Recommendation: accept, so that one rule covers every LAN member.
-9. **A separate `orbit-cluster-dns.service` from `dnsmasq-base`**, not the stock `dnsmasq.service`. Recommendation: accept. A Router can also hold `vpn` or Incus bridges, and on beast the stock unit is failed while `/etc/dnsmasq.d` holds an Incus snippet and a stale Orbit file.
+8. **The Router resolves through its own Cluster DNS**, unless it holds `vpn` or `gateway`. Recommendation: accept, so that one rule covers every LAN member.
+9. **A separate `orbit-cluster-dns.service` from `dnsmasq-base`, with overlap refusal.** Recommendation: accept the bind-set preflight above; sharing a Node does not imply sharing an address. A Router can also hold `vpn` or Incus bridges, and on beast the stock unit is failed while `/etc/dnsmasq.d` holds an Incus snippet and a stale Orbit file.
 10. **Exact names live in a hosts file that dnsmasq reads again on `SIGHUP`, on both servers.** Recommendation: accept. Hosts-only updates avoid a restart and clear cached answers. Configuration changes still require a restart.
 11. **Both servers keep the 30-second TTL with `local-ttl=30`.** Recommendation: accept.
-12. **The Gateway writes a Router only when its stored digest differs, and publications never remove a Cluster DNS.** Recommendation: accept. A down Router then blocks only its own Cluster, and a publication from stored state during an activation cannot undo the expand.
-13. **The VPN DNS answers on the private interface of the `vpn` Node again.** Recommendation: accept. The override of app-prod points at that interface, and one `interface=` line restores it.
+12. **The Gateway writes a Router only when its stored digest differs, and publications never remove a Cluster DNS.** Recommendation: accept. A down Router then blocks only publications that change its projection, and a publication from stored state during an activation cannot undo the expand.
+13. **The VPN DNS answers on the private interface of the `vpn` Node again.** Recommendation: accept. The override of app-prod points at that interface, but `interface=` includes loopback and requires the overlap preflight.
 14. **A rollback bridge before the cutover.** Recommendation: accept. Without it, a rollback needs a manual step on the `vpn` Node and several seconds without DNS.
 15. **Doctor reports Router LAN rules whose source is not eligible**, for the HTTPS family too. Recommendation: accept.
 16. **Narrow overlapping port 53 rules before enabling Cluster DNS.** Recommendation: include this in rollout, preserving Incus access on bridge interfaces. Without it, Nick's member-only requirement is not met.
-17. **The member steps run inside the request of their action.** Recommendation: accept while a Cluster has few LAN members.
-18. **One validated record boundary, reserved extension names, and removal on disable.** Recommendation: accept the Record boundary contract already introduced by #1299.
+17. **Use the owning action's execution and deadline.** Recommendation: follow ADR 0209 and ADR 0218 conversions; do not add a separate DNS queue or unbounded request.
+18. **Preserve the existing contribution contract.** Required compatibility, not a new approval: placement controls publication; Doctor reports stored conflicts with reserved names while publication continues. Withdrawal follows ADR 0212 step 4/A3. Recommendation: extend these same rules to the new projections.
 19. **Transition overrides remain authoritative across intermediate publications; partial writes require compensating restore.** Recommendation: accept. A digest alone does not provide distributed consistency.
 
 ## Rejected alternatives
@@ -231,6 +237,7 @@ The decision of 2026-10-16 fixes the location rule, the two servers, plain dnsma
 - **No LAN answers.** Traffic between LAN members would go through the hub in the datacenter.
 - **Keep the PHP listener.** It keeps a custom DNS server, its release, and its socket units to answer what two stock dnsmasq instances answer by location.
 - **The Cluster DNS as a second server on the `orbit` link.** systemd-resolved sends each query to a link server out of that link, and WireGuard drops the LAN query.
+- **TLD-only, non-forwarding Cluster DNS.** It removes exact outside-TLD Route support and narrows the required scope. It is not the proposed design.
 - **Two scopes with `~.`.** resolved asks both and takes the first success, so a Cluster name gets the LAN answer or the WireGuard answer by chance.
 - **The Cluster DNS on the LAN link.** networkd drops the setting when it restarts, NetworkManager overwrites it, and the VPN DNS cannot be a second server there.
 - **A global `resolved.conf` drop-in instead of a delegate.** It takes over the global `DNS=` list of the machine and needs the same reload.
@@ -238,17 +245,21 @@ The decision of 2026-10-16 fixes the location rule, the two servers, plain dnsma
 ## Consequences
 
 - The listener code and its tests are deleted. The VPN DNS is stock dnsmasq again.
-- A LAN member resolves names under the TLD over the LAN, also when the `vpn` Node or its own tunnel is down.
-- Each Router of an active Cluster with a TLD and a LAN address runs a DNS server.
+- A LAN member resolves the TLD and exact Cluster Routes over the LAN while Cluster DNS remains its current server. Forwarded failures can move it to VPN DNS and leave it there.
+- Each Router of an active Cluster with a LAN address runs a DNS server.
 - A member step reloads systemd-resolved, which flushes its cache, restarts the stub listener, and fails the lookups in flight on that member.
 - A TLD change or a LAN address change of the Router can move a LAN member to the second server between the publication and its member step. The member step reloads systemd-resolved and moves it back.
 - Software that sends DNS to the VPN DNS address itself, outside systemd-resolved, gets WireGuard answers on a LAN member.
 - When an uplink does not answer, dnsmasq sends no reply and the client times out. The listener answered NXDOMAIN after about 4 seconds. A Node TLD nested below a Cluster TLD follows the dnsmasq rule that the more specific domain wins.
 - A LAN member needs systemd 258 or newer for the delegate. Ubuntu 26.04 ships systemd 259.
 
+### Local design evidence
+
+A disposable container with no external network ran dnsmasq 2.91 on 2026-10-16. `interface=private0` bound UDP and TCP port 53 on its private address and on IPv4/IPv6 loopback. A second listener on that private address failed with `Address in use`; a listener on a separate dummy LAN interface worked. Queries confirmed the exact outside-TLD A answer, forwarding for its child name, forwarded public answers, and local suppression of AAAA beneath the TLD. AAAA for the outside-TLD hosts entry forwarded and returned the upstream REFUSED response. This verifies daemon behavior, not the planned preflight implementation or systemd 259 lifecycle. Rehearse those on the target packages before rollout.
+
 ## Affects
 
 - Components: apps/gateway, apps/cli, packages/php-sdk, apps/docs
-- ADRs: [0210](/decisions/0210-give-each-extension-its-own-code-boundary), whose plug-in point for private DNS records feeds only the VPN DNS; [0211](/decisions/0211-ship-node-changes-as-remote-programs), which the three new programs follow; [0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension), whose step 2b DNS record is a VPN DNS record
+- ADRs: [0210](/decisions/0210-give-each-extension-its-own-code-boundary), whose plug-in point feeds the shared record boundary; [0211](/decisions/0211-ship-node-changes-as-remote-programs), which the three new programs follow; [0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension), whose step 2b DNS record is a VPN DNS record
 - Detail: [Private DNS](/reference/private-dns), with a Cluster DNS section in place of "Cluster Router addresses" and "The listener", and their "Why it works this way" sections; [Routes: Cluster scope](/reference/routes#cluster-scope), [Private network trust](/reference/routes#private-network-trust), and "LAN first, without fallback"; [Node provisioning: Converge the Orbit footprint](/reference/node-provisioning#converge-the-orbit-footprint); [cluster](/cli/cluster); [node](/cli/node); [doctor](/cli/doctor); [firewall](/cli/firewall); [Relocate the gateway role](/solutions/relocate-gateway-role)
 - Verify: `php artisan test --compact --filter='ClusterDns|PrivateDns|ClusterRouterDnsSelection|RouterLanIngress|WireGuardPeerDns|Doctor'` in apps/gateway, `bin/remote-programs-check`, a test that runs the rendered Cluster DNS and VPN DNS files in a real dnsmasq, and the live checks of each build step
