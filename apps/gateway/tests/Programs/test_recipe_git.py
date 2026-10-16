@@ -155,6 +155,8 @@ class RecipeGitTest(unittest.TestCase):
 
     def test_only_a_root_owned_receipt_allows_a_later_pin_to_replace_a_previous_recipe_build(self):
         self.install(recipe)
+        # The write-only publish fake must match the real publisher's explicit mode, not the caller's umask.
+        (self.apt / 'orbit-git.json').chmod(0o644)
         self.origin = 'https://vendor.example/git resolute/main amd64 Packages'
         bumped = {name: {**pin, 'version': PIN.replace('2.55.0', '2.56.0')} for name, pin in self.tools.items()}
         original_stat = recipe.Path.stat
