@@ -81,6 +81,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $failed_step
  * @property bool $first_setup_pending
  * @property list<string>|null $environment_owned_keys
+ * @property Carbon|null $environment_runtime_pending_at
  * @property string|null $error_code
  * @property Carbon|null $runtime_definitions_captured_at
  * @property bool $development_release_layout
@@ -472,6 +473,7 @@ final class Instance extends Model
             'seed_selected' => 'boolean',
             'first_setup_pending' => 'boolean',
             'environment_owned_keys' => 'array',
+            'environment_runtime_pending_at' => 'datetime',
             'status' => InstanceState::class,
         ];
     }
