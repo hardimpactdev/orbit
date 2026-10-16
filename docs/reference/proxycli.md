@@ -7,8 +7,7 @@ covers:
   - apps/gateway/app/Http/Controllers/Api/ProxyCliController.php
   - apps/gateway/app/Models/ProxyCliProcessSource.php
   - apps/gateway/database/migrations/*_move_proxycli_process_sources_to_extension_table.php
-  - apps/gateway/tests/Feature/Database/ProxyCliProcessSourceMigrationTest.php
-  - apps/gateway/tests/Feature/Infrastructure/ProxyCli/**
+  - apps/gateway/tests/Feature/{Database/ProxyCliProcessSourceMigrationTest.php,Infrastructure/ProxyCli/**}
   - apps/gateway/resources/proxycli/**
   - apps/web/src/pages/Quota.tsx
 ---
