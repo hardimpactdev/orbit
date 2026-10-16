@@ -32,8 +32,6 @@ The generated API schema also includes the Project development deploy step opera
 
 The generated API schema includes show and update operations for Project Documents storage on the Gateway, with their redacted `DocumentStorage` response. Credential fields are update inputs only, never response properties. These types describe the [storage contract](/reference/project-documents#private-s3-boundary); they do not add storage settings controls to the web app.
 
-The generated Instance response includes nullable `annotator_port` and `annotator_url` fields. The URL points to `/__orbit/annotator` on the Instance Route when a port and Route exist. The generated Process create description also lists the `annotator` preset. These API schema fields add no web UI control; see [Annotator Process](/reference/agentation#annotator-process).
-
 [GitHub feedback fixups](/reference/tasks#review-fixup-lifecycle) use the existing subtask `fixup_problem` and `brief` fields. Regenerating the API types confirms that feedback consumption adds no response field or web merge control. Source provenance is task data, not a rendered GitHub instruction or permission to merge.
 
 The generated Instance rename request exposes optional `branch` and `domain` fields. The Gateway still requires at least one; optional TypeScript properties do not replace API validation. This API operation adds no web UI control.
@@ -157,7 +155,7 @@ The periodic refresh rebuilds the loaded range from the newest page. Each next r
 
 ## Polling
 
-Realtime events keep the fleet lists, the deployment history, and the annotation list current, so those views do not poll while the page is live. When the page goes live after a time without realtime, it reloads them once, because events sent in that time are lost.
+Realtime events keep the fleet lists and the deployment history current, so those views do not poll while the page is live. When the page goes live after a time without realtime, it reloads them once, because events sent in that time are lost.
 
 While realtime is down, those views poll with a backoff. The first poll comes 30 seconds after the loss. The delay then doubles up to 5 minutes. A reconnect resets it. The footer shows `live updates paused` next to the Gateway name. Clicking it reloads every view and restarts the backoff. A hidden tab never polls. A tab that becomes visible reloads the views whose data is older than 30 seconds.
 
@@ -317,6 +315,22 @@ Then open `http://127.0.0.1:5173` on the Mac. Keep both the web command and SSH 
 
 Browser tests assert on the page, the URL, and the requests that the demo Gateway received. They never write tracked files, so a passing `bun run test` in `apps/web` leaves the working tree unchanged.
 
+## Annotation overlay
+
+The web app mounts the [`@nckrtl/annotator`](https://github.com/nckrtl/annotator) overlay once for the page's lifetime. It sends annotations to the package's standalone server. The package documents the server and its agent API. An ordinary Process can run that server; Orbit provides no annotation store, task delivery, or preset.
+
+`vp dev` forwards `/__annotate/local/{port}/annotations` to the annotation server on `127.0.0.1:{port}` only when that port answers as `@nckrtl/annotator`. Demo mode answers this path itself and makes no upstream call.
+
+The web app reads these values at startup. Set them in `apps/web/.env.local` and restart the dev server.
+
+| Variable | Meaning |
+| --- | --- |
+| `VITE_ANNOTATION_TRANSCRIPTION_URL` | The speech URL, passed as `dictation.wsUrl`. Empty turns speech off. |
+| `VITE_ANNOTATION_AUTO_START` | `0` records only on the microphone button. |
+| `VITE_ANNOTATION_DICTATION_PROVIDER` | `post` for desktop dictation. |
+| `VITE_ANNOTATION_DICTATION_POST_URL`, `VITE_ANNOTATION_DICTATION_STOP_URL` | The desktop dictation endpoints. |
+| `ANNOTATION_TRANSCRIPTION_TARGET` | A Diction origin, such as `http://127.0.0.1:8080`. The dev server proxies `/__annotate/speech` to its `/v1/audio/stream`. Set the speech URL to `/__annotate/speech` to keep speech on the page origin. |
+
 ## Why it works this way
 
 These reasons explain the design. Check them before you propose a change.
@@ -384,3 +398,11 @@ Its Deploy action starts an `instance.deploy` [operation](/reference/operations)
 ## Database tables
 
 The database Tables panel shows a query error when a table read fails, instead of reporting an empty database. MySQL inspection requires the MySQL PDO driver in the Gateway PHP runtime.
+
+### Annotations outside the Gateway
+
+Annotations run outside Orbit. The web app uses the independent overlay package as any other host does. Keeping one package avoids copies that drift between applications. The Gateway does not duplicate the package's store or dispatch its work to T3 threads or Tasks.
+
+The removal deletes the Gateway's annotation records, revision counter, and annotation-only Tasks. It removes the `annotation:*` API operations and matching MCP tools, `annotation.updated`, and the `annotator`, `agentation-mcp`, and dependent `antigravity-watch` presets. The CLI and SDK omit the Instance annotator port and URL fields; the CLI accepts only the `vp-dev` preset. Task `execution_mode` and `target_thread_id` are gone. This does not change ordinary Processes that run a standalone annotation server. Browser calls from private app Route origins now receive HTTP 403 `api.origin_refused`. This breaks the Orbit tool in `nckrtl/laravel-toolbar` (`useOrbitProcesses.ts`).
+
+Before deploying this removal, destroy all removed preset Processes through the old Gateway. The migration refuses to change data while any such Process remains and names its ID. This blocks the release before activation. The destructive migration requires a verified pre-migration database backup to restore removed data. Rollback restores empty annotation tables and the Task schema and defaults required by the previous release, not deleted records. See [retained Node files](/reference/node-provisioning#converge-the-orbit-footprint) for cleanup.

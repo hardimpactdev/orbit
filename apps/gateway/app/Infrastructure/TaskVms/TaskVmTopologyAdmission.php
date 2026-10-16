@@ -6,6 +6,7 @@ namespace App\Infrastructure\TaskVms;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Tasks\TaskCapacityException;
+use App\Domain\Tasks\TaskSubtaskRunner;
 use App\Domain\Tasks\TaskTopology;
 use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Domain\Tasks\TaskTopologyEvidence;
@@ -24,12 +25,13 @@ use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Prepares a group's declared topology nested in its task VM, before a subtask that declares one runs its baseline
- * check or any turn. The first such subtask starts a preparation unit ({@see TaskVmTopologyUnit}), which runs the host
- * setup, builds the role images the VM lacks, and acquires `TASK-<group>` with the union of the group's declarations.
- * Each tick reads the unit's state until it is ready. A ready topology that holds the subtask's declaration admits it
- * at once, from the row. A failed or lost unit asks for assistance and forgets the run, so a resolution starts it
- * again. Evidence comes from {@see TaskVmTopologyEvidenceReader}.
+ * Prepares a group's declared topology nested in its task VM, before each turn that Orbit prepares for a subtask that
+ * declares one ({@see TaskSubtaskRunner::prepareTurn()}). So it runs after the group's baseline check, whose Project
+ * setup installs what the harness needs. The first such turn starts a preparation unit ({@see TaskVmTopologyUnit}),
+ * which runs the host setup, builds the role images the VM lacks, and acquires `TASK-<group>` with the union of the
+ * group's declarations. Each tick reads the unit's state until it is ready. A ready topology that holds the subtask's
+ * declaration admits it at once, from the row. A failed or lost unit asks for assistance and forgets the run, so a
+ * resolution starts it again. Evidence comes from {@see TaskVmTopologyEvidenceReader}.
  */
 final readonly class TaskVmTopologyAdmission implements TaskTopologyAdmission
 {

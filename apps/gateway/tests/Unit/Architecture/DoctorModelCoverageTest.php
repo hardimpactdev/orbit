@@ -6,7 +6,6 @@ use App\Domain\Doctor\DoctorFamily;
 use App\Models\Activity;
 use App\Models\AgentThread;
 use App\Models\AgentThreadSendLease;
-use App\Models\Annotation;
 use App\Models\Cluster;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
@@ -117,7 +116,6 @@ it('partitions every persisted model across doctor dispositions', function (): v
         FleetRollout::class,
         FleetRolloutNode::class,
         NodeFootprint::class,
-        Annotation::class,
         DependencyPackage::class,
         InstanceDependencyObservation::class,
         InstanceDependencyResolution::class,

@@ -520,9 +520,6 @@ it("does not let demo adapters call the CLI or an upstream service", async () =>
             output: "Demo mode does not run orbit profile.",
         });
 
-        const thread = await fetch(`${origin}/__annotate/thread`);
-        expect(await thread.json()).toEqual({ status: "unavailable", reason: "demo" });
-
         const speech = await fetch(`${origin}/__annotate/speech`);
         expect(speech.ok).toBe(true);
         expect(await speech.text()).not.toBe("upstream");

@@ -44,7 +44,7 @@ A Node keeps its own TLD while it belongs to a Cluster, and membership never cha
 | --- | --- |
 | Node TLDs are unique among Nodes. | `node.tld_taken` |
 | Cluster TLDs are unique among Clusters. | A validation error on `tld` |
-| No Cluster or Node TLD is `orbit`, where the platform names such as `gateway.orbit` live, or the private VPN domain. Private DNS answers every name under a TLD. A Gateway release refuses to migrate while a stored TLD breaks this rule. | A validation error on `tld` |
+| No Cluster or Node TLD may equal, be an ancestor of, or be a descendant of either private zone: `orbit` or the configured VPN domain. Comparisons ignore case and the VPN domain’s optional root dot, and use DNS label boundaries. The guard migration refuses stored conflicts on its first run; already migrated Gateways require an operator check, as [Private DNS](/reference/private-dns#cluster-router-addresses) explains. | A validation error on `tld` |
 | A Node outside an active Cluster cannot own that Cluster's TLD. Activating a Cluster with a TLD, or giving an active Cluster a TLD, checks this. | `cluster.tld_conflict` |
 | A Node cannot take the TLD of an active Cluster that it is not a member of. | `node.tld_conflict` |
 | A member that shares the active Cluster TLD cannot leave while that TLD is active. | `cluster.tld_conflict` |
@@ -65,7 +65,7 @@ orbit cluster:create <name> [--tld=TLD]
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--tld=TLD` | none | Development TLD as one DNS label, such as `test`. It cannot be `orbit` or the private VPN domain. An active Cluster with this TLD owns generated development Route domains for its members. |
+| `--tld=TLD` | none | Development TLD as one DNS label, such as `test`. It cannot equal, be an ancestor of, or be a descendant of `orbit` or the configured VPN domain. Comparisons ignore case and the VPN domain’s optional root dot, and use DNS label boundaries. An active Cluster with this TLD owns generated development Route domains for its members. |
 
 ```bash
 orbit cluster:create lab --tld=test

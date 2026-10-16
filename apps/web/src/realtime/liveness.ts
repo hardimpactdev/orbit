@@ -40,9 +40,6 @@ export function downForMs(now = Date.now()): number {
     return downSince === null ? 0 : Math.max(0, now - downSince);
 }
 
-/** Whether record-change events reach the page right now. */
-export const isLive = (): boolean => current.liveness === "live";
-
 /**
  * The delay before the next fallback poll, given when the query last fetched. There is none while
  * realtime is live. Without it, the delay is how long realtime had been down at that fetch, from

@@ -4,8 +4,8 @@ sidebarTitle: "Contributor guide"
 description: "Prepare architecture and documentation, build a feature, and submit a complete pull request."
 covers:
   - .agents/skills/reviewing-pull-requests/references/test-*.md
-  - "{composer,vet}.json"
-  - bin/{bootstrap,gateway-app-key,test,pest-plain,review-check,bug-repro,task-group-check,pr-head-check,deploy-verify,docs-merge-check,dependency-audit}
+  - "{composer.json,vet.json,.gitattributes}"
+  - bin/{bootstrap,gateway-app-key,test,pest-plain,review-check,bug-repro,task-group-check,pr-head-check,deploy-verify,docs-merge-check,generated-merge,dependency-audit}
   - "{apps/*,packages/php-sdk}/{composer,vet}.json"
   - "{apps/*,packages/php-sdk}/phpstan.neon"
   - apps/gateway/tests/Support/{LinuxHost,TestToolchain,LocalShellSshExecutor}.php
@@ -70,6 +70,24 @@ composer docs-lint
 
 Commit `docs/generated/context.json` when `docs-build` changes it. A new page also needs a place in the `docs/docs.json` navigation; `composer docs-nav` fails for a page that exists only on disk. For Mintlify page or navigation changes, also run `npx mint validate` and `npx mint broken-links` from `docs/`.
 
+### Merging generated files
+
+Keep `docs/generated/context.json`, `docs/docs.json`, `docs/decisions/overview.mdx`, `docs/openapi.json`, `apps/web/src/api/schema.d.ts`, and `apps/gateway/resources/mcp/tools.json` committed. The Gateway and web app need their runtime contracts, and the documentation checks need reproducible snapshots. Do not resolve their conflicts by taking one branch or using a text union: that can drop another PR's API or produce invalid JSON.
+
+Run `bin/generated-merge --install` once in each clone before merging branches. `bin/bootstrap` also installs this local Git driver. It needs the normal Docs and Gateway Composer dependencies and the web app's Bun dependencies. Git does not distribute driver configuration with attributes; a fresh clone and a hosted merge service do not run it automatically. Prepare the merge locally with the driver, then publish the checked merge through the normal review workflow. No global Git configuration is changed.
+
+The Docs CI job installs the Gateway Composer dependencies and the web app's locked Bun dependencies before running tests, so the merge proof runs with the same prerequisites in a clean checkout.
+
+For Orbit task workspaces whose Project setup list uses separate dependency steps instead of `bin/bootstrap`, the operator must add `orbit instance:setup-step:create generated-merge --project=PROJECT_ID --command='bin/generated-merge --install' --timeout=30` after this change merges. Replace `PROJECT_ID` with the Orbit Project ID. The baseline setup installs the driver before agent turns and mechanical main merges. Apply this live Project change only after merge; repository changes do not update the live setup list. Mechanical main merges honor repository-local merge drivers while still disabling hooks and fsmonitor, and run the Project gate before inheriting review evidence.
+
+The driver merges the maintained parts of `docs/docs.json` by navigation identity and ADR overview rows by decision number. Conflicting edits to the same value still fail. It builds a private merge preview of the source files, regenerates the context index, OpenAPI document, web types, and MCP manifest there, and returns the requested artifact to Git. Source conflicts or missing build tools leave the merge unresolved. It does not fetch, change the source checkout, or run Git hooks.
+
+Regeneration is cached once per ordered pair of commit SHAs and driver version in the checkout's private Git directory. It refuses changes to either branch's Docs or Gateway `composer.lock` or web `bun.lock` since their common ancestor, since installed packages may predate those changes. Before sharing installed dependencies, it also compares the merged tree's locks with the dependency checkout. A lock change or mismatch fails clearly: install the merged locked dependencies and run the generators explicitly instead of using old vendor packages. Source conflicts and dependency failures are not cached.
+
+`bin/docs-merge-check` previews GitHub's ordinary text merge without custom drivers; it reports the local driver result separately on a conflict, never turning that conflict into a successful GitHub preview.
+
+This keeps the existing file layout and deployment contracts. Dropping build outputs would need deployment changes and would not solve the committed runtime artifacts; splitting indexes would still leave the API contracts. Regeneration is smaller and avoids combining stale snapshots. All existing read-only freshness and `--check` gates remain required after a merge; the driver does not replace them. Use a normal two-parent merge with locally available commit refs. For a rebase, squash application, or a merge with conflicting source edits, resolve the sources first and run the generators explicitly.
+
 ## 3. Implement and verify
 
 Build the feature and its tests against the documented behavior. Keep the in-progress ADRs and the documentation in line with what the implementation delivers. Explain any change of direction in the pull request.
@@ -106,6 +124,8 @@ Some tests run Node programs that use Linux kernel interfaces, such as `/proc/ne
 Each test process copies `apps/gateway` to the host with rsync once and reuses the copy. The copy holds only the files that Git would track, as `git ls-files --cached --others --exclude-standard` lists them, and `vendor/`. So ignored files such as keys, logs, caches, and databases stay local, and no `.env` file except `.env.example` leaves your machine. The copy lives in a mode 700 directory under `/tmp/orbit-gateway-linux-tests-<uid>`. The process removes its copy when it ends, also on Ctrl-C or `SIGTERM`. The host stops a test that runs longer than five minutes, or `ORBIT_LINUX_TEST_TIMEOUT` seconds. A later run removes the copies that a killed process left, after six hours.
 
 Each Gateway test process keeps its fixtures in its own directory under `TMPDIR`, `orbit-gateway-tests-<pid>-<random>`, and removes it when it ends, also on Ctrl-C or `SIGTERM`. A later run removes the directories of killed processes. E2E test processes keep their temporary paths in `orbit-e2e-tests-<random>` and remove it when they end. So a suite run leaves nothing in `TMPDIR`. Create fixtures under `sys_get_temp_dir()`, not a fixed `/tmp`, unless the test needs a short Unix socket path or a path that a Node program fixes. On `app-dev` Nodes, the [tmpfiles rule](/reference/node-provisioning#converge-the-orbit-footprint) empties `/tmp/orbit-*` and `/dev/shm/orbit-*` directories a day after their contents last changed.
+
+Every Gateway Feature test gets `Storage::fake('local')`. Its Laravel storage path points to a temporary directory for that test, including direct-file staging. An after-test guard compares the original `storage/app` tree and fails if files changed there. Use the fake disk or a per-test temporary path for archives; never write transcript fixtures to the real archive root.
 
 Add regression tests for behavior changes and their important failure modes. A bug fix adds a test that fails before the fix and passes after it. Confirm that the tests that exercise the new behavior ran. Temporary Git repositories in DocsImpact tests disable automatic garbage collection and maintenance before the first commit, so background Git processes cannot write pack files during fixture cleanup.
 

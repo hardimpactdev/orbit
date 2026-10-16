@@ -6,7 +6,7 @@ Use this workflow when the requested scope is a complete subsystem, project, or 
 
 Pin the commit and record working-tree changes. Establish test results before cleanup. Record pre-existing failures and environment limits separately. Measure test, support, and production LOC separately and record runtime under comparable conditions. Do not promise a percentage reduction before discovery.
 
-Inspect CI, manifests, test configurations, scripts, and shared fixtures to enumerate the surface. Include PHP projects, web unit and browser tests, annotation, Pi server, Rust agent tests, and tooling when the scope is all Orbit. Discover the current paths rather than relying on this list alone.
+Inspect CI, manifests, test configurations, scripts, and shared fixtures to enumerate the surface. Include PHP projects, web unit and browser tests, Pi server, Rust agent tests, and tooling when the scope is all Orbit. Discover the current paths rather than relying on this list alone.
 
 Assign every test file and scenario to one feature boundary. Include cross-project tests owned by that feature. Track unassigned files, disabled tests, excluded groups, and separate live scenarios so they cannot disappear from the audit.
 

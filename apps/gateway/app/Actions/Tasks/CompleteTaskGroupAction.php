@@ -37,7 +37,6 @@ final readonly class CompleteTaskGroupAction
      */
     public function execute(Task $group, bool $finishWhenRemovalFails = true): Task
     {
-        $group->requireManagedExecution();
         $this->requireExtension->execute();
 
         $group->refresh()->load(['project', 'tasks', 'taskable']);

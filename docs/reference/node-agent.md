@@ -98,15 +98,17 @@ When it cannot fetch the list for 60 seconds, the agent stops every stream and e
 
 ### Sources
 
-The agent checks each source itself and runs no program for any of them.
+The agent checks each source itself. For a `journal` source it runs read-only `journalctl`; for the other sources it runs no program.
 
 | Type | Fields | What it reads | What it refuses |
 | --- | --- | --- | --- |
 | `laravel` | `path`: the Instance's [application directory](/reference/projects#application-directory) | `storage/logs/laravel.log`, or the newest `laravel-*.log`. It follows a daily file to the next day's file. | A path that is not normalized and absolute. A link at `storage/logs` or at the file. A file that is not regular, or that `root` owns. |
-| `journal` | `unit` | The journal files in `/var/log/journal` and `/run/log/journal`, for the unit and systemd's messages about it. | A unit that is not `orbit-process-{id}-{name}.service`. |
+| `journal` | `unit` | The output of `journalctl --unit {unit} --output short-iso --utc`: the unit's entries, systemd's and root services' messages about it, and its core dumps. | A unit that is not `orbit-process-{id}-{name}.service`. |
 | `docker` | `container`, `process_id` | The container's output through the Docker Engine API. | A name that is not `orbit-process-{id}-{name}`, and a container without the labels `orbit.managed=true` and `orbit.process.id` equal to `process_id`. |
 
-Refusing a file that `root` owns means the agent reads only files that other users may read, inside the Instance root that its unit binds. So a link in a checkout cannot point the read at another user's file. The journal reader supports the compact and regular formats and zstd and lz4 compression. A field compressed with xz shows as `[orbit] entry not readable`. When the agent cannot open or keep reading a source, it ends the stream with `source_unavailable`.
+Refusing a file that `root` owns means the agent reads only files that other users may read, inside the Instance root that its unit binds. So a link in a checkout cannot point the read at another user's file. When the agent cannot open or keep reading a source, it ends the stream with `source_unavailable`.
+
+`journalctl` is part of systemd on every supported Ubuntu Node, at `/usr/bin/journalctl`. The agent starts it with no environment and no input, and stops it when the stream stops, so no `journalctl` outlives its stream. When the agent itself stops, systemd stops any `journalctl` that is left, because it runs in the agent's unit. [Live logs](/reference/live-logs#sources) describes how the agent hands over from the first lines to the follow and how it cuts a long entry.
 
 The agent redacts each line with the Gateway's secret patterns before it sends it. [Live logs](/reference/live-logs#redaction) lists the patterns. The agent and the Gateway tests share one table of cases in `apps/agent/tests/redaction_cases.json`.
 
@@ -118,6 +120,7 @@ The agent redacts each line with the Gateway's secret patterns before it sends i
 | Events | One `client-log` event per stream every 250 milliseconds at most, each under 10,000 bytes |
 | Rate | 32 KiB per second per stream, with a 256 KiB burst, and 256 KiB per second for the agent |
 | Read ahead | 1 MiB per read. A file more than 4 MiB behind skips to its newest 64 KiB. |
+| Journal | One `journalctl` per stream. The agent keeps at most 512 KiB of one printed line and makes at most 256 KiB of lines from one entry. |
 
 The agent drops a line that exceeds a rate and reports the count in its next event. It sends log events on a second presence channel, `presence-node-logs.{id}`, as member `agent.{id}`. Only the agent and the Gateway's subscriber join it. [Realtime events](/reference/events#log-channels) defines the events.
 
@@ -287,7 +290,7 @@ The Gateway pins a released agent version and its architecture checksums. It sto
 
 The Node downloads the asset to a candidate file, checks the checksum, and moves it into place. A mismatch deletes the candidate and fails with `agent.checksum_mismatch`. When the installed binary already matches, the download is skipped. The Gateway restarts the agent only when the binary, configuration, certificate, secret, or unit changed.
 
-The unit runs the agent as `root` with `Restart=always` and `RestartSec=2`. It grants no capabilities and sets `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ProtectHome=tmpfs`, `BindReadOnlyPaths=-{Instance root}`, `PrivateTmp=yes`, `MemoryMax=128M`, and `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`.
+The unit runs the agent as `root` with `Restart=always` and `RestartSec=2`. It grants no capabilities and sets `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ProtectHome=tmpfs`, `BindReadOnlyPaths=-{Instance root}`, `PrivateTmp=yes`, `MemoryMax=128M`, and `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`. The memory limit also covers the `journalctl` processes of live journal streams.
 
 The Instance root is the Node's [apps root](/reference/node-settings#derive-the-effective-root). The bind line appears only when the root lies under `/home` or `/root`. When the Gateway cannot resolve the managed user, or the root has characters other than letters, digits, `.`, `_`, `-`, and `/`, the unit sets `ProtectHome=yes`, and the Gateway reads that Node's checkouts over SSH.
 
@@ -330,7 +333,7 @@ The agent recovers from each failure below without an operator.
 | The agent stops cleanly | It closes its connection. The web app shows the Node offline at once, and the Gateway drops the Node's view. |
 | The Node loses power or network | Heartbeats stop. After 15 seconds, the web app shows the Node offline and the view turns stale. |
 | The watch list request fails | The agent keeps its last list and asks again after 60 seconds. |
-| A log source cannot be read | The agent ends that stream with `source_unavailable`. |
+| A log source cannot be read, or `journalctl` is missing or stops | The agent ends that stream with `source_unavailable`. |
 | The agent leaves while it streams | The subscriber ends each stream of that Node with `agent_left`. |
 | Reverb is down, or no `websocket` role is active | The agent and the subscriber retry. The web app polls Prometheus, and Gateway reads use Prometheus and SSH. |
 | The subscriber stops | systemd restarts it after 2 seconds. Meanwhile the view turns stale, and Gateway reads use Prometheus and SSH. |
@@ -401,7 +404,7 @@ These reasons explain the design. Check them before you propose a change.
 
 ### The agent only observes
 
-An agent that also runs commands would be a second way to change a Node, with its own authorization, listener, and recovery, while SSH would still be needed when the agent breaks. So the agent listens on no port, runs nothing on anyone's behalf, and SSH stays the only way to change a Node. A compromised Gateway gains no new way into a Node, and a compromised Node can only report false state about itself.
+An agent that also runs commands would be a second way to change a Node, with its own authorization, listener, and recovery, while SSH would still be needed when the agent breaks. So the agent listens on no port, runs nothing on anyone's behalf, and SSH stays the only way to change a Node. Its only child process, read-only `journalctl` with fixed arguments, reads logs and changes nothing; [Live logs](/reference/live-logs#the-agent-runs-no-program-that-changes-the-node) explains why. A compromised Gateway gains no new way into a Node, and a compromised Node can only report false state about itself.
 
 The same boundary keeps updates out of the agent. An agent that pulls and applies updates would make a compromised Gateway, Reverb secret, or release key a root code-execution path to every Node. It would need offline signing and a privileged updater first, and it would still not cover Macs, which have no agent. So the Gateway runs [`orbit self-update`](/reference/self-update) on each Node over SSH. A self-update that an agent signal triggers stays possible, but it needs its own decision, with signed manifests and a narrow privileged trigger.
 

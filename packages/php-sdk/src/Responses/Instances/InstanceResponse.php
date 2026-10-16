@@ -15,8 +15,6 @@ use SensitiveParameter;
  *
  * @phpstan-type InstanceRecordFields array{
  *     shared_paths?: list<string>,
- *     annotator_port: int|null,
- *     annotator_url: string|null,
  *     id: int,
  *     project_id: int,
  *     node_id: int,
@@ -50,8 +48,6 @@ use SensitiveParameter;
  * }
  * @phpstan-type InstanceRecord array{
  *     shared_paths?: list<string>,
- *     annotator_port: int|null,
- *     annotator_url: string|null,
  *     id: int,
  *     project_id: int,
  *     node_id: int,
@@ -117,8 +113,6 @@ final readonly class InstanceResponse
         public ?int $ssrPort = null,
         public ?string $seedPath = null,
         public ?string $seedCommit = null,
-        public ?int $annotatorPort = null,
-        public ?string $annotatorUrl = null,
         /** @var list<RouteResponse> Every Route of the Instance, including Routes with a web root. */
         public array $routes = [],
         /** @var list<string>|null */
@@ -146,8 +140,6 @@ final readonly class InstanceResponse
             ssrPort: is_int($data['ssr_port'] ?? null) && $data['ssr_port'] >= 1024 && $data['ssr_port'] <= 65535 ? $data['ssr_port'] : null,
             seedPath: is_string($data['seed_path'] ?? null) ? $data['seed_path'] : null,
             seedCommit: is_string($data['seed_commit'] ?? null) ? $data['seed_commit'] : null,
-            annotatorPort: is_int($data['annotator_port'] ?? null) && $data['annotator_port'] >= 1024 && $data['annotator_port'] <= 65535 ? $data['annotator_port'] : null,
-            annotatorUrl: is_string($data['annotator_url'] ?? null) ? $data['annotator_url'] : null,
             name: is_string($data['name'] ?? null) ? $data['name'] : '',
             sourceLayout: is_string($data['source_layout'] ?? null) ? $data['source_layout'] : '',
             checkoutPath: is_string($data['checkout_path'] ?? null) ? $data['checkout_path'] : '',
@@ -184,8 +176,6 @@ final readonly class InstanceResponse
             'node' => $this->node?->toArray(),
             'vite_port' => $this->vitePort,
             'ssr_port' => $this->ssrPort,
-            'annotator_port' => $this->annotatorPort,
-            'annotator_url' => $this->annotatorUrl,
             'name' => $this->name,
             'source_layout' => $this->sourceLayout,
             'checkout_path' => $this->checkoutPath,

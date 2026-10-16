@@ -104,17 +104,17 @@ it('admits same-origin pages and the Gateway site', function (array $headers): v
     'Gateway origin from the Metrics hop' => [['Origin' => 'https://gateway.orbit', 'Sec-Fetch-Site' => 'same-origin']],
 ]);
 
-it('answers CORS with the exact origin of an active private App Route', function (): void {
-    $this->getJson('/api/v1/nodes', ['Origin' => 'https://shop.test', 'Sec-Fetch-Site' => 'cross-site'])
+it('answers CORS with the exact Gateway origin', function (): void {
+    $this->getJson('/api/v1/nodes', ['Origin' => 'https://gateway.orbit', 'Sec-Fetch-Site' => 'cross-site'])
         ->assertOk()
-        ->assertHeader('Access-Control-Allow-Origin', 'https://shop.test')
+        ->assertHeader('Access-Control-Allow-Origin', 'https://gateway.orbit')
         ->assertHeaderMissing('Access-Control-Allow-Credentials');
 
     $this->call('OPTIONS', '/api/v1/nodes', server: [
-        'HTTP_ORIGIN' => 'https://shop.test:443',
+        'HTTP_ORIGIN' => 'https://gateway.orbit:443',
         'HTTP_ACCESS_CONTROL_REQUEST_METHOD' => 'POST',
         'HTTP_SEC_FETCH_SITE' => 'cross-site',
-    ])->assertNoContent()->assertHeader('Access-Control-Allow-Origin', 'https://shop.test:443');
+    ])->assertNoContent()->assertHeader('Access-Control-Allow-Origin', 'https://gateway.orbit:443');
 });
 
 it('refuses other origins before routing, including preflight and MCP', function (string $method, string $uri, array $server): void {
@@ -126,6 +126,9 @@ it('refuses other origins before routing, including preflight and MCP', function
         ]])
         ->assertHeaderMissing('Access-Control-Allow-Origin');
 })->with([
+    'active private Route' => ['GET', '/api/v1/nodes', ['HTTP_ORIGIN' => 'https://shop.test', 'HTTP_SEC_FETCH_SITE' => 'cross-site']],
+    'private Route preflight' => ['OPTIONS', '/api/v1/nodes', ['HTTP_ORIGIN' => 'https://shop.test:443', 'HTTP_ACCESS_CONTROL_REQUEST_METHOD' => 'POST']],
+    'private Route MCP' => ['POST', '/mcp', ['HTTP_ORIGIN' => 'https://shop.test']],
     'unknown site' => ['GET', '/api/v1/metrics/credentials', ['HTTP_ORIGIN' => 'https://evil.example', 'HTTP_SEC_FETCH_SITE' => 'cross-site']],
     'unknown preflight' => ['OPTIONS', '/api/v1/nodes', ['HTTP_ORIGIN' => 'https://evil.example', 'HTTP_ACCESS_CONTROL_REQUEST_METHOD' => 'DELETE']],
     'simple cross-site POST' => ['POST', '/api/v1/nodes', ['HTTP_ORIGIN' => 'https://evil.example', 'HTTP_SEC_FETCH_SITE' => 'cross-site', 'CONTENT_TYPE' => 'text/plain']],

@@ -2,12 +2,10 @@
 
 declare(strict_types=1);
 
-use App\Actions\Annotations\AnnotationStoreAction;
 use App\Actions\Instances\DestroyInstanceAction;
 use App\Actions\Processes\CascadeInstanceProcessesAction;
 use App\Actions\Processes\DestroyProcessAction;
 use App\Actions\Schedules\CreateScheduleAction;
-use App\Data\Annotations\AnnotationInput;
 use App\Data\Schedules\AddScheduleData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
@@ -41,8 +39,6 @@ use App\Domain\Schedules\ScheduleTargetResolver;
 use App\Domain\Schedules\ScheduleTargetType;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskStatus;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
@@ -1821,28 +1817,4 @@ it('refuses to cascade create rollback into another registered instance', functi
         ->toThrow(ResourceOperationException::class, 'Create rollback cannot remove other Instances.')
         ->and(Instance::query()->count())->toBe(3)
         ->and(InstanceRemoval::query()->count())->toBe(0);
-});
-
-it('cancels unfinished annotation tasks on Instance removal and preserves completed and unrelated tasks', function (): void {
-    $instance = orb181_coordinator_instance();
-    $other = orb181_coordinator_instance();
-    $store = app(AnnotationStoreAction::class);
-    $create = fn (Instance $owner, string $id) => $store->create($owner, new AnnotationInput(['id' => $id, 'comment' => 'Adjust heading', 'threadId' => 'annotation-thread']));
-    $pending = $create($instance, 'pending-annotation');
-    $running = $create($instance, 'running-annotation');
-    $store->transition($running, 'in_progress', null);
-    $done = $create($instance, 'done-annotation');
-    $store->transition($done, 'in_progress', null);
-    $store->transition($done, 'resolved', 'Already completed');
-    $unrelated = $create($other, 'unrelated-annotation');
-    $this->orb181Coordinator->execute($instance, false);
-    foreach ([$pending, $running] as $annotation) {
-        expect($annotation->refresh()->task->status)->toBe(TaskStatus::Cancelled);
-        expect($annotation->task->parent->status)->toBe(TaskGroupStatus::Cancelled);
-        expect($annotation->delivery)->toBe('cancelled');
-        expect(fn () => $store->transition($annotation, 'resolved', 'Late reply'))->toThrow(ResourceOperationException::class);
-    }
-    expect($done->refresh()->task->status)->toBe(TaskStatus::Completed);
-    expect($done->task->completion_summary)->toBe('Already completed');
-    expect($unrelated->refresh()->task->status)->toBe(TaskStatus::Todo);
 });

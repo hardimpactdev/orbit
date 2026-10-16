@@ -6,7 +6,6 @@ use App\Http\Controllers\Api\ActivitiesController;
 use App\Http\Controllers\Api\AgentRealtimeController;
 use App\Http\Controllers\Api\AgentThreadsController;
 use App\Http\Controllers\Api\AnalyticsController;
-use App\Http\Controllers\Api\AnnotationsController;
 use App\Http\Controllers\Api\ClustersController;
 use App\Http\Controllers\Api\DatabaseConnectionAttachmentsController;
 use App\Http\Controllers\Api\DatabaseConnectionsController;
@@ -76,14 +75,6 @@ use App\Http\Middleware\RequireNodeAgentSecret;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function (): void {
-    Route::middleware([RequireActiveWireGuardPeer::class, RequireNodeAccess::class])
-        ->prefix('instances/{instance}/annotations')->group(function (): void {
-            Route::get('', [AnnotationsController::class, 'index'])->name('annotation:list');
-            Route::post('', [AnnotationsController::class, 'store'])->name('annotation:create');
-            Route::post('{annotation}/status', [AnnotationsController::class, 'update'])->name('annotation:update');
-            Route::post('{annotation}/retry', [AnnotationsController::class, 'retry'])->name('annotation:retry');
-        });
-
     Route::middleware([RequireActiveWireGuardPeer::class, RequireNodeAccess::class])->group(function (): void {
         Route::get('extensions', [ExtensionsController::class, 'index'])->name('extension:list');
         Route::post('extensions/{extension}/enable', [ExtensionsController::class, 'enable'])->name('extension:enable');

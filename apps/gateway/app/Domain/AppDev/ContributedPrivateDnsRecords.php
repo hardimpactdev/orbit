@@ -7,8 +7,9 @@ namespace App\Domain\AppDev;
 /**
  * A plug-in point: private DNS host records that an extension contributes ([Extensions](/reference/extensions#plug-in-points)).
  *
- * Each hostname must be one that an extension reserves through ContributedReservedHostnames, so neither a core
- * record nor a Route can answer for it.
+ * Each hostname must be one that an extension reserves through ContributedReservedHostnames. It cannot take a core
+ * name, and new Routes cannot take it. Existing Routes remain published; Doctor reports conflicts for an operator
+ * to resolve by changing or removing the Route.
  */
 interface ContributedPrivateDnsRecords
 {

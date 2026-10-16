@@ -18,7 +18,6 @@ final readonly class CreateTaskAction
 
     public function execute(Task $group, CreateTaskData $data): Task
     {
-        $group->requireManagedExecution();
         $this->requireExtension->execute();
 
         $status = $group->refresh()->status;

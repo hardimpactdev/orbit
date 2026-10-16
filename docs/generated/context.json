@@ -697,7 +697,9 @@
             ],
             "concepts": [
                 "Cluster",
+                "Deployment",
                 "Gateway",
+                "Instance",
                 "Node",
                 "Node agent",
                 "Pi server",
@@ -863,7 +865,8 @@
                 "Task workspace"
             ],
             "governing_adrs": [
-                "0200"
+                "0200",
+                "0222"
             ]
         },
         {
@@ -928,12 +931,14 @@
                 "Process",
                 "Route",
                 "Task",
+                "Task workspace",
                 "Tool"
             ],
             "governing_adrs": [
                 "0206",
                 "0209",
-                "0217"
+                "0217",
+                "0218"
             ]
         },
         {
@@ -1010,7 +1015,8 @@
                 "0200",
                 "0210",
                 "0212",
-                "0214"
+                "0214",
+                "0218"
             ]
         },
         {
@@ -1145,7 +1151,48 @@
             ],
             "governing_adrs": [
                 "0209",
-                "0217"
+                "0217",
+                "0218"
+            ]
+        },
+        {
+            "path": "docs/decisions/0218-take-long-commands-off-the-request-path.md",
+            "title": "ADR 0218: Take long commands off the request path",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Activity",
+                "Cluster",
+                "Database server",
+                "Deliverable",
+                "Deployment",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Role",
+                "Route",
+                "Schedule",
+                "Subtask",
+                "Task",
+                "Task workspace",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0209",
+                "0211",
+                "0212",
+                "0217",
+                "0218"
             ]
         },
         {
@@ -1173,6 +1220,31 @@
                 "0190",
                 "0212",
                 "0221"
+            ]
+        },
+        {
+            "path": "docs/decisions/0222-give-task-vms-a-cloned-topology-seed.md",
+            "title": "ADR 0222: Give task VMs a cloned topology seed",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project",
+                "Role",
+                "Subtask",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0200",
+                "0206",
+                "0222"
             ]
         },
         {
@@ -1237,7 +1309,9 @@
                 "0215",
                 "0216",
                 "0217",
-                "0221"
+                "0218",
+                "0221",
+                "0222"
             ]
         },
         {
@@ -1343,44 +1417,6 @@
             "governing_adrs": []
         },
         {
-            "path": "docs/reference/agent-annotation.md",
-            "title": "Agent annotation",
-            "kind": "reference",
-            "components": [
-                "apps/gateway",
-                "apps/web"
-            ],
-            "concepts": [
-                "Extension",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Route",
-                "Subtask",
-                "Task"
-            ],
-            "governing_adrs": []
-        },
-        {
-            "path": "docs/reference/agentation.md",
-            "title": "Agentation",
-            "kind": "reference",
-            "components": [
-                "apps/gateway",
-                "apps/web"
-            ],
-            "concepts": [
-                "Doctor",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Route"
-            ],
-            "governing_adrs": []
-        },
-        {
             "path": "docs/reference/alpha.md",
             "title": "Source alpha",
             "kind": "reference",
@@ -1389,6 +1425,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Project",
                 "Role",
                 "Route",
                 "Task"
@@ -1514,9 +1551,7 @@
             "concepts": [
                 "Access grant",
                 "Gateway",
-                "Instance",
-                "Node",
-                "Route"
+                "Node"
             ],
             "governing_adrs": []
         },
@@ -1902,6 +1937,7 @@
             "concepts": [
                 "Activity",
                 "Cluster",
+                "Doctor",
                 "Extension",
                 "Gateway",
                 "Node",
@@ -2491,7 +2527,8 @@
                 "Tool"
             ],
             "governing_adrs": [
-                "0209"
+                "0209",
+                "0218"
             ]
         },
         {
@@ -2826,7 +2863,6 @@
                 "Gateway",
                 "Instance",
                 "Node",
-                "Process",
                 "Project",
                 "Role",
                 "Task",

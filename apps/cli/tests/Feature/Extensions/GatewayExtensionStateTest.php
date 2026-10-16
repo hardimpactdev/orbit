@@ -42,9 +42,8 @@ it('reports unknown rows and direct-operation guidance when no profile is active
     $exit = Artisan::call('tasks:list', ['--json' => true]);
     $output = Artisan::output();
     expect($exit)->toBe(1)
-        ->and($output)->toContain('extension.state_unknown')
-        ->and($output)->toContain('gateway.profile_missing')
-        ->and($output)->toContain('gateway:add');
+        ->and($output)->not->toContain('extension.state_unknown')
+        ->and($output)->toContain('gateway.profile_missing');
 
     $exit = Artisan::call('tasks:status', ['--json' => true]);
     $output = Artisan::output();
@@ -97,6 +96,7 @@ it('reports a bounded unknown state when discovery times out', function (): void
     ));
     $discoveryCalls = 0;
     $mock = MockClient::global([
+        ...gateway_fixture_mock('tasks/tasks-list/default'),
         ListExtensionsRequest::class => static function (PendingRequest $request) use (&$discoveryCalls): never {
             $discoveryCalls++;
             throw new FatalRequestException(
@@ -114,10 +114,11 @@ it('reports a bounded unknown state when discovery times out', function (): void
 
     $exit = Artisan::call('tasks:list', ['--json' => true]);
     $output = Artisan::output();
-    expect($exit)->toBe(1)
-        ->and($output)->toContain('extension.state_unknown')
-        ->and($output)->toContain('timed out after 2 seconds')
+    expect($exit)->toBe(0)
+        ->and(json_decode($output, true, flags: JSON_THROW_ON_ERROR))->toHaveKey('task_groups')
+        ->and($output)->not->toContain('extension.state_unknown')
         ->and($discoveryCalls)->toBe(1);
 
     $mock->assertSentCount(0, ListExtensionsRequest::class);
+    $mock->assertSentCount(1, ListTaskGroupsRequest::class);
 });

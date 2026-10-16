@@ -413,7 +413,7 @@ The sizes come from the nested topology spike on beast. There, the test Gateway,
 
 The sizes are caps, not reservations. Incus does not pin the vCPUs, and the guest takes host memory only when it first uses it. Medium and large VMs have free page reporting on their memory balloon, so the host gets back the memory that the guest frees, but not the guest's page cache. Plan for a VM that runs a topology to use all of its memory on the host.
 
-A subtask whose topology needs a larger VM than its group got waits before it starts, with the reason `Task VM: this subtask's topology needs a larger task VM than the group got, and Orbit does not resize it.` This happens when a subtask is added or changed after the claim. Orbit never runs it without its nodes, and never moves the group to another VM. To go on, cancel that subtask, or cancel the group and create it again with the topology declared. See [Orbit Project](#orbit-project).
+A subtask whose topology needs a larger VM than its group got waits before its first turn, with the reason `Task VM: this subtask's topology needs a larger task VM than the group got, and Orbit does not resize it.` This happens when a subtask is added or changed after the claim. Orbit never runs it without its nodes, and never moves the group to another VM. To go on, cancel that subtask, or cancel the group and create it again with the topology declared. See [Orbit Project](#orbit-project).
 
 ### Shared package cache
 
@@ -704,6 +704,16 @@ After promotion, the final chain step prunes old recipe images on that host. It 
 
 At 03:00 Europe/Amsterdam (01:00 UTC in summer, 02:00 UTC in winter), the Gateway opens a PR against main through its existing GitHub App. It reads main and advances only `ubuntu.snapshot` to the current date at UTC midnight. Exact package versions and Sury artifact URLs and hashes stay pinned; there is no separate Sury snapshot field. An unchanged or newer date creates no PR. A date branch makes repeated submissions reuse the same PR. The same job also opens the [PHP build](#bump-the-php-build) pull request when Sury publishes a newer PHP build.
 
+Before opening tonight's PR, the nightly job checks every open `nightly/recipe-*` PR. If Required checks failed and main advanced beyond the commit's parent, it closes an untouched older-date App PR so tonight's PR replaces it. For today's date it rebuilds the PR as one fresh Gateway App commit on current main, using an expected-head force update so a concurrent push cannot be overwritten.
+
+Recovery is one-shot per PR: any previous force push or close/reopen blocks it. Before writing, it verifies App authorship, the single date-only commit, the PR timeline, and body edit history, then rechecks the PR head. It leaves green, pending, or closed PRs unchanged, as well as PRs modified by a person. Other bots' reviews and edits also block recovery; only cross-references are ignored.
+
+A short recovery comment is best-effort. GitHub recovery errors raise an alert without stopping tonight's snapshot or PHP build PR.
+
+A cross-reference from another issue or PR is not a modification and does not block refresh; unknown or truncated history still blocks it.
+
+Keeping a same-date PR preserves its URL and CI history; rerunning CI alone would reuse the stale merge commit. Closing an older failed PR instead avoids keeping both that PR and tonight's replacement open.
+
 Each minute the Gateway merges its date PRs after Required checks pass on the exact head. It re-reads the PR files and patch at merge time and requires one App-authored commit, its App as PR author, and only the single `ubuntu.snapshot` line change. Any extra change, commit, or different author blocks the merge and raises the existing alert; the merge uses the expected head SHA. This reuses the existing App and PR API without Actions secrets or a second publisher.
 
 The jobs run only from the serving release while task VMs are enabled. Merge and deployment have no fixed time. The existing release handoff and per-minute image reconcile build, smoke-test, and promote the base on each configured host. Maintenance adds no build trigger or composed-topology smoke run. Every host must promote the deployed identity and generation before fleet convergence starts. A failed build halts and alerts the operator.
@@ -917,7 +927,7 @@ One build runs at a time. A build marks its time stamp as running for two hours,
 
 ### Refresh the UpCloud template on recipe changes
 
-The per-minute recipe reconcile and release handoff queue `RefreshUpCloudTaskVmBaseImage` on the `builds` queue when UpCloud is configured and no verified template matches the deployed recipe. There is no separate nightly schedule. The job checks the identity again before building. A database ledger records each attempt before remote work, including failed and interrupted builds. Reconcile does not dispatch that identity again unless `task-vms:build-recipe --retry` explicitly requests it. A new identity can build automatically. The manual `task-vms:build-upcloud-image` command also starts an explicit attempt.
+The per-minute recipe reconcile and release handoff queue `RefreshUpCloudTaskVmBaseImage` on the `builds` queue when UpCloud is configured and no verified template matches the deployed recipe. There is no separate nightly schedule. The job checks the identity again before building. A database ledger records each attempt before remote work, including failed and interrupted builds. Reconcile does not dispatch that identity again unless `task-vms:build-recipe --retry` explicitly requests it. A new identity can build automatically. A queued build that finds an earlier attempt refuses with `task_vm.image_build_superseded`; use the explicit retry command instead of redispatching it. The manual `task-vms:build-upcloud-image` command also starts an explicit attempt.
 
 Reconcile raises a recipe-maintenance alert when the current identity has a failed attempt, or a running attempt at least two hours old, and no verified template. The alert names the identity and attempt and includes `php artisan task-vms:build-recipe --retry`. Repeated alerts for an attempt are limited to one per hour. The build command also reports this fenced state. Reconcile reports only the latest attempt and stops alerting once a verified template exists. `--retry` also retries failed Incus builds.
 
@@ -994,7 +1004,17 @@ The group's topology is the union of its subtasks that are not cancelled: each n
 
 ### Prepare the topology
 
-Before a subtask that declares a topology runs its baseline check or its implementer, Orbit prepares the group's topology in the VM. It starts the systemd unit `orbit-task-topology-<run>` as `orbit` and polls it on each tick. The subtask waits meanwhile with `Task VM: preparing the topology <nodes>.` The unit runs `resources/task-vms/topology.sh` from the workspace checkout:
+Orbit prepares the group's topology in the VM after the group's baseline check, because the check's Project setup installs what the harness needs, such as `apps/e2e/vendor`. Orbit admits the topology before each turn that it prepares for a subtask that declares one:
+
+- the implementer's first turn;
+- each relay of review findings to the implementer;
+- each relay of the reviewer's answer to the implementer, after a consult or a direction relay;
+- each review request;
+- each rubric reminder.
+
+Every other turn in the subtask follows one of these turns: a consult, a direction relay or review, a resolution, a deliverable correction, a nudge to continue, and the resume of an interrupted turn. These turns do not admit the topology again.
+
+To prepare the topology, Orbit starts the systemd unit `orbit-task-topology-<run>` as `orbit` and polls it on each tick. The subtask waits meanwhile with `Task VM: preparing the topology <nodes>.` The unit runs `resources/task-vms/topology.sh` from the workspace checkout:
 
 | Step | What happens |
 | --- | --- |
@@ -1006,9 +1026,9 @@ For medium and large VMs, the preparation job on `task-vms` transfers the single
 
 Every task VM's user `orbit` is in the `incus-admin` group from its first boot, so agents can run `bin/e2e-topology` once Incus is installed. The row stores the union in `topology`, its state in `topology_state` (`preparing` or `ready`), and the run in `topology_run`.
 
-A ready topology serves every next subtask whose declaration it holds. A subtask that declares more starts the unit again, which releases the topology and acquires the new union; the images stay. A [parked](#park-and-resume) or resumed VM forgets its topology, because its test machines stop with it, and the next subtask prepares it again. A shared group cannot run a topology: its subtask waits with `Declared topology runs only in a task VM group.`
+A ready topology serves every next subtask whose declaration it holds. A subtask that declares more starts the unit again, which releases the topology and acquires the new union; the images stay. A [parked](#park-and-resume) or resumed VM forgets its topology, because its test machines stop with it, and the next of the turns above prepares it again. A shared group cannot run a topology: its subtask waits with `Declared topology runs only in a task VM group.`
 
-A VM can also restart on its own. So before each turn of a subtask with a ready topology, Orbit reads the run's state. The run records the VM's boot ID, and a run from an earlier boot is `stale`. Orbit then prepares the topology again.
+A VM can also restart on its own. So before each of the turns above in a subtask with a ready topology, Orbit reads the run's state. The run records the VM's boot ID, and a run from an earlier boot is `stale`. Orbit then prepares the topology again.
 
 When the unit fails, or stops without a result, the subtask asks for assistance with the step and the end of its log. The row forgets the run, so a resolution prepares again. A unit runs for at most 75 minutes. A start stops the units of earlier runs first, so one preparation runs at a time. When the start call fails, Orbit reads the run's state: a unit that runs or finished is the run, and only a run without a unit fails. Host setup gets the Gateway's VPN subnet, so its input rule covers the VM's own address.
 

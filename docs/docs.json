@@ -82,8 +82,6 @@
               "reference/app-dev-runtime-hibernation",
               "reference/assigned-vite-ports",
               "reference/assigned-ssr-ports",
-              "reference/agentation",
-              "reference/agent-annotation",
               "reference/php-runtime",
               "reference/instance-cloning",
               "reference/deployments",
@@ -520,16 +518,6 @@
             ]
           },
           {
-            "group": "Annotations",
-            "openapi": "/openapi.json",
-            "pages": [
-              "GET /api/v1/instances/{instance}/annotations",
-              "POST /api/v1/instances/{instance}/annotations",
-              "POST /api/v1/instances/{instance}/annotations/{annotation}/retry",
-              "POST /api/v1/instances/{instance}/annotations/{annotation}/status"
-            ]
-          },
-          {
             "group": "Tasks",
             "openapi": "/openapi.json",
             "pages": [
@@ -682,7 +670,9 @@
               "decisions/0215-start-development-processes-from-project-definitions",
               "decisions/0216-run-one-exact-php-build-everywhere",
               "decisions/0217-deploy-production-instances-automatically-by-polling",
-              "decisions/0221-run-valkey-database-servers-with-orbit-owned-acl-users"
+              "decisions/0218-take-long-commands-off-the-request-path",
+              "decisions/0221-run-valkey-database-servers-with-orbit-owned-acl-users",
+              "decisions/0222-give-task-vms-a-cloned-topology-seed"
             ]
           }
         ]
@@ -1299,11 +1289,11 @@
     },
     {
       "source": "/decisions/0082-wire-agentation-watch-mode-through-appinstance-processes",
-      "destination": "/reference/agentation"
+      "destination": "/reference/web-app#annotations-outside-the-gateway"
     },
     {
       "source": "/decisions/0120-extract-agent-annotation-package",
-      "destination": "/reference/agent-annotation"
+      "destination": "/reference/web-app#annotation-overlay"
     },
     {
       "source": "/decisions/0127-share-one-ssh-connection-per-node",

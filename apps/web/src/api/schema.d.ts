@@ -1335,58 +1335,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/instances/{instance}/annotations": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** annotation:list */
-        get: operations["annotation-list"];
-        put?: never;
-        /** annotation:create */
-        post: operations["annotation-create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/instances/{instance}/annotations/{annotation}/retry": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** annotation:retry */
-        post: operations["annotation-retry"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/instances/{instance}/annotations/{annotation}/status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** annotation:update */
-        post: operations["annotation-update"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/instances/{instance}/database-connections/{database_connection}": {
         parameters: {
             query?: never;
@@ -4337,8 +4285,6 @@ export interface components {
             ssr_port?: number | null;
             seed_path?: string | null;
             seed_commit?: string | null;
-            annotator_port?: number | null;
-            annotator_url?: string | null;
             routes?: components["schemas"]["Route"][];
             shared_paths?: string[];
             auto_deploy?: components["schemas"]["InstanceAutoDeploy"] | null;
@@ -4463,44 +4409,6 @@ export interface components {
             task_workspace_routed?: boolean;
             review_and_merge?: boolean;
             merge_check?: string | null;
-        };
-        Annotation: {
-            id?: string;
-            threadId?: string | null;
-            comment?: string;
-            x?: number;
-            y?: number;
-            timestamp?: number;
-            /** Format: uri */
-            url?: string;
-            pathname?: string;
-            element?: string;
-            elementPath?: string;
-            isFixed?: boolean;
-            boundingBox?: {
-                x?: number;
-                y?: number;
-                width?: number;
-                height?: number;
-            };
-            screenshot?: string | null;
-            component?: string | null;
-            controller?: string | null;
-            route?: string | null;
-            screenSize?: string | null;
-            scrollPosition?: string | null;
-            breakpoint?: string | null;
-            react?: string | null;
-            instanceId?: number;
-            taskId?: number;
-            taskGroupId?: number;
-            revision?: number;
-            /** @enum {string} */
-            status?: "pending" | "in_progress" | "resolved" | "cancelled";
-            /** @enum {string} */
-            delivery?: "queued" | "sending" | "sent" | "error" | "cancelled";
-            syncError?: string | null;
-            summary?: string | null;
         };
         DatabaseConnectionAttachment: {
             instance_id?: number;
@@ -4853,8 +4761,6 @@ export interface components {
             questions?: number;
             escalations?: number;
             tasks?: components["schemas"]["Task"][];
-            /** @enum {string} */
-            execution_mode?: "managed" | "existing_thread";
             capacity_wait_reason?: string | null;
             /** @enum {string|null} */
             vm_power?: "running" | "stopped" | "destroyed" | null;
@@ -4880,8 +4786,7 @@ export interface components {
             questions?: number;
             escalations?: number;
             /** @enum {string} */
-            type?: "implementation" | "annotation" | "final_review";
-            target_thread_id?: string | null;
+            type?: "implementation" | "final_review";
             completion_summary?: string | null;
             check?: components["schemas"]["TaskCheck"] | null;
             assistance_requested?: boolean;
@@ -9860,296 +9765,6 @@ export interface operations {
             };
         };
     };
-    "annotation-list": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Numeric Instance ID. */
-                instance: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The request succeeded. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        data: components["schemas"]["Annotation"][];
-                        meta: components["schemas"]["Meta"];
-                    };
-                };
-            };
-            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No record matches the path parameters. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "annotation-create": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Numeric Instance ID. */
-                instance: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    id: string;
-                    threadId?: string | null;
-                    comment: string;
-                    x: number;
-                    y: number;
-                    timestamp: number;
-                    /** Format: uri */
-                    url: string;
-                    pathname: string;
-                    element: string;
-                    elementPath: string;
-                    isFixed?: boolean;
-                    boundingBox?: {
-                        x?: number;
-                        y?: number;
-                        width?: number;
-                        height?: number;
-                    };
-                    screenshot?: string | null;
-                    component?: string | null;
-                    controller?: string | null;
-                    route?: string | null;
-                    screenSize?: string | null;
-                    scrollPosition?: string | null;
-                    breakpoint?: string | null;
-                    react?: string | null;
-                };
-            };
-        };
-        responses: {
-            /** @description The request succeeded; an exact retry returned the existing record. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        data: components["schemas"]["Annotation"];
-                        meta: components["schemas"]["Meta"];
-                    };
-                };
-            };
-            /** @description Created. */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        data: components["schemas"]["Annotation"];
-                        meta: components["schemas"]["Meta"];
-                    };
-                };
-            };
-            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No record matches the path parameters. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "annotation-retry": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Numeric Instance ID. */
-                instance: number;
-                annotation: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": {
-                    threadId?: string | null;
-                };
-            };
-        };
-        responses: {
-            /** @description The request succeeded. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        data: components["schemas"]["Annotation"];
-                        meta: components["schemas"]["Meta"];
-                    };
-                };
-            };
-            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No record matches the path parameters. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "annotation-update": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Numeric Instance ID. */
-                instance: number;
-                annotation: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /** @enum {string} */
-                    status: "in_progress" | "resolved";
-                    /** @description Conditionally required. */
-                    summary?: string | null;
-                };
-            };
-        };
-        responses: {
-            /** @description The request succeeded. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        data: components["schemas"]["Annotation"];
-                        meta: components["schemas"]["Meta"];
-                    };
-                };
-            };
-            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No record matches the path parameters. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
     "instance-database-add": {
         parameters: {
             query?: never;
@@ -14000,7 +13615,7 @@ export interface operations {
                     target_id: number;
                     /** @description Process name */
                     name: string;
-                    /** @description Process preset: vp-dev, annotator, agentation-mcp, or antigravity-watch */
+                    /** @description Process preset: vp-dev */
                     preset?: string;
                     /** @description Existing non-root account for a Node systemd Process */
                     user?: string;

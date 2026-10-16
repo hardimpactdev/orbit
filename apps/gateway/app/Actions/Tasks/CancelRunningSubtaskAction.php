@@ -22,7 +22,6 @@ final readonly class CancelRunningSubtaskAction
 
     public function execute(Task $group, Task $task): Task
     {
-        $group->requireManagedExecution();
         $this->requireExtension->execute();
 
         $this->scheduler->cancelRunningSubtask($group, $task, function (Task $running) use ($group): void {

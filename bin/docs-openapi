@@ -15,8 +15,7 @@ It writes docs/openapi.json, which docs/docs.json references for the API tab of 
 
 A response schema uses the keys of a hand-written toArray() when each key is one constructor property.
 Otherwise it snake-cases constructor properties when the class uses SnakeCaseMapper, and keeps the
-constructor names when it does not. AnnotationData is the exception that sends camelCase on purpose:
-the controller returns the array fromModel() builds, and that schema is written below.
+constructor names when it does not.
 """
 
 import copy
@@ -617,7 +616,6 @@ TAGS = [
     ('database', 'Database connections', 'The registry of mysql, pgsql, and sqlite connections.'),
     ('process', 'Processes', 'systemd services and Docker containers owned by an Instance, a Node, or a Project definition.'),
     ('schedule', 'Schedules', 'Recurring commands run by native systemd timers.'),
-    ('annotation', 'Annotations', 'Instance annotations and T3 delivery.'),
     ('tasks', 'Tasks', 'Commander feature groups and ordered subtasks.'),
     ('extension', 'Extensions', 'Gateway-owned extension switches.'),
     ('doctor', 'Doctor', 'Verify-only drift checks across the fleet.'),
@@ -2034,17 +2032,6 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
 
 spec['components']['schemas'].update({k: v for k, v in components.items() if v is not None})
 
-
-annotation_create = spec['paths']['/api/v1/instances/{instance}/annotations']['post']['requestBody']['content']['application/json']['schema']
-annotation_create['properties']['boundingBox'] = {'type': 'object', 'properties': {key: {'type': 'number'} for key in ('x', 'y', 'width', 'height')}, 'additionalProperties': False}
-# AnnotationData::fromModel() builds camelCase (`instanceId`, `syncError`, and the browser context).
-# The controller returns that array, so this schema stays camelCase. It has no toArray().
-spec['components']['schemas']['Annotation'] = {'type': 'object', 'properties': {
-    **annotation_create['properties'], 'instanceId': {'type': 'integer'}, 'taskId': {'type': 'integer'}, 'taskGroupId': {'type': 'integer'},
-    'revision': {'type': 'integer'}, 'status': {'type': 'string', 'enum': ['pending', 'in_progress', 'resolved', 'cancelled']},
-    'delivery': {'type': 'string', 'enum': ['queued', 'sending', 'sent', 'error', 'cancelled']},
-    'syncError': {'type': ['string', 'null']}, 'summary': {'type': ['string', 'null']},
-}}
 
 def route_create_accepts(schema, payload):
     """Exercise the emitted Route create schema's object, oneOf, required and enum semantics."""
