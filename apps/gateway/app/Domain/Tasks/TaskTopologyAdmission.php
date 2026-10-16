@@ -7,7 +7,7 @@ namespace App\Domain\Tasks;
 use App\Models\Task;
 use Carbon\CarbonInterface;
 
-/** Prepare a subtask's declared topology before its baseline check or any of its turns, and read its evidence. */
+/** Prepare a subtask's declared topology before each turn that Orbit prepares for it, and read its evidence. */
 interface TaskTopologyAdmission
 {
     /**

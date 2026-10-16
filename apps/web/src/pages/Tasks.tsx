@@ -131,18 +131,6 @@ function taskProperties(
 ) {
     return [
         { name: "Title", value: detail.title },
-        ...(group.execution_mode === "existing_thread"
-            ? [
-                  { name: "Type", value: "Annotation" },
-                  {
-                      name: "Thread",
-                      value:
-                          ("target_thread_id" in detail
-                              ? detail.target_thread_id
-                              : group.tasks[0]?.target_thread_id) ?? "Unassigned",
-                  },
-              ]
-            : []),
         {
             name: "Status",
             value: taskColumn(detail.status),

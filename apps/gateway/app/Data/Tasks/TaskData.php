@@ -37,7 +37,6 @@ final class TaskData extends Data
         public int $questions,
         public int $escalations,
         public TaskType $type,
-        public ?string $targetThreadId,
         public ?string $completionSummary,
         public ?TaskCheckData $check,
         public bool $assistanceRequested,
@@ -65,7 +64,6 @@ final class TaskData extends Data
 
         return new self(
             type: $task->type,
-            targetThreadId: $task->target_thread_id,
             completionSummary: $task->completion_summary,
             check: $check instanceof TaskCheck ? TaskCheckData::fromModel($check) : null,
             assistanceRequested: $task->assistance_requested,

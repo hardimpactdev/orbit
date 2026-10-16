@@ -14,7 +14,7 @@ covers:
 
 A long operation, such as an [Instance deploy or rollback](/reference/deployments#deploy-through-the-api), runs as an operation: a record in the Gateway's database that a job on the [Gateway queue](/reference/gateway-queue) works through as named steps. The request that starts it answers `202 Accepted` with the record and returns at once. A client then follows the record until it ends. Nothing a client does, such as closing its connection, stops the operation. Only [cancel](#cancel-an-operation) does.
 
-Instance deploy and rollback are operations. Instance create and remove, and Route convergence still run inside their request ([ADR 0209](/decisions/0209-run-long-operations-as-durable-queued-operations)).
+Instance deploy and rollback are operations. Instance create and remove, and Route convergence still run inside their request ([ADR 0209](/decisions/0209-run-long-operations-as-durable-queued-operations)). Other long commands, such as `node:add` and `instance:transfer`, also still run inside their request. [ADR 0218](/decisions/0218-take-long-commands-off-the-request-path) plans to move them off the request path and to lower the request limit.
 
 Production deployments include a resumable `process_restart` step after PHP refresh. It restarts active Instance Processes before after-activation commands. A completed restart step is skipped on recovery. An interrupted restart step can restart a Process again. A stored deploy plan from before this step was introduced keeps its original steps after a Gateway upgrade. See [Deploy](/reference/deployments#deploy) for the opt-out and failure behavior.
 

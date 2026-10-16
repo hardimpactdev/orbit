@@ -67,9 +67,8 @@ REPORT_RETENTION_SECONDS = 24 * 60 * 60
 NO_SELECTION = 'No affected tests found'
 FULL_SUITE = ('../../bin/pest-plain', 'vendor/bin/pest', '--no-tia',
               '--fail-on-empty-test-suite', '--compact', '--colors=never')
-# Checks of these projects share files, so they run in one lane, in order. The Gateway's annotator check reads
-# apps/web/node_modules, which the web checks install. The repository's bin/docs-openapi --check boots Laravel in
-# apps/gateway.
+# Keep the web and Gateway checks in one lane. The repository's bin/docs-openapi --check also boots
+# Laravel in apps/gateway.
 SHARED_LANES = {'apps/web': 'apps/gateway', 'repository': 'apps/gateway'}
 
 

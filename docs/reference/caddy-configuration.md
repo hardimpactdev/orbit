@@ -64,7 +64,7 @@ The `websocket`, `analytics`, ProxyCli, and Metrics sites also wait for their ce
 
 | Site source | Nodes | Listener |
 | --- | --- | --- |
-| `app-dev` and `app-prod` workload and Router sites, custom proxy Routes, analytics tracking hosts, Agentation, Vite, and hibernation wake sites | Workload and Router Nodes | The WireGuard address, and the LAN address when the Node has one |
+| `app-dev` and `app-prod` workload and Router sites, custom proxy Routes, analytics tracking hosts, Vite, and hibernation wake sites | Workload and Router Nodes | The WireGuard address, and the LAN address when the Node has one |
 | Public Ingress sites | The Cluster's Ingress Node | `0.0.0.0`, the WireGuard address, and the LAN address when the Node has one |
 | `gateway.orbit` | The Node with the `gateway` role | The WireGuard address |
 | `metrics.orbit` | The Node with the `gateway` role, while a Metrics role renders | The WireGuard address |

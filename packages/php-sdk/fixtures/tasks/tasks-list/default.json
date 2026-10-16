@@ -53,7 +53,6 @@
                         "questions": 0,
                         "escalations": 0,
                         "type": "implementation",
-                        "target_thread_id": null,
                         "completion_summary": null,
                         "check": null,
                         "assistance_requested": false,
@@ -63,7 +62,6 @@
                         "fixup_problem": null
                     }
                 ],
-                "execution_mode": "managed",
                 "capacity_wait_reason": null,
                 "vm_power": null,
                 "preview": false,
@@ -132,7 +130,6 @@
                         "questions": 0,
                         "escalations": 0,
                         "type": "implementation",
-                        "target_thread_id": null,
                         "completion_summary": null,
                         "check": null,
                         "assistance_requested": false,
@@ -172,7 +169,6 @@
                         "questions": 0,
                         "escalations": 0,
                         "type": "implementation",
-                        "target_thread_id": null,
                         "completion_summary": null,
                         "check": null,
                         "assistance_requested": false,
@@ -182,7 +178,6 @@
                         "fixup_problem": null
                     }
                 ],
-                "execution_mode": "managed",
                 "capacity_wait_reason": null,
                 "vm_power": null,
                 "preview": false,

@@ -35,6 +35,8 @@ The Gateway owns the tick, `orbit:auto-deploy`, every minute on the Gateway queu
 
 This changes [ADR 0209](/decisions/0209-run-long-operations-as-durable-queued-operations) step 4: the scheduled development deploy is now an operation.
 
+[ADR 0218](/decisions/0218-take-long-commands-off-the-request-path#the-deployment-history) replaces the deployment history with operations. Decisions 4 to 6 then read and show `instance.deploy` and `instance.rollback` operations instead of history rows, `auto_deploy_resumed_after` becomes the time `auto_deploy_resumed_at`, and a pause names its operation.
+
 ## Rejected alternatives
 
 - **A GitHub push or check-suite webhook.** It needs a public endpoint, a webhook secret, and replay protection on a Gateway that otherwise answers only WireGuard peers. Polling reuses existing paths, and its cost is one `ls-remote` a minute and a few API reads while a check runs. The price is up to a minute of delay.
@@ -54,6 +56,6 @@ This changes [ADR 0209](/decisions/0209-run-long-operations-as-durable-queued-op
 ## Affects
 
 - Components: apps/gateway, apps/cli, packages/php-sdk, apps/web
-- ADRs: [0209](/decisions/0209-run-long-operations-as-durable-queued-operations)
+- ADRs: [0209](/decisions/0209-run-long-operations-as-durable-queued-operations); [0218](/decisions/0218-take-long-commands-off-the-request-path) changes its history reads
 - Detail: [Deployments: Automatic deployments](/reference/deployments#automatic-deployments) and its "Why it works this way" sections
 - Verify: `php artisan test --compact --filter='DeployInstance|ProductionDeployment|DeployDevelopmentDefaults|AutoDeploy|InstanceUpdate'` in apps/gateway

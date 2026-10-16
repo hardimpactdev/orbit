@@ -240,10 +240,11 @@ describe('task responses from recorded Gateway fixtures', function (): void {
         expect($group)->toBeInstanceOf(TaskGroupResponse::class);
         assert($group instanceof TaskGroupResponse);
 
+        expect($group->toArray())->not->toHaveKey('execution_mode');
+
         expect($group->reference())->toBe('ORB-1')
             ->and($group->status)->toBe('backlog')
             ->and($group->project)->toBe('orbit')
-            ->and($group->executionMode)->toBe('managed')
             ->and($group->assistanceRequested)->toBeFalse()
             ->and($group->assistanceKind)->toBeNull()
             ->and($group->assistanceQuestion)->toBeNull()
