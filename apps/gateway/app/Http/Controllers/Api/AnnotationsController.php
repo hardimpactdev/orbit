@@ -5,20 +5,17 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Actions\Annotations\AnnotationStoreAction;
-use App\Actions\Annotations\StreamAnnotationsAction;
 use App\Data\Annotations\AnnotationData;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Annotations\RetryAnnotationRequest;
 use App\Http\Requests\Annotations\StoreAnnotationRequest;
-use App\Http\Requests\Annotations\StreamAnnotationsRequest;
 use App\Http\Requests\Annotations\UpdateAnnotationRequest;
 use App\Models\Annotation;
 use App\Models\Instance;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Symfony\Component\HttpFoundation\StreamedResponse;
 
 #[RequiresNodeAccess(ServingNode::InstanceOwning)]
 final class AnnotationsController extends Controller
@@ -45,10 +42,5 @@ final class AnnotationsController extends Controller
         abort_unless($annotation->instance_id === $instance->id, 404);
 
         return response()->json(['data' => AnnotationData::fromModel($action->retry($annotation, $request->filled('threadId') ? $request->string('threadId')->toString() : null))->annotation, 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]]);
-    }
-
-    public function events(StreamAnnotationsRequest $request, Instance $instance, StreamAnnotationsAction $action): StreamedResponse
-    {
-        return $action->execute($instance, $request->integer('after', 0));
     }
 }

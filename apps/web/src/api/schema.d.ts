@@ -1333,23 +1333,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/instances/{instance}/annotations/events": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** annotation:events */
-        get: operations["annotation-events"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/instances/{instance}/annotations/{annotation}/retry": {
         parameters: {
             query?: never;
@@ -9938,49 +9921,6 @@ export interface operations {
             };
         };
     };
-    "annotation-events": {
-        parameters: {
-            query?: {
-                after?: number | null;
-            };
-            header?: never;
-            path: {
-                /** @description Numeric Instance ID. */
-                instance: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Instance annotation snapshots and status updates. Reconnect with a numeric Last-Event-ID or after query cursor. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/event-stream": string;
-                };
-            };
-            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No record matches the path parameters. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
     "annotation-retry": {
         parameters: {
             query?: never;
@@ -10863,6 +10803,8 @@ export interface operations {
                             operation?: string;
                             changed?: boolean;
                             key_count?: number;
+                            runtime_refresh?: string | null;
+                            restarted_process_ids?: unknown[] | null;
                         };
                         meta: components["schemas"]["Meta"];
                     };
@@ -10934,6 +10876,8 @@ export interface operations {
                             operation?: string;
                             changed?: boolean;
                             key_count?: number;
+                            runtime_refresh?: string | null;
+                            restarted_process_ids?: unknown[] | null;
                         };
                         meta: components["schemas"]["Meta"];
                     };
@@ -11010,6 +10954,8 @@ export interface operations {
                             operation?: string;
                             changed?: boolean;
                             key_count?: number;
+                            runtime_refresh?: string | null;
+                            restarted_process_ids?: unknown[] | null;
                         };
                         meta: components["schemas"]["Meta"];
                     };

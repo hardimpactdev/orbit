@@ -79,7 +79,7 @@
     },
     {
       "name": "Annotations",
-      "description": "Instance annotations, T3 delivery, and replayable status events."
+      "description": "Instance annotations and T3 delivery."
     },
     {
       "name": "Tasks",
@@ -9553,78 +9553,6 @@
         ]
       }
     },
-    "/api/v1/instances/{instance}/annotations/events": {
-      "get": {
-        "operationId": "annotation-events",
-        "summary": "annotation:events",
-        "tags": [
-          "Annotations"
-        ],
-        "parameters": [
-          {
-            "name": "instance",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "description": "Numeric Instance ID."
-          },
-          {
-            "name": "after",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": [
-                "integer",
-                "null"
-              ],
-              "minimum": 0
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Instance annotation snapshots and status updates. Reconnect with a numeric Last-Event-ID or after query cursor.",
-            "content": {
-              "text/event-stream": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No record matches the path parameters.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "x-codeSamples": [
-          {
-            "lang": "bash",
-            "label": "curl",
-            "source": "curl -sS \"https://gateway.orbit/api/v1/instances/12/annotations/events?after=1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
-          }
-        ]
-      }
-    },
     "/api/v1/instances/{instance}/annotations/{annotation}/retry": {
       "post": {
         "operationId": "annotation-retry",
@@ -11165,6 +11093,19 @@
                         },
                         "key_count": {
                           "type": "integer"
+                        },
+                        "runtime_refresh": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "restarted_process_ids": {
+                          "type": [
+                            "array",
+                            "null"
+                          ],
+                          "items": {}
                         }
                       }
                     },
@@ -11287,6 +11228,19 @@
                         },
                         "key_count": {
                           "type": "integer"
+                        },
+                        "runtime_refresh": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "restarted_process_ids": {
+                          "type": [
+                            "array",
+                            "null"
+                          ],
+                          "items": {}
                         }
                       }
                     },
@@ -11428,6 +11382,19 @@
                         },
                         "key_count": {
                           "type": "integer"
+                        },
+                        "runtime_refresh": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "restarted_process_ids": {
+                          "type": [
+                            "array",
+                            "null"
+                          ],
+                          "items": {}
                         }
                       }
                     },

@@ -15,7 +15,8 @@ use Carbon\CarbonImmutable;
  * Records, per Node, that a role's certificate is on the Node. `caddy validate` loads every certificate a
  * Caddyfile names, so a role site renders only once its publisher recorded the certificate. A build that
  * runs while the role's row already serves, for example during its first convergence or a relocation,
- * then leaves the site out instead of failing validation for every site on the Node.
+ * then leaves the site out instead of failing validation for every site on the Node. Core names the slugs of its
+ * roles here. A site source that an extension contributes names its own slug in `certificateSlug()`.
  */
 final readonly class CaddySiteCertificates
 {
@@ -23,9 +24,10 @@ final readonly class CaddySiteCertificates
 
     public const string Analytics = 'analytics';
 
-    public const string ProxyCli = 'proxycli';
-
     public const string Metrics = 'metrics';
+
+    /** Core's slugs. A contributed site source may not use one, so its removal cannot forget a core record. */
+    public const array CoreSlugs = [self::Websocket, self::Analytics, self::Metrics];
 
     public const string KeyPrefix = 'caddy.certificate.';
 

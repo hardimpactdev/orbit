@@ -70,7 +70,6 @@ it('declares node access scope on every active-peer API route', function (): voi
         'analytics:credentials:unset' => ServingNode::Gateway,
         'analytics:update' => ServingNode::Gateway,
         'annotation:create' => ServingNode::InstanceOwning,
-        'annotation:events' => ServingNode::InstanceOwning,
         'annotation:list' => ServingNode::InstanceOwning,
         'annotation:retry' => ServingNode::InstanceOwning,
         'annotation:update' => ServingNode::InstanceOwning,

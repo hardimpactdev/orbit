@@ -34,6 +34,8 @@ use App\Infrastructure\Tools\ComposerInstalledInventoryParser;
 use App\Infrastructure\Tools\ComposerToolManager;
 use App\Infrastructure\Tools\NativeToolInspector;
 use App\Infrastructure\Tools\RemoteToolCommandRunner;
+use App\Infrastructure\Tools\ToolCommandBudget;
+use App\Infrastructure\Tools\VpToolManager;
 use App\Models\Node;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
@@ -50,6 +52,8 @@ function tool_doctor_probe(ToolInspector $inspector, ?InstalledPackageInventory 
         $inspector,
         new VersionConstraint,
         $inventory ?? new UnsupportedPackageInventory,
+        app(VpToolManager::class),
+        app(ToolCommandBudget::class),
     );
 }
 
@@ -443,7 +447,8 @@ it('eager loads inspector relationships in the bounded tool query', function ():
     };
     tool_doctor_probe($inspector)
         ->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'amd64', true)));
-    expect($queries)->toBe(3);
+    // Tools, managers, Nodes, and recorded Instance vp environments.
+    expect($queries)->toBe(4);
 });
 
 it('inspects multiple Composer tools with one installed-package command and keeps tool order', function (): void {

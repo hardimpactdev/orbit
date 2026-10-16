@@ -45,6 +45,11 @@ function agent_stream_events(string $output): array
 }
 
 describe('task agent viewer', function (): void {
+    beforeEach(function (): void {
+        // Transcript files outlive database rollbacks and can match reused group/thread IDs.
+        Storage::fake('local');
+    });
+
     it('lists persisted links after the workspace is removed', function (): void {
         [$group, $session] = agent_viewer_fixture();
         AgentThread::query()->create([
@@ -81,7 +86,6 @@ describe('task agent viewer', function (): void {
 
     it('replays the transcript Orbit archived once the task VM Node is gone', function (): void {
         [$group, $session] = agent_viewer_fixture();
-        Storage::fake('local');
         $session->update(['node_id' => null]);
         Storage::disk('local')->put(ArchiveAgentTranscriptsAction::path($session), json_encode([
             'state' => 'done', 'entries' => [['id' => 'm1', 'kind' => 'message', 'label' => 'assistant', 'text' => 'Approved TOKEN=hidden', 'at' => '2026-10-14T18:00:00Z']],

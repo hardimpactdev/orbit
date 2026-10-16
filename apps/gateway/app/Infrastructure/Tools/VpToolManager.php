@@ -13,7 +13,10 @@ use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolOperation;
 use App\Domain\Tools\ToolRemovalPlan;
+use App\Domain\Tools\VpEnvironment;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\RemotePrograms\RemoteProgramCatalog;
+use App\Infrastructure\RemotePrograms\SshProgramRunner;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
 
@@ -415,6 +418,70 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
         }
 
         return $version;
+    }
+
+    /** vp itself is recipe-owned; deploy prerequisites only inspect it. */
+    public function ensureVersion(Node $node, string $required): void
+    {
+        if (! $this->versionSatisfies($this->managerVersion($node), $required)) {
+            throw new ToolManagerException('manager-version', 'Update the machine recipe: vp is older than the locked Project version.');
+        }
+    }
+
+    public function versionSatisfies(string $observed, string $required): bool
+    {
+        $normalized = $this->versions->normalize(preg_replace('/\\Avp\\s+/', '', trim($observed)) ?? '');
+
+        return $normalized !== null && version_compare($normalized, $required, '>=');
+    }
+
+    /** Read-only inspection; no registry requests, commands, locks, or store writes. */
+    public function environmentInstalled(Node $node, VpEnvironment $environment): bool
+    {
+        return $this->environmentsInstalled($node, [$environment])[0];
+    }
+
+    /** @param list<VpEnvironment> $environments
+     * @return list<bool>
+     */
+    public function environmentsInstalled(Node $node, array $environments): array
+    {
+        $store = dirname($this->existingBinary($node), 2);
+        $data = $this->storeProgram($node, 'tools.inspect-vp-store', ['environments' => array_map(fn (VpEnvironment $environment): array => $environment->record('active'), $environments)], 'inspected');
+        $installed = $data['installed'] ?? null;
+        if (! is_array($installed) || ! array_is_list($installed) || count($installed) !== count($environments) || array_filter($installed, is_bool(...)) !== $installed) {
+            throw new ToolManagerException('environment-inspect', 'Malformed vp store inventory.');
+        }
+
+        return array_map(fn (bool $present, int $index): bool => $present && $environments[$index]->store === $store, $installed, array_keys($installed));
+    }
+
+    public function installEnvironment(Node $node, VpEnvironment $environment, string $npmrc = ''): void
+    {
+        $this->storeProgram($node, 'tools.install-vp-environment', [...$environment->record('installing'), 'npmrc' => $npmrc], 'installed');
+    }
+
+    /** @param list<array<string, mixed>> $references */
+    public function pruneEnvironments(Node $node, string $store, array $references): void
+    {
+        $this->storeProgram($node, 'tools.prune-vp-store', ['store' => $store, 'references' => $references], 'pruned');
+    }
+
+    /** @param array<string, mixed> $input
+     * @return array<array-key, mixed>
+     */
+    private function storeProgram(Node $node, string $name, array $input, string $outcome): array
+    {
+        $catalog = new RemoteProgramCatalog;
+        $command = SshProgramRunner::pythonCommand($catalog->program($name), $catalog->bootstrap(), $input);
+        $result = $this->commands->execute($node, $command->arguments, $command->input, timeoutSeconds: $command->timeout, maxOutputBytes: 65536);
+        $this->guardSuccessfulResult($result, 'environment', 'The owner-only vp store operation failed.');
+        $value = json_decode($result->stdout, true, flags: JSON_THROW_ON_ERROR);
+        if (! is_array($value) || ($value['outcome'] ?? null) !== $outcome || ! is_array($value['data'] ?? null)) {
+            throw new ToolManagerException('environment', 'The vp store prerequisite failed before build; check store ownership, checksums, registry access, and lock contention.');
+        }
+
+        return $value['data'];
     }
 
     public function candidateVersion(Node $node, string $package, ToolOperation $operation): string
