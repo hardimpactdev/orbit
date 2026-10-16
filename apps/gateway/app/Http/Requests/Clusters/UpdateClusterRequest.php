@@ -7,7 +7,9 @@ namespace App\Http\Requests\Clusters;
 use App\Data\Clusters\UpdateClusterData;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Clusters\ClusterTld;
+use App\Domain\WireGuard\VpnSettings;
 use App\Models\Cluster;
+use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -36,6 +38,11 @@ final class UpdateClusterRequest extends FormRequest
                 'string',
                 'max:63',
                 'regex:/\A[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\z/D',
+                static function (string $attribute, mixed $value, Closure $fail): void {
+                    if (is_string($value) && app(VpnSettings::class)->isDomain($value)) {
+                        $fail("The {$attribute} field must not be the private VPN domain.");
+                    }
+                },
                 Rule::unique('clusters', 'tld')->ignore($clusterId),
             ],
             'state' => ['sometimes', Rule::enum(ClusterState::class)],

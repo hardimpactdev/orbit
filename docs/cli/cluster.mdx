@@ -43,6 +43,7 @@ A Node keeps its own TLD while it belongs to a Cluster, and membership never cha
 | --- | --- |
 | Node TLDs are unique among Nodes. | `node.tld_taken` |
 | Cluster TLDs are unique among Clusters. | A validation error on `tld` |
+| No Cluster or Node TLD is the private VPN domain, `orbit` by default. Private DNS answers every name under a TLD, and the platform names, such as `gateway.orbit`, live under the private VPN domain. | A validation error on `tld` |
 | A Node outside an active Cluster cannot own that Cluster's TLD. Activating a Cluster with a TLD, or giving an active Cluster a TLD, checks this. | `cluster.tld_conflict` |
 | A Node cannot take the TLD of an active Cluster that it is not a member of. | `node.tld_conflict` |
 | A member that shares the active Cluster TLD cannot leave while that TLD is active. | `cluster.tld_conflict` |
@@ -63,7 +64,7 @@ orbit cluster:create <name> [--tld=TLD]
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--tld=TLD` | none | Development TLD as one DNS label, such as `test`. An active Cluster with this TLD owns generated development Route domains for its members. |
+| `--tld=TLD` | none | Development TLD as one DNS label, such as `test`. It cannot be the private VPN domain, `orbit` by default. An active Cluster with this TLD owns generated development Route domains for its members. |
 
 ```bash
 orbit cluster:create lab --tld=test

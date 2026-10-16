@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes;
 
+use App\Domain\WireGuard\VpnSettings;
+
 final class NodeTld
 {
     private const string PATTERN = '/\A[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\z/D';
@@ -19,10 +21,14 @@ final class NodeTld
         return strtolower($normalized);
     }
 
+    /** Lowercase DNS labels, at most 253 characters, that are not the private VPN domain ({@see VpnSettings::isDomain()}). */
     public static function isValid(string $tld): bool
     {
         $normalized = self::normalize($tld);
 
-        return $normalized !== '' && strlen($normalized) <= 253 && preg_match(self::PATTERN, $normalized) === 1;
+        return $normalized !== ''
+            && strlen($normalized) <= 253
+            && preg_match(self::PATTERN, $normalized) === 1
+            && ! app(VpnSettings::class)->isDomain($normalized);
     }
 }

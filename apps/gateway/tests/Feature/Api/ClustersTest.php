@@ -12,6 +12,7 @@ use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\WireGuard\VpnSettings;
 use App\Models\Activity;
 use App\Models\Cluster;
 use App\Models\Instance;
@@ -247,6 +248,37 @@ describe('Cluster lifecycle', function (): void {
         expect($cluster->refresh()->state)->toBe(ClusterState::Active);
     });
 
+    it('refuses the private VPN domain as a Cluster TLD on create and update', function (string $tld): void {
+        $cluster = Cluster::query()->create(['name' => 'lab', 'state' => ClusterState::Inactive]);
+
+        $this
+            ->postJson('/api/v1/clusters', ['name' => 'private', 'tld' => $tld])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation.failed')
+            ->assertJsonPath('error.details.tld.0', 'The tld field must not be the private VPN domain.');
+        $this
+            ->patchJson("/api/v1/clusters/{$cluster->id}", ['tld' => $tld])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation.failed')
+            ->assertJsonPath('error.details.tld.0', 'The tld field must not be the private VPN domain.');
+
+        expect(Cluster::query()->count())->toBe(1)
+            ->and($cluster->refresh()->tld)->toBeNull();
+    })->with(['orbit', ' ORBIT ']);
+
+    it('reads the private VPN domain from the VPN settings', function (): void {
+        app(VpnSettings::class)->configure(subnet: '10.44.0.0/24', domain: 'corp');
+
+        $this
+            ->postJson('/api/v1/clusters', ['name' => 'corp', 'tld' => 'corp'])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.tld.0', 'The tld field must not be the private VPN domain.');
+        $this
+            ->postJson('/api/v1/clusters', ['name' => 'orbit', 'tld' => 'orbit'])
+            ->assertCreated()
+            ->assertJsonPath('data.tld', 'orbit');
+    });
+
     it('requires a Router only for a proposed active TLD-bearing Cluster', function (): void {
         $withTld = Cluster::query()->create([
             'name' => 'with-tld',
@@ -264,7 +296,7 @@ describe('Cluster lifecycle', function (): void {
             ->assertConflict()
             ->assertJsonPath('error.code', 'cluster.router_required');
         $this
-            ->patchJson("/api/v1/clusters/{$withoutTld->id}", ['tld' => 'orbit'])
+            ->patchJson("/api/v1/clusters/{$withoutTld->id}", ['tld' => 'lab'])
             ->assertConflict()
             ->assertJsonPath('error.code', 'cluster.router_required');
 
@@ -384,14 +416,14 @@ describe('Cluster lifecycle', function (): void {
 
         $outside = Node::query()->create([
             'name' => 'outside',
-            'tld' => 'orbit',
+            'tld' => 'lab',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.5',
             'wireguard_ip' => '10.44.0.5',
         ]);
 
         $this
-            ->patchJson("/api/v1/clusters/{$cluster->id}", ['tld' => 'orbit'])
+            ->patchJson("/api/v1/clusters/{$cluster->id}", ['tld' => 'lab'])
             ->assertConflict()
             ->assertJsonPath('error.code', 'cluster.tld_conflict');
 

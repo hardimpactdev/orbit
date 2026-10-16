@@ -401,6 +401,23 @@ describe('POST /api/v1/nodes', function (): void {
             ->assertJsonPath('error.code', 'node.tld_taken');
     });
 
+    it('refuses the private VPN domain as a Node TLD before anything changes', function (string $tld): void {
+        $this
+            ->postJson('/api/v1/nodes', [
+                'name' => 'private-tld',
+                'public_ssh_host' => '192.0.2.44',
+                'architecture' => 'x86_64',
+                'roles' => ['app-dev'],
+                'tld' => $tld,
+                'host_key_fingerprint' => 'SHA256:'.str_repeat(string: 'A', times: 43),
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation.failed')
+            ->assertJsonPath('error.details.tld.0', 'The tld field must not be the private VPN domain.');
+
+        expect(Node::query()->where('name', 'private-tld')->exists())->toBeFalse();
+    })->with(['orbit', '.ORBIT']);
+
     it('rejects a non-member Node TLD owned by an active Cluster before convergence', function (): void {
         $converger = new class implements NodeConverger
         {
