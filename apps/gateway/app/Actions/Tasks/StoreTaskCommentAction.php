@@ -25,6 +25,7 @@ use App\Domain\Tasks\TaskTurnInstructions;
 use App\Domain\Tasks\TaskTurnMode;
 use App\Domain\Tasks\TaskTurnReceiptException;
 use App\Domain\Tasks\TaskTurnReceipts;
+use App\Domain\Tasks\TaskWorkspaceHead;
 use App\Models\Activity;
 use App\Models\AgentThread;
 use App\Models\Instance;
@@ -144,6 +145,11 @@ final readonly class StoreTaskCommentAction
                 $task->loadMissing('implementerThread');
                 // A reviewing subtask is blocked on its own reviewer. The group pointer can still name an older thread.
                 $reviewing = $task->status === TaskStatus::Reviewing;
+                if ($reviewing && app(TaskWorkspaceHead::class)->checksRunning($task->parent)) {
+                    $this->deferReviewResolution($task, $comment);
+
+                    return;
+                }
                 try {
                     $thread = $reviewing ? $this->subtaskReviewer($task) : $task->implementerThread;
                     if ($retryBaselineQueued) {
@@ -201,6 +207,13 @@ final readonly class StoreTaskCommentAction
     private function deliverDirection(Task $task, TaskComment $comment): void
     {
         $task->refresh();
+        if (app(TaskWorkspaceHead::class)->checksRunning($task->parent)) {
+            if ($task->status === TaskStatus::Reviewing) {
+                $this->deferReviewResolution($task, $comment);
+            }
+
+            return;
+        }
         $reviewer = $this->subtaskReviewer($task);
         if ($task->status === TaskStatus::Reviewing && $reviewer instanceof AgentThread) {
             $this->sendDirectionReview($task, $comment, $reviewer);
@@ -329,6 +342,26 @@ final readonly class StoreTaskCommentAction
             ]);
             $locked->parent()->update(TaskAssistance::cleared());
             $this->log($locked, $comment, 'resolution held for reviewer');
+        });
+    }
+
+    /** The next tick sends the resolution in a review packet after the check releases the workspace. */
+    private function deferReviewResolution(Task $task, TaskComment $comment): void
+    {
+        DB::transaction(function () use ($task, $comment): void {
+            $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
+            if (! $locked->assistance_requested) {
+                return;
+            }
+            $attempt = $locked->review_attempt + 1;
+            $comment->update(['review_attempt' => $attempt]);
+            TaskQuestions::attachResolution($locked, $comment);
+            $locked->update([
+                ...TaskAssistance::cleared(), 'review_attempt' => $attempt,
+                'communication_failures' => 0, 'review_reminder_attempt' => null, 'review_reminder_input_id' => null,
+            ]);
+            $locked->parent()->update(TaskAssistance::cleared());
+            $this->log($locked, $comment, 'resolution waits for workspace check');
         });
     }
 
