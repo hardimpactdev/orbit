@@ -697,16 +697,18 @@ it('sets up the recipe PHP build in every PHP job of every workflow and never fl
     $steps = array_column($action['runs']['steps'], null, 'name');
     // `composer` or `php` as a command word, not inside a name such as bin/php-build, which is Python.
     $command = '(?<![\w\/.=-])(?:composer|php)(?![\w.-])';
-    // A bin script runs PHP when PHP is its interpreter or when a Bash script calls PHP or Composer. Python scripts
-    // that run PHP are named, because Python names `php` as data, too.
-    $phpBins = ['docs-openapi', 'mcp-tools'];
+    // A bin script runs PHP when PHP is its interpreter, when a Bash script calls PHP or Composer, or when a Python
+    // script starts an argv list with them. mcp-tools reaches PHP through another script, so it is named.
+    $phpBins = ['mcp-tools'];
     foreach (glob(base_path('../../bin/*')) ?: [] as $bin) {
         $lines = is_file($bin) ? file($bin, FILE_IGNORE_NEW_LINES) : false;
         if ($lines === false || $lines === []) {
             continue;
         }
         $body = implode("\n", array_filter(array_slice($lines, 1), static fn (string $line): bool => ! str_starts_with(ltrim($line), '#')));
-        if (str_ends_with($lines[0], 'php') || (str_ends_with($lines[0], 'bash') && preg_match("/{$command}/", $body) === 1)) {
+        if (str_ends_with($lines[0], 'php')
+            || (str_ends_with($lines[0], 'bash') && preg_match("/{$command}/", $body) === 1)
+            || (str_ends_with($lines[0], 'python3') && preg_match('/\[\s*[\'"](?:php|composer)[\'"]\s*,/', $body) === 1)) {
             $phpBins[] = basename($bin);
         }
     }
@@ -731,7 +733,7 @@ it('sets up the recipe PHP build in every PHP job of every workflow and never fl
         }
     }
 
-    expect($phpBins)->toContain('orbit-build-cli-binary', 'dependency-audit', 'docs-nav', 'e2e-topology')
+    expect($phpBins)->toContain('orbit-build-cli-binary', 'dependency-audit', 'docs-nav', 'e2e-topology', 'ci-tia', 'docs-openapi')
         ->not->toContain('php-build');
     expect($phpJobs)->toBe([
         'ci.yml:project', 'ci.yml:gateway-plan', 'ci.yml:gateway-shards', 'ci.yml:privileged', 'ci.yml:remote-programs',
