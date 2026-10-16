@@ -108,20 +108,16 @@ Each record has one source, the same one that its one-shot read uses.
 | Record | Source | Lines |
 | --- | --- | --- |
 | Instance | `storage/logs/laravel.log` in the Instance's application directory (inside the checkout or selected release), or the newest `laravel-*.log` when it is absent, as [Instance logs](/reference/instance-logs#know-which-file-the-gateway-reads) describes | Each line of the file |
-| systemd Process | The journal entries of `orbit-process-{id}-{name}.service`, and systemd's own messages about that unit | `2026-09-25T10:15:02+00:00 host name[pid]: message`, as `journalctl --output short-iso --utc` prints it |
+| systemd Process | The journal entries that `journalctl --unit orbit-process-{id}-{name}.service` selects: the unit's own entries, systemd's messages about the unit, messages that root services log about it, and its core dumps | `2026-09-25T10:15:02+00:00 host name[pid]: message`, as `journalctl --output short-iso --utc` prints it |
 | Docker Process | The output of container `orbit-process-{id}-{name}` | Each line of standard output and standard error, in the order the container wrote them |
 
 The agent follows a daily log file to the next day's file. When an earlier file becomes the newest again, it continues where it left that file, so no line is sent twice. It starts from the beginning of a file that was truncated.
 
-Journal lines match the one-shot read over SSH, which uses `journalctl --output short-iso --utc`. The agent makes at most 256 KiB of lines from one journal entry, one stream's queue, so a huge message cannot exhaust its memory.
+The agent follows a systemd Process with `journalctl --unit {unit} --output short-iso --utc`, the command of the one-shot read over SSH. So both reads select the same entries, and each journal line is the same text in both. `journalctl` is part of systemd on every supported Ubuntu Node. When it is missing, or it stops while the agent follows, the stream ends with `source_unavailable`.
 
-A longer entry ends with the line `[orbit] message cut at 256 KiB`. A single line longer than 256 KiB is cut there too, before a character rather than inside one. The one-shot read cuts each entry by the same rule, so the lines of a cut entry are the same in both reads, and a follow can switch between the reads there without a gap.
+The agent first reads the cursor of the unit's newest entry. It reads the first lines from that entry backwards and then follows from the next entry, so an entry written in between is sent exactly once.
 
-A few rare entries still differ between the live stream and the one-shot read. A message over 256 KiB with terminal color codes differs because the agent cuts the message before it removes the codes. At that entry, a follow that switches between the reads prints `[orbit] lines may be missing`.
-
-A single line over 256 KiB that contains tabs is cut at different places too. The agent cuts the raw journal message before each tab expands to 8 spaces, while the one-shot `awk` cuts after that expansion. The CLI still matches the lines, because the live side is cut at 8 KiB anyway, so only the text past the cut differs.
-
-A message over 256 KiB that is not printable text differs as well. At that entry, a follow that switches between the reads prints `[orbit] lines may be missing`.
+The agent makes at most 256 KiB of lines from one journal entry, one stream's queue, and keeps at most 512 KiB of one printed line, so a huge message cannot exhaust its memory. A longer entry ends with the line `[orbit] message cut at 256 KiB`. A single line longer than 256 KiB is cut there too, before a character rather than inside one. The one-shot read cuts each entry by the same rule, so a follow can switch between the reads at any entry without a gap.
 
 The one-shot read of a systemd Process reads the journal newest entry first and stops after 4 MiB, because `journalctl --lines` counts entries and one entry can hold millions of lines. It cuts each entry at 256 KiB before that limit, so a huge entry does not hide the older entries. The one-shot read of a Docker Process also returns both streams in one, in the same order.
 
@@ -205,9 +201,11 @@ Every browser with Gateway access joins `presence-node.{id}`, so log lines never
 
 A `log-streams.changed` event carries no data. It only prompts the agent to fetch its list over HTTPS. So a forged or lost event cannot start a read, and the agent never acts on the content of a channel message.
 
-### The agent runs no program
+### The agent runs no program that changes the Node
 
-The agent is visibility-only. It reads the journal and log files with its own readers and never starts `journalctl` or `tail`. It is a static musl binary, so it cannot load `libsystemd`.
+The agent is visibility-only. The only program it runs is read-only `journalctl`, with fixed arguments, to follow a systemd Process. `journalctl` changes nothing on the Node, and the Gateway already runs it over SSH for one-shot reads. So the live stream and the one-shot read share one command and one output, and their lines match on every systemd version.
+
+Reading the journal through `libsystemd` is not possible, because the agent is a static musl binary and cannot load it. An earlier agent read the journal files with its own reader. It was rejected, because it had to follow the file format, its compression, and file rotation, and it still printed some rare entries differently from `journalctl`. The agent reads Instance log files itself and never starts `tail`.
 
 ### Production Instances stay on SSH
 

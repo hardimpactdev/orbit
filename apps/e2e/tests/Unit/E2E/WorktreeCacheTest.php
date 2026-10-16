@@ -12,7 +12,7 @@ function worktreeCacheFixture(): array
     $root = temporaryPath('orbit-cache-', 6);
     mkdir($root.'/bin', 0700, true);
     $run = new ProcessFactory;
-    foreach (['bootstrap', 'gateway-app-key', 'worktree-cache'] as $script) {
+    foreach (['bootstrap', 'gateway-app-key', 'generated-merge', 'worktree-cache'] as $script) {
         copy(dirname(__DIR__, 5).'/bin/'.$script, $root.'/bin/'.$script);
         chmod($root.'/bin/'.$script, 0755);
     }
@@ -78,6 +78,9 @@ it('seeds all five projects during bootstrap with independent cache copies', fun
     file_put_contents($orbitHome.'/gateway.app-key', 'fixture-key');
     $result = $run->env(['PATH' => $tools.':'.getenv('PATH'), 'ORBIT_HOME' => $orbitHome])->run([$worktree.'/bin/bootstrap']);
     expect($result->successful())->toBeTrue($result->errorOutput().$result->output());
+    $driver = $run->path($worktree)->run(['git', 'config', '--local', '--get', 'merge.orbit-generated.driver']);
+    expect($driver->successful())->toBeTrue($driver->errorOutput());
+    expect($driver->output())->toContain($worktree.'/bin/generated-merge', '--merge %O %A %B %P %X %Y');
 
     foreach ($projects as $project) {
         foreach ($caches as $cache) {
