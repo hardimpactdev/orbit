@@ -229,7 +229,7 @@ The first form stores a loopback URL. The second form stores a Node Process and 
 | Rule | Result |
 | --- | --- |
 | Domain | Any unique DNS domain, such as `executor.orbit`, `grafana.internal`, or `something.test`. No Cluster TLD, Node TLD, or `.orbit` suffix is required. |
-| Uniqueness | Fleet-wide, across every Route kind and the reserved platform names. `cli-proxy-api.orbit` is not reserved. |
+| Uniqueness | Fleet-wide, across every Route kind and the reserved platform names. Core reserves its own names, and an [extension](/reference/extensions#plug-in-points) can reserve more, such as `collector.cli-proxy-api.orbit`. `cli-proxy-api.orbit` is not reserved. |
 | Owner and scope | The serving Node, which must be active and have a WireGuard address. Cluster membership never gives it Cluster scope. |
 | Publication | Private only. |
 | Upstream | HTTP on `127.0.0.1`, `localhost`, or `::1`, or the listener of a Node Process on the serving Node. A remote URL is refused. |

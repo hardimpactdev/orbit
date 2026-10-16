@@ -106,6 +106,8 @@ Setup runs the shared [Caddy package step](/reference/node-provisioning#package-
 
 The `proxycli` provider contributes the collector site to the [Node Caddy build](/reference/caddy-configuration#node-caddy-build) through a [plug-in point](/reference/extensions#plug-in-points). The site renders on the collector Node while setup holds the collector and the Node has the collector certificate.
 
+The provider contributes three more pieces through [plug-in points](/reference/extensions#plug-in-points): the `proxycli` artifact of the [Node footprint](/reference/node-provisioning#converge-the-orbit-footprint), the private DNS record `collector.cli-proxy-api.orbit`, and the reservation of that name. The footprint artifact writes a changed collector script on the collector Node. VPN DNS publishes the record while setup holds the collector. The name stays reserved while the extension is off.
+
 ## Collection
 
 The collector is the only process that calls CLIProxyAPI for quota. Every minute it takes the Valkey lock `orbit:proxycli:lock` for up to 120 seconds. When another holder has the lock, it skips the round. It lists the CLIProxyAPI auth files, fetches quota for each account that is due through `POST /v0/management/api-call`, and writes `orbit:proxycli:raw` and `orbit:proxycli:snapshot`. It remembers each auth file's models in `orbit:proxycli:model-files`.

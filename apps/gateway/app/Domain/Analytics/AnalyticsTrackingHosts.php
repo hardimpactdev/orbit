@@ -35,7 +35,7 @@ final readonly class AnalyticsTrackingHosts
             return 'A tracking host is a DNS host name such as analytics.example.com, without a scheme or a path.';
         }
 
-        if (in_array($host, ReservedPrivateHostname::NAMES, true) || str_ends_with($host, '.orbit')) {
+        if (in_array($host, ReservedPrivateHostname::names(), true) || str_ends_with($host, '.orbit')) {
             return 'A tracking host cannot use the reserved private orbit names.';
         }
 

@@ -17,3 +17,19 @@ arch('the Caddy build never uses proxycli code')
 arch('the application provider never uses proxycli code')
     ->expect('App\Providers\ApplicationServiceProvider')
     ->not->toUse(proxycli_namespaces());
+
+arch('the Node footprint never uses proxycli code')
+    ->expect('App\Infrastructure\Fleet')
+    ->not->toUse(proxycli_namespaces());
+
+arch('the fleet provider never uses proxycli code')
+    ->expect('App\Providers\FleetServiceProvider')
+    ->not->toUse(proxycli_namespaces());
+
+arch('private DNS never uses proxycli code')
+    ->expect('App\Infrastructure\AppDev')
+    ->not->toUse(proxycli_namespaces());
+
+arch('reserved hostnames never use proxycli code')
+    ->expect('App\Domain\Routes')
+    ->not->toUse(proxycli_namespaces());

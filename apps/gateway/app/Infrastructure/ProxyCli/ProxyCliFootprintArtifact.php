@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Infrastructure\Fleet\Footprint;
+namespace App\Infrastructure\ProxyCli;
 
 use App\Actions\Processes\RestartProcessAction;
 use App\Domain\Fleet\NodeFootprintArtifact;
@@ -10,13 +10,13 @@ use App\Domain\ProxyCli\ProxyCliProcess;
 use App\Domain\ProxyCli\ProxyCliState;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Fleet\NodeShell;
-use App\Infrastructure\ProxyCli\ProxyCliSourcePublisher;
 use App\Models\Node;
 use App\Models\Process;
 
 /**
  * The ProxyCli collector script on the collector's Node. A changed script restarts the collector,
- * a Node-owned Process; it is not an Instance Process.
+ * a Node-owned Process; it is not an Instance Process. The proxycli provider contributes it to the Node
+ * footprint ([Extensions](/reference/extensions#plug-in-points)).
  */
 final readonly class ProxyCliFootprintArtifact implements NodeFootprintArtifact
 {

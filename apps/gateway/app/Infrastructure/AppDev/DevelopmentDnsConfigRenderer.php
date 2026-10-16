@@ -6,15 +6,17 @@ namespace App\Infrastructure\AppDev;
 
 use App\Domain\Analytics\AnalyticsHostname;
 use App\Domain\AppDev\ClusterRouterDnsSelection;
+use App\Domain\AppDev\ContributedPrivateDnsRecords;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Extensions\Contributions;
 use App\Domain\Nodes\RoleName;
-use App\Domain\ProxyCli\ProxyCliHostname;
-use App\Domain\ProxyCli\ProxyCliState;
 use App\Domain\Routes\ClusterRouterTransition;
+use App\Domain\Routes\ReservedPrivateHostname;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\WebSocket\WebSocketDnsTarget;
 use App\Models\Node;
 use Illuminate\Database\Eloquent\Builder;
+use LogicException;
 
 final readonly class DevelopmentDnsConfigRenderer
 {
@@ -112,10 +114,8 @@ final readonly class DevelopmentDnsConfigRenderer
             $records->push('host-record='.AnalyticsHostname::Value.",{$analytics->wireguard_ip}");
         }
 
-        $proxycli = $this->proxycliNode();
-
-        if ($proxycli instanceof Node) {
-            $records->push('host-record='.ProxyCliHostname::Value.",{$proxycli->wireguard_ip}");
+        foreach ($this->contributedRecords() as $hostname => $address) {
+            $records->push("host-record={$hostname},{$address}");
         }
 
         foreach ($this->selection->clusterTldRecords($nodeOverrides, $clusterOverrides) as $record) {
@@ -125,25 +125,35 @@ final readonly class DevelopmentDnsConfigRenderer
         return '# Managed by Orbit.'.PHP_EOL.$records->unique()->sort()->implode(PHP_EOL).PHP_EOL;
     }
 
-    private function proxycliNode(): ?Node
+    /**
+     * The records that extensions contribute. A record for a hostname that no extension reserves, or that another
+     * contribution already publishes, is a wiring error: two records could answer for one name. It throws, so
+     * publication fails closed.
+     *
+     * @return array<string, string>
+     *
+     * @throws LogicException
+     */
+    private function contributedRecords(): array
     {
-        $state = app(ProxyCliState::class);
+        $reserved = ReservedPrivateHostname::contributed();
+        $records = [];
 
-        if (! $state->enabled()) {
-            return null;
+        foreach (app(Contributions::class)->of(ContributedPrivateDnsRecords::class) as $contribution) {
+            foreach ($contribution->records() as $hostname => $address) {
+                if (! in_array($hostname, $reserved, true)) {
+                    throw new LogicException('The contribution ['.$contribution::class."] publishes the private DNS record [{$hostname}], which no extension reserves.");
+                }
+
+                if (array_key_exists($hostname, $records)) {
+                    throw new LogicException('The contribution ['.$contribution::class."] publishes the private DNS record [{$hostname}], which another contribution publishes.");
+                }
+
+                $records[$hostname] = $address;
+            }
         }
 
-        $nodeId = $state->nodeId();
-
-        if ($nodeId === null) {
-            return null;
-        }
-
-        $node = Node::query()->find($nodeId);
-
-        return $node instanceof Node && is_string($node->wireguard_ip) && $node->wireguard_ip !== ''
-            ? $node
-            : null;
+        return $records;
     }
 
     /**
