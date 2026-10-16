@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Fleet\Footprint;
 
+use App\Domain\AppDev\ContributedPrivateDnsRecords;
 use App\Domain\AppDev\PrivateDnsManager;
+use App\Domain\Extensions\Contributions;
 use App\Domain\Fleet\NodeFootprintArtifact;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
@@ -41,11 +43,26 @@ final readonly class PrivateDnsFootprintArtifact implements NodeFootprintArtifac
      */
     public function digest(Node $node): string
     {
-        return hash('sha256', PrivateDnsListenerRelease::fromGateway()->id()."\n".SourceDigest::of([
+        return hash('sha256', PrivateDnsListenerRelease::fromGateway()->id()."\n".SourceDigest::of(self::inputs()));
+    }
+
+    /**
+     * The publication code: the dnsmasq manager, the records renderer, the listener units, and the record sources
+     * that extensions contribute with the classes they use, such as the state that decides a record.
+     *
+     * @return list<string> Paths relative to the Gateway's base path.
+     */
+    public static function inputs(): array
+    {
+        return [
             'app/Infrastructure/AppDev/DnsmasqPrivateDnsManager.php',
             'app/Infrastructure/AppDev/DevelopmentDnsConfigRenderer.php',
             'app/Infrastructure/AppDev/PrivateDnsListenerUnitRenderer.php',
-        ]));
+            ...SourceClosure::of([], array_map(
+                static fn (ContributedPrivateDnsRecords $records): string => $records::class,
+                app(Contributions::class)->of(ContributedPrivateDnsRecords::class),
+            )),
+        ];
     }
 
     public function apply(Node $node): ?bool

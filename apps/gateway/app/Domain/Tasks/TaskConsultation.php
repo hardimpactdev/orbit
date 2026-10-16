@@ -323,6 +323,9 @@ final readonly class TaskConsultation
         }
 
         try {
+            if ($this->runner->workspaceChecksRunning($group)) {
+                return;
+            }
             $reserved = $this->spawner->reserveReviewer($task);
             $this->turnFetcher->beforeTurn($group);
             $this->receipts->prepare($instance, TaskThreadRole::Reviewer, false, $task->deliverableList(), $reserved, new TaskTurnMode(consult: true), $this->reviewPackets->reviewContext($task));
@@ -572,6 +575,9 @@ final readonly class TaskConsultation
     /** Starts the reviewer and sends the operator's resolution as a relay, not as a review packet. */
     public function beginDirectionRelay(Task $group, Task $task, TaskComment $resolution): void
     {
+        if ($this->runner->workspaceChecksRunning($group)) {
+            return;
+        }
         $instance = $group->taskable;
         if (! $instance instanceof Instance || ! $this->spawner instanceof TaskAgentSpawner) {
             return;
@@ -840,6 +846,9 @@ final readonly class TaskConsultation
     /** Reserves a delayed, idempotent continuation of the same work before asking for assistance. */
     public function retryProviderFailure(Task $task, Task $group, TaskThreadObservation $acting): bool
     {
+        if ($acting->role === TaskThreadRole::Reviewer && $this->runner->workspaceChecksRunning($group)) {
+            return true;
+        }
         if (! in_array($acting->providerError, ['overloaded', 'rate_limited', 'server_error'], true)
             || ! is_string($acting->turnId) || $acting->turnId === ''
             || AgentThread::query()->find($acting->threadId)?->driver !== 'pi') {
@@ -899,6 +908,9 @@ final readonly class TaskConsultation
      */
     public function resumePiServerRestart(Task $task, Task $group, TaskThreadObservation $acting): string
     {
+        if ($acting->role === TaskThreadRole::Reviewer && $this->runner->workspaceChecksRunning($group)) {
+            return 'handled';
+        }
         $record = AgentThread::query()->find($acting->threadId);
         if (! $record instanceof AgentThread || ! $this->isServerRestartError($record->driver, $acting->error)) {
             return 'skip';

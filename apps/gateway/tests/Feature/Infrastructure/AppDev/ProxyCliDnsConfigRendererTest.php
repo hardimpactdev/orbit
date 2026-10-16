@@ -2,8 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppDev\ContributedPrivateDnsRecords;
+use App\Domain\Clusters\ClusterState;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\ProxyCli\ProxyCliHostname;
 use App\Domain\ProxyCli\ProxyCliState;
+use App\Domain\Routes\ContributedReservedHostnames;
 use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
@@ -11,8 +16,53 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
+use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
+
+final class ProxyCliDnsConfigRendererTestTakesCore implements ContributedPrivateDnsRecords
+{
+    public function records(): array
+    {
+        return ['gateway.orbit' => '10.44.0.99'];
+    }
+}
+
+final class ProxyCliDnsConfigRendererTestTakesRoute implements ContributedPrivateDnsRecords
+{
+    public function records(): array
+    {
+        return ['shop.test' => '10.44.0.99'];
+    }
+}
+
+final class ProxyCliDnsConfigRendererTestTakesCollector implements ContributedPrivateDnsRecords
+{
+    public function records(): array
+    {
+        return [ProxyCliHostname::Value => '10.44.0.99'];
+    }
+}
+
+/** Reserves one hostname and publishes it with one address; each test sets both. */
+final class ProxyCliDnsConfigRendererTestRecord implements ContributedPrivateDnsRecords, ContributedReservedHostnames
+{
+    public static string $hostname = 'test-record.orbit';
+
+    public static string $address = '10.44.0.50';
+
+    public function hostnames(): array
+    {
+        return [self::$hostname];
+    }
+
+    public function records(): array
+    {
+        return [self::$hostname => self::$address];
+    }
+}
 
 it('publishes collector.cli-proxy-api.orbit on the collector Node, not the Gateway or the apex', function (): void {
     $gateway = Node::query()->create([
@@ -101,3 +151,144 @@ it('omits collector.cli-proxy-api.orbit when the fleet feature is disabled', fun
         ->not
         ->toContain('host-record=cli-proxy-api.orbit,');
 });
+
+it('renders the records and the catalog that main rendered for the live fleet, byte for byte', function (): void {
+    private_dns_live_fleet();
+    $renderer = app(DevelopmentDnsConfigRenderer::class);
+
+    expect($renderer->render())->toBe(file_get_contents(base_path('tests/Fixtures/PrivateDns/live-fleet-dnsmasq-main.conf')))
+        ->and(private_dns_published_catalog($renderer))->toBe(file_get_contents(base_path('tests/Fixtures/PrivateDns/live-fleet-catalog-main.json')));
+});
+
+it('refuses a contributed record that no extension reserves, or that another contribution publishes', function (string $contribution, string $message): void {
+    private_dns_live_fleet();
+    app()->tag([$contribution], ContributedPrivateDnsRecords::class);
+
+    expect(fn (): string => app(DevelopmentDnsConfigRenderer::class)->render())
+        ->toThrow(LogicException::class, "The contribution [{$contribution}] publishes the private DNS record {$message}");
+})->with([
+    'a core hostname' => [ProxyCliDnsConfigRendererTestTakesCore::class, '[gateway.orbit], which no extension reserves.'],
+    'a Route domain' => [ProxyCliDnsConfigRendererTestTakesRoute::class, '[shop.test], which no extension reserves.'],
+    'the collector hostname' => [ProxyCliDnsConfigRendererTestTakesCollector::class, '[collector.cli-proxy-api.orbit], which another contribution publishes.'],
+]);
+
+it('publishes a contributed record only with a safe hostname and a VPN host address', function (string $hostname, string $address, string $problem): void {
+    private_dns_live_fleet();
+    ProxyCliDnsConfigRendererTestRecord::$hostname = $hostname;
+    ProxyCliDnsConfigRendererTestRecord::$address = $address;
+    app()->tag([ProxyCliDnsConfigRendererTestRecord::class], ContributedReservedHostnames::class);
+    app()->tag([ProxyCliDnsConfigRendererTestRecord::class], ContributedPrivateDnsRecords::class);
+
+    expect(fn (): string => app(DevelopmentDnsConfigRenderer::class)->render())
+        ->toThrow(LogicException::class, 'The contribution ['.ProxyCliDnsConfigRendererTestRecord::class."] {$problem}.");
+})->with([
+    'an address that is no IP address' => ['test-record.orbit', 'collector', 'publishes the address [collector] for [test-record.orbit], which is not an IPv4 address'],
+    'an IPv6 address' => ['test-record.orbit', 'fd00::50', 'publishes the address [fd00::50] for [test-record.orbit], which is not an IPv4 address'],
+    'a comma in the address' => ['test-record.orbit', '10.44.0.50,10.44.0.51', 'publishes the address [10.44.0.50,10.44.0.51] for [test-record.orbit], which is not an IPv4 address'],
+    'a newline in the address' => ['test-record.orbit', "10.44.0.50\naddress=/#/10.44.0.50", "publishes the address [10.44.0.50\naddress=/#/10.44.0.50] for [test-record.orbit], which is not an IPv4 address"],
+    'an address outside the VPN subnet' => ['test-record.orbit', '192.0.2.50', 'publishes the address [192.0.2.50] for [test-record.orbit], which is not a host address in the VPN subnet [10.44.0.0/24]'],
+    'a comma in the hostname' => ['test,record.orbit', '10.44.0.50', 'reserves the hostname [test,record.orbit], which contains a comma or whitespace'],
+    'a newline in the hostname' => ["test-record.orbit\naddress=/#/10.44.0.50", '10.44.0.50', "reserves the hostname [test-record.orbit\naddress=/#/10.44.0.50], which contains a comma or whitespace"],
+    'a padded hostname' => [' test-record.orbit', '10.44.0.50', 'reserves the hostname [ test-record.orbit], which contains a comma or whitespace'],
+    'an uppercase hostname' => ['Test-Record.orbit', '10.44.0.50', 'reserves the hostname [Test-Record.orbit], which is not lowercase'],
+    'a hostname outside .orbit' => ['test-record.example.com', '10.44.0.50', 'reserves the hostname [test-record.example.com], which is not a DNS name under .orbit'],
+    'an empty hostname' => ['', '10.44.0.50', 'reserves the hostname [], which is not a DNS name under .orbit'],
+]);
+
+it('refuses a contributed record that is a Cluster TLD this publication answers for, or a name under one', function (string $tld, string $hostname): void {
+    private_dns_live_fleet();
+    ProxyCliDnsConfigRendererTestRecord::$hostname = 'test-record.orbit';
+    ProxyCliDnsConfigRendererTestRecord::$address = '10.44.0.50';
+    app()->tag([ProxyCliDnsConfigRendererTestRecord::class], ContributedReservedHostnames::class);
+    app()->tag([ProxyCliDnsConfigRendererTestRecord::class], ContributedPrivateDnsRecords::class);
+    $dev = Cluster::query()->where('name', 'dev')->sole();
+
+    expect(fn (): string => app(DevelopmentDnsConfigRenderer::class)->render(clusterOverrides: [$dev->id => ['tld' => $tld]]))
+        ->toThrow(LogicException::class, "publishes the private DNS record [{$hostname}], which is a Cluster TLD or a name under one.");
+})->with([
+    'the Cluster TLD itself' => ['test-record.orbit', 'test-record.orbit'],
+    'a name under the Cluster TLD' => ['orbit', 'collector.cli-proxy-api.orbit'],
+]);
+
+/**
+ * The live fleet's private DNS: the `vpn` and `gateway` Nodes, `services` with the collector, Reverb and analytics,
+ * the `dev` Cluster with its Router `beast` and the `metrics` role, and the `prod` Cluster.
+ *
+ * @return array<string, Node>
+ */
+function private_dns_live_fleet(): array
+{
+    $dev = Cluster::query()->create(['name' => 'dev', 'tld' => 'test', 'state' => ClusterState::Active]);
+    $prod = Cluster::query()->create(['name' => 'prod', 'state' => ClusterState::Active]);
+    $node = static function (string $name, string $address, array $roles, array $attributes = []): Node {
+        $node = Node::query()->create([
+            'name' => $name,
+            'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
+            'public_ssh_host' => "{$name}.example.test",
+            'user' => 'orbit',
+            'wireguard_ip' => $address,
+            ...$attributes,
+        ]);
+
+        foreach ($roles as $role) {
+            $node->roles()->create(['role' => $role, 'status' => LifecycleStatus::Active, 'cluster_id' => in_array($role, [RoleName::Router, RoleName::Ingress], true) ? $node->cluster_id : null]);
+        }
+
+        return $node;
+    };
+    $nodes = [
+        'vpn' => $node('vpn', '10.44.0.1', [RoleName::Vpn]),
+        'gateway' => $node('gateway', '10.44.0.2', [RoleName::Gateway]),
+        'services' => $node('services', '10.44.0.3', [RoleName::AppDev, RoleName::Database, RoleName::WebSocket, RoleName::Analytics]),
+        'app-prod' => $node('app-prod', '10.44.0.4', [RoleName::Router, RoleName::Ingress, RoleName::AppProd], ['tld' => 'prod', 'cluster_id' => $prod->id]),
+        'beast' => $node('beast', '10.44.0.7', [RoleName::Router, RoleName::AppDev, RoleName::Metrics, RoleName::Database], ['tld' => 'test', 'cluster_id' => $dev->id, 'lan_ip' => '192.168.6.20']),
+        'sabre' => $node('sabre', '10.44.0.10', [], ['cluster_id' => $dev->id, 'lan_ip' => '192.168.6.30']),
+        'shark' => $node('shark', '10.44.0.11', [RoleName::AppDev, RoleName::Database], ['cluster_id' => $dev->id, 'lan_ip' => '192.168.6.40']),
+        'mini' => $node('mini', '10.44.0.9', [], ['platform' => 'macos']),
+    ];
+    $project = Project::query()->create(['name' => 'shop', 'slug' => 'shop', 'repository_url' => 'https://example.test/shop.git', 'root' => 'public']);
+    $instance = Instance::query()->create([
+        'project_id' => $project->id,
+        'node_id' => $nodes['shark']->id,
+        'name' => 'default',
+        'checkout_path' => '/home/orbit/apps/shop',
+        'root' => 'public',
+        'selected_php_version' => '8.5',
+        'status' => InstanceState::Active,
+    ]);
+    $shop = Route::query()->create([
+        'project_id' => $project->id,
+        'cluster_id' => $dev->id,
+        'domain' => 'shop.test',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $shop->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+    $shop->update(['status' => RouteStatus::Active, 'sites_published' => true]);
+    $management = Route::query()->create([
+        'kind' => RouteKind::CustomProxy,
+        'node_id' => $nodes['services']->id,
+        'domain' => 'cli-proxy-api.orbit',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $management->customProxy()->create(['node_id' => $nodes['services']->id, 'upstream' => 'http://127.0.0.1:8317']);
+    $management->update(['status' => RouteStatus::Active, 'sites_published' => true]);
+    app(ProxyCliState::class)->enable($nodes['services']->id, 'services-valkey', 'http://10.44.0.3:8317', 'management', 'read', 'control');
+
+    return array_map(static fn (Node $node): Node => $node->fresh('roles') ?? $node, $nodes);
+}
+
+/** The private DNS catalog that publication writes, with each requester's Node by name. */
+function private_dns_published_catalog(DevelopmentDnsConfigRenderer $renderer): string
+{
+    $names = Node::query()->pluck('name', 'id')->all();
+
+    return json_encode([
+        'requesters' => array_map(static fn (int $id): string => $names[$id], $renderer->registeredRequesters()),
+        ...$renderer->catalog()->toPublished(),
+    ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT)."\n";
+}

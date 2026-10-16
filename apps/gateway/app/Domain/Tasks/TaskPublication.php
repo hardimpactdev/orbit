@@ -350,7 +350,7 @@ final readonly class TaskPublication
                 return;
             }
             try {
-                if ($this->head->held($group)) {
+                if ($this->head->held($group, ownCheck: $task->checks()->where('kind', TaskCheckKind::BaseMerge)->latest('id')->first()?->id)) {
                     $this->recordMerge($group, TaskMergeStatus::Waiting, 'The main merge waits for the workspace review or handoff check to settle.');
 
                     return;
@@ -460,7 +460,12 @@ final readonly class TaskPublication
      */
     public function prepareBaseMerge(TaskScheduler $scheduler, Task $group, Task $task, ?TaskComment $receipt = null, bool $refreshPassed = false): string
     {
-        if ($this->head->held($group, $receipt)) {
+        $query = $task->checks()->where('kind', TaskCheckKind::BaseMerge);
+        if (! $refreshPassed) {
+            $query->where('task_comment_id', $receipt?->id);
+        }
+        $check = $query->latest('id')->first();
+        if ($this->head->held($group, $receipt, $check?->id)) {
             return 'waiting';
         }
         $instance = $group->taskable;
@@ -468,11 +473,6 @@ final readonly class TaskPublication
             throw new TaskCheckException('The task workspace is unavailable.');
         }
         $snapshot = $scheduler->workspaceSnapshot($group);
-        $query = $task->checks()->where('kind', TaskCheckKind::BaseMerge);
-        if (! $refreshPassed) {
-            $query->where('task_comment_id', $receipt?->id);
-        }
-        $check = $query->latest('id')->first();
         if ($check instanceof TaskCheck && $check->status === TaskCheckStatus::Running && $check->pid > 0) {
             $reading = $this->checks->read($instance, $check->process());
             if ($reading->state === 'running') {

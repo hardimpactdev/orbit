@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Instances\DeployInstanceAction;
+use App\Actions\Instances\RollbackInstanceAction;
 use App\Domain\Gateway\GatewayQueue;
 use App\Domain\Instances\Deployment\DeploymentStepName;
 use App\Domain\Instances\Deployment\InstanceDeploymentRecorder;
@@ -69,6 +70,91 @@ function lost_deploy(object $test, string $running): Operation
 
     return $operation->refresh();
 }
+
+/**
+ * A rollback to `initial` that a worker on another host started while `fresh` was selected: its plan is recorded, the
+ * `rollback` step found the release, and `$running` was running when the worker was lost.
+ */
+function lost_rollback(object $test, string $running): Operation
+{
+    $test->fixture->deployment->current = 'fresh';
+    $response = $test->withServerVariables(['REMOTE_ADDR' => $test->fixture->caller->wireguard_ip])
+        ->call('POST', "/api/v1/instances/{$test->fixture->instance->id}/rollback", server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{"release":"initial"}');
+    $operation = Operation::query()->findOrFail($response->json('data.id'));
+    DB::table('jobs')->delete();
+    $store = app(OperationStore::class);
+    $store->claim($operation, 'gone-host:4242:1');
+    $run = new OperationRun($operation, $store);
+    $run->remember('deployment_id', static fn (): int => app(InstanceDeploymentRecorder::class)->start($test->fixture->instance, 'deployment-stream-caller', InstanceDeployment::Rollback)->id);
+    $run->plan(array_map(
+        static fn (DeploymentStepName $step): OperationStepPlan => new OperationStepPlan($step->name(), $step->resumable()),
+        app(RollbackInstanceAction::class)->plan($test->fixture->instance),
+    ));
+    $run->step('rollback', static fn (): array => [
+        'previous' => ['name' => 'fresh', 'path' => '/home/deployment-stream/releases/fresh', 'commit' => str_repeat('b', 40)],
+        'release' => ['name' => 'initial', 'path' => '/home/deployment-stream/releases/initial', 'commit' => str_repeat('a', 40)],
+    ]);
+
+    foreach ($operation->steps()->get() as $step) {
+        if ($step->name === $running) {
+            break;
+        }
+
+        if ($step->status === OperationStepStatus::Pending) {
+            $step->update(['status' => OperationStepStatus::Succeeded]);
+        }
+    }
+
+    $operation->steps()->where('name', $running)->update(['status' => OperationStepStatus::Running->value]);
+    $operation->update(['current_step' => $running]);
+
+    return $operation->refresh();
+}
+
+describe('a lost rollback worker', function (): void {
+    it('resumes an interrupted activation with the release that the rollback step stored', function (): void {
+        $operation = lost_rollback($this, 'activation');
+
+        expect(app(OperationSweeper::class)->sweep())->toBe(1)
+            ->and(run_operation_jobs())->toBe(1);
+
+        $operation->refresh();
+        $deployment = InstanceDeployment::query()->sole();
+
+        expect($operation->status)->toBe(OperationStatus::Succeeded)
+            ->and($operation->attempts)->toBe(2)
+            ->and($operation->result['release'])->toBe('initial')
+            ->and($operation->result['selected_release'])->toBe('initial')
+            ->and($this->fixture->deployment->invocations)->toBe(0)
+            ->and($this->fixture->deployment->activations)->toBe(1)
+            ->and($this->fixture->deployment->current)->toBe('initial')
+            ->and($deployment->kind)->toBe(InstanceDeployment::Rollback)
+            ->and($deployment->status)->toBe('succeeded');
+    });
+
+    it('fails a rollback that started too often and ends its history row at the step boundary', function (): void {
+        $operation = lost_rollback($this, 'activation');
+        $operation->update(['attempts' => 3]);
+        app(OperationSweeper::class)->sweep();
+        run_operation_jobs();
+
+        $operation->refresh();
+        $deployment = InstanceDeployment::query()->sole();
+
+        expect($operation->status)->toBe(OperationStatus::Failed)
+            ->and($operation->failed_step)->toBe('activation')
+            ->and($operation->error_code)->toBe('operation.worker_lost')
+            ->and($operation->lock_key)->toBeNull()
+            ->and($operation->result['release'] ?? null)->toBe('initial')
+            ->and($operation->result['selected_release'] ?? null)->toBe('fresh')
+            ->and($deployment->status)->toBe('failed')
+            ->and($deployment->failed_step)->toBe('activation')
+            ->and($deployment->error_code)->toBe('operation.worker_lost')
+            ->and($deployment->release)->toBe('initial')
+            ->and($deployment->selected_release)->toBe('fresh')
+            ->and($this->fixture->deployment->activations)->toBe(0);
+    });
+});
 
 describe('a lost worker', function (): void {
     it('resumes a resumable step and skips the steps that already succeeded', function (): void {

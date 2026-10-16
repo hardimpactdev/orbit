@@ -70,6 +70,13 @@ final class GatewayFailureRenderer
             return self::environmentConfigurationDetails($details);
         }
 
+        if (in_array($code, ['operation.target_busy', 'operation.dispatch_failed'], true)) {
+            // The operation that holds the target, or the one that could not be queued, so the caller can follow or cancel it.
+            $operationId = $details['operation_id'] ?? null;
+
+            return is_int($operationId) && $operationId > 0 ? ['operation_id' => $operationId] : [];
+        }
+
         if (in_array($code, ['instance.setup_step_failed', 'instance.teardown_step_failed'], true)) {
             $safe = [];
             foreach (['step', 'teardown_step'] as $field) {
@@ -182,10 +189,12 @@ final class GatewayFailureRenderer
             }
         }
 
-        $id = $humanDetails['id'] ?? null;
+        foreach (['id', 'operation_id'] as $field) {
+            $id = $humanDetails[$field] ?? null;
 
-        if (is_int($id) && $id > 0) {
-            $humanDetails['id'] = (string) $id;
+            if (is_int($id) && $id > 0) {
+                $humanDetails[$field] = (string) $id;
+            }
         }
 
         $output = $command->getOutput();

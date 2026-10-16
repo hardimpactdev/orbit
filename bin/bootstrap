@@ -53,7 +53,6 @@ if ((with_rust)) && ! command -v cargo >/dev/null 2>&1; then
 fi
 
 log_directory="$(mktemp -d)"
-pids=()
 failed=0
 
 cleanup() {
@@ -63,24 +62,20 @@ cleanup() {
 
 trap cleanup EXIT
 
+# Composer's shared file cache is not safe for concurrent writers. Keep installs
+# serial; each Composer process still downloads its packages concurrently.
 for project in "${projects[@]}"; do
-    (
-        cd "$repository_root/$project"
+    log_file="$log_directory/${project//\//-}.log"
+
+    if (
+        cd "$repository_root/$project" || exit
 
         if [[ -f .env.example && ! -e .env ]]; then
-            cp .env.example .env
+            cp .env.example .env || exit
         fi
 
         composer install --no-interaction --prefer-dist
-    ) >"$log_directory/${project//\//-}.log" 2>&1 &
-    pids+=("$!")
-done
-
-for index in "${!projects[@]}"; do
-    project="${projects[$index]}"
-    log_file="$log_directory/${project//\//-}.log"
-
-    if wait "${pids[$index]}"; then
+    ) >"$log_file" 2>&1; then
         printf '\n[%s] installed\n' "$project"
     else
         printf '\n[%s] failed\n' "$project" >&2

@@ -23,6 +23,12 @@ interface AgentDriver
 
     public function observe(AgentThread $thread): AgentObservation;
 
+    /**
+     * Reads the thread for a viewer, within an interactive time budget. With a cursor from the driver's current
+     * run, the observation holds only the entries after it and is a delta. Otherwise it is a full snapshot.
+     */
+    public function read(AgentThread $thread, ?string $cursor): AgentObservation;
+
     /** @return iterable<AgentThreadEvent> */
     public function events(AgentThread $thread, ?string $cursor, ?float $timeoutSeconds = null): iterable;
 }

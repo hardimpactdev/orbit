@@ -69,7 +69,7 @@ A top-level task holds the task workspace, the branch, the reviewed pull request
 
 Clearing the assistance flag can keep the last reason.
 
-An [annotation](/reference/agent-annotation) creates a task with `execution_mode` `existing_thread`. That task sends work to a thread that already exists. The lifecycle operations refuse it with `tasks.external_execution` (HTTP 409): update, cancel, complete, and the subtask create, update, destroy, and cancel operations. List, show, the comment operations, `tasks:check:cancel`, and `tasks:agents` accept it. The scheduler never claims it.
+An [annotation](/reference/agent-annotation) creates a task with `execution_mode` `existing_thread`. That task sends work to a thread that already exists. The lifecycle operations refuse it with `tasks.external_execution` (HTTP 409): update, cancel, complete, and the subtask create, update, destroy, and cancel operations. List, show, the comment operations, `tasks:check:cancel`, `tasks:agents`, and `tasks:agent:show` accept it. The scheduler never claims it.
 
 Typed comments record the workflow. A stored turn receipt is a comment whose type is its outcome: `ready_for_review`, `blocked`, `changes_requested`, or `approved`. An operator posts `assistance_requested` and `resolution` comments. Each comment keeps its full body, author, time, and attempt. An approval that Orbit committed carries `commit_sha`. The approval of the last subtask also carries `pull_request`: the summary, changes, and breaking changes it proposed.
 
@@ -118,6 +118,7 @@ List, show, and `tasks:question:list` accept any authorized peer. Update and the
 | `tasks:question:list` | `GET /api/v1/task-questions` | Any peer |
 | `tasks:question:close` | `POST /api/v1/task-questions/{question}/close` | Gateway |
 | `tasks:agents` | `GET /api/v1/task-groups/{group}/agents` | Gateway |
+| `tasks:agent:show` | `GET /api/v1/task-groups/{group}/agents/{session}` | Gateway |
 
 Each MCP tool name is the operation name with hyphens, such as `tasks-subtask-create`. The paths keep the `task-groups` segment. `{group}` is the top-level task id, and `{task}` is the subtask id.
 
@@ -176,6 +177,8 @@ The task and subtask operations return these errors.
 | `tasks.subtask_interrupt_failed` | 502 | Orbit could not stop the implementer or the check |
 | `tasks.agent_driver_unavailable` | 409 | The configured agent driver is unknown. No task is stored |
 | `tasks.agent_transcript_unavailable` | 409 | A transcript request for a stored `t3` task thread. The row stays, and no stream opens |
+| `tasks.agent_unavailable` | 409 | A transcript request for a thread whose Node is gone, when Orbit saved no transcript |
+| `tasks.agent_read_failed` | 502 | A [thread read](#read-a-thread) that the thread's Pi server could not serve, when Orbit saved no transcript |
 | `tasks.github_app_required` | 422 | Create for a Project with `source_access: gh_cli`. No task is stored |
 | `tasks.external_execution` | 409 | A lifecycle operation on an annotation task |
 | `validation.failed` | 422 | An invalid field, such as a deliverable or a position outside the `todo` subtasks |
@@ -1371,11 +1374,40 @@ Each card shows the Project code and the task id, such as `ORB-13`, its line cou
 
 ## Agent viewer
 
-The Agents section lists every started thread of the task. `GET /api/v1/task-groups/{group}/agents` returns each thread with its driver, external id, state, observation time, errors, and metrics. `GET /api/v1/task-groups/{group}/agents/{session}/stream` streams the thread's normalized conversation to the browser. Both need Gateway access and an enabled extension. Runtime credentials stay in the Gateway.
+The Agents section lists every started thread of the task. `GET /api/v1/task-groups/{group}/agents` returns each thread with its driver, external id, state, observation time, errors, and metrics. `GET /api/v1/task-groups/{group}/agents/{session}` [reads](#read-a-thread) the thread's normalized conversation, as a snapshot or as a delta after a cursor. `GET /api/v1/task-groups/{group}/agents/{session}/stream` streams that conversation to the browser. All three need Gateway access and an enabled extension. Runtime credentials stay in the Gateway.
 
 Stored T3 task-thread rows stay in that list, with their metrics. The `t3_*` columns on `agent_threads` stay. A transcript request for a `t3` thread returns HTTP 409 `tasks.agent_transcript_unavailable` and does not open a stream.
 
 A snapshot replaces the browser transcript. Entries merge by id and kind, so an updated entry replaces the earlier one. On reconnect, the browser sends its last cursor. The stream resumes after the cursor and sends only what the viewer missed. When one event becomes several entries, only the last carries the cursor. The viewer writes no thread state. When the thread's Node is gone, the stream sends the [saved transcript](#archive-finished-threads) as one snapshot and ends. Without a saved transcript, it returns HTTP 409 `tasks.agent_unavailable`.
+
+### Read a thread
+
+`GET /api/v1/task-groups/{group}/agents/{session}` reads the thread as one JSON response. The CLI command [`tasks:agent:show`](/cli/tasks#orbit-tasksagentshow) and the MCP tool `tasks-agent-show` call it. An agent polls it to follow a thread without a stream.
+
+A first read returns a snapshot of the whole transcript. It holds the same redacted content as the first event of the stream, plus `archived`. To poll, pass the previous answer's `cursor` as the `after_sequence` query. When the thread's Pi server can resume from that cursor, the read returns a delta: only the entries added or changed after it, and the current state. Otherwise it returns a snapshot again. `kind` says which one the answer is.
+
+| Field | Meaning |
+| --- | --- |
+| `thread_id` | The agent thread ID |
+| `kind` | `snapshot` when `entries` is the whole transcript. `delta` when `entries` holds only the entries after `after_sequence` |
+| `state` | `idle`, `working`, `asking_for_input`, `done`, or `failed`. Null when unknown or before the thread starts |
+| `entries` | Normalized transcript entries, oldest first. Each entry has `id`, `kind` (`message` or `activity`), `label`, `text`, and `at` |
+| `input_requests` | Open input requests. A Pi thread has none |
+| `tokens`, `input_tokens`, `cached_input_tokens`, `output_tokens`, `model_calls`, `peak_context_tokens` | The [thread token metrics](#thread-token-metrics). Each is null when unknown |
+| `lines_added`, `lines_deleted` | The thread's line diff, or null |
+| `error`, `provider_error` | The error of a `failed` turn and its provider class |
+| `cursor` | The thread's place in its events after this answer. Null for a saved transcript or a thread that has not started |
+| `archived` | True when the answer is the saved transcript |
+
+The cursor has the form `{run}.{sequence}`. Pass it back as `after_sequence`, or to the stream as `after_sequence` or `Last-Event-ID`. Either one then sends only what came after it. Replace your transcript with a snapshot. Merge a delta into it by id and kind, so a changed entry replaces the earlier one. A delta can repeat an entry that you already have. A cursor from an earlier run of the Pi server gets a snapshot. The run changes when the Pi server restarts or unloads an idle session. A Pi server binary built before delta reads answers every read with a snapshot.
+
+A thread that has not started yet returns an empty snapshot: no entries, a null `state`, and a null `cursor`. Poll it again until it starts.
+
+When the thread's Node is gone, the read returns the [saved transcript](#archive-finished-threads) with `archived` true and `cursor` null. It does the same when the thread's Pi server fails and Orbit saved a transcript, as after the task VM is deleted. A saved transcript does not change, so a reader can stop polling it.
+
+The read waits at most 5 seconds for the Pi server. The Gateway accepts at most 16 MiB of session data from the Pi server for one read; real transcripts reach about 9 MiB. The same limit applies when the [tick](#session-routing) observes the thread and when Orbit [saves its transcript](#archive-finished-threads), so a larger thread counts as unobservable.
+
+The read writes no thread state. Activity samples it like any other [read](/cli/activity#what-the-gateway-records). When the Pi server is unavailable, refuses the read, does not answer in time, or sends more than 16 MiB, and Orbit saved no transcript, the read returns HTTP 502 `tasks.agent_read_failed`. Its message holds no server detail. The other errors match the stream: 404 for a thread of another task, 409 `tasks.agent_transcript_unavailable` for a `t3` thread, and 409 `tasks.agent_unavailable` when the Node is gone and Orbit saved no transcript.
 
 ## Coder settle webhook
 
@@ -1662,6 +1694,12 @@ The approval commit must hold only the work that the implementer handed off. A w
 
 A task VM is deleted when its task ends, and its Pi sessions go with it. Without a copy, nobody can read what an agent did after the task settles, so prompts cannot be audited or replayed against real turns. Orbit saves the redacted observation on the Gateway just before the delete. It reuses the snapshot the agent viewer already streams, so the copy needs no second format and no second redaction path.
 
+### Agents read a snapshot, browsers stream
+
+An MCP tool call returns one answer and holds no request open, so an agent cannot follow the stream. The [thread read](#read-a-thread) gives it the same content as one JSON response. The read and the stream share the checks, the saved-transcript fallback, and the sanitizer, so they never redact differently. The cursor stays the Pi server's, so a reader can move from the read to the stream without a gap. The Gateway keeps no state per reader.
+
+A poll returns a delta, because a transcript only grows: downloading it again on every poll would cost more on each call and pass the MCP output limit for a long thread. The Pi server already keeps the events of its current run for the stream, so it can answer a delta from the same cursor. The 16 MiB limit bounds the memory of one read and stays above real transcripts, so the scheduler still observes a long thread. A thread that has not started is a normal state, so its read is an empty snapshot and not an error.
+
 ### Orbit commits and pushes
 
 Orbit holds the branch, the receipts, and the GitHub App, so it commits after approval and publishes itself. It pushes the stored commit, not `HEAD`, because `HEAD` can move after the approval. It pushes after every approval, so a lost clone loses no approved work. Retries back off, so a failing Node or GitHub is not called every 10 seconds. Publication requests configured reviewers so GitHub emits `review_requested` and the fleet reviewer wakes. That request is optional and soft-fails, because an empty reviewer list must not block settle.
@@ -1728,11 +1766,13 @@ The merge condition is a fact Orbit recorded: this exact SHA passed Orbit's fina
 
 Asking GitHub to update a branch was rejected for these tasks, because its merge commit would land without the Project gate. Orbit merges main locally and records the gate on the exact merge commit. The group execution lock owns admission of workspace head changes. A mechanical merge waits while a subtask is reviewing, a reviewer turn is working, or a handoff check is running. Publication may merge after the current review's approval has settled; it cannot overlap another review. Deferred merges run on a later tick after the review settles, without extra retries or longer waits.
 
+The same execution lock admits workspace checks and reviewer turns. Baseline, candidate, handoff, main-merge gates, and their command deliverables wait for a running reviewer; reviewer starts and continuations, including consults and direction relays, wait for every running workspace check. Orbit takes the review baseline only after those checks finish. A tree change recorded by Orbit's own check starts a fresh review instead of asking the reviewer to restore the tree or requesting assistance. Check fixtures are not excluded from the workspace snapshot.
+
 An unavailable superseded reviewer conversation does not hold workspace changes after its replacement settles. Orbit selects the current reviewer by the group's pointer, or the latest started conversation for that subtask. A legacy shared reviewer is superseded by the group's current reviewer. Any reviewer observed working still holds changes, including an older conversation. If the current reviewer's observation is unavailable, Orbit reports that failure for assistance instead of claiming a review is settling. Restore access to the agent runtime or retry the review to replace the unavailable conversation.
 
 If HEAD changes unexpectedly during a review, Orbit discards that turn's outcome and requests a fresh review of the delta from the previous review tree on the new head. It does not ask for assistance or attribute the head change to the reviewer. A working-tree change without a head change still needs resolution; its reminder and any assistance describe the workspace mismatch rather than claiming that the reviewer edited it.
 
-Reviews already blocked by the old workspace-change reminder recover on the next tick when Orbit's stored main-merge check identifies the current head and tree. Orbit clears only that stale failure, preserves other assistance requests, and sends a delta review with a fresh workspace baseline. No database edit or operator resolution is needed.
+Reviews already blocked by a workspace-change reminder poll their running workspace checks under the execution lock before the assistance gate. Orbit records finished remote results even when the database still says running. Active checks retain ownership and delay recovery; an unreadable result keeps assistance in place and records a communication failure. Recovery needs an exact current head and tree recorded by Orbit's finished check or main-merge check. Orbit clears only that stale failure, preserves other assistance requests, and sends a delta review with a fresh workspace baseline. No database edit or operator resolution is needed.
 
 If Orbit cannot read the workspace during recovery, the assistance reason reports that inspection error instead of the old revert instruction. Recovery remains automatic after access returns, and unrelated assistance stays unchanged.
 

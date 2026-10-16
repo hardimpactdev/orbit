@@ -25,7 +25,6 @@ OUTPUT = ROOT / 'apps/gateway/resources/mcp/tools.json'
 # discovery, watch list, and log stream list, live log streams that need a Reverb socket, Caddy forward-auth, the wake page a browser receives, the completion report a Node's schedule timer
 # posts, and the two pages that carry a GitHub App registration through the operator's browser.
 EXCLUDED = {
-    'annotation-events',
     'tasks-agent-stream',
     'realtime-auth',
     'agent-realtime',
@@ -104,8 +103,6 @@ def tool(method, path, operation, components):
 
     summary = operation.get('summary', name).strip()
     description = operation.get('description', '').strip()
-    responses = operation.get('responses', {})
-    streams = any('application/x-ndjson' in (response.get('content') or {}) for response in responses.values())
 
     schema = {'type': 'object', 'properties': properties, 'additionalProperties': False}
     if required:
@@ -124,7 +121,6 @@ def tool(method, path, operation, components):
         'path': path,
         'path_inputs': path_inputs,
         'query_inputs': query_inputs,
-        'streams': streams,
         'starts_operation': operation.get('x-orbit-operation') == 'start',
         'input_schema': schema,
     }

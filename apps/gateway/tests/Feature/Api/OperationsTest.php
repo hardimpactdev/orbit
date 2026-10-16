@@ -317,7 +317,7 @@ describe('reading operations', function (): void {
 
         ($this->asCaller)()->getJson("/api/v1/operations?{$query}")->assertOk()->assertJsonPath('data', []);
     })->with([
-        'kind' => 'kind=instance.rollback',
+        'kind' => 'kind=instance.restart',
         'target type' => 'target_type=route',
     ]);
 

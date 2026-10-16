@@ -175,7 +175,7 @@ describe('a thread that works outside the task phase', function (): void {
         Classification::assertNothingClassified();
     })->with(['idle', 'running']);
 
-    it('moves a passing handoff to review but asks for the review only once the reviewer is idle', function (): void {
+    it('defers the handoff check and review until the running reviewer releases the workspace', function (): void {
         $group = tick_group();
         $task = $group->tasks->sole();
         AgentThread::query()->whereKey($group->reviewer_agent_thread_id)->update(['task_id' => $task->id]);
@@ -207,8 +207,9 @@ describe('a thread that works outside the task phase', function (): void {
         app(TaskScheduler::class)->tick();
         app(TaskScheduler::class)->tick();
 
-        expect($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
-            ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Reviewing)
+        expect($task->fresh()?->status)->toBe(TaskStatus::Running)
+            ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running)
+            ->and($task->checks()->count())->toBe(0)
             ->and($spawner->reviews)->toBe(0)
             ->and($task->fresh()?->review_notified_attempt)->toBeNull()
             ->and($task->fresh()?->communication_failures)->toBe(0)

@@ -6,10 +6,13 @@ namespace App\Infrastructure\Tasks\Pi;
 
 use App\Domain\Tasks\AgentDriverException;
 use App\Models\Node;
+use App\Support\ValidatedData;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
+use InvalidArgumentException;
 
 /**
  * Calls the Pi server on a Node. Every failure becomes an AgentDriverException that names the
@@ -24,6 +27,15 @@ final readonly class PiClient
     private const float STREAM_SECONDS = 20.0;
 
     private const float STREAM_READ_TIMEOUT = 5.0;
+
+    /**
+     * The largest session body the Gateway accepts. Real Pi transcripts reach about 9 MiB, and decoding one takes about
+     * twice its size. A larger body stops the transfer and fails, so it never fills a PHP worker's memory.
+     */
+    public const int SESSION_MAX_BYTES = 16 * 1024 * 1024;
+
+    /** A viewer's read waits at most this long, the stream's read timeout, so it holds a PHP worker briefly. */
+    public const float READ_TIMEOUT = self::STREAM_READ_TIMEOUT;
 
     public function __construct(private PiConnection $connection) {}
 
@@ -52,8 +64,26 @@ final readonly class PiClient
     /** @return array<string, mixed> */
     public function snapshot(Node $node, string $sessionId): array
     {
-        $payload = $this->ensure($this->call(fn (): Response => $this->request($node)->get($this->url($node, 'sessions', $sessionId))), $node)->json();
-        if (! is_array($payload) || ($payload['kind'] ?? null) !== 'snapshot') {
+        $payload = $this->session($node, $sessionId, null, self::TIMEOUT);
+        if (($payload['kind'] ?? null) !== 'snapshot') {
+            throw new AgentDriverException('The Pi server returned an invalid snapshot.');
+        }
+
+        return $payload;
+    }
+
+    /**
+     * Reads a session for a viewer within {@see READ_TIMEOUT}. With a cursor from the server's current run, the server
+     * answers a `delta`: the events a stream would replay after the cursor, and the current state. Otherwise it answers
+     * a `snapshot`, as a server built before deltas always does.
+     *
+     * @param  array{run: string, sequence: int}|null  $after
+     * @return array<string, mixed>
+     */
+    public function read(Node $node, string $sessionId, ?array $after): array
+    {
+        $payload = $this->session($node, $sessionId, $after, self::READ_TIMEOUT);
+        if (! in_array($payload['kind'] ?? null, ['snapshot', 'delta'], true)) {
             throw new AgentDriverException('The Pi server returned an invalid snapshot.');
         }
 
@@ -87,13 +117,56 @@ final readonly class PiClient
         }
     }
 
+    /**
+     * Gets `GET /sessions/{id}`, bounded by {@see SESSION_MAX_BYTES}. The transfer stops once the body passes the limit,
+     * and the body is decoded only when it fits.
+     *
+     * @param  array{run: string, sequence: int}|null  $after
+     * @return array<string, mixed>
+     */
+    private function session(Node $node, string $sessionId, ?array $after, float $timeout): array
+    {
+        $response = $this->call(fn (): Response => $this->request($node)
+            ->timeout($timeout)
+            // Decoding stays off, so the progress counts are the body's own bytes.
+            ->withOptions(['decode_content' => false, 'progress' => static function (int $total, int $received): void {
+                if (max($total, $received) > self::SESSION_MAX_BYTES) {
+                    throw self::tooLarge();
+                }
+            }])
+            ->get($this->url($node, 'sessions', $sessionId), $after === null ? [] : ['run' => $after['run'], 'after' => $after['sequence']]));
+        if (($response->toPsrResponse()->getBody()->getSize() ?? 0) > self::SESSION_MAX_BYTES) {
+            throw self::tooLarge();
+        }
+        try {
+            return ValidatedData::object($this->ensure($response, $node)->json());
+        } catch (InvalidArgumentException) {
+            throw new AgentDriverException('The Pi server returned an invalid snapshot.');
+        }
+    }
+
+    private static function tooLarge(): AgentDriverException
+    {
+        return new AgentDriverException('The Pi server session is larger than '.intdiv(self::SESSION_MAX_BYTES, 1024 * 1024).' MiB.');
+    }
+
     /** @param callable(): Response $send */
     private function call(callable $send): Response
     {
         try {
             return $send();
-        } catch (ConnectionException) {
+        } catch (ConnectionException $exception) {
+            // A transfer that a callback stopped carries that callback's reason.
+            for ($cause = $exception->getPrevious(); $cause !== null; $cause = $cause->getPrevious()) {
+                if ($cause instanceof AgentDriverException) {
+                    throw $cause;
+                }
+            }
+
             throw new AgentDriverException('The Pi server is unavailable.');
+        } catch (RequestException $exception) {
+            // An error status whose body transfer stopped, such as at the size limit or the timeout.
+            throw new AgentDriverException('The Pi server failed with HTTP '.$exception->response->status().'.');
         }
     }
 

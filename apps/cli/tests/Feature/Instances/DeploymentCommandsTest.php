@@ -9,7 +9,6 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Deployments\DeployInstanceRequest;
 use Orbit\Sdk\Requests\Deployments\ListInstanceReleasesRequest;
-use Orbit\Sdk\Requests\Deployments\RollbackInstanceRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Process\Process;
@@ -73,148 +72,7 @@ describe('retained releases', function (): void {
     });
 });
 
-describe('rollback streams', function (): void {
-    it('renders a rollback progress tree for a human', function (): void {
-        $mock = MockClient::global([
-            RollbackInstanceRequest::class => deployment_cli_stream_response([
-                deployment_cli_phase(1, 'rollback'),
-                deployment_cli_result(2, 'succeeded', selectedRelease: 'release-a'),
-            ]),
-        ]);
-
-        $exitCode = Artisan::call('instance:rollback', [
-            'instance' => '17',
-            '--release' => 'release-a',
-            '--no-interaction' => true,
-        ]);
-        $output = Artisan::output();
-
-        expect($exitCode)->toBe(0)
-            ->and($output)
-            ->toContain(
-                'Roll back Instance [17]',
-                '● Selected release',
-                'Rollback succeeded.',
-                'Selected release: release-a',
-                'Request ID: '.deployment_cli_request_id(),
-            );
-
-        expect($mock->getRecordedResponses())->toHaveCount(1);
-    });
-
-    it('reports the rollback Process restart phase in human and JSON output', function (bool $fails, bool $json): void {
-        MockClient::global([
-            RollbackInstanceRequest::class => deployment_cli_stream_response([
-                deployment_cli_phase(1, 'rollback'),
-                deployment_cli_phase(2, 'process_restart'),
-                deployment_cli_output(3, $fails ? 'stderr' : 'stdout', $fails ? "Failed to restart Process 12.\n" : "Restarted Process 12.\n"),
-                deployment_cli_result(4, $fails ? 'failed' : 'succeeded', failedStep: $fails ? 'after_activation' : null,
-                    errorCode: $fails ? 'process.restart_failed' : null, selectedRelease: 'release-a'),
-            ]),
-        ]);
-
-        $exitCode = Artisan::call('instance:rollback', [
-            'instance' => '17', '--release' => 'release-a', '--no-interaction' => true, '--json' => $json,
-        ]);
-        $output = Artisan::output();
-
-        expect($exitCode)->toBe($fails ? 1 : 0);
-        if ($json) {
-            $events = array_map(fn (string $line): array => json_decode($line, associative: true, flags: JSON_THROW_ON_ERROR), explode("\n", trim($output)));
-            expect($events[1]['phase'])->toBe('process_restart')
-                ->and($events[3]['status'])->toBe($fails ? 'failed' : 'succeeded')
-                ->and($events[3]['selected_release'])->toBe('release-a');
-        } else {
-            expect($output)->toContain($fails ? 'Restarting Processes' : 'Restarted Processes')
-                ->and($output)->toContain($fails ? 'Rollback failed.' : 'Rollback succeeded.')
-                ->and($output)->toContain('Selected release: release-a');
-        }
-    })->with([false, true])->with([false, true]);
-
-    it('marks the current row failed for a rollback activation failure (F2a)', function (): void {
-        // rollback's only admitted row is 'rollback' ('Select release'); activation has no
-        // row of its own, so the reached row must take the failure instead of looking merely
-        // skipped. Footer color is covered generically in ProgressDisplayTest.php.
-        MockClient::global([
-            RollbackInstanceRequest::class => deployment_cli_stream_response([
-                deployment_cli_phase(1, 'rollback'),
-                deployment_cli_result(2, 'failed', failedStep: 'activation', errorCode: 'deployment.activation_failed'),
-            ]),
-        ]);
-
-        $exitCode = Artisan::call('instance:rollback', [
-            'instance' => '17',
-            '--release' => 'release-a',
-            '--no-interaction' => true,
-        ]);
-        $output = Artisan::output();
-
-        expect($exitCode)->toBe(1)
-            ->and($output)
-            ->toContain(
-                '● Selecting release',
-                'deployment.activation_failed',
-                'Rollback failed.',
-                'Failed boundary: activation',
-                'Error code: deployment.activation_failed',
-            )
-            ->not->toContain('Selected release:');
-        // The failed row itself carries the error code as its message (once), separate from
-        // the "Error code:" summary line below the tree (once more) — not blank (M13).
-        expect(substr_count($output, 'deployment.activation_failed'))->toBe(2);
-    });
-
-    it('marks the current row failed for a rollback cache_refresh failure', function (): void {
-        MockClient::global([
-            RollbackInstanceRequest::class => deployment_cli_stream_response([
-                deployment_cli_phase(1, 'rollback'),
-                deployment_cli_result(2, 'failed', failedStep: 'cache_refresh', errorCode: 'deployment.cache_refresh_failed'),
-            ]),
-        ]);
-
-        $exitCode = Artisan::call('instance:rollback', [
-            'instance' => '17',
-            '--release' => 'release-a',
-            '--no-interaction' => true,
-        ]);
-        $output = Artisan::output();
-
-        expect($exitCode)->toBe(1)
-            ->and($output)
-            ->toContain(
-                '● Selecting release',
-                'deployment.cache_refresh_failed',
-                'Rollback failed.',
-                'Failed boundary: cache_refresh',
-                'Error code: deployment.cache_refresh_failed',
-            )
-            ->not->toContain('Selected release:');
-    });
-
-    it('uses one typed rollback request with only the selected release', function (): void {
-        $mock = MockClient::global([
-            RollbackInstanceRequest::class => deployment_cli_stream_response([
-                deployment_cli_phase(1, 'rollback'),
-                deployment_cli_result(2, 'succeeded', selectedRelease: 'release-a'),
-            ]),
-        ]);
-
-        $this
-            ->artisan('instance:rollback', [
-                'instance' => '17',
-                '--release' => 'release-a',
-                '--json' => true,
-            ])
-            ->assertExitCode(0);
-
-        expect($mock->getLastRequest())
-            ->toBeInstanceOf(RollbackInstanceRequest::class)
-            ->and($mock->getLastRequest()?->body()->all())
-            ->toBe(['release' => 'release-a'])
-            ->and($mock->getRecordedResponses())
-            ->toHaveCount(1);
-    });
-
+describe('deploy and rollback requests', function (): void {
     it('rejects a missing rollback release before sending a request', function (): void {
         $mock = MockClient::global();
 
@@ -232,61 +90,6 @@ describe('rollback streams', function (): void {
             ))
             ->and($mock->getLastPendingRequest())
             ->toBeNull();
-    });
-
-    it('emits a failed result event in JSON mode without rewriting it as an error envelope', function (): void {
-        $event = deployment_cli_result(
-            1,
-            'failed',
-            failedStep: 'operation',
-            errorCode: 'deployment_config.unavailable',
-        );
-        MockClient::global([
-            RollbackInstanceRequest::class => deployment_cli_stream_response([$event]),
-        ]);
-
-        $exitCode = Artisan::call('instance:rollback', [
-            'instance' => '17',
-            '--release' => 'release-a',
-            '--json' => true,
-            '--no-interaction' => true,
-        ]);
-        $payload = json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(1)
-            ->and($payload)->toBe($event)
-            ->and($payload)->not->toHaveKey('error');
-    });
-
-    it('rejects a truncated stream with a correlated safe error and no resubmission', function (): void {
-        $mock = MockClient::global([
-            RollbackInstanceRequest::class => deployment_cli_stream_response([
-                deployment_cli_phase(1, 'rollback'),
-            ]),
-        ]);
-
-        $exitCode = Artisan::call('instance:rollback', [
-            'instance' => '17',
-            '--release' => 'release-a',
-            '--json' => true,
-            '--no-interaction' => true,
-        ]);
-        $lines = array_values(array_filter(explode("\n", trim(Artisan::output()))));
-
-        expect($exitCode)->toBe(1)
-            ->and($lines)->toHaveCount(2)
-            ->and(json_decode($lines[0], true, flags: JSON_THROW_ON_ERROR))
-            ->toBe(deployment_cli_phase(1, 'rollback'))
-            ->and($lines[1])
-            ->toBe(deployment_cli_error(
-                'deployment.stream_invalid',
-                'Gateway deployment stream is invalid.',
-                deployment_cli_request_id(),
-            ))
-            ->and($mock->getRecordedResponses())
-            ->toHaveCount(1)
-            ->and($mock->getLastResponse()?->stream()->isReadable())
-            ->toBeFalse();
     });
 
     it('preserves shared safe pre-admission errors and request IDs', function (): void {
@@ -345,7 +148,7 @@ describe('rollback streams', function (): void {
             ]]);
     });
 
-    it('leaves SIGINT at its default for stream and non-stream commands', function (): void {
+    it('leaves SIGINT at its default while a deploy, rollback, or release request is sent', function (): void {
         $commands = Artisan::all();
 
         expect($commands['instance:deploy']->getSubscribedSignals())->toBe([])
@@ -402,7 +205,7 @@ describe('rollback streams', function (): void {
         }
     })->with([SIGINT, SIGTERM])->with(['--ansi', '--no-ansi', '--json']);
 
-    it('terminates promptly and disconnects before headers arrive', function (): void {
+    it('terminates a rollback start promptly and disconnects before headers arrive', function (): void {
         if (! defined('SIGINT') || ! function_exists('posix_kill') || ! function_exists('openssl_csr_new')) {
             $this->markTestSkipped('POSIX signals are unavailable.');
         }
@@ -440,7 +243,6 @@ describe('rollback streams', function (): void {
                 ->and($command->getTermSignal())->toBe(SIGINT)
                 ->and($elapsed)->toBeLessThan(2.0)
                 ->and($serverExitCode)->toBe(0)
-                ->and($output)->not->toContain('"type":"result"')
                 ->and($output)->not->toContain('succeeded');
         } finally {
             if ($command->isRunning()) {
@@ -453,69 +255,6 @@ describe('rollback streams', function (): void {
         }
     });
 
-    it('interrupts a blocked stream read within one second, decorated, plain, or JSON', function (string $mode): void {
-        if (! defined('SIGINT') || ! function_exists('posix_kill') || ! function_exists('openssl_csr_new')) {
-            $this->markTestSkipped('POSIX signals are unavailable.');
-        }
-
-        if ($mode === '--ansi' && ! Process::isPtySupported()) {
-            $this->markTestSkipped('PTY is unavailable.');
-        }
-
-        $fixture = deployment_cli_signal_fixture($this->orbitHome, 'body-blocked');
-        $output = '';
-        $command = new Process(
-            [PHP_BINARY, dirname(__DIR__, 3).'/orbit', 'instance:rollback', '17', '--release=release-a', $mode, '--no-interaction'],
-            env: ['ORBIT_HOME' => $fixture['home']],
-            timeout: $fixture['deadline'] - microtime(true),
-        );
-
-        if ($mode === '--ansi') {
-            $command->setPty(true);
-        }
-
-        try {
-            $command->start(static function (string $type, string $data) use (&$output): void {
-                $output .= $data;
-            });
-            SubprocessFixture::waitUntil($fixture['server'], static fn (): bool => is_file($fixture['stream']));
-            usleep(100_000);
-
-            if (! $command->isRunning()) {
-                throw new RuntimeException(
-                    "Deployment command exited before SIGINT: {$output}\n"
-                    .'Request: '.file_get_contents($fixture['request'])."\n"
-                    .'Server stdout: '.$fixture['server']->getOutput()."\n"
-                    .'Server stderr: '.$fixture['server']->getErrorOutput(),
-                );
-            }
-            $startedAt = microtime(true);
-            $command->signal(SIGINT);
-            $exitCode = $command->wait();
-            $elapsed = microtime(true) - $startedAt;
-            SubprocessFixture::waitUntil($fixture['server'], static fn (): bool => is_file($fixture['disconnected']));
-            $serverExitCode = $fixture['server']->wait();
-
-            expect($exitCode)->toBe(130)
-                ->and($elapsed)->toBeLessThan(1.0)
-                ->and($serverExitCode)->toBe(0)
-                ->and($output)->not->toContain('"type":"result"')
-                ->and($output)->not->toContain('succeeded')
-                ->and($output)->not->toContain('Deployment stream failed.');
-
-            if ($mode === '--ansi') {
-                expect($output)->toContain("\e[?25h");
-            }
-        } finally {
-            if ($command->isRunning()) {
-                $command->stop(0.1, 9);
-            }
-
-            if ($fixture['server']->isRunning()) {
-                $fixture['server']->stop(0.1, 9);
-            }
-        }
-    })->with(['decorated (PTY)' => '--ansi', 'plain' => '--no-ansi', 'JSON' => '--json']);
 });
 
 function deployment_cli_releases_response(): MockResponse
@@ -527,75 +266,6 @@ function deployment_cli_releases_response(): MockResponse
         ],
         'meta' => ['request_id' => deployment_cli_request_id()],
     ]);
-}
-
-/** @param list<array<string, mixed>> $events */
-function deployment_cli_stream_response(array $events): MockResponse
-{
-    return MockResponse::make(
-        implode('', array_map(
-            static fn (array $event): string => json_encode($event, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n",
-            $events,
-        )),
-        headers: deployment_cli_stream_headers(),
-    );
-}
-
-/** @return array<string, mixed> */
-function deployment_cli_phase(int $sequence, string $phase, ?string $stepName = null): array
-{
-    $event = [
-        'type' => 'phase',
-        'sequence' => $sequence,
-        'request_id' => deployment_cli_request_id(),
-        'phase' => $phase,
-    ];
-
-    if ($stepName !== null) {
-        $event['step_name'] = $stepName;
-    }
-
-    return $event;
-}
-
-/** @return array<string, mixed> */
-function deployment_cli_output(int $sequence, string $stream, string $data): array
-{
-    return [
-        'type' => 'output',
-        'sequence' => $sequence,
-        'request_id' => deployment_cli_request_id(),
-        'stream' => $stream,
-        'data_base64' => base64_encode($data),
-    ];
-}
-
-/** @return array<string, mixed> */
-function deployment_cli_result(
-    int $sequence,
-    string $status,
-    ?string $failedStep = null,
-    ?string $errorCode = null,
-    ?string $selectedRelease = null,
-): array {
-    return [
-        'type' => 'result',
-        'sequence' => $sequence,
-        'request_id' => deployment_cli_request_id(),
-        'status' => $status,
-        'failed_step' => $failedStep,
-        'error_code' => $errorCode,
-        'selected_release' => $selectedRelease,
-    ];
-}
-
-/** @return array<string, string> */
-function deployment_cli_stream_headers(): array
-{
-    return [
-        'Content-Type' => 'application/x-ndjson',
-        'X-Orbit-Request-Id' => deployment_cli_request_id(),
-    ];
 }
 
 function deployment_cli_error(string $code, string $message, ?string $requestId = null): string
@@ -618,7 +288,6 @@ function deployment_cli_request_id(): string
  * @return array{
  *     home: string,
  *     request: string,
- *     stream: string,
  *     disconnected: string,
  *     server: Process,
  *     deadline: float,
@@ -630,7 +299,6 @@ function deployment_cli_signal_fixture(string $root, string $mode): array
     mkdir($directory, 0o700, recursive: true);
     [$certificate, $privateKey] = deployment_cli_signal_certificate($directory);
     $request = "{$directory}/request";
-    $stream = "{$directory}/stream";
     $disconnected = "{$directory}/disconnected";
     $server = new Process([
         PHP_BINARY,
@@ -682,139 +350,6 @@ function deployment_cli_signal_fixture(string $root, string $mode): array
 
             file_put_contents($argv[3], $request);
 
-            if ($argv[6] === 'body-blocked') {
-                preg_match('/^X-Orbit-Request-Id:\s*([^\r\n]+)\r?$/mi', $request, $matches);
-                $requestId = $matches[1] ?? '';
-                $headers = "HTTP/1.1 200 OK\r\n"
-                    ."Content-Type: application/x-ndjson\r\n"
-                    ."X-Orbit-Request-Id: {$requestId}\r\n"
-                    ."Transfer-Encoding: chunked\r\n"
-                    ."Connection: close\r\n\r\n";
-                fwrite($connection, $headers);
-                $events = [
-                    [
-                        'type' => 'phase',
-                        'sequence' => 1,
-                        'request_id' => $requestId,
-                        'phase' => 'rollback',
-                    ],
-                    [
-                        'type' => 'phase',
-                        'sequence' => 2,
-                        'request_id' => $requestId,
-                        'phase' => 'before_activation',
-                        'step_name' => 'slow',
-                    ],
-                    [
-                        'type' => 'output',
-                        'sequence' => 3,
-                        'request_id' => $requestId,
-                        'stream' => 'stdout',
-                        'data_base64' => base64_encode("FIRST\n"),
-                    ],
-                ];
-
-                foreach ($events as $event) {
-                    $line = json_encode($event, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n";
-                    fwrite($connection, dechex(strlen($line))."\r\n{$line}\r\n");
-                    fflush($connection);
-                }
-
-                file_put_contents($argv[4], 'sent');
-            } elseif ($argv[6] === 'streamed-output') {
-                preg_match('/^X-Orbit-Request-Id:\s*([^\r\n]+)\r?$/mi', $request, $matches);
-                $requestId = $matches[1] ?? '';
-                $headers = "HTTP/1.1 200 OK\r\n"
-                    ."Content-Type: application/x-ndjson\r\n"
-                    ."X-Orbit-Request-Id: {$requestId}\r\n"
-                    ."Transfer-Encoding: chunked\r\n"
-                    ."Connection: close\r\n\r\n";
-                fwrite($connection, $headers);
-                $events = [
-                    [
-                        'type' => 'phase',
-                        'sequence' => 1,
-                        'request_id' => $requestId,
-                        'phase' => 'rollback',
-                    ],
-                    [
-                        'type' => 'phase',
-                        'sequence' => 2,
-                        'request_id' => $requestId,
-                        'phase' => 'environment_sync',
-                    ],
-                    [
-                        'type' => 'phase',
-                        'sequence' => 3,
-                        'request_id' => $requestId,
-                        'phase' => 'before_activation',
-                        'step_name' => 'print-step',
-                    ],
-                    [
-                        'type' => 'output',
-                        'sequence' => 4,
-                        'request_id' => $requestId,
-                        'stream' => 'stdout',
-                        'data_base64' => base64_encode("line one\n"),
-                    ],
-                    [
-                        'type' => 'output',
-                        'sequence' => 5,
-                        'request_id' => $requestId,
-                        'stream' => 'stdout',
-                        'data_base64' => base64_encode("line two\n"),
-                    ],
-                    [
-                        'type' => 'output',
-                        'sequence' => 6,
-                        'request_id' => $requestId,
-                        'stream' => 'stdout',
-                        'data_base64' => base64_encode("line three\n"),
-                    ],
-                    [
-                        'type' => 'phase',
-                        'sequence' => 7,
-                        'request_id' => $requestId,
-                        'phase' => 'activation',
-                    ],
-                    [
-                        'type' => 'result',
-                        'sequence' => 8,
-                        'request_id' => $requestId,
-                        'status' => 'succeeded',
-                        'failed_step' => null,
-                        'error_code' => null,
-                        'selected_release' => 'release-b',
-                    ],
-                ];
-
-                foreach ($events as $event) {
-                    $line = json_encode($event, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n";
-                    fwrite($connection, dechex(strlen($line))."\r\n{$line}\r\n");
-                    fflush($connection);
-                }
-
-                fwrite($connection, "0\r\n\r\n");
-                fflush($connection);
-                file_put_contents($argv[4], 'sent');
-                stream_set_blocking($connection, false);
-                while (true) {
-                    $data = @fread($connection, 8192);
-
-                    if ($data === '' && feof($connection)) {
-                        file_put_contents($argv[5], 'closed');
-
-                        break;
-                    }
-
-                    usleep(10_000);
-                }
-
-                fclose($connection);
-                fclose($server);
-                exit(0);
-            }
-
             stream_set_blocking($connection, false);
             while (true) {
                 $read = [$connection];
@@ -825,7 +360,7 @@ function deployment_cli_signal_fixture(string $root, string $mode): array
                     $data = fread($connection, 8192);
 
                     if ($data === '' && feof($connection)) {
-                        file_put_contents($argv[5], 'closed');
+                        file_put_contents($argv[4], 'closed');
                         fclose($connection);
                         fclose($server);
                         exit(0);
@@ -837,9 +372,7 @@ function deployment_cli_signal_fixture(string $root, string $mode): array
         $certificate,
         $privateKey,
         $request,
-        $stream,
         $disconnected,
-        $mode,
     ], timeout: 10);
     $server->start();
     $deadline = $server->getStartTime() + $server->getTimeout();
@@ -853,7 +386,7 @@ function deployment_cli_signal_fixture(string $root, string $mode): array
         caPath: $certificate,
     ));
 
-    return compact('home', 'request', 'stream', 'disconnected', 'server', 'deadline');
+    return compact('home', 'request', 'disconnected', 'server', 'deadline');
 }
 
 /** @return array{string, string} */

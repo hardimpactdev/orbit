@@ -1,6 +1,6 @@
 ---
 title: "PHP SDK"
-description: "Call the Gateway API from PHP with typed requests, typed responses, bounded errors, and a closeable deployment stream."
+description: "Call the Gateway API from PHP with typed requests, typed responses, bounded errors, and operations that you follow by polling."
 ---
 
 The PHP SDK is the typed [Saloon](https://docs.saloon.dev) client that the `orbit` command line uses. It ships one request class per Gateway operation, one immutable response class per record, and one exception type. It applies no Gateway policy: validation, authorization, and lifecycle decisions stay on the Gateway.
@@ -41,13 +41,13 @@ $connector = new GatewayConnector(
 | --- | --- | --- |
 | `baseUrl` | required | HTTPS origin of the Gateway, such as `https://gateway.orbit` or `https://10.44.0.1`. |
 | `caPemPath` | `null` | Path to the pinned Gateway root CA. Omit it only when the operating system already trusts the certificate. |
-| `timeout` | `900` | Request timeout in seconds. A read and its one retry run within it. Deployment streams set their own limit. |
+| `timeout` | `900` | Request timeout in seconds. A read and its one retry run within it. |
 | `clientName` | `cli` | Value of the `X-Orbit-Client` header. |
 | `requestIdResolver` | UUID generator | Closure that returns the `X-Orbit-Request-Id` for each request. |
 
 The connector adds `Accept: application/json`, the two Orbit headers, a 10-second connect timeout, and never follows redirects. It cannot be serialized, and its raw transport debugging is disabled so request bodies never reach a log.
 
-The connector retries a read once. When a `GET` or `HEAD` request fails because the connection was refused, reset, or closed before any HTTP response, it waits 250 milliseconds and sends the same request again with the same request ID. A Caddy reload on the Gateway can cause these failures. The connector never retries a request that changes state, a request that received any HTTP response (including a `5xx` error), a timeout, a certificate failure, or a deployment stream. The retry gets only the time left of `timeout`, so a read never takes longer than `timeout` in total. A refused or reset connection usually fails within milliseconds, so the retry usually adds about 250 milliseconds. The retry uses PHP's curl extension; with another Guzzle handler, reads are not retried.
+The connector retries a read once. When a `GET` or `HEAD` request fails because the connection was refused, reset, or closed before any HTTP response, it waits 250 milliseconds and sends the same request again with the same request ID. A Caddy reload on the Gateway can cause these failures. The connector never retries a request that changes state, a request that received any HTTP response (including a `5xx` error), a timeout, or a certificate failure. The retry gets only the time left of `timeout`, so a read never takes longer than `timeout` in total. A refused or reset connection usually fails within milliseconds, so the retry usually adds about 250 milliseconds. The retry uses PHP's curl extension; with another Guzzle handler, reads are not retried.
 
 ## Send a request
 
@@ -95,6 +95,7 @@ Response classes are `final readonly` objects with public camel-case properties 
 | `DatabaseConnectionResponse`, `DatabaseConnectionAttachmentResponse` | The connection registry and attachments. |
 | `MetricsStatusResponse`, `MetricsCredentialsResponse`, `MetricsMutationResponse` | The Metrics role. |
 | `DoctorReportResponse` | Doctor, with `DoctorNodeResponse`, `DoctorFamilyResponse`, and `DoctorIssueResponse` nested inside. |
+| `OperationResponse`, `OperationsResponse` | Operations, and the deploy and rollback that start one. |
 | `ActivityResponse`, `WorkspaceResponse` | Activities and legacy Workspaces. |
 
 [GitHub feedback fixups](/reference/tasks#review-fixup-lifecycle) remain ordinary subtasks in task-group responses. Their existing `brief` contains the source review and immutable findings. The Gateway's `fixup_problem` string uses `review:{reviewer_id}`. Feedback adds no SDK request, response shape, trust configuration input, or merge method. SDK tests replay the Gateway-recorded review-fixup fixture to check that its findings and typed deliverables survive unchanged.
@@ -119,28 +120,25 @@ try {
 
 A transport failure such as an unreachable Gateway or a certificate mismatch throws the same exception type with a `null` error code.
 
-## Stream a deployment
+## Follow an operation
 
-`DeployInstanceRequest` and `RollbackInstanceRequest` return a `DeploymentStream`, an iterator of typed events. The SDK validates each newline-delimited JSON line, its sequence, and its request ID as you advance, and it reports success only when the final event is a succeeded result.
+`DeployInstanceRequest` and `RollbackInstanceRequest` start an [operation](/reference/operations) and return its `OperationResponse` at once. Read it again with `ShowOperationRequest` after `pollAfterSeconds`, until `terminal()` is true. Pass the last `sequence` as `afterSequence` to receive only the steps that changed.
 
 ```php
-use Orbit\Sdk\Requests\Deployments\DeployInstanceRequest;
-use Orbit\Sdk\Responses\Deployments\DeploymentOutputEvent;
-use Orbit\Sdk\Responses\Deployments\DeploymentPhaseEvent;
-use Orbit\Sdk\Responses\Deployments\DeploymentResultEvent;
+use Orbit\Sdk\Requests\Deployments\RollbackInstanceRequest;
+use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 
-$stream = $connector->send(new DeployInstanceRequest(instanceId: 15))->dto();
+$operation = $connector->send(new RollbackInstanceRequest(instanceId: 15, release: '20260914T101500Z'))->dto();
 
-foreach ($stream as $event) {
-    match (true) {
-        $event instanceof DeploymentPhaseEvent => printf("phase %s %s\n", $event->phase, $event->stepName ?? ''),
-        $event instanceof DeploymentOutputEvent => fwrite($event->stream === 'stderr' ? STDERR : STDOUT, $event->data),
-        $event instanceof DeploymentResultEvent => printf("%s (%s)\n", $event->status, $event->selectedRelease ?? 'no release'),
-    };
+while (! $operation->terminal()) {
+    sleep($operation->pollAfterSeconds ?? 2);
+    $operation = $connector->send(new ShowOperationRequest($operation->id, afterSequence: $operation->sequence))->dto();
 }
+
+printf("%s %s\n", $operation->status, $operation->result['selected_release'] ?? $operation->errorCode ?? '');
 ```
 
-Call `$stream->close()` to stop early; closing the stream closes the HTTP connection so the Gateway observes the cancellation. The SDK never retries or replays a stream, and a truncated or malformed stream throws before it can report success.
+Closing the connection or stopping the loop does not stop the operation. `CancelOperationRequest` asks it to stop. The SDK never retries a start request.
 
 ## Doctor
 

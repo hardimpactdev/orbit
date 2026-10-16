@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Commands\Instances;
 
+use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Deployments\DestroyInstanceDeployStepRequest;
@@ -13,7 +14,7 @@ use Orbit\Sdk\Responses\Deployments\DeploymentStepResponse;
 use Orbit\Sdk\Responses\Deployments\DeployStepsResponse;
 use Orbit\Sdk\Responses\Instances\InstanceResponse;
 
-final class DestroyDeployStepCommand extends DeploymentCommand
+final class DestroyDeployStepCommand extends GatewayCommand
 {
     #[\Override]
     protected $signature = 'instance:deploy-step:destroy

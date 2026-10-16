@@ -32,7 +32,6 @@ const InlineRemoteScriptFiles = [
     'app/Infrastructure/Firewall/UfwStoredRuleProbe.php',
     'app/Infrastructure/Fleet/Footprint/TmpfilesFootprintArtifact.php',
     'app/Infrastructure/Gateway/GatewayCheckoutAccessConverger.php',
-    'app/Infrastructure/Gateway/GatewayCleanupStartupRenderer.php',
     'app/Infrastructure/Gateway/GatewayPrivateDnsResolver.php',
     'app/Infrastructure/Gateway/GatewayWebDirectoryConverger.php',
     'app/Infrastructure/Gateway/NativeGatewayCertificatePublisher.php',
@@ -109,6 +108,7 @@ const InlineRemoteScriptFiles = [
     'app/Infrastructure/WireGuard/NativeGatewayPeerProjectionManager.php',
     'app/Infrastructure/WireGuard/NativeGatewayVpnConverger.php',
     'app/Infrastructure/WireGuard/NativeWireGuardPeerConverger.php',
+    'extensions/documents/src/Infrastructure/DocumentsServiceStartHook.php',
 ];
 
 it('lists exactly the files that still hold an inline Node script', function (): void {

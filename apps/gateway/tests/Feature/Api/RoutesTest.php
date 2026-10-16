@@ -701,6 +701,58 @@ it('refuses invalid or occupied active explicit domains before Route or projecti
     expect($route->fresh(['targets'])->toArray())->toBe($before);
 });
 
+it('refuses a reserved domain for a pending Route before the replacement Route exists', function (string $domain): void {
+    $route = pendingNodeRouteFixture($this->orbitApp->id, $this->node->id, 'pending.example.test');
+    $route->targets()->create(['instance_id' => $this->target->id, 'position' => 0]);
+    $before = $route->fresh(['targets'])->toArray();
+
+    $this
+        ->patchJson("/api/v1/routes/{$route->id}", ['domain' => $domain])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'route.domain_conflict')
+        ->assertJsonPath('error.message', "Route domain [{$domain}] is reserved.");
+
+    expect($route->fresh(['targets'])->toArray())->toBe($before)
+        ->and(Route::query()->count())->toBe(1);
+})->with(['gateway.orbit', 'collector.cli-proxy-api.orbit']);
+
+it('refuses a reserved domain for an active Route before Route or projection state changes', function (string $domain): void {
+    $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
+    $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
+        projectId: $this->orbitApp->id,
+        domain: 'active.example.test',
+        publication: RoutePublication::Private,
+        instanceId: $this->target->id,
+        nodeId: null,
+        clusterId: null,
+    ))['route'];
+    $route->update(['status' => 'active']);
+    app()->instance(RouteDomainProjector::class, Mockery::mock(RouteDomainProjector::class));
+    app()->instance(
+        DevelopmentInstanceConfigurator::class,
+        Mockery::mock(DevelopmentInstanceConfigurator::class),
+    );
+    app()->instance(DevelopmentProjectionOperationLock::class, new RouteApiProjectionOwner);
+    $before = $route->fresh(['targets'])->toArray();
+
+    $this
+        ->patchJson("/api/v1/routes/{$route->id}", ['domain' => $domain])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'route.domain_conflict')
+        ->assertJsonPath('error.message', "Route domain [{$domain}] is reserved.");
+
+    expect($route->fresh(['targets'])->toArray())->toBe($before)
+        ->and(Route::query()->count())->toBe(1);
+})->with(['gateway.orbit', 'collector.cli-proxy-api.orbit']);
+
+it('refuses a reserved explicit domain for an Instance Route before the Route exists', function (string $domain): void {
+    expect(fn (): Route => app(CreateRouteAction::class)->ensureForInstance($this->target, $domain))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('route.domain_conflict')
+            ->and($exception->getMessage())->toBe("Route domain [{$domain}] is reserved."));
+
+    expect(Route::query()->count())->toBe(0);
+})->with(['gateway.orbit', 'collector.cli-proxy-api.orbit']);
+
 it('returns 409 instance.source_profile_missing for an explicit domain change without a recorded profile', function (): void {
     $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
         projectId: $this->orbitApp->id,

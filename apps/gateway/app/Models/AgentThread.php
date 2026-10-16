@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Domain\Tasks\AgentThreadState;
+use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskBroadcastObserver;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
+use Illuminate\Database\Eloquent\Attributes\Scope;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -91,6 +94,23 @@ final class AgentThread extends Model
     public function sendLeases(): HasMany
     {
         return $this->hasMany(AgentThreadSendLease::class);
+    }
+
+    /** The spawner reserved this thread, but its agent conversation has not started: the external ID is a placeholder. */
+    public function isPending(): bool
+    {
+        return str_starts_with($this->external_id, TaskAgentSpawner::PendingPrefix);
+    }
+
+    /**
+     * The threads whose agent conversation has started: the opposite of {@see isPending()}.
+     *
+     * @param  Builder<self>  $query
+     */
+    #[Scope]
+    protected function started(Builder $query): void
+    {
+        $query->where('external_id', 'not like', TaskAgentSpawner::PendingPrefix.'%');
     }
 
     /** @return array<string, string> */

@@ -26,7 +26,7 @@ use App\Http\Middleware\RecordCommandActivity;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireEnabledExtension;
 use App\Http\Middleware\RequireNodeAccess;
-use App\Http\Middleware\ValidateDocumentPostSize;
+use App\Http\Middleware\ValidateRequestBodySize;
 use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
@@ -97,11 +97,11 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withCommands()
     ->withMiddleware(function (Middleware $middleware): void {
-        $middleware->replace(ValidatePostSize::class, ValidateDocumentPostSize::class);
+        $middleware->replace(ValidatePostSize::class, ValidateRequestBodySize::class);
         // The Gateway keeps no session, so the Horizon dashboard has no CSRF token: only Sec-Fetch-Site: same-origin passes.
         $middleware->preventRequestForgery(originOnly: true);
-        $middleware->trimStrings(except: [ValidateDocumentPostSize::preservesExactJson(...)]);
-        $middleware->convertEmptyStringsToNull(except: [ValidateDocumentPostSize::preservesExactJson(...)]);
+        $middleware->trimStrings(except: [ValidateRequestBodySize::keepsExactBody(...)]);
+        $middleware->convertEmptyStringsToNull(except: [ValidateRequestBodySize::keepsExactBody(...)]);
         $middleware->prepend(GuardBrowserOrigins::class);
         $middleware->prepend(EnsureRequestId::class);
         $middleware->api(prepend: [NormalizeErrorDetails::class, RecordCommandActivity::class], append: [AnnounceDesiredCliVersion::class]);

@@ -12,6 +12,7 @@ use App\Infrastructure\Nodes\CaddyPackageProgram;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\ProxyCli\NativeProxyCliPublicationManager;
 use App\Infrastructure\ProxyCli\ProxyCliCaddySiteRenderer;
+use App\Infrastructure\ProxyCli\ProxyCliCaddySiteSource;
 use App\Infrastructure\ProxyCli\ProxyCliCertificatePublisher;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -29,7 +30,7 @@ it('installs Caddy, publishes the certificate, requests a Node Caddy build, then
     $manager->converge(proxycli_publication_node());
 
     expect($events)->toBe(['ssh:caddy-source', 'certificate:issue', 'ssh:certificate', 'build:beast', 'dns:converge'])
-        ->and(new CaddySiteCertificates()->published(proxycli_publication_node()->id, CaddySiteCertificates::ProxyCli))->toBeTrue();
+        ->and(new CaddySiteCertificates()->published(proxycli_publication_node()->id, ProxyCliCaddySiteSource::CertificateSlug))->toBeTrue();
 });
 
 it('throws when the certificate SSH push fails', function (): void {
@@ -64,12 +65,12 @@ it('builds the Node before it removes the certificate, then converges DNS withou
     $events = [];
     $manager = proxycli_publication_manager($events);
 
-    new CaddySiteCertificates()->record(proxycli_publication_node()->id, CaddySiteCertificates::ProxyCli);
+    new CaddySiteCertificates()->record(proxycli_publication_node()->id, ProxyCliCaddySiteSource::CertificateSlug);
 
     $manager->remove(proxycli_publication_node());
 
     expect($events)->toBe(['build:beast', 'ssh:certificate-remove', 'dns:converge-empty'])
-        ->and(new CaddySiteCertificates()->published(proxycli_publication_node()->id, CaddySiteCertificates::ProxyCli))->toBeFalse();
+        ->and(new CaddySiteCertificates()->published(proxycli_publication_node()->id, ProxyCliCaddySiteSource::CertificateSlug))->toBeFalse();
 });
 
 it('renders a site that proxies collector.cli-proxy-api.orbit to the loopback collector and waits for its restart', function (): void {

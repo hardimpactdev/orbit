@@ -44,7 +44,10 @@ function machine_recipe_snapshot_probe(?string $failure = null): SnapshotAvailab
         {
             $this->called = true;
             if ($this->failure !== null) {
-                throw new RuntimeException("Snapshot [{$recipe->snapshot}] release [26.04] architecture [amd64]: {$this->failure}");
+                $document = json_decode($recipe->canonicalJson, true, flags: JSON_THROW_ON_ERROR);
+                $release = $document['ubuntu']['release'];
+                $architecture = $recipe->architectures[0];
+                throw new RuntimeException("Snapshot [{$recipe->snapshot}] release [{$release}] architecture [{$architecture}]: {$this->failure}");
             }
         }
     };
@@ -131,12 +134,13 @@ describe('machine recipe structure and identity', function (): void {
 
     it('installs OpenTelemetry packages only for app-dev and excludes it from every CLI module check', function (): void {
         $recipe = new RecipeLoader()->load();
+        $document = machine_recipe_document();
 
         foreach (['8.4', '8.5'] as $version) {
             $name = "php{$version}-opentelemetry";
             expect($recipe->profile('app-dev'))->toContain($name);
             expect($recipe->phpExtensions($recipe->profile('app-dev'))[$version])->not->toContain('opentelemetry');
-            expect($recipe->tools[$name]->version)->toBe('1.2.1-2+0~20260623.18+ubuntu26.04~1.gbpdbb97a');
+            expect($recipe->tools[$name]->version)->toBe($document['tools'][$name]['version']);
             foreach (['app-prod', 'ci-runner', 'base', 'gateway'] as $profile) {
                 expect($recipe->profile($profile))->not->toContain($name);
                 foreach ($recipe->phpExtensions($recipe->profile($profile)) as $extensions) {
@@ -224,16 +228,19 @@ describe('machine recipe structure and identity', function (): void {
 
     it('names one exact PHP build per version for every environment', function (): void {
         $recipe = new RecipeLoader()->load();
+        $document = machine_recipe_document();
         $build = $recipe->php('8.5');
 
         expect($recipe->ciPhp)->toBe('8.5')
-            ->and($build->phpVersion)->toBe('8.5.11')
-            ->and($recipe->php('8.4')->phpVersion)->toBe('8.4.26')
             ->and($build->packages)->toContain('php-common', 'libgd3', 'php8.5-cli', 'php8.5-fpm', 'php8.5-pcov')
             ->not->toContain('php8.4-cli')
             ->and($build->extensions)->toContain('core', 'pcov', 'zend opcache', 'lexbor', 'uri')
             ->and($recipe->php('8.4')->extensions)->not->toContain('lexbor', 'uri')
             ->and(array_keys($recipe->php))->toBe(new InstancePhpVersionCatalog()->versions());
+        foreach ($recipe->php as $version => $phpBuild) {
+            $coreVersion = $document['tools']["php{$version}-common"]['version'];
+            expect($phpBuild->phpVersion)->toBe(explode('-', $coreVersion, 2)[0]);
+        }
         foreach (['gateway', 'app-prod', 'websocket', 'ci-runner', 'app-dev', 'base'] as $profile) {
             expect($recipe->profile($profile))->toContain(...$build->packagesFor($profile === 'app-dev'));
         }
@@ -252,9 +259,10 @@ describe('machine recipe structure and identity', function (): void {
     })->with([
         'one core pin of another patch' => [function (&$d): void {
             $pin = &$d['tools']['php8.5-cli'];
-            $pin['version'] = str_replace('8.5.11-1', '8.5.10-1', $pin['version']);
+            $current = $pin['version'];
+            $pin['version'] = preg_replace_callback('/^8\.5\.([0-9]+)/', static fn (array $match): string => '8.5.'.((int) $match[1] + 1), $current);
             foreach ($pin['artifacts'] as &$artifact) {
-                $artifact['url'] = str_replace('8.5.11-1', '8.5.10-1', $artifact['url']);
+                $artifact['url'] = str_replace($current, $pin['version'], $artifact['url']);
             }
         }, 'Change every pin of one PHP version together'],
         'a pin for another Ubuntu release' => [function (&$d): void {
@@ -316,7 +324,7 @@ describe('machine recipe structure and identity', function (): void {
         $reordered['tools'] = array_reverse($document['tools'], true);
         expect(machine_recipe_decode($reordered)->identity)->toBe($first->identity);
         expect(new RecipeLoader()->decode(json_encode($reordered, JSON_PRETTY_PRINT))->identity)->toBe($first->identity);
-        $document['ubuntu']['snapshot'] = '20261013T000000Z';
+        $document['ubuntu']['snapshot'] = new DateTimeImmutable($first->snapshot)->modify('+1 day')->format('Ymd\THis\Z');
         expect(machine_recipe_decode($document)->identity)->not->toBe($first->identity);
         $document = machine_recipe_document();
         $document['tools']['pi']['artifacts']['amd64']['filename'] = 'same-bytes-another-location';
@@ -454,9 +462,13 @@ describe('recipe availability and artifact integrity', function (): void {
     })->with([['git', 'sha256'], ['php8.5-cli', 'sha256'], ['caddy', 'sha512']]);
 
     it('fails an unavailable snapshot with a fake availability probe before artifact downloads', function (): void {
+        $recipe = new RecipeLoader()->load();
+        $document = json_decode($recipe->canonicalJson, true, flags: JSON_THROW_ON_ERROR);
+        $release = $document['ubuntu']['release'];
+        $architecture = $recipe->architectures[0];
         $probe = machine_recipe_snapshot_probe('metadata URL returned 404');
-        expect(fn () => new RecipeValidator($probe)->validate(new RecipeLoader()->load(), '/unused'))
-            ->toThrow(RuntimeException::class, 'Snapshot [20261014T000000Z] release [26.04] architecture [amd64]: metadata URL returned 404');
+        expect(fn () => new RecipeValidator($probe)->validate($recipe, '/unused'))
+            ->toThrow(RuntimeException::class, "Snapshot [{$recipe->snapshot}] release [{$release}] architecture [{$architecture}]: metadata URL returned 404");
         expect($probe->called)->toBeTrue();
         Http::assertNothingSent();
     });
