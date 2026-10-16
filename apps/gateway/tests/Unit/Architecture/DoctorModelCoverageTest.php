@@ -61,6 +61,7 @@ use App\Models\TaskReviewedCommit;
 use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
 use App\Models\TaskWorkspaceLeaseRecord;
+use App\Models\TaskWorkspaceOperation;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 use App\Models\UpCloudTaskVmImageBuild;
@@ -90,6 +91,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
     ];
     $ownerInputs = [
         TaskWorkspaceLeaseRecord::class,
+        TaskWorkspaceOperation::class,
         InstanceEnvironmentValue::class,
         ToolManagerRecord::class,
         Setting::class,
