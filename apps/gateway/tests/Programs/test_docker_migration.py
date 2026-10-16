@@ -415,6 +415,64 @@ class DockerMigrationTest(unittest.TestCase):
         self.assertEqual(bodies[0]['Image'], 'sha256:' + 'b' * 64)
         self.assertTrue(all(Path(archive).stat().st_mode & 0o077 == 0 for archive in state['archives'].values()))
 
+    def test_local_tag_process_recovery_restores_all_inventory_tags(self):
+        self.local_tag_process_recovery(interrupt=False)
+
+    def test_local_tag_process_recovery_resumes_after_partial_tag_restoration(self):
+        self.local_tag_process_recovery(interrupt=True)
+
+    def local_tag_process_recovery(self, *, interrupt):
+        local_tag = 'local/mysql:production'
+        alias = 'local/mysql:backup'
+        self.images[0].update(RepoDigests=[], RepoTags=[local_tag, alias])
+        self.containers['two']['Config']['Image'] = local_tag
+        self.incompatible = True
+        loaded, tags = set(), {}
+        original_command, original_api = self.command, self.api
+        fail_tag = interrupt
+
+        def command(argv, **kwargs):
+            nonlocal fail_tag
+            if argv[:2] == ['docker', 'load']:
+                # Docker save by ID contains image bytes, not repository tags.
+                loaded.add('sha256:img')
+            if argv[:2] == ['docker', 'tag']:
+                self.assertIn(argv[2], loaded)
+                if argv[3] == alias and fail_tag:
+                    fail_tag = False
+                    raise module.RecipeFailure('command')
+                tags[argv[3]] = argv[2]
+            return original_command(argv, **kwargs)
+
+        def api(method, path, body=None, **kwargs):
+            if path.startswith('/containers/create') and body['Image'] == local_tag:
+                if tags.get(local_tag) != 'sha256:img':
+                    raise module.RecipeFailure('docker-api')
+            return original_api(method, path, body, **kwargs)
+
+        with patch.object(module, 'run', command), patch.object(module, 'api', api):
+            if interrupt:
+                with self.assertRaises(module.RecipeFailure):
+                    module.migrate(self.payload, 'prepare')
+                state = json.loads((self.journal / 'inventory.json').read_text())
+                self.assertEqual(state['stage'], 'restore-image-tags')
+                self.assertFalse(state['prepared'])
+                self.assertEqual(tags, {local_tag: 'sha256:img'})
+            report = module.migrate(self.payload, 'prepare')
+            self.assertTrue(report['fallback'])
+            self.assertEqual(tags, {local_tag: 'sha256:img', alias: 'sha256:img'})
+            # The Gateway recreates the Process using its stored image tag,
+            # not the inventory image ID used for non-Orbit recovery.
+            body = copy.deepcopy(self.original['two']['Config'])
+            body['Image'] = local_tag
+            body['HostConfig'] = self.original['two']['HostConfig']
+            api('POST', '/containers/create?name=orbit-process-7-mysql', body)
+            self.assertEqual(self.containers['new-orbit-process-7-mysql']['Config']['Image'], local_tag)
+        installs = [a for a in self.commands if a[:2] == ['apt-get', 'install'] and '--yes' in a]
+        self.assertEqual(len(installs), 1)
+        loads = [a for a in self.commands if a[:2] == ['docker', 'load']]
+        self.assertEqual(len(loads), 2 if interrupt else 1)
+
     def test_apt_failure_after_removal_is_recorded_and_repairs_before_retry(self):
         original = self.command
         def fail_after_removal(argv, **kwargs):

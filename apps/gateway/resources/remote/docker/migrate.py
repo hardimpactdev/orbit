@@ -677,6 +677,13 @@ def migrate(payload, mode):
             stage(state, 'load-images')
             for archive in state['archives'].values():
                 run(['docker', 'load', '--input', archive], timeout=600)
+            # ID-based saves omit repository names. Restore inventory tags before
+            # the Gateway reconciles stored Process specs, including local-only images.
+            stage(state, 'restore-image-tags')
+            for image in state['images']:
+                if image['Id'] in state['archives']:
+                    for tag in image.get('RepoTags') or []:
+                        run(['docker', 'tag', image['Id'], tag])
             stage(state, 'recreate')
             for container in state['containers']:
                 if (container['Config'].get('Labels') or {}).get('orbit.managed') != 'true':
