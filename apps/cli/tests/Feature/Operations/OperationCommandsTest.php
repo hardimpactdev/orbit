@@ -284,11 +284,47 @@ describe('instance:rollback', function (): void {
         ]);
 
         $exitCode = Artisan::call('instance:rollback', ['instance' => '17', '--release' => 'release-a', '--json' => true, '--no-interaction' => true]);
+        $error = json_decode(trim(Artisan::output()), true)['error'];
 
         expect($exitCode)->toBe(1)
-            ->and(json_decode(trim(Artisan::output()), true)['error']['code'])->toBe('operation.target_busy');
+            ->and($error['code'])->toBe('operation.target_busy')
+            ->and($error['details'])->toBe(['operation_id' => 41]);
         $mock->assertSentCount(1);
+
+        Artisan::call('instance:rollback', ['instance' => '17', '--release' => 'release-a', '--no-interaction' => true]);
+        expect(Artisan::output())->toContain('41');
     });
+
+    it('stops following on Ctrl-C, leaves the rollback running, and sends no cancel', function (string $mode): void {
+        if (! function_exists('pcntl_async_signals') || ! function_exists('posix_kill')) {
+            $this->markTestSkipped('POSIX signals are unavailable.');
+        }
+
+        $rollback = ['id' => 43, 'kind' => 'instance.rollback', 'input' => ['release' => 'release-a']];
+        $mock = MockClient::global([
+            ShowRealtimeRequest::class => MockResponse::make(['data' => ['url' => null, 'key' => null, 'channel' => 'orbit'], 'meta' => ['request_id' => OPERATION_REQUEST_ID]]),
+            RollbackInstanceRequest::class => cli_operation_response(cli_operation($rollback), 202),
+            ShowOperationRequest::class => static function () use ($rollback): MockResponse {
+                // The person presses Ctrl-C while the CLI follows the running rollback.
+                posix_kill(getmypid(), SIGINT);
+
+                return cli_operation_response(cli_operation([...$rollback, 'status' => 'running', 'sequence' => 2, 'current_step' => 'rollback'], [
+                    cli_step('rollback', 1, 'running', 2),
+                ]));
+            },
+        ]);
+
+        $exitCode = Artisan::call('instance:rollback', ['instance' => '17', '--release' => 'release-a', $mode => true, '--no-interaction' => true]);
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(130);
+        if ($mode === '--json') {
+            expect(trim($output))->toBe('');
+        } else {
+            expect($output)->toContain('The operation keeps running. Follow it with: orbit operation:show 43');
+        }
+        $mock->assertNotSent(CancelOperationRequest::class);
+    })->with(['human' => '--no-ansi', 'JSON' => '--json']);
 });
 
 describe('operation commands', function (): void {

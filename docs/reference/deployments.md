@@ -187,7 +187,7 @@ A lost worker resumes a resumable step and fails any other step with `operation.
 
 ### The rollback operation
 
-The Gateway validates the request and the access grant, checks that the Instance is a production Instance, and answers `202`. The operation's `input` is `{ release }`. A refusal uses the normal JSON error envelope: `deployment_config.unavailable` (409) for an Instance that is not a production Instance, `operation.target_busy` (409) while another operation holds the Instance, and `operation.queue_unavailable` (503) without the Gateway queue. A rollback cancels a deploy that waits in the queue, as [One operation at a time](#one-operation-at-a-time) describes.
+The Gateway validates the request and the access grant, checks that the Instance is a production Instance, and answers `202`. The operation's `input` is `{ release }`. A refusal uses the normal JSON error envelope: `deployment_config.unavailable` (409) for an Instance that is not a production Instance, `operation.target_busy` (409) while another operation holds the Instance, and `operation.queue_unavailable` (503) without the Gateway queue. A rollback cancels a deploy that no worker has started, as [One operation at a time](#one-operation-at-a-time) describes.
 
 | Step | Resumable | Failed boundary |
 | --- | --- | --- |
@@ -320,7 +320,7 @@ Resuming continues from the commit that is live then. The commit a rollback move
 
 A blocked commit stays blocked. It never deploys automatically again, until a newer commit lands on the branch: that commit deploys, and the blocked one is behind it.
 
-A rollback that came after the tick queued the deployment wins. While no worker started the deployment, the rollback cancels it, as [One operation at a time](#one-operation-at-a-time) describes. A rollback or manual deployment can also end between the tick's read of the history and the start of its deployment. So the deployment checks for a pause again under the Instance lock. A pause found there ends the operation with `deployment.paused`; it deploys nothing and writes no history row.
+A rollback that came after the tick queued the deployment wins while no worker has started the deployment: the rollback cancels it, as [One operation at a time](#one-operation-at-a-time) describes. Once a worker has started it, the rollback is busy. A rollback or manual deployment can also end between the tick's read of the history and the start of its deployment. So the deployment checks for a pause again under the Instance lock. A pause found there ends the operation with `deployment.paused`; it deploys nothing and writes no history row.
 
 **Visibility.** Each automatic deployment has its operation and its [history row](#history) with `triggered_by` `orbit:auto-deploy`. `instance:show` shows the last result, its commit, the head, and a pause. When a result other than `up_to_date`, `deploying`, or `gate_pending` starts, the tick writes one Activity entry, `auto_deploy.<result>`, with the command `orbit:auto-deploy`. A [release alert](/reference/gateway-recovery#release-alerts) with the target `instance:<id>` reports a failed automatic deployment once per commit, a commit or a pending head that waited 30 minutes once per commit, and a pause.
 
@@ -351,7 +351,7 @@ A rollback is the one exception. It wins over a deploy of the Instance that no w
 
 A deploy that a worker started keeps the Instance, also while it waits to resume after a lost worker. The rollback then answers `operation.target_busy` with the deploy's ID. Cancel the deploy with [`operation:cancel`](/cli/operation), or wait for it to end. Then start the rollback again.
 
-The Gateway cancels the deploy and creates the rollback in one database transaction. When a worker claims the deploy first, the deploy runs, and the rollback is busy. One operation holds the Instance in every case.
+The Gateway cancels the deploy and creates the rollback in one database transaction. When a worker claims the deploy first, the deploy runs, and the rollback is busy. One operation holds the Instance in every case. When the Gateway then cannot queue the rollback's job, the rollback fails with `operation.dispatch_failed`, and the deploy stays cancelled; start the rollback again.
 
 ## Inspect release placement with Doctor
 

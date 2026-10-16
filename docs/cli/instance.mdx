@@ -601,7 +601,7 @@ orbit instance:deploy 15
 orbit instance:deploy 15 --json > deploy.json
 ```
 
-A failure during release fetch, environment synchronization, or a `before_activation` step leaves the prior `current` selected. A failure during PHP cache refresh, Process restart, or an `after_activation` step leaves the fresh release selected. Deployment, rollback, deploy-step changes, environment changes, and removal share one operation owner per Instance, so a competing request waits or returns a busy refusal. A second deploy while the first one is queued or running returns `operation.target_busy`. A rollback cancels a deploy that is still queued; see [`instance:rollback`](#orbit-instancerollback).
+A failure during release fetch, environment synchronization, or a `before_activation` step leaves the prior `current` selected. A failure during PHP cache refresh, Process restart, or an `after_activation` step leaves the fresh release selected. Deployment, rollback, deploy-step changes, environment changes, and removal share one operation owner per Instance, so a competing request waits or returns a busy refusal. A second deploy while the first one is queued or running returns `operation.target_busy`. A rollback cancels a deploy that no worker has started; see [`instance:rollback`](#orbit-instancerollback).
 
 <Note>
 Only `default` can be deployed on an app-dev Node. Other development Instances still return `deployment_config.unavailable`. Releases, rollback, and per-Instance deploy-step operations remain production-only; `instance:release:list` shows none for a development default.
@@ -633,7 +633,7 @@ orbit instance:rollback <instance> --release=NAME [--json]
 
 The command starts an `instance.rollback` [operation](/reference/operations) and follows it until it ends, as [`instance:deploy`](#orbit-instancedeploy) does: over Reverb, or every `poll_after_seconds` without it. Human output shows a progress tree of the steps `Find retained release`, `Activate release`, `Refresh PHP cache` for an Instance that serves PHP, and `Restart Processes`. New output of the running step prints above the tree, labeled and escaped. The final lines add the failed step, the error code, the selected release when available, the operation ID, and the request ID. `--json` prints nothing while it follows, then the final operation document with every step.
 
-A rollback wins over a deploy of the same Instance that waits in the queue: the deploy ends `cancelled` with `operation.superseded`, and the rollback starts. A deploy that a worker runs keeps the Instance, and the rollback returns `operation.target_busy` with the deploy's operation ID. [One operation at a time](/reference/deployments#one-operation-at-a-time) gives the rules.
+A rollback wins over a deploy of the same Instance that no worker has started: the deploy ends `cancelled` with `operation.superseded`, and the rollback starts. A deploy that a worker has started keeps the Instance, also while it waits to resume after a lost worker, and the rollback returns `operation.target_busy` with the deploy's operation ID. [One operation at a time](/reference/deployments#one-operation-at-a-time) gives the rules.
 
 Pressing Ctrl-C stops following, not the rollback. The CLI prints the command that shows the operation and exits nonzero. It sends no cancel request; [`operation:cancel`](/cli/operation#orbit-operationcancel) stops a rollback before its `activation` step. Once the release is selected, the rollback finishes PHP refresh and Process restarts.
 

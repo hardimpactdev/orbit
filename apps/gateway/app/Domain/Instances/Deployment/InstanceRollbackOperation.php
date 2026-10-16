@@ -15,9 +15,9 @@ use App\Models\InstanceDeployment;
 use App\Models\Operation;
 
 /**
- * The `instance.rollback` operation (docs/reference/deployments.md#the-rollback-operation). It records one rollback history row on
- * its first attempt, runs the rollback's steps as the operation's steps, and saves the row's events after each step,
- * so a resumed attempt continues the same row. The input `release` names the retained release to select.
+ * The `instance.rollback` operation (docs/reference/deployments.md#the-rollback-operation). It records one rollback
+ * history row on its first attempt, runs the rollback's steps as the operation's steps, and saves the row's events after
+ * each step, so a resumed attempt continues the same row. The input `release` names the retained release to select.
  */
 final readonly class InstanceRollbackOperation implements OperationKind
 {
@@ -46,11 +46,12 @@ final readonly class InstanceRollbackOperation implements OperationKind
 
         $this->history->plan($run, $plan);
         $release = $operation->input['release'] ?? null;
+        $release = is_string($release) ? $release : '';
 
         return $this->history->run(
             $deployment,
             $run,
-            fn (DeploymentSteps $steps, DeploymentRequest $request): DeploymentResult => $this->rollback->execute($instance, is_string($release) ? $release : '', $steps, $request),
+            fn (DeploymentSteps $steps, DeploymentRequest $request): DeploymentResult => $this->rollback->execute($instance, $release, $steps, $request),
         );
     }
 

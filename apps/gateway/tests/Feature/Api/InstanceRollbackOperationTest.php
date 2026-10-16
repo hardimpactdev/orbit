@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Instances\StartInstanceDeployAction;
 use App\Actions\Operations\CancelOperationAction;
+use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Instances\Deployment\AutomaticDeployHistory;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStepStatus;
@@ -16,6 +17,7 @@ use App\Models\Operation;
 use App\Models\Process;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Testing\TestResponse;
 use Tests\Support\Orb220DeploymentApiFixture;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
@@ -117,6 +119,23 @@ describe('a rollback and a deploy of the same Instance', function (): void {
             ->and(InstanceDeployment::query()->sole()->kind)->toBe(InstanceDeployment::Rollback);
     })->with(['manual' => false, 'automatic' => true]);
 
+    it('tells the deploy channel and the orbit channel that the deploy ended, then that the rollback started', function (): void {
+        $deploy = queue_rollback_test_deploy($this, automatic: false);
+        Event::fake([RecordBroadcast::class]);
+
+        $rollback = start_rollback($this)->assertAccepted()->json('data.id');
+
+        $events = collect(Event::dispatched(RecordBroadcast::class))->map(static fn (array $arguments): RecordBroadcast => $arguments[0])
+            ->filter(static fn (RecordBroadcast $event): bool => str_starts_with($event->type->value, 'operation.'));
+        $orbit = $events->filter(static fn (RecordBroadcast $event): bool => $event->channel === 'orbit')
+            ->map(static fn (RecordBroadcast $event): string => "{$event->type->value}:{$event->data['id']}:{$event->data['status']}")->values()->all();
+        $private = $events->filter(static fn (RecordBroadcast $event): bool => $event->channel === "operation.{$deploy->id}")->values();
+
+        expect($orbit)->toBe(["operation.updated:{$deploy->id}:cancelled", "operation.created:{$rollback}:queued"])
+            ->and($private)->toHaveCount(1)
+            ->and($private->first()->data['sequence'])->toBe($deploy->refresh()->sequence);
+    });
+
     it('refuses while a worker runs the deploy', function (bool $automatic): void {
         $deploy = queue_rollback_test_deploy($this, $automatic);
         expect(app(OperationStore::class)->claim($deploy, 'gateway:1'))->toBeTrue();
@@ -144,12 +163,13 @@ describe('a rollback and a deploy of the same Instance', function (): void {
 
     it('leaves one holder when the deploy starts between the check and the cancel', function (): void {
         $deploy = queue_rollback_test_deploy($this, automatic: false);
-        $claimed = false;
+        $claimed = null;
         DB::listen(static function (QueryExecuted $query) use ($deploy, &$claimed): void {
-            // The worker claims the deploy right after the rollback found it queued.
-            if (! $claimed && str_contains($query->sql, '"kind" in')) {
-                $claimed = true;
-                app(OperationStore::class)->claim($deploy, 'gateway:1');
+            // The worker claims the deploy right after the rollback found it queued. On the test's one connection the
+            // claim joins the rollback's transaction, so the rollback's refused insert also undoes the claim. On the
+            // Gateway, BEGIN IMMEDIATE runs the claim before or after the whole transaction.
+            if ($claimed === null && str_contains($query->sql, '"kind" in')) {
+                $claimed = app(OperationStore::class)->claim($deploy, 'gateway:1');
             }
         });
 
@@ -208,6 +228,18 @@ describe('running a rollback', function (): void {
             ->and($deployment->triggered_by)->toBe($this->fixture->caller->name)
             ->and(collect($deployment->events)->where('type', 'phase')->pluck('phase')->all())->toBe(['rollback', 'activation', 'php_refresh', 'process_restart'])
             ->and(rollback_test_lock_holders())->toBe([]);
+    });
+
+    it('plans no PHP refresh for an Instance that serves no PHP', function (): void {
+        $this->fixture->instance->update(['selected_php_version' => null]);
+        $id = start_rollback($this)->json('data.id');
+        run_operation_jobs();
+
+        $operation = Operation::query()->findOrFail($id);
+
+        expect($operation->status)->toBe(OperationStatus::Succeeded)
+            ->and($operation->steps()->pluck('name')->all())->toBe(['rollback', 'activation', 'process_restart'])
+            ->and(collect(InstanceDeployment::query()->sole()->events)->where('type', 'phase')->pluck('phase')->all())->toBe(['rollback', 'activation', 'process_restart']);
     });
 
     it('fails at the rollback step when the release is not retained', function (): void {

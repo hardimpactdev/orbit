@@ -77,7 +77,7 @@ A start request validates the input and the caller's access, creates the record 
 | `operation.target_busy` | 409 | Another operation on the same target has not ended. `details.operation_id` names it |
 | `operation.queue_unavailable` | 503 | `ORBIT_GATEWAY_QUEUE_CONNECTION` is empty. The Gateway records nothing |
 
-When the Gateway cannot push the job, it ends the record as `failed` with `operation.dispatch_failed` and answers `503` with that code.
+When the Gateway cannot push the job, it ends the record as `failed` with `operation.dispatch_failed` and answers `503` with that code. A deploy that a rollback superseded stays cancelled.
 
 ## Read an operation
 
