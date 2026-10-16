@@ -204,6 +204,9 @@ final readonly class TaskReviewOutcome
 
             return true;
         }
+        if (app(TaskWorkspaceHead::class)->held($group, $receipt)) {
+            return true;
+        }
         $commit = $instance instanceof Instance ? $this->signer->commit($instance, $task->title."\n\n".$receipt->body) : null;
         if ($commit === null && $instance instanceof Instance) {
             // The commit can land and the SHA response can still be lost. The parent and tree identify Orbit's commit.
@@ -420,7 +423,8 @@ final readonly class TaskReviewOutcome
      */
     public function startFinalReview(TaskScheduler $scheduler, Task $group, Task $task, bool $alreadyFetched): void
     {
-        if ($task->status !== TaskStatus::Running || ! $this->runner->workspaceRouteReady($scheduler, $group, $task)) {
+        if ($task->status !== TaskStatus::Running || app(TaskWorkspaceHead::class)->held($group)
+            || ! $this->runner->workspaceRouteReady($scheduler, $group, $task)) {
             return;
         }
         try {
@@ -547,7 +551,8 @@ final readonly class TaskReviewOutcome
      * from the pair recorded with the review request, unless a newer implementer turn explains the
      * difference or the commit below is Orbit's. One reminder, then the scheduler waits for a newer
      * stopped reviewer turn before it looks again. That later turn applies the outcome when the
-     * workspace matches, and asks for assistance when it still differs. Another poll of the reminded
+     * workspace matches, and asks for assistance when the working tree still differs. A changed
+     * HEAD starts a fresh delta review without attributing the change to an actor. Another poll of the reminded
      * turn does neither. A failed read is a communication failure, not a change. A review notified
      * before a baseline existed has nothing to compare, so its outcome applies as before.
      * A commit already stored on the receipt is Orbit's. Publication retries only while HEAD is
@@ -580,6 +585,23 @@ final readonly class TaskReviewOutcome
             }
 
             return 'wait';
+        }
+        $expectedHead = $this->committedApproval($receipt) ? $receipt->commit_sha : $task->review_workspace_head;
+        if (is_string($expectedHead) && $expectedHead !== '' && $current->head !== $expectedHead) {
+            // No actor can approve a head it did not review. Keep the previous tree as the
+            // next packet's delta base, consume this receipt, and start a new review attempt.
+            $task->update([
+                'review_handled_comment_id' => $receipt->id,
+                'review_attempt' => $task->review_attempt + 1,
+                'review_reminder_attempt' => null,
+                'review_reminder_input_id' => null,
+            ]);
+            TaskFinalReview::log($group, 'workspace head changed during review', [
+                'subtask_id' => $task->id, 'previous_head' => $expectedHead, 'head' => $current->head,
+            ]);
+            $this->nudgeReviewer($scheduler, $task, $reviewer);
+
+            return 'reopened';
         }
         $scheduler->remindOrAssist($group, $task, $reviewer, [
             new TaskRubricItem('workspace_unchanged', false, TaskScheduler::WorkspaceChangedReminder),

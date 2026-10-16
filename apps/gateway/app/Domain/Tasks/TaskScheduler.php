@@ -23,7 +23,7 @@ final readonly class TaskScheduler
 
     public const string ReservationExpiredReason = 'The group stayed reserved too long and returned to todo.';
 
-    public const string WorkspaceChangedReminder = 'The workspace changed during the review. Revert your changes and request the changes from the implementer instead.';
+    public const string WorkspaceChangedReminder = 'The workspace working tree no longer matches the review baseline. Orbit cannot attribute this change to the reviewer. Restore the reviewed tree or request the needed changes from the implementer.';
 
     public const string TickFailedReason = 'The tick failed on this group. Fix the cause, then post a resolution. The error: ';
 

@@ -861,6 +861,20 @@ function tick_running_agents(bool $fetchFails = false, bool $fastForwardFails = 
     };
     app()->instance(AgentSpawner::class, $agents);
     app()->instance(TaskBaseBranchFetcher::class, $agents);
+    // The previous review has settled. A generic running/null snapshot in these
+    // implementer fixtures must not describe the group's old shared reviewer.
+    app()->instance(AgentDriverRegistry::class, test_snapshot_registry(reader: new class implements AgentSnapshotReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            $thread = AgentThread::query()->where('external_id', $threadId)->first();
+            if ($thread?->role === 'reviewer' && ! Task::query()->where('parent_id', $thread->task_group_id)->where('status', TaskStatus::Reviewing)->exists()) {
+                return tick_checked_thread('done');
+            }
+
+            return app(AgentSnapshotReader::class)->snapshot($node, $threadId);
+        }
+    }));
 
     return $agents;
 }

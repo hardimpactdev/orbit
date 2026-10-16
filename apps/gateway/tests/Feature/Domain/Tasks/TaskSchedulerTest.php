@@ -37,6 +37,7 @@ use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestHealth;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskPullRequestWatcher;
+use App\Domain\Tasks\TaskReviewBase;
 use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskReviewDiffException;
 use App\Domain\Tasks\TaskReviewPacket;
@@ -2583,6 +2584,8 @@ function scheduler_review(array $receipts, bool $notified = true): array
     {
         public function spawnReviewer(Task $task): ?int
         {
+            $this->reviewBases[] = TaskReviewBase::reviewBase($task);
+
             return test_agent_thread($task->parent, 'spawned-reviewer')->id;
         }
 
@@ -2591,7 +2594,13 @@ function scheduler_review(array $receipts, bool $notified = true): array
             return test_agent_thread($task->parent, 'spawned-implementer-'.$task->id, $task)->id;
         }
 
-        public function requestReview(Task $task): void {}
+        /** @var list<string> */
+        public array $reviewBases = [];
+
+        public function requestReview(Task $task): void
+        {
+            $this->reviewBases[] = TaskReviewBase::reviewBase($task);
+        }
     });
     $receipts = new FakeTaskTurnReceipts($receipts);
     app()->instance(TaskTurnReceipts::class, $receipts);
@@ -2686,7 +2695,7 @@ it('approves a review when the workspace is unchanged since the review request',
     expect($group->fresh()?->status)->toBe(TaskGroupStatus::Running);
 });
 
-it('refuses a review when the reviewer changed the workspace and asks for assistance on the second change', function (): void {
+it('refuses a review when the working tree differs and asks for assistance after a second turn with the mismatch', function (): void {
     [$group, $task, , $signer, $checks, $dispatcher, $reader] = scheduler_review([
         FakeTaskTurnReceipts::contents('approved', 'Checked the models.'),
     ]);
@@ -2773,7 +2782,7 @@ it('counts an unreadable review workspace as a communication failure and does no
         ->and($task->fresh()?->communication_failures)->toBe(0);
 });
 
-it('does not relay findings or accept a blocked question when the reviewer changed the workspace', function (string $outcome, ?string $question, string $field): void {
+it('does not relay findings or accept a blocked question when the working tree differs', function (string $outcome, ?string $question, string $field): void {
     [$group, $task, , $signer, $checks, $dispatcher] = scheduler_review([
         FakeTaskTurnReceipts::contents($outcome, 'Distinct findings that must not be applied.', $question),
     ]);
@@ -2790,7 +2799,7 @@ it('does not relay findings or accept a blocked question when the reviewer chang
         ->and($task->comments()->sole()->getRawOriginal('type'))->toBe($outcome);
 })->with([
     'changes requested' => ['changes_requested', null, 'tree'],
-    'blocked' => ['blocked', 'Which contract should win?', 'head'],
+    'blocked' => ['blocked', 'Which contract should win?', 'tree'],
 ]);
 
 it('treats a newer implementer turn during review as a new handoff without reminding the reviewer', function (): void {
@@ -3000,9 +3009,10 @@ it('stores the commit when its response is lost and pushes that stored commit wi
         ->and($task->comments()->count())->toBe(1);
 });
 
-it('refuses a workspace commit that is not the stored commit recorded for review', function (): void {
-    [, $task, , $signer, $checks, $dispatcher] = scheduler_review([
-        FakeTaskTurnReceipts::contents('approved', 'Checked the models.'),
+it('restarts on an unexpected head with the previous review tree as delta scope and no assistance', function (string $outcome, ?string $question): void {
+    [$group, $task, , $signer, $checks, $dispatcher, $reader] = scheduler_review([
+        FakeTaskTurnReceipts::contents($outcome, 'The old head was reviewed.', $question),
+        FakeTaskTurnReceipts::contents('approved', 'The new head was reviewed.'),
     ]);
     $checks->head = str_repeat('d', 40);
     $checks->parent = str_repeat('a', 40);
@@ -3013,9 +3023,32 @@ it('refuses a workspace commit that is not the stored commit recorded for review
     expect($signer->messages)->toBe([])
         ->and($task->comments()->sole()->commit_sha)->toBeNull()
         ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
-        ->and($dispatcher->commands)->toHaveCount(1)
-        ->and($dispatcher->commands[0]['message']['text'])->toContain(TaskScheduler::WorkspaceChangedReminder);
-});
+        ->and($task->fresh()?->review_attempt)->toBe($task->review_attempt + 1)
+        ->and($task->fresh()?->review_notified_attempt)->toBe($task->review_attempt + 1)
+        ->and($task->fresh()?->review_workspace_head)->toBe($checks->head)
+        ->and($task->fresh()?->review_workspace_tree)->toBe($checks->tree)
+        ->and($task->fresh()?->review_handled_comment_id)->toBe($task->comments()->sole()->id)
+        ->and($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and($group->fresh()?->assistance_requested)->toBeFalse()
+        ->and($dispatcher->commands)->toBe([]);
+    expect(app(AgentSpawner::class))->reviewBases->toBe([str_repeat('b', 40)]);
+
+    // Polling the old turn must not apply its receipt or request the review again.
+    app(TaskScheduler::class)->tick();
+    expect($task->comments()->count())->toBe(1);
+    expect(app(AgentSpawner::class))->reviewBases->toHaveCount(1);
+
+    $reader->turnId = 'new-head-review';
+    app(TaskScheduler::class)->tick();
+    expect($task->fresh()?->status)->toBe(TaskStatus::Completed)
+        ->and($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and($group->fresh()?->assistance_requested)->toBeFalse()
+        ->and($signer->messages)->toBe([$task->title."\n\nThe new head was reviewed."]);
+})->with([
+    'approved' => ['approved', null],
+    'changes requested' => ['changes_requested', null],
+    'blocked' => ['blocked', 'Which head should be reviewed?'],
+]);
 
 it('waits for topology before baseline and retries without failed spawns or communication failures', function (): void {
     $project = scheduler_app('topology-baseline');
