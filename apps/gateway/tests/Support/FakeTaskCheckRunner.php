@@ -22,6 +22,8 @@ final class FakeTaskCheckRunner implements TaskCheckRunner
 
     public bool $failSnapshot = false;
 
+    public bool $failRead = false;
+
     public string $head;
 
     public string $tree;
@@ -69,6 +71,10 @@ final class FakeTaskCheckRunner implements TaskCheckRunner
 
     public function read(Instance $instance, TaskCheckProcess $process): TaskCheckReading
     {
+        if ($this->failRead) {
+            throw new TaskCheckException('The check result could not be read.');
+        }
+
         $passed = TaskCheckReading::finished(0, $process->head, $process->tree, [], "checks passed\n");
         if ($this->readings === null) {
             return $passed;
