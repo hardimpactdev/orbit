@@ -11165,6 +11165,19 @@
                         },
                         "key_count": {
                           "type": "integer"
+                        },
+                        "runtime_refresh": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "restarted_process_ids": {
+                          "type": [
+                            "array",
+                            "null"
+                          ],
+                          "items": {}
                         }
                       }
                     },
@@ -11287,6 +11300,19 @@
                         },
                         "key_count": {
                           "type": "integer"
+                        },
+                        "runtime_refresh": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "restarted_process_ids": {
+                          "type": [
+                            "array",
+                            "null"
+                          ],
+                          "items": {}
                         }
                       }
                     },
@@ -11428,6 +11454,19 @@
                         },
                         "key_count": {
                           "type": "integer"
+                        },
+                        "runtime_refresh": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "restarted_process_ids": {
+                          "type": [
+                            "array",
+                            "null"
+                          ],
+                          "items": {}
                         }
                       }
                     },

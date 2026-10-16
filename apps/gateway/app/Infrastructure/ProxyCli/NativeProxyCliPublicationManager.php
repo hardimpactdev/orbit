@@ -49,7 +49,7 @@ final readonly class NativeProxyCliPublicationManager implements ProxyCliPublica
             'proxycli.certificate_publication_failed',
             "proxycli certificate publication failed on node [{$node->name}].",
         );
-        $this->certificateRecords()->record($node->id, CaddySiteCertificates::ProxyCli);
+        $this->certificateRecords()->record($node->id, ProxyCliCaddySiteSource::CertificateSlug);
 
         if (! $takeover instanceof Route) {
             $this->build($node);
@@ -70,7 +70,7 @@ final readonly class NativeProxyCliPublicationManager implements ProxyCliPublica
         // The extension is already disabled, so the build withdraws the collector site before its certificate.
         $this->build($node);
         $this->ssh->execute($this->connection($node, $address), $this->certificatePublisher->removeCommand());
-        $this->certificateRecords()->forget($node->id, CaddySiteCertificates::ProxyCli);
+        $this->certificateRecords()->forget($node->id, ProxyCliCaddySiteSource::CertificateSlug);
         $this->dns->converge();
     }
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Fleet\Footprint;
 
+use LogicException;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use SplFileInfo;
@@ -23,17 +24,25 @@ final class SourceClosure
 
     /**
      * @param  list<string>  $directories  Directories relative to the Gateway's base path, such as `app/Infrastructure/Caddy`.
+     * @param  list<class-string>  $classes  More start classes outside those directories. The walk reads only `app/`,
+     *                                       so a start class outside it fails instead of dropping out unseen.
      * @return list<string> Paths relative to the base path, sorted.
      */
-    public static function of(array $directories): array
+    public static function of(array $directories, array $classes = []): array
     {
-        $key = implode("\0", $directories);
+        $key = implode("\0", [...$directories, ...$classes]);
 
         if (isset(self::$cache[$key])) {
             return self::$cache[$key];
         }
 
-        $pending = [];
+        foreach ($classes as $class) {
+            if (! str_starts_with($class, 'App\\') || ! is_file(base_path(self::path($class)))) {
+                throw new LogicException("The source closure reads only classes under app/, not [{$class}].");
+            }
+        }
+
+        $pending = $classes;
 
         foreach ($directories as $directory) {
             $absolute = base_path($directory);

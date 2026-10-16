@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tools\PrepareVpEnvironmentAction;
 use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Instances\Deployment\DeploymentRelease;
 use App\Domain\Instances\InstanceState;
@@ -48,7 +49,7 @@ describe('production web roots', function (): void {
     it('passes the served web roots to release preparation and activation only when a Route has one', function (): void {
         [$instance] = prodweb_instance();
         $ssh = new AppDevFakeSshExecutor(array_fill(0, 4, new CommandResult(0, "20261009-a1\t".str_repeat('b', 40)."\n", '', 1, false)));
-        $deployment = new RemoteProductionDeployment(prodweb_executor($ssh), app(RepositoryReadAccess::class), static fn (): string => '20261009-a1');
+        $deployment = new RemoteProductionDeployment(prodweb_executor($ssh), app(RepositoryReadAccess::class), app(PrepareVpEnvironmentAction::class), static fn (): string => '20261009-a1');
         $deployment->prepare($instance, 'main');
         prodweb_route($instance, 'docs.example.com', 'apps/docs/public');
         $release = $deployment->prepare($instance, 'main');

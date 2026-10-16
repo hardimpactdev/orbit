@@ -12,6 +12,8 @@ enum ToolDoctorIssueCode: string implements DoctorIssueCode
     case InventoryScan = 'tool.inventory_scan';
     case NodeUnreachable = 'tool.node_unreachable';
     case InspectionFailed = 'tool.inspection_failed';
+    case VpStoreMissing = 'tool.vp_store_missing';
+    case VpStoreInspectionFailed = 'tool.vp_store_inspection_failed';
 
     public function code(): string
     {

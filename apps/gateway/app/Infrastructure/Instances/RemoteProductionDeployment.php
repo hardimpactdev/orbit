@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Instances;
 
+use App\Actions\Tools\PrepareVpEnvironmentAction;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Instances\Deployment\DeploymentEvent;
@@ -41,6 +42,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
     public function __construct(
         private ProductionSshExecutor $ssh,
         private RepositoryReadAccess $access,
+        private PrepareVpEnvironmentAction $environments,
         ?Closure $releaseName = null,
         private ?ProductionRepositoryBinding $repositories = null,
     ) {
@@ -186,9 +188,10 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
         [, $user, $home] = $this->identity($instance);
         $this->assertRelease($release, $home);
         $stepName = $step->name;
+        $command = $this->environments->command($instance, $release->path, $stepName, $step->command);
         $protectedInput = ProtectedInput::fromString(str_replace(
             '__COMMAND__',
-            base64_encode($step->command),
+            base64_encode($command),
             <<<'BASH'
                 user=$1
                 home=$2
@@ -574,6 +577,11 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
             $this->assertReleaseName($parts[1]);
             $outcome[$parts[0] === 'PRUNED' ? 'removed' : 'in_use'][] = $parts[1];
         }
+
+        $this->environments->releaseRemoved($instance, array_map(
+            static fn (string $name): string => "{$home}/releases/{$name}",
+            $outcome['removed'],
+        ));
 
         return $outcome;
     }

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tools\PrepareVpEnvironmentAction;
 use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Instances\Deployment\DeploymentRelease;
 use App\Domain\Instances\InstanceState;
@@ -127,7 +128,7 @@ function prod_equivalence_render(Node $node, array $instances): array
 
         $ssh = new AppDevFakeSshExecutor(array_fill(0, 4, new CommandResult(0, "20261009-a1\t".str_repeat('b', 40)."\n", '', 1, false)));
         $executor = prod_equivalence_executor($ssh);
-        $deployment = new RemoteProductionDeployment($executor, app(RepositoryReadAccess::class), static fn (): string => '20261009-a1');
+        $deployment = new RemoteProductionDeployment($executor, app(RepositoryReadAccess::class), app(PrepareVpEnvironmentAction::class), static fn (): string => '20261009-a1');
         $release = $deployment->prepare($instance, 'main');
         $deployment->activate($instance, new DeploymentRelease($release->name, $release->path, $release->commit));
         $runtime = static function (Closure $operation, array $results = []): array {

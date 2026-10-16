@@ -28,6 +28,7 @@ final readonly class TaskPublication
         private TaskBaseBranchFetcher $bases,
         private TaskTurnFetcher $turnFetcher,
         private TaskPullRequestMerger $merger,
+        private TaskWorkspaceHead $head,
     ) {}
 
     /**
@@ -349,6 +350,11 @@ final readonly class TaskPublication
                 return;
             }
             try {
+                if ($this->head->held($group)) {
+                    $this->recordMerge($group, TaskMergeStatus::Waiting, 'The main merge waits for the workspace review or handoff check to settle.');
+
+                    return;
+                }
                 $this->turnFetcher->fetch($group);
                 $current = $scheduler->workspaceSnapshot($group);
                 $pending = $task->checks()->where('kind', TaskCheckKind::BaseMerge)
@@ -454,6 +460,9 @@ final readonly class TaskPublication
      */
     public function prepareBaseMerge(TaskScheduler $scheduler, Task $group, Task $task, ?TaskComment $receipt = null, bool $refreshPassed = false): string
     {
+        if ($this->head->held($group, $receipt)) {
+            return 'waiting';
+        }
         $instance = $group->taskable;
         if (! $instance instanceof Instance) {
             throw new TaskCheckException('The task workspace is unavailable.');

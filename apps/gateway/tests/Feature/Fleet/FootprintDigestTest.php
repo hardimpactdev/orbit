@@ -12,12 +12,14 @@ use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Fleet\Footprint\CaddyFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\CaddyPackageFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\PrivateDnsFootprintArtifact;
+use App\Infrastructure\Fleet\Footprint\SourceClosure;
 use App\Infrastructure\Fleet\Footprint\SourceDigest;
 use App\Infrastructure\Fleet\Footprint\TmpfilesFootprintArtifact;
 use App\Infrastructure\Nodes\CaddyPackageProgram;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Node;
 use App\Models\NodeRole;
+use Orbit\Extensions\Vault\VaultServiceProvider;
 use Tests\Support\FakeNodeCaddyBuilds;
 use Tests\Support\Fleet\FleetFixtures;
 use Tests\Support\Fleet\FleetTestSsh;
@@ -34,10 +36,17 @@ describe('footprint digests', function (): void {
             'app/Infrastructure/Caddy/Build/Sources/RouteCaddySiteSource.php',
             'app/Infrastructure/AppDev/DevelopmentSite.php',
             'app/Domain/Nodes/CaddyRelease.php',
+            'app/Infrastructure/ProxyCli/ProxyCliCaddySiteSource.php',
+            'app/Infrastructure/ProxyCli/ProxyCliCaddySiteRenderer.php',
         )
             ->and(array_filter($inputs, static fn (string $path): bool => str_starts_with($path, 'app/Models/')))->toBe([])
             ->and($artifact->digest($node))->toBe(SourceDigest::of($inputs))
             ->and($artifact->digest($node))->not->toBe(app(NodeCaddyfileRenderer::class)->render($node)->version);
+    });
+
+    it('refuses a start class outside app/, so a contributed site source never drops out of the Caddy digest', function (): void {
+        expect(fn (): array => SourceClosure::of(['app/Infrastructure/Caddy'], [VaultServiceProvider::class]))
+            ->toThrow(LogicException::class, 'The source closure reads only classes under app/, not [Orbit\\Extensions\\Vault\\VaultServiceProvider].');
     });
 
     it('keeps the private-DNS digest when a Node joins and the records change', function (): void {

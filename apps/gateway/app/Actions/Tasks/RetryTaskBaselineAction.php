@@ -17,6 +17,7 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
+use App\Domain\Tasks\TaskWorkspaceHead;
 use App\Models\AgentThread;
 use App\Models\Task;
 use App\Models\TaskCheck;
@@ -67,7 +68,8 @@ final readonly class RetryTaskBaselineAction
         $group = Task::topLevel()->findOrFail($task->parent_id);
         $fresh = Task::query()->findOrFail($task->id);
         $check = $this->failedBaseline($group, $fresh);
-        if (! $check instanceof TaskCheck || ! $this->requested($fresh, $check)) {
+        if (! $check instanceof TaskCheck || ! $this->requested($fresh, $check)
+            || app(TaskWorkspaceHead::class)->held($group)) {
             return false;
         }
 
