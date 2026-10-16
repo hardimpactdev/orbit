@@ -10,6 +10,8 @@ use App\Domain\GatewayReleases\GatewayReleaseExecutionOwner;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use Closure;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\DB;
+use Throwable;
 
 /** Requires the service account and its existing private state; never repairs permissions. */
 final readonly class NativeGatewayReleaseExecutionOwner implements GatewayReleaseExecutionOwner
@@ -26,9 +28,8 @@ final readonly class NativeGatewayReleaseExecutionOwner implements GatewayReleas
         }
         $home = Config::string('orbit.home');
         $connection = Config::string('database.default');
-        $database = Config::string('database.connections.'.$connection.'.database');
-        if (Config::get('database.connections.'.$connection.'.driver') !== 'sqlite'
-            || ! str_starts_with($database, '/') || ! str_starts_with($home, '/')) {
+        $database = $this->database(Config::get('database.connections.'.$connection));
+        if (! str_starts_with($home, '/')) {
             $this->refuse();
         }
         foreach ([$home, $database, $this->layout->basePath(), $this->layout->sharedPath(), $this->layout->environmentPath(), $this->layout->storagePath(), $this->layout->releasesPath()] as $path) {
@@ -38,6 +39,24 @@ final readonly class NativeGatewayReleaseExecutionOwner implements GatewayReleas
             if (file_exists($path) || is_link($path)) {
                 $this->owned($path, $uid);
             }
+        }
+        // The manager may retain a connection opened before configuration changed.
+        try {
+            $running = DB::connection();
+            if ($this->database($running->getConfig()) !== $database || $running->getDriverName() !== 'sqlite') {
+                $this->refuse();
+            }
+            $statement = $running->getPdo()->query('PRAGMA database_list');
+            if ($statement === false) {
+                $this->refuse();
+            }
+            $files = $statement->fetchAll(\PDO::FETCH_ASSOC);
+            $main = array_values(array_filter($files, static fn (array $file): bool => $file['name'] === 'main'));
+            if (count($main) !== 1 || $main[0]['file'] !== $database) {
+                $this->refuse();
+            }
+        } catch (Throwable) {
+            $this->refuse();
         }
         $caches = [$this->layout->applicationPath.'/bootstrap/cache/config.php'];
         if (app()->configurationIsCached()) {
@@ -64,10 +83,27 @@ final readonly class NativeGatewayReleaseExecutionOwner implements GatewayReleas
             if (! is_array($values) || data_get($values, 'orbit.home') !== $home
                 || data_get($values, 'orbit.gateway_checkout') !== $this->layout->applicationPath
                 || data_get($values, 'database.default') !== $connection
-                || data_get($values, 'database.connections.'.$connection.'.database') !== $database) {
+                || $this->database(data_get($values, 'database.connections.'.$connection)) !== $database) {
                 $this->refuse();
             }
         }
+    }
+
+    /** Only the single-file SQLite form is supported; no URL, split connections or PDO overrides. */
+    private function database(mixed $configuration): string
+    {
+        if (! is_array($configuration) || ($configuration['driver'] ?? null) !== 'sqlite'
+            || ! in_array($configuration['url'] ?? null, [null, ''], true)
+            || array_key_exists('read', $configuration) || array_key_exists('write', $configuration)
+            || ! empty($configuration['options'])) {
+            $this->refuse();
+        }
+        $path = $configuration['database'] ?? null;
+        if (! is_string($path) || ! str_starts_with($path, '/') || ! is_file($path) || realpath($path) !== $path) {
+            $this->refuse();
+        }
+
+        return $path;
     }
 
     private function owned(string $path, int $uid): void

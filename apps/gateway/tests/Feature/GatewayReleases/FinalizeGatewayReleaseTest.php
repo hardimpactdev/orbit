@@ -59,6 +59,8 @@ beforeEach(function (): void {
         public function run(ProcessInvocation $invocation): CommandResult
         {
             expect($invocation->arguments)->toContain('migrate:status', '--pending=3');
+            $artisan = $invocation->arguments[array_search('migrate:status', $invocation->arguments, true) - 1];
+            expect($invocation->arguments)->toContain('APP_CONFIG_CACHE='.dirname($artisan).'/bootstrap/cache/config.php');
             $code = $this->pending ? 3 : 0;
 
             return new CommandResult($code, '', '', 0, false);

@@ -2,11 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Domain\GatewayReleases\GatewayReleaseDrain;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseExecutionOwner;
 use App\Infrastructure\GatewayReleases\NativeGatewayReleaseExecutionOwner;
 use App\Models\GatewayRelease;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Tests\Support\GatewayReleasePipeline;
 
 pest()->group('subprocess');
@@ -44,7 +46,7 @@ it('refuses root and a different account at public mutation boundaries before lo
 it('accepts the supported owner with matching private configuration and refuses drift without repair', function (): void {
     $layout = $this->pipeline->fixture->layout;
     $database = $this->pipeline->home.'/gateway.sqlite';
-    file_put_contents($database, 'owned test database');
+    (new PDO('sqlite:'.$database))->exec('CREATE TABLE marker (id INTEGER)');
     chmod($database, 0600);
     chmod($layout->environmentPath(), 0600);
     config(['database.default' => 'owner_test', 'database.connections.owner_test' => ['driver' => 'sqlite', 'database' => $database]]);
@@ -55,7 +57,7 @@ it('accepts the supported owner with matching private configuration and refuses 
     try {
         file_put_contents($cache, '<?php return '.var_export([
             'orbit' => ['home' => $this->pipeline->home, 'gateway_checkout' => $layout->applicationPath],
-            'database' => ['default' => 'owner_test', 'connections' => ['owner_test' => ['database' => $database]]],
+            'database' => ['default' => 'owner_test', 'connections' => ['owner_test' => ['driver' => 'sqlite', 'database' => $database]]],
         ], true).';');
         chmod($cache, 0600);
         $owner = new NativeGatewayReleaseExecutionOwner($layout, accountUid: posix_geteuid());
@@ -68,5 +70,115 @@ it('accepts the supported owner with matching private configuration and refuses 
     } finally {
         putenv($old === false ? 'APP_CONFIG_CACHE' : 'APP_CONFIG_CACHE='.$old);
         config(['database.default' => $oldDefault]);
+    }
+});
+
+it('refuses divergent effective connections at public stage before any release work', function (string $change): void {
+    $layout = $this->pipeline->fixture->layout;
+    $database = $this->pipeline->home.'/declared.sqlite';
+    $other = $this->pipeline->home.'/other.sqlite';
+    foreach ([$database, $other] as $path) {
+        (new PDO('sqlite:'.$path))->exec('CREATE TABLE marker (id INTEGER)');
+        chmod($path, 0600);
+    }
+    chmod($layout->environmentPath(), 0600);
+    $configuration = ['driver' => 'sqlite', 'database' => $database];
+    $cached = $configuration;
+    if ($change === 'running-url') {
+        $configuration['url'] = 'sqlite:///'.$other;
+    } elseif ($change === 'cached-url') {
+        $cached['url'] = 'sqlite:///'.$other;
+    } elseif ($change === 'cached-driver') {
+        $cached['driver'] = 'mysql';
+    } elseif ($change === 'read') {
+        $configuration['read'] = ['database' => $other];
+    } elseif ($change === 'write') {
+        $configuration['write'] = ['database' => $other];
+    } elseif ($change === 'retained-connection') {
+        config(['database.connections.owner_drift' => ['driver' => 'sqlite', 'database' => $other]]);
+        DB::connection('owner_drift')->getPdo();
+    }
+    $oldDefault = config('database.default');
+    config(['database.default' => 'owner_drift', 'database.connections.owner_drift' => $configuration]);
+    $cache = $layout->applicationPath.'/bootstrap/cache/config.php';
+    $oldCache = getenv('APP_CONFIG_CACHE');
+    putenv('APP_CONFIG_CACHE='.$cache);
+    file_put_contents($cache, '<?php return '.var_export([
+        'orbit' => ['home' => $this->pipeline->home, 'gateway_checkout' => $layout->applicationPath],
+        'database' => ['default' => 'owner_drift', 'connections' => ['owner_drift' => $cached]],
+    ], true).';');
+    chmod($cache, 0600);
+    app()->instance(GatewayReleaseExecutionOwner::class, new NativeGatewayReleaseExecutionOwner($layout, accountUid: posix_geteuid()));
+    $before = $layout->currentReleaseId();
+    $hashes = [hash_file('sha256', $database), hash_file('sha256', $other)];
+    try {
+        expect(Artisan::call('gateway:release:stage', ['commit' => str_repeat('a', 40)]))->toBe(1);
+        expect(json_decode(Artisan::output(), true)['error_code'])->toBe('gateway.release_owner_invalid');
+        expect(is_file($this->pipeline->home.'/gateway-release.lock'))->toBeFalse();
+        expect($this->pipeline->snapshots)->toBe(0);
+        expect($this->pipeline->steps)->toBe([]);
+        expect($layout->currentReleaseId())->toBe($before);
+        expect([hash_file('sha256', $database), hash_file('sha256', $other)])->toBe($hashes);
+    } finally {
+        config(['database.default' => $oldDefault]);
+        DB::purge('owner_drift');
+        putenv($oldCache === false ? 'APP_CONFIG_CACHE' : 'APP_CONFIG_CACHE='.$oldCache);
+    }
+    expect(GatewayRelease::query()->count())->toBe(0);
+})->with(['running-url', 'cached-url', 'cached-driver', 'read', 'write', 'retained-connection']);
+
+it('revalidates the refreshed target before snapshot or migration at the public stage boundary', function (): void {
+    $layout = $this->pipeline->fixture->layout;
+    $database = $this->pipeline->home.'/gateway.sqlite';
+    $copy = new PDO('sqlite:'.$database);
+    foreach (DB::select("SELECT sql FROM sqlite_master WHERE type = 'table' AND sql IS NOT NULL AND name NOT LIKE 'sqlite_%'") as $table) {
+        $copy->exec($table->sql);
+    }
+    chmod($database, 0600);
+    chmod($layout->environmentPath(), 0600);
+    $oldDefault = config('database.default');
+    config(['database.default' => 'refresh_owner', 'database.connections.refresh_owner' => ['driver' => 'sqlite', 'database' => $database]]);
+    $values = [
+        'orbit' => ['home' => $this->pipeline->home, 'gateway_checkout' => $layout->applicationPath],
+        'database' => ['default' => 'refresh_owner', 'connections' => ['refresh_owner' => ['driver' => 'sqlite', 'database' => $database]]],
+    ];
+    $cache = $layout->applicationPath.'/bootstrap/cache/config.php';
+    $oldCache = getenv('APP_CONFIG_CACHE');
+    putenv('APP_CONFIG_CACHE='.$cache);
+    file_put_contents($cache, '<?php return '.var_export($values, true).';');
+    chmod($cache, 0600);
+    // The child rebuilds its cache from shared state, which now selects another DB.
+    $other = $this->pipeline->home.'/other.sqlite';
+    (new PDO('sqlite:'.$other))->exec('CREATE TABLE preserve_me (id INTEGER)');
+    chmod($other, 0600);
+    $values['database']['connections']['refresh_owner']['database'] = $other;
+    file_put_contents($layout->environmentPath(), json_encode($values, JSON_THROW_ON_ERROR));
+    $this->pipeline->fixture->write('apps/gateway/artisan', <<<'PHP'
+        <?php
+        $cache = getenv('APP_CONFIG_CACHE') ?: __DIR__.'/bootstrap/cache/config.php';
+        $values = json_decode(file_get_contents(__DIR__.'/.env'), true, flags: JSON_THROW_ON_ERROR);
+        file_put_contents($cache, '<?php return '.var_export($values, true).';');
+        PHP);
+    $target = $this->pipeline->fixture->commit('shared configuration selects another database');
+    app()->instance(GatewayReleaseExecutionOwner::class, new NativeGatewayReleaseExecutionOwner($layout, accountUid: posix_geteuid()));
+    app()->instance(GatewayReleaseDrain::class, new class implements GatewayReleaseDrain
+    {
+        public function assertHeld(string $targetSha): void {}
+    });
+    $before = $layout->currentReleaseId();
+    $hash = hash_file('sha256', $other);
+    try {
+        expect(Artisan::call('gateway:release:stage', ['commit' => $target]))->toBe(1);
+        expect(json_decode(Artisan::output(), true)['error_code'])->toBe('gateway.release_owner_invalid');
+        expect($this->pipeline->snapshots)->toBe(0);
+        expect($this->pipeline->steps)->toBe([]);
+        expect($layout->currentReleaseId())->toBe($before);
+        expect(hash_file('sha256', $other))->toBe($hash);
+        expect(is_file($this->pipeline->home.'/gateway-release.paused'))->toBeFalse();
+        expect(GatewayRelease::query()->sole()->migrations_ran)->toBeFalse();
+    } finally {
+        config(['database.default' => $oldDefault]);
+        DB::purge('refresh_owner');
+        putenv($oldCache === false ? 'APP_CONFIG_CACHE' : 'APP_CONFIG_CACHE='.$oldCache);
     }
 });

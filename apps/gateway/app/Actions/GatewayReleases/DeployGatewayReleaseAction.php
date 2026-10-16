@@ -134,6 +134,7 @@ final readonly class DeployGatewayReleaseAction
             // Before any migration: a configuration that cannot be cached must stop the release while nothing changed.
             $step = 'configuration';
             $this->builder->refreshConfiguration($prepared->id);
+            $this->owner->assertAllowed($prepared->sha);
             $phases['configuration'] = ['outcome' => 'cached'];
             $this->recorder->progress($record, $phases);
             if ($held) {

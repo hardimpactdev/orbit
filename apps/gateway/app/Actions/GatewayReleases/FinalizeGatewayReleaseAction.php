@@ -35,6 +35,7 @@ final readonly class FinalizeGatewayReleaseAction
         $this->owner->assertAllowed($sha);
 
         return $this->lock->run(function () use ($sha, $recordId): DeployedGatewayRelease {
+            $this->owner->assertAllowed($sha);
             $record = GatewayRelease::query()->find($recordId);
             if (! GatewayReleaseCommit::isSha($sha) || ! $record instanceof GatewayRelease || $record->sha !== $sha
                 || data_get($record->phases, 'hold.outcome') !== 'held'
@@ -47,7 +48,7 @@ final readonly class FinalizeGatewayReleaseAction
                 throw new GatewayReleaseException('finalize', 'gateway.release_finalize_invalid', 'Finalize requires the original staged record, full SHA and current prepared target.', 422);
             }
             $status = $this->processes->run(new ProcessInvocation(
-                ReleaseArtisan::command(PHP_BINARY, $this->layout->releaseApplicationPath($record->release_id).'/artisan', ['migrate:status', '--pending=3', '--no-interaction']),
+                ReleaseArtisan::command(PHP_BINARY, $this->layout->releaseApplicationPath($record->release_id).'/artisan', ['migrate:status', '--pending=3', '--no-interaction'], ['APP_CONFIG_CACHE' => $this->layout->releaseApplicationPath($record->release_id).'/bootstrap/cache/config.php']),
                 timeout: 120.0,
             ));
             if (! $status->succeeded() || $status->truncated) {

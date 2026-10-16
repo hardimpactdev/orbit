@@ -115,7 +115,7 @@ final readonly class SqliteGatewayReleaseDatabase implements GatewayReleaseDatab
     {
         $result = $this->processes->run(new ProcessInvocation(
             // --isolated: a second migrate, such as one left running by a deployer that died, waits for this one.
-            arguments: ReleaseArtisan::command($this->php, $releasePath.'/apps/gateway/artisan', ['migrate', '--force', '--isolated', '--no-interaction'], stepLock: $this->stepLock),
+            arguments: ReleaseArtisan::command($this->php, $releasePath.'/apps/gateway/artisan', ['migrate', '--force', '--isolated', '--no-interaction'], ['APP_CONFIG_CACHE' => $releasePath.'/apps/gateway/bootstrap/cache/config.php'], stepLock: $this->stepLock),
             timeout: $this->migrateTimeout,
         ));
 

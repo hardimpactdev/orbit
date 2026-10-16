@@ -70,7 +70,7 @@ describe(SqliteGatewayReleaseDatabase::class, function (): void {
         $processes->exit = 1;
         $exception = release_failure(fn () => $database->migrate('/home/orbit/releases/0123456789ab'));
 
-        expect($processes->ran[0]->arguments)->toBe(ReleaseArtisan::command('/usr/bin/php8.5', '/home/orbit/releases/0123456789ab/apps/gateway/artisan', ['migrate', '--force', '--isolated', '--no-interaction']))
+        expect($processes->ran[0]->arguments)->toBe(ReleaseArtisan::command('/usr/bin/php8.5', '/home/orbit/releases/0123456789ab/apps/gateway/artisan', ['migrate', '--force', '--isolated', '--no-interaction'], ['APP_CONFIG_CACHE' => '/home/orbit/releases/0123456789ab/apps/gateway/bootstrap/cache/config.php']))
             ->and(array_slice($processes->ran[0]->arguments, 0, 2))->toBe(['env', '-i'])
             ->and($exception->step)->toBe('migrate')
             ->and($exception->errorCode)->toBe('gateway.release_migrate_failed');
