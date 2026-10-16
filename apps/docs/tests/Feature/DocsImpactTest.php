@@ -849,7 +849,8 @@ it('docs impact does not fail on the unowned identifiers of a deleted file outsi
 
     $report = new DocsImpact($root)->report('HEAD', [$path]);
 
-    expect($report['errors'])->toBe([]);
+    expect($report['errors'])->toBe([])
+        ->and($report['impacted_pages'])->toBe([]);
 });
 
 it('docs impact does not fail on the unowned console commands of a deleted file outside the API', function (): void {
@@ -862,7 +863,8 @@ it('docs impact does not fail on the unowned console commands of a deleted file 
 
     $report = new DocsImpact($root)->report('HEAD', [$path]);
 
-    expect($report['errors'])->toBe([]);
+    expect($report['errors'])->toBe([])
+        ->and($report['impacted_pages'])->toBe([]);
 });
 
 it('docs impact reports Laravel console route schedule changes', function (): void {

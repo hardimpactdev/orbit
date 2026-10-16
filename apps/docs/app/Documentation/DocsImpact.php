@@ -352,6 +352,10 @@ final readonly class DocsImpact
         }
         if (! $unchangedSnapshot) {
             foreach (array_diff_key($baseByKey, $currentByKey) as $surface) {
+                if ($deleted && ! $this->isApiPath($path) && $surface['owner'] === 'unowned' && ($surface['kind'] === 'error_code' || $surface['kind'] === 'registered_command')) {
+                    continue;
+                }
+
                 $this->addSurface($surfaces, $impacts, $path, $surface['kind'], $surface['owner'], 'Removed from current source: '.$surface['reason']);
             }
         }

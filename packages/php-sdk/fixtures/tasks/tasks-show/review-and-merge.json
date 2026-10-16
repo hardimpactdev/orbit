@@ -58,7 +58,6 @@
                     "questions": 0,
                     "escalations": 0,
                     "type": "final_review",
-                    "target_thread_id": null,
                     "completion_summary": null,
                     "check": null,
                     "assistance_requested": false,
