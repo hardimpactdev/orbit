@@ -863,7 +863,8 @@
                 "Task workspace"
             ],
             "governing_adrs": [
-                "0200"
+                "0200",
+                "0222"
             ]
         },
         {
@@ -1193,6 +1194,33 @@
             ]
         },
         {
+            "path": "docs/decisions/0222-run-topology-nodes-as-siblings-on-the-task-vm-host.md",
+            "title": "ADR 0222: Run topology Nodes as siblings on the task VM host",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Placement",
+                "Project",
+                "Role",
+                "Route",
+                "Subtask",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0200",
+                "0222"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -1254,7 +1282,8 @@
                 "0215",
                 "0216",
                 "0217",
-                "0218"
+                "0218",
+                "0222"
             ]
         },
         {
