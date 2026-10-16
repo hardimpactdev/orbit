@@ -102,7 +102,6 @@ it("counts completed nested tasks against the group total", () => {
         id,
         task_group_id: 1,
         type: "implementation",
-        target_thread_id: null,
         completion_summary: null,
         check: null,
         assistance_requested: false,

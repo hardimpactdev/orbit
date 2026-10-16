@@ -72,10 +72,8 @@
             "@guidance:check",
             "@analyse",
             "@rector",
-            "@format:check",
-            "@annotator:check"
+            "@format:check"
         ],
-        "annotator:check": "python3 ../../bin/annotator-build --check",
         "format": "vendor/bin/pint --parallel --max-processes=$(../../bin/check-processes)",
         "format:check": "../../bin/quality-scope pint vendor/bin/pint --test --parallel --max-processes=$(../../bin/check-processes)",
         "guidance:check": "../../bin/guidance-check",

@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Data\Activities\ActivityData;
-use App\Data\Annotations\AnnotationData;
 use App\Data\Metrics\MetricsAssignmentData;
 use App\Data\Metrics\MetricsExporterData;
 use App\Data\Metrics\MetricsMutationData;
@@ -49,24 +48,6 @@ it('publishes data class schemas with the keys those classes produce', function 
             reason: ExporterSelectionReason::RoleDefault,
             degradation: ExporterDegradationReason::Unreachable,
         )->toArray()));
-});
-
-it('keeps the annotation schema in the camelCase AnnotationData sends', function (): void {
-    $source = file_get_contents(new ReflectionClass(AnnotationData::class)->getFileName());
-    preg_match_all("/^\\s*'([A-Za-z][A-Za-z0-9_]*)'\\s*=>/m", (string) $source, $matches);
-    $properties = openapi_schema_properties('Annotation');
-
-    expect($matches[1])->not->toBeEmpty();
-
-    foreach ($matches[1] as $key) {
-        expect($properties)->toHaveKey($key);
-
-        if (preg_match('/[a-z][A-Z]/', $key) === 1) {
-            $snake = strtolower((string) preg_replace('/(?<!^)(?=[A-Z])/', '_', $key));
-
-            expect($properties)->not->toHaveKey($snake);
-        }
-    }
 });
 
 /**

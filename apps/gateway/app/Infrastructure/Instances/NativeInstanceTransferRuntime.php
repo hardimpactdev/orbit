@@ -77,7 +77,6 @@ final readonly class NativeInstanceTransferRuntime implements InstanceTransferRu
             // so every Process that carries one follows the checkout, not only the presets.
             if (
                 $process->isVpDev()
-                || $process->isAnnotator()
                 || (is_string($runtimeConfig['environment_file'] ?? null) && $runtimeConfig['environment_file'] !== '')
             ) {
                 $runtimeConfig['environment_file'] = $environmentFile;

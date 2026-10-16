@@ -133,7 +133,7 @@ Human output shows bytes and durations in readable units. JSON keeps the raw num
 
 ## orbit node:converge
 
-Re-apply the Gateway-rendered Orbit footprint of a Node: its agent files, Caddyfile, private-DNS listener on the `vpn` Node, ProxyCli collector, and annotator server files. The fleet rollout runs the same step on each Node. It never changes an Instance or a role, so it works on a Node that owns Instances, unlike `node:add`.
+Re-apply the Gateway-rendered Orbit footprint of a Node: its agent files, Caddyfile, private-DNS listener on the `vpn` Node, and ProxyCli collector. The fleet rollout runs the same step on each Node. It never changes an Instance or a role, so it works on a Node that owns Instances, unlike `node:add`.
 
 ```bash
 orbit node:converge <node> [--force] [--json]

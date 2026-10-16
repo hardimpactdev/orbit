@@ -28,7 +28,6 @@ final readonly class UpdateTaskAction
 
     public function execute(Task $group, Task $task, UpdateTaskData $data, ?Node $actor = null, ?string $requestId = null): Task
     {
-        $group->requireManagedExecution();
         $this->requireExtension->execute();
 
         $group = Task::topLevel()->with(['project', 'taskable'])->findOrFail($group->id);
