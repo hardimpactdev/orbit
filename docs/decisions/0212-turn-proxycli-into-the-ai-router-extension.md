@@ -268,7 +268,7 @@ Every pull request in [Build order](#build-order) passes these checks on the liv
 | --- | --- | --- | --- |
 | A1 | An extension can refuse to be disabled. A pre-disable guard runs after the `extension.required` check and before the switch changes. It may refuse with a `ResourceOperationException`. | Build step 4 | `ai_router.keys_outstanding` must refuse before the switch turns off. ADR 0210 turns the switch off and then calls `disable()`. |
 | A2 | The Gateway runs `enable()` first and turns the switch on only after the hook succeeds. A failed hook leaves the switch off and returns its error. | The follow-up pull request to ADR 0210 and `EnableExtensionAction` from branch `extension-enable-order`, before build step 1 | The maintainer decided this rule for every extension. Tasks must never see the router switch on without a router. |
-| A3 | An `enable()` or `disable()` hook may do fleet work over SSH, within the request's command deadline. It replaces the rule that fleet work belongs in a separate setup command. | Build step 4 | The router has one switch and no setup command. |
+| A3 | An `enable()` or `disable()` hook may do fleet work over SSH in the request, within 180 seconds ([ADR 0218](/decisions/0218-take-long-commands-off-the-request-path#commands-that-stay-in-the-request)). It replaces the rule that fleet work belongs in a separate setup command. | Build step 4 | The router has one switch and no setup command. |
 
 The new plug-in points in [Plug-in points](#plug-in-points) need no amendment, because ADR 0210 lets each extension add its points.
 

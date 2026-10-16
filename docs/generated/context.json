@@ -926,12 +926,14 @@
                 "Process",
                 "Route",
                 "Task",
+                "Task workspace",
                 "Tool"
             ],
             "governing_adrs": [
                 "0206",
                 "0209",
-                "0217"
+                "0217",
+                "0218"
             ]
         },
         {
@@ -1008,7 +1010,8 @@
                 "0200",
                 "0210",
                 "0212",
-                "0214"
+                "0214",
+                "0218"
             ]
         },
         {
@@ -1143,7 +1146,47 @@
             ],
             "governing_adrs": [
                 "0209",
-                "0217"
+                "0217",
+                "0218"
+            ]
+        },
+        {
+            "path": "docs/decisions/0218-take-long-commands-off-the-request-path.md",
+            "title": "ADR 0218: Take long commands off the request path",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Activity",
+                "Cluster",
+                "Database server",
+                "Deliverable",
+                "Deployment",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Role",
+                "Route",
+                "Schedule",
+                "Subtask",
+                "Task",
+                "Task workspace",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0209",
+                "0212",
+                "0217",
+                "0218"
             ]
         },
         {
@@ -1207,7 +1250,8 @@
                 "0214",
                 "0215",
                 "0216",
-                "0217"
+                "0217",
+                "0218"
             ]
         },
         {
@@ -2450,7 +2494,8 @@
                 "Tool"
             ],
             "governing_adrs": [
-                "0209"
+                "0209",
+                "0218"
             ]
         },
         {
