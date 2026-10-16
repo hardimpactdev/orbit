@@ -56,6 +56,7 @@ enum TaskVmError: string
     case RecipeImagesMissing = 'task_vm.recipe_images_missing';
     case RecipeImagesTransferFailed = 'task_vm.recipe_images_transfer_failed';
     case RecipeImagesUnreadable = 'task_vm.recipe_images_unreadable';
+    case RecipeImagesRefused = 'task_vm.recipe_images_refused';
     case BaseImageMissing = 'task_vm.base_image_missing';
     case ImageBuildFailed = 'task_vm.image_build_failed';
     case ImageBuildRunning = 'task_vm.image_build_running';

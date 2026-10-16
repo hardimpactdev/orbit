@@ -1006,7 +1006,9 @@ For medium and large VMs, the preparation job on `task-vms` transfers the single
 
 The host runs `resources/task-vms/role-images-transfer.sh` for the transfer. It skips a VM whose manifest already names the claimed recipe and base fingerprint. It succeeds only when the manifest in the VM exists, parses, and names them after the copy; otherwise the transfer fails with `task_vm.recipe_images_transfer_failed`.
 
-Before Orbit starts the unit, it checks that the VM holds that manifest. A VM without it, for example one whose transfer at the claim was lost, gets it from a queued transfer on `task-vms`. Meanwhile the row is `importing` and the subtask waits with `Task VM: transferring the recipe base image for the topology.` When the transfer fails its last try, the subtask asks for assistance with the error, and a resolution transfers again.
+Before Orbit starts the unit, it checks that the VM holds that manifest. A VM without it, for example one whose transfer at the claim was lost, gets it from a queued transfer on `task-vms`. Meanwhile the row is `importing` and the subtask waits with `Task VM: transferring the recipe base image for the topology.`
+
+Each import has its own `topology_run`, so a transfer of an earlier import changes nothing. The transfer runs once. When it fails, the subtask asks for assistance with the error, and a resolution starts a new import. A host without the claimed image, or one that refuses the manifest, asks for assistance at once. Only a check that cannot read the VM, for example over a lost connection, makes the subtask wait and try again on the next tick.
 
 Every task VM's user `orbit` is in the `incus-admin` group from its first boot, so agents can run `bin/e2e-topology` once Incus is installed. The row stores the union in `topology`, its state in `topology_state` (`importing`, `preparing`, or `ready`), and the run in `topology_run`.
 

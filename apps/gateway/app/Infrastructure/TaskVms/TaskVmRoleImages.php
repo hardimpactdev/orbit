@@ -26,19 +26,29 @@ final readonly class TaskVmRoleImages
     /** The exit code of `check` when the VM does not hold the manifest. */
     private const int Absent = 3;
 
+    /** The exit codes of the script when it refuses its arguments or the manifest: no retry changes them. */
+    private const array Refused = [64, 65];
+
+    /** A check reads one small file, so it never holds a tick for long. */
+    private const float CheckSeconds = 15.0;
+
     public function __construct(private IncusHost $incus, private TaskVmSettings $settings) {}
 
     /**
      * Whether the VM holds the manifest of its claimed base image. A VM that runs no topology needs none.
      *
-     * @throws TaskVmException `task_vm.recipe_images_unreadable` when the host cannot tell
+     * @throws TaskVmException `task_vm.recipe_images_unreadable` when the host cannot tell now, and a permanent
+     *                         error such as `task_vm.recipe_images_missing` or `task_vm.recipe_images_refused`
      */
     public function present(TaskVm $vm): bool
     {
-        $result = $this->run($vm, 'check', 60.0);
+        $result = $this->run($vm, 'check', self::CheckSeconds);
 
         if (! $result instanceof CommandResult) {
             return true;
+        }
+        if (in_array($result->exitCode, self::Refused, true)) {
+            throw new TaskVmException(TaskVmError::RecipeImagesRefused, 'The host refused the recipe image manifest of the task VM.'.self::detail($result));
         }
 
         return match ($result->truncated ? null : $result->exitCode) {

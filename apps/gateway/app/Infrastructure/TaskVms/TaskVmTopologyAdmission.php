@@ -11,6 +11,7 @@ use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Domain\Tasks\TaskTopologyEvidence;
 use App\Domain\Tasks\TaskTopologyFailedException;
 use App\Domain\Tasks\TaskWait;
+use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmTopologyRun;
 use App\Domain\TaskVms\TaskVmTopologyRunState;
@@ -105,8 +106,9 @@ final readonly class TaskVmTopologyAdmission implements TaskTopologyAdmission
     }
 
     /**
-     * Returns when the VM holds its recipe base image. Otherwise the row is `importing` while a queued transfer runs,
-     * and the subtask waits. A transfer that failed its last try asks for assistance, and a resolution transfers again.
+     * Returns when the VM holds its recipe base image. Otherwise the row is `importing` while a queued transfer of that
+     * import runs, and the subtask waits. A transfer that failed, or an image the host cannot supply, asks for
+     * assistance, and a resolution starts a new import. Only a check that cannot read the VM now waits.
      */
     private function importImages(TaskVm $vm): void
     {
@@ -116,16 +118,19 @@ final readonly class TaskVmTopologyAdmission implements TaskTopologyAdmission
                 return;
             }
         } catch (TaskVmException $exception) {
+            if ($exception->errorCode !== TaskVmError::RecipeImagesUnreadable->value) {
+                $this->fail($vm, new TaskVmTopologyRun(TaskVmTopologyRunState::Failed, 'recipe-images', $exception->getMessage()));
+            }
             throw new TaskCapacityException(TaskWait::RecipeImages, 'Task VM: the recipe base image in the VM could not be read: '.$exception->getMessage());
         }
         if ($vm->topology_state === TaskVmTopologyState::Importing && $vm->topology_error !== null) {
             $this->fail($vm, new TaskVmTopologyRun(TaskVmTopologyRunState::Failed, 'recipe-images', $vm->topology_error));
         }
-        if ($vm->topology_state !== TaskVmTopologyState::Importing) {
-            $vm->update(['topology_state' => TaskVmTopologyState::Importing, 'topology_run' => null, 'topology_error' => null]);
+        if ($vm->topology_state !== TaskVmTopologyState::Importing || $vm->topology_run === null) {
+            $vm->update(['topology_state' => TaskVmTopologyState::Importing, 'topology_run' => bin2hex(random_bytes(8)), 'topology_started_at' => now(), 'topology_error' => null]);
         }
         // Unique per row: a transfer that is queued or runs already is not queued again.
-        TransferTaskVmRoleImages::dispatch($vm->id);
+        TransferTaskVmRoleImages::dispatch($vm->id, (string) $vm->topology_run);
 
         throw new TaskCapacityException(TaskWait::RecipeImages, self::Importing);
     }

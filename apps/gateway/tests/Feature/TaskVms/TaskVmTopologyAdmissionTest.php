@@ -25,7 +25,10 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
+use App\Models\TaskVmImageBuild;
 use Carbon\CarbonImmutable;
+use Illuminate\Bus\UniqueLock;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\TaskVmRecipeImages;
@@ -293,34 +296,64 @@ it('waits when the host cannot tell whether the VM holds the recipe base image',
     Queue::assertNotPushed(TransferTaskVmRoleImages::class);
 });
 
-it('asks for assistance when the transfer failed its last try, and transfers again after a resolution', function (): void {
+it('asks for assistance when the transfer of this import failed, and starts a new import after a resolution', function (): void {
     Queue::fake();
-    $this->vm->update(['topology_state' => TaskVmTopologyState::Importing]);
-    $job = new TransferTaskVmRoleImages($this->vm->id);
-    $job->failed(new RuntimeException('The host could not transfer the claimed recipe base image to the task VM. Exit code [67].'));
     $absent = new CommandResult(3, '', '', 1, false);
-    topology_admission_host([$absent, $absent]);
+    topology_admission_host([$absent, $absent, $absent]);
     $subtask = topology_admission_subtask($this->group, ['app-dev']);
+    $admission = app(TaskTopologyAdmission::class);
+    expect(fn () => $admission->prepare($this->group, $subtask))->toThrow(TaskCapacityException::class, TaskVmTopologyAdmission::Importing);
+    $run = (string) $this->vm->fresh()?->topology_run;
+    // The worker runs the job, which fails, and releases its unique lock.
+    $job = new TransferTaskVmRoleImages($this->vm->id, $run);
+    $job->failed(new RuntimeException('The host could not transfer the claimed recipe base image to the task VM. Exit code [67].'));
+    new UniqueLock(Cache::store())->release($job);
 
-    expect(fn () => app(TaskTopologyAdmission::class)->prepare($this->group, $subtask))
+    expect(fn () => $admission->prepare($this->group, $subtask))
         ->toThrow(TaskTopologyFailedException::class, 'Preparing the topology failed at step recipe-images. The end of its log: The host could not transfer');
     expect($this->vm->fresh()?->topology_state)->toBeNull();
-    Queue::assertNotPushed(TransferTaskVmRoleImages::class);
 
-    expect(fn () => app(TaskTopologyAdmission::class)->prepare($this->group, $subtask))->toThrow(TaskCapacityException::class, TaskVmTopologyAdmission::Importing);
-    expect($this->vm->fresh()?->topology_state)->toBe(TaskVmTopologyState::Importing)
-        ->and($this->vm->fresh()?->topology_error)->toBeNull();
-    Queue::assertPushed(TransferTaskVmRoleImages::class);
+    expect(fn () => $admission->prepare($this->group, $subtask))->toThrow(TaskCapacityException::class, TaskVmTopologyAdmission::Importing);
+    $vm = $this->vm->fresh();
+    expect($vm?->topology_state)->toBe(TaskVmTopologyState::Importing)
+        ->and($vm?->topology_run)->not->toBe($run)
+        ->and($vm?->topology_error)->toBeNull();
+    Queue::assertPushed(TransferTaskVmRoleImages::class, fn (TransferTaskVmRoleImages $job): bool => $job->run === $vm?->topology_run);
 });
 
-it('transfers the recipe base image only while the row is importing', function (): void {
+it('keeps a failure of an earlier import off the current one', function (): void {
+    $this->vm->update(['topology_state' => TaskVmTopologyState::Importing, 'topology_run' => 'bbbbbbbbbbbbbbbb']);
+
+    new TransferTaskVmRoleImages($this->vm->id, 'aaaaaaaaaaaaaaaa')->failed(new RuntimeException('stale'));
+    $host = topology_admission_host();
+    app()->call([new TransferTaskVmRoleImages($this->vm->id, 'aaaaaaaaaaaaaaaa'), 'handle']);
+
+    expect($this->vm->fresh()?->topology_error)->toBeNull()
+        ->and($host->commands)->toBe([]);
+});
+
+it('asks for assistance at once when the host cannot supply the recipe base image', function (Closure $break, string $message): void {
+    Queue::fake();
+    $break($this);
+
+    expect(fn () => app(TaskTopologyAdmission::class)->prepare($this->group, topology_admission_subtask($this->group, ['app-dev'])))
+        ->toThrow(TaskTopologyFailedException::class, $message);
+    expect($this->vm->fresh()?->topology_state)->toBeNull();
+    Queue::assertNotPushed(TransferTaskVmRoleImages::class);
+})->with([
+    'no promoted image' => [fn ($test) => TaskVmImageBuild::query()->delete(), 'The claimed recipe base image is unavailable on the task VM host.'],
+    'not a host' => [fn ($test) => $test->vm->update(['host_node_id' => $test->node->id]), 'is not a task VM host'],
+    'refused manifest' => [fn ($test) => topology_admission_host([new CommandResult(65, '', '', 1, false)]), 'The host refused the recipe image manifest'],
+]);
+
+it('transfers the recipe base image only for the import it belongs to', function (): void {
     $host = topology_admission_host();
 
-    app()->call([new TransferTaskVmRoleImages($this->vm->id), 'handle']);
+    app()->call([new TransferTaskVmRoleImages($this->vm->id, 'aaaaaaaaaaaaaaaa'), 'handle']);
     expect($host->commands)->toBe([]);
 
-    $this->vm->update(['topology_state' => TaskVmTopologyState::Importing]);
-    app()->call([new TransferTaskVmRoleImages($this->vm->id), 'handle']);
+    $this->vm->update(['topology_state' => TaskVmTopologyState::Importing, 'topology_run' => 'aaaaaaaaaaaaaaaa']);
+    app()->call([new TransferTaskVmRoleImages($this->vm->id, 'aaaaaaaaaaaaaaaa'), 'handle']);
     expect($host->commands)->toHaveCount(1)
         ->and($host->commands[0]->arguments[6])->toBe('transfer');
 });
