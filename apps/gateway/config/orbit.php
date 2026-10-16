@@ -78,10 +78,6 @@ return [
         // The Plausible Community Edition release a new analytics role runs; `analytics:update` pins another.
         'plausible_version' => env(key: 'ORBIT_ANALYTICS_PLAUSIBLE_VERSION', default: '3.2.1'),
     ],
-    't3' => [
-        'port' => max(1, (int) env('ORBIT_T3_PORT', 3773)),
-        'token' => env('ORBIT_T3_TOKEN'),
-    ],
     'git' => [
         // Transports a credentialed development checkout fetch may use. Tests add `file` for local origins.
         'checkout_protocols' => ['https'],
@@ -124,9 +120,7 @@ return [
     // The outer loop neither counts nor files a listed fingerprint or a source path under a prefix.
     'problems' => [
         'suppressed_fingerprints' => [],
-        'suppressed_path_prefixes' => [
-            'app/Infrastructure/Tasks/T3/',
-        ],
+        'suppressed_path_prefixes' => [],
     ],
     'hibernation' => [
         'idle_seconds' => max(1, (int) env('ORBIT_HIBERNATION_IDLE_SECONDS', 3600)),

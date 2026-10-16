@@ -12,7 +12,7 @@ namespace App\Infrastructure\Metrics;
  * a `name` label holding `DockerProcessRenderer::containerName()`, and its `id` is the opaque
  * `/system.slice/docker-{sha}.scope` cgroup path, which carries nothing identifying. A systemd unit
  * is a raw cgroup: cAdvisor gives it no `name` at all, only the `id` path ending in
- * `SystemdProcessRenderer::unitName()`, as in `/system.slice/orbit-process-69-agentation.service`.
+ * `SystemdProcessRenderer::unitName()`, as in `/system.slice/orbit-process-69-queue.service`.
  * Matching on `name` alone therefore finds containers and silently misses every systemd Process,
  * which is what these `or` arms exist to prevent.
  */

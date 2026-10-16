@@ -23,7 +23,7 @@ use Throwable;
  *
  * Reading that key back out of a series takes both labels, because cAdvisor only labels containers
  * by `name`. A systemd unit is a raw cgroup with no `name` at all, so its key is the last segment
- * of the `id` path (`/system.slice/orbit-process-69-agentation.service`). Keying on `name` alone
+ * of the `id` path (`/system.slice/orbit-process-69-queue.service`). Keying on `name` alone
  * leaves every systemd Process reporting no usage while containers report theirs.
  *
  * A Process cAdvisor has no series for — not running, cAdvisor unreachable, or the Metrics role is

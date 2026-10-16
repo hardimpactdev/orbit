@@ -7,7 +7,6 @@ namespace App\Data\Instances;
 use App\Data\Nodes\NodeIdentityData;
 use App\Data\Projects\ProjectIdentityData;
 use App\Data\Routes\RouteData;
-use App\Domain\AppDev\AnnotatorEndpoint;
 use App\Domain\Instances\Deployment\InstanceDeployStepStore;
 use App\Domain\Instances\Deployment\SharedPaths;
 use App\Models\Instance;
@@ -50,8 +49,6 @@ final class InstanceData extends Data
         public ?int $ssrPort = null,
         public ?string $seedPath = null,
         public ?string $seedCommit = null,
-        public ?int $annotatorPort = null,
-        public ?string $annotatorUrl = null,
         /** @var list<RouteData> */
         public array $routes = [],
         /** @var list<string> */
@@ -82,8 +79,6 @@ final class InstanceData extends Data
             ssrPort: $instance->ssr_port,
             seedPath: $instance->seed_path,
             seedCommit: $instance->seed_commit,
-            annotatorPort: $instance->annotator_port,
-            annotatorUrl: $instance->annotator_port !== null && $route instanceof Route ? AnnotatorEndpoint::origin($route->domain) : null,
             name: $instance->name,
             sourceLayout: $instance->source_layout,
             checkoutPath: $instance->checkout_path,

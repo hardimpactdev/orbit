@@ -36,7 +36,6 @@ final readonly class SsrPortAllocator
                 ...VitePortAllocator::EXCLUDED_PORTS,
                 ...$this->ports('ssr_port_assignments', $node, $instance),
                 ...$this->ports('vite_port_assignments', $node),
-                ...$this->ports('annotation_port_assignments', $node),
             ]));
             $port = $this->runtime->selectPort($node, $instance->ssr_port ?? self::FIRST_PORT, $excluded);
             if ($port < 1024 || $port > 65535 || in_array($port, $excluded, true)) {

@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppDev\AgentationSiteProjection;
 use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\AppDev\VitePortRuntime;
 use App\Domain\Clusters\ClusterState;
@@ -14,7 +13,6 @@ use App\Domain\Instances\Deployment\InstanceDeployStepStore;
 use App\Domain\Logs\LogStreamStore;
 use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Processes\ProcessEnvironmentProjection;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskReviewDiff;
@@ -43,12 +41,10 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Sleep;
 use Laravel\Ai\Classification;
-use Tests\Support\FakeAgentationSiteProjection;
 use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
 use Tests\Support\FakeHostKeyScanner;
 use Tests\Support\FakeNodeAgentRuntime;
 use Tests\Support\FakeNodeCaddyBuilds;
-use Tests\Support\FakeProcessEnvironmentProjection;
 use Tests\Support\FakeRouterLanIngressReconciler;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskTurnReceipts;
@@ -98,8 +94,6 @@ uses(TestCase::class, RefreshDatabase::class)
         app()->instance(NativeProcessRunner::class, $processes);
         app()->instance(VitePortRuntime::class, new FakeVitePortRuntime);
         app()->instance(NodeAgentRuntime::class, new FakeNodeAgentRuntime);
-        app()->instance(AgentationSiteProjection::class, new FakeAgentationSiteProjection);
-        app()->instance(ProcessEnvironmentProjection::class, new FakeProcessEnvironmentProjection);
         app()->instance(RouterLanIngressReconciler::class, new FakeRouterLanIngressReconciler);
         app()->instance(ClusterRouterDnsSelectionReconciler::class, new FakeClusterRouterDnsSelectionReconciler);
         app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts);

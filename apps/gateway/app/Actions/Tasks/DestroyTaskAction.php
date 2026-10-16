@@ -17,7 +17,6 @@ final readonly class DestroyTaskAction
 
     public function execute(Task $group, Task $task): Task
     {
-        $group->requireManagedExecution();
         $this->requireExtension->execute();
 
         return DB::transaction(static function () use ($group, $task): Task {

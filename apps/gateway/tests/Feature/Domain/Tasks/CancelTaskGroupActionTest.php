@@ -624,7 +624,7 @@ it('cancels open subtasks left in a cancelled group', function (): void {
     try {
         $paths = array_values(array_filter(
             glob(database_path('migrations/*.php')) ?: [],
-            static fn (string $path): bool => ! str_contains($path, 'merge_task_groups_into_tasks') && ! str_contains($path, 'allow_owned_project_sandbox_instance_removal'),
+            static fn (string $path): bool => basename($path) < '2026_10_05_000000_merge_task_groups_into_tasks.php',
         ));
         Artisan::call('migrate', ['--database' => 'cancelled_open_subtasks', '--path' => $paths, '--realpath' => true, '--force' => true]);
 

@@ -1003,7 +1003,7 @@ describe(ProvisionNodeAction::class, function (): void {
             'status' => LifecycleStatus::Active,
             'platform' => 'linux',
             'architecture' => 'x86_64',
-            'tld' => 'prior.orbit',
+            'tld' => 'prior.test',
             'public_ssh_host' => '192.0.2.50',
             'public_ssh_port' => 2222,
             'user' => 'prior-user',
@@ -1020,7 +1020,7 @@ describe(ProvisionNodeAction::class, function (): void {
         expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
             name: $existing->name,
             publicSshHost: '192.0.2.51',
-            tld: 'changed.orbit',
+            tld: 'changed.test',
             wireguardIp: '10.44.0.51',
             wireguardEndpointOverride: '10.0.0.3:51820',
             dnsServerOverride: '10.0.0.2',
@@ -1046,7 +1046,7 @@ describe(ProvisionNodeAction::class, function (): void {
             ]))
             ->toBe([
                 'status' => LifecycleStatus::Active,
-                'tld' => 'prior.orbit',
+                'tld' => 'prior.test',
                 'public_ssh_host' => '192.0.2.50',
                 'public_ssh_port' => 2222,
                 'user' => 'prior-user',
@@ -1263,7 +1263,7 @@ describe(ProvisionNodeAction::class, function (): void {
             publicSshHost: $existing->public_ssh_host,
             orbitUser: 'nckrtl',
             roles: [RoleName::AppDev, RoleName::Vpn],
-            tld: 'recoverable-identity.orbit',
+            tld: 'recoverable-identity.test',
         ));
 
         expect($events)
@@ -1568,7 +1568,7 @@ describe(ProvisionNodeAction::class, function (): void {
             roles: [RoleName::AppDev],
             platform: 'linux',
             architecture: 'x86_64',
-            tld: '.App-Dev.Orbit',
+            tld: '.App-Dev.Test',
             expectedSshHostFingerprint: 'SHA256:pinned',
         ));
 
@@ -1579,7 +1579,7 @@ describe(ProvisionNodeAction::class, function (): void {
             ->and($node->architecture)
             ->toBe('x86_64')
             ->and($node->tld)
-            ->toBe('app-dev.orbit')
+            ->toBe('app-dev.test')
             ->and($node->roles()->sole()->status)
             ->toBe(LifecycleStatus::Active)
             ->and($converger->expectedFingerprint)
@@ -1611,7 +1611,7 @@ describe(ProvisionNodeAction::class, function (): void {
             publicSshHost: '192.0.2.80',
             roles: [RoleName::AppDev, RoleName::AppProd],
             architecture: 'x86_64',
-            tld: 'conflicted.orbit',
+            tld: 'conflicted.test',
             expectedSshHostFingerprint: 'SHA256:pinned',
         )))
             ->toThrow(RoleAssignmentException::class);
@@ -1656,7 +1656,7 @@ describe(ProvisionNodeAction::class, function (): void {
             'status' => LifecycleStatus::Active,
             'platform' => 'linux',
             'architecture' => 'x86_64',
-            'tld' => 'existing.orbit',
+            'tld' => 'existing.test',
             'public_ssh_host' => '192.0.2.81',
             'wireguard_ip' => '10.44.0.8',
             'ssh_host_fingerprint' => 'SHA256:pinned',
@@ -1735,7 +1735,7 @@ describe(ProvisionNodeAction::class, function (): void {
             'name' => 'app-dev',
             'architecture' => 'x86_64',
             'public_ssh_host' => '94.237.40.75',
-            'tld' => 'app-dev.orbit',
+            'tld' => 'app-dev.test',
             'ssh_host_fingerprint' => 'SHA256:pinned',
         ]);
 
@@ -1745,7 +1745,7 @@ describe(ProvisionNodeAction::class, function (): void {
             roles: [RoleName::AppDev],
         ));
 
-        expect($node->tld)->toBe('app-dev.orbit');
+        expect($node->tld)->toBe('app-dev.test');
     });
 
     it('preserves established node identity and connection fields during safe reprovision', function (): void {
@@ -1780,7 +1780,7 @@ describe(ProvisionNodeAction::class, function (): void {
             'status' => LifecycleStatus::Active,
             'platform' => 'linux',
             'architecture' => 'aarch64',
-            'tld' => 'app-dev.orbit',
+            'tld' => 'app-dev.test',
             'public_ssh_host' => '192.0.2.20',
             'public_ssh_port' => 2222,
             'user' => 'orbit',
@@ -1806,7 +1806,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 'dns_server_override' => '10.0.0.1',
             ])
             ->and($node->tld)
-            ->toBe('app-dev.orbit')
+            ->toBe('app-dev.test')
             ->and($node->roles()->sole()->status)
             ->toBe(LifecycleStatus::Active)
             ->and($materializer->requests)
@@ -1859,7 +1859,7 @@ describe(ProvisionNodeAction::class, function (): void {
         expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
             name: $node->name,
             publicSshHost: $node->public_ssh_host,
-            tld: 'new.orbit',
+            tld: 'new.test',
         )))->toThrow(function (ResourceOperationException $exception): void {
             expect($exception->errorCode)
                 ->toBe('node.has_instances')
@@ -1867,7 +1867,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 ->toBe(409);
         });
 
-        expect($node->refresh()->tld)->toBe('old.orbit');
+        expect($node->refresh()->tld)->toBe('old.test');
         expect($instance->refresh()->checkout_path)->toBe('/home/orbit/apps/orbit/main');
         expect($nodeConverger->calls)->toBe(0);
         expect($converger->calls)->toBe(0);
@@ -1907,15 +1907,15 @@ describe(ProvisionNodeAction::class, function (): void {
         $result = app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
             name: $node->name,
             publicSshHost: $node->public_ssh_host,
-            tld: 'new.orbit',
+            tld: 'new.test',
         ));
 
         expect($result->tld)
-            ->toBe('new.orbit')
+            ->toBe('new.test')
             ->and($result->status)
             ->toBe(LifecycleStatus::Active)
             ->and($converger->calls)
-            ->toBe([['tld' => 'new.orbit', 'status' => LifecycleStatus::Provisioning]]);
+            ->toBe([['tld' => 'new.test', 'status' => LifecycleStatus::Provisioning]]);
     });
 
     it('restores the previous app development TLD and projections when convergence fails', function (): void {
@@ -1937,17 +1937,17 @@ describe(ProvisionNodeAction::class, function (): void {
         expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
             name: $node->name,
             publicSshHost: $node->public_ssh_host,
-            tld: 'new.orbit',
+            tld: 'new.test',
         )))->toThrow(function (RuntimeConvergenceException $exception): void {
             expect($exception->errorCode)->toBe('app-dev.dns_config_failed');
         });
 
         expect($node->refresh()->tld)
-            ->toBe('old.orbit')
+            ->toBe('old.test')
             ->and($node->status)
             ->toBe(LifecycleStatus::Active)
             ->and($converger->calls)
-            ->toBe(['new.orbit', 'old.orbit']);
+            ->toBe(['new.test', 'old.test']);
     });
 
     it('marks the node failed when restoring previous app development projections fails', function (): void {
@@ -1969,7 +1969,7 @@ describe(ProvisionNodeAction::class, function (): void {
         expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
             name: $node->name,
             publicSshHost: $node->public_ssh_host,
-            tld: 'new.orbit',
+            tld: 'new.test',
         )))->toThrow(function (RuntimeConvergenceException $exception): void {
             expect($exception->step)
                 ->toBe('app-dev-tld-rollback')
@@ -1978,7 +1978,7 @@ describe(ProvisionNodeAction::class, function (): void {
         });
 
         expect($node->refresh()->tld)
-            ->toBe('old.orbit')
+            ->toBe('old.test')
             ->and($node->status)
             ->toBe(LifecycleStatus::Failed)
             ->and($node->failed_step)
@@ -1986,7 +1986,7 @@ describe(ProvisionNodeAction::class, function (): void {
             ->and($node->error_code)
             ->toBe('app-dev.tld_rollback_failed')
             ->and($converger->calls)
-            ->toBe(['new.orbit', 'old.orbit']);
+            ->toBe(['new.test', 'old.test']);
     });
 
     it('rejects a managed user change while the node owns Instances', function (): void {
@@ -2070,7 +2070,7 @@ describe(ProvisionNodeAction::class, function (): void {
             'platform' => 'linux',
             'architecture' => 'x86_64',
             'user' => 'orbit',
-            'tld' => 'role-node.orbit',
+            'tld' => 'role-node.test',
             'public_ssh_host' => '192.0.2.21',
             'wireguard_ip' => '10.44.0.4',
             'ssh_host_fingerprint' => 'SHA256:pinned',
@@ -2357,7 +2357,7 @@ describe(ProvisionNodeAction::class, function (): void {
             publicSshHost: '94.237.40.75',
             roles: [RoleName::AppDev],
             architecture: 'x86_64',
-            tld: 'app-dev.orbit',
+            tld: 'app-dev.test',
             expectedSshHostFingerprint: 'SHA256:pinned',
         )))->toThrow(function (NodeProvisioningException $exception): void {
             expect($exception->step)
@@ -2509,7 +2509,7 @@ describe(ProvisionNodeAction::class, function (): void {
             publicSshHost: '94.237.40.75',
             roles: [RoleName::AppDev],
             architecture: 'x86_64',
-            tld: 'app-dev.orbit',
+            tld: 'app-dev.test',
         )))->toThrow(function (ResourceOperationException $exception): void {
             expect($exception->errorCode)->toBe('node.ssh_host_fingerprint_required');
         });
@@ -2563,7 +2563,7 @@ describe(ProvisionNodeAction::class, function (): void {
             publicSshHost: '94.237.40.75',
             roles: [RoleName::AppDev],
             architecture: 'x86_64',
-            tld: 'app-dev.orbit',
+            tld: 'app-dev.test',
             expectedSshHostFingerprint: 'SHA256:pinned',
         );
 
@@ -2727,7 +2727,7 @@ function provision_node_tld_change_record(): Node
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
         'architecture' => 'x86_64',
-        'tld' => 'old.orbit',
+        'tld' => 'old.test',
         'public_ssh_host' => '192.0.2.21',
         'wireguard_ip' => '10.44.0.4',
         'ssh_host_fingerprint' => 'SHA256:pinned',

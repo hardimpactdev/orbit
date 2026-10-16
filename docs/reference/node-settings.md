@@ -41,7 +41,7 @@ The CLI splits each option at its first colon, so a value can contain more colon
 
 The [API reference](/api/overview), [MCP](/reference/mcp), and generated web types publish `apps` as an object or null, with `path` as a string or null, and `task_vms` as a typed object or null. The settings object and its nested objects reject unknown fields. A patch needs at least one supported member, `apps` or `task_vms`; the `apps.path` member is optional. `"path": null`, `"apps": null`, or `"apps": {}` removes the path.
 
-A patch changes only the members it names. Other stored keys stay, such as the [`t3` connection](/reference/tasks#opsbot-direction-webhook) that annotations use. The API never returns them. Node responses return the stored value only. They return `settings: null` when nothing is set, never the default. `orbit node:show` shows the path, or an em dash when none is set.
+A patch changes only the members it names. Other stored keys stay, and the API never returns them. Node responses return the stored value only. They return `settings: null` when nothing is set, never the default. `orbit node:show` shows the path, or an em dash when none is set.
 
 ## Configure a task VM host
 

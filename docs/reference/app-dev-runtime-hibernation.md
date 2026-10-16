@@ -69,8 +69,6 @@ For a Laravel Instance, dependency inspection, pruning, and restoration use its 
 
 Orbit deletes `vendor` only next to `composer.json` and `composer.lock`. It deletes `node_modules` only next to `package.json` and exactly one JavaScript lockfile. It never follows a symlink and keeps every lockfile. Then it writes the cold marker. The [dependency inventory](/reference/instance-dependencies) stays, because it reads lockfiles.
 
-The `annotator` preset also sleeps with its Instance and refuses keep-alive. Creating a stopped annotator or removing it rewrites the systemd units of its siblings without activation, so desired-running sleeping workers and Vite stay stopped and cold dependencies are not restored. Its port and store survive hibernation. Wake waits for `/health` on its assigned loopback port; a timeout reports `hibernation.annotator_not_ready`.
-
 ## Wake
 
 Caddy on the Instance's Node checks for the awake marker on every request. When the marker is missing, Caddy calls `GET /api/v1/runtime-activations/app-instance/{id}` on the Gateway over WireGuard, trusting the Orbit root certificate. The caller must be the Instance's Node, or a Node with an [access grant](/cli/node) to it.
@@ -81,7 +79,7 @@ The wake runs in this order:
 
 1. When the cold marker exists, restore dependencies with `composer install --no-interaction --prefer-dist` and `vp install --frozen-lockfile`. This uses the cold wake timeout.
 2. Start every desired-running Process.
-3. Wait until each one runs. A `vp-dev` Process must answer on its [assigned Vite port](/reference/assigned-vite-ports). An `agentation-mcp` Process must answer `/health` on its port.
+3. Wait until each one runs. A `vp-dev` Process must answer on its [assigned Vite port](/reference/assigned-vite-ports).
 4. Clear the cold marker and write the awake marker.
 
 Any other Process is ready when its runtime reports running.

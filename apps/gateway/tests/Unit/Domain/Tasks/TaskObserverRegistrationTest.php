@@ -132,7 +132,6 @@ it('selects only the tests that cover a non-PHP runtime resource', function (): 
         'resources/instances/ci-caches.sh',
         'resources/fpm/opcache-reset.php',
         'resources/private-dns/serve.php',
-        'resources/annotator/manifest.json',
         'resources/compute/unlisted-program.py',
     ];
     $selected = [];
@@ -157,7 +156,6 @@ it('selects only the tests that cover a non-PHP runtime resource', function (): 
         'resources/instances/ci-caches.sh' => ['tests/Feature/Domain/CiCacheSetupTest.php'],
         'resources/fpm/opcache-reset.php' => ['tests/Feature/GatewayReleases/GatewayRuntimeHandoffTest.php'],
         'resources/private-dns/serve.php' => ['tests/Feature/Infrastructure/AppDev'],
-        'resources/annotator/manifest.json' => [],
         'resources/compute/unlisted-program.py' => [],
     ]);
 });

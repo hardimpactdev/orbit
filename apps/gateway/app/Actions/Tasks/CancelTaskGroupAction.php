@@ -30,7 +30,6 @@ final readonly class CancelTaskGroupAction
 
     public function execute(Task $group): Task
     {
-        $group->requireManagedExecution();
         $this->requireExtension->execute();
 
         $group->refresh()->load(['project', 'tasks', 'taskable']);

@@ -194,7 +194,7 @@ Task agents and reviewers use only the topology allocated to their task. They ne
 
 ### Web session
 
-Run `bin/e2e-topology web TASK-58` in the task workspace only after its topology has been acquired. `web` requires that topology and its configured operator; it never acquires one implicitly. It installs the mounted web app and annotation package dependencies with `vp install` and runs `vp dev` as the transient `orbit-e2e-web.service` unit in `/home/orbit/orbit/apps/web` in the operator, with guest TCP port `5173` and strict-port behavior. An occupied guest port fails startup; there is no guest-port fallback.
+Run `bin/e2e-topology web TASK-58` in the task workspace only after its topology has been acquired. `web` requires that topology and its configured operator; it never acquires one implicitly. It installs the mounted web app's dependencies with `vp install` and runs `vp dev` as the transient `orbit-e2e-web.service` unit in `/home/orbit/orbit/apps/web` in the operator, with guest TCP port `5173` and strict-port behavior. An occupied guest port fails startup; there is no guest-port fallback.
 
 The command publishes the dev server only on the host's IPv4 loopback, `127.0.0.1`, using an available OS-assigned ephemeral host TCP port. After readiness, it prints the actual host port and URL, such as `http://127.0.0.1:P` with the numeric port in place of `P`. There is no fixed host port, DNS name, or Caddy Route. [Web app: Run against a topology](/reference/web-app#run-against-a-topology) gives the Mac SSH forwarding steps.
 

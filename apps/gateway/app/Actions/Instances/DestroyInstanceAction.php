@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Actions\Instances;
 
-use App\Actions\Annotations\CancelInstanceAnnotationTasksAction;
 use App\Actions\DatabaseConnections\DropOwnedDatabasesAction;
 use App\Actions\Processes\CascadeInstanceProcessesAction;
 use App\Actions\Routes\ConvergeRouteAction;
@@ -445,9 +444,6 @@ final readonly class DestroyInstanceAction implements InstanceRemover
                 Instance::query()
                     ->whereKey($members->pluck('id'))
                     ->update(['status' => InstanceState::Removing->value]);
-                foreach ($members as $member) {
-                    app(CancelInstanceAnnotationTasksAction::class)->execute($member->id);
-                }
 
                 return $operation->load('members');
             }),
@@ -520,7 +516,6 @@ final readonly class DestroyInstanceAction implements InstanceRemover
                     'source_digest' => $inventory->digest,
                 ]);
             $locked->update(['status' => InstanceState::Removing]);
-            app(CancelInstanceAnnotationTasksAction::class)->execute($locked->id);
 
             return $operation->load('members');
         }));
@@ -1068,7 +1063,6 @@ final readonly class DestroyInstanceAction implements InstanceRemover
                 ->where('instance_id', $member->instance_id)
                 ->closed()
                 ->update(['instance_id' => null]);
-            app(CancelInstanceAnnotationTasksAction::class)->execute($member->instance_id);
             Instance::query()->lockForUpdate()->findOrFail($member->instance_id)->delete();
             $lockedMember->update(['row_deleted_at' => now()]);
 
