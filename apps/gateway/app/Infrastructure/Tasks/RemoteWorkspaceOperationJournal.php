@@ -8,10 +8,13 @@ use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\Tasks\TaskWorkspaceOperationRecovery;
 use App\Domain\Tasks\TaskWorkspaceWaiting;
+use App\Domain\TaskVms\TaskVmWorkspaceGuard;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
+use App\Models\Instance;
 use App\Models\TaskWorkspaceLeaseRecord;
 use App\Models\TaskWorkspaceOperation;
 use App\Support\ValidatedData;
@@ -36,7 +39,7 @@ final class RemoteWorkspaceOperationJournal implements TaskWorkspaceOperationRec
         }
         $operation = app(TaskExecutionLock::class)->synchronized(-$lease->instance_id, function () use ($lease, $connection): TaskWorkspaceOperation {
             $fresh = TaskWorkspaceLeaseRecord::query()->whereKey($lease->id)->where('status', 'held')->where('active_instance_id', $lease->instance_id)->first();
-            if (! $fresh instanceof TaskWorkspaceLeaseRecord || $fresh->getAttribute('completion_pending')) {
+            if (! $fresh instanceof TaskWorkspaceLeaseRecord || ($fresh->getAttribute('completion_pending') || $fresh->getAttribute('recovery_sealed'))) {
                 throw new TaskWorkspaceWaiting('The task operation no longer owns this workspace.');
             }
             $operation = TaskWorkspaceOperation::query()->create([
@@ -84,6 +87,9 @@ final class RemoteWorkspaceOperationJournal implements TaskWorkspaceOperationRec
                         return false;
                     }
                     $operation->update(['status' => $data['state']]);
+                    if (($data['outcome_unknown'] ?? false) === true) {
+                        TaskWorkspaceLeaseRecord::query()->whereKey($lease->id)->update(['causality_uncertain' => true]);
+                    }
                 } catch (Throwable) {
                     return false;
                 }
@@ -94,12 +100,50 @@ final class RemoteWorkspaceOperationJournal implements TaskWorkspaceOperationRec
                     return false;
                 }
 
-                return TaskWorkspaceLeaseRecord::query()->whereKey($lease->id)->where('status', 'held')->where('active_instance_id', $lease->instance_id)
+                return TaskWorkspaceLeaseRecord::query()->whereKey($lease->id)->where('status', 'held')->where('active_instance_id', $lease->instance_id)->where('recovery_sealed', false)
                     ->update(['remote_uncertain' => false]) === 1;
             });
         } finally {
             $this->probing = false;
         }
+    }
+
+    /** Seal every known endpoint before proving that managed descendants have stopped.
+     * @return array{binding: string, endpoints: int}
+     */
+    public function seal(TaskWorkspaceLeaseRecord $lease, ?Instance $instance): array
+    {
+        $binding = hash('sha256', $lease->id.':'.$lease->instance_id.':'.$lease->acquisition_sequence);
+        $operations = TaskWorkspaceOperation::query()->where('lease_id', $lease->id)->get();
+        $endpoints = [];
+        foreach ($operations as $operation) {
+            $key = hash('sha256', json_encode($operation->connection, JSON_THROW_ON_ERROR));
+            $endpoints[$key]['connection'] = $operation->connection;
+            $endpoints[$key]['operations'][] = $operation->operation;
+        }
+        $verify = function (CommandResult $result, int $count) use ($binding): void {
+            $data = $result->succeeded() ? json_decode($result->stdout, true, 8, JSON_THROW_ON_ERROR) : null;
+            if (! is_array($data) || ($data['binding'] ?? null) !== $binding || ($data['state'] ?? null) !== 'sealed'
+                || ($data['operations'] ?? null) !== $count) {
+                throw new TaskWorkspaceWaiting('Remote quiescence is not proven; the workspace remains sealed and held.');
+            }
+        };
+        foreach ($endpoints as $endpoint) {
+            $identities = $endpoint['operations'];
+            $command = new RemoteCommand(['python3', '-c', $this->program(), 'seal', str_repeat('0', 32), $binding, '0', json_encode($identities, JSON_THROW_ON_ERROR)], timeout: 30.0);
+            $verify(app(SshExecutor::class)->execute(self::connection($endpoint['connection']), $command), count($identities));
+        }
+        // An unstarted lease has no saved connection, but its current workspace is still a required endpoint.
+        if ($instance instanceof Instance) {
+            TaskVmWorkspaceGuard::assertOwnedWorkspace($instance);
+            $command = new RemoteCommand(['python3', '-c', $this->program(), 'seal', str_repeat('0', 32), $binding, '0', '[]'], timeout: 30.0);
+            $verify(app(DevelopmentSshExecutor::class)->execute($instance->node, $command,
+                'task-workspace-recovery', 'tasks.workspace_recovery_unverifiable', failureLabel: 'Task workspace recovery'), 0);
+        } elseif ($endpoints === []) {
+            throw new TaskWorkspaceWaiting('No recorded remote endpoint can prove this missing workspace stopped.');
+        }
+
+        return ['binding' => $binding, 'endpoints' => count($endpoints) + ($instance instanceof Instance ? 1 : 0)];
     }
 
     private function program(): string

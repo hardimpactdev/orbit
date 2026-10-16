@@ -24,6 +24,7 @@ final readonly class TaskCheckReading
         public ?string $treeBefore = null,
         public ?string $failedStep = null,
         public ?array $deliverables = null,
+        public bool $causalityUncertain = false,
     ) {}
 
     public static function running(): self
@@ -41,6 +42,11 @@ final readonly class TaskCheckReading
     public static function finished(int $exitCode, string $headAfter, string $treeAfter, array $changedPaths, string $output, ?float $finishedAt = null, ?string $treeBefore = null, ?string $failedStep = null, ?array $deliverables = null): self
     {
         return new self('finished', $exitCode, $headAfter, $treeAfter, $changedPaths, $output, $finishedAt, $treeBefore, $failedStep, $deliverables);
+    }
+
+    public static function interrupted(string $output): self
+    {
+        return new self('finished', exitCode: 1, output: $output, failedStep: 'check_error', causalityUncertain: true);
     }
 
     public static function lost(string $output): self

@@ -921,25 +921,40 @@ def output_tail(start=0, path=None):
         return log.read().decode('utf-8', errors='replace')
 
 
-def managed_run(pid, started):
+def managed_run(pid, started, run_id=''):
     root = os.path.join(DIRECTORY, 'check-starts')
+    if run_id and not re.fullmatch(r'[a-f0-9]{32}', run_id):
+        raise ValueError('Invalid check run identity')
     if not os.path.isdir(root):
+        if run_id:
+            raise RuntimeError('The exact check run record is unavailable')
         return None
-    for name in os.listdir(root):
+    names = [run_id + '.json'] if run_id else os.listdir(root)
+    matches = []
+    for name in names:
         if not re.fullmatch(r'[a-f0-9]{32}\.json', name):
             continue
         with open(os.path.join(root, name)) as source:
             data = json.load(source)
         if data.get('pid') == pid and data.get('started') == started and data.get('boot'):
-            return data
-    return None
+            if run_id and data.get('run_id') != run_id:
+                raise RuntimeError('The check run record identity differs')
+            matches.append(data)
+    if run_id:
+        if len(matches) != 1:
+            raise RuntimeError('The exact check process identity differs')
+        return matches[0]
+    if len(matches) > 1:
+        raise RuntimeError('Legacy check process identity is ambiguous across retained runs')
+    return matches[0] if matches else None
 
 
 def managed_run_finished(data):
     if data.get('state') == 'finished':
         return True
     if data.get('boot') != open('/proc/sys/kernel/random/boot_id').read().strip():
-        return False
+        # An old boot proves termination, never the check result or causal after-tree.
+        return True
     unit = 'orbit-task-check-' + data['run_id'] + '.service'
     result = subprocess.run(['systemctl', 'show', unit, '--no-pager',
                              '--property=LoadState,ActiveState,SubState,ControlGroup,Description'],
@@ -971,11 +986,17 @@ def managed_run_finished(data):
     return True
 
 
-def status(pid, started):
+def status(pid, started, run_id=''):
     # Read liveness before the result: the check writes check.json before it exits, so a check that
     # finishes between the two reads is still running on the first and finished on the second.
     alive = process_started(pid) == started
-    owned = managed_run(pid, started)
+    owned = managed_run(pid, started, run_id)
+    if owned and owned.get('boot') != open('/proc/sys/kernel/random/boot_id').read().strip():
+        if not run_id:
+            print(json.dumps({'state': 'running'}))
+            return
+        print(json.dumps({'state': 'interrupted', 'output': 'The workspace rebooted; the check outcome and resulting tree are unknown.'}))
+        return
     if owned and not managed_run_finished(owned):
         print(json.dumps({'state': 'running'}))
         return
@@ -1004,8 +1025,11 @@ def status(pid, started):
         print(json.dumps({'state': 'lost', 'output': output_tail(path=log_path)}))
 
 
-def cancel(pid, started):
-    owned = managed_run(pid, started)
+def cancel(pid, started, run_id=''):
+    owned = managed_run(pid, started, run_id)
+    if owned and owned.get('boot') != open('/proc/sys/kernel/random/boot_id').read().strip():
+        print(json.dumps({'cancelled': False}))
+        return
     if owned and not managed_run_finished(owned):
         subprocess.run(['sudo', '-n', 'systemctl', 'kill', '--signal=TERM', 'orbit-task-check-' + owned['run_id'] + '.service'], check=True)
         print(json.dumps({'cancelled': True}))
@@ -1048,10 +1072,10 @@ def main(arguments):
         run_owned(*arguments[1:])
     elif command == 'run' and len(arguments) in (4, 5, 6, 7):
         run(*arguments[1:])
-    elif command == 'status' and len(arguments) == 3:
-        status(int(arguments[1]), arguments[2])
-    elif command == 'cancel' and len(arguments) == 3:
-        cancel(int(arguments[1]), arguments[2])
+    elif command == 'status' and len(arguments) in (3, 4):
+        status(int(arguments[1]), arguments[2], arguments[3] if len(arguments) == 4 else '')
+    elif command == 'cancel' and len(arguments) in (3, 4):
+        cancel(int(arguments[1]), arguments[2], arguments[3] if len(arguments) == 4 else '')
     elif command == 'snapshot' and len(arguments) == 2:
         snapshot(arguments[1])
     else:

@@ -107,7 +107,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
             throw new TaskCheckException('The check did not start.');
         }
 
-        return new TaskCheckProcess($pid, $started, $head, $tree);
+        return new TaskCheckProcess($pid, $started, $head, $tree, $runId);
     }
 
     public function recoverStart(Instance $instance, string $runId): ?TaskCheckProcess
@@ -130,17 +130,18 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
             throw new TaskCheckException('The check start is not authoritatively known.');
         }
 
-        return new TaskCheckProcess($data['pid'], $data['started'], $data['head'], $data['tree']);
+        return new TaskCheckProcess($data['pid'], $data['started'], $data['head'], $data['tree'], $runId);
     }
 
     public function read(Instance $instance, TaskCheckProcess $process): TaskCheckReading
     {
-        $data = $this->run($instance, [(string) $process->pid, $process->started], 'check_python "$dir/check" status "$2" "$3"');
+        $data = $this->run($instance, [(string) $process->pid, $process->started, $process->runId ?? ''], $this->statusProtocol().'check_python "$dir/check" status "$2" "$3" "$4"');
         $output = is_string($data['output'] ?? null) ? $data['output'] : '';
 
         return match ($data['state'] ?? null) {
             'running' => TaskCheckReading::running(),
             'lost' => TaskCheckReading::lost($output),
+            'interrupted' => TaskCheckReading::interrupted($output),
             'finished' => $this->finished($data['result'] ?? null, $output),
             default => throw new TaskCheckException('The check state could not be read.'),
         };
@@ -148,7 +149,17 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
 
     public function cancel(Instance $instance, TaskCheckProcess $process): void
     {
-        $this->run($instance, [(string) $process->pid, $process->started], 'check_python "$dir/check" cancel "$2" "$3"');
+        $this->run($instance, [(string) $process->pid, $process->started, $process->runId ?? ''], $this->statusProtocol().'check_python "$dir/check" cancel "$2" "$3" "$4"');
+    }
+
+    private function statusProtocol(): string
+    {
+        $script = file_get_contents(resource_path('tasks/check'));
+        if (! is_string($script)) {
+            throw new TaskCheckException('The check script is unavailable.');
+        }
+
+        return TaskWorkspaceMetadata::operation('snapshot', ['script' => base64_encode($script)]);
     }
 
     public function snapshot(Instance $instance): TaskWorkspaceSnapshot

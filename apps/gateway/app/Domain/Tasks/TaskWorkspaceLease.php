@@ -76,10 +76,8 @@ final class TaskWorkspaceLease
             return null;
         }
         $fresh = $scope->fresh();
-        if (! $fresh instanceof TaskWorkspaceLeaseRecord || $fresh->status !== 'held' || $fresh->getAttribute('active_instance_id') !== $instanceId) {
-            unset($this->scopes[$instanceId]);
-
-            return null;
+        if (! $fresh instanceof TaskWorkspaceLeaseRecord || $fresh->status !== 'held' || $fresh->getAttribute('recovery_sealed') || $fresh->getAttribute('active_instance_id') !== $instanceId) {
+            throw new TaskWorkspaceWaiting('The workspace scope has ended or is sealed for recovery.');
         }
 
         $scope->refresh();
@@ -105,7 +103,7 @@ final class TaskWorkspaceLease
     public function within(TaskWorkspaceLeaseRecord $lease, Closure $operation): mixed
     {
         $fresh = $lease->fresh();
-        if (! $fresh instanceof TaskWorkspaceLeaseRecord || $fresh->status !== 'held' || $fresh->getAttribute('active_instance_id') !== $fresh->instance_id) {
+        if (! $fresh instanceof TaskWorkspaceLeaseRecord || $fresh->status !== 'held' || $fresh->getAttribute('recovery_sealed') || $fresh->getAttribute('active_instance_id') !== $fresh->instance_id) {
             throw new TaskWorkspaceWaiting('The workspace admission no longer owns this Instance.');
         }
         $previous = $this->scopes[$lease->instance_id] ?? null;
@@ -133,7 +131,7 @@ final class TaskWorkspaceLease
             if (! $lease instanceof TaskWorkspaceLeaseRecord) {
                 throw new TaskWorkspaceWaiting('A checkout mutation requires its exact admitted workspace scope.');
             }
-            if ($lease->getAttribute('remote_uncertain') || $lease->getAttribute('completion_pending')) {
+            if ($lease->getAttribute('recovery_sealed') || $lease->getAttribute('remote_uncertain') || $lease->getAttribute('completion_pending')) {
                 throw new TaskWorkspaceWaiting('The prior remote mutation has no authoritative completion.');
             }
             $lease->update(['remote_uncertain' => true, 'orbit_mutation' => $lease->getAttribute('orbit_mutation') || $changesCheckout]);
@@ -147,7 +145,7 @@ final class TaskWorkspaceLease
         if ($lease instanceof TaskWorkspaceLeaseRecord) {
             app(TaskExecutionLock::class)->synchronized(-$lease->instance_id, static function () use ($lease): void {
                 if (! TaskWorkspaceOperation::query()->where('lease_id', $lease->id)->where('status', 'pending')->exists()) {
-                    TaskWorkspaceLeaseRecord::query()->whereKey($lease->id)->where('status', 'held')->update(['remote_uncertain' => false]);
+                    TaskWorkspaceLeaseRecord::query()->whereKey($lease->id)->where('status', 'held')->where('recovery_sealed', false)->update(['remote_uncertain' => false]);
                 }
             });
         }
@@ -199,7 +197,7 @@ final class TaskWorkspaceLease
 
                 return $request;
             });
-            if ($request->status === 'held' && $request->getAttribute('remote_uncertain')) {
+            if ($request->status === 'held' && ($request->getAttribute('remote_uncertain') || $request->getAttribute('recovery_sealed'))) {
                 throw new TaskWorkspaceWaiting('The prior remote mutation has no authoritative completion.');
             }
             if ($request->status !== 'held') {
@@ -248,7 +246,7 @@ final class TaskWorkspaceLease
                 $lease->refresh();
                 if ($lease->thread_id === null && $lease->pid === null) {
                     $after = $lease->getAttribute('remote_uncertain') ? null : $this->snapshot($group);
-                    $lease->update(['completion_pending' => true]);
+                    $lease->update(['completion_pending' => true, 'causality_uncertain' => $lease->getAttribute('causality_uncertain') || ($after === null && $lease->getAttribute('orbit_mutation'))]);
                     $this->release($lease, $after);
                 }
             }
@@ -552,13 +550,13 @@ final class TaskWorkspaceLease
 
     public function invalidateCheck(Instance $instance, TaskCheckProcess $process): void
     {
-        unset($this->readings[$instance->id.':'.$process->pid.':'.$process->started]);
+        unset($this->readings[$instance->id.':'.$process->pid.':'.$process->started.':'.$process->runId]);
         $this->reconciled = [];
     }
 
     public function readCheck(Instance $instance, TaskCheckProcess $process): TaskCheckReading
     {
-        $key = $instance->id.':'.$process->pid.':'.$process->started;
+        $key = $instance->id.':'.$process->pid.':'.$process->started.':'.$process->runId;
         if ($this->ticking && isset($this->readings[$key])) {
             return $this->readings[$key];
         }
@@ -574,11 +572,11 @@ final class TaskWorkspaceLease
     {
         app(TaskExecutionLock::class)->synchronized($lease->group_id, fn () => app(TaskExecutionLock::class)->synchronized(-$lease->instance_id, function () use ($lease, $after): void {
             $fresh = TaskWorkspaceLeaseRecord::query()->whereKey($lease->id)->where('status', 'held')->first();
-            if (! $fresh instanceof TaskWorkspaceLeaseRecord || $fresh->getAttribute('remote_uncertain')) {
+            if (! $fresh instanceof TaskWorkspaceLeaseRecord || $fresh->getAttribute('remote_uncertain') || $fresh->getAttribute('recovery_sealed')) {
                 return;
             }
             if ($fresh->getAttribute('orbit_mutation') && $after === null && Instance::query()->whereKey($fresh->instance_id)->exists()) {
-                $fresh->update(['completion_pending' => true]);
+                $fresh->update(['completion_pending' => true, 'causality_uncertain' => true]);
 
                 return;
             }
@@ -601,9 +599,9 @@ final class TaskWorkspaceLease
         }
         $this->synchronized($group, function () use ($check, $reading, $group): void {
             $lease = TaskWorkspaceLeaseRecord::query()->where('status', 'held')->where('active_instance_id', $group->taskable_id)
-                ->where('pid', $check->pid)->where('process_started', $check->process_started)->where('group_id', $group->id)->first();
+                ->where('pid', $check->pid)->where('process_started', $check->process_started)->where('group_id', $group->id)->where('check_id', $check->id)->first();
             if ($lease instanceof TaskWorkspaceLeaseRecord) {
-                $lease->update(['check_id' => $check->id]);
+                $lease->update(['check_id' => $check->id, 'causality_uncertain' => $lease->getAttribute('causality_uncertain') || $reading->causalityUncertain]);
                 $this->release($lease, $reading->headAfter !== null && $reading->treeAfter !== null
                     ? new TaskWorkspaceSnapshot($reading->headAfter, $reading->treeAfter) : null);
             }
@@ -642,6 +640,9 @@ final class TaskWorkspaceLease
             if (! $holder instanceof TaskWorkspaceLeaseRecord) {
                 $this->adoptExistingOwner($group);
 
+                return;
+            }
+            if ($holder->getAttribute('recovery_sealed')) {
                 return;
             }
             app(TaskExecutionLock::class)->synchronized(-$instance->id, function () use ($holder): void {
@@ -700,7 +701,7 @@ final class TaskWorkspaceLease
                 if ($holder->pid === null || $holder->pid < 1) {
                     return;
                 }
-                $process = new TaskCheckProcess($holder->pid, $holder->process_started ?? '', $holder->process_head ?? $holder->head_before ?? '', $holder->process_tree ?? $holder->tree_before ?? '');
+                $process = new TaskCheckProcess($holder->pid, $holder->process_started ?? '', $holder->process_head ?? $holder->head_before ?? '', $holder->process_tree ?? $holder->tree_before ?? '', is_string($holder->getAttribute('check_run_id')) ? $holder->getAttribute('check_run_id') : null);
                 try {
                     $reading = $this->readCheck($instance, $process);
                 } catch (TaskCheckException $exception) {
@@ -726,6 +727,9 @@ final class TaskWorkspaceLease
                     app(TaskSubtaskRunner::class)->recordReading($check, $reading);
                 }
                 $check->refresh();
+                if ($reading->causalityUncertain) {
+                    $holder->update(['causality_uncertain' => true]);
+                }
                 $this->release($holder, $reading->headAfter !== null && $reading->treeAfter !== null
                     ? new TaskWorkspaceSnapshot($reading->headAfter, $reading->treeAfter) : null);
                 unset($this->reconciled[$group->id]);
@@ -841,7 +845,7 @@ final class TaskWorkspaceLease
         }
         $changed = false;
         foreach (TaskWorkspaceLeaseRecord::query()->where('instance_id', $group->taskable_id)->where('status', 'released')->where('acquisition_sequence', '>', $baseline->getAttribute('acquisition_sequence'))->orderBy('acquisition_sequence')->get() as $record) {
-            if (! $record->getAttribute('orbit_mutation') || $record->getAttribute('adopted') || $record->head_before !== $head || $record->tree_before !== $tree || in_array($record->kind, ['reviewer', 'implementer'], true)
+            if ($record->getAttribute('causality_uncertain') || ! $record->getAttribute('orbit_mutation') || $record->getAttribute('adopted') || $record->head_before !== $head || $record->tree_before !== $tree || in_array($record->kind, ['reviewer', 'implementer'], true)
                 || $record->head_after === null || $record->tree_after === null) {
                 continue;
             }
@@ -971,7 +975,7 @@ final class TaskWorkspaceLease
         return is_string($boot) && trim($boot) !== '' ? trim($boot) : null;
     }
 
-    private function localOwnerDead(TaskWorkspaceLeaseRecord $holder): bool
+    public function localOwnerDead(TaskWorkspaceLeaseRecord $holder): bool
     {
         if ($holder->getAttribute('gateway_host') !== gethostname() || self::bootIdentity() === null
             || ! is_string($holder->getAttribute('gateway_boot')) || ! is_int($holder->getAttribute('gateway_pid'))

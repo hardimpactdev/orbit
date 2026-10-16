@@ -39,6 +39,6 @@ final class TaskWorkspaceLeaseRecord extends Model
 
     protected function casts(): array
     {
-        return ['completion_pending' => 'boolean', 'journaled' => 'boolean', 'review_baseline_required' => 'boolean', 'dispatch_completed' => 'boolean', 'orbit_mutation' => 'boolean', 'remote_uncertain' => 'boolean', 'adopted' => 'boolean', 'saw_working' => 'boolean', 'dispatch_started_at' => 'datetime', 'active_instance_id' => 'integer', 'instance_id' => 'integer', 'group_id' => 'integer', 'acquisition_sequence' => 'integer', 'task_id' => 'integer', 'thread_id' => 'integer', 'check_id' => 'integer', 'pid' => 'integer', 'gateway_pid' => 'integer', 'acquired_at' => 'datetime', 'released_at' => 'datetime'];
+        return ['recovery_sealed' => 'boolean', 'causality_uncertain' => 'boolean', 'completion_pending' => 'boolean', 'journaled' => 'boolean', 'review_baseline_required' => 'boolean', 'dispatch_completed' => 'boolean', 'orbit_mutation' => 'boolean', 'remote_uncertain' => 'boolean', 'adopted' => 'boolean', 'saw_working' => 'boolean', 'dispatch_started_at' => 'datetime', 'active_instance_id' => 'integer', 'instance_id' => 'integer', 'group_id' => 'integer', 'acquisition_sequence' => 'integer', 'task_id' => 'integer', 'thread_id' => 'integer', 'check_id' => 'integer', 'pid' => 'integer', 'gateway_pid' => 'integer', 'acquired_at' => 'datetime', 'released_at' => 'datetime'];
     }
 }

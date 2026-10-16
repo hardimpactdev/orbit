@@ -65,7 +65,7 @@ it('recovers a proven dead local owner without stealing live or unknown Gateway 
     'previous boot' => ['old_boot', true],
 ]);
 
-it('retains a completed mutation until its after snapshot is durable and then preserves the causal chain', function (): void {
+it('recovers ownership after a delayed snapshot without crediting its uncertain tree to Orbit', function (bool $outsideEdit): void {
     $leases = app(TaskWorkspaceLease::class);
     $baseline = $leases->acquire($this->leaseGroup, 'reviewer', 'review-baseline');
     $leases->release($baseline);
@@ -84,12 +84,16 @@ it('retains a completed mutation until its after snapshot is durable and then pr
         ->and($holder->tree_after)->toBeNull();
     $leases->reconcile($this->leaseGroup);
     expect($holder->fresh()->status)->toBe('held');
+    if ($outsideEdit) {
+        $this->leaseChecks->tree = str_repeat('e', 40);
+    }
     $this->leaseChecks->failSnapshot = false;
     $leases->reconcile($this->leaseGroup);
     expect($holder->fresh()->status)->toBe('released')
         ->and($mutations)->toBe(1)
-        ->and($leases->ownedChange($this->leaseGroup, $head, $before, new TaskWorkspaceSnapshot($head, $this->leaseChecks->tree), $baseline->id))->toBeTrue();
-});
+        ->and($holder->fresh()->getAttribute('causality_uncertain'))->toBeTrue()
+        ->and($leases->ownedChange($this->leaseGroup, $head, $before, new TaskWorkspaceSnapshot($head, $this->leaseChecks->tree), $baseline->id))->toBeFalse();
+})->with([false, true]);
 
 it('rejects unscoped mutations even when an unrelated holder exists', function (bool $occupied): void {
     $leases = app(TaskWorkspaceLease::class);
