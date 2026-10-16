@@ -480,14 +480,14 @@ describe('CLI binary workflow', function (): void {
             ->and($run['run'])->not->toContain('composer');
     });
 
-    it('sets up PHP only on Linux runners', function (): void {
+    it('sets up the recipe PHP build only on Linux runners', function (): void {
         $jobs = cli_binary_workflow()['jobs'];
 
-        expect(cli_binary_step_uses($jobs['build']))->toContain('shivammathur/setup-php@v2');
+        expect(cli_binary_step_uses($jobs['build']))->toContain('./.github/actions/php');
 
         foreach ($jobs as $name => $job) {
             $runners = isset($job['strategy']) ? array_column($job['strategy']['matrix']['include'], 'runner') : [$job['runs-on']];
-            $usesPhp = in_array('shivammathur/setup-php@v2', cli_binary_step_uses($job), true);
+            $usesPhp = in_array('./.github/actions/php', cli_binary_step_uses($job), true);
 
             foreach ($runners as $runner) {
                 expect($usesPhp && ! str_starts_with((string) $runner, 'ubuntu-'))->toBeFalse("{$name} sets up PHP on {$runner}");

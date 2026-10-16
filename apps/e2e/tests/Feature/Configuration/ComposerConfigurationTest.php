@@ -692,19 +692,20 @@ it('publishes the web build of each main push for the Gateway to install', funct
         ->toBe(array_search('Build', $names, true) + 1);
 });
 
-it('sets up the recipe PHP build in every PHP job and never floats PHP with setup-php', function (): void {
+it('sets up the recipe PHP build in every PHP job of every workflow and never floats PHP with setup-php', function (): void {
     $action = Yaml::parseFile(base_path('../../.github/actions/php/action.yml'));
     $steps = array_column($action['runs']['steps'], null, 'name');
     $phpJobs = [];
-    foreach (['ci.yml', 'dependency-audit.yml'] as $file) {
-        $contents = (string) file_get_contents(base_path('../../.github/workflows/'.$file));
-        expect($contents)->not->toContain('setup-php');
-        foreach (Yaml::parseFile(base_path('../../.github/workflows/'.$file))['jobs'] as $name => $job) {
+    foreach (glob(base_path('../../.github/workflows/*.yml')) ?: [] as $path) {
+        $file = basename($path);
+        expect((string) file_get_contents($path))->not->toContain('setup-php');
+        foreach (Yaml::parseFile($path)['jobs'] as $name => $job) {
             $uses = array_column($job['steps'] ?? [], 'uses');
             $runs = implode("\n", array_column($job['steps'] ?? [], 'run'));
-            $runsPhp = preg_match('/\b(?:composer|php|vendor\/bin\/pest)\b|bin\/(?:project-vocabulary|env-docs|tooling-baseline|docs-nav|docs-openapi|mcp-tools|dependency-audit)/', $runs) === 1;
+            // `composer` or `php` as a command, not inside a name such as bin/php-build, which is Python.
+            $runsPhp = preg_match('/(?<![\w\/.=-])(?:composer|php)(?![\w.-])|vendor\/bin\/pest|bin\/(?:project-vocabulary|env-docs|tooling-baseline|docs-nav|docs-openapi|mcp-tools|dependency-audit|orbit-build-cli-binary)/', $runs) === 1;
             if (in_array('./.github/actions/php', $uses, true)) {
-                $phpJobs[] = $name;
+                $phpJobs[] = "{$file}:{$name}";
                 $step = collect($job['steps'])->firstWhere('uses', './.github/actions/php');
                 // A job without coverage keeps PCOV loaded, so its loaded extensions still match the recipe.
                 expect($step['with']['coverage'])->toBeIn(['pcov', 'none'])
@@ -715,7 +716,10 @@ it('sets up the recipe PHP build in every PHP job and never floats PHP with setu
         }
     }
 
-    expect($phpJobs)->toBe(['project', 'gateway-plan', 'gateway-shards', 'privileged', 'remote-programs', 'docs-merge-ref', 'api-reference', 'audit'])
+    expect($phpJobs)->toBe([
+        'ci.yml:project', 'ci.yml:gateway-plan', 'ci.yml:gateway-shards', 'ci.yml:privileged', 'ci.yml:remote-programs',
+        'ci.yml:docs-merge-ref', 'ci.yml:api-reference', 'dependency-audit.yml:audit', 'orbit-cli-binary.yml:build',
+    ])
         ->and($steps['Install the recipe PHP build']['if'])->toBe("runner.environment == 'github-hosted'")
         ->and($steps['Install the recipe PHP build']['run'])->toContain('sudo python3 bin/php-build install --ci --purge-extras --coverage "$COVERAGE"')
         ->and($steps['Restore the PHP packages']['with']['path'])->toBe('/var/cache/orbit/php-packages')
