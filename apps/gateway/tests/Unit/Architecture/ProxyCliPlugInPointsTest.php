@@ -19,6 +19,10 @@ arch('the application provider never uses proxycli code')
     ->not->toUse(proxycli_namespaces());
 
 arch('the Node footprint never uses proxycli code')
+    ->expect('App\Domain\Fleet')
+    ->not->toUse(proxycli_namespaces());
+
+arch('the core footprint artifacts never use proxycli code')
     ->expect('App\Infrastructure\Fleet')
     ->not->toUse(proxycli_namespaces());
 
