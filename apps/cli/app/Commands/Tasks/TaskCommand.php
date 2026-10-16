@@ -18,11 +18,13 @@ use Laravel\Prompts\TextareaPrompt;
 use Laravel\Prompts\TextPrompt;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Projects\ListProjectsRequest;
+use Orbit\Sdk\Requests\Tasks\ListTaskAgentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskGroupsRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTaskGroupRequest;
 use Orbit\Sdk\Responses\Projects\ProjectsResponse;
 use Orbit\Sdk\Responses\Tasks\SubtaskResponse;
 use Orbit\Sdk\Responses\Tasks\TaskAgentResponse;
+use Orbit\Sdk\Responses\Tasks\TaskAgentsResponse;
 use Orbit\Sdk\Responses\Tasks\TaskCommentResponse;
 use Orbit\Sdk\Responses\Tasks\TaskGroupResponse;
 use Orbit\Sdk\Responses\Tasks\TaskGroupsResponse;
@@ -208,6 +210,34 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
         }
 
         return (int) $this->commandPrompts()->selectEntity('Task group', ['ID', 'Title', 'Project', 'Status'], $rows);
+    }
+
+    /** Lists the group's agent threads and returns the selected ID. A stored `t3` thread has no transcript, so it is left out. */
+    protected function selectAgent(GatewayConnector $connector, int $groupId): ?int
+    {
+        $agents = $this->sendWithProgress(
+            $connector,
+            new ListTaskAgentsRequest($groupId),
+            TaskAgentsResponse::class,
+            ['List agent threads', 'Loading agent threads', 'Loaded agent threads'],
+            dismiss: true,
+        );
+
+        if (! $agents instanceof TaskAgentsResponse) {
+            return null;
+        }
+
+        $rows = [];
+
+        foreach ($agents->agents as $agent) {
+            if ($agent->driver === 't3') {
+                continue;
+            }
+
+            $rows[$agent->id] = [(string) $agent->id, $agent->role, $agent->taskId === null ? '—' : (string) $agent->taskId, $agent->driver, $agent->state ?? '—'];
+        }
+
+        return (int) $this->commandPrompts()->selectEntity('Agent thread', ['ID', 'Role', 'Subtask', 'Driver', 'State'], $rows);
     }
 
     /**
@@ -758,7 +788,8 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
             return null;
         }
 
-        $time = DateTimeImmutable::createFromFormat(DATE_ATOM, $value);
+        // Agent transcript times carry milliseconds, such as 2026-09-23T09:50:00.000Z.
+        $time = DateTimeImmutable::createFromFormat(DATE_ATOM, $value) ?: DateTimeImmutable::createFromFormat('Y-m-d\TH:i:s.vP', $value);
 
         return $time === false ? $value : $time->format('Y-m-d H:i');
     }

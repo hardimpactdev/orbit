@@ -50,6 +50,8 @@ describe('retired T3 task history', function (): void {
             ->assertJsonPath('data.0.lines_added', 10)->assertJsonPath('data.0.lines_deleted', 3);
         $this->getJson("/api/v1/task-groups/{$group->id}/agents/{$thread->id}/stream")
             ->assertStatus(409)->assertJsonPath('error.code', 'tasks.agent_transcript_unavailable');
+        $this->getJson("/api/v1/task-groups/{$group->id}/agents/{$thread->id}")
+            ->assertStatus(409)->assertJsonPath('error.code', 'tasks.agent_transcript_unavailable');
 
         app(PrunePendingTaskThreads::class)->run();
         Http::assertNothingSent();
@@ -59,8 +61,11 @@ describe('retired T3 task history', function (): void {
         $thread->update(['node_id' => null]);
         $this->getJson("/api/v1/task-groups/{$group->id}/agents/{$thread->id}/stream")
             ->assertStatus(409)->assertJsonPath('error.code', 'tasks.agent_transcript_unavailable');
+        $this->getJson("/api/v1/task-groups/{$group->id}/agents/{$thread->id}")
+            ->assertStatus(409)->assertJsonPath('error.code', 'tasks.agent_transcript_unavailable');
         $other = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Other', 'brief' => 'Other']);
         $this->getJson("/api/v1/task-groups/{$other->id}/agents/{$thread->id}/stream")->assertNotFound();
+        $this->getJson("/api/v1/task-groups/{$other->id}/agents/{$thread->id}")->assertNotFound();
         Http::assertNothingSent();
     });
 });

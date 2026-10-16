@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace App\Commands\Instances;
 
+use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Deployments\UpdateInstanceDeployStepRequest;
 use Orbit\Sdk\Responses\Deployments\DeploymentStepResponse;
 
-final class UpdateDeployStepCommand extends DeploymentCommand
+final class UpdateDeployStepCommand extends GatewayCommand
 {
     use InstanceOutput;
 

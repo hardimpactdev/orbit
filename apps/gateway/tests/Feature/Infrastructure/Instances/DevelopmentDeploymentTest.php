@@ -40,7 +40,7 @@ describe('development defaults in place', function (): void {
         plain_steps($instance, [new DevelopmentDeployStep('install', 'printf "%s" "$PWD" > step-ran-in')]);
         $commit = $this->fixture->push('second');
 
-        $result = app(DeployDefaultInstanceAction::class)->execute($instance);
+        $result = app(DeployDefaultInstanceAction::class)->execute($instance, operation_steps($instance, app(DeployDefaultInstanceAction::class)), DeploymentRequest::withoutOutput());
 
         expect($result->succeeded)->toBeTrue()
             ->and($result->commit)->toBe($commit)
@@ -74,14 +74,14 @@ describe('development defaults in place', function (): void {
         plain_steps($instance, [new DevelopmentDeployStep('install', 'test -f allow-install; touch installed')]);
         $commit = $this->fixture->push('second');
 
-        $failed = app(DeployDefaultInstanceAction::class)->execute($instance);
+        $failed = app(DeployDefaultInstanceAction::class)->execute($instance, operation_steps($instance, app(DeployDefaultInstanceAction::class)), DeploymentRequest::withoutOutput());
 
         expect($failed->failure?->errorCode)->toBe('deployment.step_failed')
             ->and(plain_git($home, 'rev-parse', 'HEAD'))->toBe($commit)
             ->and($instance->fresh()->seed_commit)->toBeNull();
 
         touch($home.'/allow-install');
-        $retried = app(DeployDefaultInstanceAction::class)->execute($instance);
+        $retried = app(DeployDefaultInstanceAction::class)->execute($instance, operation_steps($instance, app(DeployDefaultInstanceAction::class)), DeploymentRequest::withoutOutput());
 
         expect($retried->succeeded)->toBeTrue()
             ->and(file_exists($home.'/installed'))->toBeTrue()
@@ -94,14 +94,14 @@ describe('development defaults in place', function (): void {
         $second = $this->fixture->push('second');
         $this->fixture->push('third');
 
-        $pinned = app(DeployDefaultInstanceAction::class)->execute($instance, commit: $second);
+        $pinned = app(DeployDefaultInstanceAction::class)->execute($instance, operation_steps($instance, app(DeployDefaultInstanceAction::class)), DeploymentRequest::withoutOutput(), $second);
 
         expect($pinned->succeeded)->toBeTrue()
             ->and($pinned->commit)->toBe($second)
             ->and(plain_git($home, 'rev-parse', 'HEAD'))->toBe($second)
             ->and($instance->fresh()->seed_commit)->toBe($second);
 
-        $refused = app(DeployDefaultInstanceAction::class)->execute($instance, commit: str_repeat('f', 40));
+        $refused = app(DeployDefaultInstanceAction::class)->execute($instance, operation_steps($instance, app(DeployDefaultInstanceAction::class)), DeploymentRequest::withoutOutput(), str_repeat('f', 40));
 
         expect($refused->failure?->errorCode)->toBe('deployment.commit_not_on_branch')
             ->and($refused->commit)->toBe(str_repeat('f', 40))
@@ -114,7 +114,7 @@ describe('development defaults in place', function (): void {
         $this->fixture->push('second');
         $events = [];
 
-        $result = app(DeployDefaultInstanceAction::class)->execute($this->fixture->instance, new DeploymentRequest(static function ($event) use (&$events): void {
+        $result = app(DeployDefaultInstanceAction::class)->execute($this->fixture->instance, operation_steps($this->fixture->instance, app(DeployDefaultInstanceAction::class)), new DeploymentRequest(static function ($event) use (&$events): void {
             $events[] = $event->value;
         }));
 
@@ -130,7 +130,7 @@ describe('development defaults in place', function (): void {
         $local = plain_git($home, 'rev-parse', 'HEAD');
         $this->fixture->push('second');
 
-        $result = app(DeployDefaultInstanceAction::class)->execute($this->fixture->instance);
+        $result = app(DeployDefaultInstanceAction::class)->execute($this->fixture->instance, operation_steps($this->fixture->instance, app(DeployDefaultInstanceAction::class)), DeploymentRequest::withoutOutput());
 
         expect($result?->failure?->errorCode)->toBe('deployment.branch_diverged')
             ->and(plain_git($home, 'rev-parse', 'HEAD'))->toBe($local)
@@ -143,7 +143,7 @@ describe('development defaults in place', function (): void {
             ...array_map(static fn (int $step): DevelopmentDeployStep => new DevelopmentDeployStep('step-'.$step, 'true'), range(1, 8)),
         ]);
 
-        $result = app(DeployDefaultInstanceAction::class)->execute($this->fixture->instance);
+        $result = app(DeployDefaultInstanceAction::class)->execute($this->fixture->instance, operation_steps($this->fixture->instance, app(DeployDefaultInstanceAction::class)), DeploymentRequest::withoutOutput());
 
         expect($result?->succeeded)->toBeTrue()
             ->and($result?->commands)->toHaveCount(9);
@@ -153,7 +153,7 @@ describe('development defaults in place', function (): void {
         $this->fixture->push('second');
         $lock = DevelopmentDeploymentFixture::holdLifecycleLock($this->fixture->home);
 
-        $result = app(DeployDefaultInstanceAction::class)->execute($this->fixture->instance);
+        $result = app(DeployDefaultInstanceAction::class)->execute($this->fixture->instance, operation_steps($this->fixture->instance, app(DeployDefaultInstanceAction::class)), DeploymentRequest::withoutOutput());
         fclose($lock);
 
         expect($result?->failure?->errorCode)->toBe('instance.lifecycle_busy')
@@ -165,7 +165,7 @@ describe('development defaults in place', function (): void {
         plain_steps($this->fixture->instance, [new DevelopmentDeployStep('hang', 'sleep 60', timeoutSeconds: 1)]);
         $started = microtime(true);
 
-        $result = app(DeployDefaultInstanceAction::class)->execute($this->fixture->instance);
+        $result = app(DeployDefaultInstanceAction::class)->execute($this->fixture->instance, operation_steps($this->fixture->instance, app(DeployDefaultInstanceAction::class)), DeploymentRequest::withoutOutput());
 
         expect($result?->failure?->errorCode)->toBe('deployment.step_failed')
             ->and($result?->commands[0]->result->exitCode)->toBe(143)

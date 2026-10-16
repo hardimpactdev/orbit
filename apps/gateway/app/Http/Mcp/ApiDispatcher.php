@@ -8,8 +8,6 @@ use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Facade;
-use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * Runs one API operation as an internal request on behalf of the MCP caller.
@@ -63,7 +61,7 @@ final readonly class ApiDispatcher
         try {
             $response = $this->kernel->handle($request);
 
-            return new ApiResult($response->getStatusCode(), $this->body($response));
+            return new ApiResult($response->getStatusCode(), (string) $response->getContent());
         } finally {
             // The kernel rebinds the container's request; the MCP transport still answers the caller's.
             $this->app->instance('request', $caller);
@@ -96,33 +94,5 @@ final readonly class ApiDispatcher
         }
 
         return $preserved;
-    }
-
-    /**
-     * A streamed operation, such as a deploy, flushes each event line. Flushing a plain buffer would pass the
-     * lines on to the MCP reply before its headers, so PHP would send them as text/html. The capturing
-     * handler keeps every flushed chunk in the tool result and passes nothing on.
-     */
-    private function body(Response $response): string
-    {
-        if (! $response instanceof StreamedResponse) {
-            return (string) $response->getContent();
-        }
-
-        $body = '';
-
-        ob_start(static function (string $chunk) use (&$body): string {
-            $body .= $chunk;
-
-            return '';
-        });
-
-        try {
-            $response->sendContent();
-        } finally {
-            ob_end_flush();
-        }
-
-        return $body;
     }
 }

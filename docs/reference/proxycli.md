@@ -5,7 +5,6 @@ covers:
   - apps/gateway/app/{Domain,Infrastructure}/ProxyCli/**
   - apps/gateway/app/{Actions,Data,Http/Requests}/ProxyCli/**
   - apps/gateway/app/Http/Controllers/Api/ProxyCliController.php
-  - apps/gateway/app/Infrastructure/Caddy/Build/Sources/ProxyCliCaddySiteSource.php
   - apps/gateway/resources/proxycli/**
   - apps/web/src/pages/Quota.tsx
 ---
@@ -99,11 +98,15 @@ The Process runs `/usr/bin/python3 /var/lib/orbit/proxycli/server.py`. systemd d
 
 While setup holds the collector, `process:destroy` refuses to remove the Process with `process.required_by_proxycli`.
 
-`collector.cli-proxy-api.orbit` is a reserved platform name, so `route:create` refuses it with `route.domain_conflict`. The apex `cli-proxy-api.orbit` is not reserved. Publish the CLIProxyAPI management UI there as a [custom proxy Route](/reference/routes#custom-proxy-routes) to `http://127.0.0.1:8317`.
+`collector.cli-proxy-api.orbit` is a reserved platform name, so `route:create` and `route:update` refuse it with `route.domain_conflict`. The apex `cli-proxy-api.orbit` is not reserved. Publish the CLIProxyAPI management UI there as a [custom proxy Route](/reference/routes#custom-proxy-routes) to `http://127.0.0.1:8317`.
 
 Before it changes anything, setup checks for a Route on `collector.cli-proxy-api.orbit`. It takes over a custom proxy Route on the collector Node to `http://127.0.0.1:8787` with no Process target: one Caddy reload moves the name to the collector site, and setup then removes the Route. Any other Route on that name fails setup with `proxycli.hostname_taken` (409).
 
 Setup runs the shared [Caddy package step](/reference/node-provisioning#package-sources) before it publishes the Caddy site and updates the collector Process in place. An installed Caddy at or above the floor stays in place. The site retries the loopback collector for up to 5 seconds, so a request that arrives during the restart waits instead of failing.
+
+The `proxycli` provider contributes the collector site to the [Node Caddy build](/reference/caddy-configuration#node-caddy-build) through a [plug-in point](/reference/extensions#plug-in-points). The site renders on the collector Node while setup holds the collector and the Node has the collector certificate.
+
+The provider contributes three more pieces through [plug-in points](/reference/extensions#plug-in-points): the `proxycli` artifact of the [Node footprint](/reference/node-provisioning#converge-the-orbit-footprint), the private DNS record `collector.cli-proxy-api.orbit`, and the reservation of that name. The footprint artifact writes a changed collector script on the collector Node. VPN DNS publishes the record while setup holds the collector. The name stays reserved while the extension is off.
 
 ## Collection
 

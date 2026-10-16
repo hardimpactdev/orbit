@@ -12,6 +12,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\NodeSettingsParser;
 use App\Domain\WireGuard\WireGuardEndpoint;
 use App\Models\Node;
+use App\Rules\ValidNodeTld;
 use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -78,10 +79,12 @@ final class ProvisionNodeRequest extends FormRequest
                 },
             ],
             'tld' => [
+                'bail',
                 'nullable',
                 'string',
                 'max:253',
-                'regex:/\A[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\z/D',
+                'regex:'.NodeTld::Pattern,
+                new ValidNodeTld,
             ],
             'public_ssh_port' => ['sometimes', 'integer', 'between:1,65535'],
             'user' => [

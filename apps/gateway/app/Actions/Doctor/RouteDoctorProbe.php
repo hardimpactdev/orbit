@@ -15,6 +15,7 @@ use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\RouteDoctorIssueCode;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\ReservedPrivateHostname;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
@@ -38,7 +39,7 @@ final readonly class RouteDoctorProbe implements DoctorFamilyProbe
     public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
     {
         $routes = $this->servedRoutes($context->node);
-        $issues = $this->lifecycleIssues($routes);
+        $issues = [...$this->lifecycleIssues($routes), ...$this->reservedIssues($routes)];
         $proxies = RouteCustomProxy::query()
             ->with('route')
             ->where('node_id', $context->node->id)
@@ -128,6 +129,32 @@ final readonly class RouteDoctorProbe implements DoctorFamilyProbe
                 "Route [{$route->domain}] lifecycle is not active.",
                 RouteStatus::Active->value,
                 $route->status->value,
+            ))
+            ->all());
+    }
+
+    /**
+     * No Route may hold a reserved name. A Route that took a name before core or an extension reserved it keeps it
+     * until an operator moves it. This reads only stored state, so it also runs when the Node is unreachable.
+     *
+     * @param  Collection<int, Route>  $routes
+     * @return list<DoctorIssueData>
+     */
+    private function reservedIssues(Collection $routes): array
+    {
+        $reserved = ReservedPrivateHostname::names();
+
+        return array_values($routes
+            ->filter(static fn (Route $route): bool => in_array($route->domain, $reserved, true))
+            ->map(static fn (Route $route): DoctorIssueData => new DoctorIssueData(
+                RouteDoctorIssueCode::DomainReserved,
+                DoctorIssueKind::Drift,
+                'route',
+                $route->id,
+                $route->domain,
+                "Route [{$route->domain}] holds a reserved name.",
+                'unreserved',
+                'reserved',
             ))
             ->all());
     }

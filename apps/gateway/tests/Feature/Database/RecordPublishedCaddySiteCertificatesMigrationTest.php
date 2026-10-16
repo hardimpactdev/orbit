@@ -6,6 +6,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\ProxyCli\ProxyCliState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
+use App\Infrastructure\ProxyCli\ProxyCliCaddySiteSource;
 use App\Models\Node;
 use Illuminate\Database\Migrations\Migration;
 
@@ -28,7 +29,7 @@ it('records a certificate for every role site that renders today and for nothing
     expect($records->published($websocket->id, CaddySiteCertificates::Websocket))->toBeTrue()
         ->and($records->published($retrying->id, CaddySiteCertificates::Analytics))->toBeTrue()
         ->and($records->published($gateway->id, CaddySiteCertificates::Metrics))->toBeTrue()
-        ->and($records->published($collector->id, CaddySiteCertificates::ProxyCli))->toBeTrue()
+        ->and($records->published($collector->id, ProxyCliCaddySiteSource::CertificateSlug))->toBeTrue()
         ->and($records->published($removing->id, CaddySiteCertificates::Websocket))->toBeFalse()
         ->and($records->published($removalFailed->id, CaddySiteCertificates::Analytics))->toBeFalse()
         ->and($records->published($metrics->id, CaddySiteCertificates::Metrics))->toBeFalse();

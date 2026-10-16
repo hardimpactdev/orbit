@@ -610,6 +610,75 @@ it('ignores changes only to the production testing environment file', function (
         ->assertOk()->assertJsonPath('data.changed', true)->assertJsonPath('data.runtime_refresh', 'skipped_unchanged');
 });
 
+it('keeps the production runtime refresh pending across cache clears when testing synchronization fails after replacing env', function (): void {
+    environment_api_production($this->instance);
+    $this->access->contents = '';
+    $this->instance->environmentValues()->create(['env_key' => 'QUEUE_CONNECTION', 'env_value' => 'redis']);
+    $connection = DatabaseConnection::query()->create([
+        'slug' => 'env-testing', 'driver' => 'sqlite', 'path' => ':memory:',
+        'owner_instance_id' => $this->instance->id, 'test_database' => ':memory:',
+    ]);
+    DatabaseConnectionTarget::query()->create([
+        'instance_id' => $this->instance->id, 'database_connection_id' => $connection->id, 'prefix' => 'DB',
+    ]);
+    $writer = Mockery::mock(InstanceTestEnvironmentWriter::class);
+    $writer->shouldReceive('mergeTesting')->once()->ordered()->andReturnUsing(function (): never {
+        expect($this->access->contents)->toContain('QUEUE_CONNECTION="redis"')
+            ->and($this->instance->refresh()->environment_runtime_pending_at)->not->toBeNull();
+
+        throw new ResourceOperationException('env.testing_tracking_unknown', 'Git tracking could not be confirmed.', 409);
+    });
+    $writer->shouldReceive('mergeTesting')->times(3)->ordered()->andReturn(InstanceEnvironmentWriteResult::unchanged());
+    app()->instance(InstanceTestEnvironmentWriter::class, $writer);
+    $refreshed = false;
+    $refresh = Mockery::mock(InstanceEnvironmentRuntimeRefresher::class);
+    $refresh->shouldReceive('refresh')->once()->ordered()->andThrow(new ResourceOperationException('env.config_cache_refresh_failed', 'Old cache kept.', 502));
+    $refresh->shouldReceive('refresh')->once()->ordered()->andReturnUsing(function () use (&$refreshed): string {
+        $refreshed = true;
+
+        return 'config_cache_and_opcache_refreshed';
+    });
+    app()->instance(InstanceEnvironmentRuntimeRefresher::class, $refresh);
+    $process = Process::query()->create([
+        'owner_type' => $this->instance->getMorphClass(), 'owner_id' => $this->instance->id,
+        'name' => 'queue', 'runtime' => 'systemd', 'working_directory' => '/home/orbit-env-test/current',
+        'runtime_config' => ['command' => ['php', 'artisan', 'queue:work']],
+        'restart_policy' => 'always', 'desired_state' => 'running', 'status' => 'active',
+    ]);
+    $runtime = Mockery::mock(ProcessRuntimeManager::class);
+    $runtime->shouldReceive('restart')->once()->andReturnUsing(function (Process $restarted) use ($process, &$refreshed): void {
+        expect($restarted->id)->toBe($process->id)
+            ->and($refreshed)->toBeTrue()
+            ->and($this->instance->refresh()->environment_runtime_pending_at)->not->toBeNull();
+    });
+    $runtime->shouldReceive('status')->once()->andReturn('running');
+    app()->instance(ProcessRuntimeManager::class, $runtime);
+    $url = "/api/v1/instances/{$this->instance->id}/environment/sync";
+
+    $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->call('POST', $url, server: ['CONTENT_TYPE' => 'application/json'], content: '{}')
+        ->assertConflict()->assertJsonPath('error.code', 'env.testing_tracking_unknown');
+    expect($this->instance->refresh()->environment_runtime_pending_at)->not->toBeNull()->and($refreshed)->toBeFalse();
+    cache()->flush();
+    expect($this->instance->refresh()->environment_runtime_pending_at)->not->toBeNull();
+    $written = $this->access->contents;
+    $this->access->writeResult = InstanceEnvironmentWriteResult::unchanged();
+
+    $this->call('POST', $url, server: ['CONTENT_TYPE' => 'application/json'], content: '{}')
+        ->assertStatus(502)->assertJsonPath('error.code', 'env.config_cache_refresh_failed');
+    expect($this->instance->refresh()->environment_runtime_pending_at)->not->toBeNull();
+
+    $this->call('POST', $url, server: ['CONTENT_TYPE' => 'application/json'], content: '{}')
+        ->assertOk()->assertJsonPath('data.changed', false)
+        ->assertJsonPath('data.runtime_refresh', 'config_cache_and_opcache_refreshed')
+        ->assertJsonPath('data.restarted_process_ids', [$process->id]);
+    expect($this->access->contents)->toBe($written)->and($this->instance->refresh()->environment_runtime_pending_at)->toBeNull();
+
+    $this->call('POST', $url, server: ['CONTENT_TYPE' => 'application/json'], content: '{}')
+        ->assertOk()->assertJsonPath('data.runtime_refresh', 'skipped_unchanged')
+        ->assertJsonPath('data.restarted_process_ids', []);
+});
+
 it('retries a pending refresh on an unchanged production sync', function (): void {
     environment_api_production($this->instance);
     $this->access->contents = '';
@@ -664,8 +733,10 @@ it('restarts only opted-in running Processes after env-sync refresh and reports 
         $response->assertStatus(502)->assertJsonPath('error.code', 'env.process_restart_failed')
             ->assertJsonPath('error.details.restarted_process_ids', (string) $first->id);
         expect($response->getContent())->not->toContain('SECRET');
+        expect($this->instance->refresh()->environment_runtime_pending_at)->not->toBeNull();
     } else {
         $response->assertOk()->assertJsonPath('data.restarted_process_ids', [$first->id, $second->id]);
+        expect($this->instance->refresh()->environment_runtime_pending_at)->toBeNull();
     }
 })->with([false, true]);
 

@@ -71,6 +71,8 @@ The `websocket`, `analytics`, ProxyCli, and Metrics sites also wait for their ce
 | Service metrics scrape site on port 9103 | A selected Ingress Node | The WireGuard address |
 | `reverb.orbit`, `analytics.orbit`, and `collector.cli-proxy-api.orbit` | The Node that runs the role or collector | The WireGuard address |
 
+An extension adds its own site source through the [Caddy site source plug-in point](/reference/extensions#plug-in-points). The build renders it after core's sources. Its sites cannot use a core source name, such as `gateway`, and its certificate record cannot use a core slug. The ProxyCli collector site comes from such a source.
+
 A Node gets at most one site for each domain, port, and listener. When a Route's current placement and its transition placement render the same site on one Node, the build keeps the current one. Any other duplicate fails the build and names both sites.
 
 ### Move the websocket site

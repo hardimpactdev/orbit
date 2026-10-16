@@ -39,6 +39,15 @@ final readonly class TaskReviewOutcome
 
     public function handleReviewerOutcome(TaskScheduler $scheduler, Task $group, Task $task, TaskSessionObservation $observation): bool
     {
+        try {
+            if ($this->runner->workspaceChecksRunning($group)) {
+                return true;
+            }
+        } catch (TaskCheckException $exception) {
+            $scheduler->recordCommunicationFailure($task, $group, $exception->getMessage());
+
+            return true;
+        }
         $reviewer = $observation->thread(TaskThreadRole::Reviewer);
         // Before this subtask's review is requested, the observed reviewer can be an earlier
         // subtask's thread. A Pi restart of that turn is not this review. Request the review
@@ -426,7 +435,8 @@ final readonly class TaskReviewOutcome
      */
     public function startFinalReview(TaskScheduler $scheduler, Task $group, Task $task, bool $alreadyFetched): void
     {
-        if ($task->status !== TaskStatus::Running || app(TaskWorkspaceHead::class)->held($group)
+        if ($task->status !== TaskStatus::Running || app(TaskWorkspaceHead::class)->held($group,
+            ownCheck: $task->checks()->where('kind', TaskCheckKind::BaseMerge)->latest('id')->first()?->id)
             || ! $this->runner->workspaceRouteReady($scheduler, $group, $task)) {
             return;
         }
@@ -589,6 +599,11 @@ final readonly class TaskReviewOutcome
 
             return 'wait';
         }
+        if ($this->recordedCheckTree($group, $task, $current)) {
+            $this->restartReviewOnHead($scheduler, $group, $task, $reviewer, $current, $receipt->id);
+
+            return 'reopened';
+        }
         $expectedHead = $this->committedApproval($receipt) ? $receipt->commit_sha : $task->review_workspace_head;
         if (is_string($expectedHead) && $expectedHead !== '' && $current->head !== $expectedHead) {
             $this->restartReviewOnHead($scheduler, $group, $task, $reviewer, $current, $receipt->id);
@@ -609,8 +624,8 @@ final readonly class TaskReviewOutcome
     }
 
     /**
-     * Older deployments consumed the receipt and asked for assistance after Orbit moved HEAD.
-     * Run before the assistance gate; only Orbit's exact recorded merge tree can lift that failure.
+     * Older deployments could consume a receipt and ask for assistance after Orbit changed the workspace.
+     * Run before the assistance gate; only an exact recorded Orbit check or merge tree can lift that failure.
      */
     public function recoverStaleReview(TaskScheduler $scheduler, Task $group, Task $task): bool
     {
@@ -625,6 +640,9 @@ final readonly class TaskReviewOutcome
             return false;
         }
         try {
+            if ($this->runner->workspaceChecksRunning($group)) {
+                return false;
+            }
             $current = $this->workspaceSnapshot($group);
         } catch (TaskCheckException $exception) {
             $reason = self::StaleReviewInspectionFailure.$exception->getMessage();
@@ -633,7 +651,7 @@ final readonly class TaskReviewOutcome
 
             return false;
         }
-        if ($current->head === $head || ! $this->recordedMainMerge($group, $current)) {
+        if (! (($current->head !== $head && $this->recordedMainMerge($group, $current)) || $this->recordedCheckTree($group, $task, $current))) {
             return false;
         }
         $observation = $this->observer->observe($group, $task);
@@ -675,6 +693,17 @@ final readonly class TaskReviewOutcome
                 'Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder,
                 'Checks still failed after the reminder. The workspace changed during the review. Revert your changes and request the changes from the implementer instead.',
             ], true));
+    }
+
+    private function recordedCheckTree(Task $group, Task $task, TaskWorkspaceSnapshot $current): bool
+    {
+        // A stored result proves Orbit observed this exact tree, not that the reviewer approved it.
+        // Re-review it rather than applying the old receipt or blaming the reviewer. This also
+        // covers old baselines captured while a check's temporary untracked files existed.
+        return ($task->review_workspace_head !== $current->head || $task->review_workspace_tree !== $current->tree)
+            && TaskCheck::query()->whereIn('task_id', $group->tasks()->select('id'))
+                ->where('status', '!=', TaskCheckStatus::Running)
+                ->where('head_after', $current->head)->where('tree_after', $current->tree)->exists();
     }
 
     private function recordedMainMerge(Task $group, TaskWorkspaceSnapshot $current): bool
@@ -727,7 +756,8 @@ final readonly class TaskReviewOutcome
         $group->refresh();
         TaskFinalReview::log($group, 'workspace head changed during review', [
             'subtask_id' => $task->id, 'previous_head' => $previousHead, 'head' => $current->head,
-            'cause' => $this->recordedMainMerge($group, $current) ? 'orbit_main_merge' : 'unattributed_head_change',
+            'cause' => $this->recordedMainMerge($group, $current) ? 'orbit_main_merge'
+                : ($this->recordedCheckTree($group, $task, $current) ? 'orbit_check' : 'unattributed_head_change'),
         ]);
         $this->nudgeReviewer($scheduler, $task, $reviewer);
 
@@ -829,8 +859,10 @@ final readonly class TaskReviewOutcome
             return;
         }
         $group = $task->parent()->with('taskable')->firstOrFail();
-
         try {
+            if ($this->runner->workspaceChecksRunning($group)) {
+                return;
+            }
             // Read at send time. Do not copy the hash from an earlier check row: the request may have waited.
             $snapshot = $this->workspaceSnapshot($group);
             if ($existing === null && $this->spawner instanceof TaskAgentSpawner) {

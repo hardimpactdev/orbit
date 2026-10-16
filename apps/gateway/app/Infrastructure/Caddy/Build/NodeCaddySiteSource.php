@@ -7,7 +7,8 @@ namespace App\Infrastructure\Caddy\Build;
 use App\Models\Node;
 
 /**
- * Renders the sites one role or feature serves on a Node from committed database state only.
+ * Renders the sites one role or feature serves on a Node from committed database state only. An extension contributes
+ * a {@see ContributedCaddySiteSource}.
  */
 interface NodeCaddySiteSource
 {
