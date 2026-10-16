@@ -64,8 +64,8 @@ return [
     // PHP-FPM and Caddy end a Gateway request after 600 seconds. The command deadline ends remote
     // work 30 seconds earlier, so a slow command fails with an error and records its Activity.
     'command_timeout' => 570.0,
-    // PHP-FPM checks its 600-second request limit on a heartbeat of a third of it, so a Gateway request,
-    // streamed deployments included, ends by about 800 seconds. An Activity still `running` at 900
+    // PHP-FPM checks its 600-second request limit on a heartbeat of a third of it, so a Gateway request
+    // ends by about 800 seconds. An Activity still `running` at 900
     // seconds belongs to a request that was killed.
     'activity_interrupted_after' => 900,
     'websocket' => [

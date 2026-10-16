@@ -10,7 +10,7 @@ The SDK models exactly 214 concrete public Gateway API operations:
 - Project: list, show, create, update, and remove; development deploy step list, create, update, and remove. Development steps carry a name, command, timeout, and required boolean. Omit null optional fields and preserve explicit false.
 - Development node exclusion: add, list, and remove from either the Project or the Node.
 - Project runtime definition: process and Schedule list, create, show, update, and destroy.
-- Operation: list, show, and cancel. Instance deploy returns the queued operation.
+- Operation: list, show, and cancel. Instance deploy and rollback return the queued operation.
 - Instance: list, show, create, register, rename, clone, transfer, remove, update, deploy-step create, list, update, and destroy, deploy, rollback, retained-release list, deployment-history list and show, environment import, environment update, environment synchronization, dependency inventory read, dependency scan, dependency update, and full-domain and directory instance resolution through the concise Instance routes.
 - Route: list, show, create, update, target set, target clear, and remove.
 - Process: list, add, start, stop, restart, logs, and remove.
@@ -28,7 +28,7 @@ The SDK models exactly 214 concrete public Gateway API operations:
 - Vault: status, setup, sync, and teardown.
 - Tasks: enable, disable, status, group list, show, create, update, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, question list and close, and agent thread list and show.
 
-The four abstract request bases are implementation details, not extra Gateway
+The five abstract request bases are implementation details, not extra Gateway
 operations. Keep the public API typed and small.
 
 - Use numeric resource IDs in routes where the Gateway contract does. Keep a
@@ -52,12 +52,11 @@ operations. Keep the public API typed and small.
   eligibility, destination reservation, downtime, Route cutover, and cleanup.
 - Keep Instance deployment transport limited to named deploy-step create,
   list, update, and destroy, Instance branch update, explicit deploy and
-  rollback streams, and retained-release inspection. Preserve optional
+  rollback starts, and retained-release inspection. Preserve optional
   step-timeout omission, require an explicit empty deployment body, and send
-  only the selected release for rollback. Decode bounded correlated events
-  incrementally, close a cancelled response, and never retry or replay a
-  deployment stream. The Gateway owns deployment validation, execution,
-  cancellation, and recovery policy.
+  only the selected release for rollback. Deploy and rollback return the queued
+  operation. The Gateway owns deployment validation, execution, cancellation,
+  and recovery policy.
 - Treat configured deployment commands and decoded application output as
   sensitive transport values. Keep them out of generic debug and serialization
   representations while preserving their intended request or event value.

@@ -568,7 +568,7 @@ describe('repository guidance bootstrap', function (): void {
                 'Keep Instance environment transport limited to an ID-or-domain selector, optional import replacement, one key and string value for update, an empty synchronization body, and the bounded value-free operation result.',
             )
             ->toContain(
-                'Keep Instance deployment transport limited to named deploy-step create, list, update, and destroy, Instance branch update, explicit deploy and rollback streams, and retained-release inspection.',
+                'Keep Instance deployment transport limited to named deploy-step create, list, update, and destroy, Instance branch update, explicit deploy and rollback starts, and retained-release inspection.',
             )
             ->toContain(
                 "Keep Project runtime definition transport limited to a numeric Project ID, a definition name for item operations, and the caller's exact JSON document for create and full update.",
@@ -602,7 +602,7 @@ describe('repository guidance bootstrap', function (): void {
                 'Doctor accepts the current Gateway family set, including Schedule and Database connection.',
                 "Create and update requests send the caller's exact JSON document to the Gateway.",
                 'The SDK exposes typed deploy-step, deploy, rollback, and retained-release operations.',
-                'Deployment streams are incremental, closeable, bounded, correlated, and never retried or replayed.',
+                'Deploy and rollback return the queued operation, which the operation requests follow.',
                 'The SDK exposes typed import, update, and synchronization requests for Instance environment configuration.',
                 'Environment values remain outside normal SDK diagnostics and errors.',
             );

@@ -42,7 +42,7 @@ The Project schema includes `task_workspace_routed`, which describes routing for
 
 The generated Process schema includes the installed PATCH update operation, nullable `working_directory`, and Docker environment maps for create and update. A null directory means the image default, not an empty path. These types describe [Process updates](/reference/processes-and-schedules#update-in-place); they add no web editing controls.
 
-The generated Process schema includes nullable `user`, the explicitly selected account or null for the derived account. Process create accepts `user` only for a Node systemd Process without a preset. [Processes and schedules](/reference/processes-and-schedules#node-account) owns the account validation and working-directory defaults. The schema also carries `restart_on_deploy` on Process create, update, and responses, and `process_restart` in deployment phase events.
+The generated Process schema includes nullable `user`, the explicitly selected account or null for the derived account. Process create accepts `user` only for a Node systemd Process without a preset. [Processes and schedules](/reference/processes-and-schedules#node-account) owns the account validation and working-directory defaults. The schema also carries `restart_on_deploy` on Process create, update, and responses.
 
 Extension navigation follows the Gateway's enabled set: each page and its route depend only on their own extension. Tasks pages need only the `tasks` extension. The Quota page needs only `proxycli`, and it shows provider quota whenever `proxycli` is enabled and its collector is configured, whether or not Tasks is enabled. The Project Documents section and its route need only `documents`; the page lives in `src/extensions/documents`. Tasks, ProxyCLI, and Documents links and routes are absent while their extension is disabled. The `vault` and `conn` extensions have no pages. The Gateway API remains authoritative, so a stale direct request still receives `extension.disabled` rather than granting access.
 
@@ -377,7 +377,7 @@ The page shows when each snapshot was observed and distinguishes unscanned, abse
 
 The Instance overview shows the latest 25 deployments, in the order returned by the Gateway.
 
-Its Deploy action starts an `instance.deploy` [operation](/reference/operations) with the same request as `instance:deploy`. A Deploy pane then shows each step's status and the running step's output tail. The pane subscribes to `private-operation.{id}`, reads the operation, and reads it again with `after_sequence` for each newer event, as [Follow an operation over Reverb](/reference/operations#follow-an-operation-over-reverb) describes. Without realtime it reads every `poll_after_seconds`. While a deploy of the Instance runs, the overview shows it, also when another client started it.
+Its Deploy action starts an `instance.deploy` [operation](/reference/operations) with the same request as `instance:deploy`. A Deploy pane then shows each step's status and the running step's output tail. The pane subscribes to `private-operation.{id}`, reads the operation, and reads it again with `after_sequence` for each newer event, as [Follow an operation over Reverb](/reference/operations#follow-an-operation-over-reverb) describes. Without realtime it reads every `poll_after_seconds`. While a deploy or a rollback of the Instance runs, the overview shows it, also when another client started it. The pane's title names the kind: Deploy or Rollback.
 
 ## Database tables
 

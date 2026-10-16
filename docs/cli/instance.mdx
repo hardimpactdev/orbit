@@ -19,7 +19,7 @@ An Instance is one copy of a Project on one Node. On an `app-dev` Node it owns a
 
 Instance JSON includes nullable `seed_path` and `seed_commit`. On `default`, these name its checkout and the last commit that deployed there. Read them before creating a linked worktree for `instance:register`; use that commit rather than a newer `origin/main`. Human tables keep their existing columns.
 
-Every command accepts `--json`. Machine output never supplies consent. Human list commands use tables, with labeled records when the terminal is too narrow; detail commands show a tree and slow requests show progress. `instance:rollback` returns newline-delimited JSON (NDJSON) instead of one document.
+Every command accepts `--json`. Machine output never supplies consent. Human list commands use tables, with labeled records when the terminal is too narrow; detail commands show a tree and slow requests show progress.
 
 Placement commands create, adopt, inspect, and remove an Instance on one Node.
 
@@ -601,7 +601,7 @@ orbit instance:deploy 15
 orbit instance:deploy 15 --json > deploy.json
 ```
 
-A failure during release fetch, environment synchronization, or a `before_activation` step leaves the prior `current` selected. A failure during PHP cache refresh, Process restart, or an `after_activation` step leaves the fresh release selected. Deployment, rollback, deploy-step changes, environment changes, and removal share one operation owner per Instance, so a competing request waits or returns a busy refusal. A second deploy while the first one is queued or running returns `operation.target_busy`.
+A failure during release fetch, environment synchronization, or a `before_activation` step leaves the prior `current` selected. A failure during PHP cache refresh, Process restart, or an `after_activation` step leaves the fresh release selected. Deployment, rollback, deploy-step changes, environment changes, and removal share one operation owner per Instance, so a competing request waits or returns a busy refusal. A second deploy while the first one is queued or running returns `operation.target_busy`. A rollback cancels a deploy that no worker has started; see [`instance:rollback`](#orbit-instancerollback).
 
 <Note>
 Only `default` can be deployed on an app-dev Node. Other development Instances still return `deployment_config.unavailable`. Releases, rollback, and per-Instance deploy-step operations remain production-only; `instance:release:list` shows none for a development default.
@@ -631,22 +631,18 @@ orbit instance:rollback <instance> --release=NAME [--json]
 | --- | --- |
 | `--release=NAME` | Retained release name from `instance:release:list`. |
 
-The command streams newline-delimited JSON events while the Gateway works. Human output shows a progress tree, and output from commands prints above it, labeled and escaped. `--json` writes the events as NDJSON, one event per line. Pressing Ctrl-C closes the connection at once, and the CLI submits no second request. Once the Gateway switches the release, it finishes PHP refresh and Process restarts even if the client disconnects.
+The command starts an `instance.rollback` [operation](/reference/operations) and follows it until it ends, as [`instance:deploy`](#orbit-instancedeploy) does: over Reverb, or every `poll_after_seconds` without it. Human output shows a progress tree of the steps `Find retained release`, `Activate release`, `Refresh PHP cache` for an Instance that serves PHP, and `Restart Processes`. New output of the running step prints above the tree, labeled and escaped. The final lines add the failed step, the error code, the selected release when available, the operation ID, and the request ID. `--json` prints nothing while it follows, then the final operation document with every step.
 
-| Event type | Fields |
+A rollback wins over a deploy of the same Instance that no worker has started: the deploy ends `cancelled` with `operation.superseded`, and the rollback starts. A deploy that a worker has started keeps the Instance, also while it waits to resume after a lost worker, and the rollback returns `operation.target_busy` with the deploy's operation ID. [One operation at a time](/reference/deployments#one-operation-at-a-time) gives the rules.
+
+Pressing Ctrl-C stops following, not the rollback. The CLI prints the command that shows the operation and exits nonzero. It sends no cancel request; [`operation:cancel`](/cli/operation#orbit-operationcancel) stops a rollback before its `activation` step. Once the release is selected, the rollback finishes PHP refresh and Process restarts.
+
+| Outcome | Exit status |
 | --- | --- |
-| `phase` | `phase` is `rollback` or `process_restart`. |
-| `output` | `stream` is `stdout` or `stderr`. `data_base64` carries at most 16 KiB of decoded bytes. |
-| `result` | `status` is `succeeded` or `failed`, with nullable `failed_step`, `error_code`, and `selected_release`. This is the final line. |
-
-Every event carries `type`, a monotonically increasing `sequence`, and the `request_id`.
-
-| Stream outcome | Exit status |
-| --- | --- |
-| The final event is a succeeded result. | `0` |
-| The final event is a failed result. | Nonzero. The command names the failed boundary and the selected release when the result includes one. |
-| The stream is malformed, truncated, or ends without a result. | Nonzero. The CLI never infers success from earlier events. |
-| You press Ctrl-C. | Nonzero. The CLI closes its connection and submits no second request. |
+| The operation succeeded. | `0` |
+| The operation failed or was cancelled. | Nonzero. The command names the failed step and the selected release when the result includes one. |
+| The Gateway refused the request, such as `operation.target_busy` while a deploy runs, or `rollback.release_not_retained` for a release the Instance does not retain. | Nonzero, with the one-line error envelope. Nothing changes. |
+| You pressed Ctrl-C. | `130`. The operation keeps running. |
 
 ```bash
 orbit instance:release:list 15
@@ -659,7 +655,7 @@ Orbit selects the older code only. You own any data or application recovery that
 
 ## orbit instance:deployment:list
 
-List the deployment history the Gateway recorded for a production Instance, newest first. The Gateway writes one row when a deploy operation or `instance:rollback` starts and fills it in when the run finishes, and keeps the last 50 rows per Instance.
+List the deployment history the Gateway recorded for a production Instance, newest first. The Gateway writes one row when a worker starts a deploy or rollback operation and fills it in when the run finishes, and keeps the last 50 rows per Instance.
 
 ```bash
 orbit instance:deployment:list <instance> [--json]
@@ -687,7 +683,7 @@ orbit instance:deployment:show <deployment> [--json]
 | --- | --- | --- |
 | `deployment` | yes | Numeric deployment ID from `instance:deployment:list`. |
 
-The detail tree shows the Instance ID, release, branch, commit, started and finished times, duration, status, failed step, error code, selected release, and who triggered it. The phases table repeats the `phase` and `step_name` values the run streamed. The log reproduces the run's standard output and standard error lines in order.
+The detail tree shows the Instance ID, release, branch, commit, started and finished times, duration, status, failed step, error code, selected release, and who triggered it. The phases table repeats the `phase` and `step_name` values the run recorded. The log reproduces the run's standard output and standard error lines in order.
 
 ```bash
 orbit instance:deployment:show 42

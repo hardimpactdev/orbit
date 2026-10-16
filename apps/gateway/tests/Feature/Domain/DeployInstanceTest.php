@@ -8,7 +8,6 @@ use App\Actions\Instances\InstantiateProjectRuntimeDefinitionsAction;
 use App\Actions\Instances\RollbackInstanceAction;
 use App\Actions\Instances\StartInstanceDeployAction;
 use App\Actions\Instances\SynchronizeInstanceEnvironmentAction;
-use App\Domain\Instances\Deployment\DeploymentCancellation;
 use App\Domain\Instances\Deployment\DeploymentEvent;
 use App\Domain\Instances\Deployment\DeploymentFailureBoundary;
 use App\Domain\Instances\Deployment\DeploymentOutputStream;
@@ -16,7 +15,6 @@ use App\Domain\Instances\Deployment\DeploymentRelease;
 use App\Domain\Instances\Deployment\DeploymentReleaseState;
 use App\Domain\Instances\Deployment\DeploymentRequest;
 use App\Domain\Instances\Deployment\DeploymentStep;
-use App\Domain\Instances\Deployment\InlineDeploymentSteps;
 use App\Domain\Instances\Deployment\ProductionDeployment;
 use App\Domain\Instances\Deployment\SharedPaths;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
@@ -71,7 +69,7 @@ it('does not run the env-sync runtime refresher during deployment', function ():
     $trace = new Orb219DeploymentTrace;
     [$deploy] = orb219_actions($trace, app(SynchronizeInstanceEnvironmentAction::class));
 
-    expect($deploy->execute($instance, new InlineDeploymentSteps)->succeeded)->toBeTrue();
+    expect($deploy->execute($instance, operation_steps($instance, $deploy), DeploymentRequest::withoutOutput())->succeeded)->toBeTrue();
 });
 
 it('resolves shared paths from the production Instance and Laravel application directory', function (string $type, string $root, ?array $declared, array $expected): void {
@@ -126,7 +124,7 @@ it('restarts only active opted-in Instance Processes on the selected release aft
             $events[] = $event;
         },
     );
-    $result = $rollback ? $rollbackAction->execute($instance, $release, $request) : $deploy->execute($instance, new InlineDeploymentSteps, $request);
+    $result = $rollback ? $rollbackAction->execute($instance, $release, operation_steps($instance, $rollbackAction), $request) : $deploy->execute($instance, operation_steps($instance, $deploy), $request);
 
     expect($result->succeeded)->toBeTrue()
         ->and($trace->entries)->toBe([
@@ -164,7 +162,7 @@ it('fails after activation and reports a Process restart failure without running
             $events[] = $event;
         },
     );
-    $result = $rollback ? $rollbackAction->execute($instance, $release, $request) : $deploy->execute($instance, new InlineDeploymentSteps, $request);
+    $result = $rollback ? $rollbackAction->execute($instance, $release, operation_steps($instance, $rollbackAction), $request) : $deploy->execute($instance, operation_steps($instance, $deploy), $request);
 
     expect($result->succeeded)->toBeFalse()
         ->and($result->failure?->boundary)->toBe(DeploymentFailureBoundary::AfterActivation)
@@ -177,44 +175,6 @@ it('fails after activation and reports a Process restart failure without running
         ->and($events[0]->stream)->toBe(DeploymentOutputStream::Stderr)
         ->and($events[0]->important)->toBeTrue();
 })->with([false, true]);
-
-it('honours rollback cancellation only before activation', function (string $cancelAt, bool $finishes): void {
-    $instance = orb219_deployment_instance([], php: true);
-    $process = Process::query()->create([
-        'owner_type' => $instance->getMorphClass(), 'owner_id' => $instance->id, 'name' => 'horizon',
-        'runtime' => 'systemd', 'runtime_config' => ['command' => ['/usr/bin/php', 'artisan', 'horizon']],
-        'restart_policy' => 'always', 'desired_state' => 'running', 'status' => 'active',
-    ]);
-    $trace = new Orb219DeploymentTrace;
-    $runtime = Mockery::mock(ProcessRuntimeManager::class);
-    if ($finishes) {
-        $runtime->shouldReceive('restart')->once()->andReturnUsing(function (Process $fresh) use ($trace): void {
-            $trace->entries[] = 'restart:'.$fresh->id;
-        });
-        $runtime->shouldReceive('status')->once()->andReturn('running');
-    } else {
-        $runtime->shouldNotReceive('restart');
-    }
-    app()->instance(ProcessRuntimeManager::class, $runtime);
-    [, $rollback] = orb219_actions($trace);
-    $cancellation = new DeploymentCancellation(fn (): bool => in_array($cancelAt, $trace->entries, true));
-
-    $result = $rollback->execute($instance, 'retained', new DeploymentRequest(cancellation: $cancellation));
-
-    expect($cancellation->requested())->toBeTrue()
-        ->and($result->succeeded)->toBe($finishes)
-        ->and($result->failure?->errorCode)->toBe($finishes ? null : 'deployment.cancelled')
-        ->and($result->selectedRelease?->name)->toBe($finishes ? 'retained' : 'initial')
-        ->and($trace->entries)->toBe([
-            'lock:1', 'selected:initial', 'retained:retained',
-            ...($finishes ? ['activate:retained', 'cache:retained', 'restart:'.$process->id] : ['selected:initial']),
-        ])
-        ->and($trace->runtimeEvents)->toBe($finishes ? ['converge:retained', 'cache:retained'] : []);
-})->with([
-    'before activation' => ['retained:retained', false],
-    'after activation' => ['activate:retained', true],
-    'after PHP refresh' => ['cache:retained', true],
-]);
 
 it('does not restart a Process stopped before the deployment acquires its runtime lease', function (): void {
     $instance = orb219_deployment_instance([]);
@@ -236,7 +196,7 @@ it('does not restart a Process stopped before the deployment acquires its runtim
     [$deploy] = orb219_actions(new Orb219DeploymentTrace);
     $events = [];
 
-    $result = $deploy->execute($instance, new InlineDeploymentSteps, new DeploymentRequest(
+    $result = $deploy->execute($instance, operation_steps($instance, $deploy), new DeploymentRequest(
         output: function (DeploymentEvent $event) use (&$events): void {
             $events[] = $event;
         },
@@ -263,7 +223,7 @@ it('captures one configuration and preserves the complete deployment order', fun
     });
     [$deploy] = orb219_actions($trace, $environment);
 
-    $result = $deploy->execute($instance, new InlineDeploymentSteps);
+    $result = $deploy->execute($instance, operation_steps($instance, $deploy), DeploymentRequest::withoutOutput());
 
     expect($result->succeeded)
         ->toBeTrue()
@@ -299,8 +259,8 @@ it('reconciles PHP after deployment and rollback select the release and before c
     $trace = new Orb219DeploymentTrace(firstDeployment: true);
     [$deploy, $rollback] = orb219_actions($trace);
 
-    expect($deploy->execute($instance, new InlineDeploymentSteps)->succeeded)->toBeTrue();
-    expect($rollback->execute($instance, 'retained')->succeeded)->toBeTrue();
+    expect($deploy->execute($instance, operation_steps($instance, $deploy), DeploymentRequest::withoutOutput())->succeeded)->toBeTrue();
+    expect($rollback->execute($instance, 'retained', operation_steps($instance, $rollback), DeploymentRequest::withoutOutput())->succeeded)->toBeTrue();
     expect($trace->runtimeEvents)->toBe(['converge:fresh', 'cache:fresh', 'converge:retained', 'cache:retained']);
 })->with(['root public' => 'public', 'nested Laravel' => 'server/web/public']);
 
@@ -309,7 +269,7 @@ it('reports a failed PHP reconciliation without refreshing the cache after selec
     $trace = new Orb219DeploymentTrace(failAt: 'converge:'.$release);
     [$deploy, $rollbackAction] = orb219_actions($trace);
 
-    $result = $rollback ? $rollbackAction->execute($instance, 'retained') : $deploy->execute($instance, new InlineDeploymentSteps);
+    $result = $rollback ? $rollbackAction->execute($instance, 'retained', operation_steps($instance, $rollbackAction), DeploymentRequest::withoutOutput()) : $deploy->execute($instance, operation_steps($instance, $deploy), DeploymentRequest::withoutOutput());
 
     expect($result->succeeded)->toBeFalse()
         ->and($result->failure?->boundary)->toBe(DeploymentFailureBoundary::CacheRefresh)
@@ -355,7 +315,7 @@ it('installs captured runtime definitions only after deployment selects the rele
     );
     [$deploy] = orb219_actions(new Orb219DeploymentTrace, definitions: $definitions);
 
-    $result = $deploy->execute($instance, new InlineDeploymentSteps);
+    $result = $deploy->execute($instance, operation_steps($instance, $deploy), DeploymentRequest::withoutOutput());
 
     expect($result->succeeded)->toBeTrue()
         ->and($process->refresh()->status)->toBe(LifecycleStatus::Active)
@@ -367,7 +327,7 @@ it('runs no application command or cache refresh for an empty non-PHP deployment
     $trace = new Orb219DeploymentTrace;
     [$deploy] = orb219_actions($trace);
 
-    $result = $deploy->execute($instance, new InlineDeploymentSteps);
+    $result = $deploy->execute($instance, operation_steps($instance, $deploy), DeploymentRequest::withoutOutput());
 
     expect($result->succeeded)
         ->toBeTrue()
@@ -390,7 +350,7 @@ it('reports removed and in-use releases and a failed cleanup without failing a d
     [$deploy] = orb219_actions($trace);
     $events = [];
 
-    $result = $deploy->execute($instance, new InlineDeploymentSteps, new DeploymentRequest(static function (DeploymentEvent $event) use (&$events): void {
+    $result = $deploy->execute($instance, operation_steps($instance, $deploy), new DeploymentRequest(static function (DeploymentEvent $event) use (&$events): void {
         $events[] = $event;
     }));
 
@@ -412,7 +372,7 @@ it('keeps the observed old selection when deployment fails before activation', f
     $trace = new Orb219DeploymentTrace(failAt: 'step:fail');
     [$deploy] = orb219_actions($trace);
 
-    $result = $deploy->execute($instance, new InlineDeploymentSteps);
+    $result = $deploy->execute($instance, operation_steps($instance, $deploy), DeploymentRequest::withoutOutput());
 
     expect($result->succeeded)
         ->toBeFalse()
@@ -437,7 +397,7 @@ it('keeps the new selection and persistent effects when deployment fails after a
     $trace = new Orb219DeploymentTrace(failAt: 'step:fail');
     [$deploy] = orb219_actions($trace);
 
-    $result = $deploy->execute($instance, new InlineDeploymentSteps);
+    $result = $deploy->execute($instance, operation_steps($instance, $deploy), DeploymentRequest::withoutOutput());
 
     expect($result->succeeded)
         ->toBeFalse()
@@ -460,7 +420,7 @@ it('reports the observed selection when deployment activation switches before fa
     );
     [$deploy] = orb219_actions($trace);
 
-    $result = $deploy->execute($instance, new InlineDeploymentSteps);
+    $result = $deploy->execute($instance, operation_steps($instance, $deploy), DeploymentRequest::withoutOutput());
 
     expect($result->succeeded)
         ->toBeFalse()
@@ -491,7 +451,7 @@ it('reports the observed selection when rollback activation switches before fail
     );
     [, $rollback] = orb219_actions($trace);
 
-    $result = $rollback->execute($instance, 'retained');
+    $result = $rollback->execute($instance, 'retained', operation_steps($instance, $rollback), DeploymentRequest::withoutOutput());
 
     expect($result->succeeded)
         ->toBeFalse()
@@ -522,7 +482,7 @@ it('preserves the activation failure and last known selection when reinspection 
     );
     [$deploy] = orb219_actions($trace);
 
-    $result = $deploy->execute($instance, new InlineDeploymentSteps);
+    $result = $deploy->execute($instance, operation_steps($instance, $deploy), DeploymentRequest::withoutOutput());
 
     expect($result->succeeded)
         ->toBeFalse()
@@ -554,7 +514,7 @@ it('reports each infrastructure failure boundary with its observed selection', f
     $trace = new Orb219DeploymentTrace(failAt: $failure);
     [$deploy] = orb219_actions($trace);
 
-    $result = $deploy->execute($instance, new InlineDeploymentSteps);
+    $result = $deploy->execute($instance, operation_steps($instance, $deploy), DeploymentRequest::withoutOutput());
 
     expect($result->succeeded)
         ->toBeFalse()
@@ -576,7 +536,7 @@ describe('a deployment pinned to a commit', function (): void {
         [$deploy] = orb219_actions($trace);
         $commit = str_repeat('c', 40);
 
-        $result = $deploy->execute($instance, new InlineDeploymentSteps, commit: $commit);
+        $result = $deploy->execute($instance, operation_steps($instance, $deploy), DeploymentRequest::withoutOutput(), $commit);
 
         expect($result->succeeded)->toBeTrue()
             ->and($result->commit)->toBe($commit)
@@ -592,7 +552,7 @@ describe('a deployment pinned to a commit', function (): void {
         $trace->notOnBranch = $commit;
         [$deploy] = orb219_actions($trace);
 
-        $result = $deploy->execute($instance, new InlineDeploymentSteps, commit: $commit);
+        $result = $deploy->execute($instance, operation_steps($instance, $deploy), DeploymentRequest::withoutOutput(), $commit);
 
         expect($result->succeeded)->toBeFalse()
             ->and($result->failure?->boundary)->toBe(DeploymentFailureBoundary::Preparation)
@@ -607,7 +567,7 @@ describe('a deployment pinned to a commit', function (): void {
         $instance->update(['deployment_branch' => 'bad..branch']);
         [$deploy] = orb219_actions(new Orb219DeploymentTrace);
 
-        $result = $deploy->execute($instance, new InlineDeploymentSteps, commit: str_repeat('e', 40));
+        $result = $deploy->execute($instance, operation_steps($instance, $deploy), DeploymentRequest::withoutOutput(), str_repeat('e', 40));
 
         expect($result->failure?->errorCode)->toBe('deployment_config.unavailable')
             ->and($result->commit)->toBe(str_repeat('e', 40));
@@ -656,7 +616,7 @@ it('reports a deployment or rollback that ran out of time as deployment.deadline
     $instance = orb219_deployment_instance([]);
     [$deploy, $rollbackAction] = orb219_actions(new Orb219DeploymentTrace(failAt: $failAt));
 
-    $result = $rollback ? $rollbackAction->execute($instance, 'retained') : $deploy->execute($instance, new InlineDeploymentSteps);
+    $result = $rollback ? $rollbackAction->execute($instance, 'retained', operation_steps($instance, $rollbackAction), DeploymentRequest::withoutOutput()) : $deploy->execute($instance, operation_steps($instance, $deploy), DeploymentRequest::withoutOutput());
 
     expect($result->succeeded)->toBeFalse()
         ->and($result->failure?->errorCode)->toBe('deployment.deadline_exceeded');
@@ -673,7 +633,7 @@ it('selects retained code without fetching, synchronizing, running steps, or cha
     [, $rollback] = orb219_actions($trace);
     $instance->environmentValues()->create(['env_key' => 'DATABASE_URL', 'env_value' => 'kept']);
 
-    $result = $rollback->execute($instance, 'retained');
+    $result = $rollback->execute($instance, 'retained', operation_steps($instance, $rollback), DeploymentRequest::withoutOutput());
 
     expect($result->succeeded)
         ->toBeTrue()
@@ -698,7 +658,7 @@ it('refuses an unsafe rollback name before any remote mutation', function (): vo
     $trace = new Orb219DeploymentTrace;
     [, $rollback] = orb219_actions($trace);
 
-    $result = $rollback->execute($instance, '../foreign');
+    $result = $rollback->execute($instance, '../foreign', operation_steps($instance, $rollback), DeploymentRequest::withoutOutput());
 
     expect($result->succeeded)
         ->toBeFalse()
@@ -715,7 +675,7 @@ it('uses the same action for a first deployment and adds no deployment history s
     $trace = new Orb219DeploymentTrace(firstDeployment: true);
     [$deploy] = orb219_actions($trace);
 
-    $result = $deploy->execute($instance, new InlineDeploymentSteps);
+    $result = $deploy->execute($instance, operation_steps($instance, $deploy), DeploymentRequest::withoutOutput());
     $tables = collect(DB::select("select name from sqlite_master where type = 'table'"))->pluck('name');
 
     expect($result->succeeded)

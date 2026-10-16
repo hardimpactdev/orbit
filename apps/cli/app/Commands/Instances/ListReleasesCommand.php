@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace App\Commands\Instances;
 
+use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Requests\Deployments\ListInstanceReleasesRequest;
 use Orbit\Sdk\Responses\Deployments\DeploymentReleasesResponse;
 
-final class ListReleasesCommand extends DeploymentCommand
+final class ListReleasesCommand extends GatewayCommand
 {
     #[\Override]
     protected $signature = 'instance:release:list

@@ -18,7 +18,7 @@ final readonly class ApiResult
     }
 
     /**
-     * The JSON document, or each line of a newline-delimited JSON stream as one `events` entry.
+     * The JSON document, or null when the body is empty or not a JSON object.
      *
      * @return array<string, mixed>|null
      */
@@ -28,31 +28,7 @@ final readonly class ApiResult
             return null;
         }
 
-        $document = $this->decode($this->body);
-
-        if ($document !== null) {
-            return $document;
-        }
-
-        $events = [];
-
-        foreach (preg_split('/\R/', trim($this->body)) ?: [] as $line) {
-            $event = $this->decode($line);
-
-            if ($event === null) {
-                return null;
-            }
-
-            $events[] = $event;
-        }
-
-        return ['events' => $events];
-    }
-
-    /** @return array<string, mixed>|null */
-    private function decode(string $json): ?array
-    {
-        $decoded = JsonObjects::decode($json);
+        $decoded = JsonObjects::decode($this->body);
 
         if ($decoded instanceof stdClass) {
             return [];

@@ -96,6 +96,16 @@ it("deploys an instance and follows its operation step by step until it ends", a
     ).toBe(true);
 });
 
+it("follows a rollback that another client started in a pane of its own", async () => {
+    const app = await openApp("/instances");
+    await app.gateway.transport("POST", "/api/v1/instances/1/rollback", { release: "initial" });
+    await app.router.navigate({ to: "/$section/$id", params: { section: "instances", id: "1" } });
+
+    await expect.element(pane("Rollback")).toHaveTextContent("Operation 1 · succeeded");
+    await expect.element(pane("Rollback")).toHaveTextContent("rollback");
+    await expect.element(pane("Rollback")).toHaveTextContent("process_restart");
+});
+
 it("shows an instance's Horizon queue by job state and opens a job in Horizon", async () => {
     // A job opens through a real link with a target, so a new tab is the browser's own behaviour.
     const opened: { href: string; target: string }[] = [];

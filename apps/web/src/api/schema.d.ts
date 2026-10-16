@@ -1728,7 +1728,7 @@ export interface paths {
         put?: never;
         /**
          * Roll back an Instance
-         * @description Select one retained production Instance release.
+         * @description Starts an `instance.rollback` operation that selects one retained release, and answers 202 with it at once; the rollback runs on the Gateway queue. Follow it with `operation:show` and `after_sequence` after `poll_after_seconds`, until `status` is `succeeded`, `failed`, or `cancelled`. A release the Instance does not retain returns `rollback.release_not_retained` (422) and changes nothing. A deploy of the Instance that no worker has started ends `cancelled` with `operation.superseded`; any other operation that holds the Instance, such as a deploy a worker has started, returns `operation.target_busy` (409) with `details.operation_id`. See /reference/deployments#the-rollback-operation.
          */
         post: operations["instance-rollback"];
         delete?: never;
@@ -11489,47 +11489,29 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Newline-delimited JSON events: `phase` and `output` events while the Gateway works, then exactly one final `result` event. A failed operation still ends with a `result` event. */
-            200: {
+            /** @description Accepted. The operation is queued; follow it with `operation:show`. */
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/x-ndjson": {
-                        /** @enum {string} */
-                        type: "phase";
-                        sequence: number;
-                        /** Format: uuid */
-                        request_id: string;
-                        /** @enum {string} */
-                        phase: "source_preparation" | "environment_sync" | "before_activation" | "activation" | "php_refresh" | "process_restart" | "after_activation" | "rollback";
-                        step_name?: string | null;
-                    } | {
-                        /** @enum {string} */
-                        type: "output";
-                        sequence: number;
-                        /** Format: uuid */
-                        request_id: string;
-                        /** @enum {string} */
-                        stream: "stdout" | "stderr";
-                        /** @description At most 16 KiB of decoded bytes, base64-encoded. */
-                        data_base64: string;
-                    } | {
-                        /** @enum {string} */
-                        type: "result";
-                        sequence: number;
-                        /** Format: uuid */
-                        request_id: string;
-                        /** @enum {string} */
-                        status: "succeeded" | "failed";
-                        failed_step?: string | null;
-                        error_code?: string | null;
-                        selected_release?: string | null;
+                    "application/json": {
+                        data: components["schemas"]["Operation"];
+                        meta: components["schemas"]["Meta"];
                     };
                 };
             };
             /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11546,8 +11528,17 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            /** @description The JSON body fails validation (`validation.failed`), or the Instance does not retain the release (`rollback.release_not_retained`). The Gateway records nothing and supersedes no deploy. */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The Gateway has no queue (`operation.queue_unavailable`) and recorded nothing, or it could not queue the job (`operation.dispatch_failed`) and ended the operation as failed. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

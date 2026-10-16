@@ -45,10 +45,10 @@ final readonly class GatewayConnectorFactory
 
         if ($sender instanceof GuzzleSender && function_exists('curl_multi_exec')) {
             // Return to PHP between network waits so pending terminal signals are handled.
-            // Keep the existing handler for streaming requests and TLS fallbacks.
+            // Keep the existing handler for TLS fallbacks.
             $fallback = Utils::chooseHandler();
             $sender->getHandlerStack()->setHandler(Proxy::wrapTlsFallback(
-                Proxy::wrapStreaming(new CurlMultiHandler(['select_timeout' => 0.1]), $fallback),
+                new CurlMultiHandler(['select_timeout' => 0.1]),
                 $fallback,
             ));
         }

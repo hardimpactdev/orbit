@@ -23,7 +23,6 @@ final readonly class ToolDefinition
         public string $path,
         public array $pathInputs,
         public array $queryInputs,
-        public bool $streams,
         public array $inputSchema,
         public ?string $extension = null,
         /** The operation answers 202 with an operation that the caller polls with `operation-show`. */
@@ -60,7 +59,6 @@ final readonly class ToolDefinition
             path: $path,
             pathInputs: array_values(array_filter($pathInputs, is_string(...))),
             queryInputs: array_values(array_filter($queryInputs, is_string(...))),
-            streams: ($entry['streams'] ?? false) === true,
             startsOperation: ($entry['starts_operation'] ?? false) === true,
             inputSchema: ValidatedData::object($inputSchema),
         );
