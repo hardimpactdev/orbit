@@ -1,11 +1,10 @@
 //! Live log tails (ADR 0153). The agent reads a log only while the Gateway's HTTPS stream list names it,
-//! redacts each line, and sends the lines on `presence-node-logs.{id}`. It runs no program for any source.
+//! redacts each line, and sends the lines on `presence-node-logs.{id}`. The only program it runs is a
+//! read-only `journalctl` for a `journal` source.
 pub mod controller;
 pub mod docker;
 pub mod events;
-pub mod journal;
-#[cfg(test)]
-mod journal_writer;
+pub mod journalctl;
 pub mod laravel;
 pub mod limits;
 pub mod redact;
