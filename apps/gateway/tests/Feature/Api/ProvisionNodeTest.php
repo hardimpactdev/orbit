@@ -88,6 +88,8 @@ describe('POST /api/v1/nodes', function (): void {
     });
 
     it('provisions a node through the gateway action', function (): void {
+        app(VpnSettings::class)->configure(subnet: '10.44.0.0/24', domain: 'VPN.CORP.');
+
         app()->instance(NodeConverger::class, new class implements NodeConverger
         {
             public function converge(
@@ -109,7 +111,7 @@ describe('POST /api/v1/nodes', function (): void {
                 'public_ssh_host' => '94.237.40.75',
                 'platform' => 'linux',
                 'architecture' => 'x86_64',
-                'tld' => '.App-Dev.Orbit',
+                'tld' => '.App-Dev.Test',
                 'roles' => ['app-dev'],
                 'cluster_id' => $cluster->id,
                 'wireguard_ip' => '10.44.0.3',
@@ -123,7 +125,7 @@ describe('POST /api/v1/nodes', function (): void {
             ->assertJsonPath('data.status', 'active')
             ->assertJsonPath('data.platform', 'linux')
             ->assertJsonPath('data.architecture', 'x86_64')
-            ->assertJsonPath('data.tld', 'app-dev.orbit')
+            ->assertJsonPath('data.tld', 'app-dev.test')
             ->assertJsonPath('data.cluster_id', $cluster->id)
             ->assertJsonPath('data.wireguard_ip', '10.44.0.3')
             ->assertJsonPath('data.lan_ip', '10.0.0.3')
@@ -236,7 +238,7 @@ describe('POST /api/v1/nodes', function (): void {
             'status' => LifecycleStatus::Active,
             'platform' => 'linux',
             'architecture' => 'x86_64',
-            'tld' => 'app-dev.orbit',
+            'tld' => 'app-dev.test',
             'public_ssh_host' => '192.0.2.40',
             'wireguard_ip' => '10.44.0.3',
             'ssh_host_fingerprint' => 'SHA256:pinned',
@@ -250,7 +252,7 @@ describe('POST /api/v1/nodes', function (): void {
             ->postJson('/api/v1/nodes', [
                 'name' => 'app-dev',
                 'architecture' => 'x86_64',
-                'tld' => 'app-dev.orbit',
+                'tld' => 'app-dev.test',
                 'roles' => ['app-dev'],
             ])
             ->assertCreated()
@@ -426,6 +428,11 @@ describe('POST /api/v1/nodes', function (): void {
         'the private space with a leading dot' => [null, '.ORBIT'],
         'the private space under VPN domain corp' => ['corp', 'orbit'],
         'an ancestor of the VPN domain' => ['vpn.corp', 'corp'],
+        'an ancestor of a rooted VPN domain' => ['VPN.CORP.', 'CORP'],
+        'a multi-label ancestor of a rooted VPN domain' => ['deep.vpn.corp.', 'vpn.corp'],
+        'the rooted VPN domain itself' => ['vpn.corp.', 'vpn.corp'],
+        'a descendant of the private space' => [null, 'beast.orbit'],
+        'a descendant of the rooted VPN domain' => ['VPN.CORP.', 'n1.vpn.corp'],
         'VPN domain corp' => ['corp', 'corp'],
     ]);
 
@@ -709,7 +716,7 @@ describe('POST /api/v1/nodes', function (): void {
                 'public_ssh_host' => '94.237.40.75',
                 'architecture' => 'x86_64',
                 'roles' => ['app-dev'],
-                'tld' => 'app-dev.orbit',
+                'tld' => 'app-dev.test',
             ])
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'node.ssh_host_fingerprint_required');
@@ -1089,7 +1096,7 @@ describe('POST /api/v1/nodes', function (): void {
                 'public_ssh_host' => '94.237.40.75',
                 'architecture' => 'x86_64',
                 'roles' => ['app-dev'],
-                'tld' => 'app-dev.orbit',
+                'tld' => 'app-dev.test',
                 'host_key_fingerprint' => 'SHA256:'.str_repeat(string: 'A', times: 43),
             ])
             ->assertStatus(502)

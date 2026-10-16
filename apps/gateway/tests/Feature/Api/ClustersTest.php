@@ -36,6 +36,8 @@ beforeEach(function (): void {
 
 describe('Cluster lifecycle', function (): void {
     it('creates, lists, shows, updates, and removes normalized Clusters', function (): void {
+        app(VpnSettings::class)->configure(subnet: '10.44.0.0/24', domain: 'VPN.CORP.');
+
         $this->operator->update(['tld' => 'beast']);
 
         $createRequestId = (string) Str::uuid();
@@ -272,6 +274,7 @@ describe('Cluster lifecycle', function (): void {
         'the private space, padded and uppercase' => [null, ' ORBIT '],
         'the private space under VPN domain corp' => ['corp', 'orbit'],
         'an ancestor of the VPN domain' => ['vpn.corp', 'corp'],
+        'an ancestor of a rooted VPN domain' => ['VPN.CORP.', 'CORP'],
         'VPN domain corp' => ['corp', 'corp'],
     ]);
 

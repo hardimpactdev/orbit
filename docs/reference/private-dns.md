@@ -145,7 +145,9 @@ The rule covers the Cluster TLD and every exact Cluster-scoped Route domain, als
 
 New Routes and Route domain changes cannot take these reserved platform names. Existing conflicts remain published until an operator changes or removes the Route; Doctor reports `route.domain_reserved`. Core reserves and publishes `gateway.orbit`, `metrics.orbit`, `reverb.orbit`, and `analytics.orbit`. The proxycli extension reserves and publishes `collector.cli-proxy-api.orbit` through [plug-in points](/reference/extensions#plug-in-points). An extension can publish a record only for a name that an extension reserves. `cli-proxy-api.orbit` is not reserved, and a custom proxy Route can publish it.
 
-No Cluster or Node TLD can be `orbit`, the private VPN domain, or an ancestor of that domain. For example, a VPN domain of `vpn.corp` also reserves the TLD `corp`. Relocating the `gateway` role republishes `gateway.orbit`. Renaming a Node does not change it.
+No Cluster or Node TLD can equal, contain, or sit below either private zone: `orbit` and the configured VPN domain. Overlap is checked at DNS label boundaries. For example, a VPN domain of `vpn.corp` or `VPN.CORP.` also reserves `corp`, `vpn.corp`, and `n1.vpn.corp`; `beast.orbit` is always reserved. Unrelated suffixes such as `test`, `orp`, and `notvpn.corp` remain valid. This comparison ignores case and the optional DNS root dot, including in existing configured domains. Relocating the `gateway` role republishes `gateway.orbit`. Renaming a Node does not change it.
+
+The guard migration checks stored TLDs only when it first runs. Gateways that already applied it are not scanned again, and Doctor does not report these stored TLD overlaps. Operators must inspect existing Cluster and Node TLDs and correct conflicts. This input guard does not remove stored conflicts or change their DNS publication.
 
 ### Inspect the selection
 
