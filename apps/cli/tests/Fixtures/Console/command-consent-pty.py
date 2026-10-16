@@ -52,6 +52,10 @@ while process.poll() is None:
             process.returncode = os.waitstatus_to_exitcode(status)
             break
         try:
+            # A completed prompt can restore canonical mode before the next
+            # prompt configures raw input. Do not type into that transition.
+            if termios.tcgetattr(slave)[3] & (termios.ICANON | termios.ISIG | termios.ECHO):
+                continue
             key = keys.pop(0)
             if os.write(master, key) != len(key):
                 raise RuntimeError('Incomplete PTY key write')
@@ -59,7 +63,8 @@ while process.poll() is None:
             while struct.unpack('i', fcntl.ioctl(slave, termios.FIONREAD, struct.pack('i', 0)))[0] < len(key):
                 remaining = deadline - time.monotonic()
                 if remaining <= 0 or not select.select([slave], [], [], remaining)[0]:
-                    raise RuntimeError('PTY key was not delivered')
+                    raise RuntimeError('PTY key was not delivered: ' + repr(key) + ' ' +
+                                       repr(termios.tcgetattr(slave)) + '\n' + output.decode(errors='replace'))
         finally:
             os.kill(process.pid, signal.SIGCONT)
         awaiting_output = True
