@@ -93,6 +93,7 @@ use Orbit\Sdk\Requests\Tasks\ListTaskAgentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskCommentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskGroupsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskQuestionsRequest;
+use Orbit\Sdk\Requests\Tasks\ShowTaskAgentRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTasksStatusRequest;
 use Orbit\Sdk\Requests\Tasks\UpdateSubtaskRequest;
@@ -281,6 +282,7 @@ describe('repository guidance bootstrap', function (): void {
             ListTaskQuestionsRequest::class,
             CloseTaskQuestionRequest::class,
             ListTaskAgentsRequest::class,
+            ShowTaskAgentRequest::class,
         ];
         $lifecycleRequests = [
             RenameInstanceRequest::class,
@@ -516,8 +518,8 @@ describe('repository guidance bootstrap', function (): void {
         $normalizedPublicContract = repository_guidance_normalized_contents('.ai/rules/public-contract.md');
 
         expect($publicContract)
-            ->toContain('The SDK models exactly 213 concrete public Gateway API operations:')
-            ->toContain('- Tasks: enable, disable, status, group list, show, create, update, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, question list and close, and agent thread list.')
+            ->toContain('The SDK models exactly 214 concrete public Gateway API operations:')
+            ->toContain('- Tasks: enable, disable, status, group list, show, create, update, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, question list and close, and agent thread list and show.')
             ->toContain('- Logs: Instance log read, and live log stream create, renew, and destroy for an Instance or a Process.')
             ->toContain('- Analytics: pin the Plausible version, and show, set, and unset the Stats API key. The key is never returned.')
             ->toContain('- proxycli: enable, disable, status, provider list, provider show, account update, and model list.')
@@ -591,7 +593,7 @@ describe('repository guidance bootstrap', function (): void {
 
         expect(repository_guidance_normalized_contents('README.md'))
             ->toContain(
-                'The SDK exposes exactly 213 public Gateway operations.',
+                'The SDK exposes exactly 214 public Gateway operations.',
                 'The SDK exposes typed enable, disable, status, provider list, provider show, account update, and model list requests for the optional CLIProxyAPI quota collector.',
                 'The SDK exposes typed status, setup, sync, and teardown requests for publishing database credentials to Vaultwarden.',
                 'The SDK exposes typed list, show, add, update, remove, attach, detach, query, tables, schema, describe, and user create requests for Gateway-owned database connection records.',

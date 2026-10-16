@@ -3524,6 +3524,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/task-groups/{group}/agents/{session}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show a task agent session
+         * @description Returns one redacted read of a task agent thread: its state, its transcript entries, and its token metrics. To poll, pass the previous answer's `cursor` as `after_sequence`. When the Pi server can resume from it, `kind` is `delta` and `entries` holds only the entries added or changed after it; merge them by `id` and `kind`. Otherwise, as on a first read or after a Pi server restart, `kind` is `snapshot` and `entries` replaces the whole transcript. A thread that has not started returns an empty snapshot. When the thread's Node is gone, or its Pi server fails and Orbit saved a transcript, returns that transcript with `archived` true and `cursor` null; it does not change. Requires Gateway access. See /reference/tasks#read-a-thread.
+         */
+        get: operations["tasks-agent-show"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/task-groups/{group}/agents/{session}/stream": {
         parameters: {
             query?: never;
@@ -3954,6 +3974,47 @@ export interface components {
             required: boolean;
         };
         DevelopmentDeploySteps: components["schemas"]["DevelopmentDeployStep"][];
+        TaskAgentSnapshot: {
+            /** @description The agent thread ID. */
+            thread_id: number;
+            /**
+             * @description `snapshot` when `entries` is the whole transcript, `delta` when it holds only the entries after `after_sequence`.
+             * @enum {string}
+             */
+            kind: "snapshot" | "delta";
+            /** @enum {string|null} */
+            state?: "idle" | "working" | "asking_for_input" | "done" | "failed" | null;
+            input_requests?: {
+                id: string;
+                kind: string;
+                details: unknown;
+            }[];
+            /** @description The normalized transcript, oldest first, or in a delta the entries added or changed after `after_sequence`. Merge entries by `id` and `kind`. */
+            entries?: {
+                id: string;
+                /** @description `message` or `activity`. */
+                kind: string;
+                /** @description The role of a message, or the tool of an activity. */
+                label: string;
+                text: string;
+                at: string;
+            }[];
+            tokens?: number | null;
+            input_tokens?: number | null;
+            cached_input_tokens?: number | null;
+            output_tokens?: number | null;
+            model_calls?: number | null;
+            peak_context_tokens?: number | null;
+            lines_added?: number | null;
+            lines_deleted?: number | null;
+            error?: string | null;
+            /** @enum {string|null} */
+            provider_error?: "overloaded" | "rate_limited" | "server_error" | null;
+            /** @description The thread's place in its events after this answer. Pass it as `after_sequence` on the next read, or to `tasks:agent-stream`. Null for a saved transcript or a thread that has not started. */
+            cursor: string | null;
+            /** @description True when the snapshot is the transcript Orbit saved before the task VM was deleted. */
+            archived: boolean;
+        };
         Activity: {
             id?: number;
             request_id?: string;
@@ -19249,6 +19310,72 @@ export interface operations {
             };
             /** @description The tasks extension is disabled (`extension.disabled`). A disabled extension returns HTTP 409 (`extension.disabled`). */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-agent-show": {
+        parameters: {
+            query?: {
+                after_sequence?: string | null;
+            };
+            header?: never;
+            path: {
+                /** @description Numeric Task group ID. */
+                group: number;
+                /** @description Numeric task agent session ID within this group. */
+                session: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskAgentSnapshot"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The thread is a stored `t3` thread (`tasks.agent_transcript_unavailable`), or its Node is gone and Orbit saved no transcript (`tasks.agent_unavailable`). A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The thread's Pi server is unavailable, refused the read, did not answer within 5 seconds, or sent a session over 16 MiB, and Orbit saved no transcript (`tasks.agent_read_failed`). */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -8889,6 +8889,50 @@
       }
     },
     {
+      "name": "tasks-agent-show",
+      "extension": "tasks",
+      "title": "Show a task agent session",
+      "description": "Returns one redacted read of a task agent thread: its state, its transcript entries, and its token metrics. To poll, pass the previous answer's `cursor` as `after_sequence`. When the Pi server can resume from it, `kind` is `delta` and `entries` holds only the entries added or changed after it; merge them by `id` and `kind`. Otherwise, as on a first read or after a Pi server restart, `kind` is `snapshot` and `entries` replaces the whole transcript. A thread that has not started returns an empty snapshot. When the thread's Node is gone, or its Pi server fails and Orbit saved a transcript, returns that transcript with `archived` true and `cursor` null; it does not change. Requires Gateway access. See /reference/tasks#read-a-thread.",
+      "method": "GET",
+      "path": "/api/v1/task-groups/{group}/agents/{session}",
+      "path_inputs": [
+        "group",
+        "session"
+      ],
+      "query_inputs": [
+        "after_sequence"
+      ],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Task group ID."
+          },
+          "session": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric task agent session ID within this group."
+          },
+          "after_sequence": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[A-Za-z0-9._:+=\\/-]+$",
+            "maxLength": 512
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "group",
+          "session"
+        ]
+      }
+    },
+    {
       "name": "tasks-agents",
       "extension": "tasks",
       "title": "List task agent sessions",

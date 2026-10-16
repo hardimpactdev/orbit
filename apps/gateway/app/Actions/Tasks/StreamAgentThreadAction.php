@@ -4,11 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Tasks;
 
-use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AgentDriverRegistry;
-use App\Domain\Tasks\AgentThreadEvent;
-use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Models\AgentThread;
 use App\Models\Task;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -19,27 +15,15 @@ final readonly class StreamAgentThreadAction
     private const array Headers = ['Content-Type' => 'text/event-stream', 'Cache-Control' => 'no-cache, no-store', 'X-Accel-Buffering' => 'no'];
 
     public function __construct(
-        private RequireTasksExtensionAction $requireExtension,
         private AgentDriverRegistry $drivers,
-        private CommandActivityInputSanitizer $sanitizer,
-        private ArchiveAgentTranscriptsAction $archive,
+        private ReadAgentThreadAction $read,
     ) {}
 
     public function execute(Task $group, AgentThread $session, ?string $afterSequence): StreamedResponse
     {
-        $this->requireExtension->execute();
-        abort_unless($session->task_group_id === $group->id, 404);
-        if ($session->driver === 't3') {
-            throw new ResourceOperationException('tasks.agent_transcript_unavailable', 'Transcripts for retired T3 task threads are unavailable.', 409);
-        }
-        $node = $session->node;
-        if ($node === null || $node->status !== LifecycleStatus::Active) {
-            $archived = $this->archive->read($session);
-            if ($archived === null) {
-                throw new ResourceOperationException('tasks.agent_unavailable', 'The original agent Node is unavailable.', 409);
-            }
-
-            return $this->archived($session, $archived);
+        $this->read->assertReadable($group, $session);
+        if ($this->read->nodeGone($session)) {
+            return $this->archived($this->read->savedTranscript($session));
         }
 
         return response()->stream(function () use ($session, $afterSequence): \Generator {
@@ -57,7 +41,7 @@ final readonly class StreamAgentThreadAction
 
                         continue;
                     }
-                    $data = $this->sanitizer->sanitizeProperties($event->toArray());
+                    $data = $this->read->event($event);
                     $json = json_encode($data, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE);
                     $cursor = $event->cursor;
                     if ($cursor !== null && preg_match('/[\r\n\x00]/', $cursor) === 1) {
@@ -74,12 +58,10 @@ final readonly class StreamAgentThreadAction
     /**
      * Replays the transcript Orbit saved before the task VM was deleted, as one snapshot.
      *
-     * @param  array<string, mixed>  $observation
+     * @param  array<string, mixed>  $data  the sanitized snapshot
      */
-    private function archived(AgentThread $session, array $observation): StreamedResponse
+    private function archived(array $data): StreamedResponse
     {
-        $data = $this->sanitizer->sanitizeProperties(new AgentThreadEvent($session->id, 'snapshot', $observation)->toArray());
-
         return response()->stream(static function () use ($data): \Generator {
             yield "retry: 3000\n\n";
             yield "event: agent\ndata: ".json_encode($data, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE)."\n\n";

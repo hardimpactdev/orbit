@@ -1,6 +1,6 @@
 # Public contract
 
-The SDK models exactly 213 concrete public Gateway API operations:
+The SDK models exactly 214 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
@@ -26,7 +26,7 @@ The SDK models exactly 213 concrete public Gateway API operations:
 - Gateway releases: list, show, deploy, rollback, and automatic release status, enable, disable, and resume.
 - proxycli: enable, disable, status, provider list, provider show, account update, and model list.
 - Vault: status, setup, sync, and teardown.
-- Tasks: enable, disable, status, group list, show, create, update, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, question list and close, and agent thread list.
+- Tasks: enable, disable, status, group list, show, create, update, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, question list and close, and agent thread list and show.
 
 The four abstract request bases are implementation details, not extra Gateway
 operations. Keep the public API typed and small.
@@ -115,15 +115,17 @@ operations. Keep the public API typed and small.
   `keep_items` flag on teardown. Status and sync are bodyless. Responses omit
   the client secret and the master password. The Gateway owns login,
   encryption, reconciliation, and item deletion.
-- Keep Tasks transport limited to numeric task group and subtask IDs, the
-  optional Project ID and status list filters, the question list filters
-  (Project ID, cause, status, and since), the group title, brief, status,
+- Keep Tasks transport limited to numeric task group, subtask, and agent
+  thread IDs, the optional Project ID and status list filters, the question list filters
+  (Project ID, cause, status, and since), the agent thread cursor
+  `after_sequence`, the group title, brief, status,
   Coder notification flag, and ordered subtask titles and briefs on create,
   partial title, brief, status, and position updates, and the comment type,
   body, author, and optional agent thread ID. Toggle, status, cancel, complete,
   destroy, and question list requests are bodyless. Task and subtask responses
   keep `assistance_kind`, `assistance_question`, `questions`, and `escalations`.
   The Gateway owns the lifecycle, scheduling, and every status rule.
+  Agent thread show returns one redacted snapshot or delta with its cursor.
   The agent conversation stream stays outside the SDK.
 - Keep Gateway release transport limited to a record id or a hex SHA of 7 to
   40 characters for show, a hex SHA of 7 to 40 characters for deploy, and a
