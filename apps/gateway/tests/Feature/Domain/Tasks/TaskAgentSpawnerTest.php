@@ -61,7 +61,15 @@ function task_spawner_group(): Task
         'public_ssh_host' => '10.44.0.110',
         'wireguard_ip' => '10.44.0.110',
     ]);
+    $group = Task::topLevel()->create([
+        'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
+        'project_id' => $project->id,
+        'title' => 'Wire an agent',
+        'brief' => 'Spawn reviewer and implementer.',
+        'status' => TaskGroupStatus::Running,
+    ]);
     $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $group->id,
         'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'task-1',
@@ -69,13 +77,6 @@ function task_spawner_group(): Task
         'branch' => 'task-1',
         'status' => 'source_resolved',
         'starting_commit' => str_repeat('b', 40),
-    ]);
-    $group = Task::topLevel()->create([
-        'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
-        'project_id' => $project->id,
-        'title' => 'Wire an agent',
-        'brief' => 'Spawn reviewer and implementer.',
-        'status' => TaskGroupStatus::Running,
     ]);
     $group->taskable()->associate($instance);
     $group->save();

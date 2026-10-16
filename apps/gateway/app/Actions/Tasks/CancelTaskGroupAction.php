@@ -55,7 +55,7 @@ final readonly class CancelTaskGroupAction
             if ($unpublished) {
                 $this->pushApprovedWork($group);
             }
-            $this->removeWorkspace($group, $instance);
+            $this->removeWorkspace($group);
         }
 
         $removedId = $instance instanceof Instance && $offlineId === null ? $instance->id : null;
@@ -83,7 +83,7 @@ final readonly class CancelTaskGroupAction
 
         if ($attachedByClaim instanceof Instance) {
             try {
-                $this->removeWorkspace($group, $attachedByClaim);
+                $this->removeWorkspace($group);
             } catch (Throwable $exception) {
                 $locked = Task::topLevel()->findOrFail($group->id);
                 $locked->taskable()->associate($attachedByClaim);
@@ -120,10 +120,10 @@ final readonly class CancelTaskGroupAction
     }
 
     /** A refused removal keeps the checkout and the Instance row, asks for assistance, and returns the error. */
-    private function removeWorkspace(Task $group, Instance $instance): void
+    private function removeWorkspace(Task $group): void
     {
         try {
-            $this->workspace->remove($instance);
+            $this->workspace->remove($group);
         } catch (Throwable $exception) {
             $this->workspace->recordFailure($group, $exception);
 

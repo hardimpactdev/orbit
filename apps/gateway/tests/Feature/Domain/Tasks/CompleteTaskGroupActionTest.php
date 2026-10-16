@@ -49,13 +49,6 @@ function complete_group(TaskGroupStatus $status = TaskGroupStatus::Settling): Ta
         'public_ssh_host' => '10.44.0.150',
         'wireguard_ip' => '10.44.0.150',
     ]);
-    $instance = Instance::query()->create([
-        'project_id' => $project->id,
-        'node_id' => $node->id,
-        'name' => 'task-20',
-        'checkout_path' => '/srv/orbit/apps/complete-app/task-20',
-        'status' => 'source_resolved',
-    ]);
     $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Complete me',
@@ -63,9 +56,12 @@ function complete_group(TaskGroupStatus $status = TaskGroupStatus::Settling): Ta
         'status' => $status,
         'pr_url' => 'https://github.com/nckrtl/orbit/pull/543',
     ]);
-    test_own_workspace($instance, $group);
-    $group->taskable()->associate($instance);
-    $group->save();
+    test_task_workspace($group, [
+        'node_id' => $node->id,
+        'name' => 'task-20',
+        'branch_override' => null,
+        'checkout_path' => '/srv/orbit/apps/complete-app/task-20',
+    ]);
 
     return $group->fresh(['project', 'taskable']) ?? $group;
 }
@@ -102,10 +98,11 @@ it('never removes a user Instance named and branched like the workspace of the g
     app(TaskExtensionState::class)->enable();
     $group = complete_group();
     $name = 'task-'.$group->id;
-    $user = $group->taskable;
-    test_own_workspace($user, null)->update(['name' => $name, 'branch_override' => $name]);
+    $workspace = $group->taskable;
     $group->taskable()->dissociate();
     $group->save();
+    $workspace->delete();
+    $user = Instance::query()->create(['project_id' => $group->project_id, 'node_id' => $workspace->node_id, 'name' => $name, 'branch_override' => $name, 'checkout_path' => '/srv/orbit/apps/complete-app/'.$name, 'status' => 'source_resolved']);
     $remover = new class implements InstanceRemover
     {
         /** @var list<int> */

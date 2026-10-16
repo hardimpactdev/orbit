@@ -26,11 +26,11 @@ function owners_migration(): Migration
     return require database_path('migrations/2026_11_15_000000_record_task_workspace_owners.php');
 }
 
-function owners_group(int $id, ?int $instance = null, ?int $parent = null): void
+function owners_group(int $id, ?int $instance = null, ?int $parent = null, string $status = 'completed'): void
 {
     DB::table('tasks')->insert([
         'id' => $id, 'parent_id' => $parent, 'position' => $parent === null ? null : 1, 'project_id' => $parent === null ? 1 : null,
-        'title' => 'Group', 'brief' => 'Brief', 'status' => 'completed',
+        'title' => 'Group', 'brief' => 'Brief', 'status' => $status,
         'taskable_type' => $instance === null ? null : 'instance', 'taskable_id' => $instance,
     ]);
 }
@@ -68,7 +68,7 @@ it('records owners from explicit records only, never from names', function (): v
     // Two groups hold one Instance.
     owners_instance(4, 1, 'shared');
     owners_group(14, 4);
-    owners_group(15, 4);
+    owners_group(15, 4, status: 'running');
     // A destroyed VM is no record.
     owners_instance(5, 4, 'task-16', 'task-16');
     owners_group(16);
@@ -79,7 +79,8 @@ it('records owners from explicit records only, never from names', function (): v
     // A group that two records name for two Instances owns neither.
     owners_instance(7, 1, 'attached-18');
     owners_instance(8, 5, 'task-18', 'task-18');
-    owners_group(18, 7);
+    owners_group(18, 7, status: 'running');
+    DB::table('tasks')->where('id', 18)->update(['assistance_requested' => true, 'assistance_kind' => 'direction', 'assistance_question' => 'Which branch?', 'assistance_reason' => 'Asked.']);
     owners_vm(18, 5);
     // A subtask's Instance is no record.
     owners_instance(9, 1, 'subtask');
@@ -92,7 +93,20 @@ it('records owners from explicit records only, never from names', function (): v
         1 => 10, 2 => 11, 3 => 12, 4 => null, 5 => null, 6 => null, 7 => null, 8 => null, 9 => null,
     ]);
     expect(DB::select('PRAGMA foreign_key_check'))->toBe([]);
-    expect(fn () => DB::table('instances')->where('id', 6)->update(['task_workspace_owner_id' => 10]))->toThrow(QueryException::class);
+
+    // A group holds only the workspace it owns. The others lose their attachment; an open group asks for assistance.
+    expect(DB::table('tasks')->whereNull('parent_id')->whereNotNull('taskable_id')->orderBy('id')->pluck('taskable_id', 'id')->all())->toBe([10 => 1]);
+    $reason = 'Orbit detached the Instance of this task because the task does not own it. Cancel the task and start a new one.';
+    expect((array) DB::table('tasks')->where('id', 15)->first(['assistance_requested', 'assistance_kind', 'assistance_reason']))
+        ->toBe(['assistance_requested' => 1, 'assistance_kind' => 'failure', 'assistance_reason' => $reason]);
+    expect(DB::table('tasks')->where('id', 14)->value('assistance_requested'))->toBe(0);
+    expect(DB::table('tasks')->where('id', 18)->value('assistance_kind'))->toBe('direction');
+    expect(DB::table('tasks')->where('id', 19)->value('taskable_id'))->toBe(9);
+
+    // The owner never changes once set, and an Instance without one never gains one.
+    expect(fn () => DB::table('instances')->where('id', 2)->update(['task_workspace_owner_id' => 12]))->toThrow(QueryException::class, 'A task workspace owner never changes.');
+    expect(fn () => DB::table('instances')->where('id', 6)->update(['task_workspace_owner_id' => 17]))->toThrow(QueryException::class, 'A task workspace owner never changes.');
+    expect(DB::table('instances')->where('id', 2)->value('task_workspace_owner_id'))->toBe(11);
 
     DB::table('tasks')->where('id', 10)->delete();
     expect(DB::table('instances')->where('id', 1)->value('task_workspace_owner_id'))->toBeNull();

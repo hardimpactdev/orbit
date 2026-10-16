@@ -37,7 +37,6 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
-use App\Models\TaskVm;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
@@ -63,12 +62,13 @@ function check_runner_checkout(string $check): string
     return $checkout;
 }
 
-function check_runner_instance(string $checkout): Instance
+/** @param  array<string, mixed>  $group */
+function check_runner_instance(string $checkout, array $group = []): Instance
 {
     $project = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@github.com:acme/shop.git', 'default_branch' => 'main']);
     $node = Node::query()->create(['name' => 'check-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '10.44.0.160', 'wireguard_ip' => '10.44.0.160', 'user' => 'orbit']);
 
-    return Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-8', 'checkout_path' => $checkout, 'branch' => 'task-8', 'status' => 'source_resolved']);
+    return test_ready_task_workspace($project, $node, ['name' => 'task-8', 'checkout_path' => $checkout, 'branch' => 'task-8'], $group);
 }
 
 function check_runner(SshExecutor $transport, string $vpHome = '/opt/orbit/vite-plus', ?SshExecutor $probe = null): RemoteTaskCheckRunner
@@ -180,14 +180,11 @@ it('normalizes VP_HOME probe failures without launching a check', function (int 
 
 it('releases the unstarted baseline reservation and retries after a VP_HOME probe timeout', function (): void {
     test_bind_snapshot_driver();
-    $instance = check_runner_instance('/fast/apps/shop/task-8');
-    $group = Task::topLevel()->create([
-        'project_id' => $instance->project_id, 'title' => 'Probe timeout', 'brief' => 'Retry baseline',
+    $instance = check_runner_instance('/fast/apps/shop/task-8', group: [
+        'title' => 'Probe timeout', 'brief' => 'Retry baseline',
         'status' => TaskGroupStatus::Running, 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
     ]);
-    $group->taskable()->associate($instance);
-    $group->save();
-    $group = test_vm_group($group);
+    $group = Task::topLevel()->findOrFail($instance->task_workspace_owner_id);
     $task = Task::query()->create([
         'parent_id' => $group->id, 'position' => 1, 'title' => 'First', 'brief' => 'First subtask', 'status' => TaskStatus::Running,
     ]);
@@ -1367,7 +1364,7 @@ it('passes the handoff test base only to a scoped project check', function (bool
 })->with(['scoped commit' => [true, false], 'scoped tree' => [true, true], 'unscoped' => [false, false]]);
 
 describe('ssr port', function (): void {
-    it('starts the check of two workspaces on one Node with their own allocated ssr ports and never the held 13719', function (): void {
+    it('starts the check of a workspace with its allocated ssr port and never the held 13719', function (): void {
         $node = Node::query()->create(['name' => 'shared-check-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '10.44.0.161', 'wireguard_ip' => '10.44.0.161', 'user' => 'orbit']);
         orbit_test_set_app_placement_role($node, false);
         $runtime = new FakeVitePortRuntime;
@@ -1375,20 +1372,17 @@ describe('ssr port', function (): void {
         app()->instance(VitePortRuntime::class, $runtime);
         $project = Project::query()->create(['name' => 'Recall', 'slug' => 'recall', 'repository_url' => 'git@github.com:acme/recall.git', 'default_branch' => 'main']);
         $started = '{"pid":4100,"started":"now","head":"abc","tree":"def"}';
-        $transport = new AppDevFakeSshExecutor([new CommandResult(0, $started, '', 1, false), new CommandResult(0, $started, '', 1, false)]);
+        $transport = new AppDevFakeSshExecutor([new CommandResult(0, $started, '', 1, false)]);
         $runner = check_runner($transport);
-        $ports = [];
+        // A task VM Node holds one workspace, so the held ports are the only other claims on the range.
+        $instance = test_ready_task_workspace($project, $node, ['name' => 'task-a', 'checkout_path' => '/fast/apps/recall/task-a', 'branch' => 'task-a']);
 
-        foreach (['task-a', 'task-b'] as $name) {
-            $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => $name, 'checkout_path' => "/fast/apps/recall/{$name}", 'branch' => $name, 'status' => 'source_resolved']);
-            $ports[] = app(SsrPortAllocator::class)->assign($instance);
-            $runner->start($instance, 'composer check');
-        }
+        $port = app(SsrPortAllocator::class)->assign($instance);
+        $runner->start($instance, 'composer check');
 
-        expect($ports)->toBe([13720, 13721])
+        expect($port)->toBe(13720)
             ->and($transport->commands[0]->input)->toContain("export ORBIT_SSR_PORT='13720'\nexport INERTIA_SSR_URL='http://127.0.0.1:13720'\n")
-            ->and($transport->commands[1]->input)->toContain("export ORBIT_SSR_PORT='13721'\nexport INERTIA_SSR_URL='http://127.0.0.1:13721'\n")
-            ->and($transport->commands[0]->input.$transport->commands[1]->input)->not->toContain('13719');
+            ->and($transport->commands[0]->input)->not->toContain('13719');
     });
 
     it('hands the allocated ssr port to setup, the check, and deliverable commands', function (): void {
@@ -1417,7 +1411,6 @@ it('authenticates task VM setup through protected input and redacts tokens befor
     ]);
     $checkout = check_runner_checkout('true');
     $instance = check_runner_instance($checkout);
-    TaskVm::query()->create(['node_id' => $instance->node_id, 'provider' => 'upcloud', 'name' => 'tvm-setup', 'state' => 'ready', 'wireguard_ip' => $instance->node->wireguard_ip, 'pi_token' => 'private']);
     $transport = new class implements SshExecutor
     {
         public array $commands = [];
@@ -1498,7 +1491,6 @@ it('continues task VM setup without authentication when the App does not cover t
     GitHubTestSupport::storeApp();
     Http::fake(['https://api.github.com/repos/acme/shop/installation' => Http::response([], 404)]);
     $instance = check_runner_instance(check_runner_checkout('true'));
-    TaskVm::query()->create(['node_id' => $instance->node_id, 'provider' => 'upcloud', 'name' => 'tvm-setup', 'state' => 'ready', 'wireguard_ip' => $instance->node->wireguard_ip, 'pi_token' => 'private']);
     $runner = check_runner(new LocalShellSshExecutor);
 
     $process = $runner->start($instance, 'true', [['name' => 'install', 'command' => 'test -z "${COMPOSER_AUTH:-}" && echo uncovered', 'timeout_seconds' => 10]]);
@@ -1510,10 +1502,8 @@ it('continues task VM setup without authentication when the App does not cover t
 it('mints no setup token for an incoming pull request baseline', function (): void {
     Http::preventStrayRequests();
     GitHubTestSupport::storeApp();
-    $instance = check_runner_instance(check_runner_checkout('true'));
-    $group = Task::topLevel()->create(['project_id' => $instance->project_id, 'title' => 'Incoming', 'brief' => 'Review', 'status' => 'running', 'pr_branch' => 'external/contribution']);
-    $group->taskable()->associate($instance)->save();
-    test_vm_workspace($group, $instance);
+    $instance = check_runner_instance(check_runner_checkout('true'), group: ['title' => 'Incoming', 'brief' => 'Review', 'status' => 'running', 'pr_branch' => 'external/contribution']);
+    $group = Task::topLevel()->findOrFail($instance->task_workspace_owner_id);
     $runner = check_runner(new LocalShellSshExecutor);
 
     $process = $runner->start($instance, 'true', [['name' => 'install', 'command' => 'test -z "${COMPOSER_AUTH:-}"', 'timeout_seconds' => 10]]);
@@ -1547,9 +1537,6 @@ it('streams setup output and stops its descendants on timeout or cancellation', 
     }
     $checkout = check_runner_checkout('true');
     $instance = check_runner_instance($checkout);
-    if ($authenticated) {
-        TaskVm::query()->create(['node_id' => $instance->node_id, 'provider' => 'upcloud', 'name' => 'tvm-setup', 'state' => 'ready', 'wireguard_ip' => $instance->node->wireguard_ip, 'pi_token' => 'private']);
-    }
     $runner = check_runner(new LocalShellSshExecutor);
     $process = $runner->start($instance, 'true', [[
         'name' => 'waiting',

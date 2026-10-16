@@ -64,6 +64,7 @@ function workspace_route_claim(array $routeResults): array
     $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Route', 'brief' => 'Route brief', 'status' => TaskGroupStatus::Todo]);
     Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'First', 'brief' => 'First task.', 'status' => TaskStatus::Todo]);
     $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $group->id,
         'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'task-'.$group->id,

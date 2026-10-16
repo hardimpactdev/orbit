@@ -60,6 +60,7 @@ it('claimNext continues after provision null', function (): void {
         'wireguard_ip' => '10.44.0.88',
     ]);
     $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $second->id,
         'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'claim-hol-second',
@@ -77,8 +78,13 @@ it('claimNext continues after provision null', function (): void {
         public function provision(InstanceProvisionIntent $intent): ?Instance
         {
             $this->calls++;
+            if ($this->calls === 1) {
+                return null;
+            }
 
-            return $this->calls === 1 ? null : $this->instance;
+            return $intent->group->id === $this->instance->task_workspace_owner_id
+                ? $this->instance
+                : tap(claim_hol_instance($intent->group->project, 'claim-hol-'.$intent->group->id, $intent->group))->update(['starting_commit' => str_repeat('a', 40)]);
         }
     });
     app()->instance(AgentSpawner::class, new class implements AgentSpawner
@@ -156,7 +162,7 @@ it('passes a group that waits for its task VM without a failure reason', functio
     $waiting = claim_hol_group($project, 'Waiting');
     $waiting->update(['assistance_reason' => TaskScheduler::ProvisioningFailedReason]);
     $next = claim_hol_group($project, 'Next');
-    $instance = claim_hol_instance($project, 'claim-hol-next');
+    $instance = claim_hol_instance($project, 'claim-hol-next', $next);
     app()->instance(InstanceProvisioning::class, new class($waiting->id, $instance) implements InstanceProvisioning
     {
         public function __construct(private int $waitingId, private Instance $instance) {}
@@ -196,7 +202,7 @@ it('tries a failing group once per tick', function (): void {
         {
             $this->calls[$intent->group->id] = ($this->calls[$intent->group->id] ?? 0) + 1;
 
-            return $intent->group->id === $this->failingId ? null : claim_hol_instance($this->project, 'claim-hol-'.$intent->group->id);
+            return $intent->group->id === $this->failingId ? null : claim_hol_instance($this->project, 'claim-hol-'.$intent->group->id, $intent->group);
         }
     };
     app()->instance(InstanceProvisioning::class, $provisioning);
@@ -231,7 +237,7 @@ it('returns a group to todo when provisioning throws and continues the tick with
                 throw new RuntimeException('Lock wait timeout for token secret-value-123');
             }
 
-            return claim_hol_instance($this->project, 'claim-hol-'.$intent->group->id);
+            return claim_hol_instance($this->project, 'claim-hol-'.$intent->group->id, $intent->group);
         }
     };
     app()->instance(InstanceProvisioning::class, $provisioning);
@@ -473,7 +479,7 @@ describe('the stale reservation sweep', function (): void {
         claim_hol_enable();
         $project = claim_hol_app();
         $slow = claim_hol_group($project, 'Slow');
-        $instance = claim_hol_instance($project, 'claim-hol-slow');
+        $instance = claim_hol_instance($project, 'claim-hol-slow', $slow);
         app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
         {
             public function __construct(private Instance $instance) {}
@@ -619,15 +625,14 @@ describe('the abandoned workspace sweep', function (): void {
             ->and(Instance::query()->count())->toBe(2);
     });
 
-    it('removes a workspace once, for its owner, and never for another group that holds it', function (): void {
+    it('removes a workspace once, for its owner, and never when another group ends', function (): void {
         claim_hol_enable();
         $project = claim_hol_app();
         $removed = claim_hol_recording_remover();
         $owner = claim_hol_group($project, 'Owner');
         $workspace = claim_hol_workspace($project, $owner, 'source_resolved');
-        $holder = claim_hol_group($project, 'Holder');
-        $holder->taskable()->associate($workspace);
-        $holder->forceFill(['status' => TaskGroupStatus::Cancelled])->save();
+        $other = claim_hol_group($project, 'Other');
+        $other->forceFill(['status' => TaskGroupStatus::Cancelled])->save();
 
         expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(0)
             ->and($removed->ids)->toBe([]);
@@ -949,7 +954,7 @@ function claim_hol_recording_provisioning(Project $project): object
 
             return $this->instances[$intent->group->id] = $held instanceof Instance
                 ? $held
-                : claim_hol_instance($this->project, 'claim-hol-'.$intent->group->id);
+                : claim_hol_instance($this->project, 'claim-hol-'.$intent->group->id, $intent->group);
         }
     };
 }

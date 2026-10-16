@@ -344,7 +344,7 @@ final readonly class TaskClaimAdmission
         }
 
         try {
-            $this->workspaces->execute($group);
+            $this->workspaces->remove($group);
         } catch (Throwable $exception) {
             // The workspace keeps its owner, so a repeated cancel removes it.
             report($exception);

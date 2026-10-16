@@ -62,24 +62,20 @@ final readonly class RemoveTaskWorkspaceAction
         return now()->subSeconds(Config::integer('orbit.tasks.reserved_timeout_seconds'));
     }
 
-    /** Removes the group's workspace when it has one. It returns the removed Instance. */
-    public function execute(Task $group): ?Instance
+    /**
+     * Removes the workspace the group owns, and returns it, or null when the group owns none. Every task path removes
+     * a workspace here, so only the owner decides which Instance goes.
+     *
+     * The workspace goes with its task VM, or through the generic Instance remover when the VM is gone. The source
+     * and row stay when removal refuses. A workspace on a parked task VM stays: the VM is queued to start, and removal
+     * fails with `task_vm.parked` until it is ready.
+     */
+    public function remove(Task $group): ?Instance
     {
         $instance = $group->workspace()->first();
-
-        if ($instance instanceof Instance) {
-            $this->remove($instance);
+        if (! $instance instanceof Instance) {
+            return null;
         }
-
-        return $instance;
-    }
-
-    /**
-     * Removes the workspace with its task VM, or through the generic Instance remover when the VM is gone. The source
-     * and row stay when removal refuses. A workspace on a parked task VM stays: the VM is queued to start, and removal fails with `task_vm.parked` until it is ready.
-     */
-    public function remove(Instance $instance): void
-    {
         if (! app(WakeTaskVmAction::class)->forInstance($instance)) {
             throw new TaskVmException('task_vm.parked', "The task VM of Instance [{$instance->name}] is parked. Orbit starts it and removes the workspace once it is ready.");
         }
@@ -87,10 +83,12 @@ final readonly class RemoveTaskWorkspaceAction
         if ($vm instanceof TaskVm) {
             $this->removeWithTaskVm($instance, $vm);
 
-            return;
+            return $instance;
         }
 
         $this->remover->execute($instance, true);
+
+        return $instance;
     }
 
     /**

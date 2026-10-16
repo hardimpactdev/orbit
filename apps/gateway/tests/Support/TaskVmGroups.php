@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskWorkspaceName;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
 
@@ -31,28 +33,68 @@ function test_vm_group(Task $group): Task
 }
 
 /**
- * Places a group's workspace as the task VM provisioner does: the group owns the workspace `task-<group id>`, and a
- * ready task VM of the group owns its Node.
+ * Creates a group's workspace as provisioning does: the Instance `task-<group id>` in the group's Project, owned by
+ * the group from its first save. `$attach` also attaches it, as a started claim does. `$attributes` add to or
+ * replace the defaults.
+ *
+ * @param  array<string, mixed>  $attributes
+ */
+function test_task_workspace(Task $group, array $attributes = [], bool $attach = true): Instance
+{
+    $name = TaskWorkspaceName::for($group);
+    $workspace = Instance::query()->create([
+        'project_id' => $group->project_id,
+        'name' => $name,
+        'branch_override' => $name,
+        'checkout_path' => '/home/orbit/apps/workspace-'.$group->id,
+        'status' => 'source_resolved',
+        ...$attributes,
+        'task_workspace_owner_id' => $group->id,
+    ]);
+    if ($attach) {
+        $group->taskable()->associate($workspace);
+        $group->save();
+    }
+
+    return $workspace;
+}
+
+/**
+ * A task workspace that task operations may reach: a running group of `$project` owns and holds the Instance on
+ * `$node`, and the group's ready task VM owns the Node. `$workspace` and `$group` add to or replace the defaults.
+ *
+ * @param  array<string, mixed>  $workspace
+ * @param  array<string, mixed>  $group
+ */
+function test_ready_task_workspace(Project $project, Node $node, array $workspace, array $group = []): Instance
+{
+    $owner = Task::topLevel()->create([
+        'project_id' => $project->id,
+        'title' => 'Task',
+        'brief' => 'Brief.',
+        'status' => TaskGroupStatus::Running,
+        ...$group,
+    ]);
+    $instance = test_task_workspace($owner, ['node_id' => $node->id, 'branch_override' => null, ...$workspace]);
+    test_task_vm($owner, $node);
+
+    return $instance->refresh();
+}
+
+/**
+ * Places a group's workspace as the task VM provisioner does: a ready task VM of the group owns the Node of the
+ * workspace `task-<group id>` that the group owns.
  */
 function test_vm_workspace(Task $group, Instance $workspace): Instance
 {
-    test_own_workspace($workspace, $group);
+    if ($workspace->task_workspace_owner_id !== $group->id) {
+        throw new LogicException('Create the workspace with test_task_workspace(), as provisioning does.');
+    }
     if (TaskVm::query()->live()->where('group_id', $group->id)->exists()) {
         return $workspace;
     }
     $workspace->forceFill(['name' => TaskWorkspaceName::for($group), 'source_layout' => $workspace->source_layout ?? 'checkout'])->save();
     test_task_vm($group, $workspace->node);
-
-    return $workspace->refresh();
-}
-
-/**
- * Sets the owner that provisioning records when it creates a workspace, for an Instance a test created first. The
- * model refuses to change an owner, so this writes the row directly.
- */
-function test_own_workspace(Instance $workspace, ?Task $group): Instance
-{
-    Instance::query()->whereKey($workspace->id)->update(['task_workspace_owner_id' => $group?->id]);
 
     return $workspace->refresh();
 }

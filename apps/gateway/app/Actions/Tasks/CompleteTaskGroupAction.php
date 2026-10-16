@@ -201,7 +201,7 @@ final readonly class CompleteTaskGroupAction
         $instanceId = $group->taskable_id;
 
         try {
-            $this->workspace->execute($group);
+            $this->workspace->remove($group);
         } catch (Throwable $exception) {
             $this->workspace->recordFailure($group, $exception);
 

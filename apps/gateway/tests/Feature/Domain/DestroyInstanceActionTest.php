@@ -46,14 +46,13 @@ describe('reserved worktree removable', function (): void {
 
     it('cancels a group and clears its stranded unattached task workspace', function (): void {
         app(TaskExtensionState::class)->enable();
-        $instance = reserved_removal_instance();
-        $group = Task::topLevel()->create([
-            'project_id' => $instance->project_id,
+        $instance = reserved_removal_instance(static fn (Project $project): Task => Task::topLevel()->create([
+            'project_id' => $project->id,
             'title' => 'Interrupted provision',
             'brief' => 'Clear the interrupted workspace.',
             'status' => TaskGroupStatus::Todo,
-        ]);
-        test_own_workspace($instance, $group)->update(['name' => 'task-'.$group->id, 'branch_override' => 'task-'.$group->id]);
+        ]));
+        $group = Task::topLevel()->findOrFail($instance->task_workspace_owner_id);
         $transport = reserved_removal_source($instance, true);
 
         $cancelled = app(CancelTaskGroupAction::class)->execute($group);
@@ -134,7 +133,8 @@ describe('PHP-FPM pool withdrawal', function (): void {
     });
 });
 
-function reserved_removal_instance(): Instance
+/** A reserved worktree Instance. With `$owner`, it is that group's workspace, created as provisioning does. */
+function reserved_removal_instance(?Closure $owner = null): Instance
 {
     $project = Project::query()->create([
         'name' => 'Reserved removal',
@@ -152,15 +152,18 @@ function reserved_removal_instance(): Instance
         'wireguard_ip' => '10.44.1.125',
     ]);
     $node->roles()->create(['role' => 'app-dev', 'status' => LifecycleStatus::Active]);
+    $group = $owner?->__invoke($project);
+    $name = $group instanceof Task ? 'task-'.$group->id : 'task-1253';
 
     return Instance::query()->create([
         'project_id' => $project->id,
         'node_id' => $node->id,
-        'name' => 'task-1253',
-        'branch_override' => 'task-1253',
+        'name' => $name,
+        'branch_override' => $name,
+        'task_workspace_owner_id' => $group?->id,
         'source_layout' => 'worktree',
         'source_prepare_id' => 'reserved-prepare',
-        'checkout_path' => '/srv/orbit/apps/reserved-removal/task-1253',
+        'checkout_path' => '/srv/orbit/apps/reserved-removal/'.$name,
         'task_workspace_routed' => false,
         'status' => InstanceState::Reserved,
         'starting_commit' => null,

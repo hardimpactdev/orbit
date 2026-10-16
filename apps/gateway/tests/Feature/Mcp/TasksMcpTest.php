@@ -310,22 +310,18 @@ it('cancels a running or queued group through MCP and removes its shared Instanc
         'public_ssh_host' => '192.0.2.86',
         'wireguard_ip' => '10.44.0.86',
     ]);
-    $instance = Instance::query()->create([
-        'project_id' => $this->appRecord->id,
-        'node_id' => $node->id,
-        'name' => 'task-mcp-cancel',
-        'checkout_path' => '/srv/orbit/apps/mcp-demo/task-mcp-cancel',
-        'status' => 'source_resolved',
-    ]);
     $group = Task::topLevel()->create([
         'project_id' => $this->appRecord->id,
         'title' => 'MCP cancel',
         'brief' => 'Cancel a stuck group.',
         'status' => $status,
     ]);
-    test_own_workspace($instance, $group);
-    $group->taskable()->associate($instance);
-    $group->save();
+    $instance = test_task_workspace($group, [
+        'node_id' => $node->id,
+        'name' => 'task-mcp-cancel',
+        'branch_override' => null,
+        'checkout_path' => '/srv/orbit/apps/mcp-demo/task-mcp-cancel',
+    ]);
     app()->instance(InstanceRemover::class, new class implements InstanceRemover
     {
         public function execute(Instance $instance, bool $force): InstanceRemoval

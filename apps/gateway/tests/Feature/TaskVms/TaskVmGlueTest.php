@@ -113,6 +113,23 @@ describe('workspace commands', function (): void {
         expect($transport->commands)->toBe([]);
     })->with([TaskVmState::Provisioning, TaskVmState::Failed, TaskVmState::Destroying]);
 
+    it('refuses an Instance that its group holds without owning it', function (): void {
+        $transport = tvm_glue_ssh();
+        $group = tvm_glue_group();
+        $workspace = tvm_glue_workspace($group);
+        // A row from before owners existed, attached without its group as owner. The migration detaches such a row, and
+        // the Task and Instance models refuse to create one, so the test writes it directly.
+        $legacy = Instance::withoutEvents(fn (): Instance => Instance::query()->create([
+            'project_id' => $group->project_id, 'node_id' => $workspace->node_id, 'name' => 'legacy',
+            'checkout_path' => '/home/orbit/apps/shop/legacy', 'status' => 'source_resolved',
+        ]));
+        Task::topLevel()->whereKey($group->id)->update(['taskable_type' => $legacy->getMorphClass(), 'taskable_id' => $legacy->id]);
+
+        expect(fn () => app(TaskWorkspaceExecutor::class)->execute($legacy, new RemoteCommand(['git', 'add', '-A']), 'proof', 'tasks.proof'))
+            ->toThrow(RuntimeConvergenceException::class, 'Instance [legacy] is not a task workspace.');
+        expect($transport->commands)->toBe([]);
+    });
+
     it('refuses a vm group workspace on another Node', function (): void {
         $transport = tvm_glue_ssh();
         $workspace = tvm_glue_workspace(tvm_glue_group());

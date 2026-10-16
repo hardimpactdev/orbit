@@ -177,7 +177,7 @@ final readonly class TaskSettling
 
             try {
                 $this->pushCancelledApproval($group, $instance);
-                $this->workspaces->remove($instance);
+                $this->workspaces->remove($group);
                 $this->rememberBackoff($backoffKey, null, 'workspace removal');
                 $this->releaseRemovedWorkspace($group, $instance->id);
                 Log::warning('Removed the workspace of an ended task group.', ['task_group_id' => $group->id, 'instance_id' => $instance->id]);

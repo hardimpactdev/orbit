@@ -414,9 +414,8 @@ it('fetches at resolve past planted command keys without running them', function
 describe('CheckoutProcesses', function (): void {
     it('stops the processes inside a task workspace before deleting it and leaves every other process alone', function (string $operation): void {
         $group = Task::topLevel()->create(['project_id' => $this->orbitApp->id, 'title' => 'Orphans', 'brief' => 'Brief.', 'status' => TaskGroupStatus::Running]);
-        $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-'.$group->id);
+        $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-'.$group->id, $group);
         $sibling = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-'.$group->id.'0');
-        test_own_workspace($instance, $group);
         TaskVm::query()->create(['group_id' => $group->id, 'node_id' => $this->node->id, 'host_node_id' => $this->node->id, 'provider' => 'incus', 'name' => 'removal-vm', 'wireguard_ip' => '10.44.0.130', 'state' => TaskVmState::Ready]);
         $checkout = (string) $instance->checkout_path;
         // A copy of bash keeps its own behaviour under any name; a multi-call coreutils `sleep` does not.
@@ -2970,8 +2969,9 @@ function orb180_resolved_source(
     Node $node,
     string $appsRoot,
     string $name,
+    ?Task $owner = null,
 ): Instance {
-    $instance = orb76_source_instance($project, $node, $appsRoot, $name);
+    $instance = orb76_source_instance($project, $node, $appsRoot, $name, owner: $owner);
     $source->prepare($instance, false);
     $resolution = $source->resolve($instance);
     $instance->update([

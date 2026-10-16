@@ -29,19 +29,20 @@ it('sums task tokens, reads the workspace line diff, and measures duration', fun
         'public_ssh_host' => '10.44.0.160',
         'wireguard_ip' => '10.44.0.160',
     ]);
-    $instance = Instance::query()->create([
-        'project_id' => $project->id,
-        'node_id' => $node->id,
-        'name' => 'task-40',
-        'checkout_path' => '/tmp/task-40',
-        'status' => 'source_resolved',
-    ]);
     $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Metrics',
         'brief' => 'Fill settle numbers.',
         'status' => TaskGroupStatus::Settling,
         'started_at' => '2026-09-20 12:00:00',
+    ]);
+    $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $group->id,
+        'project_id' => $project->id,
+        'node_id' => $node->id,
+        'name' => 'task-40',
+        'checkout_path' => '/tmp/task-40',
+        'status' => 'source_resolved',
     ]);
     $group->taskable()->associate($instance);
     $group->save();

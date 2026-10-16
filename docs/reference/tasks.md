@@ -558,9 +558,16 @@ Orbit writes an untracked `.mcp.json` into the workspace before a reviewer start
 
 ### Workspace ownership
 
-When provisioning creates the workspace, it records the task as the workspace's owner, before any remote work. The owner never changes. Deleting the task clears it. A task owns at most one Instance.
+When provisioning creates the workspace, it records the task as the workspace's owner, before any remote work. The owner never changes: the database refuses a new owner once one is set. Deleting the task clears it. A task owns at most one Instance.
 
-The owner is the only record of task workspace ownership. Claims, cancel, complete, and the sweep find a task's workspace only through it, attached or not. The name and branch `task-{id}` never make an Instance a task workspace. A task never removes your own Instance named or branched `task-{id}`.
+The owner is the only record of task workspace ownership:
+
+- A task holds only the workspace it owns. Orbit refuses to attach any other Instance to a task.
+- Claims, cancel, complete, and the sweep find and remove a task's workspace only through its owner, attached or not.
+- A task operation runs only in the workspace the task owns, on the task's ready task VM.
+- The name and branch `task-{id}` never make an Instance a task workspace. A task never removes your own Instance named or branched `task-{id}`.
+
+Task operations include agent turns, checks, pushes, commit signing, and `.mcp.json` writes. Orbit refuses them on any other Instance.
 
 Workspaces created before the owner existed get it from explicit records:
 
@@ -568,6 +575,8 @@ Workspaces created before the owner existed get it from explicit records:
 - Any other Instance belongs to the one task of its Project that holds it as its Instance.
 
 An Instance that no record names, that two tasks hold, or that shares its task with another Instance gets no owner. Task cleanup never removes it. To remove it, run [`instance:destroy`](/cli/instance#orbit-instancedestroy).
+
+The same migration detaches every Instance that its task does not own. A task that has not ended then asks for assistance with the reason `Orbit detached the Instance of this task because the task does not own it. Cancel the task and start a new one.` Rolling the migration back keeps those tasks detached.
 
 A task VM holds only its task's workspace, and destroying the VM waits only for that workspace. Any other Instance row on the VM's Node describes a checkout inside the VM, so it goes with the VM and never keeps the VM alive.
 

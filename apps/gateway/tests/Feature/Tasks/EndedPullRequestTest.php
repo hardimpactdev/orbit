@@ -269,7 +269,7 @@ it('does not retry a committed approval push while ended pull request assistance
         'public_ssh_host' => '10.44.0.194', 'wireguard_ip' => '10.44.0.194',
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $group->project_id, 'node_id' => $node->id, 'name' => 'ended-pr-workspace',
+        'task_workspace_owner_id' => $group->id, 'project_id' => $group->project_id, 'node_id' => $node->id, 'name' => 'ended-pr-workspace',
         'checkout_path' => '/tmp/ended-pr-workspace', 'status' => 'source_resolved',
     ]);
     $group->taskable()->associate($instance);

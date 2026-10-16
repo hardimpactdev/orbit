@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Domain\Tasks\AssistanceKind;
+use App\Domain\Tasks\TaskableType;
 use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskBroadcastObserver;
 use App\Domain\Tasks\TaskDeliverable;
@@ -280,6 +281,7 @@ final class Task extends Model
             $task->ensureParentId();
             $task->applyLevelDefaults();
             $task->guardHierarchy();
+            $task->guardWorkspace();
             $task->guardStatus();
             $task->clearAssistanceWhenEnded();
         });
@@ -669,6 +671,22 @@ final class Task extends Model
             if (! array_key_exists($column, $this->attributes) || $this->attributes[$column] === null) {
                 $this->setAttribute($column, $value);
             }
+        }
+    }
+
+    /** A task holds only the workspace it owns: the Instance that provisioning created with this task as its owner. */
+    private function guardWorkspace(): void
+    {
+        if ($this->parentKey() !== null || $this->getAttribute('taskable_id') === null || ! $this->isDirty(['taskable_type', 'taskable_id'])) {
+            return;
+        }
+
+        $owned = $this->exists
+            && $this->getAttribute('taskable_type') === TaskableType::Instance
+            && Instance::query()->whereKey($this->getAttribute('taskable_id'))->where('task_workspace_owner_id', $this->getKey())->exists();
+
+        if (! $owned) {
+            throw new LogicException('A task holds only the workspace it owns.');
         }
     }
 

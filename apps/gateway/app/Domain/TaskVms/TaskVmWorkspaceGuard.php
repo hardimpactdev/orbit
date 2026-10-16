@@ -51,15 +51,16 @@ final class TaskVmWorkspaceGuard
     }
 
     /**
-     * When a group owns this workspace, the workspace must be on that group's ready task VM. Provisioning attaches
-     * only a workspace the group owns, so an Instance without an owner is no task workspace.
+     * A task workspace is the Instance a group owns, on that group's ready task VM. An Instance without an owner is no
+     * task workspace, so no task operation reaches it.
      */
     public static function assertOwnedWorkspace(Instance $workspace): void
     {
         $group = $workspace->task_workspace_owner_id === null ? null : Task::topLevel()->find($workspace->task_workspace_owner_id);
-        if ($group instanceof Task) {
-            self::assertWorkspace($group, $workspace);
+        if (! $group instanceof Task) {
+            throw new TaskVmException(TaskVmError::WorkspaceMismatch, "Instance [{$workspace->name}] is not a task workspace.");
         }
+        self::assertWorkspace($group, $workspace);
     }
 
     /** An Instance on a task VM Node must be the workspace that the VM's group owns, in the group's Project. A pool VM serves none. */

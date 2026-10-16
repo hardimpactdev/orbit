@@ -115,6 +115,7 @@ function rm_group(array $subtasks, TaskGroupStatus $status = TaskGroupStatus::Re
         'status' => $status, 'pr_url' => $prUrl, 'pr_branch' => $prBranch,
     ]);
     $instance = Instance::query()->create([
+        'task_workspace_owner_id' => $group->id,
         'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id,
         'checkout_path' => '/srv/orbit/apps/acme/task-'.$group->id, 'branch' => 'task-'.$group->id, 'status' => 'source_resolved',
         // The implementer admission gate validates deliverables against a resolved review base.
