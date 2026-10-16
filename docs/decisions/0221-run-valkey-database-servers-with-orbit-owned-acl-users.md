@@ -1,10 +1,10 @@
 ---
-title: "ADR 0218: Run Valkey Database servers with Orbit-owned ACL users"
-sidebarTitle: "0218 Valkey servers"
+title: "ADR 0221: Run Valkey Database servers with Orbit-owned ACL users"
+sidebarTitle: "0221 Valkey servers"
 description: "In progress. database:server:create --driver=redis runs Valkey as a Database server that starts only from an Orbit-owned ACL file. The Gateway holds the admin password, and database:create --server adds one ACL user per Redis Database connection. A one-time --process option adopts the Valkey Process on services."
 ---
 
-# ADR 0218: Run Valkey Database servers with Orbit-owned ACL users
+# ADR 0221: Run Valkey Database servers with Orbit-owned ACL users
 
 `orbit database:server:create <slug> --driver=redis` runs Valkey as a [Database server](/reference/database-servers). The Gateway generates the admin password and keeps it encrypted. Valkey starts only from an ACL file that Orbit writes, so no path starts it without a password. `orbit database:create <slug> --server=<server>` adds one ACL user with the key patterns and commands that the caller names, and records a Redis Database connection for it. A one-time `--process` option brings the existing Valkey Process on `services` under Orbit without moving its data.
 

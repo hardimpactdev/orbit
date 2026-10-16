@@ -229,7 +229,7 @@ Doctor does not report an old `last_tick_at` yet. Until it does, check [`orbit t
 
 A Horizon that is down while its Process should run is ordinary Process drift. Doctor reports it as `process.state_mismatch`, or `process.crash_loop` when systemd keeps restarting it. Problem collection runs in the scheduler, so it records that issue within one collection cycle, and `problems:file` files it once two collections 10 minutes apart saw it. A Horizon stopped with `orbit process:stop` is not drift and is not reported.
 
-The ProxyCli collector has no ACL user of its own. It logs in as `default` through `services-valkey`, and so do the Gateway's snapshot reads. Step 3 of the [AI router build](/decisions/0212-turn-proxycli-into-the-ai-router-extension#build-order) renames their keys from `orbit:proxycli:*` to `orbit:ai-router:*`. Before step 4, a connection on `services-valkey` with the pattern `orbit:ai-router:*` gives them their own user, and step 4 binds it ([ADR 0218](/decisions/0218-run-valkey-database-servers-with-orbit-owned-acl-users#the-collector-gets-its-own-user-later)).
+The ProxyCli collector has no ACL user of its own. It logs in as `default` through `services-valkey`, and so do the Gateway's snapshot reads. Step 3 of the [AI router build](/decisions/0212-turn-proxycli-into-the-ai-router-extension#build-order) renames their keys from `orbit:proxycli:*` to `orbit:ai-router:*`. Before step 4, a connection on `services-valkey` with the pattern `orbit:ai-router:*` gives them their own user, and step 4 binds it ([ADR 0221](/decisions/0221-run-valkey-database-servers-with-orbit-owned-acl-users#the-collector-gets-its-own-user-later)).
 
 ## Why it works this way
 

@@ -66,7 +66,7 @@ The server's Process is an ordinary Docker Node Process: read its logs, stop it,
 
 ## Adopt a Valkey Process
 
-`database:server:create` with `--process` and `--connection` brings an existing Valkey Process under Orbit, without a new volume and without a data move. The option exists only to adopt the `valkey` Process on `services` ([ADR 0218](/decisions/0218-run-valkey-database-servers-with-orbit-owned-acl-users)). A later version removes it.
+`database:server:create` with `--process` and `--connection` brings an existing Valkey Process under Orbit, without a new volume and without a data move. The option exists only to adopt the `valkey` Process on `services` ([ADR 0221](/decisions/0221-run-valkey-database-servers-with-orbit-owned-acl-users)). A later version removes it.
 
 ```bash
 orbit database:server:create services-valkey --node=services --driver=redis --process=162 --connection=services-valkey
