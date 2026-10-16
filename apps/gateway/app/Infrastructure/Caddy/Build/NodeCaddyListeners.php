@@ -22,6 +22,12 @@ final readonly class NodeCaddyListeners
     private const array TaskVmSources = ['gateway', 'websocket'];
 
     /**
+     * Every site source name core uses. A contributed site may not use one: the task VM guard admits two of them, and
+     * the Caddyfile and Doctor name each site by its source.
+     */
+    public const array CoreSources = ['gateway', 'metrics', 'service-metrics', 'app-dev', 'app-prod', 'ingress', 'websocket', 'analytics'];
+
+    /**
      * @param  list<string>  $explicit  The WireGuard address, then the LAN address when the Node has one.
      */
     private function __construct(
