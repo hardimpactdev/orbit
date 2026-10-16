@@ -82,6 +82,8 @@ A caller matches the outcome and maps it to its own error codes. It never sees t
 
 `SshProgramRunner` implements the runner over SSH. It connects to the Node's WireGuard address as the Node's user, with the Gateway's key and pinned host keys, and sends the program on standard input. A call can pass a shorter timeout than the program's and a cancellation check.
 
+An internal caller may select a validated Unix account through the catalog's optional `user` argument. The runner prefixes that program's command with `sudo -n -u <user> -H`; SSH still connects as the enrolled account. This is not a caller-supplied API option. Project metadata inspection uses the Instance account on production, so version files are read with application permissions rather than as the store owner.
+
 ### Git read credentials
 
 A program that reads a private repository receives the [Git read environment](/reference/github-app#the-checkout-cannot-inherit-the-token) in its input under `git_read`, a map of environment variables. The program sets them only for the command that reads the origin. Input with a credential travels as protected input and is marked as a Git credential, so it never reaches a task VM ([Git on a task VM](/reference/compute-drivers#git-on-a-task-vm)). Bash programs take no credential.

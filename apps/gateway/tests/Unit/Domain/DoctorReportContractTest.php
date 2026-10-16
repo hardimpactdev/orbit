@@ -325,6 +325,8 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
             'tool.inventory_scan',
             'tool.node_unreachable',
             'tool.inspection_failed',
+            'tool.vp_store_missing',
+            'tool.vp_store_inspection_failed',
         ],
         'process' => [
             'process.runtime_missing',

@@ -143,6 +143,14 @@ The branch lives on the Instance. `PATCH /api/v1/instances/{instance}` with `bra
 
 Deploy-step and branch changes need an access grant to the Instance's Node. The Gateway refuses them for an Instance that is not a production Instance with `deployment_config.unavailable` (409). Activity and errors never contain a step command.
 
+### Vite store prerequisite
+
+Before a JavaScript step (`npm-build`, or a command using `vp`, Node, npm/npx, pnpm, Yarn, Bun, Vite, or Corepack), Orbit prepares the [Project environment in the vp store](/reference/tools#project-environments-in-the-vite-store) when the Project declares `vite-plus`. The prerequisite runs before the application command, as the store owner. It records desired versions before installing missing content and verifies the result before allowing the step to start. It does not run package install scripts as the store owner.
+
+The default JavaScript deploy runs `vp install --frozen-lockfile` followed by `vp run build`, through `vp env exec` with recorded exact Node and package-manager versions as the Instance user. That execution reads the shared store but never writes it. A data migration replaces stored legacy default steps containing hard-coded Node and npm paths; runtime execution does not rewrite commands. Customized commands keep their flags, shell operators, and additional build scripts, including SSR builds.
+
+A missing runtime or package manager that cannot be installed fails with `deployment.vp_store_failed`, before the build command runs. Invalid or incompatible Project requirements fail with `deployment.vp_requirements_invalid`. The current production release stays selected. Fix connectivity, store ownership, or Project requirements and retry the deploy; no manual runtime installation is required. Doctor reports recorded store drift without repairing it.
+
 ## Deploy through the API
 
 A deployment runs as an [operation](/reference/operations) on the Gateway queue. A rollback still runs inside its request and streams its progress.
@@ -340,6 +348,8 @@ A deploy operation also holds the Instance from its start request to its end, so
 [Doctor](/cli/doctor) checks each production Instance against its home. It reports a missing or wrongly owned home, a broken `current` link, a selected release outside `releases/`, and a web root that leaves the release. It checks the `.env` link of the default application directory only. A home without `current` is healthy before the first deployment. Doctor accepts an older release after a rollback, and a release whose branch has moved on.
 
 ## Retained releases
+
+When preparing a candidate, Orbit keeps the selected release's Node and package-manager references, even when its build fails. Retained releases keep those references for rollback too. Release cleanup drops references only for releases it takes out of the retained set; a release kept for running processes keeps its runtimes.
 
 A successful production deployment keeps at most 3 releases in the home: the new selection, the selection before it, and the newest other release. `initial` counts as the oldest, and later releases sort by the creation time in their names. It removes the rest, and the output names each one. So [`instance:rollback`](/cli/instance#orbit-instancerollback) can return to the previous selection and one other release. A rollback removes nothing. A failed deployment removes nothing either; the next successful one does.
 
