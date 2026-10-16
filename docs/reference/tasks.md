@@ -565,7 +565,7 @@ The owner is the only record of task workspace ownership. Claims, cancel, comple
 Workspaces created before the owner existed get it from explicit records:
 
 - An Instance on the Node of a task VM that is not destroyed belongs to the VM's task.
-- Any other Instance belongs to the one task that holds it as its Instance.
+- Any other Instance belongs to the one task of its Project that holds it as its Instance.
 
 An Instance that no record names, that two tasks hold, or that shares its task with another Instance gets no owner. Task cleanup never removes it. To remove it, run [`instance:destroy`](/cli/instance#orbit-instancedestroy).
 
