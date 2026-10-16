@@ -10,6 +10,7 @@ use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentThreadObserver;
 use App\Domain\Tasks\AgentThreadState;
+use App\Domain\Tasks\DeliverablePathRepository;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
@@ -26,6 +27,7 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
+use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskReviewedCommit;
 use App\Models\TaskVm;
@@ -77,6 +79,15 @@ function lease_stopped_driver(): FakeAgentDriver
     app()->instance(AgentThreadObserver::class, new AgentThreadObserver($registry));
 
     return $driver;
+}
+
+function lease_review_anchor(Task $group): TaskWorkspaceLeaseRecord
+{
+    $leases = app(TaskWorkspaceLease::class);
+    $lease = $leases->acquire($group, 'reviewer', 'baseline');
+    $leases->release($lease);
+
+    return $lease;
 }
 
 it('retains a persisted turn through restart, unknown state, and an old stopped observation', function (): void {
@@ -178,17 +189,18 @@ it('does not resurrect a completed pre-lease actor when its runtime later become
 it('requires a continuous Orbit lease chain and refuses reviewer or unleased changes', function (): void {
     $group = tick_group();
     $leases = app(TaskWorkspaceLease::class);
+    $baseline = lease_review_anchor($group);
     $record = TaskWorkspaceLeaseRecord::query()->create(['instance_id' => $group->taskable_id, 'group_id' => $group->id,
-        'kind' => 'check', 'owner' => 'first', 'status' => 'released', 'orbit_mutation' => true, 'head_before' => 'a', 'tree_before' => 'b', 'head_after' => 'a', 'tree_after' => 'c']);
-    expect($leases->ownedChange($group, 'a', 'b', new TaskWorkspaceSnapshot('a', 'c')))->toBeTrue();
-    expect($leases->ownedChange($group, 'a', 'b', new TaskWorkspaceSnapshot('outside', 'c')))->toBeFalse();
+        'kind' => 'check', 'owner' => 'first', 'status' => 'released', 'orbit_mutation' => true, 'acquisition_sequence' => 2, 'head_before' => 'a', 'tree_before' => 'b', 'head_after' => 'a', 'tree_after' => 'c']);
+    expect($leases->ownedChange($group, 'a', 'b', new TaskWorkspaceSnapshot('a', 'c'), $baseline->id))->toBeTrue();
+    expect($leases->ownedChange($group, 'a', 'b', new TaskWorkspaceSnapshot('outside', 'c'), $baseline->id))->toBeFalse();
     $record->update(['kind' => 'reviewer']);
-    expect($leases->ownedChange($group, 'a', 'b', new TaskWorkspaceSnapshot('a', 'c')))->toBeFalse();
+    expect($leases->ownedChange($group, 'a', 'b', new TaskWorkspaceSnapshot('a', 'c'), $baseline->id))->toBeFalse();
     $record->delete();
     $group->tasks->first()->checks()->create(['kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Changed,
         'pid' => 321, 'process_started' => 'start', 'started_at' => now(), 'finished_at' => now(),
         'head_before' => 'a', 'tree_before' => 'b', 'head_after' => 'a', 'tree_after' => 'c']);
-    expect($leases->ownedChange($group, 'a', 'b', new TaskWorkspaceSnapshot('a', 'c')))->toBeFalse();
+    expect($leases->ownedChange($group, 'a', 'b', new TaskWorkspaceSnapshot('a', 'c'), $baseline->id))->toBeFalse();
 });
 
 it('does not attribute an outside edit observed under a read-only verdict lease to Orbit', function (): void {
@@ -199,13 +211,14 @@ it('does not attribute an outside edit observed under a read-only verdict lease 
     $head = $checks->head;
     $tree = $checks->tree;
     $leases = app(TaskWorkspaceLease::class);
+    $baseline = lease_review_anchor($group);
     $leases->inspect($group, function () use ($checks): bool {
         $checks->tree = str_repeat('e', 40);
 
         return true;
     });
     expect(TaskWorkspaceLeaseRecord::query()->where('kind', 'verdict')->sole()->getAttribute('orbit_mutation'))->toBeFalse();
-    expect($leases->ownedChange($group, $head, $tree, new TaskWorkspaceSnapshot($head, $checks->tree)))->toBeFalse();
+    expect($leases->ownedChange($group, $head, $tree, new TaskWorkspaceSnapshot($head, $checks->tree), $baseline->id))->toBeFalse();
 });
 
 it('releases a confirmed rejected send but retains an unknown send result', function (bool $rejected): void {
@@ -306,6 +319,7 @@ it('preserves merge provenance when the same lease continues into its detached g
     $checks = new FakeTaskCheckRunner;
     app()->instance(TaskCheckRunner::class, $checks);
     $leases = app(TaskWorkspaceLease::class);
+    $baseline = lease_review_anchor($group);
     $task = $group->tasks->first();
     $beforeHead = $checks->head;
     $beforeTree = $checks->tree;
@@ -318,7 +332,7 @@ it('preserves merge provenance when the same lease continues into its detached g
             'head_before' => $process->head, 'tree_before' => $process->tree]);
         $leases->finishedCheck($check, TaskCheckReading::finished(0, $checks->head, $checks->tree, [], 'done'));
     });
-    expect($leases->ownedChange($group, $beforeHead, $beforeTree, new TaskWorkspaceSnapshot($checks->head, $checks->tree)))->toBeTrue();
+    expect($leases->ownedChange($group, $beforeHead, $beforeTree, new TaskWorkspaceSnapshot($checks->head, $checks->tree), $baseline->id))->toBeTrue();
 });
 
 it('imports only a clean recorded historical Orbit merge with its matching gate', function (): void {
@@ -381,7 +395,7 @@ it('acknowledges a completed keyed send after restart without reopening its turn
     $registry->get('pi')->send($thread->fresh(), 'Same command.', 'durable');
     expect(collect($driver->calls)->where('operation', 'send'))->toHaveCount(1);
     expect(TaskWorkspaceLeaseRecord::query()->where('status', 'held')->exists())->toBeFalse();
-    expect(app(TaskWorkspaceLease::class)->pendingSend($thread, 'durable'))->toBe(['key' => 'durable', 'message' => 'Same command.']);
+    expect(app(TaskWorkspaceLease::class)->pendingSend($thread, 'durable', includeCompleted: true))->toBe(['key' => 'durable', 'message' => 'Same command.']);
     expect(fn () => $registry->get('pi')->send($thread->fresh(), 'Changed command.', 'durable'))->toThrow(TaskWorkspaceWaiting::class);
     $leases = app(TaskWorkspaceLease::class);
     expect($leases->acquire($group, 'publication', 'after-completion')->status)->toBe('held');
@@ -410,4 +424,145 @@ it('drops a cancelled subtasks queued baseline and admits its successor without 
     $leases->release($holder);
     $start->invoke(app(TaskSubtaskRunner::class), app(TaskScheduler::class), $group->fresh(), $next->fresh());
     expect($checks->starts)->toBe(1)->and($next->fresh()->communication_failures)->toBe(0);
+});
+
+it('leases immutable deliverable validation and reuses an existing prepared actor on retry', function (bool $pending): void {
+    $group = tick_group();
+    lease_stopped_driver();
+    app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner);
+    $task = $group->tasks->first();
+    $task->update(['subtask_start_commit' => str_repeat('a', 40), 'deliverables' => [['id' => 'source', 'type' => 'file', 'path' => 'existing.php', 'change' => 'modified']]]);
+    if ($pending) {
+        AgentThread::query()->create(['task_group_id' => $group->id, 'task_id' => $task->id, 'node_id' => $group->taskable->node_id,
+            'driver' => 'pi', 'runtime_key' => 'node:'.$group->taskable->node_id, 'external_id' => 'pending:path-validation', 'role' => 'implementer']);
+    }
+    $repository = new class implements DeliverablePathRepository
+    {
+        public int $reads = 0;
+
+        public function defaultBranchCommit(Project $project): string
+        {
+            return str_repeat('a', 40);
+        }
+
+        public function files(Project $project, string $commit, ?Instance $workspace = null): array
+        {
+            $this->reads++;
+            expect(TaskWorkspaceLeaseRecord::query()->where('active_instance_id', $workspace->id)->exists())->toBeTrue();
+
+            return ['existing.php'];
+        }
+    };
+    app()->instance(DeliverablePathRepository::class, $repository);
+    $leases = app(TaskWorkspaceLease::class);
+    $holder = $leases->acquire($group, 'publication', 'busy');
+    $validate = new ReflectionMethod(TaskSubtaskRunner::class, 'validateImplementerDeliverablePaths');
+    expect(fn () => $validate->invoke(app(TaskSubtaskRunner::class), app(TaskScheduler::class), $task, $group))->toThrow(TaskWorkspaceWaiting::class);
+    expect($repository->reads)->toBe(0);
+    $leases->release($holder);
+    expect($validate->invoke(app(TaskSubtaskRunner::class), app(TaskScheduler::class), $task, $group))->toBeTrue();
+    expect($repository->reads)->toBe(1);
+    expect(TaskWorkspaceLeaseRecord::query()->where('status', 'queued')->exists())->toBeFalse();
+})->with([false, true]);
+
+it('does not credit an outside edit observed during metadata-only remote work to Orbit', function (): void {
+    $group = tick_group();
+    lease_stopped_driver();
+    $checks = new FakeTaskCheckRunner;
+    app()->instance(TaskCheckRunner::class, $checks);
+    $leases = app(TaskWorkspaceLease::class);
+    $baseline = lease_review_anchor($group);
+    $head = $checks->head;
+    $tree = $checks->tree;
+    $leases->run($group, 'publication', 'metadata-only', function () use ($group, $leases, $checks): void {
+        $record = $leases->remoteStarted($group->taskable);
+        $checks->tree = str_repeat('e', 40);
+        $leases->remoteFinished($record);
+    });
+    expect($leases->ownedChange($group, $head, $tree, new TaskWorkspaceSnapshot($head, $checks->tree), $baseline->id))->toBeFalse();
+});
+
+it('never reuses a mutation before the current reviewer baseline after a checkout returns to the same tree', function (): void {
+    $group = tick_group();
+    $leases = app(TaskWorkspaceLease::class);
+    foreach ([['a', 'b', 1], ['b', 'a', 2]] as [$before, $after, $sequence]) {
+        TaskWorkspaceLeaseRecord::query()->create(['instance_id' => $group->taskable_id, 'group_id' => $group->id,
+            'kind' => 'check', 'owner' => 'old:'.$sequence, 'status' => 'released', 'orbit_mutation' => true,
+            'acquisition_sequence' => $sequence, 'head_before' => 'head', 'tree_before' => $before, 'head_after' => 'head', 'tree_after' => $after]);
+    }
+    $baseline = lease_review_anchor($group);
+    expect($leases->ownedChange($group, 'head', 'a', new TaskWorkspaceSnapshot('head', 'b'), $baseline->id))->toBeFalse();
+});
+
+it('credits a waiter admitted after review even when its request predates the adopted reviewer record', function (): void {
+    $group = tick_group();
+    $leases = app(TaskWorkspaceLease::class);
+    $queued = TaskWorkspaceLeaseRecord::query()->create(['instance_id' => $group->taskable_id, 'group_id' => $group->id,
+        'kind' => 'check', 'owner' => 'early-request', 'status' => 'queued']);
+    $baseline = TaskWorkspaceLeaseRecord::query()->create(['instance_id' => $group->taskable_id, 'group_id' => $group->id,
+        'kind' => 'reviewer', 'owner' => 'adopted-review', 'status' => 'released', 'adopted' => true, 'acquisition_sequence' => 1]);
+    $admitted = $leases->acquire($group, 'check', 'early-request');
+    expect($admitted->id)->toBeLessThan($baseline->id)->and($admitted->getAttribute('acquisition_sequence'))->toBe(2);
+    $admitted->update(['orbit_mutation' => true, 'head_before' => 'head', 'tree_before' => 'a']);
+    $leases->release($admitted, new TaskWorkspaceSnapshot('head', 'b'));
+    expect($leases->ownedChange($group, 'head', 'a', new TaskWorkspaceSnapshot('head', 'b'), $baseline->id))->toBeTrue();
+});
+
+it('adopts pre-lease ownership from another group using the same Instance before admitting new work', function (bool $remoteCheck): void {
+    $first = tick_group();
+    $other = $first->replicate();
+    $other->save();
+    $subtask = $first->tasks->first()->replicate();
+    $subtask->parent_id = $other->id;
+    $subtask->save();
+    $other->unsetRelations();
+    test_link_agent_threads($other, 'other-reviewer', 'other-implementer');
+    $driver = lease_stopped_driver();
+    if ($remoteCheck) {
+        $task = $other->tasks->first();
+        $task->checks()->create(['kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Running,
+            'pid' => 0, 'process_started' => '', 'head_before' => '', 'tree_before' => '', 'started_at' => now()]);
+    } else {
+        $driver->observation = null;
+        AgentThread::query()->where('task_group_id', $first->id)->delete();
+    }
+    $called = false;
+    $leases = app(TaskWorkspaceLease::class);
+    expect(fn () => $leases->run($first, 'publication', 'new-work', function () use (&$called): void {
+        $called = true;
+    }))->toThrow(TaskWorkspaceWaiting::class);
+    $holder = TaskWorkspaceLeaseRecord::query()->where('status', 'held')->sole();
+    expect($called)->toBeFalse()->and($holder->group_id)->toBe($other->id)->and($holder->getAttribute('adopted'))->toBeTrue();
+    expect(TaskWorkspaceLeaseRecord::query()->where('status', 'queued')->sole()->group_id)->toBe($first->id);
+})->with([true, false]);
+
+it('drains a finished legacy check but fences the next active legacy check before admitting a new actor', function (): void {
+    $group = tick_group();
+    lease_stopped_driver();
+    $checks = new FakeTaskCheckRunner([
+        FakeTaskCheckRunner::passed(), TaskCheckReading::running(), FakeTaskCheckRunner::passed(),
+    ]);
+    app()->instance(TaskCheckRunner::class, $checks);
+    $task = $group->tasks->first();
+    $rows = [];
+    foreach ([123, 456] as $pid) {
+        $rows[] = $task->checks()->create(['kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Running,
+            'pid' => $pid, 'process_started' => 'legacy-'.$pid, 'head_before' => $checks->head, 'tree_before' => $checks->tree, 'started_at' => now()]);
+    }
+    $leases = app(TaskWorkspaceLease::class);
+    $entered = 0;
+    $operation = function () use (&$entered): void {
+        $entered++;
+    };
+    expect(fn () => $leases->run($group, 'publication', 'after-checks', $operation))->toThrow(TaskWorkspaceWaiting::class);
+    expect($rows[0]->fresh()->status)->toBe(TaskCheckStatus::Passed)
+        ->and($rows[1]->fresh()->status)->toBe(TaskCheckStatus::Running)
+        ->and(TaskWorkspaceLeaseRecord::query()->where('status', 'held')->sole()->check_id)->toBe($rows[1]->id)
+        ->and(TaskWorkspaceLeaseRecord::query()->where('status', 'queued')->sole()->owner)->toBe('after-checks')
+        ->and($entered)->toBe(0);
+    $leases->run($group, 'publication', 'after-checks', $operation);
+    expect($rows[1]->fresh()->status)->toBe(TaskCheckStatus::Passed)
+        ->and($entered)->toBe(1)
+        ->and(TaskWorkspaceLeaseRecord::query()->whereIn('status', ['held', 'queued'])->exists())->toBeFalse()
+        ->and($checks->starts)->toBe(0)->and($checks->cancels)->toBe(0);
 });

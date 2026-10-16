@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -12,6 +13,7 @@ use App\Infrastructure\Tasks\TaskWorkspaceExecutor;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
+use App\Models\Task;
 use Symfony\Component\Process\Process;
 use Tests\Support\LocalShellSshExecutor;
 use Tests\Support\TestOrbitHome;
@@ -136,4 +138,17 @@ it('reports failure for a workspace without a checkout', function (): void {
     $instance->checkout_path = '';
 
     expect(workspace_mcp()->installWhenMissing($instance))->toBeFalse();
+});
+
+it('keeps MCP installation fenced without crediting changes to the reviewed checkout tree', function (): void {
+    $instance = workspace_mcp_instance(workspace_mcp_checkout());
+    $group = Task::topLevel()->create(['project_id' => $instance->project_id, 'title' => 'Install MCP', 'brief' => 'Prepare the task', 'status' => 'running']);
+    $group->taskable()->associate($instance);
+    $group->save();
+    $group = test_vm_group($group);
+    $instance->refresh();
+    $lease = app(TaskWorkspaceLease::class)->acquire($group, 'reviewer', 'prepare');
+    expect(workspace_mcp()->installWhenMissing($instance))->toBeTrue();
+    expect($lease->fresh()->getAttribute('orbit_mutation'))->toBeFalse()
+        ->and($lease->fresh()->getAttribute('remote_uncertain'))->toBeFalse();
 });

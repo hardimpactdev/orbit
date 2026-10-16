@@ -691,6 +691,11 @@ final readonly class TaskReviewOutcome
         return $this->restartReviewOnHead($scheduler, $group, $task, $reviewer, $current, $task->review_handled_comment_id, recoverAssistance: true);
     }
 
+    public function reportStaleReviewCheckFailure(Task $group, Task $task, string $reason): void
+    {
+        $this->reportStaleReviewInspectionFailure($group, $task, self::StaleReviewInspectionFailure.$reason);
+    }
+
     private function reportStaleReviewInspectionFailure(Task $group, Task $task, string $reason): void
     {
         // Only replace this recovery's failure. An operator may have requested unrelated
@@ -725,7 +730,7 @@ final readonly class TaskReviewOutcome
     private function ownedWorkspaceChange(Task $group, Task $task, TaskWorkspaceSnapshot $current): bool
     {
         return is_string($task->review_workspace_head) && is_string($task->review_workspace_tree)
-            && app(TaskWorkspaceLease::class)->ownedChange($group, $task->review_workspace_head, $task->review_workspace_tree, $current);
+            && app(TaskWorkspaceLease::class)->ownedChange($group, $task->review_workspace_head, $task->review_workspace_tree, $current, $task->review_workspace_lease_id);
     }
 
     private function restartReviewOnHead(TaskScheduler $scheduler, Task $group, Task $task, TaskThreadObservation $reviewer, TaskWorkspaceSnapshot $current, ?int $handledComment, bool $recoverAssistance = false): bool

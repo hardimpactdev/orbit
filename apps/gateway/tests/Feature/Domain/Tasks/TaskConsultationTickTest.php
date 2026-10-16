@@ -705,7 +705,7 @@ it('reminds an implementer that ends a turn without a receipt once, then asks fo
     {
         public function snapshot(Node $node, string $threadId): ?array
         {
-            return tick_checked_thread('idle');
+            return tick_checked_thread('idle', $threadId);
         }
     });
     $receipts = new FakeTaskTurnReceipts([null, null]);
@@ -1068,7 +1068,7 @@ it('retries the reviewer nudge until the handoff send succeeds', function (): vo
     {
         public function snapshot(Node $node, string $threadId): ?array
         {
-            return tick_checked_thread('idle');
+            return tick_checked_thread('idle', $threadId);
         }
     });
 
@@ -1334,7 +1334,8 @@ it('retains reminder send failures across successful classifications and clears 
     $group->update(['status' => $status === TaskStatus::Reviewing ? TaskGroupStatus::Reviewing : TaskGroupStatus::Running]);
     $task->update(['status' => $status, 'review_notified_attempt' => $task->review_attempt, 'review_notified_turn_id' => 'old-turn']);
     app(TaskExtensionState::class)->enable();
-    app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts([]));
+    $receipts = new FakeTaskTurnReceipts([]);
+    app()->instance(TaskTurnReceipts::class, $receipts);
     app()->instance(AgentSnapshotReader::class, new class implements AgentSnapshotReader
     {
         public function snapshot(Node $node, string $threadId): ?array
@@ -1346,8 +1347,12 @@ it('retains reminder send failures across successful classifications and clears 
     {
         public bool $fails = true;
 
+        /** @var list<array<string, mixed>> */
+        public array $attempts = [];
+
         public function dispatch(Node $node, array $command): array
         {
+            $this->attempts[] = $command;
             if ($this->fails) {
                 throw new AgentDriverException('send failed');
             }
@@ -1359,7 +1364,10 @@ it('retains reminder send failures across successful classifications and clears 
 
     app(TaskScheduler::class)->tick();
     app(TaskScheduler::class)->tick();
-    expect($task->fresh()->communication_failures)->toBe(2);
+    expect($task->fresh()->communication_failures)->toBe(2)
+        ->and($receipts->reads())->toBe(1)
+        ->and($dispatcher->attempts)->toHaveCount(2)
+        ->and($dispatcher->attempts[1])->toBe($dispatcher->attempts[0]);
 
     $dispatcher->fails = false;
     app(TaskScheduler::class)->tick();

@@ -9,7 +9,7 @@ covers:
   - "apps/gateway/app/Console/Commands/{TickTaskSessionsCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand,TaskGitHubReviewsCommand}.php"
   - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,TaskReviewedCommit,TaskWorkspaceLeaseRecord,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
   - "apps/gateway/resources/tasks/**"
-  - "apps/gateway/database/migrations/*_{add_pending_resolution_comment_id_to_tasks,create_task_workspace_leases_table,merge_task_groups_into_tasks,create_task_github_review_consumptions_table,create_task_github_review_observations_table,convert_test_deliverables_to_commands,add_continuation_source_to_tasks,drop_task_definitions_table,create_problem_fingerprints,clear_assistance_on_ended_tasks,add_assistance_kind_to_tasks,create_task_questions,add_model_and_effort_to_task_agent_sessions,add_watched_pr_url_to_tasks,add_review_and_merge}.php"
+  - "apps/gateway/database/migrations/*_{add_review_workspace_lease_id_to_tasks,add_pending_resolution_comment_id_to_tasks,create_task_workspace_leases_table,merge_task_groups_into_tasks,create_task_github_review_consumptions_table,create_task_github_review_observations_table,convert_test_deliverables_to_commands,add_continuation_source_to_tasks,drop_task_definitions_table,create_problem_fingerprints,clear_assistance_on_ended_tasks,add_assistance_kind_to_tasks,create_task_questions,add_model_and_effort_to_task_agent_sessions,add_watched_pr_url_to_tasks,add_review_and_merge}.php"
 ---
 
 # Tasks
@@ -543,7 +543,9 @@ When the implementer cannot start, the subtask and the task become `failed`, and
 
 One durable workspace lease coordinates every Orbit actor that reads a task checkout for a verdict or writes it. The lease belongs to the Instance. Implementer and reviewer turns, candidate and handoff checks, deliverable commands, main merges, publication, settlement, and teardown use the same lease. The group execution lock still serializes admission and completion authorization; it does not replace workspace ownership.
 
-A busy workspace queues the next actor. Waiters retain their order across Gateway restarts. Releasing the holder admits the oldest eligible waiter on the next scheduler tick. Task status and Doctor show the holder and waiters, including their thread or check identity and `remote_uncertain` when a remote mutation has no confirmed result. Waiting is not a check failure and consumes no communication attempt.
+A busy workspace queues the next actor. Waiters retain their order across Gateway restarts. Queued intents retain the subtask phase and attempt they serve. Cancellation or a changed phase or assistance request withdraws an obsolete queued intent; it never discards a held actor.
+
+Releasing the holder admits the oldest eligible waiter on the next scheduler tick. Task status and Doctor show the holder and waiters, including their thread or check identity and `remote_uncertain` when a remote mutation has no confirmed result. Waiting is not a check failure and consumes no communication attempt.
 
 Agent turns keep ownership until Orbit observes that the turn stopped. Detached checks keep ownership until Orbit records their remote result. A timeout or an unavailable runtime never proves that a holder stopped. After authoritative completion, replaying the same keyed command acknowledges its durable result without opening another turn or lease.
 
@@ -552,6 +554,8 @@ Before assistance can stop a tick, Orbit reconciles completed checks and stopped
 Orbit records the review HEAD and working tree after it acquires the reviewer lease and prepares the turn, immediately before it sends the review packet. A review that waited therefore reads the current tree. Review outcomes and publication use the same ownership rule.
 
 Every completed Orbit mutation records its before and after HEAD and tree under its lease. A durable mutation marker distinguishes executed Orbit commands from read-only verdicts; a changed snapshot under a read-only lease is not ownership proof.
+
+The causal chain starts after the lease that captured the review baseline, using admission order rather than queue creation order. A matching mutation from an earlier review cannot excuse a later edit. Fetches, pushes, and receipt-file cleanup do not prove a checkout mutation.
 
 An exact ownership chain from the review baseline to the current snapshot permits a new review with delta scope. This also clears workspace-changed or stale-head assistance on the next tick. Orbit does not infer ownership from a commit message, a matching old snapshot, a pre-lease check record, or a different HEAD alone. An agent edit outside its turn, a reviewer edit, or an unexplained gap still asks for assistance. Orbit never asks an agent to revert an Orbit-owned mutation.
 
@@ -1788,7 +1792,7 @@ The merge condition is a fact Orbit recorded: this exact SHA passed Orbit's fina
 
 Orbit merges main locally and records the Project gate on the exact merge commit. Every checkout actor uses the [workspace lease](#workspace-lease), including review verdicts, main merges, publication, and teardown. The group execution lock serializes admission; the durable Instance lease owns the checkout through each remote turn or detached check. Waiters retain FIFO order. Cancelling a subtask removes its queued intents but never discards an active or uncertain holder.
 
-Orbit captures the review baseline after reviewer admission and preparation, immediately before dispatch. If HEAD or the working tree changes, automatic delta review and stale-assistance recovery require an exact durable chain of proven Orbit mutations from that baseline. A read-only lease, a changed HEAD alone, or an old check snapshot does not prove ownership. Unexplained edits and reviewer edits still need assistance. A narrow historical clean-merge bridge requires the durable reviewed merge record, its passed gate, verified parents, and the baseline parent tree.
+Orbit captures the review baseline after reviewer admission and preparation, immediately before dispatch. If HEAD or the working tree changes, automatic delta review and stale-assistance recovery require an exact durable chain of proven Orbit mutations from that baseline. A read-only lease, a changed HEAD alone, or an old check snapshot does not prove ownership. Unexplained edits and reviewer edits still need assistance. For a merge created before leases existed, recovery requires the durable reviewed merge record, its passed gate, verified parents, and the baseline parent tree.
 
 A reviewer whose completed turn has durable confirmation does not regain ownership when its runtime later becomes unreadable. Working, paused, and unknown uncompleted turns retain the lease, including older conversations. Orbit reconciles authoritative completion before assistance gating and never expires an uncertain holder by elapsed time.
 

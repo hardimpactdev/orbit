@@ -2608,6 +2608,14 @@ function scheduler_review(array $receipts, bool $notified = true): array
         'review_workspace_head' => $notified ? str_repeat('a', 40) : null,
         'review_workspace_tree' => $notified ? str_repeat('b', 40) : null,
     ]);
+    if ($notified) {
+        $baseline = TaskWorkspaceLeaseRecord::query()->create([
+            'instance_id' => $instance->id, 'group_id' => $group->id, 'task_id' => $task->id,
+            'kind' => 'reviewer', 'owner' => 'baseline:'.$task->id, 'status' => 'released',
+            'acquisition_sequence' => 1, 'released_at' => now(),
+        ]);
+        $task->update(['review_workspace_lease_id' => $baseline->id]);
+    }
     app(TaskExtensionState::class)->enable();
     app()->instance(TaskWorkspaceStateReader::class, new class($group->id) implements TaskWorkspaceStateReader
     {
@@ -2855,6 +2863,9 @@ it('reconciles remote finished checks before recovering assistance with an exhau
         ]);
     }
 
+    // Recovery needs causal mutation proof as well as reconciled legacy check results.
+    scheduler_record_merge_lease($group, $checks);
+
     app(TaskScheduler::class)->tick();
 
     foreach ($rows as $row) {
@@ -3042,6 +3053,7 @@ function scheduler_record_merge_lease(Task $group, FakeTaskCheckRunner $checks):
     TaskWorkspaceLeaseRecord::query()->create([
         'instance_id' => $group->taskable_id, 'group_id' => $group->id,
         'kind' => 'main_merge', 'owner' => 'main-merge:'.$group->id, 'status' => 'released', 'orbit_mutation' => true,
+        'acquisition_sequence' => 2,
         'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('b', 40),
         'head_after' => $checks->head, 'tree_after' => $checks->tree,
         'acquired_at' => now()->subMinute(), 'released_at' => now(),

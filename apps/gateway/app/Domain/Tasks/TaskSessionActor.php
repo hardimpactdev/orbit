@@ -102,7 +102,7 @@ final readonly class TaskSessionActor
 
     private function followupMessage(AgentThread $thread, string $message, ?string $key): string
     {
-        $pending = $key === null ? null : app(TaskWorkspaceLease::class)->pendingSend($thread, $key);
+        $pending = $key === null ? null : app(TaskWorkspaceLease::class)->pendingSend($thread, $key, includeCompleted: true);
 
         return $pending['message'] ?? $this->fetchNotice->apply($message);
     }

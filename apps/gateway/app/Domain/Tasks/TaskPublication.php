@@ -460,9 +460,10 @@ final readonly class TaskPublication
         }
 
         // A pending row after this failed gate is durable retry intent. Keep the failed row and approval untouched.
-        TaskCheck::query()->create(['task_id' => $task->id, 'task_comment_id' => $check->task_comment_id, 'kind' => TaskCheckKind::BaseMerge,
+        $pending = TaskCheck::query()->create(['task_id' => $task->id, 'task_comment_id' => $check->task_comment_id, 'kind' => TaskCheckKind::BaseMerge,
             'status' => TaskCheckStatus::Running, 'pid' => 0, 'process_started' => '',
             'head_before' => $check->head_before, 'tree_before' => $check->tree_before, 'started_at' => now()]);
+        app(TaskWorkspaceLease::class)->recordPendingCheck($group, $pending);
         $resolution->update(['review_attempt' => $task->review_attempt]);
         TaskQuestions::attachResolution($task, $resolution);
         $reason = $task->assistance_reason;

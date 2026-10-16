@@ -20,6 +20,7 @@ use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskCommentType;
+use App\Domain\Tasks\TaskConsultation;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskReviewDiff;
@@ -386,8 +387,10 @@ it('keeps a relay answer while the implementer is busy and delivers it once the 
         FakeTaskTurnReceipts::contents('answered', 'Use the public mirror.', cause: 'scope'),
     ]);
     $dispatcher = tick_dispatcher();
-    $state = (object) ['implementer' => 'running'];
+    $state = (object) ['implementer' => 'idle'];
     tick_relay_runtime($receipts, $dispatcher, $state);
+    app(TaskConsultation::class)->collectReceipt($group, $task, TaskThreadRole::Reviewer);
+    $state->implementer = 'running';
     $completion = $task->completion_attempt;
 
     app(TaskScheduler::class)->tick();
@@ -889,7 +892,6 @@ it('does not send a second implementer turn when an accepted relay answer lost i
     [$group, $task] = tick_held_relay();
     $receipts = new FakeTaskTurnReceipts([
         FakeTaskTurnReceipts::contents('answered', 'Use the public mirror.', cause: 'scope'),
-        null,
         FakeTaskTurnReceipts::contents('ready_for_review', 'The mirror is wired.'),
     ]);
     $state = (object) ['implementer' => 'idle', 'turnId' => 'turn-before', 'messageId' => null];
@@ -946,7 +948,6 @@ it('keeps the implementer handoff when the relay marker update fails after the s
     [$group, $task] = tick_held_relay();
     $receipts = new FakeTaskTurnReceipts([
         FakeTaskTurnReceipts::contents('answered', 'Use the public mirror.', cause: 'contract_gap'),
-        null,
         FakeTaskTurnReceipts::contents('ready_for_review', 'The mirror is wired.'),
     ]);
     $state = (object) ['implementer' => 'idle', 'turnId' => 'turn-before', 'messageId' => null];

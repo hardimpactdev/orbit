@@ -100,7 +100,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
             $this->workspaces->execute($instance, new RemoteCommand(
                 arguments: $arguments,
                 input: $script,
-            ), 'task-branch-sync', 'tasks.fetch_failed', mutates: true);
+            ), 'task-branch-sync', 'tasks.fetch_failed', mutates: true, changesCheckout: true);
         } catch (RuntimeConvergenceException $exception) {
             throw new TaskPullRequestException('The task branch could not be fetched.', previous: $exception);
         }
@@ -138,7 +138,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
             $result = $this->workspaces->execute($instance, new RemoteCommand(
                 arguments: ['bash', '-seu', '--', $instance->checkout_path, $default, $local],
                 input: $script,
-            ), 'task-baseline-reset', 'tasks.baseline_reset_failed', mutates: true);
+            ), 'task-baseline-reset', 'tasks.baseline_reset_failed', mutates: true, changesCheckout: true);
         } catch (RuntimeConvergenceException $exception) {
             throw new TaskPullRequestException('The baseline workspace could not be reset.', previous: $exception);
         }
@@ -197,7 +197,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
             $result = $this->workspaces->execute($instance, new RemoteCommand(
                 arguments: ['bash', '-seu', '--', $instance->checkout_path, $default, 'task-'.$group->id],
                 input: $script,
-            ), 'task-base-merge', 'tasks.merge_failed', mutates: true);
+            ), 'task-base-merge', 'tasks.merge_failed', mutates: true, changesCheckout: true);
         } catch (RuntimeConvergenceException $exception) {
             throw new TaskPullRequestException('The default branch could not be merged.', previous: $exception);
         }
@@ -265,7 +265,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
             git -C "$checkout" reset --hard --quiet "$sha"
             git -C "$checkout" rev-parse HEAD
             BASH;
-        if ($this->commitFrom($instance, $script, [$sha], 'task-pull-request-head', 'The workspace could not move to the pull request head.') !== $sha) {
+        if ($this->commitFrom($instance, $script, [$sha], 'task-pull-request-head', 'The workspace could not move to the pull request head.', changesCheckout: true) !== $sha) {
             throw new TaskPullRequestException('The workspace could not move to the pull request head.');
         }
     }
@@ -275,13 +275,13 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
      *
      * @throws TaskPullRequestException
      */
-    private function commitFrom(Instance $instance, string $script, array $arguments, string $step, string $failure): string
+    private function commitFrom(Instance $instance, string $script, array $arguments, string $step, string $failure, bool $changesCheckout = false): string
     {
         try {
             $result = $this->workspaces->execute($instance, new RemoteCommand(
                 arguments: ['bash', '-seu', '--', $instance->checkout_path, ...$arguments],
                 input: $script,
-            ), $step, 'tasks.fetch_failed', mutates: true);
+            ), $step, 'tasks.fetch_failed', mutates: $changesCheckout, changesCheckout: $changesCheckout);
         } catch (RuntimeConvergenceException $exception) {
             throw new TaskPullRequestException($failure, previous: $exception);
         }

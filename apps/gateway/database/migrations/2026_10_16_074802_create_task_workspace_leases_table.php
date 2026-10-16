@@ -15,6 +15,8 @@ return new class extends Migration
             $table->unsignedBigInteger('instance_id')->index();
             $table->unsignedBigInteger('group_id')->index();
             $table->unsignedBigInteger('task_id')->nullable()->index();
+            $table->string('task_context', 64)->nullable();
+            $table->unsignedBigInteger('acquisition_sequence')->nullable();
             $table->unsignedBigInteger('active_instance_id')->nullable()->unique();
             $table->string('kind');
             $table->string('owner');

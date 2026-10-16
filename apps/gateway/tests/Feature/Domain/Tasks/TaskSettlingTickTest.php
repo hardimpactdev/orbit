@@ -2236,24 +2236,26 @@ it('waits for an earlier handoff check before dispatching a blocked implementer 
 
     app(TaskScheduler::class)->tick();
 
-    $blocked = $task->comments()->where('type', 'blocked')->sole();
-    $sendKey = $task->fresh()?->direction_answer_key;
-    $reserved = AgentThread::query()->where('task_id', $task->id)->where('role', 'reviewer')->sole();
+    $waiter = TaskWorkspaceLeaseRecord::query()->where('status', 'queued')->sole();
     expect($check->fresh()?->status)->toBe(TaskCheckStatus::Running)
-        ->and($task->fresh()?->consult_comment_id)->toBe($blocked->id)
-        ->and($sendKey)->not->toBeNull()
-        ->and(TaskQuestion::query()->sole()->status)->toBe(QuestionStatus::Open)
-        ->and($reserved->isPending())->toBeTrue()
+        ->and($task->fresh()?->consult_comment_id)->toBeNull()
+        ->and($task->comments()->where('type', 'blocked')->count())->toBe(0)
+        ->and(TaskQuestion::query()->count())->toBe(0)
+        ->and(AgentThread::query()->where('task_id', $task->id)->where('role', 'reviewer')->count())->toBe(0)
         ->and(TaskWorkspaceLeaseRecord::query()->where('status', 'held')->sole()->kind)->toBe('check')
-        ->and(TaskWorkspaceLeaseRecord::query()->where('status', 'queued')->sole()->thread_id)->toBe($reserved->id)
+        ->and($waiter->kind)->toBe('verdict')
+        ->and($receipts->reads())->toBe(0)
+        ->and($receipts->cleared)->toBe([])
         ->and($dispatcher->commands)->toBe([])
         ->and($receipts->prepared)->toBe([]);
 
     app(TaskScheduler::class)->tick();
 
     expect($check->fresh()?->status)->toBe(TaskCheckStatus::Running)
-        ->and($task->fresh()?->direction_answer_key)->toBe($sendKey)
-        ->and($reserved->fresh()?->isPending())->toBeTrue()
+        ->and($task->fresh()?->direction_answer_key)->toBeNull()
+        ->and(TaskWorkspaceLeaseRecord::query()->where('status', 'queued')->sole()->id)->toBe($waiter->id)
+        ->and($receipts->reads())->toBe(0)
+        ->and($receipts->cleared)->toBe([])
         ->and($dispatcher->commands)->toBe([])
         ->and($receipts->prepared)->toBe([]);
 
@@ -2262,12 +2264,16 @@ it('waits for an earlier handoff check before dispatching a blocked implementer 
     app(TaskScheduler::class)->tick();
 
     $starts = tick_reviewer_starts($dispatcher);
+    $blocked = $task->comments()->where('type', 'blocked')->sole();
+    $reviewer = AgentThread::query()->where('task_id', $task->id)->where('role', 'reviewer')->sole();
     expect($check->fresh()?->status)->toBe(TaskCheckStatus::Passed)
         ->and($starts)->toHaveCount(1)
-        ->and(AgentThread::query()->where('task_id', $task->id)->where('role', 'reviewer')->sole()->id)->toBe($reserved->id)
-        ->and($starts[0]['commandId'])->toBe($sendKey)
+        ->and($waiter->fresh()?->status)->toBe('released')
+        ->and($starts[0]['commandId'])->toBe(TaskWorkspaceLeaseRecord::query()->where('thread_id', $reviewer->id)->where('adopted', false)->sole()->dispatch_key)
         ->and($starts[0]['message']['text'])->toContain('Which contract should I use?')
         ->and($receipts->modes)->toBe(['consult', 'consult'])
+        ->and($receipts->reads())->toBe(1)
+        ->and($receipts->cleared)->toHaveCount(1)
         ->and($task->fresh()?->direction_answer_key)->toBeNull()
         ->and($task->fresh()?->consult_comment_id)->toBe($blocked->id)
         ->and($task->fresh()?->completion_attempt)->toBe($attempt)

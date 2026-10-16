@@ -462,14 +462,21 @@ final readonly class TaskConsultation
             return;
         }
 
-        try {
-            $read = $this->collectReceipt($group, $task, TaskThreadRole::Reviewer);
-        } catch (TaskTurnReceiptException $exception) {
-            $this->recordCommunicationFailure($task, $group, $exception->getMessage());
-
-            return;
-        }
         $receipt = $this->pendingReceipt($task, TaskThreadRole::Reviewer);
+        $read = null;
+        // Once the answer is durable, retry its implementer delivery under that actor's
+        // lease. A new reviewer checkout read would wait behind the very send being retried.
+        if (! $receipt instanceof TaskComment || $this->receiptOutcome($receipt) !== TaskTurnOutcome::Answered
+            || ! $receipt->cause instanceof QuestionCause) {
+            try {
+                $read = $this->collectReceipt($group, $task, TaskThreadRole::Reviewer);
+            } catch (TaskTurnReceiptException $exception) {
+                $this->recordCommunicationFailure($task, $group, $exception->getMessage());
+
+                return;
+            }
+            $receipt = $this->pendingReceipt($task, TaskThreadRole::Reviewer);
+        }
         $outcome = $receipt instanceof TaskComment ? $this->receiptOutcome($receipt) : null;
         if (! $receipt instanceof TaskComment || ! in_array($outcome, [TaskTurnOutcome::Answered, TaskTurnOutcome::Blocked], true)) {
             $this->remindOrAssist($scheduler, $group, $task, $reviewer, [
@@ -653,14 +660,21 @@ final readonly class TaskConsultation
             return;
         }
 
-        try {
-            $read = $this->collectReceipt($group, $task, TaskThreadRole::Reviewer);
-        } catch (TaskTurnReceiptException $exception) {
-            $this->recordCommunicationFailure($task, $group, $exception->getMessage());
-
-            return;
-        }
         $receipt = $this->pendingReceipt($task, TaskThreadRole::Reviewer);
+        $read = null;
+        // Once the answer is durable, retry its implementer delivery under that actor's
+        // lease. A new reviewer checkout read would wait behind the very send being retried.
+        if (! $receipt instanceof TaskComment || $this->receiptOutcome($receipt) !== TaskTurnOutcome::Answered
+            || ! $receipt->cause instanceof QuestionCause) {
+            try {
+                $read = $this->collectReceipt($group, $task, TaskThreadRole::Reviewer);
+            } catch (TaskTurnReceiptException $exception) {
+                $this->recordCommunicationFailure($task, $group, $exception->getMessage());
+
+                return;
+            }
+            $receipt = $this->pendingReceipt($task, TaskThreadRole::Reviewer);
+        }
         $outcome = $receipt instanceof TaskComment ? $this->receiptOutcome($receipt) : null;
         if (! $receipt instanceof TaskComment || ! in_array($outcome, [TaskTurnOutcome::Answered, TaskTurnOutcome::Blocked], true)) {
             if ($read instanceof TaskTurnReceipt || $receipt instanceof TaskComment) {

@@ -38,6 +38,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\Process\InputStream;
 use Symfony\Component\Process\Process;
+use Tests\Support\AgentSnapshotReader;
 use Tests\Support\DeliverablePathWorkspace;
 use Tests\Support\NullTaskWorkspaceStateReader;
 use Tests\Support\TestOrbitHome;
@@ -303,6 +304,14 @@ it('checks the workspace head recorded at start rather than the release seed', f
 });
 
 it('blocks the next implementer when a running sibling is cancelled', function (): void {
+    test_bind_snapshot_driver();
+    app()->instance(AgentSnapshotReader::class, new class implements AgentSnapshotReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return ['thread' => ['session' => ['status' => 'done'], 'latestTurn' => ['id' => 'stopped-'.$threadId, 'state' => 'completed']]];
+        }
+    });
     [$group, $task, $repository, $spawner] = revalidation_fixture([
         ['id' => 'implementation', 'type' => 'file', 'path' => 'app/Present.php'],
     ]);

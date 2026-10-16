@@ -18,7 +18,7 @@ final readonly class TaskWorkspaceExecutor
 {
     public function __construct(private DevelopmentSshExecutor $shared) {}
 
-    public function execute(Instance $workspace, RemoteCommand $command, string $step, string $errorCode, ?float $commandTimeout = null, string $failureLabel = 'Task workspace', bool $mutates = false): CommandResult
+    public function execute(Instance $workspace, RemoteCommand $command, string $step, string $errorCode, ?float $commandTimeout = null, string $failureLabel = 'Task workspace', bool $mutates = false, bool $changesCheckout = false): CommandResult
     {
         try {
             TaskVmWorkspaceGuard::assertOwnedWorkspace($workspace);
@@ -27,7 +27,7 @@ final readonly class TaskWorkspaceExecutor
         }
 
         $leases = app(TaskWorkspaceLease::class);
-        $lease = $mutates ? $leases->remoteStarted($workspace) : null;
+        $lease = $mutates ? $leases->remoteStarted($workspace, $changesCheckout) : null;
         try {
             $result = $this->shared->execute($workspace->node, $command, $step, $errorCode, $commandTimeout, $failureLabel);
         } catch (RuntimeConvergenceException $exception) {

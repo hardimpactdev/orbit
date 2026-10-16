@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskPullRequestException;
+use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
@@ -502,3 +503,12 @@ it('merges main directly without hooks and aborts conflicts without losing the t
             ->and(fetcher(new LocalShellSshExecutor)->mergeDefault($group)->head)->toBe($merged->head);
     }
 })->with(['clean' => 'clean', 'conflict' => 'conflict', 'overlap' => 'overlap']);
+
+it('retains uncertainty for a checkout move but not a timed-out merge-base read', function (bool $move): void {
+    $group = fetcher_group('/srv/orbit/apps/shop/task-7');
+    $lease = app(TaskWorkspaceLease::class)->acquire($group, 'publication', 'compare-or-move');
+    $bases = fetcher(new AppDevFakeSshExecutor([new CommandResult(255, '', 'connection lost', 1, true)]));
+    expect(fn () => $move ? $bases->moveTo($group, str_repeat('a', 40)) : $bases->mergeBase($group))->toThrow(TaskPullRequestException::class);
+    expect($lease->fresh()->getAttribute('remote_uncertain'))->toBe($move)
+        ->and($lease->fresh()->getAttribute('orbit_mutation'))->toBe($move);
+})->with([false, true]);

@@ -70,6 +70,21 @@ final readonly class TaskSubtaskRunner
             return false;
         }
 
+        $thread = AgentThread::query()->find($implementer->threadId);
+        $key = TaskConsultation::reminderKey($task, TaskThreadRole::Implementer);
+        $pending = $thread instanceof AgentThread ? app(TaskWorkspaceLease::class)->pendingSend($thread, $key) : null;
+        if ($thread instanceof AgentThread && $pending !== null) {
+            try {
+                app(AgentDriverRegistry::class)->get($thread->driver)->send($thread, $pending['message'], $pending['key']);
+                $task->update(['completion_reminder_attempt' => $task->completion_attempt,
+                    'completion_reminder_input_id' => $implementer->pendingUserInputId ?? $implementer->pendingApprovalId, 'communication_failures' => 0]);
+            } catch (AgentDriverException $exception) {
+                $scheduler->recordCommunicationFailure($task, $group, $exception->getMessage());
+            }
+
+            return true;
+        }
+
         if ($task->completion_handoff_attempt !== null && ! $scheduler->newerTurnHasStopped($task->completion_handoff_turn_id, $implementer)) {
             return true;
         }
@@ -884,7 +899,17 @@ final readonly class TaskSubtaskRunner
 
         try {
             $workspace = $group->taskable instanceof Instance ? $group->taskable : null;
-            $errors = $this->deliverablePaths->check($group->project, $task->deliverables ?? [], $base, 'resolved', $workspace);
+            $read = fn (): array => $this->deliverablePaths->check($group->project, $task->deliverables ?? [], $base, 'resolved', $workspace);
+            $leases = app(TaskWorkspaceLease::class);
+            $pending = AgentThread::query()->where('task_group_id', $group->id)->where('task_id', $task->id)
+                ->where('role', TaskThreadRole::Implementer->value)->where('external_id', 'like', TaskAgentSpawner::PendingPrefix.'%')->latest('id')->first();
+            $errors = $pending instanceof AgentThread
+                ? $leases->withThreadLock($pending, function () use ($leases, $group, $pending, $read): array {
+                    $leases->turn($group, TaskThreadRole::Implementer, 'thread:'.$pending->id, $pending->id);
+
+                    return $read();
+                })
+                : $leases->run($group, 'verdict', 'deliverable-paths:'.$task->id, $read, taskId: $task->id);
         } catch (ResourceOperationException $exception) {
             $scheduler->requestAssistance($task, $group, TaskGroupGuard::DeliverableGatePrefix."could not read base {$base}: ".$exception->getMessage());
 
