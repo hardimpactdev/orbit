@@ -9,12 +9,15 @@ use App\Domain\Tasks\AgentThreadState;
 use App\Domain\TaskVms\TaskVmException;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\SshExecutor;
+use App\Infrastructure\TaskVms\TaskVmRoleImages;
 use App\Models\AgentThread;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Support\Facades\DB;
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
+use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\FakeAgentDriver;
 use Tests\Support\TaskVmRecipeImages;
@@ -138,4 +141,68 @@ it('refuses a pending send lease even when the agent reports done', function ():
     $this->artisan('task-vms:retry-role-images', ['group' => (string) $group->id, 'vm' => (string) $vm->id])->assertFailed();
 
     expect($ssh->commands)->toBeEmpty();
+});
+
+it('reports only typed completion facts and preserves recovery state after transfer failure', function (string $failure, int $exit, bool $truncated, bool $hasReceipt, string $classification): void {
+    [$group, $vm, $receipt] = roleImageRecoveryFixture();
+    $before = $vm->fresh()->getAttributes();
+    $secret = 'credential-that-must-not-appear';
+    $stdout = $secret."\n".($hasReceipt ? $receipt : 'orbit-role-images-ready:wrong:wrong')."\n";
+    if ($failure === 'missing') {
+        $stdout = $secret;
+    }
+    if ($failure === 'prefixed') {
+        $stdout = $secret.$receipt;
+    }
+    if ($failure === 'timeout') {
+        $process = new Process(['secret-command', $secret]);
+        $process->setTimeout(1200);
+        $ssh = Mockery::mock(SshExecutor::class);
+        $ssh->shouldReceive('execute')->once()->andThrow(new ProcessTimedOutException($process, ProcessTimedOutException::TYPE_GENERAL));
+    } else {
+        $ssh = new AppDevFakeSshExecutor([new CommandResult($exit, $stdout, $secret, 1234, $truncated)]);
+    }
+    app()->instance(SshExecutor::class, $ssh);
+    $timeout = $failure === 'timeout';
+    $diagnostic = json_encode([
+        'classification' => $classification,
+        'exit_code' => $timeout ? null : $exit,
+        'duration_ms' => $timeout ? null : 1234,
+        'truncated' => $timeout ? null : $truncated,
+        'expected_receipt_present' => $timeout ? null : $hasReceipt,
+    ], JSON_THROW_ON_ERROR);
+
+    $this->artisan('task-vms:retry-role-images', ['group' => (string) $group->id, 'vm' => (string) $vm->id])
+        ->expectsOutputToContain('[task_vm.recipe_images_transfer_failed] The host could not transfer the claimed recipe base image to the task VM. '.$diagnostic)
+        ->doesntExpectOutputToContain($secret)
+        ->assertFailed();
+
+    expect($vm->fresh()->getAttributes())->toBe($before);
+    expect($group->fresh()->assistance_requested)->toBeTrue();
+})->with([
+    'failed exit despite receipt' => ['exit', 67, false, true, 'exit'],
+    'truncated despite receipt' => ['truncated', 0, true, true, 'truncated'],
+    'all completion predicates fail' => ['exit', 1, true, false, 'exit'],
+    'missing receipt' => ['missing', 0, false, false, 'receipt_mismatch'],
+    'wrong receipt' => ['wrong', 0, false, false, 'receipt_mismatch'],
+    'receipt is not an exact line' => ['prefixed', 0, false, false, 'receipt_mismatch'],
+    'timeout discards command and process details' => ['timeout', 0, false, false, 'timeout'],
+]);
+
+it('does not retain raw process output in diagnostic exception arguments', function (): void {
+    [, $vm] = roleImageRecoveryFixture();
+    $secret = 'raw-process-secret';
+    app()->instance(SshExecutor::class, new AppDevFakeSshExecutor([new CommandResult(1, $secret, $secret, 1234, false)]));
+    $previous = ini_set('zend.exception_ignore_args', '0');
+
+    try {
+        app(TaskVmRoleImages::class)->prepare($vm);
+        $this->fail('Expected transfer refusal.');
+    } catch (TaskVmException $exception) {
+        expect($exception->getPrevious())->toBeNull();
+        expect(json_encode($exception->getTrace(), JSON_THROW_ON_ERROR))->not->toContain($secret);
+        expect($exception->getMessage())->not->toContain($secret);
+    } finally {
+        ini_set('zend.exception_ignore_args', $previous);
+    }
 });
