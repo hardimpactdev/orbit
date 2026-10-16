@@ -4,7 +4,8 @@ set -euo pipefail
 umask 077
 [[ $# -eq 3 && $1 =~ ^[a-z0-9][a-z0-9-]*$ && $2 =~ ^tvm-[1-9][0-9]*$ ]] || exit 64
 project=$1 vm=$2 manifest=$3
-incus=(incus --project "$project")
+# Progress can end with CR and no newline, obscuring the exact completion receipt.
+incus=(incus --quiet --project "$project")
 guest=/var/lib/orbit/task-vm-role-images
 work=$(mktemp -d /var/tmp/orbit-role-images.XXXXXXXX)
 trap 'rm -rf -- "$work"' EXIT

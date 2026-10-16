@@ -1006,7 +1006,11 @@ For medium and large VMs, the preparation job on `task-vms` transfers the single
 
 If a ready VM is missing its transferred archive or manifest, run `php artisan task-vms:retry-role-images GROUP VM` on the deployed Gateway, using numeric group and VM IDs. This synchronous recovery command takes the group's execution lock and refuses unless the group is active, waiting for assistance, its agents are observed stopped, and its ready Incus VM has no topology run.
 
-It transfers only that VM's claimed immutable recipe from its promoted host-local build, even if the desired recipe has changed. It does not rebuild images, change VM lifecycle state, clear assistance, or acquire a topology. A failed transfer exits nonzero and leaves assistance in place. After success, resolve the group's assistance through the task workflow; Orbit retries normal topology preparation. Never reset the VM's database state to rerun provisioning.
+It transfers only that VM's claimed immutable recipe from its promoted host-local build, even if the desired recipe has changed. It does not rebuild images, change VM lifecycle state, clear assistance, or acquire a topology. A failed transfer exits nonzero and leaves assistance in place.
+
+Its diagnostic classifies a failed exit, timeout, truncated output, or missing exact receipt. It reports only the exit code, duration in milliseconds, truncation flag, and expected-receipt presence; unavailable observations are null. It never includes raw command output. Incus progress is suppressed so it cannot join the completion receipt on the same line.
+
+After success, resolve the group's assistance through the task workflow; Orbit retries normal topology preparation. Never reset the VM's database state to rerun provisioning.
 
 Every task VM's user `orbit` is in the `incus-admin` group from its first boot, so agents can run `bin/e2e-topology` once Incus is installed. The row stores the union in `topology`, its state in `topology_state` (`preparing` or `ready`), and the run in `topology_run`.
 

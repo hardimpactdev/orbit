@@ -48,6 +48,12 @@ it('exports exact host fingerprints and transfers archives before publishing the
 #!/usr/bin/env bash
 set -euo pipefail
 echo "$*" >> "$WORK/calls"
+quiet=false
+if [[ $1 == --quiet ]]; then quiet=true; shift; fi
+if [[ $3 == file && $4 == push && $quiet == false ]]; then
+    if [[ $FAULT == cr-progress ]]; then printf '\rPushing: 100%%\r              \r'; fi
+    if [[ $FAULT == normal-progress ]]; then printf 'Pushing: 100%%\n'; fi
+fi
 if [[ $3 == exec && "$*" != *--disable-stdin* ]]; then cat >/dev/null; fi
 if [[ $3 == image && $4 == export ]]; then printf 'image bytes' >"$6.tar"; fi
 if [[ $3 == file && $4 == push ]]; then
@@ -57,6 +63,7 @@ fi
 if [[ $3 == exec && "$*" == *'mv -f'* ]]; then
     mv "$WORK/manifest.json.new" "$WORK/manifest.json"
     if [[ $FAULT == corrupt ]]; then printf 'corrupt' >"$WORK/base.tar"; fi
+    if [[ $FAULT == corrupt-manifest ]]; then printf 'corrupt' >"$WORK/manifest.json"; fi
 fi
 if [[ $3 == exec && "$*" == *sha256sum* ]]; then
     for name in base.tar manifest.json; do
@@ -74,7 +81,7 @@ SH);
     $process = new Process(['bash', '-s', '--', 'orbit-tasks', 'tvm-7', $manifest], input: TaskVmScripts::read('role-images-transfer.sh'), env: ['WORK' => $work, 'FAULT' => $fault, 'PATH' => $work.'/bin:'.getenv('PATH')]);
     try {
         $process->run();
-        if ($fault !== '') {
+        if (in_array($fault, ['push', 'corrupt', 'corrupt-manifest'], true)) {
             expect($process->isSuccessful())->toBeFalse();
             expect($process->getOutput())->not->toContain('orbit-role-images-ready:');
 
@@ -83,13 +90,13 @@ SH);
         expect($process->isSuccessful())->toBeTrue();
         expect(file_get_contents($work.'/base.tar'))->toBe('image bytes');
         expect(file_get_contents($work.'/manifest.json'))->toBe($manifest."\n");
-        expect($process->getOutput())->toContain('orbit-role-images-ready:'.str_repeat('1', 64).':'.hash('sha256', $manifest."\n"));
+        expect(explode("\n", trim($process->getOutput())))->toContain('orbit-role-images-ready:'.str_repeat('1', 64).':'.hash('sha256', $manifest."\n"));
         $calls = file($work.'/calls', FILE_IGNORE_NEW_LINES);
         expect(array_values(array_filter($calls, static fn (string $call): bool => str_contains($call, 'image export'))))->toHaveCount(1);
         expect(implode("\n", $calls))->toContain('image export '.str_repeat('1', 64))
             ->not->toContain('launch', 'publish', 'image import');
-        expect(end($calls))->toBe('--project orbit-tasks exec tvm-7 --disable-stdin -- sha256sum /var/lib/orbit/task-vm-role-images/base.tar /var/lib/orbit/task-vm-role-images/manifest.json');
+        expect(end($calls))->toBe('--quiet --project orbit-tasks exec tvm-7 --disable-stdin -- sha256sum /var/lib/orbit/task-vm-role-images/base.tar /var/lib/orbit/task-vm-role-images/manifest.json');
     } finally {
         new Process(['rm', '-rf', '--', $work])->run();
     }
-})->with(['complete' => '', 'push failure' => 'push', 'corrupt guest archive' => 'corrupt']);
+})->with(['complete' => '', 'push failure' => 'push', 'corrupt guest archive' => 'corrupt', 'corrupt guest manifest' => 'corrupt-manifest', 'CR progress without newline' => 'cr-progress', 'normal progress' => 'normal-progress']);
