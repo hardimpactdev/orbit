@@ -216,6 +216,29 @@ describe(RouteDoctorProbe::class, function (): void {
         'failed' => [RouteStatus::Failed],
     ]);
 
+    it('reports a Route that holds a reserved name, also when the Node is unreachable', function (string $domain, bool $reachable): void {
+        $node = route_doctor_node();
+        $route = route_doctor_app_route($node, $domain);
+        $inspector = Mockery::mock(CustomProxyRouteInspector::class);
+        $inspector->shouldNotReceive('inspect');
+
+        $report = new RouteDoctorProbe($inspector)->inspect(
+            new DoctorNodeContext($node, new NodeInspectionData($reachable, null, null, null)),
+        );
+
+        expect($report->status)->toBe(DoctorFamilyStatus::Drift)
+            ->and($report->issues)->toHaveCount(1)
+            ->and($report->issues[0]->code)->toBe('route.domain_reserved')
+            ->and($report->issues[0]->kind->value)->toBe('drift')
+            ->and($report->issues[0]->resourceId)->toBe($route->id)
+            ->and($report->issues[0]->resourceName)->toBe($domain)
+            ->and($report->issues[0]->expected)->toBe('unreserved')
+            ->and($report->issues[0]->observed)->toBe('reserved');
+    })->with([
+        'a core name' => ['gateway.orbit'],
+        'a name proxycli reserves' => ['collector.cli-proxy-api.orbit'],
+    ])->with(['reachable' => [true], 'unreachable' => [false]]);
+
     it('reports Route status on an unreachable Node before the node-unreachable finding', function (): void {
         $node = route_doctor_node();
         $proxy = route_doctor_custom_proxy($node, 'executor.orbit');
@@ -337,7 +360,7 @@ function route_doctor_custom_proxy(Node $node, string $domain): RouteCustomProxy
     return $route->customProxy()->sole();
 }
 
-function route_doctor_app_route(Node $node): Route
+function route_doctor_app_route(Node $node, ?string $domain = null): Route
 {
     $project = Project::query()->create([
         'name' => 'Doctor App '.$node->id,
@@ -357,7 +380,7 @@ function route_doctor_app_route(Node $node): Route
         'kind' => RouteKind::App,
         'project_id' => $project->id,
         'node_id' => $node->id,
-        'domain' => 'app-'.$node->id.'.test',
+        'domain' => $domain ?? 'app-'.$node->id.'.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,

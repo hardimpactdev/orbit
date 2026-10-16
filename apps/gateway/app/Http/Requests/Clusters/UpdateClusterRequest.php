@@ -8,6 +8,7 @@ use App\Data\Clusters\UpdateClusterData;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Clusters\ClusterTld;
 use App\Models\Cluster;
+use App\Rules\ValidClusterTld;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -31,11 +32,13 @@ final class UpdateClusterRequest extends FormRequest
         return [
             'name' => ['sometimes', 'string', 'max:255', Rule::unique('clusters', 'name')->ignore($clusterId)],
             'tld' => [
+                'bail',
                 'sometimes',
                 'nullable',
                 'string',
                 'max:63',
-                'regex:/\A[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\z/D',
+                'regex:'.ClusterTld::Pattern,
+                new ValidClusterTld,
                 Rule::unique('clusters', 'tld')->ignore($clusterId),
             ],
             'state' => ['sometimes', Rule::enum(ClusterState::class)],

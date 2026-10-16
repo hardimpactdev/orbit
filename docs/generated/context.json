@@ -1911,6 +1911,7 @@
             ],
             "concepts": [
                 "Activity",
+                "Cluster",
                 "Extension",
                 "Gateway",
                 "Node",
@@ -2419,6 +2420,7 @@
                 "Activity",
                 "Cluster",
                 "Doctor",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -2554,6 +2556,7 @@
             "concepts": [
                 "Cluster",
                 "Doctor",
+                "Extension",
                 "Gateway",
                 "Node",
                 "Placement",
@@ -2701,6 +2704,7 @@
                 "Cluster",
                 "Deployment",
                 "Doctor",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
