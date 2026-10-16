@@ -668,6 +668,8 @@ final readonly class TaskReviewOutcome
             return false;
         }
         try {
+            // The surrounding workspace lease reconciles remote checks under the execution
+            // lock before this verdict can inspect the checkout or lift assistance.
             $current = $this->workspaceSnapshot($group);
         } catch (TaskCheckException $exception) {
             $reason = self::StaleReviewInspectionFailure.$exception->getMessage();
