@@ -623,6 +623,8 @@ Route::prefix('v1')->group(function (): void {
         Route::middleware(RequireEnabledExtension::class.':tasks')->group(function (): void {
             Route::get('task-groups/{group}/agents', [AgentThreadsController::class, 'index'])
                 ->whereNumber('group')->withoutMiddleware(RecordCommandActivity::class)->name('tasks:agents');
+            Route::get('task-groups/{group}/agents/{session}', [AgentThreadsController::class, 'show'])
+                ->whereNumber('group')->whereNumber('session')->name('tasks:agent:show');
             Route::get('task-groups/{group}/agents/{session}/stream', [AgentThreadsController::class, 'stream'])
                 ->whereNumber('group')->whereNumber('session')->withoutMiddleware(RecordCommandActivity::class)->name('tasks:agent-stream');
             Route::get('task-groups', [TaskGroupsController::class, 'index'])->name('tasks:list');

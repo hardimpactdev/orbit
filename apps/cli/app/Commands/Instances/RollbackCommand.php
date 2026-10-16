@@ -4,18 +4,23 @@ declare(strict_types=1);
 
 namespace App\Commands\Instances;
 
+use App\Commands\Concerns\FollowsOperations;
+use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Deployments\RollbackInstanceRequest;
-use Orbit\Sdk\Responses\Deployments\DeploymentStream;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
-final class RollbackCommand extends DeploymentCommand
+/** Starts an `instance.rollback` operation and follows it until it ends. Ctrl-C stops following, not the rollback. */
+final class RollbackCommand extends GatewayCommand
 {
+    use FollowsOperations;
+
     #[\Override]
     protected $signature = 'instance:rollback
         {instance : Numeric instance ID}
         {--release= : Retained release name to select}
-        {--json : Return machine-readable NDJSON}';
+        {--json : Return the final operation as machine-readable JSON}';
 
     #[\Override]
     protected $description = 'Select one retained production Instance release.';
@@ -37,20 +42,17 @@ final class RollbackCommand extends DeploymentCommand
             );
         }
 
-        $connector = $this->gatewayConnector($repository, $connectors);
+        $profile = $this->activeGatewayProfile($repository);
 
-        if ($connector === null) {
+        if ($profile === null) {
             return self::FAILURE;
         }
 
-        $stream = $this->send(
-            $connector,
-            new RollbackInstanceRequest($instanceId, $release),
-            DeploymentStream::class,
-        );
+        $connector = $connectors->make($profile);
+        $operation = $this->send($connector, new RollbackInstanceRequest($instanceId, $release), OperationResponse::class);
 
-        return $stream instanceof DeploymentStream
-            ? $this->renderDeploymentStream($stream, "Roll back Instance [{$instanceId}]", 'rollback', 'Rollback')
+        return $operation instanceof OperationResponse
+            ? $this->followOperation($connector, $profile, $operation, "Roll back Instance [{$instanceId}]", 'Rollback')
             : self::FAILURE;
     }
 }

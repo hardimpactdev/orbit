@@ -15,18 +15,10 @@ describe(ApiResult::class, function (): void {
         expect(json_encode($result->json(), JSON_THROW_ON_ERROR))->toBe('{"data":{"options":{},"flags":[],"items":[{"options":{}}]}}');
     });
 
-    it('collects a newline-delimited stream into events', function (): void {
-        $result = new ApiResult(200, "{\"type\":\"phase\",\"phase\":\"prepare\"}\n{\"type\":\"result\",\"status\":\"succeeded\"}\n");
-
-        expect($result->json())->toBe(['events' => [
-            ['type' => 'phase', 'phase' => 'prepare'],
-            ['type' => 'result', 'status' => 'succeeded'],
-        ]]);
-    });
-
     it('has no document for an empty or non-JSON body', function (): void {
         expect(new ApiResult(204, '')->json())->toBeNull()
-            ->and(new ApiResult(200, '<html></html>')->json())->toBeNull();
+            ->and(new ApiResult(200, '<html></html>')->json())->toBeNull()
+            ->and(new ApiResult(200, "{\"type\":\"phase\"}\n{\"type\":\"result\"}\n")->json())->toBeNull();
     });
 
     it('fails from status 400 upward', function (): void {

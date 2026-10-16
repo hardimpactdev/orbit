@@ -50,7 +50,7 @@ final readonly class TaskReviewPacketBuilder
             diffFilesComplete: $filesComplete,
             diffAvailable: $diffAvailable,
             diffCounts: $diff['summary'],
-            resolution: $continued ? '' : $this->pendingResolution($task),
+            resolution: $this->pendingResolution($task),
             threadId: $threadId,
             groupStartCommit: TaskReviewBase::groupStartCommit($group),
             consults: $continued ? [] : $this->consults($task),

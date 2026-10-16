@@ -28,28 +28,41 @@ final readonly class OperationStore
     /**
      * Creates a queued operation that holds its target until it ends.
      *
+     * An operation of a kind in `$supersedes` that holds the target and that no worker started gives the target up: it
+     * ends `cancelled` with `operation.superseded` in the same transaction that creates this one. A worker that claims
+     * it first keeps the target, and this start is busy.
+     *
      * @param  array<string, mixed>  $input
+     * @param  list<string>  $supersedes
      *
      * @throws ResourceOperationException `operation.target_busy` while another operation holds the target
      */
-    public function create(string $kind, string $targetType, int $targetId, ?int $nodeId, array $input, ?string $triggeredBy, ?string $requestId): Operation
+    public function create(string $kind, string $targetType, int $targetId, ?int $nodeId, array $input, ?string $triggeredBy, ?string $requestId, array $supersedes = []): Operation
     {
         $lockKey = self::lockKey($targetType, $targetId);
+        $superseded = null;
 
         try {
-            $operation = Operation::query()->create([
-                'kind' => $kind,
-                'target_type' => $targetType,
-                'target_id' => $targetId,
-                'node_id' => $nodeId,
-                'lock_key' => $lockKey,
-                'input' => $input,
-                'status' => OperationStatus::Queued,
-                'sequence' => 1,
-                'attempts' => 0,
-                'triggered_by' => $triggeredBy,
-                'request_id' => $requestId,
-            ]);
+            $operation = DB::transaction(function () use ($kind, $targetType, $targetId, $nodeId, $lockKey, $input, $triggeredBy, $requestId, $supersedes, &$superseded): Operation {
+                $holder = $supersedes === [] ? null : Operation::query()->where('lock_key', $lockKey)->whereIn('kind', $supersedes)->first();
+                $now = Carbon::now();
+                $superseded = $holder instanceof Operation
+                    && $this->cancelUnstarted($holder, $now, ['error_code' => 'operation.superseded', 'cancel_requested_at' => $now]) ? $holder : null;
+
+                return Operation::query()->create([
+                    'kind' => $kind,
+                    'target_type' => $targetType,
+                    'target_id' => $targetId,
+                    'node_id' => $nodeId,
+                    'lock_key' => $lockKey,
+                    'input' => $input,
+                    'status' => OperationStatus::Queued,
+                    'sequence' => 1,
+                    'attempts' => 0,
+                    'triggered_by' => $triggeredBy,
+                    'request_id' => $requestId,
+                ]);
+            });
         } catch (UniqueConstraintViolationException $exception) {
             $holder = Operation::query()->where('lock_key', $lockKey)->value('id');
 
@@ -60,6 +73,10 @@ final readonly class OperationStore
                 $exception,
                 is_int($holder) ? ['operation_id' => $holder] : [],
             );
+        }
+
+        if ($superseded instanceof Operation) {
+            $this->broadcaster->changed($superseded->refresh(), true);
         }
 
         $this->broadcaster->created($operation);
@@ -155,19 +172,7 @@ final readonly class OperationStore
     public function cancelQueued(Operation $operation): bool
     {
         $now = Carbon::now();
-        $cancelled = Operation::query()
-            ->whereKey($operation->id)
-            ->where('status', OperationStatus::Queued->value)
-            // A requeued operation already ran steps; its next worker stops it and finishes its records.
-            ->where('attempts', 0)
-            ->update([
-                'status' => OperationStatus::Cancelled->value,
-                'lock_key' => null,
-                'finished_at' => $now,
-                'sequence' => DB::raw('sequence + 1'),
-                'updated_at' => $now,
-            ]) === 1;
-
+        $cancelled = $this->cancelUnstarted($operation, $now);
         $operation->refresh();
 
         if ($cancelled) {
@@ -177,6 +182,29 @@ final readonly class OperationStore
         }
 
         return $cancelled;
+    }
+
+    /**
+     * Ends an operation that no worker started as `cancelled`, with the extra changes, and frees its target. A worker
+     * that claims it first keeps it. A requeued operation already ran steps; its next worker stops it and finishes its
+     * records.
+     *
+     * @param  array<string, mixed>  $changes
+     */
+    private function cancelUnstarted(Operation $operation, Carbon $now, array $changes = []): bool
+    {
+        return Operation::query()
+            ->whereKey($operation->id)
+            ->where('status', OperationStatus::Queued->value)
+            ->where('attempts', 0)
+            ->update([
+                ...$changes,
+                'status' => OperationStatus::Cancelled->value,
+                'lock_key' => null,
+                'finished_at' => $now,
+                'sequence' => DB::raw('sequence + 1'),
+                'updated_at' => $now,
+            ]) === 1;
     }
 
     /** Returns a running operation whose worker was lost to the queue, so the next worker resumes or fails it. */

@@ -10,7 +10,6 @@ use App\Domain\Instances\Environment\InstanceEnvironmentResult;
 use App\Domain\Instances\Environment\InstanceEnvironmentRuntimeRefresher;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
-use Illuminate\Contracts\Cache\Repository;
 use Throwable;
 
 final readonly class RefreshInstanceEnvironmentRuntimeAction
@@ -18,8 +17,26 @@ final readonly class RefreshInstanceEnvironmentRuntimeAction
     public function __construct(
         private InstanceEnvironmentRuntimeRefresher $runtime,
         private RestartInstanceProcessesAction $processes,
-        private Repository $pending,
     ) {}
+
+    // Record immediately after explicit env-sync replaces .env, before later sync steps.
+    public function recordPending(InstanceEnvironmentContext $context): void
+    {
+        if ($context->environment !== 'production') {
+            return;
+        }
+
+        try {
+            Instance::query()->findOrFail($context->instanceId)
+                ->forceFill(['environment_runtime_pending_at' => now()])->saveOrFail();
+        } catch (Throwable) {
+            throw new ResourceOperationException(
+                errorCode: 'env.runtime_refresh_failed',
+                message: 'The environment file was synchronized, but Orbit could not record the pending runtime refresh. No refresh was attempted.',
+                status: 502,
+            );
+        }
+    }
 
     // Called only by explicit env-sync, while the Instance environment lock is held.
     public function execute(InstanceEnvironmentContext $context, InstanceEnvironmentResult $result): InstanceEnvironmentResult
@@ -43,21 +60,14 @@ final readonly class RefreshInstanceEnvironmentRuntimeAction
 
     private function refresh(InstanceEnvironmentContext $context, InstanceEnvironmentResult $result): InstanceEnvironmentResult
     {
-        $key = 'instance-environment-runtime-pending:'.$context->instanceId;
+        $instance = Instance::query()->findOrFail($context->instanceId);
         $status = 'skipped_unchanged';
         $restarted = [];
-        if ($result->environmentChanged || $this->pending->has($key)) {
-            if (! $this->pending->forever($key, true)) {
-                throw new ResourceOperationException(
-                    errorCode: 'env.runtime_refresh_failed',
-                    message: 'The environment file was synchronized, but Orbit could not record the pending runtime refresh. No refresh was attempted.',
-                    status: 502,
-                );
-            }
+        if ($result->environmentChanged || $instance->environment_runtime_pending_at !== null) {
+            $this->recordPending($context);
             $status = $this->runtime->refresh($context);
             if (! str_starts_with($status, 'skipped_')) {
                 try {
-                    $instance = Instance::query()->findOrFail($context->instanceId);
                     $this->processes->execute($instance, DeploymentRequest::withoutOutput(), function (int $id) use (&$restarted): void {
                         $restarted[] = $id;
                     });
@@ -69,7 +79,7 @@ final readonly class RefreshInstanceEnvironmentRuntimeAction
                         details: ['restarted_process_ids' => implode(',', $restarted)],
                     );
                 }
-                $this->pending->forget($key);
+                $instance->refresh()->forceFill(['environment_runtime_pending_at' => null])->saveOrFail();
             }
         }
 

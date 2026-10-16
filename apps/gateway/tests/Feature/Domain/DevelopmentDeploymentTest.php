@@ -9,7 +9,6 @@ use App\Domain\Instances\Deployment\DeploymentEvent;
 use App\Domain\Instances\Deployment\DeploymentFailureBoundary;
 use App\Domain\Instances\Deployment\DeploymentRequest;
 use App\Domain\Instances\Deployment\DevelopmentDeployment;
-use App\Domain\Instances\Deployment\InlineDeploymentSteps;
 use App\Domain\Instances\DevelopmentRouteProjector;
 use App\Domain\Projects\DevelopmentDeployStep;
 use App\Domain\Shared\ResourceOperationException;
@@ -30,7 +29,7 @@ describe('development default deployments', function (): void {
     it('checks out the default branch in place and runs the Project steps there', function (): void {
         $this->instance->update(['deployment_branch' => 'ignored-production-override']);
         dev935_steps($this->instance, [new DevelopmentDeployStep('install', 'incremental install'), new DevelopmentDeployStep('build', 'build')]);
-        $result = app(DeployInstanceAction::class)->execute($this->instance, new InlineDeploymentSteps);
+        $result = app(DeployInstanceAction::class)->execute($this->instance, operation_steps($this->instance, app(DeployInstanceAction::class)), DeploymentRequest::withoutOutput());
         $instance = $this->instance->refresh();
 
         expect($result->succeeded)->toBeTrue()
@@ -62,17 +61,17 @@ describe('development default deployments', function (): void {
         });
         app()->instance(DevelopmentRouteProjector::class, $projector);
 
-        expect(app(DeployDefaultInstanceAction::class)->execute($instance)?->succeeded)->toBeTrue()
+        expect(app(DeployDefaultInstanceAction::class)->execute($instance, operation_steps($instance, app(DeployDefaultInstanceAction::class)), DeploymentRequest::withoutOutput())?->succeeded)->toBeTrue()
             ->and($instance->fresh()->development_projection_pending)->toBeFalse();
         // A deployment in place does not move the Route, so it does not converge it again.
-        expect(app(DeployDefaultInstanceAction::class)->execute($instance)?->succeeded)->toBeTrue();
+        expect(app(DeployDefaultInstanceAction::class)->execute($instance, operation_steps($instance, app(DeployDefaultInstanceAction::class)), DeploymentRequest::withoutOutput())?->succeeded)->toBeTrue();
     });
 
     it('leaves the checkout at the new commit and keeps the seed when a required step fails', function (): void {
         $this->instance->update(['seed_path' => $this->instance->checkout_path, 'seed_commit' => str_repeat('a', 40), 'seed_repository' => $this->instance->checkout_path]);
         dev935_steps($this->instance, [new DevelopmentDeployStep('install', 'false'), new DevelopmentDeployStep('build', 'never')]);
         $this->remote->failedStep = 'install';
-        $result = app(DeployInstanceAction::class)->execute($this->instance, new InlineDeploymentSteps);
+        $result = app(DeployInstanceAction::class)->execute($this->instance, operation_steps($this->instance, app(DeployInstanceAction::class)), DeploymentRequest::withoutOutput());
 
         expect($result->succeeded)->toBeFalse()
             ->and($result->failure?->boundary)->toBe(DeploymentFailureBoundary::BeforeActivation)
@@ -86,7 +85,7 @@ describe('development default deployments', function (): void {
 
     it('records a dirty checkout as a failed preparation', function (): void {
         $this->remote->checkoutFailure = new ResourceOperationException('deployment.checkout_dirty', 'The checkout has uncommitted changes to tracked files.', 409);
-        $result = app(DeployDefaultInstanceAction::class)->execute($this->instance);
+        $result = app(DeployDefaultInstanceAction::class)->execute($this->instance, operation_steps($this->instance, app(DeployDefaultInstanceAction::class)), DeploymentRequest::withoutOutput());
 
         expect($result->failure?->errorCode)->toBe('deployment.checkout_dirty')
             ->and($result->failure?->boundary)->toBe(DeploymentFailureBoundary::Preparation)
@@ -99,7 +98,7 @@ describe('development default deployments', function (): void {
         $pinned = str_repeat('c', 40);
         $this->remote->targetCommit = str_repeat('d', 40);
 
-        $result = app(DeployDefaultInstanceAction::class)->execute($this->instance, commit: $pinned);
+        $result = app(DeployDefaultInstanceAction::class)->execute($this->instance, operation_steps($this->instance, app(DeployDefaultInstanceAction::class)), DeploymentRequest::withoutOutput(), $pinned);
 
         expect($result->succeeded)->toBeTrue()
             ->and($result->commit)->toBe($pinned)
@@ -111,7 +110,7 @@ describe('development default deployments', function (): void {
         $pinned = str_repeat('e', 40);
         $this->remote->notOnBranch = $pinned;
 
-        $result = app(DeployDefaultInstanceAction::class)->execute($this->instance, commit: $pinned);
+        $result = app(DeployDefaultInstanceAction::class)->execute($this->instance, operation_steps($this->instance, app(DeployDefaultInstanceAction::class)), DeploymentRequest::withoutOutput(), $pinned);
 
         expect($result->failure?->errorCode)->toBe('deployment.commit_not_on_branch')
             ->and($result->failure?->boundary)->toBe(DeploymentFailureBoundary::Preparation)
@@ -123,7 +122,7 @@ describe('development default deployments', function (): void {
         dev935_steps($this->instance, [new DevelopmentDeployStep('warm', 'false', required: false), new DevelopmentDeployStep('build', 'true')]);
         $this->remote->failedStep = 'warm';
         $events = [];
-        $result = app(DeployDefaultInstanceAction::class)->execute($this->instance, new DeploymentRequest(static function (DeploymentEvent $event) use (&$events): void {
+        $result = app(DeployDefaultInstanceAction::class)->execute($this->instance, operation_steps($this->instance, app(DeployDefaultInstanceAction::class)), new DeploymentRequest(static function (DeploymentEvent $event) use (&$events): void {
             $events[] = $event;
         }));
 
@@ -163,7 +162,7 @@ describe('development default deployments', function (): void {
 
     it('refuses other development Instances and unsafe source states before any remote work', function (array $attributes): void {
         $this->instance->update($attributes);
-        $result = app(DeployDefaultInstanceAction::class)->execute($this->instance);
+        $result = app(DeployDefaultInstanceAction::class)->execute($this->instance, operation_steps($this->instance, app(DeployDefaultInstanceAction::class)), DeploymentRequest::withoutOutput());
 
         expect($result?->failure?->errorCode)->toBe('deployment_config.unavailable')
             ->and($this->remote->trace)->toBe([]);

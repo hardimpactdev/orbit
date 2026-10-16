@@ -92,7 +92,6 @@ final readonly class RemoteDevelopmentDeployment implements DevelopmentDeploymen
                 arguments: [...$arguments, (string) $step->timeoutSeconds],
                 protectedInput: ProtectedInput::fromString(str_replace('__COMMAND__', base64_encode($command), DevelopmentCheckoutProgram::step())),
                 output: self::stream($step->name, $request),
-                cancelled: $request->cancellation->requested(...),
                 // Leave time for the remote timer to terminate the step's children.
                 timeout: $step->timeoutSeconds + 30,
             ),

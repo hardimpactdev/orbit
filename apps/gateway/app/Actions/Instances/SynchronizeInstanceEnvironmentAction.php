@@ -55,7 +55,7 @@ final readonly class SynchronizeInstanceEnvironmentAction implements InstanceEnv
     {
         return $this->operations->run([$instance->id], function () use ($instance, $runtime): InstanceEnvironmentResult {
             $context = $this->contexts->resolve($instance->refresh(), requireActiveNode: true);
-            $result = $this->synchronize($context);
+            $result = $this->synchronize($context, runtime: $runtime);
 
             return $runtime->execute($context, $result);
         });
@@ -83,6 +83,7 @@ final readonly class SynchronizeInstanceEnvironmentAction implements InstanceEnv
     private function synchronize(
         InstanceEnvironmentContext $context,
         bool $keepWorkloadKeys = true,
+        ?RefreshInstanceEnvironmentRuntimeAction $runtime = null,
     ): InstanceEnvironmentResult {
         $requiredCapacity = $this->store->synchronizationCapacity($context);
         $this->preflight->assertEnvironmentWritable($context, $requiredCapacity);
@@ -94,6 +95,11 @@ final readonly class SynchronizeInstanceEnvironmentAction implements InstanceEnv
         }
 
         $environmentChanged = $changed = $this->confirmed($this->writer->write($context, $contents));
+        if ($environmentChanged) {
+            // Later key tracking or .env.testing work can fail after .env was replaced.
+            // An unchanged-file retry must still refresh the explicit env-sync runtime.
+            $runtime?->recordPending($context);
+        }
         $this->store->recordSynchronizedKeys($context, array_keys($snapshot->values()));
         $plan = ($this->testing ?? app(InstanceTestEnvironment::class))->plan($context->instanceId, $snapshot->values());
         $outcome = null;

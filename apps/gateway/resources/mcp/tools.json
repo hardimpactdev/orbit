@@ -17,7 +17,6 @@
         "caller_node_id",
         "target_node_id"
       ],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -71,7 +70,6 @@
         "activity"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -97,7 +95,6 @@
       "path": "/api/v1/analytics/credentials",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -114,7 +111,6 @@
       "path": "/api/v1/analytics/credentials",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -140,7 +136,6 @@
       "path": "/api/v1/analytics/credentials",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -157,7 +152,6 @@
       "path": "/api/v1/analytics/update",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -185,7 +179,6 @@
         "instance"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -346,7 +339,6 @@
         "instance"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -375,7 +367,6 @@
         "annotation"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -415,7 +406,6 @@
         "annotation"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -461,7 +451,6 @@
       "path": "/api/v1/clusters",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -498,7 +487,6 @@
         "cluster"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -524,7 +512,6 @@
       "path": "/api/v1/clusters",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -544,7 +531,6 @@
         "node"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -579,7 +565,6 @@
         "node"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -619,7 +604,6 @@
         "node"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -653,7 +637,6 @@
         "cluster"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -686,7 +669,6 @@
         "cluster"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -714,7 +696,6 @@
         "cluster"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -762,7 +743,6 @@
       "path": "/api/v1/conn/environments",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -779,7 +759,6 @@
       "path": "/api/v1/conn/environments",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -822,7 +801,6 @@
       "path": "/api/v1/conn/me",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -839,7 +817,6 @@
       "path": "/api/v1/conn/me/profile",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -865,7 +842,6 @@
         "environment"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -891,7 +867,6 @@
         "environment"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -917,7 +892,6 @@
         "environment"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -944,7 +918,6 @@
       "path": "/api/v1/conn/profiles",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -969,7 +942,6 @@
       "path": "/api/v1/conn/profiles",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -988,7 +960,6 @@
         "profile"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -1402,7 +1373,6 @@
         "profile"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -1428,7 +1398,6 @@
         "profile"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -1794,7 +1763,6 @@
       "path": "/api/v1/database-connections",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -2060,7 +2028,6 @@
         "table"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -2095,7 +2062,6 @@
         "database_connection"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -2121,7 +2087,6 @@
       "path": "/api/v1/database-connections",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -2140,7 +2105,6 @@
         "database_connection"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -2179,7 +2143,6 @@
         "database_connection"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -2233,7 +2196,6 @@
       "path": "/api/v1/database-servers",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -2297,7 +2259,6 @@
         "database_server"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -2323,7 +2284,6 @@
       "path": "/api/v1/database-servers",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -2342,7 +2302,6 @@
         "database_server"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -2370,7 +2329,6 @@
         "database_connection"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -2398,7 +2356,6 @@
         "database_connection"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -2426,7 +2383,6 @@
         "database_connection"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -2524,7 +2480,6 @@
         "database_connection"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -2569,7 +2524,6 @@
         "database_connection"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -2595,7 +2549,6 @@
       "path": "/api/v1/doctor",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -2639,7 +2592,6 @@
         "instance"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -2670,7 +2622,6 @@
         "instance"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -2698,7 +2649,6 @@
         "key"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -2736,7 +2686,6 @@
         "extension"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -2770,7 +2719,6 @@
         "extension"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -2802,7 +2750,6 @@
       "path": "/api/v1/extensions",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -2821,7 +2768,6 @@
         "node"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -2874,7 +2820,6 @@
         "node"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -2925,7 +2870,6 @@
       "path": "/api/v1/firewall-rules",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -2944,7 +2888,6 @@
         "node"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -2972,7 +2915,6 @@
         "node"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -3000,7 +2942,6 @@
         "node"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -3029,7 +2970,6 @@
         "firewall_rule"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -3060,7 +3000,6 @@
       "path": "/api/v1/fleet/rollout/resume",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -3086,7 +3025,6 @@
       "path": "/api/v1/fleet/rollout",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -3103,7 +3041,6 @@
       "path": "/api/v1/gateway/desired-fleet-state",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -3120,7 +3057,6 @@
       "path": "/api/v1/gateway/release-automation/disable",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -3137,7 +3073,6 @@
       "path": "/api/v1/gateway/release-automation/enable",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -3154,7 +3089,6 @@
       "path": "/api/v1/gateway/release-automation/resume",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -3171,7 +3105,6 @@
       "path": "/api/v1/gateway/release-automation",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -3188,7 +3121,6 @@
       "path": "/api/v1/gateway/releases",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -3214,7 +3146,6 @@
       "path": "/api/v1/gateway/releases",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -3233,7 +3164,6 @@
         "release"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -3259,7 +3189,6 @@
         "release"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -3283,7 +3212,6 @@
       "path": "/api/v1/gateway/release-smoke",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -3317,7 +3245,6 @@
       "path": "/api/v1/gateway/status",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -3334,7 +3261,6 @@
       "path": "/api/v1/ca/root",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -3351,7 +3277,6 @@
       "path": "/api/v1/github/app",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -3368,7 +3293,6 @@
       "path": "/api/v1/github/app/install",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -3399,7 +3323,6 @@
       "path": "/api/v1/github/app",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -3418,7 +3341,6 @@
         "instance"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -3446,7 +3368,6 @@
         "instance"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -3482,7 +3403,6 @@
         "instance"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -3510,7 +3430,6 @@
         "instance"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -3538,7 +3457,6 @@
         "candidate"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -3593,7 +3511,6 @@
       "path": "/api/v1/instances",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -3652,7 +3569,6 @@
         "database_connection"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -3691,7 +3607,6 @@
         "database_connection"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -3729,7 +3644,6 @@
         "instance"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -3757,7 +3671,6 @@
         "instance"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -3785,7 +3698,6 @@
         "instance"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -3813,7 +3725,6 @@
         "instance"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": true,
       "input_schema": {
         "type": "object",
@@ -3841,7 +3752,6 @@
         "instance"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -3901,7 +3811,6 @@
         "step"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -3935,7 +3844,6 @@
         "instance"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -3964,7 +3872,6 @@
         "step"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -4021,7 +3928,6 @@
         "instance"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -4049,7 +3955,6 @@
         "deployment"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -4075,7 +3980,6 @@
         "instance"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -4105,7 +4009,6 @@
       "path": "/api/v1/instances",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -4127,7 +4030,6 @@
         "lines",
         "follow"
       ],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -4167,7 +4069,6 @@
         "state",
         "limit"
       ],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -4206,7 +4107,6 @@
       "path": "/api/v1/instances/register",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -4259,7 +4159,6 @@
         "instance"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -4287,7 +4186,6 @@
         "instance"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -4325,7 +4223,6 @@
       "query_inputs": [
         "domain"
       ],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -4352,7 +4249,6 @@
       "query_inputs": [
         "directory"
       ],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -4372,15 +4268,14 @@
       "name": "instance-rollback",
       "extension": null,
       "title": "Roll back an Instance",
-      "description": "Select one retained production Instance release.",
+      "description": "Starts an `instance.rollback` operation that selects one retained release, and answers 202 with it at once; the rollback runs on the Gateway queue. Follow it with `operation:show` and `after_sequence` after `poll_after_seconds`, until `status` is `succeeded`, `failed`, or `cancelled`. A release the Instance does not retain returns `rollback.release_not_retained` (422) and changes nothing. A deploy of the Instance that no worker has started ends `cancelled` with `operation.superseded`; any other operation that holds the Instance, such as a deploy a worker has started, returns `operation.target_busy` (409) with `details.operation_id`. See /reference/deployments#the-rollback-operation.",
       "method": "POST",
       "path": "/api/v1/instances/{instance}/rollback",
       "path_inputs": [
         "instance"
       ],
       "query_inputs": [],
-      "streams": true,
-      "starts_operation": false,
+      "starts_operation": true,
       "input_schema": {
         "type": "object",
         "properties": {
@@ -4412,7 +4307,6 @@
         "instance"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -4440,7 +4334,6 @@
         "project"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -4511,7 +4404,6 @@
         "step"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -4545,7 +4437,6 @@
         "project"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -4574,7 +4465,6 @@
         "step"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -4644,7 +4534,6 @@
         "instance"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -4672,7 +4561,6 @@
         "project"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -4743,7 +4631,6 @@
         "step"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -4777,7 +4664,6 @@
         "project"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -4806,7 +4692,6 @@
         "step"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -4876,7 +4761,6 @@
         "instance"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -4921,7 +4805,6 @@
         "instance"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -4967,7 +4850,6 @@
       "path": "/api/v1/metrics/credentials",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -4984,7 +4866,6 @@
       "path": "/api/v1/metrics/credentials/reset",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -5001,7 +4882,6 @@
       "path": "/api/v1/metrics",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -5027,7 +4907,6 @@
       "path": "/api/v1/metrics",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -5054,7 +4933,6 @@
         "node"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -5082,7 +4960,6 @@
         "node"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -5108,7 +4985,6 @@
       "path": "/api/v1/metrics/status",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -5128,7 +5004,6 @@
         "consumer_node"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -5163,7 +5038,6 @@
         "consumer_node"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -5195,7 +5069,6 @@
       "path": "/api/v1/nodes",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -5327,7 +5200,6 @@
         "node"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -5360,7 +5232,6 @@
         "project"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -5394,7 +5265,6 @@
         "node"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -5423,7 +5293,6 @@
         "project"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -5455,7 +5324,6 @@
       "path": "/api/v1/nodes",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -5474,7 +5342,6 @@
         "node"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -5502,7 +5369,6 @@
         "node"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -5538,7 +5404,6 @@
         "node"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -5573,7 +5438,6 @@
         "node"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -5631,7 +5495,6 @@
         "node"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -5660,7 +5523,6 @@
         "role"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -5715,7 +5577,6 @@
         "role"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -5772,7 +5633,6 @@
         "node"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -5867,7 +5727,6 @@
         "node"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -5895,7 +5754,6 @@
         "node"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -5927,7 +5785,6 @@
         "operation"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -5958,7 +5815,6 @@
         "target_type",
         "target_id"
       ],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -6004,7 +5860,6 @@
       "query_inputs": [
         "after_sequence"
       ],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -6034,7 +5889,6 @@
       "path": "/api/v1/processes",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -6192,7 +6046,6 @@
         "process"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -6221,7 +6074,6 @@
         "target_type",
         "target_id"
       ],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -6261,7 +6113,6 @@
         "lines",
         "follow"
       ],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -6298,7 +6149,6 @@
         "process"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -6326,7 +6176,6 @@
         "process"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -6354,7 +6203,6 @@
         "process"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -6382,7 +6230,6 @@
         "process"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -6516,7 +6363,6 @@
       "path": "/api/v1/projects",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -6602,7 +6448,6 @@
         "project"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -6630,7 +6475,6 @@
         "project"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -6692,7 +6536,6 @@
         "step"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -6726,7 +6569,6 @@
         "project"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -6755,7 +6597,6 @@
         "step"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -6813,7 +6654,6 @@
         "entry"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -6853,7 +6693,6 @@
         "project"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -6975,7 +6814,6 @@
         "entry"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -7020,7 +6858,6 @@
       "query_inputs": [
         "version"
       ],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -7064,7 +6901,6 @@
         "cursor",
         "limit"
       ],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -7126,7 +6962,6 @@
       "query_inputs": [
         "version"
       ],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -7165,7 +7000,6 @@
         "entry"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -7206,7 +7040,6 @@
         "entry"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -7257,7 +7090,6 @@
         "cursor",
         "limit"
       ],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -7316,7 +7148,6 @@
         "entry"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -7348,7 +7179,6 @@
       "path": "/api/v1/project-document-storage",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -7365,7 +7195,6 @@
       "path": "/api/v1/project-document-storage",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -7407,7 +7236,6 @@
         "entry"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -7474,7 +7302,6 @@
         "cursor",
         "limit"
       ],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -7518,7 +7345,6 @@
         "entry"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -7596,7 +7422,6 @@
         "node"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -7630,7 +7455,6 @@
         "project"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -7659,7 +7483,6 @@
         "node"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -7691,7 +7514,6 @@
       "path": "/api/v1/projects",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -7710,7 +7532,6 @@
         "project"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -7856,7 +7677,6 @@
         "process_definition"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -7889,7 +7709,6 @@
         "project"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -7918,7 +7737,6 @@
         "process_definition"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -7952,7 +7770,6 @@
         "process_definition"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -8102,7 +7919,6 @@
         "project"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -8174,7 +7990,6 @@
         "schedule_definition"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -8207,7 +8022,6 @@
         "project"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -8236,7 +8050,6 @@
         "schedule_definition"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -8270,7 +8083,6 @@
         "schedule_definition"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -8346,7 +8158,6 @@
         "project"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -8374,7 +8185,6 @@
         "project"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -8472,7 +8282,6 @@
       "path": "/api/v1/proxycli/providers",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -8489,7 +8298,6 @@
       "path": "/api/v1/proxycli/models",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -8506,7 +8314,6 @@
       "path": "/api/v1/proxycli",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -8552,7 +8359,6 @@
         "provider"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -8576,7 +8382,6 @@
       "path": "/api/v1/proxycli",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -8593,7 +8398,6 @@
       "path": "/api/v1/proxycli",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -8612,7 +8416,6 @@
         "account"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -8641,7 +8444,6 @@
       "path": "/api/v1/realtime",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -8658,7 +8460,6 @@
       "path": "/api/v1/routes",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -8784,7 +8585,6 @@
         "route"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -8814,7 +8614,6 @@
       "path": "/api/v1/routes",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -8833,7 +8632,6 @@
         "route"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -8861,7 +8659,6 @@
         "route"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -8920,7 +8717,6 @@
         "route"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -8948,7 +8744,6 @@
         "route"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -8995,7 +8790,6 @@
       "path": "/api/v1/schedules",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -9058,7 +8852,6 @@
         "schedule"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -9086,7 +8879,6 @@
         "schedule"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -9112,7 +8904,6 @@
       "path": "/api/v1/schedules",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -9133,7 +8924,6 @@
       "query_inputs": [
         "lines"
       ],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -9166,7 +8956,6 @@
         "schedule"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -9194,7 +8983,6 @@
         "schedule"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -9212,6 +9000,50 @@
       }
     },
     {
+      "name": "tasks-agent-show",
+      "extension": "tasks",
+      "title": "Show a task agent session",
+      "description": "Returns one redacted read of a task agent thread: its state, its transcript entries, and its token metrics. To poll, pass the previous answer's `cursor` as `after_sequence`. When the Pi server can resume from it, `kind` is `delta` and `entries` holds only the entries added or changed after it; merge them by `id` and `kind`. Otherwise, as on a first read or after a Pi server restart, `kind` is `snapshot` and `entries` replaces the whole transcript. A thread that has not started returns an empty snapshot. When the thread's Node is gone, or its Pi server fails and Orbit saved a transcript, returns that transcript with `archived` true and `cursor` null; it does not change. Requires Gateway access. See /reference/tasks#read-a-thread.",
+      "method": "GET",
+      "path": "/api/v1/task-groups/{group}/agents/{session}",
+      "path_inputs": [
+        "group",
+        "session"
+      ],
+      "query_inputs": [
+        "after_sequence"
+      ],
+      "starts_operation": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Task group ID."
+          },
+          "session": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric task agent session ID within this group."
+          },
+          "after_sequence": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[A-Za-z0-9._:+=\\/-]+$",
+            "maxLength": 512
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "group",
+          "session"
+        ]
+      }
+    },
+    {
       "name": "tasks-agents",
       "extension": "tasks",
       "title": "List task agent sessions",
@@ -9222,7 +9054,6 @@
         "group"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -9250,7 +9081,6 @@
         "group"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -9279,7 +9109,6 @@
         "task"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -9312,7 +9141,6 @@
         "task"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -9375,7 +9203,6 @@
         "type",
         "limit"
       ],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -9427,7 +9254,6 @@
         "group"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -9453,7 +9279,6 @@
       "path": "/api/v1/task-groups",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -9609,7 +9434,6 @@
         "project_id",
         "status"
       ],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -9651,7 +9475,6 @@
         "question"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -9697,7 +9520,6 @@
         "status",
         "since"
       ],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -9745,7 +9567,6 @@
       "query_inputs": [
         "compact"
       ],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -9774,7 +9595,6 @@
       "path": "/api/v1/tasks/status",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -9794,7 +9614,6 @@
         "task"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -9826,7 +9645,6 @@
         "group"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -9944,7 +9762,6 @@
         "task"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -9977,7 +9794,6 @@
         "task"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -10101,7 +9917,6 @@
         "group"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -10149,7 +9964,6 @@
       "path": "/api/v1/tools/adopt",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -10193,7 +10007,6 @@
       "path": "/api/v1/tools",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -10239,7 +10052,6 @@
       "query_inputs": [
         "node_id"
       ],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -10266,7 +10078,6 @@
       "query_inputs": [
         "node_id"
       ],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -10293,7 +10104,6 @@
         "tool"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -10321,7 +10131,6 @@
       "query_inputs": [
         "node_id"
       ],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -10348,7 +10157,6 @@
         "tool"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -10376,7 +10184,6 @@
         "tool"
       ],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -10402,7 +10209,6 @@
       "path": "/api/v1/vault",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -10457,7 +10263,6 @@
       "path": "/api/v1/vault",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -10474,7 +10279,6 @@
       "path": "/api/v1/vault/sync",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",
@@ -10491,7 +10295,6 @@
       "path": "/api/v1/vault",
       "path_inputs": [],
       "query_inputs": [],
-      "streams": false,
       "starts_operation": false,
       "input_schema": {
         "type": "object",

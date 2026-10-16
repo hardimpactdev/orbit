@@ -1901,7 +1901,7 @@ it('reconciles Cluster activation for an active Instance Route without moving pl
 
     $this->putJson("/api/v1/clusters/{$cluster->id}/nodes/{$this->node->id}")->assertOk();
     $this->putJson("/api/v1/clusters/{$cluster->id}/router/{$firstRouter->id}")->assertOk();
-    $this->patchJson("/api/v1/clusters/{$cluster->id}", ['tld' => 'orbit'])->assertOk();
+    $this->patchJson("/api/v1/clusters/{$cluster->id}", ['tld' => 'lab'])->assertOk();
     $this
         ->patchJson("/api/v1/clusters/{$cluster->id}", ['state' => 'active'])
         ->assertOk()
@@ -1916,7 +1916,7 @@ it('reconciles Cluster activation for an active Instance Route without moving pl
             'status' => RouteStatus::Active,
             'node_id' => null,
             'cluster_id' => $cluster->id,
-            'domain' => 'dev.acme.orbit',
+            'domain' => 'dev.acme.lab',
         ])
         ->and($firstRouter->roles()->where('role', RoleName::Router)->sole()->status)
         ->toBe(LifecycleStatus::Active)

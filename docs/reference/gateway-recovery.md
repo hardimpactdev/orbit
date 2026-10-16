@@ -216,7 +216,7 @@ The handoff runs `php releases/<id>/apps/gateway/artisan gateway:release:handoff
 The serving phase:
 
 1. publishes the Gateway Node's Caddyfile when the render changed, with a graceful Caddy reload;
-2. compares the rendered pool with `/etc/php/8.5/fpm/pool.d/orbit-gateway.conf` and reloads PHP-FPM only for a difference, as a reload ends requests in flight;
+2. converges the PHP-FPM pool and the start hooks, as described below;
 3. installs the hibernator, agent-view, and [release units](#release-units) again and restarts agent-view. The units name the stable `/home/orbit/orbit/apps/gateway` path;
 4. moves [Laravel Horizon](/reference/gateway-queue#releases) to the new release, with `php artisan horizon:terminate` while it runs.
 
@@ -228,6 +228,8 @@ The scheduler phase:
 4. moves the jobs left in the old database queues to the [Gateway queue](/reference/gateway-queue#releases);
 5. updates the Gateway Node's own `orbit-agent` to the release's pin, described below;
 6. resets OPcache, described below.
+
+The handoff compares the rendered pool with `/etc/php/8.5/fpm/pool.d/orbit-gateway.conf`. A reload ends requests in flight, so a matching pool keeps running, and the handoff only installs the contributed [start hooks](/reference/extensions#plug-in-points). For a different pool, it checks and installs the pool. Then it installs and runs the start hooks and reloads PHP-FPM.
 
 PHP-FPM is not restarted for a release. Caddy resolves the `/home/orbit/orbit` link for each request (`resolve_root_symlink`) and passes PHP-FPM the release's real script path. A request that started before the switch finishes on its release, and the next one runs the new release. The `/grafana` authorization resolves the link the same way. A fixed script path through the link would let each PHP-FPM worker keep the old release in its realpath cache for up to two minutes.
 

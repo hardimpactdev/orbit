@@ -54,7 +54,6 @@
             ],
             "concepts": [
                 "Activity",
-                "Deployment",
                 "Doctor",
                 "Extension",
                 "Gateway",
@@ -425,7 +424,6 @@
             "concepts": [
                 "Activity",
                 "Cluster",
-                "Deployment",
                 "Doctor",
                 "Extension",
                 "Gateway",
@@ -606,6 +604,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Pi server",
                 "Project",
                 "Role",
                 "Route",
@@ -1799,7 +1798,9 @@
                 "Route",
                 "Tool"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0217"
+            ]
         },
         {
             "path": "docs/reference/desktop-app.md",
@@ -1900,6 +1901,7 @@
             ],
             "concepts": [
                 "Activity",
+                "Cluster",
                 "Extension",
                 "Gateway",
                 "Node",
@@ -2342,6 +2344,7 @@
                 "Instance",
                 "Node",
                 "Node agent",
+                "Pi server",
                 "Process",
                 "Project",
                 "Project Documents",
@@ -2411,6 +2414,7 @@
                 "Activity",
                 "Cluster",
                 "Doctor",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -2545,6 +2549,7 @@
             "concepts": [
                 "Cluster",
                 "Doctor",
+                "Extension",
                 "Gateway",
                 "Node",
                 "Placement",
@@ -2669,6 +2674,7 @@
                 "Activity",
                 "Database server",
                 "Deployment",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -2693,6 +2699,7 @@
                 "Cluster",
                 "Deployment",
                 "Doctor",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",

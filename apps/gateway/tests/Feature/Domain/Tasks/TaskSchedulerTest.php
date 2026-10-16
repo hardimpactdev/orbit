@@ -2672,6 +2672,116 @@ function scheduler_review(array $receipts, bool $notified = true): array
     return [$group->fresh(['tasks', 'taskable']) ?? $group, $task->fresh() ?? $task, $receipts, $signer, $checks, $dispatcher, $reader];
 }
 
+it('waits for a workspace check before taking the review baseline', function (TaskCheckKind $kind): void {
+    [, $task, , , , $dispatcher] = scheduler_review([], notified: false);
+    $checks = new FakeTaskCheckRunner([TaskCheckReading::running(), FakeTaskCheckRunner::passed()]);
+    $checks->failSnapshot = true;
+    app()->instance(TaskCheckRunner::class, $checks);
+    $check = $task->checks()->create([
+        'kind' => $kind, 'status' => TaskCheckStatus::Running, 'pid' => 1234,
+        'process_started' => 'check-start', 'head_before' => $checks->head, 'tree_before' => $checks->tree,
+        'started_at' => now(),
+    ]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->review_notified_attempt)->toBeNull()
+        ->and($task->fresh()?->review_workspace_head)->toBeNull()
+        ->and($task->fresh()?->communication_failures)->toBe(0)
+        ->and($dispatcher->commands)->toBe([]);
+
+    $checks->failSnapshot = false;
+    $checks->tree = str_repeat('d', 40);
+    app(TaskScheduler::class)->tick();
+
+    expect($check->fresh()?->status)->toBe(TaskCheckStatus::Passed)
+        ->and($task->fresh()?->review_workspace_tree)->toBe($checks->tree)
+        ->and($task->fresh()?->review_notified_attempt)->toBe($task->review_attempt)
+        ->and($task->fresh()?->assistance_requested)->toBeFalse();
+})->with(TaskCheckKind::cases());
+
+it('does not blame a reviewer for untracked files from an overlapping legacy check', function (): void {
+    [$group, $task, , $signer, , $dispatcher] = scheduler_review([
+        FakeTaskTurnReceipts::contents('approved', 'Checked the models.'),
+    ]);
+    $changedTree = str_repeat('d', 40);
+    $checks = new FakeTaskCheckRunner([
+        TaskCheckReading::running(),
+        TaskCheckReading::finished(0, str_repeat('a', 40), $changedTree, ['orbit_tia_fixture/test.php'], 'check created untracked fixture'),
+    ]);
+    $checks->tree = $changedTree;
+    app()->instance(TaskCheckRunner::class, $checks);
+    $check = $task->checks()->create([
+        'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Running, 'pid' => 1234,
+        'process_started' => 'check-start', 'head_before' => $task->review_workspace_head,
+        'tree_before' => $task->review_workspace_tree, 'started_at' => now(),
+    ]);
+
+    app(TaskScheduler::class)->tick();
+    expect($task->fresh()?->assistance_requested)->toBeFalse()->and($dispatcher->commands)->toBe([]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($check->fresh()?->status)->toBe(TaskCheckStatus::Changed)
+        ->and($task->fresh()?->review_attempt)->toBe($task->review_attempt + 1)
+        ->and($task->fresh()?->review_workspace_tree)->toBe($changedTree)
+        ->and($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and($group->fresh()?->assistance_requested)->toBeFalse()
+        ->and($signer->messages)->toBe([])
+        ->and($dispatcher->commands)->toBe([]);
+});
+
+it('queues a reviewer resolution behind a running workspace check', function (AssistanceKind $kind): void {
+    [$group, $task, $receipts, , , $dispatcher] = scheduler_review([]);
+    $hold = TaskAssistance::attributes($kind, 'Which contract?', 'Choose the contract.');
+    $task->update($hold);
+    $group->update($hold);
+    $checks = new FakeTaskCheckRunner([TaskCheckReading::running(), FakeTaskCheckRunner::passed()]);
+    app()->instance(TaskCheckRunner::class, $checks);
+    $task->checks()->create([
+        'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Running, 'pid' => 1234,
+        'process_started' => 'check-start', 'head_before' => $checks->head, 'tree_before' => $checks->tree,
+        'started_at' => now(),
+    ]);
+
+    app(StoreTaskCommentAction::class)->execute($task, [
+        'type' => 'resolution', 'body' => 'Use the documented contract.', 'author' => 'operator',
+    ]);
+    expect($dispatcher->commands)->toBe([])->and($receipts->prepared)->toBe([]);
+
+    app(TaskScheduler::class)->tick();
+    expect($receipts->prepared)->toBe([]);
+
+    app(TaskScheduler::class)->tick();
+    expect($task->fresh()?->review_notified_attempt)->toBe($task->fresh()?->review_attempt)
+        ->and($receipts->contexts)->toHaveCount(1)
+        ->and($receipts->contexts[0])->toContain('Use the documented contract.')
+        ->and($task->fresh()?->assistance_requested)->toBeFalse();
+})->with([AssistanceKind::Failure, AssistanceKind::Direction]);
+
+it('recovers old workspace-change assistance when a finished check records the current tree', function (): void {
+    [$group, $task, , $signer, $checks, $dispatcher] = scheduler_review([]);
+    $failure = TaskAssistance::attributes(AssistanceKind::Failure, null, 'Checks still failed after the reminder. '.TaskScheduler::WorkspaceChangedReminder);
+    $task->update($failure);
+    $group->update($failure);
+    $checks->tree = str_repeat('d', 40);
+    $task->checks()->create([
+        'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Changed, 'pid' => 1234,
+        'process_started' => 'check-start', 'head_before' => $checks->head,
+        'tree_before' => str_repeat('b', 40), 'head_after' => $checks->head, 'tree_after' => $checks->tree,
+        'started_at' => now()->subMinute(), 'finished_at' => now(),
+    ]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->review_attempt)->toBe($task->review_attempt + 1)
+        ->and($task->fresh()?->review_workspace_tree)->toBe($checks->tree)
+        ->and($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and($group->fresh()?->assistance_requested)->toBeFalse()
+        ->and($signer->messages)->toBe([])
+        ->and($dispatcher->commands)->toBe([]);
+});
+
 it('approves a review when the workspace is unchanged since the review request', function (): void {
     [$group, $task, , $signer, $checks, $dispatcher, $reader] = scheduler_review([
         FakeTaskTurnReceipts::contents('approved', 'Checked the models.'),

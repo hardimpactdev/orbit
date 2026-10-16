@@ -80,18 +80,19 @@ it('records a failed deployment with its failed step and error code', function (
 });
 
 it('records a rollback as its own deployment row', function (): void {
-    $response = $this
+    $this
         ->withServerVariables(['REMOTE_ADDR' => $this->fixture->caller->wireguard_ip])
         ->call('POST', $this->rollbackUrl, server: [
             'CONTENT_TYPE' => 'application/json',
-            'HTTP_ACCEPT' => 'application/x-ndjson',
-        ], content: '{"release":"initial"}');
-    $response->assertOk();
-    $response->streamedContent();
+            'HTTP_ACCEPT' => 'application/json',
+        ], content: '{"release":"initial"}')
+        ->assertAccepted();
+    run_operation_jobs();
 
     $deployment = InstanceDeployment::query()->sole();
 
-    expect($deployment->status)->toBe('succeeded')
+    expect($deployment->kind)->toBe(InstanceDeployment::Rollback)
+        ->and($deployment->status)->toBe('succeeded')
         ->and($deployment->triggered_by)->toBe($this->fixture->caller->name);
 });
 
