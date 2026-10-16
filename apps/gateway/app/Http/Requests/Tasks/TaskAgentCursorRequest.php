@@ -6,7 +6,10 @@ namespace App\Http\Requests\Tasks;
 
 use Illuminate\Foundation\Http\FormRequest;
 
-final class TaskAgentStreamRequest extends FormRequest
+/**
+ * The cursor of an agent thread read or stream: the `after_sequence` query, or the stream's `Last-Event-ID` header.
+ */
+final class TaskAgentCursorRequest extends FormRequest
 {
     /** @return array<string, list<string>> */
     public function rules(): array

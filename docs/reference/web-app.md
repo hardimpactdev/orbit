@@ -20,6 +20,8 @@ The generated clone response types include required `data.warnings: string[]` fo
 
 The generated API schema includes `PATCH /api/v1/nodes/{node}/wireguard-key`, with a `wireguard_public_key` input and the standard Node response. These types describe the [unmanaged peer key contract](/cli/node#orbit-nodewireguard-key); they do not add a web key editor. Regenerate them with `bun run types` when the operation changes.
 
+The generated API schema includes `GET /api/v1/task-groups/{group}/agents/{session}` and its `TaskAgentSnapshot` response, the [thread read](/reference/tasks#read-a-thread). The task page's Agents section reads the agent stream, not this operation.
+
 The generated Node settings schema includes nullable `task_vms` alongside `apps`. The Node settings PATCH input accepts the typed host object or null, and Node responses expose its stored host configuration. These types describe [operator-owned task VM hosts](/reference/node-settings#configure-a-task-vm-host); they add no web settings editor and do not make an `app-dev` Node a host.
 
 The task group schema includes nullable `vm_power`: `running`, `stopped`, or `destroyed`, separately from task status. The Tasks page keeps its status-based grouping and detail view when power is present, null, or omitted. [VM power](/reference/compute-drivers#vm-power) defines the state mapping.

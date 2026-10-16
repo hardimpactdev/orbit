@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Actions\Tasks;
 
-use App\Domain\Tasks\TaskAgentSpawner;
 use App\Models\AgentThread;
 use App\Models\Task;
 use Illuminate\Database\Eloquent\Collection;
@@ -20,7 +19,7 @@ final readonly class ShowAgentThreadsAction
 
         return AgentThread::query()
             ->where('task_group_id', $group->id)
-            ->where('external_id', 'not like', TaskAgentSpawner::PendingPrefix.'%')
+            ->started()
             ->orderBy('id')
             ->get();
     }

@@ -120,7 +120,7 @@ Older Pi server binaries send older error shapes. A binary built before this env
 | `POST /sessions` | Creates a session from `id`, `cwd`, `model`, `thinkingLevel`, and an optional `appendSystemPrompt`, and returns `201`. Repeating the same create returns `200` |
 | `POST /sessions/{id}/messages` | Starts a turn from `key` and `text`, and returns `202`. A repeated key returns `200` with `duplicate: true` and starts no turn |
 | `POST /sessions/{id}/interrupt` | Aborts the active turn and returns `202` |
-| `GET /sessions/{id}` | Snapshot: session settings, state, error, turn ID, transcript entries, and [token usage](#token-usage) |
+| `GET /sessions/{id}` | Snapshot: session settings, state, error, turn ID, transcript entries, and [token usage](#token-usage). With `run` and `after`, it can answer a delta instead. See [Read after a cursor](#read-after-a-cursor) |
 | `GET /sessions/{id}/stream` | Newline-delimited JSON: a snapshot or, with `run` and `after`, a resumed start; then `entry` and `state` events, with a `heartbeat` every 15 seconds. See [Stream](#stream) |
 
 | Error code | Status | Meaning |
@@ -139,7 +139,7 @@ The turn ID is the key of the latest accepted send. The Gateway uses a new key f
 
 ## Token usage
 
-The snapshot and each stream `state` event include `usage`. The sums cover every assistant message that has numeric `input`, `output`, `cacheRead`, and `cacheWrite`. A message without that usage is not a call. [Thread token metrics](/reference/tasks#thread-token-metrics) describes how the Gateway stores these numbers on the agent thread.
+The snapshot, the delta, and each stream `state` event include `usage`. The sums cover every assistant message that has numeric `input`, `output`, `cacheRead`, and `cacheWrite`. A message without that usage is not a call. [Thread token metrics](/reference/tasks#thread-token-metrics) describes how the Gateway stores these numbers on the agent thread.
 
 | Field | Meaning |
 | --- | --- |
@@ -169,6 +169,27 @@ Then it sends the entries streamed after that sequence and the latest `state` ev
 
 The server sends a snapshot instead when the cursor is missing or malformed, names another run, or is ahead of the run. A cursor from before a restart or an idle unload names another run.
 
+### Read after a cursor
+
+`GET /sessions/{id}` takes the same `run` and `after` parameters as the stream. When the stream would start with a `resumed` event, the read answers a `delta`:
+
+```json
+{"kind": "delta", "run": "3f9c…", "sequence": 57, "session": {"id": "…"}, "state": "done", "error": null, "turnId": "…", "usage": {…}, "context": [], "events": []}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `run` | The session's current run |
+| `sequence` | The newest sequence of the run. Pass it as `after` on the next read |
+| `session` | The session ID |
+| `state`, `error`, `providerError`, `turnId`, `usage` | The session's current values, the same as in a snapshot |
+| `context` | The entries at or before the cursor whose tool calls have no result yet, the same as in `resumed` |
+| `events` | The `entry` and `state` events that a stream resumed from the same cursor sends after `resumed`, in sequence order. A cursor at the newest sequence gives an empty list |
+
+The read answers a full snapshot whenever the stream would start with one. The Gateway's [agent thread read](/reference/tasks#read-a-thread) uses the delta, so each poll carries only the events after the last one. A read does not change the stream or its sequence numbers.
+
+A binary built before delta reads ignores `run` and `after` on `GET /sessions/{id}` and always answers a snapshot. A client tells the two answers apart by `kind`.
+
 ## Thread states
 
 The server reports one of the Orbit thread states from its own evidence. The Gateway stores that state on the thread.
@@ -181,7 +202,7 @@ The server reports one of the Orbit thread states from its own evidence. The Gat
 | The turn ended with a provider error, an interruption, or the output limit | `failed`, with the error |
 | The server restarted while the turn was active | `failed`, with error `The Pi server restarted during the turn.` |
 
-Provider-error failures may include `providerError` in snapshots and stream state events: `overloaded`, `rate_limited`, or `server_error`. It is absent for other failures. Classification reads only the last assistant message with stop reason `error`, not tool output. Structured provider error codes and HTTP status codes take precedence over a narrow fallback for known capacity messages when the SDK preserves only text.
+Provider-error failures may include `providerError` in snapshots, deltas, and stream state events: `overloaded`, `rate_limited`, or `server_error`. It is absent for other failures. Classification reads only the last assistant message with stop reason `error`, not tool output. Structured provider error codes and HTTP status codes take precedence over a narrow fallback for known capacity messages when the SDK preserves only text.
 
 For `openai-responses` (the API used by `orbit-task-vm`) and `openai-codex-responses`, Orbit observes HTTP responses and SSE error records before the SDK replaces them with human-readable messages. This includes streamed `error` and `response.failed` records received after HTTP 200. Orbit stores only the resulting category (or an explicit non-transient result) on the failed assistant message, so unloading or restarting the server preserves it.
 
