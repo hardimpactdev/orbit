@@ -1017,6 +1017,12 @@ final readonly class TaskSubtaskRunner
             if ($task->status === TaskStatus::Running) {
                 $this->recordSubtaskStart($task);
             }
+            if ($task->status === TaskStatus::Reviewing && $task->assistance_requested
+                && TaskExecutionHold::run($group, fn (): bool => $scheduler->recoverStaleReview($group, $task)) === true) {
+                $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
+
+                continue;
+            }
             if ($task->assistance_requested || $scheduler->progressBlockedByAssistance($group)) {
                 if ($task->assistance_requested && ! $group->assistance_requested && $task->assistance_kind instanceof AssistanceKind && is_string($task->assistance_reason)) {
                     $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;

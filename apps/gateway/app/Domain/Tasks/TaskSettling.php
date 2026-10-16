@@ -1183,6 +1183,9 @@ final readonly class TaskSettling
      */
     private function prepareResumedWorkspace(TaskScheduler $scheduler, Task $group, Task $todo): bool
     {
+        if (app(TaskWorkspaceHead::class)->held($group)) {
+            return false;
+        }
         $key = 'tasks.resume-fetch.'.$todo->id;
         if (! $this->retryIsDue($key, 'resume fetch')) {
             return false;
