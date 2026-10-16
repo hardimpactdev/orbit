@@ -704,6 +704,12 @@ After promotion, the final chain step prunes old recipe images on that host. It 
 
 At 03:00 Europe/Amsterdam (01:00 UTC in summer, 02:00 UTC in winter), the Gateway opens a PR against main through its existing GitHub App. It reads main and advances only `ubuntu.snapshot` to the current date at UTC midnight. Exact package versions and Sury artifact URLs and hashes stay pinned; there is no separate Sury snapshot field. An unchanged or newer date creates no PR. A date branch makes repeated submissions reuse the same PR. The same job also opens the [PHP build](#bump-the-php-build) pull request when Sury publishes a newer PHP build.
 
+If Required checks fail and main has advanced beyond the commit's parent, the nightly job rebuilds the open PR as one fresh Gateway App commit on current main. It force-updates the date branch using an expected-head comparison, so a concurrent push cannot be overwritten. Before writing, it verifies App authorship, the single date-only commit, the PR timeline, and body edit history, then rechecks the PR head. It leaves green, pending, or closed PRs unchanged, as well as any PR that a person modified.
+
+A cross-reference from another issue or PR is not a modification and does not block refresh; unknown or truncated history still blocks it.
+
+Keeping the PR preserves its URL and CI history; rerunning CI alone would reuse the stale merge commit. The refresh leaves a short comment explaining the superseded head.
+
 Each minute the Gateway merges its date PRs after Required checks pass on the exact head. It re-reads the PR files and patch at merge time and requires one App-authored commit, its App as PR author, and only the single `ubuntu.snapshot` line change. Any extra change, commit, or different author blocks the merge and raises the existing alert; the merge uses the expected head SHA. This reuses the existing App and PR API without Actions secrets or a second publisher.
 
 The jobs run only from the serving release while task VMs are enabled. Merge and deployment have no fixed time. The existing release handoff and per-minute image reconcile build, smoke-test, and promote the base on each configured host. Maintenance adds no build trigger or composed-topology smoke run. Every host must promote the deployed identity and generation before fleet convergence starts. A failed build halts and alerts the operator.

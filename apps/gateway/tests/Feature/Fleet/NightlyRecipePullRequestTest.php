@@ -50,6 +50,7 @@ function nightlyRecipeGitHub(array $file, ?array $branchFile = null, array $pull
         },
         $base.'/git/refs' => Http::response(['ref' => 'refs/heads/nightly/recipe-'.nightlyRecipeDate()->format('Ymd')], $branchFile === null ? 201 : 422),
         $base.'/pulls?*' => Http::response($pulls),
+        $base.'/pulls/99' => Http::response($pulls[0] ?? []),
         $base.'/pulls' => Http::response(['html_url' => 'https://github.com/nckrtl/orbit/pull/99', 'number' => 99, 'user' => ['login' => 'orbit-bot']], 201),
     ]);
 }

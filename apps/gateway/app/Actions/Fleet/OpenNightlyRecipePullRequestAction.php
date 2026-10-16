@@ -7,6 +7,7 @@ namespace App\Actions\Fleet;
 use App\Domain\Fleet\FleetRolloutAlerts;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubPullRequestDraft;
+use App\Domain\GitHub\GitHubPullRequestState;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
@@ -18,7 +19,7 @@ final readonly class OpenNightlyRecipePullRequestAction
 {
     public const string Path = 'apps/gateway/resources/machine-software/recipe.json';
 
-    public function __construct(private RepositoryPullRequestAccess $access, private GitHubApi $github, private RecipeLoader $loader) {}
+    public function __construct(private RepositoryPullRequestAccess $access, private GitHubApi $github, private RecipeLoader $loader, private RefreshNightlyRecipePullRequestAction $refresh) {}
 
     public function execute(): ?string
     {
@@ -47,6 +48,10 @@ final readonly class OpenNightlyRecipePullRequestAction
         $existing = $this->github->pullRequestsByHead($token, $repository, $branch);
         if ($existing !== []) {
             // A closed date PR is an operator decision too; never reopen or overwrite it.
+            if (count($existing) === 1 && $existing[0]->state === GitHubPullRequestState::Open) {
+                $this->refresh->execute($http, $repository, $existing[0]->number, $branch, $head, $content, $title);
+            }
+
             return $existing[0]->url;
         }
         $created = $http->post('/git/refs', ['ref' => 'refs/heads/'.$branch, 'sha' => $head]);
