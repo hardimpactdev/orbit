@@ -131,10 +131,7 @@ final readonly class AnnotationStoreAction
     /** The caller holds the transaction so the record and its revision commit together. */
     public function record(Annotation $annotation): Annotation
     {
-        $sequence = DB::table('annotation_events')->insertGetId([
-            'instance_id' => $annotation->instance_id, 'payload' => '{}',
-            'created_at' => now(), 'updated_at' => now(),
-        ]);
+        $sequence = DB::table('annotation_events')->insertGetId(['created_at' => now(), 'updated_at' => now()]);
         $annotation->revision = $sequence;
         if ($annotation->submission_order === 0) {
             $annotation->submission_order = $sequence;

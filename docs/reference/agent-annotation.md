@@ -71,7 +71,9 @@ The command and message IDs are fixed when the annotation is stored, so a repeat
 
 Every change sends an [`annotation.updated`](/reference/events#annotation) notice through Reverb with the ID, Instance ID, and revision. The browser then fetches the list with `annotation:list`. It also fetches when it subscribes, reconnects, or refreshes. Submissions stay HTTP requests.
 
-A client follows annotations with `annotation.updated` notices and `annotation:list`. The Gateway has no annotation event stream. An MCP client calls `annotation-list`.
+A client follows annotations with `annotation.updated` notices and `annotation:list`. An MCP client calls `annotation-list`.
+
+Each change takes the next revision from one Gateway-wide counter. So a later change always has a higher revision, also across Instances. The first revision of an annotation is its submission order.
 
 The transport subscribes through the web app's own realtime connection. While that connection is not live, the browser also fetches every 15 seconds and when a hidden tab becomes visible. That timed fetch skips a hidden tab. A realtime notice starts a fetch in a hidden tab too.
 
@@ -107,7 +109,7 @@ HTTP keeps Gateway validation, storage, and a durable answer for each submission
 
 ### Notices, not a Gateway stream
 
-An open stream holds a PHP-FPM worker, and those workers serve every API request. Reverb holds the open connections instead, and each fetch is one short request. [ADR 0209](/decisions/0209-run-long-operations-as-durable-queued-operations) rejects long-held requests for the same reason.
+An open stream holds a PHP-FPM worker, and those workers serve every API request. Reverb holds the open connections instead, and each fetch is one short request.
 
 ### A subtask in an existing-thread task
 

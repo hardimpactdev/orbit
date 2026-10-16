@@ -1331,9 +1331,7 @@
                 "Subtask",
                 "Task"
             ],
-            "governing_adrs": [
-                "0209"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/agentation.md",
