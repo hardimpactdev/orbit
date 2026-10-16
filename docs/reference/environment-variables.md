@@ -159,7 +159,7 @@ The production sync response adds `runtime_refresh`: `config_cache_and_opcache_r
 
 Config is built at a temporary `APP_CONFIG_CACHE` path and verified by booting Artisan against that cache before renaming it over the old cache. Laravel loads the cached array using the application's own bootstrap and autoload context, including custom Composer vendor directories and shared repository autoloaders. Valid cached enums and class instances need no special handling. A build failure keeps the old cache. Fix the cause and repeat env-sync; the Gateway remembers pending refreshes and retries them even when `.env` is unchanged.
 
-It records the pending refresh as soon as the production `.env` replacement is confirmed, before key tracking or `.env.testing` synchronization can fail, and clears it only after PHP refresh and eligible Process restarts succeed.
+It records the pending refresh in the Instance database row as soon as the production `.env` replacement is confirmed, before key tracking or `.env.testing` synchronization can fail, and clears it only after PHP refresh and eligible Process restarts succeed. Pending refreshes survive application cache clears, including Gateway recovery. The database migration copies existing cache markers into Instance rows.
 
 After refresh, Orbit uses the deploy Process restart action to restart running Instance Processes opted into `restart_on_deploy`. The response includes `restarted_process_ids`. Restart failures return `env.process_restart_failed` (502), including IDs already restarted, without exposing application output. An unexpected refresh failure returns `env.runtime_refresh_failed` (502).
 
