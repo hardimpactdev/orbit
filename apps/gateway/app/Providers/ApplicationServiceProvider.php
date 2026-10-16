@@ -19,6 +19,7 @@ use App\Domain\AgentView\AgentProcessView;
 use App\Domain\AgentView\AgentStateView;
 use App\Domain\AgentView\AgentViewConverger;
 use App\Domain\Analytics\AnalyticsClickhouseConfigurationManager;
+use App\Domain\Analytics\AnalyticsProcessOwnership;
 use App\Domain\Analytics\AnalyticsPublicationManager;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\Analytics\AnalyticsSecretManager;
@@ -43,6 +44,7 @@ use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\DatabaseConnections\DatabaseInspectionExecutor;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
+use App\Domain\DatabaseServers\DatabaseServerProcessOwnership;
 use App\Domain\Doctor\CaddyBuildInspector;
 use App\Domain\Doctor\CustomProxyRouteInspector;
 use App\Domain\Doctor\GatewayVpnStateInspector;
@@ -156,6 +158,7 @@ use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessEnvironmentProjection;
+use App\Domain\Processes\ProcessRemovalGuard;
 use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessRuntimeStatusIndex;
@@ -552,6 +555,8 @@ final class ApplicationServiceProvider extends ServiceProvider
 
     public function register(): void
     {
+        $this->app->tag([AnalyticsProcessOwnership::class, DatabaseServerProcessOwnership::class], ProcessRemovalGuard::class);
+
         $this->app->bind(
             SweepIdleAppDevRuntimesAction::class,
             static fn ($app): SweepIdleAppDevRuntimesAction => new SweepIdleAppDevRuntimesAction(

@@ -135,6 +135,8 @@ Creating or starting an Instance Process needs an active Instance on an active N
 
 Removing a systemd Process disables and stops the unit, deletes the unit file, reloads systemd, and resets the unit's failed state. A crashed unit therefore leaves no `failed` entry in `systemctl list-units`.
 
+Process removal runs the tagged [Process removal guards](/reference/extensions#plug-in-points) before changing the record or stopping its runtime. Analytics, Database servers, and ProxyCli keep their ownership checks through this point. A refusal leaves the Process in place.
+
 ### Update in place
 
 [`process:update`](/cli/process#orbit-processupdate) replaces an installed Process specification without deleting its record. `PATCH /api/v1/processes/{process}` accepts a complete specification with the same runtime fields and defaults as create: `runtime`, `command`, `image`, `working_directory`, `environment`, `ports`, `volumes`, `restart_policy`, `keep_alive`, `restart_on_deploy`, and `user` where allowed. It does not accept a new name, owner, preset, or initial-start flag. The Process ID, name, owner, and desired state stay the same. For Docker, omitted or null `working_directory` restores the image default; omitted environment, ports, and volumes are empty. This is replacement, not a merge of individual environment keys.
