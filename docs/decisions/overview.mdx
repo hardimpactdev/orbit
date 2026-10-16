@@ -14,7 +14,7 @@ The docs-first subtask writes an ADR when a feature needs an architectural decis
 
 The pull request that completes a decision writes its behavior into the owning page and its lasting reasons and rejected alternatives into that page's "Why it works this way" section. It deletes the ADR, removes it from Records, redirects the exact ADR path to the absorbing section, adds a Retired decisions row, and updates inbound links. A decision completed in one pull request never leaves an ADR on main; a record stays only while a decision spans multiple pull requests. Numbers are never reused. The retired table and redirects resolve old numbers and links, including those in code comments.
 
-`composer docs-lint` enforces this lifecycle: retired slugs have no matching file and each has a redirect from its exact path. Live ADRs numbered 0180 or later must say `In progress.` in their Status section, include a `Principle:` line, and have a row in Records. A lower number follows those same rules only when Retired decisions does not list it. The open gaps are 0007 and 0020. The committed allowlist for older live records can only shrink as those records retire. The [docs-impact check](/contributor-guide#docs-impact-stays-in-the-repository) and `covers:` frontmatter keep pages in step with code between decisions.
+`composer docs-lint` enforces this lifecycle: retired slugs have no matching file and each has a redirect from its exact path. Live ADRs numbered 0180 or later must say `In progress.` or `Withdrawn on YYYY-MM-DD.` in their Status section, include a `Principle:` line, and have a row in Records. A lower number follows those same rules only when Retired decisions does not list it. The open gaps are 0007 and 0020. The committed allowlist for older live records can only shrink as those records retire. The [docs-impact check](/contributor-guide#docs-impact-stays-in-the-repository) and `covers:` frontmatter keep pages in step with code between decisions.
 
 ## Why it works this way
 
@@ -71,7 +71,7 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0025 | Stabilize the default Instance identity | [Applications: The default Instance keeps its name](/domains/applications#the-default-instance-keeps-its-name) |
 | 0026 | Identify each App by one repository | [Projects: Repository identity](/reference/projects#repository-identity) |
 | 0027 | Adopt local Git sources into Instance ownership | [Applications: Register an existing checkout](/domains/applications#register-an-existing-checkout) |
-| 0028 | Require one Route per active Instance | [Routes: Why it works this way](/reference/routes#one-route-per-active-instance) |
+| 0028 | Require one Route per active Instance | [Routes: One own Route per active Instance](/reference/routes#one-own-route-per-active-instance) |
 | 0029 | Manage Laravel application URLs through Orbit | [Applications: Laravel application URL](/domains/applications#laravel-application-url) |
 | 0030 | Complete Instance provisioning without application health gates | [Applications: Active does not mean healthy](/domains/applications#active-does-not-mean-healthy) |
 | 0031 | Clone initial production source during provisioning | [Instance cloning (superseded by 0047)](/reference/instance-cloning) |
@@ -111,7 +111,7 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0065 | Replace Routes when domains change | [Routes: Change an explicit domain](/reference/routes#change-an-explicit-domain) |
 | 0066 | Transfer development Instances between Nodes | [Instance transfer](/reference/instance-transfer) |
 | 0067 | Serve development servers on the Route origin | [Routes: Development-server endpoint](/reference/routes#development-server-endpoint) |
-| 0068 | Accept only apps.path as the node storage setting path | [Node settings: One typed setting](/reference/node-settings#one-typed-setting) |
+| 0068 | Accept only apps.path as the node storage setting path | [Node settings: Closed, typed settings](/reference/node-settings#closed-typed-settings) |
 | 0069 | Allow Process targets of Instance or managed Node | [Processes and schedules: Owners](/reference/processes-and-schedules#owners) |
 | 0070 | Keep the database role as a Docker baseline | [Database role](/reference/database-role) |
 | 0071 | Use one verb vocabulary across the CLI, route names, and SDK | [CLI command vocabulary: Why it works this way](/reference/cli-command-vocabulary#why-it-works-this-way) |

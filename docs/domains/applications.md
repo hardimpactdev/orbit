@@ -292,9 +292,9 @@ Laravel uses `APP_URL` to build links outside a request. When Orbit changes a do
 
 ### Each new Instance copies the default database
 
-A test run with `RefreshDatabase` empties the database it uses. Instances that share one database can therefore wipe each other's data. The `default` Instance is the Project's main development source, so its database holds the Project's working data. So every other new development Instance gets its own copy, and the rule depends only on what `default` has attached.
+Instances that share one database can wipe each other's data, for example when a test run empties it. [Tests get their own database](/reference/database-connections#tests-get-their-own-database) explains that risk and the separate test database. The `default` Instance is the Project's main development source, so its database holds the Project's working data. So every other new development Instance gets its own copy, and the rule depends only on what `default` has attached.
 
-An opt-in flag on `instance:create` was rejected: an Instance created without it shares or lacks data, which is the problem the copy solves. A Project setting that names the source Instance was rejected: `default` already is the main source, and a second setting would allow two answers. Converting a SQLite source to MySQL on each copy was rejected: type differences between the engines make such a copy unreliable. So the copy keeps the kind of its source. [Tests get their own database](/reference/database-connections#tests-get-their-own-database) explains the separate test database.
+An opt-in flag on `instance:create` was rejected: an Instance created without it shares or lacks data, which is the problem the copy solves. A Project setting that names the source Instance was rejected: `default` already is the main source, and a second setting would allow two answers. Converting a SQLite source to MySQL on each copy was rejected: type differences between the engines make such a copy unreliable. So the copy keeps the kind of its source.
 
 ### Create the database before setup
 
